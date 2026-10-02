@@ -94,13 +94,15 @@ router.get('/saas-plan', adminAuth, async (req, res) => {
   const tenantId = req.admin.role === 'platformSuper' ? req.query.tenantId : req.admin.tenantId;
   if (!tenantId) return res.json({ success: true, data: { standard: standardPlan, tenant: null } });
   if (!mongoose.isValidObjectId(tenantId)) return res.status(400).json({ success: false, message: '机构 ID 无效' });
-  const tenant = await Tenant.findById(tenantId).select('name code commercialPlan commercialTerms extraStaffSeats extraAdminSeats').lean();
+  const tenant = await Tenant.findById(tenantId).select('name code legalName serviceScope serviceScopeNote commercialPlan commercialTerms extraStaffSeats extraAdminSeats').lean();
   if (!tenant || (req.admin.role !== 'platformSuper' && String(tenant._id) !== String(req.admin.tenantId))) return res.sendStatus(404);
   const usage = await seatUsage(tenant._id);
   const standard = tenant.commercialPlan === 'standard';
   const terms = standard ? tenantTerms(tenant) : null;
   return res.json({ success: true, data: { standard: standardPlan,
-    tenant: { ...tenant, usage, terms, staffLimit: standard ? terms.includedStaffSeats + (tenant.extraStaffSeats || 0) : null,
+    tenant: { ...tenant, legalName: tenant.legalName || (tenant.code === 'jiayihui' ? '杭州嘉医汇健康管理有限公司' : ''),
+      serviceScope: tenant.serviceScope || (tenant.code === 'jiayihui' ? ['admin', 'staff', 'customer'] : []),
+      serviceProfileSaved: Array.isArray(tenant.serviceScope), usage, terms, staffLimit: standard ? terms.includedStaffSeats + (tenant.extraStaffSeats || 0) : null,
       adminLimit: standard ? terms.includedAdminSeats + (tenant.extraAdminSeats || 0) : null,
       estimatedMonthlySeatFeeYuan: standard ? estimatedMonthlySeatFee(usage, terms) : null } } });
 });
@@ -1564,18 +1566,19 @@ router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
   if (process.env.ENABLE_EXTERNAL_TENANTS !== 'true') {
     return res.status(403).json({ success: false, message: '外部机构接入尚未开放' });
   }
-  const { code, name, slogan, logo, themeColor, adminUsername, adminPassword } = req.body;
+  const { code, name, legalName, slogan, logo, themeColor, adminUsername, adminPassword } = req.body;
   let websiteHosts;
   try { websiteHosts = require('../utils/websiteTenant').normalizeWebsiteHosts(req.body.websiteHosts || []); }
   catch (error) { return res.status(400).json({ success: false, message: error.message }); }
   if (!code || !name) return res.status(400).json({ success: false, message: '机构标识和名称为必填项' });
+  if (typeof legalName !== 'string' || !legalName.trim() || legalName.trim().length > 120) return res.status(400).json({ success: false, message: '请填写签约企业全称（最多120字）' });
   if ((adminUsername || adminPassword) && (!adminUsername || typeof adminPassword !== 'string' || adminPassword.length < 10 || adminPassword.length > 128)) {
     return res.status(400).json({ success: false, message: '创建机构管理员时须填写用户名和10至128位初始密码' });
   }
   const dup = await Tenant.findOne({ code });
   if (dup) return res.status(400).json({ success: false, message: '该机构标识已存在' });
   if (websiteHosts.length && await Tenant.exists({ websiteHosts: { $in: websiteHosts } })) return res.status(409).json({ success: false, message: '网站域名已绑定其他机构' });
-  const tenant = await Tenant.create({ code, name, slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts, commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()) });
+  const tenant = await Tenant.create({ code, name, legalName: legalName.trim(), serviceScope: ['admin', 'staff', 'customer'], slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts, commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()) });
 
   // 为新机构建一个 superadmin，否则该机构无人能登录管理
   let createdAdmin = null;
@@ -1645,6 +1648,32 @@ router.put('/tenants/:id/commercial-terms', adminAuth, requirePlatformSuper, asy
   await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
     action: 'change_tenant_commercial_terms', before, after: terms, reason, at: new Date(), ip: req.ip });
   res.json({ success: true, data: { terms } });
+});
+
+// 每家签约企业的服务配置独立保存；记录配置不代表协议已签署或技术功能已开通。
+router.put('/tenants/:id/service-profile', adminAuth, requirePlatformSuper, async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '机构 ID 无效' });
+  const legalName = typeof req.body?.legalName === 'string' ? req.body.legalName.trim() : '';
+  const scope = req.body?.serviceScope;
+  const note = typeof req.body?.serviceScopeNote === 'string' ? req.body.serviceScopeNote.trim() : '';
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  const allowed = new Set(['admin', 'staff', 'customer', 'ai']);
+  if (!legalName || legalName.length > 120 || !Array.isArray(scope) || !scope.length ||
+      scope.length > allowed.size || scope.some(code => !allowed.has(code)) || new Set(scope).size !== scope.length ||
+      note.length > 500 || reason.length < 4 || reason.length > 500) {
+    return res.status(400).json({ success: false, message: '请填写签约企业全称、有效服务项目及4至500字变更依据' });
+  }
+  const tenant = await Tenant.findById(req.params.id);
+  if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
+  const before = { legalName: tenant.legalName || '', serviceScope: tenant.serviceScope || [], serviceScopeNote: tenant.serviceScopeNote || '' };
+  tenant.legalName = legalName;
+  tenant.serviceScope = scope;
+  tenant.serviceScopeNote = note;
+  await tenant.save();
+  const after = { legalName, serviceScope: scope, serviceScopeNote: note };
+  await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
+    action: 'change_tenant_service_profile', before, after, reason, at: new Date(), ip: req.ip });
+  res.json({ success: true, data: after });
 });
 
 async function createInstitutionAdmin(req, res, tenantId) {
