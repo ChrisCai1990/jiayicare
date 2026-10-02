@@ -2,6 +2,10 @@ module.exports = function followUpServiceLinkPlugin(schema, { targetType }) {
   const reconcile = async targetId => {
     if (!targetId) return;
     await require('./followUpServiceLink').safeReconcileServiceLinks({ targetType, targetId });
+    if (targetType === 'order') {
+      const order = await require('../models/Order').findById(targetId).select('_id user serviceId orderType paymentStatus paidAmount status completedAt packageEntitlementUsage').lean();
+      if (order && (order.packageEntitlementUsage || order.status === 'completed')) await require('./packageServiceRedemption').safeReconcilePackageOrder(order);
+    }
     if (targetType === 'health_plan') await require('./annualCheckupEvidence').safeReconcileCheckupPreparation({
       'formData.annualCheckupPreparation.evidence.healthPlanId': String(targetId),
     });

@@ -44,3 +44,14 @@ test('ledger preserves shared quota, frequencies and customer usage isolation', 
   assert.equal(plan.usage[0].name, 'Escort');
   assert.equal(JSON.stringify(row), before);
 });
+test('historic effective package shows new automatic usage without claiming a verified balance', async () => {
+  const row = { _id: 'effective', sourceType: 'effective_service', historyVerified: false,
+    packageName: 'Young', rights: { productEntitlements: [{ productId: 'nutrition', productName: '营养评估服务', count: 12, remainingCount: 11 }] },
+    usageRecords: [{ usedByUserId: 'self', productId: 'nutrition', productName: '营养评估服务', status: 'redeemed', usedAt: '2026-10-02' }] };
+  const plan = (await fixture({ rows: [row] }).membershipBenefits(user)).plans[0];
+  assert.equal(plan.groups.independent[0].usageKnown, false);
+  assert.equal(plan.usage.length, 1);
+  assert.match(plan.notice, /历史使用仍待核对/);
+  assert.match(plan.items[0].value, /新增已核销 1 次/);
+  assert.doesNotMatch(plan.items[0].value, /剩余 11|可用 11/);
+});

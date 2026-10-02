@@ -10,6 +10,7 @@ function Quota({item,shared}) {
 export default function MembershipBenefitsSummary({ data, error, onRefresh }) {
   return <div className="card" style={{marginBottom:16}}><div className="card-header"><div className="card-title">会员计划与使用情况</div><button className="btn btn-secondary btn-sm" onClick={onRefresh}>刷新权益</button></div><div className="card-body">
     {error||(!data?'正在加载…':data.message)}
+    {!!data?.redemptionAlerts && <p role="alert" style={{color:'#B45309'}}>有 {data.redemptionAlerts} 项服务已完成，但套餐次数自动核销待核对。请核对服务包来源与剩余次数。</p>}
     {(data?.plans||[]).map(plan=><section key={plan.id} style={{marginBottom:20}}>
       <div style={{background:'#193C30',borderRadius:14,padding:20,color:'#fff'}}><h3 style={{margin:'0 0 8px'}}>{plan.name}</h3><div style={{fontSize:12,color:'#C5D9CE'}}>有效期：{String(plan.validFrom||'待核对').slice(0,10)} — {String(plan.validUntil||'待核对').slice(0,10)}</div></div>
       {plan.groups ? <>
