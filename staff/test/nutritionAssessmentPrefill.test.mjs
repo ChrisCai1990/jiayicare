@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { nutritionAssessmentPrefill } from '../src/utils/nutritionAssessmentPrefill.mjs'
+import foodAllergy from '../../shared/foodAllergy.cjs'
 
 test('已有营养评估可带入文本和逐项指标，但不沿用旧复盘日期或安全确认', () => {
   const patient = { height: 156, weight: 51, healthProfile: { foodAllergy: '花生' } }
@@ -52,4 +53,16 @@ test('自动读取独立过敏史和膳食问卷中的食物过敏线索，仍�
   assert.match(assessment.allergyDetails, /麸质/)
   assert.doesNotMatch(assessment.allergyDetails, /青霉素|无食物过敏史/)
   assert.equal(assessment.allergyStatus, '')
+})
+
+test('档案未同步时可带入问卷中的具体食物，只有是或有不冒充详情', () => {
+  const patient = { initialArchiveReview: { items: [
+    { path: 'healthProfile.foodAllergy', valueStr: '花生：皮疹；鸡蛋：腹痛' },
+  ] } }
+  assert.equal(nutritionAssessmentPrefill(patient).assessment.allergyDetails, '花生：皮疹；鸡蛋：腹痛')
+  assert.equal(nutritionAssessmentPrefill({ initialArchiveReview: { items: [
+    { path: 'healthProfile.foodAllergy', answer: '有食物过敏' },
+  ] } }).assessment.allergyDetails, '')
+  assert.equal(foodAllergy.hasFoodAllergyRecord({ healthProfile: { foodAllergy: '有食物过敏史' } }), true)
+  assert.equal(foodAllergy.foodAllergyEvidence({ healthProfile: { foodAllergy: '有食物过敏史' } }), '')
 })

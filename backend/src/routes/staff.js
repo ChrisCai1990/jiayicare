@@ -15819,25 +15819,6 @@ router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, 
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-router.post('/patients/:id/nutrition-food-allergy', staffAuth, async (req, res) => {
-  try {
-    if (!['nutritionist', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师可核实本次食物过敏记录' });
-    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '会员 ID 无效' });
-    const user = await User.findById(req.params.id).select('tenantId assignedNutritionist isDeleted coreHealthArchive initialArchiveReview healthProfile').lean();
-    if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
-    if (String(user.tenantId || '') !== String(req.staff.tenantId || '')
-      || (req.staff.role !== 'superadmin' && String(user.assignedNutritionist || '') !== String(req.staff._id))) {
-      return res.status(403).json({ success: false, message: '无权更新该会员过敏档案' });
-    }
-    const mutation = require('../utils/nutritionFoodAllergyArchive').appendNutritionFoodAllergy(user, req.body?.allergyDetails, req.staff);
-    if (!mutation) return res.json({ success: true, data: { alreadyRecorded: true } });
-    const result = await User.collection.updateOne(mutation.filter, mutation.update);
-    if (!result.matchedCount) return res.status(409).json({ success: false, message: '过敏档案已更新，请刷新后重新核对' });
-    res.json({ success: true, data: { foodAllergy: mutation.update.$set['healthProfile.foodAllergy'],
-      allergySection: mutation.update.$set['coreHealthArchive.allergy'] } });
-  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
-});
-
 router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
   if (!['nutritionist', 'superadmin'].includes(req.staff.role)) {
     return res.status(403).json({ success: false, message: '仅营养师可生成营养干预方案' });
@@ -15849,7 +15830,7 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
     if (!template) return res.status(404).json({ success: false, message: '营养方案模板不存在' });
 
     const user = await User.findById(req.params.id)
-      .select('name gender age height weight chronicDiseases healthProfile lifestyle_data aiRiskAssessment tenantId isDeleted assignedNutritionist');
+      .select('name gender age height weight chronicDiseases healthProfile lifestyle_data coreHealthArchive initialArchiveReview aiRiskAssessment tenantId isDeleted assignedNutritionist');
     if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
     if (String(user.tenantId || '') !== String(req.staff.tenantId || '') ||
         (req.staff.role !== 'superadmin' && String(user.assignedNutritionist || '') !== String(req.staff._id))) {
@@ -15860,8 +15841,10 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
     }
     const { assessment, missing } = require('../utils/nutritionPlanAssessment').prepareNutritionAssessment(req.body.assessment, user);
     if (missing.length) return res.status(400).json({ success: false, message: `生成前请补齐或核实：${missing.join('、')}` });
-    const { foodAllergyEvidence } = require('../../../shared/foodAllergy.cjs');
-    if (assessment.allergyStatus === 'confirmed_none' && foodAllergyEvidence(user)) {
+    const { hasFoodAllergyRecord } = require('../../../shared/foodAllergy.cjs');
+    const allergyArchiveView = user.toObject();
+    allergyArchiveView.lifestyle_data = require('../utils/effectiveLifestyle').effectiveLifestyle(allergyArchiveView);
+    if (assessment.allergyStatus === 'confirmed_none' && hasFoodAllergyRecord(allergyArchiveView)) {
       return res.status(409).json({ success: false, message: '档案已有食物过敏记录，请先核对并填写过敏详情，不能直接选择无过敏' });
     }
 
@@ -15948,6 +15931,17 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
       supplement: { content: '' },
       exercise: { content: tc.exerciseSuggestion || '' },
     };
+
+    // The nutritionist enters/validates allergy details once. After the AI
+    // draft is complete, append that verified evidence to the archive using
+    // its existing CAS and before/after history; never overwrite old records.
+    if (assessment.allergyStatus === 'confirmed_present') {
+      const mutation = require('../utils/nutritionFoodAllergyArchive').appendNutritionFoodAllergy(user.toObject(), assessment.allergyDetails, req.staff);
+      if (mutation) {
+        const result = await User.collection.updateOne(mutation.filter, mutation.update);
+        if (!result.matchedCount) return res.status(409).json({ success: false, message: '过敏档案已更新，请刷新并重新核对后生成方案' });
+      }
+    }
 
     const plan = await HealthPlan.create({
       patientId: user._id,

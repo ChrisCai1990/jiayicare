@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import DateField from '../../../shared/DateField.jsx'
 import NutritionTargetRows, { nutritionTargetError } from './NutritionTargetRows'
 import { nutritionAssessmentPrefill } from '../utils/nutritionAssessmentPrefill.mjs'
 import foodAllergy from '../../../shared/foodAllergy.cjs'
-import { staffAPI } from '../api'
 
-const { foodAllergyEvidence, isUsableFoodAllergy } = foodAllergy
+const { foodAllergyEvidence, hasFoodAllergyRecord, questionnaireFoodAllergyEvidence, isUsableFoodAllergy } = foodAllergy
 
 export const initialNutritionAssessment = (patient = {}, previous = null) => nutritionAssessmentPrefill(patient, previous).assessment
 
@@ -26,31 +25,18 @@ export function missingNutritionAssessment(value = {}, goal = '') {
   return missing
 }
 
-export default function NutritionAssessmentFields({ patient, value, onChange, previousAssessmentAt = '', onAllergySaved }) {
-  const [savingAllergy, setSavingAllergy] = useState(false)
-  const [allergyMessage, setAllergyMessage] = useState('')
-  const [syncedDetails, setSyncedDetails] = useState('')
-  useEffect(() => { setSyncedDetails(''); setAllergyMessage('') }, [patient?._id])
+export default function NutritionAssessmentFields({ patient, value, onChange, previousAssessmentAt = '' }) {
   const set = (key, fieldValue) => onChange(current => ({ ...current, [key]: fieldValue }))
-  const recordedAllergy = foodAllergyEvidence(patient) || syncedDetails
-  const formalRecordedAllergy = foodAllergyEvidence({ ...patient, lifestyle_data: {} }) || syncedDetails
+  const recordedAllergy = foodAllergyEvidence(patient)
+  const questionnaireAllergy = questionnaireFoodAllergyEvidence(patient)
+  const formalRecordedAllergy = foodAllergyEvidence({ ...patient, lifestyle_data: {} })
   const setAllergyStatus = status => onChange(current => ({ ...current, allergyStatus: status,
-    allergyDetails: status === 'confirmed_none' || (status === 'confirmed_present' && !isUsableFoodAllergy(current.allergyDetails)) ? '' : current.allergyDetails }))
-  const saveAllergy = async () => {
-    if (!patient?._id || !isUsableFoodAllergy(value.allergyDetails)) { setAllergyMessage('请先填写具体过敏食物及反应'); return }
-    setSavingAllergy(true); setAllergyMessage('')
-    try {
-      const result = await staffAPI.appendNutritionFoodAllergy(patient._id, value.allergyDetails.trim())
-      setSyncedDetails(value.allergyDetails.trim())
-      setAllergyMessage(result.data?.alreadyRecorded ? '档案已有相同记录，请继续核对本次方案。' : '已追加到过敏史档案，原记录及本次修改留痕已保留。')
-      onAllergySaved?.(result.data)
-    } catch (error) { setAllergyMessage(error.message || '更新档案失败，请稍后重试') }
-    finally { setSavingAllergy(false) }
-  }
+    allergyDetails: status === 'confirmed_none' ? '' : isUsableFoodAllergy(current.allergyDetails)
+      ? current.allergyDetails : recordedAllergy }))
   return <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
     <div style={{ fontWeight: 700 }}>生成前营养评估 · 由营养师核实</div>
     <div style={{ color: '#66776E', fontSize: 12 }}>已带入客户档案{previousAssessmentAt ? `及 ${new Date(previousAssessmentAt).toLocaleDateString('zh-CN')} 的上次营养评估` : '中可用的信息'}。请按本次情况核对、修订；上次基线和目标不能直接当作当前测量结果。本次记录将与方案一同保存。</div>
-    <div style={{ color: '#52675D', fontSize: 12 }}>档案年龄：{patient?.age || '未录入（请先在客户基本信息中补齐）'}；档案食物过敏：{recordedAllergy || '未见具体食物过敏记录，仍需本次核对'}</div>
+    <div style={{ color: '#52675D', fontSize: 12 }}>档案年龄：{patient?.age || '未录入（请先在客户基本信息中补齐）'}；档案食物过敏：{recordedAllergy || '未见具体食物过敏记录'}{!recordedAllergy && questionnaireAllergy && `；问卷待核对：${questionnaireAllergy}`}</div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
       {[['height', '身高（cm）'], ['weight', '体重（kg）']].map(([key, label]) => <label key={key} className="form-label">{label} *<input className="form-input" value={value[key]} onChange={e => set(key, e.target.value)} /></label>)}
       <label className="form-label">阶段复盘日期 *<DateField className="form-input" type="date" value={value.reviewDate} onChange={e => set('reviewDate', e.target.value)} /></label>
@@ -60,13 +46,11 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
     <label className="form-label">食物过敏核对 *<select className="form-input" value={value.allergyStatus} onChange={e => setAllergyStatus(e.target.value)}><option value="">请选择已核实结果</option><option value="confirmed_none">已核实，无已知食物过敏</option><option value="confirmed_present">已核实，有食物过敏</option></select></label>
     {value.allergyStatus === 'confirmed_present' && <label className="form-label">过敏食物及反应 *<textarea className="form-input" rows={2} value={value.allergyDetails} onChange={e => set('allergyDetails', e.target.value)} placeholder="请核对档案记录，补充具体食物及反应" /></label>}
     {value.allergyStatus === 'confirmed_present' && !formalRecordedAllergy && <div role="alert" style={{ padding: 10, background: '#FFF4DC', color: '#79551A', borderRadius: 6 }}>
-      本次核实有食物过敏，过敏史档案未见具体记录。请核对后追加到过敏史档案；已有记录会保留。
-      <div><button type="button" className="btn btn-secondary btn-sm" disabled={savingAllergy || !isUsableFoodAllergy(value.allergyDetails)} onClick={saveAllergy}>{savingAllergy ? '更新中…' : '确认并追加到过敏史档案'}</button></div>
+      本次核实有食物过敏，过敏史档案未见具体记录。若已有调查记录，上方已带入供核对；若没有，请在上方填写一次具体食物及反应。成功生成草稿时系统会自动追加到档案并保留历史。
     </div>}
-    {value.allergyStatus === 'confirmed_none' && recordedAllergy && <div role="alert" style={{ padding: 10, background: '#FFF4DC', color: '#79551A', borderRadius: 6 }}>
-      本次选择无过敏，但档案记录为“{recordedAllergy}”。请先核对并在过敏史档案中修订；当前不能按无过敏生成方案。
+    {value.allergyStatus === 'confirmed_none' && hasFoodAllergyRecord(patient) && <div role="alert" style={{ padding: 10, background: '#FFF4DC', color: '#79551A', borderRadius: 6 }}>
+      本次选择无过敏，但档案记录为“{recordedAllergy || '有食物过敏，具体食物待核对'}”。请先核对并在过敏史档案中修订；当前不能按无过敏生成方案。
     </div>}
-    {allergyMessage && <div role="status" style={{ color: '#52675D', fontSize: 12 }}>{allergyMessage}</div>}
     <label className="form-label">专业风险分流 *<select className="form-input" value={value.riskStatus} onChange={e => set('riskStatus', e.target.value)}><option value="">请选择</option><option value="standard">已核对，适用所选营养方案模板</option><option value="specialist">需专业评估或特殊疾病营养路径</option></select></label>
     <label className="form-label"><input type="checkbox" checked={value.templateCompatibilityConfirmed} onChange={e => set('templateCompatibilityConfirmed', e.target.checked)} /> 已逐项核对本次带入的评估资料，并确认所选模板与过敏、疾病要求及本次目标不冲突 *</label>
   </div>

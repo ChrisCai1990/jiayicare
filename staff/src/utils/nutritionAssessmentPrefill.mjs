@@ -1,5 +1,5 @@
 import foodAllergy from '../../../shared/foodAllergy.cjs'
-const { isUsableFoodAllergy, foodAllergyEvidence } = foodAllergy
+const { isUsableFoodAllergy, foodAllergyEvidence, questionnaireFoodAllergyEvidence } = foodAllergy
 
 const text = value => String(value ?? '').trim()
 const row = (label, value) => text(value) ? `${label}：${text(value)}` : ''
@@ -46,7 +46,7 @@ function priorTargets(previous = {}) {
 
 export function nutritionAssessmentPrefill(patient = {}, previous = null) {
   const prior = previous || {}
-  const recordedAllergy = foodAllergyEvidence(patient)
+  const recordedAllergy = foodAllergyEvidence(patient) || questionnaireFoodAllergyEvidence(patient)
   return {
     goal: text(prior.goal),
     assessment: {
