@@ -48,10 +48,10 @@ test('工作台与审核必须匹配实际客户归属及岗位', () => {
   assert.equal(isAssignedPhaseReviewer(user, { _id: 'b', role: 'rehabSpecialist' }, 'rehabSpecialist'), false);
   assert.equal(isAssignedPhaseReviewer(user, { _id: 'a', role: 'nutritionist' }, 'rehabSpecialist'), false);
 });
-test('自动扫描仅允许有效服务期内的试点客户，当日到期仍有效', () => {
+test('自动扫描仅允许有效服务期内的客户，当日到期仍有效', () => {
   const now = new Date('2026-09-19T12:00:00+08:00');
   const user = { aiPilotFeatures: { stageAssessment: true }, serviceExpiry: '2026-09-19' };
   assert.equal(eligibleForAutomaticAssessment(user, now), true);
   for (const serviceExpiry of ['', 'invalid', '2026-09-18']) assert.equal(eligibleForAutomaticAssessment({ ...user, serviceExpiry }, now), false);
-  assert.equal(eligibleForAutomaticAssessment({ ...user, aiPilotFeatures: {} }, now), false);
+  assert.equal(eligibleForAutomaticAssessment({ ...user, aiPilotFeatures: {} }, now), true);
 });

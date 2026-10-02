@@ -9,6 +9,7 @@ const partnerBenefitSchema = new mongoose.Schema({
   description:  { type: String, default: '' }, // 权益详情（富文本/多段文字）
   usageGuide:   { type: String, default: '' },  // 使用说明（如何核销/预约方式）
   visibleMemberTypes: [{ type: String }], // 可见的会员等级名称列表，空数组=所有会员可见
+  visibleMemberTypeIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'MemberType' }], // Admin 会员类型树中的精确节点
   status:       { type: String, enum: ['on', 'off'], default: 'on' },
   sortOrder:    { type: Number, default: 999 },
 }, { timestamps: true });

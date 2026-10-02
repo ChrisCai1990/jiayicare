@@ -419,6 +419,7 @@ export const staffAPI = {
   // 订单管理
   getPatientOrders:     (patientId)       => req(`/staff/patients/${patientId}/orders`),
   getPackageEntitlements: (patientId)     => req(`/staff/patients/${patientId}/package-entitlements`),
+  getPatientPartnerBenefits: (patientId)  => req(`/staff/patients/${patientId}/partner-benefits`),
   usePackageEntitlement: (patientId, entitlementId, data) => req(`/staff/patients/${patientId}/package-entitlements/${entitlementId}/use`, { method: 'POST', body: JSON.stringify(data) }),
   startOrder:           (orderId, data)   => req(`/staff/orders/${orderId}/start`, { method: 'PATCH', body: JSON.stringify(data) }),
   getMedicalReminderDraft: (orderId, messages) => req(`/staff/orders/${orderId}/medical-reminder-draft`, { method: 'POST', body: JSON.stringify({ messages }) }),

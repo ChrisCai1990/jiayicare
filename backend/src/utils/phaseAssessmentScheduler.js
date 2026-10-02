@@ -66,10 +66,10 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
   const basePeriod = periodOverride || periodFor(frequency, new Date(), assessmentAnchor);
   const period = basePeriod && { ...basePeriod, key: `${basePeriod.key}:${routing.assessmentDomain}` };
   if (!period) return null;
-  const existingFilter = { annualPlanId: plan._id, templateId: template._id, periodKey: { $in: [period.key, basePeriod.key] } };
+  const existingFilter = { annualPlanId: plan._id, periodKey: { $in: [period.key, basePeriod.key] } };
   const existing = await PhaseAssessment.exists(existingFilter);
   if (existing) return null;
-  const generationId = crypto.createHash('sha256').update([plan._id, template._id, period.key].join(':')).digest('hex');
+  const generationId = crypto.createHash('sha256').update([plan._id, period.key].join(':')).digest('hex');
   const token = crypto.randomUUID();
   try {
     await PhaseAssessmentGeneration.findOneAndUpdate({ _id: generationId, $or: [
@@ -125,28 +125,30 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
 
 async function scanAndCreatePhaseAssessments() {
   if (!process.env.QWEN_API_KEY) return 0;
-  // Independent, exact patient allowlist: a global health-management rollout or
-  // future pilot flag cannot silently start assessment generation for others.
+  // The broad rollout is explicit. Without it, retain the exact pilot allowlist.
+  const allEligible = process.env.PHASE_ASSESSMENT_AUTO_SCOPE === 'eligible';
   const ids = String(process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS || '').split(',').map(id => id.trim().toLowerCase()).filter(Boolean);
-  if (!ids.length || ids.some(id => !/^[a-f\d]{24}$/.test(id))) return 0;
+  if (!allEligible && (!ids.length || ids.some(id => !/^[a-f\d]{24}$/.test(id)))) return 0;
   const templates = await PlanTemplate.find({ type: 'phase_assessment', status: 'active', 'content.frequency': { $in: ['monthly', 'quarterly', 'yearly'] } }).lean();
   if (!templates.length) return 0;
-  const plans = await AnnualPlan.find({ $and: [require('./healthManagementRollout').patientFilter(), { patientId: { $in: ids } }, { confirmedAt: { $ne: null } }] }).sort({ confirmedAt: -1 }).limit(500).lean();
+  const planFilters = [require('./healthManagementRollout').patientFilter(), { confirmedAt: { $ne: null } }];
+  if (!allEligible) planFilters.push({ patientId: { $in: ids } });
+  const plans = await AnnualPlan.find({ $and: planFilters }).sort({ confirmedAt: -1 }).limit(5000).lean();
   let created = 0;
   const seenPatients = new Set();
   for (const plan of plans) {
     if (seenPatients.has(String(plan.patientId))) continue;
     let user, gate, frequency, pilotFrequency = false;
     try {
-      user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand servicePackage aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
-      if (!user || user.isDeleted || user.aiPilotFeatures?.stageAssessment !== true) continue;
+      user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand tenantId servicePackage aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
+      if (!user || user.isDeleted) continue;
       gate = await require('./annualPeriodicGate').annualPeriodicGate(plan, user);
       const rights = await require('./packageFeatureEntitlements').getAiEntitlements(user, gate.access);
       if (!gate.allowed || !rights.phaseAssessment || !eligibleForAutomaticAssessment(user, new Date(), gate.access)) continue;
-      // A patient-specific pilot setting fills a missing frozen package frequency;
-      // a template alone never grants an assessment cadence.
+      // Package rights and their configured cadence are authoritative. Keep the
+      // existing explicit patient cadence only for historical blank packages.
       const configured = user.aiPilotFeatures?.stageAssessmentFrequency;
-      pilotFrequency = !rights.phaseAssessmentFrequency && ['biweekly', 'monthly', 'quarterly'].includes(configured);
+      pilotFrequency = user.aiPilotFeatures?.stageAssessment === true && !rights.phaseAssessmentFrequency && ['biweekly', 'monthly', 'quarterly'].includes(configured);
       frequency = pilotFrequency ? configured : rights.phaseAssessmentFrequency;
       if (!['biweekly', 'monthly', 'quarterly'].includes(frequency)) continue;
     } catch (error) {
@@ -154,12 +156,12 @@ async function scanAndCreatePhaseAssessments() {
       continue; // 单个客户凭据查询失败不阻断其他客户，也不带病调用AI。
     }
     seenPatients.add(String(plan.patientId));
-    const eligibleTemplates = templates.filter(t => !t.clientBrand || t.clientBrand === user.clientBrand)
-      .filter(t => t.content?.frequency !== 'yearly' && (!pilotFrequency || t.content?.frequency === frequency))
-      // 优先用同频模板；没有时复用已启用的标准模板，但由服务包频率决定实际节点。
-      .sort((a, b) => Number(b.content?.frequency === frequency) - Number(a.content?.frequency === frequency)
-        || Number(b.clientBrand === user.clientBrand) - Number(a.clientBrand === user.clientBrand));
-    for (const template of pilotFrequency ? eligibleTemplates.slice(0, 1) : eligibleTemplates) {
+    const brand = user.clientBrand || 'jiayiguanjia';
+    const eligibleTemplates = templates.filter(t => String(t.tenantId || '') === String(user.tenantId || ''))
+      .filter(t => !t.clientBrand || t.clientBrand === brand)
+      .filter(t => t.content?.frequency === frequency || (frequency === 'biweekly' && t.content?.frequency === 'monthly'))
+      .sort((a, b) => Number(b.clientBrand === brand) - Number(a.clientBrand === brand));
+    for (const template of eligibleTemplates.slice(0, 1)) {
       const completed = completedCalendarPeriod(frequency, new Date(), gate.anchor);
       if (['monthly', 'quarterly'].includes(frequency) && !completed) continue;
       try { if (await createAssessment({ plan, user, template, assessmentDomain: pilotFrequency ? user.aiPilotFeatures.stageAssessmentDomain || undefined : undefined, assessmentAnchor: gate.anchor, frequencyOverride: frequency,
@@ -182,7 +184,7 @@ function startPhaseAssessmentScheduler() {
 }
 
 function eligibleForAutomaticAssessment(user, now = new Date(), access = null) {
-  if (!user || user.isDeleted || user.aiPilotFeatures?.stageAssessment !== true) return false;
+  if (!user || user.isDeleted) return false;
   const { legacyAccess, dayOf } = require('./serviceAccess');
   const effective = access || legacyAccess(user, now);
   // 自动AI评估比普通访问更严格：必须有可核验的结束日期。

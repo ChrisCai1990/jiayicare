@@ -3,13 +3,8 @@ import { adminAPI } from '../api'
 import { useToast } from '../App'
 
 const CATEGORIES = ['口腔', '体检', '保险', '酒店', '其他']
-// 真实生效的会员等级——与医护端会员详情页"会员类型"下拉框（PatientDetailPage.jsx）保持一致，
-// 这是 User.memberType 字段实际会被写入的取值。admin后台另有一套 MemberType 集合（健康重塑计划等），
-// 但那套值从未被写入 User.memberType，两者是完全不同的体系，不能混用，否则权益可见性永远匹配不上。
-const MEMBER_LEVELS = ['优享', '悦享', '尊享', '卓越']
-
 const EMPTY_PARTNER = { name: '', category: CATEGORIES[0], logo: '', description: '', contactPhone: '', sortOrder: 999, status: 'on' }
-const EMPTY_BENEFIT = { title: '', subtitle: '', images: [], description: '', usageGuide: '', visibleMemberTypes: [], sortOrder: 999, status: 'on' }
+const EMPTY_BENEFIT = { title: '', subtitle: '', images: [], description: '', usageGuide: '', visibleMemberTypeIds: [], sortOrder: 999, status: 'on' }
 
 // ── 单图上传（合作伙伴 logo） ──────────────────────────────────────
 function LogoUpload({ value, onChange }) {
@@ -167,24 +162,28 @@ function PartnerModal({ partner, onClose, onSaved }) {
 }
 
 // ── 权益表单 Modal ────────────────────────────────────────────────
-function BenefitModal({ partnerId, benefit, onClose, onSaved }) {
+function BenefitModal({ partnerId, benefit, memberTypes, memberTypesError, onClose, onSaved }) {
   const toast = useToast()
   const isEdit = !!benefit?._id
-  const [form, setForm] = useState(isEdit ? { ...benefit, partner: partnerId } : { ...EMPTY_BENEFIT, partner: partnerId })
+  const [form, setForm] = useState(isEdit ? { ...benefit, partner: partnerId, visibleMemberTypeIds: (benefit.visibleMemberTypeIds || []).length
+    ? benefit.visibleMemberTypeIds.map(String)
+    : memberTypes.filter(item => (benefit.visibleMemberTypes || []).includes(item.name)).map(item => String(item._id)) } : { ...EMPTY_BENEFIT, partner: partnerId })
   const [loading, setLoading] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const toggleMemberType = (name) => {
-    const has = form.visibleMemberTypes.includes(name)
-    set('visibleMemberTypes', has ? form.visibleMemberTypes.filter(n => n !== name) : [...form.visibleMemberTypes, name])
+  const toggleMemberType = (id) => {
+    const has = form.visibleMemberTypeIds.includes(id)
+    set('visibleMemberTypeIds', has ? form.visibleMemberTypeIds.filter(value => value !== id) : [...form.visibleMemberTypeIds, id])
   }
 
   const save = async () => {
     if (!form.title) { toast('❌ 权益标题为必填项'); return }
+    if (memberTypesError || !memberTypes.length) { toast('❌ 会员类型尚未加载，不能保存权益'); return }
     setLoading(true)
     try {
-      if (isEdit) await adminAPI.updatePartnerBenefit(benefit._id, form)
-      else await adminAPI.createPartnerBenefit(form)
+      const payload = { ...form, visibleMemberTypes: [], visibleMemberTypeIds: form.visibleMemberTypeIds }
+      if (isEdit) await adminAPI.updatePartnerBenefit(benefit._id, payload)
+      else await adminAPI.createPartnerBenefit(payload)
       toast(`✅ 权益${isEdit ? '更新' : '创建'}成功`)
       onSaved(); onClose()
     } catch (err) {
@@ -221,14 +220,15 @@ function BenefitModal({ partnerId, benefit, onClose, onSaved }) {
             <textarea className="form-input" rows={3} value={form.usageGuide} onChange={e => set('usageGuide', e.target.value)} placeholder="如何预约/核销该权益" />
           </div>
           <div className="form-group">
-            <label className="form-label">可见会员等级（不选=所有会员可见）</label>
+            <label className="form-label">可见会员类型（来自会员设置；不选=所有会员可见）</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              {MEMBER_LEVELS.map(name => (
-                <label key={name} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form.visibleMemberTypes.includes(name)} onChange={() => toggleMemberType(name)} />
-                  {name}
+              {memberTypes.map(item => (
+                <label key={item._id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.visibleMemberTypeIds.includes(String(item._id))} onChange={() => toggleMemberType(String(item._id))} />
+                  {item.clientBrand === 'jinyisen' ? '金伊森' : '嘉医管家'} · {item.name}
                 </label>
               ))}
+              {memberTypesError && <span style={{ color: '#C2410C' }}>{memberTypesError}</span>}
             </div>
           </div>
           <div className="form-group">
@@ -256,6 +256,21 @@ export default function PartnersPage() {
   const [benefitsByPartner, setBenefitsByPartner] = useState({})
   const [showBenefitModal, setShowBenefitModal] = useState(false)
   const [editingBenefit, setEditingBenefit] = useState(null)
+  const [memberTypes, setMemberTypes] = useState([])
+  const [memberTypesError, setMemberTypesError] = useState('')
+
+  useEffect(() => {
+    adminAPI.memberTypesTree().then(result => {
+      const leaves = []
+      const walk = nodes => nodes.forEach(node => {
+        if (node.parent && node.active) leaves.push(node)
+        walk(node.children || [])
+      })
+      walk(result.data || [])
+      setMemberTypes(leaves)
+      setMemberTypesError('')
+    }).catch(() => setMemberTypesError('会员类型加载失败，请刷新页面'))
+  }, [])
 
   const loadPartners = async (name) => {
     setLoading(true)
@@ -364,7 +379,8 @@ export default function PartnersPage() {
                         <div style={{ fontWeight: 500 }}>{b.title}</div>
                         <div style={{ fontSize: 12, color: '#888' }}>{b.subtitle}</div>
                         <div style={{ fontSize: 11, color: '#aaa' }}>
-                          {(b.visibleMemberTypes || []).length === 0 ? '所有会员可见' : `可见：${b.visibleMemberTypes.join('、')}`}
+                          {(b.visibleMemberTypeIds || []).length ? `可见：${(b.visibleMemberTypeIds || []).map(id => memberTypes.find(item => String(item._id) === String(id))?.name || '历史类型').join('、')}`
+                            : (b.visibleMemberTypes || []).length ? `可见：${b.visibleMemberTypes.join('、')}（历史规则）` : '所有会员可见'}
                         </div>
                       </div>
                       <span className={`badge ${b.status === 'on' ? 'badge-green' : 'badge-gray'}`}>{b.status === 'on' ? '上架' : '下架'}</span>
@@ -387,6 +403,8 @@ export default function PartnersPage() {
         <BenefitModal
           partnerId={expandedId}
           benefit={editingBenefit}
+          memberTypes={memberTypes}
+          memberTypesError={memberTypesError}
           onClose={() => setShowBenefitModal(false)}
           onSaved={() => loadBenefits(expandedId)}
         />

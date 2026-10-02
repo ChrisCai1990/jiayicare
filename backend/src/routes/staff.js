@@ -7312,6 +7312,14 @@ router.patch('/patients/:id/membership', staffAuth, async (req, res) => {
 });
 
 // ── 服务包权益台账 ────────────────────────────────────────────────
+router.get('/patients/:id/partner-benefits', staffAuth, async (req, res) => {
+  try {
+    const customer = await User.findById(req.params.id).select('clientBrand memberType').lean();
+    if (!customer) return res.status(404).json({ success: false, message: '客户不存在' });
+    res.json({ success: true, data: await require('../utils/partnerBenefitsForMember').partnerBenefitsForMember(customer) });
+  } catch (err) { res.status(500).json({ success: false, message: '合作伙伴权益加载失败' }); }
+});
+
 // 只返回已支付、未到期的套餐权益。家庭共享仅限在 Admin 对套餐显式勾选后，
 // 并且双方已有系统内家庭关联；不从姓名、手机号等信息推断家庭关系。
 router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => {
