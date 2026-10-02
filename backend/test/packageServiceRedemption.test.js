@@ -67,6 +67,30 @@ test('服务完成将预占转为核销，不再次扣共享次数', async t => 
   assert.equal(update.$inc, undefined);
 });
 
+test('记录实际服务启动时自动核销预占，随后取消也不退回已使用次数', async t => {
+  let filter, update;
+  t.mock.method(Entitlement, 'updateOne', async (f, u) => { filter = f; update = u; return { modifiedCount: 1 }; });
+  const startedAt = new Date('2026-10-02T09:00:00Z');
+  const result = await settleReservedPackageOrder({ _id: sourceId, status: 'scheduled', serviceStartedAt: startedAt,
+    packageEntitlementUsage: { entitlementId, poolKey: 'medical' } });
+  assert.equal(result.status, 'completed');
+  assert.equal(filter.usageRecords.$elemMatch.status, 'reserved');
+  assert.equal(update.$set['usageRecords.$.status'], 'redeemed');
+  assert.equal(update.$set['usageRecords.$.usedAt'], startedAt);
+  assert.equal(update.$inc, undefined);
+});
+
+test('多次服务仅启动时保持预占，整单完成后才核销套餐', async t => {
+  let writes = 0;
+  t.mock.method(Entitlement, 'updateOne', async () => { writes++; return { modifiedCount: 1 }; });
+  const order = { _id: sourceId, status: 'scheduled', totalUnits: 3,
+    serviceStartedAt: new Date(), packageEntitlementUsage: { entitlementId, poolKey: 'medical' } };
+  assert.equal((await settleReservedPackageOrder(order)).status, 'reserved');
+  assert.equal(writes, 0);
+  assert.equal((await settleReservedPackageOrder({ ...order, status: 'completed' })).status, 'completed');
+  assert.equal(writes, 1);
+});
+
 test('营养阶段评估必须正式归档后才成为核销来源', () => {
   assert.equal(isFinalizedNutritionAssessment({ status: 'archive_pending', serviceRecordId: sourceId, assessmentDomain: 'nutrition' }), false);
   assert.equal(isFinalizedNutritionAssessment({ status: 'finalized', assessmentDomain: 'nutrition' }), false);

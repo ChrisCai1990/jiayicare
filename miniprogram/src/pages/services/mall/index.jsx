@@ -157,6 +157,8 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const submittingRef = useRef(false);
   const pendingOrderRef = useRef(null);
   const [submitted, setSubmitted] = useState(false);
+  const [submittedPackage, setSubmittedPackage] = useState(false);
+  const [packageRedemptionAt, setPackageRedemptionAt] = useState('service_start');
   const [errMsg, setErrMsg] = useState('');
   const hasSpecs = !!(item?.servicePrices && item.servicePrices.length > 0);
   const [specIdx, setSpecIdx] = useState(0);
@@ -248,6 +250,10 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
           : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice))
         : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined);
       if (res.success) {
+        if (res.data?.packageCovered) {
+          setSubmittedPackage(true);
+          setPackageRedemptionAt(res.data.packageRedemptionAt || 'service_start');
+        }
         const orderId = res.data?.orderId || res.data?.order?._id || pendingOrderRef.current?.id;
         if (isPay && orderId) pendingOrderRef.current = { id: orderId, key: checkoutKey };
         if (res.data?.paymentParams) {
@@ -272,9 +278,9 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
       <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
         <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', width: '100%', boxSizing: 'border-box', padding: `${spacing.lg}px`, textAlign: 'center' }}>
           <Text style={{ fontSize: '44px', display: 'block', margin: '16px 0' }}>✅</Text>
-          <Text style={{ fontSize: '20px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{isPay ? '支付已完成' : '预约申请已提交'}</Text>
+          <Text style={{ fontSize: '20px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{submittedPackage ? '已使用套餐权益' : isPay ? '支付已完成' : '预约申请已提交'}</Text>
           <Text style={{ fontSize: '14px', color: colors.textSecondary, lineHeight: '22px', display: 'block', marginBottom: `${spacing.xl}px` }}>
-            {isPay
+            {submittedPackage ? `本次服务已预占套餐次数，无需再次付费。${packageRedemptionAt === 'order_completion' ? '分次服务全部完成后' : '实际服务启动后'}将自动核销。可在“我的订单”查看进度。` : isPay
               ? `¥${finalPrice} 的订单已提交${finalPrice > 0 ? '并完成微信支付' : '（已用健康基金/优惠券全额抵扣）'}。健管师将与您联系预约具体服务时间，可在"我的订单"查看进度。`
               : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
           </Text>

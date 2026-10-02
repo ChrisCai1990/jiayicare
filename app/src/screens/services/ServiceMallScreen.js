@@ -140,6 +140,8 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
   const [payMethod, setPayMethod] = useState('wechat');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submittedPackage, setSubmittedPackage] = useState(false);
+  const [packageRedemptionAt, setPackageRedemptionAt] = useState('service_start');
   const [errMsg, setErrMsg]       = useState('');
   const [serviceProviderConsent, setServiceProviderConsent] = useState(false);
   // 多规格：默认选第一个规格
@@ -195,6 +197,10 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
         currentSpecLabel || undefined, serviceProviderConsent
       );
       if (res.success) {
+        if (res.data?.packageCovered) {
+          setSubmittedPackage(true);
+          setPackageRedemptionAt(res.data.packageRedemptionAt || 'service_start');
+        }
         setSubmitted(true);
       } else {
         setErrMsg(res.message || '提交失败，请重试');
@@ -214,9 +220,9 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             <View style={styles.successIconWrap}>
               <Ionicons name="checkmark-circle" size={52} color={colors.success} />
             </View>
-            <Text style={styles.successTitle}>{isPay ? '订单已提交' : '预约申请已提交'}</Text>
+            <Text style={styles.successTitle}>{submittedPackage ? '已使用套餐权益' : isPay ? '订单已提交' : '预约申请已提交'}</Text>
             <Text style={styles.successDesc}>
-              {isPay
+              {submittedPackage ? `本次服务已预占套餐次数，无需再次付费；${packageRedemptionAt === 'order_completion' ? '分次服务全部完成后' : '实际服务启动后'}自动核销。可在「我的订单」查看进度。` : isPay
                 ? `已为您生成 ¥${finalPrice} 的订单${finalPrice > 0 ? `（${PAY_METHOD_LABEL[payMethod] || payMethod}）` : '（已用健康基金/优惠券全额抵扣）'}。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
                 : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
             </Text>
