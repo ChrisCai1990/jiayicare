@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const { runWithoutTenantScope } = require('../utils/tenantScope');
 const router = express.Router();
 const adminAuth = require('../middleware/adminAuth');
 
@@ -7,6 +8,7 @@ const CompanyInfo    = require('../models/CompanyInfo');
 const Department     = require('../models/Department');
 const StaffRole      = require('../models/StaffRole');
 const Admin          = require('../models/Admin');
+const Tenant         = require('../models/Tenant');
 const { canAddSeat } = require('../utils/saasPlan');
 const Team           = require('../models/Team');
 const MemberTag      = require('../models/MemberTag');
@@ -132,9 +134,30 @@ router.get('/roles', adminAuth, async (req, res) => {
   res.json({ success: true, data: list });
 });
 
+const SYSTEM_ROLES = [
+  'familyDoctor', 'nutritionist', 'healthManager',
+  'medicalAssistant', 'psychologist', 'rehabSpecialist',
+  'tcmDoctor', 'specialist', 'healthPlanner',
+  'institutionStaff',
+];
+
+async function ownInstitutionRoles(req) {
+  const tenant = await Tenant.findById(req.admin.tenantId).select('code').lean();
+  return tenant?.code !== 'jiayihui';
+}
+
+async function resolveEmployeeRole(req, customRoleId, requestedRole) {
+  if (!await ownInstitutionRoles(req)) return requestedRole;
+  if (!customRoleId || !mongoose.isValidObjectId(customRoleId)) return null;
+  const institutionRole = await StaffRole.findById(customRoleId).select('_id').lean();
+  return institutionRole ? 'institutionStaff' : null;
+}
+
 router.post('/roles', adminAuth, async (req, res) => {
   const { name, permissions } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '角色名称不能为空' });
+  const ownRoles = await ownInstitutionRoles(req);
+  if (ownRoles && req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅机构管理员可配置岗位' });
   const existing = await StaffRole.findOne({ name });
   if (existing) return res.status(400).json({ success: false, message: '角色名称已存在' });
   const role = await StaffRole.create({ name, permissions: permissions || DEFAULT_PERMISSIONS });
@@ -143,6 +166,10 @@ router.post('/roles', adminAuth, async (req, res) => {
 
 router.put('/roles/:id', adminAuth, async (req, res) => {
   const { name, permissions } = req.body;
+  const ownRoles = await ownInstitutionRoles(req);
+  if (ownRoles && req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅机构管理员可配置岗位' });
+  const current = await StaffRole.findById(req.params.id);
+  if (!current) return res.status(404).json({ success: false, message: '角色不存在' });
   if (name) {
     const dup = await StaffRole.findOne({ name, _id: { $ne: req.params.id } });
     if (dup) return res.status(400).json({ success: false, message: '角色名称已存在' });
@@ -160,12 +187,6 @@ router.delete('/roles/:id', adminAuth, async (req, res) => {
 });
 
 // ── 员工管理 ────────────────────────────────────────────────────
-const SYSTEM_ROLES = [
-  'familyDoctor', 'nutritionist', 'healthManager',
-  'medicalAssistant', 'psychologist', 'rehabSpecialist',
-  'tcmDoctor', 'specialist', 'healthPlanner',
-];
-
 router.get('/employees', adminAuth, async (req, res) => {
   const { q = '', deptId, staffStatus, page = 1, limit = 20 } = req.query;
   const filter = { role: { $in: SYSTEM_ROLES } };
@@ -196,25 +217,26 @@ router.post('/employees', adminAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '仅超级管理员可创建员工账号' });
   }
   const { username, password, name, role, title, email, certNumber, deptId, customRoleId, phone, personalPerformanceRule, teamId, mentorOfTeamId } = req.body;
-  if (!password || !name || !role) {
-    return res.status(400).json({ success: false, message: '密码、姓名、角色不能为空' });
+  if (!password || !name) {
+    return res.status(400).json({ success: false, message: '密码和姓名不能为空' });
   }
   if (!phone) {
     return res.status(400).json({ success: false, message: '手机号码不能为空' });
   }
-  if (!SYSTEM_ROLES.includes(role)) {
-    return res.status(400).json({ success: false, message: '角色无效' });
+  const effectiveRole = await resolveEmployeeRole(req, customRoleId, role);
+  if (!SYSTEM_ROLES.includes(effectiveRole)) {
+    return res.status(400).json({ success: false, message: '请先配置并选择本机构岗位' });
   }
   if (!await ownedEmployeeReferences({ deptId, customRoleId, teamId, mentorOfTeamId })) return res.status(400).json({ success: false, message: '部门、岗位权限或团队不属于本机构' });
   if (!await canAddSeat(req.admin.tenantId, 'staff')) return res.status(409).json({ success: false, message: '服务人员账号额度已满，请联系平台开通额外账号' });
-  const phoneExists = await Admin.findOne({ phone });
+  const phoneExists = await runWithoutTenantScope(() => Admin.findOne({ phone }));
   if (phoneExists) return res.status(400).json({ success: false, message: '该手机号已被使用' });
   const finalUsername = username || `staff_${Date.now().toString(36)}`;
-  const usernameExists = await Admin.findOne({ username: finalUsername });
+  const usernameExists = await runWithoutTenantScope(() => Admin.findOne({ username: finalUsername }));
   if (usernameExists) return res.status(400).json({ success: false, message: '用户名已存在' });
 
   const emp = await Admin.create({
-    username: finalUsername, password, name, role, phone,
+    username: finalUsername, password, name, role: effectiveRole, phone,
     title: title || '', email: email || '', certNumber: certNumber || '',
     deptId: deptId || null, customRoleId: customRoleId || null,
     teamId: teamId || null,
@@ -235,14 +257,16 @@ router.put('/employees/:id', adminAuth, async (req, res) => {
   if (!emp || !SYSTEM_ROLES.includes(emp.role)) {
     return res.status(404).json({ success: false, message: '员工不存在' });
   }
+  const effectiveRole = await resolveEmployeeRole(req, customRoleId === undefined ? emp.customRoleId : customRoleId, role || emp.role);
+  if (!SYSTEM_ROLES.includes(effectiveRole)) return res.status(400).json({ success: false, message: '请先配置并选择本机构岗位' });
   if (!await ownedEmployeeReferences({ deptId, customRoleId, teamId, mentorOfTeamId })) return res.status(400).json({ success: false, message: '部门、岗位权限或团队不属于本机构' });
   if (phone && phone !== emp.phone) {
-    const phoneExists = await Admin.findOne({ phone, _id: { $ne: emp._id } });
+    const phoneExists = await runWithoutTenantScope(() => Admin.findOne({ phone, _id: { $ne: emp._id } }));
     if (phoneExists) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });
     emp.phone = phone;
   }
   if (name) emp.name = name;
-  if (role && SYSTEM_ROLES.includes(role)) emp.role = role;
+  emp.role = effectiveRole;
   if (title !== undefined) emp.title = title;
   if (email !== undefined) emp.email = email;
   if (certNumber !== undefined) emp.certNumber = certNumber;

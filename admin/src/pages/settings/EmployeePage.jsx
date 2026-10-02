@@ -96,6 +96,7 @@ export default function EmployeePage() {
   const [showTeamMgr, setShowTeamMgr] = useState(false)
 
   const isSuperAdmin = admin?.role === 'superadmin'
+  const ownRoles = admin?.tenantStatus === 'setup' || (admin?.tenantCode && admin.tenantCode !== 'jiayihui')
 
   const loadAll = () => {
     setLoading(true)
@@ -121,7 +122,7 @@ export default function EmployeePage() {
   useEffect(() => { loadTeams() }, [])
 
   const openCreate = () => {
-    setEditId(null); setForm(EMPTY_FORM); setError(''); setShowModal(true)
+    setEditId(null); setForm({ ...EMPTY_FORM, role: ownRoles ? 'institutionStaff' : EMPTY_FORM.role }); setError(''); setShowModal(true)
   }
 
   const openEdit = emp => {
@@ -147,6 +148,7 @@ export default function EmployeePage() {
     if (!editId && (!form.phone || !form.password || !form.name)) {
       setError('手机号码、密码、姓名不能为空'); return
     }
+    if (ownRoles && !form.customRoleId) { setError('请先选择本机构岗位'); return }
     setSaving(true); setError('')
     try {
       const payload = { ...form }
@@ -190,7 +192,7 @@ export default function EmployeePage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 700 }}>员工管理</h2>
-          <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>管理所有医护端/后台登录账号</p>
+          <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>{ownRoles ? '先在岗位管理中设置本机构岗位与权限，再为员工开通账号。' : '管理所有医护端/后台登录账号'}</p>
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
           <input
@@ -211,6 +213,8 @@ export default function EmployeePage() {
         </div>
       )}
 
+      {ownRoles && roles.length === 0 && !loading && <div style={{ background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8, padding: '10px 16px', marginBottom: 16, fontSize: 13 }}><a href="/settings/roles">先设置本机构岗位与职责</a>，再创建员工。</div>}
+
       <div className="card">
         {loading ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
           : list.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无员工账号</div>
@@ -218,7 +222,7 @@ export default function EmployeePage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {['姓名', '用户名', '系统角色', '自定义角色', '所属团队', '部门', '联系方式', '状态', '操作'].map(h => (
+                {(ownRoles ? ['姓名', '用户名', '本机构岗位', '所属团队', '部门', '联系方式', '状态', '操作'] : ['姓名', '用户名', '系统角色', '自定义角色', '所属团队', '部门', '联系方式', '状态', '操作']).map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
                 ))}
               </tr>
@@ -233,12 +237,12 @@ export default function EmployeePage() {
                   <td style={{ padding: '12px 14px', color: '#6B7280', fontFamily: 'monospace' }}>{emp.username}</td>
                   <td style={{ padding: '12px 14px' }}>
                     <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, background: '#E8F5EF', color: '#1E6B50' }}>
-                      {SYSTEM_ROLE_LABEL[emp.role] || emp.role}
+                      {ownRoles ? (emp.customRoleId?.name || '待配置') : (SYSTEM_ROLE_LABEL[emp.role] || emp.role)}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 13 }}>
+                  {!ownRoles && <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 13 }}>
                     {emp.customRoleId?.name || '-'}
-                  </td>
+                  </td>}
                   <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 13 }}>
                     {emp.teamId?.name || '-'}
                   </td>
@@ -306,16 +310,16 @@ export default function EmployeePage() {
                   <label className="form-label">{editId ? '重置密码（留空则不修改）' : '初始密码 *'}</label>
                   <input className="form-input" type="password" value={form.password} onChange={set('password')} placeholder="至少6位；员工登录后必须修改" autoComplete="new-password" />
                 </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
+                {!ownRoles && <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">系统角色 *</label>
                   <select className="form-input" value={form.role} onChange={set('role')}>
                     {Object.entries(SYSTEM_ROLE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </select>
-                </div>
+                </div>}
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">自定义角色</label>
+                  <label className="form-label">{ownRoles ? '本机构岗位 *' : '自定义角色'}</label>
                   <select className="form-input" value={form.customRoleId} onChange={set('customRoleId')}>
-                    <option value="">无</option>
+                    <option value="">{ownRoles ? '请选择机构岗位' : '无'}</option>
                     {roles.map(r => <option key={r._id} value={r._id}>{r.name}</option>)}
                   </select>
                 </div>
@@ -397,6 +401,7 @@ export default function EmployeePage() {
         <TeamManagerModal
           teams={teams}
           staffList={list}
+          ownRoles={ownRoles}
           onClose={() => setShowTeamMgr(false)}
           onChanged={() => { loadTeams(); loadAll() }}
           toast={toast}
@@ -407,7 +412,7 @@ export default function EmployeePage() {
 }
 
 // ── 团队管理弹窗：新建/编辑/删除团队 + 指定导师 ──────────────────────
-function TeamManagerModal({ teams, staffList, onClose, onChanged, toast }) {
+function TeamManagerModal({ teams, staffList, ownRoles, onClose, onChanged, toast }) {
   const [name, setName] = useState('')
   const [mentorId, setMentorId] = useState('')
   const [editId, setEditId] = useState(null)
@@ -455,7 +460,7 @@ function TeamManagerModal({ teams, staffList, onClose, onChanged, toast }) {
               <label className="form-label">导师</label>
               <select className="form-input" value={mentorId} onChange={e => setMentorId(e.target.value)}>
                 <option value="">暂不指定</option>
-                {staffList.map(s => <option key={s._id} value={s._id}>{s.name}（{SYSTEM_ROLE_LABEL[s.role] || s.role}）</option>)}
+                {staffList.map(s => <option key={s._id} value={s._id}>{s.name}（{ownRoles ? (s.customRoleId?.name || '待配置') : (SYSTEM_ROLE_LABEL[s.role] || s.role)}）</option>)}
               </select>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>

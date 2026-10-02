@@ -24,6 +24,7 @@ const adminSchema = new mongoose.Schema({
       'tcmDoctor',       // 中医师
       'specialist',      // 专科医师
       'healthPlanner',   // 健康规划师
+      'institutionStaff', // 外部机构自行配置岗位与模块权限
       'enterprise_hr',   // 企业客户HR/行政对接人，仅可查看本企业员工聚合数据
     ],
     default: 'healthManager',

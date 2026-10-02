@@ -339,6 +339,7 @@ const ROLE_LABEL = {
   tcmDoctor:       '中医师',
   specialist:      '专科医师',
   healthPlanner:   '健康规划师',
+  institutionStaff:'机构员工',
   superadmin:      '超级管理员',
 };
 
@@ -354,6 +355,7 @@ router.post('/login', async (req, res) => {
     'familyDoctor', 'nutritionist', 'healthManager',
     'medicalAssistant', 'psychologist', 'rehabSpecialist',
     'tcmDoctor', 'specialist', 'healthPlanner',
+    'institutionStaff',
   ];
 
   const loginId = String(username).trim();
@@ -387,7 +389,7 @@ router.post('/login', async (req, res) => {
         _id: admin._id,
         name: admin.name,
         role: admin.role,
-        roleLabel: ROLE_LABEL[admin.role] || admin.role,
+        roleLabel: tenant.code !== 'jiayihui' && admin.customRoleId?.name ? admin.customRoleId.name : (ROLE_LABEL[admin.role] || admin.role),
         title: admin.title,
         department: admin.department,
         avatar: admin.avatar,
@@ -408,7 +410,7 @@ router.post('/login', async (req, res) => {
 router.get('/me', staffAuth, async (req, res) => {
   const s = await Admin.findById(req.staff._id).populate('customRoleId');
   if (!s) return res.status(404).json({ success: false, message: '账号不存在' });
-  const tenant = await Tenant.findById(s.tenantId).select('name staffPortalName slogan status').lean();
+  const tenant = await Tenant.findById(s.tenantId).select('name staffPortalName slogan status code').lean();
   if (!tenant) return res.status(403).json({ success: false, message: '所属机构不存在' });
   res.json({
     success: true,
@@ -416,7 +418,7 @@ router.get('/me', staffAuth, async (req, res) => {
       _id: s._id,
       name: s.name,
       role: s.role,
-      roleLabel: ROLE_LABEL[s.role] || s.role,
+      roleLabel: tenant.code !== 'jiayihui' && s.customRoleId?.name ? s.customRoleId.name : (ROLE_LABEL[s.role] || s.role),
       title: s.title,
       department: s.department,
       avatar: s.avatar,

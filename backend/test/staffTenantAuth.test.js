@@ -48,6 +48,9 @@ test('staff authentication requires an active institution and completed password
     assert.equal((await call()).next, true);
     assert.equal((await call('GET', '/patients')).status, 403);
     assert.equal((await call('GET', '/notifications')).status, 403);
+    admin.role = 'institutionStaff';
+    assert.equal((await call()).next, true);
+    assert.equal((await call('GET', '/patients')).status, 403);
   } finally {
     Admin.findById = originalAdminFind;
     Tenant.findById = originalTenantFind;
