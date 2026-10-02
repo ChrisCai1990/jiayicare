@@ -3,7 +3,7 @@ const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
 const FollowUp = require('../models/FollowUp');
 const Request = require('../models/ServiceSupervisionRequest');
-const { loadServices, id, hash } = require('../utils/advisorSupervision');
+const { loadServices, id } = require('../utils/advisorSupervision');
 const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
 const wrap = fn => async (req, res) => { try { await fn(req, res); } catch (e) { res.status(e.statusCode || 500).json({ success: false, message: e.statusCode ? e.message : '督办信息处理失败，请稍后重试' }); } };
 router.use(staffAuth, (req, res, next) => req.staff.staffStatus === 'inactive' ? res.status(403).json({ message: '账号已停用' }) : next());
@@ -48,21 +48,9 @@ router.get('/tasks/:id', wrap(async (req, res) => {
   res.json({ success: true, data: { ...task, assigneeName: service.current.find(c => c.taskId === id(task))?.person?.name || '待核对' } });
 }));
 router.post('/requests', wrap(async (req, res) => {
-  if (req.staff.role !== 'familyDoctor') fail('仅客户所属健康顾问可发起督办', 403);
-  const { serviceKey, version, kind, recipientId, note } = req.body || {};
-  if (!['remind', 'coordinate'].includes(kind) || typeof note !== 'string' || !note.trim() || note.trim().length > 1000) fail('请填写1至1000字的督办说明', 400);
-  const row = (await loadServices(req.staff)).find(s => s.key === serviceKey);
-  if (!row) fail('服务已结束、转为本人办理或不在所属客户范围', 404);
-  if (row.version !== version) fail('服务进度已变化，请刷新后核对');
-  const recipient = kind === 'coordinate' ? row.coordinator : row.current.find(c => c.person?.id === recipientId)?.person;
-  if (!recipient || recipient.id !== recipientId || recipient.id === id(req.staff)) fail('当前接收人不可用，请核对服务负责人');
-  const key = hash([serviceKey, version, kind, recipient.id, id(req.staff)]);
-  const value = { _id: key, ...scope(req.staff), patientId: row.patientId, serviceKey, version, kind,
-    senderId: req.staff._id, senderName: req.staff.name, recipientId: recipient.id, recipientName: recipient.name, note: note.trim() };
-  let saved;
-  try { saved = await Request.findOneAndUpdate({ _id: key }, { $setOnInsert: value }, { upsert: true, new: true }); }
-  catch (e) { if (e.code !== 11000) throw e; saved = await Request.findById(key); }
-  res.json({ success: true, data: saved });
+  // 顾问保留全程只读视图；随访和就医协助分别由健管、规划师督导。
+  // 历史请求仍可由原接收人反馈，但不再从顾问端创建新催办。
+  fail('健康顾问仅查看服务进度；请由健管专员督导随访、健康规划师督导就医协助', 409);
 }));
 router.post('/requests/:id/respond', wrap(async (req, res) => {
   const response = req.body?.response;

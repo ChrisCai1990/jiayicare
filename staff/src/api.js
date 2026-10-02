@@ -169,6 +169,9 @@ export const staffAPI = {
   regenerateMedicalAssistPurposes: (id) => req(`/staff/plans/${id}/regenerate-medical-assist-purposes`, { method: 'POST' }),
   deletePlan:     (id, reason) => req(`/staff/plans/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   pushPlan:       (id)     => req(`/staff/plans/${id}/push`, { method: 'PATCH' }),
+  getNutritionIntervention: (id) => req(`/staff/nutrition-interventions/plans/${id}`),
+  generateNutritionIntervention: (id) => req(`/staff/nutrition-interventions/plans/${id}/generate`, { method: 'POST' }),
+  publishNutritionIntervention: (id, data) => req(`/staff/nutrition-interventions/plans/${id}/publish`, { method: 'POST', body: JSON.stringify(data) }),
   decideWorkflowModule: (planId, moduleId, data) => req(`/staff/plans/${planId}/workflow-modules/${moduleId}/decision`, { method: 'PATCH', body: JSON.stringify(data) }),
   getFollowUpPlans: ()     => req('/staff/followup-plans'),
   // AI体检方案讨论区

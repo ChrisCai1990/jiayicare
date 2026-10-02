@@ -1156,7 +1156,7 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
       await onCustomerConfirmedCheckupPlan(plan);
     }
     // 一站式体检在客户确认后直接交棒给健康规划师，不再另建模糊的“确认后随访”占位。
-    if (plan.type !== 'annual_checkup') await generateHealthPlanFollowUp(plan).catch(() => {});
+    if (plan.type !== 'annual_checkup' && !(plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1)) await generateHealthPlanFollowUp(plan).catch(() => {});
     res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败', error: err.message });

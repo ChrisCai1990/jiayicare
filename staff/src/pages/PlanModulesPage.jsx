@@ -350,6 +350,12 @@ export default function PlanModulesPage() {
   const [plan, setPlan] = useState(null)
   const [moduleData, setModuleData] = useState({})
   const [goal, setGoal] = useState('')
+  const [nutritionMetric, setNutritionMetric] = useState('')
+  const [nutritionBaseline, setNutritionBaseline] = useState('')
+  const [nutritionTarget, setNutritionTarget] = useState('')
+  const [nutritionReviewDate, setNutritionReviewDate] = useState('')
+  const [nutritionDraft, setNutritionDraft] = useState(null)
+  const [nutritionDraftBusy, setNutritionDraftBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [pushing, setPushing] = useState(false)
@@ -384,11 +390,22 @@ export default function PlanModulesPage() {
         }
         setModuleData(nextModuleData)
         setGoal(c.goal || p.description || '')
+        setNutritionMetric(c.nutritionMetric || '')
+        setNutritionBaseline(c.nutritionBaseline || '')
+        setNutritionTarget(c.nutritionTarget || '')
+        setNutritionReviewDate(c.nutritionReviewDate || '')
+        if (p.type === 'nutrition') staffAPI.getNutritionIntervention(id).then(d => setNutritionDraft(d.data || null)).catch(() => {})
         setDirty(false)
       })
       .catch(err => toast(err.message || '加载失败'))
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    if (plan?.type !== 'nutrition' || !plan.pushedAt || ['pending_review', 'publishing', 'published', 'failed'].includes(nutritionDraft?.status)) return
+    const timer = window.setInterval(() => staffAPI.getNutritionIntervention(id).then(result => setNutritionDraft(result.data || null)).catch(() => {}), 3000)
+    return () => window.clearInterval(timer)
+  }, [id, plan?.type, plan?.pushedAt, nutritionDraft?.status])
 
   useEffect(() => {
     const selectedId = moduleData.visit?.supervisorId
@@ -425,6 +442,9 @@ export default function PlanModulesPage() {
     setSaving(true)
     try {
       const content = contentFromModules(plan, moduleData, goal, staffList)
+      if (plan.type === 'nutrition') Object.assign(content, {
+        nutritionTaskVersion: 1, nutritionMetric, nutritionBaseline, nutritionTarget, nutritionReviewDate,
+      })
       await staffAPI.updatePlan(id, { content, description: goal })
       setPlan(p => ({ ...p, content, description: goal }))
       toast('方案已保存')
@@ -474,12 +494,31 @@ export default function PlanModulesPage() {
       }
       const res = await staffAPI.pushPlan(id)
       setPlan(p => ({ ...p, content: res.data?.content || p.content, pushedAt: res.data?.pushedAt || new Date().toISOString(), status: 'active' }))
-      toast(outpatientService ? '服务已启动，资料收集任务已转交健管专员' : pendingReview ? '方案已审核推送，岗位任务已生成' : '方案已推送给客户')
+      if (plan.type === 'nutrition') staffAPI.getNutritionIntervention(id).then(d => setNutritionDraft(d.data || null)).catch(() => {})
+      toast(res.warning || (outpatientService ? '服务已启动，资料收集任务已转交健管专员' : plan.type === 'nutrition' ? '营养方案已推送，AI行动草稿待营养师确认' : pendingReview ? '方案已审核推送，岗位任务已生成' : '方案已推送给客户'))
     } catch (err) {
       toast(err.message || '推送失败')
     } finally {
       setPushing(false)
     }
+  }
+
+  const handleGenerateNutritionDraft = async () => {
+    if (dirty) { toast('请先保存方案修改'); return }
+    setNutritionDraftBusy(true)
+    try { await staffAPI.generateNutritionIntervention(id); setNutritionDraft({ status: 'generating' }); toast('已开始生成营养行动草稿') }
+    catch (e) { toast(e.message || '生成失败') }
+    finally { setNutritionDraftBusy(false) }
+  }
+
+  const handlePublishNutritionDraft = async () => {
+    if (!window.confirm('确认这些行动符合营养方案和客户实际情况？发布后将建立客户行动及岗位阶段任务。')) return
+    setNutritionDraftBusy(true)
+    try {
+      const res = await staffAPI.publishNutritionIntervention(id, { revision: nutritionDraft.revision, actions: nutritionDraft.actions })
+      setNutritionDraft(res.data); toast('营养干预任务已发布')
+    } catch (e) { toast(e.message || '发布失败') }
+    finally { setNutritionDraftBusy(false) }
   }
 
   const handleDelete = async () => {
@@ -595,7 +634,25 @@ export default function PlanModulesPage() {
           onChange={e => { setGoal(e.target.value); setDirty(true) }}
           style={{ width: '100%', padding: '8px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
         />
+        {plan.type === 'nutrition' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 12 }}>
+          {[['观察指标', nutritionMetric, setNutritionMetric, '如体重或饮食执行情况'], ['基线', nutritionBaseline, setNutritionBaseline, '当前已核实的数值或情况'], ['目标', nutritionTarget, setNutritionTarget, '期望达到的数值或情况']].map(([label, value, setter, placeholder]) => <label key={label} style={{ fontSize: 13 }}>{label}<input className="form-input" value={value} placeholder={placeholder} onChange={e => { setter(e.target.value); setDirty(true) }} style={{ display: 'block', width: '100%', marginTop: 5 }} /></label>)}
+          <label style={{ fontSize: 13 }}>阶段复盘日期<input className="form-input" type="date" value={nutritionReviewDate} onChange={e => { setNutritionReviewDate(e.target.value); setDirty(true) }} style={{ display: 'block', width: '100%', marginTop: 5 }} /></label>
+        </div>}
       </div>}
+
+      {plan.type === 'nutrition' && plan.pushedAt && <section className="card" style={{ marginBottom: 20, padding: 18 }} aria-label="营养干预行动草稿">
+        <div style={{ fontWeight: 700 }}>营养干预行动与阶段复盘</div>
+        <p style={{ fontSize: 13, color: '#65776F' }}>方案由营养师负责。AI行动仅为待审草稿；确认后客户收到行动事项，健管负责阶段随访，营养师评估结果，顾问最后复盘整体目标。</p>
+        <div style={{ fontSize: 13 }}>状态：{{ generating: '生成中', pending_review: '待营养师确认', publishing: '发布中，可重试', published: '已发布', failed: '生成失败' }[nutritionDraft?.status] || '尚未生成'}</div>
+        {nutritionDraft?.generationError && <p role="alert" style={{ color: '#B42318' }}>{nutritionDraft.generationError}</p>}
+        {canEdit && (!nutritionDraft || ['failed', 'generating'].includes(nutritionDraft.status)) && <button type="button" className="btn btn-secondary btn-sm" disabled={nutritionDraftBusy} onClick={handleGenerateNutritionDraft}>{nutritionDraftBusy ? '处理中…' : '生成或重试 AI 行动草稿'}</button>}
+        {nutritionDraft?.actions?.map((action, index) => <div key={action.key || index} style={{ marginTop: 12, padding: 10, border: '1px solid #E3ECE7', borderRadius: 8 }}>
+          <b>客户行动 {index + 1}</b>
+          {canEdit && nutritionDraft.status === 'pending_review' && nutritionDraft.actions.length > 1 && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={() => setNutritionDraft(prev => ({ ...prev, actions: prev.actions.filter((_, i) => i !== index) }))}>删除此行动</button>}
+          {['title', 'instruction', 'frequency', 'evidence'].map(field => <label key={field} style={{ display: 'block', fontSize: 12, marginTop: 7 }}>{({ title: '行动名称', instruction: '具体做法', frequency: '执行或记录频率', evidence: '阶段核对依据' })[field]}<textarea className="form-input" rows={field === 'instruction' ? 2 : 1} value={action[field] || ''} disabled={!canEdit || nutritionDraft.status !== 'pending_review'} onChange={e => setNutritionDraft(prev => ({ ...prev, actions: prev.actions.map((row, i) => i === index ? { ...row, [field]: e.target.value } : row) }))} style={{ display: 'block', width: '100%', marginTop: 4 }} /></label>)}
+        </div>)}
+        {canEdit && ['pending_review', 'publishing'].includes(nutritionDraft?.status) && <button type="button" className="btn btn-primary btn-sm" disabled={nutritionDraftBusy} onClick={handlePublishNutritionDraft} style={{ marginTop: 12 }}>{nutritionDraftBusy ? '发布中…' : nutritionDraft.status === 'publishing' ? '重试完成发布' : '确认并发布行动及阶段任务'}</button>}
+      </section>}
 
       {/* 板块列表 */}
       {plan.type === 'medical_assist' && !isCheckupService && (

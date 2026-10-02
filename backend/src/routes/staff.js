@@ -120,6 +120,7 @@ async function allPushPatientsBelongToStaff(patientIds, staff) {
   return count === ids.length;
 }
 router.use('/service-supervision', require('./advisorSupervision'));
+router.use('/nutrition-interventions', require('./nutritionInterventions'));
 router.use('/patients', require('./reviewPlanAmendments')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./annualExecutionReview')({ getVisiblePlanPatientIds }));
 router.use('/followups', require('./followUpServices'));
@@ -2406,6 +2407,14 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     }
   }
   const submittedExecutionContent = require('../utils/followUpExecutionContent').executionContent(req.body);
+  if (followUp.formData?.nutritionIntervention && req.body.status === 'completed') {
+    const stage = followUp.formData.nutritionIntervention.stage;
+    const review = req.body.formData?.nutritionStageAssessment || {};
+    if (!String(submittedExecutionContent || '').trim()) return res.status(400).json({ success: false, message: '请填写本阶段的实际结果' });
+    if (stage !== 'manager' && (!String(review.result || '').trim() || !String(review.reason || '').trim() || !String(review.decision || '').trim())) {
+      return res.status(400).json({ success: false, message: '请填写目标结果、原因分析和下一步决定' });
+    }
+  }
   if (followUp.sourceType === 'health_plan' && followUp.followUpSchemeId && req.body.status === 'completed') {
     const workflowScheme = await FollowUpPlan.findById(followUp.followUpSchemeId).lean();
     const workflowStage = workflowScheme ? stageForScheme(workflowScheme) : '';
@@ -2519,6 +2528,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const incoming = req.body.formData && typeof req.body.formData === 'object' && !Array.isArray(req.body.formData)
       ? { ...req.body.formData } : {};
     if (require('../../../shared/annualNutrition.cjs').isTask(followUp)) { incoming.lifestyleInterview=followUp.formData?.lifestyleInterview; incoming.nutritionAssessment=followUp.formData?.nutritionAssessment; incoming.nutritionResultReview=followUp.formData?.nutritionResultReview; incoming.nutritionResultHistory=followUp.formData?.nutritionResultHistory; }
+    if (followUp.formData?.nutritionIntervention) incoming.nutritionIntervention = followUp.formData.nutritionIntervention;
     delete incoming.adHocMedicalReminder;
     delete incoming.reminderKind;
     if (followUp.formData?.adHocMedicalReminder === true) {
@@ -3296,6 +3306,7 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   const { patientId, type, title, description, year, startDate, endDate, checkupDate, items, followupFrequency, summary, content } = req.body;
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   let planContent = content || {};
+  if (type === 'nutrition') planContent = { ...planContent, nutritionTaskVersion: 1 };
   if (type === 'medical_assist') {
     try { planContent = { ...planContent, resourceReferences: await freezeMedicalResourceReferences(planContent.resourceReferences) }; }
     catch (err) { return res.status(400).json({ success: false, message: err.message }); }
@@ -3621,6 +3632,12 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (!(await canManagePlan(req, plan))) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
   }
+  if (plan.type === 'nutrition' && req.body.content) {
+    const published = await require('../models/NutritionInterventionDraft').exists({ _id: plan._id, status: { $in: ['publishing', 'published'] } });
+    if (published && JSON.stringify(req.body.content) !== JSON.stringify(plan.content || {})) {
+      return res.status(409).json({ success: false, message: '营养干预任务已发布；调整专业方案请建立新方案，保留原任务和复盘记录' });
+    }
+  }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
   if (req.body.content?.aiStatus === 'adopted') {
@@ -3840,6 +3857,10 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   if (plan.content?.aiStatus === 'pending') {
     return res.status(409).json({ success: false, message: 'AI方案尚未审核，不能推送给会员' });
   }
+  if (plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1) {
+    try { await require('../utils/nutritionInterventionTasks').inputFor(plan); }
+    catch (e) { return res.status(e.statusCode || 409).json({ success: false, message: e.message }); }
+  }
   // 重点检查在推送前自动补齐标准准备事项，保证客户收到的方案不是只有项目名。
   // 医学上可能涉及停药的内容统一要求向开单医生确认，避免系统替代医嘱。
   if (plan.type === 'annual_checkup') {
@@ -4053,6 +4074,11 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
   }
+  if (plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1) {
+    setImmediate(() => {
+      require('../utils/nutritionInterventionTasks').generate(plan).catch(e => console.error('营养任务草稿生成失败', { planId: String(plan._id), message: e.message }));
+    });
+  }
   res.json({ success: true, data: plan });
 });
 
@@ -4210,6 +4236,9 @@ ${discussionText}
 router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  if (plan.type === 'nutrition' && await require('../models/NutritionInterventionDraft').exists({ _id: plan._id, status: { $in: ['publishing', 'published'] } })) {
+    return res.status(409).json({ success: false, message: '营养干预任务已发布，需保留方案和执行记录；请在新方案中调整' });
+  }
   if (plan.preparationTaskId) return res.status(409).json({ success: false, message: '体检准备来源方案需保留追溯，请修改或取消，不可直接删除后重建' });
   const reason = String(req.body?.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请填写删除原因' });
@@ -15468,6 +15497,7 @@ ${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制
       items,
       content: {
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
+        nutritionTaskVersion: 1,
         templateId: template._id, templateName: template.name || '',
         goal: goal || '',
         moduleData,
