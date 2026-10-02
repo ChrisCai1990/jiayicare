@@ -48,7 +48,7 @@ test('frozen ledger wins over edited plan, reports pool totals and only own usag
   const api = fixture({rows,pkg});
   const plan = (await api.membershipBenefits(user)).plans[0];
   assert.equal(plan.name, 'Sold plan');
-  assert.match(plan.items[0].value, /已用 2 次 · 剩余 3 次/);
+  assert.match(plan.items[0].value, /已核销 2 次 · 已预占 0 次 · 可用 3 次/);
   assert.match(plan.items[1].value, /共享次数，不单独累计/);
   assert.equal(plan.usage.length,1);
   assert.equal(plan.groups.shared.length,1);

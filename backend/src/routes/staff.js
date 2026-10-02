@@ -7337,6 +7337,7 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
     const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
     const customer = await User.findById(req.params.id);
     const summary = customer ? await require('../utils/membershipBenefits').membershipBenefits(customer, rows) : { plans:[],message:'客户不存在' };
+    summary.redemptionAlerts = await require('../models/PackageEntitlementRedemption').countDocuments({ patientId: req.params.id, status: 'needs_review' });
     res.json({ success: true, summary, data: rows.map(row => ({
       _id: row._id, ownerUserId: row.ownerUserId, sourceOrderId: row.sourceOrderId,
       packageName: row.packageName, clientBrand: row.clientBrand, validFrom: row.validFrom,
@@ -7382,6 +7383,7 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
       : candidates.find(item => String(item.entitlement._id) === String(req.params.entitlementId));
     if (!selected) return res.status(404).json({ success: false, message: autoMatch ? '没有可自动匹配的有效服务包权益，请按正常付费流程处理' : '权益不存在、已过期，或当前客户无权使用' });
     const { entitlement, productRightIndex, productRight, poolIndex, available } = selected;
+    if (entitlement.historyVerified === false) return res.status(409).json({ success: false, message: '历史使用次数尚未核对，暂不能预占新服务；已完成服务会自动留痕，请先核对额度' });
     if (available < 1) return res.status(409).json({ success: false, message: poolIndex >= 0 ? '该共享权益次数已用完' : '该服务权益次数已用完' });
 
     const product = await Product.findOne({ _id: productId, status: 'on' }).lean();
@@ -7409,7 +7411,7 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
       packageEntitlementUsage: {
         entitlementId: entitlement._id, sourceOrderId: entitlement.sourceOrderId,
         ownerUserId: entitlement.ownerUserId, productId: product._id,
-        poolKey: poolIndex >= 0 ? productRight.poolKey : '', usedAt: now,
+        poolKey: poolIndex >= 0 ? productRight.poolKey : '', rightIndex: productRightIndex, reservedAt: now,
       },
     });
 
@@ -7421,14 +7423,14 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
       [remainingPath]: { $gte: 1 },
     }, {
       $inc: { [remainingPath]: -1 },
-      $push: { usageRecords: { productId: product._id, productName: product.name, poolKey: poolIndex >= 0 ? productRight.poolKey : '', usedByUserId: patient._id, executionOrderId: executionOrder._id, usedAt: now, note: String(req.body.note || '').trim() } },
+      $push: { usageRecords: { productId: product._id, productName: product.name, poolKey: poolIndex >= 0 ? productRight.poolKey : '', usedByUserId: patient._id, executionOrderId: executionOrder._id, usedAt: now, status: 'reserved', note: String(req.body.note || '').trim() } },
     });
     if (result.modifiedCount !== 1) {
       await Order.deleteOne({ _id: executionOrder._id, status: 'pending', paymentStatus: 'paid', 'packageEntitlementUsage.entitlementId': entitlement._id });
       return res.status(409).json({ success: false, message: '权益次数刚被其他操作使用，请刷新后重试' });
     }
     const updatedEntitlement = await require('../models/PackageEntitlement').findById(entitlement._id).lean();
-    res.json({ success: true, data: { entitlement: updatedEntitlement, executionOrder, autoMatched: autoMatch }, message: `${autoMatch ? `已自动匹配「${entitlement.packageName || '服务包'}」权益并` : '已'}创建履约单，请启动服务并在完成后按现有流程核销` });
+    res.json({ success: true, data: { entitlement: updatedEntitlement, executionOrder, autoMatched: autoMatch }, message: `${autoMatch ? `已自动匹配「${entitlement.packageName || '服务包'}」权益并` : '已'}预占一次权益并创建履约单；服务完成后自动记为核销，取消前可释放预占` });
   } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 

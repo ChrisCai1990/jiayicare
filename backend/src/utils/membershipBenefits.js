@@ -10,23 +10,28 @@ async function legacyPackage(user) {
   if (await PackageEntitlement.exists({ ownerUserId:user._id })) return null;
   return ServicePackage.findOne({ name:user.servicePackage, clientBrand:user.clientBrand || 'jiayiguanjia', active:true }).lean();
 }
-function quota(row, legacy) {
+function quota(row, legacy, reserved = 0, newlyRedeemed = 0) {
   const total = Number(row.count);
   const remaining = Number(row.remainingCount);
-  if (legacy || row.remainingCount == null || !Number.isFinite(remaining) || !Number.isFinite(total)) return `计划包含 ${Number.isFinite(total) ? total : '待核对'} 次；已用及剩余待核对`;
-  return `总计 ${total} 次 · 已用 ${Math.max(0,total-remaining)} 次 · 剩余 ${remaining} 次`;
+  if (legacy || row.remainingCount == null || !Number.isFinite(remaining) || !Number.isFinite(total)) return `计划包含 ${Number.isFinite(total) ? total : '待核对'} 次；${newlyRedeemed ? `新增已核销 ${newlyRedeemed} 次；` : ''}历史已用及剩余待核对`;
+  return `总计 ${total} 次 · 已核销 ${Math.max(0,total-remaining-reserved)} 次 · 已预占 ${reserved} 次 · 可用 ${remaining} 次`;
 }
 function project(row, userId, legacy = false) {
   const rights = row.rights || {};
+  const openingUnverified = legacy || row.historyVerified === false;
   const items = Object.entries(FEATURES).filter(([key])=>rights.aiEntitlements?.[key] === true).map(([,label])=>({label,value:'计划包含；按计划服务规则执行'}));
   const pools = rights.sharedEntitlementPools || [];
   const services = rights.productEntitlements || [];
+  const reservedFor = item => (row.usageRecords || []).filter(record => record.status === 'reserved'
+    && (item.key ? record.poolKey === item.key : !record.poolKey && String(record.productId) === String(item.productId))).length;
+  const redeemedFor = item => (row.usageRecords || []).filter(record => record.status !== 'reserved' && record.status !== 'cancelled'
+    && (item.key ? record.poolKey === item.key : !record.poolKey && String(record.productId) === String(item.productId))).length;
   const describeQuota = item => ({
     name:item.productName || item.name || '服务项目',
     total:Number.isFinite(Number(item.count)) ? Number(item.count) : null,
-    usageKnown:!legacy && item.remainingCount != null && Number.isFinite(Number(item.remainingCount)) && Number.isFinite(Number(item.count)),
+    usageKnown:!legacy && row.historyVerified !== false && item.remainingCount != null && Number.isFinite(Number(item.remainingCount)) && Number.isFinite(Number(item.count)),
     remaining:legacy || item.remainingCount == null ? null : Number(item.remainingCount),
-    detail:quota(item,legacy),
+    detail:quota(item,openingUnverified,reservedFor(item),redeemedFor(item)),
   });
   const groups = {
     features:items.map(item=>item.label),
@@ -42,14 +47,14 @@ function project(row, userId, legacy = false) {
     shared:pools.map(pool=>({...describeQuota(pool),services:services.filter(item=>item.poolKey===pool.key).map(item=>item.productName || '服务项目')})),
     independent:services.filter(item=>!pools.some(pool=>pool.key===item.poolKey)).map(describeQuota),
   };
-  pools.forEach(pool=>items.push({label:`共享次数：${pool.name}`,value:quota(pool,legacy)}));
+  pools.forEach(pool=>items.push({label:`共享次数：${pool.name}`,value:quota(pool,openingUnverified,reservedFor(pool),redeemedFor(pool))}));
   (rights.productEntitlements || []).forEach(item=>{
     const pool=pools.find(p=>p.key===item.poolKey);
-    items.push({label:item.productName || '服务项目',value:pool?`使用「${pool.name}」共享次数，不单独累计`:quota(item,legacy)});
+    items.push({label:item.productName || '服务项目',value:pool?`使用「${pool.name}」共享次数，不单独累计`:quota(item,openingUnverified,reservedFor(item),redeemedFor(item))});
   });
   return { id:String(row._id || 'legacy'), name:row.packageName, validFrom:row.validFrom, validUntil:row.validUntil,
-    source:legacy?'configuration':'ledger', notice:legacy?'当前计划配置参考；历史使用台账尚未建立，不能据此认定全部次数未使用。':row.familySharing?'按已授予权益台账展示；家庭共用额度包含家庭成员的使用。':'按已授予权益台账展示。', items, groups,
-    usage:(row.usageRecords || []).filter(r=>String(r.usedByUserId)===String(userId)).map(r=>({name:r.productName || '服务项目',usedAt:r.usedAt})) };
+    source:legacy?'configuration':'ledger', notice:legacy?'当前计划配置参考；历史使用台账尚未建立，不能据此认定全部次数未使用。':row.historyVerified === false?'已自动记录本次起的实际服务核销；历史使用仍待核对，暂不显示确定剩余次数。':row.familySharing?'按已授予权益台账展示；家庭共用额度包含家庭成员的使用。':'按已授予权益台账展示。', items, groups,
+    usage:(row.usageRecords || []).filter(r=>r.status !== 'reserved' && r.status !== 'cancelled' && String(r.usedByUserId)===String(userId)).map(r=>({name:r.productName || '服务项目',usedAt:r.usedAt})) };
 }
 async function membershipBenefits(user, existingRows) {
   const rows = existingRows || await applicableEntitlements(user._id);

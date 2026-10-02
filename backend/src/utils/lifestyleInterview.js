@@ -93,7 +93,13 @@ async function handle(req,res) {
   const event={action:'completed',result,by:interview.by,at:new Date(),sourceResponseId:interview.submissionId};
   const saved=await FollowUp.findOneAndUpdate({_id:task._id,status:task.status,aiStatus:task.aiStatus,assignedTo:task.assignedTo,'formData.lifestyleInterview.phase':'applying','formData.lifestyleInterview.submissionId':interview.submissionId},{$set:{'formData.lifestyleInterview.phase':'submitted',content:result,executedContent:result,status:'completed',completedAt:new Date(),completedBy:'staff',aiStatus:'approved',reviewRole:null,reviewAssignedTo:null,isBlocked:false,'formData.nutritionResultReview':event},$push:{'formData.nutritionResultHistory':event}},{new:true});
   if(!saved)throw fail('任务已变化，请刷新核对提交状态');
-  res.json({success:true,data:saved});
+  let entitlementRedemption = null;
+  if (saved.sourceAnnualPlanId && saved.workflowKey === 'annual_nutrition_assessment') {
+   try { entitlementRedemption = await require('./packageServiceRedemption').recordCompletedService({
+    patientId: saved.patientId, sourceType: 'follow_up', sourceId: saved._id, workflowKey: 'nutrition_intervention',
+   }); } catch (error) { console.error('[package-service-redemption] nutrition deferred', saved._id, error.message); entitlementRedemption = { status: 'needs_review' }; }
+  }
+  res.json({success:true,data:saved,entitlementRedemption});
  }catch(e){res.status(e.statusCode||500).json({success:false,message:e.message});}
 }
 module.exports={handle,prepare,fingerprint};
