@@ -80,6 +80,9 @@ function DetailModal({ item, onClose }) {
   if (!item) return null
   const FOLLOWUP_TYPE = { phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他随访' }
   const ROUTINE_PERIOD = { 双周: '双周随访', 月度: '月度随访', 季度: '季度随访' }
+  const nutritionStage = item.formData?.nutritionIntervention
+  const nutritionReview = item.formData?.nutritionStageAssessment || {}
+  const outcomeLabels = { met: '达到目标', not_met: '未达到目标', unknown: '资料不足，无法判断' }
 
   const Row = ({ label, value }) => value ? (
     <div style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '1px solid #f0ece4' }}>
@@ -118,14 +121,30 @@ function DetailModal({ item, onClose }) {
               <CheckupCompletionEvidence item={item} />
             </>
           )}
+          {nutritionStage && <div style={{ marginTop: 14, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>
+            <div style={{ fontSize: 13, color: '#1E6B50', fontWeight: 700, marginBottom: 8 }}>营养干预阶段指标对比</div>
+            <Row label="管理目标" value={nutritionStage.goal} />
+            <Row label="复盘日期" value={nutritionStage.reviewDate} />
+            {(nutritionStage.nutritionTargets || []).map((target, index) => <div key={index} style={{ border: '1px solid #DCE7E0', borderRadius: 8, padding: 10, marginTop: 8, fontSize: 13, lineHeight: 1.7 }}>
+              <strong>{index + 1}. {target.metric}</strong>
+              <div>已核实基线：{target.baseline || '未记录'}</div>
+              <div>阶段目标：{target.target || '未记录'}</div>
+              {nutritionReview.targetResults?.[index]?.actual && <div>实际结果：{nutritionReview.targetResults[index].actual}</div>}
+              {nutritionReview.targetResults?.[index]?.outcome && <div>对比结论：{outcomeLabels[nutritionReview.targetResults[index].outcome] || '未判断'}</div>}
+            </div>)}
+            {!nutritionStage.nutritionTargets?.length && <div style={{ fontSize: 12, color: '#8AA89C' }}>此历史任务未保存逐项基线和目标，请查看原方案及当时的随访记录。</div>}
+            <Row label="目标结果" value={nutritionReview.result} />
+            <Row label="原因分析" value={nutritionReview.reason} />
+            <Row label="下一步决定" value={nutritionReview.decision} />
+          </div>}
           {item.status === 'cancelled' && <Row label="取消原因" value={item.cancelReason} />}
           <FollowUpProgressHistory item={item} />
           <FollowUpOutcomeReview key={item._id} item={item} />
           {/* 随访表单完整数据（formData） */}
-          {item.formData && Object.keys(item.formData).length > 0 && (
+          {item.formData && Object.keys(item.formData).some(key => !nutritionStage || !['nutritionIntervention', 'nutritionStageAssessment'].includes(key)) && (
             <div style={{ marginTop: 12 }}>
               <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 700, marginBottom: 8, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>随访表单完整内容</div>
-              {Object.entries(item.formData).map(([k, v]) => {
+              {Object.entries(item.formData).filter(([key]) => !nutritionStage || !['nutritionIntervention', 'nutritionStageAssessment'].includes(key)).map(([k, v]) => {
                 if (v === null || v === undefined || v === '') return null
                 if (Array.isArray(v)) {
                   return v.length > 0 ? <Row key={k} label={k} value={v.join('、')} /> : null
