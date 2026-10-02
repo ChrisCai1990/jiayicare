@@ -40,8 +40,15 @@ async function inputFor(plan) {
   const verifiedLifestyle = (user.lifestyleHistory || []).some(row => row.recordedById || row.interviewId)
     || (user.archiveVersionHistory || []).some(row => row.confirmedBy && String(row.path || '').startsWith('lifestyle_data.'));
   if (!verifiedLifestyle || !Object.values(lifestyle).some(v => v && (typeof v !== 'object' || Object.keys(v).length))) throw error('请先由营养师核实生活方式资料，再生成干预任务');
+  const rawTargets = Array.isArray(c.nutritionTargets) && c.nutritionTargets.length
+    ? c.nutritionTargets : [{ metric: c.nutritionMetric, baseline: c.nutritionBaseline, target: c.nutritionTarget }];
+  const nutritionTargets = rawTargets.map(row => ({ metric: trim(row?.metric, 100), baseline: trim(row?.baseline, 200), target: trim(row?.target, 200) }));
+  if (nutritionTargets.length > 12 || nutritionTargets.some(row => !row.metric || !row.baseline || !row.target)) {
+    throw error('请在方案中逐项核实观察指标、基线和阶段目标', 400);
+  }
   const sourceSnapshot = {
     goal, metric: trim(c.nutritionMetric, 200), baseline: trim(c.nutritionBaseline, 200), target: trim(c.nutritionTarget, 200),
+    nutritionTargets,
     reviewDate, moduleData: c.moduleData || {}, templateId: String(template._id), templateName: template.name,
     templateContent: template.content || {}, lifestyle,
   };
@@ -133,7 +140,8 @@ async function publish(plan, draft, actor, actions) {
       sourceType: 'health_plan', sourceHealthPlanId: plan._id, workflowKey: `nutrition:${plan._id}:${final.sourceFingerprint}`,
       taskRole: stage.taskRole, dependsOnTaskId: previousId, isBlocked: stage.blocked,
       activationEvent: stage.blocked ? 'previous_completed' : '',
-      formData: { nutritionIntervention: { draftId: final._id, stage: stage.key, goal: input.sourceSnapshot.goal, reviewDate: dueDate } },
+      formData: { nutritionIntervention: { draftId: final._id, stage: stage.key, goal: input.sourceSnapshot.goal,
+        nutritionTargets: input.sourceSnapshot.nutritionTargets, reviewDate: dueDate } },
     } }, { upsert: true });
   }
   await Draft.updateOne({ _id: final._id, status: 'publishing' }, { $set: { status: 'published', publishedAt: new Date() } });

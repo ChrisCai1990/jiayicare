@@ -3,6 +3,8 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import { StaffListContext, ModulePanel } from '../components/ModulePanel'
+import NutritionTargetRows, { nutritionTargetsFrom, nutritionTargetError } from '../components/NutritionTargetRows'
+import DateField from '../../../shared/DateField.jsx'
 
 // 营养干预方案 / 就医协助方案的板块化编辑页（2026-07-13新增）。
 // 之前这两类方案AI生成后只是扁平items+零散content字段，跟年度管理方案的"选模板→板块折叠面板→
@@ -350,9 +352,7 @@ export default function PlanModulesPage() {
   const [plan, setPlan] = useState(null)
   const [moduleData, setModuleData] = useState({})
   const [goal, setGoal] = useState('')
-  const [nutritionMetric, setNutritionMetric] = useState('')
-  const [nutritionBaseline, setNutritionBaseline] = useState('')
-  const [nutritionTarget, setNutritionTarget] = useState('')
+  const [nutritionTargets, setNutritionTargets] = useState(() => nutritionTargetsFrom())
   const [nutritionReviewDate, setNutritionReviewDate] = useState('')
   const [nutritionDraft, setNutritionDraft] = useState(null)
   const [nutritionDraftBusy, setNutritionDraftBusy] = useState(false)
@@ -390,9 +390,7 @@ export default function PlanModulesPage() {
         }
         setModuleData(nextModuleData)
         setGoal(c.goal || p.description || '')
-        setNutritionMetric(c.nutritionMetric || '')
-        setNutritionBaseline(c.nutritionBaseline || '')
-        setNutritionTarget(c.nutritionTarget || '')
+        setNutritionTargets(nutritionTargetsFrom(c))
         setNutritionReviewDate(c.nutritionReviewDate || '')
         if (p.type === 'nutrition') staffAPI.getNutritionIntervention(id).then(d => setNutritionDraft(d.data || null)).catch(() => {})
         setDirty(false)
@@ -427,6 +425,10 @@ export default function PlanModulesPage() {
   }, [])
 
   const handleSave = async () => {
+    if (plan.type === 'nutrition') {
+      const targetError = nutritionTargetError(nutritionTargets)
+      if (targetError) { toast(targetError); return }
+    }
     if (plan.type === 'medical_assist') {
       const visit = moduleData.visit || {}
       const checkupService = isCheckupMedicalAssist(plan.content || {}, plan.title)
@@ -444,7 +446,8 @@ export default function PlanModulesPage() {
     try {
       const content = contentFromModules(plan, moduleData, goal, staffList)
       if (plan.type === 'nutrition') Object.assign(content, {
-        nutritionTaskVersion: 1, nutritionMetric, nutritionBaseline, nutritionTarget, nutritionReviewDate,
+        nutritionTaskVersion: 1, nutritionTargets, nutritionReviewDate,
+        nutritionMetric: nutritionTargets[0].metric, nutritionBaseline: nutritionTargets[0].baseline, nutritionTarget: nutritionTargets[0].target,
       })
       await staffAPI.updatePlan(id, { content, description: goal })
       setPlan(p => ({ ...p, content, description: goal }))
@@ -645,9 +648,9 @@ export default function PlanModulesPage() {
           onChange={e => { setGoal(e.target.value); setDirty(true) }}
           style={{ width: '100%', padding: '8px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
         />
-        {plan.type === 'nutrition' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 12 }}>
-          {[['观察指标', nutritionMetric, setNutritionMetric, '如体重或饮食执行情况'], ['基线', nutritionBaseline, setNutritionBaseline, '当前已核实的数值或情况'], ['目标', nutritionTarget, setNutritionTarget, '期望达到的数值或情况']].map(([label, value, setter, placeholder]) => <label key={label} style={{ fontSize: 13 }}>{label}<input className="form-input" value={value} placeholder={placeholder} onChange={e => { setter(e.target.value); setDirty(true) }} style={{ display: 'block', width: '100%', marginTop: 5 }} /></label>)}
-          <label style={{ fontSize: 13 }}>阶段复盘日期<input className="form-input" type="date" value={nutritionReviewDate} onChange={e => { setNutritionReviewDate(e.target.value); setDirty(true) }} style={{ display: 'block', width: '100%', marginTop: 5 }} /></label>
+        {plan.type === 'nutrition' && <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+          <NutritionTargetRows value={nutritionTargets} onChange={rows => { setNutritionTargets(rows); setDirty(true) }} disabled={!canEdit} />
+          <label style={{ fontSize: 13 }}>阶段复盘日期<DateField className="form-input" type="date" value={nutritionReviewDate} disabled={!canEdit} onChange={e => { setNutritionReviewDate(e.target.value); setDirty(true) }} style={{ display: 'block', width: '100%', marginTop: 5 }} /></label>
         </div>}
       </div>}
 

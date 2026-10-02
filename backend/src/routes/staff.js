@@ -2433,6 +2433,11 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     if (stage !== 'manager' && (!String(review.result || '').trim() || !String(review.reason || '').trim() || !String(review.decision || '').trim())) {
       return res.status(400).json({ success: false, message: '请填写目标结果、原因分析和下一步决定' });
     }
+    const targets = followUp.formData.nutritionIntervention.nutritionTargets || [];
+    if (stage !== 'manager' && targets.some((_, index) => !String(review.targetResults?.[index]?.actual || '').trim()
+      || !['met', 'not_met', 'unknown'].includes(review.targetResults?.[index]?.outcome))) {
+      return res.status(400).json({ success: false, message: '请逐项填写实际结果及达标判断；资料不足时说明原因并选择无法判断' });
+    }
   }
   if (followUp.sourceType === 'health_plan' && followUp.followUpSchemeId && req.body.status === 'completed') {
     const workflowScheme = await FollowUpPlan.findById(followUp.followUpSchemeId).lean();
@@ -3650,6 +3655,17 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   }
   if (!(await canManagePlan(req, plan))) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
+  }
+  if (plan.type === 'nutrition' && req.body.content?.nutritionTargets !== undefined) {
+    const rows = req.body.content.nutritionTargets;
+    const names = new Set();
+    if (!Array.isArray(rows) || !rows.length || rows.length > 12 || rows.some(row => {
+      const metric = String(row?.metric || '').trim().toLowerCase();
+      const invalid = !metric || !String(row?.baseline || '').trim() || !String(row?.target || '').trim()
+        || metric.length > 100 || String(row.baseline).length > 200 || String(row.target).length > 200 || names.has(metric);
+      names.add(metric);
+      return invalid;
+    })) return res.status(400).json({ success: false, message: '请逐项填写不重复的观察指标、已核实基线和阶段目标（最多12条）' });
   }
   if (plan.type === 'nutrition' && req.body.content) {
     const published = await require('../models/NutritionInterventionDraft').exists({ _id: plan._id, status: { $in: ['publishing', 'published'] } });
@@ -15605,7 +15621,9 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
 
 【本次服务目标（营养师填写，方案要朝这个方向靠，如与模板骨架冲突以骨架为准）】
 ${assessment.goal}
-观察指标：${assessment.metric}；基线：${assessment.baseline}；阶段目标：${assessment.target}；复盘日期：${assessment.reviewDate}
+阶段复盘日期：${assessment.reviewDate}
+逐项观察指标（指标名称、已核实基线、阶段目标须逐项对应）：
+${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}：基线 ${row.baseline}；目标 ${row.target}`).join('\n')}
 
 【模板固定骨架（不可修改，仅供你参考约束）】
 膳食总原则：${tc.dietPrinciple || '无'}
@@ -15677,6 +15695,7 @@ ${assessment.goal}
         nutritionTaskVersion: 1,
         templateId: template._id, templateName: template.name || '',
         goal: assessment.goal,
+        nutritionTargets: assessment.nutritionTargets,
         nutritionMetric: assessment.metric, nutritionBaseline: assessment.baseline,
         nutritionTarget: assessment.target, nutritionReviewDate: assessment.reviewDate,
         nutritionAssessment: { ...assessment, verifiedBy: req.staff._id, verifiedAt: new Date() },

@@ -254,7 +254,10 @@ export default function FollowUpsPage() {
     if (annualNutrition.isTask(f) || annualDispatch.dedicated(f)) { nav(`/patients/${f.patientId?._id || f.patientId}?tab=followups&followUpId=${f._id}`); return }
     setExecItem(f)
     const checklist = checkupConclusionStage(f) ? [] : normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: f.formData?.nutritionIntervention ? { ...f.formData, nutritionStageAssessment: f.formData.nutritionStageAssessment || { result: '', reason: '', decision: '' } } : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    const priorResults = f.dependsOnTaskId?.formData?.nutritionStageAssessment?.targetResults || []
+    const targetResults = (f.formData?.nutritionIntervention?.nutritionTargets || []).map((_, index) =>
+      f.formData?.nutritionStageAssessment?.targetResults?.[index] || priorResults[index] || { actual: '', outcome: '' })
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: f.formData?.nutritionIntervention ? { ...f.formData, nutritionStageAssessment: { result: '', reason: '', decision: '', ...f.formData.nutritionStageAssessment, targetResults } } : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
   }
 
   const handleExec = async () => {
@@ -313,6 +316,8 @@ export default function FollowUpsPage() {
       if (!execForm.content.trim()) { toast('请填写本阶段实际结果'); return }
       const review = execForm.formData?.nutritionStageAssessment || {}
       if (nutritionStage !== 'manager' && (!review.result?.trim() || !review.reason?.trim() || !review.decision?.trim())) { toast('请填写目标结果、原因分析和下一步决定'); return }
+      if (nutritionStage !== 'manager' && (execItem.formData?.nutritionIntervention?.nutritionTargets || []).some((_, index) =>
+        !review.targetResults?.[index]?.actual?.trim() || !review.targetResults?.[index]?.outcome)) { toast('请逐项填写实际结果及是否达标；资料不足请选择无法判断'); return }
     } else if (checkupConclusionStage(execItem)) {
       if (!execForm.content.trim()) { toast('请填写本阶段结论及后续安排'); return }
     } else if (execItem?.taskRole && !isBooking && !isCheckupAppointmentBooking && !isReportCollection) {
@@ -581,6 +586,16 @@ export default function FollowUpsPage() {
                 <b>管理目标：</b>{execItem.formData.nutritionIntervention.goal}
                 <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{execItem.plannedContent}</div>
                 {execItem.dependsOnTaskId?.executedContent && <div style={{ marginTop: 6 }}>上一环节结果：{execItem.dependsOnTaskId.executedContent}</div>}
+              </div>}
+              {nutritionStageType && !!execItem.formData?.nutritionIntervention?.nutritionTargets?.length && <div style={{ display: 'grid', gap: 8 }}>
+                <strong>逐项指标对比</strong>
+                {execItem.formData.nutritionIntervention.nutritionTargets.map((row, index) => <div key={index} style={{ border: '1px solid #DCE7E0', borderRadius: 8, padding: 10, fontSize: 13 }}>
+                  <b>{row.metric}</b><div>已核实基线：{row.baseline}</div><div>阶段目标：{row.target}</div>
+                  {nutritionStageType !== 'manager' && <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
+                    <input className="form-control" placeholder="本阶段实际结果（或资料未掌握的原因）" value={execForm.formData?.nutritionStageAssessment?.targetResults?.[index]?.actual || ''} onChange={e => setExecForm(form => ({ ...form, formData: { ...form.formData, nutritionStageAssessment: { ...form.formData.nutritionStageAssessment, targetResults: form.formData.nutritionStageAssessment.targetResults.map((item, i) => i === index ? { ...item, actual: e.target.value } : item) } } }))} />
+                    <select className="form-control" value={execForm.formData?.nutritionStageAssessment?.targetResults?.[index]?.outcome || ''} onChange={e => setExecForm(form => ({ ...form, formData: { ...form.formData, nutritionStageAssessment: { ...form.formData.nutritionStageAssessment, targetResults: form.formData.nutritionStageAssessment.targetResults.map((item, i) => i === index ? { ...item, outcome: e.target.value } : item) } } }))}><option value="">请选择对比结论</option><option value="met">达到目标</option><option value="not_met">未达到目标</option><option value="unknown">资料不足，无法判断</option></select>
+                  </div>}
+                </div>)}
               </div>}
               {/* 只读信息 */}
               {execItem.taskRole && !nutritionStageType && <details style={{ border: '1px solid #E0E8E3', borderRadius: 9, background: '#FAFBFA' }}>

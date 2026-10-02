@@ -1,11 +1,18 @@
 const clean = (value, limit = 1000) => String(value ?? '').trim().slice(0, limit);
 
 function prepareNutritionAssessment(input = {}, user = {}) {
+  const targetInput = input.nutritionTargets === undefined
+    ? [{ metric: input.metric, baseline: input.baseline, target: input.target }]
+    : input.nutritionTargets;
+  const nutritionTargets = Array.isArray(targetInput) ? targetInput.slice(0, 12).map(row => ({
+    metric: clean(row?.metric, 100), baseline: clean(row?.baseline, 200), target: clean(row?.target, 200),
+  })) : [];
   const assessment = {
     goal: clean(input.goal, 500),
-    metric: clean(input.metric, 100),
-    baseline: clean(input.baseline, 100),
-    target: clean(input.target, 100),
+    nutritionTargets,
+    metric: nutritionTargets[0]?.metric || '',
+    baseline: nutritionTargets[0]?.baseline || '',
+    target: nutritionTargets[0]?.target || '',
     reviewDate: clean(input.reviewDate, 10),
     currentDiet: clean(input.currentDiet, 1200),
     medicalReview: clean(input.medicalReview, 800),
@@ -20,10 +27,19 @@ function prepareNutritionAssessment(input = {}, user = {}) {
   };
   const missing = [];
   for (const [key, label] of [
-    ['goal', '本次营养目标'], ['metric', '观察指标'], ['baseline', '已核实基线'],
-    ['target', '阶段目标'], ['currentDiet', '近期实际饮食'],
+    ['goal', '本次营养目标'], ['currentDiet', '近期实际饮食'],
     ['medicalReview', '疾病、用药及相关检查核对'], ['practicalConstraints', '饮食偏好与执行条件'],
   ]) if (!assessment[key]) missing.push(label);
+  if (!Array.isArray(targetInput) && input.nutritionTargets !== undefined) missing.push('观察指标列表格式');
+  if (!nutritionTargets.length) missing.push('至少一条观察指标');
+  if (Array.isArray(targetInput) && targetInput.length > 12) missing.push('观察指标最多12条');
+  const names = new Set();
+  nutritionTargets.forEach((row, index) => {
+    if (!row.metric || !row.baseline || !row.target) missing.push(`第${index + 1}条指标的名称、已核实基线和阶段目标`);
+    const name = row.metric.toLowerCase();
+    if (name && names.has(name)) missing.push(`第${index + 1}条观察指标重复`);
+    names.add(name);
+  });
   if (!Number.isFinite(assessment.age) || assessment.age < 18) missing.push('成年客户年龄（未成年人需专门流程）');
   if (!Number.isFinite(assessment.height) || assessment.height < 80 || assessment.height > 230) missing.push('已核实身高（cm）');
   if (!Number.isFinite(assessment.weight) || assessment.weight < 25 || assessment.weight > 350) missing.push('已核实体重（kg）');
