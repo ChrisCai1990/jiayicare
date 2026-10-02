@@ -3,7 +3,7 @@ import { adminAPI } from '../api'
 import { useAdmin, useToast } from '../App'
 
 const STATUS_LABEL = { active: '运营中', suspended: '已暂停' }
-const EMPTY = { code: '', name: '', slogan: '', themeColor: '#1E6B50', adminUsername: '', adminPassword: '' }
+const EMPTY = { code: '', name: '', slogan: '', themeColor: '#1E6B50', websiteHosts: '', adminUsername: '', adminPassword: '' }
 const externalEnabled = import.meta.env.VITE_ENABLE_EXTERNAL_TENANTS === 'true'
 
 export default function TenantsPage() {
@@ -30,15 +30,16 @@ export default function TenantsPage() {
   useEffect(() => { if (isPlatform) load() }, [])
 
   const openCreate = () => { setEditing(null); setForm(EMPTY); setShowModal(true) }
-  const openEdit = (t) => { setEditing(t); setForm({ code: t.code, name: t.name, slogan: t.slogan || '', themeColor: t.themeColor || '#1E6B50', status: t.status, adminUsername: '', adminPassword: '' }); setShowModal(true) }
+  const openEdit = (t) => { setEditing(t); setForm({ code: t.code, name: t.name, slogan: t.slogan || '', themeColor: t.themeColor || '#1E6B50', websiteHosts: (t.websiteHosts || []).join('\n'), status: t.status, adminUsername: '', adminPassword: '' }); setShowModal(true) }
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const save = async () => {
     if (!form.code || !form.name) { toast('❌ 机构标识和名称必填'); return }
     setSaving(true)
     try {
-      if (editing) await adminAPI.updateTenant(editing._id, { name: form.name, slogan: form.slogan, themeColor: form.themeColor, status: form.status })
-      else await adminAPI.createTenant(form)
+      const websiteHosts = form.websiteHosts.split(/[\n,，]+/).map(host => host.trim()).filter(Boolean)
+      if (editing) await adminAPI.updateTenant(editing._id, { name: form.name, slogan: form.slogan, themeColor: form.themeColor, status: form.status, websiteHosts })
+      else await adminAPI.createTenant({ ...form, websiteHosts })
       toast(editing ? '✅ 机构已更新' : '✅ 机构创建成功')
       setShowModal(false); load()
     } catch (err) { toast('❌ ' + (err.message || '操作失败')) } finally { setSaving(false) }
@@ -91,7 +92,7 @@ export default function TenantsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {['机构名称', '标识', '员工数', '客户数', '状态', '创建时间', '操作'].map(h => (
+                {['机构名称', '标识', '网站域名', '员工数', '客户数', '状态', '创建时间', '操作'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
                 ))}
               </tr>
@@ -104,6 +105,7 @@ export default function TenantsPage() {
                     {t.name}
                   </td>
                   <td style={{ padding: '12px 14px', color: '#6B7280', fontFamily: 'monospace' }}>{t.code}</td>
+                  <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 12 }}>{(t.websiteHosts || []).join('、') || '未绑定'}</td>
                   <td style={{ padding: '12px 14px', color: '#6B7280' }}>{t.staffCount ?? 0}</td>
                   <td style={{ padding: '12px 14px', color: '#6B7280' }}>{t.userCount ?? 0}</td>
                   <td style={{ padding: '12px 14px' }}>
@@ -162,6 +164,10 @@ export default function TenantsPage() {
                   <label className="form-label">品牌标语</label>
                   <input className="form-input" value={form.slogan} onChange={set('slogan')} placeholder="选填" />
                 </div>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">网站域名（每行一个，公开咨询与 AI 用量按此归属）</label>
+                  <textarea className="form-input" rows={3} value={form.websiteHosts} onChange={set('websiteHosts')} placeholder={'jiaycare.com\nwww.jiaycare.com'} />
+                </div>
                 {editing && (
                   <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                     <label className="form-label">状态</label>
@@ -206,7 +212,7 @@ export default function TenantsPage() {
             <div className="modal-body" style={{ fontSize: 14, lineHeight: 1.8, color: '#333' }}>
               {[
                 ['第 1 步 · 完成权限验收', '外部机构开户目前关闭。先完成各业务接口的跨机构读写验收，再启用开户功能。'],
-                ['第 2 步 · 新建机构', '点右上「＋ 新建机构」，填写：机构名称（如"华东康养中心"）、机构标识（英文/拼音，如 huadong，创建后不可改）、可选主题色和标语。'],
+                ['第 2 步 · 新建机构并绑定网站', '创建机构时填写名称、标识和网站域名。新网站配置同域名 API 反向代理后，访客咨询和 AI 调用会按已绑定域名归属该机构；未绑定的域名不能调用。'],
                 ['第 3 步 · 设机构管理员', '在同一弹窗里填写该机构的管理员用户名和初始密码。系统会自动为这家机构创建一个独立的超级管理员账号。'],
                 ['第 4 步 · 权限验收', '先核对机构归属和各业务接口的跨机构读写限制；创建机构本身不代表全部业务数据已完成隔离验收。'],
                 ['第 5 步 · 交付同行使用', '验收通过后，通过安全渠道交付初始凭据。机构管理员首次登录须修改密码，再管理本机构的员工、客户和服务配置。'],

@@ -34,7 +34,9 @@ app.use(cors({
   origin: (origin, callback) => {
     // origin 为空表示非浏览器请求（curl、移动端原生、服务器间调用）
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS: origin ${origin} not allowed`));
+    require('./utils/websiteTenant').websiteOriginAllowed(origin)
+      .then(allowed => callback(allowed ? null : new Error('CORS: website origin not registered'), allowed))
+      .catch(() => callback(new Error('CORS: website origin lookup failed')));
   },
   credentials: true,
 }));

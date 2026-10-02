@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 // 不保存病历、检查指标、症状、用药和完整对话记录。
 const visitorLeadSchema = new mongoose.Schema({
   tenantId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  siteHost: { type: String, default: '' },
   acceptance: { type: mongoose.Schema.Types.Mixed, default: null }, // durable conversion intent; retries consume the same input
   name: { type: String, required: true, maxlength: 30 },
   phone: { type: String, required: true, maxlength: 20, index: true },

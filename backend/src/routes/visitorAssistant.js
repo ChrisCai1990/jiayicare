@@ -1,7 +1,7 @@
 const express = require('express');
 const { chat } = require('../utils/ai');
 const { withAiContext } = require('../utils/aiBudget');
-const Tenant = require('../models/Tenant');
+const { resolveWebsiteTenant } = require('../utils/websiteTenant');
 const VisitorLead = require('../models/VisitorLead');
 const { normalizeText, hasEmergency, hasMedicalDetail, emergencyReply, safeConversation } = require('../utils/visitorAssistantSafety');
 
@@ -22,6 +22,9 @@ const SYSTEM_PROMPT = `你是嘉医汇官网的“咨询准备助手”。只帮
 
 router.post('/reply', async (req, res) => {
   if (req.body?.consent !== true) return res.status(400).json({ success: false, message: '请先阅读并同意访客咨询信息处理说明。' });
+  let site;
+  try { site = await resolveWebsiteTenant(req); }
+  catch (error) { return res.status(error.status || 503).json({ success: false, message: error.message }); }
   if (!allowRequest(req)) return res.status(429).json({ success: false, message: '咨询请求过于频繁，请稍后再试或拨打客服电话19106761448。' });
   const rawMessages = Array.isArray(req.body?.messages) ? req.body.messages : [];
   const rawLast = normalizeText(rawMessages[rawMessages.length - 1]?.content, 500);
@@ -32,14 +35,10 @@ router.post('/reply', async (req, res) => {
   const last = messages[messages.length - 1]?.content || '';
   if (!last) return res.status(400).json({ success: false, message: '请先输入您的咨询方向。' });
   if (!process.env.QWEN_API_KEY && !process.env.DEEPSEEK_API_KEY) {
-    return res.json({ success: true, data: { content: '我可以先帮您梳理咨询准备。请问您更关注体重管理、生活方式安排、体检资料整理，还是了解嘉医汇服务流程？', handoffSuggested: true, aiAvailable: false } });
+    return res.json({ success: true, data: { content: `我可以先帮您梳理咨询准备。请问您更关注体重管理、生活方式安排、体检资料整理，还是了解${site.tenantName}服务流程？`, handoffSuggested: true, aiAvailable: false } });
   }
   try {
-    // This public assistant is explicitly the Jiayihui website. Visitors have
-    // no login actor, so attribute its AI usage to the owning institution.
-    const tenant = await Tenant.findOne({ code: 'jiayihui', status: 'active' }).select('_id').lean();
-    if (!tenant) throw new Error('嘉医汇机构不可用');
-    const content = await withAiContext({ tenantId: String(tenant._id), business: 'other', stage: 'visitor_assistant' }, () => chat(messages, { systemPrompt: SYSTEM_PROMPT, maxTokens: 280, timeoutMs: 30000 }));
+    const content = await withAiContext({ tenantId: String(site.tenantId), siteHost: site.siteHost, business: 'other', stage: 'visitor_assistant' }, () => chat(messages, { systemPrompt: SYSTEM_PROMPT.replace('嘉医汇', site.tenantName), maxTokens: 280, timeoutMs: 30000 }));
     return res.json({ success: true, data: { content: normalizeText(content, 800), handoffSuggested: true, aiAvailable: true } });
   } catch (error) {
     console.error('visitor assistant failed:', error.message);
@@ -48,6 +47,9 @@ router.post('/reply', async (req, res) => {
 });
 
 router.post('/handoff', async (req, res) => {
+  let site;
+  try { site = await resolveWebsiteTenant(req); }
+  catch (error) { return res.status(error.status || 503).json({ success: false, message: error.message }); }
   const body = req.body || {};
   if (body.consent !== true) return res.status(400).json({ success: false, message: '请先阅读并同意访客咨询信息处理说明。' });
   const name = normalizeText(body.name, 30); const phone = normalizeText(body.phone, 20);
@@ -61,11 +63,11 @@ router.post('/handoff', async (req, res) => {
   const fields = { name, phone, city, contactWindow, topic, summary, source };
   if (body.requestId && !/^[a-zA-Z0-9_-]{16,100}$/.test(body.requestId)) return res.status(400).json({ success: false, message: '提交标识无效，请刷新后重试。' });
   // Built-in _id uniqueness also protects concurrent retries without a migration.
-  const requestKey = body.requestId ? require('crypto').createHash('sha256').update(JSON.stringify([body.requestId, fields])).digest('hex').slice(0, 24) : null;
+  const requestKey = body.requestId ? require('crypto').createHash('sha256').update(JSON.stringify([body.requestId, site.siteHost, fields])).digest('hex').slice(0, 24) : null;
   let lead;
-  try { lead = await VisitorLead.create({ ...(requestKey ? { _id: requestKey } : {}), ...fields, consentAt: new Date() }); }
+  try { lead = await VisitorLead.create({ ...(requestKey ? { _id: requestKey } : {}), tenantId: site.tenantId, siteHost: site.siteHost, ...fields, consentAt: new Date() }); }
   catch (error) { if (!requestKey || error.code !== 11000) throw error; lead = { _id: requestKey }; }
-  return res.status(201).json({ success: true, data: { id: lead._id }, message: '已收到您的咨询申请。嘉医汇工作人员将根据您留下的联系方式确认服务安排。' });
+  return res.status(201).json({ success: true, data: { id: lead._id }, message: `已收到您的咨询申请。${site.tenantName}工作人员将根据您留下的联系方式确认服务安排。` });
 });
 
 module.exports = router;

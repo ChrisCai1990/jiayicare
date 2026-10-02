@@ -8,8 +8,11 @@ const tenantSchema = new mongoose.Schema({
   slogan:   { type: String, default: '' },     // 品牌标语，如"做健康顾问行业领跑者"
   logo:     { type: String, default: '' },     // logo图片URL
   themeColor: { type: String, default: '#1E6B50' }, // 主题色（默认沿用现有嘉医汇主色）
+  websiteHosts: { type: [String], default: [] }, // 已绑定的网站域名；公开入口据此归属机构
   status:   { type: String, enum: ['active', 'suspended'], default: 'active' },
   note:     { type: String, default: '' },
 }, { timestamps: true });
+
+tenantSchema.index({ websiteHosts: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Tenant', tenantSchema);

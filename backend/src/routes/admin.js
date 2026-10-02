@@ -1406,13 +1406,17 @@ router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
     return res.status(403).json({ success: false, message: '外部机构接入尚未开放' });
   }
   const { code, name, slogan, logo, themeColor, adminUsername, adminPassword } = req.body;
+  let websiteHosts;
+  try { websiteHosts = require('../utils/websiteTenant').normalizeWebsiteHosts(req.body.websiteHosts || []); }
+  catch (error) { return res.status(400).json({ success: false, message: error.message }); }
   if (!code || !name) return res.status(400).json({ success: false, message: '机构标识和名称为必填项' });
   if ((adminUsername || adminPassword) && (!adminUsername || typeof adminPassword !== 'string' || adminPassword.length < 10 || adminPassword.length > 128)) {
     return res.status(400).json({ success: false, message: '创建机构管理员时须填写用户名和10至128位初始密码' });
   }
   const dup = await Tenant.findOne({ code });
   if (dup) return res.status(400).json({ success: false, message: '该机构标识已存在' });
-  const tenant = await Tenant.create({ code, name, slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50' });
+  if (websiteHosts.length && await Tenant.exists({ websiteHosts: { $in: websiteHosts } })) return res.status(409).json({ success: false, message: '网站域名已绑定其他机构' });
+  const tenant = await Tenant.create({ code, name, slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts });
 
   // 为新机构建一个 superadmin，否则该机构无人能登录管理
   let createdAdmin = null;
@@ -1435,6 +1439,11 @@ router.put('/tenants/:id', adminAuth, requirePlatformSuper, async (req, res) => 
   const { name, slogan, logo, themeColor, status, note } = req.body;
   const update = {};
   ['name', 'slogan', 'logo', 'themeColor', 'status', 'note'].forEach(k => { if (req.body[k] !== undefined) update[k] = req.body[k]; });
+  if (req.body.websiteHosts !== undefined) {
+    try { update.websiteHosts = require('../utils/websiteTenant').normalizeWebsiteHosts(req.body.websiteHosts); }
+    catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+    if (update.websiteHosts.length && await Tenant.exists({ _id: { $ne: req.params.id }, websiteHosts: { $in: update.websiteHosts } })) return res.status(409).json({ success: false, message: '网站域名已绑定其他机构' });
+  }
   const tenant = await Tenant.findByIdAndUpdate(req.params.id, update, { new: true });
   if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
   res.json({ success: true, data: tenant, message: '机构信息已更新' });
