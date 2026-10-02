@@ -5,6 +5,43 @@
 // 与 staff PatientDetailPage 的 buildBasicInfoForm/buildHealthForm/buildHealthNeedsForm/buildLifestyleForm 对齐。
 
 const ARCHIVE_FIELDS = [
+  // 儿童档案：与 User.childProfile 和医护端儿童档案核实页共用。
+  { path: 'childProfile.motherAge', label: '母亲分娩年龄（岁）', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.gravida', label: '胎次', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.para', label: '产次', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.motherPregnancyStatus', label: '母亲妊娠期情况', group: '儿童·围产与出生', type: 'text' },
+  { path: 'childProfile.deliveryComplications', label: '产时并发情况', group: '儿童·围产与出生', type: 'text' },
+  { path: 'childProfile.gestationalWeeks', label: '出生孕周（周）', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.birthWeight', label: '出生体重（克）', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.birthLength', label: '出生身长（厘米）', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.birthHeadCirc', label: '出生头围（厘米）', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.birthChestCirc', label: '出生胸围（厘米）', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.deliveryMode', label: '分娩方式', group: '儿童·围产与出生', type: 'text' },
+  { path: 'childProfile.apgar1min', label: 'Apgar 1分钟', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.apgar5min', label: 'Apgar 5分钟', group: '儿童·围产与出生', type: 'number' },
+  { path: 'childProfile.neonatalConditions', label: '新生儿期情况', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.birthDefects', label: '出生缺陷', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.hearingScreening', label: '听力筛查', group: '儿童·筛查与健康史', type: 'enum', options: ['通过', '未通过', '未查'] },
+  { path: 'childProfile.eyeScreening', label: '眼底筛查', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.visionScreening', label: '视力筛查', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.neonatalDiseaseScreen', label: '新生儿疾病筛查', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.familyAllergyHistory', label: '家族过敏史', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.familyDiseaseHistory', label: '家族疾病史', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.pastMedicalHistory', label: '既往疾病与住院史', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.surgeries', label: '手术史', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.allergies', label: '过敏与不良反应自述', group: '儿童·筛查与健康史', type: 'text' },
+  { path: 'childProfile.currentMedicationReport', label: '当前用药自述', group: '儿童·成长与近况', type: 'text' },
+  { path: 'childProfile.currentSymptomsReport', label: '近期不适自述', group: '儿童·成长与近况', type: 'text' },
+  { path: 'childProfile.fatherHeight', label: '父亲身高（厘米）', group: '儿童·筛查与健康史', type: 'number' },
+  { path: 'childProfile.motherHeight', label: '母亲身高（厘米）', group: '儿童·筛查与健康史', type: 'number' },
+  { path: 'childProfile.fatherBirthDate', label: '父亲出生日期', group: '儿童·筛查与健康史', type: 'date' },
+  { path: 'childProfile.motherBirthDate', label: '母亲出生日期', group: '儿童·筛查与健康史', type: 'date' },
+  { path: 'childProfile.feeding', label: '喂养与饮食情况', group: '儿童·成长与近况', type: 'text' },
+  { path: 'childProfile.sleep', label: '睡眠情况', group: '儿童·成长与近况', type: 'text' },
+  { path: 'childProfile.development', label: '生长发育与行为', group: '儿童·成长与近况', type: 'text' },
+  { path: 'childProfile.vaccinationStatus', label: '预防接种情况', group: '儿童·成长与近况', type: 'text' },
+  { path: 'childProfile.schoolAndActivity', label: '托育、学校与活动', group: '儿童·成长与近况', type: 'text' },
+  { path: 'childProfile.caregiverConcerns', label: '监护人关注的问题', group: '儿童·成长与近况', type: 'text' },
   // 基本信息
   { path: 'residence.city', label: '常住城市', group: '基本信息', type: 'text' },
   { path: 'carePreferences.city', label: '首选就医城市', group: '基本信息', type: 'text' },
@@ -148,7 +185,7 @@ const FIELD_MAP = Object.fromEntries(ARCHIVE_FIELDS.map(f => [f.path, f]));
 
 // 按分组聚合，供前端下拉 optgroup 使用
 function groupedArchiveFields() {
-  const order = ['基本信息', '既往健康史', '健康需求', '医疗保障', '生活方式', '心理健康', '膳食调查'];
+  const order = ['儿童·围产与出生', '儿童·筛查与健康史', '儿童·成长与近况', '基本信息', '既往健康史', '健康需求', '医疗保障', '生活方式', '心理健康', '膳食调查'];
   const byGroup = {};
   ARCHIVE_FIELDS.forEach(f => { (byGroup[f.group] = byGroup[f.group] || []).push(f); });
   return order.filter(g => byGroup[g]).map(g => ({ group: g, fields: byGroup[g] }));

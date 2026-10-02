@@ -203,7 +203,23 @@ const userSchema = new mongoose.Schema({
     fatherBirthDate:  { type: String, default: '' },
     motherBirthDate:  { type: String, default: '' },
     familyAllergyHistory: { type: String, default: '' },
+    familyDiseaseHistory: { type: String, default: '' },
+    pastMedicalHistory: { type: String, default: '' },
+    surgeries: { type: String, default: '' },
+    allergies: { type: String, default: '' },
+    currentMedicationReport: { type: String, default: '' },
+    currentSymptomsReport: { type: String, default: '' },
+    feeding: { type: String, default: '' },
+    sleep: { type: String, default: '' },
+    development: { type: String, default: '' },
+    vaccinationStatus: { type: String, default: '' },
+    schoolAndActivity: { type: String, default: '' },
+    caregiverConcerns: { type: String, default: '' },
   },
+  childArchiveFirstResponseId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  childArchiveImportPending: { type: mongoose.Schema.Types.Mixed, default: null },
+  childArchiveSubmissions: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  childArchiveHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
 
   // 医护端管理字段
   assignedHealthPlanner:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健康规划师：客户经理，负责转化规划/方案统筹/订单与服务进度监控/佣金归属，与健管专员(日常执行)分工不同

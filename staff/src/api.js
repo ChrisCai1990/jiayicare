@@ -84,6 +84,9 @@ export const staffAPI = {
   retryInitialArchive: id => req(`/staff/patients/${id}/initial-archive-review/retry`, {method:'POST',body:'{}'}),
   saveCoreArchive: (id, section, data) => req(`/staff/patients/${id}/core-health-archive/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
   reviewInitialArchive: (id, section, data) => req(`/staff/patients/${id}/initial-archive-review/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
+  reviewChildArchive: (id, responseId, data) => req(`/staff/patients/${id}/child-archive/${responseId}/review`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateChildArchive: (id, data) => req(`/staff/patients/${id}/child-archive/manual`, { method: 'PUT', body: JSON.stringify(data) }),
+  retryChildArchive: id => req(`/staff/patients/${id}/child-archive/retry`, { method: 'POST', body: '{}' }),
   getOrderShipments: (p = {}) => req('/staff/order-shipments?' + qs(p)),
   shipOrder: (id, data) => req(`/staff/order-shipments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   // Auth

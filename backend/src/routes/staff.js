@@ -837,7 +837,7 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
-      .select('name phone gender age height weight healthScore servicePackage serviceExpiry chronicDiseases patientType assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner source createdAt contactPhone')
+      .select('name phone gender age patientCategory height weight healthScore servicePackage serviceExpiry chronicDiseases patientType assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner source createdAt contactPhone')
       .populate('assignedHealthManager', 'name title')
       .populate('assignedFamilyDoctor', 'name title')
       .populate('assignedNutritionist', 'name title')
@@ -5632,7 +5632,7 @@ router.post('/knowledge/:id/push', staffAuth, checkPermission('knowledge', 'send
 // ── 问卷推送 ───────────────────────────────────────────────
 // GET /api/staff/questionnaires — 问卷模板列表（含草稿，供医护查看；仅 active 可推送）
 router.get('/questionnaires', staffAuth, checkPermission('questionnaires', 'view'), async (req, res) => {
-  const qs = await DynamicQuestionnaire.find({ deletedAt: null }).select('title description status questions deadline createdAt').sort({ createdAt: -1 });
+  const qs = await DynamicQuestionnaire.find({ deletedAt: null }).select('title description status questions deadline createdAt patientCategory archivePurpose').sort({ createdAt: -1 });
   res.json({ success: true, data: qs });
 });
 
@@ -5643,6 +5643,11 @@ router.post('/questionnaires/:id/push', staffAuth, checkPermission('questionnair
   if (!await allPushPatientsBelongToStaff(patientIds, req.staff)) return res.status(403).json({ success: false, message: '只能推送给本机构客户' });
   const q = await DynamicQuestionnaire.findById(req.params.id);
   if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
+  if (q.status !== 'active' || q.deletedAt) return res.status(400).json({ success: false, message: '问卷尚未开放' });
+  if (q.patientCategory && q.patientCategory !== 'all') {
+    const eligible = await User.countDocuments({ _id: { $in: patientIds }, patientCategory: q.patientCategory });
+    if (eligible !== patientIds.length) return res.status(400).json({ success: false, message: '所选会员类型与问卷适用人群不一致' });
+  }
 
   // 写推送记录
   const records = patientIds.map(pid => ({
@@ -12927,6 +12932,22 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({ id: 'initial_archive_' + u._id, type: 'archive_review', label: '初次建档待复核', priority: 3,
           patientName: u.name || '未知', patientId: String(u._id), summary: `已复核 ${6 - pending.length}/6：待核对${pending.map(k => SECTION_LABELS[k]).join('、')}`,
           createdAt: review.createdAt, overdue: (now - new Date(review.createdAt)) > DAY, link: `/patients/${u._id}?tab=records&initialReview=1` });
+      }
+      const childUsers = await User.find({ patientCategory: 'child', $or: [
+        { childArchiveSubmissions: { $elemMatch: { status: 'pending' } } },
+        { childArchiveImportPending: { $ne: null } },
+      ], ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) }).select('name childArchiveSubmissions childArchiveImportPending').lean();
+      for (const u of childUsers) {
+        if (u.childArchiveImportPending) todos.push({ id: 'child_archive_retry_' + u._id, type: 'archive_review', label: '儿童问卷承接待重试', priority: 2,
+          patientName: u.name || '未知', patientId: String(u._id), summary: '问卷已保存，待恢复到儿童健康档案',
+          createdAt: u.childArchiveImportPending.createdAt || now, link: `/patients/${u._id}?tab=records` });
+        for (const row of (u.childArchiveSubmissions || []).filter(item => item.status === 'pending')) {
+          const createdAt = row.submittedAt || now;
+          todos.push({ id: 'child_archive_' + row.responseId, type: 'archive_review',
+            label: row.kind === 'initial' ? '儿童首次建档待核实' : '儿童档案更新待确认', priority: 3,
+            patientName: u.name || '未知', patientId: String(u._id), summary: `${row.questionnaireTitle || '儿童健康问卷'} · ${row.items?.length || 0}项待核实`,
+            createdAt, overdue: (now - new Date(createdAt)) > DAY, link: `/patients/${u._id}?tab=records` });
+        }
       }
     }
 

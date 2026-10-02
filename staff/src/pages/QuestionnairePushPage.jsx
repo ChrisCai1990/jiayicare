@@ -83,7 +83,7 @@ function PreviewModal({ questionnaire, onClose }) {
                         {(q.options || []).map((opt, oi) => (
                           <div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#4A6558' }}>
                             <div style={{ width: 16, height: 16, borderRadius: q.type === 'radio' ? '50%' : 3, border: '1.5px solid #CBD5CE', flexShrink: 0 }} />
-                            {opt}
+                            {typeof opt === 'string' ? opt : opt.label}
                           </div>
                         ))}
                       </div>
@@ -329,7 +329,7 @@ function PushQuestionnaireModal({ questionnaire, onClose, onSaved }) {
   const toggle = id => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
 
   const patientSearch = usePatientSearch(search)
-  const filtered = patientSearch.patients
+  const filtered = patientSearch.patients.filter(patient => !questionnaire.patientCategory || questionnaire.patientCategory === 'all' || (patient.patientCategory || 'adult') === questionnaire.patientCategory)
 
 
   const handlePush = async () => {
@@ -358,6 +358,7 @@ function PushQuestionnaireModal({ questionnaire, onClose, onSaved }) {
             <DateField className="form-input" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
           </div>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#4A6558' }}>选择会员（已选 {selected.length} 人）</div>
+          {questionnaire.patientCategory && questionnaire.patientCategory !== 'all' && <div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>仅显示{questionnaire.patientCategory === 'child' ? '儿童' : '成人'}会员；服务端会再次校验。</div>}
           <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
             <input className="form-input" placeholder="搜索姓名/手机" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, minWidth: 120 }} />
             <button className="btn btn-secondary btn-sm" onClick={() => setSelected(previous => [...new Set([...previous, ...filtered.map(p => p._id)])])}>选择本页</button>
@@ -477,6 +478,7 @@ export default function QuestionnairePushPage() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                           <span style={{ fontWeight: 600, fontSize: 15 }}>{q.title}</span>
+                          {q.archivePurpose === 'child_health' && <span style={{ fontSize: 11, color: '#1E6B50', background: '#E8F5EF', borderRadius: 4, padding: '2px 6px' }}>儿童档案</span>}
                           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: meta.bg, color: meta.color, fontWeight: 600 }}>
                             {meta.label}
                           </span>

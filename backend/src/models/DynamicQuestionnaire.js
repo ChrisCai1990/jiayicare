@@ -40,6 +40,8 @@ const questionnaireSchema = new mongoose.Schema({
   questions:   [questionSchema],
   status:      { type: String, enum: ['draft', 'active', 'closed'], default: 'draft' },
   targetType:  { type: String, enum: ['all', 'specific'], default: 'all' },
+  patientCategory: { type: String, enum: ['all', 'adult', 'child'], default: 'all' },
+  archivePurpose: { type: String, enum: ['', 'child_health'], default: '' },
   targetUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   respondedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
@@ -61,6 +63,7 @@ const questionnaireResponseSchema = new mongoose.Schema({
   questionnaire: { type: mongoose.Schema.Types.ObjectId, ref: 'DynamicQuestionnaire', required: true },
   user:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   answers:       { type: mongoose.Schema.Types.Mixed, default: {} },
+  questionnaireSnapshot: { type: mongoose.Schema.Types.Mixed, default: null }, // 儿童档案答卷保留提交时题目与映射，供失败恢复
   proxyEntry: { type: mongoose.Schema.Types.Mixed, default: null }, // 营养师访谈代填来源及待确认题目
   totalScore:    { type: Number, default: 0 }, // 自动计算总分
   factorScores:  { type: mongoose.Schema.Types.Mixed, default: {} }, // 按题目factor分组的均分（如SCL90十因子）

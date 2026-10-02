@@ -454,6 +454,44 @@ const makeNewQ = (type) => {
   return base
 }
 
+const makeChildHealthDraft = () => {
+  const fields = [
+    ['childProfile.motherPregnancyStatus', '母亲妊娠期间是否有需要说明的健康情况？', 'text'],
+    ['childProfile.gestationalWeeks', '出生时孕周是多少周？', 'number'],
+    ['childProfile.birthWeight', '出生体重是多少克？', 'number'],
+    ['childProfile.deliveryMode', '分娩方式是什么？', 'text'],
+    ['childProfile.deliveryComplications', '分娩时是否有并发情况？', 'text'],
+    ['childProfile.neonatalConditions', '新生儿期是否有患病或住院情况？', 'text'],
+    ['childProfile.birthDefects', '是否有出生缺陷或先天性疾病？', 'text'],
+    ['childProfile.hearingScreening', '听力筛查结果是什么？', 'dropdown'],
+    ['childProfile.eyeScreening', '眼底筛查结果是什么？', 'text'],
+    ['childProfile.visionScreening', '近期视力筛查情况如何？', 'text'],
+    ['childProfile.neonatalDiseaseScreen', '新生儿疾病筛查结果是什么？', 'text'],
+    ['childProfile.familyAllergyHistory', '家族中是否有过敏史？', 'text'],
+    ['childProfile.familyDiseaseHistory', '家族中是否有需要关注的疾病史？', 'text'],
+    ['childProfile.pastMedicalHistory', '孩子既往有哪些疾病或住院经历？', 'text'],
+    ['childProfile.surgeries', '孩子是否接受过手术？', 'text'],
+    ['childProfile.allergies', '孩子有哪些已知过敏或不良反应？', 'text'],
+    ['childProfile.vaccinationStatus', '预防接种情况如何？有无漏种或异常反应？', 'text'],
+    ['childProfile.currentMedicationReport', '孩子目前是否在用药或服用营养补充剂？', 'text'],
+    ['childProfile.currentSymptomsReport', '孩子近期有哪些不适或症状？', 'text'],
+    ['childProfile.feeding', '目前的喂养和饮食情况如何？', 'text'],
+    ['childProfile.sleep', '目前的睡眠情况如何？', 'text'],
+    ['childProfile.development', '生长发育、语言或行为方面有无需要关注的变化？', 'text'],
+    ['childProfile.schoolAndActivity', '托育、学校生活和日常活动情况如何？', 'text'],
+    ['childProfile.caregiverConcerns', '监护人目前最关注哪些健康问题？', 'text'],
+  ]
+  return {
+    title: '儿童健康问卷（建档与后续更新）',
+    description: '由监护人填写。出生及新生儿信息如不清楚可留空；后续再次填写时，医护端逐项核对变化。问卷回答不作为诊断。',
+    patientCategory: 'child', archivePurpose: 'child_health', targetType: 'specific',
+    questions: fields.map(([archiveField, text, type], index) => ({
+      id: `child_${Date.now()}_${index}`, archiveField, text, type, required: false,
+      ...(type === 'dropdown' ? { options: ['通过', '未通过', '未查'].map(label => ({ label, allowInput: false, exclusive: false, score: 0 })) } : {}),
+    })),
+  }
+}
+
 // ── 快捷添加按钮栏（底部） ────────────────────────────────────────
 function AddQuestionBar({ onAdd }) {
   return (
@@ -523,6 +561,8 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
       scoreEnabled: !!q.scoreEnabled,
     })),
     targetType:     questionnaire?.targetType     || 'all',
+    patientCategory: questionnaire?.patientCategory || 'all',
+    archivePurpose: questionnaire?.archivePurpose || '',
     deadline:       questionnaire?.deadline       || '',
     scoringEnabled: questionnaire?.scoringEnabled || false,
     scoreRanges:    questionnaire?.scoreRanges    || [],
@@ -583,6 +623,18 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
               onChange={e => set('description', e.target.value)}
               placeholder="问卷说明（可选）" />
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>档案用途</div>
+                <select className="form-input" value={form.archivePurpose} onChange={e => setForm(f => ({ ...f, archivePurpose: e.target.value, patientCategory: e.target.value === 'child_health' ? 'child' : 'all', questions: f.questions.map(q => ({ ...q, archiveField: q.archiveField && q.archiveField.startsWith('childProfile.') === (e.target.value === 'child_health') ? q.archiveField : '' })) }))}>
+                  <option value="">普通问卷</option><option value="child_health">儿童健康档案</option>
+                </select>
+              </div>
+              <div style={{ flex: 1, minWidth: 130 }}>
+                <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>适用会员</div>
+                <select className="form-input" value={form.patientCategory} disabled={form.archivePurpose === 'child_health'} onChange={e => set('patientCategory', e.target.value)}>
+                  <option value="all">成人与儿童</option><option value="adult">仅成人</option><option value="child">仅儿童</option>
+                </select>
+              </div>
               <div style={{ flex: 1, minWidth: 160 }}>
                 <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>推送对象</div>
                 <select className="form-input" value={form.targetType} onChange={e => set('targetType', e.target.value)}>
@@ -679,7 +731,7 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
                       onRemove={() => removeQ(i)}
                       onMove={dir => moveQ(i, dir)}
                       scoringEnabled={form.scoringEnabled}
-                      archiveFields={archiveFields}
+                      archiveFields={archiveFields.filter(g => form.archivePurpose === 'child_health' ? g.group.startsWith('儿童·') : !g.group.startsWith('儿童·'))}
                     />
                     <InsertBar onInsert={newQ => insertQ(i + 1, newQ)} />
                   </React.Fragment>
@@ -838,7 +890,7 @@ export default function QuestionnairePage() {
           <div className="page-title">📝 问卷管理</div>
           <div className="page-subtitle">创建并管理向用户推送的健康问卷</div>
         </div>
-        <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>＋ 新建问卷</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button className="btn btn-secondary" onClick={() => { setEditing(makeChildHealthDraft()); setShowModal(true) }}>＋ 儿童健康问卷草稿</button><button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>＋ 新建问卷</button></div>
       </div>
 
   {!loading && (
@@ -899,7 +951,7 @@ export default function QuestionnairePage() {
                     </td>
                     <td>{q.questions?.length || 0} 题</td>
                     <td>{q.scoringEnabled ? <span style={{ color: '#2b6cb0', fontSize: 12 }}>✓ 启用</span> : <span style={{ color: '#ccc', fontSize: 12 }}>—</span>}</td>
-                    <td>{q.targetType === 'all' ? '全体' : `指定 ${q.targetUsers?.length || 0} 人`}</td>
+                    <td>{q.patientCategory === 'child' ? '儿童 · ' : q.patientCategory === 'adult' ? '成人 · ' : ''}{q.targetType === 'all' ? '全体' : `指定 ${q.targetUsers?.length || 0} 人`}</td>
                     <td style={{ fontSize: 13 }}>{q.deadline || '—'}</td>
                     <td>
                       <span style={{ cursor: 'pointer', color: '#1E6B50', textDecoration: 'underline' }}

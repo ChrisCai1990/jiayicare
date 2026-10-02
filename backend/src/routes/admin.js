@@ -1310,17 +1310,32 @@ router.get('/archive-fields', adminAuth, (req, res) => {
   res.json({ success: true, data: groupedArchiveFields() });
 });
 
+function childQuestionnaireError(questions, patientCategory, archivePurpose) {
+  if (!['all', 'adult', 'child'].includes(patientCategory) || !['', 'child_health'].includes(archivePurpose)) return '问卷适用人群或档案用途无效';
+  const paths = questions.map(q => q.archiveField).filter(Boolean);
+  if (archivePurpose !== 'child_health') return paths.some(path => path.startsWith('childProfile.')) ? '儿童档案字段仅可用于儿童健康问卷' : '';
+  if (patientCategory !== 'child' || !paths.length || paths.some(path => !path.startsWith('childProfile.'))) return '儿童健康问卷须仅面向儿童，并将档案题映射到儿童档案字段';
+  if (new Set(paths).size !== paths.length) return '同一儿童档案字段只能绑定一道题';
+  const { FIELD_MAP } = require('../config/archiveFields');
+  if (paths.some(path => !FIELD_MAP[path])) return '包含无效的儿童档案字段';
+  const compatible = { number: ['number'], date: ['date'], enum: ['radio', 'dropdown'], text: ['text', 'radio', 'dropdown'] };
+  if (questions.some(q => q.archiveField && !compatible[FIELD_MAP[q.archiveField]?.type]?.includes(q.type))) return '儿童档案题型与目标字段类型不一致';
+  return '';
+}
+
 // POST /api/admin/questionnaires
 router.post('/questionnaires', adminAuth, async (req, res) => {
-  const { title, description, questions, targetType, targetUsers, deadline, scoringEnabled, sortOrder } = req.body;
+  const { title, description, questions, targetType, targetUsers, deadline, scoringEnabled, sortOrder, patientCategory = 'all', archivePurpose = '' } = req.body;
   if (!title || !questions?.length) {
     return res.status(400).json({ success: false, message: '问卷标题和问题不能为空' });
   }
+  const childError = childQuestionnaireError(questions, patientCategory, archivePurpose);
+  if (childError) return res.status(400).json({ success: false, message: childError });
   const maxDoc = await DynamicQuestionnaire.findOne().sort({ sortOrder: -1 }).select('sortOrder');
   const newSortOrder = (sortOrder !== undefined && sortOrder !== null) ? sortOrder : ((maxDoc?.sortOrder || 0) + 1);
   const q = await DynamicQuestionnaire.create({
     title, description: description || '',
-    questions, targetType: targetType || 'all',
+    questions, targetType: targetType || 'all', patientCategory, archivePurpose,
     targetUsers: targetUsers || [],
     createdBy: req.admin._id, deadline: deadline || '',
     scoringEnabled: !!scoringEnabled,
@@ -1352,6 +1367,7 @@ router.post('/questionnaires/:id/copy', adminAuth, async (req, res) => {
       description: orig.description,
       questions: normalizeQuestions(orig.questions), // lean() 后字符串选项正确还原
       targetType: orig.targetType,
+      patientCategory: orig.patientCategory || 'all', archivePurpose: orig.archivePurpose || '',
       targetUsers: orig.targetUsers || [],
       deadline: orig.deadline || '',
       scoringEnabled: orig.scoringEnabled || false,
@@ -1367,11 +1383,19 @@ router.post('/questionnaires/:id/copy', adminAuth, async (req, res) => {
 
 // PUT /api/admin/questionnaires/:id
 router.put('/questionnaires/:id', adminAuth, async (req, res) => {
-  const { title, description, questions, targetType, targetUsers, deadline, scoringEnabled, sortOrder } = req.body;
+  const { title, description, questions, targetType, targetUsers, deadline, scoringEnabled, sortOrder, patientCategory = 'all', archivePurpose = '' } = req.body;
   if (questions !== undefined && (!Array.isArray(questions) || questions.length === 0)) {
     return res.status(400).json({ success: false, message: '问卷至少需要包含一道题目' });
   }
-  const updateData = { title, description, questions, targetType, targetUsers, deadline, scoringEnabled: !!scoringEnabled };
+  const current = await DynamicQuestionnaire.findById(req.params.id).lean();
+  if (!current) return res.status(404).json({ success: false, message: '问卷不存在' });
+  if (current.archivePurpose === 'child_health' && await QuestionnaireResponse.exists({ questionnaire: current._id })) {
+    return res.status(409).json({ success: false, message: '该儿童问卷已有答卷。为保留原题目与档案映射，请复制为新草稿后调整' });
+  }
+  const effectiveQuestions = questions || current.questions;
+  const childError = childQuestionnaireError(effectiveQuestions, patientCategory, archivePurpose);
+  if (childError) return res.status(400).json({ success: false, message: childError });
+  const updateData = { title, description, questions, targetType, targetUsers, deadline, scoringEnabled: !!scoringEnabled, patientCategory, archivePurpose };
   if (sortOrder !== undefined && sortOrder !== null) updateData.sortOrder = sortOrder;
   const q = await DynamicQuestionnaire.findByIdAndUpdate(req.params.id, updateData, { new: true });
   if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });

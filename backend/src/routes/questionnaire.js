@@ -191,7 +191,7 @@ router.get('/pending', auth, async (req, res) => {
     const pendingPushes = pushRecords.filter(r => !answeredPushIds.has(String(r._id))
       && (r.sourceOrderId ? validOrderIds.has(String(r.sourceOrderId)) : !legacyAnsweredQuestionnaireIds.has(String(r.questionnaireId))));
     const questionnaires = await DynamicQuestionnaire.find({ _id: { $in: pendingPushes.map(r => r.questionnaireId) }, status: 'active', deletedAt: null })
-      .select('title description questions deadline scoringEnabled createdBy sortOrder').lean();
+      .select('title description questions deadline scoringEnabled createdBy sortOrder patientCategory archivePurpose').lean();
     const questionnaireMap = new Map(questionnaires.map(q => [String(q._id), q]));
     const profileUser = await User.findById(req.user._id).lean();
 
@@ -199,7 +199,7 @@ router.get('/pending', auth, async (req, res) => {
     const filtered = pendingPushes.map(push => {
       const q = questionnaireMap.get(String(push.questionnaireId));
       const questions = (q?.questions || []).filter(item => !item.genderOnly || item.genderOnly === req.user.gender);
-      return q ? { ...q, assignmentId: push._id, sourceOrderId: push.sourceOrderId || null, sourceHealthPlanId: push.sourceHealthPlanId || null,
+      return q && (!q.patientCategory || q.patientCategory === 'all' || q.patientCategory === (profileUser?.patientCategory || 'adult')) ? { ...q, assignmentId: push._id, sourceOrderId: push.sourceOrderId || null, sourceHealthPlanId: push.sourceHealthPlanId || null,
         questions, initialAnswers: buildInitialAnswers(profileUser, questions) } : null;
     }).filter(Boolean);
 
@@ -216,8 +216,16 @@ router.post('/:id/submit', auth, async (req, res) => {
 
     const questionnaire = await DynamicQuestionnaire.findById(req.params.id);
     if (!questionnaire) return res.status(404).json({ success: false, message: '问卷不存在' });
-    if (questionnaire.status !== 'active') {
+    if (questionnaire.status !== 'active' || questionnaire.deletedAt) {
       return res.status(400).json({ success: false, message: '该问卷暂未开放' });
+    }
+    const categoryUser = await User.findById(req.user._id).select('patientCategory childArchiveImportPending').lean();
+    const patientCategory = categoryUser?.patientCategory || 'adult';
+    if (questionnaire.patientCategory && questionnaire.patientCategory !== 'all' && questionnaire.patientCategory !== patientCategory) {
+      return res.status(403).json({ success: false, message: '该问卷不适用于当前会员类型' });
+    }
+    if (questionnaire.archivePurpose === 'child_health' && categoryUser?.childArchiveImportPending) {
+      return res.status(409).json({ success: false, message: '上一份儿童问卷仍待医护端恢复承接，请联系负责人员后再提交' });
     }
 
     let assignment = null;
@@ -303,6 +311,9 @@ router.post('/:id/submit', auth, async (req, res) => {
       questionnaire: req.params.id,
       user: req.user._id,
       answers,
+      questionnaireSnapshot: questionnaire.archivePurpose === 'child_health' ? {
+        title: questionnaire.title, questions: questionnaire.questions.map(q => ({ id: q.id, text: q.text, archiveField: q.archiveField, type: q.type })),
+      } : null,
       totalScore,
       factorScores,
       pushRecordId: assignment?._id || null,
@@ -333,6 +344,32 @@ router.post('/:id/submit', auth, async (req, res) => {
       } catch (e) {
         console.error('[psych-scale-import] 心理量表自动写入档案失败', e.message);
       }
+    } else if (questionnaire.archivePurpose === 'child_health') {
+      try {
+        const { childSubmission, initialChildMutation } = require('../utils/childArchive');
+        let fullUser = await User.findById(req.user._id).lean();
+        if (fullUser.patientCategory !== 'child') throw new Error('儿童健康问卷仅适用于儿童会员');
+        if (!fullUser.childArchiveFirstResponseId) {
+          let mutation = initialChildMutation(fullUser, questionnaire, response);
+          let result = await User.collection.updateOne(mutation.filter, mutation.update);
+          if (!result.matchedCount) {
+            fullUser = await User.findById(req.user._id).lean();
+            if (!fullUser.childArchiveFirstResponseId) {
+              mutation = initialChildMutation(fullUser, questionnaire, response);
+              result = await User.collection.updateOne(mutation.filter, mutation.update);
+              if (!result.matchedCount) throw new Error('儿童首次建档发生并发变化');
+            }
+          }
+          if (result.matchedCount) fullUser = null;
+        }
+        if (fullUser) {
+          const submission = childSubmission(fullUser, questionnaire, response, 'followup');
+          await User.collection.updateOne({ _id: req.user._id, patientCategory: 'child', 'childArchiveSubmissions.responseId': { $ne: response._id } }, { $push: { childArchiveSubmissions: submission } });
+        }
+      } catch (e) {
+        console.error('[child-archive] 儿童问卷承接失败', e.message);
+        await User.collection.updateOne({ _id: req.user._id, patientCategory: 'child' }, { $set: { childArchiveImportPending: { responseId: response._id, createdAt: new Date() } } });
+      }
     } else {
       // 初次健康问卷先写入，再按板块复核；后续问卷继续生成变化草稿。
       let initialImportAttempt = false;
@@ -346,7 +383,7 @@ router.post('/:id/submit', auth, async (req, res) => {
           const { initialImport, isIntake } = require('../utils/initialArchiveReview');
           // Only the first intake response is auto-written. Later responses retain change review.
           const previous = isIntake(questionnaire) ? await QuestionnaireResponse.exists({ user: req.user._id, questionnaire: questionnaire._id, _id: { $lt: response._id } }) : true;
-          const mutation = !previous ? initialImport(fullUser, questionnaire, response, draft) : null;
+          const mutation = !previous && patientCategory !== 'child' ? initialImport(fullUser, questionnaire, response, draft) : null;
           if (mutation) {
             initialImportAttempt = true;
             const result = await User.collection.updateOne(mutation.filter, mutation.update);

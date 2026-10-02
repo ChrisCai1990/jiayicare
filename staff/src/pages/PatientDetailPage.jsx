@@ -3,6 +3,7 @@ import NutritionAssessmentFields, { initialNutritionAssessment, missingNutrition
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
+import ChildHealthArchive from '../components/ChildHealthArchive'
 import followUpReview from '../../../shared/followUpReview.cjs'
 import followUpDetailView from '../utils/followUpDetail.cjs'
 import MedicationReminderModal from '../components/MedicationReminderModal'
@@ -5244,8 +5245,9 @@ export default function PatientDetailPage() {
             一致的情况无需人工再次确认，故此处不再重复放置整体人工审核开关 */}
 
         {tab === 'records' && healthBaseView === 'profile' && <>
+        <ChildHealthArchive user={user} onSaved={load} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} />
         {/* ── 健康评分卡片 ── */}
-        {(() => {
+        {user.patientCategory !== 'child' && (() => {
           const detail = user.healthScoreDetail || {}
           const score = user.healthScore || 0
           const grade = detail.grade || (score >= 90 ? '优' : score >= 75 ? '良' : score >= 60 ? '中' : score > 0 ? '差' : '-')
