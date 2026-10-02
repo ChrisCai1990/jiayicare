@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
-// The deterministic _id is the durable lock for one plan/template/period/domain.
+// The deterministic _id is the durable lock for one plan/period/domain,
+// even if the selected template changes before a retry.
 // MongoDB always enforces _id uniqueness, including when autoIndex is disabled.
 const schema = new mongoose.Schema({
   _id: { type: String },

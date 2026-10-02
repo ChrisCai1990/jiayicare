@@ -26,11 +26,14 @@ test.beforeEach(t => {
   aiCalls = 0; saved = [];
   const previousKey = process.env.QWEN_API_KEY;
   const previousIds = process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS;
+  const previousScope = process.env.PHASE_ASSESSMENT_AUTO_SCOPE;
   process.env.QWEN_API_KEY = 'test-only-not-a-real-key';
   process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS = USER_ID;
+  delete process.env.PHASE_ASSESSMENT_AUTO_SCOPE;
   t.after(() => {
     if (previousKey === undefined) delete process.env.QWEN_API_KEY; else process.env.QWEN_API_KEY = previousKey;
     if (previousIds === undefined) delete process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS; else process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS = previousIds;
+    if (previousScope === undefined) delete process.env.PHASE_ASSESSMENT_AUTO_SCOPE; else process.env.PHASE_ASSESSMENT_AUTO_SCOPE = previousScope;
   });
   t.mock.method(AnnualPlan, 'find', () => ({ sort: () => ({ limit: () => ({ lean: async () => [plan] }) }) }));
   t.mock.method(Template, 'find', () => ({ lean: async () => [{ _id: 't', content: { frequency: 'quarterly' } }] }));
@@ -72,14 +75,53 @@ test('续年总评从有效执行起点计算，不从提前确认日提前触�
   t.mock.method(Template, 'find', () => ({ lean: async () => [{ _id: 't', content: { frequency: 'yearly' } }] }));
   assert.equal(await scanAndCreatePhaseAssessments(), 0); assert.equal(aiCalls, 0);
 });
-test('门槛不通过、非试点和缺失客户都不调用AI', async t => {
+test('门槛不通过和缺失客户都不调用AI', async t => {
   t.mock.method(gate, 'annualPeriodicGate', async () => ({ allowed: false }));
   assert.equal(await scanAndCreatePhaseAssessments(), 0);
-  for (const row of [null, { ...user, aiPilotFeatures: {} }, { ...user, isDeleted: true }]) {
+  for (const row of [null, { ...user, isDeleted: true }]) {
     t.mock.method(User, 'findById', () => ({ select: async () => row }));
     assert.equal(await scanAndCreatePhaseAssessments(), 0);
   }
   assert.equal(aiCalls, 0);
+});
+test('全量模式允许非试点会员，但仍需有效权益和同频通用模板', async t => {
+  process.env.PHASE_ASSESSMENT_AUTO_SCOPE = 'eligible';
+  delete process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS;
+  t.mock.method(AnnualPlan, 'find', query => {
+    assert.equal(query.$and.some(x => x.patientId?.$in), false);
+    return { sort: () => ({ limit: () => ({ lean: async () => [plan] }) }) };
+  });
+  t.mock.method(User, 'findById', () => ({ select: async () => ({ ...user, aiPilotFeatures: {} }) }));
+  t.mock.method(Template, 'find', () => ({ lean: async () => [
+    { _id: 'monthly', content: { frequency: 'monthly' } },
+    { _id: 'quarterly', content: { frequency: 'quarterly' } },
+  ] }));
+  assert.equal(await scanAndCreatePhaseAssessments(), 1);
+  assert.equal(saved[0].templateId, 'quarterly');
+  assert.equal(saved[0].status, 'doctor_review');
+  assert.equal(aiCalls, 1);
+});
+test('全量模式不为无权益或未配置评估周期的会员猜测生成', async t => {
+  process.env.PHASE_ASSESSMENT_AUTO_SCOPE = 'eligible';
+  t.mock.method(User, 'findById', () => ({ select: async () => ({ ...user, aiPilotFeatures: {} }) }));
+  t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: false, phaseAssessmentFrequency: 'quarterly' }));
+  assert.equal(await scanAndCreatePhaseAssessments(), 0);
+  t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: '' }));
+  assert.equal(await scanAndCreatePhaseAssessments(), 0);
+  assert.equal(aiCalls, 0);
+});
+test('同周期通用与品牌模板并存时仅用品牌模板生成一份', async t => {
+  process.env.PHASE_ASSESSMENT_AUTO_SCOPE = 'eligible';
+  t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: 'monthly' }));
+  t.mock.method(User, 'findById', () => ({ select: async () => ({ ...user, clientBrand: 'jinyisen', assignedNutritionist: 'nutritionist', aiPilotFeatures: {} }) }));
+  t.mock.method(Template, 'find', () => ({ lean: async () => [
+    { _id: 'generic', clientBrand: '', content: { frequency: 'monthly' } },
+    { _id: 'brand', clientBrand: 'jinyisen', content: { frequency: 'monthly', assessmentDomain: 'nutrition' } },
+  ] }));
+  assert.equal(await scanAndCreatePhaseAssessments(), 1);
+  assert.equal(saved[0].templateId, 'brand');
+  assert.equal(saved[0].primaryReviewRole, 'nutritionist');
+  assert.equal(aiCalls, 1);
 });
 test('单个客户凭据故障不阻断下一个客户', async t => {
   process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS = `${USER_ID},${OTHER_ID}`;

@@ -26,7 +26,9 @@ test('综合评估默认顾问审核并使用季度资料窗口', async t => {
 test('历史周期及同领域周期去重发生在AI调用之前', async t => {
   calls = 0;
   t.mock.method(PhaseAssessment, 'exists', async filter => {
-    assert.deepEqual(filter.periodKey.$in, ['2026-Q3:comprehensive', '2026-Q3']); return true;
+    assert.deepEqual(filter.periodKey.$in, ['2026-Q3:comprehensive', '2026-Q3']);
+    assert.equal(filter.templateId, undefined);
+    return true;
   });
   assert.equal(await createAssessment(input()), null); assert.equal(calls, 0);
 });
