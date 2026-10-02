@@ -1572,7 +1572,7 @@ router.post('/tenants/draft', adminAuth, requirePlatformSuper, async (req, res) 
   if (await Tenant.exists({ code })) return res.status(409).json({ success: false, message: '该机构标识已存在' });
   const tenant = await Tenant.create({ code, name, legalName, status: 'suspended',
     commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()),
-    serviceScope: ['admin', 'staff'], note: '待接入：仅记录机构后台与医护端配置；未开通账号、域名、客户业务或独立小程序' });
+    serviceScope: [], note: '待接入：尚未配置和开通机构后台、医护端或客户小程序' });
   await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
     action: 'create_tenant_draft', at: new Date(), ip: req.ip });
   res.json({ success: true, data: { tenant }, message: '待接入机构已创建，尚未开放登录及客户业务' });
@@ -1594,7 +1594,7 @@ router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
   const dup = await Tenant.findOne({ code });
   if (dup) return res.status(400).json({ success: false, message: '该机构标识已存在' });
   if (websiteHosts.length && await Tenant.exists({ websiteHosts: { $in: websiteHosts } })) return res.status(409).json({ success: false, message: '网站域名已绑定其他机构' });
-  const tenant = await Tenant.create({ code, name, legalName: legalName.trim(), serviceScope: ['admin', 'staff'], slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts, commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()) });
+  const tenant = await Tenant.create({ code, name, legalName: legalName.trim(), serviceScope: [], slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts, commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()) });
 
   // 为新机构建一个 superadmin，否则该机构无人能登录管理
   let createdAdmin = null;
@@ -1688,10 +1688,10 @@ router.put('/tenants/:id/service-profile', adminAuth, requirePlatformSuper, asyn
   const note = typeof req.body?.serviceScopeNote === 'string' ? req.body.serviceScopeNote.trim() : '';
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
   const allowed = new Set(['admin', 'staff', 'customer', 'ai']);
-  if (!legalName || legalName.length > 120 || !Array.isArray(scope) || !scope.length ||
+  if (!legalName || legalName.length > 120 || !Array.isArray(scope) ||
       scope.length > allowed.size || scope.some(code => !allowed.has(code)) || new Set(scope).size !== scope.length ||
       note.length > 500 || reason.length < 4 || reason.length > 500) {
-    return res.status(400).json({ success: false, message: '请填写签约企业全称、有效服务项目及4至500字变更依据' });
+    return res.status(400).json({ success: false, message: '请填写签约企业全称、有效服务清单及4至500字变更依据' });
   }
   const tenant = await Tenant.findById(req.params.id);
   if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
