@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
-import { useToast } from '../../App'
+import { useAdmin, useToast } from '../../App'
 
 // 健康方案的方案类型子权限：勾选=该角色可管理此类方案，不勾=不可（后端按方案 type 校验）。
 // 与用户举例一致的4类 + 中医/复健/心理，共7类，与 staff 端 PLAN_TYPE_LABEL 对齐。
@@ -51,7 +51,9 @@ function buildEmptyPermissions() {
 }
 
 export default function RolePage() {
+  const { admin } = useAdmin()
   const toast = useToast()
+  const ownRoles = admin?.tenantStatus === 'setup' || (admin?.tenantCode && admin.tenantCode !== 'jiayihui')
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -141,20 +143,20 @@ export default function RolePage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
-          <h2 style={{ fontSize: 20, fontWeight: 700 }}>角色管理</h2>
-          <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>定义系统权限角色，配置各模块访问权限</p>
+          <h2 style={{ fontSize: 20, fontWeight: 700 }}>{ownRoles ? '本机构岗位' : '角色管理'}</h2>
+          <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>{ownRoles ? '岗位名称和模块职责由本机构自行设置，员工只选择本机构岗位。' : '定义系统权限角色，配置各模块访问权限'}</p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}>＋ 新增角色</button>
+        <button className="btn btn-primary" onClick={openCreate}>＋ {ownRoles ? '新增机构岗位' : '新增角色'}</button>
       </div>
 
       <div className="card">
         {loading ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
-          : list.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无自定义角色</div>
+          : list.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{ownRoles ? '尚未设置本机构岗位，请先新增岗位，再创建员工。' : '暂无自定义角色'}</div>
           : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {['角色名称', '创建时间', '操作'].map(h => (
+                {(ownRoles ? ['机构岗位', '创建时间', '操作'] : ['角色名称', '创建时间', '操作']).map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
                 ))}
               </tr>
@@ -185,9 +187,11 @@ export default function RolePage() {
             {error && <div className="login-err" style={{ margin: '0 20px 12px' }}>⚠️ {error}</div>}
             <div className="modal-body">
               <div className="form-group">
-                <label className="form-label">角色名称 *</label>
-                <input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="如：总经理、区域经理、健康顾问" />
+                <label className="form-label">{ownRoles ? '本机构岗位名称 *' : '角色名称 *'}</label>
+                <input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder={ownRoles ? '由本机构自行命名，如：客户健康经理' : '如：总经理、区域经理、健康顾问'} />
               </div>
+
+              {ownRoles && <p style={{ marginTop: 0, fontSize: 12, color: '#667085' }}>按下方模块勾选本岗位可执行的职责与操作。客户业务开放前仍需完成派单流程适配和跨机构验收。</p>}
 
               <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: '#374151' }}>权限配置</div>
               <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>

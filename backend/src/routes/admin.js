@@ -334,7 +334,7 @@ router.post('/login', async (req, res) => {
     success: true,
     data: {
       token,
-      admin: { _id: admin._id, name: admin.name, role: admin.role, title: admin.title, tenantId: admin.tenantId || null, tenantName: tenant?.name || (admin.role === 'platformSuper' ? '嘉静佑辰' : '嘉医汇'), tenantLogo: tenant?.logo || '', tenantStatus: tenant?.status || '', mustChangePassword: !!admin.mustChangePassword },
+      admin: { _id: admin._id, name: admin.name, role: admin.role, title: admin.title, tenantId: admin.tenantId || null, tenantCode: tenant?.code || '', tenantName: tenant?.name || (admin.role === 'platformSuper' ? '嘉静佑辰' : '嘉医汇'), tenantLogo: tenant?.logo || '', tenantStatus: tenant?.status || '', mustChangePassword: !!admin.mustChangePassword },
     },
   });
 });
@@ -1423,6 +1423,7 @@ const STAFF_ROLES = [
   'familyDoctor', 'nutritionist', 'healthManager',
   'medicalAssistant', 'psychologist', 'rehabSpecialist',
   'tcmDoctor', 'specialist', 'healthPlanner',
+  'institutionStaff',
 ];
 
 // GET /api/admin/staff — 列出所有医护账号

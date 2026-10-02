@@ -5,6 +5,7 @@ const { tenantContext } = require('../src/utils/tenantScope');
 const CompanyInfo = require('../src/models/CompanyInfo');
 const Department = require('../src/models/Department');
 const StaffRole = require('../src/models/StaffRole');
+const Admin = require('../src/models/Admin');
 
 test('company settings, departments and custom roles stay inside the signed-in institution', async () => {
   const own = new mongoose.Types.ObjectId();
@@ -22,4 +23,7 @@ test('company settings, departments and custom roles stay inside the signed-in i
   for (const Model of [CompanyInfo, Department, StaffRole]) {
     assert.equal(Model.schema.path('tenantId') != null, true, Model.modelName);
   }
+  assert.equal(Admin.schema.path('role').enumValues.includes('institutionStaff'), true);
+  const ownPosition = new StaffRole({ name: '明大自定岗位', permissions: { patients: { view: true } } });
+  assert.equal(ownPosition.validateSync(), undefined);
 });

@@ -10,6 +10,7 @@ const STAFF_ROLES = [
   'familyDoctor', 'nutritionist', 'healthManager',
   'medicalAssistant', 'psychologist', 'rehabSpecialist',
   'tcmDoctor', 'specialist', 'healthPlanner',
+  'institutionStaff',
 ];
 
 module.exports = async (req, res, next) => {
