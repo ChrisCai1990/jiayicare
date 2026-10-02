@@ -2035,6 +2035,8 @@ export default function PatientDetailPage() {
   const [packageEntitlements, setPackageEntitlements] = useState([])
   const [membershipSummary, setMembershipSummary] = useState(null)
   const [membershipError, setMembershipError] = useState('')
+  const [partnerBenefits, setPartnerBenefits] = useState([])
+  const [partnerBenefitsError, setPartnerBenefitsError] = useState('')
   const loadMembership = () => {
     setMembershipError('')
     return staffAPI.getPackageEntitlements(id).then(r => {
@@ -3199,10 +3201,14 @@ export default function PatientDetailPage() {
       // reports.find()找不到、按钮点了没反应（表现为"有些编辑键不可用"），这里同样按需补一次
       if (reports.length === 0) loadReports()
     }
-    else if (tab === 'consumption') {
-      staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
+    else if (tab === 'consumption' || tab === 'membership') {
+      if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
       setMembershipSummary(null)
       loadMembership()
+      if (tab === 'membership') {
+        setPartnerBenefitsError('')
+        staffAPI.getPatientPartnerBenefits(id).then(r => setPartnerBenefits(r.data || [])).catch(() => { setPartnerBenefits([]); setPartnerBenefitsError('合作伙伴权益加载失败') })
+      }
     }
     else if (tab === 'ai') {
       loadScreening()
@@ -4536,7 +4542,7 @@ export default function PatientDetailPage() {
           { key: 'referrals', label: '转介记录', tabs: [{ key: 'referrals', label: '转介记录' }] },
           { key: 'consumption', label: '消费记录', tabs: [{ key: 'consumption', label: '消费记录' }] },
           { key: 'family', label: '家庭信息', tabs: [{ key: 'family', label: '家庭信息' }] },
-          { key: 'membership', label: '会员信息', tabs: [{ key: 'membership', label: '会员信息' }] },
+          { key: 'membership', label: '会员权益', tabs: [{ key: 'membership', label: '会员类型与权益' }] },
         ]
         const activeGroup = groups.find(group => group.tabs.some(item => item.key === (tab === 'aiCase' ? 'ai' : tab)))
         const secondaryTabs = activeGroup?.tabs || []
@@ -10888,7 +10894,7 @@ export default function PatientDetailPage() {
 
       {/* ── Membership Tab ── */}
       {tab === 'membership' && (
-        <MembershipPanel user={user} patientId={id} onRefresh={load} />
+        <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
       )}
 
       {/* 随访详情弹窗 */}
@@ -12942,7 +12948,7 @@ export default function PatientDetailPage() {
   )
 }
 
-function MembershipPanel({ user, patientId, onRefresh }) {
+function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, onBenefitsRefresh, partnerBenefits, partnerBenefitsError }) {
   const toast = useToast()
   const [membership, setMembership] = useState(user)
   const [cardNumber, setCardNumber] = useState(user.cardNumber || '')
@@ -12979,6 +12985,13 @@ function MembershipPanel({ user, patientId, onRefresh }) {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <div style={{ fontSize: 13, color: '#65776F', marginBottom: 12 }}>会员类型用于展示与筛选；实际服务权益以已购买且生效的服务包为准。</div>
+        <MembershipBenefitsSummary data={benefits} error={benefitsError} onRefresh={onBenefitsRefresh} />
+        <div className="card"><div className="card-header"><div className="card-title">合作伙伴权益</div></div><div className="card-body">
+          {partnerBenefitsError || (!partnerBenefits?.length ? '当前会员类型暂无可见合作伙伴权益' : partnerBenefits.map(group => <div key={group.partner.id} style={{ marginBottom: 12 }}><strong>{group.partner.name}</strong>{group.benefits.map(item => <div key={item.id} style={{ marginTop: 5, color: '#4A6558' }}>{item.title}{item.subtitle ? ` · ${item.subtitle}` : ''}</div>)}</div>))}
+        </div></div>
+      </div>
       {/* 会员基本信息 */}
       <div className="card">
         <div className="card-header"><div className="card-title">会员基本信息</div></div>

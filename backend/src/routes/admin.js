@@ -2161,6 +2161,14 @@ router.delete('/partners/:id', adminAuth, async (req, res) => {
 });
 
 // ── 合作伙伴权益管理 ──────────────────────────────────────────────
+async function validPartnerBenefitTypeIds(values) {
+  if (!Array.isArray(values) || values.length > 100) return null;
+  const ids = [...new Set(values.map(String))];
+  if (ids.some(id => !/^[a-f\d]{24}$/i.test(id))) return null;
+  if (!ids.length) return [];
+  const types = await MemberType.find({ _id: { $in: ids }, active: true }).select('_id parent').lean();
+  return types.length === ids.length && types.every(type => !!type.parent) ? ids : null;
+}
 
 // GET /api/admin/partner-benefits?partnerId=
 router.get('/partner-benefits', adminAuth, async (req, res) => {
@@ -2174,22 +2182,26 @@ router.get('/partner-benefits', adminAuth, async (req, res) => {
 
 // POST /api/admin/partner-benefits
 router.post('/partner-benefits', adminAuth, async (req, res) => {
-  const { partner, title, subtitle, images, description, usageGuide, visibleMemberTypes, sortOrder, status } = req.body;
+  const { partner, title, subtitle, images, description, usageGuide, visibleMemberTypes, visibleMemberTypeIds, sortOrder, status } = req.body;
   if (!partner || !title) return res.status(400).json({ success: false, message: '合作伙伴、权益标题为必填项' });
+  const typeIds = visibleMemberTypeIds === undefined ? [] : await validPartnerBenefitTypeIds(visibleMemberTypeIds);
+  if (typeIds === null) return res.status(400).json({ success: false, message: '请选择有效的 Admin 会员类型' });
   const benefit = await PartnerBenefit.create({
     partner, title, subtitle: subtitle || '', images: images || [],
     description: description || '', usageGuide: usageGuide || '',
-    visibleMemberTypes: visibleMemberTypes || [], sortOrder: sortOrder ?? 999, status: status || 'on',
+    visibleMemberTypes: visibleMemberTypes || [], visibleMemberTypeIds: typeIds, sortOrder: sortOrder ?? 999, status: status || 'on',
   });
   res.json({ success: true, data: benefit, message: '权益创建成功' });
 });
 
 // PUT /api/admin/partner-benefits/:id
 router.put('/partner-benefits/:id', adminAuth, async (req, res) => {
-  const { partner, title, subtitle, images, description, usageGuide, visibleMemberTypes, sortOrder, status } = req.body;
+  const { partner, title, subtitle, images, description, usageGuide, visibleMemberTypes, visibleMemberTypeIds, sortOrder, status } = req.body;
+  const typeIds = visibleMemberTypeIds === undefined ? undefined : await validPartnerBenefitTypeIds(visibleMemberTypeIds);
+  if (typeIds === null) return res.status(400).json({ success: false, message: '请选择有效的 Admin 会员类型' });
   const benefit = await PartnerBenefit.findByIdAndUpdate(
     req.params.id,
-    { partner, title, subtitle, images, description, usageGuide, visibleMemberTypes, sortOrder, status },
+    { partner, title, subtitle, images, description, usageGuide, visibleMemberTypes, ...(typeIds === undefined ? {} : { visibleMemberTypeIds: typeIds }), sortOrder, status },
     { new: true }
   );
   if (!benefit) return res.status(404).json({ success: false, message: '权益不存在' });
