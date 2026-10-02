@@ -15151,7 +15151,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, patient, i
     if (planType === 'annual_checkup' && !desiredServiceDate) { toast('请选择期望服务时间'); return }
     if (planType === 'annual_checkup' && !serviceRequirements.trim()) { toast('请填写具体服务需求'); return }
     if (planType === 'nutrition') {
-      const missing = missingNutritionAssessment(nutritionAssessment, briefNote)
+      const missing = missingNutritionAssessment(nutritionAssessment, briefNote, patient)
       if (missing.length) { toast(`请先补齐：${missing.join('、')}`); return }
       if (nutritionAssessment.riskStatus === 'specialist') { toast('此客户需专业评估，请先完成评估后人工制定方案'); return }
     }

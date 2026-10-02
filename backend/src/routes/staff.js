@@ -15875,6 +15875,12 @@ ${assessment.goal}
 逐项观察指标（指标名称、已核实基线、阶段目标须逐项对应）：
 ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}：基线 ${row.baseline}；目标 ${row.target}`).join('\n')}
 
+【已核实能量预算】
+按年龄、性别、身高、体重及活动等级估算维持能量：约 ${assessment.estimatedMaintenanceKcal} kcal/日（仅作估算）。
+营养师确认的管理期能量：${assessment.managementKcal} kcal/日。
+餐次预算：早餐 ${assessment.mealEnergyKcal.breakfast}、午餐 ${assessment.mealEnergyKcal.lunch}、晚餐 ${assessment.mealEnergyKcal.dinner}、加餐 ${assessment.mealEnergyKcal.snack} kcal。
+请围绕各餐预算选择食物与分量；不要虚构精确的食物热量或宣称已核算实际摄入。加餐预算为 0 时不要安排加餐。
+
 【模板固定骨架（不可修改，仅供你参考约束）】
 膳食总原则：${tc.dietPrinciple || '无'}
 推荐食物：${tc.allowedFoods || '无限制'}
@@ -15884,7 +15890,7 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
 模板早餐参考：${tc.breakfast || '无'}
 模板午餐参考：${tc.lunch || '无'}
 模板晚餐参考：${tc.dinner || '无'}
-模板加餐参考：${tc.snack || '无'}
+模板加餐参考：${assessment.mealEnergyKcal.snack > 0 ? (tc.snack || '无') : '本次未安排加餐'}
 
 不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应食物；在description中指出需营养师修订模板。餐次写清食物与可执行分量，不承诺治疗效果。
 请以JSON格式输出，仅输出JSON：
@@ -15910,7 +15916,8 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
     const breakfast = raw.breakfast.trim();
     const lunch = raw.lunch.trim();
     const dinner = raw.dinner.trim();
-    const snack = raw.snack || tc.snack || '';
+    const snack = assessment.mealEnergyKcal.snack > 0 ? String(raw.snack || '').trim() : '';
+    if (assessment.mealEnergyKcal.snack > 0 && !snack) return res.status(502).json({ success: false, message: 'AI未生成已安排的加餐草稿，请重试' });
     const items = [
       { name: '早餐方案', category: '营养干预', notes: breakfast },
       { name: '午餐方案', category: '营养干预', notes: lunch },

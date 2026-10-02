@@ -1,5 +1,7 @@
 import foodAllergy from '../../../shared/foodAllergy.cjs'
+import nutritionTargets from '../../../shared/nutritionTargets.cjs'
 const { isUsableFoodAllergy, foodAllergyEvidence, questionnaireFoodAllergyEvidence } = foodAllergy
+const { withFixedNutritionTargets } = nutritionTargets
 
 const text = value => String(value ?? '').trim()
 const row = (label, value) => text(value) ? `${label}：${text(value)}` : ''
@@ -52,11 +54,13 @@ export function nutritionAssessmentPrefill(patient = {}, previous = null) {
     assessment: {
       height: patient.height || prior.height || '', weight: patient.weight || prior.weight || '',
       currentDiet: text(prior.currentDiet) || dietFromArchive(patient),
-      nutritionTargets: priorTargets(prior).length ? priorTargets(prior) : [{ metric: '', baseline: '', target: '' }],
+      nutritionTargets: withFixedNutritionTargets(priorTargets(prior), patient),
       reviewDate: '', medicalReview: text(prior.medicalReview) || medicalFromArchive(patient),
       practicalConstraints: text(prior.practicalConstraints) || constraintsFromArchive(patient),
       allergyStatus: '', allergyDetails: recordedAllergy || (isUsableFoodAllergy(prior.allergyDetails) ? text(prior.allergyDetails) : ''),
       riskStatus: '', templateCompatibilityConfirmed: false,
+      activityLevel: '', lifeStage: '', managementPurpose: '', managementKcal: '',
+      breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30, snackPercent: 0,
     },
   }
 }

@@ -27,7 +27,7 @@ test('无上次评估时汇总档案膳食和疾病资料，不虚构已核实�
   assert.match(assessment.currentDiet, /午餐：外卖/)
   assert.match(assessment.medicalReview, /档案记录/)
   assert.match(assessment.practicalConstraints, /不吃辣/)
-  assert.equal(assessment.nutritionTargets.length, 1)
+  assert.deepEqual(assessment.nutritionTargets.map(row => row.metric), ['体重', '骨骼肌', '体脂率', '内脏脂肪'])
   assert.equal(assessment.nutritionTargets[0].baseline, '')
 })
 
