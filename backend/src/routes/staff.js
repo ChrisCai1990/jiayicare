@@ -7336,8 +7336,11 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
     ] });
     await Promise.all(packageOrders.map(order => require('../utils/packageEntitlements').ensurePackageEntitlement(order)));
     await Promise.all(packageOrders.map(order => require('../utils/packageEntitlements').ensureMemberBundleEntitlement(order)));
-    const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
     const customer = await User.findById(req.params.id);
+    // Surface legacy effective-service rights for history review even before a
+    // service has been completed. This keeps the superadmin action discoverable.
+    if (customer) await require('../utils/packageServiceRedemption').ensureEffectiveServiceLedger(customer);
+    const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
     const summary = customer ? await require('../utils/membershipBenefits').membershipBenefits(customer, rows) : { plans:[],message:'客户不存在' };
     summary.redemptionAlerts = await require('../models/PackageEntitlementRedemption').countDocuments({ patientId: req.params.id, status: 'needs_review' });
     res.json({ success: true, summary, data: rows.map(row => ({
