@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const staffRoleSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true, trim: true },
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true },
+  name: { type: String, required: true, trim: true },
   permissions: {
     // 医护端模块权限：{ view, create, edit, delete, audit, send }
     patients:        { type: Object, default: {} },
@@ -21,5 +22,8 @@ const staffRoleSchema = new mongoose.Schema({
     daily_checkin:   { type: Object, default: {} },
   },
 }, { timestamps: true });
+
+staffRoleSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
+staffRoleSchema.index({ tenantId: 1, name: 1 }, { unique: true });
 
 module.exports = mongoose.model('StaffRole', staffRoleSchema);

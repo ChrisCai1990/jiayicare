@@ -149,9 +149,10 @@ export default function Layout() {
         ...section,
         items: section.items.filter(item =>
           (!item.superadminOnly || admin?.role === 'superadmin')
-          && (!item.aiControlOnly || admin?.role === 'platformSuper')),
-      })),
-    [admin?.role, admin?.tenantId],
+          && (!item.aiControlOnly || admin?.role === 'platformSuper')
+          && (admin?.tenantStatus !== 'setup' || ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees', '/saas-plan'].includes(item.path))),
+      })).filter(section => section.items.length),
+    [admin?.role, admin?.tenantId, admin?.tenantStatus],
   )
   const activeSection = visibleSections.find(section => section.items.some(item => isItemActive(loc.pathname, item.path)))?.label
   const activeItem = visibleSections.flatMap(section => section.items).find(item => isItemActive(loc.pathname, item.path))
@@ -175,7 +176,7 @@ export default function Layout() {
   }, [activeSection, activeGroup, loc.pathname])
 
   useEffect(() => {
-    if (admin?.role === 'platformSuper') return
+    if (admin?.role === 'platformSuper' || admin?.tenantStatus === 'setup') return
     let cancelled = false
     const loadPending = async () => {
       try {
@@ -186,7 +187,7 @@ export default function Layout() {
     loadPending()
     const timer = setInterval(loadPending, 30000)
     return () => { cancelled = true; clearInterval(timer) }
-  }, [admin?.role])
+  }, [admin?.role, admin?.tenantStatus])
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {

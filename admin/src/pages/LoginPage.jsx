@@ -23,7 +23,7 @@ export default function LoginPage() {
       const res = await adminAPI.login(username.trim(), password)
       setToken(res.data.token)
       login(res.data.admin)
-      nav(res.data.admin.mustChangePassword ? '/change-password' : res.data.admin.role === 'platformSuper' ? '/tenants' : '/dashboard', { replace: true })
+      nav(res.data.admin.mustChangePassword ? '/change-password' : res.data.admin.role === 'platformSuper' ? '/tenants' : res.data.admin.tenantStatus === 'setup' ? '/setup' : '/dashboard', { replace: true })
     } catch (err) {
       setError(err.message || '登录失败，请检查用户名和密码')
     } finally {

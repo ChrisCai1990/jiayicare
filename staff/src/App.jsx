@@ -151,7 +151,13 @@ function RequireAuth({ children }) {
   const location = useLocation()
   const token = getToken()
   if (!staff || !token) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
+  if (staff.tenantStatus === 'setup' && !['/setup', '/change-password'].includes(location.pathname)) return <Navigate to="/setup" replace />
   return children
+}
+
+function StaffSetupPage() {
+  const { staff, logout } = useStaff()
+  return <div style={{ maxWidth: 560, margin: '9vh auto', padding: 28, fontFamily: 'sans-serif' }}><h1>{staff?.tenantName} · 医护端</h1><p>当前岗位：{staff?.customRoleName || staff?.roleLabel || staff?.role}。本机构暂无客户，后台正在配置部门、岗位及员工账号。</p><p>客户业务将在跨机构数据隔离验收后开放。</p><button onClick={logout}>退出登录</button></div>
 }
 
 // Admin 新建/重置员工密码后，只允许访问强制改密页；改密成功后才进入工作台。
@@ -181,6 +187,7 @@ export default function App() {
         <ToastProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/setup" element={<RequireAuth><StaffSetupPage /></RequireAuth>} />
             <Route path="/change-password" element={<RequireAuth><ForcePasswordChangePage /></RequireAuth>} />
             <Route path="/" element={<RequireAuth><RequirePasswordChanged><RequireModule><Layout /></RequireModule></RequirePasswordChanged></RequireAuth>}>
               <Route index element={<Navigate to="/home" replace />} />

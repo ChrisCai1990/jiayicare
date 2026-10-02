@@ -25,7 +25,7 @@ export default function LoginPage() {
       login(res.data.staff, res.data.token)
       const from = location.state?.from
       const target = typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/home'
-      nav(res.data.staff.mustChangePassword ? '/change-password' : target, { replace: true })
+      nav(res.data.staff.mustChangePassword ? '/change-password' : res.data.staff.tenantStatus === 'setup' ? '/setup' : target, { replace: true })
     } catch (err) {
       setError(err.message || '登录失败，请检查手机号码和密码')
     } finally {

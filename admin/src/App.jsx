@@ -110,6 +110,7 @@ function RequireAuth({ children }) {
   if (!admin || !token) return <Navigate to="/login" replace />
   if (admin.mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
   if (!admin.mustChangePassword && location.pathname === '/change-password') return <Navigate to={admin.role === 'platformSuper' ? '/tenants' : '/dashboard'} replace />
+  if (admin.tenantStatus === 'setup' && !['/setup', '/settings/company', '/settings/departments', '/settings/roles', '/settings/employees', '/saas-plan', '/change-password'].includes(location.pathname)) return <Navigate to="/setup" replace />
   if (admin.role === 'platformSuper' && location.pathname !== '/tenants' && location.pathname !== '/agreements' && location.pathname !== '/saas-plan' && location.pathname !== '/settings/ai-usage' && location.pathname !== '/change-password' && location.pathname !== '/') {
     return <Navigate to="/tenants" replace />
   }
@@ -118,7 +119,12 @@ function RequireAuth({ children }) {
 
 function HomeRoute() {
   const { admin } = useAdmin()
-  return <Navigate to={admin?.role === 'platformSuper' ? '/tenants' : '/dashboard'} replace />
+  return <Navigate to={admin?.role === 'platformSuper' ? '/tenants' : admin?.tenantStatus === 'setup' ? '/setup' : '/dashboard'} replace />
+}
+
+function InstitutionSetupPage() {
+  const { admin } = useAdmin()
+  return <div className="page"><div className="page-header"><div><h1 className="page-title">{admin?.tenantName} · 机构配置</h1><p className="page-subtitle">当前没有本机构客户。先维护企业信息、部门、岗位和员工。</p></div></div><div className="card" style={{ padding: 28 }}><p>客户与医护业务将在跨机构数据隔离验收后开放。</p><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>{[['企业信息', '/settings/company'], ['部门管理', '/settings/departments'], ['岗位权限', '/settings/roles'], ['员工账号', '/settings/employees'], ['本机构套餐', '/saas-plan']].map(([label, path]) => <a key={path} className="btn btn-secondary" href={path}>{label}</a>)}</div></div></div>
 }
 
 export default function App() {
@@ -132,6 +138,7 @@ export default function App() {
             <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<HomeRoute />} />
+              <Route path="setup" element={<InstitutionSetupPage />} />
               <Route path="change-password" element={<ChangePasswordPage />} />
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="health-data-import" element={<HealthDataImportPage />} />

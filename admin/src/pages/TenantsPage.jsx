@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../api'
 import { useAdmin, useToast } from '../App'
 
-const STATUS_LABEL = { active: '运营中', suspended: '待接入／已暂停' }
+const STATUS_LABEL = { active: '运营中', setup: '配置中', suspended: '待接入／已暂停' }
 const EMPTY = { code: '', name: '', legalName: '', staffPortalName: '', slogan: '', themeColor: '#1E6B50', websiteHosts: '', adminUsername: '', adminPassword: '' }
 const externalEnabled = import.meta.env.VITE_ENABLE_EXTERNAL_TENANTS === 'true'
 
@@ -19,8 +19,14 @@ export default function TenantsPage() {
   const [showGuide, setShowGuide] = useState(false)
   const [customerView, setCustomerView] = useState(null)
   const [customerLoading, setCustomerLoading] = useState(false)
+  const [search, setSearch] = useState('')
 
   const isPlatform = admin?.role === 'platformSuper'
+  const visibleTenants = list.filter(t => {
+    const keyword = search.trim().toLocaleLowerCase()
+    return !keyword || [t.name, t.legalName, t.code].some(value => String(value || '').toLocaleLowerCase().includes(keyword))
+  })
+  const serviceNames = { admin: '机构后台', staff: '医护端', customer: '客户小程序', ai: 'AI' }
 
   const load = async () => {
     setLoading(true)
@@ -70,8 +76,8 @@ export default function TenantsPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">🏛️ 机构管理</h1>
-          <p className="page-subtitle">多机构 SaaS 运营 · 各机构使用独立管理员账号</p>
+          <h1 className="page-title">服务机构</h1>
+          <p className="page-subtitle">搜索机构，进入详情查看签约企业、服务范围、价格与账号。</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary" onClick={() => setShowGuide(true)}>📖 后续接入流程</button>
@@ -82,33 +88,39 @@ export default function TenantsPage() {
 
       {/* 顶部流程提示条 */}
       <div style={{ background: '#F0FAF5', border: '1px solid #CDE9DC', borderRadius: 10, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#2C6E52', lineHeight: 1.7 }}>
-        <b>当前阶段：</b>可建立第二家机构的商务配置草案；草案不可登录、绑定域名或接入客户。外部机构正式启用仍须完成跨机构权限验收。
+        <b>当前阶段：</b>待接入机构可进入配置阶段，维护自己的企业信息、部门、岗位和员工。客户业务仍须完成跨机构隔离验收。
         <span style={{ color: '#888', cursor: 'pointer', marginLeft: 6, textDecoration: 'underline' }} onClick={() => setShowGuide(true)}>查看详细步骤</span>
       </div>
 
       <div className="card">
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <input className="form-input" aria-label="搜索机构" placeholder="搜索机构名称、签约企业或标识" value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 360 }} />
+          <span style={{ color: '#667085', fontSize: 13 }}>共 {visibleTenants.length} 家机构</span>
+        </div>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
         ) : list.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>机构记录尚未初始化，请先完成嘉医汇历史归属迁移。</div>
+        ) : visibleTenants.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#667085' }}>没有匹配的机构</div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {['机构名称', '标识', '网站域名', '员工数', '客户数', '状态', '创建时间', '操作'].map(h => (
+                {['机构名称／签约企业', '拟提供服务', '员工数', '客户数', '状态', '操作'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {list.map(t => (
+              {visibleTenants.map(t => (
                 <tr key={t._id}>
                   <td style={{ padding: '12px 14px', fontWeight: 600 }}>
                     <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: t.themeColor || '#1E6B50', marginRight: 8 }} />
-                    {t.name}
+                    <a href={`/saas-plan?tenantId=${t._id}`} style={{ color: '#0A7156', textDecoration: 'underline' }}>{t.name}</a>
+                    <div style={{ marginTop: 4, color: '#667085', fontSize: 12, fontWeight: 400 }}>{t.legalName || '签约企业待核验'} · {t.code}</div>
                   </td>
-                  <td style={{ padding: '12px 14px', color: '#6B7280', fontFamily: 'monospace' }}>{t.code}</td>
-                  <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 12 }}>{(t.websiteHosts || []).join('、') || '未绑定'}</td>
+                  <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 12 }}>{(t.serviceScope || (t.code === 'jiayihui' ? ['admin', 'staff', 'customer'] : [])).map(code => serviceNames[code] || code).join('、') || '尚未配置'}</td>
                   <td style={{ padding: '12px 14px', color: '#6B7280' }}>{t.staffCount ?? 0}</td>
                   <td style={{ padding: '12px 14px', color: '#6B7280' }}>{t.userCount ?? 0}</td>
                   <td style={{ padding: '12px 14px' }}>
@@ -116,9 +128,8 @@ export default function TenantsPage() {
                       {STATUS_LABEL[t.status] || t.status}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 14px', color: '#9CA3AF', fontSize: 12 }}>{new Date(t.createdAt).toLocaleDateString('zh-CN')}</td>
                   <td style={{ padding: '12px 14px' }}>
-                    <a className="btn btn-secondary btn-sm" href={`/saas-plan?tenantId=${t._id}`} style={{ marginRight: 6 }}>服务/报价</a>
+                    <a className="btn btn-secondary btn-sm" href={`/saas-plan?tenantId=${t._id}`} style={{ marginRight: 6 }}>合作详情</a>
                     <button className="btn btn-secondary btn-sm" onClick={() => viewCustomers(t)} style={{ marginRight: 6 }}>查看客户</button>
                     <button className="btn btn-secondary btn-sm" onClick={() => openEdit(t)} style={{ marginRight: 6 }}>编辑</button>
                     <button className="btn btn-danger btn-sm" onClick={() => del(t)}>删除</button>
@@ -187,6 +198,7 @@ export default function TenantsPage() {
                     <label className="form-label">状态</label>
                     <select className="form-input" value={form.status} onChange={set('status')}>
                       <option value="active" disabled={!externalEnabled && editing.status !== 'active'}>运营中</option>
+                      <option value="setup">配置中（仅机构设置）</option>
                       <option value="suspended">已暂停</option>
                     </select>
                   </div>
