@@ -10676,9 +10676,13 @@ export default function PatientDetailPage() {
           const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
           return (entitlement.rights?.productEntitlements || []).map((right, index) => {
             const pool = pools.get(right.poolKey)
+            const usage = (entitlement.usageRecords || []).filter(record => String(record.productId) === String(right.productId))
             return { key: `${entitlement._id}:${right.productId}:${index}`, name: right.productName, packageName: entitlement.packageName,
               entitlement, productId: right.productId, entitlementKey: right.entitlementKey || '', workflowKey: right.productSnapshot?.serviceWorkflow?.key || '',
               count: pool ? pool.count : right.count, remaining: pool ? pool.remainingCount : right.remainingCount,
+              reservedCount: usage.filter(record => record.status === 'reserved').length,
+              redeemedCount: usage.filter(record => record.status === 'redeemed').length,
+              rightIndex: index,
               shared: !!pool, historyKnown: entitlement.historyVerified !== false,
               automatic: /营养评估/.test(right.productName || '') && right.productSnapshot?.serviceWorkflow?.key === 'nutrition_intervention', validUntil: entitlement.validUntil }
           })
@@ -10697,14 +10701,24 @@ export default function PatientDetailPage() {
         const visibleIncludedServices = medicalServiceOnly ? includedServices.filter(isMedicalService) : includedServices
         const visibleOrders = medicalServiceOnly ? patientOrders.filter(isMedicalService) : patientOrders
         const availableMedicalBenefit = includedServices.some(item => isMedicalService(item) && item.historyKnown && Number(item.remaining) > 0)
+        const pendingOrderFor = item => patientOrders.find(order => order.status === 'pending'
+          && order.packageEntitlementUsage && String(order.packageEntitlementUsage.entitlementId) === String(item.entitlement?._id)
+          && String(order.serviceId) === String(item.productId)
+          && Number(order.packageEntitlementUsage.rightIndex) === Number(item.rightIndex))
+        const continueMedicalOrder = order => nav(order.medicalAssistPlanId
+          ? `/plans/${order.medicalAssistPlanId}/modules`
+          : `/plans?type=medical_assist&openPlan=medical_assist&patientId=${id}&patientName=${encodeURIComponent(user.name || '')}&reservedOrderId=${order._id}&reservedProductName=${encodeURIComponent(order.serviceName || '')}`)
         const startIncludedService = async item => {
+          const pending = pendingOrderFor(item)
+          if (pending) { continueMedicalOrder(pending); return }
           if (!item.entitlement || !item.productId || !window.confirm(`确认发起「${item.name}」吗？系统优先使用最早到期的有效套餐，预占 1 次；实际启动后自动核销。`)) return
           setUsingEntitlementId(item.key)
           try {
             const result = await staffAPI.usePackageEntitlement(id, 'auto', { productId: item.productId, entitlementKey: item.entitlementKey })
-            setPatientOrders(previous => [result.data.executionOrder, ...previous])
+            setPatientOrders(previous => previous.some(order => order._id === result.data.executionOrder._id) ? previous : [result.data.executionOrder, ...previous])
             await loadMembership()
-            toast(result.message || '已生成 ¥0 履约单')
+            if (isMedicalService(item)) continueMedicalOrder(result.data.executionOrder)
+            else toast(result.message || '已生成 ¥0 履约单')
           } catch (error) { toast(error.message || '发起套餐服务失败') }
           finally { setUsingEntitlementId('') }
         }
@@ -10772,13 +10786,14 @@ export default function PatientDetailPage() {
                       <td style={{ fontWeight: 600 }}>{item.name}</td>
                       <td><span style={{ color: '#1E6B50', fontWeight: 600 }}>套餐包含</span><div style={{ fontSize: 12, color: '#718579' }}>{item.packageName}{item.shared ? ' · 共用次数' : ''}</div></td>
                       <td style={{ color: '#1E6B50', fontWeight: 700 }}>¥0</td>
-                      <td style={{ fontSize: 12 }}>{item.historyKnown ? `${item.shared ? '共用' : ''}可用 ${item.remaining || 0} / ${item.count || 0} 次` : `${item.shared ? '共用' : ''}计划 ${item.count || 0} 次 · 历史余额待核对`}</td>
+                      <td style={{ fontSize: 12 }}>{item.historyKnown ? <>{item.shared ? '共享池' : '本项'}可用 {item.remaining || 0} / {item.count || 0} 次<br />本项已预占 {item.reservedCount || 0} · 已核销 {item.redeemedCount || 0}</> : `${item.shared ? '共用' : ''}计划 ${item.count || 0} 次 · 历史余额待核对`}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>有效至 {String(item.validUntil || '').slice(0, 10)}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>按服务分配</td>
-                      <td style={{ fontSize: 12, color: item.historyKnown ? '#1E6B50' : '#B45309' }}>{!item.historyKnown ? '待核对' : item.automatic ? '随评估自动核销' : Number(item.remaining) > 0 ? '待发起' : '次数已用完'}</td>
+                      <td style={{ fontSize: 12, color: item.historyKnown ? '#1E6B50' : '#B45309' }}>{!item.historyKnown ? '待核对' : item.automatic ? '随评估自动核销' : pendingOrderFor(item) ? '待继续办理' : Number(item.remaining) > 0 ? '待发起' : '共享次数已用完'}</td>
                       <td>
                         {!item.historyKnown ? staff?.role === 'superadmin' ? <button className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview(item.entitlement)}>核对历史次数</button> : <span style={{ fontSize: 12, color: '#718579' }}>请医护端超管核对</span>
                           : item.automatic ? <span style={{ fontSize: 12, color: '#718579' }}>评估归档后自动核销</span>
+                          : pendingOrderFor(item) ? <button className="btn btn-primary btn-sm" onClick={() => startIncludedService(item)}>继续原单办理</button>
                           : Number(item.remaining) > 0 ? <button className="btn btn-primary btn-sm" disabled={usingEntitlementId === item.key} onClick={() => startIncludedService(item)}>{usingEntitlementId === item.key ? '发起中…' : '发起 ¥0 服务'}</button>
                             : <span style={{ fontSize: 12, color: '#718579' }}>—</span>}
                       </td>
@@ -10826,7 +10841,8 @@ export default function PatientDetailPage() {
                           {CHECKUP_STAGE_LABEL[order.currentStage] && <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>{CHECKUP_STAGE_LABEL[order.currentStage]}</div>}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
-                          {order.status === 'pending' && (
+                          {order.status === 'pending' && order.packageEntitlementUsage && isMedicalService(order) && <button className="btn btn-primary btn-sm" onClick={() => continueMedicalOrder(order)}>继续就医协助</button>}
+                          {order.status === 'pending' && !(order.packageEntitlementUsage && isMedicalService(order)) && (
                             <button className="btn btn-primary btn-sm" onClick={async () => {
                               try {
                                 await staffAPI.startOrder(order._id, { action: 'schedule' })

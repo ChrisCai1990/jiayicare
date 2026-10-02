@@ -133,7 +133,9 @@ async function recordLinkedOrderCompletion(order) {
 async function settleReservedPackageOrder(order) {
   const usage = order?.packageEntitlementUsage;
   if (!usage?.entitlementId) return { status: 'not_applicable' };
-  if ((order.serviceStartedAt && Number(order.totalUnits || 1) === 1) || order.status === 'completed') {
+  // 就医协助套餐按一次已发起的服务占用共享池，不按方案内部子项目重复扣池。
+  const medicalService = /就医|代办|代诊|陪同|陪诊|约诊|挂号|复诊/.test(order.serviceName || '');
+  if ((order.serviceStartedAt && (Number(order.totalUnits || 1) === 1 || medicalService)) || order.status === 'completed') {
     const result = await PackageEntitlement.updateOne({ _id: usage.entitlementId,
       usageRecords: { $elemMatch: { executionOrderId: order._id, status: 'reserved' } } },
     { $set: { 'usageRecords.$.status': 'redeemed', 'usageRecords.$.usedAt': order.serviceStartedAt || order.completedAt || new Date() } });
