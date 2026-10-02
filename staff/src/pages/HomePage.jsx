@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
 import AiTodosPanel from '../components/AiTodosPanel'
+import ClinicalStandardReviewPanel from '../components/ClinicalStandardReviewPanel'
 import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
 import ServiceTasksPanel from '../components/ServiceTasksPanel'
@@ -178,6 +179,7 @@ export default function HomePage() {
 
       {/* 临时服务方案产生的岗位任务优先处理，固定显示在 AI 审核任务上方。 */}
       <MonthlyReviewWorkbench />
+      <ClinicalStandardReviewPanel />
       <ServiceTasksPanel onTasksLoaded={setServiceTasks} />
 
       {/* AI 待审核任务面板 */}

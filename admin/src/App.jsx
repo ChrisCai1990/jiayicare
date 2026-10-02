@@ -21,6 +21,7 @@ import EnterprisesPage from './pages/EnterprisesPage'
 import TenantsPage from './pages/TenantsPage'
 import PlatformAgreementPage from './pages/PlatformAgreementPage'
 import SaasPlanPage from './pages/SaasPlanPage'
+import ClinicalStandardsPage from './pages/ClinicalStandardsPage'
 import OpsDashboardPage from './pages/OpsDashboardPage'
 import CareQualityPage from './pages/CareQualityPage'
 import ResearchCareJourneysPage from './pages/ResearchCareJourneysPage'
@@ -111,7 +112,7 @@ function RequireAuth({ children }) {
   if (admin.mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
   if (!admin.mustChangePassword && location.pathname === '/change-password') return <Navigate to={admin.role === 'platformSuper' ? '/tenants' : '/dashboard'} replace />
   if (admin.tenantStatus === 'setup' && !['/setup', '/settings/company', '/settings/departments', '/settings/roles', '/settings/employees', '/saas-plan', '/change-password'].includes(location.pathname)) return <Navigate to="/setup" replace />
-  if (admin.role === 'platformSuper' && location.pathname !== '/tenants' && location.pathname !== '/agreements' && location.pathname !== '/saas-plan' && location.pathname !== '/settings/ai-usage' && location.pathname !== '/change-password' && location.pathname !== '/') {
+  if (admin.role === 'platformSuper' && location.pathname !== '/tenants' && location.pathname !== '/agreements' && location.pathname !== '/saas-plan' && location.pathname !== '/clinical-standards' && location.pathname !== '/settings/ai-usage' && location.pathname !== '/change-password' && location.pathname !== '/') {
     return <Navigate to="/tenants" replace />
   }
   return children
@@ -159,6 +160,7 @@ export default function App() {
               <Route path="tenants" element={<TenantsPage />} />
               <Route path="agreements" element={<PlatformAgreementPage />} />
               <Route path="saas-plan" element={<SaasPlanPage />} />
+              <Route path="clinical-standards" element={<ClinicalStandardsPage />} />
               <Route path="ops-dashboard" element={<OpsDashboardPage />} />
               <Route path="care-quality" element={<CareQualityPage />} />
               <Route path="research-care-journeys" element={<ResearchCareJourneysPage />} />

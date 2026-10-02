@@ -6,7 +6,8 @@ function platformAdminMayAccess(path) {
     || /^\/api\/admin\/tenants(?:\/|$)/.test(pathname)
     || /^\/api\/admin\/ai-control(?:\/|$)/.test(pathname)
     || /^\/api\/admin\/agreements(?:\/|$)/.test(pathname)
-    || /^\/api\/admin\/saas-plan(?:\/|$)/.test(pathname);
+    || /^\/api\/admin\/saas-plan(?:\/|$)/.test(pathname)
+    || /^\/api\/admin\/clinical-standards(?:\/|$)/.test(pathname);
 }
 
 module.exports = { platformAdminMayAccess };

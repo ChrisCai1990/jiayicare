@@ -2,17 +2,18 @@
 // infer a diagnosis or turn an imaging risk category into a health-score grade.
 // Bump this version whenever matching logic or a referenced standard changes.
 // Old clinician confirmations then become stale and require renewed review.
-const RULE_VERSION = '2026-10-03.1';
+const { RULE_VERSION, standards: standardRegistry } = require('./clinicalStandards.cjs');
+const registered = Object.fromEntries(standardRegistry.map(item => [item.id, item]));
 const STANDARDS = {
   thyroid: [
-    { name: 'C-TIRADS', version: '2020', url: 'https://pubmed.ncbi.nlm.nih.gov/32827126/', pattern: /C[\s-]*TI[\s-]*RADS\s*(?:分级|分类|等级|为|：|:)?\s*([1-6](?:[ABCabc])?)\s*(?:类|级)?/gi, valid: /^(?:[1-3]|4[ABC]|[56])$/ },
-    { name: 'ACR TI-RADS', version: '2017', url: 'https://www.acr.org/Clinical-Resources/Clinical-Tools-and-Reference/Reporting-and-Data-Systems/TI-RADS', pattern: /(?:ACR[\s-]*TI[\s-]*RADS\s*(?:TR\s*)?|\bTR\s*)(?:分级|分类|等级|为|：|:)?\s*([1-5])\s*(?:类|级)?/gi, valid: /^[1-5]$/ },
+    { name: 'C-TIRADS', version: registered['c-tirads'].version, url: registered['c-tirads'].sourceUrl, pattern: /C[\s-]*TI[\s-]*RADS\s*(?:分级|分类|等级|为|：|:)?\s*([1-6](?:[ABCabc])?)\s*(?:类|级)?/gi, valid: /^(?:[1-3]|4[ABC]|[56])$/ },
+    { name: 'ACR TI-RADS', version: registered['acr-tirads'].version, url: registered['acr-tirads'].sourceUrl, pattern: /(?:ACR[\s-]*TI[\s-]*RADS\s*(?:TR\s*)?|\bTR\s*)(?:分级|分类|等级|为|：|:)?\s*([1-5])\s*(?:类|级)?/gi, valid: /^[1-5]$/ },
   ],
   breast: [
-    { name: 'BI-RADS', version: 'ACR', url: 'https://www.acr.org/Clinical-Resources/Clinical-Tools-and-Reference/Reporting-and-Data-Systems/BI-RADS', pattern: /BI[\s-]*RADS\s*(?:分级|分类|等级|为|：|:)?\s*([0-6](?:[ABCabc])?)\s*(?:类|级)?/gi, valid: /^(?:[0-3]|4[ABC]?|[5-6])$/ },
+    { name: 'BI-RADS', version: registered['bi-rads'].version, url: registered['bi-rads'].sourceUrl, pattern: /BI[\s-]*RADS\s*(?:分级|分类|等级|为|：|:)?\s*([0-6](?:[ABCabc])?)\s*(?:类|级)?/gi, valid: /^(?:[0-3]|4[ABC]?|[5-6])$/ },
   ],
   lung: [
-    { name: 'Lung-RADS', version: 'v2022', url: 'https://www.acr.org/-/media/ACR/Files/RADS/Lung-RADS/Lung-RADS-2022.pdf', pattern: /Lung[\s-]*RADS\s*(?:分级|分类|等级|为|：|:)?\s*([0-4](?:[ABXabx])?)\s*(?:类|级)?/gi, valid: /^(?:[0-3]|4[ABX]?)$/ },
+    { name: 'Lung-RADS', version: registered['lung-rads'].version, url: registered['lung-rads'].sourceUrl, pattern: /Lung[\s-]*RADS\s*(?:分级|分类|等级|为|：|:)?\s*([0-4](?:[ABXabx])?)\s*(?:类|级)?/gi, valid: /^(?:[0-3]|4[ABX]?)$/ },
   ],
 };
 

@@ -96,10 +96,12 @@ app.use('/api/feedback',      require('./routes/feedback'));
 app.use('/api/system',        require('./routes/system'));
 app.use('/api/share',         require('./routes/share'));
 app.use('/api/admin',         require('./routes/admin'));
+app.use('/api/admin/clinical-standards', require('./routes/clinicalStandardsAdmin'));
 app.use('/api/admin',         require('./routes/settings'));
 app.use('/api/admin/ai-control', require('./routes/aiControl'));
 const staffRouter = require('./routes/staff');
 app.use('/api/staff',         staffRouter);
+app.use('/api/staff/clinical-standards', require('./routes/clinicalStandardsStaff'));
 app.use('/api/staff',         require('./routes/aiCaseReviews'));
 app.use('/api/staff',         require('./routes/annualServicePeriods'));
 app.use('/api/staff/service-groups', require('./routes/serviceGroups'));
@@ -134,6 +136,7 @@ app.listen(PORT, () => {
     return;
   }
   require('./utils/serviceGroupCleanup').startServiceGroupCleanup();
+  require('./utils/clinicalStandardMonitor').startClinicalStandardMonitor();
   require('./utils/wecomEmployeeReminders').start();
   console.log(`🚀 服务启动成功，端口：${PORT}`);
   // 报告 OCR 是可恢复后台任务：进程重启后继续跑，不能把 processing 误改为待审核。
