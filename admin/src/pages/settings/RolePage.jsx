@@ -19,20 +19,19 @@ const MODULES = [
   { key: 'service_assistant', label: '家庭服务助手', actions: ['view'] },
   { key: 'patients',        label: '我的会员',     actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'followups',       label: '随访管理',     actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'plans',           label: '健康方案',     actions: ['view', 'create', 'edit', 'delete'], planTypes: PLAN_TYPES },
+  { key: 'plans',           label: '服务方案',     actions: ['view', 'create', 'edit', 'delete'], planTypes: PLAN_TYPES },
   { key: 'medical_resources', label: '就医资源', actions: ['view'] },
   { key: 'reports',         label: '报告管理',     actions: ['view', 'audit', 'delete'] },
-  { key: 'abnormal_review', label: '异常复查',     actions: ['view', 'create', 'edit'] },
   { key: 'service_records', label: '服务记录',     actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'knowledge',       label: '科普推送',     actions: ['view', 'send'] },
   { key: 'questionnaires',  label: '问卷推送',     actions: ['view', 'send'] },
   { key: 'products',        label: '产品推送',     actions: ['view', 'send'] },
   { key: 'commission',      label: '分佣中心',     actions: ['view'] },
   { key: 'marketing',       label: '会员营销',     actions: ['view', 'create'] },
-  { key: 'leads',           label: '官网咨询线索', actions: ['view', 'edit'] },
+  { key: 'leads',           label: '官网线索', actions: ['view', 'edit'] },
   { key: 'team',            label: '团队管理',     actions: ['view', 'create', 'edit'] },
   { key: 'operations',      label: '运营看板',     actions: ['view'] },
-  { key: 'daily_checkin',   label: '日常健康打卡', actions: ['view'] },
+  { key: 'daily_checkin',   label: '日常健康数据', actions: ['view'] },
 ]
 
 const ACTION_LABEL = { view: '查看', create: '新增', edit: '编辑', delete: '删除', send: '推送', audit: '审核' }
@@ -90,6 +89,8 @@ export default function RolePage() {
         }
       })
     }
+    // 历史异常复查接口权限尚无独立医护端页面；编辑其他权限时保留原值。
+    if (r.permissions?.abnormal_review) p.abnormal_review = r.permissions.abnormal_review
     setPermissions(p); setError(''); setShowModal(true)
   }
 
@@ -231,7 +232,7 @@ export default function RolePage() {
                             </div>
                           </td>
                         </tr>
-                        {/* 健康方案：按方案类型细分授权（不勾则该角色不能管理此类方案） */}
+                        {/* 服务方案：按方案类型细分授权（不勾则该角色不能管理此类方案） */}
                         {m.planTypes && (
                           <tr style={{ background: '#FAFBFC' }}>
                             <td style={{ padding: '6px 12px 10px 28px', fontSize: 12, color: '#9CA3AF', verticalAlign: 'top' }}>可管理方案类型</td>
