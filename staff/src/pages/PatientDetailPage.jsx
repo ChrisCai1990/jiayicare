@@ -10,6 +10,7 @@ import { summaryTarget } from '../utils/workbenchTargets'
 import { taskProgress, readableServiceText } from '../utils/staffWorkspace'
 import diseaseSummaryHelpers from '../../../shared/diseaseSummary.cjs'
 import archiveHelpers from '../../../shared/diseaseReportArchive.cjs'
+import standardAssessment from '../../../shared/standardDiseaseAssessment.cjs'
 import DiseaseReportPicker, { ArchivedDiagnosis } from '../components/DiseaseReportPicker'
 import DiseaseStagePanel from '../components/DiseaseStagePanel'
 import '../components/DiseaseWorkspace.css'
@@ -2024,6 +2025,7 @@ export default function PatientDetailPage() {
     return () => { active = false }
   }, [id, tab, serviceManagementView])
   const [reports, setReports] = useState([])
+  const [standardReportLoadState, setStandardReportLoadState] = useState('loading')
   const [serviceRecords, setServiceRecords] = useState([])
   const [serviceRecordCategory, setServiceRecordCategory] = useState('营养干预')
   const [patientReferrals, setPatientReferrals] = useState([])
@@ -2361,6 +2363,7 @@ export default function PatientDetailPage() {
   const [expandedMetricHistory, setExpandedMetricHistory] = useState({})
   const [editingDiseaseSeverity, setEditingDiseaseSeverity] = useState(false)
   const [severityForm, setSeverityForm] = useState({})
+  const [confirmingStandardDisease, setConfirmingStandardDisease] = useState('')
   const [showTagEditor, setShowTagEditor] = useState(false)
   const [tagEditorDiseases, setTagEditorDiseases] = useState({ tumor_risk: [], cardiovascular_risk: [], chronic_disease: [] })
   const [tagEditorInput, setTagEditorInput] = useState({ tumor_risk: '', cardiovascular_risk: '', chronic_disease: '' })
@@ -2851,7 +2854,9 @@ export default function PatientDetailPage() {
     finally { setAiMedicalAssistGenerating(false) }
   }
   const loadReports = async () => {
-    try { const res = await staffAPI.getPatientReports(id); setReports(res.data) } catch {}
+    setStandardReportLoadState('loading')
+    try { const res = await staffAPI.getPatientReports(id); setReports(res.data); setStandardReportLoadState('ready') }
+    catch { setStandardReportLoadState('error') }
   }
 
   const openRiskEvidence = async (tag, categoryLabel) => {
@@ -3634,6 +3639,16 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '保存失败') }
   }
 
+  const handleConfirmStandardDisease = async result => {
+    setConfirmingStandardDisease(result.disease)
+    try {
+      await staffAPI.confirmStandardAssessment(id, result.disease, result)
+      toast('标准分级已核对确认')
+      await load(false)
+    } catch (err) { toast(err.message || '确认失败，请刷新报告后重试') }
+    finally { setConfirmingStandardDisease('') }
+  }
+
   // 4.2 身体成分
   const handleSaveBodyComp = async () => {
     try {
@@ -4328,6 +4343,7 @@ export default function PatientDetailPage() {
   if (!data) return <div className="page">{loadError || '会员不存在'}</div>
 
   const { user, recentFollowUps, recentRecords } = data
+  const standardAssessments = standardAssessment.buildStandardAssessments(user.chronicDiseases, reports)
   const age = user.age ? `${user.age}岁` : '-'
   const numericAge = Number(user.age)
   const isPediatricBodyComp = Number.isFinite(numericAge) && numericAge >= 0 && numericAge < 18
@@ -9966,7 +9982,7 @@ export default function PatientDetailPage() {
         {user.chronicDiseases?.length > 0 && (
           <details className="card chronic-severity-card" style={{ marginBottom: 16 }}>
             <summary className="card-header" style={{ cursor: 'pointer' }}>
-              <div className="card-title">慢病分级</div><span style={{ color: '#8AA89C' }}>⌄</span>
+              <div className="card-title">健康问题标准分级与评分档位</div><span style={{ color: '#8AA89C' }}>⌄</span>
             </summary>
             <div style={{ padding: '12px 20px 0', display: 'flex', justifyContent: 'flex-end' }}>
               {!editingDiseaseSeverity
@@ -9978,22 +9994,50 @@ export default function PatientDetailPage() {
               }
             </div>
             <div style={{ padding: '12px 20px' }}>
-              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>设置每种慢性病的严重程度，影响基础健康分扣分幅度</div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>依据已审核报告自动识别的标准分级</div>
+              <div style={{ fontSize: 12, color: '#6B8075', marginBottom: 12 }}>仅识别报告明确写出的标准类别；这是风险或影像分类建议，不等于疾病严重程度，也不会自动改变健康评分。未审核或证据不足时显示待评估。</div>
+              {standardReportLoadState !== 'ready' && <div style={{ fontSize: 12, color: '#8A6B36', marginBottom: 12 }}>{standardReportLoadState === 'loading' ? '正在读取报告，暂不显示自动分级。' : <>报告读取失败，暂不显示自动分级。<button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={loadReports}>重试</button></>}</div>}
+              {standardReportLoadState === 'ready' &&
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px 20px', marginBottom: 18 }}>
+                {standardAssessments.map(result => {
+                  const confirmation = (user.standardDiseaseAssessmentConfirmations || []).find(item => item.disease === result.disease)
+                  const isConfirmed = standardAssessment.matchesAssessment(result, confirmation)
+                  return (
+                  <div key={result.disease} style={{ padding: 10, border: '1px solid #E3EBE6', borderRadius: 8 }}>
+                    <div style={{ fontSize: 13, color: '#1A2B24', fontWeight: 500 }}>{result.disease}</div>
+                    <div style={{ fontSize: 13, color: result.status === 'suggested' ? '#1E6B50' : '#8A6B36', marginTop: 4 }}>{result.label}{result.status === 'suggested' ? (isConfirmed ? '（已核对）' : '（待医护核对）') : ''}</div>
+                    <div style={{ fontSize: 11, color: '#6B8075', marginTop: 4 }}>
+                      {result.status === 'suggested'
+                        ? <>{result.reportTitle}{result.reportDate ? ` · ${String(result.reportDate).slice(0, 10)}` : ''}{result.itemName ? ` · ${result.itemName}` : ''}<br />报告原文：{result.evidence}<br /><a href={result.url} target="_blank" rel="noopener noreferrer">{result.standard} 依据</a></>
+                        : result.reason}
+                    </div>
+                    {confirmation && !isConfirmed && <div style={{ fontSize: 11, color: '#A46623', marginTop: 5 }}>既往确认已失效，需重新核对当前报告</div>}
+                    {result.status === 'suggested' && !isConfirmed && (staff?.role === 'superadmin' || (staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff?._id))) &&
+                      <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={confirmingStandardDisease === result.disease} onClick={() => handleConfirmStandardDisease(result)}>{confirmingStandardDisease === result.disease ? '确认中...' : '核对并确认'}</button>}
+                    {isConfirmed && <div style={{ fontSize: 11, color: '#6B8075', marginTop: 5 }}>确认人：{confirmation.confirmedByName || '医护人员'}{confirmation.confirmedAt ? ` · ${new Date(confirmation.confirmedAt).toLocaleDateString('zh-CN')}` : ''}</div>}
+                  </div>
+                  )
+                })}
+              </div>
+              }
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>健康评分扣分档位（人工设置）</div>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>以下档位仅用于现有评分公式，不是临床分级。未设置时评分引擎仍暂按一级计算。</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px 20px' }}>
                 {user.chronicDiseases.map(disease => (
                   <div key={disease}>
                     <div style={{ fontSize: 13, color: '#1A2B24', fontWeight: 500, marginBottom: 4 }}>{disease}</div>
                     {editingDiseaseSeverity ? (
                       <select className="form-control" style={{ fontSize: 13 }}
-                        value={severityForm[disease] || 1}
-                        onChange={e => setSeverityForm(f => ({ ...f, [disease]: parseInt(e.target.value) }))}>
-                        <option value={1}>一级（早/轻症，无并发症）</option>
-                        <option value={2}>二级（中症，有并发症风险）</option>
-                        <option value={3}>三级（重症/终末期）</option>
+                        value={severityForm[disease] || ''}
+                        onChange={e => setSeverityForm(f => { const next = { ...f }; if (e.target.value) next[disease] = Number(e.target.value); else delete next[disease]; return next })}>
+                        <option value="">未设置</option>
+                        <option value={1}>一级扣分档</option>
+                        <option value={2}>二级扣分档</option>
+                        <option value={3}>三级扣分档</option>
                       </select>
                     ) : (
                       <span style={{ fontSize: 13, color: '#4A6558' }}>
-                        {['一级（轻症）','二级（中症）','三级（重症）'][(user.chronicDiseaseSeverity?.[disease] || 1) - 1]}
+                        {user.chronicDiseaseSeverity?.[disease] ? `${user.chronicDiseaseSeverity[disease]}级扣分档` : '未设置（评分暂按一级）'}
                       </span>
                     )}
                   </div>

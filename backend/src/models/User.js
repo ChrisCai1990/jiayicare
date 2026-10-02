@@ -289,6 +289,9 @@ const userSchema = new mongoose.Schema({
   // ── 健康评分相关 ─────────────────────────────────────────────────
   // 慢病严重度: { '高血压': 1, '糖尿病': 2, ... }  1=轻/早 2=中 3=重
   chronicDiseaseSeverity: { type: mongoose.Schema.Types.Mixed, default: {} },
+  standardDiseaseAssessmentConfirmations: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  standardDiseaseAssessmentHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  standardDiseaseAssessmentRevision: { type: Number, default: 0 },
   // 体检关键指标（最近一次）: fpg,tc,ldl,tg,ua,alt,ckdStage,sbp,dbp,labDate
   labValues: { type: mongoose.Schema.Types.Mixed, default: {} },
   // 评分明细（最近一次计算结果）

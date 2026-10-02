@@ -111,6 +111,7 @@ export const staffAPI = {
   generateHealthRiskTags: id => req(`/staff/patients/${id}/health-risk-tags/generate`, { method: 'POST' }),
   reviewHealthRiskTags: (id, tags) => req(`/staff/patients/${id}/health-risk-tags/review`, { method: 'PUT', body: JSON.stringify({ tags }) }),
   recalculateScore:   (id)     => req(`/staff/patients/${id}/recalculate-score`, { method: 'POST' }),
+  confirmStandardAssessment: (id, disease, expected) => req(`/staff/patients/${id}/standard-assessments/confirm`, { method: 'POST', body: JSON.stringify({ disease, expected }) }),
   serviceOptions:     (clientBrand = '') => req('/staff/service-options?' + qs({ clientBrand })),
   memberTypeOptions:  (clientBrand = '') => req('/staff/member-type-options?' + qs({ clientBrand })),
   memberSourceOptions:()       => req('/staff/member-source-options'),  // 会员来源下拉选项（admin配置）

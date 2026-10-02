@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { calculateHealthScore } = require('../utils/healthScore');
+const { buildStandardAssessments, matchesAssessment } = require('../../../shared/standardDiseaseAssessment.cjs');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements, followUpTaskPurposes } = require('../utils/medicalAssistRequirements');
@@ -1847,6 +1848,43 @@ router.put('/patients/:id/health-risk-tags/review', staffAuth, checkPermission('
 });
 
 // ── POST /api/staff/patients/:id/recalculate-score ────────────────
+router.post('/patients/:id/standard-assessments/confirm', staffAuth, async (req, res) => {
+  const user = await User.findById(req.params.id).select('chronicDiseases assignedFamilyDoctor standardDiseaseAssessmentConfirmations standardDiseaseAssessmentRevision isDeleted');
+  if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
+  if (req.staff.role !== 'superadmin' && !(req.staff.role === 'familyDoctor' && String(user.assignedFamilyDoctor || '') === String(req.staff._id))) {
+    return res.status(403).json({ success: false, message: '仅该会员的健康顾问或超管可确认标准分级' });
+  }
+  const disease = String(req.body.disease || '');
+  if (!user.chronicDiseases.includes(disease)) return res.status(400).json({ success: false, message: '健康问题标签已变化，请刷新后重试' });
+  const reports = await MedicalReport.find({ user: user._id })
+    .select('_id title screeningL2 checkDate date createdAt reportItems audit_status familyDoctorAudit.status reviewRevision').lean();
+  const result = buildStandardAssessments([disease], reports)[0];
+  if (result.status !== 'suggested') return res.status(409).json({ success: false, message: '报告证据不足或已变化，请刷新后重新核对' });
+  const expected = req.body.expected || {};
+  if (!matchesAssessment(result, expected)) {
+    return res.status(409).json({ success: false, message: '报告分级或版本已变化，请刷新后重新核对' });
+  }
+  const previous = (user.standardDiseaseAssessmentConfirmations || []).find(item => item.disease === disease);
+  if (matchesAssessment(result, previous)) {
+    return res.json({ success: true, data: previous });
+  }
+  const confirmed = {
+    disease, standard: result.standard, version: result.version, ruleVersion: result.ruleVersion, category: result.category,
+    reportId: result.reportId, reportRevision: result.reportRevision, reportDate: result.reportDate,
+    evidence: result.evidence, confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', confirmedAt: new Date(),
+  };
+  const next = (user.standardDiseaseAssessmentConfirmations || []).filter(item => item.disease !== disease).concat(confirmed);
+  const revision = Number(user.standardDiseaseAssessmentRevision || 0);
+  const updated = await User.findOneAndUpdate(
+    { _id: user._id, $or: [{ standardDiseaseAssessmentRevision: revision }, ...(revision === 0 ? [{ standardDiseaseAssessmentRevision: { $exists: false } }] : [])] },
+    { $set: { standardDiseaseAssessmentConfirmations: next }, $inc: { standardDiseaseAssessmentRevision: 1 },
+      $push: { standardDiseaseAssessmentHistory: { disease, previous: previous || null, confirmed, action: 'confirm', at: confirmed.confirmedAt } } },
+    { new: true }
+  );
+  if (!updated) return res.status(409).json({ success: false, message: '其他人员刚更新了分级，请刷新后重试' });
+  res.json({ success: true, data: confirmed });
+});
+
 router.post('/patients/:id/recalculate-score', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
