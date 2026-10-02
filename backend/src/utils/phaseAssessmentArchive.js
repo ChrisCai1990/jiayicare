@@ -30,7 +30,11 @@ async function completePhaseAssessmentArchive(item, user, actor, models = {}) {
       $set: { status: 'finalized', serviceRecordId: record._id, archiveError: '' }, $inc: { __v: 1 },
       $push: { auditLog: { action: 'archive', fromStatus: 'archive_pending', toStatus: 'finalized', staffId: actor._id, staffName: actor.name || '', staffRole: actor.role, at: new Date() } },
     }, { new: true });
-    return { data: saved || await Assessments.findOne({ _id: item._id }), serviceRecordId: record._id };
+    const finalized = saved || await Assessments.findOne({ _id: item._id });
+    if (finalized?.status === 'finalized' && finalized?.serviceRecordId) {
+      await require('./packageServiceRedemption').safeRecordFinalizedNutritionAssessment(finalized);
+    }
+    return { data: finalized, serviceRecordId: record._id };
   } catch (error) {
     // 不返回数据库内部错误；保留待办，即使重试报错也不能把已完成记录降级。
     const saved = await Assessments.findOneAndUpdate({ _id: item._id, status: 'archive_pending' }, {

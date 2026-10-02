@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const User = require('../src/models/User');
 const Entitlement = require('../src/models/PackageEntitlement');
 const Redemption = require('../src/models/PackageEntitlementRedemption');
-const { recordCompletedService, settleReservedPackageOrder } = require('../src/utils/packageServiceRedemption');
+const { recordCompletedService, settleReservedPackageOrder, isFinalizedNutritionAssessment } = require('../src/utils/packageServiceRedemption');
 
 const patientId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const sourceId = 'bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -65,4 +65,11 @@ test('服务完成将预占转为核销，不再次扣共享次数', async t => 
   assert.equal(filter.usageRecords.$elemMatch.status, 'reserved');
   assert.equal(update.$set['usageRecords.$.status'], 'redeemed');
   assert.equal(update.$inc, undefined);
+});
+
+test('营养阶段评估必须正式归档后才成为核销来源', () => {
+  assert.equal(isFinalizedNutritionAssessment({ status: 'archive_pending', serviceRecordId: sourceId, assessmentDomain: 'nutrition' }), false);
+  assert.equal(isFinalizedNutritionAssessment({ status: 'finalized', assessmentDomain: 'nutrition' }), false);
+  assert.equal(isFinalizedNutritionAssessment({ status: 'finalized', serviceRecordId: sourceId, assessmentDomain: 'nutrition' }), true);
+  assert.equal(isFinalizedNutritionAssessment({ status: 'finalized', serviceRecordId: sourceId, assessmentDomain: 'comprehensive' }), false);
 });

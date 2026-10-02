@@ -54,7 +54,7 @@ function matchingRight(entitlement, productId, workflowKey) {
 }
 
 async function recordCompletedService({ patientId, sourceType, sourceId, productId = null, workflowKey = '' }) {
-  if (!['order', 'follow_up'].includes(sourceType) || !mongoose.isValidObjectId(patientId)
+  if (!['order', 'follow_up', 'phase_assessment'].includes(sourceType) || !mongoose.isValidObjectId(patientId)
     || !mongoose.isValidObjectId(sourceId) || !(productId || workflowKey)) return { status: 'not_applicable' };
   const key = keyFor({ patientId, sourceType, sourceId });
   const token = crypto.randomUUID();
@@ -171,6 +171,22 @@ async function safeReconcilePackageOrder(order) {
   }
 }
 
+function isFinalizedNutritionAssessment(item) {
+  return item?.status === 'finalized' && !!item.serviceRecordId
+    && (item.assessmentDomain === 'nutrition' || item.assessmentMode === 'intensive_nutrition');
+}
+
+async function safeRecordFinalizedNutritionAssessment(item) {
+  if (!isFinalizedNutritionAssessment(item)) return { status: 'not_applicable' };
+  try {
+    return await recordCompletedService({ patientId: item.patientId, sourceType: 'phase_assessment',
+      sourceId: item._id, workflowKey: 'nutrition_intervention' });
+  } catch (error) {
+    console.error('[package-service-redemption] phase assessment deferred', item._id, error.message);
+    return { status: 'needs_review' };
+  }
+}
+
 async function scanCompletedServiceRedemptions() {
   const from = process.env.PACKAGE_SERVICE_AUTOREDEEM_FROM;
   if (!from || !Number.isFinite(new Date(from).getTime())) return 0;
@@ -185,12 +201,17 @@ async function scanCompletedServiceRedemptions() {
       sourceId: task._id, workflowKey: 'nutrition_intervention' }); }
     catch (error) { console.error('[package-service-redemption] nutrition retry deferred', task._id, error.message); }
   }
+  const PhaseAssessment = require('../models/PhaseAssessment');
+  const assessments = await PhaseAssessment.find({ status: 'finalized', serviceRecordId: { $ne: null },
+    finalizedAt: { $gte: since }, $or: [{ assessmentDomain: 'nutrition' }, { assessmentMode: 'intensive_nutrition' }] })
+    .select('_id patientId status serviceRecordId assessmentDomain assessmentMode').limit(500).lean();
+  for (const item of assessments) await safeRecordFinalizedNutritionAssessment(item);
   const orders = await Order.find({ $or: [
     { status: 'completed', completedAt: { $gte: since } },
     { packageEntitlementUsage: { $ne: null }, status: 'cancelled', updatedAt: { $gte: since } },
   ] }).select('_id user serviceId orderType paymentStatus paidAmount status completedAt packageEntitlementUsage').limit(500).lean();
   for (const order of orders) await safeReconcilePackageOrder(order);
-  return tasks.length + orders.length;
+  return tasks.length + assessments.length + orders.length;
 }
 
 function startPackageServiceRedemptionScheduler() {
@@ -199,4 +220,4 @@ function startPackageServiceRedemptionScheduler() {
   setInterval(() => scanCompletedServiceRedemptions().catch(error => console.error('[package-service-redemption] scan failed', error.message)), 24 * 60 * 60 * 1000).unref?.();
 }
 
-module.exports = { keyFor, matchingRight, ensureEffectiveServiceLedger, recordCompletedService, recordLinkedOrderCompletion, settleReservedPackageOrder, safeReconcilePackageOrder, scanCompletedServiceRedemptions, startPackageServiceRedemptionScheduler };
+module.exports = { keyFor, matchingRight, ensureEffectiveServiceLedger, recordCompletedService, recordLinkedOrderCompletion, settleReservedPackageOrder, isFinalizedNutritionAssessment, safeRecordFinalizedNutritionAssessment, safeReconcilePackageOrder, scanCompletedServiceRedemptions, startPackageServiceRedemptionScheduler };
