@@ -3,6 +3,7 @@ const Admin = require('../models/Admin');
 const Tenant = require('../models/Tenant');
 const { tenantContext } = require('../utils/tenantScope');
 const { platformAdminMayAccess } = require('../utils/adminAccess');
+const { hasTenantChannel } = require('../utils/tenantChannel');
 
 module.exports = async (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -24,10 +25,11 @@ module.exports = async (req, res, next) => {
       return res.status(403).json({ success: false, message: '管理员未归属机构' });
     }
     if (admin.tenantId) {
-      const tenant = await Tenant.findById(admin.tenantId).select('status').lean();
+      const tenant = await Tenant.findById(admin.tenantId).select('status code serviceScope').lean();
       if (!tenant || tenant.status !== 'active') {
         return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
       }
+      if (!hasTenantChannel(tenant, 'admin')) return res.status(403).json({ success: false, message: '本机构尚未开通管理后台' });
     }
     if (admin.role === 'platformSuper' && !platformAdminMayAccess(req.originalUrl)) {
       return res.status(403).json({ success: false, message: '平台管理员不能访问机构业务数据，请使用所属机构账号' });

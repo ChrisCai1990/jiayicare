@@ -28,6 +28,7 @@ const tenantMatchStage = () => {
 };
 const Admin = require('../models/Admin');
 const Tenant = require('../models/Tenant');
+const { hasTenantChannel } = require('../utils/tenantChannel');
 const User = require('../models/User');
 const PointsLog = require('../models/PointsLog');
 const ChatLog = require('../models/ChatLog');
@@ -369,8 +370,9 @@ router.post('/login', async (req, res) => {
     return res.status(403).json({ success: false, message: '该账号无医护端权限' });
   }
   if (!admin.tenantId) return res.status(403).json({ success: false, message: '员工未归属机构' });
-  const tenant = await Tenant.findById(admin.tenantId).select('name staffPortalName slogan status').lean();
+  const tenant = await Tenant.findById(admin.tenantId).select('name staffPortalName slogan status code serviceScope').lean();
   if (!tenant || tenant.status !== 'active') return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
+  if (!hasTenantChannel(tenant, 'staff')) return res.status(403).json({ success: false, message: '本机构尚未开通医护端' });
 
   const token = jwt.sign(
     { id: admin._id, type: 'admin', role: admin.role },

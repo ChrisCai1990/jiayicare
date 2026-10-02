@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
 const Tenant = require('../models/Tenant');
 const { tenantContext } = require('../utils/tenantScope');
+const { hasTenantChannel } = require('../utils/tenantChannel');
 
 // 医护端角色列表
 const STAFF_ROLES = [
@@ -27,8 +28,9 @@ module.exports = async (req, res, next) => {
       return res.status(403).json({ success: false, message: '无医护端权限' });
     }
     if (!admin.tenantId) return res.status(403).json({ success: false, message: '员工未归属机构' });
-    const tenant = await Tenant.findById(admin.tenantId).select('status').lean();
+    const tenant = await Tenant.findById(admin.tenantId).select('status code serviceScope').lean();
     if (!tenant || tenant.status !== 'active') return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
+    if (!hasTenantChannel(tenant, 'staff')) return res.status(403).json({ success: false, message: '本机构尚未开通医护端' });
     const isPasswordChange = req.method === 'PUT' && req.path === '/me/password';
     if (admin.mustChangePassword && !isPasswordChange) {
       return res.status(403).json({ success: false, message: '请先修改初始密码' });
