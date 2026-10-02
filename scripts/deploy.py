@@ -62,7 +62,7 @@ def push_clean_master():
     print("GitHub push 完成")
 
 
-def deploy(backend_only=False, clean=False, github_source=False, skip_data_migrations=False):
+def deploy(backend_only=False, clean=False, github_source=False, skip_data_migrations=False, care_tenant_migration=False):
     require_clean_master()
     revision = run_git("rev-parse", "HEAD").stdout.strip()
     dependency_hash = dependency_fingerprint()
@@ -96,6 +96,17 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         )
         if code:
             raise RuntimeError("生产有 Git 锁或未提交修改，停止部署")
+
+        previous_revision = None
+        if care_tenant_migration:
+            code, previous_revision = remote(
+                f"cd {REPO_DIR} && git rev-parse HEAD",
+                timeout=15,
+                label="记录迁移失败时可恢复的线上版本",
+            )
+            previous_revision = previous_revision.strip()
+            if code or not re.fullmatch(r"[0-9a-f]{40}", previous_revision):
+                raise RuntimeError("无法确认线上旧版本，停止带迁移部署")
 
         if github_source:
             code, _ = remote(
@@ -208,6 +219,21 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         )
         if code:
             raise RuntimeError("构建期间线上版本被其他发布修改，已停止本次重启和迁移")
+
+        if care_tenant_migration:
+            command = (
+                "set -eu; "
+                "trap 'pm2 restart jiayicare-backend >/dev/null || true; "
+                "if pm2 describe jiayicare-wecom-archive >/dev/null 2>&1; then pm2 restart jiayicare-wecom-archive >/dev/null || true; fi' EXIT; "
+                "pm2 stop jiayicare-backend >/dev/null; "
+                "if pm2 describe jiayicare-wecom-archive >/dev/null 2>&1; then pm2 stop jiayicare-wecom-archive >/dev/null; fi; "
+                f"if ! (cd {REPO_DIR}/backend && node src/scripts/releaseJiayihuiCareRecordsTenant.js); then "
+                f"git -C {REPO_DIR} reset --hard {previous_revision} >/dev/null; "
+                "exit 1; fi"
+            )
+            code, _ = remote(command, timeout=300, label="停写、备份并迁移嘉医汇随访与推送归属")
+            if code:
+                raise RuntimeError("嘉医汇随访与推送归属迁移失败，线上代码已恢复旧版本")
 
         code, _ = remote("pm2 restart jiayicare-backend", timeout=30, label="重启后端")
         if code:
@@ -737,6 +763,7 @@ def main():
     parser.add_argument("--push", action="store_true", help="推送干净的 master 后部署")
     parser.add_argument("--backend", action="store_true", help="只安装依赖并重启后端")
     parser.add_argument("--skip-data-migrations", action="store_true", help="仅发布代码，不执行数据迁移或创建迁移标记")
+    parser.add_argument("--care-tenant-migration", action="store_true", help="重启前停写、备份并迁移嘉医汇随访与推送归属")
     parser.add_argument("--clean", action="store_true", help="先清理服务器 node_modules")
     parser.add_argument(
         "--github-source",
@@ -753,6 +780,7 @@ def main():
             clean=args.clean,
             github_source=args.github_source,
             skip_data_migrations=args.skip_data_migrations,
+            care_tenant_migration=args.care_tenant_migration,
         )
     except (RuntimeError, OSError) as exc:
         print(f"部署失败：{exc}", file=sys.stderr)

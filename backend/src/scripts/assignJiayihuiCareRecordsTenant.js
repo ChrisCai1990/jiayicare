@@ -2,7 +2,7 @@
 // Apply during a write pause, after a verified backup:
 // node src/scripts/assignJiayihuiCareRecordsTenant.js --apply --backup-confirmed --expect-followups=N --expect-pushrecords=N
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+require('dotenv').config({ path: process.env.JIAYICARE_ENV_FILE || path.resolve(__dirname, '../../.env') });
 const mongoose = require('mongoose');
 mongoose.set('autoIndex', false);
 mongoose.set('autoCreate', false);
