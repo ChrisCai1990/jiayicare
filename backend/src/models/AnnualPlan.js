@@ -17,6 +17,7 @@ const annualPlanSchema = new mongoose.Schema({
   templateSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   year:       { type: Number, default: () => new Date().getFullYear() },
   moduleData: { type: mongoose.Schema.Types.Mixed, default: {} }, // { moduleKey: { enabled, field1, field2... } }
+  phaseAssessmentFrequency: { type: String, enum: ['', 'biweekly', 'monthly', 'quarterly'], default: '' }, // 已确认方案中的正式阶段评估节奏；仅在服务包未指定节奏时使用
   notes:      { type: String, default: '' },
   supplementRevisions: { type: [mongoose.Schema.Types.Mixed], default: [], select: false }, // 内部修订历史及执行核对凭据；默认不向客户返回
   continuitySource: {
