@@ -549,7 +549,7 @@ export default function ServicePlansScreen({ navigation }) {
         monitoring: '日常监测', lifestyle: '生活方式评估',
         medication: '药物服用', nutrition_supplement: '营养素补充',
         annual_checkup: '年度体检', functional_medicine: '功能医学检测',
-        quarterly_eval: '季度评估',
+        quarterly_eval: '季度评估', nutrition_assessment: '营养评估',
       };
       // 字段标签映射
       const FIELD_LABEL = {
@@ -565,7 +565,7 @@ export default function ServicePlansScreen({ navigation }) {
         notes: '备注',
         // annual_checkup / functional_medicine 模块字段
         date: '计划时间', focus: '重点关注', staff: '评估人员',
-        goal: '干预目标', plan: '干预计划',
+        goal: '干预目标', plan: '干预计划', executionDate: '计划评估日期', nutritionComparisonMetrics: '前后对比指标',
         // monitoring / vaccine 模块字段
         other: '其他项目',
       };

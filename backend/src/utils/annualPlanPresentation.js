@@ -1,7 +1,7 @@
 const MODULE_NAME = {
   medical_treatment: '安排就医', specialist_collab: '全专联合会诊', checkup_completion: '完善检查',
   abnormal_followup: '定期复查', vaccine: '疫苗接种', monitoring: '家庭健康监测', lifestyle: '生活方式干预',
-  medication: '用药管理', supplement: '营养素管理', nutrition_intervention: '营养干预',
+  medication: '用药管理', supplement: '营养素管理', nutrition_intervention: '营养干预', nutrition_assessment: '营养评估',
   annual_checkup: '年度体检', functional_medicine: '功能医学检测', quarterly_eval: '阶段评估', personalized_followups: '个性化管理',
 };
 const SERVICE_MODE = { reminder: '仅提醒', single: '单项服务', managed: '全托管' };
@@ -15,7 +15,9 @@ function normalizeItem(moduleKey, record, index) {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey] || moduleKey, title,
     problem: first(record.reason, record.current, record.finding),
     evidence: first(record.basisSummary, record.matchReason, record.sourceRule),
-    goal: first(record.purpose, record.goal, record.focus, record.personalization),
+    goal: moduleKey === 'nutrition_assessment'
+      ? (record.nutritionComparisonMetrics?.length ? `前后对比：${record.nutritionComparisonMetrics.join('、')}` : '核实膳食与体成分情况')
+      : first(record.purpose, record.goal, record.focus, record.personalization),
     schedule, frequency: record.frequency || '',
     careTarget: { hospital: record.hospital || record.institution || '', department: record.department || record.order_dept || '', expert: record.expert || record.order_expert || '' },
     customerAction: record.customerAction || '', precautions: record.precautions || '',

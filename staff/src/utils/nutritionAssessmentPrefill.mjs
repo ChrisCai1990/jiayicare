@@ -1,7 +1,7 @@
 import foodAllergy from '../../../shared/foodAllergy.cjs'
 import nutritionTargets from '../../../shared/nutritionTargets.cjs'
 const { isUsableFoodAllergy, foodAllergyEvidence, questionnaireFoodAllergyEvidence } = foodAllergy
-const { withFixedNutritionTargets } = nutritionTargets
+const { withFixedNutritionTargets, FIXED_METRICS, canonicalMetric } = nutritionTargets
 
 const text = value => String(value ?? '').trim()
 const row = (label, value) => text(value) ? `${label}：${text(value)}` : ''
@@ -49,12 +49,18 @@ function priorTargets(previous = {}) {
 export function nutritionAssessmentPrefill(patient = {}, previous = null) {
   const prior = previous || {}
   const recordedAllergy = foodAllergyEvidence(patient) || questionnaireFoodAllergyEvidence(patient)
+  const previousRows = priorTargets(prior)
+  const selectedMetrics = Array.isArray(prior.annualNutritionMetrics) ? prior.annualNutritionMetrics : []
+  const selectedRows = selectedMetrics.map(metric => previousRows.find(row => canonicalMetric(row.metric) === metric)
+    || { metric, baseline: '', target: '' })
   return {
     goal: text(prior.goal),
     assessment: {
       height: patient.height || prior.height || '', weight: patient.weight || prior.weight || '',
       currentDiet: text(prior.currentDiet) || dietFromArchive(patient),
-      nutritionTargets: withFixedNutritionTargets(priorTargets(prior), patient),
+      nutritionTargets: withFixedNutritionTargets([...previousRows.filter(row => FIXED_METRICS.includes(canonicalMetric(row.metric))), ...selectedRows], patient),
+      annualNutritionSource: prior.annualNutritionSource || null,
+      annualNutritionMetrics: selectedMetrics,
       reviewDate: '', medicalReview: text(prior.medicalReview) || medicalFromArchive(patient),
       practicalConstraints: text(prior.practicalConstraints) || constraintsFromArchive(patient),
       allergyStatus: '', allergyDetails: recordedAllergy || (isUsableFoodAllergy(prior.allergyDetails) ? text(prior.allergyDetails) : ''),

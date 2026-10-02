@@ -5,7 +5,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
-import { StaffListContext, ModulePanel } from '../components/ModulePanel'
+import { StaffListContext, ModulePanel, NutritionComparisonMetricPicker } from '../components/ModulePanel'
 import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
 import AnnualPlanSupplement from '../components/AnnualPlanSupplement'
 import AnnualExecutionReview from '../components/AnnualExecutionReview'
@@ -561,9 +561,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
         const servicePlanCode = annualTemplateCode(planType, selectedTemplate)
-        const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData, phaseAssessmentFrequency, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
+        const annualModuleData = { ...moduleData, nutrition_assessment: moduleData.nutrition_assessment || { enabled: true, nutritionComparisonMetrics: [] } }
+        const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData: annualModuleData, phaseAssessmentFrequency, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
+          setModuleData(saved.moduleData || annualModuleData)
           setPlansByType(prev => {
             const next = { ...prev, [servicePlanCode]: saved }
             if (planType !== servicePlanCode) delete next[planType]
@@ -624,7 +626,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             merged[key] = val
           }
         })
-        const personalized = (aiData.templateNodes || []).map(node => ({
+        const personalized = (aiData.templateNodes || [])
+          .filter(node => node.defaultRole !== 'nutritionist' && !/营养评估/.test(node.standardPlanName || node.name || ''))
+          .map(node => ({
           standardPlanId: node.standardPlanId || '', standardPlanName: node.standardPlanName || '',
           sourceCycles: node.sourceCycles || [], items: node.standardPlanName || '',
           standardContent: node.standardContent || '', standardSchedule: node.standardSchedule || '',
@@ -632,7 +636,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           frequency: node.frequency || '', precautions: node.precautions || '',
           customerAction: node.customerAction || '', followUpStaff: node.defaultEmployeeId || '',
           reviewStatus: 'pending_family_doctor_review',
-        }))
+          }))
         if (personalized.length) merged.personalized_followups = { records: personalized }
         return merged
       })
@@ -1090,6 +1094,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               </div>
             ))}
           </div>
+          {patientMode && <section style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 标准方案 · 营养评估</div>
+            <div style={{ fontSize: 12, color: '#62776A', margin: '5px 0 12px' }}>每位客户均保留营养评估。健康顾问只选择本年度需要营养师重点跟踪、前后对比的附加指标；体重、骨骼肌、体脂率、内脏脂肪由营养方案固定提供。</div>
+            <label style={{ display: 'block', fontSize: 13, color: '#4A6558' }}>计划评估日期（可留空；留空则以客户确认年度方案的日期安排）<DateField type="date" className="form-input" value={moduleData.nutrition_assessment?.executionDate || ''} disabled={!canEdit || Boolean(pushedAt)} onChange={e => handleModuleChange('nutrition_assessment', 'executionDate', e.target.value)} style={{ display: 'block', maxWidth: 240, marginTop: 5 }} /></label>
+            <div style={{ fontSize: 13, marginTop: 12, color: '#4A6558' }}>责任营养师：{patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name || '待分配'}</div>
+            <div style={{ fontSize: 13, color: '#4A6558', marginTop: 12 }}>本年度营养干预前后对比指标</div>
+            <NutritionComparisonMetricPicker value={moduleData.nutrition_assessment?.nutritionComparisonMetrics} onChange={metrics => handleModuleChange('nutrition_assessment', 'nutritionComparisonMetrics', metrics)} disabled={!canEdit || Boolean(pushedAt)} />
+          </section>}
           {visibleModuleEntries.map(entry => (
             <ModulePanel
               key={entry.key}

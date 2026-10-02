@@ -47,6 +47,7 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
     </div>
     <div style={{ fontWeight: 700 }}>固定观察指标：体重、骨骼肌、体脂率、内脏脂肪</div>
     <div style={{ color: '#66776E', fontSize: 12 }}>有测量日期的档案值可作为待核对基线；每项基线与阶段目标请结合客户情况确认。其他指标可在下方新增。</div>
+    {value.annualNutritionSource && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7 }}>{value.annualNutritionMetrics?.length ? `已带入 ${value.annualNutritionSource.year} 年健康顾问年度方案所选的 ${value.annualNutritionMetrics.length} 项附加对比指标` : `${value.annualNutritionSource.year} 年健康顾问年度方案未选附加指标，按四项固定指标评估`}{value.annualNutritionSource.pushed ? '' : '（年度方案尚未推送，请核对）'}；基线与阶段目标仍须逐项核实。</div>}
     <NutritionTargetRows value={value.nutritionTargets} onChange={rows => set('nutritionTargets', rows)} fixed />
     <section style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #DCE7E0', borderRadius: 9, background: '#FAFCFB' }}>
       <strong>每日能量与三餐分配</strong>

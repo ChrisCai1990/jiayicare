@@ -6416,7 +6416,7 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
     monitoring: '日常监测', lifestyle: '生活方式评估',
     medication: '药物服用', nutrition_supplement: '营养素补充',
     annual_checkup: '年度体检', functional_medicine: '功能医学检测',
-    quarterly_eval: '季度评估',
+    quarterly_eval: '季度评估', nutrition_assessment: '营养评估',
   };
 
   const annualMapped = annualPlans.map(ap => {
@@ -8143,6 +8143,23 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const phaseAssessmentFrequency = req.body.phaseAssessmentFrequency || '';
     if (!['', 'biweekly', 'monthly', 'quarterly'].includes(phaseAssessmentFrequency)) return res.status(400).json({ success: false, message: '阶段评估周期无效' });
     let { moduleData } = req.body;
+    moduleData = { ...(moduleData || {}), nutrition_assessment: {
+      ...(moduleData?.nutrition_assessment || {}), enabled: true,
+      nutritionComparisonMetrics: moduleData?.nutrition_assessment?.nutritionComparisonMetrics || [],
+    } };
+    try {
+      const { isRow } = require('../../../shared/annualNutrition.cjs');
+      const { normalizeMetrics } = require('../../../shared/nutritionComparisonMetrics.cjs');
+      if (moduleData?.nutrition_assessment?.nutritionComparisonMetrics !== undefined) {
+        moduleData.nutrition_assessment.nutritionComparisonMetrics = normalizeMetrics(moduleData.nutrition_assessment.nutritionComparisonMetrics);
+      }
+      for (const row of moduleData?.personalized_followups?.records || []) {
+        if (row.nutritionComparisonMetrics !== undefined) {
+          if (!isRow(row)) throw new Error('仅营养师评估事项可选择营养干预对比指标');
+          row.nutritionComparisonMetrics = normalizeMetrics(row.nutritionComparisonMetrics);
+        }
+      }
+    } catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权编辑该会员的年度方案' });
     if (!planType && !requestedServicePlanCode) return res.status(400).json({ success: false, message: '缺少服务版本' });
@@ -8395,6 +8412,12 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (planType) query.planType = planType;
     const plan = await AnnualPlan.findOne(query);
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
+    const hasLegacyNutritionAssessment = (plan.moduleData?.personalized_followups?.records || []).some(row =>
+      require('../../../shared/annualNutrition.cjs').isRow(row) || /营养评估/.test(row.standardPlanName || ''));
+    if (!plan.moduleData?.nutrition_assessment && !hasLegacyNutritionAssessment) {
+      plan.moduleData = { ...(plan.moduleData || {}), nutrition_assessment: { enabled: true, nutritionComparisonMetrics: [] } };
+      plan.markModified('moduleData');
+    }
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(plan.patientId);
     if (closedLoop) {
     const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
@@ -15806,15 +15829,26 @@ router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, 
       'content.nutritionAssessment.verifiedAt': { $exists: true } })
       .sort({ createdAt: -1 }).select('content.nutritionAssessment content.goal createdAt').lean();
     const assessment = previous?.content?.nutritionAssessment;
-    res.json({ success: true, data: assessment ? {
-      planId: previous._id, recordedAt: assessment.verifiedAt || previous.createdAt,
-      goal: previous.content?.goal || assessment.goal || '',
-      height: assessment.height, weight: assessment.weight,
-      nutritionTargets: assessment.nutritionTargets || [],
-      metric: assessment.metric || '', baseline: assessment.baseline || '', target: assessment.target || '',
-      currentDiet: assessment.currentDiet || '', medicalReview: assessment.medicalReview || '',
-      practicalConstraints: assessment.practicalConstraints || '',
-      allergyDetails: assessment.allergyDetails || '',
+    const annualPlans = await AnnualPlan.find({ patientId: user._id, year: { $gte: new Date().getFullYear() - 1 } })
+      .sort({ year: -1, updatedAt: -1 }).limit(20).select('_id year planType moduleData pushedAt updatedAt').lean();
+    const annualNutrition = require('../../../shared/annualNutrition.cjs');
+    const selection = require('../../../shared/nutritionComparisonMetrics.cjs');
+    const annualPlan = annualPlans.find(plan => (plan.moduleData?.nutrition_assessment?.enabled !== false && Boolean(plan.moduleData?.nutrition_assessment))
+      || (plan.moduleData?.personalized_followups?.records || []).some(annualNutrition.isRow));
+    const annualNutritionMetrics = selection.selectedFromAnnualPlan(annualPlan);
+    const annualNutritionSource = annualPlan ? {
+      planId: String(annualPlan._id), year: annualPlan.year, pushed: Boolean(annualPlan.pushedAt),
+    } : null;
+    res.json({ success: true, data: assessment || annualPlan ? {
+      planId: previous?._id || null, recordedAt: assessment?.verifiedAt || previous?.createdAt || null,
+      goal: previous?.content?.goal || assessment?.goal || '',
+      height: assessment?.height, weight: assessment?.weight,
+      nutritionTargets: assessment?.nutritionTargets || [],
+      metric: assessment?.metric || '', baseline: assessment?.baseline || '', target: assessment?.target || '',
+      currentDiet: assessment?.currentDiet || '', medicalReview: assessment?.medicalReview || '',
+      practicalConstraints: assessment?.practicalConstraints || '',
+      allergyDetails: assessment?.allergyDetails || '',
+      annualNutritionMetrics, annualNutritionSource,
     } : null });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
