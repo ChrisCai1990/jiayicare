@@ -37,6 +37,10 @@
 .clinical-current strong { margin-top: 4px; color: #1d6248; font-size: 17px; line-height: 1.35; }
 .clinical-current small { margin-top: 6px; color: #83978a; font-size: 11px; }
 .clinical-empty-assignment { display: flex; align-items: center; min-height: 72px; padding: 14px 16px; border: 1px dashed #cfded5; border-radius: 10px; background: #fafcfa; color: #64776c; font-size: 13px; }
+.clinical-list-tabs { display: flex; gap: 8px; padding: 4px; width: fit-content; border: 1px solid #e1ebe5; border-radius: 11px; background: #f6f9f7; }
+.clinical-list-tabs button { padding: 9px 16px; border-radius: 8px; color: #64766b; font-size: 13px; font-weight: 700; }
+.clinical-list-tabs button.is-active { background: #fff; color: #087d5a; box-shadow: 0 1px 5px #17442a16; }
+.clinical-list-tabs span { margin-left: 5px; color: #90a097; font-size: 11px; }
 .clinical-table-wrap { overflow-x: auto; }
 .clinical-table { width: 100%; min-width: 780px; border-collapse: collapse; }
 .clinical-table thead th { padding: 11px 26px; border-top: 1px solid #edf1ef; border-bottom: 1px solid #edf1ef; background: #f9fbfa; color: #7d8e85; font-size: 11px; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
@@ -58,5 +62,10 @@
 .clinical-table td small { display: block; max-width: 220px; margin-top: 5px; color: #a36e57; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clinical-review-note { display: block; max-width: 350px; margin-top: 4px; color: #839089; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clinical-empty-records { margin: 0 26px 24px; padding: 28px 16px; border: 1px dashed #dbe6dd; border-radius: 11px; background: #fbfdfb; color: #829187; text-align: center; font-size: 12px; }
+.clinical-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 26px; border-top: 1px solid #edf1ef; color: #64776c; font-size: 12px; }
+.clinical-pagination > div { display: flex; gap: 8px; }
+.clinical-pagination button { min-width: 70px; padding: 7px 11px; border: 1px solid #cfded5; border-radius: 8px; background: #fff; color: #17694d; font-size: 12px; font-weight: 650; }
+.clinical-pagination button:hover:not(:disabled) { background: #edf8f2; }
+.clinical-pagination button:disabled { color: #aab8af; background: #f8faf8; cursor: not-allowed; }
 @media (max-width: 900px) { .clinical-assignment-body { grid-template-columns: 1fr; gap: 12px; } .clinical-current { min-height: 74px; } }
-@media (max-width: 640px) { .clinical-page { gap: 13px; } .clinical-hero { flex-direction: column; align-items: flex-start; padding: 21px 20px; } .clinical-summary { gap: 8px; } .clinical-summary-item { flex-direction: column; gap: 4px; padding: 13px; } .clinical-summary-item strong { font-size: 23px; } .clinical-summary-item small { display: none; } .clinical-section-heading { padding: 19px 18px 15px; } .clinical-assignment-body { padding: 0 18px 18px; } .clinical-control-row { flex-direction: column; align-items: stretch; } .clinical-control-row select { flex: none; max-width: none; width: 100%; } .clinical-primary-button { width: 100%; } .clinical-table thead th, .clinical-table tbody td { padding-left: 16px; padding-right: 16px; } }
+@media (max-width: 640px) { .clinical-page { gap: 13px; } .clinical-hero { flex-direction: column; align-items: flex-start; padding: 21px 20px; } .clinical-summary { gap: 8px; } .clinical-summary-item { flex-direction: column; gap: 4px; padding: 13px; } .clinical-summary-item strong { font-size: 23px; } .clinical-summary-item small { display: none; } .clinical-section-heading { padding: 19px 18px 15px; } .clinical-assignment-body { padding: 0 18px 18px; } .clinical-control-row { flex-direction: column; align-items: stretch; } .clinical-control-row select { flex: none; max-width: none; width: 100%; } .clinical-primary-button { width: 100%; } .clinical-table thead th, .clinical-table tbody td { padding-left: 16px; padding-right: 16px; } .clinical-pagination { padding: 12px 18px; } }

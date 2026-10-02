@@ -6,6 +6,19 @@ import './ClinicalStandardsPage.css'
 const kindName = { guideline: '临床指南', instrument: '量表工具', internal: '内部规则' }
 const statusName = { pending: '待医学审核', clinically_reviewed: '待实施发布', dismissed: '无需更新' }
 const dateText = value => value ? new Date(value).toLocaleString('zh-CN') : '尚未检查'
+const PAGE_SIZE = 25
+
+function Pagination({ page, total, onPageChange }) {
+  const pages = Math.ceil(total / PAGE_SIZE)
+  if (pages <= 1) return null
+  return <nav className="clinical-pagination" aria-label="分页">
+    <span>第 {page} / {pages} 页 · 每页 {PAGE_SIZE} 项</span>
+    <div>
+      <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>上一页</button>
+      <button type="button" disabled={page >= pages} onClick={() => onPageChange(page + 1)}>下一页</button>
+    </div>
+  </nav>
+}
 
 export default function ClinicalStandardsPage() {
   const { admin } = useAdmin()
@@ -16,12 +29,15 @@ export default function ClinicalStandardsPage() {
   const [error, setError] = useState('')
   const [checkResult, setCheckResult] = useState('')
   const [busy, setBusy] = useState(false)
-  const load = () => adminAPI.clinicalStandards().then(r => {
+  const [standardsPage, setStandardsPage] = useState(1)
+  const [updatePage, setUpdatePage] = useState(1)
+  const [activeList, setActiveList] = useState('standards')
+  const load = (page = updatePage) => adminAPI.clinicalStandards(page).then(r => {
     setData(r.data)
     setTenantId(r.data.delegatedTenantId || '')
     setReviewerId(r.data.reviewerId || '')
   }).catch(e => setError(e.message))
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(updatePage) }, [updatePage])
   const act = async fn => { setBusy(true); setError(''); try { await fn(); await load() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   const confirmDelegation = () => act(() => adminAPI.delegateClinicalStandards(tenantId))
   const confirmReviewer = () => act(() => adminAPI.setClinicalStandardReviewer(reviewerId))
@@ -33,7 +49,9 @@ export default function ClinicalStandardsPage() {
   })
   const standards = data?.standards || []
   const updates = data?.updates || []
-  const pending = updates.filter(row => row.status === 'pending').length
+  const updateTotal = data?.updateTotal ?? updates.length
+  const pending = data?.pendingCount ?? updates.filter(row => row.status === 'pending').length
+  const visibleStandards = standards.slice((standardsPage - 1) * PAGE_SIZE, standardsPage * PAGE_SIZE)
   const automatic = standards.filter(row => row.monitor === 'source').length
   const selectedTenantName = data?.tenants?.find(row => row._id === tenantId)?.name || ''
   const selectedReviewerName = data?.reviewers?.find(row => row._id === reviewerId)?.name || ''
@@ -68,14 +86,21 @@ export default function ClinicalStandardsPage() {
       </div>
     </section>
 
-    <section className="clinical-panel">
-      <div className="clinical-section-heading"><div><span className="clinical-step">标准目录</span><h2>已纳入的标准与规则</h2><p>国内依据优先。季度检查仅核对已登记来源的变化；新版国内指南仍需年度人工检索与医学复核。</p></div><span className="clinical-count">共 {standards.length} 项</span></div>
-      <div className="clinical-table-wrap"><table className="clinical-table"><thead><tr><th>标准名称</th><th>类别与版本</th><th>监测方式</th><th>最近检查</th><th>状态</th></tr></thead><tbody>{standards.map(row => <tr key={row.id}><td><strong>{row.title}</strong><span>{row.domesticNote || row.origin || '出处待核对'}</span><span>{row.domesticSourceUrl ? <a href={row.domesticSourceUrl} target="_blank" rel="noopener noreferrer">国内依据 ↗</a> : '国内依据待补'}{row.originalUrl && row.originalUrl !== row.domesticSourceUrl && <> · <a href={row.originalUrl} target="_blank" rel="noopener noreferrer">国际原版 ↗</a></>}</span></td><td><span className={`clinical-kind clinical-kind-${row.kind}`}>{kindName[row.kind]}</span><span className="clinical-version">{row.version}</span></td><td>{row.monitor === 'source' ? '每季度自动检查' : '年度人工复核'}</td><td>{dateText(row.watch?.checkedAt)}</td><td><span className={`clinical-table-status ${row.watch?.lastError ? 'has-error' : row.watch?.checkedAt ? 'is-ok' : ''}`}>{row.watch?.lastError ? '检查失败' : row.watch?.checkedAt ? '已检查' : '待首次检查'}</span>{row.watch?.lastError && <small title={row.watch.lastError}>{row.watch.lastError}</small>}</td></tr>)}</tbody></table></div>
-    </section>
+    <div className="clinical-list-tabs" role="tablist" aria-label="标准列表">
+      <button type="button" role="tab" aria-selected={activeList === 'standards'} className={activeList === 'standards' ? 'is-active' : ''} onClick={() => setActiveList('standards')}>标准目录 <span>{standards.length}</span></button>
+      <button type="button" role="tab" aria-selected={activeList === 'updates'} className={activeList === 'updates' ? 'is-active' : ''} onClick={() => setActiveList('updates')}>审核记录 <span>{updateTotal}</span></button>
+    </div>
 
-    <section className="clinical-panel">
-      <div className="clinical-section-heading"><div><span className="clinical-step">审核记录</span><h2>来源变化与定期复核</h2><p>来源变化只生成审核任务，不会自动修改客户分级。</p></div><span className="clinical-count">共 {updates.length} 项</span></div>
+    {activeList === 'standards' && <section className="clinical-panel">
+      <div className="clinical-section-heading"><div><span className="clinical-step">标准目录</span><h2>已纳入的标准与规则</h2><p>国内依据优先。季度检查仅核对已登记来源的变化；新版国内指南仍需年度人工检索与医学复核。</p></div><span className="clinical-count">共 {standards.length} 项</span></div>
+      <div className="clinical-table-wrap"><table className="clinical-table"><thead><tr><th>标准名称</th><th>类别与版本</th><th>监测方式</th><th>最近检查</th><th>状态</th></tr></thead><tbody>{visibleStandards.map(row => <tr key={row.id}><td><strong>{row.title}</strong><span>{row.domesticNote || row.origin || '出处待核对'}</span><span>{row.domesticSourceUrl ? <a href={row.domesticSourceUrl} target="_blank" rel="noopener noreferrer">国内依据 ↗</a> : '国内依据待补'}{row.originalUrl && row.originalUrl !== row.domesticSourceUrl && <> · <a href={row.originalUrl} target="_blank" rel="noopener noreferrer">国际原版 ↗</a></>}</span></td><td><span className={`clinical-kind clinical-kind-${row.kind}`}>{kindName[row.kind]}</span><span className="clinical-version">{row.version}</span></td><td>{row.monitor === 'source' ? '每季度自动检查' : '年度人工复核'}</td><td>{dateText(row.watch?.checkedAt)}</td><td><span className={`clinical-table-status ${row.watch?.lastError ? 'has-error' : row.watch?.checkedAt ? 'is-ok' : ''}`}>{row.watch?.lastError ? '检查失败' : row.watch?.checkedAt ? '已检查' : '待首次检查'}</span>{row.watch?.lastError && <small title={row.watch.lastError}>{row.watch.lastError}</small>}</td></tr>)}</tbody></table></div>
+      <Pagination page={standardsPage} total={standards.length} onPageChange={setStandardsPage} />
+    </section>}
+
+    {activeList === 'updates' && <section className="clinical-panel">
+      <div className="clinical-section-heading"><div><span className="clinical-step">审核记录</span><h2>来源变化与定期复核</h2><p>来源变化只生成审核任务，不会自动修改客户分级。</p></div><span className="clinical-count">共 {updateTotal} 项</span></div>
       {updates.length ? <div className="clinical-table-wrap"><table className="clinical-table"><thead><tr><th>标准</th><th>发现时间</th><th>进度</th><th>审核记录</th></tr></thead><tbody>{updates.map(row => <tr key={row._id}><td><strong>{standards.find(item => item.id === row.standardId)?.title || row.standardId}</strong></td><td>{dateText(row.detectedAt)}</td><td><span className={`clinical-table-status ${row.status === 'pending' ? '' : 'is-ok'}`}>{statusName[row.status] || row.status}</span></td><td>{row.reviewedByName || '尚未审核'}{row.note && <span className="clinical-review-note">{row.note}</span>}</td></tr>)}</tbody></table></div> : <div className="clinical-empty-records">暂无来源变化记录。首次检查后，需核对的项目会显示在这里。</div>}
-    </section>
+      <Pagination page={updatePage} total={updateTotal} onPageChange={setUpdatePage} />
+    </section>}
   </div>
 }

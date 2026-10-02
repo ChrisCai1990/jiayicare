@@ -55,7 +55,7 @@ export const metabolicPilotAPI = {
   access: (id,action) => reqRoot(`/metabolic-pilot/admin/${id}`, {method:'PATCH',body:JSON.stringify({action})}),
 }
 export const adminAPI = {
-  clinicalStandards: () => req('/clinical-standards'),
+  clinicalStandards: (updatePage = 1) => req(`/clinical-standards?updatePage=${updatePage}`),
   delegateClinicalStandards: tenantId => req('/clinical-standards/delegation', { method: 'PUT', body: JSON.stringify({ tenantId, confirmed: true }) }),
   setClinicalStandardReviewer: staffId => req('/clinical-standards/reviewer', { method: 'PUT', body: JSON.stringify({ staffId, confirmed: true }) }),
   checkClinicalStandards: () => req('/clinical-standards/check', { method: 'POST', body: '{}' }),

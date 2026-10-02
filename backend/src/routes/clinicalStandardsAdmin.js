@@ -16,9 +16,13 @@ router.use(adminAuth, (req, res, next) => ['platformSuper', 'superadmin'].includ
 
 router.get('/', async (req, res) => {
   const platform = req.admin.role === 'platformSuper';
-  const [watches, updates, delegation, tenants] = await Promise.all([
+  const updatePage = Math.max(1, Math.min(100000, Number.parseInt(req.query.updatePage, 10) || 1));
+  const pageSize = 25;
+  const [watches, updates, updateTotal, pendingCount, delegation, tenants] = await Promise.all([
     ClinicalStandardWatch.find().lean(),
-    ClinicalStandardUpdate.find().sort({ detectedAt: -1 }).limit(100).lean(),
+    ClinicalStandardUpdate.find().sort({ detectedAt: -1, _id: -1 }).skip((updatePage - 1) * pageSize).limit(pageSize).lean(),
+    ClinicalStandardUpdate.countDocuments(),
+    ClinicalStandardUpdate.countDocuments({ status: 'pending' }),
     SystemConfig.findOne({ key: DELEGATION_KEY }).lean(),
     platform ? Tenant.find({ status: 'active' }).select('name code').sort({ name: 1 }).lean() : Promise.resolve([]),
   ]);
@@ -36,7 +40,7 @@ router.get('/', async (req, res) => {
   }
   res.json({ success: true, data: {
     standards: standards.map(item => ({ ...item, watch: latestWatches.get(item.id) || null })),
-    updates, tenants, delegatedTenantId, delegatedTenantName: delegation?.value?.tenantName || '',
+    updates, updateTotal, pendingCount, updatePage, tenants, delegatedTenantId, delegatedTenantName: delegation?.value?.tenantName || '',
     delegationConfirmedAt: delegation?.value?.confirmedAt || null,
     canAssign, reviewerId: reviewerConfig?.value?.staffId || '', reviewers,
   } });
