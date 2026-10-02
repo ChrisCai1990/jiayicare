@@ -56,6 +56,8 @@ export const metabolicPilotAPI = {
 }
 export const adminAPI = {
   saasPlan: (tenantId = '') => req(`/saas-plan${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`),
+  saveStandardPlan: (plan, revision) => req('/saas-plan/standard', { method: 'PUT', body: JSON.stringify({ plan, revision }) }),
+  saveTenantCommercialTerms: (id, terms, reason) => req(`/tenants/${id}/commercial-terms`, { method: 'PUT', body: JSON.stringify({ terms, reason }) }),
   setTenantSeats: (id, data) => req(`/tenants/${id}/seats`, { method: 'PUT', body: JSON.stringify(data) }),
   createTenantAdmin: (id, data) => req(`/tenants/${id}/admins`, { method: 'POST', body: JSON.stringify(data) }),
   createOwnTenantAdmin: data => req('/saas-plan/admins', { method: 'POST', body: JSON.stringify(data) }),

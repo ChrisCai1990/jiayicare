@@ -10,6 +10,7 @@ const tenantSchema = new mongoose.Schema({
   themeColor: { type: String, default: '#1E6B50' }, // 主题色（默认沿用现有嘉医汇主色）
   websiteHosts: { type: [String], default: [] }, // 已绑定的网站域名；公开入口据此归属机构
   commercialPlan: { type: String, enum: ['legacy', 'standard'], default: 'legacy' }, // 存量嘉医汇保留独立协议；新机构采用标准套餐
+  commercialTerms: { type: mongoose.Schema.Types.Mixed, default: null }, // 签约机构独立条款快照；标准模板调整不追溯
   extraStaffSeats: { type: Number, min: 0, default: 0 },
   extraAdminSeats: { type: Number, min: 0, default: 0 },
   status:   { type: String, enum: ['active', 'suspended'], default: 'active' },

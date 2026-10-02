@@ -10,7 +10,7 @@ const Admin = require('../models/Admin');
 const Tenant = require('../models/Tenant');
 const PlatformAgreement = require('../models/PlatformAgreement');
 const { renderAgreement } = require('../utils/platformAgreementText');
-const { STANDARD_PLAN, seatUsage, canAddSeat, estimatedMonthlySeatFee } = require('../utils/saasPlan');
+const { STANDARD_PLAN, PLAN_KEY, validatePlan, getStandardPlan, tenantTerms, seatUsage, canAddSeat, estimatedMonthlySeatFee } = require('../utils/saasPlan');
 const User = require('../models/User');
 const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
@@ -90,17 +90,35 @@ router.get('/agreements/:tenantId', adminAuth, async (req, res) => {
 // 标准套餐公开给双方管理员核对；嘉医汇等存量机构仍以自己的签署协议为准。
 router.get('/saas-plan', adminAuth, async (req, res) => {
   if (!agreementAllowed(req)) return res.status(403).json({ success: false, message: '仅超级管理员可查看套餐' });
+  const standardPlan = await getStandardPlan();
   const tenantId = req.admin.role === 'platformSuper' ? req.query.tenantId : req.admin.tenantId;
-  if (!tenantId) return res.json({ success: true, data: { standard: STANDARD_PLAN, tenant: null } });
+  if (!tenantId) return res.json({ success: true, data: { standard: standardPlan, tenant: null } });
   if (!mongoose.isValidObjectId(tenantId)) return res.status(400).json({ success: false, message: '机构 ID 无效' });
-  const tenant = await Tenant.findById(tenantId).select('name code commercialPlan extraStaffSeats extraAdminSeats').lean();
+  const tenant = await Tenant.findById(tenantId).select('name code commercialPlan commercialTerms extraStaffSeats extraAdminSeats').lean();
   if (!tenant || (req.admin.role !== 'platformSuper' && String(tenant._id) !== String(req.admin.tenantId))) return res.sendStatus(404);
   const usage = await seatUsage(tenant._id);
   const standard = tenant.commercialPlan === 'standard';
-  return res.json({ success: true, data: { standard: STANDARD_PLAN,
-    tenant: { ...tenant, usage, staffLimit: standard ? STANDARD_PLAN.includedStaffSeats + (tenant.extraStaffSeats || 0) : null,
-      adminLimit: standard ? STANDARD_PLAN.includedAdminSeats + (tenant.extraAdminSeats || 0) : null,
-      estimatedMonthlySeatFeeYuan: standard ? estimatedMonthlySeatFee(usage) : null } } });
+  const terms = standard ? tenantTerms(tenant) : null;
+  return res.json({ success: true, data: { standard: standardPlan,
+    tenant: { ...tenant, usage, terms, staffLimit: standard ? terms.includedStaffSeats + (tenant.extraStaffSeats || 0) : null,
+      adminLimit: standard ? terms.includedAdminSeats + (tenant.extraAdminSeats || 0) : null,
+      estimatedMonthlySeatFeeYuan: standard ? estimatedMonthlySeatFee(usage, terms) : null } } });
+});
+
+router.put('/saas-plan/standard', adminAuth, requirePlatformSuper, async (req, res) => {
+  let plan;
+  try { plan = validatePlan(req.body?.plan); }
+  catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+  const current = await SystemConfig.findOne({ key: PLAN_KEY });
+  const revision = Number(current?.value?.revision || 0);
+  if (Number(req.body?.revision) !== revision) return res.status(409).json({ success: false, message: '模板已被其他管理员修改，请刷新重试' });
+  const before = current?.value ? { ...current.value } : { ...STANDARD_PLAN };
+  const next = { ...plan, revision: revision + 1 };
+  if (current) { current.value = next; current.markModified('value'); await current.save(); }
+  else await SystemConfig.create({ key: PLAN_KEY, label: '新机构标准套餐模板', value: next });
+  await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id,
+    action: 'change_standard_saas_plan', before, after: next, at: new Date(), ip: req.ip });
+  res.json({ success: true, data: next });
 });
 
 router.post('/agreements/:tenantId/publish', adminAuth, async (req, res) => {
@@ -1557,7 +1575,7 @@ router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
   const dup = await Tenant.findOne({ code });
   if (dup) return res.status(400).json({ success: false, message: '该机构标识已存在' });
   if (websiteHosts.length && await Tenant.exists({ websiteHosts: { $in: websiteHosts } })) return res.status(409).json({ success: false, message: '网站域名已绑定其他机构' });
-  const tenant = await Tenant.create({ code, name, slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts, commercialPlan: 'standard' });
+  const tenant = await Tenant.create({ code, name, slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts, commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()) });
 
   // 为新机构建一个 superadmin，否则该机构无人能登录管理
   let createdAdmin = null;
@@ -1596,7 +1614,8 @@ router.put('/tenants/:id/seats', adminAuth, requirePlatformSuper, async (req, re
   const tenant = await Tenant.findById(req.params.id);
   if (!tenant || tenant.commercialPlan !== 'standard') return res.status(404).json({ success: false, message: '标准套餐机构不存在' });
   const usage = await seatUsage(tenant._id);
-  if (values[0] + STANDARD_PLAN.includedStaffSeats < usage.staff || values[1] + STANDARD_PLAN.includedAdminSeats < usage.admins) {
+  const terms = tenantTerms(tenant);
+  if (values[0] + terms.includedStaffSeats < usage.staff || values[1] + terms.includedAdminSeats < usage.admins) {
     return res.status(409).json({ success: false, message: '不能将额度调低至当前已启用账号数以下' });
   }
   const before = { extraStaffSeats: tenant.extraStaffSeats || 0, extraAdminSeats: tenant.extraAdminSeats || 0 };
@@ -1605,6 +1624,27 @@ router.put('/tenants/:id/seats', adminAuth, requirePlatformSuper, async (req, re
   await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
     action: 'change_seat_quota', before, after: { extraStaffSeats: values[0], extraAdminSeats: values[1] }, at: new Date(), ip: req.ip });
   res.json({ success: true, data: tenant });
+});
+
+router.put('/tenants/:id/commercial-terms', adminAuth, requirePlatformSuper, async (req, res) => {
+  let terms;
+  try { terms = validatePlan(req.body?.terms); }
+  catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 4 || reason.length > 500) return res.status(400).json({ success: false, message: '请填写 4 至 500 字的协商或变更依据' });
+  const tenant = await Tenant.findById(req.params.id);
+  if (!tenant || tenant.commercialPlan !== 'standard') return res.status(404).json({ success: false, message: '标准套餐机构不存在' });
+  const usage = await seatUsage(tenant._id);
+  if (terms.includedStaffSeats + (tenant.extraStaffSeats || 0) < usage.staff || terms.includedAdminSeats + (tenant.extraAdminSeats || 0) < usage.admins) {
+    return res.status(409).json({ success: false, message: '协商名额不能低于当前已启用账号数' });
+  }
+  const before = tenantTerms(tenant);
+  tenant.commercialTerms = terms;
+  tenant.markModified('commercialTerms');
+  await tenant.save();
+  await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
+    action: 'change_tenant_commercial_terms', before, after: terms, reason, at: new Date(), ip: req.ip });
+  res.json({ success: true, data: { terms } });
 });
 
 async function createInstitutionAdmin(req, res, tenantId) {

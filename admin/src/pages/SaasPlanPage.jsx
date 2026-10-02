@@ -10,6 +10,9 @@ export default function SaasPlanPage() {
   const [tenants, setTenants] = useState([])
   const [tenantId, setTenantId] = useState(admin?.tenantId || '')
   const [snapshot, setSnapshot] = useState(null)
+  const [standardForm, setStandardForm] = useState({})
+  const [termsForm, setTermsForm] = useState({})
+  const [reason, setReason] = useState('')
   const [extras, setExtras] = useState({ extraStaffSeats: 0, extraAdminSeats: 0 })
   const [newAdmin, setNewAdmin] = useState({ username: '', name: '', password: '' })
   const [error, setError] = useState('')
@@ -19,6 +22,8 @@ export default function SaasPlanPage() {
   const load = async id => {
     const result = await adminAPI.saasPlan(id)
     setSnapshot(result.data)
+    setStandardForm(result.data.standard || {})
+    setTermsForm(result.data.tenant?.terms || {})
     setExtras({ extraStaffSeats: result.data.tenant?.extraStaffSeats || 0, extraAdminSeats: result.data.tenant?.extraAdminSeats || 0 })
   }
   useEffect(() => {
@@ -32,11 +37,20 @@ export default function SaasPlanPage() {
   useEffect(() => { load(tenantId).catch(e => setError(e.message)) }, [tenantId])
   const action = async fn => {
     setBusy(true); setError(''); setMessage('')
-    try { await fn(); await load(tenantId); setMessage('已保存'); setNewAdmin({ username: '', name: '', password: '' }) }
+    try { await fn(); await load(tenantId); setMessage('已保存'); setReason(''); setNewAdmin({ username: '', name: '', password: '' }) }
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
   const plan = snapshot?.standard
   const tenant = snapshot?.tenant
+  const fields = [
+    ['monthlyPlatformYuan', '平台订阅费（元/月）'], ['setupYuan', '首次上线费（元）'],
+    ['activeClientLimit', '包含在管客户数'], ['includedStaffSeats', '包含服务人员账号'],
+    ['includedAdminSeats', '包含机构管理员账号'], ['extraSeatMonthlyYuan', '额外账号（元/人/月）'],
+    ['aiMonthlyYuan', 'AI 功能费（元/月）'], ['aiIncludedSupplierCostYuan', 'AI 含第三方成本额度（元/月）'],
+  ]
+  const formFields = (value, setter) => <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12, margin: '16px 0' }}>
+    {fields.map(([key, label]) => <label key={key}>{label}<input className="form-input" type="number" min="0" step={['activeClientLimit', 'includedStaffSeats', 'includedAdminSeats'].includes(key) ? '1' : '0.01'} value={value[key] ?? ''} onChange={e => setter({ ...value, [key]: e.target.value })} /></label>)}
+  </div>
   if (!platform && admin?.role !== 'superadmin') return <div className="page">仅超级管理员可查看套餐。</div>
   return <div className="page" style={{ maxWidth: 1050 }}>
     <div className="page-header"><div><h1 className="page-title">标准机构套餐</h1><p className="page-subtitle">新机构采用标准套餐；嘉医汇按双方独立协议执行。</p></div></div>
@@ -51,13 +65,26 @@ export default function SaasPlanPage() {
         <p><strong>{yuan(plan.aiMonthlyYuan)}/月</strong><br />AI 可选，含每月 {yuan(plan.aiIncludedSupplierCostYuan)} 的第三方成本额度</p>
       </div>
       <p style={{ color: '#667' }}>在管客户指有效服务期内的客户；历史档案不计入。AI 超额按可核对的供应商实际成本结算，未用额度不结转。客户数与月度账单目前仍须人工核对，页面不自动扣费。</p>
+      {platform && <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 18, marginTop: 18 }}>
+        <h3>修改新机构标准模板</h3>
+        <p style={{ color: '#667' }}>仅影响此后新建的机构；已保存的机构协商条款和嘉医汇独立协议不会被覆盖。</p>
+        {formFields(standardForm, setStandardForm)}
+        <button className="btn btn-primary" disabled={busy} onClick={() => action(() => adminAPI.saveStandardPlan(standardForm, plan.revision || 0))}>保存标准模板</button>
+      </div>}
     </div>}
     {platform && tenants.length > 0 && <div className="card" style={{ padding: 22, marginBottom: 16 }}><label>查看机构　<select className="form-input" value={tenantId} onChange={e => setTenantId(e.target.value)}>{tenants.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}</select></label></div>}
     {tenant && <div className="card" style={{ padding: 24 }}>
       <h2>{tenant.name} · {tenant.commercialPlan === 'standard' ? '标准套餐' : '独立协议'}</h2>
       {tenant.commercialPlan !== 'standard' ? <p>此机构不适用标准套餐限额和标准报价；请查看双方签署的合作协议。</p> : <>
+        <p>本机构协商条款：平台 {yuan(tenant.terms.monthlyPlatformYuan)}/月、首次上线 {yuan(tenant.terms.setupYuan)}、最多 {tenant.terms.activeClientLimit} 名在管客户，包含 {tenant.terms.includedStaffSeats} 个服务账号及 {tenant.terms.includedAdminSeats} 个管理员账号。</p>
         <p>当前已启用：服务人员 <strong>{tenant.usage.staff}</strong> / {tenant.staffLimit}；机构管理员 <strong>{tenant.usage.admins}</strong> / {tenant.adminLimit}。</p>
         <p>按当前账号数估算，额外账号费 <strong>{yuan(tenant.estimatedMonthlySeatFeeYuan)}/月</strong>；实际结算以双方确认的月度账单为准。</p>
+        {platform && <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 18, marginTop: 18 }}>
+          <h3>本机构协商条款</h3><p style={{ color: '#667' }}>调整包含人数或价格后，仅更新本机构配置；合同和账单仍需双方确认。</p>
+          {formFields(termsForm, setTermsForm)}
+          <label>协商或变更依据<input className="form-input" value={reason} onChange={e => setReason(e.target.value)} placeholder="例如：双方确认增加两个服务人员名额" /></label>
+          <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={busy || reason.trim().length < 4} onClick={() => action(() => adminAPI.saveTenantCommercialTerms(tenantId, termsForm, reason))}>保存本机构条款</button>
+        </div>}
         {platform && <><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginTop: 20 }}>
           <label>额外服务账号额度<input className="form-input" type="number" min="0" max="500" value={extras.extraStaffSeats} onChange={e => setExtras({ ...extras, extraStaffSeats: e.target.value })} /></label>
           <label>额外管理员账号额度<input className="form-input" type="number" min="0" max="500" value={extras.extraAdminSeats} onChange={e => setExtras({ ...extras, extraAdminSeats: e.target.value })} /></label>
