@@ -15,7 +15,8 @@ const schema = new mongoose.Schema({
   actionChoice: { id: String, choice: String, at: Date },
   reflections: [{ day: Number, text: String, at: Date }],
   help: { status: { type: String, enum: ['open','closed',null], default: null }, requestedAt: Date,
-    message: String, reply: String, closedAt: Date, closedBy: mongoose.Schema.Types.ObjectId },
+    message: String, assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    source: String, reply: String, closedAt: Date, closedBy: mongoose.Schema.Types.ObjectId },
   humanMinutes: { type: Number, default: 0 },
   history: [{ at: Date, actor: String, action: String, note: String, minutes: Number }],
 }, { timestamps: true, versionKey: 'revision', optimisticConcurrency: true });

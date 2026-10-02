@@ -1,5 +1,5 @@
 export function notificationTotal(summary = {}) {
-  return ['pendingReferralCount', 'unreadMessageCount', 'unreadRepliedCount'].reduce((sum, key) => sum + Math.max(0, Number(summary[key]) || 0), 0)
+  return ['pendingReferralCount', 'unreadMessageCount', 'unreadRepliedCount', 'metabolicHelpCount'].reduce((sum, key) => sum + Math.max(0, Number(summary[key]) || 0), 0)
 }
 
 export function taskProgress(tasks = []) {

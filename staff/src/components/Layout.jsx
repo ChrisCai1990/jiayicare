@@ -42,7 +42,8 @@ function LayoutContent() {
   const setup = staff?.tenantStatus === 'setup'
   const setupView = setup ? new URLSearchParams(loc.search).get('view') || '/home' : loc.pathname
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const { count: notifBadge } = useNotificationSummary()
+  const { count: notifBadge, data: notificationData } = useNotificationSummary()
+  const pilotBadge = Number(notificationData?.summary?.metabolicHelpCount || 0)
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -114,6 +115,7 @@ function LayoutContent() {
                     {notifBadge}
                   </span>
                 )}
+                {item.path === '/metabolic-pilot' && pilotBadge > 0 && <span style={{background:'#DC3545',color:'#fff',borderRadius:99,fontSize:11,fontWeight:700,padding:'1px 7px'}}>{pilotBadge}</span>}
               </div>
             )
           })}

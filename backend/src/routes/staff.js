@@ -36,6 +36,7 @@ const ChatLog = require('../models/ChatLog');
 const FollowUp = require('../models/FollowUp');
 const { routineMedicationNoiseFilter } = require('../utils/medicationFollowUpVisibility');
 const HealthRecord = require('../models/HealthRecord');
+const MetabolicPilot = require('../models/MetabolicPilot');
 const { calcStatus: calcHealthRecordStatus } = require('../utils/healthRecordStatus');
 const MedicalReport = require('../models/MedicalReport');
 const { REPORT_LIST_PROJECTION, toReportListItem } = require('../utils/reportListPayload');
@@ -7151,6 +7152,25 @@ router.get('/notifications', staffAuth, async (req, res) => {
     ...msgRecipientFilter,
   });
 
+  // 体重管理求助是待办通知，直到责任人回复才从红点消失。旧求助按当前健管归属兜底。
+  let metabolicHelps = [], metabolicHelpCount = 0;
+  if (staff.role === 'healthManager') {
+    const legacyRows = await MetabolicPilot.find({ tenantId: staff.tenantId, 'help.status': 'open', 'help.assignedTo': { $exists: false } }).select('_id').lean();
+    const legacyUsers = await User.find({ tenantId: staff.tenantId, _id: { $in: legacyRows.map(r => r._id) }, assignedHealthManager: staff._id, isDeleted: { $ne: true } }).select('_id').lean();
+    const metabolicPage = Math.max(1, Math.min(10000, Number.parseInt(req.query.metabolicPage, 10) || 1));
+    const filter = { tenantId: staff.tenantId, 'help.status': 'open', $or: [
+      { 'help.assignedTo': staff._id },
+      { 'help.assignedTo': { $exists: false }, _id: { $in: legacyUsers.map(u => u._id) } },
+    ] };
+    const [rows, count] = await Promise.all([
+      MetabolicPilot.find(filter).select('_id help.message help.requestedAt').sort({ 'help.requestedAt': -1 }).skip((metabolicPage - 1) * 50).limit(50).lean(),
+      MetabolicPilot.countDocuments(filter),
+    ]);
+    const names = await User.find({ tenantId: staff.tenantId, _id: { $in: rows.map(r => r._id) }, isDeleted: { $ne: true } }).select('_id name').lean();
+    metabolicHelps = rows.map(r => ({ patientId: r._id, patientName: names.find(u => String(u._id) === String(r._id))?.name || '客户', message: r.help?.message || '', requestedAt: r.help?.requestedAt }));
+    metabolicHelpCount = count;
+  }
+
   res.json({
     success: true,
     data: {
@@ -7160,11 +7180,14 @@ router.get('/notifications', staffAuth, async (req, res) => {
       unreadReferralCount,
       unreadRepliedCount,
       unreadMessageCount,
+      metabolicHelps,
+      metabolicHelpPage: staff.role === 'healthManager' ? Math.max(1, Math.min(10000, Number.parseInt(req.query.metabolicPage, 10) || 1)) : 1,
       summary: {
         pushCount: recentPushes.length,
         pendingReferralCount: unreadReferralCount,
         unreadRepliedCount,
         unreadMessageCount,
+        metabolicHelpCount,
         expiringCount: expiringPatients.length,
       },
     },

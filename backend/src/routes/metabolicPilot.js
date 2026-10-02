@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
+const Admin = require('../models/Admin');
 const Pilot = require('../models/MetabolicPilot');
 const SystemConfig = require('../models/SystemConfig');
 const { tenantFilter, configId, configFor, contextFor, historyFor } = require('../utils/metabolicPilot');
@@ -29,6 +30,8 @@ function scopeFor(staff) {
   const field = { healthManager: 'assignedHealthManager', familyDoctor: 'assignedFamilyDoctor', nutritionist: 'assignedNutritionist' }[staff.role];
   return field ? { ...filter, [field]: staff._id } : { ...filter, _id: null };
 }
+const activeManager = (id, actor) => id && Admin.findOne({ _id: id, ...tenantFilter(actor), role: 'healthManager', staffStatus: { $ne: 'inactive' } }).select('_id name').lean();
+const ownerIdFor = (row, user) => String(row.help?.assignedTo || user?.assignedHealthManager || '');
 router.use('/admin', adminAuth, supervisor);
 router.get('/admin', wrap(async(req,res) => {
   const [config, rows] = await Promise.all([configFor(req.admin), Pilot.find(tenantFilter(req.admin)).sort({createdAt:-1}).limit(200).lean()]);
@@ -74,17 +77,49 @@ router.patch('/admin/:id', wrap(async(req,res) => {
 router.use('/staff',staffAuth);
 router.get('/staff',wrap(async(req,res)=>{
   if (req.staff.customPermissions && !req.staff.customPermissions.daily_checkin?.view) return fail(res,403,'无健康数据查看权限');
-  const users=await User.find(scopeFor(req.staff)).select('_id name').lean();
-  const rows=await Pilot.find({...tenantFilter(req.staff),_id:{$in:users.map(u=>u._id)}}).sort({'help.requestedAt':-1}).limit(200).lean();
-  okay(res,rows.map(r=>({...r,state:stateOf(r),user:users.find(u=>String(u._id)===String(r._id))})));
+  const users=await User.find(scopeFor(req.staff)).select('_id name assignedHealthManager').lean();
+  const owned=req.staff.role==='healthManager'
+    ? await Pilot.find({...tenantFilter(req.staff),'help.status':'open','help.assignedTo':req.staff._id}).select('_id').lean() : [];
+  const ids=[...new Set([...users.map(u=>String(u._id)),...owned.map(r=>String(r._id))])];
+  const visibleUsers=owned.length ? await User.find({...tenantFilter(req.staff),_id:{$in:ids},isDeleted:{$ne:true}}).select('_id name assignedHealthManager').lean() : users;
+  const rows=await Pilot.find({...tenantFilter(req.staff),_id:{$in:visibleUsers.map(u=>u._id)}}).sort({'help.status':-1,'help.requestedAt':-1}).limit(200).lean();
+  const include=mongoose.isValidObjectId(req.query.include)?String(req.query.include):null;
+  if(include&&visibleUsers.some(u=>String(u._id)===include)&&!rows.some(r=>String(r._id)===include)){
+    const extra=await Pilot.findOne({_id:include,...tenantFilter(req.staff)}).lean();
+    if(extra)rows.push(extra);
+  }
+  const ownerIds=[...new Set(rows.map(r=>ownerIdFor(r,visibleUsers.find(u=>String(u._id)===String(r._id)))).filter(Boolean))];
+  const owners=await Admin.find({...tenantFilter(req.staff),_id:{$in:ownerIds}}).select('_id name role staffStatus').lean();
+  okay(res,rows.map(r=>{
+    const user=visibleUsers.find(u=>String(u._id)===String(r._id));
+    const assignedTo=ownerIdFor(r,user);
+    const owner=owners.find(a=>String(a._id)===assignedTo && a.role==='healthManager' && a.staffStatus!=='inactive');
+    return {...r,state:stateOf(r),user,owner:owner?{id:String(owner._id),name:owner.name}:null,canAssign:req.staff.role==='superadmin',
+      canResolve:req.staff.role==='superadmin'||(r.help?.status==='open'&&String(req.staff._id)===assignedTo)};
+  }));
+}));
+router.get('/staff/owners',wrap(async(req,res)=>{
+  if(req.staff.role!=='superadmin') return fail(res,403,'仅机构管理员可调整责任人');
+  okay(res,await Admin.find({...tenantFilter(req.staff),role:'healthManager',staffStatus:{$ne:'inactive'}}).select('_id name').sort({name:1}).lean());
+}));
+router.post('/staff/:id/assign',wrap(async(req,res)=>{
+  if(req.staff.role!=='superadmin') return fail(res,403,'仅机构管理员可调整责任人');
+  if(!mongoose.isValidObjectId(req.params.id)) return fail(res,400,'客户ID无效');
+  const owner=await activeManager(req.body.assignedTo,req.staff);
+  if(!owner) return fail(res,400,'请选择本机构在职健管专员');
+  const row=await Pilot.findOne({_id:req.params.id,...tenantFilter(req.staff)});
+  if(!row || row.help?.status!=='open' || String(row.revision)!==String(req.body.revision)) return fail(res,409,'待办已更新，请刷新后再处理');
+  row.help.assignedTo=owner._id;
+  audit(row,req.staff,'assign',`责任人：${owner.name}`);
+  await row.save(); okay(res,{assignedTo:String(owner._id)});
 }));
 router.post('/staff/:id/resolve',wrap(async(req,res)=>{
   if (req.staff.customPermissions && !req.staff.customPermissions.daily_checkin?.edit) return fail(res,403,'无健康数据处理权限');
   if (!mongoose.isValidObjectId(req.params.id)) return fail(res,400,'客户ID无效');
-  const user=await User.findOne({...scopeFor(req.staff),_id:req.params.id}).lean();
-  // Preserve role deny-all even when an explicit id is present.
-  if (!['superadmin','healthManager','familyDoctor','nutritionist'].includes(req.staff.role) || !user) return fail(res,403,'无权处理该客户');
+  const user=await User.findOne({_id:req.params.id,...tenantFilter(req.staff),isDeleted:{$ne:true}}).select('_id assignedHealthManager').lean();
+  if (!user || !['superadmin','healthManager'].includes(req.staff.role)) return fail(res,403,'无权处理该客户');
   const row=await Pilot.findOne({_id:user._id,...tenantFilter(req.staff)});
+  if(req.staff.role!=='superadmin' && ownerIdFor(row||{},user)!==String(req.staff._id)) return fail(res,403,'请由本次求助责任人处理');
   const reply=String(req.body.reply||'').trim(), minutes=Number(req.body.minutes);
   if (!reply || reply.length>1000 || !Number.isFinite(minutes) || minutes<=0 || minutes>480) return fail(res,400,'请填写处理结果和实际用时（0—480分钟，不含0）');
   if (!row || row.help?.status!=='open' || String(row.revision)!==String(req.body.revision)) return fail(res,409,'待办已更新，请刷新后再处理');
@@ -104,13 +139,14 @@ router.get('/me',wrap(async(req,res)=>{
   const last=rows[0];
   const latestWeight=rows.find(r=>r.type==='weight');
   const lastAt=latestWeight && new Date(latestWeight.recordedAt);
+  const helpOwner=enrollment.help?.status ? await activeManager(enrollment.help.assignedTo||req.user.assignedHealthManager,req.user) : null;
   okay(res,{available,accepting:config.accepting,status:summary.state,version:enrollment.version,
     startedAt:enrollment.startedAt,endsAt:enrollment.endsAt,goal:enrollment.goal,
     reminderEnabled:enrollment.reminderEnabled,reminderEveryDays:enrollment.reminderEveryDays,
     reminder:active && enrollment.reminderEnabled && (!lastAt || Date.now()-lastAt>=enrollment.reminderEveryDays*DAY)
       ? '如果现在方便，可以记录一次体重，了解最近的变化。也可以稍后再记录。' : '',
     summary,feedback:active && last ? feedbackFor(last,rows) : null,actionChoice:enrollment.actionChoice,
-    help:enrollment.help,actions:ACTIONS});
+    help:enrollment.help,helpOwner:helpOwner?.name||null,actions:ACTIONS});
 }));
 router.post('/me',wrap(async(req,res)=>{
   const {config,enrollment}=await contextFor(req.user);
@@ -143,7 +179,9 @@ router.post('/me',wrap(async(req,res)=>{
       const message=String(req.body.message||'').trim();
       if (!message || message.length>1000) return fail(res,400,'请填写需要帮助的内容（最多1000字）');
       if (row.help?.status==='open') return fail(res,409,'已有求助正在处理中，请查看处理状态');
-      row.help={status:'open',requestedAt:new Date(),message};
+      const owner=await activeManager(req.user.assignedHealthManager,req.user);
+      if(!owner) return fail(res,409,'暂无法确定负责的健管专员，请联系机构管理员核对归属；本次求助尚未提交');
+      row.help={status:'open',requestedAt:new Date(),message,assignedTo:owner._id,source:'health_data_page'};
     } else return fail(res,409,'当前状态不支持此操作');
   }
   audit(row,req.user,action,action==='help'?row.help.message:action==='reflect'?String(req.body.text):action==='choose'?`${row.actionChoice.id}:${row.actionChoice.choice}`:action==='preferences'?`reminder=${row.reminderEnabled};every=${row.reminderEveryDays}`:'');

@@ -13,13 +13,14 @@ function cycle(row) {
 export default function MetabolicPilotPage({ api = metabolicPilotAPI }) {
   const [rows,setRows]=useState([]), [loaded,setLoaded]=useState(false), [loading,setLoading]=useState(false)
   const [error,setError]=useState(''), [notice,setNotice]=useState(''), [updated,setUpdated]=useState(null)
-  const [filter,setFilter]=useState('open'), [query,setQuery]=useState(''), [selected,setSelected]=useState(null)
+  const [filter,setFilter]=useState('open'), [query,setQuery]=useState(''), [selected,setSelected]=useState(typeof window!=='undefined'?new URLSearchParams(window.location.search).get('customer'):null)
   const [reply,setReply]=useState(''), [minutes,setMinutes]=useState(''), [busy,setBusy]=useState(false)
+  const [owners,setOwners]=useState([]), [newOwner,setNewOwner]=useState('')
   const generation=useRef(0), submitting=useRef(false)
   const load=async()=>{
-    setSelected(null);setReply('');setMinutes('')
+    setReply('');setMinutes('')
     const version=++generation.current; setLoading(true); setError('')
-    try { const result=await api.get(); if(version!==generation.current)return; setRows(result.data||[]);setLoaded(true);setUpdated(new Date()) }
+    try { const result=await api.get(selected); if(version!==generation.current)return; setRows(result.data||[]);setLoaded(true);setUpdated(new Date());if(result.data?.some(r=>r.canAssign)&&api.owners){const choices=await api.owners();if(version===generation.current)setOwners(choices.data||[])} }
     catch(e){if(version===generation.current)setError(e.message||'加载失败，请重试')}
     finally{if(version===generation.current)setLoading(false)}
   }
@@ -28,18 +29,19 @@ export default function MetabolicPilotPage({ api = metabolicPilotAPI }) {
   const visible=rows.filter(r=>(filter==='all'||(filter==='open'?r.help?.status==='open':r.state===filter))&&(!query.trim()||(r.user?.name||'').includes(query.trim())))
     .sort((a,b)=>Number(b.help?.status==='open')-Number(a.help?.status==='open')||new Date(a.help?.requestedAt||a.createdAt)-new Date(b.help?.requestedAt||b.createdAt))
   const current=visible.find(r=>r._id===selected)||null
-  const select=id=>{setSelected(id);setReply('');setMinutes('');setNotice('')}
+  const select=id=>{setSelected(id);setReply('');setMinutes('');setNewOwner('');setNotice('')}
+  const assign=async()=>{if(!current||!newOwner)return;setBusy(true);setError('');try{await api.assign(current._id,{assignedTo:newOwner,revision:current.revision});setNotice('责任人已更新');await load()}catch(e){setError(e.message||'指派失败')}finally{setBusy(false)}}
   const resolve=async e=>{
     e.preventDefault();if(submitting.current||!current)return
     const amount=Number(minutes)
     if(!reply.trim()||!Number.isFinite(amount)||amount<=0||amount>480){setError('请填写处理结果及0—480分钟内的实际用时（不含0）');return}
     submitting.current=true;setBusy(true);setError('');setNotice('')
-    try{await api.resolve(current._id,{reply:reply.trim(),minutes:amount,revision:current.revision});setReply('');setMinutes('');setNotice('回复已保存，客户可在体验卡中查看。');await load()}
+    try{await api.resolve(current._id,{reply:reply.trim(),minutes:amount,revision:current.revision});setReply('');setMinutes('');setNotice('回复已保存，客户可在体验卡中查看。');await load();if(typeof window!=='undefined')window.dispatchEvent(new Event('notif-refresh'))}
     catch(e){setError(e.message||'保存失败，请刷新核对后重试')}
     finally{submitting.current=false;setBusy(false)}
   }
   return <div className="metabolic-workbench">
-    <header className="mw-header"><div><div className="mw-eyebrow">健康管理 / 受控试点</div><h1>体重与代谢管理 <span className="mw-tag">白名单</span></h1><p>系统负责日常反馈，你只需关注需要团队帮助的客户。</p></div><div className="mw-refresh"><button className="mw-button mw-secondary" disabled={loading||busy} onClick={load}>{loading?'更新中…':'刷新工作台'}</button><small>{updated?`更新于 ${date(updated)}`:'仅显示分配给你的客户'}</small></div></header>
+    <header className="mw-header"><div><div className="mw-eyebrow">健康管理 / 受控试点</div><h1>体重与代谢管理 <span className="mw-tag">白名单</span></h1><p>系统负责日常反馈，你只需关注需要团队帮助的客户。</p></div><div className="mw-refresh"><button className="mw-button mw-secondary" disabled={loading||busy} onClick={()=>{setSelected(null);load()}}>{loading?'更新中…':'刷新工作台'}</button><small>{updated?`更新于 ${date(updated)}`:'仅显示分配给你的客户'}</small></div></header>
     {error&&<div className="mw-alert" role="alert">{error}<button disabled={busy||loading} onClick={load}>重新加载</button></div>}
     {notice&&<div className="mw-notice" role="status">{notice}</div>}
     <section className="mw-metrics" aria-label="试点概览">{[
@@ -53,8 +55,9 @@ export default function MetabolicPilotPage({ api = metabolicPilotAPI }) {
       <section className="mw-detail" aria-label="客户服务详情">{!current?<div className="mw-detail-placeholder"><span>◎</span><h2>选择客户，查看服务进展</h2><p>查看求助与已有回复，再决定是否需要人工介入。<br/>数据异常仍在「日常健康数据」中处理。</p><a href="/daily-checkin">前往日常健康数据 →</a></div>:<>
         <div className="mw-detail-title"><div><h2>{current.user?.name||'未命名客户'}</h2><p>{labels[current.state]}{!current.allowed?' · 资格已撤回':''}</p></div><span className="mw-tag">12周体验</span></div>
         <section className="mw-cycle"><div><strong>{cycle(current).phase}</strong><small>{cycle(current).text}</small></div><div className="mw-progress" role="progressbar" aria-label="自然周期进度，不代表服务完成率" aria-valuenow={Math.round(cycle(current).percent)} aria-valuemin={0} aria-valuemax={100}><span style={{width:`${cycle(current).percent}%`}}/></div><div className="mw-cycle-dates"><span>开始 {date(current.startedAt)}</span><span>结束 {date(current.endsAt)}</span></div></section>
-        {current.help?.status?<section className="mw-help"><h3>{current.help.status==='open'?'客户需要帮助':'最近一次处理结果'}</h3><p className="mw-message">{current.help.message}</p><small>提交于 {date(current.help.requestedAt)}</small>{current.help.reply&&<div className="mw-reply"><strong>团队回复</strong><p>{current.help.reply}</p><small>{date(current.help.closedAt)} · 回复可由客户查看，未代表已读确认</small></div>}
-        {current.help.status==='open'&&<form onSubmit={resolve}><label htmlFor="mw-reply">处理结果 <span>保存后向客户展示</span></label><textarea id="mw-reply" required maxLength={1000} value={reply} disabled={busy} onChange={e=>setReply(e.target.value)} placeholder="说明已采取的措施，以及客户下一步可以怎么做…"/><div className="mw-form-bottom"><label htmlFor="mw-minutes">实际用时（分钟）<input id="mw-minutes" required type="number" min="0.1" max="480" step="0.1" value={minutes} disabled={busy} onChange={e=>setMinutes(e.target.value)}/></label><button className="mw-button" disabled={busy||!reply.trim()||!minutes}>{busy?'正在保存…':'发送回复并结束本次求助'}</button></div></form>}</section>:<div className="mw-neutral">客户尚未提交求助。日常记录由系统自动反馈，无需创建每日人工任务。</div>}
+        {current.help?.status?<section className="mw-help"><h3>{current.help.status==='open'?'客户需要帮助':'最近一次处理结果'}</h3><p>责任人：{current.owner?.name||'待管理员核对归属'}</p><p className="mw-message">{current.help.message}</p><small>来源：健康数据页求助 · 提交于 {date(current.help.requestedAt)}</small>{current.help.reply&&<div className="mw-reply"><strong>团队回复</strong><p>{current.help.reply}</p><small>{date(current.help.closedAt)} · 回复可由客户查看，未代表已读确认</small></div>}
+        {current.help.status==='open'&&current.canAssign&&<div><label>调整责任人 <select value={newOwner} onChange={e=>setNewOwner(e.target.value)}><option value="">选择在职健管专员</option>{owners.map(o=><option key={o._id} value={o._id}>{o.name}</option>)}</select></label><button disabled={busy||!newOwner} onClick={assign}>确认指派</button></div>}
+        {current.help.status==='open'&&current.canResolve&&<form onSubmit={resolve}><label htmlFor="mw-reply">处理结果 <span>保存后向客户展示</span></label><textarea id="mw-reply" required maxLength={1000} value={reply} disabled={busy} onChange={e=>setReply(e.target.value)} placeholder="说明已采取的措施，以及客户下一步可以怎么做…"/><div className="mw-form-bottom"><label htmlFor="mw-minutes">实际用时（分钟）<input id="mw-minutes" required type="number" min="0.1" max="480" step="0.1" value={minutes} disabled={busy} onChange={e=>setMinutes(e.target.value)}/></label><button className="mw-button" disabled={busy||!reply.trim()||!minutes}>{busy?'正在保存…':'发送回复并结束本次求助'}</button></div></form>}</section>:<div className="mw-neutral">客户尚未提交求助。日常记录由系统自动反馈，无需创建每日人工任务。</div>}
         <details className="mw-history"><summary>查看服务留痕 · {current.history?.length||0}条</summary>{[...(current.history||[])].reverse().map((event,index)=><div key={index}><small>{date(event.at)}</small><strong>{actions[event.action]||event.action}</strong>{event.note&&<p>{event.note}</p>}{event.minutes>0&&<small>实际用时 {event.minutes} 分钟</small>}</div>)}</details>
       </>}</section></div>:null}
     <footer className="mw-footer">当前最多展示200位授权客户。周期进度不等于疗效或闭环完成率；异常监测与紧急情况沿用原处理流程。</footer>

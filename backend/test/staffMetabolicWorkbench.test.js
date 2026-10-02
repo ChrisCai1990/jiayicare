@@ -11,7 +11,7 @@ function harness(initial=[],failure=false){
   const flush=()=>new Promise(resolve=>setImmediate(resolve));
   return{render,nodes,calls,values,flush,load:async()=>{render();effects[0]();await flush()}};
 }
-const sample={_id:'synthetic-1',user:{name:'演示客户 A'},allowed:true,state:'active',revision:7,humanMinutes:0,startedAt:new Date(Date.now()-35*86400000).toISOString(),endsAt:new Date(Date.now()+49*86400000).toISOString(),help:{status:'open',requestedAt:new Date().toISOString(),message:'最近出差，想调整记录节奏，应该怎样设置？'},history:[]};
+const sample={_id:'synthetic-1',user:{name:'演示客户 A'},owner:{name:'测试健管'},canResolve:true,allowed:true,state:'active',revision:7,humanMinutes:0,startedAt:new Date(Date.now()-35*86400000).toISOString(),endsAt:new Date(Date.now()+49*86400000).toISOString(),help:{status:'open',requestedAt:new Date().toISOString(),message:'最近出差，想调整记录节奏，应该怎样设置？'},history:[]};
 test('staff empty state guides enrollment, load failure never pretends zero customers',async()=>{
   const empty=harness();await empty.load();
   assert.ok(empty.nodes().some(n=>n.type==='h2'&&n.props.children.includes('等待首位客户')));

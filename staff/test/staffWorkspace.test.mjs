@@ -5,6 +5,7 @@ import { notificationTotal, taskProgress, followUpDateRange, filterReviewTodos, 
 test('notification count includes messages and both referral queues, never adds sent pushes', () => {
   assert.equal(notificationTotal({ unreadMessageCount: 13, pushCount: 30 }), 13)
   assert.equal(notificationTotal({ unreadMessageCount: 4, pendingReferralCount: 2, unreadRepliedCount: 1 }), 7)
+  assert.equal(notificationTotal({ metabolicHelpCount: 1 }), 1)
   assert.equal(notificationTotal({ unreadMessageCount: -1, pendingReferralCount: '3' }), 3)
 })
 test('pending work cannot be presented as complete, cancelled tasks do not block completion', () => {
