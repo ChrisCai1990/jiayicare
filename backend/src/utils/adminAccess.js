@@ -4,7 +4,8 @@ function platformAdminMayAccess(path) {
   const pathname = String(path || '').split('?')[0];
   return pathname === '/api/admin/me/password'
     || /^\/api\/admin\/tenants(?:\/|$)/.test(pathname)
-    || /^\/api\/admin\/ai-control(?:\/|$)/.test(pathname);
+    || /^\/api\/admin\/ai-control(?:\/|$)/.test(pathname)
+    || /^\/api\/admin\/agreements(?:\/|$)/.test(pathname);
 }
 
 module.exports = { platformAdminMayAccess };

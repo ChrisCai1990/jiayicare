@@ -43,6 +43,7 @@ function createBudgetRunner(db = store, now = () => new Date()) {
       await db.insert({ _id: id, createdAt: started, status: 'reserved', provider, model,
         business: ctx.business, reportId: ctx.reportId || '', page: ctx.page || null,
         stage: ctx.stage || 'request', actorId: ctx.actorId || '', tenantId: ctx.tenantId || '',
+        siteHost: ctx.siteHost || '',
         reservedTokens: estimate.total, reservedMicros: estimatedMicros, rate: rate || null,
         scopes: reserved, inputTokens: null, outputTokens: null, actualTokens: null, costMicros: null });
     } catch (error) {

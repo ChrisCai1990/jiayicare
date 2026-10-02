@@ -14,6 +14,7 @@ let usageIndexes;
 async function prepareUsageIndexes() {
   if (!usageIndexes) usageIndexes = Promise.all([
     collection('ai_usage').createIndex({ createdAt: -1, _id: -1 }),
+    collection('ai_usage').createIndex({ tenantId: 1, createdAt: -1 }),
     collection('ai_usage').createIndex({ reportId: 1, createdAt: -1, _id: -1 }),
     collection('ai_usage').createIndex({ business: 1, createdAt: -1, _id: -1 }),
     collection('ai_control_audit').createIndex({ at: -1 }),
