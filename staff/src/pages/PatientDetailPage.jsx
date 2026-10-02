@@ -2049,8 +2049,15 @@ export default function PatientDetailPage() {
   const [usingEntitlementId, setUsingEntitlementId] = useState('')
   const [historyReviewEntitlement, setHistoryReviewEntitlement] = useState(null)
   const [historyReviewSaving, setHistoryReviewSaving] = useState(false)
-  const historyReviewNeeded = packageEntitlements.some(item => item.historyVerified === false)
-    || membershipSummary?.plans?.some(plan => plan.source === 'configuration')
+  useEffect(() => {
+    if (tab === 'consumption' && historyReviewEntitlement) {
+      document.getElementById('patient-service-redemption')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [tab, historyReviewEntitlement])
+  const historyReviewNeeded = membershipSummary?.historyReviewRequired === true
+    || packageEntitlements.some(item => item.historyVerified === false)
+    || membershipSummary?.plans?.some(plan => plan.source === 'configuration' || /历史.*待核对/.test(plan.notice || '')
+      || [...(plan.groups?.shared || []), ...(plan.groups?.independent || [])].some(item => /历史.*待核对/.test(item.detail || '')))
   const openPackageHistoryReview = async (entitlement = null) => {
     try {
       const target = entitlement || packageEntitlements.find(item => item.historyVerified === false)
@@ -10935,7 +10942,7 @@ export default function PatientDetailPage() {
 
       {/* ── Membership Tab ── */}
       {tab === 'membership' && (
-        <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} onViewRedemption={() => setTab('consumption')} historyReviewNeeded={historyReviewNeeded} isSuperadmin={staff?.role === 'superadmin'} onReviewHistory={openPackageHistoryReview} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
+        <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} onViewRedemption={() => setTab('consumption')} historyReviewNeeded={historyReviewNeeded} isSuperadmin={staff?.role === 'superadmin' || membershipSummary?.canReviewHistory === true} onReviewHistory={openPackageHistoryReview} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
       )}
 
       {/* 随访详情弹窗 */}
@@ -13033,7 +13040,7 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
           {isSuperadmin ? <button type="button" className="btn btn-primary btn-sm" style={{ marginLeft: 10 }} onClick={() => onReviewHistory()}>核对历史次数</button>
             : <span style={{ marginLeft: 8 }}>请医护端超级管理员在此客户的“会员权益”中核对。</span>}
         </div>}
-        <MembershipBenefitsSummary data={benefits} error={benefitsError} onRefresh={onBenefitsRefresh} onViewRedemption={onViewRedemption} />
+        <MembershipBenefitsSummary data={benefits} error={benefitsError} onRefresh={onBenefitsRefresh} onViewRedemption={onViewRedemption} onReviewHistory={isSuperadmin ? onReviewHistory : null} />
         <div className="card"><div className="card-header"><div className="card-title">合作伙伴权益</div></div><div className="card-body">
           {partnerBenefitsError || (!partnerBenefits?.length ? '当前会员类型暂无可见合作伙伴权益' : partnerBenefits.map(group => <div key={group.partner.id} style={{ marginBottom: 12 }}><strong>{group.partner.name}</strong>{group.benefits.map(item => <div key={item.id} style={{ marginTop: 5, color: '#4A6558' }}>{item.title}{item.subtitle ? ` · ${item.subtitle}` : ''}</div>)}</div>))}
         </div></div>

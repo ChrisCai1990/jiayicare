@@ -7,8 +7,8 @@ function Quota({item,shared}) {
     <div style={muted}>{item.detail || '使用情况待核对 · 暂不显示剩余次数'}</div>
   </div>
 }
-export default function MembershipBenefitsSummary({ data, error, onRefresh, onViewRedemption }) {
-  return <div className="card" style={{marginBottom:16}}><div className="card-header"><div className="card-title">会员计划与使用情况</div><div style={{display:'flex',gap:8}}>{onViewRedemption && <button className="btn btn-primary btn-sm" onClick={onViewRedemption}>查看服务核销</button>}<button className="btn btn-secondary btn-sm" onClick={onRefresh}>刷新权益</button></div></div><div className="card-body">
+export default function MembershipBenefitsSummary({ data, error, onRefresh, onViewRedemption, onReviewHistory }) {
+  return <div className="card" style={{marginBottom:16}}><div className="card-header"><div className="card-title">会员计划与使用情况</div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{onReviewHistory && <button className="btn btn-secondary btn-sm" onClick={onReviewHistory}>核对历史次数</button>}{onViewRedemption && <button className="btn btn-primary btn-sm" onClick={onViewRedemption}>查看服务核销</button>}<button className="btn btn-secondary btn-sm" onClick={onRefresh}>刷新权益</button></div></div><div className="card-body">
     {error||(!data?'正在加载…':data.message)}
     {!!data?.redemptionAlerts && <p role="alert" style={{color:'#B45309'}}>有 {data.redemptionAlerts} 项服务已完成，但套餐次数自动核销待核对。请核对服务包来源与剩余次数。</p>}
     {(data?.plans||[]).map(plan=><section key={plan.id} style={{marginBottom:20}}>

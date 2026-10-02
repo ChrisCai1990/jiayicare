@@ -7342,6 +7342,9 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
     if (customer) await require('../utils/packageServiceRedemption').ensureEffectiveServiceLedger(customer);
     const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
     const summary = customer ? await require('../utils/membershipBenefits').membershipBenefits(customer, rows) : { plans:[],message:'客户不存在' };
+    summary.canReviewHistory = req.staff.role === 'superadmin';
+    summary.historyReviewRequired = rows.some(row => row.historyVerified === false)
+      || summary.plans.some(plan => plan.source === 'configuration');
     summary.redemptionAlerts = await require('../models/PackageEntitlementRedemption').countDocuments({ patientId: req.params.id, status: 'needs_review' });
     res.json({ success: true, summary, data: rows.map(row => ({
       _id: row._id, ownerUserId: row.ownerUserId, sourceOrderId: row.sourceOrderId,
