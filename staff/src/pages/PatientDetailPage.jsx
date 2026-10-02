@@ -10744,7 +10744,7 @@ export default function PatientDetailPage() {
                       <td style={{ fontWeight: 600 }}>{item.name}</td>
                       <td><span style={{ color: '#1E6B50', fontWeight: 600 }}>套餐包含</span><div style={{ fontSize: 12, color: '#718579' }}>{item.packageName}{item.shared ? ' · 共用次数' : ''}</div></td>
                       <td style={{ color: '#1E6B50', fontWeight: 700 }}>¥0</td>
-                      <td style={{ fontSize: 12 }}>{item.historyKnown ? `可用 ${item.remaining || 0} / ${item.count || 0} 次` : `计划 ${item.count || 0} 次 · 历史余额待核对`}</td>
+                      <td style={{ fontSize: 12 }}>{item.historyKnown ? `${item.shared ? '共用' : ''}可用 ${item.remaining || 0} / ${item.count || 0} 次` : `${item.shared ? '共用' : ''}计划 ${item.count || 0} 次 · 历史余额待核对`}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>有效至 {String(item.validUntil || '').slice(0, 10)}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>按服务分配</td>
                       <td style={{ fontSize: 12, color: item.historyKnown ? '#1E6B50' : '#B45309' }}>{!item.historyKnown ? '待核对' : item.automatic ? '随评估自动核销' : Number(item.remaining) > 0 ? '待发起' : '次数已用完'}</td>
