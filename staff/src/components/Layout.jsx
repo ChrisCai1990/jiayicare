@@ -67,7 +67,7 @@ function LayoutContent() {
         <button className="mobile-menu-btn" onClick={() => setSidebarOpen(true)}>
           <span /><span /><span />
         </button>
-        <div className="mobile-header-title">嘉医汇</div>
+        <div className="mobile-header-title">{staff?.tenantName || '机构医护端'}</div>
         <div className="mobile-header-avatar">{initials}</div>
       </header>
 
@@ -79,8 +79,8 @@ function LayoutContent() {
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-logo">
-          <div className="sidebar-logo-title">嘉医汇</div>
-          <div className="sidebar-logo-sub">做健康顾问行业领跑者</div>
+          <div className="sidebar-logo-title">{staff?.tenantName || '机构医护端'}</div>
+          <div className="sidebar-logo-sub">{staff?.tenantSlogan || '医护工作台'}</div>
         </div>
 
         <nav className="sidebar-nav">

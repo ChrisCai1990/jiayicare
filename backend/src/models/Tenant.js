@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const tenantSchema = new mongoose.Schema({
   code:     { type: String, required: true, unique: true }, // 机构唯一标识（英文/拼音，如 jiayihui），用于登录域名/子域名映射
   name:     { type: String, required: true }, // 机构名称，如"嘉医汇"
+  staffPortalName: { type: String, default: '' }, // 医护端显示名称；与客户小程序品牌独立
   legalName: { type: String, default: '' }, // 签约企业全称；品牌名仍使用 name
   serviceScope: { type: [String], default: undefined }, // 平台记录的服务范围，合同效力以双方协议为准
   serviceScopeNote: { type: String, default: '' },

@@ -67,21 +67,21 @@ export default function SaasPlanPage() {
     {tenant && <>
       <section className="card sp-hero">
         <div className="sp-hero-top"><div className="sp-brand">{tenant.name.slice(0, 1)}</div><div className="sp-heading"><div className="sp-eyebrow">机构档案 <span>/{tenant.code}</span></div><h2>{tenant.name}</h2><p>{tenant.legalName || '待核验企业全称'}</p></div><span className={`sp-status ${tenant.status === 'active' ? 'is-active' : ''}`}>{tenant.status === 'active' ? '运营中' : '待接入'}</span></div>
-        <div className="sp-service-head"><h3>服务范围</h3><span>{tenant.serviceProfileSaved ? '平台已记录' : '待按协议核对'}</span></div>
-        <div className="sp-service-grid">{services.map(([code, label]) => <div key={code} className={`sp-service ${tenant.serviceScope?.includes(code) ? 'is-selected' : ''}`}><span>{tenant.serviceScope?.includes(code) ? '✓' : '＋'}</span>{label}</div>)}</div>
+        <div className="sp-service-head"><h3>服务配置</h3><span>{tenant.status === 'active' && tenant.serviceScope?.length ? '平台已配置' : '尚未开通'}</span></div>
+        {tenant.status === 'active' && tenant.serviceScope?.length ? <div className="sp-service-grid">{services.filter(([code]) => tenant.serviceScope.includes(code)).map(([code, label]) => <div key={code} className="sp-service is-selected"><span>✓</span>{label}</div>)}</div> : <p className="sp-note">嘉静佑辰尚未完成本机构的管理后台、医护端和客户端配置；当前没有可用服务。</p>}
         {tenant.serviceScopeNote && <p className="sp-note">{tenant.serviceScopeNote}</p>}
-        <p className="sp-footnote">{tenant.serviceProfileSaved ? '配置已保存。' : '以上为系统模块建议清单。'}实际交付和收费以双方协议及验收为准；此处不直接开通功能。</p>
+        <p className="sp-footnote">实际交付和收费以双方协议及验收为准；保存服务清单不直接开通功能。</p>
       </section>
       {platform && <details className="card sp-editor"><summary>编辑签约企业与服务范围 <span>填写变更依据后保存</span></summary>
         <div className="sp-editor-body"><label>签约企业全称<input className="form-input" maxLength={120} value={profileForm.legalName} onChange={e => setProfileForm({ ...profileForm, legalName: e.target.value })} /></label>
         <div className="sp-choice-grid">{services.map(([code, label]) => <label key={code}><input type="checkbox" checked={profileForm.serviceScope.includes(code)} onChange={e => setProfileForm({ ...profileForm, serviceScope: e.target.checked ? [...profileForm.serviceScope, code] : profileForm.serviceScope.filter(item => item !== code) })} />{label}</label>)}</div>
         <div className="sp-fields"><label>服务说明<input className="form-input" maxLength={500} value={profileForm.serviceScopeNote} onChange={e => setProfileForm({ ...profileForm, serviceScopeNote: e.target.value })} placeholder="交付方式、上线安排等" /></label><label>配置依据<input className="form-input" maxLength={500} value={profileReason} onChange={e => setProfileReason(e.target.value)} placeholder="例如：根据双方服务清单确认" /></label></div>
-        <button className="btn btn-primary" disabled={busy || profileReason.trim().length < 4 || !profileForm.legalName.trim() || !profileForm.serviceScope.length} onClick={() => action(() => adminAPI.saveTenantServiceProfile(tenantId, { ...profileForm, reason: profileReason }))}>保存服务配置</button></div>
+        <button className="btn btn-primary" disabled={busy || profileReason.trim().length < 4 || !profileForm.legalName.trim()} onClick={() => action(() => adminAPI.saveTenantServiceProfile(tenantId, { ...profileForm, reason: profileReason }))}>保存服务清单草案</button></div>
       </details>}
       <section className="card sp-commercial"><div className="sp-section-title"><div><span className="sp-eyebrow">商务条款</span><h2>{tenant.commercialPlan === 'standard' ? '本机构专属报价' : '独立合作协议'}</h2></div><span className="sp-tag">{tenant.commercialPlan === 'standard' ? '标准套餐 · 可协商' : '独立协议'}</span></div>
       {tenant.commercialPlan !== 'standard' ? <div className="sp-legacy"><p>嘉医汇的价格与账号人数按独立协议执行，不套用新机构标准价。</p><a className="btn btn-secondary" href="/agreements">查看合作协议与收费</a></div> : <>
-        <div className="sp-metrics"><div><small>平台订阅</small><strong>{yuan(tenant.terms.monthlyPlatformYuan)}<em>/月</em></strong></div><div><small>首次上线</small><strong>{yuan(tenant.terms.setupYuan)}</strong></div><div><small>在管客户</small><strong>{tenant.terms.activeClientLimit}<em>人</em></strong></div><div><small>包含账号</small><strong>{tenant.terms.includedStaffSeats} + {tenant.terms.includedAdminSeats}<em>个</em></strong></div></div>
-        <div className="sp-seat"><span>服务人员 <strong>{tenant.usage.staff}/{tenant.staffLimit}</strong></span><span>机构管理员 <strong>{tenant.usage.admins}/{tenant.adminLimit}</strong></span><span>预计超额账号费 <strong>{yuan(tenant.estimatedMonthlySeatFeeYuan)}/月</strong></span></div>
+        <div className="sp-metrics"><div><small>平台订阅</small><strong>{yuan(tenant.terms.monthlyPlatformYuan)}<em>/月</em></strong></div><div><small>首次上线</small><strong>{yuan(tenant.terms.setupYuan)}</strong></div><div><small>在管客户</small><strong>{tenant.terms.activeClientLimit}<em>人</em></strong></div>{tenant.status === 'active' && <div><small>包含账号</small><strong>{tenant.terms.includedStaffSeats} + {tenant.terms.includedAdminSeats}<em>个</em></strong></div>}</div>
+        {tenant.status === 'active' && <div className="sp-seat"><span>服务人员 <strong>{tenant.usage.staff}/{tenant.staffLimit}</strong></span><span>机构管理员 <strong>{tenant.usage.admins}/{tenant.adminLimit}</strong></span><span>预计超额账号费 <strong>{yuan(tenant.estimatedMonthlySeatFeeYuan)}/月</strong></span></div>}
         <p className="sp-footnote">实际费用以双方确认的月度账单为准；页面不自动扣费。</p>
         {platform && <details className="sp-inner-details"><summary>调整本机构协商价格与包含人数</summary><p className="sp-footnote">仅更新本机构配置；合同与账单仍需双方确认。</p>
           {formFields(termsForm, setTermsForm)}
@@ -100,7 +100,7 @@ export default function SaasPlanPage() {
           <button className="btn" disabled={busy || tenant.usage.admins >= tenant.adminLimit} onClick={() => action(() => platform ? adminAPI.createTenantAdmin(tenantId, newAdmin) : adminAPI.createOwnTenantAdmin(newAdmin))}>创建账号</button>
         </div><p style={{ color: '#667' }}>机构可在本机构额度内自行创建管理员；超额由平台先扩容。初始密码须 10–128 位，首次登录强制修改。</p>
       </>}
-      {tenant.status !== 'active' && <p className="sp-footnote">待接入机构尚未开放账号和客户业务；启用前须完成跨机构隔离验收。</p>}
+      {tenant.status !== 'active' && <p className="sp-footnote">以上仅为报价草案，账号名额尚未开放。嘉静佑辰须先完成各端配置及跨机构隔离验收。</p>}
       </>}
       </section>
     </>}

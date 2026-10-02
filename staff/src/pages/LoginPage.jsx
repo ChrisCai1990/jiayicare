@@ -38,7 +38,7 @@ export default function LoginPage() {
       <div className="login-card">
         <div className="login-logo">
           <div style={{ fontSize: 40, marginBottom: 8 }}>🏥</div>
-          <div className="login-logo-title">嘉医管家</div>
+          <div className="login-logo-title">机构医护工作台</div>
           <div className="login-logo-sub">医护工作台 · 仅限授权医护人员使用</div>
         </div>
 

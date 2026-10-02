@@ -3,7 +3,7 @@ import { adminAPI } from '../api'
 import { useAdmin, useToast } from '../App'
 
 const STATUS_LABEL = { active: '运营中', suspended: '待接入／已暂停' }
-const EMPTY = { code: '', name: '', legalName: '', slogan: '', themeColor: '#1E6B50', websiteHosts: '', adminUsername: '', adminPassword: '' }
+const EMPTY = { code: '', name: '', legalName: '', staffPortalName: '', slogan: '', themeColor: '#1E6B50', websiteHosts: '', adminUsername: '', adminPassword: '' }
 const externalEnabled = import.meta.env.VITE_ENABLE_EXTERNAL_TENANTS === 'true'
 
 export default function TenantsPage() {
@@ -31,7 +31,7 @@ export default function TenantsPage() {
   useEffect(() => { if (isPlatform) load() }, [])
 
   const openCreate = (draft = false) => { setEditing(null); setDraftMode(draft); setForm(EMPTY); setShowModal(true) }
-  const openEdit = (t) => { setEditing(t); setForm({ code: t.code, name: t.name, legalName: t.legalName || '', slogan: t.slogan || '', themeColor: t.themeColor || '#1E6B50', websiteHosts: (t.websiteHosts || []).join('\n'), status: t.status, adminUsername: '', adminPassword: '' }); setShowModal(true) }
+  const openEdit = (t) => { setEditing(t); setForm({ code: t.code, name: t.name, legalName: t.legalName || '', staffPortalName: t.staffPortalName || '', slogan: t.slogan || '', themeColor: t.themeColor || '#1E6B50', websiteHosts: (t.websiteHosts || []).join('\n'), status: t.status, adminUsername: '', adminPassword: '' }); setShowModal(true) }
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const save = async () => {
@@ -39,7 +39,7 @@ export default function TenantsPage() {
     setSaving(true)
     try {
       const websiteHosts = form.websiteHosts.split(/[\n,，]+/).map(host => host.trim()).filter(Boolean)
-      if (editing) await adminAPI.updateTenant(editing._id, { name: form.name, slogan: form.slogan, themeColor: form.themeColor, status: form.status, websiteHosts })
+      if (editing) await adminAPI.updateTenant(editing._id, { name: form.name, staffPortalName: form.staffPortalName, slogan: form.slogan, themeColor: form.themeColor, status: form.status, websiteHosts })
       else if (draftMode) await adminAPI.createDraftTenant({ code: form.code, name: form.name, legalName: form.legalName })
       else await adminAPI.createTenant({ ...form, websiteHosts })
       toast(editing ? '✅ 机构已更新' : '✅ 机构创建成功')
@@ -173,6 +173,11 @@ export default function TenantsPage() {
                   <label className="form-label">品牌标语</label>
                   <input className="form-input" value={form.slogan} onChange={set('slogan')} placeholder="选填" />
                 </div>
+                {editing && <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">医护端显示名称</label>
+                  <input className="form-input" value={form.staffPortalName} onChange={set('staffPortalName')} placeholder="留空时使用机构名称" maxLength={60} />
+                  <small style={{ color: '#6B7280' }}>按员工所属机构显示；此项不创建客户小程序。</small>
+                </div>}
                 {(!draftMode || (editing && editing.status === 'active')) && <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">网站域名（每行一个，公开咨询与 AI 用量按此归属）</label>
                   <textarea className="form-input" rows={3} value={form.websiteHosts} onChange={set('websiteHosts')} placeholder={'jiaycare.com\nwww.jiaycare.com'} />
