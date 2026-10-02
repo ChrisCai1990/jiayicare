@@ -30,15 +30,15 @@ const ALLOWED_ORIGINS = [
   'http://localhost:8082',
   'http://localhost:19006', // Expo web
 ];
-app.use(cors({
-  origin: (origin, callback) => {
-    // origin 为空表示非浏览器请求（curl、移动端原生、服务器间调用）
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-    require('./utils/websiteTenant').websiteOriginAllowed(origin)
-      .then(allowed => callback(allowed ? null : new Error('CORS: website origin not registered'), allowed))
-      .catch(() => callback(new Error('CORS: website origin lookup failed')));
-  },
-  credentials: true,
+app.use(cors((req, callback) => {
+  const origin = req.headers.origin;
+  const options = { credentials: true };
+  // origin 为空表示非浏览器请求（curl、移动端原生、服务器间调用）
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, { ...options, origin: true });
+  if (!req.path.startsWith('/api/visitor-assistant/')) return callback(new Error('CORS: origin not allowed for this API'));
+  require('./utils/websiteTenant').websiteOriginAllowed(origin)
+    .then(allowed => callback(allowed ? null : new Error('CORS: website origin not registered'), { ...options, origin: allowed }))
+    .catch(() => callback(new Error('CORS: website origin lookup failed')));
 }));
 
 // 静态文件（上传图片/PDF）
