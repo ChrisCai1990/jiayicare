@@ -36,3 +36,32 @@ test('tenant query hook overrides a foreign tenantId supplied by a caller', asyn
     } catch (error) { reject(error); }
   }));
 });
+
+test('tenant writes cannot move or insert records into another institution', async () => {
+  const schema = new mongoose.Schema({ tenantId: mongoose.Schema.Types.ObjectId, name: String });
+  schema.plugin(tenantScopePlugin);
+  const Model = mongoose.model('AdminTenantWriteBoundaryTest', schema);
+  const own = new mongoose.Types.ObjectId();
+  const foreign = new mongoose.Types.ObjectId();
+
+  await new Promise((resolve, reject) => tenantContext({ admin: { _id: own, role: 'superadmin', tenantId: own } }, {}, async () => {
+    try {
+      const moving = Model.updateOne({ name: 'sample' }, { $set: { tenantId: foreign } });
+      await assert.rejects(
+        new Promise((done, fail) => schema.s.hooks.execPre('updateOne', moving, [], error => error ? fail(error) : done())),
+        /机构归属不可通过业务请求修改/
+      );
+
+      const docs = [{ name: 'new' }];
+      await new Promise((done, fail) => schema.s.hooks.execPre('insertMany', Model, [docs], error => error ? fail(error) : done()));
+      assert.equal(String(docs[0].tenantId), String(own));
+
+      const foreignDocs = [{ tenantId: foreign, name: 'foreign' }];
+      await assert.rejects(
+        new Promise((done, fail) => schema.s.hooks.execPre('insertMany', Model, [foreignDocs], error => error ? fail(error) : done())),
+        /不能写入其他机构的数据/
+      );
+      resolve();
+    } catch (error) { reject(error); }
+  }));
+});

@@ -39,6 +39,15 @@ function tenantScopePlugin(schema) {
     schema.pre(name, function () {
       const tenantId = getCurrentTenantId();
       if (!als.getStore() || tenantId === BYPASS) return;
+      // The filter alone cannot protect ownership if an update moves a document
+      // to another tenant. Keep tenantId immutable for authenticated requests.
+      const update = typeof this.getUpdate === 'function' ? this.getUpdate() : null;
+      if (update && (Array.isArray(update)
+        ? update.some(stage => /"tenantId(?:\.[^"]*)?"\s*:/.test(JSON.stringify(stage)))
+        : Object.keys(update).some(key => key === 'tenantId' ||
+          (key.startsWith('$') && Object.keys(update[key] || {}).some(field => field === 'tenantId' || field.startsWith('tenantId.')))))) {
+        throw new Error('机构归属不可通过业务请求修改');
+      }
       // A caller-supplied tenantId must never disable the authenticated tenant
       // boundary. Mongoose merges this into the query, replacing any foreign
       // tenantId that came from a route parameter or request body.
@@ -56,7 +65,21 @@ function tenantScopePlugin(schema) {
 
   schema.pre('save', function (next) {
     const tenantId = getCurrentTenantId();
-    if (tenantId && tenantId !== BYPASS && !this.tenantId) this.tenantId = tenantId;
+    if (tenantId && tenantId !== BYPASS) {
+      if (this.tenantId && String(this.tenantId) !== String(tenantId)) return next(new Error('不能保存其他机构的数据'));
+      this.tenantId = tenantId;
+    }
+    next();
+  });
+
+  schema.pre('insertMany', function (next, docs) {
+    const tenantId = getCurrentTenantId();
+    if (tenantId && tenantId !== BYPASS) {
+      for (const doc of docs) {
+        if (doc.tenantId && String(doc.tenantId) !== String(tenantId)) return next(new Error('不能写入其他机构的数据'));
+        doc.tenantId = tenantId;
+      }
+    }
     next();
   });
 }
