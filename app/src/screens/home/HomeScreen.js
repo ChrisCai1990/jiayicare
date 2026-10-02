@@ -8,7 +8,7 @@ import Svg, { Polyline, Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI } from '../../services/api';
+import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI, metabolicPilotAPI } from '../../services/api';
 import AnimatedNumber from '../../components/AnimatedNumber';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期，国内时区凌晨0-8点时
@@ -215,6 +215,7 @@ function GrowthCard({ growth, onCheckin }) {
 export default function HomeScreen({ navigation }) {
   const { user: authUser, token, isDemo } = useAuth();
   const [dashData, setDashData]             = useState(null);
+  const [pilotData, setPilotData]           = useState(null);
   const [scoreHistory, setScoreHistory]     = useState([]);
   const [loading, setLoading]               = useState(true);
   const [refreshing, setRefreshing]         = useState(false);
@@ -231,12 +232,13 @@ export default function HomeScreen({ navigation }) {
 
   const loadData = useCallback(async () => {
     try {
-      const [dashRes, followupRes, tasksRes, servicesRes] =
+      const [dashRes, followupRes, tasksRes, servicesRes, pilotRes] =
         await Promise.allSettled([
           token ? userAPI.getDashboard() : Promise.resolve(null),
           token ? followupTasksAPI.list() : Promise.resolve(null),
           token ? tasksAPI.list() : Promise.resolve(null),
           servicesAPI.list(),
+          token ? metabolicPilotAPI.get() : Promise.resolve(null),
         ]);
 
       if (dashRes.status === 'fulfilled' && dashRes.value?.success) {
@@ -254,6 +256,7 @@ export default function HomeScreen({ navigation }) {
       if (servicesRes.status === 'fulfilled' && servicesRes.value?.success) {
         setPopularServices((servicesRes.value.data?.services || []).slice(0, 4));
       }
+      setPilotData(pilotRes.status === 'fulfilled' ? pilotRes.value?.data || null : null);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   }, [token]);
@@ -405,6 +408,7 @@ export default function HomeScreen({ navigation }) {
             <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10}}><View style={{flex:1}}><Text style={{fontSize:12,color:colors.textMuted}}>{name}，{greeting}</Text><Text style={{fontSize:20,fontWeight:'700',color:colors.textPrimary,marginTop:6}}>一起照顾好今天的你</Text></View><View style={{backgroundColor:colors.primary10,borderRadius:12,padding:10,alignItems:'center'}}><Text style={{fontSize:26,fontWeight:'700',color:colors.primary}}>{scoreDisplay ?? '--'}</Text><Text style={{fontSize:10,color:colors.textMuted}}>健康评分 / 100</Text></View></View>
             <Text style={{fontSize:12,color:colors.textSecondary,lineHeight:19,marginVertical:16}}>{trendActionText || '记录近期变化，帮助了解健康趋势'}</Text>
             <TouchableOpacity style={{flexDirection:'row',alignItems:'center',gap:9,backgroundColor:colors.primary,borderRadius:12,padding:14}} onPress={()=>goProtected('Checkin')}><Ionicons name="add-circle-outline" size={20} color="#fff"/><Text style={{flex:1,fontSize:15,fontWeight:'600',color:'#fff'}}>记录健康数据</Text><Ionicons name="chevron-forward" size={18} color="#fff"/></TouchableOpacity>
+            {!!pilotData?.help?.status&&<TouchableOpacity onPress={()=>goProtected('Checkin')} style={{backgroundColor:colors.primary10,borderRadius:12,padding:12,marginTop:12}}><Text style={{fontSize:13,fontWeight:'600',color:colors.primary}}>{pilotData.help.status==='open'?'体重管理求助待处理':'体重管理求助已回复'} ›</Text><Text numberOfLines={2} style={{fontSize:12,color:colors.textPrimary,marginTop:5}}>{pilotData.help.status==='open'?`负责人：${pilotData.helpOwner||'待核对'}`:pilotData.help.reply||'点击查看处理结果'}</Text></TouchableOpacity>}
             <Text style={{fontSize:11,color:colors.textMuted,textAlign:'center',marginTop:10}}>{dashData?.growth?.totalCheckinDays>0?`近30天已记录 ${dashData.growth.totalCheckinDays} 天 · 每一次记录，多一份了解`:'每一次记录，都多一份了解'}</Text>
           </View>
 

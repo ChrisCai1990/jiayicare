@@ -3,7 +3,7 @@ import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { userAPI, tasksAPI, followupTasksAPI, systemAPI, servicesAPI } from '../../services/api';
+import { userAPI, tasksAPI, followupTasksAPI, systemAPI, servicesAPI, metabolicPilotAPI } from '../../services/api';
 import TrendChart from '../../components/TrendChart';
 import Icon from '../../components/Icon';
 import useNavBar from '../../hooks/useNavBar';
@@ -188,6 +188,7 @@ export default function HomePage() {
     }
   })();
   const [dashData, setDashData] = useState(null);
+  const [pilotData, setPilotData] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [followups, setFollowups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -205,7 +206,7 @@ export default function HomePage() {
     const current = () => requestId === loadRequestRef.current && sessionRef.current === token;
     setLoading(true);
     setSectionState({ dashboard: token ? 'loading' : 'ready', tasks: token ? 'loading' : 'ready', followups: token ? 'loading' : 'ready', services: 'loading' });
-    if (!token) { setDashData(null); setTasks([]); setFollowups([]); }
+    if (!token) { setDashData(null); setTasks([]); setFollowups([]); setPilotData(null); }
     const load = async (key, request, apply) => {
       try {
         const result = await request();
@@ -221,13 +222,14 @@ export default function HomePage() {
     if (token) jobs.push(
       load('dashboard', () => userAPI.getDashboard(), setDashData),
       load('tasks', () => tasksAPI.list(), data => setTasks((data || []).filter(t => t.status === 'pending'))),
-      load('followups', () => followupTasksAPI.list(), data => setFollowups((data || []).filter(p => !p.completedByUser && !['completed', 'cancelled'].includes(p.status))))
+      load('followups', () => followupTasksAPI.list(), data => setFollowups((data || []).filter(p => !p.completedByUser && !['completed', 'cancelled'].includes(p.status)))),
+      metabolicPilotAPI.get().then(result => { if (current()) setPilotData(result?.data || null); }).catch(() => { if (current()) setPilotData(null); })
     );
     await Promise.all(jobs);
     if (current()) setLoading(false);
   }, [token, authLoading]);
 
-  useEffect(() => { setDashData(null); setTasks([]); setFollowups([]); setTaskDetail(null); }, [token]);
+  useEffect(() => { setDashData(null); setTasks([]); setFollowups([]); setPilotData(null); setTaskDetail(null); }, [token]);
   useEffect(() => () => { loadRequestRef.current += 1; }, []);
 
   useEffect(() => { loadCore(); }, [loadCore]);
@@ -340,6 +342,10 @@ export default function HomePage() {
           <View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{display:'flex',alignItems:'center',gap:'9px',backgroundColor:colors.primary,borderRadius:'12px',padding:'13px 15px'}}>
             <Text style={{fontSize:'22px',color:'#fff'}}>＋</Text><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>记录健康数据</Text><Text style={{color:'#fff'}}>›</Text>
           </View>
+          {!!pilotData?.help?.status&&<View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{backgroundColor:colors.primary10,borderRadius:'12px',padding:'12px',marginTop:'12px'}}>
+            <Text style={{display:'block',fontSize:'13px',fontWeight:600,color:colors.primary}}>{pilotData.help.status==='open'?'体重管理求助待处理':'体重管理求助已回复'} ›</Text>
+            <Text style={{display:'block',fontSize:'12px',color:colors.textPrimary,marginTop:'5px'}} numberOfLines={2}>{pilotData.help.status==='open'?`负责人：${pilotData.helpOwner||'待核对'}`:pilotData.help.reply||'点击查看处理结果'}</Text>
+          </View>}
           <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',textAlign:'center',marginTop:'10px'}}>{growth.totalCheckinDays>0?`近30天已记录 ${growth.totalCheckinDays} 天`:'每一次记录，都多一份了解'}</Text>
         </View>
 
