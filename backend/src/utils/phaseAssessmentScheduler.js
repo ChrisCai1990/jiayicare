@@ -34,7 +34,28 @@ function periodFor(frequency, now = new Date(), confirmedAt) {
   return { key: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, label: `${now.getFullYear()}年${now.getMonth() + 1}月` };
 }
 
-async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null, assessmentAnchor = plan.confirmedAt, frequencyOverride = '' }) {
+// Automatic calendar assessments review the most recently completed period.
+// Never open a new month's review before that month has finished.
+function completedCalendarPeriod(frequency, now = new Date(), anchor = null) {
+  if (!['monthly', 'quarterly'].includes(frequency)) return null;
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const [year, month] = day.split('-').map(Number);
+  const currentStartMonth = frequency === 'quarterly' ? Math.floor((month - 1) / 3) * 3 + 1 : month;
+  const currentStart = new Date(`${year}-${String(currentStartMonth).padStart(2, '0')}-01T00:00:00+08:00`);
+  const previousStart = new Date(Date.UTC(year, currentStartMonth - 1 - (frequency === 'quarterly' ? 3 : 1), 1));
+  const previousYear = previousStart.getUTCFullYear();
+  const previousMonth = previousStart.getUTCMonth() + 1;
+  const periodStart = new Date(`${previousYear}-${String(previousMonth).padStart(2, '0')}-01T00:00:00+08:00`);
+  const anchorDate = anchor ? new Date(anchor) : null;
+  if (anchorDate && (!Number.isFinite(anchorDate.getTime()) || anchorDate >= currentStart)) return null;
+  const start = anchorDate && anchorDate > periodStart ? anchorDate : periodStart;
+  const end = new Date(currentStart.getTime() - 1);
+  const key = frequency === 'monthly' ? `${previousYear}-${String(previousMonth).padStart(2, '0')}` : `${previousYear}-Q${Math.floor((previousMonth - 1) / 3) + 1}`;
+  const label = frequency === 'monthly' ? `${previousYear}年${previousMonth}月` : `${previousYear}年第${Math.floor((previousMonth - 1) / 3) + 1}季度`;
+  return { key, label, start, end };
+}
+
+async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null, assessmentAnchor = plan.confirmedAt, frequencyOverride = '', contextWindow = null }) {
   const frequency = ['biweekly', 'monthly', 'quarterly', 'yearly'].includes(frequencyOverride)
     ? frequencyOverride : ['monthly', 'quarterly', 'yearly'].includes(template.content?.frequency)
     ? template.content.frequency : 'quarterly';
@@ -45,8 +66,9 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
   if (!period) return null;
   const existing = await PhaseAssessment.exists({ annualPlanId: plan._id, templateId: template._id, periodKey: { $in: [period.key, basePeriod.key] } });
   if (existing) return null;
-  const windowDays = [7, 14, 30, 90, 365].includes(template.content?.windowDays) ? template.content.windowDays : frequency === 'yearly' ? 365 : frequency === 'quarterly' ? 90 : 30;
-  const context = await buildStageAssessmentContext(user, windowDays);
+  const templateWindowDays = [7, 14, 30, 90, 365].includes(template.content?.windowDays) ? template.content.windowDays : frequency === 'yearly' ? 365 : frequency === 'quarterly' ? 90 : 30;
+  const windowDays = contextWindow ? Math.max(1, Math.ceil((new Date(contextWindow.end) - new Date(contextWindow.start)) / 86400000)) : templateWindowDays;
+  const context = await buildStageAssessmentContext(user, windowDays, contextWindow);
   // 固定本次评估对应方案，避免读取过程中出现另一份新确认方案而混用目标。
   context.confirmedAnnualPlan = { _id: plan._id, year: plan.year, planType: plan.planType, templateName: plan.templateName, moduleData: plan.moduleData, notes: plan.notes, confirmedAt: plan.confirmedAt };
   const focus = template.content?.focus || '阶段数据变化、生活方式关联、潜在风险和下一步计划';
@@ -82,25 +104,33 @@ async function scanAndCreatePhaseAssessments() {
   const seenPatients = new Set();
   for (const plan of plans) {
     if (seenPatients.has(String(plan.patientId))) continue;
-    let user, gate, frequency;
+    let user, gate, frequency, pilotMonthly = false;
     try {
       user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
       if (!user || user.isDeleted || user.aiPilotFeatures?.stageAssessment !== true) continue;
       gate = await require('./annualPeriodicGate').annualPeriodicGate(plan, user);
       const rights = await require('./packageFeatureEntitlements').getAiEntitlements(user, gate.access);
-      if (!gate.allowed || !rights.phaseAssessment || !['biweekly', 'monthly', 'quarterly'].includes(rights.phaseAssessmentFrequency) || !eligibleForAutomaticAssessment(user, new Date(), gate.access)) continue;
-      frequency = rights.phaseAssessmentFrequency;
+      if (!gate.allowed || !rights.phaseAssessment || !eligibleForAutomaticAssessment(user, new Date(), gate.access)) continue;
+      // Explicitly opted-in pilot members may use their one active monthly template
+      // while older package snapshots have no stored assessment frequency.
+      pilotMonthly = !rights.phaseAssessmentFrequency && templates.some(t => t.content?.frequency === 'monthly' && t.clientBrand === user.clientBrand);
+      frequency = pilotMonthly ? 'monthly' : rights.phaseAssessmentFrequency;
+      if (!['biweekly', 'monthly', 'quarterly'].includes(frequency)) continue;
     } catch (error) {
       console.error('[phase-assessment] eligibility failed', String(plan.patientId), error.message);
       continue; // 单个客户凭据查询失败不阻断其他客户，也不带病调用AI。
     }
     seenPatients.add(String(plan.patientId));
     const eligibleTemplates = templates.filter(t => !t.clientBrand || t.clientBrand === user.clientBrand)
-      .filter(t => t.content?.frequency !== 'yearly')
+      .filter(t => t.content?.frequency !== 'yearly' && (!pilotMonthly || t.content?.frequency === 'monthly'))
       // 优先用同频模板；没有时复用已启用的标准模板，但由服务包频率决定实际节点。
-      .sort((a, b) => Number(b.content?.frequency === frequency) - Number(a.content?.frequency === frequency));
-    for (const template of eligibleTemplates) {
-      try { if (await createAssessment({ plan, user, template, assessmentAnchor: gate.anchor, frequencyOverride: frequency })) created++; }
+      .sort((a, b) => Number(b.content?.frequency === frequency) - Number(a.content?.frequency === frequency)
+        || Number(b.clientBrand === user.clientBrand) - Number(a.clientBrand === user.clientBrand));
+    for (const template of pilotMonthly ? eligibleTemplates.slice(0, 1) : eligibleTemplates) {
+      const completed = completedCalendarPeriod(frequency, new Date(), gate.anchor);
+      if (['monthly', 'quarterly'].includes(frequency) && !completed) continue;
+      try { if (await createAssessment({ plan, user, template, assessmentDomain: pilotMonthly ? 'nutrition' : undefined, assessmentAnchor: gate.anchor, frequencyOverride: frequency,
+        periodOverride: completed && { key: completed.key, label: completed.label }, contextWindow: completed && { start: completed.start, end: completed.end } })) created++; }
       catch (error) { console.error('[phase-assessment] create failed', String(plan.patientId), error.message); }
     }
   }
@@ -125,4 +155,4 @@ function eligibleForAutomaticAssessment(user, now = new Date(), access = null) {
   // 自动AI评估比普通访问更严格：必须有可核验的结束日期。
   return effective.active === true && Boolean(dayOf(effective.endDate));
 }
-module.exports = { createAssessment, scanAndCreatePhaseAssessments, startPhaseAssessmentScheduler, INTENSIVE_NUTRITION_WEEKS, intensiveNutritionCheckpoint, eligibleForAutomaticAssessment, periodFor };
+module.exports = { createAssessment, scanAndCreatePhaseAssessments, startPhaseAssessmentScheduler, INTENSIVE_NUTRITION_WEEKS, intensiveNutritionCheckpoint, eligibleForAutomaticAssessment, periodFor, completedCalendarPeriod };

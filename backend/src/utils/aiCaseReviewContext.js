@@ -52,9 +52,9 @@ async function buildContext(user, scopes = []) {
   return snapshot;
 }
 
-async function buildStageAssessmentContext(user, days = 30) {
-  const end = new Date();
-  const start = new Date(end.getTime() - days * 86400000);
+async function buildStageAssessmentContext(user, days = 30, window = null) {
+  const end = window?.end ? new Date(window.end) : new Date();
+  const start = window?.start ? new Date(window.start) : new Date(end.getTime() - days * 86400000);
   const [records, followups, plan, reports] = await Promise.all([
     HealthRecord.find({ user: user._id, recordedAt: { $gte: start, $lte: end } }).sort({ recordedAt: 1 })
       .select('category type label value unit extra status note recordedAt recordedBy.source').limit(240).lean(),

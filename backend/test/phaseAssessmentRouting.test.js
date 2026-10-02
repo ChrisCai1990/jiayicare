@@ -16,6 +16,10 @@ test('旧营养记录保留审核岗位，完成记录退出待办', () => {
   assert.equal(currentReviewer({ status: 'rejected' }), 'nutritionist');
   assert.equal(currentReviewer({ status: 'finalized' }), null);
   assert.equal(currentReviewer({ primaryReviewRole: 'tcmDoctor', status: 'doctor_review' }), 'familyDoctor');
+  for (const role of ['superadmin', 'familyDoctor', 'nutritionist']) {
+    assert.equal(reviewQueueFilter(role).periodKey.$not.test('2026-08-legacy-e175a2'), true);
+    assert.equal(reviewQueueFilter(role).periodKey.$not.test('2026-09:nutrition'), false);
+  }
 });
 test('对应专业审核、风险升级和退回形成同一条流转', () => {
   const primaryReviewRole = 'rehabSpecialist';
