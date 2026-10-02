@@ -16,6 +16,7 @@ import ReportReviewQuality, { useReportReviewActivity } from '../components/Repo
 import ClinicalDocumentReviewFields from '../components/ClinicalDocumentReviewFields'
 import MembershipBenefitsSummary from '../components/MembershipBenefitsSummary'
 import PackageHistoryReview from '../components/PackageHistoryReview'
+import customerNumber from '../../../shared/customerNumber.cjs'
 import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
@@ -2048,6 +2049,17 @@ export default function PatientDetailPage() {
   const [usingEntitlementId, setUsingEntitlementId] = useState('')
   const [historyReviewEntitlement, setHistoryReviewEntitlement] = useState(null)
   const [historyReviewSaving, setHistoryReviewSaving] = useState(false)
+  const historyReviewNeeded = packageEntitlements.some(item => item.historyVerified === false)
+    || membershipSummary?.plans?.some(plan => plan.source === 'configuration')
+  const openPackageHistoryReview = async (entitlement = null) => {
+    try {
+      const target = entitlement || packageEntitlements.find(item => item.historyVerified === false)
+        || (await staffAPI.preparePackageHistoryReview(id)).data
+      setHistoryReviewEntitlement(target)
+      setTab('consumption')
+      await loadMembership()
+    } catch (error) { toast(error.message || '无法开始历史次数核对') }
+  }
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
@@ -4748,7 +4760,8 @@ export default function PatientDetailPage() {
               ) : (
                 <>
                   <InfoRow label="姓名" value={user.name} />
-                  <InfoRow label="客户编号" value={user._id ? `KH-${String(user._id).toUpperCase()}` : '-'} />
+                  <InfoRow label="客户编号" value={customerNumber.formatCustomerNumber(user._id) || '-'} />
+                  <InfoRow label="编号规则" value="KH + 系统自动生成的唯一ID；建档后固定不变，可用于搜索" />
                   <InfoRow label="称呼（AI用）" value={(() => {
                     // 与后端 resolveTitle 对齐：preferredTitle 优先，否则按性别+姓氏兜底，未标注时标「自动」
                     if (user.preferredTitle && user.preferredTitle.trim()) return user.preferredTitle.trim()
@@ -10668,13 +10681,6 @@ export default function PatientDetailPage() {
             shared: false, historyKnown: false, automatic: /营养评估/.test(right.name), validUntil: plan.validUntil,
           })),
         ])
-        const beginHistoryReview = async entitlement => {
-          try {
-            if (entitlement) setHistoryReviewEntitlement(entitlement)
-            else { const result = await staffAPI.preparePackageHistoryReview(id); setHistoryReviewEntitlement(result.data); await loadMembership() }
-            document.getElementById('patient-service-redemption')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          } catch (error) { toast(error.message || '无法开始历史次数核对') }
-        }
         const startIncludedService = async item => {
           if (!item.entitlement || !item.productId || !window.confirm(`确认从「${item.packageName}」发起「${item.name}」吗？本次生成 ¥0 履约单并预占 1 次，服务完成后核销。`)) return
           setUsingEntitlementId(item.key)
@@ -10714,9 +10720,9 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button className="btn btn-primary btn-sm" onClick={() => document.getElementById('patient-service-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>查看服务清单（套餐 {includedServices.length} 项 · 已安排订单 {patientOrders.filter(order => order.status === 'scheduled' && (order.usedUnits || 0) < (order.totalUnits || 1)).length} 条）</button>
                   <button className="btn btn-secondary btn-sm" onClick={() => setTab('membership')}>查看会员权益总览</button>
-                  {staff?.role === 'superadmin' && !packageEntitlements.length && membershipSummary?.plans?.some(plan => plan.source === 'configuration') && <button className="btn btn-secondary btn-sm" onClick={() => beginHistoryReview(null)}>核对历史服务次数</button>}
+                  {staff?.role === 'superadmin' && !packageEntitlements.some(item => item.historyVerified === false) && membershipSummary?.plans?.some(plan => plan.source === 'configuration') && <button className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview()}>核对历史服务次数</button>}
                 </div>
-                {staff?.role === 'superadmin' && packageEntitlements.filter(item => item.historyVerified === false).map(item => <button key={item._id} className="btn btn-secondary btn-sm" onClick={() => setHistoryReviewEntitlement(item)} style={{ justifySelf: 'start' }}>核对「{item.packageName}」历史次数</button>)}
+                {staff?.role === 'superadmin' && packageEntitlements.filter(item => item.historyVerified === false).map(item => <button key={item._id} className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview(item)} style={{ justifySelf: 'start' }}>核对「{item.packageName}」历史次数</button>)}
                 {historyReviewEntitlement && <PackageHistoryReview key={historyReviewEntitlement._id} entitlement={historyReviewEntitlement} saving={historyReviewSaving} onCancel={() => setHistoryReviewEntitlement(null)} onSave={async data => {
                   if (!window.confirm('请确认旧服务已用次数与核对依据准确；保存后系统将据此计算可用余额。')) return
                   setHistoryReviewSaving(true)
@@ -10749,7 +10755,7 @@ export default function PatientDetailPage() {
                       <td style={{ fontSize: 12, color: '#718579' }}>按服务分配</td>
                       <td style={{ fontSize: 12, color: item.historyKnown ? '#1E6B50' : '#B45309' }}>{!item.historyKnown ? '待核对' : item.automatic ? '随评估自动核销' : Number(item.remaining) > 0 ? '待发起' : '次数已用完'}</td>
                       <td>
-                        {!item.historyKnown ? staff?.role === 'superadmin' ? <button className="btn btn-secondary btn-sm" onClick={() => beginHistoryReview(item.entitlement)}>核对历史次数</button> : <span style={{ fontSize: 12, color: '#718579' }}>请超管核对</span>
+                        {!item.historyKnown ? staff?.role === 'superadmin' ? <button className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview(item.entitlement)}>核对历史次数</button> : <span style={{ fontSize: 12, color: '#718579' }}>请医护端超管核对</span>
                           : item.automatic ? <span style={{ fontSize: 12, color: '#718579' }}>评估归档后自动核销</span>
                           : Number(item.remaining) > 0 ? <button className="btn btn-primary btn-sm" disabled={usingEntitlementId === item.key} onClick={() => startIncludedService(item)}>{usingEntitlementId === item.key ? '发起中…' : '发起 ¥0 服务'}</button>
                             : <span style={{ fontSize: 12, color: '#718579' }}>—</span>}
@@ -10929,7 +10935,7 @@ export default function PatientDetailPage() {
 
       {/* ── Membership Tab ── */}
       {tab === 'membership' && (
-        <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} onViewRedemption={() => setTab('consumption')} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
+        <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} onViewRedemption={() => setTab('consumption')} historyReviewNeeded={historyReviewNeeded} isSuperadmin={staff?.role === 'superadmin'} onReviewHistory={openPackageHistoryReview} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
       )}
 
       {/* 随访详情弹窗 */}
@@ -12983,7 +12989,7 @@ export default function PatientDetailPage() {
   )
 }
 
-function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, onBenefitsRefresh, onViewRedemption, partnerBenefits, partnerBenefitsError }) {
+function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, onBenefitsRefresh, onViewRedemption, historyReviewNeeded, isSuperadmin, onReviewHistory, partnerBenefits, partnerBenefitsError }) {
   const toast = useToast()
   const [membership, setMembership] = useState(user)
   const [cardNumber, setCardNumber] = useState(user.cardNumber || '')
@@ -13022,6 +13028,11 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <div style={{ gridColumn: '1 / -1' }}>
         <div style={{ fontSize: 13, color: '#65776F', marginBottom: 12 }}>会员类型用于展示与筛选；实际服务权益以已购买且生效的服务包为准。</div>
+        {historyReviewNeeded && <div role="alert" style={{ padding: '12px 14px', marginBottom: 12, border: '1px solid #E8C37A', borderRadius: 8, background: '#FFFAEE', color: '#805A13', fontSize: 13 }}>
+          旧套餐的历史已用次数尚未核对，暂不能把计划次数当作可用余额。
+          {isSuperadmin ? <button type="button" className="btn btn-primary btn-sm" style={{ marginLeft: 10 }} onClick={() => onReviewHistory()}>核对历史次数</button>
+            : <span style={{ marginLeft: 8 }}>请医护端超级管理员在此客户的“会员权益”中核对。</span>}
+        </div>}
         <MembershipBenefitsSummary data={benefits} error={benefitsError} onRefresh={onBenefitsRefresh} onViewRedemption={onViewRedemption} />
         <div className="card"><div className="card-header"><div className="card-title">合作伙伴权益</div></div><div className="card-body">
           {partnerBenefitsError || (!partnerBenefits?.length ? '当前会员类型暂无可见合作伙伴权益' : partnerBenefits.map(group => <div key={group.partner.id} style={{ marginBottom: 12 }}><strong>{group.partner.name}</strong>{group.benefits.map(item => <div key={item.id} style={{ marginTop: 5, color: '#4A6558' }}>{item.title}{item.subtitle ? ` · ${item.subtitle}` : ''}</div>)}</div>))}
