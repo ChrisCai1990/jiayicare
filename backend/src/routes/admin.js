@@ -8,6 +8,8 @@ const crypto = require('crypto');
 const multer = require('multer');
 const Admin = require('../models/Admin');
 const Tenant = require('../models/Tenant');
+const PlatformAgreement = require('../models/PlatformAgreement');
+const { renderAgreement } = require('../utils/platformAgreementText');
 const User = require('../models/User');
 const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
@@ -48,6 +50,126 @@ const FollowUp      = require('../models/FollowUp');
 const adminAuth = require('../middleware/adminAuth');
 const { entryCode } = require('../utils/wechatMiniProgramCode');
 const router = express.Router();
+
+const agreementPrices = { platformMonthlyYuan: 1000, aiServiceRatePercent: 10, setupYuan: 0 };
+function agreementAllowed(req) {
+  return req.admin.role === 'platformSuper' || req.admin.role === 'superadmin';
+}
+async function agreementTenant(req) {
+  const id = req.admin.role === 'platformSuper' ? req.params.tenantId : req.admin.tenantId;
+  if (!mongoose.isValidObjectId(id)) return null;
+  const tenant = await Tenant.findById(id).lean();
+  if (!tenant || tenant.status !== 'active') return null;
+  if (req.admin.role !== 'platformSuper' && String(req.admin.tenantId) !== String(tenant._id)) return null;
+  return tenant;
+}
+function agreementResponse(res, item) {
+  const data = item.toObject ? item.toObject() : { ...item };
+  if (data.signedPdf) delete data.signedPdf.path;
+  return res.json({ success: true, data });
+}
+function agreementApproval(req, hash) {
+  return { adminId: req.admin._id, name: req.admin.name, at: new Date(), ip: req.ip,
+    userAgent: String(req.headers['user-agent'] || '').slice(0, 300), documentHash: hash };
+}
+
+// 协议只对平台超管与所属机构超管可见。拟签价仅作提案，不自动生成应收账款。
+router.get('/agreements/:tenantId', adminAuth, async (req, res) => {
+  if (!agreementAllowed(req)) return res.status(403).json({ success: false, message: '仅双方超级管理员可查看协议' });
+  const tenant = await agreementTenant(req);
+  if (!tenant) return res.status(404).json({ success: false, message: '机构不存在或无权访问' });
+  const item = await PlatformAgreement.findOne({ tenantId: tenant._id }).sort({ version: -1 });
+  if (item) return agreementResponse(res, item);
+  const document = renderAgreement(tenant.code === 'jiayihui' ? '杭州嘉医汇健康管理有限公司' : tenant.name, agreementPrices);
+  return agreementResponse(res, { tenantId: tenant._id, tenantName: tenant.name, status: 'proposal',
+    version: 0, prices: agreementPrices, document,
+    documentHash: crypto.createHash('sha256').update(document).digest('hex') });
+});
+
+router.post('/agreements/:tenantId/publish', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'platformSuper') return res.status(403).json({ success: false, message: '仅平台超管可提交协议版本' });
+  const tenant = await agreementTenant(req);
+  if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
+  if (tenant.code !== 'jiayihui') return res.status(400).json({ success: false, message: '其他机构须先核验营业执照全称和签约主体' });
+  const previous = await PlatformAgreement.findOne({ tenantId: tenant._id }).sort({ version: -1 });
+  if (previous && previous.status !== 'review') return res.status(409).json({ success: false, message: '当前协议已确认或生效，变更费用须另走补充协议流程' });
+  const prices = Object.fromEntries(Object.keys(agreementPrices).map(key => [key, Number(req.body?.prices?.[key])]));
+  if (Object.values(prices).some(value => !Number.isFinite(value) || value < 0 || value > 1000000) || prices.aiServiceRatePercent > 100) {
+    return res.status(400).json({ success: false, message: '收费参数不合法' });
+  }
+  const document = renderAgreement(tenant.code === 'jiayihui' ? '杭州嘉医汇健康管理有限公司' : tenant.name, prices);
+  const documentHash = crypto.createHash('sha256').update(document).digest('hex');
+  const item = await PlatformAgreement.create({ tenantId: tenant._id, version: (previous?.version || 0) + 1,
+    document, documentHash, prices });
+  return agreementResponse(res, item);
+});
+
+router.post('/agreements/:tenantId/confirm', adminAuth, async (req, res) => {
+  if (!agreementAllowed(req)) return res.status(403).json({ success: false, message: '无权确认协议' });
+  const tenant = await agreementTenant(req);
+  if (!tenant) return res.status(404).json({ success: false, message: '机构不存在或无权访问' });
+  const item = await PlatformAgreement.findOne({ tenantId: tenant._id }).sort({ version: -1 });
+  if (!item || !['review', 'confirmed'].includes(item.status)) return res.status(409).json({ success: false, message: '没有待确认协议' });
+  if (req.body?.documentHash !== item.documentHash) return res.status(409).json({ success: false, message: '协议版本已变化，请刷新后重读' });
+  const admin = await Admin.findById(req.admin._id);
+  if (!req.body?.password || !await admin.comparePassword(req.body.password)) return res.status(403).json({ success: false, message: '密码验证失败' });
+  const side = req.admin.role === 'platformSuper' ? 'platformApproval' : 'tenantApproval';
+  if (item[side]?.at) return res.status(409).json({ success: false, message: '本方已确认' });
+  item[side] = agreementApproval(req, item.documentHash);
+  if (item.platformApproval?.at && item.tenantApproval?.at) item.status = 'confirmed';
+  await item.save();
+  return agreementResponse(res, item);
+});
+
+const signedAgreementUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, file.mimetype === 'application/pdf') });
+router.post('/agreements/:tenantId/signed-pdf', adminAuth, signedAgreementUpload.single('file'), async (req, res) => {
+  if (req.admin.role !== 'platformSuper') return res.status(403).json({ success: false, message: '仅平台超管可归档双方签章 PDF' });
+  const tenant = await agreementTenant(req);
+  if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
+  const item = await PlatformAgreement.findOne({ tenantId: tenant._id }).sort({ version: -1 });
+  if (!item || item.status !== 'confirmed' || !req.file?.buffer?.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+    return res.status(400).json({ success: false, message: '须双方先确认并上传有效 PDF' });
+  }
+  const privateDir = path.resolve(UPLOADS_DIR, '..', 'private-agreements');
+  fs.mkdirSync(privateDir, { recursive: true });
+  const filePath = path.join(privateDir, `${item._id}-${crypto.randomBytes(12).toString('hex')}.pdf`);
+  fs.writeFileSync(filePath, req.file.buffer, { flag: 'wx' });
+  if (item.signedPdf?.path) fs.rmSync(item.signedPdf.path, { force: true });
+  item.signedPdf = { path: filePath, hash: crypto.createHash('sha256').update(req.file.buffer).digest('hex'),
+    uploadedAt: new Date(), uploadedBy: req.admin._id };
+  item.signedPdfTenantVerified = undefined;
+  await item.save();
+  return agreementResponse(res, item);
+});
+
+router.get('/agreements/:tenantId/signed-pdf', adminAuth, async (req, res) => {
+  if (!agreementAllowed(req)) return res.sendStatus(403);
+  const tenant = await agreementTenant(req);
+  if (!tenant) return res.sendStatus(404);
+  const item = await PlatformAgreement.findOne({ tenantId: tenant._id }).sort({ version: -1 });
+  if (!item?.signedPdf?.path || !fs.existsSync(item.signedPdf.path)) return res.sendStatus(404);
+  res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="signed-agreement.pdf"', 'Cache-Control': 'no-store' });
+  return res.sendFile(item.signedPdf.path);
+});
+
+router.post('/agreements/:tenantId/verify-signed-pdf', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅机构超管可核验签章文件' });
+  const tenant = await agreementTenant(req);
+  if (!tenant) return res.sendStatus(404);
+  const item = await PlatformAgreement.findOne({ tenantId: tenant._id }).sort({ version: -1 });
+  if (!item || item.status !== 'confirmed' || !item.signedPdf?.hash || req.body?.pdfHash !== item.signedPdf.hash) {
+    return res.status(409).json({ success: false, message: '签章文件不存在或已变化' });
+  }
+  const admin = await Admin.findById(req.admin._id);
+  if (!req.body?.password || !await admin.comparePassword(req.body.password)) return res.status(403).json({ success: false, message: '密码验证失败' });
+  item.signedPdfTenantVerified = agreementApproval(req, item.documentHash);
+  item.signedPdfTenantVerified.pdfHash = item.signedPdf.hash;
+  item.status = 'effective';
+  item.effectiveAt = new Date();
+  await item.save();
+  return agreementResponse(res, item);
+});
 
 // ── 图片上传（multer） ───────────────────────────────────────────
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../../uploads');

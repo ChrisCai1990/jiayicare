@@ -48,6 +48,7 @@ const NAV_SECTIONS = [
       { label: 'AI 每日关怀', icon: 'care', path: '/settings/daily-care' },
       { label: '健康助手配置', icon: 'settings', path: '/settings/health-assistant' },
       { label: '本机构 AI 用量', icon: 'chart', path: '/settings/ai-usage', superadminOnly: true },
+      { label: '平台合作协议', icon: 'form', path: '/agreements', superadminOnly: true },
       { label: '服务流程管理', icon: 'settings', path: '/settings/supply-workflow' },
       { label: '成熟流程对齐', icon: 'settings', path: '/settings/service-workflow-alignment' },
       { label: '小程序审核体验', icon: 'settings', path: '/settings/review-experience' },
@@ -73,7 +74,7 @@ const NAV_SECTIONS = [
   {
     label: '平台运营',
     platformOnly: true,
-    items: [{ label: '机构管理', icon: 'tenant', path: '/tenants' }, { label: '平台 AI 预算', icon: 'chart', path: '/settings/ai-usage' }],
+    items: [{ label: '机构管理', icon: 'tenant', path: '/tenants' }, { label: '平台 AI 预算', icon: 'chart', path: '/settings/ai-usage' }, { label: '机构合作协议', icon: 'form', path: '/agreements' }],
   },
 ]
 

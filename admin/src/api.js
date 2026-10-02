@@ -55,6 +55,18 @@ export const metabolicPilotAPI = {
   access: (id,action) => reqRoot(`/metabolic-pilot/admin/${id}`, {method:'PATCH',body:JSON.stringify({action})}),
 }
 export const adminAPI = {
+  agreement: id => req(`/agreements/${id}`),
+  publishAgreement: (id, prices) => req(`/agreements/${id}/publish`, { method: 'POST', body: JSON.stringify({ prices }) }),
+  confirmAgreement: (id, documentHash, password) => req(`/agreements/${id}/confirm`, { method: 'POST', body: JSON.stringify({ documentHash, password }) }),
+  signedAgreementPdfUrl: id => `${BASE}/agreements/${id}/signed-pdf`,
+  uploadSignedAgreement: async (id, file) => {
+    const body = new FormData(); body.append('file', file)
+    const res = await fetch(`${BASE}/agreements/${id}/signed-pdf`, { method: 'POST', headers: { Authorization: `Bearer ${_token}` }, body })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.message || '上传失败')
+    return data
+  },
+  verifySignedAgreement: (id, pdfHash, password) => req(`/agreements/${id}/verify-signed-pdf`, { method: 'POST', body: JSON.stringify({ pdfHash, password }) }),
   importPatientHealthRecords: (id, data) => req(`/patients/${id}/health-records/import`, { method: 'POST', body: JSON.stringify(data) }),
   researchJourneys: (year) => req(`/research-care-journeys/journeys?${new URLSearchParams(year ? { year } : {})}`),
   enrollResearchJourney: data => req('/research-care-journeys/journeys', { method: 'POST', body: JSON.stringify(data) }),
