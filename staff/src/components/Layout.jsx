@@ -3,16 +3,17 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
 import { NotificationSummaryProvider, useNotificationSummary } from './NotificationSummary'
 import AppIcon from './AppIcon'
+import { getSetupNav } from '../setupNav'
 
 // moduleKey: 对应 StaffRole 里的权限模块 key，无 key 表示所有人可见
 // roles: 无 customRoleId 时按内置角色过滤（空数组=全部可见）
 const ALL_NAV = [
   { label: '工作台',       icon: 'home', path: '/home',             roles: [] },
-  { label: '家庭服务助手', icon: 'services', path: '/service-assistant', roles: [], moduleKey: 'patients' },
+  { label: '家庭服务助手', icon: 'services', path: '/service-assistant', roles: [], moduleKey: 'service_assistant' },
   { label: '我的会员',     icon: 'patients', path: '/patients',     roles: [],                                                                                  moduleKey: 'patients' },
   { label: '随访管理',     icon: 'followups', path: '/followups',   roles: [],                                                                                  moduleKey: 'followups' },
   { label: '服务方案',     icon: 'plans', path: '/plans',           roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans' },
-  { label: '就医资源',     icon: 'knowledge', path: '/medical-resource-knowledge', roles: [] },
+  { label: '就医资源',     icon: 'knowledge', path: '/medical-resource-knowledge', roles: [], moduleKey: 'medical_resources' },
   { label: '报告管理',     icon: 'reports', path: '/reports',       roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'reports' },
   { label: '服务记录',     icon: 'services', path: '/service-records', roles: [],                                                                                moduleKey: 'service_records' },
   { label: '科普推送',     icon: 'knowledge', path: '/knowledge',   roles: ['healthManager','nutritionist','familyDoctor','superadmin'],                         moduleKey: 'knowledge' },
@@ -87,7 +88,7 @@ function LayoutContent() {
 
         <nav className="sidebar-nav">
           <div className="sidebar-section-label">功能菜单</div>
-          {ALL_NAV.filter(item => {
+          {(setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
             // 无 moduleKey 的项（工作台/消息/个人中心）始终显示
             if (!item.moduleKey) return true
             // 有 customPermissions（管理后台为该账号配置了自定义角色权限）时，按权限决定显隐
@@ -96,7 +97,7 @@ function LayoutContent() {
             }
             // 否则按内置角色过滤（空数组=全部可见）
             return item.roles.length === 0 || item.roles.includes(staff?.role)
-          }).map(item => {
+          })).map(item => {
             const isOnPlansPage = setupView === item.path || setupView.startsWith(item.path + '/')
             const isActive = isOnPlansPage && !item.children
 
