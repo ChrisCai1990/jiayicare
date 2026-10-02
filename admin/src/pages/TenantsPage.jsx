@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../api'
 import { useAdmin, useToast } from '../App'
 
-const STATUS_LABEL = { active: '运营中', suspended: '已暂停' }
+const STATUS_LABEL = { active: '运营中', suspended: '待接入／已暂停' }
 const EMPTY = { code: '', name: '', legalName: '', slogan: '', themeColor: '#1E6B50', websiteHosts: '', adminUsername: '', adminPassword: '' }
 const externalEnabled = import.meta.env.VITE_ENABLE_EXTERNAL_TENANTS === 'true'
 
@@ -13,6 +13,7 @@ export default function TenantsPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)   // null=新建
+  const [draftMode, setDraftMode] = useState(false)
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
@@ -29,7 +30,7 @@ export default function TenantsPage() {
   }
   useEffect(() => { if (isPlatform) load() }, [])
 
-  const openCreate = () => { setEditing(null); setForm(EMPTY); setShowModal(true) }
+  const openCreate = (draft = false) => { setEditing(null); setDraftMode(draft); setForm(EMPTY); setShowModal(true) }
   const openEdit = (t) => { setEditing(t); setForm({ code: t.code, name: t.name, legalName: t.legalName || '', slogan: t.slogan || '', themeColor: t.themeColor || '#1E6B50', websiteHosts: (t.websiteHosts || []).join('\n'), status: t.status, adminUsername: '', adminPassword: '' }); setShowModal(true) }
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
@@ -39,6 +40,7 @@ export default function TenantsPage() {
     try {
       const websiteHosts = form.websiteHosts.split(/[\n,，]+/).map(host => host.trim()).filter(Boolean)
       if (editing) await adminAPI.updateTenant(editing._id, { name: form.name, slogan: form.slogan, themeColor: form.themeColor, status: form.status, websiteHosts })
+      else if (draftMode) await adminAPI.createDraftTenant({ code: form.code, name: form.name, legalName: form.legalName })
       else await adminAPI.createTenant({ ...form, websiteHosts })
       toast(editing ? '✅ 机构已更新' : '✅ 机构创建成功')
       setShowModal(false); load()
@@ -73,13 +75,14 @@ export default function TenantsPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary" onClick={() => setShowGuide(true)}>📖 后续接入流程</button>
-          {externalEnabled && <button className="btn btn-primary" onClick={openCreate}>＋ 新建机构</button>}
+          <button className="btn btn-primary" onClick={() => openCreate(true)}>＋ 建立待接入机构</button>
+          {externalEnabled && <button className="btn btn-secondary" onClick={() => openCreate(false)}>新建已验收机构</button>}
         </div>
       </div>
 
       {/* 顶部流程提示条 */}
       <div style={{ background: '#F0FAF5', border: '1px solid #CDE9DC', borderRadius: 10, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#2C6E52', lineHeight: 1.7 }}>
-        <b>当前阶段：</b>嘉医汇作为独立业务机构运营，嘉静佑辰从平台侧按机构查看。外部机构接入在跨机构权限验收后开放。
+        <b>当前阶段：</b>可建立第二家机构的商务配置草案；草案不可登录、绑定域名或接入客户。外部机构正式启用仍须完成跨机构权限验收。
         <span style={{ color: '#888', cursor: 'pointer', marginLeft: 6, textDecoration: 'underline' }} onClick={() => setShowGuide(true)}>查看详细步骤</span>
       </div>
 
@@ -143,11 +146,12 @@ export default function TenantsPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
           <div className="modal" style={{ maxWidth: 480 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{editing ? '编辑机构' : '新建机构'}</h3>
+              <h3 className="modal-title">{editing ? '编辑机构' : draftMode ? '建立待接入机构' : '新建机构'}</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             <div className="modal-body">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {draftMode && !editing && <p style={{ gridColumn: 'span 2', margin: 0, color: '#8A6D3B' }}>仅用于核对企业、服务及报价；暂不创建账号、域名和客户数据。</p>}
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">机构名称 *</label>
                   <input className="form-input" value={form.name} onChange={set('name')} placeholder="如：华东康养中心" />
@@ -168,20 +172,20 @@ export default function TenantsPage() {
                   <label className="form-label">品牌标语</label>
                   <input className="form-input" value={form.slogan} onChange={set('slogan')} placeholder="选填" />
                 </div>
-                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                {(!draftMode || (editing && editing.status === 'active')) && <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">网站域名（每行一个，公开咨询与 AI 用量按此归属）</label>
                   <textarea className="form-input" rows={3} value={form.websiteHosts} onChange={set('websiteHosts')} placeholder={'jiaycare.com\nwww.jiaycare.com'} />
-                </div>
+                </div>}
                 {editing && (
                   <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                     <label className="form-label">状态</label>
                     <select className="form-input" value={form.status} onChange={set('status')}>
-                      <option value="active">运营中</option>
+                      <option value="active" disabled={!externalEnabled && editing.status !== 'active'}>运营中</option>
                       <option value="suspended">已暂停</option>
                     </select>
                   </div>
                 )}
-                {!editing && (
+                {!editing && !draftMode && (
                   <>
                     <div style={{ gridColumn: 'span 2', fontSize: 12, color: '#8A6D3B', background: '#FFFDF7', padding: '8px 12px', borderRadius: 6 }}>
                       为新机构创建一个超级管理员账号（该机构自己登录管理用）。留空则暂不创建，之后需另行添加。

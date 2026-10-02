@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../api'
 import { useAdmin } from '../App'
+import './SaasPlanPage.css'
 
 const yuan = value => `¥${Number(value || 0).toLocaleString('zh-CN')}`
 const services = [
@@ -59,40 +60,39 @@ export default function SaasPlanPage() {
     {fields.map(([key, label]) => <label key={key}>{label}<input className="form-input" type="number" min="0" step={['activeClientLimit', 'includedStaffSeats', 'includedAdminSeats'].includes(key) ? '1' : '0.01'} value={value[key] ?? ''} onChange={e => setter({ ...value, [key]: e.target.value })} /></label>)}
   </div>
   if (!platform && admin?.role !== 'superadmin') return <div className="page">仅超级管理员可查看套餐。</div>
-  return <div className="page" style={{ maxWidth: 1050 }}>
-    <div className="page-header"><div><h1 className="page-title">机构服务与收费</h1><p className="page-subtitle">按机构查看签约企业、服务范围和专属条款。</p></div></div>
+  return <div className="page sp-page">
+    <div className="page-header"><div><h1 className="page-title">机构服务与收费</h1><p className="page-subtitle">每家企业独立配置服务、价格与账号额度。</p></div></div>
     {error && <p style={{ color: '#b42318' }}>{error}</p>}{message && <p style={{ color: '#087f5b' }}>{message}</p>}
-    {platform && tenants.length > 0 && <div className="card" style={{ padding: 22, marginBottom: 16 }}><label>选择机构　<select className="form-input" value={tenantId} onChange={e => setTenantId(e.target.value)}>{tenants.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}</select></label></div>}
-    {tenant && <div className="card" style={{ padding: 24, marginBottom: 16 }}>
-      <h2>{tenant.name} · {tenant.commercialPlan === 'standard' ? '标准套餐' : '独立协议'}</h2>
-      <p><strong>签约企业：</strong>{tenant.legalName || '待核验企业全称'}<br /><strong>机构标识：</strong>{tenant.code}</p>
-      <h3>本机构服务范围</h3>
-      <p>{services.filter(([code]) => tenant.serviceScope?.includes(code)).map(([, label]) => label).join('、') || '尚未配置'}</p>
-      {tenant.serviceScopeNote && <p>服务说明：{tenant.serviceScopeNote}</p>}
-      <p style={{ color: '#667' }}>{tenant.serviceProfileSaved ? '平台已记录此机构配置；正式交付和收费以双方协议及验收为准。' : '当前为系统模块建议清单，尚未保存为本机构配置；请按协议核对。'}此处记录服务范围，不直接开通或关闭功能。</p>
-      {platform && <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 18, marginTop: 18 }}>
-        <h3>设置本机构服务</h3>
-        <label>签约企业全称<input className="form-input" maxLength={120} value={profileForm.legalName} onChange={e => setProfileForm({ ...profileForm, legalName: e.target.value })} /></label>
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', margin: '16px 0' }}>{services.map(([code, label]) => <label key={code}><input type="checkbox" checked={profileForm.serviceScope.includes(code)} onChange={e => setProfileForm({ ...profileForm, serviceScope: e.target.checked ? [...profileForm.serviceScope, code] : profileForm.serviceScope.filter(item => item !== code) })} /> {label}</label>)}</div>
-        <label>服务说明<input className="form-input" maxLength={500} value={profileForm.serviceScopeNote} onChange={e => setProfileForm({ ...profileForm, serviceScopeNote: e.target.value })} placeholder="例如：交付方式、上线安排、需另行约定的接口" /></label>
-        <label>配置依据<input className="form-input" maxLength={500} value={profileReason} onChange={e => setProfileReason(e.target.value)} placeholder="例如：根据双方服务清单确认" /></label>
-        <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={busy || profileReason.trim().length < 4 || !profileForm.legalName.trim() || !profileForm.serviceScope.length} onClick={() => action(() => adminAPI.saveTenantServiceProfile(tenantId, { ...profileForm, reason: profileReason }))}>保存本机构服务配置</button>
-      </div>}
-      {tenant.commercialPlan !== 'standard' ? <p style={{ marginTop: 20 }}>本机构价格和人数按独立协议执行。<a href="/agreements">查看合作协议与收费</a></p> : <>
-        <p>本机构协商条款：平台 {yuan(tenant.terms.monthlyPlatformYuan)}/月、首次上线 {yuan(tenant.terms.setupYuan)}、最多 {tenant.terms.activeClientLimit} 名在管客户，包含 {tenant.terms.includedStaffSeats} 个服务账号及 {tenant.terms.includedAdminSeats} 个管理员账号。</p>
-        <p>当前已启用：服务人员 <strong>{tenant.usage.staff}</strong> / {tenant.staffLimit}；机构管理员 <strong>{tenant.usage.admins}</strong> / {tenant.adminLimit}。</p>
-        <p>按当前账号数估算，额外账号费 <strong>{yuan(tenant.estimatedMonthlySeatFeeYuan)}/月</strong>；实际结算以双方确认的月度账单为准。</p>
-        {platform && <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 18, marginTop: 18 }}>
-          <h3>本机构协商条款</h3><p style={{ color: '#667' }}>调整包含人数或价格后，仅更新本机构配置；合同和账单仍需双方确认。</p>
+    {platform && tenants.length > 0 && <div className="sp-toolbar"><label>当前机构<select className="form-input" value={tenantId} onChange={e => setTenantId(e.target.value)}>{tenants.map(t => <option key={t._id} value={t._id}>{t.name} · {t.legalName || '企业待核验'}</option>)}</select></label><a className="btn btn-secondary" href="/tenants">机构管理</a></div>}
+    {tenant && <>
+      <section className="card sp-hero">
+        <div className="sp-hero-top"><div className="sp-brand">{tenant.name.slice(0, 1)}</div><div className="sp-heading"><div className="sp-eyebrow">机构档案 <span>/{tenant.code}</span></div><h2>{tenant.name}</h2><p>{tenant.legalName || '待核验企业全称'}</p></div><span className={`sp-status ${tenant.status === 'active' ? 'is-active' : ''}`}>{tenant.status === 'active' ? '运营中' : '待接入'}</span></div>
+        <div className="sp-service-head"><h3>服务范围</h3><span>{tenant.serviceProfileSaved ? '平台已记录' : '待按协议核对'}</span></div>
+        <div className="sp-service-grid">{services.map(([code, label]) => <div key={code} className={`sp-service ${tenant.serviceScope?.includes(code) ? 'is-selected' : ''}`}><span>{tenant.serviceScope?.includes(code) ? '✓' : '＋'}</span>{label}</div>)}</div>
+        {tenant.serviceScopeNote && <p className="sp-note">{tenant.serviceScopeNote}</p>}
+        <p className="sp-footnote">{tenant.serviceProfileSaved ? '配置已保存。' : '以上为系统模块建议清单。'}实际交付和收费以双方协议及验收为准；此处不直接开通功能。</p>
+      </section>
+      {platform && <details className="card sp-editor"><summary>编辑签约企业与服务范围 <span>填写变更依据后保存</span></summary>
+        <div className="sp-editor-body"><label>签约企业全称<input className="form-input" maxLength={120} value={profileForm.legalName} onChange={e => setProfileForm({ ...profileForm, legalName: e.target.value })} /></label>
+        <div className="sp-choice-grid">{services.map(([code, label]) => <label key={code}><input type="checkbox" checked={profileForm.serviceScope.includes(code)} onChange={e => setProfileForm({ ...profileForm, serviceScope: e.target.checked ? [...profileForm.serviceScope, code] : profileForm.serviceScope.filter(item => item !== code) })} />{label}</label>)}</div>
+        <div className="sp-fields"><label>服务说明<input className="form-input" maxLength={500} value={profileForm.serviceScopeNote} onChange={e => setProfileForm({ ...profileForm, serviceScopeNote: e.target.value })} placeholder="交付方式、上线安排等" /></label><label>配置依据<input className="form-input" maxLength={500} value={profileReason} onChange={e => setProfileReason(e.target.value)} placeholder="例如：根据双方服务清单确认" /></label></div>
+        <button className="btn btn-primary" disabled={busy || profileReason.trim().length < 4 || !profileForm.legalName.trim() || !profileForm.serviceScope.length} onClick={() => action(() => adminAPI.saveTenantServiceProfile(tenantId, { ...profileForm, reason: profileReason }))}>保存服务配置</button></div>
+      </details>}
+      <section className="card sp-commercial"><div className="sp-section-title"><div><span className="sp-eyebrow">商务条款</span><h2>{tenant.commercialPlan === 'standard' ? '本机构专属报价' : '独立合作协议'}</h2></div><span className="sp-tag">{tenant.commercialPlan === 'standard' ? '标准套餐 · 可协商' : '独立协议'}</span></div>
+      {tenant.commercialPlan !== 'standard' ? <div className="sp-legacy"><p>嘉医汇的价格与账号人数按独立协议执行，不套用新机构标准价。</p><a className="btn btn-secondary" href="/agreements">查看合作协议与收费</a></div> : <>
+        <div className="sp-metrics"><div><small>平台订阅</small><strong>{yuan(tenant.terms.monthlyPlatformYuan)}<em>/月</em></strong></div><div><small>首次上线</small><strong>{yuan(tenant.terms.setupYuan)}</strong></div><div><small>在管客户</small><strong>{tenant.terms.activeClientLimit}<em>人</em></strong></div><div><small>包含账号</small><strong>{tenant.terms.includedStaffSeats} + {tenant.terms.includedAdminSeats}<em>个</em></strong></div></div>
+        <div className="sp-seat"><span>服务人员 <strong>{tenant.usage.staff}/{tenant.staffLimit}</strong></span><span>机构管理员 <strong>{tenant.usage.admins}/{tenant.adminLimit}</strong></span><span>预计超额账号费 <strong>{yuan(tenant.estimatedMonthlySeatFeeYuan)}/月</strong></span></div>
+        <p className="sp-footnote">实际费用以双方确认的月度账单为准；页面不自动扣费。</p>
+        {platform && <details className="sp-inner-details"><summary>调整本机构协商价格与包含人数</summary><p className="sp-footnote">仅更新本机构配置；合同与账单仍需双方确认。</p>
           {formFields(termsForm, setTermsForm)}
           <label>协商或变更依据<input className="form-input" value={reason} onChange={e => setReason(e.target.value)} placeholder="例如：双方确认增加两个服务人员名额" /></label>
           <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={busy || reason.trim().length < 4} onClick={() => action(() => adminAPI.saveTenantCommercialTerms(tenantId, termsForm, reason))}>保存本机构条款</button>
-        </div>}
-        {platform && <><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginTop: 20 }}>
+        </details>}
+        {platform && tenant.status === 'active' && <><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginTop: 20 }}>
           <label>额外服务账号额度<input className="form-input" type="number" min="0" max="500" value={extras.extraStaffSeats} onChange={e => setExtras({ ...extras, extraStaffSeats: e.target.value })} /></label>
           <label>额外管理员账号额度<input className="form-input" type="number" min="0" max="500" value={extras.extraAdminSeats} onChange={e => setExtras({ ...extras, extraAdminSeats: e.target.value })} /></label>
           <button className="btn btn-primary" disabled={busy} onClick={() => action(() => adminAPI.setTenantSeats(tenantId, extras))}>保存账号额度</button>
-        </div><p style={{ color: '#667' }}>增加额度只允许开户；额外账号费按实际启用且超出包含名额的账号估算。</p></>}
+        </div><p style={{ color: '#667' }}>增加额度只允许开户；额外账号费按实际启用且超出包含名额的账号估算。</p>
         <h3 style={{ marginTop: 24 }}>新增机构管理员</h3><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
           <label>用户名<input className="form-input" value={newAdmin.username} onChange={e => setNewAdmin({ ...newAdmin, username: e.target.value })} /></label>
           <label>姓名<input className="form-input" value={newAdmin.name} onChange={e => setNewAdmin({ ...newAdmin, name: e.target.value })} /></label>
@@ -100,8 +100,11 @@ export default function SaasPlanPage() {
           <button className="btn" disabled={busy || tenant.usage.admins >= tenant.adminLimit} onClick={() => action(() => platform ? adminAPI.createTenantAdmin(tenantId, newAdmin) : adminAPI.createOwnTenantAdmin(newAdmin))}>创建账号</button>
         </div><p style={{ color: '#667' }}>机构可在本机构额度内自行创建管理员；超额由平台先扩容。初始密码须 10–128 位，首次登录强制修改。</p>
       </>}
-    </div>}
-    {plan && <details className="card" style={{ padding: 24, marginBottom: 16 }}><summary style={{ cursor: 'pointer', fontWeight: 700 }}>新机构标准模板（仅供新建机构使用）</summary>
+      {tenant.status !== 'active' && <p className="sp-footnote">待接入机构尚未开放账号和客户业务；启用前须完成跨机构隔离验收。</p>}
+      </>}
+      </section>
+    </>}
+    {plan && <details className="card sp-template"><summary>新机构标准模板 <span>仅用于以后新建的机构</span></summary>
       <p>平台订阅 {yuan(plan.monthlyPlatformYuan)}/月，首次上线 {yuan(plan.setupYuan)}；最多 {plan.activeClientLimit} 名在管客户，含 {plan.includedStaffSeats} 个服务账号和 {plan.includedAdminSeats} 个管理员账号。超额账号 {yuan(plan.extraSeatMonthlyYuan)}/人/月。可选 AI {yuan(plan.aiMonthlyYuan)}/月，含第三方成本额度 {yuan(plan.aiIncludedSupplierCostYuan)}/月。</p>
       <p style={{ color: '#667' }}>只影响此后新建机构；已有机构配置和协议不自动变更。账单仍需人工核对。</p>
       {platform && <><h3>修改标准模板</h3>{formFields(standardForm, setStandardForm)}<button className="btn btn-primary" disabled={busy} onClick={() => action(() => adminAPI.saveStandardPlan(standardForm, plan.revision || 0))}>保存标准模板</button></>}

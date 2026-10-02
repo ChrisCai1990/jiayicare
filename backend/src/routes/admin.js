@@ -94,7 +94,7 @@ router.get('/saas-plan', adminAuth, async (req, res) => {
   const tenantId = req.admin.role === 'platformSuper' ? req.query.tenantId : req.admin.tenantId;
   if (!tenantId) return res.json({ success: true, data: { standard: standardPlan, tenant: null } });
   if (!mongoose.isValidObjectId(tenantId)) return res.status(400).json({ success: false, message: '机构 ID 无效' });
-  const tenant = await Tenant.findById(tenantId).select('name code legalName serviceScope serviceScopeNote commercialPlan commercialTerms extraStaffSeats extraAdminSeats').lean();
+  const tenant = await Tenant.findById(tenantId).select('name code status legalName serviceScope serviceScopeNote commercialPlan commercialTerms extraStaffSeats extraAdminSeats').lean();
   if (!tenant || (req.admin.role !== 'platformSuper' && String(tenant._id) !== String(req.admin.tenantId))) return res.sendStatus(404);
   const usage = await seatUsage(tenant._id);
   const standard = tenant.commercialPlan === 'standard';
@@ -1562,6 +1562,22 @@ router.get('/tenants/:id/customers', adminAuth, requirePlatformSuper, async (req
 });
 
 // POST /api/admin/tenants — 新建机构，并为其创建一个 superadmin 账号（归属该机构）
+router.post('/tenants/draft', adminAuth, requirePlatformSuper, async (req, res) => {
+  const code = String(req.body?.code || '').trim().toLowerCase();
+  const name = String(req.body?.name || '').trim();
+  const legalName = String(req.body?.legalName || '').trim();
+  if (!/^[a-z][a-z0-9-]{2,39}$/.test(code) || !name || name.length > 80 || !legalName || legalName.length > 120) {
+    return res.status(400).json({ success: false, message: '请填写机构名称、签约企业全称及3至40位英文机构标识' });
+  }
+  if (await Tenant.exists({ code })) return res.status(409).json({ success: false, message: '该机构标识已存在' });
+  const tenant = await Tenant.create({ code, name, legalName, status: 'suspended',
+    commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()),
+    serviceScope: ['admin', 'staff', 'customer'], note: '待接入：仅记录商务与服务配置，未开通账号、域名或客户业务' });
+  await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
+    action: 'create_tenant_draft', at: new Date(), ip: req.ip });
+  res.json({ success: true, data: { tenant }, message: '待接入机构已创建，尚未开放登录及客户业务' });
+});
+
 router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
   if (process.env.ENABLE_EXTERNAL_TENANTS !== 'true') {
     return res.status(403).json({ success: false, message: '外部机构接入尚未开放' });
@@ -1601,9 +1617,19 @@ router.put('/tenants/:id', adminAuth, requirePlatformSuper, async (req, res) => 
   const { name, slogan, logo, themeColor, status, note } = req.body;
   const update = {};
   ['name', 'slogan', 'logo', 'themeColor', 'status', 'note'].forEach(k => { if (req.body[k] !== undefined) update[k] = req.body[k]; });
+  if (update.status === 'active' && process.env.ENABLE_EXTERNAL_TENANTS !== 'true') {
+    const current = await Tenant.findById(req.params.id).select('status code').lean();
+    if (!current) return res.status(404).json({ success: false, message: '机构不存在' });
+    if (current.status !== 'active' && current.code !== 'jiayihui') return res.status(403).json({ success: false, message: '外部机构隔离验收前不能启用' });
+  }
   if (req.body.websiteHosts !== undefined) {
     try { update.websiteHosts = require('../utils/websiteTenant').normalizeWebsiteHosts(req.body.websiteHosts); }
     catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+    if (update.websiteHosts.length && process.env.ENABLE_EXTERNAL_TENANTS !== 'true') {
+      const current = await Tenant.findById(req.params.id).select('status code').lean();
+      if (!current) return res.status(404).json({ success: false, message: '机构不存在' });
+      if (current.status !== 'active' && current.code !== 'jiayihui') return res.status(403).json({ success: false, message: '待接入机构不能绑定域名' });
+    }
     if (update.websiteHosts.length && await Tenant.exists({ _id: { $ne: req.params.id }, websiteHosts: { $in: update.websiteHosts } })) return res.status(409).json({ success: false, message: '网站域名已绑定其他机构' });
   }
   const tenant = await Tenant.findByIdAndUpdate(req.params.id, update, { new: true });
@@ -1679,6 +1705,7 @@ router.put('/tenants/:id/service-profile', adminAuth, requirePlatformSuper, asyn
 async function createInstitutionAdmin(req, res, tenantId) {
   const tenant = await Tenant.findById(tenantId).lean();
   if (!tenant || tenant.commercialPlan !== 'standard') return res.status(404).json({ success: false, message: '标准套餐机构不存在' });
+  if (tenant.status !== 'active') return res.status(409).json({ success: false, message: '待接入机构尚未启用，不能创建登录账号' });
   if (!await canAddSeat(tenant._id, 'admin')) return res.status(409).json({ success: false, message: '机构管理员账号额度已满' });
   const { username, password, name } = req.body || {};
   if (!username || !name || typeof password !== 'string' || password.length < 10 || password.length > 128) return res.status(400).json({ success: false, message: '填写用户名、姓名及 10 至 128 位初始密码' });
