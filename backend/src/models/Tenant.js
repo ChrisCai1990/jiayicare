@@ -5,6 +5,9 @@ const mongoose = require('mongoose');
 const tenantSchema = new mongoose.Schema({
   code:     { type: String, required: true, unique: true }, // 机构唯一标识（英文/拼音，如 jiayihui），用于登录域名/子域名映射
   name:     { type: String, required: true }, // 机构名称，如"嘉医汇"
+  legalName: { type: String, default: '' }, // 签约企业全称；品牌名仍使用 name
+  serviceScope: { type: [String], default: undefined }, // 平台记录的服务范围，合同效力以双方协议为准
+  serviceScopeNote: { type: String, default: '' },
   slogan:   { type: String, default: '' },     // 品牌标语，如"做健康顾问行业领跑者"
   logo:     { type: String, default: '' },     // logo图片URL
   themeColor: { type: String, default: '#1E6B50' }, // 主题色（默认沿用现有嘉医汇主色）

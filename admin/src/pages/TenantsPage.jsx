@@ -3,7 +3,7 @@ import { adminAPI } from '../api'
 import { useAdmin, useToast } from '../App'
 
 const STATUS_LABEL = { active: '运营中', suspended: '已暂停' }
-const EMPTY = { code: '', name: '', slogan: '', themeColor: '#1E6B50', websiteHosts: '', adminUsername: '', adminPassword: '' }
+const EMPTY = { code: '', name: '', legalName: '', slogan: '', themeColor: '#1E6B50', websiteHosts: '', adminUsername: '', adminPassword: '' }
 const externalEnabled = import.meta.env.VITE_ENABLE_EXTERNAL_TENANTS === 'true'
 
 export default function TenantsPage() {
@@ -30,11 +30,11 @@ export default function TenantsPage() {
   useEffect(() => { if (isPlatform) load() }, [])
 
   const openCreate = () => { setEditing(null); setForm(EMPTY); setShowModal(true) }
-  const openEdit = (t) => { setEditing(t); setForm({ code: t.code, name: t.name, slogan: t.slogan || '', themeColor: t.themeColor || '#1E6B50', websiteHosts: (t.websiteHosts || []).join('\n'), status: t.status, adminUsername: '', adminPassword: '' }); setShowModal(true) }
+  const openEdit = (t) => { setEditing(t); setForm({ code: t.code, name: t.name, legalName: t.legalName || '', slogan: t.slogan || '', themeColor: t.themeColor || '#1E6B50', websiteHosts: (t.websiteHosts || []).join('\n'), status: t.status, adminUsername: '', adminPassword: '' }); setShowModal(true) }
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const save = async () => {
-    if (!form.code || !form.name) { toast('❌ 机构标识和名称必填'); return }
+    if (!form.code || !form.name || (!editing && !form.legalName.trim())) { toast('❌ 机构标识、名称和签约企业全称必填'); return }
     setSaving(true)
     try {
       const websiteHosts = form.websiteHosts.split(/[\n,，]+/).map(host => host.trim()).filter(Boolean)
@@ -152,6 +152,10 @@ export default function TenantsPage() {
                   <label className="form-label">机构名称 *</label>
                   <input className="form-input" value={form.name} onChange={set('name')} placeholder="如：华东康养中心" />
                 </div>
+                {!editing && <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">签约企业全称 *</label>
+                  <input className="form-input" value={form.legalName} onChange={set('legalName')} placeholder="与营业执照一致" maxLength={120} />
+                </div>}
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">机构标识 *（英文/拼音，创建后不可改）</label>
                   <input className="form-input" value={form.code} onChange={set('code')} placeholder="如 huadong" disabled={!!editing} />
