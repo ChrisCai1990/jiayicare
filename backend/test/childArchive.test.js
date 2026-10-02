@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { initialChildMutation, childSubmission, reviewChildSubmission, manualChildUpdate } = require('../src/utils/childArchive');
+const { initialChildMutation, followupChildMutation, childSubmission, reviewChildSubmission, manualChildUpdate } = require('../src/utils/childArchive');
 
 const questionnaire = { _id: 'questionnaire-1', title: '儿童健康问卷', questions: [
   { id: 'birth', text: '出生体重', archiveField: 'childProfile.birthWeight' },
@@ -41,6 +41,17 @@ test('后续相同回答无需复核；有变化时只确认变化并拒绝过�
   assert.equal(changed.items[0].path, 'childProfile.feeding');
   assert.throws(() => reviewChildSubmission({ ...user, childProfile: { ...user.childProfile, feeding: '配方奶' }, childArchiveSubmissions: [changed] }, changedResponse._id,
     { revision: 0, note: '已核实', decisions: [{ path: 'childProfile.feeding', verified: true, accept: true, value: '混合喂养' }] }, actor), /已变化/);
+});
+
+test('后续问卷自动预填空字段，但不覆盖已有字段', () => {
+  const user = { _id: 'child-1', patientCategory: 'child', childArchiveFirstResponseId: 'first', childProfile: { feeding: '母乳' } };
+  const next = { ...response, _id: 'response-3', answers: { birth: 3200, feeding: '混合喂养' } };
+  const mutation = followupChildMutation(user, questionnaire, next);
+  assert.equal(mutation.update.$set['childProfile.birthWeight'], 3200);
+  assert.equal(mutation.update.$set['childProfile.feeding'], undefined);
+  assert.equal(mutation.submission.items.find(item => item.path === 'childProfile.birthWeight').imported, true);
+  assert.equal(mutation.submission.items.find(item => item.path === 'childProfile.feeding').imported, false);
+  assert.equal(mutation.filter['childProfile.birthWeight'], null);
 });
 
 test('人工更新要求依据及当前值，不能绕过待核实的首次问卷', () => {

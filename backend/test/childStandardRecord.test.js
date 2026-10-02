@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { childAgeStage, applicableChildQuestions } = require('../src/utils/childAgeStage');
 const { createChildStandardRecord } = require('../src/utils/childStandardRecord');
+const { buildChildQuestionnaireTemplate } = require('../src/utils/childQuestionnaireTemplate');
 
 test('年龄段按中国日期和实际生日切换，旧记录不会跟着当前年龄变化', () => {
   assert.equal(childAgeStage('2026-09-06', new Date('2026-10-03T00:00:00Z')).id, 'newborn');
@@ -15,6 +16,19 @@ test('年龄段按中国日期和实际生日切换，旧记录不会跟着当�
 test('分龄题目保留公共题，屏蔽不适用年龄段及性别题', () => {
   const questions = [{ id: 'all' }, { id: 'young', ageStages: ['infant'] }, { id: 'school', ageStages: ['school'] }, { id: 'female', genderOnly: '女' }];
   assert.deepEqual(applicableChildQuestions(questions, 'school', '男').map(q => q.id), ['all', 'school']);
+});
+
+test('Admin预设与上线模板使用同一份题库，字段可承接到儿童档案', () => {
+  const template = buildChildQuestionnaireTemplate();
+  const { FIELD_MAP } = require('../src/config/archiveFields');
+  assert.equal(template.patientCategory, 'child');
+  assert.equal(template.archivePurpose, 'child_health');
+  assert.equal(template.targetType, 'specific');
+  assert.equal(template.questions.length, 24);
+  assert.equal(new Set(template.questions.map(q => q.id)).size, template.questions.length);
+  assert.ok(template.questions.every(q => FIELD_MAP[q.archiveField]));
+  assert.ok(applicableChildQuestions(template.questions, 'school', '男').some(q => q.archiveField === 'childProfile.schoolAndActivity'));
+  assert.ok(!applicableChildQuestions(template.questions, 'school', '男').some(q => q.archiveField === 'childProfile.development'));
 });
 
 test('分龄记录按实际访视年龄和表单节点校验，并保存来源快照', () => {

@@ -47,7 +47,7 @@ function ReviewForm({ user, submission, onSaved, canEdit }) {
   }
   return <div style={{ border: '1px solid #D8EDE3', borderRadius: 8, padding: 14, marginTop: 12, background: '#FAFCFB' }}>
     <div style={{ fontWeight: 700, color: '#1E6B50' }}>{submission.kind === 'initial' ? '首次建档待核实' : '后续问卷变化待确认'} · {submission.questionnaireTitle || '儿童健康问卷'}</div>
-    <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>提交于 {new Date(submission.submittedAt).toLocaleString('zh-CN')} · {stageLabel(submission.ageStage)}。首次填写只预填空字段；已有记录须人工核对。后续填写在确认前不会改动当前档案。</div>
+    <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>提交于 {new Date(submission.submittedAt).toLocaleString('zh-CN')} · {stageLabel(submission.ageStage)}。空字段先写入并标记待核实；与已有记录不同的回答，须经医护确认后才更新。</div>
     {(submission.items || []).map((item, index) => <div key={`${item.path}-${index}`} style={{ borderTop: '1px solid #E5EEE8', padding: '12px 0' }}>
       <div style={{ fontWeight: 600, fontSize: 13 }}>{item.label} {item.conflict && <span style={{ color: '#A65A00', fontWeight: 400 }}>· 与原档案不同</span>}</div>
       <div style={{ fontSize: 12, color: '#65776F', margin: '4px 0' }}>问卷：{item.questionText}　回答：{fmt(item.valueStr)}　原档案：{fmt(item.before)}</div>
@@ -74,7 +74,7 @@ export default function ChildHealthArchive({ user, onSaved, canEdit }) {
   if (user?.patientCategory !== 'child') return null
   const submissions = user.childArchiveSubmissions || []
   const pending = submissions.filter(row => row.status === 'pending')
-  const unverifiedPaths = new Set(pending.filter(row => row.kind === 'initial').flatMap(row => (row.items || []).filter(item => item.imported).map(item => item.path)))
+  const unverifiedPaths = new Set(pending.flatMap(row => (row.items || []).filter(item => item.imported).map(item => item.path)))
   const history = user.childArchiveHistory || []
   return <section className="card core-archive" style={{ marginBottom: 16 }}>
     <div className="card-header"><div><div className="card-title">儿童健康档案</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>围产与出生、筛查与健康史、成长近况；问卷来源与人工核实记录持续保留。用药和症状自述不自动修改专业记录。</div></div></div>

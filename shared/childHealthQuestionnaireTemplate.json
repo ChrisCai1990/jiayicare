@@ -1,0 +1,30 @@
+{
+  "title": "儿童健康问卷（分龄标准版）",
+  "description": "由监护人填写。按出生日期显示适龄题；回答自动进入儿童基础档案，空字段标记待核实，已有字段变化由医护确认。问卷回答不替代体检或诊断。",
+  "fields": [
+    ["motherPregnancyStatus", "母亲妊娠期间是否有需要说明的健康情况？", "text"],
+    ["gestationalWeeks", "出生时孕周是多少周？", "number"],
+    ["birthWeight", "出生体重是多少克？", "number"],
+    ["deliveryMode", "分娩方式是什么？", "text"],
+    ["deliveryComplications", "分娩时是否有并发情况？", "text"],
+    ["neonatalConditions", "新生儿期是否有患病或住院情况？", "text"],
+    ["birthDefects", "是否有出生缺陷或先天性疾病？", "text"],
+    ["hearingScreening", "听力筛查结果是什么？", "dropdown"],
+    ["eyeScreening", "眼底筛查结果是什么？", "text"],
+    ["visionScreening", "近期视力筛查情况如何？", "text", ["preschool", "school", "adolescent"]],
+    ["neonatalDiseaseScreen", "新生儿疾病筛查结果是什么？", "text"],
+    ["familyAllergyHistory", "家族中是否有过敏史？", "text"],
+    ["familyDiseaseHistory", "家族中是否有需要关注的疾病史？", "text"],
+    ["pastMedicalHistory", "孩子既往有哪些疾病或住院经历？", "text"],
+    ["surgeries", "孩子是否接受过手术？", "text"],
+    ["allergies", "孩子有哪些已知过敏或不良反应？", "text"],
+    ["vaccinationStatus", "预防接种情况如何？有无漏种或异常反应？", "text"],
+    ["currentMedicationReport", "孩子目前是否在用药或服用营养补充剂？", "text"],
+    ["currentSymptomsReport", "孩子近期有哪些不适或症状？", "text"],
+    ["feeding", "目前的喂养和饮食情况如何？", "text"],
+    ["sleep", "目前的睡眠情况如何？", "text"],
+    ["development", "生长发育、语言或行为方面有无需要关注的变化？", "text", ["newborn", "infant", "toddler", "preschool"]],
+    ["schoolAndActivity", "托育、学校生活和日常活动情况如何？", "text", ["preschool", "school", "adolescent"]],
+    ["caregiverConcerns", "监护人目前最关注哪些健康问题？", "text"]
+  ]
+}

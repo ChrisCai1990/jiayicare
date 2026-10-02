@@ -8,7 +8,7 @@ const empty = value => value === undefined || value === null || value === '';
 function childSubmission(user, questionnaire, response, kind) {
   const draft = buildArchiveDraft(user, questionnaire, response);
   const items = draft.items.filter(item => childPath(item.path) && (kind === 'initial' || item.existing !== item.valueStr)).map(item => ({
-    ...item, imported: kind === 'initial' && empty(getByPath(user, item.path)),
+    ...item, imported: empty(getByPath(user, item.path)),
     before: getByPath(user, item.path) ?? null,
   }));
   return {
@@ -28,6 +28,20 @@ function initialChildMutation(user, questionnaire, response) {
     if (item.imported) set[item.path] = item.value;
   }
   return { submission, filter, update: { $set: set, $push: { childArchiveSubmissions: submission } } };
+}
+
+function followupChildMutation(user, questionnaire, response) {
+  const submission = childSubmission(user, questionnaire, response, 'followup');
+  const filter = { _id: user._id, patientCategory: 'child',
+    childArchiveFirstResponseId: user.childArchiveFirstResponseId,
+    'childArchiveSubmissions.responseId': { $ne: response._id } };
+  const set = {};
+  for (const item of submission.items) {
+    filter[item.path] = item.before;
+    if (item.imported) set[item.path] = item.value;
+  }
+  return { submission, filter, update: { ...(Object.keys(set).length ? { $set: set } : {}),
+    $push: { childArchiveSubmissions: submission } } };
 }
 
 function normalizeReviewValue(path, input) {
@@ -111,4 +125,4 @@ function manualChildUpdate(user, payload, actor, now = new Date()) {
     } } } };
 }
 
-module.exports = { childSubmission, initialChildMutation, reviewChildSubmission, manualChildUpdate, normalizeReviewValue };
+module.exports = { childSubmission, initialChildMutation, followupChildMutation, reviewChildSubmission, manualChildUpdate, normalizeReviewValue };

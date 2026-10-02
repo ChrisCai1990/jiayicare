@@ -31,10 +31,17 @@ const healthRecordSchema = new mongoose.Schema({
   deleteReason: { type: String, default: '' },
   // 录入来源留痕。用户打卡为 customer；医护发现并代录为 staff。
   recordedBy: {
-    source:    { type: String, enum: ['customer', 'staff', 'system'], default: 'customer' },
+    source:    { type: String, enum: ['customer', 'staff', 'system', 'device'], default: 'customer' },
     staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
     staffName: { type: String, default: '' },
     staffRole: { type: String, default: '' },
+  },
+  // 仅由服务端设备适配器写入；现有手工录入接口不能指定此字段。
+  deviceSource: {
+    connectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeviceConnection' },
+    provider: String,
+    externalRecordId: String,
+    receivedAt: Date,
   },
   // “今日健康状态/不适主诉”处理闭环。仅 type=symptom 时使用。
   symptomWorkflow: {
@@ -72,6 +79,13 @@ const healthRecordSchema = new mongoose.Schema({
 // 索引：按用户+时间查询
 healthRecordSchema.index({ user: 1, recordedAt: -1 });
 healthRecordSchema.index({ user: 1, type: 1, recordedAt: -1 });
+healthRecordSchema.index({ tenantId: 1, user: 1, 'deviceSource.connectionId': 1, 'deviceSource.externalRecordId': 1 }, {
+  unique: true,
+  partialFilterExpression: {
+    'deviceSource.connectionId': { $type: 'objectId' },
+    'deviceSource.externalRecordId': { $type: 'string' },
+  },
+});
 healthRecordSchema.index({ user: 1, 'photoRecognition.imageHash': 1 }, {
   unique: true,
   partialFilterExpression: { 'photoRecognition.imageHash': { $type: 'string' } },

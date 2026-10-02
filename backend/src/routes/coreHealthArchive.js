@@ -100,13 +100,12 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       const response = await QuestionnaireResponse.findOne({ _id: responseId, user: patient._id }).lean();
       const questionnaire = response && await DynamicQuestionnaire.findById(response.questionnaire).lean();
       if (!questionnaire || questionnaire.archivePurpose !== 'child_health') return res.status(404).json({ success: false, message: '来源儿童问卷不存在' });
-      const { initialChildMutation, childSubmission } = require('../utils/childArchive');
+      const { initialChildMutation, followupChildMutation } = require('../utils/childArchive');
       const sourceQuestionnaire = response.questionnaireSnapshot ? { ...questionnaire,
         title: response.questionnaireSnapshot.title, questions: response.questionnaireSnapshot.questions } : questionnaire;
       let mutation;
       if (!patient.childArchiveFirstResponseId) mutation = initialChildMutation(patient, sourceQuestionnaire, response);
-      else mutation = { filter: { _id: patient._id, 'childArchiveImportPending.responseId': responseId, 'childArchiveSubmissions.responseId': { $ne: responseId } },
-        update: { $push: { childArchiveSubmissions: childSubmission(patient, sourceQuestionnaire, response, 'followup') } } };
+      else mutation = followupChildMutation(patient, sourceQuestionnaire, response);
       mutation.filter['childArchiveImportPending.responseId'] = responseId;
       mutation.update.$set = { ...(mutation.update.$set || {}), childArchiveImportPending: null };
       const result = await User.collection.updateOne(mutation.filter, mutation.update);

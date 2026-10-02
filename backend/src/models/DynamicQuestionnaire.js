@@ -43,6 +43,7 @@ const questionnaireSchema = new mongoose.Schema({
   targetType:  { type: String, enum: ['all', 'specific'], default: 'all' },
   patientCategory: { type: String, enum: ['all', 'adult', 'child'], default: 'all' },
   archivePurpose: { type: String, enum: ['', 'child_health'], default: '' },
+  standardTemplateKey: { type: String, default: '' },
   targetUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   respondedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },

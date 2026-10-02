@@ -1,5 +1,6 @@
 import DateField from '../../../shared/DateField.jsx'
 import childAgeStages from '../../../shared/childAgeStages.json'
+import childHealthTemplate from '../../../shared/childHealthQuestionnaireTemplate.json'
 import React, { useEffect, useState, useRef } from 'react'
 import { adminAPI } from '../api'
 import { useToast } from '../App'
@@ -460,38 +461,12 @@ const makeNewQ = (type) => {
 }
 
 const makeChildHealthDraft = () => {
-  const fields = [
-    ['childProfile.motherPregnancyStatus', '母亲妊娠期间是否有需要说明的健康情况？', 'text'],
-    ['childProfile.gestationalWeeks', '出生时孕周是多少周？', 'number'],
-    ['childProfile.birthWeight', '出生体重是多少克？', 'number'],
-    ['childProfile.deliveryMode', '分娩方式是什么？', 'text'],
-    ['childProfile.deliveryComplications', '分娩时是否有并发情况？', 'text'],
-    ['childProfile.neonatalConditions', '新生儿期是否有患病或住院情况？', 'text'],
-    ['childProfile.birthDefects', '是否有出生缺陷或先天性疾病？', 'text'],
-    ['childProfile.hearingScreening', '听力筛查结果是什么？', 'dropdown'],
-    ['childProfile.eyeScreening', '眼底筛查结果是什么？', 'text'],
-    ['childProfile.visionScreening', '近期视力筛查情况如何？', 'text', ['preschool', 'school', 'adolescent']],
-    ['childProfile.neonatalDiseaseScreen', '新生儿疾病筛查结果是什么？', 'text'],
-    ['childProfile.familyAllergyHistory', '家族中是否有过敏史？', 'text'],
-    ['childProfile.familyDiseaseHistory', '家族中是否有需要关注的疾病史？', 'text'],
-    ['childProfile.pastMedicalHistory', '孩子既往有哪些疾病或住院经历？', 'text'],
-    ['childProfile.surgeries', '孩子是否接受过手术？', 'text'],
-    ['childProfile.allergies', '孩子有哪些已知过敏或不良反应？', 'text'],
-    ['childProfile.vaccinationStatus', '预防接种情况如何？有无漏种或异常反应？', 'text'],
-    ['childProfile.currentMedicationReport', '孩子目前是否在用药或服用营养补充剂？', 'text'],
-    ['childProfile.currentSymptomsReport', '孩子近期有哪些不适或症状？', 'text'],
-    ['childProfile.feeding', '目前的喂养和饮食情况如何？', 'text', ['newborn', 'infant', 'toddler', 'preschool', 'school', 'adolescent']],
-    ['childProfile.sleep', '目前的睡眠情况如何？', 'text'],
-    ['childProfile.development', '生长发育、语言或行为方面有无需要关注的变化？', 'text', ['newborn', 'infant', 'toddler', 'preschool']],
-    ['childProfile.schoolAndActivity', '托育、学校生活和日常活动情况如何？', 'text', ['preschool', 'school', 'adolescent']],
-    ['childProfile.caregiverConcerns', '监护人目前最关注哪些健康问题？', 'text'],
-  ]
   return {
-    title: '儿童健康问卷（建档与后续更新）',
-    description: '由监护人填写。题目按出生日期匹配年龄段；出生及新生儿信息如不清楚可留空。后续填写由医护逐项核对变化，回答不作为诊断。',
+    title: childHealthTemplate.title,
+    description: childHealthTemplate.description,
     patientCategory: 'child', archivePurpose: 'child_health', targetType: 'specific',
-    questions: fields.map(([archiveField, text, type, ageStages = []], index) => ({
-      id: `child_${Date.now()}_${index}`, archiveField, text, type, ageStages, required: false,
+    questions: childHealthTemplate.fields.map(([key, text, type, ageStages = []]) => ({
+      id: `child_${key}`, archiveField: `childProfile.${key}`, text, type, ageStages, required: false,
       ...(type === 'dropdown' ? { options: ['通过', '未通过', '未查'].map(label => ({ label, allowInput: false, exclusive: false, score: 0 })) } : {}),
     })),
   }

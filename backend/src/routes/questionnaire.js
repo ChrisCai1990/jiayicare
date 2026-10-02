@@ -360,7 +360,7 @@ router.post('/:id/submit', auth, async (req, res) => {
       }
     } else if (questionnaire.archivePurpose === 'child_health') {
       try {
-        const { childSubmission, initialChildMutation } = require('../utils/childArchive');
+        const { followupChildMutation, initialChildMutation } = require('../utils/childArchive');
         let fullUser = await User.findById(req.user._id).lean();
         if (fullUser.patientCategory !== 'child') throw new Error('儿童健康问卷仅适用于儿童会员');
         if (!fullUser.childArchiveFirstResponseId) {
@@ -378,8 +378,9 @@ router.post('/:id/submit', auth, async (req, res) => {
           if (result.matchedCount) fullUser = null;
         }
         if (fullUser) {
-          const submission = childSubmission(fullUser, { ...questionnaire.toObject(), questions: effectiveQuestions }, response, 'followup');
-          await User.collection.updateOne({ _id: req.user._id, patientCategory: 'child', 'childArchiveSubmissions.responseId': { $ne: response._id } }, { $push: { childArchiveSubmissions: submission } });
+          const mutation = followupChildMutation(fullUser, { ...questionnaire.toObject(), questions: effectiveQuestions }, response);
+          const result = await User.collection.updateOne(mutation.filter, mutation.update);
+          if (!result.matchedCount) throw new Error('儿童后续问卷承接时档案已变化');
         }
       } catch (e) {
         console.error('[child-archive] 儿童问卷承接失败', e.message);
