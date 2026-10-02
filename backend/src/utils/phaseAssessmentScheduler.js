@@ -140,7 +140,7 @@ async function scanAndCreatePhaseAssessments() {
     if (seenPatients.has(String(plan.patientId))) continue;
     let user, gate, frequency, pilotFrequency = false;
     try {
-      user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand tenantId servicePackage aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
+      user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand tenantId servicePackage membershipTier enterpriseId aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
       if (!user || user.isDeleted) continue;
       gate = await require('./annualPeriodicGate').annualPeriodicGate(plan, user);
       const rights = await require('./packageFeatureEntitlements').getAiEntitlements(user, gate.access);

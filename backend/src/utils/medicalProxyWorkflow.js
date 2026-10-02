@@ -38,7 +38,7 @@ async function reserveStaffMedicalBenefit(patientId, order, serviceName) {
   if (!coveredName) return { status: 'not_covered' };
   let rows = await applicableEntitlements(patientId);
   if (!rows.length) {
-    const user = await User.findById(patientId).select('_id tenantId clientBrand servicePackage serviceStartDate serviceExpiry familyLinks').lean();
+    const user = await User.findById(patientId).select('_id tenantId clientBrand servicePackage serviceStartDate serviceExpiry membershipTier enterpriseId familyLinks').lean();
     if (user) {
       await require('./packageServiceRedemption').ensureEffectiveServiceLedger(user);
       rows = await applicableEntitlements(patientId);

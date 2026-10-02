@@ -6,6 +6,7 @@ const PackageEntitlement = require('../models/PackageEntitlement');
 const Redemption = require('../models/PackageEntitlementRedemption');
 const { buildPackageEntitlementSnapshot } = require('./packageEntitlementSnapshot');
 const { applicableEntitlements } = require('./packageEntitlements');
+const { effectivePackageName } = require('./effectivePackageName');
 
 const keyFor = ({ patientId, sourceType, sourceId }) => crypto.createHash('sha256')
   .update(`${patientId}:${sourceType}:${sourceId}`).digest('hex');
@@ -24,7 +25,7 @@ function validServiceWindow(user, now) {
 async function ensureEffectiveServiceLedger(user, now = new Date()) {
   const window = validServiceWindow(user, now);
   if (!window || !user.servicePackage) return null;
-  const pkg = await ServicePackage.findOne({ name: user.servicePackage, clientBrand: user.clientBrand || 'jiayiguanjia', active: true }).lean();
+  const pkg = await ServicePackage.findOne({ name: effectivePackageName(user), clientBrand: user.clientBrand || 'jiayiguanjia', active: true }).lean();
   if (!pkg) return null;
   const existing = await PackageEntitlement.findOne({ ownerUserId: user._id, packageId: pkg._id,
     status: 'active', validFrom: { $lte: now }, validUntil: { $gte: now } }).lean();
@@ -77,7 +78,7 @@ async function recordCompletedService({ patientId, sourceType, sourceId, product
       await Redemption.updateOne({ _id: key, token }, { $set: { status: 'completed', entitlementId: previous._id, completedAt: new Date() } });
       return { status: 'completed', entitlementId: previous._id };
     }
-    const user = await User.findById(patientId).select('_id tenantId clientBrand servicePackage serviceStartDate serviceExpiry familyLinks').lean();
+    const user = await User.findById(patientId).select('_id tenantId clientBrand servicePackage serviceStartDate serviceExpiry membershipTier enterpriseId familyLinks').lean();
     if (!user) throw new Error('会员不存在');
     let rows = await applicableEntitlements(patientId);
     if (!rows.some(row => matchingRight(row, productId, workflowKey))) {

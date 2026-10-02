@@ -1,5 +1,6 @@
 const ServicePackage = require('../models/ServicePackage');
 const { applicableEntitlements } = require('./packageEntitlements');
+const { effectivePackageName } = require('./effectivePackageName');
 
 const NONE = { aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthArchiveConcierge: false, healthConsultation: false, medicalPlanning: false, expertAppointment: false, reportInterpretation: false, phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1 };
 const HEALTH_FUND_TIERS = new Set(['consumer365', 'annual', 'therapy', 'enterprise']);
@@ -50,7 +51,7 @@ async function getAiEntitlements(user, serviceAccess) {
   // 不再用套餐名称、服务时长或团队人员来推断。
   if (!user.servicePackage) return { ...NONE };
   const pkg = await ServicePackage.findOne({
-    clientBrand: user.clientBrand || 'jiayiguanjia', name: user.servicePackage, active: true,
+    clientBrand: user.clientBrand || 'jiayiguanjia', name: effectivePackageName(user), active: true,
   }).select('entitlements configuration').lean();
   return { ...aiRights(pkg?.entitlements), phaseAssessmentFrequency: pkg?.configuration?.phaseAssessmentFrequency || '', monthlyReviewStartMonth: Math.max(1, Number(pkg?.configuration?.monthlyReviewStartMonth) || 1) };
 }

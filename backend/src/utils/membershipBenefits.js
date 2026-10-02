@@ -2,13 +2,14 @@ const PackageEntitlement = require('../models/PackageEntitlement');
 const ServicePackage = require('../models/ServicePackage');
 const { legacyAccess } = require('./serviceAccess');
 const { applicableEntitlements } = require('./packageEntitlements');
+const { effectivePackageName } = require('./effectivePackageName');
 const FEATURES = { aiHealthAnalysis:'AI健康趋势分析', phaseAssessment:'阶段性评估', monthlyServiceReview:'月度服务回顾（内部）', healthArchiveConcierge:'健康档案更新与管理', healthConsultation:'健康咨询', medicalPlanning:'就医规划', expertAppointment:'专家约诊（不指定）', reportInterpretation:'报告解读', aiRiskAssessment:'AI风险评估' };
 
 async function legacyPackage(user) {
   if (!user?.servicePackage || !legacyAccess(user).active) return null;
   // A cancelled/expired ledger must never regain rights through a profile label.
   if (await PackageEntitlement.exists({ ownerUserId:user._id })) return null;
-  return ServicePackage.findOne({ name:user.servicePackage, clientBrand:user.clientBrand || 'jiayiguanjia', active:true }).lean();
+  return ServicePackage.findOne({ name:effectivePackageName(user), clientBrand:user.clientBrand || 'jiayiguanjia', active:true }).lean();
 }
 function quota(row, legacy, reserved = 0, newlyRedeemed = 0) {
   const total = Number(row.count);
@@ -60,7 +61,9 @@ async function membershipBenefits(user, existingRows) {
   const rows = existingRows || await applicableEntitlements(user._id);
   if (rows.length) return { plans:rows.map(row=>project(row,user._id)), message:'' };
   const pkg = await legacyPackage(user);
-  if (!pkg) return { plans:[], message:'暂无当前有效且已确认的会员计划权益，请联系服务团队核对。' };
+  if (!pkg) return { plans:[], message:user?.servicePackage && legacyAccess(user).active
+    ? `档案中的「${user.servicePackage}」尚未关联到已生效的服务包配置或权益台账，请联系服务团队核对套餐来源。`
+    : '暂无当前有效且已确认的会员计划权益，请联系服务团队核对。' };
   const rights = await require('./packageEntitlementSnapshot').buildPackageEntitlementSnapshot(pkg);
   return { plans:[project({ packageName:pkg.name,validFrom:user.serviceStartDate,validUntil:user.serviceExpiry,rights },user._id,true)],message:'' };
 }

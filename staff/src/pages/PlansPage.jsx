@@ -283,7 +283,7 @@ function SelectPatientForAhModal({ year, title, actionLabel = '进入编辑', on
         </div>
         <div className="modal-body">
           <label className="form-label">选择会员</label>
-          <PatientSearchInput value={patientId} onChange={setPatientId} initialSelectedId={initialPatientId} initialSelectedName={initialPatientName} />
+          <PatientSearchInput value={patientId} onChange={setPatientId} initialSelectedId={initialPatientId} initialSelectedName={initialPatientName} inlineResults />
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
@@ -295,7 +295,7 @@ function SelectPatientForAhModal({ year, title, actionLabel = '进入编辑', on
 }
 
 // ── 会员搜索组件（按姓名或手机号实时搜索） ────────────────────────────
-function PatientSearchInput({ value, onChange, initialSelectedName = '', initialSelectedId = '' }) {
+function PatientSearchInput({ value, onChange, initialSelectedName = '', initialSelectedId = '', inlineResults = false }) {
   const [keyword, setKeyword] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
@@ -389,7 +389,7 @@ function PatientSearchInput({ value, onChange, initialSelectedName = '', initial
       {/* 搜索结果下拉 */}
       {open && !value && (
         <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999,
+          position: inlineResults ? 'relative' : 'absolute', top: inlineResults ? undefined : '100%', left: 0, right: 0, zIndex: 9999,
           background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8,
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto',
           marginTop: 4,

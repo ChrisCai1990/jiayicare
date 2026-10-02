@@ -8,6 +8,7 @@ function fixture({rows = [], exists = false, active = true, pkg = null} = {}) {
     '../models/ServicePackage': {findOne: () => ({lean: async () => pkg})},
     './serviceAccess': {legacyAccess: () => ({active})},
     './packageEntitlements': {applicableEntitlements: async () => rows},
+    './effectivePackageName': require('../src/utils/effectivePackageName'),
     './packageEntitlementSnapshot': {buildPackageEntitlementSnapshot: async p => p.rights},
   };
   const context = {module: {exports: {}}, require: key => {assert.ok(key in mocks); return mocks[key];}};
