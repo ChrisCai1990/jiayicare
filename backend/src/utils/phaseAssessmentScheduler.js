@@ -125,9 +125,13 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
 
 async function scanAndCreatePhaseAssessments() {
   if (!process.env.QWEN_API_KEY) return 0;
+  // Independent, exact patient allowlist: a global health-management rollout or
+  // future pilot flag cannot silently start assessment generation for others.
+  const ids = String(process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS || '').split(',').map(id => id.trim().toLowerCase()).filter(Boolean);
+  if (!ids.length || ids.some(id => !/^[a-f\d]{24}$/.test(id))) return 0;
   const templates = await PlanTemplate.find({ type: 'phase_assessment', status: 'active', 'content.frequency': { $in: ['monthly', 'quarterly', 'yearly'] } }).lean();
   if (!templates.length) return 0;
-  const plans = await AnnualPlan.find({ ...require('./healthManagementRollout').patientFilter(), confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).limit(500).lean();
+  const plans = await AnnualPlan.find({ $and: [require('./healthManagementRollout').patientFilter(), { patientId: { $in: ids } }, { confirmedAt: { $ne: null } }] }).sort({ confirmedAt: -1 }).limit(500).lean();
   let created = 0;
   const seenPatients = new Set();
   for (const plan of plans) {
