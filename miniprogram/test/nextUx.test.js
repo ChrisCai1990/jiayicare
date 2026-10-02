@@ -128,8 +128,20 @@ function componentHarness(file,mocks) {
   const render=()=>{si=0;ri=0;return Page({});};
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.children||[]).flat(Infinity).flatMap(nodes)];
   const text=n=>typeof n==='string'||typeof n==='number'?String(n):n&&typeof n==='object'?(n.children||[]).flat(Infinity).map(text).join(''):'';
-  return {render,nodes,text,state, mount:async()=>{render();effects.splice(0).forEach(f=>f());await flush();},show:async()=>{show();await flush();}};
+  return {render,nodes,text,state, mount:async()=>{render();effects.splice(0).forEach(f=>f());await flush();},runLatestEffect:async()=>{effects.splice(0).at(-1)?.();await flush();},show:async()=>{show();await flush();}};
 }
+test('viewing a closed pilot reply acknowledges it once and keeps the reply visible as a record',async()=>{
+  const help={status:'closed',message:'请帮我调整提醒',reply:'已调整提醒',closedAt:'2026-10-03T08:00:00.000Z'};
+  const data={status:'active',available:true,startedAt:'2026-09-29',summary:{week:1,checkpoints:[]},help};
+  const calls=[];
+  const h=componentHarness('components/MetabolicPilotCard.jsx',{'../services/api':{metabolicPilotAPI:{get:async()=>({data}),action:async body=>{calls.push(body);return {success:true}}}}});
+  await h.mount();h.render();await h.runLatestEffect();
+  assert.deepEqual(calls.map(x=>x.action),['read-help-reply']);
+  assert.equal(calls[0].closedAt,help.closedAt);
+  assert.ok(h.state.some(x=>x?.help?.readAt),JSON.stringify(h.state));
+  assert.ok(h.text(h.render()).includes('团队回复：已调整提醒'));
+  await h.runLatestEffect();assert.equal(calls.length,1);
+});
 test('pilot action tick follows saved choice and remains correct after reload',async()=>{
   const data={status:'active',available:true,startedAt:'2026-09-29',summary:{week:1,checkpoints:[],action:{id:'meal',title:'餐食'}},actionChoice:{id:'meal',choice:'try'}};
   const h=componentHarness('components/MetabolicPilotCard.jsx',{'../services/api':{metabolicPilotAPI:{get:async()=>({data}),action:async body=>{data.actionChoice={id:body.id,choice:body.choice};}}}});
