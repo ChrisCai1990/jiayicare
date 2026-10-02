@@ -17,7 +17,7 @@ router.use(adminAuth, (req, res, next) => ['platformSuper', 'superadmin'].includ
 router.get('/', async (req, res) => {
   const platform = req.admin.role === 'platformSuper';
   const updatePage = Math.max(1, Math.min(100000, Number.parseInt(req.query.updatePage, 10) || 1));
-  const pageSize = 25;
+  const pageSize = 5;
   const [watches, updates, updateTotal, pendingCount, delegation, tenants] = await Promise.all([
     ClinicalStandardWatch.find().lean(),
     ClinicalStandardUpdate.find().sort({ detectedAt: -1, _id: -1 }).skip((updatePage - 1) * pageSize).limit(pageSize).lean(),

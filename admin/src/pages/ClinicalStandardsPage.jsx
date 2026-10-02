@@ -6,7 +6,7 @@ import './ClinicalStandardsPage.css'
 const kindName = { guideline: '临床指南', instrument: '量表工具', internal: '内部规则' }
 const statusName = { pending: '待医学审核', clinically_reviewed: '待实施发布', dismissed: '无需更新' }
 const dateText = value => value ? new Date(value).toLocaleString('zh-CN') : '尚未检查'
-const PAGE_SIZE = 25
+const PAGE_SIZE = 5
 
 function Pagination({ page, total, onPageChange }) {
   const pages = Math.ceil(total / PAGE_SIZE)
