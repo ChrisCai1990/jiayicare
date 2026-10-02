@@ -10,6 +10,7 @@ const Admin = require('../models/Admin');
 const Tenant = require('../models/Tenant');
 const PlatformAgreement = require('../models/PlatformAgreement');
 const { renderAgreement } = require('../utils/platformAgreementText');
+const { STANDARD_PLAN, seatUsage, canAddSeat, estimatedMonthlySeatFee } = require('../utils/saasPlan');
 const User = require('../models/User');
 const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
@@ -84,6 +85,22 @@ router.get('/agreements/:tenantId', adminAuth, async (req, res) => {
   return agreementResponse(res, { tenantId: tenant._id, tenantName: tenant.name, status: 'proposal',
     version: 0, prices: agreementPrices, document,
     documentHash: crypto.createHash('sha256').update(document).digest('hex') });
+});
+
+// 标准套餐公开给双方管理员核对；嘉医汇等存量机构仍以自己的签署协议为准。
+router.get('/saas-plan', adminAuth, async (req, res) => {
+  if (!agreementAllowed(req)) return res.status(403).json({ success: false, message: '仅超级管理员可查看套餐' });
+  const tenantId = req.admin.role === 'platformSuper' ? req.query.tenantId : req.admin.tenantId;
+  if (!tenantId) return res.json({ success: true, data: { standard: STANDARD_PLAN, tenant: null } });
+  if (!mongoose.isValidObjectId(tenantId)) return res.status(400).json({ success: false, message: '机构 ID 无效' });
+  const tenant = await Tenant.findById(tenantId).select('name code commercialPlan extraStaffSeats extraAdminSeats').lean();
+  if (!tenant || (req.admin.role !== 'platformSuper' && String(tenant._id) !== String(req.admin.tenantId))) return res.sendStatus(404);
+  const usage = await seatUsage(tenant._id);
+  const standard = tenant.commercialPlan === 'standard';
+  return res.json({ success: true, data: { standard: STANDARD_PLAN,
+    tenant: { ...tenant, usage, staffLimit: standard ? STANDARD_PLAN.includedStaffSeats + (tenant.extraStaffSeats || 0) : null,
+      adminLimit: standard ? STANDARD_PLAN.includedAdminSeats + (tenant.extraAdminSeats || 0) : null,
+      estimatedMonthlySeatFeeYuan: standard ? estimatedMonthlySeatFee(usage) : null } } });
 });
 
 router.post('/agreements/:tenantId/publish', adminAuth, async (req, res) => {
@@ -275,6 +292,7 @@ router.post('/login', async (req, res) => {
   if (!admin || !(await admin.comparePassword(password))) {
     return res.status(401).json({ success: false, message: '用户名或密码错误' });
   }
+  if (admin.staffStatus === 'inactive') return res.status(403).json({ success: false, message: '账号已停用' });
   // 企业HR账号仅可通过 /api/enterprise-hr/login 独立入口登录，不允许进入超管/医护后台
   if (admin.role === 'enterprise_hr') {
     return res.status(403).json({ success: false, message: '企业HR账号请使用企业客户专属登录入口' });
@@ -1405,6 +1423,7 @@ router.post('/staff', adminAuth, async (req, res) => {
   if (!STAFF_ROLES.includes(role)) {
     return res.status(400).json({ success: false, message: '角色无效' });
   }
+  if (!await canAddSeat(req.admin.tenantId, 'staff')) return res.status(409).json({ success: false, message: '服务人员账号额度已满，请联系平台开通额外账号' });
   // 手机号唯一检查
   const existingPhone = await Admin.findOne({ phone });
   if (existingPhone) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });
@@ -1538,7 +1557,7 @@ router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
   const dup = await Tenant.findOne({ code });
   if (dup) return res.status(400).json({ success: false, message: '该机构标识已存在' });
   if (websiteHosts.length && await Tenant.exists({ websiteHosts: { $in: websiteHosts } })) return res.status(409).json({ success: false, message: '网站域名已绑定其他机构' });
-  const tenant = await Tenant.create({ code, name, slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts });
+  const tenant = await Tenant.create({ code, name, slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts, commercialPlan: 'standard' });
 
   // 为新机构建一个 superadmin，否则该机构无人能登录管理
   let createdAdmin = null;
@@ -1569,6 +1588,34 @@ router.put('/tenants/:id', adminAuth, requirePlatformSuper, async (req, res) => 
   const tenant = await Tenant.findByIdAndUpdate(req.params.id, update, { new: true });
   if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
   res.json({ success: true, data: tenant, message: '机构信息已更新' });
+});
+
+router.put('/tenants/:id/seats', adminAuth, requirePlatformSuper, async (req, res) => {
+  const values = ['extraStaffSeats', 'extraAdminSeats'].map(key => Number(req.body?.[key]));
+  if (values.some(value => !Number.isInteger(value) || value < 0 || value > 500)) return res.status(400).json({ success: false, message: '额外账号数必须为 0 至 500 的整数' });
+  const tenant = await Tenant.findById(req.params.id);
+  if (!tenant || tenant.commercialPlan !== 'standard') return res.status(404).json({ success: false, message: '标准套餐机构不存在' });
+  const usage = await seatUsage(tenant._id);
+  if (values[0] + STANDARD_PLAN.includedStaffSeats < usage.staff || values[1] + STANDARD_PLAN.includedAdminSeats < usage.admins) {
+    return res.status(409).json({ success: false, message: '不能将额度调低至当前已启用账号数以下' });
+  }
+  const before = { extraStaffSeats: tenant.extraStaffSeats || 0, extraAdminSeats: tenant.extraAdminSeats || 0 };
+  [tenant.extraStaffSeats, tenant.extraAdminSeats] = values;
+  await tenant.save();
+  await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
+    action: 'change_seat_quota', before, after: { extraStaffSeats: values[0], extraAdminSeats: values[1] }, at: new Date(), ip: req.ip });
+  res.json({ success: true, data: tenant });
+});
+
+router.post('/tenants/:id/admins', adminAuth, requirePlatformSuper, async (req, res) => {
+  const tenant = await Tenant.findById(req.params.id).lean();
+  if (!tenant || tenant.commercialPlan !== 'standard') return res.status(404).json({ success: false, message: '标准套餐机构不存在' });
+  if (!await canAddSeat(tenant._id, 'admin')) return res.status(409).json({ success: false, message: '机构管理员账号额度已满' });
+  const { username, password, name } = req.body || {};
+  if (!username || !name || typeof password !== 'string' || password.length < 10 || password.length > 128) return res.status(400).json({ success: false, message: '填写用户名、姓名及 10 至 128 位初始密码' });
+  if (await runWithoutTenantScope(() => Admin.exists({ username }))) return res.status(409).json({ success: false, message: '用户名已被占用' });
+  const account = await Admin.create({ username, password, name, role: 'superadmin', tenantId: tenant._id, mustChangePassword: true });
+  res.json({ success: true, data: { _id: account._id, username: account.username, name: account.name } });
 });
 
 // DELETE /api/admin/tenants/:id — 删除机构（有员工/客户时拒绝，避免误删数据）

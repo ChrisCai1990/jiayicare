@@ -6,6 +6,7 @@ const CompanyInfo    = require('../models/CompanyInfo');
 const Department     = require('../models/Department');
 const StaffRole      = require('../models/StaffRole');
 const Admin          = require('../models/Admin');
+const { canAddSeat } = require('../utils/saasPlan');
 const Team           = require('../models/Team');
 const MemberTag      = require('../models/MemberTag');
 const MemberSource   = require('../models/MemberSource');
@@ -192,6 +193,7 @@ router.post('/employees', adminAuth, async (req, res) => {
   if (!SYSTEM_ROLES.includes(role)) {
     return res.status(400).json({ success: false, message: '角色无效' });
   }
+  if (!await canAddSeat(req.admin.tenantId, 'staff')) return res.status(409).json({ success: false, message: '服务人员账号额度已满，请联系平台开通额外账号' });
   const phoneExists = await Admin.findOne({ phone });
   if (phoneExists) return res.status(400).json({ success: false, message: '该手机号已被使用' });
   const finalUsername = username || `jy_${Date.now().toString(36)}`;
@@ -253,6 +255,7 @@ router.patch('/employees/:id/toggle', adminAuth, async (req, res) => {
   }
   const emp = await Admin.findById(req.params.id);
   if (!emp) return res.status(404).json({ success: false, message: '员工不存在' });
+  if (emp.staffStatus !== 'active' && !await canAddSeat(req.admin.tenantId, 'staff')) return res.status(409).json({ success: false, message: '服务人员账号额度已满，请联系平台开通额外账号' });
   emp.staffStatus = emp.staffStatus === 'active' ? 'inactive' : 'active';
   await emp.save();
   res.json({ success: true, data: { staffStatus: emp.staffStatus }, message: emp.staffStatus === 'active' ? '账号已启用' : '账号已停用' });

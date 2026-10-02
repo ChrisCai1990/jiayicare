@@ -362,6 +362,7 @@ router.post('/login', async (req, res) => {
   if (!admin || !(await admin.comparePassword(password))) {
     return res.status(401).json({ success: false, message: '用户名或密码错误' });
   }
+  if (admin.staffStatus === 'inactive') return res.status(403).json({ success: false, message: '账号已停用' });
   if (!STAFF_ROLES.includes(admin.role)) {
     return res.status(403).json({ success: false, message: '该账号无医护端权限' });
   }

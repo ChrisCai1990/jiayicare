@@ -15,6 +15,7 @@ module.exports = async (req, res, next) => {
     }
     const admin = await Admin.findById(decoded.id).select('-password');
     if (!admin) return res.status(401).json({ success: false, message: '管理员账号不存在' });
+    if (admin.staffStatus === 'inactive') return res.status(403).json({ success: false, message: '账号已停用' });
     // 企业HR账号只能访问 /api/enterprise-hr 独立只读聚合接口，禁止访问超管/医护端全部接口
     if (admin.role === 'enterprise_hr') {
       return res.status(403).json({ success: false, message: '企业HR账号无权限访问该接口' });
