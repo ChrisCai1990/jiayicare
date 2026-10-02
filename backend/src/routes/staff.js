@@ -8394,6 +8394,12 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
           currentOrder.serviceStartedBy = req.staff._id;
           currentOrder.serviceStartEvidence = evidence.slice(0, 1000);
           currentOrder.tradeStatus = 'fulfilling';
+          const fulfillment = await Fulfillment.findOneAndUpdate({ order: currentOrder._id },
+            { $set: { status: 'in_service', note: evidence.slice(0, 1000) },
+              $setOnInsert: { order: currentOrder._id, user: currentOrder.user,
+                type: currentOrder.fulfillmentType || 'offline_service' } }, { upsert: true, new: true });
+          currentOrder.fulfillmentId = fulfillment._id;
+          currentOrder.fulfillmentStatus = fulfillment.status;
           await currentOrder.save();
         }
         const settled = await require('../utils/packageServiceRedemption').safeReconcilePackageOrder(currentOrder);
@@ -8410,6 +8416,10 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
       currentOrder.fulfillmentStatus = 'completed';
       currentOrder.usedUnits = 1;
       currentOrder.completedAt = new Date();
+      await Fulfillment.findOneAndUpdate({ order: currentOrder._id },
+        { $set: { status: 'completed', completedAt: currentOrder.completedAt },
+          $setOnInsert: { order: currentOrder._id, user: currentOrder.user,
+            type: currentOrder.fulfillmentType || 'offline_service' } }, { upsert: true });
       await currentOrder.save();
       await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: currentOrder._id,
         status: { $nin: ['completed', 'cancelled'] } },
