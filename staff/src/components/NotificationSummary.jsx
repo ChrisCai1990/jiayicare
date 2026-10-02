@@ -6,10 +6,14 @@ import { notificationTotal } from '../utils/staffWorkspace'
 const SummaryContext = createContext({ count: null, data: null, error: '' })
 export const useNotificationSummary = () => useContext(SummaryContext)
 
-export function NotificationSummaryProvider({ children }) {
+export function NotificationSummaryProvider({ children, disabled = false }) {
   const location = useLocation()
   const [snapshot, setSnapshot] = useState({ count: null, data: null, error: '' })
   useEffect(() => {
+    if (disabled) {
+      setSnapshot({ count: 0, data: null, error: '' })
+      return
+    }
     let active = true
     let version = 0
     const refresh = async () => {
@@ -27,6 +31,6 @@ export function NotificationSummaryProvider({ children }) {
     window.addEventListener('notif-refresh', refresh)
     window.addEventListener('focus', refreshVisible)
     return () => { active = false; clearInterval(timer); window.removeEventListener('notif-refresh', refresh); window.removeEventListener('focus', refreshVisible) }
-  }, [location.pathname])
+  }, [location.pathname, disabled])
   return <SummaryContext.Provider value={snapshot}>{children}</SummaryContext.Provider>
 }

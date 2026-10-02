@@ -151,13 +151,39 @@ function RequireAuth({ children }) {
   const location = useLocation()
   const token = getToken()
   if (!staff || !token) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
-  if (staff.tenantStatus === 'setup' && !['/setup', '/change-password'].includes(location.pathname)) return <Navigate to="/setup" replace />
+  if (staff.tenantStatus === 'setup' && !['/setup', '/change-password'].includes(location.pathname)) return <Navigate to={`/setup?view=${encodeURIComponent(location.pathname)}`} replace />
   return children
 }
 
 function StaffSetupPage() {
-  const { staff, logout } = useStaff()
-  return <div style={{ maxWidth: 560, margin: '9vh auto', padding: 28, fontFamily: 'sans-serif' }}><h1>{staff?.tenantName} · 医护端</h1><p>当前岗位：{staff?.customRoleName || staff?.roleLabel || staff?.role}。本机构暂无客户，后台正在配置部门、岗位及员工账号。</p><p>客户业务将在跨机构数据隔离验收后开放。</p><button onClick={logout}>退出登录</button></div>
+  const { staff } = useStaff()
+  const location = useLocation()
+  const view = new URLSearchParams(location.search).get('view') || '/home'
+  const modules = [
+    ['/service-assistant', '家庭服务助手', 'patients'], ['/patients', '我的会员', 'patients'], ['/followups', '随访管理', 'followups'],
+    ['/plans', '健康方案', 'plans'], ['/reports', '报告管理', 'reports'],
+    ['/service-records', '服务记录', 'service_records'], ['/knowledge', '科普推送', 'knowledge'],
+    ['/questionnaires', '问卷推送', 'questionnaires'], ['/products', '产品推送', 'products'], ['/commission', '分佣中心', 'commission'],
+    ['/marketing', '会员营销', 'marketing'], ['/visitor-leads', '官网线索', 'leads'],
+    ['/team', '团队管理', 'team'], ['/operations', '运营看板', 'operations'],
+    ['/daily-checkin', '日常健康数据', 'daily_checkin'], ['/metabolic-pilot', '体重管理试点', 'daily_checkin'],
+    ['/medical-resource-knowledge', '就医资源', ''], ['/notifications', '消息通知', ''], ['/profile', '个人中心', ''],
+  ]
+  const allowed = modules.filter(([, , key]) => !key || staff?.role === 'superadmin' || !!staff?.customPermissions?.[key]?.view)
+  const selected = modules.find(([path]) => path === view)
+  const roleName = staff?.customRoleName || staff?.roleLabel || '机构员工'
+  const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+  const emptyText = view === '/notifications' ? '暂无本机构消息。' : view === '/medical-resource-knowledge' || view === '/knowledge' ? '该工作模块将在机构业务启用后展示内容。' : '暂无本机构客户及相关记录。'
+  return <div className="page">
+    <div className="page-header"><div><h1 className="page-title">{view === '/home' ? `你好，${staff?.name} · ${roleName}` : selected?.[1] || '机构工作台'}</h1><p className="page-subtitle">{staff?.tenantName} · {today}</p></div></div>
+    <div className="card" style={{ padding: 18, marginBottom: 20, background: '#F0F8F4', border: '1px solid #D4E9DC', color: '#24543D' }}>本机构工作台已建立。客户档案接入后，属于本岗位的工作会显示在这里。</div>
+    {view === '/home' ? <>
+      <div className="stats-grid home-stats" style={{ marginBottom: 20 }}>{[['在管客户', '0'], ['今日待办', '0'], ['待处理消息', '0']].map(([label, value]) => <div className="card" key={label} style={{ padding: 20 }}><div style={{ color: '#667085', fontSize: 13 }}>{label}</div><strong style={{ display: 'block', fontSize: 30, marginTop: 8, color: '#1E6B50' }}>{value}</strong></div>)}</div>
+      <div className="card" style={{ padding: 24, marginBottom: 20 }}><h2 style={{ margin: '0 0 12px', fontSize: 18 }}>我的岗位与工作入口</h2><p style={{ color: '#667085' }}>当前岗位：{roleName}</p><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>{allowed.map(([path, label]) => <a className="btn btn-secondary" key={path} href={`/setup?view=${encodeURIComponent(path)}`}>{label}</a>)}</div>{!allowed.length && <p style={{ color: '#667085' }}>机构管理员尚未给此岗位分配工作模块。</p>}</div>
+      <div className="card" style={{ padding: 24 }}><h2 style={{ margin: '0 0 10px', fontSize: 18 }}>待办工作</h2><p style={{ color: '#667085', margin: 0 }}>当前没有待办。客户接入后，这里按岗位显示需要处理的事项。</p></div>
+    </> : <div className="card" style={{ padding: 28 }}><h2 style={{ margin: '0 0 10px', fontSize: 18 }}>{selected?.[1] || '本机构工作'}</h2>{view === '/profile' ? <p style={{ color: '#667085', margin: 0 }}>{staff?.name} · {roleName}{staff?.phone ? ` · ${staff.phone}` : ''}</p> : <p style={{ color: '#667085', margin: 0 }}>{emptyText}</p>}</div>}
+    <p style={{ color: '#89968F', fontSize: 12, marginTop: 16 }}>当前为机构配置阶段；客户建档、派单及其他客户业务须完成跨机构数据隔离验收后开放。</p>
+  </div>
 }
 
 // Admin 新建/重置员工密码后，只允许访问强制改密页；改密成功后才进入工作台。
@@ -187,7 +213,9 @@ export default function App() {
         <ToastProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/setup" element={<RequireAuth><StaffSetupPage /></RequireAuth>} />
+            <Route path="/setup" element={<RequireAuth><RequirePasswordChanged><Layout /></RequirePasswordChanged></RequireAuth>}>
+              <Route index element={<StaffSetupPage />} />
+            </Route>
             <Route path="/change-password" element={<RequireAuth><ForcePasswordChangePage /></RequireAuth>} />
             <Route path="/" element={<RequireAuth><RequirePasswordChanged><RequireModule><Layout /></RequireModule></RequirePasswordChanged></RequireAuth>}>
               <Route index element={<Navigate to="/home" replace />} />
