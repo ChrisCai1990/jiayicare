@@ -132,10 +132,10 @@ async function recordLinkedOrderCompletion(order) {
 async function settleReservedPackageOrder(order) {
   const usage = order?.packageEntitlementUsage;
   if (!usage?.entitlementId) return { status: 'not_applicable' };
-  if (order.status === 'completed') {
+  if ((order.serviceStartedAt && Number(order.totalUnits || 1) === 1) || order.status === 'completed') {
     const result = await PackageEntitlement.updateOne({ _id: usage.entitlementId,
       usageRecords: { $elemMatch: { executionOrderId: order._id, status: 'reserved' } } },
-    { $set: { 'usageRecords.$.status': 'redeemed', 'usageRecords.$.usedAt': order.completedAt || new Date() } });
+    { $set: { 'usageRecords.$.status': 'redeemed', 'usageRecords.$.usedAt': order.serviceStartedAt || order.completedAt || new Date() } });
     return { status: result.modifiedCount ? 'completed' : 'unchanged' };
   }
   if (order.status !== 'cancelled' && order.paymentStatus !== 'refunded') return { status: 'reserved' };
@@ -209,7 +209,8 @@ async function scanCompletedServiceRedemptions() {
   const orders = await Order.find({ $or: [
     { status: 'completed', completedAt: { $gte: since } },
     { packageEntitlementUsage: { $ne: null }, status: 'cancelled', updatedAt: { $gte: since } },
-  ] }).select('_id user serviceId orderType paymentStatus paidAmount status completedAt packageEntitlementUsage').limit(500).lean();
+    { packageEntitlementUsage: { $ne: null }, serviceStartedAt: { $gte: since } },
+  ] }).select('_id user serviceId orderType totalUnits paymentStatus paidAmount status completedAt serviceStartedAt packageEntitlementUsage').limit(500).lean();
   for (const order of orders) await safeReconcilePackageOrder(order);
   return tasks.length + assessments.length + orders.length;
 }

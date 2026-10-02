@@ -10805,9 +10805,36 @@ export default function PatientDetailPage() {
                                 setPatientOrders(prev => prev.map(o => o._id === order._id ? { ...o, status: 'scheduled', scheduledAt: new Date().toISOString() } : o))
                                 toast('已安排服务')
                               } catch (err) { toast(err.message || '操作失败') }
-                            }}>启动服务</button>
+                            }}>{order.packageEntitlementUsage ? '安排服务' : '启动服务'}</button>
                           )}
-                          {order.status === 'scheduled' && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
+                          {order.status === 'scheduled' && order.packageEntitlementUsage && !order.serviceStartedAt && (
+                            <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
+                              style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
+                                const evidence = window.prompt('请填写本次服务实际启动的内容；确认后自动核销套餐次数：', '')
+                                if (!evidence?.trim()) return
+                                setRedeemingOrderId(order._id)
+                                try {
+                                  const res = await staffAPI.startOrder(order._id, { action: 'actual_start', actualPackageService: true, evidence: evidence.trim() })
+                                  setPatientOrders(prev => prev.map(o => o._id === order._id ? res.data : o))
+                                  toast(res.message || '套餐次数已自动核销')
+                                } catch (err) { toast(err.message || '操作失败') }
+                                finally { setRedeemingOrderId(null) }
+                              }}>{redeemingOrderId === order._id ? '处理中…' : Number(order.totalUnits || 1) === 1 ? '确认实际启动·自动核销' : '确认实际启动'}</button>
+                          )}
+                          {order.status === 'scheduled' && order.packageEntitlementUsage && order.serviceStartedAt
+                            && Number(order.totalUnits || 1) === 1 && !(order.serviceItemsSnapshot || []).length
+                            && !order.serviceWorkflowSnapshot?.key && (
+                            <button className="btn btn-sm" disabled={redeemingOrderId === order._id} onClick={async () => {
+                              setRedeemingOrderId(order._id)
+                              try {
+                                const res = await staffAPI.startOrder(order._id, { action: 'complete', actualPackageService: true })
+                                setPatientOrders(prev => prev.map(o => o._id === order._id ? res.data : o))
+                                toast(res.message || '服务已完成')
+                              } catch (err) { toast(err.message || '操作失败') }
+                              finally { setRedeemingOrderId(null) }
+                            }}>完成服务</button>
+                          )}
+                          {order.status === 'scheduled' && (!order.packageEntitlementUsage || (order.serviceStartedAt && Number(order.totalUnits || 1) > 1)) && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
                             <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
                               style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
                               const note = window.prompt(`确认核销第 ${(order.usedUnits || 0) + 1}/${order.totalUnits || 1} 次服务。\n可填写本次服务备注（可留空）：`, '')
@@ -10819,16 +10846,16 @@ export default function PatientDetailPage() {
                                 toast(res.message || '核销成功')
                               } catch (err) { toast(err.message || '操作失败') }
                               finally { setRedeemingOrderId(null) }
-                            }}>{redeemingOrderId === order._id ? '核销中…' : '核销1次'}</button>
+                            }}>{redeemingOrderId === order._id ? '处理中…' : order.packageEntitlementUsage ? '完成1次服务' : '核销1次'}</button>
                           )}
-                          {order.status === 'scheduled' && (order.serviceItemsSnapshot || []).filter(item => (item.usedUnits || 0) < item.units).map(item => (
+                          {order.status === 'scheduled' && (!order.packageEntitlementUsage || order.serviceStartedAt) && (order.serviceItemsSnapshot || []).filter(item => (item.usedUnits || 0) < item.units).map(item => (
                             <button key={item.key} className="btn btn-sm" disabled={redeemingOrderId === order._id}
                               style={{background:'#22A06B',color:'#fff',border:'none',margin:'2px'}} onClick={async()=>{
                                 const note=window.prompt(`确认核销“${item.name}”第 ${(item.usedUnits||0)+1}/${item.units} 次。\n可填写备注（可留空）：`,'')
                                 if(note===null)return
                                 setRedeemingOrderId(order._id)
                                 try{const res=await staffAPI.redeemOrder(order._id,note,item.key);setPatientOrders(prev=>prev.map(o=>o._id===order._id?res.data:o));toast(res.message||'核销成功')}catch(err){toast(err.message||'操作失败')}finally{setRedeemingOrderId(null)}
-                              }}>核销：{item.name}</button>
+                              }}>{order.packageEntitlementUsage ? '完成' : '核销'}：{item.name}</button>
                           ))}
                         </td>
                       </tr>

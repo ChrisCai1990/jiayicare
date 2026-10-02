@@ -7468,7 +7468,7 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
       return res.status(409).json({ success: false, message: '权益次数刚被其他操作使用，请刷新后重试' });
     }
     const updatedEntitlement = await require('../models/PackageEntitlement').findById(entitlement._id).lean();
-    res.json({ success: true, data: { entitlement: updatedEntitlement, executionOrder, autoMatched: autoMatch }, message: `${autoMatch ? `已自动匹配「${entitlement.packageName || '服务包'}」权益并` : '已'}预占一次权益并创建履约单；服务完成后自动记为核销，取消前可释放预占` });
+    res.json({ success: true, data: { entitlement: updatedEntitlement, executionOrder, autoMatched: autoMatch }, message: `${autoMatch ? `已自动匹配「${entitlement.packageName || '服务包'}」权益并` : '已'}预占一次权益并创建履约单；实际服务启动后自动核销，启动前取消可释放预占` });
   } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 
@@ -8377,12 +8377,55 @@ router.use('/order-shipments', staffAuth, require('./orderShipments'));
 router.patch('/orders/:id/start', staffAuth, async (req, res) => {
   try {
     const { action = 'schedule', scheduledAt, note } = req.body;
-    if (action === 'complete') {
+    if (action === 'complete' && !req.body.actualPackageService) {
       return res.status(400).json({ success: false, message: '请通过“核销一次”记录服务，全部次数核销后订单会自动完成' });
     }
     const actionableOrder = await Order.exists({ _id: req.params.id, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() });
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const currentOrder = await Order.findById(req.params.id);
+    if (req.body.actualPackageService && ['actual_start', 'complete'].includes(action)) {
+      if (!currentOrder?.packageEntitlementUsage || currentOrder.status !== 'scheduled')
+        return res.status(409).json({ success: false, message: '仅已安排的套餐履约单可以确认实际启动或完成' });
+      if (action === 'actual_start') {
+        const evidence = String(req.body.evidence || '').trim();
+        if (!evidence) return res.status(400).json({ success: false, message: '请填写实际启动的服务内容' });
+        if (!currentOrder.serviceStartedAt) {
+          currentOrder.serviceStartedAt = new Date();
+          currentOrder.serviceStartedBy = req.staff._id;
+          currentOrder.serviceStartEvidence = evidence.slice(0, 1000);
+          currentOrder.tradeStatus = 'fulfilling';
+          const fulfillment = await Fulfillment.findOneAndUpdate({ order: currentOrder._id },
+            { $set: { status: 'in_service', note: evidence.slice(0, 1000) },
+              $setOnInsert: { order: currentOrder._id, user: currentOrder.user,
+                type: currentOrder.fulfillmentType || 'offline_service' } }, { upsert: true, new: true });
+          currentOrder.fulfillmentId = fulfillment._id;
+          currentOrder.fulfillmentStatus = fulfillment.status;
+          await currentOrder.save();
+        }
+        const settled = await require('../utils/packageServiceRedemption').safeReconcilePackageOrder(currentOrder);
+        if (Number(currentOrder.totalUnits || 1) === 1 && !['completed', 'unchanged'].includes(settled.status))
+          return res.status(503).json({ success: false, message: '服务已启动，套餐核销待补偿处理，请刷新后查看记录' });
+        return res.json({ success: true, data: currentOrder, message: Number(currentOrder.totalUnits || 1) === 1
+          ? '实际服务已启动，套餐次数自动核销' : '实际服务已启动；分次服务按每次完成记录，全部完成后核销套餐次数' });
+      }
+      if (!currentOrder.serviceStartedAt || Number(currentOrder.totalUnits || 1) !== 1
+        || currentOrder.serviceItemsSnapshot?.length || currentOrder.serviceWorkflowSnapshot?.key)
+        return res.status(409).json({ success: false, message: '请先确认实际启动；分项服务仍须逐项完成' });
+      currentOrder.status = 'completed';
+      currentOrder.tradeStatus = 'completed';
+      currentOrder.fulfillmentStatus = 'completed';
+      currentOrder.usedUnits = 1;
+      currentOrder.completedAt = new Date();
+      await Fulfillment.findOneAndUpdate({ order: currentOrder._id },
+        { $set: { status: 'completed', completedAt: currentOrder.completedAt },
+          $setOnInsert: { order: currentOrder._id, user: currentOrder.user,
+            type: currentOrder.fulfillmentType || 'offline_service' } }, { upsert: true });
+      await currentOrder.save();
+      await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: currentOrder._id,
+        status: { $nin: ['completed', 'cancelled'] } },
+      { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff' } });
+      return res.json({ success: true, data: currentOrder, message: '服务已完成；套餐次数已在实际启动时自动核销' });
+    }
     let shippingManager = null;
     if (require('../../../shared/orderShipping.cjs').isShippingOrder(currentOrder)) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由健康规划师确认配送需求' });

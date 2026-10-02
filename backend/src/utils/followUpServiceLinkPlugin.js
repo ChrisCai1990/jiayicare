@@ -3,7 +3,7 @@ module.exports = function followUpServiceLinkPlugin(schema, { targetType }) {
     if (!targetId) return;
     await require('./followUpServiceLink').safeReconcileServiceLinks({ targetType, targetId });
     if (targetType === 'order') {
-      const order = await require('../models/Order').findById(targetId).select('_id user serviceId orderType paymentStatus paidAmount status completedAt packageEntitlementUsage').lean();
+      const order = await require('../models/Order').findById(targetId).select('_id user serviceId orderType totalUnits paymentStatus paidAmount status completedAt serviceStartedAt packageEntitlementUsage').lean();
       if (order && (order.packageEntitlementUsage || order.status === 'completed')) await require('./packageServiceRedemption').safeReconcilePackageOrder(order);
     }
     if (targetType === 'health_plan') await require('./annualCheckupEvidence').safeReconcileCheckupPreparation({

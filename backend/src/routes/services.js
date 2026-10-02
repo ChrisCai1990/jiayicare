@@ -245,7 +245,6 @@ router.post('/inquiries', auth, async (req, res) => {
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
   const appPayment = req.body.paymentScene === 'app';
-  if (appPayment) { try { require('../utils/wechatPay').assertAppReady(); } catch (e) { return res.status(503).json({ success: false, message: e.message }); } }
   const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [] } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
@@ -381,6 +380,46 @@ router.post('/order', auth, async (req, res) => {
     : (unitsMatch ? Math.max(1, Number(unitsMatch[1])) : 1);
   const unitPrice = Math.round((service.price / totalUnits) * 100) / 100;
 
+  // Existing package rights are the first funding source for the same service.
+  // Reserving at request time prevents a second paid checkout; actual redemption
+  // still follows documented service completion or cancellation.
+  if (product && !isPkg) {
+    const supervisorId = await resolveOrderWorkflowAssignee(req.user._id, service.name);
+    const packageOrder = await require('../utils/packageFirstOrder').packageFirstOrder({
+      user: req.user, product, service, totalUnits, serviceItems: productServiceItems,
+      note: String(note || '').trim(), desiredServiceDate: confirmedServiceDate,
+      serviceRequirements: confirmedServiceRequirements, fulfillmentType: orderFulfillmentType,
+      supervisorId,
+    });
+    if (packageOrder.status === 'history_pending') return res.status(409).json({ success: false,
+      code: 'PACKAGE_HISTORY_REVIEW_REQUIRED', message: '该服务包含在现有套餐中，但历史使用次数尚未核对；请联系服务人员核对后再发起，避免重复付费' });
+    if (packageOrder.status === 'retry') return res.status(409).json({ success: false,
+      code: 'PACKAGE_BALANCE_CHANGED', message: '套餐次数刚发生变化，请刷新后重试' });
+    if (packageOrder.status === 'reserved') {
+      const order = packageOrder.order;
+      if (supervisorId) await FollowUp.create({ staffId: supervisorId, assignedTo: supervisorId,
+        patientId: req.user._id, type: 'other', status: 'planned', theme: `预约：${service.name}`,
+        content: order.note || '客户已使用套餐权益提交服务预约，请联系确认安排',
+        sourceType: 'order', sourceOrderId: order._id });
+      const fulfillment = await Fulfillment.findOneAndUpdate({ order: order._id },
+        { $setOnInsert: { order: order._id, user: order.user, type: order.fulfillmentType,
+          status: 'awaiting_booking', note: order.note || '' } }, { upsert: true, new: true });
+      order.fulfillmentId = fulfillment._id;
+      order.fulfillmentStatus = fulfillment.status;
+      await order.save();
+      await require('../utils/orderPlannerConversation').ensureOrderPlannerPrompt(order);
+      await require('../utils/orderSupplementArchive').ensureOrderSupplementDraft(order);
+      return res.json({ success: true, message: totalUnits === 1
+        ? '已优先使用套餐权益；实际服务启动后自动核销'
+        : '已优先使用套餐权益；分次服务全部完成后自动核销', data: {
+        orderId: order._id, orderNo: order.orderNo, originalPrice: service.price,
+        fundUsed: 0, couponDiscount: 0, paidAmount: 0, paymentParams: null,
+        paymentStatus: 'paid', packageCovered: true,
+        packageRedemptionAt: totalUnits === 1 ? 'service_start' : 'order_completion',
+      } });
+    }
+  }
+
   // ── 健康基金 + 优惠券抵扣（下单即扣，实时校验余额/券状态）──────────
   let coupon = null;
   let couponDiscount = 0;
@@ -422,6 +461,7 @@ router.post('/order', auth, async (req, res) => {
   }
 
   const paidAmount = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
+  if (appPayment && paidAmount > 0) { try { require('../utils/wechatPay').assertAppReady(); } catch (e) { return res.status(503).json({ success: false, message: e.message }); } }
 
   // Check the amount the customer actually confirmed before reserving stock or creating an order.
   if (req.body.expectedAmount != null && (!Number.isFinite(Number(req.body.expectedAmount))
