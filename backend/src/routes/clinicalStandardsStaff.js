@@ -26,7 +26,12 @@ router.post('/:id/review', async (req, res) => {
   const action = String(req.body?.action || '');
   const note = String(req.body?.note || '').trim();
   if (!['clinically_reviewed', 'dismissed'].includes(action) || note.length < 10 || note.length > 2000) return res.status(400).json({ success: false, message: '请选择处理结果，并填写至少10字审核说明' });
-  const update = await ClinicalStandardUpdate.findOneAndUpdate({ _id: req.params.id, status: 'pending' }, { $set: { status: action, note, reviewedBy: req.staff._id, reviewedByName: req.staff.name, reviewedAt: new Date() } }, { new: true });
+  const pending = await ClinicalStandardUpdate.findOne({ _id: req.params.id, status: 'pending' }).lean();
+  if (!pending) return res.status(409).json({ success: false, message: '任务已被处理，请刷新' });
+  const standard = standards.find(row => row.id === pending.standardId);
+  if (!standard || standard.evidence === 'missing' || !standard.originalUrl) return res.status(422).json({ success: false, message: '缺少可核对的原件，暂不能完成审核' });
+  if (req.body?.sourceVerified !== true) return res.status(400).json({ success: false, message: '请先阅读原文并确认已核对来源' });
+  const update = await ClinicalStandardUpdate.findOneAndUpdate({ _id: req.params.id, status: 'pending' }, { $set: { status: action, note, sourceVerified: true, reviewedBy: req.staff._id, reviewedByName: req.staff.name, reviewedAt: new Date() } }, { new: true });
   if (!update) return res.status(409).json({ success: false, message: '任务已被处理，请刷新' });
   res.json({ success: true, data: update, message: action === 'clinically_reviewed' ? '已完成医学审核，等待规则实现与发布' : '已记录无需更新' });
 });
