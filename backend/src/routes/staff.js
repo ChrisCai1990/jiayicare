@@ -110,6 +110,15 @@ const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = 
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
+async function allPushPatientsBelongToStaff(patientIds, staff) {
+  if (!Array.isArray(patientIds) || !patientIds.length) return false;
+  const ids = [...new Set(patientIds.map(String))];
+  if (ids.some(id => !/^[a-f\d]{24}$/i.test(id))) return false;
+  const count = await User.countDocuments({
+    _id: { $in: ids }, tenantId: staff.tenantId || null, isDeleted: { $ne: true },
+  });
+  return count === ids.length;
+}
 router.use('/service-supervision', require('./advisorSupervision'));
 router.use('/patients', require('./reviewPlanAmendments')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./annualExecutionReview')({ getVisiblePlanPatientIds }));
@@ -5444,6 +5453,7 @@ router.delete('/knowledge/:id', staffAuth, checkPermission('knowledge', 'send'),
 router.post('/knowledge/:id/push', staffAuth, checkPermission('knowledge', 'send'), async (req, res) => {
   const { patientIds } = req.body; // 数组
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
+  if (!await allPushPatientsBelongToStaff(patientIds, req.staff)) return res.status(403).json({ success: false, message: '只能推送给本机构客户' });
   const item = await KnowledgeItem.findById(req.params.id);
   if (!item) return res.status(404).json({ success: false, message: '内容不存在' });
   const records = patientIds.map(pid => ({
@@ -5468,6 +5478,7 @@ router.get('/questionnaires', staffAuth, checkPermission('questionnaires', 'view
 router.post('/questionnaires/:id/push', staffAuth, checkPermission('questionnaires', 'send'), async (req, res) => {
   const { patientIds, deadline } = req.body;
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
+  if (!await allPushPatientsBelongToStaff(patientIds, req.staff)) return res.status(403).json({ success: false, message: '只能推送给本机构客户' });
   const q = await DynamicQuestionnaire.findById(req.params.id);
   if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
 
@@ -6075,6 +6086,7 @@ router.get('/product-categories', staffAuth, checkPermission('products', 'view')
 // POST /api/staff/products/push-bundle — 推送多产品组合给会员
 router.post('/products/push-bundle', staffAuth, checkPermission('products', 'send'), async (req, res) => {
   const { productIds, patientIds, pricedProducts, servicePerformers } = req.body;
+  if (!await allPushPatientsBelongToStaff(patientIds, req.staff)) return res.status(403).json({ success: false, message: '只能推送给本机构客户' });
   if (!productIds?.length) return res.status(400).json({ success: false, message: '请选择产品' });
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const products = await Product.find({ _id: { $in: productIds } });
@@ -6112,6 +6124,7 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
 router.post('/products/:id/push', staffAuth, checkPermission('products', 'send'), async (req, res) => {
   const { patientIds, servicePerformers } = req.body;
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
+  if (!await allPushPatientsBelongToStaff(patientIds, req.staff)) return res.status(403).json({ success: false, message: '只能推送给本机构客户' });
   const product = await Product.findById(req.params.id).catch(() => null);
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   const cleanPerformers = Array.isArray(servicePerformers)
