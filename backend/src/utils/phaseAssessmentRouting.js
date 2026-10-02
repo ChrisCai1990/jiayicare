@@ -18,10 +18,12 @@ function isAssignedPhaseReviewer(user, staff, role) {
   return staff.role === 'superadmin' || Boolean(staff.role === role && ROLE_FIELDS[role] && user[ROLE_FIELDS[role]] && String(user[ROLE_FIELDS[role]]) === String(staff._id));
 }
 function reviewQueueFilter(role) {
-  if (role === 'superadmin') return { status: { $in: ['pending', 'nutrition_review', 'professional_review', 'doctor_review', 'rejected', 'archive_pending'] } };
+  // Superseded pilot drafts remain for audit but are never actionable again.
+  const currentOnly = { periodKey: { $not: /-legacy-/ } };
+  if (role === 'superadmin') return { ...currentOnly, status: { $in: ['pending', 'nutrition_review', 'professional_review', 'doctor_review', 'rejected', 'archive_pending'] } };
   const archiveFilter = { status: 'archive_pending', finalReviewRole: role };
-  if (role === 'familyDoctor') return { $or: [{ status: 'doctor_review' }, { status: 'rejected', primaryReviewRole: role }, archiveFilter] };
+  if (role === 'familyDoctor') return { ...currentOnly, $or: [{ status: 'doctor_review' }, { status: 'rejected', primaryReviewRole: role }, archiveFilter] };
   const primaryFilter = role === 'nutritionist' ? { $or: [{ primaryReviewRole: role }, { primaryReviewRole: { $exists: false } }] } : { primaryReviewRole: role };
-  return { $or: [{ ...primaryFilter, status: { $in: role === 'nutritionist' ? ['pending', 'nutrition_review', 'rejected'] : ['professional_review', 'rejected'] } }, archiveFilter] };
+  return { ...currentOnly, $or: [{ ...primaryFilter, status: { $in: role === 'nutritionist' ? ['pending', 'nutrition_review', 'rejected'] : ['professional_review', 'rejected'] } }, archiveFilter] };
 }
 module.exports = { ROLE_FIELDS, ROLE_LABELS, DOMAIN_ROLES, routingFor, initialReviewStatus, primaryRole, currentReviewer, isAssignedPhaseReviewer, reviewQueueFilter };

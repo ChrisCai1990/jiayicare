@@ -4,6 +4,7 @@ const AnnualPlan = require('../src/models/AnnualPlan');
 const User = require('../src/models/User');
 const Template = require('../src/models/PlanTemplate');
 const Assessment = require('../src/models/PhaseAssessment');
+const Generation = require('../src/models/PhaseAssessmentGeneration');
 const Supply = require('../src/models/RecurringSupplyPlan');
 const Message = require('../src/models/Message');
 const gate = require('../src/utils/annualPeriodicGate');
@@ -14,22 +15,50 @@ let aiCalls = 0, saved = [];
 ai.chat = async () => { aiCalls++; return '待审核草稿'; };
 context.buildStageAssessmentContext = async () => ({ sources: [] });
 require('../src/utils/supplyWorkflowConfig').getSupplyWorkflowConfig = async () => ({ medication: { enabled: true, leadDays: 3 }, supplement: { enabled: true, leadDays: 3 }, customerNotificationEnabled: true });
-const { scanAndCreatePhaseAssessments, eligibleForAutomaticAssessment } = require('../src/utils/phaseAssessmentScheduler');
+const { scanAndCreatePhaseAssessments, eligibleForAutomaticAssessment, completedCalendarPeriod } = require('../src/utils/phaseAssessmentScheduler');
 const { scanAndNotifyDueSupplyPlans } = require('../src/utils/recurringSupplyPlanScheduler');
-const user = { _id: 'u', assignedFamilyDoctor: 'doctor', aiPilotFeatures: { stageAssessment: true }, serviceExpiry: '2020-01-01' };
-const plan = { _id: 'p', patientId: 'u', confirmedAt: '2020-01-01', continuitySource: { previousPlanId: 'old' } };
+const USER_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+const OTHER_ID = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+const user = { _id: USER_ID, assignedFamilyDoctor: 'doctor', aiPilotFeatures: { stageAssessment: true }, serviceExpiry: '2020-01-01' };
+const plan = { _id: 'p', patientId: USER_ID, confirmedAt: '2020-01-01', continuitySource: { previousPlanId: 'old' } };
 test.beforeEach(t => {
   t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: 'quarterly' }));
   aiCalls = 0; saved = [];
   const previousKey = process.env.QWEN_API_KEY;
+  const previousIds = process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS;
   process.env.QWEN_API_KEY = 'test-only-not-a-real-key';
-  t.after(() => { if (previousKey === undefined) delete process.env.QWEN_API_KEY; else process.env.QWEN_API_KEY = previousKey; });
+  process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS = USER_ID;
+  t.after(() => {
+    if (previousKey === undefined) delete process.env.QWEN_API_KEY; else process.env.QWEN_API_KEY = previousKey;
+    if (previousIds === undefined) delete process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS; else process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS = previousIds;
+  });
   t.mock.method(AnnualPlan, 'find', () => ({ sort: () => ({ limit: () => ({ lean: async () => [plan] }) }) }));
   t.mock.method(Template, 'find', () => ({ lean: async () => [{ _id: 't', content: { frequency: 'quarterly' } }] }));
   t.mock.method(User, 'findById', () => ({ select: async () => user }));
   t.mock.method(Assessment, 'exists', async () => saved.length > 0);
   t.mock.method(Assessment, 'create', async row => { saved.push(row); return row; });
-  t.mock.method(gate, 'annualPeriodicGate', async () => ({ allowed: true, anchor: new Date(), access: { active: true, endDate: '2099-01-01' } }));
+  t.mock.method(Generation, 'findOneAndUpdate', async () => ({}));
+  t.mock.method(Generation, 'exists', async () => true);
+  t.mock.method(Generation, 'updateOne', async () => ({}));
+  t.mock.method(gate, 'annualPeriodicGate', async () => ({ allowed: true, anchor: new Date('2019-01-01'), access: { active: true, endDate: '2099-01-01' } }));
+});
+test('月度自动评估只生成刚结束的月份，已被替代的八月旧稿不影响九月', () => {
+  const period = completedCalendarPeriod('monthly', new Date('2026-10-02T02:00:00Z'), new Date('2026-09-22T17:49:42Z'));
+  assert.equal(period.key, '2026-09');
+  assert.equal(period.label, '2026年9月');
+  assert.equal(period.start.toISOString(), '2026-09-22T17:49:42.000Z');
+  assert.equal(period.end.toISOString(), '2026-09-30T15:59:59.999Z');
+  assert.equal(completedCalendarPeriod('monthly', new Date('2026-10-02T02:00:00Z'), new Date('2026-10-01')), null);
+});
+test('显式试点客户沿用已启用的月度模板，生成营养师待审九月评估', async t => {
+  t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: '' }));
+  t.mock.method(Template, 'find', () => ({ lean: async () => [{ _id: 't', clientBrand: 'jinyisen', content: { frequency: 'monthly' } }] }));
+  t.mock.method(User, 'findById', () => ({ select: async () => ({ ...user, clientBrand: 'jinyisen', assignedNutritionist: 'nutritionist', aiPilotFeatures: { stageAssessment: true, stageAssessmentFrequency: 'monthly', stageAssessmentDomain: 'nutrition' } }) }));
+  assert.equal(await scanAndCreatePhaseAssessments(), 1);
+  assert.equal(saved[0].periodKey.endsWith(':nutrition'), true);
+  assert.equal(saved[0].primaryReviewRole, 'nutritionist');
+  assert.equal(saved[0].status, 'nutrition_review');
+  assert.equal(aiCalls, 1);
 });
 test('续约客户旧档案过期仍可生成待审评估，重复扫描不再次调用AI', async () => {
   assert.equal(await scanAndCreatePhaseAssessments(), 1);
@@ -50,12 +79,20 @@ test('门槛不通过、非试点和缺失客户都不调用AI', async t => {
   assert.equal(aiCalls, 0);
 });
 test('单个客户凭据故障不阻断下一个客户', async t => {
-  t.mock.method(AnnualPlan, 'find', () => ({ sort: () => ({ limit: () => ({ lean: async () => [plan, { ...plan, _id: 'p2', patientId: 'u2' }] }) }) }));
+  process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS = `${USER_ID},${OTHER_ID}`;
+  t.mock.method(AnnualPlan, 'find', () => ({ sort: () => ({ limit: () => ({ lean: async () => [plan, { ...plan, _id: 'p2', patientId: OTHER_ID }] }) }) }));
   t.mock.method(gate, 'annualPeriodicGate', async row => {
-    if (row.patientId === 'u') throw Error('temporary failure');
-    return { allowed: true, anchor: new Date(), access: { active: true, endDate: '2099-01-01' } };
+    if (row.patientId === USER_ID) throw Error('temporary failure');
+    return { allowed: true, anchor: new Date('2019-01-01'), access: { active: true, endDate: '2099-01-01' } };
   });
   assert.equal(await scanAndCreatePhaseAssessments(), 1); assert.equal(aiCalls, 1);
+});
+test('未配置或错误的独立客户白名单不启动扫描', async () => {
+  for (const ids of ['', 'invalid-id']) {
+    process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS = ids;
+    assert.equal(await scanAndCreatePhaseAssessments(), 0);
+  }
+  assert.equal(aiCalls, 0);
 });
 test('评估资格优先可信窗口且仍要求结束日期，旧期未开始不得生成', () => {
   assert.equal(eligibleForAutomaticAssessment(user, new Date(), { active: true, endDate: '2099-01-01' }), true);
