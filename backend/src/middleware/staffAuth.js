@@ -29,7 +29,10 @@ module.exports = async (req, res, next) => {
     if (!admin.tenantId) return res.status(403).json({ success: false, message: '员工未归属机构' });
     const tenant = await Tenant.findById(admin.tenantId).select('status').lean();
     if (!tenant || tenant.status !== 'active') return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
-    if (admin.mustChangePassword) return res.status(403).json({ success: false, message: '请先修改初始密码' });
+    const isPasswordChange = req.method === 'PUT' && req.path === '/me/password';
+    if (admin.mustChangePassword && !isPasswordChange) {
+      return res.status(403).json({ success: false, message: '请先修改初始密码' });
+    }
     req.staff = admin;
     tenantContext(req, res, next);
   } catch (err) {

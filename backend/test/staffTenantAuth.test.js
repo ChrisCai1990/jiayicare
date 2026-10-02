@@ -19,11 +19,11 @@ test('staff authentication requires an active institution and completed password
   Admin.findById = () => ({ select: async () => admin });
   Tenant.findById = () => ({ select: () => ({ lean: async () => tenant }) });
   const request = { headers: { authorization: `Bearer ${jwt.sign({ id, type: 'admin' }, process.env.JWT_SECRET)}` } };
-  async function call() {
+  async function call(method = 'GET', path = '/me') {
     return new Promise(resolve => {
       const result = { status: 200, next: false, message: '' };
       const response = { status(code) { result.status = code; return this; }, json(body) { result.message = body.message; resolve(result); } };
-      staffAuth({ ...request }, response, () => { result.next = true; resolve(result); });
+      staffAuth({ ...request, method, path }, response, () => { result.next = true; resolve(result); });
     });
   }
   try {
@@ -35,6 +35,9 @@ test('staff authentication requires an active institution and completed password
     tenant = { status: 'active' };
     admin.mustChangePassword = true;
     assert.equal((await call()).status, 403);
+    assert.equal((await call('PUT', '/me/password')).next, true);
+    assert.equal((await call('GET', '/me/password')).status, 403);
+    assert.equal((await call('PUT', '/patients')).status, 403);
     admin.mustChangePassword = false;
     assert.equal((await call()).next, true);
   } finally {
