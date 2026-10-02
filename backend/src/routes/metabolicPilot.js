@@ -153,6 +153,20 @@ router.post('/me',wrap(async(req,res)=>{
   if (!enrollment) return fail(res,403,'本服务仅向已邀请客户开放');
   const row=await Pilot.findOne({_id:req.user._id,...tenantFilter(req.user)});
   const action=req.body.action, state=stateOf(row);
+  if (action==='read-help-reply') {
+    const closedAt=new Date(req.body.closedAt);
+    if (Number.isNaN(closedAt.getTime())) return fail(res,400,'回复时间无效');
+    const sameReply=row.help?.status==='closed' && row.help.closedAt?.getTime()===closedAt.getTime();
+    if (!sameReply) return fail(res,409,'回复已更新，请刷新后查看');
+    if (!row.help.readAt) {
+      const result=await Pilot.updateOne({_id:row._id,...tenantFilter(req.user),'help.status':'closed','help.closedAt':closedAt,'help.readAt':null},{$set:{'help.readAt':new Date()}});
+      if (!result.modifiedCount) {
+        const latest=await Pilot.findOne({_id:row._id,...tenantFilter(req.user)});
+        if (latest?.help?.status!=='closed'||latest.help.closedAt?.getTime()!==closedAt.getTime()||!latest.help.readAt) return fail(res,409,'回复已更新，请刷新后查看');
+      }
+    }
+    return okay(res,{read:true});
+  }
   if (action==='withdraw') { row.status='withdrawn'; row.reminderEnabled=false; }
   else {
     if (!config.enabled || !row.allowed) return fail(res,403,'试点暂未开放或已暂停');

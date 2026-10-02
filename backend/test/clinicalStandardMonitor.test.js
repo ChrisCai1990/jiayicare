@@ -15,17 +15,18 @@ test('every catalogued rule has an implementation and an update policy', () => {
   }
 });
 
-test('manual source check builds a valid lease query without querying a remote source', async () => {
-  const original = ClinicalStandardWatch.findOneAndUpdate;
+test('recent source check skips a second fetch and does not insert a duplicate watch', async () => {
+  const originalFind = ClinicalStandardWatch.findOne;
+  const originalUpdate = ClinicalStandardWatch.findOneAndUpdate;
   const filters = [];
+  ClinicalStandardWatch.findOne = () => ({ sort: async () => ({ _id: 'latest', checkedAt: new Date(), attemptedSourceUrl: standards[0].sourceUrl, lastError: '' }) });
   ClinicalStandardWatch.findOneAndUpdate = async filter => { filters.push(filter); return null };
   try {
-    assert.equal((await checkOne(standards[0], { force: true })).outcome, 'not_due');
     assert.equal((await checkOne(standards[0])).outcome, 'not_due');
-    assert.equal(filters[0].$and.length, 1);
-    assert.equal(filters[1].$and.length, 2);
-    assert.ok(filters[1].$and[1].$or[1].checkedAt.$lte < new Date(Date.now() - 89 * 24 * 60 * 60 * 1000));
-  } finally { ClinicalStandardWatch.findOneAndUpdate = original }
+    assert.equal(filters.length, 0);
+    assert.equal((await checkOne(standards[0], { force: true })).outcome, 'not_due');
+    assert.equal(filters[0]._id, 'latest');
+  } finally { ClinicalStandardWatch.findOne = originalFind; ClinicalStandardWatch.findOneAndUpdate = originalUpdate }
 });
 
 test('source fingerprint ignores scripts but detects clinical text changes', async () => {
@@ -45,4 +46,26 @@ test('ACR source may redirect only to its official asset path', async () => {
     : new Response('clinical content '.repeat(10), { status: 200, headers: { 'content-type': 'text/html' } });
   assert.match(await fetchFingerprint(legacy, fetchImpl), /^[a-f0-9]{64}$/);
   await assert.rejects(fetchFingerprint(legacy, async () => new Response(null, { status: 302, headers: { location: 'https://example.com/file.pdf' } })), /非可信站点/);
+});
+
+test('failed source checks retry the next day and remember the attempted URL', async () => {
+  const originalQuery = ClinicalStandardWatch.findOne;
+  const originalFind = ClinicalStandardWatch.findOneAndUpdate;
+  const originalUpdate = ClinicalStandardWatch.updateOne;
+  let saved;
+  ClinicalStandardWatch.findOne = () => ({ sort: async () => null });
+  ClinicalStandardWatch.findOneAndUpdate = async () => ({ _id: 'watch', fingerprint: '' });
+  ClinicalStandardWatch.updateOne = async (_, update) => { saved = update.$set };
+  try {
+    const row = standards.find(item => item.id === 'lung-rads');
+    const started = Date.now();
+    assert.equal((await checkOne(row, { fetchImpl: async () => { throw new Error('offline') } })).outcome, 'error');
+    assert.equal(saved.attemptedSourceUrl, row.sourceUrl);
+    assert.ok(saved.nextCheckAt.getTime() >= started + 23 * 60 * 60 * 1000);
+    assert.ok(saved.nextCheckAt.getTime() <= started + 25 * 60 * 60 * 1000);
+  } finally {
+    ClinicalStandardWatch.findOne = originalQuery;
+    ClinicalStandardWatch.findOneAndUpdate = originalFind;
+    ClinicalStandardWatch.updateOne = originalUpdate;
+  }
 });

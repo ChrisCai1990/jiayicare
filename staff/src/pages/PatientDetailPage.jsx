@@ -1682,7 +1682,7 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
               </label>
             </div>
             <div style={{ fontSize: 11, color: '#B0A99C' }}>
-              依据《中国血脂管理指南（2023年）》图1"中国成人ASCVD总体发病风险评估流程图"完整校准，含直接高危判定、21格查表矩阵及余生风险判定（10年中危且年龄&lt;55岁时触发）。
+              现行实现参考《中国血脂管理指南（2023年）》图1，含直接高危判定、查表及余生风险分支；各边界值和适用人群仍需医学逐项核对。
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}>取消</button>
@@ -5259,6 +5259,7 @@ export default function PatientDetailPage() {
                 </button>
               </div>
               <div style={{ padding: '16px 20px' }}>
+                <div style={{ fontSize: 12, color: '#8A6B36', marginBottom: 12 }}>平台内部健康管理评分，扣分和“优良中差”档位不是临床疾病分级。</div>
                 {score > 0 ? (
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 32, flexWrap: 'wrap' }}>
                     {/* 总分 */}
@@ -8728,6 +8729,7 @@ export default function PatientDetailPage() {
         return (
           <div>
             <AiRuleHint scene="risk_assessment" />
+            <div style={{ fontSize: 12, color: '#8A6B36', marginBottom: 12 }}>关注等级由内部警戒值与 AI 整理生成，供医护核对；不代表疾病发生概率或指南分级，阈值出处正在逐项复核。</div>
             {/* 年度切换 */}
             <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
               {yearOpts.map(y => (

@@ -11,5 +11,23 @@ const standards = [
   { id: 'scl90-sas-sds', title: 'SCL-90 / SAS / SDS 量表导入与阈值', kind: 'instrument', version: '待核对', sourceUrl: '', originalUrl: '', origin: '海外量表／国内阈值待核对', publisher: '原量表及国内常模出处待补证', evidence: 'missing', evidenceNote: '未找到能支持三量表现行阈值的原件；当前 SAS 与 SDS 共用 53 分，需分别核对。', currentRule: 'SCL-90 因子均分分层；SAS、SDS 标准分＝粗分×1.25，均以 ≥53 标记异常。', implementation: 'backend/src/utils/psychScaleImport.js', monitor: 'manual' },
   { id: 'health-score', title: '基础健康评分与慢病扣分', kind: 'internal', version: '内部规则', sourceUrl: '', originalUrl: '', origin: '嘉医汇内部', publisher: '制定者待确认', evidence: 'missing', evidenceNote: '代码引用“健康评分逻辑.docx”，仓库未找到签发原件。', currentRule: '基础分、生活方式分及慢病三级扣分表组合为总分。', implementation: 'backend/src/utils/healthScore.js', monitor: 'manual' },
   { id: 'cancer-screening', title: '癌症筛查覆盖口径', kind: 'internal', version: '内部规则', sourceUrl: '', originalUrl: '', origin: '嘉医汇内部', publisher: '制定者待确认', evidence: 'missing', evidenceNote: '代码注明“金娟口径，2026-07-10 确认”，仓库未找到批准记录或原件。', currentRule: '按部位、年龄和性别判断筛查覆盖及替代条件。', implementation: 'backend/src/config/cancerScreeningRules.js', monitor: 'manual' },
+  { id: 'health-attention', title: 'AI 健康关注提示与规则信号', kind: 'internal', version: '内部规则', sourceUrl: '', originalUrl: '', origin: '嘉医汇内部', publisher: '制定者待确认', evidence: 'missing', evidenceNote: '四维关注等级由内部阈值和 AI 草稿形成，尚未逐项归档阈值出处；不等于疾病风险概率。', currentRule: '血压、血糖、血脂等信号设置关注等级下限，AI 综合整理后由医护审核。', implementation: 'backend/src/utils/aiRiskAssessment.js', monitor: 'manual' },
 ];
+// Domestic applicability is separate from the instrument's place of origin.
+// A comparison document does not mean China adopted the overseas classification or thresholds.
+const domesticReferences = {
+  'c-tirads': { domesticStatus: 'primary', domesticNote: '中国甲状腺结节分类的直接依据。' },
+  'acr-tirads': { domesticStatus: 'comparison', domesticSourceUrl: standards[0].originalUrl, domesticNote: '国内以 C-TIRADS 为主；仅在原报告明确写出 ACR 类别时转录，不跨体系换算。' },
+  'bi-rads': { domesticStatus: 'adopted', domesticSourceUrl: 'https://seleguide.yiigle.com/uploads/guide_html/%E4%B8%AD%E5%9B%BD%E5%A5%B3%E6%80%A7%E4%B9%B3%E8%85%BA%E7%99%8C%E7%AD%9B%E6%9F%A5%E6%A0%87%E5%87%86(T_CPMA%20014-2020).html', domesticNote: '中国女性乳腺癌筛查标准采用 BI-RADS 分类；现行系统所用手册版次仍待核对。' },
+  'lung-rads': { domesticStatus: 'comparison', domesticSourceUrl: 'https://wjw.xinjiang.gov.cn/hfpc/wsyj1/202409/8bda02d66bad43749f665dfa6d3df88f/files/%E9%99%84%E4%BB%B61%E8%82%BA%E7%99%8C%E7%AD%9B%E6%9F%A5%E4%B8%8E%E6%97%A9%E8%AF%8A%E6%97%A9%E6%B2%BB%E6%96%B9%E6%A1%88%EF%BC%882024%E5%B9%B4%E7%89%88%EF%BC%89.pdf', domesticNote: '国内筛查与随访优先参考国家卫健委 2024 方案（新疆卫健委转载原件）；Lung-RADS 仅转录原报告分类，不代替国内管理建议。' },
+  'cn-lipid-2023': { domesticStatus: 'primary', domesticNote: '中国指南为直接依据；代码查表分支仍须医学逐项核对。' },
+  phq9: { domesticStatus: 'adopted', domesticSourceUrl: 'https://training.yiigle.com/uploads/guide_html/%E5%9C%A8%E5%BF%83%E8%A1%80%E7%AE%A1%E7%A7%91%E5%B0%B1%E8%AF%8A%E6%82%A3%E8%80%85%E5%BF%83%E7%90%86%E5%A4%84%E6%96%B9%E4%B8%AD%E5%9B%BD%E4%B8%93%E5%AE%B6%E5%85%B1%E8%AF%86%EF%BC%882020%E7%89%88%EF%BC%89.html', domesticNote: '国内专家共识推荐此量表；需核对本平台人群适用性和阈值。' },
+  gad7: { domesticStatus: 'review_required', domesticSourceUrl: 'https://training.yiigle.com/uploads/guide_html/%E5%9C%A8%E5%BF%83%E8%A1%80%E7%AE%A1%E7%A7%91%E5%B0%B1%E8%AF%8A%E6%82%A3%E8%80%85%E5%BF%83%E7%90%86%E5%A4%84%E6%96%B9%E4%B8%AD%E5%9B%BD%E4%B8%93%E5%AE%B6%E5%85%B1%E8%AF%86%EF%BC%882020%E7%89%88%EF%BC%89.html', domesticNote: '国内共识推荐此量表，但其分层描述与现行代码不完全一致，须医学复核。' },
+  'scl90-sas-sds': { domesticStatus: 'unverified', domesticNote: '三量表阈值的国内依据尚未归档。' },
+  'health-score': { domesticStatus: 'internal', domesticNote: '平台自定评分，不是临床指南分级。' },
+  'cancer-screening': { domesticStatus: 'internal', domesticNote: '平台筛查覆盖口径，尚未逐项对照国内癌筛方案。' },
+  'health-attention': { domesticStatus: 'internal', domesticNote: '内部关注提示，不是经验证的患病概率模型。' },
+};
+for (const standard of standards) Object.assign(standard, domesticReferences[standard.id] || {});
+for (const standard of standards) if (standard.domesticStatus === 'primary') standard.domesticSourceUrl = standard.originalUrl;
 module.exports = { RULE_VERSION, standards };

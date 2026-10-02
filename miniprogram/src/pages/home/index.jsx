@@ -342,7 +342,7 @@ export default function HomePage() {
           <View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{display:'flex',alignItems:'center',gap:'9px',backgroundColor:colors.primary,borderRadius:'12px',padding:'13px 15px'}}>
             <Text style={{fontSize:'22px',color:'#fff'}}>＋</Text><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>记录健康数据</Text><Text style={{color:'#fff'}}>›</Text>
           </View>
-          {!!pilotData?.help?.status&&<View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{backgroundColor:colors.primary10,borderRadius:'12px',padding:'12px',marginTop:'12px'}}>
+          {(pilotData?.help?.status==='open'||(pilotData?.help?.status==='closed'&&!pilotData.help.readAt))&&<View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{backgroundColor:colors.primary10,borderRadius:'12px',padding:'12px',marginTop:'12px'}}>
             <Text style={{display:'block',fontSize:'13px',fontWeight:600,color:colors.primary}}>{pilotData.help.status==='open'?'体重管理求助待处理':'体重管理求助已回复'} ›</Text>
             <Text style={{display:'block',fontSize:'12px',color:colors.textPrimary,marginTop:'5px'}} numberOfLines={2}>{pilotData.help.status==='open'?`负责人：${pilotData.helpOwner||'待核对'}`:pilotData.help.reply||'点击查看处理结果'}</Text>
           </View>}

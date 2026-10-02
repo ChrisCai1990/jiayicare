@@ -11,6 +11,15 @@ export default function MetabolicPilotCard({ refreshKey=0,onStatus,feedback }) {
   const generation=useRef(0);
   const load=async()=>{const current=++generation.current;try{const r=await metabolicPilotAPI.get();if(current!==generation.current)return;setData(r.data);setError('');onStatus?.(!!r.data?.status)}catch(e){if(current===generation.current)setError(e.message)}};
   useEffect(()=>{load();return()=>{generation.current++}},[refreshKey]);
+  useEffect(()=>{
+    const reply=data?.help;
+    if(reply?.status!=='closed'||!reply.reply||reply.readAt||!reply.closedAt)return;
+    let active=true;
+    metabolicPilotAPI.action({action:'read-help-reply',closedAt:reply.closedAt}).then(()=>{
+      if(active)setData(current=>current?.help?.closedAt===reply.closedAt?{...current,help:{...current.help,readAt:new Date().toISOString()}}:current);
+    }).catch(()=>{});
+    return()=>{active=false};
+  },[data?.help?.status,data?.help?.closedAt,data?.help?.readAt]);
   const act=async(action,body={})=>{if(busy)return;setBusy(true);setError('');try{await metabolicPilotAPI.action({action,...body});await load()}catch(e){setError(e.message)}finally{setBusy(false)}};
   if(!data?.status)return error?<View style={card}><Text style={para}>体重管理反馈暂不可用，健康记录不受影响。</Text><Button onClick={load}>重试反馈</Button></View>:null;
   const active=data.available&&data.status==='active';

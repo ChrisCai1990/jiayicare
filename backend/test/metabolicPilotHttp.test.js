@@ -90,7 +90,12 @@ test('pilot real Mongo/HTTP acceptance: auth, whitelist, feedback, correction, p
     const close=()=>call(manager,`/metabolic-pilot/staff/${user._id}/resolve`,'POST',{reply:'已按你的意愿说明提醒设置方法',minutes:2,revision});
     const replies=await Promise.all([close(),close()]);assert.deepEqual(replies.map(r=>r.status).sort(),[200,409]);
     const row=await Pilot.findById(user._id).lean();assert.equal(row.humanMinutes,2);
-    assert.match((await call(user,'/metabolic-pilot/me')).body.data.help.reply,/提醒设置/);
+    const answered=(await call(user,'/metabolic-pilot/me')).body.data.help;
+    assert.match(answered.reply,/提醒设置/);assert.ok(!answered.readAt);
+    assert.equal((await action('read-help-reply',{closedAt:answered.closedAt})).status,200);
+    const read=(await call(user,'/metabolic-pilot/me')).body.data.help;assert.ok(read.readAt);
+    assert.equal((await action('read-help-reply',{closedAt:answered.closedAt})).status,200);
+    assert.equal((await action('read-help-reply',{closedAt:'2020-01-01T00:00:00.000Z'})).status,409);
   });
   await t.test('kill switch and revoked whitelist stop feedback without losing records',async()=>{
     const before=await Record.countDocuments({user:user._id});
