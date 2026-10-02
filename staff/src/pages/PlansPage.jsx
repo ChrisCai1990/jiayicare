@@ -1247,7 +1247,7 @@ function NutritionAIDraftModal({ onClose, onSaved, initialPatientId = '', initia
 
   const generate = async () => {
     if (!patientId || !selectedTpl || !patient) { setError('请先选择会员和模板'); return }
-    const missing = missingNutritionAssessment(assessment, goal)
+    const missing = missingNutritionAssessment(assessment, goal, patient)
     if (missing.length) { setError(`生成前请补齐：${missing.join('、')}`); return }
     if (assessment.riskStatus === 'specialist') { setError('此客户需专业评估，请先完成评估后人工制定方案'); return }
     setError('')

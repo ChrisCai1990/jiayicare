@@ -16,9 +16,13 @@ router.use(adminAuth, (req, res, next) => ['platformSuper', 'superadmin'].includ
 
 router.get('/', async (req, res) => {
   const platform = req.admin.role === 'platformSuper';
-  const [watches, updates, delegation, tenants] = await Promise.all([
+  const updatePage = Math.max(1, Math.min(100000, Number.parseInt(req.query.updatePage, 10) || 1));
+  const pageSize = 5;
+  const [watches, updates, updateTotal, pendingCount, delegation, tenants] = await Promise.all([
     ClinicalStandardWatch.find().lean(),
-    ClinicalStandardUpdate.find().sort({ detectedAt: -1 }).limit(100).lean(),
+    ClinicalStandardUpdate.find().sort({ detectedAt: -1, _id: -1 }).skip((updatePage - 1) * pageSize).limit(pageSize).lean(),
+    ClinicalStandardUpdate.countDocuments(),
+    ClinicalStandardUpdate.countDocuments({ status: 'pending' }),
     SystemConfig.findOne({ key: DELEGATION_KEY }).lean(),
     platform ? Tenant.find({ status: 'active' }).select('name code').sort({ name: 1 }).lean() : Promise.resolve([]),
   ]);
@@ -28,9 +32,15 @@ router.get('/', async (req, res) => {
     SystemConfig.findOne({ key: reviewerKey(delegatedTenantId) }).lean(),
     Admin.find({ tenantId: req.admin.tenantId, role: 'familyDoctor', staffStatus: 'active' }).select('name title').lean(),
   ]) : [null, []];
+  const latestWatches = new Map();
+  for (const row of watches) {
+    const previous = latestWatches.get(row.standardId);
+    if (!previous || new Date(row.checkedAt || 0) > new Date(previous.checkedAt || 0) ||
+      (String(row.checkedAt) === String(previous.checkedAt) && String(row._id) > String(previous._id))) latestWatches.set(row.standardId, row);
+  }
   res.json({ success: true, data: {
-    standards: standards.map(item => ({ ...item, watch: watches.find(row => row.standardId === item.id) || null })),
-    updates, tenants, delegatedTenantId, delegatedTenantName: delegation?.value?.tenantName || '',
+    standards: standards.map(item => ({ ...item, watch: latestWatches.get(item.id) || null })),
+    updates, updateTotal, pendingCount, updatePage, tenants, delegatedTenantId, delegatedTenantName: delegation?.value?.tenantName || '',
     delegationConfirmedAt: delegation?.value?.confirmedAt || null,
     canAssign, reviewerId: reviewerConfig?.value?.staffId || '', reviewers,
   } });

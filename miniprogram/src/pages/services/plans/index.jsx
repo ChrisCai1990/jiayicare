@@ -39,7 +39,7 @@ const ITEM_STATUS_META = {
 const MODULE_NAME = {
   medical_treatment: '医疗问题解决', specialist_collab: '全专联合会诊', abnormal_followup: '异常复查提醒',
   vaccine: '疫苗接种', monitoring: '日常监测', lifestyle: '生活方式评估', medication: '药物服用',
-  nutrition_supplement: '营养素补充', annual_checkup: '年度体检', functional_medicine: '功能医学检测', quarterly_eval: '季度评估',
+  nutrition_supplement: '营养素补充', annual_checkup: '年度体检', functional_medicine: '功能医学检测', quarterly_eval: '季度评估', nutrition_assessment: '营养评估',
 };
 const FIELD_LABEL = {
   visit_time: '就医时间', hospital: '就医/体检医院', department: '就诊科室', expert: '专家姓名', reason: '原因',
@@ -47,7 +47,7 @@ const FIELD_LABEL = {
   frequency: '频率', name: '名称', brand: '品牌', dose: '剂量', escort: '陪检服务', institution: '体检机构',
   chemical_name: '药品名', brand_name: '商品名', body_composition: '人体成分', diet_analysis: '膳食调研',
   assist: '就医协助', order_dept: '开单科室', order_expert: '开单专家', notes: '备注',
-  date: '计划时间', focus: '重点关注', staff: '评估人员', goal: '干预目标', plan: '干预计划', other: '其他项目',
+  date: '计划时间', focus: '重点关注', staff: '评估人员', goal: '干预目标', plan: '干预计划', other: '其他项目', executionDate: '计划评估日期', nutritionComparisonMetrics: '前后对比指标',
 };
 const PLAN_TYPE_LABEL = { health_reshape: '健康重塑方案', young_state: '健康年轻态方案', chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案' };
 const displayItemNotes = item => [

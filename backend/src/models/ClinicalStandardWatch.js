@@ -7,6 +7,7 @@ const schema = new mongoose.Schema({
   leaseUntil: { type: Date, default: null },
   lastError: { type: String, default: '' },
   sourceFinalUrl: { type: String, default: '' },
+  attemptedSourceUrl: { type: String, default: '' },
   annualReviewYear: { type: Number, default: 0 },
 }, { timestamps: true });
 module.exports = mongoose.model('ClinicalStandardWatch', schema);

@@ -25,7 +25,6 @@ const ALL_NAV = [
   { label: '团队管理',     icon: 'team', path: '/team',             roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'],      moduleKey: 'team' },
   { label: '运营看板',     icon: 'operations', path: '/operations', roles: ['superadmin','manager'],                                                            moduleKey: 'operations' },
   { label: '日常健康数据', icon: 'checkin', path: '/daily-checkin', roles: [], moduleKey: 'daily_checkin' },
-  { label: '体重管理试点', icon: 'checkin', path: '/metabolic-pilot', roles: ['healthManager','familyDoctor','nutritionist','superadmin'], moduleKey: 'daily_checkin' },
   { label: '消息通知',     icon: 'notifications', path: '/notifications', roles: [] },
   { label: '个人中心',     icon: 'profile', path: '/profile',       roles: [] },
 ]

@@ -62,6 +62,7 @@ export default function NotificationsPage() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(location.state?.tab || 'referrals')
+  const [metabolicPage,setMetabolicPage]=useState(1)
   const [respondModal, setRespondModal] = useState(null)
   const [detailModal, setDetailModal] = useState(null)   // push 消息详情
   const [sentReferrals, setSentReferrals] = useState([])
@@ -73,11 +74,11 @@ export default function NotificationsPage() {
   const [editReferralSaving, setEditReferralSaving] = useState(false)
   const [editReferralError, setEditReferralError] = useState('')
 
-  const load = async () => {
+  const load = async (page = metabolicPage) => {
     setLoading(true)
     try {
       const [notifRes, sentRes, receivedRes, msgRes] = await Promise.allSettled([
-        staffAPI.getNotifications(),
+        staffAPI.getNotifications(page),
         staffAPI.getSentReferrals(),
         staffAPI.getReferrals({ direction: 'received', limit: 50 }),
         staffAPI.getUserMessages(),
@@ -138,7 +139,7 @@ export default function NotificationsPage() {
 
   if (loading) return <div className="page-loading">加载中...</div>
 
-  const { recentPushes = [], pendingReferrals = [], expiringPatients = [], summary = {} } = data || {}
+  const { recentPushes = [], pendingReferrals = [], expiringPatients = [], metabolicHelps = [], summary = {} } = data || {}
 
   const daysLeft = (dateStr) => {
     const diff = new Date(dateStr) - new Date()
@@ -227,7 +228,21 @@ export default function NotificationsPage() {
             <span style={{ marginLeft: 4, background: '#0077B6', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{unreadUserMessageGroups.length}位未读</span>
           )}
         </button>
+        <button className={`tab-btn ${tab === 'pilotHelp' ? 'active' : ''}`} onClick={() => setTab('pilotHelp')}>
+          🙋 体重管理求助
+          {summary.metabolicHelpCount > 0 && <span style={{ marginLeft: 4, background: '#DC3545', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{summary.metabolicHelpCount}待处理</span>}
+        </button>
       </div>
+
+      {tab === 'pilotHelp' && <div className="card" style={{padding:20}}>
+        {!metabolicHelps.length ? <div style={{color:'#789087'}}>当前没有分配给你的体重管理求助。</div> : metabolicHelps.map(item => <div key={item.patientId} style={{padding:'14px 0',borderBottom:'1px solid #edf1ed'}}>
+          <strong>{item.patientName} · 待你处理</strong>
+          <div style={{margin:'8px 0',whiteSpace:'pre-wrap'}}>{item.message}</div>
+          <small>{item.requestedAt ? new Date(item.requestedAt).toLocaleString('zh-CN') : ''}</small>
+          <div><button className="btn btn-primary btn-sm" onClick={()=>nav(`/metabolic-pilot?customer=${encodeURIComponent(item.patientId)}`)}>查看并回复</button></div>
+        </div>)}
+        {summary.metabolicHelpCount > 50 && <div style={{display:'flex',gap:12,alignItems:'center',paddingTop:12}}><button disabled={metabolicPage===1} onClick={()=>{const page=metabolicPage-1;setMetabolicPage(page);load(page)}}>上一页</button><span>第 {metabolicPage} / {Math.ceil(summary.metabolicHelpCount/50)} 页</span><button disabled={metabolicPage*50>=summary.metabolicHelpCount} onClick={()=>{const page=metabolicPage+1;setMetabolicPage(page);load(page)}}>下一页</button></div>}
+      </div>}
 
       {/* ── 收到的转介 ── */}
       {tab === 'referrals' && (

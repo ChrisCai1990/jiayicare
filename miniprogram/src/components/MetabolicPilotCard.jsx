@@ -11,6 +11,15 @@ export default function MetabolicPilotCard({ refreshKey=0,onStatus,feedback }) {
   const generation=useRef(0);
   const load=async()=>{const current=++generation.current;try{const r=await metabolicPilotAPI.get();if(current!==generation.current)return;setData(r.data);setError('');onStatus?.(!!r.data?.status)}catch(e){if(current===generation.current)setError(e.message)}};
   useEffect(()=>{load();return()=>{generation.current++}},[refreshKey]);
+  useEffect(()=>{
+    const reply=data?.help;
+    if(reply?.status!=='closed'||!reply.reply||reply.readAt||!reply.closedAt)return;
+    let active=true;
+    metabolicPilotAPI.action({action:'read-help-reply',closedAt:reply.closedAt}).then(()=>{
+      if(active)setData(current=>current?.help?.closedAt===reply.closedAt?{...current,help:{...current.help,readAt:new Date().toISOString()}}:current);
+    }).catch(()=>{});
+    return()=>{active=false};
+  },[data?.help?.status,data?.help?.closedAt,data?.help?.readAt]);
   const act=async(action,body={})=>{if(busy)return;setBusy(true);setError('');try{await metabolicPilotAPI.action({action,...body});await load()}catch(e){setError(e.message)}finally{setBusy(false)}};
   if(!data?.status)return error?<View style={card}><Text style={para}>体重管理反馈暂不可用，健康记录不受影响。</Text><Button onClick={load}>重试反馈</Button></View>:null;
   const active=data.available&&data.status==='active';
@@ -21,6 +30,8 @@ export default function MetabolicPilotCard({ refreshKey=0,onStatus,feedback }) {
     <Text style={para}>{statuses[data.status]}{data.startedAt?` · 第${data.summary.week}周 / 共12周`:''}</Text>
     {error&&<Text style={{...para,color:'#b42318'}}>{error}</Text>}
     {!data.available&&<Text style={para}>试点服务暂未开放或资格已暂停，已有健康数据保留。</Text>}
+    {data.help?.status&&<View style={{backgroundColor:'#fff',padding:'10px',marginBottom:'12px',borderRadius:'8px'}}><Text style={para}>{data.help.status==='open'?`求助待处理 · 责任人：${data.helpOwner||'待核对'}`:`团队回复：${data.help.reply}`}</Text><Text style={para}>你提交的问题：{data.help.message}</Text><Text style={para}>提交时间：{data.help.requestedAt?new Date(data.help.requestedAt).toLocaleString('zh-CN'):'待核对'}</Text></View>}
+    {data.available&&['active','paused','completed'].includes(data.status)&&data.help?.status!=='open'&&<View style={{marginBottom:'12px'}}><Text style={{...para,fontWeight:700}}>需要人工帮助？</Text><Textarea maxlength={1000} value={help} onInput={e=>setHelp(e.detail.value)} placeholder="说明希望健管专员帮你解决的问题" style={{backgroundColor:'#fff',width:'100%',height:'70px'}}/><Button size="mini" disabled={busy||!help.trim()} onClick={()=>act('help',{message:help})}>提交给我的健管专员</Button><Text style={{...para,fontSize:'12px'}}>此处不是急救通道；明显不适请及时就医。</Text></View>}
     {data.status==='invited'&&data.available&&<View>
       <Text style={para}>这是一项84天的健康记录与反馈体验。系统帮助你观察变化、选择行动，不要求每日完成任务。本期不收费、不自动续订，可随时退出；暂停不延长周期。</Text>
       <Input maxlength={200} placeholder="你希望了解或改善什么？（选填）" value={goal} onInput={e=>setGoal(e.detail.value)} style={{backgroundColor:'#fff',padding:'10px',marginBottom:'12px'}}/>
@@ -49,11 +60,6 @@ export default function MetabolicPilotCard({ refreshKey=0,onStatus,feedback }) {
         {data.available&&['active','completed'].includes(data.status)&&<View><Textarea maxlength={1000} placeholder="哪些行动有帮助？遇到了什么困难？" value={reflection[point.day]||''} onInput={e=>setReflection({...reflection,[point.day]:e.detail.value})} style={{backgroundColor:'#fff',width:'100%',height:'70px'}}/><Button size="mini" disabled={busy||!reflection[point.day]?.trim()} onClick={()=>act('reflect',{day:point.day,text:reflection[point.day]})}>保存阶段感受</Button></View>}
       </View>)}
       {data.status==='completed'&&<Text style={para}>本期已结束，记录和回顾仍可查看。若希望继续维持，可向健管专员表达需求，本服务不会自动收费或续订。</Text>}
-      {data.help?.status&&<Text style={para}>{data.help.status==='open'?'求助已提交，等待所属团队处理。':`团队回复：${data.help.reply}`}</Text>}
-      {data.available&&['active','paused','completed'].includes(data.status)&&data.help?.status!=='open'&&<View style={{marginTop:'16px'}}>
-        <Textarea maxlength={1000} value={help} onInput={e=>setHelp(e.detail.value)} placeholder="希望团队帮你解决什么？" style={{backgroundColor:'#fff',width:'100%',height:'70px'}}/>
-        <Button size="mini" disabled={busy||!help.trim()} onClick={()=>act('help',{message:help})}>需要帮助</Button><Text style={{...para,fontSize:'12px'}}>此处不是急救通道；明显不适请及时就医，不要等待线上回复。</Text>
-      </View>}
     </View>}
     {!['withdrawn','completed'].includes(data.status)&&<Button size="mini" disabled={busy} onClick={async()=>{const r=await Taro.showModal({title:'退出本期体验',content:'退出后保留健康记录，本期不再提供自动反馈。确定退出吗？'});if(r.confirm)act('withdraw')}}>退出本期体验</Button>}
   </View>;

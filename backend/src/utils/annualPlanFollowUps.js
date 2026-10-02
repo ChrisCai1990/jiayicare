@@ -111,6 +111,19 @@ async function buildAnnualPlanFollowUps(plan) {
     });
   };
 
+  // 年度营养评估是标准事项。旧方案未保存此板块时仍沿用原个性化营养任务。
+  const standardNutrition = moduleData.nutrition_assessment;
+  if (standardNutrition && standardNutrition.enabled !== false) {
+    const metrics = require('../../../shared/nutritionComparisonMetrics.cjs').selectedFromAnnualPlan(plan);
+    const date = standardNutrition.executionDate || plan.confirmedAt || plan.followUpReleasedAt || new Date();
+    const before = created.length;
+    const dateKey = Number.isFinite(new Date(date).getTime()) ? new Date(date).toISOString().slice(0, 10) : 'invalid';
+    push(date, '年度标准营养评估', `营养师核实膳食与生活方式；${metrics.length ? `本年度重点对比指标：${metrics.join('、')}` : '本年度按固定体成分指标评估'}。基线与目标在营养方案中逐项确认。`, patient?.assignedNutritionist,
+      `nutrition-assessment:${dateKey}`, standardNutrition);
+    if (created.length > before) Object.assign(created.at(-1), { workflowKey: 'annual_nutrition_assessment', reviewAssignedTo: null, reviewRole: null,
+      formData: { annualNutritionMetrics: metrics } });
+  }
+
   // ① 有具体日期的多条记录模块：每条各生成一条，content拼该条记录的关键字段
   for (const mod of DATED_RECORD_MODULES) {
     const records = moduleData[mod.key]?.records;
@@ -193,6 +206,8 @@ async function buildAnnualPlanFollowUps(plan) {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
     personalizedRecords.forEach((rec, recordIndex) => {
+      if (standardNutrition && standardNutrition.enabled !== false
+        && (require('../../../shared/annualNutrition.cjs').isRow(rec) || /营养评估/.test(rec.standardPlanName || ''))) return;
       if (isAnnualUmbrellaRecord(rec)) return;
       if (rec.healthDataPlan?.id && rec.healthDataPlan.enabled === false) return;
       const cycles = Array.isArray(rec.sourceCycles) ? rec.sourceCycles : [];

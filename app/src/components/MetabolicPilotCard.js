@@ -9,6 +9,15 @@ export default function MetabolicPilotCard({ refreshKey=0,onStatus,feedback }) {
   const generation=useRef(0);
   const load=async()=>{const current=++generation.current;try{const r=await metabolicPilotAPI.get();if(current!==generation.current)return;setData(r.data);setError('');onStatus?.(!!r.data?.status)}catch(e){if(current===generation.current)setError(e.message)}};
   useEffect(()=>{load();return()=>{generation.current++}},[refreshKey]);
+  useEffect(()=>{
+    const reply=data?.help;
+    if(reply?.status!=='closed'||!reply.reply||reply.readAt||!reply.closedAt)return;
+    let active=true;
+    metabolicPilotAPI.action({action:'read-help-reply',closedAt:reply.closedAt}).then(()=>{
+      if(active)setData(current=>current?.help?.closedAt===reply.closedAt?{...current,help:{...current.help,readAt:new Date().toISOString()}}:current);
+    }).catch(()=>{});
+    return()=>{active=false};
+  },[data?.help?.status,data?.help?.closedAt,data?.help?.readAt]);
   const act=async(action,body={})=>{if(busy)return;setBusy(true);setError('');try{await metabolicPilotAPI.action({action,...body});await load()}catch(e){setError(e.message)}finally{setBusy(false)}};
   const button=(label,onPress,disabled=false)=><TouchableOpacity accessibilityRole="button" disabled={busy||disabled} onPress={onPress} style={{padding:10,marginVertical:4,backgroundColor:'#fff',borderRadius:8,opacity:busy||disabled?0.5:1}}><Text style={{color:'#1e6b50'}}>{label}</Text></TouchableOpacity>;
   if(!data?.status)return error?<View style={{padding:16}}><Text style={paragraph}>体重管理反馈暂不可用，健康记录不受影响。</Text>{button('重试反馈',load)}</View>:null;
@@ -19,6 +28,8 @@ export default function MetabolicPilotCard({ refreshKey=0,onStatus,feedback }) {
     <Text style={paragraph}>{states[data.status]}{data.startedAt?` · 第${data.summary.week}周 / 共12周`:''}</Text>
     {!!error&&<Text style={{...paragraph,color:'#b42318'}}>{error}</Text>}
     {!data.available&&<Text style={paragraph}>试点服务暂未开放或资格已暂停，已有健康数据保留。</Text>}
+    {!!data.help?.status&&<View style={{backgroundColor:'#fff',padding:10,marginBottom:12,borderRadius:8}}><Text style={paragraph}>{data.help.status==='open'?`求助待处理 · 责任人：${data.helpOwner||'待核对'}`:`团队回复：${data.help.reply}`}</Text><Text style={paragraph}>你提交的问题：{data.help.message}</Text><Text style={paragraph}>提交时间：{data.help.requestedAt?new Date(data.help.requestedAt).toLocaleString('zh-CN'):'待核对'}</Text></View>}
+    {data.available&&['active','paused','completed'].includes(data.status)&&data.help?.status!=='open'&&<View><Text style={paragraph}>需要人工帮助？</Text><TextInput multiline maxLength={1000} placeholder="说明希望健管专员帮你解决的问题" value={help} onChangeText={setHelp} style={{backgroundColor:'#fff',padding:10,minHeight:65}}/>{button('提交给我的健管专员',()=>act('help',{message:help}),!help.trim())}<Text style={paragraph}>此处不是急救通道；明显不适请及时就医。</Text></View>}
     {data.status==='invited'&&data.available&&<View>
       <Text style={paragraph}>84天健康记录与反馈体验，帮助你观察变化、选择行动，无需每日完成任务。本期不收费、不自动续订，可随时退出；暂停不延长周期。</Text>
       <TextInput maxLength={200} placeholder="你希望了解或改善什么？（选填）" value={goal} onChangeText={setGoal} style={{padding:10,backgroundColor:'#fff'}}/>
@@ -44,11 +55,6 @@ export default function MetabolicPilotCard({ refreshKey=0,onStatus,feedback }) {
         {data.available&&['active','completed'].includes(data.status)&&<View><TextInput multiline maxLength={1000} placeholder="哪些行动有帮助？遇到了什么困难？" value={reflection[point.day]||''} onChangeText={v=>setReflection({...reflection,[point.day]:v})} style={{backgroundColor:'#fff',padding:10,minHeight:65}}/>{button('保存阶段感受',()=>act('reflect',{day:point.day,text:reflection[point.day]}),!reflection[point.day]?.trim())}</View>}
       </View>)}
       {data.status==='completed'&&<Text style={paragraph}>本期已结束。若希望继续维持，可向健管专员表达需求，本服务不会自动收费或续订。</Text>}
-      {!!data.help?.status&&<Text style={paragraph}>{data.help.status==='open'?'求助已提交，等待所属团队处理。':`团队回复：${data.help.reply}`}</Text>}
-      {data.available&&['active','paused','completed'].includes(data.status)&&data.help?.status!=='open'&&<View>
-        <TextInput multiline maxLength={1000} placeholder="希望团队帮你解决什么？" value={help} onChangeText={setHelp} style={{backgroundColor:'#fff',padding:10,minHeight:65}}/>
-        {button('需要帮助',()=>act('help',{message:help}),!help.trim())}<Text style={paragraph}>此处不是急救通道；明显不适请及时就医，不要等待线上回复。</Text>
-      </View>}
     </View>}
     {!['withdrawn','completed'].includes(data.status)&&(confirmExit?<View><Text style={paragraph}>确定退出本期体验？健康记录会保留。</Text>{button('确认退出',()=>act('withdraw'))}{button('继续体验',()=>setConfirmExit(false))}</View>:button('退出本期体验',()=>setConfirmExit(true)))}
   </View>;

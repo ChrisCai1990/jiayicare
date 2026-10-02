@@ -36,6 +36,7 @@ const ChatLog = require('../models/ChatLog');
 const FollowUp = require('../models/FollowUp');
 const { routineMedicationNoiseFilter } = require('../utils/medicationFollowUpVisibility');
 const HealthRecord = require('../models/HealthRecord');
+const MetabolicPilot = require('../models/MetabolicPilot');
 const { calcStatus: calcHealthRecordStatus } = require('../utils/healthRecordStatus');
 const MedicalReport = require('../models/MedicalReport');
 const { REPORT_LIST_PROJECTION, toReportListItem } = require('../utils/reportListPayload');
@@ -6426,7 +6427,7 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
     monitoring: '日常监测', lifestyle: '生活方式评估',
     medication: '药物服用', nutrition_supplement: '营养素补充',
     annual_checkup: '年度体检', functional_medicine: '功能医学检测',
-    quarterly_eval: '季度评估',
+    quarterly_eval: '季度评估', nutrition_assessment: '营养评估',
   };
 
   const annualMapped = annualPlans.map(ap => {
@@ -7162,6 +7163,25 @@ router.get('/notifications', staffAuth, async (req, res) => {
     ...msgRecipientFilter,
   });
 
+  // 体重管理求助是待办通知，直到责任人回复才从红点消失。旧求助按当前健管归属兜底。
+  let metabolicHelps = [], metabolicHelpCount = 0;
+  if (staff.role === 'healthManager') {
+    const legacyRows = await MetabolicPilot.find({ tenantId: staff.tenantId, 'help.status': 'open', 'help.assignedTo': { $exists: false } }).select('_id').lean();
+    const legacyUsers = await User.find({ tenantId: staff.tenantId, _id: { $in: legacyRows.map(r => r._id) }, assignedHealthManager: staff._id, isDeleted: { $ne: true } }).select('_id').lean();
+    const metabolicPage = Math.max(1, Math.min(10000, Number.parseInt(req.query.metabolicPage, 10) || 1));
+    const filter = { tenantId: staff.tenantId, 'help.status': 'open', $or: [
+      { 'help.assignedTo': staff._id },
+      { 'help.assignedTo': { $exists: false }, _id: { $in: legacyUsers.map(u => u._id) } },
+    ] };
+    const [rows, count] = await Promise.all([
+      MetabolicPilot.find(filter).select('_id help.message help.requestedAt').sort({ 'help.requestedAt': -1 }).skip((metabolicPage - 1) * 50).limit(50).lean(),
+      MetabolicPilot.countDocuments(filter),
+    ]);
+    const names = await User.find({ tenantId: staff.tenantId, _id: { $in: rows.map(r => r._id) }, isDeleted: { $ne: true } }).select('_id name').lean();
+    metabolicHelps = rows.map(r => ({ patientId: r._id, patientName: names.find(u => String(u._id) === String(r._id))?.name || '客户', message: r.help?.message || '', requestedAt: r.help?.requestedAt }));
+    metabolicHelpCount = count;
+  }
+
   res.json({
     success: true,
     data: {
@@ -7171,11 +7191,14 @@ router.get('/notifications', staffAuth, async (req, res) => {
       unreadReferralCount,
       unreadRepliedCount,
       unreadMessageCount,
+      metabolicHelps,
+      metabolicHelpPage: staff.role === 'healthManager' ? Math.max(1, Math.min(10000, Number.parseInt(req.query.metabolicPage, 10) || 1)) : 1,
       summary: {
         pushCount: recentPushes.length,
         pendingReferralCount: unreadReferralCount,
         unreadRepliedCount,
         unreadMessageCount,
+        metabolicHelpCount,
         expiringCount: expiringPatients.length,
       },
     },
@@ -8131,6 +8154,23 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const phaseAssessmentFrequency = req.body.phaseAssessmentFrequency || '';
     if (!['', 'biweekly', 'monthly', 'quarterly'].includes(phaseAssessmentFrequency)) return res.status(400).json({ success: false, message: '阶段评估周期无效' });
     let { moduleData } = req.body;
+    moduleData = { ...(moduleData || {}), nutrition_assessment: {
+      ...(moduleData?.nutrition_assessment || {}), enabled: true,
+      nutritionComparisonMetrics: moduleData?.nutrition_assessment?.nutritionComparisonMetrics || [],
+    } };
+    try {
+      const { isRow } = require('../../../shared/annualNutrition.cjs');
+      const { normalizeMetrics } = require('../../../shared/nutritionComparisonMetrics.cjs');
+      if (moduleData?.nutrition_assessment?.nutritionComparisonMetrics !== undefined) {
+        moduleData.nutrition_assessment.nutritionComparisonMetrics = normalizeMetrics(moduleData.nutrition_assessment.nutritionComparisonMetrics);
+      }
+      for (const row of moduleData?.personalized_followups?.records || []) {
+        if (row.nutritionComparisonMetrics !== undefined) {
+          if (!isRow(row)) throw new Error('仅营养师评估事项可选择营养干预对比指标');
+          row.nutritionComparisonMetrics = normalizeMetrics(row.nutritionComparisonMetrics);
+        }
+      }
+    } catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权编辑该会员的年度方案' });
     if (!planType && !requestedServicePlanCode) return res.status(400).json({ success: false, message: '缺少服务版本' });
@@ -8383,6 +8423,12 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (planType) query.planType = planType;
     const plan = await AnnualPlan.findOne(query);
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
+    const hasLegacyNutritionAssessment = (plan.moduleData?.personalized_followups?.records || []).some(row =>
+      require('../../../shared/annualNutrition.cjs').isRow(row) || /营养评估/.test(row.standardPlanName || ''));
+    if (!plan.moduleData?.nutrition_assessment && !hasLegacyNutritionAssessment) {
+      plan.moduleData = { ...(plan.moduleData || {}), nutrition_assessment: { enabled: true, nutritionComparisonMetrics: [] } };
+      plan.markModified('moduleData');
+    }
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(plan.patientId);
     if (closedLoop) {
     const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
@@ -15810,15 +15856,26 @@ router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, 
       'content.nutritionAssessment.verifiedAt': { $exists: true } })
       .sort({ createdAt: -1 }).select('content.nutritionAssessment content.goal createdAt').lean();
     const assessment = previous?.content?.nutritionAssessment;
-    res.json({ success: true, data: assessment ? {
-      planId: previous._id, recordedAt: assessment.verifiedAt || previous.createdAt,
-      goal: previous.content?.goal || assessment.goal || '',
-      height: assessment.height, weight: assessment.weight,
-      nutritionTargets: assessment.nutritionTargets || [],
-      metric: assessment.metric || '', baseline: assessment.baseline || '', target: assessment.target || '',
-      currentDiet: assessment.currentDiet || '', medicalReview: assessment.medicalReview || '',
-      practicalConstraints: assessment.practicalConstraints || '',
-      allergyDetails: assessment.allergyDetails || '',
+    const annualPlans = await AnnualPlan.find({ patientId: user._id, year: { $gte: new Date().getFullYear() - 1 } })
+      .sort({ year: -1, updatedAt: -1 }).limit(20).select('_id year planType moduleData pushedAt updatedAt').lean();
+    const annualNutrition = require('../../../shared/annualNutrition.cjs');
+    const selection = require('../../../shared/nutritionComparisonMetrics.cjs');
+    const annualPlan = annualPlans.find(plan => (plan.moduleData?.nutrition_assessment?.enabled !== false && Boolean(plan.moduleData?.nutrition_assessment))
+      || (plan.moduleData?.personalized_followups?.records || []).some(annualNutrition.isRow));
+    const annualNutritionMetrics = selection.selectedFromAnnualPlan(annualPlan);
+    const annualNutritionSource = annualPlan ? {
+      planId: String(annualPlan._id), year: annualPlan.year, pushed: Boolean(annualPlan.pushedAt),
+    } : null;
+    res.json({ success: true, data: assessment || annualPlan ? {
+      planId: previous?._id || null, recordedAt: assessment?.verifiedAt || previous?.createdAt || null,
+      goal: previous?.content?.goal || assessment?.goal || '',
+      height: assessment?.height, weight: assessment?.weight,
+      nutritionTargets: assessment?.nutritionTargets || [],
+      metric: assessment?.metric || '', baseline: assessment?.baseline || '', target: assessment?.target || '',
+      currentDiet: assessment?.currentDiet || '', medicalReview: assessment?.medicalReview || '',
+      practicalConstraints: assessment?.practicalConstraints || '',
+      allergyDetails: assessment?.allergyDetails || '',
+      annualNutritionMetrics, annualNutritionSource,
     } : null });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -15834,7 +15891,7 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
     if (!template) return res.status(404).json({ success: false, message: '营养方案模板不存在' });
 
     const user = await User.findById(req.params.id)
-      .select('name gender age height weight chronicDiseases healthProfile lifestyle_data aiRiskAssessment tenantId isDeleted assignedNutritionist');
+      .select('name gender age height weight chronicDiseases healthProfile lifestyle_data coreHealthArchive initialArchiveReview aiRiskAssessment tenantId isDeleted assignedNutritionist');
     if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
     if (String(user.tenantId || '') !== String(req.staff.tenantId || '') ||
         (req.staff.role !== 'superadmin' && String(user.assignedNutritionist || '') !== String(req.staff._id))) {
@@ -15845,11 +15902,10 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
     }
     const { assessment, missing } = require('../utils/nutritionPlanAssessment').prepareNutritionAssessment(req.body.assessment, user);
     if (missing.length) return res.status(400).json({ success: false, message: `生成前请补齐或核实：${missing.join('、')}` });
-    const recordedFoodAllergies = [user.healthProfile?.foodAllergy, ...(Array.isArray(user.healthProfile?.allergies) ? user.healthProfile.allergies : [])
-      .filter(row => /食物|食品|food/i.test(String(row?.type || '')))
-      .map(row => row?.substance || row?.name || '')]
-      .map(value => String(value || '').trim()).filter(value => value && !/^(无|否|没有|无已知|none)$/i.test(value));
-    if (assessment.allergyStatus === 'confirmed_none' && recordedFoodAllergies.length) {
+    const { hasFoodAllergyRecord } = require('../../../shared/foodAllergy.cjs');
+    const allergyArchiveView = user.toObject();
+    allergyArchiveView.lifestyle_data = require('../utils/effectiveLifestyle').effectiveLifestyle(allergyArchiveView);
+    if (assessment.allergyStatus === 'confirmed_none' && hasFoodAllergyRecord(allergyArchiveView)) {
       return res.status(409).json({ success: false, message: '档案已有食物过敏记录，请先核对并填写过敏详情，不能直接选择无过敏' });
     }
 
@@ -15880,6 +15936,12 @@ ${assessment.goal}
 逐项观察指标（指标名称、已核实基线、阶段目标须逐项对应）：
 ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}：基线 ${row.baseline}；目标 ${row.target}`).join('\n')}
 
+【已核实能量预算】
+按年龄、性别、身高、体重及活动等级估算维持能量：约 ${assessment.estimatedMaintenanceKcal} kcal/日（仅作估算）。
+营养师确认的管理期能量：${assessment.managementKcal} kcal/日。
+餐次预算：早餐 ${assessment.mealEnergyKcal.breakfast}、午餐 ${assessment.mealEnergyKcal.lunch}、晚餐 ${assessment.mealEnergyKcal.dinner}、加餐 ${assessment.mealEnergyKcal.snack} kcal。
+请围绕各餐预算选择食物与分量；不要虚构精确的食物热量或宣称已核算实际摄入。加餐预算为 0 时不要安排加餐。
+
 【模板固定骨架（不可修改，仅供你参考约束）】
 膳食总原则：${tc.dietPrinciple || '无'}
 推荐食物：${tc.allowedFoods || '无限制'}
@@ -15889,7 +15951,7 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
 模板早餐参考：${tc.breakfast || '无'}
 模板午餐参考：${tc.lunch || '无'}
 模板晚餐参考：${tc.dinner || '无'}
-模板加餐参考：${tc.snack || '无'}
+模板加餐参考：${assessment.mealEnergyKcal.snack > 0 ? (tc.snack || '无') : '本次未安排加餐'}
 
 不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应食物；在description中指出需营养师修订模板。餐次写清食物与可执行分量，不承诺治疗效果。
 请以JSON格式输出，仅输出JSON：
@@ -15915,7 +15977,8 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
     const breakfast = raw.breakfast.trim();
     const lunch = raw.lunch.trim();
     const dinner = raw.dinner.trim();
-    const snack = raw.snack || tc.snack || '';
+    const snack = assessment.mealEnergyKcal.snack > 0 ? String(raw.snack || '').trim() : '';
+    if (assessment.mealEnergyKcal.snack > 0 && !snack) return res.status(502).json({ success: false, message: 'AI未生成已安排的加餐草稿，请重试' });
     const items = [
       { name: '早餐方案', category: '营养干预', notes: breakfast },
       { name: '午餐方案', category: '营养干预', notes: lunch },
@@ -15936,6 +15999,17 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
       supplement: { content: '' },
       exercise: { content: tc.exerciseSuggestion || '' },
     };
+
+    // The nutritionist enters/validates allergy details once. After the AI
+    // draft is complete, append that verified evidence to the archive using
+    // its existing CAS and before/after history; never overwrite old records.
+    if (assessment.allergyStatus === 'confirmed_present') {
+      const mutation = require('../utils/nutritionFoodAllergyArchive').appendNutritionFoodAllergy(user.toObject(), assessment.allergyDetails, req.staff);
+      if (mutation) {
+        const result = await User.collection.updateOne(mutation.filter, mutation.update);
+        if (!result.matchedCount) return res.status(409).json({ success: false, message: '过敏档案已更新，请刷新并重新核对后生成方案' });
+      }
+    }
 
     const plan = await HealthPlan.create({
       patientId: user._id,

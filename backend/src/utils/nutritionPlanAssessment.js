@@ -1,11 +1,14 @@
 const clean = (value, limit = 1000) => String(value ?? '').trim().slice(0, limit);
+const { isUsableFoodAllergy } = require('../../../shared/foodAllergy.cjs');
+const { FIXED_METRICS, canonicalMetric } = require('../../../shared/nutritionTargets.cjs');
+const { validateNutritionEnergy } = require('../../../shared/nutritionEnergy.cjs');
 
 function prepareNutritionAssessment(input = {}, user = {}) {
   const targetInput = input.nutritionTargets === undefined
     ? [{ metric: input.metric, baseline: input.baseline, target: input.target }]
     : input.nutritionTargets;
   const nutritionTargets = Array.isArray(targetInput) ? targetInput.slice(0, 12).map(row => ({
-    metric: clean(row?.metric, 100), baseline: clean(row?.baseline, 200), target: clean(row?.target, 200),
+    metric: canonicalMetric(clean(row?.metric, 100)), baseline: clean(row?.baseline, 200), target: clean(row?.target, 200),
   })) : [];
   const assessment = {
     goal: clean(input.goal, 500),
@@ -18,12 +21,20 @@ function prepareNutritionAssessment(input = {}, user = {}) {
     medicalReview: clean(input.medicalReview, 800),
     practicalConstraints: clean(input.practicalConstraints, 800),
     allergyStatus: clean(input.allergyStatus, 30),
-    allergyDetails: clean(input.allergyDetails, 500),
+    allergyDetails: input.allergyStatus === 'confirmed_none' ? '' : clean(input.allergyDetails, 500),
     riskStatus: clean(input.riskStatus, 30),
     templateCompatibilityConfirmed: input.templateCompatibilityConfirmed === true,
     height: Number(input.height || user.height),
     weight: Number(input.weight || user.weight),
     age: Number(user.age),
+    activityLevel: clean(input.activityLevel, 30),
+    lifeStage: clean(input.lifeStage, 40),
+    managementPurpose: clean(input.managementPurpose, 20),
+    managementKcal: Number(input.managementKcal),
+    breakfastPercent: Number(input.breakfastPercent),
+    lunchPercent: Number(input.lunchPercent),
+    dinnerPercent: Number(input.dinnerPercent),
+    snackPercent: Number(input.snackPercent ?? 0),
   };
   const missing = [];
   for (const [key, label] of [
@@ -33,6 +44,7 @@ function prepareNutritionAssessment(input = {}, user = {}) {
   if (!Array.isArray(targetInput) && input.nutritionTargets !== undefined) missing.push('观察指标列表格式');
   if (!nutritionTargets.length) missing.push('至少一条观察指标');
   if (Array.isArray(targetInput) && targetInput.length > 12) missing.push('观察指标最多12条');
+  if (FIXED_METRICS.some((metric, index) => nutritionTargets[index]?.metric !== metric)) missing.push('体重、骨骼肌、体脂率、内脏脂肪四项固定观察指标及顺序');
   const names = new Set();
   nutritionTargets.forEach((row, index) => {
     if (!row.metric || !row.baseline || !row.target) missing.push(`第${index + 1}条指标的名称、已核实基线和阶段目标`);
@@ -43,8 +55,14 @@ function prepareNutritionAssessment(input = {}, user = {}) {
   if (!Number.isFinite(assessment.age) || assessment.age < 18) missing.push('成年客户年龄（未成年人需专门流程）');
   if (!Number.isFinite(assessment.height) || assessment.height < 80 || assessment.height > 230) missing.push('已核实身高（cm）');
   if (!Number.isFinite(assessment.weight) || assessment.weight < 25 || assessment.weight > 350) missing.push('已核实体重（kg）');
+  const energy = validateNutritionEnergy(user, assessment);
+  missing.push(...energy.errors);
+  assessment.estimatedMaintenanceKcal = energy.maintenanceKcal;
+  assessment.mealEnergyKcal = energy.mealKcal;
+  assessment.energyReference = 'NASEM DRI for Energy 2023 EER, adult';
   if (!['confirmed_none', 'confirmed_present'].includes(assessment.allergyStatus)) missing.push('食物过敏核对结果');
   if (assessment.allergyStatus === 'confirmed_present' && !assessment.allergyDetails) missing.push('食物过敏详情');
+  if (assessment.allergyStatus === 'confirmed_present' && assessment.allergyDetails && !isUsableFoodAllergy(assessment.allergyDetails)) missing.push('具体过敏食物及反应，不能填写无过敏');
   if (!['standard', 'specialist'].includes(assessment.riskStatus)) missing.push('专业风险分流结果');
   if (assessment.riskStatus === 'specialist') missing.push('需专业评估的客户不能自动生成个体化餐单');
   if (!assessment.templateCompatibilityConfirmed) missing.push('模板适用性及过敏禁忌核对');

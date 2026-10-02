@@ -426,7 +426,7 @@ export default function PlanModulesPage() {
 
   const handleSave = async () => {
     if (plan.type === 'nutrition') {
-      const targetError = nutritionTargetError(nutritionTargets)
+      const targetError = nutritionTargetError(nutritionTargets, Boolean(plan.content?.nutritionAssessment?.energyReference))
       if (targetError) { toast(targetError); return }
     }
     if (plan.type === 'medical_assist') {
@@ -649,7 +649,7 @@ export default function PlanModulesPage() {
           style={{ width: '100%', padding: '8px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
         />
         {plan.type === 'nutrition' && <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
-          <NutritionTargetRows value={nutritionTargets} onChange={rows => { setNutritionTargets(rows); setDirty(true) }} disabled={!canEdit} />
+          <NutritionTargetRows value={nutritionTargets} onChange={rows => { setNutritionTargets(rows); setDirty(true) }} disabled={!canEdit} fixed={Boolean(plan.content?.nutritionAssessment?.energyReference)} />
           <label style={{ fontSize: 13 }}>阶段复盘日期<DateField className="form-input" type="date" value={nutritionReviewDate} disabled={!canEdit} onChange={e => { setNutritionReviewDate(e.target.value); setDirty(true) }} style={{ display: 'block', width: '100%', marginTop: 5 }} /></label>
         </div>}
       </div>}
@@ -662,8 +662,11 @@ export default function PlanModulesPage() {
           ['疾病、用药及检查核对', plan.content.nutritionAssessment.medicalReview],
           ['食物过敏', plan.content.nutritionAssessment.allergyStatus === 'confirmed_none' ? '已核实无已知食物过敏' : plan.content.nutritionAssessment.allergyDetails],
           ['偏好与执行条件', plan.content.nutritionAssessment.practicalConstraints],
+          ...(plan.content.nutritionAssessment.estimatedMaintenanceKcal ? [['维持能量估算', `约 ${plan.content.nutritionAssessment.estimatedMaintenanceKcal} kcal/日`]] : []),
+          ...(plan.content.nutritionAssessment.managementKcal ? [['管理期能量', `${plan.content.nutritionAssessment.managementKcal} kcal/日`]] : []),
+          ...(plan.content.nutritionAssessment.mealEnergyKcal ? [['餐次预算', `早餐 ${plan.content.nutritionAssessment.mealEnergyKcal.breakfast}、午餐 ${plan.content.nutritionAssessment.mealEnergyKcal.lunch}、晚餐 ${plan.content.nutritionAssessment.mealEnergyKcal.dinner}、加餐 ${plan.content.nutritionAssessment.mealEnergyKcal.snack || 0} kcal`]] : []),
         ].map(([label, value]) => <div key={label} style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}><strong>{label}：</strong>{value}</div>)}
-        <div style={{ color: '#65776F', fontSize: 12, marginTop: 7 }}>生成草稿需由营养师核对餐次、分量、过敏禁忌和模板适用性后推送。</div>
+        <div style={{ color: '#65776F', fontSize: 12, marginTop: 7 }}>餐次预算是估算目标，不代表餐食实际热量；营养师需核对食物、分量、过敏禁忌和模板适用性后推送。</div>
       </section>}
 
       {plan.type === 'nutrition' && plan.pushedAt && <section className="card" style={{ marginBottom: 20, padding: 18 }} aria-label="营养干预行动草稿">

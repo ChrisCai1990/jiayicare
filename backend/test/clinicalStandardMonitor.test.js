@@ -9,19 +9,24 @@ test('every catalogued rule has an implementation and an update policy', () => {
   for (const row of standards) {
     assert.ok(row.implementation && ['source', 'manual'].includes(row.monitor));
     if (row.monitor === 'source') assert.match(row.sourceUrl, /^https:\/\//);
+    assert.ok(row.origin && row.publisher && row.currentRule);
+    if (row.evidence === 'missing') assert.equal(row.originalUrl, '');
+    else assert.match(row.originalUrl, /^https:\/\//);
   }
 });
 
-test('manual source check builds a valid lease query without querying a remote source', async () => {
-  const original = ClinicalStandardWatch.findOneAndUpdate;
+test('recent source check skips a second fetch and does not insert a duplicate watch', async () => {
+  const originalFind = ClinicalStandardWatch.findOne;
+  const originalUpdate = ClinicalStandardWatch.findOneAndUpdate;
   const filters = [];
+  ClinicalStandardWatch.findOne = () => ({ sort: async () => ({ _id: 'latest', checkedAt: new Date(), attemptedSourceUrl: standards[0].sourceUrl, lastError: '' }) });
   ClinicalStandardWatch.findOneAndUpdate = async filter => { filters.push(filter); return null };
   try {
-    assert.equal((await checkOne(standards[0], { force: true })).outcome, 'not_due');
     assert.equal((await checkOne(standards[0])).outcome, 'not_due');
-    assert.equal(filters[0].$and.length, 1);
-    assert.equal(filters[1].$and.length, 2);
-  } finally { ClinicalStandardWatch.findOneAndUpdate = original }
+    assert.equal(filters.length, 0);
+    assert.equal((await checkOne(standards[0], { force: true })).outcome, 'not_due');
+    assert.equal(filters[0]._id, 'latest');
+  } finally { ClinicalStandardWatch.findOne = originalFind; ClinicalStandardWatch.findOneAndUpdate = originalUpdate }
 });
 
 test('source fingerprint ignores scripts but detects clinical text changes', async () => {
@@ -31,4 +36,36 @@ test('source fingerprint ignores scripts but detects clinical text changes', asy
   assert.equal(a.toString(), b.toString());
   assert.notEqual(a.toString(), canonicalContent(Buffer.from(`<main>${stable.replace('2025', '2026')}</main>`), 'text/html').toString());
   await assert.rejects(fetchFingerprint({ sourceUrl: 'https://example.com/standard' }, () => { throw new Error('network called'); }), /可信站点/);
+});
+
+test('ACR source may redirect only to its official asset path', async () => {
+  const legacy = { sourceUrl: 'https://www.acr.org/-/media/ACR/Files/RADS/Lung-RADS/Lung-RADS-2022.pdf' };
+  const asset = 'https://edge.sitecorecloud.io/acr-production/media/ACR/Files/RADS/Lung-RADS/Lung-RADS-2022.pdf';
+  const fetchImpl = async url => url === legacy.sourceUrl
+    ? new Response(null, { status: 302, headers: { location: asset } })
+    : new Response('clinical content '.repeat(10), { status: 200, headers: { 'content-type': 'text/html' } });
+  assert.match(await fetchFingerprint(legacy, fetchImpl), /^[a-f0-9]{64}$/);
+  await assert.rejects(fetchFingerprint(legacy, async () => new Response(null, { status: 302, headers: { location: 'https://example.com/file.pdf' } })), /非可信站点/);
+});
+
+test('failed source checks retry the next day and remember the attempted URL', async () => {
+  const originalQuery = ClinicalStandardWatch.findOne;
+  const originalFind = ClinicalStandardWatch.findOneAndUpdate;
+  const originalUpdate = ClinicalStandardWatch.updateOne;
+  let saved;
+  ClinicalStandardWatch.findOne = () => ({ sort: async () => null });
+  ClinicalStandardWatch.findOneAndUpdate = async () => ({ _id: 'watch', fingerprint: '' });
+  ClinicalStandardWatch.updateOne = async (_, update) => { saved = update.$set };
+  try {
+    const row = standards.find(item => item.id === 'lung-rads');
+    const started = Date.now();
+    assert.equal((await checkOne(row, { fetchImpl: async () => { throw new Error('offline') } })).outcome, 'error');
+    assert.equal(saved.attemptedSourceUrl, row.sourceUrl);
+    assert.ok(saved.nextCheckAt.getTime() >= started + 23 * 60 * 60 * 1000);
+    assert.ok(saved.nextCheckAt.getTime() <= started + 25 * 60 * 60 * 1000);
+  } finally {
+    ClinicalStandardWatch.findOne = originalQuery;
+    ClinicalStandardWatch.findOneAndUpdate = originalFind;
+    ClinicalStandardWatch.updateOne = originalUpdate;
+  }
 });

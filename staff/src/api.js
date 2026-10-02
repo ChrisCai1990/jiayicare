@@ -54,7 +54,9 @@ async function req(path, options = {}) {
 const qs = (params) => new URLSearchParams(params).toString()
 
 export const metabolicPilotAPI = {
-  get: () => req('/metabolic-pilot/staff'),
+  get: (include) => req(`/metabolic-pilot/staff${include?`?include=${encodeURIComponent(include)}`:''}`),
+  owners: () => req('/metabolic-pilot/staff/owners'),
+  assign: (id,data) => req(`/metabolic-pilot/staff/${id}/assign`,{method:'POST',body:JSON.stringify(data)}),
   resolve: (id,data) => req(`/metabolic-pilot/staff/${id}/resolve`,{method:'POST',body:JSON.stringify(data)}),
 }
 export const careFlowAPI = {
@@ -374,7 +376,7 @@ export const staffAPI = {
   markSentReferralsRead: ()          => req('/staff/referrals/mark-sent-read', { method: 'PATCH' }),
 
   // P4 — Notifications
-  getNotifications: ()         => req('/staff/notifications'),
+  getNotifications: (metabolicPage) => req(`/staff/notifications${metabolicPage?`?metabolicPage=${encodeURIComponent(metabolicPage)}`:''}`),
   getExpiringPatients: (days = 30) => req(`/staff/patients/expiring?days=${days}`),
 
   // P4 — Active plan items for report linking

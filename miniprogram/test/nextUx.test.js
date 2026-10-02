@@ -52,24 +52,24 @@ test('manager entry validates fresh assignment, uses existing tab, consumes once
 
 function homeHarness() {
   const source=read('pages/home/index.jsx'),begin=source.indexOf('  const loadCore = useCallback'),end=source.indexOf('\n  useEffect',begin);
-  const state={sections:{},tasks:[],followups:[],services:[],dashboard:null};
-  const ds={dashboard:deferred(),tasks:deferred(),followups:deferred(),services:deferred()};
+  const state={sections:{},tasks:[],followups:[],services:[],dashboard:null,pilot:null};
+  const ds={dashboard:deferred(),tasks:deferred(),followups:deferred(),services:deferred(),pilot:deferred()};
   const ctx={useCallback:f=>f,authLoading:false,token:'a',sessionRef:{current:'a'},loadRequestRef:{current:0},
     setLoading:v=>state.loading=v,setSectionState:v=>state.sections=typeof v==='function'?v(state.sections):v,
-    setDashData:v=>state.dashboard=v,setTasks:v=>state.tasks=v,setFollowups:v=>state.followups=v,setPopularServices:v=>state.services=v,
-    userAPI:{getDashboard:()=>ds.dashboard.promise},tasksAPI:{list:()=>ds.tasks.promise},followupTasksAPI:{list:()=>ds.followups.promise},servicesAPI:{list:()=>ds.services.promise}};
+    setDashData:v=>state.dashboard=v,setTasks:v=>state.tasks=v,setFollowups:v=>state.followups=v,setPopularServices:v=>state.services=v,setPilotData:v=>state.pilot=v,
+    userAPI:{getDashboard:()=>ds.dashboard.promise},tasksAPI:{list:()=>ds.tasks.promise},followupTasksAPI:{list:()=>ds.followups.promise},servicesAPI:{list:()=>ds.services.promise},metabolicPilotAPI:{get:()=>ds.pilot.promise}};
   vm.runInNewContext(source.slice(begin,end)+'\nthis.run=loadCore;',ctx);return {state,ds,ctx};
 }
 test('home shows tasks while services are pending and preserves failures as error, not empty success',async()=>{
   const {state,ds,ctx}=homeHarness(),p=ctx.run();
   ds.tasks.resolve({success:true,data:[{_id:'t',status:'pending'}]});await flush();assert.equal(state.tasks.length,1);assert.equal(state.sections.tasks,'ready');assert.equal(state.sections.services,'loading');
   ds.dashboard.reject(Error('offline'));ds.followups.resolve({success:true,data:[]});await flush();assert.equal(state.sections.dashboard,'error');
-  ds.services.resolve({success:true,data:{services:[]}});await p;assert.equal(state.loading,false);assert.equal(state.sections.dashboard,'error');
+  ds.services.resolve({success:true,data:{services:[]}});ds.pilot.resolve({success:true,data:{help:{status:'closed',reply:'已回复'}}});await p;assert.equal(state.loading,false);assert.equal(state.sections.dashboard,'error');assert.equal(state.pilot.help.reply,'已回复');
 });
 test('responses issued under a previous home session cannot repopulate its private records',async()=>{
   const {state,ds,ctx}=homeHarness(),p=ctx.run();ctx.sessionRef.current='b';
-  ds.tasks.resolve({success:true,data:[{_id:'old',status:'pending'}]});ds.followups.resolve({success:true,data:[]});ds.dashboard.resolve({success:true,data:{name:'old'}});ds.services.resolve({success:true,data:{services:[]}});await p;
-  assert.equal(state.tasks.length,0);assert.equal(state.dashboard,null);
+  ds.tasks.resolve({success:true,data:[{_id:'old',status:'pending'}]});ds.followups.resolve({success:true,data:[]});ds.dashboard.resolve({success:true,data:{name:'old'}});ds.services.resolve({success:true,data:{services:[]}});ds.pilot.resolve({success:true,data:{help:{status:'closed',reply:'旧回复'}}});await p;
+  assert.equal(state.tasks.length,0);assert.equal(state.dashboard,null);assert.equal(state.pilot,null);
 });
 
 function uploadHarness({ failImage=false, failSave=false }={}) {
@@ -128,8 +128,20 @@ function componentHarness(file,mocks) {
   const render=()=>{si=0;ri=0;return Page({});};
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.children||[]).flat(Infinity).flatMap(nodes)];
   const text=n=>typeof n==='string'||typeof n==='number'?String(n):n&&typeof n==='object'?(n.children||[]).flat(Infinity).map(text).join(''):'';
-  return {render,nodes,text,state, mount:async()=>{render();effects.splice(0).forEach(f=>f());await flush();},show:async()=>{show();await flush();}};
+  return {render,nodes,text,state, mount:async()=>{render();effects.splice(0).forEach(f=>f());await flush();},runLatestEffect:async()=>{effects.splice(0).at(-1)?.();await flush();},show:async()=>{show();await flush();}};
 }
+test('viewing a closed pilot reply acknowledges it once and keeps the reply visible as a record',async()=>{
+  const help={status:'closed',message:'请帮我调整提醒',reply:'已调整提醒',closedAt:'2026-10-03T08:00:00.000Z'};
+  const data={status:'active',available:true,startedAt:'2026-09-29',summary:{week:1,checkpoints:[]},help};
+  const calls=[];
+  const h=componentHarness('components/MetabolicPilotCard.jsx',{'../services/api':{metabolicPilotAPI:{get:async()=>({data}),action:async body=>{calls.push(body);return {success:true}}}}});
+  await h.mount();h.render();await h.runLatestEffect();
+  assert.deepEqual(calls.map(x=>x.action),['read-help-reply']);
+  assert.equal(calls[0].closedAt,help.closedAt);
+  assert.ok(h.state.some(x=>x?.help?.readAt),JSON.stringify(h.state));
+  assert.ok(h.text(h.render()).includes('团队回复：已调整提醒'));
+  await h.runLatestEffect();assert.equal(calls.length,1);
+});
 test('pilot action tick follows saved choice and remains correct after reload',async()=>{
   const data={status:'active',available:true,startedAt:'2026-09-29',summary:{week:1,checkpoints:[],action:{id:'meal',title:'餐食'}},actionChoice:{id:'meal',choice:'try'}};
   const h=componentHarness('components/MetabolicPilotCard.jsx',{'../services/api':{metabolicPilotAPI:{get:async()=>({data}),action:async body=>{data.actionChoice={id:body.id,choice:body.choice};}}}});
