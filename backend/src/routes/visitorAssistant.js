@@ -1,5 +1,7 @@
 const express = require('express');
 const { chat } = require('../utils/ai');
+const { withAiContext } = require('../utils/aiBudget');
+const Tenant = require('../models/Tenant');
 const VisitorLead = require('../models/VisitorLead');
 const { normalizeText, hasEmergency, hasMedicalDetail, emergencyReply, safeConversation } = require('../utils/visitorAssistantSafety');
 
@@ -33,7 +35,11 @@ router.post('/reply', async (req, res) => {
     return res.json({ success: true, data: { content: '我可以先帮您梳理咨询准备。请问您更关注体重管理、生活方式安排、体检资料整理，还是了解嘉医汇服务流程？', handoffSuggested: true, aiAvailable: false } });
   }
   try {
-    const content = await chat(messages, { systemPrompt: SYSTEM_PROMPT, maxTokens: 280, timeoutMs: 30000 });
+    // This public assistant is explicitly the Jiayihui website. Visitors have
+    // no login actor, so attribute its AI usage to the owning institution.
+    const tenant = await Tenant.findOne({ code: 'jiayihui', status: 'active' }).select('_id').lean();
+    if (!tenant) throw new Error('嘉医汇机构不可用');
+    const content = await withAiContext({ tenantId: String(tenant._id), business: 'other', stage: 'visitor_assistant' }, () => chat(messages, { systemPrompt: SYSTEM_PROMPT, maxTokens: 280, timeoutMs: 30000 }));
     return res.json({ success: true, data: { content: normalizeText(content, 800), handoffSuggested: true, aiAvailable: true } });
   } catch (error) {
     console.error('visitor assistant failed:', error.message);
