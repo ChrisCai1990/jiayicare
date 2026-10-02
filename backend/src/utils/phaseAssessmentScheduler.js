@@ -103,7 +103,7 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
 请严格按以下四个栏目输出中文：
 一、${outputSections[0]}；二、${outputSections[1]}；三、${outputSections[2]}；四、${outputSections[3]}。
 第一部分只写${windowDays}天窗口内的监测变化和覆盖情况；第二部分只分析阶段变化与饮食、运动、睡眠、饮酒、情绪、依从性的时间关联，证据不足写“可能相关/待验证”，不得写成因果；第三部分写可能风险及数据缺口，体检只作基线背景；第四部分写下一周期可执行计划，注明事项、频次、责任角色和复评时间。每栏最多6条，每条先写简短判断标签，再用冒号补充依据。`;
-  const content = await chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 1400, temperature: 0.05, timeoutMs: 90000 });
+  const content = await chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 3500, temperature: 0.05, timeoutMs: 90000 });
   if (!await PhaseAssessmentGeneration.exists({ _id: generationId, token, status: 'generating' })) return null;
   const item = await PhaseAssessment.create({
     patientId: user._id, annualPlanId: plan._id, templateId: template._id,
