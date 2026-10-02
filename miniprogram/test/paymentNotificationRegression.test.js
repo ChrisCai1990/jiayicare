@@ -17,6 +17,7 @@ test('cancelled cashier retries the same mall order and double tap cannot create
     item: { id: 'product' }, fundApplied: 0, couponId: null, payMethod: 'wechat_pay', shareToken: '',
     checkoutUser: {}, setCheckoutUser() {}, updateUser() {},
     authAPI: { bindWechat: async () => ({ success: true, data: {} }) },
+    preparePaymentPlatform: async () => {}, isNativeApp: () => false,
     servicesAPI: { order: async (...args) => { created++; assert.equal(args.at(-1), 20000); return { success: true, data: { orderId: 'o', paymentParams: {} } }; } },
     paymentsAPI: { retry: async id => { retried++; assert.equal(id, 'o'); return { success: true, data: { order: { _id: 'o' }, paymentParams: {} } }; } },
     requestWechatPayment: async () => { throw new Error('取消支付'); }, waitForPayment: async () => {},

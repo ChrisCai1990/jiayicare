@@ -5,6 +5,7 @@ import { colors, spacing, radius, shadow } from '../../../theme';
 import { reportsAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { openH5FilePreview } from '../../../utils/h5FilePreview';
 
 // 对齐 app/src/screens/records/MedicalReportsScreen.js
 // 小程序场景适配：原件通过普通鉴权请求读取二进制，写入带正确后缀的本地文件后预览，
@@ -24,18 +25,24 @@ async function openOriginalFile(report) {
   const fileCount = report.fileUrls?.length || (report.fileUrl ? 1 : 0);
   if (fileCount) {
     const isImage = report.mimeType?.startsWith('image/');
+    const downloaded = [];
     Taro.showLoading({ title: '正在打开...' });
     try {
-      const downloaded = await Promise.all(Array.from({ length: fileCount }, (_, index) => (
-        reportsAPI.downloadOriginal(report._id, index, report.mimeType || '')
-      )));
+      for (let index = 0; index < fileCount; index += 1) {
+        downloaded.push(await reportsAPI.downloadOriginal(report._id, index, report.mimeType || ''));
+      }
       Taro.hideLoading();
+      if (process.env.TARO_ENV === 'h5') {
+        openH5FilePreview(downloaded, isImage);
+        return;
+      }
       if (isImage) {
         await Taro.previewImage({ urls: downloaded, current: downloaded[0] });
       } else {
         await Taro.openDocument({ filePath: downloaded[0], fileType: 'pdf', showMenu: true });
       }
     } catch (err) {
+      if (process.env.TARO_ENV === 'h5') downloaded.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
       Taro.hideLoading();
       Taro.showModal({
         title: '原始报告打开失败',
@@ -57,6 +64,10 @@ async function openOriginalFile(report) {
         : mimeType.includes('png') ? 'png'
         : mimeType.includes('webp') ? 'webp' : 'jpg';
       const raw = String(full.content).replace(/^data:[^;]+;base64,/, '');
+      if (process.env.TARO_ENV === 'h5') {
+        openH5FilePreview([`data:${mimeType || 'application/pdf'};base64,${raw}`], isImage);
+        return;
+      }
       const filePath = `${Taro.env.USER_DATA_PATH}/report-${report._id}.${ext}`;
       await new Promise((resolve, reject) => {
         Taro.getFileSystemManager().writeFile({

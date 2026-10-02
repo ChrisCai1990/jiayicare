@@ -5,7 +5,7 @@ import { colors, spacing, radius, shadow } from '../../../theme';
 import { reportsAPI, mediaUrl } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
-import { chooseImageWithPrivacy, isImagePickerCancelled, isPrivacyDeclarationMissing, showImagePickerError } from '../../../utils/imagePicker';
+import { chooseImageWithPrivacy, readSelectedImage, isImagePickerCancelled, isPrivacyDeclarationMissing, showImagePickerError } from '../../../utils/imagePicker';
 
 // 逐张读取压缩图并通过普通 HTTPS 请求上传，避免 uploadFile 域名配置导致真机端请求未到后端。
 export default function ReportUploadPage() {
@@ -47,14 +47,9 @@ export default function ReportUploadPage() {
       if (!filePaths.length) { setProgress({ done: 0, total: 0, stage: '' }); return; }
       setProgress({ done: 0, total: filePaths.length, stage: '正在上传' });
       const uploadedFiles = [];
-      for (const filePath of filePaths) {
-        const base64 = Taro.getFileSystemManager().readFileSync(filePath, 'base64');
-        const ext = (filePath.split('.').pop() || 'jpg').toLowerCase();
-        const mimeType = ext === 'png' ? 'image/png'
-          : ext === 'webp' ? 'image/webp'
-          : (ext === 'heic' || ext === 'heif') ? 'image/heic'
-          : 'image/jpeg';
-        const uploaded = await reportsAPI.uploadBase64(`data:${mimeType};base64,${base64}`, mimeType);
+      for (let index = 0; index < filePaths.length; index += 1) {
+        const { data, mimeType } = await readSelectedImage(res, index);
+        const uploaded = await reportsAPI.uploadBase64(data, mimeType);
         if (!uploaded?.success || !uploaded.data?.fileUrl) throw new Error(uploaded?.message || '图片上传未完成');
         uploadedFiles.push(uploaded.data);
         setProgress({ done: uploadedFiles.length, total: filePaths.length, stage: '正在上传' });

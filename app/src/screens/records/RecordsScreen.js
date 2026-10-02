@@ -655,46 +655,10 @@ export default function RecordsScreen({ navigation }) {
           </View>
         </View>
 
-        {/* ── AI健康信息整理入口 ───────────────────────────────── */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.aiEntryCard} onPress={() => {
-            if (!user?.aiEntitlements?.aiHealthAnalysis && !user?.aiEntitlements?.aiRiskAssessment) {
-              Alert.alert('年度会员专属', 'AI健康信息整理与趋势分析、健康关注提示仅向健康预防计划、健康护航计划客户开放。相关内容仅作信息整理，不构成诊断或治疗建议。', [
-                { text: '取消', style: 'cancel' },
-                { text: '查看商城', onPress: () => navigation.navigate('ServiceMall') },
-              ]);
-              return;
-            }
-            navigation.navigate('AiHealth');
-          }}>
-            <View style={styles.aiEntryIcon}>
-              <Ionicons name="sparkles" size={20} color={colors.white} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.aiEntryTitle}>AI健康信息整理</Text>
-              <Text style={styles.aiEntryDesc}>{user?.aiEntitlements?.aiHealthAnalysis || user?.aiEntitlements?.aiRiskAssessment ? '趋势分析 · 健康关注提示' : '年度会员专属 · 查看权益'}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── 个人资料入口（基本信息/基础健康档案/医疗保障/生活方式/年度复查计划已移至独立页面，2026-07-18 健康档案页瘦身）── */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.aiEntryCard} onPress={() => navigation.navigate('ProfileArchive')}>
-            <View style={[styles.aiEntryIcon, { backgroundColor: '#0077B6' }]}>
-              <Ionicons name="person-outline" size={20} color={colors.white} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.aiEntryTitle}>个人资料</Text>
-              <Text style={styles.aiEntryDesc}>基本信息 · 基础健康档案 · 生活方式 · 年度复查</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
-
         {/* ── 趋势图（含最新数值/状态，与此前"最新健康指标"卡片网格是同一份数据，
               2026-07-18 去重后不再重复展示，指标切换chip本身即概览入口）──────── */}
         <View style={styles.section}>
+          <Text style={{fontSize:11,fontWeight:'700',color:colors.textMuted,marginBottom:8}}>健康数据趋势</Text>
           {/* 指标类型选择 */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartTypeScroll}
             contentContainerStyle={styles.chartTypeContent}>
@@ -718,17 +682,20 @@ export default function RecordsScreen({ navigation }) {
               <View>
                 <Text style={styles.chartTitle}>{currentTypeCfg.label}趋势</Text>
                 {(() => {
-                  const m = METRICS.find(x => x.key === chartType);
-                  if (!m) return <Text style={styles.chartSubtitle}>{currentTypeCfg.unit}</Text>;
-                  const st = STATUS_CFG[m.status] || STATUS_CFG.normal;
+                  const latestRecord = chartData[chartData.length - 1];
+                  if (!latestRecord) return <Text style={styles.chartSubtitle}>暂无{currentTypeCfg.label}记录</Text>;
+                  const value = chartType === 'bloodPressure'
+                    ? `${latestRecord.extra?.sys ?? String(latestRecord.value).split('/')[0]}/${latestRecord.extra?.dia ?? String(latestRecord.value).split('/')[1]}`
+                    : String(latestRecord.value);
+                  const st = latestRecord.status ? (STATUS_CFG[latestRecord.status] || STATUS_CFG.normal) : null;
                   return (
                     <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
-                      <Text style={styles.chartLatestValue}>{m.value}</Text>
+                      <Text style={styles.chartLatestValue}>{value}</Text>
                       <Text style={styles.chartSubtitle}>{currentTypeCfg.unit}</Text>
-                      <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
+                      {st && <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
                         <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>
-                      </View>
-                      {m.time && <Text style={styles.chartLatestTime}>{m.time}</Text>}
+                      </View>}
+                      {latestRecord.recordedAt && <Text style={styles.chartLatestTime}>{new Date(latestRecord.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</Text>}
                     </View>
                   );
                 })()}
@@ -904,6 +871,16 @@ export default function RecordsScreen({ navigation }) {
           </View>
         </View>
 
+        {/* 当前小程序在健康数据趋势之后先展示身体成分。 */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionTitle}>身体成分</Text>
+            </View>
+          </View>
+          <BodyCompositionCharts history={bodyCompHistory} current={bodyComposition} />
+        </View>
+
         {/* ── 历史记录列表 ─────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -984,18 +961,6 @@ export default function RecordsScreen({ navigation }) {
           </View>
         </View>
 
-        {/* ── 身体成分置于持续健康数据末尾，使用与医护端相同历史 ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="analytics-outline" size={17} color="#7C3AED" />
-              <Text style={styles.sectionTitle}>身体成分</Text>
-            </View>
-            <Text style={styles.sectionHint}>按检测日期</Text>
-          </View>
-          <BodyCompositionCharts history={bodyCompHistory} current={bodyComposition} />
-        </View>
-
         {/* ── 今日健康状态：来自“今天有不适吗” ────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -1024,6 +989,29 @@ export default function RecordsScreen({ navigation }) {
               </View>
             );
           })()}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { marginBottom: 8 }]}>更多档案功能</Text>
+          <TouchableOpacity style={styles.aiEntryCard} onPress={() => navigation.navigate('ProfileArchive')}>
+            <View style={[styles.aiEntryIcon, { backgroundColor: '#0077B6' }]}><Ionicons name="person-outline" size={20} color={colors.white} /></View>
+            <View style={{ flex: 1 }}><Text style={styles.aiEntryTitle}>个人资料</Text><Text style={styles.aiEntryDesc}>基本信息 · 健康档案 · 年度复查</Text></View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.aiEntryCard, { marginTop: 8 }]} onPress={() => {
+            if (!user?.aiEntitlements?.aiHealthAnalysis && !user?.aiEntitlements?.aiRiskAssessment) {
+              Alert.alert('年度会员专属', 'AI健康信息整理与趋势分析仅向已开通相应权益的客户开放。相关内容不构成诊断或治疗建议。', [
+                { text: '取消', style: 'cancel' },
+                { text: '查看商城', onPress: () => navigation.navigate('ServiceMall') },
+              ]);
+              return;
+            }
+            navigation.navigate('AiHealth');
+          }}>
+            <View style={styles.aiEntryIcon}><Ionicons name="sparkles" size={20} color={colors.white} /></View>
+            <View style={{ flex: 1 }}><Text style={styles.aiEntryTitle}>AI健康信息整理</Text><Text style={styles.aiEntryDesc}>趋势分析 · 健康关注提示</Text></View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
         </View>
 
         <View style={{ height: spacing.xl * 2 }} />

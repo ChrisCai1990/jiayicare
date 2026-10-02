@@ -26,6 +26,7 @@ const SETTINGS = [
 const DEFAULT_SETTINGS = Object.fromEntries(SETTINGS.flatMap(group => group.items).map(item => [item.key, true]));
 
 export default function NotificationSettingsPage() {
+  const isH5 = process.env.TARO_ENV === 'h5';
   const { statusBarHeight } = useNavBar();
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
@@ -71,13 +72,13 @@ export default function NotificationSettingsPage() {
                   <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{item.label}</Text>
                   <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '2px' }}>{item.desc}</Text>
                 </View>
-                <Switch checked={settings[item.key]} onChange={() => toggle(item.key)} color={colors.primary} />
+                <Switch checked={isH5 ? false : settings[item.key]} disabled={isH5} onChange={() => toggle(item.key)} color={colors.primary} />
               </View>
             ))}
           </View>
         </View>
       ))}
-      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block' }}>关闭后仍可在“消息”页查看历史通知，仅停止新消息推送。</Text>
+      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block' }}>{isH5 ? 'App 系统推送尚未开放；新消息仍可在“健康管家”页查看。' : '关闭后仍可在“消息”页查看历史通知，仅停止新消息推送。'}</Text>
       </View>
       </ScrollView>
     </View>

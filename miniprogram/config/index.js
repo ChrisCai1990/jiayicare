@@ -3,6 +3,10 @@ const requiredReact = require('../package.json').dependencies.react;
 if (require('react/package.json').version !== requiredReact || require('react-dom/package.json').version !== requiredReact) {
   throw new Error(`小程序必须使用React ${requiredReact}；当前依赖解析错误，禁止构建上传。`);
 }
+const h5PublicPath = process.env.JIAYICARE_H5_PUBLIC_PATH || '/';
+if (h5PublicPath !== '/' && !/^\/[A-Za-z0-9/_-]+\/$/.test(h5PublicPath)) {
+  throw new Error('JIAYICARE_H5_PUBLIC_PATH 必须是以 / 开头和结尾的站内路径');
+}
 const config = {
   projectName: 'miniprogram',
   date: '2026-7-17',
@@ -54,6 +58,11 @@ const config = {
         .set('react$', require.resolve('react'))
         .set('react/jsx-runtime$', require.resolve('react/jsx-runtime'))
         .set('react/jsx-dev-runtime$', require.resolve('react/jsx-dev-runtime'))
+        // The browser PDF renderer and worker must never enter the WeApp bundle.
+        .set(
+          require('path').resolve(__dirname, '../src/utils/h5FilePreview.js') + '$',
+          require('path').resolve(__dirname, '../src/utils/miniFilePreviewStub.js'),
+        )
         .set(
           'react-reconciler$',
           require.resolve('react-reconciler', { paths: [taroReactPackage] }),
@@ -61,7 +70,17 @@ const config = {
     },
   },
   h5: {
-    publicPath: '/',
+    publicPath: h5PublicPath,
+    webpackChain(chain) {
+      // npm workspaces can hoist Taro into the root React 19 tree while this
+      // app renders with React 18. Force one React instance for every H5 chunk.
+      chain.resolve.alias
+        .set('react$', require.resolve('react'))
+        .set('react/jsx-runtime$', require.resolve('react/jsx-runtime'))
+        .set('react/jsx-dev-runtime$', require.resolve('react/jsx-dev-runtime'))
+        .set('react-dom$', require.resolve('react-dom'))
+        .set('react-dom/client$', require.resolve('react-dom/client'));
+    },
     staticDirectory: 'static',
     output: {
       filename: 'js/[name].[hash:8].js',

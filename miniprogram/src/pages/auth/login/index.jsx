@@ -8,6 +8,7 @@ import Icon from '../../../components/Icon';
 import { captureInviteCode } from '../../../utils/invitation';
 
 export default function LoginPage() {
+  const isWeapp = process.env.TARO_ENV === 'weapp';
   Taro.useLoad((options = {}) => {
     captureInviteCode(options);
   });
@@ -235,9 +236,9 @@ export default function LoginPage() {
           <Text style={{ fontSize: '12px', color: colors.textMuted }}>或</Text>
           <View style={{ height: '1px', backgroundColor: colors.border, flex: 1 }} />
         </View>
-        <Button style={{ height: '48px', lineHeight: '48px', backgroundColor: '#fff', border: `1.5px solid ${colors.border}`, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, color: colors.primary }} openType="getPhoneNumber" onGetPhoneNumber={wechatLogin} disabled={loading || !agreed}>
+        {isWeapp && <Button style={{ height: '48px', lineHeight: '48px', backgroundColor: '#fff', border: `1.5px solid ${colors.border}`, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, color: colors.primary }} openType="getPhoneNumber" onGetPhoneNumber={wechatLogin} disabled={loading || !agreed}>
           手机号快捷登录
-        </Button>
+        </Button>}
 
         <Text style={{ display: 'block', textAlign: 'center', marginTop: `${spacing.sm}px`, fontSize: '11px', color: colors.textMuted }}>
           可先浏览公开服务；购买或使用个人健康服务时再登录。
@@ -251,12 +252,12 @@ export default function LoginPage() {
           我已阅读并同意
           <Text
             style={{ color: colors.primary }}
-            onClick={() => Taro.navigateTo({ url: '/pages/legal/index?type=terms' })}
+            onClick={(e) => { e.stopPropagation?.(); Taro.navigateTo({ url: '/pages/legal/index?type=terms' }); }}
           >《用户协议》</Text>
           及
           <Text
             style={{ color: colors.primary }}
-            onClick={() => Taro.navigateTo({ url: '/pages/legal/index?type=privacy' })}
+            onClick={(e) => { e.stopPropagation?.(); Taro.navigateTo({ url: '/pages/legal/index?type=privacy' }); }}
           >《隐私政策》</Text>
           和
           <Text

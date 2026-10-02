@@ -6,7 +6,7 @@ import { screeningAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
-import { chooseImageWithPrivacy, isImagePickerCancelled, isPrivacyDeclarationMissing, showImagePickerError } from '../../../utils/imagePicker';
+import { chooseImageWithPrivacy, readSelectedImage, isImagePickerCancelled, isPrivacyDeclarationMissing, showImagePickerError } from '../../../utils/imagePicker';
 
 // 对齐 app/src/screens/records/SpecialScreeningScreen.js
 // 简化点：app端web用<input type=file>选PDF/图片；小程序用 Taro.chooseImage 只支持图片
@@ -130,18 +130,6 @@ function groupByParent(items) {
   return Object.entries(map).map(([parent, checks]) => ({ parent, checks }));
 }
 
-function fileToBase64(filePath) {
-  return new Promise((resolve, reject) => {
-    const fs = Taro.getFileSystemManager();
-    fs.readFile({
-      filePath,
-      encoding: 'base64',
-      success: (res) => resolve(res.data),
-      fail: reject,
-    });
-  });
-}
-
 export default function SpecialScreeningPage() {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
@@ -198,7 +186,7 @@ export default function SpecialScreeningPage() {
       const fileInfo = chosen.tempFiles?.[0];
       if (!filePath) return;
       setUploading(catItem.id);
-      const base64 = await fileToBase64(filePath);
+      const { base64 } = await readSelectedImage(chosen);
       await screeningAPI.upload(dbItem._id, {
         title: `${catItem.parent} · ${catItem.label}`,
         content: base64,

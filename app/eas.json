@@ -15,6 +15,15 @@
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       }
     },
+    "shared-h5-preview": {
+      "extends": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://jiaycare.com/api",
+        "EXPO_PUBLIC_SHARED_H5_URL": "https://jiaycare.com/mobile-preview/",
+        "EXPO_PUBLIC_WECHAT_APP_PAY_ENABLED": "false",
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+      }
+    },
     "production": {
       "env": {
         "EXPO_PUBLIC_API_URL": "https://app.joinwehealth.com/api"

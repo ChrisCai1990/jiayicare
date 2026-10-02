@@ -4,6 +4,10 @@ import { StatusBar } from 'expo-status-bar';
 import Navigation from './src/navigation';
 import { AuthProvider } from './src/context/AuthContext';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import SharedH5App from './src/screens/shared/SharedH5App';
+
+const sharedH5Url = process.env.EXPO_PUBLIC_SHARED_H5_URL;
+const useSharedH5 = Platform.OS !== 'web' && /^https:\/\/[^/]+(?:\/|$)/.test(sharedH5Url || '');
 
 // Web 端：把 Ionicons 字体 base64 直接注入 CSS
 // 这样完全不依赖网络路径，字体随 JS bundle 一起加载，彻底解决 404 问题
@@ -34,10 +38,10 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <StatusBar style="light" />
-        <Navigation />
-      </AuthProvider>
+      <StatusBar style="light" />
+      {useSharedH5
+        ? <SharedH5App url={sharedH5Url} />
+        : <AuthProvider><Navigation /></AuthProvider>}
     </ErrorBoundary>
   );
 }

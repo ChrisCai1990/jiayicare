@@ -1,7 +1,24 @@
 import Taro from '@tarojs/taro';
 import { paymentsAPI } from '../services/api';
+import { callNative, isNativeApp } from './appBridge';
+
+export function ensurePaymentPlatform() {
+  if (process.env.TARO_ENV !== 'weapp' && !isNativeApp()) {
+    throw new Error('当前 App 版本暂不支持微信支付，请勿重复下单；待支付接入完成后再购买');
+  }
+}
+
+export async function preparePaymentPlatform() {
+  ensurePaymentPlatform();
+  if (!isNativeApp()) return;
+  const capability = await paymentsAPI.capabilities();
+  if (!capability?.data?.app) throw new Error('App 微信支付暂不可用，请稍后再试');
+  await callNative('prepare-payment');
+}
 
 export function requestWechatPayment(params) {
+  ensurePaymentPlatform();
+  if (isNativeApp()) return callNative('wechat-pay', { params });
   if (!params?.package || !params?.paySign) return Promise.reject(new Error('微信支付信息不完整，请稍后在“我的订单”继续支付'));
   return Taro.requestPayment(params).catch((error) => {
     const cancelled = /cancel/i.test(error?.errMsg || '');

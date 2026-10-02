@@ -6,7 +6,8 @@ import { servicesAPI, authAPI, userAPI, paymentsAPI, mediaUrl } from '../../../s
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
-import { requestWechatPayment, waitForPayment } from '../../../utils/wechatPay';
+import { preparePaymentPlatform, requestWechatPayment, waitForPayment } from '../../../utils/wechatPay';
+import { isNativeApp } from '../../../utils/appBridge';
 import { maxFundDeduction } from '../../../utils/healthFundCheckout';
 import { captureInviteCode } from '../../../utils/invitation';
 
@@ -218,6 +219,9 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
       // creating a payment. A stored OpenID may belong to an earlier tester and
       // causes WeChat to reject the payment as payer/order-account mismatch.
       if (isPay && finalPrice > 0) {
+        await preparePaymentPlatform();
+      }
+      if (isPay && finalPrice > 0 && !isNativeApp()) {
         const bound = await authAPI.bindWechat();
         if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
         // 微信绑定接口只负责刷新支付 OpenID。保留结算页刚从 /user/me
@@ -493,7 +497,7 @@ export default function ServiceMallPage() {
   const [shareToken, setShareToken] = useState('');
   const routeParams = Taro.getCurrentInstance()?.router?.params || {};
 
-  useEffect(() => { Taro.showShareMenu({ menus: ['shareAppMessage'] }); }, []);
+  useEffect(() => { if (process.env.TARO_ENV === 'weapp') Taro.showShareMenu({ menus: ['shareAppMessage'] }); }, []);
 
   Taro.useShareAppMessage(() => {
     if (!detailService) return { title: '嘉医汇', path: '/pages/home/index' };
@@ -512,7 +516,7 @@ export default function ServiceMallPage() {
   useEffect(() => {
     if (!detailService) { setShareToken(''); return; }
     // 详情打开后立即恢复微信右上角原生转发，推广令牌异步补齐。
-    Taro.showShareMenu({ menus: ['shareAppMessage'] });
+    if (process.env.TARO_ENV === 'weapp') Taro.showShareMenu({ menus: ['shareAppMessage'] });
     if (!user) {
       setShareToken('');
       return;

@@ -4,7 +4,9 @@ import Taro from '@tarojs/taro';
 // 自定义导航栏适配（navigationStyle: custom 后系统胶囊按钮无法隐藏，页面需要自己计算安全区）。
 // 返回统一的顶部安全区尺寸，页面自绘的标题栏用这些值做 paddingTop/height，
 // 确保内容不被胶囊遮挡，且与胶囊按钮保持水平对齐。
-let cached = null;
+let cached = process.env.TARO_ENV === 'h5'
+  ? { statusBarHeight: 0, navBarHeight: 44, totalHeight: 44, menuRect: null }
+  : null;
 
 export default function useNavBar() {
   const [rect, setRect] = useState(cached);

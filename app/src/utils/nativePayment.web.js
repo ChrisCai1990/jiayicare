@@ -4,3 +4,6 @@ export async function prepareNativePayment() {
 export async function completeNativePayment() {
   throw new Error('请在嘉医汇App或微信小程序中查看订单并支付');
 }
+export async function requestNativePayment() {
+  throw new Error('请在嘉医汇App或微信小程序中完成支付');
+}

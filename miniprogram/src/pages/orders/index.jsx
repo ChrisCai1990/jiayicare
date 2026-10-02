@@ -5,7 +5,8 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { authAPI, ordersAPI, paymentsAPI } from '../../services/api';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
-import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
+import { preparePaymentPlatform, requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
+import { isNativeApp } from '../../utils/appBridge';
 import { ORDER_TABS, formatOrderTime, getOrderCategory, getOrderCounts } from '../../utils/orderStatus';
 
 const STATUS_META = {
@@ -83,8 +84,11 @@ export default function OrdersPage() {
     if (payingRef.current) return;
     payingRef.current = true;
     try {
-      const bound = await authAPI.bindWechat();
-      if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
+      await preparePaymentPlatform();
+      if (!isNativeApp()) {
+        const bound = await authAPI.bindWechat();
+        if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
+      }
       const result = await paymentsAPI.retry(id);
       if (!result.success) throw new Error(result.message || '发起支付失败');
       if (result.data?.paymentParams) {

@@ -43,6 +43,19 @@ class PageErrorBoundary extends Component {
 class App extends Component {
   unreadPollTimer = null;
   refreshUnread = () => refreshUnreadBadge({ notify: true });
+  startUnreadPoll = () => {
+    clearInterval(this.unreadPollTimer);
+    this.refreshUnread();
+    this.unreadPollTimer = setInterval(this.refreshUnread, 5000);
+  };
+  stopUnreadPoll = () => {
+    clearInterval(this.unreadPollTimer);
+    this.unreadPollTimer = null;
+  };
+  onVisibilityChange = () => {
+    if (document.hidden) this.stopUnreadPoll();
+    else this.startUnreadPoll();
+  };
 
   componentDidMount() {
     try {
@@ -50,6 +63,14 @@ class App extends Component {
       captureInviteCode(launch.query || {});
       captureEntrySource(launch.query || {});
     } catch {}
+    if (process.env.TARO_ENV === 'h5') {
+      document.addEventListener('visibilitychange', this.onVisibilityChange);
+      if (!document.hidden) this.startUnreadPoll();
+    }
+  }
+  componentWillUnmount() {
+    this.stopUnreadPoll();
+    if (process.env.TARO_ENV === 'h5') document.removeEventListener('visibilitychange', this.onVisibilityChange);
   }
   componentDidShow() {
     try {
@@ -57,11 +78,9 @@ class App extends Component {
       captureInviteCode(entry.query || {});
       captureEntrySource(entry.query || {});
     } catch {}
-    this.refreshUnread();
-    clearInterval(this.unreadPollTimer);
-    this.unreadPollTimer = setInterval(this.refreshUnread, 5000);
+    if (process.env.TARO_ENV !== 'h5') this.startUnreadPoll();
   }
-  componentDidHide() { clearInterval(this.unreadPollTimer); this.unreadPollTimer = null; }
+  componentDidHide() { if (process.env.TARO_ENV !== 'h5') this.stopUnreadPoll(); }
 
   // this.props.children 是将要会渲染的页面
   render() {

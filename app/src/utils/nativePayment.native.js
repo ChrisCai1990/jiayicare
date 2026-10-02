@@ -12,13 +12,15 @@ function bounded(promise, ms = 15000) {
     timer = setTimeout(() => reject(new Error('微信未响应，请返回我的订单确认状态')), ms);
   })]).finally(() => clearTimeout(timer));
 }
-export async function prepareNativePayment() {
+export async function prepareNativePayment({ capabilityChecked = false } = {}) {
   if (process.env.EXPO_PUBLIC_WECHAT_APP_PAY_ENABLED !== 'true' || !/^wx[0-9a-f]{16}$/i.test(appid)) {
     throw new Error('App微信支付正在开通中，请稍后再试');
   }
   if (Platform.OS === 'ios' && !/^https:\/\//.test(universalLink)) throw new Error('微信支付回跳尚未配置');
-  const capability = await paymentsAPI.capabilities();
-  if (!capability?.data?.app) throw new Error('App微信支付暂不可用，请稍后再试');
+  if (!capabilityChecked) {
+    const capability = await paymentsAPI.capabilities();
+    if (!capability?.data?.app) throw new Error('App微信支付暂不可用，请稍后再试');
+  }
   // Load only after an explicit purchase action; no SDK initialization on launch.
   const sdk = require('expo-native-wechat');
   if (!registration) registration = bounded(Promise.resolve(sdk.registerApp({ appid, universalLink }))).then(result => {
@@ -37,5 +39,17 @@ export async function completeNativePayment(result) {
       const response = await bounded(require('expo-native-wechat').requestPayment(params), 120000);
       if (response?.errorCode !== 0) throw new Error('微信付款未确认');
     }, paymentsAPI.status);
+  } finally { active = false; }
+}
+// The shared H5 page confirms the order with its own authenticated session.
+// This native method only invokes the WeChat SDK and never marks an order paid.
+export async function requestNativePayment(params) {
+  if (active) throw new Error('已有付款正在确认，请稍后查看订单');
+  active = true;
+  try {
+    if (params?.appId !== appid || params?.package !== 'Sign=WXPay') throw new Error('微信支付参数与当前应用不匹配');
+    await prepareNativePayment({ capabilityChecked: true });
+    const response = await bounded(require('expo-native-wechat').requestPayment(params), 120000);
+    if (response?.errorCode !== 0) throw new Error('微信付款未确认');
   } finally { active = false; }
 }

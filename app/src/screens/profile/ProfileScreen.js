@@ -9,6 +9,7 @@ import { colors, spacing, radius } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { ordersAPI, userAPI } from '../../services/api';
 import Avatar, { AvatarOnDark } from '../../components/Avatar';
+import { getOrderBadgeCounts } from '../../utils/orderStatus';
 
 const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
 
@@ -287,7 +288,7 @@ function LogoutModal({ visible, onConfirm, onCancel }) {
 export default function ProfileScreen({ navigation }) {
   const { user, isDemo, logout, updateUser } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
-  const [pendingOrders, setPendingOrders] = useState(0);
+  const [orderCounts, setOrderCounts] = useState({ payment: 0, service: 0, progress: 0, afterSale: 0 });
   const [notifLabel, setNotifLabel] = useState('');
 
   // 每次切换到此页时，重新拉取用户数据以刷新健康基金、服务包等动态字段
@@ -295,6 +296,9 @@ export default function ProfileScreen({ navigation }) {
   useFocusEffect(useCallback(() => {
     userAPI.getMe().then(res => {
       if (res.success && res.data) updateUser(res.data);
+    }).catch(() => {});
+    ordersAPI.list().then(res => {
+      if (res.success) setOrderCounts(getOrderBadgeCounts(res.data || []));
     }).catch(() => {});
   }, []));
 
@@ -331,16 +335,6 @@ export default function ProfileScreen({ navigation }) {
   })();
 
   useEffect(() => {
-    // 待跟进订单数
-    (async () => {
-      try {
-        const res = await ordersAPI.list();
-        if (res.success) {
-          setPendingOrders(res.data.filter(o => o.status === 'pending').length);
-        }
-      } catch {}
-    })();
-
     // 通知设置摘要
     try {
       const raw = localStorage.getItem('jy_notif_settings');
@@ -431,77 +425,39 @@ export default function ProfileScreen({ navigation }) {
           ) : null}
         </View>
 
-        {/* ── 家庭成员 ─────────────────────────────────────────── */}
         <View style={styles.section}>
-          <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>家庭成员</Text>
-            <TouchableOpacity style={styles.sectionLink} onPress={() => navigation.navigate('FamilyMembers')}>
-              <Ionicons name="add" size={14} color={colors.primary} />
-              <Text style={styles.sectionLinkText}>管理</Text>
+          <View style={[styles.menuCard, { padding: 14 }]}>
+            <TouchableOpacity onPress={() => navigation.navigate('Orders')} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>我的订单</Text>
+              <Text style={{ fontSize: 12, color: colors.textMuted }}>全部订单 ›</Text>
             </TouchableOpacity>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: spacing.sm, paddingBottom: 2 }}>
-            <TouchableOpacity style={styles.addFamilyCard} onPress={() => navigation.navigate('FamilyMembers')}>
-              <View style={styles.addFamilyCircle}>
-                <Ionicons name="add" size={20} color={colors.primary} />
-              </View>
-              <Text style={styles.addFamilyLabel}>添加成员</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-
-        {/* ── 健康管理 ─────────────────────────────────────────── */}
-        {/* 健康档案/体检报告已从本页移除（2026-07-18 去重）：底部导航"健康档案"Tab + "上传报告"Tab已是完整入口 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>健康管理</Text>
-          <View style={styles.menuCard}>
-            <MenuItem icon="clipboard-outline"     iconColor="#7C3AED" label="健康方案"              onPress={() => navigation.navigate('ServicePlans')} />
-            <MenuItem icon="medkit-outline"        iconColor="#D97706" label="用药管理"              onPress={() => navigation.navigate('Medication')} />
-            <MenuItem icon="leaf-outline"          iconColor="#22A06B" label="营养素管理"            onPress={() => navigation.navigate('Nutrition')} isLast />
-          </View>
-        </View>
-
-        {/* ── 我的健康管家团队（2026-07-18 从首页移入）──────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>我的健康管家团队</Text>
-          {careTeam.length === 0 ? (
-            <View style={styles.teamEmpty}>
-              <Ionicons name="people-outline" size={24} color={colors.textMuted} />
-              <Text style={styles.teamEmptyText}>健管团队待分配，完成服务包开通后即可配置</Text>
+            <View style={{ flexDirection: 'row' }}>
+              {[
+                { key: 'payment', label: '待支付', icon: 'card-outline' },
+                { key: 'service', label: '待服务', icon: 'calendar-outline' },
+                { key: 'progress', label: '进行中', icon: 'time-outline' },
+                { key: 'afterSale', label: '退款/售后', icon: 'refresh-outline' },
+              ].map(item => <TouchableOpacity key={item.key} onPress={() => navigation.navigate('Orders', { tab: item.key })} style={{ flex: 1, alignItems: 'center', paddingVertical: 5 }}>
+                <View><Ionicons name={item.icon} size={22} color={colors.textSecondary} />{orderCounts[item.key] > 0 && <Text style={{ position: 'absolute', top: -9, right: -13, color: colors.white, backgroundColor: colors.danger, borderRadius: 10, overflow: 'hidden', fontSize: 10, paddingHorizontal: 5 }}>{Math.min(orderCounts[item.key], 99)}</Text>}</View>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 7 }}>{item.label}</Text>
+              </TouchableOpacity>)}
             </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.teamScrollContent}
-            >
-              {careTeam.map((member, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.teamCard}
-                  activeOpacity={0.8}
-                  onPress={() => navigation.navigate('Messages')}
-                >
-                  <View style={[styles.teamAvatar, { backgroundColor: member.bg }]}>
-                    <Text style={styles.teamAvatarText}>{member.name[0]}</Text>
-                    <View style={[styles.teamOnlineDot, { backgroundColor: member.online ? '#22A06B' : '#C0C0C0' }]} />
-                  </View>
-                  <Text style={styles.teamName}>{member.name}</Text>
-                  <Text style={styles.teamRole}>{member.role}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
+          </View>
         </View>
 
-        {/* ── 我的服务 ─────────────────────────────────────────── */}
-        {/* "服务群组""评价服务"暂无开发计划，先隐藏占位入口，避免点进去只有提示文案（2026-07-19） */}
+        {/* 小程序“我的”页将高频入口放在订单之后；团队沟通由健康管家 Tab 承担。 */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>我的服务</Text>
-          <View style={styles.menuCard}>
-            <MenuItem icon="receipt-outline"  iconColor={colors.primary} label="我的订单"  badge={pendingOrders > 0 ? pendingOrders : undefined} onPress={() => navigation.navigate('Orders')} />
-            <MenuItem icon="gift-outline"     iconColor="#D97706" label="会员权益"              onPress={() => navigation.navigate('Benefits')} isLast />
+          <Text style={styles.sectionTitle}>常用功能</Text>
+          <View style={[styles.menuCard, { flexDirection: 'row', flexWrap: 'wrap' }]}>
+            {[
+              { label: '健康方案', icon: 'clipboard-outline', color: '#7C3AED', route: 'ServicePlans' },
+              { label: '用药管理', icon: 'medkit-outline', color: '#D97706', route: 'Medication' },
+              { label: '营养管理', icon: 'leaf-outline', color: '#22A06B', route: 'Nutrition' },
+              { label: '家庭成员', icon: 'people-outline', color: colors.primary, route: 'FamilyMembers' },
+            ].map((item, index) => <TouchableOpacity key={item.label} onPress={() => navigation.navigate(item.route)} style={{ width: '50%', flexDirection: 'row', alignItems: 'center', gap: 9, padding: 15, borderRightWidth: index % 2 === 0 ? 1 : 0, borderBottomWidth: index < 2 ? 1 : 0, borderColor: colors.borderLight }}>
+              <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: `${item.color}20`, alignItems: 'center', justifyContent: 'center' }}><Ionicons name={item.icon} size={18} color={item.color} /></View>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>{item.label}</Text>
+            </TouchableOpacity>)}
           </View>
         </View>
 
@@ -509,6 +465,7 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>账号设置</Text>
           <View style={styles.menuCard}>
+            <MenuItem icon="gift-outline" iconColor="#8e44ad" label="会员权益" onPress={() => navigation.navigate('Benefits')} />
             <MenuItem icon="notifications-outline" iconColor="#7C3AED" label="消息通知" value={notifLabel} onPress={() => navigation.navigate('NotificationSettings')} />
             <MenuItem icon="chatbubbles-outline" iconColor="#0077B6" label="服务消息" onPress={() => navigation.navigate('Messages')} />
             <MenuItem icon="lock-closed-outline"   iconColor="#22A06B" label="账号安全"            onPress={() => navigation.navigate('AccountSecurity')} />

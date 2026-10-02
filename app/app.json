@@ -23,7 +23,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "需要访问相册，以便上传体检报告照片",
-        "NSCameraUsageDescription": "需要使用相机，以便拍摄体检报告"
+        "NSCameraUsageDescription": "需要使用相机，以便拍摄体检报告",
+        "NSMicrophoneUsageDescription": "需要使用麦克风，以便向健康服务团队发送语音消息"
       }
     },
     "android": {
@@ -33,10 +34,11 @@
       },
       "edgeToEdgeEnabled": false,
       "package": "com.jiayicare.app",
-      "versionCode": 5,
+      "versionCode": 6,
       "permissions": [
         "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "READ_MEDIA_IMAGES",
+        "RECORD_AUDIO"
       ]
     },
     "web": {

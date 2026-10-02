@@ -6,8 +6,10 @@ import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, tt
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
-import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
-import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
+import { chooseImageWithPrivacy, readSelectedImage, showImagePickerError } from '../../utils/imagePicker';
+import { preparePaymentPlatform, requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
+import { isNativeApp } from '../../utils/appBridge';
+import { createH5Recorder, createH5AudioPlayer } from '../../utils/h5Audio';
 import { refreshUnreadBadge, withUnreadBadgeUpdate } from '../../utils/unreadBadge';
 import { consumeManagerConversation } from '../../utils/managerConversation';
 import { createRefreshController } from '../../utils/refreshController';
@@ -552,7 +554,9 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     paymentActivityRef.current = true;
     setPaying(true); setPayError('');
     try {
-      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
+      if (finalPrice > 0) await preparePaymentPlatform();
+      const nativeApp = isNativeApp() && finalPrice > 0;
+      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod, paymentCapability: nativeApp ? 'wechat_app_v1' : 'wechat_jsapi_v1', ...(nativeApp ? { paymentScene: 'app' } : {}), expectedAmount: finalPrice });
       if (result.code === 'CHECKOUT_QUOTE_CHANGED') { setCheckoutQuote(result.summary); throw new Error(result.message); }
       if (!result.success) throw new Error(result.message || '下单失败，请稍后重试');
       if (result.summary) setCheckoutQuote(result.summary);
@@ -844,25 +848,20 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
   const chooseFoodImage = async () => {
     try {
       const result = await chooseImageWithPrivacy({ count: Math.max(1, 9 - foodImages.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const next = (result.tempFilePaths || []).map((path) => {
-        const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
-        const ext = (path.split('.').pop() || 'jpg').toLowerCase();
-        const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-        return { path, mimeType, data: `data:${mimeType};base64,${base64}` };
-      });
+      const next = await Promise.all((result.tempFilePaths || []).map((_, index) => readSelectedImage(result, index)));
       setFoodImages((prev) => [...prev, ...next].slice(0, 9));
     } catch (err) {
       showImagePickerError(err);
     }
   };
 
-  const sendVoiceFile = async ({ tempFilePath, duration = 0 }) => {
-    if (!tempFilePath || sending) return;
+  const sendVoiceFile = async ({ tempFilePath, data, mimeType = 'audio/mpeg', duration = 0 }) => {
+    if ((!tempFilePath && !data) || sending) return;
     setSending(true);
     try {
-      const base64 = Taro.getFileSystemManager().readFileSync(tempFilePath, 'base64');
+      const content = data || `data:audio/mpeg;base64,${Taro.getFileSystemManager().readFileSync(tempFilePath, 'base64')}`;
       const res = await messagesAPI.send(role, '', {
-        audio: { data: `data:audio/mpeg;base64,${base64}`, mimeType: 'audio/mpeg', duration: Math.max(1, Math.ceil(duration / 1000)) },
+        audio: { data: content, mimeType, duration: Math.max(1, Math.ceil(duration / 1000)) },
       });
       if (!res?.success) throw new Error(res?.message || '语音发送失败');
       pollRef.current?.invalidate();
@@ -881,7 +880,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     recordingCancelledRef.current = false;
     setRecordingCancelling(false);
     setRecordingSeconds(0);
-    const recorder = recorderRef.current || Taro.getRecorderManager();
+    const recorder = recorderRef.current || (process.env.TARO_ENV === 'h5' ? createH5Recorder() : Taro.getRecorderManager());
     recorderRef.current = recorder;
     recorder.offStart?.(); recorder.offError?.();
     recorder.onStart(() => {
@@ -889,17 +888,18 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = setInterval(() => setRecordingSeconds((value) => Math.min(60, value + 1)), 1000);
     });
-    recorder.onError(() => {
+    recorder.onError((error) => {
       clearInterval(recordingTimerRef.current);
       setRecording(false);
-      Taro.showToast({ title: '请允许使用麦克风', icon: 'none' });
+      Taro.showToast({ title: error?.message || '请允许使用麦克风', icon: 'none' });
     });
     recorder.start({ duration: 60000, format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000 });
   };
 
   const stopRecording = (cancel = false) => {
     const recorder = recorderRef.current;
-    if (!recorder || !recording) return;
+    if (!recorder) return;
+    if (!recording) { if (process.env.TARO_ENV === 'h5') recorder.stop(); return; }
     recordingCancelledRef.current = cancel;
     clearInterval(recordingTimerRef.current);
     recorder.offStop?.();
@@ -950,7 +950,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     if (!url) return;
     if (playingMessageId === messageId) { stopPlayback(); return; }
     stopPlayback();
-    const player = Taro.createInnerAudioContext();
+    const player = process.env.TARO_ENV === 'h5' ? createH5AudioPlayer() : Taro.createInnerAudioContext();
     audioPlayerRef.current = player;
     player.onPlay?.(() => { setVoiceLoadingId(''); setPlayingMessageId(messageId); });
     player.onEnded?.(() => {

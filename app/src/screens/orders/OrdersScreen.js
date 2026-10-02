@@ -9,6 +9,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { ordersAPI, paymentsAPI } from '../../services/api';
 import { prepareNativePayment, completeNativePayment } from '../../utils/nativePayment';
 import { tradeLabel, canCancelOrder } from '../../utils/orderPaymentStatus';
+import { getOrderCategory, getOrderBadgeCounts } from '../../utils/orderStatus';
 import EmptyState from '../../components/EmptyState';
 
 // ── 订单状态配置 ──────────────────────────────────────────────────
@@ -19,8 +20,9 @@ const STATUS_CONFIG = {
   cancelled: { label: '已取消', bg: '#F5F5F5', color: '#8AA89C', icon: 'close-circle-outline' },
 };
 
-const FILTER_TABS = ['全部', '待支付', '待联系', '已安排', '已完成', '已取消'];
-const STATUS_MAP  = { '待联系': 'pending', '已安排': 'scheduled', '已完成': 'completed', '已取消': 'cancelled' };
+const FILTER_TABS = ['全部', '待支付', '待服务', '进行中', '已完成', '退款/售后'];
+const CATEGORY_BY_TAB = { '待支付': 'payment', '待服务': 'service', '进行中': 'progress', '已完成': 'completed', '退款/售后': 'afterSale' };
+const TAB_BY_KEY = { payment: '待支付', service: '待服务', progress: '进行中', completed: '已完成', afterSale: '退款/售后' };
 
 function fmtDate(str) {
   try {
@@ -193,7 +195,7 @@ export default function OrdersScreen({ navigation, route }) {
   const [orders, setOrders]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab]   = useState('全部');
+  const [activeTab, setActiveTab]   = useState(TAB_BY_KEY[route?.params?.tab] || '全部');
   const [loadError, setLoadError] = useState('');
   const [paying, setPaying] = useState(false);
   const payingRef = useRef(false);
@@ -221,6 +223,7 @@ export default function OrdersScreen({ navigation, route }) {
   }, []);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
+  useEffect(() => { if (route?.params?.tab) setActiveTab(TAB_BY_KEY[route.params.tab] || '全部'); }, [route?.params?.tab]);
   useEffect(() => {
     const refresh = () => { loadOrders(); };
     const unfocus = navigation?.addListener?.('focus', refresh);
@@ -276,11 +279,10 @@ export default function OrdersScreen({ navigation, route }) {
   const filtered = orders.filter(o => {
     if (route?.params?.orderId && String(o._id) !== String(route.params.orderId)) return false;
     if (activeTab === '全部') return true;
-    if (activeTab === '待支付') return o.tradeStatus === 'awaiting_payment';
-    return o.status === STATUS_MAP[activeTab];
+    return getOrderCategory(o) === CATEGORY_BY_TAB[activeTab];
   });
 
-  const pendingCount = orders.filter(o => o.status === 'pending').length;
+  const pendingCount = getOrderBadgeCounts(orders).service;
 
   return (
     <SafeAreaView style={styles.container}>

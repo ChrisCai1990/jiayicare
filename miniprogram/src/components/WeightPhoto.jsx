@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { View, Text, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { recordsAPI } from '../services/api';
-import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePicker';
+import { chooseImageWithPrivacy, readSelectedImage, isImagePickerCancelled } from '../utils/imagePicker';
 
 const box = { padding: '12px', margin: '12px 0', background: '#edf6f1', borderRadius: '12px' };
 const field = { background: '#fff', padding: '10px', margin: '8px 0', border: '1px solid #cedbd3', borderRadius: '6px' };
@@ -31,11 +31,8 @@ export default function WeightPhoto({ onSaved }) {
       const consent = await Taro.showModal({ title: '体重照片识别', content: '将所选体重秤照片发送至阿里云通义千问识别。请仅拍摄屏幕，避免包含姓名等无关信息。识别仅辅助录入，核对确认后才保存原图和数据。', confirmText: '同意选图' });
       if (!consent.confirm) return;
       const selected = await chooseImageWithPrivacy({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const path = selected.tempFilePaths[0];
-      const data = Taro.getFileSystemManager().readFileSync(path, 'base64');
-      if (data.length > 8 * 1024 * 1024) throw new Error('图片超过6MB，请压缩或重新拍摄');
-      const mime = /\.png$/i.test(path) ? 'png' : /\.webp$/i.test(path) ? 'webp' : 'jpeg';
-      const image = 'data:image/' + mime + ';base64,' + data;
+      const { path, data: image, base64 } = await readSelectedImage(selected);
+      if (base64.length > 8 * 1024 * 1024) throw new Error('图片超过6MB，请压缩或重新拍摄');
       setDraft(null); setConfirmed(false); setValue(''); setUnit('kg'); setPhoto({ path, image }); setWhen(localTime());
       const result = await recordsAPI.recognizeWeight(image);
       setDraft(result.data);

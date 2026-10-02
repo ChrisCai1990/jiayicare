@@ -648,13 +648,16 @@ function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo
 
 export default function MessagesScreen({ navigation, route }) {
   const { isDemo, user } = useAuth();
-  const careTeamKinds = new Set((user?.careTeam || []).map(m => m.kind));
+  const careTeam = Array.isArray(user?.careTeam) ? user.careTeam : [];
+  const careTeamKinds = new Set(careTeam.map(m => m?.kind).filter(Boolean));
+  const careTeamMember = key => careTeam.find(member => member?.kind === ({ doctor: 'familyDoctor', manager: 'healthManager', planner: 'healthPlanner', nutritionist: 'nutritionist', medicalAssistant: 'medicalAssistant' }[key])) || null;
   const hasRole = (key) => {
     if (isDemo) return true;
     if (key === 'doctor') return careTeamKinds.has('familyDoctor');
     if (key === 'nutritionist') return careTeamKinds.has('nutritionist');
     if (key === 'manager') return careTeamKinds.has('healthManager');
-    if (key === 'planner') return careTeamKinds.has('healthPlanner');
+    if (key === 'planner') return true;
+    if (key === 'medicalAssistant') return careTeamKinds.has('medicalAssistant');
     return false;
   };
   const [activeTab, setActiveTab] = useState('全部');
@@ -665,6 +668,7 @@ export default function MessagesScreen({ navigation, route }) {
   const [replyTo, setReplyTo] = useState('manager');
   const [threadRole, setThreadRole] = useState(null);
   const [showNotifModal, setShowNotifModal] = useState(false);
+  const [notifTab, setNotifTab] = useState('全部');
 
   useEffect(() => {
     if (route?.params?.openRole !== 'manager') return;
@@ -762,32 +766,32 @@ export default function MessagesScreen({ navigation, route }) {
     { key: 'manager',      label: '健管专员', icon: 'person',            color: '#D97706'      },
     { key: 'planner',      label: '健康规划师', icon: 'map-outline',      color: '#2563EB'      },
     { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
+    { key: 'medicalAssistant', label: '就医专员', icon: 'medkit-outline', color: '#7C3AED' },
   ];
 
-  const notifMessages = messages.filter(m => NOTIF_TYPES.has(m.type) && !m.conversationId);
+  const notifMessages = messages.filter(m => NOTIF_TYPES.has(m.type));
 
   // 每个角色的最新消息和未读数
   const roleConvs = ROLE_DEFS.map(r => {
-    const msgs = messages.filter(m =>
-      m.type === r.key ||
-      (m.conversationId && m.conversationId.endsWith(`_${r.key}`))
-    );
+    const msgs = messages.filter(m => !NOTIF_TYPES.has(m.type) && (
+      m.conversationId ? String(m.conversationId).endsWith(`_${r.key}`) : m.type === r.key
+    ));
     const last = msgs[0];
-    const unread = msgs.filter(m => m.unread).length;
-    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role', assigned: hasRole(r.key) };
+    const unread = msgs.filter(m => m.type !== 'user' && m.unread).length;
+    return { ...r, last, unread, kind: 'role', assigned: hasRole(r.key), hasHistory: msgs.length > 0, member: careTeamMember(r.key) };
   });
 
-  // 系统通知行
-  const notifLast = notifMessages[0];
-  const notifUnread = notifMessages.filter(m => m.unread).length;
-  const notifConv = {
-    key: '__notif__', label: '系统通知', icon: 'notifications', color: '#8A4AC7',
-    last: notifLast, unread: notifUnread,
-    lastTime: notifLast ? new Date(notifLast.createdAt).getTime() : 0,
-    kind: 'notif',
+  const extraTeamMeta = {
+    specialist: { label: '专科医师', icon: 'medical-outline', color: '#2563EB' },
+    tcmDoctor: { label: '中医师', icon: 'leaf-outline', color: '#7C3AED' },
+    psychologist: { label: '心理咨询师', icon: 'heart-outline', color: '#8A4AC7' },
+    rehabSpecialist: { label: '运动复健师', icon: 'fitness-outline', color: '#0891B2' },
   };
+  const extraTeamMembers = careTeam.filter(member => extraTeamMeta[member?.kind]).map(member => ({ ...extraTeamMeta[member.kind], key: member.kind, member, assigned: true, kind: 'profile' }));
+  const assignedTeamCount = roleConvs.filter(conv => conv.assigned).length + extraTeamMembers.length;
 
-  const convList = [...roleConvs, notifConv].sort((a, b) => b.lastTime - a.lastTime);
+  // 系统通知行
+  const convList = [...roleConvs, ...extraTeamMembers];
 
   const totalUnread = messages.filter(m => m.unread).length;
 
@@ -807,21 +811,25 @@ export default function MessagesScreen({ navigation, route }) {
         style={{ flex: 1 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadMessages(); }} tintColor={colors.primary} />}
       >
-        <View style={[styles.sectionCard, { marginTop: 8 }]}>
+        <View style={{ marginHorizontal: spacing.md, marginTop: 10, marginBottom: 8, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+          <View><Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>健康服务团队</Text><Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>{assignedTeamCount ? `已配置 ${assignedTeamCount} 位服务人员` : '开通相应服务后为您配置专属人员'}</Text></View>
+          {assignedTeamCount > 0 && <Text style={{ fontSize: 11, color: colors.primary, backgroundColor: '#E8F5EF', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4 }}>服务中</Text>}
+        </View>
+        <View style={{ marginHorizontal: spacing.sm }}>
           {convList.map((conv, i) => {
-            const unassigned = conv.kind === 'role' && conv.assigned === false;
+            const unassigned = conv.kind === 'role' && conv.assigned === false && !conv.hasHistory;
             const preview = unassigned
               ? `您尚未配备${conv.label}，暂不提供此项服务`
-              : conv.last?.content || conv.last?.title || (conv.kind === 'notif' ? '暂无通知' : '暂无消息');
+              : conv.last?.content || conv.last?.title || (conv.member ? '已加入您的服务团队，可在这里查看沟通与服务消息' : '暂无消息');
             const onPress = unassigned
               ? () => {}
-              : conv.kind === 'notif'
-              ? () => setShowNotifModal(true)
+              : conv.kind === 'profile'
+              ? () => {}
               : () => setThreadRole(conv.key);
 
             return (
-              <View key={conv.key}>
-                <TouchableOpacity style={styles.chatRow} onPress={onPress} activeOpacity={unassigned ? 1 : 0.7} disabled={unassigned}>
+              <View key={conv.key} style={{ marginBottom: 9, borderRadius: radius.md, overflow: 'hidden', borderWidth: 1, borderColor: unassigned ? colors.border : `${conv.color}30`, backgroundColor: colors.white }}>
+                <TouchableOpacity style={styles.chatRow} onPress={onPress} activeOpacity={unassigned ? 1 : 0.7} disabled={unassigned || conv.kind === 'profile'}>
                   <View style={[styles.chatAvatar, { backgroundColor: unassigned ? colors.border : conv.color }]}>
                     <Ionicons name={conv.icon} size={20} color={unassigned ? colors.textMuted : '#fff'} />
                     {conv.unread > 0 && !unassigned && (
@@ -832,7 +840,7 @@ export default function MessagesScreen({ navigation, route }) {
                   </View>
                   <View style={styles.chatBody}>
                     <View style={styles.chatTopRow}>
-                      <Text style={[styles.chatName, unassigned && { color: colors.textMuted }]}>{conv.label}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}><Text style={[styles.chatName, unassigned && { color: colors.textMuted }]}>{conv.member?.name || conv.label}</Text>{!!conv.member?.name && <Text style={{ fontSize: 10, color: conv.color, backgroundColor: `${conv.color}14`, borderRadius: 12, paddingHorizontal: 6, paddingVertical: 2 }}>{conv.member.role || conv.label}</Text>}</View>
                       {conv.last && !unassigned && <Text style={styles.chatTime}>{fmtMsgTime(conv.last.createdAt)}</Text>}
                     </View>
                     <Text style={[styles.chatPreview, conv.unread > 0 && !unassigned && { color: colors.textPrimary, fontWeight: '500' }]} numberOfLines={1}>
@@ -841,10 +849,22 @@ export default function MessagesScreen({ navigation, route }) {
                   </View>
                   {!unassigned && <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />}
                 </TouchableOpacity>
-                {i < convList.length - 1 && <View style={styles.rowDivider} />}
               </View>
             );
           })}
+        </View>
+
+        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginHorizontal: spacing.md, marginTop: 8, marginBottom: 10 }}>消息与提醒</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: spacing.sm }}>
+          {[
+            { label: '待填问卷', icon: 'create-outline', color: '#0077B6', count: notifMessages.filter(m => m.type === 'questionnaire' && m.unread).length },
+            { label: '每日关怀', icon: 'heart-outline', color: '#8A4AC7', count: notifMessages.filter(m => m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`) && m.unread).length },
+            { label: '系统通知', icon: 'notifications-outline', color: colors.primary, count: notifMessages.filter(m => m.type !== 'questionnaire' && !(m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`)) && m.unread).length },
+          ].map(item => <TouchableOpacity key={item.label} onPress={() => { setNotifTab(item.label); setShowNotifModal(true); }} style={{ flex: 1, minWidth: 0, backgroundColor: colors.white, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center' }}>
+            <Ionicons name={item.icon} size={22} color={item.color} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textPrimary, marginTop: 8 }}>{item.label}</Text>
+            {item.count > 0 && <Text style={{ position: 'absolute', top: 5, right: 7, fontSize: 10, color: colors.white, backgroundColor: colors.danger, overflow: 'hidden', borderRadius: 10, paddingHorizontal: 5 }}>{item.count}</Text>}
+          </TouchableOpacity>)}
         </View>
 
         <View style={{ height: spacing.xl * 2 }} />
@@ -858,6 +878,7 @@ export default function MessagesScreen({ navigation, route }) {
       )}
       <NotificationListModal
         visible={showNotifModal}
+        initialTab={notifTab}
         messages={notifMessages}
         onClose={() => setShowNotifModal(false)}
         onPress={(msg) => { setShowNotifModal(false); handlePress(msg); }}
@@ -885,13 +906,15 @@ const NOTIF_TYPE_CONFIG = {
   notice:        { icon: 'megaphone-outline',     color: '#666',    label: '通知' },
 };
 
-function NotificationListModal({ visible, messages, onClose, onPress, onMarkRead }) {
-  const [tab, setTab] = useState('全部');
-  const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
+function NotificationListModal({ visible, initialTab, messages, onClose, onPress, onMarkRead }) {
+  const [tab, setTab] = useState(initialTab);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
 
   const filtered = messages.filter(m => {
-    if (tab === '系统') return m.type === 'system';
-    if (tab === '推送') return PUSH_TYPES.has(m.type);
+    const dailyCare = m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`);
+    if (tab === '待填问卷') return m.type === 'questionnaire';
+    if (tab === '每日关怀') return dailyCare;
+    if (tab === '系统通知') return m.type !== 'questionnaire' && !dailyCare;
     return true;
   });
 
@@ -912,12 +935,12 @@ function NotificationListModal({ visible, messages, onClose, onPress, onMarkRead
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
             <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginRight: 24 }}>系统通知</Text>
+          <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginRight: 24 }}>{tab}</Text>
         </View>
 
         {/* Tab 胶囊 */}
         <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, marginVertical: spacing.sm, backgroundColor: '#EEEAE3', borderRadius: radius.sm, padding: 3 }}>
-          {['全部', '系统', '推送'].map(t => (
+          {['全部', '待填问卷', '每日关怀', '系统通知'].map(t => (
             <TouchableOpacity key={t} style={[{ flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: radius.xs }, tab === t && { backgroundColor: colors.white }]} onPress={() => setTab(t)}>
               <Text style={[{ fontSize: 13, color: colors.textMuted, fontWeight: '500' }, tab === t && { color: colors.textPrimary, fontWeight: '600' }]}>{t}</Text>
             </TouchableOpacity>
@@ -978,6 +1001,7 @@ const ROLE_META = {
   manager:      { label: '健管专员', icon: 'person',            color: '#D97706'      },
   planner:      { label: '健康规划师', icon: 'map-outline',      color: '#2563EB'      },
   nutritionist: { label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
+  medicalAssistant: { label: '就医专员', icon: 'medkit-outline', color: '#7C3AED' },
 };
 
 // 聊天内日期分隔条文案：今天/昨天/具体日期，与 ChatScreen.js/AiHealthScreen.js 保持一致

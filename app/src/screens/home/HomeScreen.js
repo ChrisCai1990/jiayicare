@@ -97,7 +97,7 @@ function TaskItem({ task, isLast, onPress, onUpload }) {
   const iconCfg = task.uploadReminder ? {icon:'cloud-upload-outline',bg:'#E8F3FB',color:colors.primary} : TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.checkup;
 
   return (
-    <View style={!isLast && styles.taskItemBorder}><TouchableOpacity
+    <View style={styles.arrangementCard}><TouchableOpacity
       style={styles.taskItem}
       activeOpacity={0.7}
       onPress={() => onPress && onPress(task)}
@@ -128,7 +128,7 @@ function ReminderItem({ reminder, isLast }) {
   const meta = REM_CAT_META[reminder.category] || REM_CAT_META.medication;
   const time = reminder.reminderTime || '';
   return (
-    <View style={[styles.taskItem, !isLast && styles.taskItemBorder]}>
+    <View style={[styles.taskItem, styles.arrangementCard]}>
       <View style={[styles.taskIconWrap, { backgroundColor: meta.bg }]}>
         <Ionicons name={meta.icon} size={20} color={meta.color} />
       </View>
@@ -427,42 +427,14 @@ export default function HomeScreen({ navigation }) {
 
           <View style={{backgroundColor:'#fff',borderRadius:20,padding:20,marginBottom:22}}>
             <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10}}><View style={{flex:1}}><Text style={{fontSize:12,color:colors.textMuted}}>{name}，{greeting}</Text><Text style={{fontSize:20,fontWeight:'700',color:colors.textPrimary,marginTop:6}}>照顾好今天的你</Text></View><TouchableOpacity onPress={() => Alert.alert('健康评分趋势', `${scoreHistory.length ? scoreHistory.map(item => `${item.date}：${item.score} 分`).join('\n') : '暂无历史评分记录'}\n\n评分仅供健康管理参考，不作为医学诊断。`)} style={{backgroundColor:colors.primary10,borderRadius:12,padding:10,alignItems:'center'}}><Text style={{fontSize:26,fontWeight:'700',color:colors.primary}}>{scoreDisplay ?? '--'}</Text><Text style={{fontSize:10,color:colors.textMuted}}>健康评分 ›</Text></TouchableOpacity></View>
-            <Text style={{fontSize:12,color:colors.textSecondary,lineHeight:19,marginVertical:16}}>{trendActionText || '记录近期变化，帮助了解健康趋势'}</Text>
+            <TouchableOpacity onPress={() => Alert.alert('健康评分趋势', `${scoreHistory.length ? scoreHistory.map(item => `${item.date}：${item.score} 分`).join('\n') : '暂无历史评分记录'}\n\n评分仅供健康管理参考，不作为医学诊断。`)} style={{flexDirection:'row',alignItems:'center',gap:7,marginVertical:16}}>
+              <Ionicons name="trending-up-outline" size={16} color={colors.textSecondary}/>
+              <Text style={{flex:1,fontSize:12,color:colors.textSecondary}}>{(trendActionText || '记录近期变化，了解健康趋势').split('，')[0]}</Text>
+              <Text style={{fontSize:12,color:colors.primary}}>查看趋势 ›</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={{flexDirection:'row',alignItems:'center',gap:9,backgroundColor:colors.primary,borderRadius:12,padding:14}} onPress={()=>goProtected('Checkin')}><Ionicons name="add-circle-outline" size={20} color="#fff"/><Text style={{flex:1,fontSize:15,fontWeight:'600',color:'#fff'}}>记录健康数据</Text><Ionicons name="chevron-forward" size={18} color="#fff"/></TouchableOpacity>
             <Text style={{fontSize:11,color:colors.textMuted,textAlign:'center',marginTop:10}}>{dashData?.growth?.totalCheckinDays>0?`近30天已记录 ${dashData.growth.totalCheckinDays} 天 · 每一次记录，多一份了解`:'每一次记录，都多一份了解'}</Text>
           </View>
-
-          {/* ── 大众服务商城：Admin 上架商品按排序取前4项 ───────── */}
-          <View style={{ marginBottom: spacing.lg, order: 3 }}>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>更多健康服务</Text>
-              </View>
-              <TouchableOpacity style={styles.sectionMore} onPress={() => navigation.navigate('ServiceMall')}>
-                <Text style={styles.sectionMoreText}>全部商城</Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 2 }}>
-              {popularServices.map(item => (
-                <TouchableOpacity key={item.id} onPress={() => navigation.navigate('ServiceMall')} activeOpacity={0.85}
-                  style={{ width: 156, backgroundColor: colors.white, borderRadius: radius.md, padding: 14, borderWidth: 1, borderColor: colors.border }}>
-                  <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primary10, alignItems: 'center', justifyContent: 'center', marginBottom: 9 }}>
-                    <Ionicons name="medkit-outline" size={18} color={colors.primary} />
-                  </View>
-                  <Text numberOfLines={2} style={{ fontSize: 14, lineHeight: 20, fontWeight: '700', color: colors.textPrimary, minHeight: 40 }}>{item.name}</Text>
-                  <Text style={{ fontSize: 15, fontWeight: '800', color: '#D97706', marginTop: 7 }}>¥{item.price ?? '咨询'}</Text>
-                  <Text style={{ fontSize: 11, color: colors.primary, marginTop: 6 }}>查看服务 ›</Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity onPress={() => navigation.navigate('ServiceMall')} style={{ width: 110, minHeight: 150, borderRadius: radius.md, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-                <Ionicons name="storefront-outline" size={25} color="#fff" />
-                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700', marginTop: 8 }}>查看全部服务</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-
-
 
           {/* ── 待办任务 ──────────────────────────────────────────── */}
           <View style={styles.section}>
@@ -472,11 +444,11 @@ export default function HomeScreen({ navigation }) {
                 style={styles.sectionMore}
                 onPress={() => goProtected('Tasks')}
               >
-                <Text style={styles.sectionMoreText}>全部</Text>
+                <Text style={styles.sectionMoreText}>查看全部</Text>
                 <Ionicons name="chevron-forward" size={14} color={colors.primary} />
               </TouchableOpacity>
             </View>
-            <View style={styles.taskCard}>
+            <View>
               {taskCards.length === 0 && todayReminders.length === 0 ? (
                 <View style={styles.emptyTask}>
                   <Ionicons name="checkmark-circle-outline" size={32} color={colors.success} />
@@ -530,6 +502,31 @@ export default function HomeScreen({ navigation }) {
               <View style={{flex:1}}><Text style={{fontSize:15,fontWeight:'600',color:colors.textPrimary}}>会员权益</Text><Text style={{fontSize:12,color:colors.textSecondary,marginTop:5}}>查看计划、使用情况与健康基金</Text>{user?.healthFund?.total!=null&&<Text style={{fontSize:13,color:colors.primary,marginTop:7}}>健康基金余额 ¥{Number(user.healthFund.total).toFixed(2)}</Text>}</View>
               <Ionicons name="chevron-forward" size={18} color={colors.primary}/>
             </TouchableOpacity>
+          </View>
+
+          {/* 与小程序一致：商城在近期安排和权益之后。 */}
+          <View style={{ marginBottom: spacing.lg }}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>更多健康服务</Text>
+              <TouchableOpacity style={styles.sectionMore} onPress={() => navigation.navigate('ServiceMall')}>
+                <Text style={styles.sectionMoreText}>全部商城</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.taskCard}>
+              {popularServices.map((item, index) => (
+                <TouchableOpacity key={item.id} onPress={() => navigation.navigate('ServiceMall', { productId: item.id })}
+                  style={[styles.taskItem, index < popularServices.length - 1 && styles.taskItemBorder]}>
+                  <Ionicons name="medkit-outline" size={22} color={colors.primary} />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.name}</Text>
+                    <Text style={{ fontSize: 13, color: '#A85D17', marginTop: 4 }}>{token ? (item.price == null ? '价格请咨询' : `¥${item.price}`) : '登录后查看价格'}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+                </TouchableOpacity>
+              ))}
+              {popularServices.length === 0 && <Text style={{ padding: 16, color: colors.textMuted }}>暂无上架服务</Text>}
+            </View>
           </View>
 
           <TouchableOpacity onPress={openManagerConversation} style={{backgroundColor:'#fff',borderRadius:14,padding:14,marginBottom:18,flexDirection:'row',alignItems:'center',gap:10}}>
@@ -760,6 +757,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden',
+  },
+  arrangementCard: {
+    backgroundColor: colors.white, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, marginBottom: 10,
   },
   taskItem: {
     flexDirection: 'row', alignItems: 'center',

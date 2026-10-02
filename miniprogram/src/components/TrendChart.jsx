@@ -8,7 +8,32 @@ export default function TrendChart({ points = [], height = 80, color = colors.pr
   const canvasId = useRef(`trend-line-${chartSeed += 1}`).current;
   useEffect(() => {
     if (!points.length) return;
-    const ctx = Taro.createCanvasContext(canvasId);
+    let ctx;
+    if (process.env.TARO_ENV === 'h5') {
+      const native = document.getElementById(canvasId)?.getContext?.('2d');
+      if (!native) return;
+      native.setTransform(1, 0, 0, 1, 0, 0);
+      native.clearRect(0, 0, native.canvas.width, native.canvas.height);
+      native.setTransform(native.canvas.width / 300, 0, 0, native.canvas.height / height, 0, 0);
+      // Keep the chart geometry identical to the mini-program canvas commands.
+      ctx = {
+        setLineWidth: value => { native.lineWidth = value; },
+        setStrokeStyle: value => { native.strokeStyle = value; },
+        setFillStyle: value => { native.fillStyle = value; },
+        setLineCap: value => { native.lineCap = value; },
+        setLineJoin: value => { native.lineJoin = value; },
+        setFontSize: value => { native.font = `${value}px sans-serif`; },
+        setTextAlign: value => { native.textAlign = value; },
+        beginPath: () => native.beginPath(),
+        lineTo: (x, y) => native.lineTo(x, y),
+        moveTo: (x, y) => native.moveTo(x, y),
+        arc: (...args) => native.arc(...args),
+        fill: () => native.fill(),
+        stroke: () => native.stroke(),
+        fillText: (...args) => native.fillText(...args),
+        draw: () => {},
+      };
+    } else ctx = Taro.createCanvasContext(canvasId);
     const width = 300;
     const top = showValues && !mini ? 17 : 5;
     const bottom = 7;
@@ -48,7 +73,9 @@ export default function TrendChart({ points = [], height = 80, color = colors.pr
   }
   return (
     <View>
-      <Canvas canvasId={canvasId} id={canvasId} style={{ width: '100%', height: `${height}px`, display: 'block' }} />
+      {process.env.TARO_ENV === 'h5'
+        ? <canvas id={canvasId} width={300} height={height} style={{ width: '100%', height: `${height}px`, display: 'block' }} />
+        : <Canvas canvasId={canvasId} id={canvasId} style={{ width: '100%', height: `${height}px`, display: 'block' }} />}
       {!mini && (
         <View style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
           {points.map((p, i) => (

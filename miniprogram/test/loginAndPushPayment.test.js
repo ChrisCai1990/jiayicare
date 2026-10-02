@@ -20,7 +20,7 @@ test('login cancel is available without consent or phone and returns to public h
   };
   const code = babel.transformSync(read('pages/auth/login/index.jsx'), { configFile: false, babelrc: false,
     presets: [require.resolve('@babel/preset-react')], plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')] }).code;
-  const ctx = { exports: {}, require: name => mocks[name] };
+  const ctx = { exports: {}, require: name => mocks[name], process: { env: { TARO_ENV: 'weapp' } } };
   vm.runInNewContext(code, ctx);
   const tree = ctx.exports.default();
   const elements = [];
@@ -41,6 +41,7 @@ function checkout(result, overrides = {}) {
     payingRef: { current: false }, paymentActivityRef: { current: false }, pendingOrderId: '', finalPrice: 6800, setCheckoutQuote: value => events.push(['quote', value]), setPendingOrderId: () => {},
     setPaying: value => events.push(['paying', value]), setPayError: value => events.push(['error', value]), setPaid: value => events.push(['paid', value]),
     pushRecordsAPI: { pay: async (id, params) => { events.push(['create', params.paymentCapability]); return result; } },
+    preparePaymentPlatform: async () => {}, isNativeApp: () => false,
     requestWechatPayment: async () => { events.push(['cashier']); }, waitForPayment: async () => { events.push(['confirmed']); }, ...overrides };
   vm.runInNewContext(`${source.slice(start, end)}\nthis.pay = handlePay;`, ctx);
   return { events, run: () => ctx.pay() };
@@ -51,6 +52,30 @@ test('pushed product opens cashier and waits for server confirmation before succ
   await h.run();
   assert.deepEqual(h.events.filter(row => ['create', 'cashier', 'confirmed', 'paid'].includes(row[0])),
     [['create', 'wechat_jsapi_v1'], ['cashier'], ['confirmed'], ['paid', true]]);
+});
+
+test('standalone H5 blocks a paid push before creating an order', async () => {
+  const h = checkout({ success: true }, {
+    preparePaymentPlatform: async () => { throw new Error('当前 App 版本暂不支持微信支付'); },
+  });
+  await h.run();
+  assert.ok(!h.events.some(row => row[0] === 'create'));
+  assert.ok(h.events.some(row => row[0] === 'error' && /暂不支持微信支付/.test(row[1])));
+});
+
+test('native App push requests its own payment capability and waits for server confirmation', async () => {
+  const h = checkout({ success: true, data: { orderId: 'order-1', paymentParams: { appId: 'wx123', package: 'Sign=WXPay' } } }, {
+    isNativeApp: () => true,
+    pushRecordsAPI: { pay: async (_id, params) => {
+      assert.equal(params.paymentCapability, 'wechat_app_v1');
+      assert.equal(params.paymentScene, 'app');
+      h.events.push(['create', params.paymentCapability]);
+      return { success: true, data: { orderId: 'order-1', paymentParams: { appId: 'wx123', package: 'Sign=WXPay' } } };
+    } },
+  });
+  await h.run();
+  assert.deepEqual(h.events.filter(row => ['create', 'cashier', 'confirmed', 'paid'].includes(row[0])),
+    [['create', 'wechat_app_v1'], ['cashier'], ['confirmed'], ['paid', true]]);
 });
 
 test('cancelled payment and delayed server confirmation never display paid', async () => {
@@ -71,7 +96,8 @@ test('missing payment parameters are not success; server-confirmed fund-only pay
 });
 
 test('shared cashier helper rejects incomplete parameters and reports user cancellation', async () => {
-  const ctx = { Taro: { requestPayment: () => Promise.reject({ errMsg: 'requestPayment:fail cancel' }) }, paymentsAPI: {} };
+  const ctx = { Taro: { requestPayment: () => Promise.reject({ errMsg: 'requestPayment:fail cancel' }) }, paymentsAPI: {},
+    process: { env: { TARO_ENV: 'weapp' } }, isNativeApp: () => false };
   vm.runInNewContext(read('utils/wechatPay.js').replace(/^import .*;\r?\n/gm, '').replace(/export /g, ''), ctx);
   await assert.rejects(ctx.requestWechatPayment({}), /信息不完整/);
   await assert.rejects(ctx.requestWechatPayment({ package: 'prepay_id=1', paySign: 'signed' }), /取消支付/);

@@ -3,7 +3,7 @@ import {View,Text,Input,Picker,Button as NativeButton,Textarea} from '@tarojs/co
 import Taro from '@tarojs/taro';
 import {tasksAPI,reportsAPI} from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
-import {chooseImageWithPrivacy,isImagePickerCancelled,showImagePickerError} from '../../../utils/imagePicker';
+import {chooseImageWithPrivacy,readSelectedImage,isImagePickerCancelled,showImagePickerError} from '../../../utils/imagePicker';
 
 const categories=['exam_report','outpatient_record','prescription_order'];
 const labels=['检查报告','门诊病历','处方/医嘱单'];
@@ -37,7 +37,7 @@ export default function CareReportUpload(){
   async function pick(){
     if(lock.current||pickLock.current)return;pickLock.current=true;setPicking(true);
     try{const result=await chooseImageWithPrivacy({count:9,sizeType:['compressed'],sourceType:['album','camera']});
-      setRows(old=>[...old,...(result.tempFilePaths||[]).map((uri,i)=>({id:Date.now()+'-'+i,uri,title:'检查报告 '+(old.length+i+1),category:'exam_report'}))]);setConfirmed(false);
+      setRows(old=>[...old,...(result.tempFilePaths||[]).map((uri,i)=>({id:Date.now()+'-'+i,uri,selection:result,index:i,title:'检查报告 '+(old.length+i+1),category:'exam_report'}))]);setConfirmed(false);
     }catch(e){if(!isImagePickerCancelled(e))showImagePickerError(e)}finally{pickLock.current=false;setPicking(false)}
   }
   async function submitAbsence(){
@@ -59,9 +59,8 @@ export default function CareReportUpload(){
         if(r.saved)continue;
         setProgress(`正在上传第 ${rows.indexOf(r)+1}/${rows.length} 项资料`);
         if(!r.uploadToken){
-          const content=Taro.getFileSystemManager().readFileSync(r.uri,'base64');
-          const ext=r.uri.split('.').pop().toLowerCase(),mime=['png','webp','heic','heif'].includes(ext)?'image/'+ext:'image/jpeg';
-          const result=await reportsAPI.uploadBase64('data:'+mime+';base64,'+content,mime);
+          const {data,mimeType}=await readSelectedImage(r.selection||{tempFilePaths:[r.uri]},r.index||0);
+          const result=await reportsAPI.uploadBase64(data,mimeType);
           r.uploadToken=result.data.uploadToken;setRows(old=>old.map(v=>v.id===r.id?{...v,uploadToken:r.uploadToken}:v));
         }
         const linked=await tasksAPI.addCareReport(flowId,{uploadToken:r.uploadToken,title:r.title,category:r.category});

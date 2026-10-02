@@ -23,11 +23,13 @@ __pycache__/
 
 # Local scratch and generated output
 artifacts/service-assistant/
+artifacts/shared-h5-preview-*.zip
 output/
 tmp/
 scripts/.codex_*.py
 .tools-npm-shim/
 app/dist-android-preflight/
+app/dist-android-shared-h5/
 
 # Mini Program developer-tool artifacts
 miniprogram/node_modules.*/

@@ -3,6 +3,7 @@
 //  - 小程序不能用 fetch/localStorage，改用 Taro.request + Taro.setStorageSync/getStorageSync
 //  - 其余 API 分组/方法/路径/参数与 app 端保持一致（同一套后端）
 import Taro from '@tarojs/taro';
+import { isNativeApp } from '../utils/appBridge';
 
 
 const BASE_URL = 'https://jiaycare.com/api';
@@ -101,7 +102,7 @@ export const authAPI = {
     let wxLoginCode = '';
     let deviceInfo = {};
     let inviteCode = '';
-    if (bindWechat) {
+    if (bindWechat && process.env.TARO_ENV === 'weapp') {
       try { wxLoginCode = (await Taro.login()).code || ''; } catch {}
     }
     try { deviceInfo = Taro.getSystemInfoSync?.() || {}; } catch {}
@@ -261,7 +262,7 @@ export const reportsAPI = {
     const ext = mimeType === 'application/pdf' ? 'pdf'
       : mimeType.includes('png') ? 'png'
       : mimeType.includes('webp') ? 'webp' : 'jpg';
-    const filePath = `${Taro.env.USER_DATA_PATH}/report-${id}-${index}.${ext}`;
+    const filePath = process.env.TARO_ENV === 'h5' ? '' : `${Taro.env.USER_DATA_PATH}/report-${id}-${index}.${ext}`;
     return Taro.request({
       url: `${BASE_URL}/reports/${id}/file/${index}`,
       header: _token ? { Authorization: `Bearer ${_token}` } : {},
@@ -270,6 +271,9 @@ export const reportsAPI = {
     }).then(async (res) => {
       if (res.statusCode !== 200 || !(res.data instanceof ArrayBuffer) || res.data.byteLength === 0) {
         throw new Error(`原始文件读取失败（${res.statusCode || '网络异常'}）`);
+      }
+      if (process.env.TARO_ENV === 'h5') {
+        return URL.createObjectURL(new Blob([res.data], { type: mimeType || (ext === 'pdf' ? 'application/pdf' : `image/${ext === 'jpg' ? 'jpeg' : ext}`) }));
       }
       await new Promise((resolve, reject) => {
         Taro.getFileSystemManager().writeFile({
@@ -345,15 +349,16 @@ export const servicesAPI = {
   list: () => request('/services'),
   packages: () => request('/services/packages'),
   order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount) =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount }) }),
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount, ...(isNativeApp() && Number(expectedAmount) > 0 ? { paymentScene: 'app' } : {}) }) }),
   inquire: (serviceId, note, specificationLabel) =>
     request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel }) }),
   coupons: () => request('/services/coupons'),
 };
 
 export const paymentsAPI = {
+  capabilities: () => request('/payments/capabilities'),
   status: (orderId) => request(`/payments/${orderId}/status`),
-  retry: (orderId) => request(`/payments/${orderId}/retry`, { method: 'POST' }),
+  retry: (orderId) => request(`/payments/${orderId}/retry`, { method: 'POST', body: JSON.stringify(isNativeApp() ? { paymentScene: 'app' } : {}) }),
 };
 
 // ── Partner Benefits ────────────────────────────────────────────
