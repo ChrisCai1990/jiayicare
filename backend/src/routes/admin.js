@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const Admin = require('../models/Admin');
 const Tenant = require('../models/Tenant');
+const { hasTenantChannel } = require('../utils/tenantChannel');
 const PlatformAgreement = require('../models/PlatformAgreement');
 const { renderAgreement } = require('../utils/platformAgreementText');
 const { STANDARD_PLAN, PLAN_KEY, validatePlan, getStandardPlan, tenantTerms, seatUsage, canAddSeat, estimatedMonthlySeatFee } = require('../utils/saasPlan');
@@ -317,9 +318,12 @@ router.post('/login', async (req, res) => {
   if (admin.role === 'enterprise_hr') {
     return res.status(403).json({ success: false, message: '企业HR账号请使用企业客户专属登录入口' });
   }
-  const tenant = admin.tenantId ? await Tenant.findById(admin.tenantId).select('name logo themeColor status').lean() : null;
+  const tenant = admin.tenantId ? await Tenant.findById(admin.tenantId).select('name logo themeColor status code serviceScope').lean() : null;
   if (admin.tenantId && (!tenant || tenant.status !== 'active')) {
     return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
+  }
+  if (admin.tenantId && !hasTenantChannel(tenant, 'admin')) {
+    return res.status(403).json({ success: false, message: '本机构尚未开通管理后台' });
   }
   const token = jwt.sign(
     { id: admin._id, type: 'admin', role: admin.role },

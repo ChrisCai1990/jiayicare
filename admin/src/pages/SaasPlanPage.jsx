@@ -68,7 +68,7 @@ export default function SaasPlanPage() {
       <section className="card sp-hero">
         <div className="sp-hero-top"><div className="sp-brand">{tenant.name.slice(0, 1)}</div><div className="sp-heading"><div className="sp-eyebrow">机构档案 <span>/{tenant.code}</span></div><h2>{tenant.name}</h2><p>{tenant.legalName || '待核验企业全称'}</p></div><span className={`sp-status ${tenant.status === 'active' ? 'is-active' : ''}`}>{tenant.status === 'active' ? '运营中' : '待接入'}</span></div>
         <div className="sp-service-head"><h3>服务配置</h3><span>{tenant.status === 'active' && tenant.serviceScope?.length ? '平台已配置' : '尚未开通'}</span></div>
-        {tenant.status === 'active' && tenant.serviceScope?.length ? <div className="sp-service-grid">{services.filter(([code]) => tenant.serviceScope.includes(code)).map(([code, label]) => <div key={code} className="sp-service is-selected"><span>✓</span>{label}</div>)}</div> : <p className="sp-note">嘉静佑辰尚未完成本机构的管理后台、医护端和客户端配置；当前没有可用服务。</p>}
+        {tenant.status === 'active' && tenant.serviceScope?.length ? <div className="sp-service-grid">{services.filter(([code]) => tenant.serviceScope.includes(code)).map(([code, label]) => <div key={code} className="sp-service is-selected"><span>✓</span>{label}</div>)}</div> : <p className="sp-note">当前没有已开通服务。{tenant.serviceScope?.length ? `待开通草案：${services.filter(([code]) => tenant.serviceScope.includes(code)).map(([, label]) => label).join('、')}。` : '嘉静佑辰尚未记录服务清单。'}</p>}
         {tenant.serviceScopeNote && <p className="sp-note">{tenant.serviceScopeNote}</p>}
         <p className="sp-footnote">实际交付和收费以双方协议及验收为准；保存服务清单不直接开通功能。</p>
       </section>

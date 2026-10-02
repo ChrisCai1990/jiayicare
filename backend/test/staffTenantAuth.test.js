@@ -32,13 +32,17 @@ test('staff authentication requires an active institution and completed password
     admin.tenantId = tenantId;
     tenant = { status: 'suspended' };
     assert.equal((await call()).status, 403);
-    tenant = { status: 'active' };
+    tenant = { status: 'active', code: 'jiayihui' };
     admin.mustChangePassword = true;
     assert.equal((await call()).status, 403);
     assert.equal((await call('PUT', '/me/password')).next, true);
     assert.equal((await call('GET', '/me/password')).status, 403);
     assert.equal((await call('PUT', '/patients')).status, 403);
     admin.mustChangePassword = false;
+    assert.equal((await call()).next, true);
+    tenant = { status: 'active', code: 'mingdahealth', serviceScope: ['admin'] };
+    assert.equal((await call()).status, 403);
+    tenant.serviceScope.push('staff');
     assert.equal((await call()).next, true);
   } finally {
     Admin.findById = originalAdminFind;
