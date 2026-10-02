@@ -53,7 +53,10 @@ test('月度自动评估只生成刚结束的月份，已被替代的八月旧�
 test('显式试点客户沿用已启用的月度模板，生成营养师待审九月评估', async t => {
   t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: '' }));
   t.mock.method(Template, 'find', () => ({ lean: async () => [{ _id: 't', clientBrand: 'jinyisen', content: { frequency: 'monthly' } }] }));
-  t.mock.method(User, 'findById', () => ({ select: async () => ({ ...user, clientBrand: 'jinyisen', assignedNutritionist: 'nutritionist', aiPilotFeatures: { stageAssessment: true, stageAssessmentFrequency: 'monthly', stageAssessmentDomain: 'nutrition' } }) }));
+  t.mock.method(User, 'findById', () => ({ select: async projection => {
+    assert.match(projection, /\bservicePackage\b/);
+    return { ...user, clientBrand: 'jinyisen', assignedNutritionist: 'nutritionist', aiPilotFeatures: { stageAssessment: true, stageAssessmentFrequency: 'monthly', stageAssessmentDomain: 'nutrition' } };
+  } }));
   assert.equal(await scanAndCreatePhaseAssessments(), 1);
   assert.equal(saved[0].periodKey.endsWith(':nutrition'), true);
   assert.equal(saved[0].primaryReviewRole, 'nutritionist');
