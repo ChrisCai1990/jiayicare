@@ -9385,23 +9385,20 @@ export default function PatientDetailPage() {
                 </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowPostCheckupSupervisionModal(true)}>
-                  发起复查督办
+                <button className="btn btn-secondary btn-sm" title="体检后复查随访：生成待健康顾问审核的随访计划" onClick={() => setShowPostCheckupSupervisionModal(true)}>
+                  体检后复查随访
                 </button>
               )}
-              {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
-                  onClick={() => nav(`/plans?type=medical_assist&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=medical_assist`)}>
-                  {aiMedicalAssistGenerating ? '生成中…' : '✨ 创建就医协助方案'}
-                </button>
-              )}
-              {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => setTab('consumption')}>
-                  发起就医协助服务（套餐优先）
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" onClick={() => { setTab('consumption'); requestAnimationFrame(() => document.getElementById('patient-service-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}>
+                  发起就医协助服务 · 套餐优先
                 </button>
               )}
               {['healthPlanner', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/products?medicalProxy=1&patientId=${id}`, { state: { initialPatient: { _id: id, name: data?.user?.name || '' } } })}>发起医疗代诊</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setExecutionCategory('medical'); setTab('followups') }}>查看就医协助执行与督办</button>
+              )}
+              {['healthPlanner', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/products?medicalProxy=1&patientId=${id}`, { state: { initialPatient: { _id: id, name: data?.user?.name || '' } } })}>推送医疗代诊产品</button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" onClick={() => nav(`/plans?type=annual_mgmt&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=annual_mgmt`)}>
@@ -15090,19 +15087,6 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, patient, i
         </div>
         {/* 服务目标固定在模板列表之前，不随列表滚动，选模板前就能先看到并填写 */}
         <div style={{ flexShrink: 0, padding: '14px 20px 0' }}>
-          {planType === 'medical_assist' && <div style={{ marginBottom: 12, padding: '12px 14px', border: '1px solid #B2D8C7', borderRadius: 8, background: '#F6FBF8', display: 'grid', gap: 8 }}>
-            <div style={{ fontWeight: 700, color: '#1E6B50' }}>体检后复查督办</div>
-            <div style={{ fontSize: 12, color: '#4A6558', lineHeight: 1.6 }}>复查督办不需要就医协助方案模板。系统将直接创建服务订单并生成 AI 随访计划，供健康顾问审核。</div>
-            <button type="button" className="btn btn-primary btn-sm" style={{ justifySelf: 'start' }} disabled={generating} onClick={async () => {
-              setGenerating(true)
-              try {
-                const result = await staffAPI.startPostCheckupSupervision(patientId, { note: briefNote.trim() })
-                if (onPostCheckupStarted) await onPostCheckupStarted(result.data?.followUpId)
-                else { toast('AI随访计划已生成，请在随访任务中审核确认'); onClose() }
-              } catch (err) { toast(err.message || '发起复查督办失败') }
-              finally { setGenerating(false) }
-            }}>{generating ? '生成中…' : '发起复查督办服务'}</button>
-          </div>}
           {planType === 'annual_checkup' && <div className="form-group" style={{ marginBottom: 12 }}>
             <label className="form-label">执行服务流程（来自 Admin）</label>
             <select className="form-input" value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)}>

@@ -94,8 +94,8 @@ export default function PlansPage() {
     if (requestedPlanType === 'annual_checkup') setShowCheckupModal(true)
     if (requestedPlanType === 'annual_mgmt') setShowAhModal(true)
     if (requestedPlanType === 'nutrition') setShowNutritionModal(true)
-    if (requestedPlanType === 'medical_assist') setShowMedicalModal(true)
-  }, [requestedPlanType])
+    if (requestedPlanType === 'medical_assist' && staff?.role === 'superadmin') setShowMedicalModal(true)
+  }, [requestedPlanType, staff?.role])
 
   const closePlanModal = (setVisible) => {
     setVisible(false)
@@ -129,9 +129,9 @@ export default function PlansPage() {
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setSearchParams(opt.v ? { type: opt.v } : {})}>{opt.l}</button>
         ))}
-        {typeFilter === 'medical_assist' && can('plans', 'create') && ['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
+        {typeFilter === 'medical_assist' && can('plans', 'create') && staff?.role === 'superadmin' && (
           <button className="btn btn-primary btn-sm" onClick={() => setShowMedicalModal(true)}>
-            ＋ 新增就医协助方案
+            ＋ 补录就医协助方案
           </button>
         )}
         {typeFilter === 'annual_checkup' && can('plans', 'create') && ['familyDoctor', 'superadmin'].includes(staff?.role) && (
@@ -151,6 +151,11 @@ export default function PlansPage() {
           style={{ width: 180, marginLeft: 'auto' }}
         />
       </div>
+      {typeFilter === 'medical_assist' && staff?.role !== 'superadmin' && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: '#F0F8F4', color: '#426457', fontSize: 13 }}>
+          新服务从客户档案中的服务产品或套餐权益发起；健康规划师在“服务执行”查看就医协助任务与督办。这里保留已生成的服务方案。
+        </div>
+      )}
 
       {/* ── 年度管理方案（AnnualPlan） ── */}
       {isAnnualMgmt && (
