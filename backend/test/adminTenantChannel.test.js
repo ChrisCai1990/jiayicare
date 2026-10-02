@@ -17,10 +17,10 @@ test('institution Admin requires the paid admin channel', async () => {
   Admin.findById = () => ({ select: async () => admin });
   Tenant.findById = () => ({ select: () => ({ lean: async () => tenant }) });
   const request = { headers: { authorization: `Bearer ${jwt.sign({ id, type: 'admin' }, process.env.JWT_SECRET)}` }, originalUrl: '/api/admin/saas-plan' };
-  const call = () => new Promise(resolve => {
+  const call = (url = '/api/admin/saas-plan') => new Promise(resolve => {
     const result = { status: 200, next: false };
     const response = { status(code) { result.status = code; return this; }, json(body) { result.message = body.message; resolve(result); } };
-    adminAuth(request, response, () => { result.next = true; resolve(result); });
+    adminAuth({ ...request, originalUrl: url }, response, () => { result.next = true; resolve(result); });
   });
   try {
     assert.equal((await call()).status, 403);
@@ -28,6 +28,12 @@ test('institution Admin requires the paid admin channel', async () => {
     assert.equal((await call()).next, true);
     tenant = { status: 'active', code: 'jiayihui' };
     assert.equal((await call()).next, true);
+    tenant = { status: 'setup', code: 'mingdahealth', serviceScope: ['admin', 'staff'] };
+    assert.equal((await call('/api/admin/settings/company')).status, 403);
+    assert.equal((await call('/api/admin/company-info')).next, true);
+    assert.equal((await call('/api/admin/employees')).next, true);
+    assert.equal((await call('/api/admin/dashboard')).status, 403);
+    assert.equal((await call('/api/admin/patients')).status, 403);
   } finally {
     Admin.findById = originalAdminFind;
     Tenant.findById = originalTenantFind;

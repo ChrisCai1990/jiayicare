@@ -88,7 +88,7 @@ export default function SaasPlanPage() {
           <label>协商或变更依据<input className="form-input" value={reason} onChange={e => setReason(e.target.value)} placeholder="例如：双方确认增加两个服务人员名额" /></label>
           <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={busy || reason.trim().length < 4} onClick={() => action(() => adminAPI.saveTenantCommercialTerms(tenantId, termsForm, reason))}>保存本机构条款</button>
         </details>}
-        {platform && tenant.status === 'active' && <><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginTop: 20 }}>
+        {platform && ['active', 'setup'].includes(tenant.status) && <><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginTop: 20 }}>
           <label>额外服务账号额度<input className="form-input" type="number" min="0" max="500" value={extras.extraStaffSeats} onChange={e => setExtras({ ...extras, extraStaffSeats: e.target.value })} /></label>
           <label>额外管理员账号额度<input className="form-input" type="number" min="0" max="500" value={extras.extraAdminSeats} onChange={e => setExtras({ ...extras, extraAdminSeats: e.target.value })} /></label>
           <button className="btn btn-primary" disabled={busy} onClick={() => action(() => adminAPI.setTenantSeats(tenantId, extras))}>保存账号额度</button>
@@ -100,7 +100,8 @@ export default function SaasPlanPage() {
           <button className="btn" disabled={busy || tenant.usage.admins >= tenant.adminLimit} onClick={() => action(() => platform ? adminAPI.createTenantAdmin(tenantId, newAdmin) : adminAPI.createOwnTenantAdmin(newAdmin))}>创建账号</button>
         </div><p style={{ color: '#667' }}>机构可在本机构额度内自行创建管理员；超额由平台先扩容。初始密码须 10–128 位，首次登录强制修改。</p>
       </>}
-      {tenant.status !== 'active' && <p className="sp-footnote">以上仅为报价草案，账号名额尚未开放。嘉静佑辰须先完成各端配置及跨机构隔离验收。</p>}
+      {tenant.status === 'suspended' && <p className="sp-footnote">以上仅为报价草案，账号名额尚未开放。</p>}
+      {tenant.status === 'setup' && <p className="sp-footnote">机构配置账号可使用；客户业务仍须完成跨机构隔离验收。</p>}
       </>}
       </section>
     </>}

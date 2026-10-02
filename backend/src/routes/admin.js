@@ -319,7 +319,7 @@ router.post('/login', async (req, res) => {
     return res.status(403).json({ success: false, message: '企业HR账号请使用企业客户专属登录入口' });
   }
   const tenant = admin.tenantId ? await Tenant.findById(admin.tenantId).select('name logo themeColor status code serviceScope').lean() : null;
-  if (admin.tenantId && (!tenant || tenant.status !== 'active')) {
+  if (admin.tenantId && (!tenant || !['active', 'setup'].includes(tenant.status))) {
     return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
   }
   if (admin.tenantId && !hasTenantChannel(tenant, 'admin')) {
@@ -334,7 +334,7 @@ router.post('/login', async (req, res) => {
     success: true,
     data: {
       token,
-      admin: { _id: admin._id, name: admin.name, role: admin.role, title: admin.title, tenantId: admin.tenantId || null, tenantName: tenant?.name || (admin.role === 'platformSuper' ? '嘉静佑辰' : '嘉医汇'), tenantLogo: tenant?.logo || '', mustChangePassword: !!admin.mustChangePassword },
+      admin: { _id: admin._id, name: admin.name, role: admin.role, title: admin.title, tenantId: admin.tenantId || null, tenantName: tenant?.name || (admin.role === 'platformSuper' ? '嘉静佑辰' : '嘉医汇'), tenantLogo: tenant?.logo || '', tenantStatus: tenant?.status || '', mustChangePassword: !!admin.mustChangePassword },
     },
   });
 });
@@ -1713,7 +1713,7 @@ router.put('/tenants/:id/service-profile', adminAuth, requirePlatformSuper, asyn
 async function createInstitutionAdmin(req, res, tenantId) {
   const tenant = await Tenant.findById(tenantId).lean();
   if (!tenant || tenant.commercialPlan !== 'standard') return res.status(404).json({ success: false, message: '标准套餐机构不存在' });
-  if (tenant.status !== 'active') return res.status(409).json({ success: false, message: '待接入机构尚未启用，不能创建登录账号' });
+  if (!['active', 'setup'].includes(tenant.status)) return res.status(409).json({ success: false, message: '待接入机构尚未开放配置账号' });
   if (!await canAddSeat(tenant._id, 'admin')) return res.status(409).json({ success: false, message: '机构管理员账号额度已满' });
   const { username, password, name } = req.body || {};
   if (!username || !name || typeof password !== 'string' || password.length < 10 || password.length > 128) return res.status(400).json({ success: false, message: '填写用户名、姓名及 10 至 128 位初始密码' });
@@ -1767,6 +1767,7 @@ router.post('/teams', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可管理团队' });
   const { name, mentorId, note, sortOrder } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '团队名称不能为空' });
+  if (mentorId && (!mongoose.isValidObjectId(mentorId) || !await Admin.exists({ _id: mentorId }))) return res.status(400).json({ success: false, message: '导师不属于本机构' });
   const team = await Team.create({ name, mentorId: mentorId || null, note: note || '', sortOrder: sortOrder || 0 });
   res.json({ success: true, data: team, message: '团队创建成功' });
 });
@@ -1775,6 +1776,7 @@ router.post('/teams', adminAuth, async (req, res) => {
 router.put('/teams/:id', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可管理团队' });
   const { name, mentorId, note, status, sortOrder } = req.body;
+  if (mentorId && (!mongoose.isValidObjectId(mentorId) || !await Admin.exists({ _id: mentorId }))) return res.status(400).json({ success: false, message: '导师不属于本机构' });
   const update = {};
   if (name !== undefined) update.name = name;
   if (mentorId !== undefined) update.mentorId = mentorId || null;

@@ -371,7 +371,7 @@ router.post('/login', async (req, res) => {
   }
   if (!admin.tenantId) return res.status(403).json({ success: false, message: '员工未归属机构' });
   const tenant = await Tenant.findById(admin.tenantId).select('name staffPortalName slogan status code serviceScope').lean();
-  if (!tenant || tenant.status !== 'active') return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
+  if (!tenant || !['active', 'setup'].includes(tenant.status)) return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
   if (!hasTenantChannel(tenant, 'staff')) return res.status(403).json({ success: false, message: '本机构尚未开通医护端' });
 
   const token = jwt.sign(
@@ -397,6 +397,7 @@ router.post('/login', async (req, res) => {
         customPermissions: admin.customRoleId?.permissions || null,
         tenantId: tenant._id,
         tenantName: tenant.staffPortalName || tenant.name,
+        tenantStatus: tenant.status,
         tenantSlogan: tenant.slogan || '',
       },
     },
@@ -407,7 +408,7 @@ router.post('/login', async (req, res) => {
 router.get('/me', staffAuth, async (req, res) => {
   const s = await Admin.findById(req.staff._id).populate('customRoleId');
   if (!s) return res.status(404).json({ success: false, message: '账号不存在' });
-  const tenant = await Tenant.findById(s.tenantId).select('name staffPortalName slogan').lean();
+  const tenant = await Tenant.findById(s.tenantId).select('name staffPortalName slogan status').lean();
   if (!tenant) return res.status(403).json({ success: false, message: '所属机构不存在' });
   res.json({
     success: true,
@@ -426,6 +427,7 @@ router.get('/me', staffAuth, async (req, res) => {
       customPermissions: s.customRoleId?.permissions || null,
       tenantId: tenant._id,
       tenantName: tenant.staffPortalName || tenant.name,
+      tenantStatus: tenant.status,
       tenantSlogan: tenant.slogan || '',
     },
   });

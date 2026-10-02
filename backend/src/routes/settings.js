@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const adminAuth = require('../middleware/adminAuth');
 
@@ -29,6 +30,17 @@ const MedicalDepartment = require('../models/MedicalDepartment');
 const MedicalExpert = require('../models/MedicalExpert');
 const MedicalResourceKnowledge = require('../models/MedicalResourceKnowledge');
 const MedicalDeliveryResource = require('../models/MedicalDeliveryResource');
+
+async function ownedEmployeeReferences({ deptId, customRoleId, teamId, mentorOfTeamId }) {
+  if ([deptId, customRoleId, teamId, mentorOfTeamId].some(id => id && !mongoose.isValidObjectId(id))) return false;
+  const checks = await Promise.all([
+    deptId ? Department.exists({ _id: deptId }) : true,
+    customRoleId ? StaffRole.exists({ _id: customRoleId }) : true,
+    teamId ? Team.exists({ _id: teamId }) : true,
+    mentorOfTeamId ? Team.exists({ _id: mentorOfTeamId }) : true,
+  ]);
+  return checks.every(Boolean);
+}
 
 // ─────────────────────────────────────────────────────────────
 // 工具：拼音首字母助记码（简单实现，正式可接 pinyin 库）
@@ -193,10 +205,11 @@ router.post('/employees', adminAuth, async (req, res) => {
   if (!SYSTEM_ROLES.includes(role)) {
     return res.status(400).json({ success: false, message: '角色无效' });
   }
+  if (!await ownedEmployeeReferences({ deptId, customRoleId, teamId, mentorOfTeamId })) return res.status(400).json({ success: false, message: '部门、岗位权限或团队不属于本机构' });
   if (!await canAddSeat(req.admin.tenantId, 'staff')) return res.status(409).json({ success: false, message: '服务人员账号额度已满，请联系平台开通额外账号' });
   const phoneExists = await Admin.findOne({ phone });
   if (phoneExists) return res.status(400).json({ success: false, message: '该手机号已被使用' });
-  const finalUsername = username || `jy_${Date.now().toString(36)}`;
+  const finalUsername = username || `staff_${Date.now().toString(36)}`;
   const usernameExists = await Admin.findOne({ username: finalUsername });
   if (usernameExists) return res.status(400).json({ success: false, message: '用户名已存在' });
 
@@ -222,6 +235,7 @@ router.put('/employees/:id', adminAuth, async (req, res) => {
   if (!emp || !SYSTEM_ROLES.includes(emp.role)) {
     return res.status(404).json({ success: false, message: '员工不存在' });
   }
+  if (!await ownedEmployeeReferences({ deptId, customRoleId, teamId, mentorOfTeamId })) return res.status(400).json({ success: false, message: '部门、岗位权限或团队不属于本机构' });
   if (phone && phone !== emp.phone) {
     const phoneExists = await Admin.findOne({ phone, _id: { $ne: emp._id } });
     if (phoneExists) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });

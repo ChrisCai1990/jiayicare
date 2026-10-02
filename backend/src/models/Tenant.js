@@ -17,7 +17,7 @@ const tenantSchema = new mongoose.Schema({
   commercialTerms: { type: mongoose.Schema.Types.Mixed, default: null }, // 签约机构独立条款快照；标准模板调整不追溯
   extraStaffSeats: { type: Number, min: 0, default: 0 },
   extraAdminSeats: { type: Number, min: 0, default: 0 },
-  status:   { type: String, enum: ['active', 'suspended'], default: 'active' },
+  status:   { type: String, enum: ['active', 'setup', 'suspended'], default: 'active' },
   note:     { type: String, default: '' },
 }, { timestamps: true });
 

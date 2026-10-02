@@ -26,10 +26,15 @@ module.exports = async (req, res, next) => {
     }
     if (admin.tenantId) {
       const tenant = await Tenant.findById(admin.tenantId).select('status code serviceScope').lean();
-      if (!tenant || tenant.status !== 'active') {
+      if (!tenant || !['active', 'setup'].includes(tenant.status)) {
         return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
       }
       if (!hasTenantChannel(tenant, 'admin')) return res.status(403).json({ success: false, message: '本机构尚未开通管理后台' });
+      if (tenant.status === 'setup') {
+        const path = String(req.originalUrl).split('?')[0];
+        const allowed = /^\/api\/admin\/(me\/password|saas-plan(?:\/admins)?|company-info|departments(?:\/[^/]+)?|roles(?:\/[^/]+)?|employees(?:\/[^/]+)?|teams(?:\/[^/]+)?)$/.test(path);
+        if (!allowed) return res.status(403).json({ success: false, message: '机构仍在配置阶段，客户业务尚未开放' });
+      }
     }
     if (admin.role === 'platformSuper' && !platformAdminMayAccess(req.originalUrl)) {
       return res.status(403).json({ success: false, message: '平台管理员不能访问机构业务数据，请使用所属机构账号' });

@@ -29,8 +29,11 @@ module.exports = async (req, res, next) => {
     }
     if (!admin.tenantId) return res.status(403).json({ success: false, message: '员工未归属机构' });
     const tenant = await Tenant.findById(admin.tenantId).select('status code serviceScope').lean();
-    if (!tenant || tenant.status !== 'active') return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
+    if (!tenant || !['active', 'setup'].includes(tenant.status)) return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
     if (!hasTenantChannel(tenant, 'staff')) return res.status(403).json({ success: false, message: '本机构尚未开通医护端' });
+    if (tenant.status === 'setup' && !/^\/api\/staff\/me(?:\/password)?$/.test(String(req.originalUrl).split('?')[0])) {
+      return res.status(403).json({ success: false, message: '机构仍在配置阶段，客户业务尚未开放' });
+    }
     const isPasswordChange = req.method === 'PUT' && req.path === '/me/password';
     if (admin.mustChangePassword && !isPasswordChange) {
       return res.status(403).json({ success: false, message: '请先修改初始密码' });
