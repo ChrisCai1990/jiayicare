@@ -12935,6 +12935,7 @@ export default function PatientDetailPage() {
         <SelectTemplateAndGenerateModal
           planType={showSelectTplModal}
           patientId={id}
+          patient={data?.user}
           initialBriefNote={showSelectTplModal === 'annual_checkup' ? buildCheckupQuestionnaireGoal(qResponses, plans) : ''}
           title={showSelectTplModal === 'annual_checkup' ? 'AI体检方案' : showSelectTplModal === 'nutrition' ? 'AI营养方案' : 'AI就医协助方案'}
           onClose={() => { setShowSelectTplModal(null); setPendingMedicalAssistOrderId('') }}
@@ -12943,7 +12944,7 @@ export default function PatientDetailPage() {
             toast('AI随访计划已生成，请审核确认')
             await openPostCheckupReview(followUpId)
           }}
-          onGenerate={async (templateId, briefNote, productId, desiredServiceDate, serviceRequirements) => {
+          onGenerate={async (templateId, briefNote, productId, desiredServiceDate, serviceRequirements, nutritionAssessment) => {
             if (showSelectTplModal === 'annual_checkup') {
               const generated = await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote, productId, desiredServiceDate, serviceRequirements)
               toast(generated.reused ? (generated.message || '本次体检已有方案，正在打开原方案') : 'AI体检方案已生成，正在打开方案')
@@ -12953,7 +12954,7 @@ export default function PatientDetailPage() {
               })
               return
             } else if (showSelectTplModal === 'nutrition') {
-              await staffAPI.generateAINutritionPlan(id, templateId, briefNote)
+              await staffAPI.generateAINutritionPlan(id, templateId, nutritionAssessment)
               toast('AI营养方案已生成，待营养师审核')
             } else {
               await staffAPI.generateAIMedicalAssistPlan(id, pendingMedicalAssistOrderId, templateId, briefNote)
@@ -15001,7 +15002,7 @@ function AttachedHealthInfoView({ info }) {
 // ── AI方案生成前先选模板弹窗（体检方案/营养方案/就医协助方案通用）───────────────────
 // 2026-07-13：三类方案都是"AI只在模板骨架基础上定制"，不该让AI自由发明。此前AI一点即生成，
 // 完全跳过模板；改为先弹出模板选择，选定后才真正调用AI生成，模板骨架部分由后端原样锁定。
-function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBriefNote = '', onClose, onGenerate, onPostCheckupStarted }) {
+function SelectTemplateAndGenerateModal({ planType, title, patientId, patient, initialBriefNote = '', onClose, onGenerate, onPostCheckupStarted }) {
   const toast = useToast()
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
@@ -15017,6 +15018,12 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
   // 就医场景每次的具体情况差异很大（去哪家医院/是否加急/会员状况等），需要专员当场填一句
   // 简要说明，AI结合这句话+模板类型生成初稿，而不是完全靠AI自己猜（2026-07-13需求）
   const [briefNote, setBriefNote] = useState(initialBriefNote)
+  const [nutritionAssessment, setNutritionAssessment] = useState({
+    height: patient?.height || '', weight: patient?.weight || '', currentDiet: patient?.lifestyle_data?.diet || '',
+    metric: '', baseline: '', target: '', reviewDate: '', medicalReview: '', practicalConstraints: '',
+    allergyStatus: '', allergyDetails: '', riskStatus: '', templateCompatibilityConfirmed: false,
+  })
+  const setNutritionField = (key, value) => setNutritionAssessment(current => ({ ...current, [key]: value }))
 
   useEffect(() => {
     setBriefNote(current => current.trim() ? current : initialBriefNote)
@@ -15042,9 +15049,18 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
     if (planType === 'annual_checkup' && workflowProducts.length > 1 && !selectedProductId) { toast('请先选择本次使用的 Admin 体检服务流程'); return }
     if (planType === 'annual_checkup' && !desiredServiceDate) { toast('请选择期望服务时间'); return }
     if (planType === 'annual_checkup' && !serviceRequirements.trim()) { toast('请填写具体服务需求'); return }
+    if (planType === 'nutrition') {
+      const required = [['height', '身高'], ['weight', '体重'], ['currentDiet', '近期实际饮食'], ['metric', '观察指标'], ['baseline', '基线'], ['target', '阶段目标'], ['reviewDate', '复盘日期'], ['medicalReview', '疾病、用药及检查核对'], ['practicalConstraints', '偏好与执行条件'], ['allergyStatus', '食物过敏核对'], ['riskStatus', '风险分流']]
+      const missing = required.filter(([key]) => !String(nutritionAssessment[key] || '').trim()).map(([, label]) => label)
+      if (!briefNote.trim()) missing.unshift('本次营养目标')
+      if (nutritionAssessment.allergyStatus === 'confirmed_present' && !nutritionAssessment.allergyDetails.trim()) missing.push('食物过敏详情')
+      if (missing.length) { toast(`请先补齐：${missing.join('、')}`); return }
+      if (nutritionAssessment.riskStatus === 'specialist') { toast('此客户需专业评估，请先完成评估后人工制定方案'); return }
+      if (!nutritionAssessment.templateCompatibilityConfirmed) { toast('请先核对所选模板的适用性及过敏禁忌'); return }
+    }
     setGenerating(true)
     try {
-      await onGenerate(selectedId, briefNote.trim(), selectedProductId, desiredServiceDate, serviceRequirements.trim())
+      await onGenerate(selectedId, briefNote.trim(), selectedProductId, desiredServiceDate, serviceRequirements.trim(), planType === 'nutrition' ? { ...nutritionAssessment, goal: briefNote.trim() } : undefined)
       onClose()
     } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
     finally { setGenerating(false) }
@@ -15052,7 +15068,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{ maxWidth: 480, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="modal" style={{ maxWidth: planType === 'nutrition' ? 680 : 480, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header" style={{ flexShrink: 0 }}>
           <h3 className="modal-title">{title} — 选择模板</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -15098,7 +15114,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
             </div>
           </>}
           <div className="form-group" style={{ marginBottom: 12 }}>
-            <label className="form-label">服务目标（已自动带入客户本次问卷需求，可核对、补充或修改）</label>
+            <label className="form-label">{planType === 'nutrition' ? '本次营养目标 *' : '服务目标（已自动带入客户本次问卷需求，可核对、补充或修改）'}</label>
             <textarea className="form-input" rows={2} placeholder={
               planType === 'medical_assist' ? '如：这次去北京协和看内分泌科，会员行动不便需要轮椅，希望尽快安排'
                 : planType === 'nutrition' ? '如：控制血糖、三个月内减重5公斤'
@@ -15107,6 +15123,20 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
           </div>
         </div>
         <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+          {planType === 'nutrition' && <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
+            <div style={{ fontWeight: 700 }}>生成前营养评估 · 由营养师核实</div>
+            <div style={{ color: '#66776E', fontSize: 12 }}>档案值仅作预填；请核对后填写。本次记录将与方案一同保存。需要专业评估的客户请先评估并人工制定方案。</div>
+            <div style={{ color: '#52675D', fontSize: 12 }}>档案年龄：{patient?.age || '未录入（请先在客户基本信息中补齐）'}；档案食物过敏：{patient?.healthProfile?.foodAllergy || '未记录，不能按无过敏处理'}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {[['height', '身高（cm）'], ['weight', '体重（kg）'], ['metric', '观察指标'], ['baseline', '已核实基线'], ['target', '阶段目标']].map(([key, label]) => <label key={key} className="form-label">{label} *<input className="form-input" value={nutritionAssessment[key]} onChange={e => setNutritionField(key, e.target.value)} /></label>)}
+              <label className="form-label">阶段复盘日期 *<DateField className="form-input" type="date" value={nutritionAssessment.reviewDate} onChange={e => setNutritionField('reviewDate', e.target.value)} /></label>
+            </div>
+            {[['currentDiet', '近期实际饮食（餐次、食物、饮料与大致分量）'], ['medicalReview', '疾病、用药及相关检查核对（注明未掌握的项目）'], ['practicalConstraints', '饮食偏好与执行条件（时间、做饭、外卖、预算等）']].map(([key, label]) => <label key={key} className="form-label">{label} *<textarea className="form-input" rows={2} value={nutritionAssessment[key]} onChange={e => setNutritionField(key, e.target.value)} /></label>)}
+            <label className="form-label">食物过敏核对 *<select className="form-input" value={nutritionAssessment.allergyStatus} onChange={e => setNutritionField('allergyStatus', e.target.value)}><option value="">请选择已核实结果</option><option value="confirmed_none">已核实，无已知食物过敏</option><option value="confirmed_present">已核实，有食物过敏</option></select></label>
+            {nutritionAssessment.allergyStatus === 'confirmed_present' && <label className="form-label">过敏食物及反应 *<textarea className="form-input" rows={2} value={nutritionAssessment.allergyDetails} onChange={e => setNutritionField('allergyDetails', e.target.value)} /></label>}
+            <label className="form-label">专业风险分流 *<select className="form-input" value={nutritionAssessment.riskStatus} onChange={e => setNutritionField('riskStatus', e.target.value)}><option value="">请选择</option><option value="standard">已核对，适用普通成人膳食方案</option><option value="specialist">需专业评估或特殊疾病营养路径</option></select></label>
+            <label className="form-label"><input type="checkbox" checked={nutritionAssessment.templateCompatibilityConfirmed} onChange={e => setNutritionField('templateCompatibilityConfirmed', e.target.checked)} /> 已核对所选模板适用于本客户，且与食物过敏、疾病要求及本次目标不冲突 *</label>
+          </div>}
           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
             方案的标准内容以模板为准，AI只会结合会员情况在模板基础上做定制，不会脱离模板另起一套。
           </div>
@@ -15121,7 +15151,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
             const desc = c.packageDesc || c.description || ''
             const isSel = selectedId === tpl._id
             return (
-              <div key={tpl._id} onClick={() => setSelectedId(tpl._id)}
+              <div key={tpl._id} onClick={() => { setSelectedId(tpl._id); if (planType === 'nutrition') setNutritionField('templateCompatibilityConfirmed', false) }}
                 style={{
                   border: isSel ? '1.5px solid #1E6B50' : '1px solid #E0D9CE', borderRadius: 10, padding: '12px 16px',
                   marginBottom: 8, cursor: 'pointer', background: isSel ? '#F0F9F4' : '#fff',

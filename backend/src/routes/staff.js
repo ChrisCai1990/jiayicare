@@ -15520,19 +15520,35 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '仅营养师可生成营养干预方案' });
   }
   try {
-    const { templateId, goal } = req.body;
+    const { templateId } = req.body;
     if (!templateId) return res.status(400).json({ success: false, message: '请先选择营养方案模板' });
     const template = await PlanTemplate.findOne({ _id: templateId, type: 'nutrition' }).lean();
     if (!template) return res.status(404).json({ success: false, message: '营养方案模板不存在' });
 
     const user = await User.findById(req.params.id)
-      .select('name gender age chronicDiseases healthProfile lifestyle_data aiRiskAssessment');
-    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+      .select('name gender age height weight chronicDiseases healthProfile lifestyle_data aiRiskAssessment tenantId isDeleted assignedNutritionist');
+    if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (String(user.tenantId || '') !== String(req.staff.tenantId || '') ||
+        (req.staff.role !== 'superadmin' && String(user.assignedNutritionist || '') !== String(req.staff._id))) {
+      return res.status(403).json({ success: false, message: '无权为该会员生成营养方案' });
+    }
+    if (template.status !== 'active' || (template.tenantId && String(template.tenantId) !== String(user.tenantId || ''))) {
+      return res.status(409).json({ success: false, message: '所选营养模板不适用于该客户' });
+    }
+    const { assessment, missing } = require('../utils/nutritionPlanAssessment').prepareNutritionAssessment(req.body.assessment, user);
+    if (missing.length) return res.status(400).json({ success: false, message: `生成前请补齐或核实：${missing.join('、')}` });
+    const recordedFoodAllergies = [user.healthProfile?.foodAllergy, ...(Array.isArray(user.healthProfile?.allergies) ? user.healthProfile.allergies : [])
+      .filter(row => /食物|食品|food/i.test(String(row?.type || '')))
+      .map(row => row?.substance || row?.name || '')]
+      .map(value => String(value || '').trim()).filter(value => value && !/^(无|否|没有|无已知|none)$/i.test(value));
+    if (assessment.allergyStatus === 'confirmed_none' && recordedFoodAllergies.length) {
+      return res.status(409).json({ success: false, message: '档案已有食物过敏记录，请先核对并填写过敏详情，不能直接选择无过敏' });
+    }
 
     const supplements = await Supplement.find({ user: user._id, stopped: false }).select('name dosage purpose').lean();
     const { chat } = require('../utils/ai');
 
-    const allergyInfo = [user.healthProfile?.foodAllergy, user.healthProfile?.drugAllergy].filter(Boolean).join('；') || '无';
+    const allergyInfo = assessment.allergyStatus === 'confirmed_none' ? '营养师已核对：无已知食物过敏' : `营养师已核对：${assessment.allergyDetails}`;
     const supText = supplements.length ? supplements.map(s => `${s.name}（${s.dosage}）：${s.purpose || ''}`).join('、') : '无';
     const lifestyle = user.lifestyle_data || {};
     const tc = template.content || {};
@@ -15542,13 +15558,17 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
 具体化到可执行的程度。绝对不能推荐模板"禁忌食物"里的东西，也不能违反"膳食总原则"。
 
 【会员信息】
-姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
-食物过敏/忌口：${allergyInfo}
+姓名：${user.name}，年龄：${assessment.age}岁，身高：${assessment.height}cm，体重：${assessment.weight}kg，慢病标签：${user.chronicDiseases?.join('、') || '未记录'}
+食物过敏：${allergyInfo}
 当前营养素补充：${supText}
-饮食习惯：${lifestyle.diet || '未记录'}，运动习惯：${lifestyle.exercise || '未记录'}
+已核实的近期实际饮食：${assessment.currentDiet}
+疾病、用药及相关检查核对：${assessment.medicalReview}
+偏好与执行条件：${assessment.practicalConstraints}
+档案饮食习惯：${lifestyle.diet || '未记录'}，运动习惯：${lifestyle.exercise || '未记录'}
 
 【本次服务目标（营养师填写，方案要朝这个方向靠，如与模板骨架冲突以骨架为准）】
-${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制）'}
+${assessment.goal}
+观察指标：${assessment.metric}；基线：${assessment.baseline}；阶段目标：${assessment.target}；复盘日期：${assessment.reviewDate}
 
 【模板固定骨架（不可修改，仅供你参考约束）】
 膳食总原则：${tc.dietPrinciple || '无'}
@@ -15561,6 +15581,7 @@ ${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制
 模板晚餐参考：${tc.dinner || '无'}
 模板加餐参考：${tc.snack || '无'}
 
+不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应食物；在description中指出需营养师修订模板。餐次写清食物与可执行分量，不承诺治疗效果。
 请以JSON格式输出，仅输出JSON：
 {
   "description": "结合会员情况的方案说明（100字以内）",
@@ -15571,16 +15592,19 @@ ${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制
 }`;
 
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1000 });
-    let raw = {};
+    let raw = null;
     try {
       const m = text.trim().match(/\{[\s\S]*\}/);
       if (m) raw = JSON.parse(m[0]);
     } catch {}
+    if (!raw || ['description', 'breakfast', 'lunch', 'dinner'].some(key => typeof raw[key] !== 'string' || !raw[key].trim())) {
+      return res.status(502).json({ success: false, message: 'AI未生成完整方案说明和三餐草稿，请重试；不会用模板餐单冒充个体化结果' });
+    }
 
-    // 骨架字段原样锁定，只有三餐+加餐内容用AI具体化结果（留空则回退模板参考值）
-    const breakfast = raw.breakfast || tc.breakfast || '';
-    const lunch = raw.lunch || tc.lunch || '';
-    const dinner = raw.dinner || tc.dinner || '';
+    // 骨架字段原样锁定，三餐必须由个体化草稿明确给出。
+    const breakfast = raw.breakfast.trim();
+    const lunch = raw.lunch.trim();
+    const dinner = raw.dinner.trim();
     const snack = raw.snack || tc.snack || '';
     const items = [
       { name: '早餐方案', category: '营养干预', notes: breakfast },
@@ -15615,7 +15639,10 @@ ${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
         nutritionTaskVersion: 1,
         templateId: template._id, templateName: template.name || '',
-        goal: goal || '',
+        goal: assessment.goal,
+        nutritionMetric: assessment.metric, nutritionBaseline: assessment.baseline,
+        nutritionTarget: assessment.target, nutritionReviewDate: assessment.reviewDate,
+        nutritionAssessment: { ...assessment, verifiedBy: req.staff._id, verifiedAt: new Date() },
         moduleData,
       },
       status: 'draft',

@@ -625,11 +625,11 @@ export default function PlanModulesPage() {
 
       {/* 体检订单的核心需求已在上方展示，避免健康规划师重复维护“服务目标”。 */}
       {!isCheckupService && !isOutpatientService && <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
-        <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 10 }}>{plan.type === 'medical_assist' ? (isOutpatientService ? '本次门诊一站式服务目标（简述）' : '本次代办总目标（简述）') : '服务目标'}</div>
+        <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 10 }}>{plan.type === 'medical_assist' ? (isOutpatientService ? '本次门诊一站式服务目标（简述）' : '本次代办总目标（简述）') : plan.type === 'nutrition' ? '营养干预目标与阶段复盘' : '服务目标'}</div>
         <textarea
           className="form-input"
           rows={2}
-          placeholder={plan.type === 'medical_assist' ? (isOutpatientService ? '说明本次评估、开单检查及检查后专家门诊要解决的问题' : '用一句话说明本次代办要解决什么问题') : '如：控制血糖、三个月内减重5公斤——AI生成方案时会参考这里的目标'}
+          placeholder={plan.type === 'medical_assist' ? (isOutpatientService ? '说明本次评估、开单检查及检查后专家门诊要解决的问题' : '用一句话说明本次代办要解决什么问题') : plan.type === 'nutrition' ? '填写本次已与客户确认的营养目标' : '填写本次服务目标'}
           value={goal}
           onChange={e => { setGoal(e.target.value); setDirty(true) }}
           style={{ width: '100%', padding: '8px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
@@ -639,6 +639,18 @@ export default function PlanModulesPage() {
           <label style={{ fontSize: 13 }}>阶段复盘日期<input className="form-input" type="date" value={nutritionReviewDate} onChange={e => { setNutritionReviewDate(e.target.value); setDirty(true) }} style={{ display: 'block', width: '100%', marginTop: 5 }} /></label>
         </div>}
       </div>}
+
+      {plan.type === 'nutrition' && plan.content?.nutritionAssessment && <section className="card" style={{ marginBottom: 20, padding: 18 }} aria-label="营养方案制定依据">
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>本次营养评估依据</div>
+        {[
+          ['体格资料', `${plan.content.nutritionAssessment.height} cm / ${plan.content.nutritionAssessment.weight} kg`],
+          ['近期实际饮食', plan.content.nutritionAssessment.currentDiet],
+          ['疾病、用药及检查核对', plan.content.nutritionAssessment.medicalReview],
+          ['食物过敏', plan.content.nutritionAssessment.allergyStatus === 'confirmed_none' ? '已核实无已知食物过敏' : plan.content.nutritionAssessment.allergyDetails],
+          ['偏好与执行条件', plan.content.nutritionAssessment.practicalConstraints],
+        ].map(([label, value]) => <div key={label} style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}><strong>{label}：</strong>{value}</div>)}
+        <div style={{ color: '#65776F', fontSize: 12, marginTop: 7 }}>生成草稿需由营养师核对餐次、分量、过敏禁忌和模板适用性后推送。</div>
+      </section>}
 
       {plan.type === 'nutrition' && plan.pushedAt && <section className="card" style={{ marginBottom: 20, padding: 18 }} aria-label="营养干预行动草稿">
         <div style={{ fontWeight: 700 }}>营养干预行动与阶段复盘</div>
