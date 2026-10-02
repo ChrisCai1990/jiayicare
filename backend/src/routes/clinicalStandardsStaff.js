@@ -7,7 +7,10 @@ const { standards } = require('../../../shared/clinicalStandards.cjs');
 const router = express.Router();
 
 async function assignedReviewer(req, res, next) {
-  const config = await SystemConfig.findOne({ key: 'clinicalStandardReviewer' }).lean();
+  const tenantId = String(req.staff.tenantId || '');
+  const delegation = await SystemConfig.findOne({ key: 'clinicalStandardDelegation' }).lean();
+  if (String(delegation?.value?.tenantId || '') !== tenantId) return res.status(403).json({ success: false, message: '本机构未受托审核临床标准' });
+  const config = await SystemConfig.findOne({ key: `clinicalStandardReviewer:${tenantId}` }).lean();
   if (req.staff.role !== 'familyDoctor' || String(config?.value?.staffId || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '此标准审核任务未指派给您' });
   next();
 }

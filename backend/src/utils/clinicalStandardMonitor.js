@@ -52,7 +52,7 @@ async function checkOne(standard, { force = false, fetchImpl = fetch } = {}) {
   if (standard.monitor !== 'source') return { standardId: standard.id, outcome: 'manual' };
   const now = new Date();
   const watch = await ClinicalStandardWatch.findOneAndUpdate(
-    { standardId: standard.id, $and: [{ $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now } }] }, ...(force ? {} : { $or: [{ nextCheckAt: null }, { nextCheckAt: { $lte: now } }] })] },
+    { standardId: standard.id, $and: [{ $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now } }] }, ...(force ? [] : [{ $or: [{ nextCheckAt: null }, { nextCheckAt: { $lte: now } }] }])] },
     { $set: { leaseUntil: new Date(now.getTime() + 30000) }, $setOnInsert: { standardId: standard.id } },
     { new: true, upsert: true },
   ).catch(error => { if (error.code === 11000) return null; throw error; });
@@ -92,7 +92,14 @@ async function scheduleManualReview(standard) {
 
 async function checkAll(options = {}) {
   const results = [];
-  for (const standard of standards) results.push(standard.monitor === 'source' ? await checkOne(standard, options) : await scheduleManualReview(standard));
+  for (const standard of standards) {
+    try {
+      results.push(standard.monitor === 'source' ? await checkOne(standard, options) : await scheduleManualReview(standard));
+    } catch (error) {
+      console.error(`[clinical-standard-monitor] ${standard.id}: ${error.message}`);
+      results.push({ standardId: standard.id, outcome: 'error', error: String(error.message).slice(0, 300) });
+    }
+  }
   return results;
 }
 

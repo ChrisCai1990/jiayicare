@@ -56,7 +56,8 @@ export const metabolicPilotAPI = {
 }
 export const adminAPI = {
   clinicalStandards: () => req('/clinical-standards'),
-  setClinicalStandardReviewer: staffId => req('/clinical-standards/reviewer', { method: 'PUT', body: JSON.stringify({ staffId }) }),
+  delegateClinicalStandards: tenantId => req('/clinical-standards/delegation', { method: 'PUT', body: JSON.stringify({ tenantId, confirmed: true }) }),
+  setClinicalStandardReviewer: staffId => req('/clinical-standards/reviewer', { method: 'PUT', body: JSON.stringify({ staffId, confirmed: true }) }),
   checkClinicalStandards: () => req('/clinical-standards/check', { method: 'POST', body: '{}' }),
   saasPlan: (tenantId = '') => req(`/saas-plan${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`),
   createDraftTenant: data => req('/tenants/draft', { method: 'POST', body: JSON.stringify(data) }),
