@@ -18,18 +18,24 @@ test('staff empty state guides enrollment, load failure never pretends zero cust
   const failed=harness([],true);await failed.load();assert.ok(failed.nodes().some(n=>n.props?.role==='alert'));
   assert.ok(!failed.nodes().some(n=>n.type==='h2'&&String(n.props.children).includes('等待首位客户')));
 });
-test('staff selects customer, validates reply and preserves revision and minutes',async()=>{
+test('staff selects customer, requires a reply and records estimated duration automatically',async()=>{
   const h=harness([sample]);await h.load();
   h.nodes().find(n=>n.props?.className?.startsWith('mw-person ')).props.onClick();
   assert.ok(h.nodes().some(n=>n.props?.role==='progressbar'&&n.props['aria-label'].includes('不代表')));
-  h.nodes().find(n=>n.type==='textarea').props.onChange({target:{value:'已说明如何调整提醒频率。'}});
-  h.nodes().find(n=>n.props?.id==='mw-minutes').props.onChange({target:{value:'0'}});
   await h.nodes().find(n=>n.type==='form').props.onSubmit({preventDefault(){}});assert.equal(h.calls.length,0);
-  h.nodes().find(n=>n.props?.id==='mw-minutes').props.onChange({target:{value:'2'}});
+  assert.ok(!h.nodes().some(n=>n.props?.id==='mw-minutes'));
+  h.nodes().find(n=>n.type==='textarea').props.onChange({target:{value:'已说明如何调整提醒频率。'}});
   const send=h.nodes().find(n=>n.type==='form').props.onSubmit;
   await Promise.all([send({preventDefault(){}}),send({preventDefault(){}})]);
-  assert.equal(h.calls.length,1);assert.equal(h.calls[0].body.revision,7);assert.equal(h.calls[0].body.minutes,2);
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].body.revision,7);assert.ok(Number.isFinite(h.calls[0].body.minutes));assert.ok(h.calls[0].body.minutes>=0);
   assert.ok(h.nodes().some(n=>n.props?.role==='status'));
+});
+test('staff history shows action and reminder choices in Chinese',async()=>{
+  const h=harness([{...sample,history:[{action:'choose',note:'consistent-measurement:try',at:new Date().toISOString()},{action:'preferences',note:'reminder=true;every=1',at:new Date().toISOString()}]}]);await h.load();
+  h.nodes().find(n=>n.props?.className?.startsWith('mw-person ')).props.onClick();
+  const notes=h.nodes().filter(n=>n.type==='p').map(n=>n.props.children);
+  assert.ok(notes.includes('让下次测量更容易比较：愿意尝试'));
+  assert.ok(notes.includes('已开启记录提醒，每1天'));
 });
 test('refresh clears selected customer and stale reply draft',async()=>{
   const h=harness([sample]);await h.load();

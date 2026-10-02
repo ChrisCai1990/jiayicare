@@ -121,7 +121,7 @@ router.post('/staff/:id/resolve',wrap(async(req,res)=>{
   const row=await Pilot.findOne({_id:user._id,...tenantFilter(req.staff)});
   if(req.staff.role!=='superadmin' && ownerIdFor(row||{},user)!==String(req.staff._id)) return fail(res,403,'请由本次求助责任人处理');
   const reply=String(req.body.reply||'').trim(), minutes=Number(req.body.minutes);
-  if (!reply || reply.length>1000 || !Number.isFinite(minutes) || minutes<=0 || minutes>480) return fail(res,400,'请填写处理结果和实际用时（0—480分钟，不含0）');
+  if (!reply || reply.length>1000 || !Number.isFinite(minutes) || minutes<0 || minutes>480) return fail(res,400,'请填写处理结果，处理时长须在0—480分钟内');
   if (!row || row.help?.status!=='open' || String(row.revision)!==String(req.body.revision)) return fail(res,409,'待办已更新，请刷新后再处理');
   row.help.status='closed'; row.help.reply=reply; row.help.closedAt=new Date(); row.help.closedBy=req.staff._id;
   row.humanMinutes+=minutes; audit(row,req.staff,'resolve',reply,minutes); await row.save(); okay(res,{resolved:true});

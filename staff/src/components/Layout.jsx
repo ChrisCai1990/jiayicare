@@ -25,7 +25,6 @@ const ALL_NAV = [
   { label: '团队管理',     icon: 'team', path: '/team',             roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'],      moduleKey: 'team' },
   { label: '运营看板',     icon: 'operations', path: '/operations', roles: ['superadmin','manager'],                                                            moduleKey: 'operations' },
   { label: '日常健康数据', icon: 'checkin', path: '/daily-checkin', roles: [], moduleKey: 'daily_checkin' },
-  { label: '体重管理试点', icon: 'checkin', path: '/metabolic-pilot', roles: ['healthManager','familyDoctor','nutritionist','superadmin'], moduleKey: 'daily_checkin' },
   { label: '消息通知',     icon: 'notifications', path: '/notifications', roles: [] },
   { label: '个人中心',     icon: 'profile', path: '/profile',       roles: [] },
 ]
@@ -42,8 +41,7 @@ function LayoutContent() {
   const setup = staff?.tenantStatus === 'setup'
   const setupView = setup ? new URLSearchParams(loc.search).get('view') || '/home' : loc.pathname
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const { count: notifBadge, data: notificationData } = useNotificationSummary()
-  const pilotBadge = Number(notificationData?.summary?.metabolicHelpCount || 0)
+  const { count: notifBadge } = useNotificationSummary()
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -115,7 +113,6 @@ function LayoutContent() {
                     {notifBadge}
                   </span>
                 )}
-                {item.path === '/metabolic-pilot' && pilotBadge > 0 && <span style={{background:'#DC3545',color:'#fff',borderRadius:99,fontSize:11,fontWeight:700,padding:'1px 7px'}}>{pilotBadge}</span>}
               </div>
             )
           })}

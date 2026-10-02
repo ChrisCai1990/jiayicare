@@ -7,6 +7,7 @@ const schema = new mongoose.Schema({
   detectedAt: { type: Date, default: Date.now },
   status: { type: String, enum: ['pending', 'clinically_reviewed', 'dismissed'], default: 'pending', index: true },
   note: { type: String, default: '', maxlength: 2000 },
+  sourceVerified: { type: Boolean, default: false },
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   reviewedByName: { type: String, default: '' },
   reviewedAt: { type: Date, default: null },
