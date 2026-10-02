@@ -361,7 +361,7 @@ function LandingScreen({ navigation, pendingQs, loading, onSelectStatic, onSelec
               <TouchableOpacity
                 key={dq._id}
                 style={[styles.landingCard, { borderColor: colors.warning + '60' }]}
-                onPress={() => onSelectDynamic(dq)}
+                onPress={() => dq.ageStageMissing ? Alert.alert('请联系医护人员', '需要先核实儿童出生日期和适用年龄，才能填写分龄问卷。') : onSelectDynamic(dq)}
                 activeOpacity={0.85}
               >
                 <View style={[styles.landingIcon, { backgroundColor: colors.warning + '15' }]}>
@@ -369,6 +369,7 @@ function LandingScreen({ navigation, pendingQs, loading, onSelectStatic, onSelec
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.landingCardTitle}>{dq.title}</Text>
+                  {dq.archivePurpose === 'child_health' ? <Text style={styles.landingCardSub}>{dq.ageStageMissing ? '出生日期或适用年龄待核实，暂不能提交' : `适用：${dq.ageStage?.label || '儿童'}`}</Text> : null}
                   {dq.description ? <Text style={styles.landingCardSub}>{dq.description}</Text> : null}
                   <View style={styles.landingCardMeta}>
                     <Ionicons name="list-outline" size={12} color={colors.textMuted} />
@@ -555,7 +556,7 @@ export default function QuestionnaireScreen({ navigation }) {
     const finalAnswers = buildFinalAnswers();
     try {
       if (mode === 'dynamic' && selectedDynamic) {
-        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers, selectedDynamic.assignmentId);
+        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers, selectedDynamic.assignmentId, selectedDynamic.ageStage?.id);
         if (res.success) {
           setSubmitResult({ dynamic: true, message: res.message, totalScore: res.totalScore, scoreRange: res.scoreRange || null });
           setPendingQs(prev => prev.filter(dq => dq.assignmentId !== selectedDynamic.assignmentId));

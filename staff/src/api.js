@@ -87,6 +87,7 @@ export const staffAPI = {
   reviewChildArchive: (id, responseId, data) => req(`/staff/patients/${id}/child-archive/${responseId}/review`, { method: 'PUT', body: JSON.stringify(data) }),
   updateChildArchive: (id, data) => req(`/staff/patients/${id}/child-archive/manual`, { method: 'PUT', body: JSON.stringify(data) }),
   retryChildArchive: id => req(`/staff/patients/${id}/child-archive/retry`, { method: 'POST', body: '{}' }),
+  addChildStandardRecord: (id, data) => req(`/staff/patients/${id}/child-archive/standard-records`, { method: 'POST', body: JSON.stringify(data) }),
   getOrderShipments: (p = {}) => req('/staff/order-shipments?' + qs(p)),
   shipOrder: (id, data) => req(`/staff/order-shipments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   // Auth

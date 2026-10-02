@@ -1,0 +1,8 @@
+[
+  { "id": "newborn", "label": "新生儿期（出生至未满28天）" },
+  { "id": "infant", "label": "婴儿期（28天至未满1岁）" },
+  { "id": "toddler", "label": "幼儿期（1岁至未满3岁）" },
+  { "id": "preschool", "label": "学龄前期（3岁至未满6岁）" },
+  { "id": "school", "label": "学龄期（6岁至未满12岁）" },
+  { "id": "adolescent", "label": "青少年期（12岁至未满18岁）" }
+]

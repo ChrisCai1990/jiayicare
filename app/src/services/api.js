@@ -219,8 +219,8 @@ export const questionnaireAPI = {
   // 动态问卷（管理员创建的问卷）
   pending: () =>
     request('/questionnaire/pending'),
-  submitDynamic: (id, answers, assignmentId) =>
-    request(`/questionnaire/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers, assignmentId }) }),
+  submitDynamic: (id, answers, assignmentId, ageStageId) =>
+    request(`/questionnaire/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers, assignmentId, ageStageId }) }),
 };
 
 // ── Checkup Plan / 复查计划 ───────────────────────────────────────

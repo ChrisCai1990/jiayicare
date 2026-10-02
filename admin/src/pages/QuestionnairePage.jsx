@@ -1,4 +1,5 @@
 import DateField from '../../../shared/DateField.jsx'
+import childAgeStages from '../../../shared/childAgeStages.json'
 import React, { useEffect, useState, useRef } from 'react'
 import { adminAPI } from '../api'
 import { useToast } from '../App'
@@ -243,7 +244,7 @@ function JumpLogicEditor({ jumpLogic = [], options = [], allQuestions = [], curr
 }
 
 // ── 单题编辑卡 ────────────────────────────────────────────────────
-function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, scoringEnabled, archiveFields = [] }) {
+function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, scoringEnabled, archivePurpose, archiveFields = [] }) {
   const [collapsed, setCollapsed] = useState(false)
 
   const handleTypeChange = (type) => {
@@ -412,6 +413,10 @@ function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, s
               value={q.placeholder || ''} onChange={e => onUpdate({ placeholder: e.target.value })} />
           )}
 
+          {archivePurpose === 'child_health' && <div style={{ borderTop: '1px dashed #E0D9CE', paddingTop: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>适用年龄段 <span style={{ fontWeight: 400, color: '#65776F' }}>（不选表示全部年龄段）</span></div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>{childAgeStages.map(stage => <label key={stage.id} style={{ fontSize: 12 }}><input type="checkbox" checked={(q.ageStages || []).includes(stage.id)} onChange={e => onUpdate({ ageStages: e.target.checked ? [...(q.ageStages || []), stage.id] : (q.ageStages || []).filter(id => id !== stage.id) })} /> {stage.label}</label>)}</div>
+          </div>}
           {/* 对应健康档案字段（答卷自动导入档案用，一次配置长期生效） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px dashed #E0D9CE', paddingTop: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: '#2b6cb0', whiteSpace: 'nowrap' }}>🔗 对应健康档案字段</span>
@@ -465,7 +470,7 @@ const makeChildHealthDraft = () => {
     ['childProfile.birthDefects', '是否有出生缺陷或先天性疾病？', 'text'],
     ['childProfile.hearingScreening', '听力筛查结果是什么？', 'dropdown'],
     ['childProfile.eyeScreening', '眼底筛查结果是什么？', 'text'],
-    ['childProfile.visionScreening', '近期视力筛查情况如何？', 'text'],
+    ['childProfile.visionScreening', '近期视力筛查情况如何？', 'text', ['preschool', 'school', 'adolescent']],
     ['childProfile.neonatalDiseaseScreen', '新生儿疾病筛查结果是什么？', 'text'],
     ['childProfile.familyAllergyHistory', '家族中是否有过敏史？', 'text'],
     ['childProfile.familyDiseaseHistory', '家族中是否有需要关注的疾病史？', 'text'],
@@ -475,18 +480,18 @@ const makeChildHealthDraft = () => {
     ['childProfile.vaccinationStatus', '预防接种情况如何？有无漏种或异常反应？', 'text'],
     ['childProfile.currentMedicationReport', '孩子目前是否在用药或服用营养补充剂？', 'text'],
     ['childProfile.currentSymptomsReport', '孩子近期有哪些不适或症状？', 'text'],
-    ['childProfile.feeding', '目前的喂养和饮食情况如何？', 'text'],
+    ['childProfile.feeding', '目前的喂养和饮食情况如何？', 'text', ['newborn', 'infant', 'toddler', 'preschool', 'school', 'adolescent']],
     ['childProfile.sleep', '目前的睡眠情况如何？', 'text'],
-    ['childProfile.development', '生长发育、语言或行为方面有无需要关注的变化？', 'text'],
-    ['childProfile.schoolAndActivity', '托育、学校生活和日常活动情况如何？', 'text'],
+    ['childProfile.development', '生长发育、语言或行为方面有无需要关注的变化？', 'text', ['newborn', 'infant', 'toddler', 'preschool']],
+    ['childProfile.schoolAndActivity', '托育、学校生活和日常活动情况如何？', 'text', ['preschool', 'school', 'adolescent']],
     ['childProfile.caregiverConcerns', '监护人目前最关注哪些健康问题？', 'text'],
   ]
   return {
     title: '儿童健康问卷（建档与后续更新）',
-    description: '由监护人填写。出生及新生儿信息如不清楚可留空；后续再次填写时，医护端逐项核对变化。问卷回答不作为诊断。',
+    description: '由监护人填写。题目按出生日期匹配年龄段；出生及新生儿信息如不清楚可留空。后续填写由医护逐项核对变化，回答不作为诊断。',
     patientCategory: 'child', archivePurpose: 'child_health', targetType: 'specific',
-    questions: fields.map(([archiveField, text, type], index) => ({
-      id: `child_${Date.now()}_${index}`, archiveField, text, type, required: false,
+    questions: fields.map(([archiveField, text, type, ageStages = []], index) => ({
+      id: `child_${Date.now()}_${index}`, archiveField, text, type, ageStages, required: false,
       ...(type === 'dropdown' ? { options: ['通过', '未通过', '未查'].map(label => ({ label, allowInput: false, exclusive: false, score: 0 })) } : {}),
     })),
   }
@@ -731,6 +736,7 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
                       onRemove={() => removeQ(i)}
                       onMove={dir => moveQ(i, dir)}
                       scoringEnabled={form.scoringEnabled}
+                      archivePurpose={form.archivePurpose}
                       archiveFields={archiveFields.filter(g => form.archivePurpose === 'child_health' ? g.group.startsWith('儿童·') : !g.group.startsWith('儿童·'))}
                     />
                     <InsertBar onInsert={newQ => insertQ(i + 1, newQ)} />

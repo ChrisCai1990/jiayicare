@@ -1320,6 +1320,8 @@ function childQuestionnaireError(questions, patientCategory, archivePurpose) {
   if (paths.some(path => !FIELD_MAP[path])) return '包含无效的儿童档案字段';
   const compatible = { number: ['number'], date: ['date'], enum: ['radio', 'dropdown'], text: ['text', 'radio', 'dropdown'] };
   if (questions.some(q => q.archiveField && !compatible[FIELD_MAP[q.archiveField]?.type]?.includes(q.type))) return '儿童档案题型与目标字段类型不一致';
+  const { ids } = require('../utils/childAgeStage');
+  if (questions.some(q => q.ageStages !== undefined && (!Array.isArray(q.ageStages) || q.ageStages.some(id => !ids.has(id)) || new Set(q.ageStages).size !== q.ageStages.length))) return '儿童题目适用年龄段无效';
   return '';
 }
 

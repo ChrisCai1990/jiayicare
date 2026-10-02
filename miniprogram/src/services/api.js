@@ -330,7 +330,7 @@ export const chatAPI = {
 export const questionnaireAPI = {
   submit: (answers) => request('/questionnaire', { method: 'POST', body: JSON.stringify({ answers }) }),
   pending: () => request('/questionnaire/pending'),
-  submitDynamic: (id, answers, assignmentId) => request(`/questionnaire/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers, assignmentId }) }),
+  submitDynamic: (id, answers, assignmentId, ageStageId) => request(`/questionnaire/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers, assignmentId, ageStageId }) }),
 };
 
 // ── Checkup Plan ────────────────────────────────────────────────

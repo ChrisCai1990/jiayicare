@@ -220,6 +220,7 @@ const userSchema = new mongoose.Schema({
   childArchiveImportPending: { type: mongoose.Schema.Types.Mixed, default: null },
   childArchiveSubmissions: { type: [mongoose.Schema.Types.Mixed], default: [] },
   childArchiveHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  childStandardRecords: { type: [mongoose.Schema.Types.Mixed], default: [] }, // 分龄规范化访视/体检记录；逐次追加，不覆盖历史
 
   // 医护端管理字段
   assignedHealthPlanner:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健康规划师：客户经理，负责转化规划/方案统筹/订单与服务进度监控/佣金归属，与健管专员(日常执行)分工不同

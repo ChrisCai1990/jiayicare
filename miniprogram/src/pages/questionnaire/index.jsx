@@ -357,7 +357,7 @@ export default function QuestionnairePage() {
     const finalAnswers = buildFinalAnswers();
     try {
       if (mode === 'dynamic' && selectedDynamic) {
-        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers, selectedDynamic.assignmentId);
+        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers, selectedDynamic.assignmentId, selectedDynamic.ageStage?.id);
         if (res.success) {
           setSubmitResult({ dynamic: true, message: res.message, totalScore: res.totalScore, scoreRange: res.scoreRange || null });
           setPendingQs((prev) => prev.filter((dq) => dq.assignmentId !== selectedDynamic.assignmentId));
@@ -405,7 +405,7 @@ export default function QuestionnairePage() {
             <>
               <Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700, display: 'block', marginBottom: `${spacing.sm}px` }}>🔔 待填问卷 ({pendingQs.length})</Text>
               {pendingQs.map((dq) => (
-                <View key={dq._id} onClick={() => Object.keys(dq.initialAnswers || {}).length ? (setSelectedDynamic(dq), setMode('prefill')) : beginDynamic(dq)} style={{
+                <View key={dq._id} onClick={() => { if (dq.ageStageMissing) return; Object.keys(dq.initialAnswers || {}).length ? (setSelectedDynamic(dq), setMode('prefill')) : beginDynamic(dq) }} style={{
                   display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`,
                   border: `1.5px solid ${colors.warning}60`, padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px`, boxShadow: shadow.sm,
                 }}>
@@ -414,6 +414,7 @@ export default function QuestionnairePage() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{dq.title}</Text>
+                    {dq.archivePurpose === 'child_health' && <Text style={{ fontSize: '12px', color: dq.ageStageMissing ? colors.danger : colors.textMuted, display: 'block' }}>{dq.ageStageMissing ? '出生日期或适用年龄待核实，暂不能提交' : `适用：${dq.ageStage?.label || '儿童'}`}</Text>}
                     {!!dq.description && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{dq.description}</Text>}
                     <Text style={{ fontSize: '11px', color: colors.textMuted }}>{dq.questions?.length || 0} 道题{dq.deadline ? ` · 截止 ${dq.deadline}` : ''}</Text>
                   </View>

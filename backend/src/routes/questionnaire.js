@@ -198,9 +198,12 @@ router.get('/pending', auth, async (req, res) => {
     // 按用户性别过滤 genderOnly 题目（如月经史/生育史仅女性可见，男性用户完全看不到这些题）
     const filtered = pendingPushes.map(push => {
       const q = questionnaireMap.get(String(push.questionnaireId));
-      const questions = (q?.questions || []).filter(item => !item.genderOnly || item.genderOnly === req.user.gender);
+      const stage = q?.archivePurpose === 'child_health' ? require('../utils/childAgeStage').childAgeStage(profileUser?.birthDate) : null;
+      const questions = q?.archivePurpose === 'child_health'
+        ? require('../utils/childAgeStage').applicableChildQuestions(q.questions, stage?.id, req.user.gender)
+        : (q?.questions || []).filter(item => !item.genderOnly || item.genderOnly === req.user.gender);
       return q && (!q.patientCategory || q.patientCategory === 'all' || q.patientCategory === (profileUser?.patientCategory || 'adult')) ? { ...q, assignmentId: push._id, sourceOrderId: push.sourceOrderId || null, sourceHealthPlanId: push.sourceHealthPlanId || null,
-        questions, initialAnswers: buildInitialAnswers(profileUser, questions) } : null;
+        questions, ageStage: stage, ageStageMissing: q.archivePurpose === 'child_health' && !stage, initialAnswers: buildInitialAnswers(profileUser, questions) } : null;
     }).filter(Boolean);
 
     res.json({ success: true, data: filtered });
@@ -212,20 +215,31 @@ router.get('/pending', auth, async (req, res) => {
 // POST /api/questionnaire/:id/submit — 提交动态问卷答卷
 router.post('/:id/submit', auth, async (req, res) => {
   try {
-    const { answers = {}, assignmentId = null } = req.body;
+    const { answers = {}, assignmentId = null, ageStageId = null } = req.body;
 
     const questionnaire = await DynamicQuestionnaire.findById(req.params.id);
     if (!questionnaire) return res.status(404).json({ success: false, message: '问卷不存在' });
     if (questionnaire.status !== 'active' || questionnaire.deletedAt) {
       return res.status(400).json({ success: false, message: '该问卷暂未开放' });
     }
-    const categoryUser = await User.findById(req.user._id).select('patientCategory childArchiveImportPending').lean();
+    const categoryUser = await User.findById(req.user._id).select('patientCategory birthDate childArchiveImportPending').lean();
     const patientCategory = categoryUser?.patientCategory || 'adult';
     if (questionnaire.patientCategory && questionnaire.patientCategory !== 'all' && questionnaire.patientCategory !== patientCategory) {
       return res.status(403).json({ success: false, message: '该问卷不适用于当前会员类型' });
     }
     if (questionnaire.archivePurpose === 'child_health' && categoryUser?.childArchiveImportPending) {
       return res.status(409).json({ success: false, message: '上一份儿童问卷仍待医护端恢复承接，请联系负责人员后再提交' });
+    }
+    const childStage = questionnaire.archivePurpose === 'child_health' ? require('../utils/childAgeStage').childAgeStage(categoryUser?.birthDate) : null;
+    if (questionnaire.archivePurpose === 'child_health' && !childStage) return res.status(409).json({ success: false, message: '请先由医护人员核实儿童出生日期和适用年龄，再提交分龄问卷' });
+    if (questionnaire.archivePurpose === 'child_health' && ageStageId && ageStageId !== childStage.id) return res.status(409).json({ success: false, message: '儿童年龄段已变化，请重新打开问卷后填写' });
+    if (questionnaire.archivePurpose === 'child_health' && (!answers || typeof answers !== 'object' || Array.isArray(answers))) return res.status(400).json({ success: false, message: '问卷答案格式无效' });
+    const effectiveQuestions = questionnaire.archivePurpose === 'child_health'
+      ? require('../utils/childAgeStage').applicableChildQuestions(questionnaire.questions, childStage.id, req.user.gender)
+      : questionnaire.questions;
+    if (questionnaire.archivePurpose === 'child_health') {
+      const allowed = new Set(effectiveQuestions.map(q => q.id));
+      for (const id of Object.keys(answers)) if (!allowed.has(id)) delete answers[id];
     }
 
     let assignment = null;
@@ -266,7 +280,7 @@ router.post('/:id/submit', auth, async (req, res) => {
 
     // genderOnly 题目校验：与用户性别不符的题目不应作答（男性提交了女性专属题的答案会被忽略）；
     // 与用户性别相符的 genderOnly 题目视为必填，不能跳过
-    for (const q of questionnaire.questions) {
+    for (const q of effectiveQuestions) {
       if (q.genderOnly && q.genderOnly !== req.user.gender) {
         delete answers[q.id]; // 与本人性别不符，忽略客户端可能误传的答案
         continue;
@@ -284,7 +298,7 @@ router.post('/:id/submit', auth, async (req, res) => {
     // 计算总分（如果问卷启用了评分）
     let totalScore = 0;
     if (questionnaire.scoringEnabled) {
-      for (const question of questionnaire.questions) {
+      for (const question of effectiveQuestions) {
         if (!question.scoreEnabled) continue;
         if (!['radio', 'multi', 'dropdown'].includes(question.type)) continue;
         const ans = answers[question.id];
@@ -312,7 +326,7 @@ router.post('/:id/submit', auth, async (req, res) => {
       user: req.user._id,
       answers,
       questionnaireSnapshot: questionnaire.archivePurpose === 'child_health' ? {
-        title: questionnaire.title, questions: questionnaire.questions.map(q => ({ id: q.id, text: q.text, archiveField: q.archiveField, type: q.type })),
+        title: questionnaire.title, ageStage: childStage, questions: effectiveQuestions.map(q => ({ id: q.id, text: q.text, archiveField: q.archiveField, type: q.type })),
       } : null,
       totalScore,
       factorScores,
@@ -350,12 +364,13 @@ router.post('/:id/submit', auth, async (req, res) => {
         let fullUser = await User.findById(req.user._id).lean();
         if (fullUser.patientCategory !== 'child') throw new Error('儿童健康问卷仅适用于儿童会员');
         if (!fullUser.childArchiveFirstResponseId) {
-          let mutation = initialChildMutation(fullUser, questionnaire, response);
+          const sourceQuestionnaire = { ...questionnaire.toObject(), questions: effectiveQuestions };
+          let mutation = initialChildMutation(fullUser, sourceQuestionnaire, response);
           let result = await User.collection.updateOne(mutation.filter, mutation.update);
           if (!result.matchedCount) {
             fullUser = await User.findById(req.user._id).lean();
             if (!fullUser.childArchiveFirstResponseId) {
-              mutation = initialChildMutation(fullUser, questionnaire, response);
+              mutation = initialChildMutation(fullUser, sourceQuestionnaire, response);
               result = await User.collection.updateOne(mutation.filter, mutation.update);
               if (!result.matchedCount) throw new Error('儿童首次建档发生并发变化');
             }
@@ -363,7 +378,7 @@ router.post('/:id/submit', auth, async (req, res) => {
           if (result.matchedCount) fullUser = null;
         }
         if (fullUser) {
-          const submission = childSubmission(fullUser, questionnaire, response, 'followup');
+          const submission = childSubmission(fullUser, { ...questionnaire.toObject(), questions: effectiveQuestions }, response, 'followup');
           await User.collection.updateOne({ _id: req.user._id, patientCategory: 'child', 'childArchiveSubmissions.responseId': { $ne: response._id } }, { $push: { childArchiveSubmissions: submission } });
         }
       } catch (e) {

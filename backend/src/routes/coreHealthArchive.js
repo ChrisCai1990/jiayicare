@@ -73,6 +73,20 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       res.json({ success: true });
     } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
   });
+  router.post('/:id/child-archive/standard-records', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+    try {
+      if (!['healthManager', 'familyDoctor', 'medicalAssistant', 'superadmin', 'platformSuper'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由负责此客户的医护人员录入' });
+      if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '客户编号无效' });
+      const scope = await getVisiblePlanPatientIds(req.staff);
+      if (scope && !scope.some(id => String(id) === req.params.id)) return res.status(403).json({ success: false, message: '无此客户权限' });
+      const patient = await User.findById(req.params.id).lean();
+      if (!patient || patient.isDeleted) return res.status(404).json({ success: false, message: '客户不存在' });
+      const mutation = require('../utils/childStandardRecord').createChildStandardRecord(patient, req.body, req.staff);
+      const result = await User.collection.updateOne(mutation.filter, mutation.update);
+      if (!result.matchedCount) return res.status(409).json({ success: false, message: '同一访视节点和日期已有记录，或出生日期已变化，请刷新后核实' });
+      res.json({ success: true, data: mutation.record });
+    } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
+  });
   router.post('/:id/child-archive/retry', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
     try {
       if (!['healthManager', 'familyDoctor', 'superadmin', 'platformSuper'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由健管专员处理' });

@@ -14,6 +14,7 @@ function childSubmission(user, questionnaire, response, kind) {
   return {
     responseId: response._id, questionnaireId: questionnaire._id,
     questionnaireTitle: questionnaire.title, submittedAt: response.submittedAt || new Date(),
+    ageStage: response.questionnaireSnapshot?.ageStage || null,
     kind, status: kind === 'followup' && !items.length ? 'unchanged' : 'pending', revision: 0, items,
   };
 }
@@ -86,7 +87,7 @@ function reviewChildSubmission(user, responseId, payload, actor, now = new Date(
   for (const item of submission.items) filter[item.path] = getByPath(user, item.path) ?? null;
   return { filter, update: { $set: set, $push: { childArchiveHistory: {
     responseId: submission.responseId, questionnaireTitle: submission.questionnaireTitle,
-    kind: submission.kind, reviewedAt: now, reviewedBy: actor._id,
+    kind: submission.kind, ageStage: submission.ageStage || null, reviewedAt: now, reviewedBy: actor._id,
     reviewedByName: actor.name || actor.username || '', note: payload.note.trim(), decisions, changes,
   } } } };
 }
@@ -105,7 +106,7 @@ function manualChildUpdate(user, payload, actor, now = new Date()) {
     at: now, by: actor._id, byName: actor.name || actor.username || '', kind: 'manual' };
   return { filter: { _id: user._id, patientCategory: 'child', [payload.path]: before },
     update: { $set: { [payload.path]: after }, $push: { childArchiveHistory: {
-      kind: 'manual', reviewedAt: now, reviewedBy: actor._id, reviewedByName: actor.name || actor.username || '',
+      kind: 'manual', ageStage: require('./childAgeStage').childAgeStage(user.birthDate, now), reviewedAt: now, reviewedBy: actor._id, reviewedByName: actor.name || actor.username || '',
       note: payload.reason.trim(), changes: [change],
     } } } };
 }

@@ -5648,6 +5648,12 @@ router.post('/questionnaires/:id/push', staffAuth, checkPermission('questionnair
     const eligible = await User.countDocuments({ _id: { $in: patientIds }, patientCategory: q.patientCategory });
     if (eligible !== patientIds.length) return res.status(400).json({ success: false, message: '所选会员类型与问卷适用人群不一致' });
   }
+  if (q.archivePurpose === 'child_health') {
+    const { childAgeStage } = require('../utils/childAgeStage');
+    const patients = await User.find({ _id: { $in: patientIds } }).select('name birthDate').lean();
+    const missing = patients.filter(patient => !childAgeStage(patient.birthDate));
+    if (missing.length || patients.length !== patientIds.length) return res.status(400).json({ success: false, message: '请先核实所有儿童的出生日期和适用年龄，再推送分龄问卷' });
+  }
 
   // 写推送记录
   const records = patientIds.map(pid => ({
