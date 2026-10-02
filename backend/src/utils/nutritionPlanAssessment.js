@@ -1,4 +1,5 @@
 const clean = (value, limit = 1000) => String(value ?? '').trim().slice(0, limit);
+const { isUsableFoodAllergy } = require('../../../shared/foodAllergy.cjs');
 
 function prepareNutritionAssessment(input = {}, user = {}) {
   const targetInput = input.nutritionTargets === undefined
@@ -18,7 +19,7 @@ function prepareNutritionAssessment(input = {}, user = {}) {
     medicalReview: clean(input.medicalReview, 800),
     practicalConstraints: clean(input.practicalConstraints, 800),
     allergyStatus: clean(input.allergyStatus, 30),
-    allergyDetails: clean(input.allergyDetails, 500),
+    allergyDetails: input.allergyStatus === 'confirmed_none' ? '' : clean(input.allergyDetails, 500),
     riskStatus: clean(input.riskStatus, 30),
     templateCompatibilityConfirmed: input.templateCompatibilityConfirmed === true,
     height: Number(input.height || user.height),
@@ -45,6 +46,7 @@ function prepareNutritionAssessment(input = {}, user = {}) {
   if (!Number.isFinite(assessment.weight) || assessment.weight < 25 || assessment.weight > 350) missing.push('已核实体重（kg）');
   if (!['confirmed_none', 'confirmed_present'].includes(assessment.allergyStatus)) missing.push('食物过敏核对结果');
   if (assessment.allergyStatus === 'confirmed_present' && !assessment.allergyDetails) missing.push('食物过敏详情');
+  if (assessment.allergyStatus === 'confirmed_present' && assessment.allergyDetails && !isUsableFoodAllergy(assessment.allergyDetails)) missing.push('具体过敏食物及反应，不能填写无过敏');
   if (!['standard', 'specialist'].includes(assessment.riskStatus)) missing.push('专业风险分流结果');
   if (assessment.riskStatus === 'specialist') missing.push('需专业评估的客户不能自动生成个体化餐单');
   if (!assessment.templateCompatibilityConfirmed) missing.push('模板适用性及过敏禁忌核对');

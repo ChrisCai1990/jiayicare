@@ -28,6 +28,8 @@ test('有食物过敏时必须记录详情，模板适用性必须核对', () =>
   const missing = prepareNutritionAssessment({ ...valid, allergyStatus: 'confirmed_present', allergyDetails: '', templateCompatibilityConfirmed: false }, user).missing;
   assert(missing.includes('食物过敏详情'));
   assert(missing.includes('模板适用性及过敏禁忌核对'));
+  assert(prepareNutritionAssessment({ ...valid, allergyStatus: 'confirmed_present', allergyDetails: '无食物过敏史' }, user).missing.some(text => text.includes('不能填写无过敏')));
+  assert.equal(prepareNutritionAssessment({ ...valid, allergyDetails: '花生过敏' }, user).assessment.allergyDetails, '');
 });
 
 test('多条观察指标分别保存基线与目标，并拒绝缺项、重复或超量', () => {

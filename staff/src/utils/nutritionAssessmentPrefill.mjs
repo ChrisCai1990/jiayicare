@@ -1,3 +1,6 @@
+import foodAllergy from '../../../shared/foodAllergy.cjs'
+const { isUsableFoodAllergy, foodAllergyEvidence } = foodAllergy
+
 const text = value => String(value ?? '').trim()
 const row = (label, value) => text(value) ? `${label}：${text(value)}` : ''
 
@@ -43,8 +46,7 @@ function priorTargets(previous = {}) {
 
 export function nutritionAssessmentPrefill(patient = {}, previous = null) {
   const prior = previous || {}
-  const archiveAllergy = text(patient.healthProfile?.foodAllergy)
-  const recordedAllergy = archiveAllergy && !/^(无|否|没有|无已知|none)$/i.test(archiveAllergy) ? archiveAllergy : ''
+  const recordedAllergy = foodAllergyEvidence(patient)
   return {
     goal: text(prior.goal),
     assessment: {
@@ -53,7 +55,7 @@ export function nutritionAssessmentPrefill(patient = {}, previous = null) {
       nutritionTargets: priorTargets(prior).length ? priorTargets(prior) : [{ metric: '', baseline: '', target: '' }],
       reviewDate: '', medicalReview: text(prior.medicalReview) || medicalFromArchive(patient),
       practicalConstraints: text(prior.practicalConstraints) || constraintsFromArchive(patient),
-      allergyStatus: '', allergyDetails: recordedAllergy || text(prior.allergyDetails),
+      allergyStatus: '', allergyDetails: recordedAllergy || (isUsableFoodAllergy(prior.allergyDetails) ? text(prior.allergyDetails) : ''),
       riskStatus: '', templateCompatibilityConfirmed: false,
     },
   }
