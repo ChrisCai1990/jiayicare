@@ -75,7 +75,7 @@ const NAV_SECTIONS = [
   {
     label: '平台运营',
     platformOnly: true,
-    items: [{ label: '机构管理', icon: 'tenant', path: '/tenants' }, { label: '平台 AI 预算', icon: 'chart', path: '/settings/ai-usage' }, { label: '机构合作协议', icon: 'form', path: '/agreements' }, { label: '标准套餐', icon: 'money', path: '/saas-plan' }],
+    items: [{ label: '机构管理', icon: 'tenant', path: '/tenants' }, { label: '平台 AI 预算', icon: 'chart', path: '/settings/ai-usage' }, { label: '机构合作协议', icon: 'form', path: '/agreements' }, { label: '机构服务与收费', icon: 'money', path: '/saas-plan' }],
   },
 ]
 
