@@ -4,6 +4,7 @@ const ClinicalStandardWatch = require('../models/ClinicalStandardWatch');
 const ClinicalStandardUpdate = require('../models/ClinicalStandardUpdate');
 
 const QUARTER = 90 * 24 * 60 * 60 * 1000;
+const FAILURE_RETRY = 24 * 60 * 60 * 1000;
 const YEAR = 365 * 24 * 60 * 60 * 1000;
 const MAX_BYTES = 8 * 1024 * 1024;
 
@@ -56,7 +57,7 @@ async function checkOne(standard, { force = false, fetchImpl = fetch } = {}) {
   if (standard.monitor !== 'source') return { standardId: standard.id, outcome: 'manual' };
   const now = new Date();
   const watch = await ClinicalStandardWatch.findOneAndUpdate(
-    { standardId: standard.id, $and: [{ $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now } }] }, ...(force ? [] : [{ $or: [{ checkedAt: null }, { checkedAt: { $lte: new Date(now.getTime() - QUARTER) } }] }])] },
+    { standardId: standard.id, $and: [{ $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now } }] }, ...(force ? [] : [{ $or: [{ checkedAt: null }, { checkedAt: { $lte: new Date(now.getTime() - QUARTER) } }, { attemptedSourceUrl: { $ne: standard.sourceUrl } }, { lastError: { $ne: '' }, nextCheckAt: { $lte: now } }] }])] },
     { $set: { leaseUntil: new Date(now.getTime() + 30000) }, $setOnInsert: { standardId: standard.id } },
     { new: true, upsert: true },
   ).catch(error => { if (error.code === 11000) return null; throw error; });
@@ -74,10 +75,10 @@ async function checkOne(standard, { force = false, fetchImpl = fetch } = {}) {
       { $setOnInsert: { standardId: standard.id, fingerprint: `annual:${now.getUTCFullYear()}`, sourceUrl: standard.sourceUrl, trigger: 'scheduled_review', detectedAt: now, status: 'pending' } },
       { upsert: true },
     );
-    await ClinicalStandardWatch.updateOne({ _id: watch._id }, { $set: { fingerprint, checkedAt: now, nextCheckAt: new Date(now.getTime() + QUARTER), annualReviewYear: now.getUTCFullYear(), lastError: '', sourceFinalUrl: standard.sourceUrl }, $unset: { leaseUntil: 1 } });
+    await ClinicalStandardWatch.updateOne({ _id: watch._id }, { $set: { fingerprint, checkedAt: now, nextCheckAt: new Date(now.getTime() + QUARTER), annualReviewYear: now.getUTCFullYear(), lastError: '', sourceFinalUrl: standard.sourceUrl, attemptedSourceUrl: standard.sourceUrl }, $unset: { leaseUntil: 1 } });
     return { standardId: standard.id, outcome: changed ? 'change_pending_review' : watch.fingerprint ? 'unchanged' : 'baseline_pending_review' };
   } catch (error) {
-    await ClinicalStandardWatch.updateOne({ _id: watch._id }, { $set: { checkedAt: now, nextCheckAt: new Date(now.getTime() + QUARTER), lastError: String(error.message).slice(0, 300) }, $unset: { leaseUntil: 1 } });
+    await ClinicalStandardWatch.updateOne({ _id: watch._id }, { $set: { checkedAt: now, nextCheckAt: new Date(now.getTime() + FAILURE_RETRY), attemptedSourceUrl: standard.sourceUrl, lastError: String(error.message).slice(0, 300) }, $unset: { leaseUntil: 1 } });
     return { standardId: standard.id, outcome: 'error', error: error.message };
   }
 }

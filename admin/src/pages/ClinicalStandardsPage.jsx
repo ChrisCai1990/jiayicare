@@ -43,7 +43,7 @@ export default function ClinicalStandardsPage() {
       <div className="clinical-hero-copy">
         <span className="clinical-eyebrow">标准治理 · STANDARD GOVERNANCE</span>
         <h1>临床标准管理</h1>
-        <p>平台监测来源并委托机构审核，受托机构指定健康顾问。审核结论留痕后再评估规则发布。</p>
+        <p>国内指南与规范优先，国际分类作补充。平台监测来源并委托机构审核；结论留痕后再评估规则发布。</p>
       </div>
       {platform && <button className="clinical-check-button" disabled={busy} onClick={check}><span aria-hidden="true">↻</span>{busy ? '检查中…' : '立即检查来源'}</button>}
     </header>
@@ -69,8 +69,8 @@ export default function ClinicalStandardsPage() {
     </section>
 
     <section className="clinical-panel">
-      <div className="clinical-section-heading"><div><span className="clinical-step">标准目录</span><h2>已纳入的标准与规则</h2><p>每条记录保留来源、现行版本与检查状态。</p></div><span className="clinical-count">共 {standards.length} 项</span></div>
-      <div className="clinical-table-wrap"><table className="clinical-table"><thead><tr><th>标准名称</th><th>类别与版本</th><th>监测方式</th><th>最近检查</th><th>状态</th></tr></thead><tbody>{standards.map(row => <tr key={row.id}><td><strong>{row.title}</strong><span>{row.origin || '出处待核对'} · {row.originalUrl ? <a href={row.originalUrl} target="_blank" rel="noopener noreferrer">{row.evidence === 'restricted' ? '查看官方出处 ↗' : '查看原文 ↗'}</a> : '原件待补'}</span></td><td><span className={`clinical-kind clinical-kind-${row.kind}`}>{kindName[row.kind]}</span><span className="clinical-version">{row.version}</span></td><td>{row.monitor === 'source' ? '每季度自动检查' : '年度人工复核'}</td><td>{dateText(row.watch?.checkedAt)}</td><td><span className={`clinical-table-status ${row.watch?.lastError ? 'has-error' : row.watch?.checkedAt ? 'is-ok' : ''}`}>{row.watch?.lastError ? '检查失败' : row.watch?.checkedAt ? '已检查' : '待首次检查'}</span>{row.watch?.lastError && <small title={row.watch.lastError}>{row.watch.lastError}</small>}</td></tr>)}</tbody></table></div>
+      <div className="clinical-section-heading"><div><span className="clinical-step">标准目录</span><h2>已纳入的标准与规则</h2><p>国内依据优先。季度检查仅核对已登记来源的变化；新版国内指南仍需年度人工检索与医学复核。</p></div><span className="clinical-count">共 {standards.length} 项</span></div>
+      <div className="clinical-table-wrap"><table className="clinical-table"><thead><tr><th>标准名称</th><th>类别与版本</th><th>监测方式</th><th>最近检查</th><th>状态</th></tr></thead><tbody>{standards.map(row => <tr key={row.id}><td><strong>{row.title}</strong><span>{row.domesticNote || row.origin || '出处待核对'}</span><span>{row.domesticSourceUrl ? <a href={row.domesticSourceUrl} target="_blank" rel="noopener noreferrer">国内依据 ↗</a> : '国内依据待补'}{row.originalUrl && row.originalUrl !== row.domesticSourceUrl && <> · <a href={row.originalUrl} target="_blank" rel="noopener noreferrer">国际原版 ↗</a></>}</span></td><td><span className={`clinical-kind clinical-kind-${row.kind}`}>{kindName[row.kind]}</span><span className="clinical-version">{row.version}</span></td><td>{row.monitor === 'source' ? '每季度自动检查' : '年度人工复核'}</td><td>{dateText(row.watch?.checkedAt)}</td><td><span className={`clinical-table-status ${row.watch?.lastError ? 'has-error' : row.watch?.checkedAt ? 'is-ok' : ''}`}>{row.watch?.lastError ? '检查失败' : row.watch?.checkedAt ? '已检查' : '待首次检查'}</span>{row.watch?.lastError && <small title={row.watch.lastError}>{row.watch.lastError}</small>}</td></tr>)}</tbody></table></div>
     </section>
 
     <section className="clinical-panel">
