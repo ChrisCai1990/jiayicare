@@ -38,10 +38,11 @@ test('source fingerprint ignores scripts but detects clinical text changes', asy
 });
 
 test('ACR source may redirect only to its official asset path', async () => {
+  const legacy = { sourceUrl: 'https://www.acr.org/-/media/ACR/Files/RADS/Lung-RADS/Lung-RADS-2022.pdf' };
   const asset = 'https://edge.sitecorecloud.io/acr-production/media/ACR/Files/RADS/Lung-RADS/Lung-RADS-2022.pdf';
-  const fetchImpl = async url => url === standards[3].sourceUrl
+  const fetchImpl = async url => url === legacy.sourceUrl
     ? new Response(null, { status: 302, headers: { location: asset } })
     : new Response('clinical content '.repeat(10), { status: 200, headers: { 'content-type': 'text/html' } });
-  assert.match(await fetchFingerprint(standards[3], fetchImpl), /^[a-f0-9]{64}$/);
-  await assert.rejects(fetchFingerprint(standards[3], async () => new Response(null, { status: 302, headers: { location: 'https://example.com/file.pdf' } })), /非可信站点/);
+  assert.match(await fetchFingerprint(legacy, fetchImpl), /^[a-f0-9]{64}$/);
+  await assert.rejects(fetchFingerprint(legacy, async () => new Response(null, { status: 302, headers: { location: 'https://example.com/file.pdf' } })), /非可信站点/);
 });
