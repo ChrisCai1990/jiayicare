@@ -3,6 +3,16 @@ const { chat } = require('./ai');
 const RISK_LEVELS = ['low', 'medium', 'high', 'critical']; // 低 / 中 / 高 / 危急值
 const { buildEvidenceCatalog, auditMedicalJson } = require('./aiFactGuard');
 
+function snapshotRiskAssessment(record) {
+  if (!record) return null;
+  return {
+    version: Number(record.version || 1), generatedAt: record.generatedAt || null,
+    approvedAt: record.approvedAt || null, approvedBy: record.approvedBy || null,
+    overallLevel: record.overallLevel || 'low', overallSummary: record.overallSummary || '',
+    dimensions: Array.isArray(record.dimensions) ? record.dimensions : [],
+  };
+}
+
 function ruleEngineSignals(lv = {}) {
   const num = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
   const sig = { cardiovascular: [], diabetes: [], tumor: [], kidney: [] };
@@ -31,6 +41,17 @@ function ruleEngineSignals(lv = {}) {
   if (bun !== null && bun > 7.1) sig.kidney.push(`尿素氮偏高 ${bun}`);
   if (ua >= 480) sig.kidney.push(`尿酸偏高 ${ua} μmol/L`);
   return sig;
+}
+
+function ruleEngineFloor(lv = {}, signals = ruleEngineSignals(lv)) {
+  const number = value => value === '' || value === null || value === undefined ? null : Number(value);
+  const sbp = number(lv.sbp), dbp = number(lv.dbp), fpg = number(lv.fpg), hba1c = number(lv.hba1c);
+  return {
+    cardiovascular: sbp >= 180 || dbp >= 110 ? 'high' : signals.cardiovascular?.length ? 'medium' : 'low',
+    diabetes: fpg >= 11.1 || hba1c >= 9 ? 'high' : signals.diabetes?.length ? 'medium' : 'low',
+    kidney: signals.kidney?.length ? 'medium' : 'low',
+    tumor: signals.tumor?.length ? 'medium' : 'low',
+  };
 }
 
 // 严格取"最近一年"报告（2026-07-11）：此前按数量截断50-60条，等于把几年前的旧数据也一起喂给AI做风险判断，
@@ -96,6 +117,7 @@ async function tumorSignalsFromReports(userId) {
 
 // 生成健康关注提示：内部沿用既有数据结构，输出仅作信息整理，不作疾病风险诊断
 async function generateRiskAssessment(user) {
+  const { enabledForPatient } = require('./healthRiskRollout');
   const MedicalReport = require('../models/MedicalReport');
   const { deriveLabFromReports, buildLatestLabText, latestToLabValues } = require('./labFromScreening');
 
@@ -118,6 +140,7 @@ async function generateRiskAssessment(user) {
   const signals = ruleEngineSignals(lv);
   const { markerAndFindingLines, geneticLines } = await tumorSignalsFromReports(user._id);
   if (markerAndFindingLines.length) signals.tumor = markerAndFindingLines;
+  const ruleFloor = ruleEngineFloor(lv, signals);
   const sigText = Object.entries(signals)
     .map(([k, arr]) => `${k}：${arr.length ? arr.join('；') : '规则引擎未发现明显异常'}`)
     .join('\n');
@@ -195,7 +218,8 @@ ${evidenceCatalog}
     const deterministicFactors = signals[key] || [];
     return {
     key, label: d.label || labels[key],
-    level: RISK_LEVELS.includes(d.level) ? d.level : 'low',
+    // 明确的规则信号不能被模型的低等级输出掩盖；具体临床升级仍由顾问核对。
+    level: RISK_LEVELS[Math.max(RISK_LEVELS.indexOf(RISK_LEVELS.includes(d.level) ? d.level : 'low'), RISK_LEVELS.indexOf(enabledForPatient(user._id) ? (ruleFloor[key] || 'low') : 'low'))],
     score: Number(d.score) || 0,
     factors: [...new Set([...(Array.isArray(d.factors) ? d.factors : []), ...deterministicFactors])],
     advice: d.advice || '',
@@ -214,4 +238,4 @@ ${evidenceCatalog}
   };
 }
 
-module.exports = { RISK_LEVELS, ruleEngineSignals, tumorSignalsFromReports, generateRiskAssessment };
+module.exports = { RISK_LEVELS, ruleEngineSignals, ruleEngineFloor, tumorSignalsFromReports, generateRiskAssessment, snapshotRiskAssessment };

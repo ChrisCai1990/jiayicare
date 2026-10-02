@@ -2106,6 +2106,11 @@ router.post('/ai-risk-assessment', auth, async (req, res) => {
     }
 
     const assessment = await generateRiskAssessment(user);
+    const previous = byYear[year];
+    assessment.version = Number(previous?.version || 0) + 1;
+    assessment.previousVersions = previous
+      ? [...(previous.previousVersions || []), require('../utils/aiRiskAssessment').snapshotRiskAssessment(previous)].slice(-10)
+      : [];
     const hasDoctor = !!user.assignedFamilyDoctor;
     if (hasDoctor) {
       assessment.approvedAt = null; // 待家医审核

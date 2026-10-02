@@ -507,7 +507,12 @@ router.post('/patients/:id/health-records/import', adminAuth, async (req, res) =
         importBatchId: batchId, importFileName: String(req.body.fileName || '').slice(0, 180),
       };
     });
-    await HealthRecord.insertMany(docs);
+    const inserted = await HealthRecord.insertMany(docs);
+    const recentForReview = inserted.filter(record =>
+      ['bloodPressure', 'bloodSugar'].includes(record.type)
+      && record.recordedAt?.getTime() >= recentThreshold);
+    await Promise.all(recentForReview.map(record => require('../utils/healthRiskEvents').syncRecordRisk(record)
+      .catch(error => console.error('[health-risk] imported record sync failed', record._id, error))));
     res.json({ success: true, data: { summary, imported: docs.length, batchId } });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

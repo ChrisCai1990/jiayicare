@@ -281,6 +281,10 @@ router.post('/', auth, async (req, res) => {
       // 客户自报不适先进入健管专员核实队列，不能未经确认直接交给健康顾问。
       symptomWorkflow: type === 'symptom' ? { status: 'pending_manager' } : undefined,
     });
+    if (type === 'bloodPressure' || type === 'bloodSugar') {
+      await require('../utils/healthRiskEvents').syncRecordRisk(record)
+        .catch(error => console.error('[health-risk] record sync failed', record._id, error));
+    }
 
     // 打卡后自动同步随访计划状态：找今日（CST UTC+8）含该 checkIn 类型的随访，更新为 completed
     try {
@@ -369,6 +373,10 @@ router.put('/:id', auth, async (req, res) => {
     record.aiAlertStatus = (record.type === 'bloodPressure' && record.status === 'danger') ? 'pending' : null;
 
     await record.save();
+    if (record.type === 'bloodPressure' || record.type === 'bloodSugar') {
+      await require('../utils/healthRiskEvents').syncRecordRisk(record)
+        .catch(error => console.error('[health-risk] record update sync failed', record._id, error));
+    }
 
     recalcHealthScore(req.user._id).catch(() => {});
     if (record.type === 'bloodPressure' || record.type === 'weight') {

@@ -29,6 +29,7 @@ const TYPE_CONFIG = {
   medication_review:  { icon: '💊', label: '用药信息待核对', color: '#0077B6', priority: 2 },
   supplement_review:  { icon: '🧪', label: '营养补充信息待核对', color: '#16A34A', priority: 3 },
   risk_review:        { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
+  risk_event_review:  { icon: '🔎', label: '健康风险线索待核对', color: '#B45309', priority: 2 },
   bp_alert_review:    { icon: '🩸', label: '血压监测异常', color: '#DC3545', priority: 1 },
   symptom_review:     { icon: '🩺', label: '不适主诉待处理', color: '#DC3545', priority: 1 },
   symptom_verify:     { icon: '☎️', label: '不适主诉待核实', color: '#D97706', priority: 1 },
@@ -73,7 +74,7 @@ const TODO_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','report_followup_review','health_course_review','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['annual_execution_review','annual_plan_input_review','trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
-  { key: 'risk', label: '风险与异常', types: ['chat_followup_failed','assignment_attention','risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
+  { key: 'risk', label: '风险与异常', types: ['chat_followup_failed','assignment_attention','risk_review','risk_event_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
   { key: 'content', label: '内容与安排', types: ['annual_service_interest','geo_content_review','checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]
 
@@ -114,13 +115,23 @@ export default function AiTodosPanel() {
     finally { setChatBusy(null) }
   }
 
+  const chooseRiskDisposition = () => {
+    const raw = window.prompt('选择核实结果：1 已核实需关注；2 待补资料；3 已联系；4 已建议就医；5 误报。请输入数字：')
+    return { '1': 'confirmed', '2': 'needs_information', '3': 'contacted', '4': 'referred', '5': 'false_positive' }[raw?.trim()]
+  }
+
   const resolveAlert = (e, todo) => {
     e.stopPropagation()
+    const disposition = chooseRiskDisposition()
+    if (!disposition) return
+    const note = window.prompt('请填写实际核实情况、联系结果及下一步安排（必填）：')?.trim()
+    if (!note) return
     const recordId = todo.id.replace(/^bp_alert_/, '')
-    staffAPI.resolveHealthRecordAlert(recordId)
+    staffAPI.resolveHealthRecordAlert(recordId, { disposition, note })
       .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
-      .catch(() => {})
+      .catch(error => window.alert(error.message || '处理失败，请重试'))
   }
+
 
   const resolveTransfer = (e, todo) => {
     e.stopPropagation()
@@ -292,6 +303,9 @@ export default function AiTodosPanel() {
                     <button onClick={e => resolveSymptom(e, todo, 'resolved')}
                       style={{ fontSize: 11, color: '#8AA89C', background: 'none', border: '1px solid #8AA89C', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>已处理</button>
                   </div>
+                ) : todo.type === 'risk_event_review' ? (
+                  <button onClick={e => { e.stopPropagation(); nav(todo.link) }}
+                    style={{ fontSize: 11, color: '#B45309', background: 'none', border: '1px solid #B45309', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>核实并记录结果</button>
                 ) : todo.type === 'bp_alert_review' ? (
                   <button
                     onClick={(e) => resolveAlert(e, todo)}

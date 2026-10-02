@@ -30,6 +30,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import HealthRiskEventsPanel from '../components/HealthRiskEventsPanel'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
 import { canRecordProgress, requiresOutcomeReview } from '../utils/followUpContinuity'
@@ -5224,6 +5225,7 @@ export default function PatientDetailPage() {
       )}
 
       {/* ── Records Tab ── */}
+      {['records', 'reports'].includes(tab) && <HealthRiskEventsPanel patientId={id} staff={staff} />}
       {['records', 'ai'].includes(tab) && (
         <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
         <style>{`.health-archive-sections>.archive-toolbar+.card,.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>

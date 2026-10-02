@@ -4963,6 +4963,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       if (err.name === 'DocumentNotFoundError') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
       throw err;
     }
+    await require('../utils/healthRiskEvents').syncReportRisk(report)
+      .catch(error => console.error('[health-risk] report sync failed', report._id, error));
     if (aiStatus === 'reviewed' && report.audit_status === 'audited') {
       await require('../utils/reportPlanItemQueue').runtime().safeReconcile(report._id, report.planItemSync?.token);
     }
@@ -5248,6 +5250,8 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     if (err.name === 'DocumentNotFoundError') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     throw err;
   }
+  await require('../utils/healthRiskEvents').syncReportRisk(report)
+    .catch(error => console.error('[health-risk] audited report sync failed', report._id, error));
   if (action === 'approve') {
     try {
       await require('../utils/reportDispatchQueue').dispatch(report, req.staff,
@@ -9467,14 +9471,64 @@ router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
 // PATCH /api/staff/health-records/:id/resolve-alert
 router.patch('/health-records/:id/resolve-alert', staffAuth, async (req, res) => {
   try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可处理该待办' });
+    const note = String(req.body?.note || '').trim();
+    const disposition = String(req.body?.disposition || '').trim();
+    const allowed = ['confirmed', 'needs_information', 'contacted', 'referred', 'false_positive'];
+    if (!note || note.length > 1000 || !allowed.includes(disposition)) return res.status(400).json({ success: false, message: '请选择核实结果并填写处理说明（最多1000字）' });
+    const source = await HealthRecord.findById(req.params.id).select('user aiAlertStatus');
+    if (!source) return res.status(404).json({ success: false, message: '记录不存在' });
+    const patient = await User.findById(source.user).select('assignedFamilyDoctor');
+    if (!patient || (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id))) return res.status(403).json({ success: false, message: '该客户不属于您的健康顾问服务范围' });
     const record = await HealthRecord.findOneAndUpdate(
       { _id: req.params.id, aiAlertStatus: 'pending' },
-      { $set: { aiAlertStatus: 'resolved' } },
+      { $set: { aiAlertStatus: disposition === 'needs_information' ? 'pending' : 'resolved', alertDisposition: disposition, alertDecisionNote: note,
+        alertDecidedBy: req.staff._id, alertDecidedByName: req.staff.name || '', alertDecidedAt: new Date() } },
       { new: true }
     );
     if (!record) return res.status(404).json({ success: false, message: '记录不存在或已处理' });
     res.json({ success: true, data: record });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.get('/patients/:id/health-risk-events', staffAuth, async (req, res) => {
+  try {
+    if (!require('../utils/healthRiskRollout').enabledForPatient(req.params.id)) return res.json({ success: true, data: [] });
+    const patient = await User.findById(req.params.id).select('assignedFamilyDoctor');
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅所属健康顾问可查看风险事件' });
+    const HealthRiskEvent = require('../models/HealthRiskEvent');
+    const events = await HealthRiskEvent.find({ patientId: patient._id }).sort({ detectedAt: -1 }).limit(100).lean();
+    res.json({ success: true, data: events });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+router.patch('/health-risk-events/:id/resolve', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可处理风险事件' });
+    const disposition = String(req.body?.disposition || '').trim();
+    const note = String(req.body?.note || '').trim();
+    if (!['confirmed', 'needs_information', 'contacted', 'referred', 'false_positive'].includes(disposition) || !note || note.length > 1000) return res.status(400).json({ success: false, message: '请选择核实结果并填写处理说明（最多1000字）' });
+    const HealthRiskEvent = require('../models/HealthRiskEvent');
+    const event = await HealthRiskEvent.findById(req.params.id).select('patientId status assignedTo');
+    if (!event) return res.status(404).json({ success: false, message: '风险事件不存在' });
+    if (!require('../utils/healthRiskRollout').enabledForPatient(event.patientId)) return res.status(404).json({ success: false, message: '风险事件不存在' });
+    const patient = await User.findById(event.patientId).select('assignedFamilyDoctor');
+    if (!patient || (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id))) return res.status(403).json({ success: false, message: '该客户不属于您的健康顾问服务范围' });
+    const now = new Date();
+    const stillPending = disposition === 'needs_information';
+    const updated = await HealthRiskEvent.findOneAndUpdate({ _id: event._id, status: 'pending' }, {
+      $set: { status: stillPending ? 'pending' : 'closed', disposition, decisionNote: note, decidedBy: req.staff._id, decidedByName: req.staff.name || '', decidedAt: now },
+      $push: { history: { at: now, action: stillPending ? 'information_requested' : 'closed', disposition, note, staffId: req.staff._id, staffName: req.staff.name || '' } },
+    }, { new: true });
+    if (!updated) return res.status(409).json({ success: false, message: '该事件已处理，请刷新' });
+    if (updated.sourceType === 'health_record') await HealthRecord.updateOne(
+      { _id: updated.sourceId, aiAlertStatus: 'pending' },
+      { $set: { aiAlertStatus: stillPending ? 'pending' : 'resolved', alertDisposition: disposition, alertDecisionNote: note,
+        alertDecidedBy: req.staff._id, alertDecidedByName: req.staff.name || '', alertDecidedAt: now } },
+    );
+    res.json({ success: true, data: updated });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
 // ── 医护端代会员录入初始健康数据（与用户端格式一致）─────────────────
@@ -9527,6 +9581,8 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
       if (!isNaN(d.getTime())) recRecord.recordedAt = d;
     }
     const record = await HealthRecord.create(recRecord);
+    if (['bloodPressure', 'bloodSugar'].includes(record.type)) await require('../utils/healthRiskEvents').syncRecordRisk(record)
+      .catch(error => console.error('[health-risk] staff record sync failed', record._id, error));
     res.json({ success: true, data: record });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -9702,6 +9758,8 @@ router.delete('/patients/:patientId/health-records/:recordId', staffAuth, async 
       { new: true },
     );
     if (!record) return res.status(404).json({ success: false, message: '记录不存在或已删除' });
+    if (['bloodPressure', 'bloodSugar'].includes(record.type)) await require('../utils/healthRiskEvents').syncRecordRisk(record)
+      .catch(error => console.error('[health-risk] deleted record sync failed', record._id, error));
     if (record.type === 'symptom') {
       await FollowUp.updateMany(
         { sourceType: 'symptom', sourceId: record._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
@@ -9736,6 +9794,8 @@ router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (re
     };
 
     await record.save();
+    if (['bloodPressure', 'bloodSugar'].includes(record.type)) await require('../utils/healthRiskEvents').syncRecordRisk(record)
+      .catch(error => console.error('[health-risk] corrected record sync failed', record._id, error));
     res.json({ success: true, data: record, message: '修改成功' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -11395,7 +11455,7 @@ ${recLines}
 
 // ── 场景八：AI 健康风险评估与预警（规则引擎 + AI）────────────────────
 // 规则引擎：根据体检指标给出每个维度的预警信号，供 AI 综合判级
-const { RISK_LEVELS, generateRiskAssessment } = require('../utils/aiRiskAssessment');
+const { RISK_LEVELS, generateRiskAssessment, snapshotRiskAssessment } = require('../utils/aiRiskAssessment');
 
 // 兼容旧数据：早期版本 aiRiskAssessment 是单个扁平对象，无 byYear。
 // 归入其生成年份（无年份则归当前年），与 aiHealthSummary.byYear 的既有迁移方式一致
@@ -11426,8 +11486,9 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
       if (gateMsg) return res.status(403).json({ success: false, needReportAudit: true, message: gateMsg });
     }
     const user = await User.findById(req.params.id)
-      .select('name gender age chronicDiseases healthProfile labValues lifestyle lifestyle_data servicePackage serviceExpiry serviceStartDate clientBrand familyLinks');
+      .select('name gender age chronicDiseases healthProfile labValues lifestyle lifestyle_data servicePackage serviceExpiry serviceStartDate clientBrand familyLinks aiRiskAssessment assignedFamilyDoctor');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (req.staff.role !== 'superadmin' && String(user.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '该客户不属于您的健康顾问服务范围' });
     const aiEntitlements = await require('../utils/packageFeatureEntitlements').getAiEntitlements(
       user, await require('../utils/serviceAccess').resolveServiceAccess(user)
     );
@@ -11437,6 +11498,11 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
 
     const year = riskYearOf(req);
     const assessment = await generateRiskAssessment(user);
+    const previous = riskByYear(user.aiRiskAssessment)[year];
+    assessment.version = Number(previous?.version || 0) + 1;
+    assessment.previousVersions = previous
+      ? [...(previous.previousVersions || []), snapshotRiskAssessment(previous)].slice(-10)
+      : [];
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
       { $set: { [`aiRiskAssessment.byYear.${year}`]: assessment } }
@@ -11450,22 +11516,34 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
 // PATCH /api/staff/patients/:id/ai-risk-assessment — 健康顾问审核/修改（body.year 指定所属年度）
 router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
   try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可修改风险评估' });
     const { dimensions, overallSummary, action } = req.body;
     const year = riskYearOf(req);
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (req.staff.role !== 'superadmin' && String(user.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '该客户不属于您的健康顾问服务范围' });
     const byYear = riskByYear(user.aiRiskAssessment);
+    if (!byYear[year]) return res.status(404).json({ success: false, message: '该年度尚无风险评估' });
     const updated = { ...(byYear[year] || {}) };
     if (dimensions !== undefined) {
+      if (!Array.isArray(dimensions) || dimensions.length !== 4 || dimensions.some(d => !RISK_LEVELS.includes(d.level))) return res.status(400).json({ success: false, message: '风险维度或等级无效' });
       updated.dimensions = dimensions;
       updated.overallLevel = dimensions.reduce((max, d) =>
         RISK_LEVELS.indexOf(d.level) > RISK_LEVELS.indexOf(max) ? d.level : max, 'low');
     }
     if (overallSummary !== undefined) updated.overallSummary = overallSummary;
+    if (dimensions !== undefined || overallSummary !== undefined) {
+      updated.previousVersions = [...(updated.previousVersions || []), snapshotRiskAssessment(byYear[year])].slice(-10);
+      updated.version = Number(updated.version || 0) + 1;
+      updated.approvedAt = null;
+      updated.approvedBy = null;
+      updated.alerted = ['high', 'critical'].includes(updated.overallLevel);
+    }
     if (action === 'approve') {
       if (req.staff.role !== 'familyDoctor' && req.staff.role !== 'superadmin') {
         return res.status(403).json({ success: false, message: '仅健康顾问可审核风险评估' });
       }
+      if (!Array.isArray(updated.dimensions) || updated.dimensions.length !== 4) return res.status(400).json({ success: false, message: '风险评估内容不完整，不能审核' });
       updated.approvedAt = new Date();
       updated.approvedBy = req.staff.name;
     }
@@ -13009,12 +13087,35 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 健康顾问：血压监测异常升级（AI自动跟进试点）──
+    // ── 健康顾问：统一风险事件（打卡及已审核报告）──
+    const eventRecordIds = new Set();
+    if (can('risk_review')) {
+      const HealthRiskEvent = require('../models/HealthRiskEvent');
+      const { patientFilter, enabledForPatient } = require('../utils/healthRiskRollout');
+      const eventFilter = { status: 'pending', ...patientFilter('patientId'), ...(myPatientIds ? { patientId: { $in: myPatientIds.filter(id => enabledForPatient(id)) } } : {}) };
+      const events = await HealthRiskEvent.find(eventFilter).populate('patientId', 'name').sort({ detectedAt: -1 }).lean();
+      events.forEach(event => {
+        if (event.sourceType === 'health_record') eventRecordIds.add(String(event.sourceId));
+        if (!event.patientId?._id) return;
+        todos.push({
+          id: `risk_event_${event._id}`, type: 'risk_event_review', priority: event.level === 'priority' ? 1 : 2,
+          label: event.title, patientName: event.patientId.name || '未知', patientId: String(event.patientId._id),
+          summary: event.summary, createdAt: event.detectedAt,
+          overdue: !!event.dueAt && now > new Date(event.dueAt),
+          link: event.sourceType === 'medical_report'
+            ? `/patients/${event.patientId._id}?tab=reports&reportId=${event.sourceId}`
+            : `/patients/${event.patientId._id}?tab=records&healthRecordId=${event.sourceId}`,
+        });
+      });
+    }
+
+    // ── 旧血压待办兼容：已有记录尚未形成统一事件时继续可处理──
     if (can('bp_alert_review')) {
       const bpFilter = { type: 'bloodPressure', aiAlertStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const alertRecords = await HealthRecord.find(bpFilter)
         .populate('user', 'name').sort({ recordedAt: -1 }).lean();
       alertRecords.forEach(r => {
+        if (eventRecordIds.has(String(r._id))) return;
         const createdAt = r.recordedAt || r.createdAt;
         const sys = r.extra?.sys || String(r.value).split('/')[0];
         todos.push({
