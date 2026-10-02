@@ -18,6 +18,7 @@ const packageEntitlementSchema = new mongoose.Schema({
   status: { type: String, enum: ['active', 'expired', 'cancelled'], default: 'active', index: true },
   familySharing: { type: Boolean, default: false },
   historyVerified: { type: Boolean, default: true }, // 历史生效服务包没有核销台账时，不宣称剩余次数准确
+  historyReconciliation: [{ at: Date, by: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, note: String, poolUsed: [Number], productUsed: [Number] }],
   rights: { type: mongoose.Schema.Types.Mixed, default: {} },
   usageRecords: [{
     productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },

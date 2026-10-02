@@ -7343,10 +7343,46 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
     res.json({ success: true, summary, data: rows.map(row => ({
       _id: row._id, ownerUserId: row.ownerUserId, sourceOrderId: row.sourceOrderId,
       packageName: row.packageName, clientBrand: row.clientBrand, validFrom: row.validFrom,
-      validUntil: row.validUntil, familySharing: row.familySharing,
+      validUntil: row.validUntil, familySharing: row.familySharing, historyVerified: row.historyVerified !== false,
       rights: row.rights || {}, usageRecords: row.usageRecords || [],
     })) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 旧生效服务包缺少起始使用台账。只允许超管按凭据核对历史次数，
+// 与上线后自动记录的预占/核销合并计算，不覆盖新服务记录。
+router.post('/patients/:id/package-entitlements/prepare-history-review', staffAuth, async (req, res) => {
+  try {
+    if (req.staff.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可核对历史次数' });
+    const patient = await User.findById(req.params.id).lean();
+    if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+    const entitlement = await require('../utils/packageServiceRedemption').ensureEffectiveServiceLedger(patient);
+    if (!entitlement || entitlement.sourceType !== 'effective_service' || entitlement.historyVerified !== false) {
+      return res.status(409).json({ success: false, message: '没有待核对的有效历史服务包，请刷新权益' });
+    }
+    res.json({ success: true, data: entitlement });
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
+});
+
+router.post('/patients/:id/package-entitlements/:entitlementId/reconcile-history', staffAuth, async (req, res) => {
+  try {
+    if (req.staff.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可核对历史次数' });
+    const note = String(req.body.note || '').trim();
+    if (note.length < 8 || note.length > 1000) return res.status(400).json({ success: false, message: '请填写 8—1000 字的核对依据' });
+    const entitlement = await require('../models/PackageEntitlement').findOne({ _id: req.params.entitlementId, ownerUserId: req.params.id }).lean();
+    if (!entitlement) return res.status(404).json({ success: false, message: '权益台账不存在' });
+    const { reconcileHistoricalCounts } = require('../utils/packageEntitlementHistory');
+    const rights = reconcileHistoricalCounts(entitlement, req.body);
+    const result = await require('../models/PackageEntitlement').updateOne({ _id: entitlement._id, ownerUserId: req.params.id,
+      sourceType: 'effective_service', historyVerified: false, updatedAt: entitlement.updatedAt }, {
+      $set: { rights, historyVerified: true },
+      $push: { historyReconciliation: { at: new Date(), by: req.staff._id, note,
+        poolUsed: req.body.poolUsed, productUsed: req.body.productUsed } },
+    });
+    if (!result.modifiedCount) return res.status(409).json({ success: false, message: '台账已变化，请刷新后重新核对' });
+    res.json({ success: true, message: '历史次数已核对，新增服务记录已合并计算',
+      data: await require('../models/PackageEntitlement').findById(entitlement._id).lean() });
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 
 // 医护人员为客户启用一项“套餐已含”的商城服务。先原子扣减权益，再生成 0 元

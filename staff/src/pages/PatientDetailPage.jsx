@@ -15,6 +15,7 @@ import '../components/DiseaseWorkspace.css'
 import ReportReviewQuality, { useReportReviewActivity } from '../components/ReportReviewQuality'
 import ClinicalDocumentReviewFields from '../components/ClinicalDocumentReviewFields'
 import MembershipBenefitsSummary from '../components/MembershipBenefitsSummary'
+import PackageHistoryReview from '../components/PackageHistoryReview'
 import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
@@ -2046,6 +2047,8 @@ export default function PatientDetailPage() {
   }
   const [usingEntitlementId, setUsingEntitlementId] = useState('')
   const [autoEntitlementSelection, setAutoEntitlementSelection] = useState('')
+  const [historyReviewEntitlement, setHistoryReviewEntitlement] = useState(null)
+  const [historyReviewSaving, setHistoryReviewSaving] = useState(false)
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
@@ -10666,10 +10669,34 @@ export default function PatientDetailPage() {
               </div>
             </div>
 
+            <div className="card" id="patient-service-redemption">
+              <div className="card-header"><div className="card-title">服务核销</div><button className="btn btn-secondary btn-sm" onClick={() => { loadMembership(); staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {}) }}>刷新记录</button></div>
+              <div className="card-body" style={{ display: 'grid', gap: 10 }}>
+                <div style={{ color: '#4A6558', fontSize: 13 }}>已安排的服务订单在下方核销实际完成的服务；套餐权益先预占，订单完成后自动转为已核销。营养访谈与营养阶段评估正式完成后自动核销对应权益。</div>
+                {membershipSummary?.redemptionAlerts > 0 && <div role="alert" style={{ color: '#B45309' }}>有 {membershipSummary.redemptionAlerts} 项自动核销异常，需核对服务包来源或剩余次数。</div>}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => document.getElementById('patient-service-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>查看待核销服务订单（{patientOrders.filter(order => order.status === 'scheduled' && (order.usedUnits || 0) < (order.totalUnits || 1)).length}）</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setTab('membership')}>查看会员权益总览</button>
+                  {staff?.role === 'superadmin' && !packageEntitlements.length && membershipSummary?.plans?.some(plan => plan.source === 'configuration') && <button className="btn btn-secondary btn-sm" onClick={async () => {
+                    try { const result = await staffAPI.preparePackageHistoryReview(id); setHistoryReviewEntitlement(result.data); await loadMembership() }
+                    catch (error) { toast(error.message || '无法开始历史次数核对') }
+                  }}>核对历史服务次数</button>}
+                </div>
+                {staff?.role === 'superadmin' && packageEntitlements.filter(item => item.historyVerified === false).map(item => <button key={item._id} className="btn btn-secondary btn-sm" onClick={() => setHistoryReviewEntitlement(item)} style={{ justifySelf: 'start' }}>核对「{item.packageName}」历史次数</button>)}
+                {historyReviewEntitlement && <PackageHistoryReview key={historyReviewEntitlement._id} entitlement={historyReviewEntitlement} saving={historyReviewSaving} onCancel={() => setHistoryReviewEntitlement(null)} onSave={async data => {
+                  if (!window.confirm('请确认旧服务已用次数与核对依据准确；保存后系统将据此计算可用余额。')) return
+                  setHistoryReviewSaving(true)
+                  try { const result = await staffAPI.reconcilePackageHistory(id, historyReviewEntitlement._id, data); toast(result.message || '历史次数已核对'); setHistoryReviewEntitlement(null); await loadMembership() }
+                  catch (error) { toast(error.message || '历史次数核对失败'); setHistoryReviewEntitlement(null); await loadMembership() }
+                  finally { setHistoryReviewSaving(false) }
+                }} />}
+                {!packageEntitlements.some(item => (item.usageRecords || []).length) ? <div style={{ fontSize: 12, color: '#718579' }}>暂无已建立的套餐核销记录；历史服务包用量待核对。</div> : <details><summary style={{ cursor: 'pointer', color: '#1E6B50' }}>套餐预占与核销记录</summary>{packageEntitlements.flatMap(item => (item.usageRecords || []).map((record, index) => <div key={`${item._id}:${index}`} style={{ padding: '7px 0', borderBottom: '1px solid #E7ECE7', fontSize: 12 }}>{record.productName || '服务项目'} · {{ reserved: '已预占', redeemed: '已核销', cancelled: '已取消' }[record.status] || '已核销'} · {String(record.usedAt || '').slice(0, 10)}</div>))}</details>}
+              </div>
+            </div>
+
             <div className="card">
-              <MembershipBenefitsSummary data={membershipSummary} error={membershipError} onRefresh={loadMembership} />
-              <div className="card-header"><div className="card-title">套餐服务权益</div><span style={{ fontSize: 12, color: '#8AA89C' }}>发起服务时优先自动匹配最早到期的有效权益；创建 0 元履约单后，再按常规流程启动与核销</span></div>
-              {!packageEntitlements.length ? <div style={{ padding: 20, color: '#8AA89C', fontSize: 13 }}>尚无可直接核销的有效权益台账；已配置的计划内容请在上方核对，不能当作全部未使用。</div> : <div className="card-body" style={{ display: 'grid', gap: 12 }}>
+              <div className="card-header"><div className="card-title">从套餐权益发起服务</div><span style={{ fontSize: 12, color: '#8AA89C' }}>发起时预占次数，服务完成后自动核销</span></div>
+              {!packageEntitlements.length ? <div style={{ padding: 20, color: '#8AA89C', fontSize: 13 }}>当前服务包的历史次数尚未核对，暂不能直接预占；新完成的服务会自动记账。计划内容请到“会员权益”查看。</div> : <div className="card-body" style={{ display: 'grid', gap: 12 }}>
                 {(() => {
                   const autoOptions = packageEntitlements.flatMap(entitlement => {
                     const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
@@ -10677,7 +10704,7 @@ export default function PatientDetailPage() {
                       const pool = right.poolKey ? pools.get(right.poolKey) : null
                       const remaining = pool ? Number(pool.remainingCount || 0) : Number(right.remainingCount || 0)
                       return { entitlement, right, index, remaining, pool }
-                    }).filter(item => item.remaining > 0)
+                    }).filter(item => item.remaining > 0 && item.entitlement.historyVerified !== false)
                   })
                   const selectedAuto = autoOptions.find(item => `${item.right.productId}:${item.right.entitlementKey || ''}` === autoEntitlementSelection)
                   return autoOptions.length > 0 && <div style={{ padding: 12, border: '1px solid #B2D8C7', borderRadius: 10, background: '#F2FBF6' }}>
@@ -10688,7 +10715,7 @@ export default function PatientDetailPage() {
                         {autoOptions.map((item, optionIndex) => <option key={`${item.entitlement._id}:${item.right.productId}:${item.right.entitlementKey || optionIndex}`} value={`${item.right.productId}:${item.right.entitlementKey || ''}`}>{item.right.productName}{item.right.specificationLabel ? ` · ${item.right.specificationLabel}` : ''}（{item.pool ? `共享池剩余 ${item.remaining} 次` : `剩余 ${item.remaining} 次`}）</option>)}
                       </select>
                       <button className="btn btn-sm" disabled={!selectedAuto || usingEntitlementId === 'auto'} style={{ background: selectedAuto ? '#1E6B50' : '#D1D5DB', color: '#fff', border: 'none' }} onClick={async () => {
-                        if (!selectedAuto || !window.confirm(`确认发起「${selectedAuto.right.productName}」吗？系统将自动匹配最早到期的有效服务包权益并扣减 1 次。`)) return
+                        if (!selectedAuto || !window.confirm(`确认发起「${selectedAuto.right.productName}」吗？系统将预占 1 次权益，服务完成后自动核销。`)) return
                         setUsingEntitlementId('auto')
                         try {
                           const result = await staffAPI.usePackageEntitlement(id, 'auto', { productId: selectedAuto.right.productId, entitlementKey: selectedAuto.right.entitlementKey || '' })
@@ -10709,15 +10736,16 @@ export default function PatientDetailPage() {
                   return <div key={entitlement._id} style={{ border: '1px solid #DCE7E1', borderRadius: 10, padding: 12, background: '#FCFEFD' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}><div><strong>{entitlement.packageName || '服务包'}</strong>{!ownerIsPatient && <span style={{ marginLeft: 8, fontSize: 12, color: '#1E6B50' }}>家庭共享权益</span>}</div><span style={{ fontSize: 12, color: '#8A5A00' }}>至 {new Date(entitlement.validUntil).toLocaleDateString('zh-CN')}</span></div>
                     {['healthArchiveConcierge', 'healthConsultation', 'medicalPlanning', 'expertAppointment', 'reportInterpretation'].some(key => entitlement.rights?.aiEntitlements?.[key]) && <div style={{ fontSize: 12, color: '#1E6B50', marginBottom: 7 }}>持续服务权益：{[entitlement.rights?.aiEntitlements?.healthArchiveConcierge && '健康档案管家（服务期内持续）', entitlement.rights?.aiEntitlements?.healthConsultation && '健康顾问咨询（服务期内不限次数）', entitlement.rights?.aiEntitlements?.medicalPlanning && '就医规划支持（服务期内不限次数）', entitlement.rights?.aiEntitlements?.expertAppointment && '常规专家约诊（服务期内不限次数）', entitlement.rights?.aiEntitlements?.reportInterpretation && '体检报告解读（服务期内不限次数）'].filter(Boolean).join('、')}；每次服务请在服务日志中留痕，不扣减次数。</div>}
-                    {(entitlement.rights?.sharedEntitlementPools || []).map(pool => <div key={pool.key} style={{ fontSize: 12, color: '#4A6558', marginBottom: 5 }}>共享池「{pool.name}」：剩余 <strong>{pool.remainingCount || 0}</strong> / {pool.count || 0} 次</div>)}
+                    {entitlement.historyVerified === false && <div style={{ fontSize: 12, color: '#B45309', marginBottom: 7 }}>历史使用次数待核对，暂不能预占；新完成的服务仍会自动记入核销记录。</div>}
+                    {(entitlement.rights?.sharedEntitlementPools || []).map(pool => <div key={pool.key} style={{ fontSize: 12, color: '#4A6558', marginBottom: 5 }}>共享池「{pool.name}」：{entitlement.historyVerified === false ? '历史剩余待核对' : <>可用 <strong>{pool.remainingCount || 0}</strong> / {pool.count || 0} 次</>}</div>)}
                     <div style={{ display: 'grid', gap: 6 }}>
                       {(entitlement.rights?.productEntitlements || []).map((right, rightIndex) => {
                         const pool = right.poolKey ? pools.get(right.poolKey) : null
                         const remaining = pool ? Number(pool.remainingCount || 0) : Number(right.remainingCount || 0)
                         return <div key={`${right.productId}:${right.entitlementKey || rightIndex}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 6, borderTop: '1px solid #EEF3F0' }}>
-                          <div><div style={{ fontSize: 13, fontWeight: 600 }}>{right.productName}</div><div style={{ fontSize: 12, color: '#8AA89C' }}>{pool ? `使用共享池「${pool.name}」` : `剩余 ${remaining} / ${right.count} 次`}{right.schedule ? ` · ${right.schedule}` : ''}</div></div>
-                          <button className="btn btn-sm" disabled={remaining < 1 || usingEntitlementId === `${entitlement._id}:${right.productId}:${right.entitlementKey || rightIndex}`} style={{ background: remaining > 0 ? '#1E6B50' : '#D1D5DB', color: '#fff', border: 'none' }} onClick={async () => {
-                            if (!window.confirm(`确认以套餐权益为客户发起「${right.productName}」吗？将立即扣减 1 次并生成履约单。`)) return
+                          <div><div style={{ fontSize: 13, fontWeight: 600 }}>{right.productName}</div><div style={{ fontSize: 12, color: '#8AA89C' }}>{pool ? `使用共享池「${pool.name}」` : entitlement.historyVerified === false ? '历史剩余待核对' : `可用 ${remaining} / ${right.count} 次`}{right.schedule ? ` · ${right.schedule}` : ''}</div></div>
+                          <button className="btn btn-sm" disabled={entitlement.historyVerified === false || remaining < 1 || usingEntitlementId === `${entitlement._id}:${right.productId}:${right.entitlementKey || rightIndex}`} style={{ background: entitlement.historyVerified !== false && remaining > 0 ? '#1E6B50' : '#D1D5DB', color: '#fff', border: 'none' }} onClick={async () => {
+                            if (!window.confirm(`确认以套餐权益为客户发起「${right.productName}」吗？将预占 1 次并生成履约单，服务完成后自动核销。`)) return
                             const key = `${entitlement._id}:${right.productId}:${right.entitlementKey || rightIndex}`
                             setUsingEntitlementId(key)
                             try {
@@ -10727,7 +10755,7 @@ export default function PatientDetailPage() {
                               setPatientOrders(prev => [result.data.executionOrder, ...prev])
                               toast(result.message || '已创建履约单')
                             } catch (error) { toast(error.message || '权益使用失败') } finally { setUsingEntitlementId('') }
-                          }}>{usingEntitlementId === `${entitlement._id}:${right.productId}:${right.entitlementKey || rightIndex}` ? '创建中…' : '使用权益'}</button>
+                          }}>{usingEntitlementId === `${entitlement._id}:${right.productId}:${right.entitlementKey || rightIndex}` ? '创建中…' : '预占并发起'}</button>
                         </div>
                       })}
                     </div>
@@ -10737,10 +10765,10 @@ export default function PatientDetailPage() {
             </div>
 
             {/* 服务购买记录 */}
-            <div className="card">
+            <div className="card" id="patient-service-orders">
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div className="card-title">服务购买记录</div>
-                <span style={{ fontSize: 12, color: '#8AA89C' }}>待安排 {patientOrders.filter(o => o.status === 'pending').length} 条</span>
+                <div className="card-title">服务订单与逐次核销</div>
+                <span style={{ fontSize: 12, color: '#8AA89C' }}>可核销 {patientOrders.filter(o => o.status === 'scheduled' && (o.usedUnits || 0) < (o.totalUnits || 1)).length} 条 · 待安排 {patientOrders.filter(o => o.status === 'pending').length} 条</span>
               </div>
               {patientOrders.length === 0 ? (
                 <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无购买记录</div>
@@ -10748,12 +10776,12 @@ export default function PatientDetailPage() {
                 <table className="table">
                   <thead><tr><th>产品名称</th><th>金额</th><th>服务次数</th><th>下单时间</th><th>归属</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
-                    {patientOrders.map(order => {
+                    {[...patientOrders].sort((a, b) => Number(b.status === 'scheduled') - Number(a.status === 'scheduled')).map(order => {
                       // 谁推送谁获推广费(referrerId=推送时自动关联)，谁服务谁获服务费(fulfillerId)——
                       // 只有该订单的推荐人本人或超管能指定服务人，不是随便谁都能改
                       const canAssignFulfiller = staff?.role === 'superadmin' || String(order.referrerId?._id) === String(staff?._id)
                       return (
-                      <tr key={order._id}>
+                      <tr key={order._id} id={`order-${order._id}`}>
                         <td style={{ fontWeight: 500 }}>
                           <div>{order.serviceName || order.serviceId}</div>
                           {order.specificationLabel && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{order.specificationLabel}</div>}
@@ -10894,7 +10922,7 @@ export default function PatientDetailPage() {
 
       {/* ── Membership Tab ── */}
       {tab === 'membership' && (
-        <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
+        <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} onViewRedemption={() => setTab('consumption')} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
       )}
 
       {/* 随访详情弹窗 */}
@@ -12948,7 +12976,7 @@ export default function PatientDetailPage() {
   )
 }
 
-function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, onBenefitsRefresh, partnerBenefits, partnerBenefitsError }) {
+function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, onBenefitsRefresh, onViewRedemption, partnerBenefits, partnerBenefitsError }) {
   const toast = useToast()
   const [membership, setMembership] = useState(user)
   const [cardNumber, setCardNumber] = useState(user.cardNumber || '')
@@ -12987,7 +13015,7 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <div style={{ gridColumn: '1 / -1' }}>
         <div style={{ fontSize: 13, color: '#65776F', marginBottom: 12 }}>会员类型用于展示与筛选；实际服务权益以已购买且生效的服务包为准。</div>
-        <MembershipBenefitsSummary data={benefits} error={benefitsError} onRefresh={onBenefitsRefresh} />
+        <MembershipBenefitsSummary data={benefits} error={benefitsError} onRefresh={onBenefitsRefresh} onViewRedemption={onViewRedemption} />
         <div className="card"><div className="card-header"><div className="card-title">合作伙伴权益</div></div><div className="card-body">
           {partnerBenefitsError || (!partnerBenefits?.length ? '当前会员类型暂无可见合作伙伴权益' : partnerBenefits.map(group => <div key={group.partner.id} style={{ marginBottom: 12 }}><strong>{group.partner.name}</strong>{group.benefits.map(item => <div key={item.id} style={{ marginTop: 5, color: '#4A6558' }}>{item.title}{item.subtitle ? ` · ${item.subtitle}` : ''}</div>)}</div>))}
         </div></div>
