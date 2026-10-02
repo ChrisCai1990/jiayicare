@@ -13,7 +13,7 @@ export default function SaasPlanPage() {
   const { admin } = useAdmin()
   const platform = admin?.role === 'platformSuper'
   const [tenants, setTenants] = useState([])
-  const [tenantId, setTenantId] = useState(admin?.tenantId || '')
+  const [tenantId, setTenantId] = useState(() => platform ? new URLSearchParams(window.location.search).get('tenantId') || '' : admin?.tenantId || '')
   const [snapshot, setSnapshot] = useState(null)
   const [standardForm, setStandardForm] = useState({})
   const [termsForm, setTermsForm] = useState({})
@@ -39,7 +39,7 @@ export default function SaasPlanPage() {
     adminAPI.tenants().then(result => {
       const rows = result.data || []
       setTenants(rows)
-      setTenantId(current => current || rows[0]?._id || '')
+      setTenantId(current => rows.some(row => row._id === current) ? current : rows[0]?._id || '')
     }).catch(e => setError(e.message))
   }, [platform])
   useEffect(() => { load(tenantId).catch(e => setError(e.message)) }, [tenantId])

@@ -118,6 +118,7 @@ export default function TenantsPage() {
                   </td>
                   <td style={{ padding: '12px 14px', color: '#9CA3AF', fontSize: 12 }}>{new Date(t.createdAt).toLocaleDateString('zh-CN')}</td>
                   <td style={{ padding: '12px 14px' }}>
+                    <a className="btn btn-secondary btn-sm" href={`/saas-plan?tenantId=${t._id}`} style={{ marginRight: 6 }}>服务/报价</a>
                     <button className="btn btn-secondary btn-sm" onClick={() => viewCustomers(t)} style={{ marginRight: 6 }}>查看客户</button>
                     <button className="btn btn-secondary btn-sm" onClick={() => openEdit(t)} style={{ marginRight: 6 }}>编辑</button>
                     <button className="btn btn-danger btn-sm" onClick={() => del(t)}>删除</button>
@@ -219,12 +220,11 @@ export default function TenantsPage() {
             </div>
             <div className="modal-body" style={{ fontSize: 14, lineHeight: 1.8, color: '#333' }}>
               {[
-                ['第 1 步 · 完成权限验收', '外部机构开户目前关闭。先完成各业务接口的跨机构读写验收，再启用开户功能。'],
-                ['第 2 步 · 新建机构并绑定网站', '创建机构时填写名称、标识和网站域名。新网站配置同域名 API 反向代理后，访客咨询和 AI 调用会按已绑定域名归属该机构；未绑定的域名不能调用。'],
-                ['第 3 步 · 设机构管理员', '在同一弹窗里填写该机构的管理员用户名和初始密码。系统会自动为这家机构创建一个独立的超级管理员账号。'],
-                ['第 4 步 · 权限验收', '先核对机构归属和各业务接口的跨机构读写限制；创建机构本身不代表全部业务数据已完成隔离验收。'],
-                ['第 5 步 · 交付同行使用', '验收通过后，通过安全渠道交付初始凭据。机构管理员首次登录须修改密码，再管理本机构的员工、客户和服务配置。'],
-                ['第 6 步 · 平台侧管理', '平台超管随时可在本页查看各机构的员工数/客户数，或暂停（status=已暂停）某机构。机构下已有员工或客户时不允许直接删除，需先清理，防误删。'],
+                ['第 1 步 · 建立待接入档案', '录入机构名称、企业全称和机构标识；此时不创建账号、域名或客户数据。'],
+                ['第 2 步 · 核对服务与报价', '在“服务/报价”中设置该企业的服务范围、包含人数及价格，留下配置依据；配置不代替双方协议。'],
+                ['第 3 步 · 完成隔离验收', '在独立测试库验证机构后台、医护端、客户端的跨机构读写边界和真实业务链路。验收前待接入机构不可登录。'],
+                ['第 4 步 · 正式开通', '验收通过后启用机构、绑定网站和小程序，创建机构管理员并安全交付初始凭据。'],
+                ['第 5 步 · 客户试运行', '用该机构自己的账号与测试客户跑建档、服务、AI 用量和账单核对；上线前由双方确认结果。'],
               ].map(([t, d], i) => (
                 <div key={i} style={{ marginBottom: 14 }}>
                   <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 2 }}>{t}</div>
