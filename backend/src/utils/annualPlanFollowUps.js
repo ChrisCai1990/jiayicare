@@ -189,7 +189,7 @@ async function buildAnnualPlanFollowUps(plan) {
   // 补齐负责人并审核年度总方案。客户确认后按标准方案周期直接生成执行计划。
   const personalizedRecords = moduleData.personalized_followups?.records;
   if (moduleData.personalized_followups?.enabled !== false && Array.isArray(personalizedRecords)) {
-    const baseDate = new Date(plan.confirmedAt || Date.now());
+    const baseDate = new Date(plan.followUpReleasedAt || plan.confirmedAt || Date.now());
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
     personalizedRecords.forEach((rec, recordIndex) => {
@@ -253,7 +253,8 @@ async function buildAnnualPlanFollowUps(plan) {
 // 保存/定时刷新都按稳定排期键原位同步。已审核记录永不重建；待审核记录仅更新，
 // 从而既保留人工修改，又避免每天刷新把同一计划再次送审。
 async function syncAnnualPlanFollowUps(plan) {
-  const gate = await require('./annualServicePeriod').annualExecutionGate(plan);
+  const earlyRelease = !plan.confirmedAt && require('./annualFollowUpEarlyRelease').released(plan);
+  const gate = earlyRelease ? { allowed: true } : await require('./annualServicePeriod').annualExecutionGate(plan);
   if (!gate.allowed) return 0;
   if (plan.continuitySource?.previousPlanId) plan = { ...(gate.executionPlan || (plan.toObject ? plan.toObject() : plan)), confirmedAt: gate.anchor };
   // 已有年度统筹占位改为取消；保留原记录供历史追溯，不触碰具体服务随访。

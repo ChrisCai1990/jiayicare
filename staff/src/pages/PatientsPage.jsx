@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { usePermission } from '../App'
 import Pagination from '../components/Pagination'
+import customerNumber from '../../../shared/customerNumber.cjs'
+
+const { formatCustomerNumber } = customerNumber
 
 const DISEASE_TAGS = ['高血压', '糖尿病', '高血脂', '冠心病', '慢阻肺', '骨质疏松']
 const TYPE_LABEL = { regular: '普通', vip: 'VIP', trial: '试用', '': '全部' }
@@ -56,7 +59,7 @@ function AssignModal({ onClose, onSuccess }) {
         <p style={{ margin: 0, fontSize: 13, color: '#8AA89C' }}>搜索已在用户端注册的会员，直接分配到您名下，无需重复录入。</p>
         <input
           className="form-input"
-          placeholder="输入姓名或手机号搜索"
+          placeholder="输入姓名、手机号或客户编号搜索"
           value={q}
           onChange={e => handleInput(e.target.value)}
           autoFocus
@@ -152,7 +155,7 @@ export default function PatientsPage() {
               <label className="form-label">搜索</label>
               <input
                 className="form-input"
-                placeholder="姓名 / 手机号"
+                placeholder="姓名 / 手机号 / 客户编号"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -203,6 +206,7 @@ export default function PatientsPage() {
             <thead>
               <tr>
                 <th>姓名</th>
+                <th>客户编号</th>
                 <th>手机号</th>
                 <th>建档日期</th>
                 <th>性别/年龄</th>
@@ -224,6 +228,7 @@ export default function PatientsPage() {
                     <strong>{p.name}</strong>
                     {p.patientType === 'vip' && <span className="badge badge-warning" style={{ marginLeft: 6 }}>VIP</span>}
                   </td>
+                  <td style={{ color: '#666', whiteSpace: 'nowrap' }}>{formatCustomerNumber(p._id)}</td>
                   <td style={{ color: '#666' }}>{p.phone}</td>
                   <td style={{ color: '#666', whiteSpace: 'nowrap' }}>{p.createdAt ? new Date(p.createdAt).toLocaleDateString('zh-CN') : '-'}</td>
                   <td style={{ color: '#666' }}>{p.gender} {p.age ? `${p.age}岁` : '-'}</td>
