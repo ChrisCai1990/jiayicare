@@ -38,7 +38,7 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
 export default function App() {
   return (
     <ErrorBoundary>
-      <StatusBar style="light" />
+      <StatusBar style={useSharedH5 ? 'dark' : 'light'} />
       {useSharedH5
         ? <SharedH5App url={sharedH5Url} />
         : <AuthProvider><Navigation /></AuthProvider>}
