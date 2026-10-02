@@ -1572,7 +1572,7 @@ router.post('/tenants/draft', adminAuth, requirePlatformSuper, async (req, res) 
   if (await Tenant.exists({ code })) return res.status(409).json({ success: false, message: '该机构标识已存在' });
   const tenant = await Tenant.create({ code, name, legalName, status: 'suspended',
     commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()),
-    serviceScope: ['admin', 'staff', 'customer'], note: '待接入：仅记录商务与服务配置，未开通账号、域名或客户业务' });
+    serviceScope: ['admin', 'staff'], note: '待接入：仅记录机构后台与医护端配置；未开通账号、域名、客户业务或独立小程序' });
   await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
     action: 'create_tenant_draft', at: new Date(), ip: req.ip });
   res.json({ success: true, data: { tenant }, message: '待接入机构已创建，尚未开放登录及客户业务' });
@@ -1594,7 +1594,7 @@ router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
   const dup = await Tenant.findOne({ code });
   if (dup) return res.status(400).json({ success: false, message: '该机构标识已存在' });
   if (websiteHosts.length && await Tenant.exists({ websiteHosts: { $in: websiteHosts } })) return res.status(409).json({ success: false, message: '网站域名已绑定其他机构' });
-  const tenant = await Tenant.create({ code, name, legalName: legalName.trim(), serviceScope: ['admin', 'staff', 'customer'], slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts, commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()) });
+  const tenant = await Tenant.create({ code, name, legalName: legalName.trim(), serviceScope: ['admin', 'staff'], slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50', websiteHosts, commercialPlan: 'standard', commercialTerms: validatePlan(await getStandardPlan()) });
 
   // 为新机构建一个 superadmin，否则该机构无人能登录管理
   let createdAdmin = null;
@@ -1617,6 +1617,10 @@ router.put('/tenants/:id', adminAuth, requirePlatformSuper, async (req, res) => 
   const { name, slogan, logo, themeColor, status, note } = req.body;
   const update = {};
   ['name', 'slogan', 'logo', 'themeColor', 'status', 'note'].forEach(k => { if (req.body[k] !== undefined) update[k] = req.body[k]; });
+  if (req.body.staffPortalName !== undefined) {
+    if (typeof req.body.staffPortalName !== 'string' || req.body.staffPortalName.trim().length > 60) return res.status(400).json({ success: false, message: '医护端显示名称最多60字' });
+    update.staffPortalName = req.body.staffPortalName.trim();
+  }
   if (update.status === 'active' && process.env.ENABLE_EXTERNAL_TENANTS !== 'true') {
     const current = await Tenant.findById(req.params.id).select('status code').lean();
     if (!current) return res.status(404).json({ success: false, message: '机构不存在' });
