@@ -31,13 +31,15 @@ const ALL_NAV = [
 
 export default function Layout() {
   const { staff } = useStaff()
-  return <NotificationSummaryProvider key={staff?._id || staff?.id || staff?.username}><LayoutContent /></NotificationSummaryProvider>
+  return <NotificationSummaryProvider key={staff?._id || staff?.id || staff?.username} disabled={staff?.tenantStatus === 'setup'}><LayoutContent /></NotificationSummaryProvider>
 }
 
 function LayoutContent() {
   const { staff, logout } = useStaff()
   const nav = useNavigate()
   const loc = useLocation()
+  const setup = staff?.tenantStatus === 'setup'
+  const setupView = setup ? new URLSearchParams(loc.search).get('view') || '/home' : loc.pathname
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { count: notifBadge } = useNotificationSummary()
 
@@ -49,7 +51,7 @@ function LayoutContent() {
   }
 
   const handleNavClick = (path) => {
-    nav(path)
+    nav(setup ? `/setup?view=${encodeURIComponent(path)}` : path)
     setSidebarOpen(false)
   }
 
@@ -95,7 +97,7 @@ function LayoutContent() {
             // 否则按内置角色过滤（空数组=全部可见）
             return item.roles.length === 0 || item.roles.includes(staff?.role)
           }).map(item => {
-            const isOnPlansPage = loc.pathname === item.path || loc.pathname.startsWith(item.path + '/')
+            const isOnPlansPage = setupView === item.path || setupView.startsWith(item.path + '/')
             const isActive = isOnPlansPage && !item.children
 
             return (
