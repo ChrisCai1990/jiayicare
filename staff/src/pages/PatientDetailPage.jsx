@@ -2002,6 +2002,7 @@ export default function PatientDetailPage() {
   const [loadError, setLoadError] = useState(null) // 加载会员详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
   const requestedTab = new URLSearchParams(location.search).get('tab') || 'info'
+  const [medicalServiceOnly, setMedicalServiceOnly] = useState(new URLSearchParams(location.search).get('serviceFilter') === 'medical')
   const requestedServiceView = new URLSearchParams(location.search).get('serviceView') || 'overview'
   const initialTab = new URLSearchParams(location.search).has('healthRecordId') && requestedTab === 'portrait' ? 'symptoms' : ['monitoring', 'archive'].includes(requestedTab) ? 'records' : requestedTab
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
@@ -9389,8 +9390,8 @@ export default function PatientDetailPage() {
                   体检后复查随访
                 </button>
               )}
-              {['familyDoctor', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => { setTab('consumption'); requestAnimationFrame(() => document.getElementById('patient-service-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}>
+              {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" onClick={() => { setMedicalServiceOnly(true); setTab('consumption'); requestAnimationFrame(() => document.getElementById('patient-service-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}>
                   发起就医协助服务 · 套餐优先
                 </button>
               )}
@@ -10676,7 +10677,7 @@ export default function PatientDetailPage() {
           return (entitlement.rights?.productEntitlements || []).map((right, index) => {
             const pool = pools.get(right.poolKey)
             return { key: `${entitlement._id}:${right.productId}:${index}`, name: right.productName, packageName: entitlement.packageName,
-              entitlement, productId: right.productId, entitlementKey: right.entitlementKey || '',
+              entitlement, productId: right.productId, entitlementKey: right.entitlementKey || '', workflowKey: right.productSnapshot?.serviceWorkflow?.key || '',
               count: pool ? pool.count : right.count, remaining: pool ? pool.remainingCount : right.remainingCount,
               shared: !!pool, historyKnown: entitlement.historyVerified !== false,
               automatic: /营养评估/.test(right.productName || '') && right.productSnapshot?.serviceWorkflow?.key === 'nutrition_intervention', validUntil: entitlement.validUntil }
@@ -10691,6 +10692,11 @@ export default function PatientDetailPage() {
             shared: false, historyKnown: false, automatic: /营养评估/.test(right.name), validUntil: plan.validUntil,
           })),
         ])
+        const isMedicalService = item => /medical_assist|medical_proxy/.test(item.workflowKey || item.serviceWorkflowSnapshot?.key || '')
+          || /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号/.test(item.name || item.serviceName || '')
+        const visibleIncludedServices = medicalServiceOnly ? includedServices.filter(isMedicalService) : includedServices
+        const visibleOrders = medicalServiceOnly ? patientOrders.filter(isMedicalService) : patientOrders
+        const availableMedicalBenefit = includedServices.some(item => isMedicalService(item) && item.historyKnown && Number(item.remaining) > 0)
         const startIncludedService = async item => {
           if (!item.entitlement || !item.productId || !window.confirm(`确认发起「${item.name}」吗？系统优先使用最早到期的有效套餐，预占 1 次；实际启动后自动核销。`)) return
           setUsingEntitlementId(item.key)
@@ -10748,15 +10754,21 @@ export default function PatientDetailPage() {
             <div className="card" id="patient-service-orders">
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div className="card-title">服务清单与逐次核销</div>
-                <span style={{ fontSize: 12, color: '#8AA89C' }}>套餐包含 {includedServices.length} 项 · 可核销订单 {patientOrders.filter(o => o.status === 'scheduled' && (o.usedUnits || 0) < (o.totalUnits || 1)).length} 条</span>
+                <span style={{ fontSize: 12, color: '#8AA89C' }}>套餐包含 {visibleIncludedServices.length} 项 · 可核销订单 {visibleOrders.filter(o => o.status === 'scheduled' && (o.usedUnits || 0) < (o.totalUnits || 1)).length} 条</span>
               </div>
-              {!patientOrders.length && !includedServices.length ? (
-                <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无套餐包含服务或单独购买订单</div>
+              <div style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <button className={`btn btn-sm ${medicalServiceOnly ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setMedicalServiceOnly(true)}>就医协助</button>
+                <button className={`btn btn-sm ${medicalServiceOnly ? 'btn-secondary' : 'btn-primary'}`} onClick={() => setMedicalServiceOnly(false)}>全部服务</button>
+                {medicalServiceOnly && <span style={{ fontSize: 12, color: '#4A6558' }}>先选择可用套餐权益，预占 1 次；实际启动并填写服务依据后自动核销。历史已付款订单保留原支付记录。</span>}
+                {medicalServiceOnly && !availableMedicalBenefit && ['healthPlanner', 'superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" onClick={() => nav(`/products?medicalServices=1&patientId=${id}`, { state: { initialPatient: { _id: id, name: data?.user?.name || '' } } })}>套餐不足 · 选择付费就医服务</button>}
+              </div>
+              {!visibleOrders.length && !visibleIncludedServices.length ? (
+                <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无{medicalServiceOnly ? '就医协助' : ''}套餐权益或已购买订单</div>
               ) : (
                 <table className="table">
                   <thead><tr><th>服务</th><th>来源</th><th>本次金额</th><th>次数</th><th>时间</th><th>归属</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
-                    {includedServices.map(item => <tr key={`included:${item.key}`}>
+                    {visibleIncludedServices.map(item => <tr key={`included:${item.key}`}>
                       <td style={{ fontWeight: 600 }}>{item.name}</td>
                       <td><span style={{ color: '#1E6B50', fontWeight: 600 }}>套餐包含</span><div style={{ fontSize: 12, color: '#718579' }}>{item.packageName}{item.shared ? ' · 共用次数' : ''}</div></td>
                       <td style={{ color: '#1E6B50', fontWeight: 700 }}>¥0</td>
@@ -10771,7 +10783,7 @@ export default function PatientDetailPage() {
                             : <span style={{ fontSize: 12, color: '#718579' }}>—</span>}
                       </td>
                     </tr>)}
-                    {[...patientOrders].sort((a, b) => Number(b.status === 'scheduled') - Number(a.status === 'scheduled')).map(order => {
+                    {[...visibleOrders].sort((a, b) => Number(b.status === 'scheduled') - Number(a.status === 'scheduled')).map(order => {
                       // 谁推送谁获推广费(referrerId=推送时自动关联)，谁服务谁获服务费(fulfillerId)——
                       // 只有该订单的推荐人本人或超管能指定服务人，不是随便谁都能改
                       const canAssignFulfiller = staff?.role === 'superadmin' || String(order.referrerId?._id) === String(staff?._id)

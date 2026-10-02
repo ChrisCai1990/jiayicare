@@ -12,6 +12,7 @@ const catColor = (name) => CAT_COLOR[name] || CAT_PALETTE[[...(name || '')].redu
 export default function ProductPushPage() {
   const location = useLocation()
   const requestedMedicalProxy = new URLSearchParams(location.search).get('medicalProxy') === '1'
+  const requestedMedicalServices = new URLSearchParams(location.search).get('medicalServices') === '1'
   const requestedPatientId = new URLSearchParams(location.search).get('patientId') || ''
   const toast = useToast()
   const [products, setProducts] = useState([])
@@ -55,7 +56,8 @@ export default function ProductPushPage() {
     setPushRecords(pr.data.records)
   }
 
-  const filtered = catFilter === '全部' ? products : products.filter(p => p.category === catFilter)
+  const categoryProducts = catFilter === '全部' ? products : products.filter(p => p.category === catFilter)
+  const filtered = requestedMedicalServices ? categoryProducts.filter(p => /medical_assist|medical_proxy/.test(p.serviceWorkflow?.key || '') || /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号/.test(p.name || '')) : categoryProducts
 
   const toggleProduct = (id) => {
     const product = products.find(p => p.id === id)
@@ -82,7 +84,7 @@ export default function ProductPushPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">产品推送</h1>
-          <p className="page-subtitle">选择多个产品组合推送给会员，会员可自由选择购买</p>
+          <p className="page-subtitle">{requestedMedicalServices ? '选择就医服务产品并推送给会员；有可用套餐时结算优先使用套餐权益' : '选择多个产品组合推送给会员，会员可自由选择购买'}</p>
         </div>
       </div>
 

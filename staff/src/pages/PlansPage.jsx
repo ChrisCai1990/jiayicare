@@ -64,6 +64,7 @@ export default function PlansPage() {
   const [showModal, setShowModal]               = useState(false)
   const [showCheckupModal, setShowCheckupModal] = useState(false)
   const [showMedicalModal, setShowMedicalModal] = useState(false)
+  const [showMedicalServicePicker, setShowMedicalServicePicker] = useState(false)
   const [showNutritionModal, setShowNutritionModal] = useState(false)
   const [showAhModal, setShowAhModal]           = useState(false)
 
@@ -94,8 +95,11 @@ export default function PlansPage() {
     if (requestedPlanType === 'annual_checkup') setShowCheckupModal(true)
     if (requestedPlanType === 'annual_mgmt') setShowAhModal(true)
     if (requestedPlanType === 'nutrition') setShowNutritionModal(true)
-    if (requestedPlanType === 'medical_assist' && staff?.role === 'superadmin') setShowMedicalModal(true)
-  }, [requestedPlanType, staff?.role])
+    if (requestedPlanType === 'medical_assist') {
+      if (staff?.role === 'superadmin' && searchParams.get('legacyPlan') === '1') setShowMedicalModal(true)
+      else if (['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role)) setShowMedicalServicePicker(true)
+    }
+  }, [requestedPlanType, staff?.role, searchParams])
 
   const closePlanModal = (setVisible) => {
     setVisible(false)
@@ -129,10 +133,13 @@ export default function PlansPage() {
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setSearchParams(opt.v ? { type: opt.v } : {})}>{opt.l}</button>
         ))}
-        {typeFilter === 'medical_assist' && can('plans', 'create') && staff?.role === 'superadmin' && (
-          <button className="btn btn-primary btn-sm" onClick={() => setShowMedicalModal(true)}>
-            ＋ 补录就医协助方案
+        {typeFilter === 'medical_assist' && ['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowMedicalServicePicker(true)}>
+            ＋ 发起就医协助服务
           </button>
+        )}
+        {typeFilter === 'medical_assist' && can('plans', 'create') && staff?.role === 'superadmin' && (
+          <button className="btn btn-secondary btn-sm" onClick={() => setShowMedicalModal(true)}>补录历史方案</button>
         )}
         {typeFilter === 'annual_checkup' && can('plans', 'create') && ['familyDoctor', 'superadmin'].includes(staff?.role) && (
           <button className="btn btn-primary btn-sm" onClick={() => setShowCheckupModal(true)}>＋ 新增年度体检方案</button>
@@ -151,11 +158,12 @@ export default function PlansPage() {
           style={{ width: 180, marginLeft: 'auto' }}
         />
       </div>
-      {typeFilter === 'medical_assist' && staff?.role !== 'superadmin' && (
+      {typeFilter === 'medical_assist' && (
         <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: '#F0F8F4', color: '#426457', fontSize: 13 }}>
-          新服务从客户档案中的服务产品或套餐权益发起；健康规划师在“服务执行”查看就医协助任务与督办。这里保留已生成的服务方案。
+          选择会员后核对就医服务产品、套餐剩余权益及已付款订单；套餐优先，确认实际启动后自动核销。下方保留历史方案。
         </div>
       )}
+      {showMedicalServicePicker && <SelectPatientForAhModal title="发起就医协助服务 — 选择会员" actionLabel="选择服务与权益" initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowMedicalServicePicker)} onSelected={patientId => { closePlanModal(setShowMedicalServicePicker); nav(`/patients/${patientId}?tab=consumption&serviceFilter=medical`) }} />}
 
       {/* ── 年度管理方案（AnnualPlan） ── */}
       {isAnnualMgmt && (
@@ -244,6 +252,9 @@ export default function PlansPage() {
                       <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                       <td>
                         <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(['nutrition', 'medical_assist'].includes(p.type) ? `/plans/${p._id}/modules` : `/plans/${p._id}`) }}>编辑</button>
+                        {p.type === 'medical_assist' && p.patientId?._id && ['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
+                          <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} onClick={e => { e.stopPropagation(); nav(`/patients/${p.patientId._id}?tab=consumption&serviceFilter=medical`) }}>选择服务与权益</button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -261,13 +272,13 @@ export default function PlansPage() {
 }
 
 // ── 新建年度健康管理：选择会员弹窗 ────────────────────────────────────────
-function SelectPatientForAhModal({ year, onClose, onSelected, initialPatientId = '', initialPatientName = '' }) {
+function SelectPatientForAhModal({ year, title, actionLabel = '进入编辑', onClose, onSelected, initialPatientId = '', initialPatientName = '' }) {
   const [patientId, setPatientId] = useState(initialPatientId)
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 className="modal-title">新建年度管理方案 — {year}年</h3>
+          <h3 className="modal-title">{title || `新建年度管理方案 — ${year}年`}</h3>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
@@ -276,7 +287,7 @@ function SelectPatientForAhModal({ year, onClose, onSelected, initialPatientId =
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" disabled={!patientId} onClick={() => patientId && onSelected(patientId)}>进入编辑</button>
+          <button className="btn btn-primary" disabled={!patientId} onClick={() => patientId && onSelected(patientId)}>{actionLabel}</button>
         </div>
       </div>
     </div>
