@@ -789,9 +789,11 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
 
   const filter = { ...assignFilter, isDeleted: { $ne: true } };
   if (search) {
+    const customerId = require('../../../shared/customerNumber.cjs').parseCustomerNumber(search);
     const searchOr = [
       { name: { $regex: search, $options: 'i' } },
       { phone: { $regex: search, $options: 'i' } },
+      ...(customerId ? [{ _id: customerId }] : []),
     ];
     // 导师模式下 assignFilter 已占用 $or（归属过滤），此时用 $and 组合归属与搜索，避免互相覆盖
     if (filter.$or) {
@@ -898,11 +900,13 @@ router.get('/checkup-progress', staffAuth, async (req, res) => {
 router.get('/patients/search-registered', staffAuth, async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.json({ success: true, data: [] });
+  const customerId = require('../../../shared/customerNumber.cjs').parseCustomerNumber(q);
   const filter = {
     isDeleted: { $ne: true },
     $or: [
       { name: { $regex: q, $options: 'i' } },
       { phone: { $regex: q, $options: 'i' } },
+      ...(customerId ? [{ _id: customerId }] : []),
     ],
   };
   const users = await User.find(filter)

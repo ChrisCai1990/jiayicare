@@ -4740,6 +4740,7 @@ export default function PatientDetailPage() {
               ) : (
                 <>
                   <InfoRow label="姓名" value={user.name} />
+                  <InfoRow label="客户编号" value={user._id ? `KH-${String(user._id).toUpperCase()}` : '-'} />
                   <InfoRow label="称呼（AI用）" value={(() => {
                     // 与后端 resolveTitle 对齐：preferredTitle 优先，否则按性别+姓氏兜底，未标注时标「自动」
                     if (user.preferredTitle && user.preferredTitle.trim()) return user.preferredTitle.trim()
