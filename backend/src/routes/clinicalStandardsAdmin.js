@@ -28,8 +28,14 @@ router.get('/', async (req, res) => {
     SystemConfig.findOne({ key: reviewerKey(delegatedTenantId) }).lean(),
     Admin.find({ tenantId: req.admin.tenantId, role: 'familyDoctor', staffStatus: 'active' }).select('name title').lean(),
   ]) : [null, []];
+  const latestWatches = new Map();
+  for (const row of watches) {
+    const previous = latestWatches.get(row.standardId);
+    if (!previous || new Date(row.checkedAt || 0) > new Date(previous.checkedAt || 0) ||
+      (String(row.checkedAt) === String(previous.checkedAt) && String(row._id) > String(previous._id))) latestWatches.set(row.standardId, row);
+  }
   res.json({ success: true, data: {
-    standards: standards.map(item => ({ ...item, watch: watches.find(row => row.standardId === item.id) || null })),
+    standards: standards.map(item => ({ ...item, watch: latestWatches.get(item.id) || null })),
     updates, tenants, delegatedTenantId, delegatedTenantName: delegation?.value?.tenantName || '',
     delegationConfirmedAt: delegation?.value?.confirmedAt || null,
     canAssign, reviewerId: reviewerConfig?.value?.staffId || '', reviewers,

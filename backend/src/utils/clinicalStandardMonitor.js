@@ -56,11 +56,17 @@ async function fetchFingerprint(standard, fetchImpl = fetch) {
 async function checkOne(standard, { force = false, fetchImpl = fetch } = {}) {
   if (standard.monitor !== 'source') return { standardId: standard.id, outcome: 'manual' };
   const now = new Date();
-  const watch = await ClinicalStandardWatch.findOneAndUpdate(
-    { standardId: standard.id, $and: [{ $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now } }] }, ...(force ? [] : [{ $or: [{ checkedAt: null }, { checkedAt: { $lte: new Date(now.getTime() - QUARTER) } }, { attemptedSourceUrl: { $ne: standard.sourceUrl } }, { lastError: { $ne: '' }, nextCheckAt: { $lte: now } }] }])] },
-    { $set: { leaseUntil: new Date(now.getTime() + 30000) }, $setOnInsert: { standardId: standard.id } },
-    { new: true, upsert: true },
-  ).catch(error => { if (error.code === 11000) return null; throw error; });
+  // Read the newest watch first. A filtered upsert can insert another row when an
+  // existing row is merely not due, especially where the unique index is absent.
+  const existing = await ClinicalStandardWatch.findOne({ standardId: standard.id }).sort({ checkedAt: -1, _id: -1 });
+  const due = !existing?.checkedAt || now - existing.checkedAt >= QUARTER ||
+    existing.attemptedSourceUrl !== standard.sourceUrl ||
+    (existing.lastError && (!existing.nextCheckAt || existing.nextCheckAt <= now));
+  if (existing && !force && !due) return { standardId: standard.id, outcome: 'not_due' };
+  const lease = { $set: { leaseUntil: new Date(now.getTime() + 30000) } };
+  const watch = existing
+    ? await ClinicalStandardWatch.findOneAndUpdate({ _id: existing._id, $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now } }] }, lease, { new: true })
+    : await ClinicalStandardWatch.findOneAndUpdate({ standardId: standard.id }, { ...lease, $setOnInsert: { standardId: standard.id } }, { new: true, upsert: true });
   if (!watch) return { standardId: standard.id, outcome: 'not_due' };
   try {
     const fingerprint = await fetchFingerprint(standard, fetchImpl);
@@ -85,7 +91,7 @@ async function checkOne(standard, { force = false, fetchImpl = fetch } = {}) {
 
 async function scheduleManualReview(standard) {
   const now = new Date();
-  const watch = await ClinicalStandardWatch.findOne({ standardId: standard.id }).lean();
+  const watch = await ClinicalStandardWatch.findOne({ standardId: standard.id }).sort({ checkedAt: -1, _id: -1 }).lean();
   if (watch?.nextCheckAt && watch.nextCheckAt > now) return { standardId: standard.id, outcome: 'not_due' };
   const fingerprint = `manual:${now.getUTCFullYear()}`;
   await ClinicalStandardUpdate.updateOne({ standardId: standard.id, fingerprint }, { $setOnInsert: {
