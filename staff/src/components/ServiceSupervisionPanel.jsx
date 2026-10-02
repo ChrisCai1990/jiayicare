@@ -39,8 +39,7 @@ export default function ServiceSupervisionPanel() {
     setBusy(true); setError('')
     try {
       if (form.request) await staffAPI.respondServiceSupervision(form.request._id, { response: note })
-      else await staffAPI.sendServiceSupervision({ serviceKey: form.service.key, version: form.service.version, kind: form.kind, recipientId: form.person.id, note })
-      setNotice(form.request ? '处理反馈已保存，顾问可查看回执。' : `已送达${form.person.name}的工作台。相同进度的重复提交只保留一条。`)
+      setNotice('处理反馈已保存，顾问可查看回执。')
       setForm(null); await resource.refresh()
     } catch (e) { setError(e.message) }
     finally { setBusy(false) }
@@ -51,9 +50,9 @@ export default function ServiceSupervisionPanel() {
     <div>{r.note}</div><div style={{ color: '#667085' }}>{r.handledAt ? `处理反馈（${date(r.handledAt)}）：${r.response}` : '尚无处理反馈（实际进度以原服务为准）'}</div>
   </div>)}</details>
   return <section className="card" style={{ marginBottom: 20 }} aria-label="服务督办">
-    <div className="card-header"><div className="card-title">{staff?.role === 'familyDoctor' ? '服务督办' : '督办与协调提醒'}{attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div></div>
+    <div className="card-header"><div className="card-title">{staff?.role === 'familyDoctor' ? '服务进度总览' : '历史协调提醒'}{attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div></div>
     <div className="card-body">
-      {staff?.role === 'familyDoctor' && <p style={{ marginTop: 0, fontSize: 13, color: '#667085' }}>跟进所属客户的服务进度；整体协调由健康规划师负责，本人任务在原执行区办理。</p>}
+      {staff?.role === 'familyDoctor' && <p style={{ marginTop: 0, fontSize: 13, color: '#667085' }}>查看所属客户的完整服务进度。随访由健管专员督导，就医协助由健康规划师督导；需要整体健康判断时在本人专业待办中处理。</p>}
       {resource.loading && <div role="status">正在读取服务进度…</div>}
       {resource.error && <div role="alert">进度更新失败：{resource.error} <button onClick={resource.refresh}>重试</button></div>}
       {notice && <p role="status">{notice}</p>}
@@ -68,16 +67,15 @@ export default function ServiceSupervisionPanel() {
         {s.attention && <div style={{ color: '#B45309', marginTop: 6 }}>{s.reasons.join(' · ') || '已请求规划师协调'}</div>}
         {s.current.map((c, i) => <div key={c.taskId || i} style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
           <span>{c.label} · {c.person?.name || '处理人待核对'}{c.blocked ? ' · 等待前置环节' : ''} · 计划时间：{date(c.dueAt)}</span>
-          {c.person && <button className="btn btn-secondary btn-sm" disabled={!!resource.error} onClick={() => start({ service: s, kind: 'remind', person: c.person })}>提醒处理人</button>}
         </div>)}
         <p>下一步：{s.current.some(c => c.blocked) ? '等待原任务的前置事项完成。' : s.current.some(c => !c.person) ? '原任务负责人待核对，不自动转交其他人员。' : '由当前处理人在原服务中办理并记录结果。'}</p>
         <div style={{ color: '#667085', whiteSpace: 'pre-wrap' }}>最新进展：{s.latest ? `${date(s.latest.at)} · ${s.latest.content}` : '暂无处理记录，请查看原服务进度。'}</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>{s.coordinator && <span>原服务协调规划师：{s.coordinator.name}</span>}<button className="btn btn-secondary btn-sm" onClick={() => openSource(s)}>查看原服务</button>{s.coordinator && <button className="btn btn-secondary btn-sm" disabled={!!resource.error} onClick={() => start({ service: s, kind: 'coordinate', person: s.coordinator })}>请求规划师协调</button>}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>{s.coordinator && <span>原服务协调规划师：{s.coordinator.name}</span>}<button className="btn btn-secondary btn-sm" onClick={() => openSource(s)}>查看原服务</button></div>
         {!!s.history.length && history(s)}
       </article>)}
       {rows.length > 5 && <Pagination compact page={currentPage} totalPages={Math.ceil(rows.length / 5)} onChange={setPage} />}
       {services.length > attention.length && <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={() => { setNormalOpen(!normalOpen); setPage(1) }}>{normalOpen ? '收起正常进度' : `查看正常进度 ${services.length - attention.length}项`}</button>}
-      {!resource.loading && !resource.error && staff?.role === 'familyDoctor' && !services.length && <span style={{ color: '#667085' }}>暂无需要督办的服务。</span>}
+      {!resource.loading && !resource.error && staff?.role === 'familyDoctor' && !services.length && <span style={{ color: '#667085' }}>暂无进行中的服务。</span>}
       {form && <form onSubmit={submit} style={{ marginTop: 16, padding: 16, background: '#F3F7F5', borderRadius: 8 }}>
         <b>{form.request ? '填写实际处理反馈' : `${form.kind === 'coordinate' ? '请求协调' : '提醒处理'} → ${form.person.name}`} · {(form.service || form.request.service).title}</b>
         <p style={{ color: '#667085', fontSize: 13 }}>{form.request ? '反馈供顾问查看。实际服务仍在原入口办理。' : '说明需要跟进的具体事项，接收人会在工作台看到。'}</p>
