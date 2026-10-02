@@ -145,11 +145,11 @@ async function scanAndCreatePhaseAssessments() {
       gate = await require('./annualPeriodicGate').annualPeriodicGate(plan, user);
       const rights = await require('./packageFeatureEntitlements').getAiEntitlements(user, gate.access);
       if (!gate.allowed || !rights.phaseAssessment || !eligibleForAutomaticAssessment(user, new Date(), gate.access)) continue;
-      // Package rights and their configured cadence are authoritative. Keep the
-      // existing explicit patient cadence only for historical blank packages.
+      // Service package cadence takes priority. A blank package cadence uses the
+      // confirmed annual plan's explicit cadence; retain the old pilot override.
       const configured = user.aiPilotFeatures?.stageAssessmentFrequency;
-      pilotFrequency = user.aiPilotFeatures?.stageAssessment === true && !rights.phaseAssessmentFrequency && ['biweekly', 'monthly', 'quarterly'].includes(configured);
-      frequency = pilotFrequency ? configured : rights.phaseAssessmentFrequency;
+      pilotFrequency = user.aiPilotFeatures?.stageAssessment === true && !rights.phaseAssessmentFrequency && !plan.phaseAssessmentFrequency && ['biweekly', 'monthly', 'quarterly'].includes(configured);
+      frequency = rights.phaseAssessmentFrequency || plan.phaseAssessmentFrequency || (pilotFrequency ? configured : '');
       if (!['biweekly', 'monthly', 'quarterly'].includes(frequency)) continue;
     } catch (error) {
       console.error('[phase-assessment] eligibility failed', String(plan.patientId), error.message);

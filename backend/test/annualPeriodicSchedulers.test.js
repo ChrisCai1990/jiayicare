@@ -110,6 +110,16 @@ test('全量模式不为无权益或未配置评估周期的会员猜测生成',
   assert.equal(await scanAndCreatePhaseAssessments(), 0);
   assert.equal(aiCalls, 0);
 });
+test('服务包未设周期时使用已确认年度方案的明确阶段节奏', async t => {
+  process.env.PHASE_ASSESSMENT_AUTO_SCOPE = 'eligible';
+  t.mock.method(AnnualPlan, 'find', () => ({ sort: () => ({ limit: () => ({ lean: async () => [{ ...plan, phaseAssessmentFrequency: 'monthly' }] }) }) }));
+  t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: '' }));
+  t.mock.method(User, 'findById', () => ({ select: async () => ({ ...user, aiPilotFeatures: {} }) }));
+  t.mock.method(Template, 'find', () => ({ lean: async () => [{ _id: 'monthly', content: { frequency: 'monthly' } }] }));
+  assert.equal(await scanAndCreatePhaseAssessments(), 1);
+  assert.equal(saved[0].templateId, 'monthly');
+  assert.equal(aiCalls, 1);
+});
 test('同周期通用与品牌模板并存时仅用品牌模板生成一份', async t => {
   process.env.PHASE_ASSESSMENT_AUTO_SCOPE = 'eligible';
   t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: 'monthly' }));

@@ -348,6 +348,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [plan, setPlan]             = useState(null)
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
+  const [phaseAssessmentFrequency, setPhaseAssessmentFrequency] = useState('')
   const [lastGenerationKey, setLastGenerationKey] = useState('')
   const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
   const [year, setYear]             = useState(() => Number(searchParams.get('year')) || new Date().getFullYear())
@@ -373,6 +374,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         if (dirty) { setRemotePlanChanged(true); return }
         setPlansByType(prev => ({ ...prev, [planType]: latest }))
         setModuleData(latest.moduleData || {})
+        setPhaseAssessmentFrequency(latest.phaseAssessmentFrequency || '')
         setPushedAt(latest.pushedAt || null)
         setConfirmedAt(latest.confirmedAt || null)
         setRemotePlanChanged(false)
@@ -479,6 +481,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setPlanType(target.servicePlanCode || target.planType)
           setSelectedTemplateId(target.templateId || '')
           setModuleData(target.moduleData || {})
+          setPhaseAssessmentFrequency(target.phaseAssessmentFrequency || '')
           setPushedAt(target.pushedAt || null)
           setConfirmedAt(target.confirmedAt || null)
         } else if (queryPlanType) {
@@ -486,12 +489,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setPlanType(queryPlanType)
           setSelectedTemplateId('')
           setModuleData({})
+          setPhaseAssessmentFrequency('')
           setPushedAt(null)
           setConfirmedAt(null)
         } else {
           setPlanType('')
           setSelectedTemplateId('')
           setModuleData({})
+          setPhaseAssessmentFrequency('')
           setPushedAt(null)
           setConfirmedAt(null)
         }
@@ -534,6 +539,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setPlanType(key)
     setSelectedTemplateId(template?._id || p?.templateId || '')
     setModuleData(p?.moduleData || {})
+    setPhaseAssessmentFrequency(p?.phaseAssessmentFrequency || '')
     setPushedAt(p?.pushedAt || null)
     setConfirmedAt(p?.confirmedAt || null)
     setDirty(false)
@@ -555,7 +561,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
         const servicePlanCode = annualTemplateCode(planType, selectedTemplate)
-        const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
+        const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData, phaseAssessmentFrequency, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
           setPlansByType(prev => {
@@ -877,6 +883,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
+      {patientMode && planType && <div style={{ background: '#F4F8F5', border: '1px solid #DDEAE0', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <label htmlFor="phase-assessment-frequency" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>正式阶段评估安排</label>
+        <select id="phase-assessment-frequency" className="form-input" value={phaseAssessmentFrequency} disabled={!canEdit || !!pushedAt || !!confirmedAt} onChange={e => { setPhaseAssessmentFrequency(e.target.value); setDirty(true) }}>
+          <option value="">按服务包已配置周期；若服务包写“按计划阶段安排”，请在此选择</option>
+          <option value="biweekly">方案约定：每 2 周</option><option value="monthly">方案约定：每月</option><option value="quarterly">方案约定：每季度</option>
+        </select>
+        <div style={{ fontSize: 12, color: '#65776F', marginTop: 8 }}>服务包已有固定周期时，以服务包为准；未配置周期时，以客户确认的本方案安排自动生成待审核评估。</div>
+      </div>}
       <details className="annual-plan-secondary" open={!patientMode || !closedLoopEnabled || window.location.hash === '#professional-assessments' || undefined}>
         <summary>方案准备与专业评估{preparation?.checklist && ` · 已完成 ${preparation.checklist.progress.completed}/${preparation.checklist.progress.total}`}</summary>
       {patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} />}

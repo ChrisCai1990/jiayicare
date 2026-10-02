@@ -7947,6 +7947,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   }
   try {
     const { planType, servicePlanCode: requestedServicePlanCode, notes, year, templateId, templateName } = req.body;
+    const phaseAssessmentFrequency = req.body.phaseAssessmentFrequency || '';
+    if (!['', 'biweekly', 'monthly', 'quarterly'].includes(phaseAssessmentFrequency)) return res.status(400).json({ success: false, message: '阶段评估周期无效' });
     let { moduleData } = req.body;
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权编辑该会员的年度方案' });
@@ -8001,7 +8003,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
         memberTypeSnapshot: patient.memberType || '',
         servicePackageSnapshot: packageRecord ? { id: packageRecord._id, name: packageRecord.name, capturedAt: new Date() } : { name: patient.servicePackage || '', capturedAt: new Date() },
         entitlementSnapshot: packageRecord?.entitlements || {}, resourceSnapshot: normalizedTemplate.content?.resourceConfig || {},
-        moduleData: moduleData || {}, notes: notes || '', ...(closedLoop ? { continuitySource: continuity.source || null } : {}), templateId: templateId || null, templateName: templateName || normalizedTemplate.content?.planName || template.name || '',
+        moduleData: moduleData || {}, phaseAssessmentFrequency, notes: notes || '', ...(closedLoop ? { continuitySource: continuity.source || null } : {}), templateId: templateId || null, templateName: templateName || normalizedTemplate.content?.planName || template.name || '',
         templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
         createdBy: req.staff._id, reviewStatus: 'pending', reviewedBy: null, reviewedAt: null, reviewNote: '',
         pushedAt: null, pushedBy: null, confirmedAt: null },
