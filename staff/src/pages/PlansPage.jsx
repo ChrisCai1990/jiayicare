@@ -1204,6 +1204,8 @@ function NutritionAIDraftModal({ onClose, onSaved, initialPatientId = '', initia
   const [error, setError] = useState('')
   const [goal, setGoal] = useState('')
   const [assessment, setAssessment] = useState(() => initialNutritionAssessment())
+  const [previousAssessmentAt, setPreviousAssessmentAt] = useState('')
+  const [prefillError, setPrefillError] = useState('')
 
   useEffect(() => {
     setPatient(null)
@@ -1211,17 +1213,24 @@ function NutritionAIDraftModal({ onClose, onSaved, initialPatientId = '', initia
     setSelectedTpl(null)
     setStep(1)
     setAssessment(initialNutritionAssessment())
+    setPreviousAssessmentAt('')
+    setPrefillError('')
     setGoal('')
     setError('')
     if (!patientId) { setLoading(false); return }
     let active = true
     setLoading(true)
-    Promise.all([staffAPI.getPatient(patientId), staffAPI.getPlanTemplates('nutrition', patientId)])
-      .then(([patientResult, templateResult]) => {
+    Promise.all([staffAPI.getPatient(patientId), staffAPI.getPlanTemplates('nutrition', patientId),
+      staffAPI.getNutritionAssessmentPrefill(patientId).catch(() => ({ data: null, prefillError: true }))])
+      .then(([patientResult, templateResult, prefillResult]) => {
         if (!active) return
         const user = patientResult.data?.user
+        const previous = prefillResult.data || null
         setPatient(user || null)
-        setAssessment(initialNutritionAssessment(user))
+        setAssessment(initialNutritionAssessment(user, previous))
+        setGoal(previous?.goal || '')
+        setPreviousAssessmentAt(previous?.recordedAt || '')
+        setPrefillError(prefillResult.prefillError ? '上次营养评估暂未加载；目前只带入客户档案。可关闭弹窗后重试。' : '')
         setTemplates(templateResult.data || [])
       })
       .catch(err => { if (active) setError(err.message || '加载会员资料与模板失败') })
@@ -1272,7 +1281,8 @@ function NutritionAIDraftModal({ onClose, onSaved, initialPatientId = '', initia
         </> : <>
           <div style={{ padding: 12, borderRadius: 8, background: '#F3E8FF', color: '#6330BA' }}>会员：{patient?.name || initialPatientName}　模板：{selectedTpl?.name}</div>
           <label className="form-label">本次营养目标 *<textarea className="form-input" rows={2} value={goal} onChange={e => setGoal(e.target.value)} placeholder="填写已与客户确认的具体营养目标" /></label>
-          <NutritionAssessmentFields patient={patient} value={assessment} onChange={setAssessment} />
+          {prefillError && <div role="alert" style={{ color: '#8A6A35', fontSize: 12 }}>{prefillError}</div>}
+          <NutritionAssessmentFields patient={patient} value={assessment} onChange={setAssessment} previousAssessmentAt={previousAssessmentAt} />
           <div style={{ color: '#52675D', fontSize: 12 }}>点击生成后会进入待审核方案。营养师需逐项核对餐次、分量及禁忌，再推送给客户。</div>
         </>}
       </div>

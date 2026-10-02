@@ -1,14 +1,9 @@
 import React from 'react'
 import DateField from '../../../shared/DateField.jsx'
-import NutritionTargetRows, { emptyNutritionTarget, nutritionTargetError } from './NutritionTargetRows'
+import NutritionTargetRows, { nutritionTargetError } from './NutritionTargetRows'
+import { nutritionAssessmentPrefill } from '../utils/nutritionAssessmentPrefill.mjs'
 
-export function initialNutritionAssessment(patient = {}) {
-  return {
-    height: patient?.height || '', weight: patient?.weight || '', currentDiet: patient?.lifestyle_data?.diet || '',
-    nutritionTargets: [emptyNutritionTarget()], reviewDate: '', medicalReview: '', practicalConstraints: '',
-    allergyStatus: '', allergyDetails: '', riskStatus: '', templateCompatibilityConfirmed: false,
-  }
-}
+export const initialNutritionAssessment = (patient = {}, previous = null) => nutritionAssessmentPrefill(patient, previous).assessment
 
 export function missingNutritionAssessment(value = {}, goal = '') {
   const required = [
@@ -26,11 +21,11 @@ export function missingNutritionAssessment(value = {}, goal = '') {
   return missing
 }
 
-export default function NutritionAssessmentFields({ patient, value, onChange }) {
+export default function NutritionAssessmentFields({ patient, value, onChange, previousAssessmentAt = '' }) {
   const set = (key, fieldValue) => onChange(current => ({ ...current, [key]: fieldValue }))
   return <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
     <div style={{ fontWeight: 700 }}>生成前营养评估 · 由营养师核实</div>
-    <div style={{ color: '#66776E', fontSize: 12 }}>档案值仅作预填；请核对后填写。本次记录将与方案一同保存。需要专业评估的客户请先评估并人工制定方案。</div>
+    <div style={{ color: '#66776E', fontSize: 12 }}>已带入客户档案{previousAssessmentAt ? `及 ${new Date(previousAssessmentAt).toLocaleDateString('zh-CN')} 的上次营养评估` : '中可用的信息'}。请按本次情况核对、修订；上次基线和目标不能直接当作当前测量结果。本次记录将与方案一同保存。</div>
     <div style={{ color: '#52675D', fontSize: 12 }}>档案年龄：{patient?.age || '未录入（请先在客户基本信息中补齐）'}；档案食物过敏：{patient?.healthProfile?.foodAllergy || '未记录，不能按无过敏处理'}</div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
       {[['height', '身高（cm）'], ['weight', '体重（kg）']].map(([key, label]) => <label key={key} className="form-label">{label} *<input className="form-input" value={value[key]} onChange={e => set(key, e.target.value)} /></label>)}
@@ -41,6 +36,6 @@ export default function NutritionAssessmentFields({ patient, value, onChange }) 
     <label className="form-label">食物过敏核对 *<select className="form-input" value={value.allergyStatus} onChange={e => set('allergyStatus', e.target.value)}><option value="">请选择已核实结果</option><option value="confirmed_none">已核实，无已知食物过敏</option><option value="confirmed_present">已核实，有食物过敏</option></select></label>
     {value.allergyStatus === 'confirmed_present' && <label className="form-label">过敏食物及反应 *<textarea className="form-input" rows={2} value={value.allergyDetails} onChange={e => set('allergyDetails', e.target.value)} /></label>}
     <label className="form-label">专业风险分流 *<select className="form-input" value={value.riskStatus} onChange={e => set('riskStatus', e.target.value)}><option value="">请选择</option><option value="standard">已核对，适用所选营养方案模板</option><option value="specialist">需专业评估或特殊疾病营养路径</option></select></label>
-    <label className="form-label"><input type="checkbox" checked={value.templateCompatibilityConfirmed} onChange={e => set('templateCompatibilityConfirmed', e.target.checked)} /> 已核对所选模板适用于本客户，且与食物过敏、疾病要求及本次目标不冲突 *</label>
+    <label className="form-label"><input type="checkbox" checked={value.templateCompatibilityConfirmed} onChange={e => set('templateCompatibilityConfirmed', e.target.checked)} /> 已逐项核对本次带入的评估资料，并确认所选模板与过敏、疾病要求及本次目标不冲突 *</label>
   </div>
 }

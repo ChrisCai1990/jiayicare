@@ -335,6 +335,7 @@ export const staffAPI = {
 
   // P3 — Patient sub-resources
   getPatientPlans:          (id) => req(`/staff/patients/${id}/plans`),
+  getNutritionAssessmentPrefill: (id) => req(`/staff/patients/${id}/nutrition-assessment-prefill`),
   getPatientReports:        (id) => req(`/staff/patients/${id}/reports`),
   startStaffMedicalProxy: (id, data) => req(`/staff/patients/${id}/medical-proxy/start`, { method: 'POST', body: JSON.stringify(data) }),
   startAdHocConsultation: (id, data) => req(`/staff/patients/${id}/ad-hoc-consultation/start`, { method: 'POST', body: JSON.stringify(data) }),

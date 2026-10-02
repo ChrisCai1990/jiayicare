@@ -15769,6 +15769,33 @@ ${monitoringText}
 // 模板：模板里"膳食总原则/推荐食物/禁忌食物/营养素补充建议/运动建议/烹饪方式/进餐顺序/每日饮水量"这些
 // 固定字段原样锁定作为骨架，AI只负责把"早/午/晚/加餐"具体食物内容，结合会员情况在骨架约束下具体化，
 // 不允许违反模板里的禁忌食物/膳食原则。
+router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, res) => {
+  try {
+    if (!['nutritionist', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师可查看营养评估参考资料' });
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '会员 ID 无效' });
+    const user = await User.findById(req.params.id).select('tenantId assignedNutritionist isDeleted').lean();
+    if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (String(user.tenantId || '') !== String(req.staff.tenantId || '')
+      || (req.staff.role !== 'superadmin' && String(user.assignedNutritionist || '') !== String(req.staff._id))) {
+      return res.status(403).json({ success: false, message: '无权查看该会员营养评估' });
+    }
+    const previous = await HealthPlan.findOne({ patientId: user._id, type: 'nutrition', status: { $ne: 'cancelled' },
+      'content.nutritionAssessment.verifiedAt': { $exists: true } })
+      .sort({ createdAt: -1 }).select('content.nutritionAssessment content.goal createdAt').lean();
+    const assessment = previous?.content?.nutritionAssessment;
+    res.json({ success: true, data: assessment ? {
+      planId: previous._id, recordedAt: assessment.verifiedAt || previous.createdAt,
+      goal: previous.content?.goal || assessment.goal || '',
+      height: assessment.height, weight: assessment.weight,
+      nutritionTargets: assessment.nutritionTargets || [],
+      metric: assessment.metric || '', baseline: assessment.baseline || '', target: assessment.target || '',
+      currentDiet: assessment.currentDiet || '', medicalReview: assessment.medicalReview || '',
+      practicalConstraints: assessment.practicalConstraints || '',
+      allergyDetails: assessment.allergyDetails || '',
+    } : null });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
   if (!['nutritionist', 'superadmin'].includes(req.staff.role)) {
     return res.status(403).json({ success: false, message: '仅营养师可生成营养干预方案' });

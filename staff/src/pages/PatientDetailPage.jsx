@@ -15113,6 +15113,9 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, patient, i
   // 简要说明，AI结合这句话+模板类型生成初稿，而不是完全靠AI自己猜（2026-07-13需求）
   const [briefNote, setBriefNote] = useState(initialBriefNote)
   const [nutritionAssessment, setNutritionAssessment] = useState(() => initialNutritionAssessment(patient))
+  const [previousAssessmentAt, setPreviousAssessmentAt] = useState('')
+  const [nutritionPrefillError, setNutritionPrefillError] = useState(false)
+  const nutritionEdited = useRef(false)
   const setNutritionField = (key, value) => setNutritionAssessment(current => ({ ...current, [key]: value }))
 
   useEffect(() => {
@@ -15123,9 +15126,17 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, patient, i
     Promise.all([
       staffAPI.getPlanTemplates(planType, patientId),
       planType === 'annual_checkup' ? staffAPI.getWorkflowProducts('checkup') : Promise.resolve({ data: [] }),
+      planType === 'nutrition' ? staffAPI.getNutritionAssessmentPrefill(patientId).catch(() => ({ data: null, prefillError: true })) : Promise.resolve({ data: null }),
     ])
-      .then(([res, productRes]) => {
+      .then(([res, productRes, prefillRes]) => {
         setTemplates(res.data || [])
+        if (planType === 'nutrition' && !nutritionEdited.current) {
+          const previous = prefillRes.data || null
+          setNutritionPrefillError(!!prefillRes.prefillError)
+          setNutritionAssessment(initialNutritionAssessment(patient, previous))
+          setBriefNote(current => current.trim() ? current : previous?.goal || '')
+          setPreviousAssessmentAt(previous?.recordedAt || '')
+        }
         const products = productRes.data || []
         setWorkflowProducts(products)
         if (products.length === 1) setSelectedProductId(products[0]._id)
@@ -15196,7 +15207,10 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, patient, i
           </div>
         </div>
         <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
-          {planType === 'nutrition' && <NutritionAssessmentFields patient={patient} value={nutritionAssessment} onChange={setNutritionAssessment} />}
+          {planType === 'nutrition' && <>
+            {nutritionPrefillError && <div role="alert" style={{ color: '#8A6A35', fontSize: 12 }}>上次营养评估暂未加载；目前只带入客户档案。可关闭弹窗后重试。</div>}
+            <NutritionAssessmentFields patient={patient} value={nutritionAssessment} onChange={value => { nutritionEdited.current = true; setNutritionAssessment(value) }} previousAssessmentAt={previousAssessmentAt} />
+          </>}
           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
             方案的标准内容以模板为准，AI只会结合会员情况在模板基础上做定制，不会脱离模板另起一套。
           </div>
