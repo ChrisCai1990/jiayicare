@@ -58,6 +58,7 @@ export const adminAPI = {
   saasPlan: (tenantId = '') => req(`/saas-plan${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`),
   setTenantSeats: (id, data) => req(`/tenants/${id}/seats`, { method: 'PUT', body: JSON.stringify(data) }),
   createTenantAdmin: (id, data) => req(`/tenants/${id}/admins`, { method: 'POST', body: JSON.stringify(data) }),
+  createOwnTenantAdmin: data => req('/saas-plan/admins', { method: 'POST', body: JSON.stringify(data) }),
   agreement: id => req(`/agreements/${id}`),
   publishAgreement: (id, prices) => req(`/agreements/${id}/publish`, { method: 'POST', body: JSON.stringify({ prices }) }),
   confirmAgreement: (id, documentHash, password) => req(`/agreements/${id}/confirm`, { method: 'POST', body: JSON.stringify({ documentHash, password }) }),

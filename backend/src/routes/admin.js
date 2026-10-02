@@ -1607,15 +1607,26 @@ router.put('/tenants/:id/seats', adminAuth, requirePlatformSuper, async (req, re
   res.json({ success: true, data: tenant });
 });
 
-router.post('/tenants/:id/admins', adminAuth, requirePlatformSuper, async (req, res) => {
-  const tenant = await Tenant.findById(req.params.id).lean();
+async function createInstitutionAdmin(req, res, tenantId) {
+  const tenant = await Tenant.findById(tenantId).lean();
   if (!tenant || tenant.commercialPlan !== 'standard') return res.status(404).json({ success: false, message: '标准套餐机构不存在' });
   if (!await canAddSeat(tenant._id, 'admin')) return res.status(409).json({ success: false, message: '机构管理员账号额度已满' });
   const { username, password, name } = req.body || {};
   if (!username || !name || typeof password !== 'string' || password.length < 10 || password.length > 128) return res.status(400).json({ success: false, message: '填写用户名、姓名及 10 至 128 位初始密码' });
   if (await runWithoutTenantScope(() => Admin.exists({ username }))) return res.status(409).json({ success: false, message: '用户名已被占用' });
   const account = await Admin.create({ username, password, name, role: 'superadmin', tenantId: tenant._id, mustChangePassword: true });
+  await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
+    action: 'create_institution_admin', createdAdminId: account._id, at: new Date(), ip: req.ip });
   res.json({ success: true, data: { _id: account._id, username: account.username, name: account.name } });
+}
+
+router.post('/tenants/:id/admins', adminAuth, requirePlatformSuper, async (req, res) => {
+  return createInstitutionAdmin(req, res, req.params.id);
+});
+
+router.post('/saas-plan/admins', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin' || !req.admin.tenantId) return res.status(403).json({ success: false, message: '仅机构超管可创建本机构管理员' });
+  return createInstitutionAdmin(req, res, req.admin.tenantId);
 });
 
 // DELETE /api/admin/tenants/:id — 删除机构（有员工/客户时拒绝，避免误删数据）

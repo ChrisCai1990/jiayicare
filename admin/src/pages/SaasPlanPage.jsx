@@ -62,13 +62,13 @@ export default function SaasPlanPage() {
           <label>额外服务账号额度<input className="form-input" type="number" min="0" max="500" value={extras.extraStaffSeats} onChange={e => setExtras({ ...extras, extraStaffSeats: e.target.value })} /></label>
           <label>额外管理员账号额度<input className="form-input" type="number" min="0" max="500" value={extras.extraAdminSeats} onChange={e => setExtras({ ...extras, extraAdminSeats: e.target.value })} /></label>
           <button className="btn btn-primary" disabled={busy} onClick={() => action(() => adminAPI.setTenantSeats(tenantId, extras))}>保存账号额度</button>
-        </div><p style={{ color: '#667' }}>增加额度只允许开户；额外账号费按实际启用且超出包含名额的账号估算。</p>
+        </div><p style={{ color: '#667' }}>增加额度只允许开户；额外账号费按实际启用且超出包含名额的账号估算。</p></>}
         <h3 style={{ marginTop: 24 }}>新增机构管理员</h3><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
           <label>用户名<input className="form-input" value={newAdmin.username} onChange={e => setNewAdmin({ ...newAdmin, username: e.target.value })} /></label>
           <label>姓名<input className="form-input" value={newAdmin.name} onChange={e => setNewAdmin({ ...newAdmin, name: e.target.value })} /></label>
           <label>初始密码<input className="form-input" type="password" value={newAdmin.password} onChange={e => setNewAdmin({ ...newAdmin, password: e.target.value })} /></label>
-          <button className="btn" disabled={busy} onClick={() => action(() => adminAPI.createTenantAdmin(tenantId, newAdmin))}>创建账号</button>
-        </div><p style={{ color: '#667' }}>初始密码须 10–128 位，首次登录强制修改；凭据请通过安全渠道交付。</p></>}
+          <button className="btn" disabled={busy || tenant.usage.admins >= tenant.adminLimit} onClick={() => action(() => platform ? adminAPI.createTenantAdmin(tenantId, newAdmin) : adminAPI.createOwnTenantAdmin(newAdmin))}>创建账号</button>
+        </div><p style={{ color: '#667' }}>机构可在本机构额度内自行创建管理员；超额由平台先扩容。初始密码须 10–128 位，首次登录强制修改。</p>
       </>}
     </div>}
   </div>
