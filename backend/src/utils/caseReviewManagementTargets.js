@@ -20,6 +20,7 @@ function conclusionFromTargets(targets) {
 function fromConfirmedReviews(reviews) {
   return (reviews || []).flatMap(review => (review.conclusion?.managementTargets || []).map((row, index) => ({
     ...row,
+    issueId: row.issueId || `review:${review._id}:target:${index}`,
     sourceReviewId: String(review._id), sourceTitle: review.title,
     sourceConfirmedAt: review.conclusion.confirmedAt,
     sourceIndex: index, sourceGoal: row.goal, sourceFocus: row.focus,

@@ -171,7 +171,7 @@ export function FieldInput({ field, value, onChange }) {
 }
 
 // ── 单条记录编辑区（多条模块用）─────────────────────────────────────
-export function RecordEditor({ def, record, onChange, onDelete, index, total, executionReviewChanges = [] }) {
+export function RecordEditor({ def, record, onChange, onDelete, index, total, executionReviewChanges = [], issues = [] }) {
   const [open, setOpen] = useState(index === 0 && total === 1)
   const directNutrition = def.personalizedAssignment && annualNutrition.isRow(record)
   const summary = record[def.summaryKey] || `${def.summaryLabel} ${index + 1}`
@@ -195,6 +195,13 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
       </div>
       {open && (
         <div style={{ padding: '0 12px 12px', borderTop: '1px solid #F0EDE7' }}>
+          {issues.length > 0 && <label style={{ display: 'block', marginTop: 12, fontSize: 13, color: '#4A6558' }}>关联管理问题
+            <select className="form-input" style={{ display: 'block', width: '100%', marginTop: 5 }} value={record.issueId || ''} onChange={e => onChange({ ...record, issueId: e.target.value })}>
+              <option value="">待关联</option>
+              <option value="fixed">年度固定服务</option>
+              {issues.map(issue => <option key={issue.id} value={issue.id}>{issue.label}</option>)}
+            </select>
+          </label>}
           {executionReviewChanges.map((change, reviewIndex) => <details key={reviewIndex} style={{ marginTop: 10, padding: 10, background: '#FFF9ED', borderRadius: 8, fontSize: 12 }}><summary style={{ cursor: 'pointer', color: '#9A5B13' }}>查看本项修订 · {change.action}</summary><div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>原方案：{reviewSnapshot(change.before)}</div><div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>当前方案：{reviewSnapshot(change.after)}</div></details>)}
           {def.reviewDriven && <p style={{fontSize:12,color:'#64796E'}}>内容由研判补入后带入，顾问核对即可；缺项可回研判提取补充，无需重新生成整份方案。</p>}
           {def.fields.filter(field=>!optionalEmpty(field)).map(renderField)}
@@ -221,7 +228,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
 }
 
 // ── 板块折叠面板 ───────────────────────────────────────────────────────
-export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = false, executionReviewChanges = [] }) {
+export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = false, executionReviewChanges = [], issues = [] }) {
   const [open, setOpen] = useState(false)
   const enabled = data.enabled !== false
 
@@ -318,6 +325,7 @@ export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = 
                     index={i}
                     total={records.length}
                     executionReviewChanges={planSummaryRows[i]?.reviewChanges || []}
+                    issues={issues}
                     onChange={newRec => updateRecord(i, newRec)}
                     onDelete={() => deleteRecord(i)}
                   />
