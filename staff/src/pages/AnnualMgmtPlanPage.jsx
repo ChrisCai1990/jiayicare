@@ -434,6 +434,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [generationCoverage, setGenerationCoverage] = useState([])
   useEffect(() => { setLastGenerationKey(''); setGenerationCoverage([]) }, [id, year, planType])
   const [preparationSaving, setPreparationSaving] = useState(false)
+  const [annualReviewBusy, setAnnualReviewBusy] = useState(false)
   const [preparationDraft, setPreparationDraft] = useState({ assessmentMode: 'required', assessmentConfirmedCriteria: [], assessmentNotRequiredReason: '', requiredAssessmentDomains: '', requiredCaseReviewIds: [], medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
   const preparationSelectionChanged = JSON.stringify([...(preparationDraft.requiredCaseReviewIds || [])].sort()) !== JSON.stringify([...(preparation?.preparation?.requiredCaseReviewIds || [])].map(String).sort()) || (preparationDraft.assessmentMode === 'none' && !assessmentCriteria.every(item => preparationDraft.assessmentConfirmedCriteria.includes(item.key)))
   const preparationBlocked = closedLoopEnabled && (!preparation?.checklist?.ready || preparationSelectionChanged)
@@ -737,6 +738,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }
   const handleGenerateAIAnnualPlan = () => runAIGenerate(planType, false)
 
+  const openAnnualComprehensiveReview = async () => {
+    setAnnualReviewBusy(true)
+    try {
+      const result = await staffAPI.prepareAnnualComprehensiveReview(id, year)
+      nav(`/patients/${id}?tab=aiCase&caseReviewId=${result.data._id}`)
+    } catch (err) { toast(err.message || '准备年度综合研判失败') }
+    finally { setAnnualReviewBusy(false) }
+  }
+
   const handleSavePreparation = async () => {
     if (preparationDraft.assessmentMode === 'none' && !assessmentCriteria.every(item => preparationDraft.assessmentConfirmedCriteria.includes(item.key))) {
       toast('请逐项核对全部五项条件；不符合或不确定时不能选择无需新增专科评估'); return
@@ -991,7 +1001,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <span style={{ fontSize: 12, fontWeight: 700, color: preparation.checklist.ready ? '#15803D' : '#B45309' }}>{preparation.checklist.ready ? '✓ 已就绪' : '待完善'}</span>
           </div>
           {preparation.continuity?.mode === 'renewal' && <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558' }}>引用 {preparation.continuity.previousYear} 年度总评；不重复要求首次会诊。<a href={`/patients/${id}?tab=aiReview${preparation.continuity.source?.annualReviewId ? `&phaseAssessmentId=${preparation.continuity.source.annualReviewId}` : ''}`}>查看/准备年度总评</a>{preparation.continuity.summary && <details style={{ marginTop: 8 }}><summary>已审核总评内容</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{preparation.continuity.summary}</div></details>}</div>}
-          {!!preparation.caseReviews?.length && <details open={preparation.caseReviews.some(item => item.required && item.conclusion?.status !== 'confirmed')} style={{ marginTop: 10 }}><summary>本年度研判依据（仅明确必需的未确认研判阻断）</summary><div>已确认研判自动引用；其他草稿不引用。只有本次方案必须等待的研判才勾选，修改后保存准备情况。</div>{preparation.caseReviews.map(item => <label key={item._id} style={{ display: 'block', marginTop: 6 }}><input type="checkbox" disabled={!canEdit} checked={(preparationDraft.requiredCaseReviewIds || []).includes(String(item._id))} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredCaseReviewIds: e.target.checked ? [...(prev.requiredCaseReviewIds || []), String(item._id)] : (prev.requiredCaseReviewIds || []).filter(id => id !== String(item._id)), advisorReady: false }))} /> 本次必需：{item.title}（{item.conclusion?.status === 'confirmed' ? '已确认，将引用' : item.required ? '待确认，阻断生成' : '未引用，不阻断'}）</label>)}<a href={`/patients/${id}?tab=aiReview`}>查看研判</a></details>}
+          <div style={{ marginTop: 12, padding: 12, border: '1px solid #DDEAE0', borderRadius: 8, background: '#F7FAF8' }}>
+            <div style={{ fontWeight: 700 }}>本年度综合研判 · 固定议题</div>
+            <div style={{ fontSize: 13, color: '#4A6558', marginTop: 5 }}>年度变化与依据、优先问题、管理目标及完成标准、分岗干预重点、客户行动、待补资料与复评。由健康顾问确认结论后进入年度方案依据；专病研判仍按需另建。</div>
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={!canEdit || annualReviewBusy} onClick={openAnnualComprehensiveReview}>{annualReviewBusy ? '正在打开…' : preparation.caseReviews?.some(item => item.reviewType === 'annual' && Number(item.annualPlanYear) === Number(year)) ? '继续年度综合研判' : '开始年度综合研判'}</button>
+          </div>
+          {!!preparation.caseReviews?.length && <details open={preparation.caseReviews.some(item => item.required && item.conclusion?.status !== 'confirmed')} style={{ marginTop: 10 }}><summary>本年度研判依据</summary><div>年度综合研判固定必需。其他专项研判按本次方案需要勾选；已确认结论自动引用，草稿不引用。</div>{preparation.caseReviews.map(item => <label key={item._id} style={{ display: 'block', marginTop: 6 }}><input type="checkbox" disabled={!canEdit || !!item.annualPlanYear} checked={!!item.annualPlanYear || (preparationDraft.requiredCaseReviewIds || []).includes(String(item._id))} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredCaseReviewIds: e.target.checked ? [...(prev.requiredCaseReviewIds || []), String(item._id)] : (prev.requiredCaseReviewIds || []).filter(id => id !== String(item._id)), advisorReady: false }))} /> {item.annualPlanYear ? '固定必需：' : '本次必需：'}{item.title}（{item.conclusion?.status === 'confirmed' ? '已确认，将引用' : item.annualPlanYear || item.required ? '待确认，阻断生成' : '未引用，不阻断'}）</label>)}<a href={`/patients/${id}?tab=aiCase`}>查看研判</a></details>}
           {!!generationCoverage.length && <details open style={{ marginTop: 10 }}><summary>本次来源核对（含待确认及未采用原因）</summary>{generationCoverage.map(item => <div key={item.sourceId}>{item.sourceId}：{{ included: '已纳入', deferred: '待确认', not_applicable: '未采用' }[item.status]}；{item.reason}</div>)}</details>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
             {preparation.checklist.items.map(item => (

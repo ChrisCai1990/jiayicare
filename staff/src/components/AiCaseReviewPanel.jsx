@@ -107,7 +107,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [showCreate, setShowCreate] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [headerExpanded, setHeaderExpanded] = useState(false)
-  const [form, setForm] = useState({ title: '', description: '', reviewType: 'custom', templateId: '', preferredProvider: 'qwen', contextScopes: SCOPES.map(([key]) => key) })
+  const [form, setForm] = useState({ title: '', description: '', reviewType: 'custom', templateId: '', preferredProvider: 'qwen', contextScopes: SCOPES.map(([key]) => key), managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] })
   const [editForm, setEditForm] = useState({ title: '', description: '' })
   const [conclusionText, setConclusionText] = useState('')
   const [managementTargets, setManagementTargets] = useState([])
@@ -129,6 +129,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         ? await Promise.all([staffAPI.getAiCaseReviews(patientId), Promise.resolve({ data: [] }), staffAPI.getAiCaseReviewTemplates()])
         : await Promise.all([staffAPI.getAiCaseReviews(patientId), staffAPI.getPhaseAssessments(patientId, new URLSearchParams(window.location.search).get('phaseAssessmentId') || ''), Promise.resolve({ data: [] })])
       setTopics(topicRes.data || []); setManagedTemplates(templateRes.data || []); setReviewSettings(templateRes.settings || { allowCustomTopic: true })
+      const requestedTopicId = new URLSearchParams(window.location.search).get('caseReviewId')
+      if ((topicRes.data || []).some(item => item._id === requestedTopicId)) setActiveId(requestedTopicId)
       setAssessments(assessmentRes.data || [])
       setClosedLoop(assessmentRes.healthManagementEnabled === true)
       const targetId = new URLSearchParams(window.location.search).get('phaseAssessmentId')
@@ -177,14 +179,17 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   }, [patientId, needsSendRefresh])
   useEffect(() => {
     setConclusionText(active?.conclusion?.content || '')
+    if (active?.annualPlanYear) setHeaderExpanded(true)
     setManagementTargets(active?.conclusion?.managementTargets || [])
     setTimeout(() => { if (chatRef.current) chatRef.current.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }) }, 30)
   }, [active?._id, active?.messages?.length])
 
   const createTopic = async () => {
     if (!form.title.trim()) return toast('请输入研判主题', 'error')
+    const managementTargets = (form.managementTargets || []).filter(row => row.goal?.trim() || row.focus?.trim())
+    if (managementTargets.some(row => !row.goal?.trim() || !row.focus?.trim())) return toast('拟目标和拟干预重点需成对填写', 'error')
     setBusy(true)
-    try { const res = await staffAPI.createAiCaseReview(patientId, form); replaceTopic(res.data); setShowCreate(false); setForm(f => ({ ...f, title: '', description: '', reviewType: 'custom', templateId: '' })) }
+    try { const res = await staffAPI.createAiCaseReview(patientId, { ...form, managementTargets }); replaceTopic(res.data); setShowCreate(false); setForm(f => ({ ...f, title: '', description: '', reviewType: 'custom', templateId: '', managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] })) }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const updateScopes = async contextScopes => {
@@ -381,7 +386,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 5 }}>{topic.status === 'concluded' ? '已形成确认结论' : `${topic.messages?.length || 0} 条讨论`} · {formatDateTime(topic.updatedAt)}</div>
             <div style={{ fontSize: 12, color: '#4A6558', marginTop: 5 }}>类型：{topicTypeLabel(topic)}</div>
           </button>
-          <div style={{ display: 'flex', gap: 6, padding: '0 10px 9px' }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => openTopicEdit(topic)}>编辑</button><button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => deleteTopic(topic)}>删除</button></div>
+          {!topic.annualPlanYear && <div style={{ display: 'flex', gap: 6, padding: '0 10px 9px' }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => openTopicEdit(topic)}>编辑</button><button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => deleteTopic(topic)}>删除</button></div>}
         </div>)}
       </div>
     </div>
@@ -398,9 +403,9 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         <div style={{ color: '#4A6558', fontSize: 12, marginTop: 7 }}>参与人员：{participantNames.join('、') || '待记录'} · 当前模型：{PROVIDER_LABEL}</div>
         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => {
           const checked = active.contextScopes?.includes(key)
-          return <label key={key} style={{ fontSize: 12, border: `1px solid ${checked ? '#1E6B50' : '#D8E1DC'}`, color: checked ? '#1E6B50' : '#65776F', borderRadius: 16, padding: '5px 9px', cursor: 'pointer' }}><input type="checkbox" checked={checked} onChange={() => updateScopes(checked ? active.contextScopes.filter(v => v !== key) : [...active.contextScopes, key])} style={{ marginRight: 5 }} />{label}</label>
+          return <label key={key} style={{ fontSize: 12, border: `1px solid ${checked ? '#1E6B50' : '#D8E1DC'}`, color: checked ? '#1E6B50' : '#65776F', borderRadius: 16, padding: '5px 9px', cursor: active.annualPlanYear ? 'default' : 'pointer' }}><input type="checkbox" checked={checked} disabled={!!active.annualPlanYear} onChange={() => updateScopes(checked ? active.contextScopes.filter(v => v !== key) : [...active.contextScopes, key])} style={{ marginRight: 5 }} />{label}</label>
         })}</div>
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #E5ECE8' }}><div style={{ fontSize: 12, color: '#65776F', marginBottom: 7 }}>套用研判模板（可用于当前主题）</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{reviewTemplates.map(item => <button key={item.key} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => applyReviewTemplate(item.key)}>{item.label}</button>)}</div></div>
+        {!active.annualPlanYear && <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #E5ECE8' }}><div style={{ fontSize: 12, color: '#65776F', marginBottom: 7 }}>套用研判模板（可用于当前主题）</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{reviewTemplates.map(item => <button key={item.key} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => applyReviewTemplate(item.key)}>{item.label}</button>)}</div></div>}
         </>}
       </div></div>
 
@@ -450,6 +455,14 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       <div className="form-group"><label className="form-label">研判主题</label><select className="form-input" defaultValue="" onChange={e => { const item = reviewTemplates.find(v => v.key === e.target.value); if (item) setForm(f => ({ ...f, title: item.title, description: item.outputGuide ? `${item.description}\n\n固定研判输出：${item.outputGuide}` : item.description, reviewType: item.reviewType || 'specialty', templateId: item.key, contextScopes: item.scopes })); else setForm(f => ({ ...f, reviewType: 'custom', templateId: '', title: '', description: '' })) }}>{reviewSettings.allowCustomTopic && <option value="">自定义主题</option>}{!reviewSettings.allowCustomTopic && <option value="">请选择主题</option>}{reviewTemplates.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select><div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>主题及其资料范围、输出结构由 Admin 后台统一设置。</div></div>
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="例如：近期血压波动原因分析" /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
+      <div className="form-group"><label className="form-label">拟管理目标与拟干预重点</label><div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>可先填写研判方向；资料核实后仍须在结论处逐条确认，确认前不会带入年度方案。</div>
+        {(form.managementTargets || []).map((row, index) => <div key={index} style={{ border: '1px solid #E1E9E3', borderRadius: 8, padding: 9, marginBottom: 8 }}>
+          <input className="form-input" aria-label={`拟管理目标 ${index + 1}`} value={row.goal || ''} onChange={e => setForm(f => ({ ...f, managementTargets: f.managementTargets.map((item, i) => i === index ? { ...item, goal: e.target.value } : item) }))} placeholder="拟管理目标，如改善空腹血糖" style={{ marginBottom: 7 }} />
+          <input className="form-input" aria-label={`拟干预重点 ${index + 1}`} value={row.focus || ''} onChange={e => setForm(f => ({ ...f, managementTargets: f.managementTargets.map((item, i) => i === index ? { ...item, focus: e.target.value } : item) }))} placeholder="拟干预重点，如核实饮食与运动执行情况" />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}><label><input type="checkbox" checked={row.nutritionRelevant === true} onChange={e => setForm(f => ({ ...f, managementTargets: f.managementTargets.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item) }))} /> 营养相关</label>{form.managementTargets.length > 1 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setForm(f => ({ ...f, managementTargets: f.managementTargets.filter((_, i) => i !== index) }))}>删除</button>}</div>
+        </div>)}
+        <button type="button" className="btn btn-secondary btn-sm" disabled={form.managementTargets.length >= 12} onClick={() => setForm(f => ({ ...f, managementTargets: [...f.managementTargets, { goal: '', focus: '', nutritionRelevant: false }] }))}>添加一条</button>
+      </div>
       <div className="form-group"><label className="form-label">测试模型</label><div className="form-input" style={{ background: '#F7F8F6', color: '#4A6558' }}>{PROVIDER_LABEL}</div></div>
     </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowCreate(false)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={createTopic}>创建主题</button></div></div></div>}
     {showEdit && active && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">编辑专项研判主题</div><button className="modal-close" onClick={() => setShowEdit(false)}>×</button></div><div className="modal-body">
