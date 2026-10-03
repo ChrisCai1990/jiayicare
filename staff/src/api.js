@@ -273,6 +273,7 @@ export const staffAPI = {
   reviewPhaseAssessment: (patientId, assessmentId, data) => req(`/staff/patients/${patientId}/phase-assessments/${assessmentId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAiCaseReviews: (patientId) => req(`/staff/patients/${patientId}/ai-case-reviews`),
   createSpecialtyReviewFromSource: (patientId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/specialty-from-source`, { method: 'POST', body: JSON.stringify(data) }),
+  syncAnnualChronicConcerns: (patientId, topicId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/sync-chronic-concerns`, { method: 'POST', body: '{}' }),
   addAiCaseReviewConcern: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/concerns`, { method: 'POST', body: JSON.stringify(data) }),
   updateAiCaseReviewConcern: (patientId, topicId, concernId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/concerns/${concernId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   createAiCaseReview: (patientId, data) => req(`/staff/patients/${patientId}/ai-case-reviews`, { method: 'POST', body: JSON.stringify(data) }),

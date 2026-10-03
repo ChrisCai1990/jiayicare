@@ -359,6 +359,29 @@ function reopenAfterConcernChange(topic) {
   topic.lastActivityAt = new Date();
 }
 
+router.post('/patients/:patientId/ai-case-reviews/:topicId/sync-chronic-concerns', staffAuth, async (req, res) => {
+  try {
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role) || (req.staff.role !== 'superadmin' && String(user.assignedFamilyDoctor) !== String(req.staff._id)))
+      return res.status(403).json({ success: false, message: '仅该客户健康顾问可同步慢病线索' });
+    const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id, reviewType: 'annual', status: { $ne: 'archived' } });
+    if (!topic) return res.status(404).json({ success: false, message: '年度研判不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在分析，请等待完成后同步' });
+    const result = require('../utils/annualComprehensiveReview').reviewedChronicConcerns(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags);
+    if (result.sourceStatus !== 'reviewed') return res.json({ success: true, data: forClient(topic), added: 0, sourceStatus: result.sourceStatus });
+    const existingKeys = new Set((topic.concerns || []).map(row => row.key));
+    const additions = result.concerns.filter(row => !existingKeys.has(row.key));
+    if ((topic.concerns || []).length + additions.length > 100) return res.status(409).json({ success: false, message: '本年度关注问题已达上限，请先整理研判' });
+    if (additions.length) {
+      topic.concerns.push(...additions.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
+      topic.markModified('concerns');
+      reopenAfterConcernChange(topic);
+      await topic.save();
+    }
+    return res.json({ success: true, data: forClient(topic), added: additions.length, sourceStatus: 'reviewed', reviewedCount: result.concerns.length });
+  } catch (error) { return res.status(error.name === 'VersionError' ? 409 : 500).json({ success: false, message: error.message }); }
+});
+
 router.post('/patients/:patientId/ai-case-reviews/:topicId/concerns', staffAuth, async (req, res) => {
   try {
     const user = await caseReviewPatientOr404(req, res); if (!user) return;

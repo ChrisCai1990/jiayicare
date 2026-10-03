@@ -25,4 +25,32 @@ function suggestedRiskConcerns(assessment, year) {
   }));
 }
 
-module.exports = { TOPICS, titleForYear, descriptionForYear, outputGuide, annualReviewForYear, suggestedRiskConcerns };
+function reviewedChronicConcerns(summary, year, healthRiskTags = {}) {
+  const entry = summary?.byYear?.[String(year)] || (!summary?.byYear && summary?.sections ? summary : null);
+  const records = Array.isArray(entry?.records) ? entry.records : entry?.sections ? [entry] : [];
+  const record = records.find(row => (row.scope === 'doctor' || row.scope === 'all' || !row.scope) && (row.doctorApprovedAt || row.approvedAt));
+  const section = record && (!record.sectionReviews?.chronic_disease || record.sectionReviews.chronic_disease.status === 'approved')
+    ? record.sections?.chronic_disease : null;
+  const concerns = (section?.items || []).filter(row => row.name && ['abnormal', 'mild_abnormal'].includes(row.status)).map(row => ({
+    key: `ai_health:${year}:chronic_disease:${String(row.name).trim()}`, kind: 'ai_health_trend', title: String(row.name).trim(),
+    evidence: [row.latest || row.current || row.value, row.trend, ...(row.keyChanges || []), row.meaning || row.riskBasis || row.note].filter(Boolean).join('；').slice(0, 600),
+    source: { year, sectionKey: 'chronic_disease', approvedAt: record.doctorApprovedAt || record.approvedAt,
+      reportIds: [...new Set([row.sourceReportId, ...(section.sourceReportIds || [])].filter(Boolean).map(String))] },
+    status: 'suggested', pathway: 'undecided', includedByName: '已审核5年健康趋势（慢病）', includedAt: new Date(),
+  }));
+  if (healthRiskTags?.status === 'reviewed') {
+    const names = new Set(concerns.map(row => row.title));
+    for (const name of healthRiskTags.chronic_disease || []) {
+      const title = String(name || '').trim();
+      if (!title || names.has(title)) continue;
+      names.add(title);
+      concerns.push({ key: `chronic_tag:${year}:${title}`, kind: 'reviewed_chronic_tag', title,
+        evidence: `已审核的慢病关注标签：${title}；请核对诊断依据及当前管理状态`,
+        source: { year, reviewedAt: healthRiskTags.reviewedAt }, status: 'suggested', pathway: 'undecided',
+        includedByName: '已审核慢病关注标签', includedAt: new Date() });
+    }
+  }
+  return { sourceStatus: section || healthRiskTags?.status === 'reviewed' ? 'reviewed' : record ? 'missing' : 'unreviewed', concerns };
+}
+
+module.exports = { TOPICS, titleForYear, descriptionForYear, outputGuide, annualReviewForYear, suggestedRiskConcerns, reviewedChronicConcerns };
