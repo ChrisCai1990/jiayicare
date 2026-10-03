@@ -10,7 +10,7 @@ import Icon from '../../../components/Icon';
 const RELATIONS = ['配偶', '父亲', '母亲', '子女', '兄弟', '姐妹', '祖父', '祖母', '其他'];
 const REL_ICON = { 配偶: '💑', 父亲: '👨', 母亲: '👩', 子女: '🧒', 兄弟: '👬', 姐妹: '👭' };
 
-function AddLinkModal({ onClose, onSaved }) {
+function AddLinkModal({ onClose, onSaved, onInviteNew }) {
   const [keyword, setKeyword] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -18,6 +18,7 @@ function AddLinkModal({ onClose, onSaved }) {
   const [relation, setRelation] = useState('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const timer = useRef(null);
 
   const search = (kw) => {
@@ -46,8 +47,8 @@ function AddLinkModal({ onClose, onSaved }) {
   };
 
   return (
-    <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
-      <View style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `0 ${spacing.lg}px ${spacing.xl + 16}px`, width: '100%', maxHeight: '90%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+    <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: `${keyboardHeight}px`, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
+      <View style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `0 ${spacing.lg}px ${keyboardHeight ? spacing.md : spacing.xl + 16}px`, width: '100%', maxHeight: keyboardHeight ? `calc(100vh - ${keyboardHeight}px - 8px)` : '90vh', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '12px auto', flexShrink: 0 }} />
         <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }}>添加家庭成员</Text>
         <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>只能添加系统内已注册的客户，搜索手机号或姓名</Text>
@@ -57,19 +58,21 @@ function AddLinkModal({ onClose, onSaved }) {
             <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, border: `1px solid ${colors.border}`, padding: `0 ${spacing.md}px`, marginBottom: `${spacing.sm}px`, height: '44px', boxSizing: 'border-box' }}>
               <Text style={{ fontSize: '14px' }}>🔍</Text>
               <Input
-                style={{ flex: 1, fontSize: '14px', color: colors.textPrimary }}
+                style={{ flex: 1, height: '44px', lineHeight: '44px', fontSize: '16px', color: colors.textPrimary }}
                 value={keyword}
                 onInput={(e) => search(e.detail.value)}
+                adjustPosition={false}
+                onKeyboardHeightChange={(e) => setKeyboardHeight(Math.max(0, e.detail.height || 0))}
                 placeholder="输入手机号或姓名搜索..."
               />
               {searching && <Text style={{ fontSize: '11px', color: colors.textMuted }}>...</Text>}
             </View>
-            <ScrollView scrollY style={{ maxHeight: '280px' }}>
+            <ScrollView scrollY style={{ maxHeight: keyboardHeight ? '140px' : '280px', flexShrink: 1 }}>
               {results.length === 0 && keyword.trim().length > 0 && !searching ? (
                 <Text style={{ fontSize: '13px', color: colors.textMuted, textAlign: 'center', display: 'block', padding: `${spacing.lg}px` }}>未找到匹配的已注册用户</Text>
               ) : null}
               {results.map((u) => (
-                <View key={u._id} onClick={() => !u.alreadyLinked && setSelected(u)} style={{
+                <View key={u._id} onClick={() => { if (!u.alreadyLinked) { Taro.hideKeyboard().catch(() => {}); setSelected(u); } }} style={{
                   display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, padding: '12px 0',
                   borderBottom: `1px solid ${colors.borderLight}`, opacity: u.alreadyLinked ? 0.4 : 1,
                 }}>
@@ -84,6 +87,9 @@ function AddLinkModal({ onClose, onSaved }) {
                 </View>
               ))}
             </ScrollView>
+            <View onClick={onInviteNew} style={{ padding: '10px 0', flexShrink: 0 }}>
+              <Text style={{ fontSize: '13px', color: colors.primary }}>对方还未注册？邀请本人建档 ›</Text>
+            </View>
           </>
         ) : (
           <>
@@ -113,7 +119,7 @@ function AddLinkModal({ onClose, onSaved }) {
         )}
 
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, paddingTop: `${spacing.md}px` }}>
-          <View onClick={onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
+          <View onClick={() => { Taro.hideKeyboard().catch(() => {}); onClose(); }} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>取消</Text>
           </View>
           {selected && (
@@ -353,7 +359,7 @@ export default function FamilyMembersPage() {
           <View style={{ textAlign: 'center', paddingTop: '60px' }}>
             <Text style={{ fontSize: '40px', display: 'block', marginBottom: `${spacing.sm}px` }}>👨‍👩‍👧</Text>
             <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>暂未关联家庭成员</Text>
-            <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>添加孩子档案，或邀请已注册的成年家人</Text>
+            <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>添加孩子档案，或邀请成年家人本人建档后关联</Text>
             <View onClick={() => setShowAdd('choice')} style={{ display: 'inline-block', backgroundColor: colors.primary, padding: '12px 32px', borderRadius: `${radius.full}px` }}>
               <Text style={{ color: '#fff', fontWeight: 700, fontSize: '14px' }}>立即添加</Text>
             </View>
@@ -370,7 +376,7 @@ export default function FamilyMembersPage() {
       </View>
 
       {showAdd === 'choice' && <View style={{ position: 'fixed', inset: 0, zIndex: 100, backgroundColor: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end' }}><View style={{ width: '100%', backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px`, boxSizing: 'border-box' }}><Text style={{ fontSize: '18px', fontWeight: 700, display: 'block', marginBottom: '12px' }}>添加家庭成员</Text><View onClick={() => setShowAdd('child')} style={{ padding: '15px', borderRadius: '8px', backgroundColor: colors.primary10, marginBottom: '10px' }}>为未成年孩子建档</View><View onClick={() => setShowAdd('adult')} style={{ padding: '15px', borderRadius: '8px', backgroundColor: colors.background, marginBottom: '10px' }}>邀请成年家人（需本人确认）</View><View onClick={() => setShowAdd('')} style={{ padding: '13px', textAlign: 'center' }}>取消</View></View></View>}
-      {showAdd === 'adult' && <AddLinkModal onClose={() => setShowAdd('')} onSaved={load} />}
+      {showAdd === 'adult' && <AddLinkModal onClose={() => setShowAdd('')} onSaved={load} onInviteNew={() => { Taro.hideKeyboard().catch(() => {}); setShowAdd(''); Taro.navigateTo({ url: '/pages/profile/invite/index?from=family' }); }} />}
       {showAdd === 'child' && <AddChildModal onClose={() => setShowAdd('')} onSaved={load} onQuestionnaire={openChildQuestionnaire} />}
       {!!childArchive && <View style={{ position: 'fixed', inset: 0, zIndex: 110, backgroundColor: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end' }}><ScrollView scrollY style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '82vh', boxSizing: 'border-box' }}><Text style={{ fontSize: '18px', fontWeight: 700, display: 'block' }}>{childArchive.name}的健康档案</Text><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', margin: '6px 0 12px' }}>{childArchive.birthDate} · {childArchive.ageStage?.label || '年龄待核实'} · 监护人自报资料须经医护核实</Text>{childArchive.pendingReviewCount > 0 && <Text style={{ color: colors.warning, display: 'block', marginBottom: '10px' }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}{[['birthWeight','出生体重（克）'],['birthLength','出生身长（厘米）'],['reportedHeightCm','最近身高/身长（厘米）'],['reportedWeightKg','最近体重（千克）'],['reportedMeasuredAt','测量日期'],['feeding','喂养与饮食'],['sleep','睡眠'],['development','生长发育与行为'],['caregiverConcerns','监护人关注问题']].map(([key,label]) => <View key={key} style={{ borderBottom: `1px solid ${colors.borderLight}`, padding: '9px 0' }}><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{label}{childArchive.pendingPaths?.includes(`childProfile.${key}`) ? ' · 待核实' : ''}</Text><Text style={{ fontSize: '14px', display: 'block', marginTop: '3px' }}>{childArchive.childProfile?.[key] ?? '未记录'}</Text></View>)}<View onClick={() => setChildArchive(null)} style={{ textAlign: 'center', padding: '14px', backgroundColor: colors.primary, color: '#fff', borderRadius: '8px', margin: '16px 0' }}>关闭</View></ScrollView></View>}
       {serviceOverview && <FamilyServiceModal data={serviceOverview} onClose={() => setServiceOverview(null)} />}
