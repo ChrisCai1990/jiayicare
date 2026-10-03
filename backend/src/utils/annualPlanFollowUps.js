@@ -27,6 +27,13 @@ const logicalScheduleKey = (row) => {
   return [row.patientId, day, content || fallbackTheme].join('|');
 };
 
+async function withoutSeparatelyDispatchedNutrition(rows, planId, model = FollowUp) {
+  if (!rows.some(row => row.workflowKey === 'annual_nutrition_assessment')) return rows;
+  const separatelyDispatched = await model.exists({ sourceAnnualPlanId: planId,
+    sourceType: 'professional_assessment', workflowKey: 'annual_nutrition_assessment', status: { $ne: 'cancelled' } });
+  return separatelyDispatched ? rows.filter(row => row.workflowKey !== 'annual_nutrition_assessment') : rows;
+}
+
 // 多条记录模块（就医/会诊/复查/接种/检测）：每条记录本身就有明确日期，直接各生成一条随访。
 // key = moduleData 里的模块 key；dateField = 该条记录里存日期的字段名；theme = 随访主题前缀。
 const DATED_RECORD_MODULES = [
@@ -282,7 +289,7 @@ async function syncAnnualPlanFollowUps(plan) {
     sourceScheduleKey: /^monitoring:/,
     status: { $ne: 'completed' },
   });
-  const toCreate = await buildAnnualPlanFollowUps(plan);
+  const toCreate = await withoutSeparatelyDispatchedNutrition(await buildAnnualPlanFollowUps(plan), plan._id);
   await require('./annualHealthDataReminders').sync(plan);
   const existing = await FollowUp.find({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled' }).sort({ createdAt: 1 });
   const desiredKeys = new Set(toCreate.map(row => row.sourceScheduleKey));
@@ -373,4 +380,4 @@ async function dedupeAnnualPlanFollowUps() {
   return removed;
 }
 
-module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps, logicalScheduleKey };
+module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps, logicalScheduleKey, withoutSeparatelyDispatchedNutrition };

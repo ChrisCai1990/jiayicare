@@ -358,9 +358,24 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [dirty, setDirty]           = useState(false)
   const [metricSelectionDirty, setMetricSelectionDirty] = useState(false)
   const [metricSelectionSaving, setMetricSelectionSaving] = useState(false)
+  const [nutritionTask, setNutritionTask] = useState(null)
+  const [nutritionTaskLoading, setNutritionTaskLoading] = useState(false)
+  const [nutritionDispatching, setNutritionDispatching] = useState(false)
   const [remotePlanChanged, setRemotePlanChanged] = useState(false)
   useEffect(() => setRemotePlanChanged(false), [id, year, planType])
   const currentPlanVersion = plansByType[planType]?.updatedAt
+  const currentPlanId = plansByType[planType]?._id
+  useEffect(() => {
+    if (!patientMode || !currentPlanId) { setNutritionTask(null); return }
+    let active = true
+    setNutritionTask(null)
+    setNutritionTaskLoading(true)
+    staffAPI.getAnnualNutritionTask(id, currentPlanId)
+      .then(res => { if (active) setNutritionTask(res.data || null) })
+      .catch(() => { if (active) setNutritionTask(null) })
+      .finally(() => { if (active) setNutritionTaskLoading(false) })
+    return () => { active = false }
+  }, [patientMode, id, currentPlanId])
   useEffect(() => {
     if (!patientMode || !planType || !currentPlanVersion) return
     let active = true, fetching = false
@@ -573,6 +588,19 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     finally { setMetricSelectionSaving(false) }
   }
 
+  const dispatchNutritionTask = async () => {
+    const current = plansByType[planType]
+    if (!current?._id) return toast('请先保存年度方案草稿')
+    if (dirty || metricSelectionDirty || remotePlanChanged) return toast('请先保存指标和方案更改')
+    setNutritionDispatching(true)
+    try {
+      const res = await staffAPI.dispatchAnnualNutritionTask(id, { planId: current._id, baseUpdatedAt: current.updatedAt })
+      setNutritionTask(res.data)
+      toast(res.reused ? '营养师任务已存在，未重复派发' : '营养评估任务已单独派发给责任营养师')
+    } catch (error) { toast(error.message || '派发失败') }
+    finally { setNutritionDispatching(false) }
+  }
+
   const handleSave = async () => {
     if (remotePlanChanged) { toast('方案已有补录，请先加载最新方案再保存'); return }
     if (!planType) { toast('请先选择方案类型'); return }
@@ -771,7 +799,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       const pushedAtVal = res.data?.pushedAt || new Date().toISOString()
       setPushedAt(pushedAtVal)
       setPlansByType(prev => prev[planType]
-        ? { ...prev, [planType]: { ...prev[planType], pushedAt: pushedAtVal } }
+        ? { ...prev, [planType]: { ...prev[planType], ...(res.data || {}), pushedAt: pushedAtVal } }
         : prev)
       toast('方案已推送给客户')
     } catch (err) {
@@ -1126,11 +1154,16 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           {patientMode && <section style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
             <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 标准方案 · 营养评估</div>
             <div style={{ fontSize: 12, color: '#62776A', margin: '5px 0 12px' }}>每位客户均保留营养评估。健康顾问勾选本年度需要前后对比的客观数据与主观感受；体重也在此选择。骨骼肌、体脂率和内脏脂肪由营养方案固定提供。</div>
-            <label style={{ display: 'block', fontSize: 13, color: '#4A6558' }}>计划评估日期（可留空；留空则以客户确认年度方案的日期安排）<DateField type="date" className="form-input" value={moduleData.nutrition_assessment?.executionDate || ''} disabled={!canEdit || Boolean(pushedAt)} onChange={e => handleModuleChange('nutrition_assessment', 'executionDate', e.target.value)} style={{ display: 'block', maxWidth: 240, marginTop: 5 }} /></label>
+            <label style={{ display: 'block', fontSize: 13, color: '#4A6558' }}>计划评估日期（可留空；单独派发时留空按当天安排）<DateField type="date" className="form-input" value={moduleData.nutrition_assessment?.executionDate || ''} disabled={!canEdit || Boolean(pushedAt)} onChange={e => handleModuleChange('nutrition_assessment', 'executionDate', e.target.value)} style={{ display: 'block', maxWidth: 240, marginTop: 5 }} /></label>
             <div style={{ fontSize: 13, marginTop: 12, color: '#4A6558' }}>责任营养师：{patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name || '待分配'}</div>
             <div style={{ fontSize: 13, color: '#4A6558', marginTop: 12 }}>本年度营养干预前后对比指标</div>
             <NutritionComparisonMetricPicker value={moduleData.nutrition_assessment?.nutritionComparisonMetrics ?? (plansByType[planType] ? [] : ['体重'])} onChange={handleNutritionMetricChange} disabled={!canEdit} />
             {pushedAt && canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={!metricSelectionDirty || metricSelectionSaving} onClick={savePublishedNutritionMetrics}>{metricSelectionSaving ? '保存中…' : '保存指标调整（留痕）'}</button>}
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {nutritionTask ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=followups&followUpId=${nutritionTask._id}`)}>营养师任务已派发 · 查看{nutritionTask.status === 'completed' ? '结果' : '任务'}</button>
+                : canEdit && <button type="button" className="btn btn-primary btn-sm" disabled={!currentPlanId || dirty || metricSelectionDirty || remotePlanChanged || nutritionDispatching || nutritionTaskLoading || !patient?.assignedNutritionist} onClick={dispatchNutritionTask}>{nutritionDispatching ? '派发中…' : '单独派发给营养师'}</button>}
+              <span style={{ fontSize: 12, color: '#62776A' }}>{nutritionTask ? '已有任务不会因年度方案确认再次派发。' : !patient?.assignedNutritionist ? '请先为客户分配责任营养师。' : '保存草稿后即可派发，无需先推送整个年度方案；仅生成营养师内部任务。'}</span>
+            </div>
             {!!plansByType[planType]?.nutritionMetricHistory?.length && <details style={{ marginTop: 10, fontSize: 12, color: '#52675D' }}><summary>指标调整记录（{plansByType[planType].nutritionMetricHistory.length}次）</summary>{plansByType[planType].nutritionMetricHistory.map((entry, index) => <div key={index} style={{ padding: '6px 0' }}>{new Date(entry.changedAt).toLocaleString('zh-CN')} · {entry.changedByName || '健康顾问'}：{(entry.before || []).join('、') || '未选'} → {(entry.after || []).join('、') || '未选'}</div>)}</details>}
           </section>}
           {visibleModuleEntries.map(entry => (
