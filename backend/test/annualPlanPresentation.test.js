@@ -18,3 +18,12 @@ test('内部备注不会进入客户展示结构', () => {
   const [item] = buildAnnualPlanDisplayItems({ vaccine: { records: [{ name: '流感疫苗', notes: '内部沟通记录' }] } });
   assert.equal(Object.values(item).includes('内部沟通记录'), false);
 });
+
+test('家庭医生年度目标和完成标准进入客户年度方案', () => {
+  const [item] = buildAnnualPlanDisplayItems({ medical_treatment: { records: [{
+    reason: '需明确问题', purpose: '专科评估', goal: '明确后续管理方向',
+    completionStandard: '回收专科意见并由健康顾问确认下一步',
+  }] } });
+  assert.equal(item.goal, '明确后续管理方向');
+  assert.equal(item.completionStandard, '回收专科意见并由健康顾问确认下一步');
+});
