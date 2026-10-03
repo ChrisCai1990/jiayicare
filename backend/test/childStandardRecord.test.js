@@ -24,9 +24,14 @@ test('Admin预设与上线模板使用同一份题库，字段可承接到儿童
   assert.equal(template.patientCategory, 'child');
   assert.equal(template.archivePurpose, 'child_health');
   assert.equal(template.targetType, 'specific');
-  assert.equal(template.questions.length, 24);
+  assert.equal(template.questions.length, 35);
   assert.equal(new Set(template.questions.map(q => q.id)).size, template.questions.length);
   assert.ok(template.questions.every(q => FIELD_MAP[q.archiveField]));
+  for (const field of ['birthWeight', 'birthLength', 'birthHeadCirc', 'birthChestCirc', 'reportedHeightCm', 'reportedWeightKg', 'reportedMeasuredAt']) {
+    assert.ok(template.questions.some(q => q.archiveField === `childProfile.${field}`), `${field} 未进入问卷`);
+  }
+  assert.equal(template.questions.find(q => q.archiveField === 'childProfile.birthWeight').type, 'number');
+  assert.equal(template.questions.find(q => q.archiveField === 'childProfile.reportedMeasuredAt').type, 'date');
   assert.ok(applicableChildQuestions(template.questions, 'school', '男').some(q => q.archiveField === 'childProfile.schoolAndActivity'));
   assert.ok(!applicableChildQuestions(template.questions, 'school', '男').some(q => q.archiveField === 'childProfile.development'));
 });

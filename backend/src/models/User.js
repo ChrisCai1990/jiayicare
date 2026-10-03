@@ -187,6 +187,9 @@ const userSchema = new mongoose.Schema({
     birthLength:      { type: Number }, // 出生身长(cm)
     birthHeadCirc:    { type: Number }, // 出生头围(cm)
     birthChestCirc:   { type: Number }, // 出生胸围(cm)
+    reportedHeightCm: { type: Number }, // 监护人自报最近身高/身长(cm)，不作为临床实测
+    reportedWeightKg: { type: Number }, // 监护人自报最近体重(kg)，不作为临床实测
+    reportedMeasuredAt: { type: String, default: '' }, // YYYY-MM-DD
     deliveryMode:     { type: String, default: '' }, // 分娩方式
     apgar1min:        { type: Number }, // Apgar 1分钟
     apgar5min:        { type: Number }, // Apgar 5分钟

@@ -327,8 +327,15 @@ export default function NewPatientPage() {
                 <input className="form-input" placeholder={form.idType === 'passport' ? '请输入护照号' : '输入后自动识别性别和出生日期'} value={form.idNumber} onChange={handleIdNumberChange} maxLength={form.idType === 'passport' ? 20 : 18} />
                 {idError && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{idError}</div>}
               </F>
-              <F label="身高(cm)"><input className="form-input" type="number" value={form.height} onChange={set('height')} /></F>
-              <F label="体重(kg)"><input className="form-input" type="number" value={form.weight} onChange={set('weight')} /></F>
+              <F label={isChild ? '当前身高/身长（cm）' : '身高(cm)'}><input className="form-input" type="number" value={form.height} onChange={set('height')} /></F>
+              <F label={isChild ? '当前体重（kg）' : '体重(kg)'}><input className="form-input" type="number" value={form.weight} onChange={set('weight')} /></F>
+              {isChild && <>
+                <div style={{ gridColumn: 'span 2', color: '#1E6B50', fontWeight: 700, fontSize: 14, marginTop: 6 }}>出生指标（与当前身高、体重分别记录）</div>
+                <F label="出生体重（g）"><input className="form-input" type="number" value={form.childProfile.birthWeight} onChange={setChild('birthWeight')} /></F>
+                <F label="出生身长（cm）"><input className="form-input" type="number" value={form.childProfile.birthLength} onChange={setChild('birthLength')} /></F>
+                <F label="出生头围（cm）"><input className="form-input" type="number" value={form.childProfile.birthHeadCirc} onChange={setChild('birthHeadCirc')} /></F>
+                <F label="出生胸围（cm）"><input className="form-input" type="number" value={form.childProfile.birthChestCirc} onChange={setChild('birthChestCirc')} /></F>
+              </>}
               {!isChild && <>
                 <F label="婚姻状况"><select className="form-input" value={form.maritalStatus} onChange={set('maritalStatus')}><option value="">未填写</option><option>未婚</option><option>已婚</option><option>离异</option><option>丧偶</option></select></F>
                 {/* 民族：可搜索下拉 */}
@@ -471,10 +478,6 @@ export default function NewPatientPage() {
                   { label:'胎次', key:'gravida', type:'number' },
                   { label:'产次', key:'para', type:'number' },
                   { label:'出生孕周（周）', key:'gestationalWeeks', type:'number' },
-                  { label:'出生体重（g）', key:'birthWeight', type:'number' },
-                  { label:'出生身长（cm）', key:'birthLength', type:'number' },
-                  { label:'出生头围（cm）', key:'birthHeadCirc', type:'number' },
-                  { label:'出生胸围（cm）', key:'birthChestCirc', type:'number' },
                   { label:'Apgar 1分钟', key:'apgar1min', type:'number' },
                   { label:'Apgar 5分钟', key:'apgar5min', type:'number' },
                   { label:'父亲身高（cm）', key:'fatherHeight', type:'number' },

@@ -21,7 +21,7 @@ const currentStage = birthDate => {
 const GROUPS = [
   ['围产与出生', [['motherAge','母亲分娩年龄'],['gravida','胎次'],['para','产次'],['motherPregnancyStatus','母亲妊娠期情况'],['deliveryComplications','产时并发情况'],['gestationalWeeks','出生孕周'],['birthWeight','出生体重'],['birthLength','出生身长'],['birthHeadCirc','出生头围'],['birthChestCirc','出生胸围'],['deliveryMode','分娩方式'],['apgar1min','Apgar 1分钟'],['apgar5min','Apgar 5分钟']]],
   ['筛查与健康史', [['neonatalConditions','新生儿期情况'],['birthDefects','出生缺陷'],['hearingScreening','听力筛查'],['eyeScreening','眼底筛查'],['visionScreening','视力筛查'],['neonatalDiseaseScreen','新生儿疾病筛查'],['familyAllergyHistory','家族过敏史'],['familyDiseaseHistory','家族疾病史'],['pastMedicalHistory','既往疾病与住院史'],['surgeries','手术史'],['allergies','过敏与不良反应自述'],['fatherHeight','父亲身高'],['motherHeight','母亲身高'],['fatherBirthDate','父亲出生日期'],['motherBirthDate','母亲出生日期']]],
-  ['成长与近况', [['feeding','喂养与饮食'],['sleep','睡眠'],['development','生长发育与行为'],['vaccinationStatus','预防接种'],['currentMedicationReport','当前用药自述'],['currentSymptomsReport','近期不适自述'],['schoolAndActivity','托育、学校与活动'],['caregiverConcerns','监护人关注问题']]],
+  ['成长与近况', [['reportedHeightCm','最近身高/身长（监护人自报，cm）'],['reportedWeightKg','最近体重（监护人自报，kg）'],['reportedMeasuredAt','最近测量日期（监护人自报）'],['feeding','喂养与饮食'],['sleep','睡眠'],['development','生长发育与行为'],['vaccinationStatus','预防接种'],['currentMedicationReport','当前用药自述'],['currentSymptomsReport','近期不适自述'],['schoolAndActivity','托育、学校与活动'],['caregiverConcerns','监护人关注问题']]],
 ]
 const fmt = value => value === null || value === undefined || value === '' ? '未记录' : String(value)
 const EDITABLE = GROUPS.flatMap(([, fields]) => fields)

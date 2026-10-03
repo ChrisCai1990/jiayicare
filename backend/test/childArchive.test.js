@@ -54,6 +54,20 @@ test('后续问卷自动预填空字段，但不覆盖已有字段', () => {
   assert.equal(mutation.filter['childProfile.birthWeight'], null);
 });
 
+test('出生身长与监护人自报的当前身高体重分别写入儿童档案', () => {
+  const template = require('../src/utils/childQuestionnaireTemplate').buildChildQuestionnaireTemplate();
+  const user = { _id: 'child-2', patientCategory: 'child', childProfile: { birthWeight: 3200 } };
+  const answers = { child_birthWeight: 3300, child_birthLength: 50,
+    child_reportedHeightCm: 112.5, child_reportedWeightKg: 19.2, child_reportedMeasuredAt: '2026-10-01' };
+  const mutation = initialChildMutation(user, template, { _id: 'response-4', answers });
+  assert.equal(mutation.update.$set['childProfile.birthWeight'], undefined);
+  assert.equal(mutation.update.$set['childProfile.birthLength'], 50);
+  assert.equal(mutation.update.$set['childProfile.reportedHeightCm'], 112.5);
+  assert.equal(mutation.update.$set['childProfile.reportedWeightKg'], 19.2);
+  assert.equal(mutation.update.$set['childProfile.reportedMeasuredAt'], '2026-10-01');
+  assert.equal(mutation.submission.items.find(item => item.path === 'childProfile.birthWeight').conflict, true);
+});
+
 test('人工更新要求依据及当前值，不能绕过待核实的首次问卷', () => {
   const user = { _id: 'child-1', patientCategory: 'child', childProfile: { feeding: '母乳' }, childArchiveSubmissions: [] };
   const mutation = manualChildUpdate(user, { path: 'childProfile.feeding', expected: '母乳', value: '混合喂养', reason: '监护人复述并核对' }, actor);

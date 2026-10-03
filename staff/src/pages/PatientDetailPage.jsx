@@ -4567,7 +4567,7 @@ export default function PatientDetailPage() {
         const groups = [
           { key: 'overview', label: '客户概览', tabs: [{ key: 'info', label: '客户概览' }] },
           { key: 'healthData', label: '健康资料', tabs: [
-            { key: 'records', label: '健康基础与生活方式' },
+            { key: 'records', label: user.patientCategory === 'child' ? '儿童健康档案与分龄记录' : '健康基础与生活方式' },
             { key: 'symptoms', label: '不适主诉与症状' },
             { key: 'medications', label: '用药与营养补充剂' },
             { key: 'ai', label: '专项筛查与评估' },
@@ -5232,7 +5232,7 @@ export default function PatientDetailPage() {
         <style>{`.health-archive-sections>.archive-toolbar+.card,.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
         {tab === 'records' && <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           {[
-            { key: 'profile', label: '基础档案与健康评估' },
+            { key: 'profile', label: user.patientCategory === 'child' ? '儿童基础档案与分龄记录' : '基础档案与健康评估' },
             { key: 'lifestyle', label: '生活方式' },
             { key: 'monitoring', label: '健康监测' },
           ].map(item => <button key={item.key} type="button" className={`btn btn-sm ${healthBaseView === item.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setHealthBaseView(item.key)}>{item.label}</button>)}
