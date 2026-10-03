@@ -23,18 +23,21 @@ function handleUnauthorized() {
   }
 }
 
-async function req(path, opts = {}) {
+async function req(path, opts = {}, { skipAuth = false } = {}) {
   const headers = { 'Content-Type': 'application/json' }
-  if (_token) headers['Authorization'] = `Bearer ${_token}`
+  if (_token && !skipAuth) headers['Authorization'] = `Bearer ${_token}`
   const res = await fetch(`${BASE}${path}`, { ...opts, headers })
-  if (res.status === 401) { handleUnauthorized(); throw new Error('登录已过期，请重新登录') }
   const data = await res.json()
+  if (res.status === 401) {
+    if (!skipAuth) handleUnauthorized()
+    throw new Error(skipAuth ? (data.message || '用户名或密码错误') : '登录已过期，请重新登录')
+  }
   if (!res.ok) throw new Error(data.message || `请求失败 (${res.status})`)
   return data
 }
 
 export const hrAPI = {
-  login:        (username, password) => req('/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  login:        (username, password) => req('/login', { method: 'POST', body: JSON.stringify({ username, password }) }, { skipAuth: true }),
   overview:     (year) => req('/overview' + (year ? `?year=${year}` : '')),
   healthSummary:() => req('/health-summary'),
 }

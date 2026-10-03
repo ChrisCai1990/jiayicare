@@ -33,6 +33,9 @@ export default function HrLoginPage() {
           <div className="login-logo-title">企业健康管理平台</div>
           <div className="login-logo-sub">企业客户专属入口</div>
         </div>
+        <div style={{ fontSize: 12, color: '#6B7D73', textAlign: 'center', marginBottom: 16 }}>
+          请使用企业 HR 账号登录；平台管理员请前往 <a href="/login" style={{ color: '#1E6B50' }}>管理端登录</a>
+        </div>
         {error && <div className="login-err">⚠️ {error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">

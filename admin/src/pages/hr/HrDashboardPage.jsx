@@ -24,6 +24,36 @@ function StatCard({ label, value, sub, color = '#1E6B50' }) {
   )
 }
 
+function YearSnapshot({ year, overview }) {
+  const hr = overview?.hrData || {}
+  const pendingActivation = Math.max(0, (overview?.seatsUsed || 0) - (overview?.activated || 0))
+  return (
+    <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 4 }}>{year} 年服务概览</div>
+      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>
+        员工账号为当前实时数据；体检、保险和健康管理人数来自该年度人工录入
+      </div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <StatCard label="年度采购名额" value={hr.seatsTotal ?? '-'} sub="人" />
+        <StatCard label="已分配员工" value={overview?.seatsUsed ?? 0} sub="实时" />
+        <StatCard label="已激活账号" value={overview?.activated ?? 0} sub={`激活率 ${overview?.activationRate ?? 0}%`} color="#0077B6" />
+      </div>
+      {pendingActivation > 0 && (
+        <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, background: '#FFF8ED', color: '#875409', fontSize: 13 }}>
+          待关注：{pendingActivation} 位已分配员工尚未激活账号，可安排入驻提醒。
+        </div>
+      )}
+      {overview?.hrData && (
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 14, fontSize: 13, color: '#4A6558' }}>
+          <span>体检人数 <strong>{hr.examCount ?? 0}</strong></span>
+          <span>参保人数 <strong>{hr.insuredCount ?? 0}</strong></span>
+          <span>健康管理服务人数 <strong>{hr.healthMgmtCount ?? 0}</strong></span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // 服务期间格式化：起止都空返回 null（不展示），单边也能显示
 function fmtPeriod(start, end) {
   if (!start && !end) return null
@@ -183,13 +213,7 @@ export default function HrDashboardPage() {
         </div>
       </div>
 
-      {/* 员工账号跨年沿用，无年度归属，这三项是当前实时状态，不随下方年度切换变化 */}
-      <div style={{ fontSize: 11, color: '#B0A99C', marginBottom: 6 }}>员工账号数据 · 实时统计，与下方服务年度无关</div>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <StatCard label="已分配员工" value={overview?.seatsUsed} />
-        <StatCard label="已激活账号" value={overview?.activated} color="#0077B6" />
-        <StatCard label="激活率" value={`${overview?.activationRate ?? 0}%`} color="#D97706" />
-      </div>
+      <YearSnapshot year={overview?.year} overview={overview} />
 
       {!overview?.hrData && (
         <div className="card" style={{ padding: 24, marginBottom: 16, textAlign: 'center', color: '#8AA89C', fontSize: 14 }}>
@@ -202,13 +226,6 @@ export default function HrDashboardPage() {
         const fund = hr.healthFund || {}
         return (
           <>
-            {/* 服务名额：按年度录入，不同年度采购批次/类型可能不同，与上方"员工账号实时统计"区分开 */}
-            {!!hr.seatsTotal && (
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-                <StatCard label={`${overview.year} 年采购名额`} value={hr.seatsTotal} sub="人" />
-              </div>
-            )}
-
             {/* 维度一：体检服务 */}
             <ServiceSection icon="🩺" title={`${overview.year} 年 · 体检服务`} period={fmtPeriod(hr.examStartAt, hr.examEndAt)}>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -312,6 +329,10 @@ export default function HrDashboardPage() {
         )
       })()}
 
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', margin: '20px 0 8px' }}>员工健康概况</div>
+      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
+        截至 {summary?.generatedAt ? fmtDate(summary.generatedAt) : '当前'} 的现状统计，不随上方服务年度切换；未评估员工单独列示
+      </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 320 }}>
           <BucketBar title="员工心血管风险分层（10年ASCVD风险，脱敏聚合）" buckets={ascvdBuckets} colorMap={ASCVD_COLOR} />
