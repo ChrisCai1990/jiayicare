@@ -11,6 +11,7 @@ const SCOPES = [
   ['medications', '用药/营养素'], ['followups', '随访'], ['plans', '管理方案'], ['aiAnalysis', '既有AI分析'],
 ]
 const PROVIDER_LABEL = '通义千问'
+const ANNUAL_REFRAME_MESSAGE = '【按问题重整年度研判】请依据当前年度问题清单及已审核资料，逐个问题重新形成完整研判，并在最后说明问题之间的关联和年度优先级。'
 const REVIEW_TYPE_LABELS = { checkup: '体检方案研判', nutrition: '营养干预研判', annual: '年度管理研判', assessment: '阶段性评估', medical: '就医协助研判', daily: '日常问题交流', specialty: '专病分析研判', custom: '自定义研判' }
 const formatDateTime = value => value ? new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'
 const topicTypeLabel = topic => topic?.templateSnapshot?.name || REVIEW_TYPE_LABELS[topic?.reviewType] || '专项研判'
@@ -30,24 +31,30 @@ function CleanText({ children }) {
   return <div>{lines.map((line, index) => <div key={index} style={{ lineHeight: 1.65, fontSize: 14, marginTop: index ? 5 : 0 }}>{line.replace(/^[-*+]\s+/, '• ')}</div>)}</div>
 }
 
-function AnnualReviewAnalysis({ content }) {
+function AnalysisRows({ rows }) {
+  return <div style={{ padding: '0 12px 11px' }}>
+    {rows.map((row, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: row.label ? 'minmax(110px, 170px) minmax(0, 1fr)' : 'minmax(0, 1fr)', gap: 10, padding: '9px 10px', borderTop: '1px solid #E5ECE8', background: index % 2 ? '#F7FAF8' : '#fff', fontSize: 13, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
+      {row.label && <strong style={{ color: '#1E6B50' }}>{row.label}</strong>}<span>{row.detail}</span>
+    </div>)}
+  </div>
+}
+
+function AnnualReviewAnalysis({ content, onReframe, busy }) {
   const parsed = parseAnnualReviewMessage(content)
   if (!parsed) return <CleanText>{content}</CleanText>
   return <div style={{ marginTop: 4 }}>
-    <div style={{ fontSize: 12, color: '#65776F', marginBottom: 10 }}>年度综合分析 · 按议题查看，点击展开具体依据与判断</div>
+    <div style={{ fontSize: 12, color: '#65776F', marginBottom: 10 }}>{parsed.mode === 'issues' ? '年度综合分析 · 按问题查看完整判断' : '旧版分析按议题排列，可按问题重新整理'}</div>
     {parsed.intro && <div style={{ background: '#F4F8F5', borderRadius: 8, padding: '8px 10px', fontSize: 13, marginBottom: 10, lineHeight: 1.5 }}>{parsed.intro}</div>}
+    {parsed.mode === 'agenda' && onReframe && <button type="button" className="btn btn-primary btn-sm" style={{ marginBottom: 10 }} disabled={busy} onClick={onReframe}>{busy ? '正在处理…' : '按问题重新整理分析'}</button>}
     <div style={{ display: 'grid', gap: 8 }}>
-      {parsed.sections.map((section, index) => <details key={`${index}-${section.title}`} style={{ border: '1px solid #DCE8E1', borderRadius: 9, background: '#FAFCFB', overflow: 'hidden' }}>
+      {parsed.sections.map((section, index) => <details key={`${index}-${section.title}`} open={parsed.mode === 'issues' && index === 0 ? true : undefined} style={{ border: '1px solid #DCE8E1', borderRadius: 9, background: '#FAFCFB', overflow: 'hidden' }}>
         <summary style={{ cursor: 'pointer', padding: '10px 12px', fontWeight: 700, color: '#1A2B24', display: 'list-item', listStylePosition: 'inside' }}>
           <span style={{ marginLeft: 5 }}>{index + 1}. {section.title}</span>
-          <span style={{ marginLeft: 9, fontSize: 12, fontWeight: 400, color: '#65776F' }}>{section.rows.length} 项{section.rows.length ? ` · ${section.rows.slice(0, 2).map(row => row.label || row.detail.slice(0, 12)).join('、')}${section.rows.length > 2 ? '等' : ''}` : ''}</span>
+          <span style={{ marginLeft: 9, fontSize: 12, fontWeight: 400, color: '#65776F' }}>{parsed.mode === 'issues' ? '依据 · 判断 · 关联 · 去向 · 目标' : `${section.rows.length} 项${section.rows.length ? ` · ${section.rows.slice(0, 2).map(row => row.label || row.detail.slice(0, 12)).join('、')}${section.rows.length > 2 ? '等' : ''}` : ''}`}</span>
         </summary>
-        <div style={{ padding: '0 12px 11px' }}>
-          {section.rows.map((row, rowIndex) => <div key={rowIndex} style={{ display: 'grid', gridTemplateColumns: row.label ? 'minmax(110px, 170px) minmax(0, 1fr)' : 'minmax(0, 1fr)', gap: 10, padding: '9px 10px', borderTop: '1px solid #E5ECE8', background: rowIndex % 2 ? '#F7FAF8' : '#fff', fontSize: 13, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
-            {row.label && <strong style={{ color: '#1E6B50' }}>{row.label}</strong>}<span>{row.detail}</span>
-          </div>)}
-        </div>
+        <AnalysisRows rows={section.rows} />
       </details>)}
+      {parsed.synthesis && <details open style={{ border: '1px solid #A7D1BA', borderRadius: 9, background: '#F0F8F3', overflow: 'hidden' }}><summary style={{ cursor: 'pointer', padding: '10px 12px', fontWeight: 700 }}>综合关联与优先级</summary><AnalysisRows rows={parsed.synthesis.rows} /></details>}
     </div>
     <details style={{ marginTop: 10, color: '#65776F', fontSize: 12 }}><summary style={{ cursor: 'pointer' }}>查看完整原文</summary><div style={{ marginTop: 8, padding: 10, background: '#F7F8F6', borderRadius: 8 }}><CleanText>{content}</CleanText></div></details>
   </div>
@@ -485,7 +492,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       </div></div>
 
       <AnnualConcernsPanel topic={active} patientId={patientId} staff={staff} toast={toast} onUpdate={replaceTopic} legacyTopics={topics.filter(item => item.issueKey && item.reviewType === 'specialty')}
-        onAnalyze={() => send(null, '请把年度列表中的具体问题、重大疾病风险维度、慢性病风险维度与已审核五年趋势放在一起分析；指出问题之间有证据支持的关联和时间变化，再确定优先级、待核实事项、专科或营养师去向及医疗管理目标。风险维度不等于已确诊疾病，不要逐项孤立分析，不能把推测当作诊断。')} />
+        onAnalyze={() => send(null, ANNUAL_REFRAME_MESSAGE)} />
       <div className="card" style={{ flex: 1 }}><div ref={chatRef} className="card-body" style={{ height: 'clamp(560px, 66vh, 780px)', overflowY: 'auto', background: '#F7F8F6', padding: 16 }}>
         {!active.messages?.length && <div style={{ color: '#65776F', textAlign: 'center', paddingTop: 100 }}>尚未开始AI分析。{active.issueKey ? <div style={{ marginTop: 16 }}><button className="btn btn-primary" disabled={busy} onClick={() => send(null, `请围绕“${active.title}”开展首次专项研判：先核对已关联的报告或趋势资料，再判断是否需要专科进一步评估、就医意见、营养师评估或随访复评。逐项区分已确认事实与待核实信息。`)}>开始分析这个专病问题</button></div>
           : ['annual', 'checkup'].includes(active.reviewType) && active.contextScopes?.includes('reports') && <div style={{ marginTop: 16 }}><button className="btn btn-primary" disabled={busy} onClick={startAutomaticReview}>{busy ? '正在启动…' : active.annualPlanYear ? '开始年度综合AI研判' : '从最近一次体检报告开始AI研判'}</button>{active.annualPlanYear && <div style={{ fontSize: 12, marginTop: 9 }}>优先使用最近已审核体检报告；若暂无体检报告，则依据已审核健康趋势、风险提示和已纳入问题分析。</div>}{automaticStartError && <div role="alert" style={{ color: '#B42318', fontSize: 13, marginTop: 10 }}>启动失败：{automaticStartError}</div>}</div>}</div>}
@@ -493,7 +500,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         {active.generation?.status === 'failed' && <div role="alert" style={{ color: '#B42318', textAlign: 'center', marginBottom: 12 }}>AI分析失败：{active.generation.error || '请稍后重试'}。可在下方重试原消息。</div>}
         {(active.messages || []).map(message => <div key={message._id} style={{ display: 'flex', justifyContent: message.role === 'staff' ? 'flex-end' : 'flex-start', marginBottom: 14 }}><div style={{ width: active.annualPlanYear && message.role === 'ai' ? '100%' : undefined, maxWidth: active.annualPlanYear && message.role === 'ai' ? '100%' : '82%', background: message.role === 'staff' ? '#DDF2E7' : '#fff', border: '1px solid #DCE5E0', borderRadius: 12, padding: '10px 13px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11, color: '#8AA89C', marginBottom: 5 }}><span>{message.role === 'ai' ? `AI助手 · ${message.provider || ''}${message.durationMs ? ` · ${(message.durationMs / 1000).toFixed(1)}秒` : ''}` : `${message.staffName} · ${message.staffRole}`} · {formatDateTime(message.createdAt)}</span><span>{message.role === 'staff' && <button type="button" onClick={() => editMessage(message)} style={{ border: 0, background: 'none', color: '#1E6B50', cursor: 'pointer' }}>编辑</button>}<button type="button" onClick={() => deleteMessage(message)} style={{ border: 0, background: 'none', color: '#B42318', cursor: 'pointer' }}>删除</button></span></div>
-          {active.annualPlanYear && message.role === 'ai' ? <AnnualReviewAnalysis content={message.content} /> : <CleanText>{message.content}</CleanText>}
+          {active.annualPlanYear && message.role === 'ai' ? <AnnualReviewAnalysis content={message.content} busy={busy} onReframe={message._id === (active.messages || []).filter(item => item.role === 'ai').at(-1)?._id ? () => send(null, ANNUAL_REFRAME_MESSAGE) : null} /> : <CleanText>{message.content}</CleanText>}
           {!!message.attachments?.length && <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>{message.attachments.map((file, index) => <a key={index} href={file.url?.startsWith('/') ? `${API_ORIGIN}${file.url}` : file.url} target="_blank" rel="noreferrer"><img src={file.url?.startsWith('/') ? `${API_ORIGIN}${file.url}` : file.url} alt={file.name || '附件'} style={{ width: 90, height: 72, objectFit: 'cover', borderRadius: 6 }} /></a>)}</div>}
           {!!message.contextSnapshot?.sources?.length && <details style={{ marginTop: 8, fontSize: 12, color: '#4A6558' }}><summary>本轮依据 {message.contextSnapshot.sources.length} 项资料</summary><div style={{ marginTop: 5 }}>{message.contextSnapshot.sources.map((s, i) => <div key={i}>· {s}</div>)}</div></details>}
           {message.role === 'ai' && ['familyDoctor','superadmin'].includes(staff?.role) && <ReviewPlanAmendment patientId={patientId} topicId={active._id} message={message} />}
