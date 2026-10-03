@@ -68,6 +68,31 @@ test('出生身长与监护人自报的当前身高体重分别写入儿童档�
   assert.equal(mutation.submission.items.find(item => item.path === 'childProfile.birthWeight').conflict, true);
 });
 
+test('儿童问卷的 ABO 与 Rh 血型写入医护端共用的档案字段并待核实', () => {
+  const template = require('../src/utils/childQuestionnaireTemplate').buildChildQuestionnaireTemplate();
+  const abo = template.questions.find(item => item.id === 'child_bloodTypeABO');
+  const rh = template.questions.find(item => item.id === 'child_bloodTypeRH');
+  assert.equal(template.title, '儿童健康问卷');
+  assert.equal(abo.archiveField, 'bloodTypeABO');
+  assert.deepEqual(abo.options.map(option => option.label), ['A', 'B', 'O', 'AB']);
+  assert.equal(rh.archiveField, 'bloodTypeRH');
+  assert.deepEqual(rh.options.map(option => option.label), ['阳性', '阴性']);
+  const user = { _id: 'child-blood', patientCategory: 'child', bloodTypeABO: 'A', bloodTypeRH: '' };
+  const response = { _id: 'response-blood', answers: { child_bloodTypeABO: 'B', child_bloodTypeRH: '阳性' } };
+  const mutation = initialChildMutation(user, template, response);
+  assert.equal(mutation.update.$set.bloodTypeABO, undefined);
+  assert.equal(mutation.update.$set.bloodTypeRH, undefined);
+  assert.equal(mutation.submission.items.find(item => item.path === 'bloodTypeABO').conflict, true);
+  assert.equal(mutation.submission.items.find(item => item.path === 'bloodTypeRH').imported, false);
+  const reviewed = reviewChildSubmission({ ...user, childArchiveSubmissions: [mutation.submission] }, response._id,
+    { revision: 0, note: '已核对检验报告', decisions: [
+      { path: 'bloodTypeABO', verified: true, accept: true, value: 'B' },
+      { path: 'bloodTypeRH', verified: true, accept: true, value: '阳性' },
+    ] }, actor);
+  assert.equal(reviewed.update.$set.bloodTypeABO, 'B');
+  assert.equal(reviewed.update.$set.bloodTypeRH, '阳性');
+});
+
 test('人工更新要求依据及当前值，不能绕过待核实的首次问卷', () => {
   const user = { _id: 'child-1', patientCategory: 'child', childProfile: { feeding: '母乳' }, childArchiveSubmissions: [] };
   const mutation = manualChildUpdate(user, { path: 'childProfile.feeding', expected: '母乳', value: '混合喂养', reason: '监护人复述并核对' }, actor);

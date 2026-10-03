@@ -80,6 +80,7 @@ router.get('/:childId/archive', async (req, res) => {
     const pending = (child.childArchiveSubmissions || []).filter(row => row.status === 'pending');
     res.json({ success: true, data: { id: child._id, name: child.name, birthDate: child.birthDate,
       gender: child.gender, ageStage: childAgeStage(child.birthDate), childProfile: child.childProfile || {},
+      bloodTypeABO: child.bloodTypeABO || '', bloodTypeRH: child.bloodTypeRH || '',
       pendingReviewCount: pending.length, pendingPaths: [...new Set(pending.flatMap(row => (row.items || []).map(item => item.path)))],
       importPending: !!child.childArchiveImportPending } });
   } catch (error) { res.status(500).json({ success: false, message: '获取儿童档案失败' }); }

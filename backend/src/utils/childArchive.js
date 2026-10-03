@@ -2,13 +2,15 @@ const { isDeepStrictEqual } = require('node:util');
 const { FIELD_MAP } = require('../config/archiveFields');
 const { buildArchiveDraft, getByPath } = require('./archiveImport');
 
-const childPath = path => typeof path === 'string' && path.startsWith('childProfile.') && !!FIELD_MAP[path];
+const childPath = path => typeof path === 'string' && !!FIELD_MAP[path]
+  && (path.startsWith('childProfile.') || path === 'bloodTypeABO' || path === 'bloodTypeRH');
+const needsClinicalConfirmation = path => path === 'bloodTypeABO' || path === 'bloodTypeRH';
 const empty = value => value === undefined || value === null || value === '';
 
 function childSubmission(user, questionnaire, response, kind) {
   const draft = buildArchiveDraft(user, questionnaire, response);
   const items = draft.items.filter(item => childPath(item.path) && (kind === 'initial' || item.existing !== item.valueStr)).map(item => ({
-    ...item, imported: empty(getByPath(user, item.path)),
+    ...item, imported: empty(getByPath(user, item.path)) && !needsClinicalConfirmation(item.path),
     before: getByPath(user, item.path) ?? null,
   }));
   return {

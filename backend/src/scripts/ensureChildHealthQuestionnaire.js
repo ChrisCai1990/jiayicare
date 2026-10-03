@@ -14,9 +14,11 @@ async function main() {
     const existing = await DynamicQuestionnaire.findOne({ standardTemplateKey: KEY }).lean();
     if (existing) {
       const answers = await QuestionnaireResponse.countDocuments({ questionnaire: existing._id });
-      const actual = (existing.questions || []).map(q => [q.id, q.archiveField, q.text, q.type, q.ageStages || [], q.required]);
-      const expected = template.questions.map(q => [q.id, q.archiveField, q.text, q.type, q.ageStages || [], q.required]);
-      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      const comparable = questions => questions.map(q => [q.id, q.archiveField, q.text, q.type, q.ageStages || [], q.required,
+        (q.options || []).map(option => typeof option === 'string' ? option : option.label)]);
+      const actual = comparable(existing.questions || []);
+      const expected = comparable(template.questions);
+      if (JSON.stringify(actual) !== JSON.stringify(expected) || existing.title !== template.title || existing.description !== template.description) {
         if (answers) throw new Error('现有标准儿童问卷已有答卷，不能原地修订；请发布新问卷版本');
         console.log(JSON.stringify({ status: apply ? 'updating' : 'needs_update', id: String(existing._id), responseCount: answers,
           currentQuestionCount: actual.length, expectedQuestionCount: expected.length }));
