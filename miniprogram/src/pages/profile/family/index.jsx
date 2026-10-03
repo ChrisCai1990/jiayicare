@@ -136,8 +136,16 @@ function AddChildModal({ onClose, onSaved, onQuestionnaire }) {
   const [consent, setConsent] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const inputStyle = { display: 'block', width: '100%', height: '52px', boxSizing: 'border-box',
+    border: `1px solid ${colors.border}`, borderRadius: '8px', padding: '0 14px',
+    fontSize: '16px', lineHeight: '52px', color: colors.textPrimary, marginBottom: '12px' };
   const save = async () => {
     if (!name.trim() || !birthDate || !relation || !consent) { setError('请填写基础信息并确认监护关系'); return; }
+    const birthday = new Date(`${birthDate}T00:00:00`);
+    const eighteenthBirthday = new Date(birthday.getFullYear() + 18, birthday.getMonth(), birthday.getDate());
+    if (Number.isNaN(birthday.getTime()) || eighteenthBirthday <= new Date()) {
+      setError('该入口仅支持未满18周岁的孩子，请核对出生日期；成年人需由本人建档'); return;
+    }
     setSaving(true); setError('');
     try {
       const result = await guardianChildrenAPI.create({ name: name.trim(), birthDate, gender, relation,
@@ -153,13 +161,17 @@ function AddChildModal({ onClose, onSaved, onQuestionnaire }) {
     <ScrollView scrollY style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '86vh', boxSizing: 'border-box' }}>
       <Text style={{ fontSize: '18px', fontWeight: 700, display: 'block', marginBottom: '8px' }}>为未成年人建档</Text>
       <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '16px' }}>仅建立孩子的基础档案，健康问卷可以稍后填写。若孩子已有档案，请联系医护人员核实关联。</Text>
-      <Input placeholder="孩子姓名" value={name} onInput={e => setName(e.detail.value)} style={{ border: `1px solid ${colors.border}`, padding: '12px', marginBottom: '10px', borderRadius: '8px' }} />
-      <Picker mode="date" end={new Date().toISOString().slice(0, 10)} onChange={e => setBirthDate(e.detail.value)}><View style={{ border: `1px solid ${colors.border}`, padding: '12px', marginBottom: '10px', borderRadius: '8px', color: birthDate ? colors.textPrimary : colors.textMuted }}>{birthDate || '选择出生日期'}</View></Picker>
+      <Text style={{ fontSize: '13px', display: 'block', marginBottom: '6px' }}>孩子姓名</Text>
+      <Input placeholder="请输入孩子姓名" value={name} onInput={e => { setName(e.detail.value); setError(''); }} style={inputStyle} />
+      <Text style={{ fontSize: '13px', display: 'block', marginBottom: '6px' }}>出生日期</Text>
+      <Picker mode="date" end={new Date().toISOString().slice(0, 10)} onChange={e => { setBirthDate(e.detail.value); setError(''); }}><View style={{ border: `1px solid ${colors.border}`, padding: '12px', marginBottom: '10px', borderRadius: '8px', color: birthDate ? colors.textPrimary : colors.textMuted }}>{birthDate || '选择出生日期'}</View></Picker>
       <Text style={{ fontSize: '13px', display: 'block', marginBottom: '6px' }}>性别</Text>
       <View style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>{['男', '女', '未知'].map(item => <View key={item} onClick={() => setGender(item)} style={{ padding: '8px 16px', border: `1px solid ${gender === item ? colors.primary : colors.border}`, borderRadius: '8px', color: gender === item ? colors.primary : colors.textMuted }}>{item}</View>)}</View>
       <Text style={{ fontSize: '13px', display: 'block', marginBottom: '6px' }}>与孩子的关系</Text>
       <View style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>{['父亲', '母亲', '其他监护人'].map(item => <View key={item} onClick={() => setRelation(item)} style={{ padding: '8px 12px', border: `1px solid ${relation === item ? colors.primary : colors.border}`, borderRadius: '8px', color: relation === item ? colors.primary : colors.textMuted }}>{item}</View>)}</View>
-      <Input placeholder="孩子身份证号（选填；已有档案请由医护关联）" value={idNumber} onInput={e => setIdNumber(e.detail.value)} style={{ border: `1px solid ${colors.border}`, padding: '12px', marginBottom: '12px', borderRadius: '8px' }} />
+      <Text style={{ fontSize: '13px', display: 'block', marginBottom: '6px' }}>孩子身份证号（选填）</Text>
+      <Input placeholder="请输入孩子身份证号" value={idNumber} onInput={e => { setIdNumber(e.detail.value); setError(''); }} style={inputStyle} />
+      <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '12px' }}>已有档案请联系医护人员核实关联</Text>
       <View onClick={() => setConsent(!consent)} style={{ padding: '8px 0', marginBottom: '12px' }}><Text style={{ color: consent ? colors.primary : colors.textMuted }}>{consent ? '☑' : '□'} 我是孩子的监护人，同意为其建立健康档案并录入健康信息</Text></View>
       {!!error && <Text style={{ color: colors.danger, display: 'block', marginBottom: '8px' }}>{error}</Text>}
       <View style={{ display: 'flex', gap: '10px', paddingBottom: '20px' }}><View onClick={onClose} style={{ flex: 1, padding: '13px', textAlign: 'center', border: `1px solid ${colors.border}`, borderRadius: '8px' }}>取消</View><View onClick={saving ? undefined : save} style={{ flex: 2, padding: '13px', textAlign: 'center', borderRadius: '8px', backgroundColor: colors.primary, color: '#fff' }}>{saving ? '保存中…' : '建立孩子档案'}</View></View>

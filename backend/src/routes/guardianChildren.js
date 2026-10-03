@@ -34,8 +34,10 @@ router.post('/', async (req, res) => {
     const gender = String(req.body?.gender || '未知').trim();
     const relation = String(req.body?.relation || '').trim();
     const idNumber = String(req.body?.idNumber || '').replace(/\s+/g, '').toUpperCase();
-    if (!name || name.length > 40 || !childAgeStage(birthDate) || !['男', '女', '未知'].includes(gender)
-      || !RELATIONS.has(relation)) return res.status(400).json({ success: false, message: '请核对孩子姓名、出生日期、性别和监护关系' });
+    if (!name || name.length > 40 || !['男', '女', '未知'].includes(gender)
+      || !RELATIONS.has(relation)) return res.status(400).json({ success: false, message: '请核对孩子姓名、性别和监护关系' });
+    if (!childAgeStage(birthDate)) return res.status(400).json({ success: false,
+      message: '该入口仅支持未满18周岁的孩子，请核对出生日期；成年人需由本人建档' });
     if (req.body?.guardianConsent !== true) return res.status(400).json({ success: false, message: '请确认监护人身份并同意为孩子建立健康档案' });
     if (idNumber) {
       const parsed = require('../utils/idCard').parseIdCard(idNumber);
