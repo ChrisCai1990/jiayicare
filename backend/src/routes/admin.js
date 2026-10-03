@@ -2294,7 +2294,11 @@ router.put('/enterprises/:id/shared-funds/:year', adminAuth, async (req, res) =>
     const shared = require('../utils/enterpriseSharedFund');
     await shared.validateConfiguration(req.params.id, year, policyIds, productIds);
     if (req.body.enabled && (!policyIds.length || !productIds.length)) return res.status(400).json({ success: false, message: '启用前请逐项选择保险方案和商品' });
-    const account = await require('../models/EnterpriseSharedFund').findOneAndUpdate(
+    const EnterpriseSharedFund = require('../models/EnterpriseSharedFund');
+    // The model is loaded lazily and production can disable startup schema
+    // writes. Create the unique key before the first account upsert.
+    await EnterpriseSharedFund.collection.createIndex({ enterpriseId: 1, year: 1 }, { unique: true, name: 'enterpriseId_1_year_1' });
+    const account = await EnterpriseSharedFund.findOneAndUpdate(
       { enterpriseId: req.params.id, year },
       { $set: { enabled: req.body.enabled === true, policyIds, productIds }, $setOnInsert: { creditedCents: 0, availableCents: 0, reservedCents: 0, spentCents: 0 } },
       { upsert: true, new: true, runValidators: true },
