@@ -22,3 +22,14 @@ test('全托管先形成服务需求单并保留原始管理事项快照', () =>
   assert.equal(rows[0].formData.serviceRequest.mode, 'managed');
   assert.deepEqual(rows[0].formData.serviceRequest.itemSnapshot, record);
 });
+
+test('就医协助需求保留健康顾问的目标与完成标准', () => {
+  const record = { items: '专科评估', visit_time: '2026-11-10', serviceMode: 'single',
+    goal: '明确后续管理方向', completionStandard: '回收专科意见并由健康顾问确认下一步' };
+  const [task] = buildAnnualPlanServiceTasks({ confirmedAt: new Date(), moduleData: {
+    medical_treatment: { records: [record] },
+  } }, { assignedHealthPlanner: 'planner-1' });
+  assert.match(task.content, /管理目标：明确后续管理方向/);
+  assert.match(task.content, /完成标准：回收专科意见并由健康顾问确认下一步/);
+  assert.deepEqual(task.formData.serviceRequest.itemSnapshot, record);
+});

@@ -27,6 +27,13 @@ const logicalScheduleKey = (row) => {
   return [row.patientId, day, content || fallbackTheme].join('|');
 };
 
+async function withoutSeparatelyDispatchedNutrition(rows, planId, model = FollowUp) {
+  if (!rows.some(row => row.workflowKey === 'annual_nutrition_assessment')) return rows;
+  const separatelyDispatched = await model.exists({ sourceAnnualPlanId: planId,
+    sourceType: 'professional_assessment', workflowKey: 'annual_nutrition_assessment', status: { $ne: 'cancelled' } });
+  return separatelyDispatched ? rows.filter(row => row.workflowKey !== 'annual_nutrition_assessment') : rows;
+}
+
 // 多条记录模块（就医/会诊/复查/接种/检测）：每条记录本身就有明确日期，直接各生成一条随访。
 // key = moduleData 里的模块 key；dateField = 该条记录里存日期的字段名；theme = 随访主题前缀。
 const DATED_RECORD_MODULES = [
@@ -145,6 +152,8 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.expert && `专家：${rec.expert}`,
         rec.reason && `原因：${rec.reason}`,
         rec.basisSummary && `设置依据：${rec.basisSummary}`,
+        rec.goal && `管理目标：${rec.goal}`,
+        rec.completionStandard && `完成标准：${rec.completionStandard}`,
         rec.purpose && `目的：${rec.purpose}`,
         rec.items && `项目：${rec.items}`,
         rec.name && `项目：${rec.name}`,
@@ -192,6 +201,8 @@ async function buildAnnualPlanFollowUps(plan) {
       annualCheckup.appointmentSchedulingVersion === 1 && `预约安排日期：${appointmentDay(annualCheckup.date)}；建议体检日期：${annualCheckup.date}。一周内完成预约安排，日期已过则立即处理。`,
       annualCheckup.institution && `计划体检机构：${annualCheckup.institution}`,
       annualCheckup.focus && `重点关注：${annualCheckup.focus}`,
+      annualCheckup.goal && `管理目标：${annualCheckup.goal}`,
+      annualCheckup.completionStandard && `完成标准：${annualCheckup.completionStandard}`,
       annualCheckup.escort && '已安排陪检服务',
     ].filter(Boolean).join('\n');
     push(annualCheckup.appointmentSchedulingVersion === 1 ? appointmentDay(annualCheckup.date) : annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, patient?.assignedHealthManager,
@@ -282,7 +293,7 @@ async function syncAnnualPlanFollowUps(plan) {
     sourceScheduleKey: /^monitoring:/,
     status: { $ne: 'completed' },
   });
-  const toCreate = await buildAnnualPlanFollowUps(plan);
+  const toCreate = await withoutSeparatelyDispatchedNutrition(await buildAnnualPlanFollowUps(plan), plan._id);
   await require('./annualHealthDataReminders').sync(plan);
   const existing = await FollowUp.find({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled' }).sort({ createdAt: 1 });
   const desiredKeys = new Set(toCreate.map(row => row.sourceScheduleKey));
@@ -373,4 +384,4 @@ async function dedupeAnnualPlanFollowUps() {
   return removed;
 }
 
-module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps, logicalScheduleKey };
+module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps, logicalScheduleKey, withoutSeparatelyDispatchedNutrition };

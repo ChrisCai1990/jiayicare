@@ -27,7 +27,9 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
       content: [
         `服务模式：${mode === 'managed' ? '全托管' : '单项服务'}`, record.serviceType && `服务类型：${record.serviceType}`,
         mode === 'managed' && record.managedServiceType && `一站式类型：${record.managedServiceType === 'checkup' ? '体检一站式' : '门诊一站式'}`,
-        `管理事项：${label}`, evidence && `设置依据：${evidence}`, record.customerAction && `客户行动：${record.customerAction}`,
+        `管理事项：${label}`, evidence && `设置依据：${evidence}`,
+        record.goal && `管理目标：${record.goal}`, record.completionStandard && `完成标准：${record.completionStandard}`,
+        record.customerAction && `客户行动：${record.customerAction}`,
         record.precautions && `注意事项：${record.precautions}`,
         moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? '处理要求：健管专员跟进并安排所选服务；营养评估通过营养服务流程确认营养师及评估日期，再关联实际服务。' : '处理要求：健康规划师核对信息后，选择已经跑通的服务流程并安排后续岗位流转。',
       ].filter(Boolean).join('\n'),

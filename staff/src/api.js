@@ -417,6 +417,8 @@ export const staffAPI = {
   reviewReportFollowUpDraft: (id, data) => req(`/staff/report-followups/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
   saveAnnualPlan:       (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
   reviseAnnualNutritionMetrics: (patientId, data) => req(`/staff/patients/${patientId}/annual-nutrition-metrics`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getAnnualNutritionTask: (patientId, planId) => req(`/staff/patients/${patientId}/annual-nutrition-task?planId=${encodeURIComponent(planId)}`),
+  dispatchAnnualNutritionTask: (patientId, data) => req(`/staff/patients/${patientId}/annual-nutrition-dispatch`, { method: 'POST', body: JSON.stringify(data) }),
   reviewPlanChoices: patientId => req(`/staff/patients/${patientId}/review-plan-amendment`),
   reviewPlanAmendment: (patientId, data) => req(`/staff/patients/${patientId}/review-plan-amendment`, { method:'POST', body:JSON.stringify(data) }),
   deleteAnnualPlan:     (patientId, year, planType, reason) => req(`/staff/patients/${patientId}/annual-plan?year=${year}&planType=${encodeURIComponent(planType)}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),

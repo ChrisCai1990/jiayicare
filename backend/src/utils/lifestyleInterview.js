@@ -110,7 +110,7 @@ async function start(req,res) {
   if(!user)throw fail('会员不存在',404);
   if(req.staff.role!=='superadmin'&&(req.staff.role!=='nutritionist'||String(user.assignedNutritionist)!==String(req.staff._id)))throw fail('仅所属营养师可开始访谈',403);
   if(!user.assignedNutritionist)throw fail('请先分配营养师',400);
-  const active=await FollowUp.findOne({patientId:user._id,status:{$in:['planned','in_progress','missed']},$or:[{sourceType:'scheduled',workflowKey:'annual_nutrition_assessment',sourceAnnualPlanId:{$ne:null}},{sourceType:'professional_assessment',workflowKey:'lifestyle_interview'}]}).sort({createdAt:-1}).lean();
+  const active=await FollowUp.findOne({patientId:user._id,status:{$in:['planned','in_progress','missed']},$or:[{sourceType:'scheduled',workflowKey:'annual_nutrition_assessment',sourceAnnualPlanId:{$ne:null}},{sourceType:'professional_assessment',workflowKey:'annual_nutrition_assessment',sourceAnnualPlanId:{$ne:null}},{sourceType:'professional_assessment',workflowKey:'lifestyle_interview'}]}).sort({createdAt:-1}).lean();
   if(active)return res.json({success:true,data:active});
   let taskId=user.lifestyleInterviewTaskId;
   const previous=taskId?await FollowUp.findById(taskId).lean():null;
