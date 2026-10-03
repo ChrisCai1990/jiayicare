@@ -218,7 +218,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
 }
 
 // ── 板块折叠面板 ───────────────────────────────────────────────────────
-export function ModulePanel({ moduleKey, def, data, onChange }) {
+export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = false }) {
   const [open, setOpen] = useState(false)
   const enabled = data.enabled !== false
 
@@ -235,6 +235,10 @@ export function ModulePanel({ moduleKey, def, data, onChange }) {
 
   // 多条模块：records 数组操作
   const records = data.records || []
+  const planSummaryRows = (def.multi ? records : [data]).map((record, index) => ({
+    title: readableValue(record.items || record.name || record.reason || record.focus || record[def.summaryKey] || record.standardPlanName || `${def.name} ${index + 1}`).trim(),
+    date: record.executionDate || record.visit_time || record.plan_time || record.time || record.date || '',
+  }))
   const setRecords = (newRecords) => onChange(moduleKey, 'records', newRecords)
   const addRecord = () => {
     setRecords([...records, {}])
@@ -279,6 +283,13 @@ export function ModulePanel({ moduleKey, def, data, onChange }) {
         )}
         <span style={{ color: '#aaa', fontSize: 13, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>▼</span>
       </div>
+
+      {showPlanSummary && !open && enabled && hasContent && (
+        <div style={{ padding: '0 18px 13px 48px', color: '#4A6558', fontSize: 13, lineHeight: 1.55 }}>
+          {planSummaryRows.slice(0, 3).map((row, index) => <div key={index} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {row.title}{row.date ? ` · ${row.date}` : ''}</div>)}
+          {planSummaryRows.length > 3 && <div style={{ color: '#8AA89C' }}>另有 {planSummaryRows.length - 3} 项，展开查看</div>}
+        </div>
+      )}
 
       {/* 板块内容 */}
       {open && (
