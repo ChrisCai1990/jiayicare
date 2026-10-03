@@ -64,6 +64,7 @@ app.get('/api/health', (req, res) => {
 
 // 路由
 app.use('/api/auth',    require('./routes/auth'));
+app.use('/api/push-devices', require('./routes/pushDevices'));
 app.use('/api/metabolic-pilot', require('./routes/metabolicPilot'));
 app.use('/api/payments', require('./routes/payments'));
 
@@ -129,6 +130,7 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
+  require('./utils/nativePush').startNativePush();
   // Stops only the workers/initializers registered below, not HTTP writes or
   // module-import side effects. Existing deployments retain their defaults.
   if (process.env.STARTUP_BACKGROUND_JOBS_ENABLED === 'false') {

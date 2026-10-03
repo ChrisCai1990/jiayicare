@@ -6778,6 +6778,7 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
       recipient:      roleKey,
     });
     ssePublish(conversationId, { type: 'message', data: msg });
+    await require('../utils/nativePush').enqueueNativePush(msg);
     res.json({ success: true, data: msg });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -10479,6 +10480,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     });
 
     const responseMessage = withSignedMessageMedia(replyMsg);
+    await require('../utils/nativePush').enqueueNativePush(replyMsg);
     ssePublish(conversationId, { type: 'message', data: responseMessage });
     res.json({ success: true, message: '回复已发送', data: responseMessage });
   } catch (err) {
