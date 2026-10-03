@@ -6108,6 +6108,7 @@ export default function PatientDetailPage() {
                   </div>
                   <SpecialtyConcernButton patientId={id} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
                     source={{ kind: 'screening_report', reportId: (r._sourceItems || [])[0]?.reportId || r._id }}
+                    sourceText={[r.note, r.examConclusion, ...(r.reportItems || []).filter(item => item.status === 'abnormal' || item.status === 'attention' || item.itemType === 'imaging').flatMap(item => [item.name, item.conclusion, item.diagnosis, item.findings])].filter(Boolean).join('；')}
                     sourceLabel={`${r.checkDate || '日期待核实'} · ${r.title || r.screeningL3 || '专项筛查记录'}`} />
                   {r.isAI
                     ? (<>
@@ -6165,6 +6166,7 @@ export default function PatientDetailPage() {
                             <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
                             <td style={{ padding: '4px 8px' }}><SpecialtyConcernButton patientId={id} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
                               source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                              sourceText={[item.name, item.conclusion, item.diagnosis, item.findings].filter(Boolean).join('；')}
                               sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} /></td>
                           </tr>
                         )),

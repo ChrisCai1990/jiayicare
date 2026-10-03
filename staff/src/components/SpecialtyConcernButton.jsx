@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
+import { specialtyIssueSuggestions } from '../utils/specialtyIssueSuggestion.mjs'
 
-export default function SpecialtyConcernButton({ patientId, source, sourceLabel, suggestedIssue = '', staff, toast, onOpenReview }) {
+export default function SpecialtyConcernButton({ patientId, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast, onOpenReview }) {
   const [open, setOpen] = useState(false)
-  const [issueTitle, setIssueTitle] = useState(suggestedIssue)
+  const suggestions = specialtyIssueSuggestions(sourceText)
+  const [issueTitle, setIssueTitle] = useState('')
   const [busy, setBusy] = useState(false)
   if (!['familyDoctor', 'superadmin'].includes(staff?.role) || !source) return null
   const submit = async () => {
@@ -19,11 +21,13 @@ export default function SpecialtyConcernButton({ patientId, source, sourceLabel,
     finally { setBusy(false) }
   }
   return <>
-    <button type="button" className="btn btn-secondary btn-sm" onClick={event => { event.stopPropagation(); setOpen(true) }}>＋ 纳入专病研判</button>
+    <button type="button" className="btn btn-secondary btn-sm" onClick={event => { event.stopPropagation(); setIssueTitle(suggestedIssue || suggestions[0] || ''); setOpen(true) }}>＋ 纳入专病研判</button>
     {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 500 }}>
       <div className="modal-header"><div className="modal-title">纳入单个专病问题</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
       <div className="modal-body"><div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核资料'}。请填写要研判的具体问题，系统会保留原始资料关联。</div>
-        <label className="form-label">具体问题名称</label><input autoFocus className="form-input" maxLength={60} value={issueTitle} onChange={event => setIssueTitle(event.target.value)} placeholder="例如：肺结节" onKeyDown={event => { if (event.key === 'Enter') submit() }} />
+        <label className="form-label">具体问题名称（可修改）</label><input autoFocus className="form-input" maxLength={60} value={issueTitle} onChange={event => setIssueTitle(event.target.value)} placeholder="例如：肺结节" onKeyDown={event => { if (event.key === 'Enter') submit() }} />
+        {!suggestedIssue && suggestions.length > 0 && <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>从当前资料提取的候选问题，请核对：<div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 5 }}>{suggestions.map(title => <button key={title} type="button" className="btn btn-secondary btn-sm" onClick={() => setIssueTitle(title)}>{title}</button>)}</div></div>}
+        {!suggestedIssue && suggestions.length === 0 && <div style={{ fontSize: 12, color: '#A16620', marginTop: 8 }}>当前资料未识别出明确的问题名称，请健康顾问填写。</div>}
         <div style={{ fontSize: 12, color: '#65776F', marginTop: 8 }}>相同问题再次纳入时，会把新资料关联到已有研判；AI 分析需在研判页明确启动。</div>
       </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setOpen(false)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={submit}>{busy ? '保存中…' : '纳入并打开研判'}</button></div>
     </div></div>}
