@@ -52,6 +52,7 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
     <div style={{ fontWeight: 700 }}>固定体成分指标：骨骼肌、体脂率、内脏脂肪</div>
     <div style={{ color: '#66776E', fontSize: 12 }}>体重及其他客观、主观指标从健康顾问年度方案带入，也可在沟通后增删。档案主观描述仅作待核对基线；请逐项确认当前情况及阶段目标。</div>
     {value.annualNutritionSource && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7 }}>{value.annualNutritionMetrics?.length ? `已带入 ${value.annualNutritionSource.year} 年健康顾问年度方案所选的 ${value.annualNutritionMetrics.length} 项对比指标` : `${value.annualNutritionSource.year} 年健康顾问年度方案未选对比指标`}{value.annualNutritionSource.pushed ? '' : '（年度方案尚未推送，请核对）'}；营养师可按本次沟通修改。生成草稿后，核实的主观描述将追加到健康档案历史。</div>}
+    {!!value.annualNutritionGoals?.length && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7, marginTop: 6 }}>已带入年度方案中 {value.annualNutritionGoals.length} 条营养相关管理目标与干预重点；请核实后确定本次营养方案的具体目标。</div>}
     <label className="form-label">沟通后增加对比指标<select className="form-input" value="" onChange={e => {
       const metric = e.target.value
       if (metric && !(value.nutritionTargets || []).some(row => row.metric === metric)) set('nutritionTargets', [...(value.nutritionTargets || []), { metric, baseline: nutritionSubjective.fromArchive(patient)[metric] || (metric === '体重' ? nutritionTargets.measuredBaseline(patient, metric) : '') || '', target: '' }])

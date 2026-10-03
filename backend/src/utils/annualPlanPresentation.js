@@ -2,13 +2,17 @@ const MODULE_NAME = {
   medical_treatment: '安排就医', specialist_collab: '全专联合会诊', checkup_completion: '完善检查',
   abnormal_followup: '定期复查', vaccine: '疫苗接种', monitoring: '家庭健康监测', lifestyle: '生活方式干预',
   medication: '用药管理', supplement: '营养素管理', nutrition_intervention: '营养干预', nutrition_assessment: '营养评估',
-  annual_checkup: '年度体检', functional_medicine: '功能医学检测', quarterly_eval: '阶段评估', personalized_followups: '个性化管理',
+  annual_checkup: '年度体检', functional_medicine: '功能医学检测', quarterly_eval: '阶段评估', personalized_followups: '个性化管理', management_targets: '年度管理目标',
 };
 const SERVICE_MODE = { reminder: '仅提醒', single: '单项服务', managed: '全托管' };
 const SERVICE_TYPE = { proxy_booking: '代约/代办', proxy_visit: '代诊', escort_visit: '陪诊', escort_exam: '陪检', consult_coordination: '会诊协调' };
 const first = (...values) => values.find(value => value !== undefined && value !== null && String(value).trim()) || '';
 
 function normalizeItem(moduleKey, record, index) {
+  if (moduleKey === 'management_targets') return {
+    id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: record.goal || `管理目标 ${index + 1}`,
+    goal: record.goal || '', interventionFocus: record.focus || '',
+  };
   const title = first(record.items, record.name, record.standardPlanName, record.purpose, record.focus, MODULE_NAME[moduleKey]);
   const schedule = first(record.visit_time, record.plan_time, record.executionDate, record.date, record.time);
   return {
@@ -37,7 +41,7 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   return items;
 }
 
-const internalFields = new Set(['notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId']);
+const internalFields = new Set(['notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceFocus', 'nutritionRelevant']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.map(customerModuleData);
