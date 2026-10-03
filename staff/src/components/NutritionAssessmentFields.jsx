@@ -4,9 +4,13 @@ import NutritionTargetRows, { nutritionTargetError } from './NutritionTargetRows
 import { nutritionAssessmentPrefill } from '../utils/nutritionAssessmentPrefill.mjs'
 import foodAllergy from '../../../shared/foodAllergy.cjs'
 import nutritionEnergy from '../../../shared/nutritionEnergy.cjs'
+import nutritionComparisonMetrics from '../../../shared/nutritionComparisonMetrics.cjs'
+import nutritionSubjective from '../../../shared/nutritionSubjective.cjs'
+import nutritionTargets from '../../../shared/nutritionTargets.cjs'
 
 const { foodAllergyEvidence, hasFoodAllergyRecord, questionnaireFoodAllergyEvidence, isUsableFoodAllergy } = foodAllergy
 const { validateNutritionEnergy } = nutritionEnergy
+const { OBJECTIVE_METRICS, SUBJECTIVE_METRICS } = nutritionComparisonMetrics
 
 export const initialNutritionAssessment = (patient = {}, previous = null) => nutritionAssessmentPrefill(patient, previous).assessment
 
@@ -45,9 +49,16 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
       {[['height', '身高（cm）'], ['weight', '体重（kg）']].map(([key, label]) => <label key={key} className="form-label">{label} *<input className="form-input" value={value[key]} onChange={e => set(key, e.target.value)} /></label>)}
       <label className="form-label">阶段复盘日期 *<DateField className="form-input" type="date" value={value.reviewDate} onChange={e => set('reviewDate', e.target.value)} /></label>
     </div>
-    <div style={{ fontWeight: 700 }}>固定观察指标：体重、骨骼肌、体脂率、内脏脂肪</div>
-    <div style={{ color: '#66776E', fontSize: 12 }}>有测量日期的档案值可作为待核对基线；每项基线与阶段目标请结合客户情况确认。其他指标可在下方新增。</div>
-    {value.annualNutritionSource && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7 }}>{value.annualNutritionMetrics?.length ? `已带入 ${value.annualNutritionSource.year} 年健康顾问年度方案所选的 ${value.annualNutritionMetrics.length} 项附加对比指标` : `${value.annualNutritionSource.year} 年健康顾问年度方案未选附加指标，按四项固定指标评估`}{value.annualNutritionSource.pushed ? '' : '（年度方案尚未推送，请核对）'}；基线与阶段目标仍须逐项核实。</div>}
+    <div style={{ fontWeight: 700 }}>固定体成分指标：骨骼肌、体脂率、内脏脂肪</div>
+    <div style={{ color: '#66776E', fontSize: 12 }}>体重及其他客观、主观指标从健康顾问年度方案带入，也可在沟通后增删。档案主观描述仅作待核对基线；请逐项确认当前情况及阶段目标。</div>
+    {value.annualNutritionSource && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7 }}>{value.annualNutritionMetrics?.length ? `已带入 ${value.annualNutritionSource.year} 年健康顾问年度方案所选的 ${value.annualNutritionMetrics.length} 项对比指标` : `${value.annualNutritionSource.year} 年健康顾问年度方案未选对比指标`}{value.annualNutritionSource.pushed ? '' : '（年度方案尚未推送，请核对）'}；营养师可按本次沟通修改。生成草稿后，核实的主观描述将追加到健康档案历史。</div>}
+    <label className="form-label">沟通后增加对比指标<select className="form-input" value="" onChange={e => {
+      const metric = e.target.value
+      if (metric && !(value.nutritionTargets || []).some(row => row.metric === metric)) set('nutritionTargets', [...(value.nutritionTargets || []), { metric, baseline: nutritionSubjective.fromArchive(patient)[metric] || (metric === '体重' ? nutritionTargets.measuredBaseline(patient, metric) : '') || '', target: '' }])
+    }}><option value="">选择指标；已有指标可在下方编辑或删除</option>
+      <optgroup label="客观数据">{OBJECTIVE_METRICS.filter(([name]) => !(value.nutritionTargets || []).some(row => row.metric === name)).map(([name, unit]) => <option key={name} value={name}>{name}{unit ? `（${unit}）` : ''}</option>)}</optgroup>
+      <optgroup label="主观感受">{SUBJECTIVE_METRICS.filter(name => !(value.nutritionTargets || []).some(row => row.metric === name)).map(name => <option key={name} value={name}>{name}</option>)}</optgroup>
+    </select></label>
     <NutritionTargetRows value={value.nutritionTargets} onChange={rows => set('nutritionTargets', rows)} fixed />
     <section style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #DCE7E0', borderRadius: 9, background: '#FAFCFB' }}>
       <strong>每日能量与三餐分配</strong>

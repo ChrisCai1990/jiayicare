@@ -18,12 +18,12 @@ test('餐次预算合计等于管理期能量，含可选加餐', () => {
   assert(validateNutritionEnergy(patient, { ...input, lifeStage: 'pregnant_or_lactating' }).errors.some(x => x.includes('孕哺期')));
 });
 
-test('固定四项指标保留个性化目标，只从带日期的测量记录带入基线', () => {
+test('固定三项体成分与可选体重保留个性化目标，只从带日期的测量记录带入固定基线', () => {
   const patient = { bodyComposition: { measuredAt: '2026-10-01', weight: 68, skelMuscle: 24, bodyFatRate: 32, visceralFat: 9 } };
   const rows = withFixedNutritionTargets([{ metric: '体重', baseline: '', target: '67 kg' }, { metric: '腰围', baseline: '88 cm', target: '84 cm' }], patient);
-  assert.deepEqual(rows.map(row => row.metric), ['体重', '骨骼肌', '体脂率', '内脏脂肪', '腰围']);
-  assert.equal(rows[0].baseline, '68 kg（2026-10-01）');
-  assert.equal(rows[0].target, '67 kg');
-  assert.equal(rows[2].baseline, '32 %（2026-10-01）');
+  assert.deepEqual(rows.map(row => row.metric), ['骨骼肌', '体脂率', '内脏脂肪', '体重', '腰围']);
+  assert.equal(rows[3].baseline, '');
+  assert.equal(rows[3].target, '67 kg');
+  assert.equal(rows[1].baseline, '32 %（2026-10-01）');
   assert.equal(withFixedNutritionTargets([], { bodyComposition: { weight: 68 } })[0].baseline, '');
 });

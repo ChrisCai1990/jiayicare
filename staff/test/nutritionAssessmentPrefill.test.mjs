@@ -11,7 +11,7 @@ test('已有营养评估可带入文本和逐项指标，但不沿用旧复盘�
   const { goal, assessment } = nutritionAssessmentPrefill(patient, previous)
   assert.equal(goal, '改善饮食')
   assert.equal(assessment.weight, 51)
-  assert.equal(assessment.nutritionTargets[0].metric, '体重')
+  assert.equal(assessment.nutritionTargets[0].metric, '骨骼肌')
   assert.equal(assessment.reviewDate, '')
   assert.equal(assessment.allergyStatus, '')
   assert.equal(assessment.riskStatus, '')
@@ -27,21 +27,28 @@ test('无上次评估时汇总档案膳食和疾病资料，不虚构已核实�
   assert.match(assessment.currentDiet, /午餐：外卖/)
   assert.match(assessment.medicalReview, /档案记录/)
   assert.match(assessment.practicalConstraints, /不吃辣/)
-  assert.deepEqual(assessment.nutritionTargets.map(row => row.metric), ['体重', '骨骼肌', '体脂率', '内脏脂肪'])
+  assert.deepEqual(assessment.nutritionTargets.map(row => row.metric), ['骨骼肌', '体脂率', '内脏脂肪'])
   assert.equal(assessment.nutritionTargets[0].baseline, '')
 })
 
-test('年度标准营养评估选中的慢病指标自动带入；普通体重管理只保留四项固定指标', () => {
+test('年度标准营养评估带入体重与慢病指标；未勾选时只保留三项固定体成分指标', () => {
   const prior = { nutritionTargets: [
     { metric: '体重', baseline: '68 kg', target: '67 kg' },
     { metric: '糖化血红蛋白', baseline: '8%', target: '7%' },
   ] }
-  assert.deepEqual(nutritionAssessmentPrefill({}, prior).assessment.nutritionTargets.map(row => row.metric), ['体重', '骨骼肌', '体脂率', '内脏脂肪'])
-  const selected = nutritionAssessmentPrefill({}, { ...prior, annualNutritionMetrics: ['糖化血红蛋白', '甘油三酯'], annualNutritionSource: { year: 2026, pushed: true } }).assessment
-  assert.deepEqual(selected.nutritionTargets.map(row => row.metric), ['体重', '骨骼肌', '体脂率', '内脏脂肪', '糖化血红蛋白', '甘油三酯'])
+  assert.deepEqual(nutritionAssessmentPrefill({}, prior).assessment.nutritionTargets.map(row => row.metric), ['骨骼肌', '体脂率', '内脏脂肪'])
+  const selected = nutritionAssessmentPrefill({}, { ...prior, annualNutritionMetrics: ['体重', '糖化血红蛋白', '甘油三酯'], annualNutritionSource: { year: 2026, pushed: true } }).assessment
+  assert.deepEqual(selected.nutritionTargets.map(row => row.metric), ['骨骼肌', '体脂率', '内脏脂肪', '体重', '糖化血红蛋白', '甘油三酯'])
   assert.equal(selected.nutritionTargets[4].target, '7%')
   assert.equal(selected.nutritionTargets[5].baseline, '')
 });
+
+test('主观感受优先取档案最新记录，消化功能可继续手工修改', () => {
+  const patient = { lifestyle: { sleep: '偶尔入睡困难', bowel: '每日一次' }, lifestyle_data: { nutritionSubjective: { 睡眠质量: '最近夜醒两次', 消化功能: '腹胀' } } }
+  const result = nutritionAssessmentPrefill(patient, { annualNutritionMetrics: ['睡眠质量', '消化功能'], nutritionTargets: [{ metric: '睡眠质量', baseline: '过去睡得好', target: '整夜安睡' }] }).assessment
+  assert.deepEqual(result.nutritionTargets.slice(3).map(row => row.baseline), ['最近夜醒两次', '腹胀'])
+  assert.equal(result.nutritionTargets[3].target, '整夜安睡')
+})
 
 test('旧评估写着无食物过敏史时不带入有过敏的详情框', () => {
   const result = nutritionAssessmentPrefill({}, { allergyDetails: '无食物过敏史' })

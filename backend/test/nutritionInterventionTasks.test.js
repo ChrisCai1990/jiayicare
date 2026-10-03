@@ -34,6 +34,9 @@ test('publishing a reviewed nutrition draft writes deterministic customer and st
   t.mock.method(PlanTemplate, 'findOne', () => query({ _id: templateId, type: 'nutrition', name: '营养模板', content: { dietPrinciple: '按模板' } }));
   const plan = { _id: planId, patientId, type: 'nutrition', title: '营养方案', content: {
     nutritionTaskVersion: 1, goal: '改善膳食执行', nutritionReviewDate: '2099-12-01', templateId,
+    nutritionTargets: [{ metric: '骨骼肌', baseline: '24 kg', target: '维持24 kg' },
+      { metric: '体脂率', baseline: '32%', target: '31%' },
+      { metric: '内脏脂肪', baseline: '9级', target: '8级' }],
     moduleData: { breakfast: { content: '按模板早餐' } },
   } };
   const input = await workflow.inputFor(plan);

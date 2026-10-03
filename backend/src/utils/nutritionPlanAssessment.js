@@ -7,7 +7,7 @@ function prepareNutritionAssessment(input = {}, user = {}) {
   const targetInput = input.nutritionTargets === undefined
     ? [{ metric: input.metric, baseline: input.baseline, target: input.target }]
     : input.nutritionTargets;
-  const nutritionTargets = Array.isArray(targetInput) ? targetInput.slice(0, 12).map(row => ({
+  const nutritionTargets = Array.isArray(targetInput) ? targetInput.slice(0, 32).map(row => ({
     metric: canonicalMetric(clean(row?.metric, 100)), baseline: clean(row?.baseline, 200), target: clean(row?.target, 200),
   })) : [];
   const assessment = {
@@ -43,8 +43,8 @@ function prepareNutritionAssessment(input = {}, user = {}) {
   ]) if (!assessment[key]) missing.push(label);
   if (!Array.isArray(targetInput) && input.nutritionTargets !== undefined) missing.push('观察指标列表格式');
   if (!nutritionTargets.length) missing.push('至少一条观察指标');
-  if (Array.isArray(targetInput) && targetInput.length > 12) missing.push('观察指标最多12条');
-  if (FIXED_METRICS.some((metric, index) => nutritionTargets[index]?.metric !== metric)) missing.push('体重、骨骼肌、体脂率、内脏脂肪四项固定观察指标及顺序');
+  if (Array.isArray(targetInput) && targetInput.length > 32) missing.push('观察指标最多32条');
+  if (FIXED_METRICS.some((metric, index) => nutritionTargets[index]?.metric !== metric)) missing.push('骨骼肌、体脂率、内脏脂肪三项固定观察指标及顺序');
   const names = new Set();
   nutritionTargets.forEach((row, index) => {
     if (!row.metric || !row.baseline || !row.target) missing.push(`第${index + 1}条指标的名称、已核实基线和阶段目标`);

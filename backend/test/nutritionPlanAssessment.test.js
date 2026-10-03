@@ -6,10 +6,10 @@ const user = { age: 42, gender: '女', height: 165, weight: 68 };
 const valid = {
   goal: '改善近期饮食结构', reviewDate: '2099-01-01', currentDiet: '三餐，午餐外卖，晚餐常喝含糖饮料',
   nutritionTargets: [
-    { metric: '体重', baseline: '68 kg（2026-10-01）', target: '67 kg' },
     { metric: '骨骼肌', baseline: '24 kg（2026-10-01）', target: '维持24 kg' },
     { metric: '体脂率', baseline: '32%（2026-10-01）', target: '31%' },
     { metric: '内脏脂肪', baseline: '9级（2026-10-01）', target: '8级' },
+    { metric: '体重', baseline: '68 kg（2026-10-01）', target: '67 kg' },
   ],
   height: 165, weight: 68, activityLevel: 'inactive', lifeStage: 'not_pregnant_lactating',
   managementPurpose: 'maintain', managementKcal: 2030,
@@ -49,7 +49,7 @@ test('多条观察指标分别保存基线与目标，并拒绝缺项、重复�
   assert.equal(result.assessment.nutritionTargets[4].target, '每周不超过1次');
   assert(prepareNutritionAssessment({ ...input, nutritionTargets: [{ metric: '体重', baseline: '51 kg', target: '' }] }, user).missing.some(text => text.includes('第1条')));
   assert(prepareNutritionAssessment({ ...input, nutritionTargets: [input.nutritionTargets[0], input.nutritionTargets[0]] }, user).missing.some(text => text.includes('重复')));
-  assert(prepareNutritionAssessment({ ...input, nutritionTargets: Array(13).fill(input.nutritionTargets[0]) }, user).missing.some(text => text.includes('最多12条')));
+  assert(prepareNutritionAssessment({ ...input, nutritionTargets: Array(33).fill(input.nutritionTargets[0]) }, user).missing.some(text => text.includes('最多32条')));
 });
 
 test('管理期能量与餐次预算由服务端重新计算，比例或低能量阻止普通生成', () => {

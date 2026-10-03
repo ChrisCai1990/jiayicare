@@ -1,4 +1,4 @@
-const FIXED_METRICS = ['体重', '骨骼肌', '体脂率', '内脏脂肪'];
+const FIXED_METRICS = ['骨骼肌', '体脂率', '内脏脂肪'];
 const canonicalMetric = value => {
   const metric = String(value || '').trim();
   if (/^骨骼肌(?:量|质量)?$/.test(metric)) return '骨骼肌';
@@ -29,7 +29,7 @@ function withFixedNutritionTargets(rows = [], patient = {}) {
     return { metric, baseline: prior?.baseline || measuredBaseline(patient, metric), target: prior?.target || '' };
   });
   const extras = normalized.filter(row => row.metric && !FIXED_METRICS.includes(row.metric));
-  return [...fixed, ...extras].slice(0, 12);
+  return [...fixed, ...extras].slice(0, 32);
 }
 
-module.exports = { FIXED_METRICS, canonicalMetric, withFixedNutritionTargets };
+module.exports = { FIXED_METRICS, canonicalMetric, measuredBaseline, withFixedNutritionTargets };

@@ -5592,6 +5592,7 @@ export default function PatientDetailPage() {
               </div>
               {!lifestyleDetailsOpen && !editingLifestyle && <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
                 {Object.entries(deriveBasicLifestyle(user.lifestyle_data || {})).filter(([, value]) => value).slice(0, 8).map(([key, value]) => <div key={key} style={{ padding: '9px 11px', background: '#F7FAF8', borderRadius: 8 }}><div style={{ fontSize: 11, color: '#8AA89C' }}>{({ diet:'饮食', exercise:'运动', sleep:'睡眠', water:'饮水', smoking:'吸烟', alcohol:'饮酒', bowel:'排便', mood:'情绪' })[key] || key}</div><div style={{ marginTop: 3, fontSize: 13, color: '#1A2B24' }}>{value}</div></div>)}
+                {Object.entries(user.lifestyle_data?.nutritionSubjective || {}).filter(([, value]) => value).map(([key, value]) => <div key={key} style={{ padding: '9px 11px', background: '#EFF8F2', borderRadius: 8 }}><div style={{ fontSize: 11, color: '#648879' }}>营养评估 · {key}</div><div style={{ marginTop: 3, fontSize: 13, color: '#1A2B24' }}>{value}</div></div>)}
                 {!Object.values(deriveBasicLifestyle(user.lifestyle_data || {})).some(Boolean) && <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无生活方式摘要，可由膳食问卷、打卡变化或营养师沟通逐步补充。</div>}
               </div>}
               {lifestyleAiDraft?.section && <div style={{ margin: '0 20px 18px', padding: 14, border: '1px solid #86D5B2', background: '#F0FDF7', borderRadius: 10 }}>
@@ -5908,10 +5909,12 @@ export default function PatientDetailPage() {
                             <span style={{ color: '#4A6558' }}><span style={{ color: '#98A59F', textDecoration: change.from ? 'line-through' : 'none' }}>{change.from || '未记录'}</span><span style={{ margin: '0 7px', color: '#A0AEA7' }}>→</span><span style={{ color: '#1A2B24', fontWeight: 600 }}>{change.to || '清空'}</span></span>
                           </div>
                         ))}
-                        {detailChanges.map(([key, change]) => (
+                        {detailChanges.flatMap(([key, change]) => key === 'nutritionSubjective'
+                          ? Object.entries(change || {}).map(([name, values]) => [`营养评估 · ${name}`, values])
+                          : [[key, change]]).map(([key, change]) => (
                           <div key={key} style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 10, fontSize: 12 }}>
                             <b style={{ color: '#1E6B50' }}>{key === 'autoSummaryFlags' ? '系统自动摘要' : key === 'summaryOverride' ? '人工摘要' : key}</b>
-                            <span style={{ color: '#4A6558' }}>{Array.isArray(change.to) ? change.to.join('、') : String(change.to || '清空')}</span>
+                            <span style={{ color: '#4A6558' }}>{change.from ? `${change.from} → ` : ''}{Array.isArray(change.to) ? change.to.join('、') : String(change.to || '清空')}</span>
                           </div>
                         ))}
                       </div>

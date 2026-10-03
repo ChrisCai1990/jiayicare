@@ -356,6 +356,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [saving, setSaving]         = useState(false)
   const [pushing, setPushing]       = useState(false)
   const [dirty, setDirty]           = useState(false)
+  const [metricSelectionDirty, setMetricSelectionDirty] = useState(false)
+  const [metricSelectionSaving, setMetricSelectionSaving] = useState(false)
   const [remotePlanChanged, setRemotePlanChanged] = useState(false)
   useEffect(() => setRemotePlanChanged(false), [id, year, planType])
   const currentPlanVersion = plansByType[planType]?.updatedAt
@@ -371,7 +373,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const list = Array.isArray(res.data) ? res.data : [res.data].filter(Boolean)
         const latest = list.find(p => (p.servicePlanCode || p.planType) === planType)
         if (!latest || latest.updatedAt === currentPlanVersion) return
-        if (dirty) { setRemotePlanChanged(true); return }
+        if (dirty || metricSelectionDirty) { setRemotePlanChanged(true); return }
         setPlansByType(prev => ({ ...prev, [planType]: latest }))
         setModuleData(latest.moduleData || {})
         setPhaseAssessmentFrequency(latest.phaseAssessmentFrequency || '')
@@ -385,7 +387,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     window.addEventListener('focus', refresh)
     document.addEventListener('visibilitychange', refresh)
     return () => { active = false; window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh) }
-  }, [patientMode, id, year, planType, currentPlanVersion, dirty])
+  }, [patientMode, id, year, planType, currentPlanVersion, dirty, metricSelectionDirty])
   const [pushedAt, setPushedAt]     = useState(null)
   const [confirmedAt, setConfirmedAt] = useState(null)
   const [aiPlanLoading, setAiPlanLoading] = useState(false)
@@ -501,6 +503,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setConfirmedAt(null)
         }
         setDirty(false)
+        setMetricSelectionDirty(false)
       }).catch(err => { if (!cancelled) toast(err.message || '加载失败') })
         .finally(() => { if (!cancelled) setLoading(false) })
     } else {
@@ -532,7 +535,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     // 旧流程（HealthPlan）只有一份数据，保持原行为
     if (!patientMode) { setPlanType(key); setDirty(true); return }
     if (key === planType) return
-    if (dirty && !window.confirm('当前方案有未保存的更改，切换类型会丢失这些更改，确认切换？')) return
+    if ((dirty || metricSelectionDirty) && !window.confirm('当前方案有未保存的更改，切换类型会丢失这些更改，确认切换？')) return
     // 加载该类型自己的数据（每个类型独立一份）
     const p = plansByType[key]
     setContinuitySource(p?.continuitySource || preparation?.continuity?.source || null)
@@ -543,6 +546,31 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setPushedAt(p?.pushedAt || null)
     setConfirmedAt(p?.confirmedAt || null)
     setDirty(false)
+    setMetricSelectionDirty(false)
+  }
+
+  const handleNutritionMetricChange = metrics => {
+    if (!pushedAt) { handleModuleChange('nutrition_assessment', 'nutritionComparisonMetrics', metrics); return }
+    setModuleData(prev => ({ ...prev, nutrition_assessment: { ...(prev.nutrition_assessment || {}), nutritionComparisonMetrics: metrics } }))
+    setMetricSelectionDirty(true)
+  }
+
+  const savePublishedNutritionMetrics = async () => {
+    const current = plansByType[planType]
+    if (!current?._id) return toast('请先打开已保存的年度方案')
+    if (remotePlanChanged) return toast('方案已有更新，请刷新后重新核对')
+    setMetricSelectionSaving(true)
+    try {
+      const res = await staffAPI.reviseAnnualNutritionMetrics(id, {
+        planId: current._id, baseUpdatedAt: current.updatedAt,
+        metrics: moduleData.nutrition_assessment?.nutritionComparisonMetrics || [],
+      })
+      setPlansByType(prev => ({ ...prev, [planType]: res.data }))
+      setModuleData(res.data.moduleData || {})
+      setMetricSelectionDirty(false)
+      toast('营养对比指标已保存并留痕；营养师打开评估时会读取最新选择')
+    } catch (error) { toast(error.message || '保存指标失败') }
+    finally { setMetricSelectionSaving(false) }
   }
 
   const handleSave = async () => {
@@ -561,7 +589,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
         const servicePlanCode = annualTemplateCode(planType, selectedTemplate)
-        const annualModuleData = { ...moduleData, nutrition_assessment: moduleData.nutrition_assessment || { enabled: true, nutritionComparisonMetrics: [] } }
+        const annualModuleData = { ...moduleData, nutrition_assessment: { ...(moduleData.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: moduleData.nutrition_assessment?.nutritionComparisonMetrics ?? ['体重'] } }
         const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData: annualModuleData, phaseAssessmentFrequency, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
@@ -827,7 +855,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         {patientMode && (
           <select
             value={year}
-            onChange={e => { setYear(parseInt(e.target.value)); setDirty(false) }}
+            onChange={e => { if ((dirty || metricSelectionDirty) && !window.confirm('当前有未保存的更改，切换年度会丢失这些更改，确认切换？')) return; setYear(parseInt(e.target.value)); setDirty(false); setMetricSelectionDirty(false) }}
             style={{ marginLeft: 12, padding: '6px 12px', borderRadius: 8, border: '1px solid #E0D9CE', fontSize: 14, background: '#fff', cursor: 'pointer' }}
           >
             {yearOptions.map(y => <option key={y} value={y}>{y}年</option>)}
@@ -866,7 +894,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               </button>
               <button
                 onClick={handlePush}
-                disabled={pushing || dirty || !planType || preparationBlocked}
+                disabled={pushing || dirty || metricSelectionDirty || !planType || preparationBlocked}
                 title={preparationBlocked ? '请先完成首次方案准备清单' : ''}
                 style={{ background: pushedAt && !dirty ? '#0077B6' : '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType || preparationBlocked) ? 0.5 : 1 }}
               >
@@ -876,8 +904,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           )}
           <button
             onClick={handleSave}
-            disabled={saving}
-            style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1 }}
+            disabled={saving || Boolean(pushedAt)}
+            title={pushedAt ? '已推送方案的营养指标请在下方单独保存并留痕' : ''}
+            style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: saving || pushedAt ? 0.5 : 1 }}
           >
             {saving ? '保存中...' : '暂存草稿'}
           </button>
@@ -1096,11 +1125,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </div>
           {patientMode && <section style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
             <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 标准方案 · 营养评估</div>
-            <div style={{ fontSize: 12, color: '#62776A', margin: '5px 0 12px' }}>每位客户均保留营养评估。健康顾问只选择本年度需要营养师重点跟踪、前后对比的附加指标；体重、骨骼肌、体脂率、内脏脂肪由营养方案固定提供。</div>
+            <div style={{ fontSize: 12, color: '#62776A', margin: '5px 0 12px' }}>每位客户均保留营养评估。健康顾问勾选本年度需要前后对比的客观数据与主观感受；体重也在此选择。骨骼肌、体脂率和内脏脂肪由营养方案固定提供。</div>
             <label style={{ display: 'block', fontSize: 13, color: '#4A6558' }}>计划评估日期（可留空；留空则以客户确认年度方案的日期安排）<DateField type="date" className="form-input" value={moduleData.nutrition_assessment?.executionDate || ''} disabled={!canEdit || Boolean(pushedAt)} onChange={e => handleModuleChange('nutrition_assessment', 'executionDate', e.target.value)} style={{ display: 'block', maxWidth: 240, marginTop: 5 }} /></label>
             <div style={{ fontSize: 13, marginTop: 12, color: '#4A6558' }}>责任营养师：{patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name || '待分配'}</div>
             <div style={{ fontSize: 13, color: '#4A6558', marginTop: 12 }}>本年度营养干预前后对比指标</div>
-            <NutritionComparisonMetricPicker value={moduleData.nutrition_assessment?.nutritionComparisonMetrics} onChange={metrics => handleModuleChange('nutrition_assessment', 'nutritionComparisonMetrics', metrics)} disabled={!canEdit || Boolean(pushedAt)} />
+            <NutritionComparisonMetricPicker value={moduleData.nutrition_assessment?.nutritionComparisonMetrics ?? (plansByType[planType] ? [] : ['体重'])} onChange={handleNutritionMetricChange} disabled={!canEdit} />
+            {pushedAt && canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={!metricSelectionDirty || metricSelectionSaving} onClick={savePublishedNutritionMetrics}>{metricSelectionSaving ? '保存中…' : '保存指标调整（留痕）'}</button>}
+            {!!plansByType[planType]?.nutritionMetricHistory?.length && <details style={{ marginTop: 10, fontSize: 12, color: '#52675D' }}><summary>指标调整记录（{plansByType[planType].nutritionMetricHistory.length}次）</summary>{plansByType[planType].nutritionMetricHistory.map((entry, index) => <div key={index} style={{ padding: '6px 0' }}>{new Date(entry.changedAt).toLocaleString('zh-CN')} · {entry.changedByName || '健康顾问'}：{(entry.before || []).join('、') || '未选'} → {(entry.after || []).join('、') || '未选'}</div>)}</details>}
           </section>}
           {visibleModuleEntries.map(entry => (
             <ModulePanel

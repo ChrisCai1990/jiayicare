@@ -1690,9 +1690,10 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
 
   // 生活方式详细结构化数据（膳食调查表融合）
   if (req.body.lifestyle_data !== undefined) {
-    updateData['lifestyle_data'] = req.body.lifestyle_data;
     const before = existingPatient.lifestyle_data || {};
-    const after = req.body.lifestyle_data || {};
+    // 普通生活方式表单不编辑营养师核实的主观感受；保留其独立写档结果，避免旧表单全量保存擦除。
+    const after = { ...(req.body.lifestyle_data || {}), ...(before.nutritionSubjective ? { nutritionSubjective: before.nutritionSubjective } : {}) };
+    updateData['lifestyle_data'] = after;
     const detailChanges = {};
     new Set([...Object.keys(before), ...Object.keys(after)]).forEach(k => {
       if (JSON.stringify(before[k] ?? '') !== JSON.stringify(after[k] ?? '')) {
@@ -3742,13 +3743,13 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (plan.type === 'nutrition' && req.body.content?.nutritionTargets !== undefined) {
     const rows = req.body.content.nutritionTargets;
     const names = new Set();
-    if (!Array.isArray(rows) || !rows.length || rows.length > 12 || rows.some(row => {
+    if (!Array.isArray(rows) || !rows.length || rows.length > 32 || rows.some(row => {
       const metric = String(row?.metric || '').trim().toLowerCase();
       const invalid = !metric || !String(row?.baseline || '').trim() || !String(row?.target || '').trim()
         || metric.length > 100 || String(row.baseline).length > 200 || String(row.target).length > 200 || names.has(metric);
       names.add(metric);
       return invalid;
-    })) return res.status(400).json({ success: false, message: '请逐项填写不重复的观察指标、已核实基线和阶段目标（最多12条）' });
+    })) return res.status(400).json({ success: false, message: '请逐项填写不重复的观察指标、已核实基线和阶段目标（最多32条）' });
   }
   if (plan.type === 'nutrition' && req.body.content) {
     const published = await require('../models/NutritionInterventionDraft').exists({ _id: plan._id, status: { $in: ['publishing', 'published'] } });
@@ -8133,10 +8134,10 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     // 指定 planType → 返回该类型单份；否则返回该年度全部类型的方案数组
     if (planType !== undefined && planType !== '') {
       query.planType = planType;
-      const plan = await AnnualPlan.findOne(query);
+      const plan = await AnnualPlan.findOne(query).select('+nutritionMetricHistory');
       return res.json({ success: true, data: exposeVersion(plan) });
     }
-    const plans = await AnnualPlan.find(query).sort({ year: -1, updatedAt: -1 });
+    const plans = await AnnualPlan.find(query).select('+nutritionMetricHistory').sort({ year: -1, updatedAt: -1 });
     res.json({ success: true, data: plans.map(exposeVersion) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -8145,6 +8146,31 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
 
 // 年度管理方案：只有健康顾问/超管可生成和编辑（2026-07-07 用户明确规则：年度管理方案和年度体检方案
 // 只由健康顾问负责，营养师等其他角色不应有生成/编辑权限，此前任何登录角色都能操作）
+// 已推送方案只允许单独修订营养对比项目，不重写其他板块或重派既有执行任务。
+router.patch('/patients/:id/annual-nutrition-metrics', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可调整年度营养指标' });
+  try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权修改该会员的年度方案' });
+    if (!mongoose.isValidObjectId(req.body.planId)) return res.status(400).json({ success: false, message: '年度方案 ID 无效' });
+    const { normalizeMetrics } = require('../../../shared/nutritionComparisonMetrics.cjs');
+    const metrics = normalizeMetrics(req.body.metrics);
+    const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: req.params.id }).select('+nutritionMetricHistory').lean();
+    if (!plan) return res.status(404).json({ success: false, message: '年度方案不存在' });
+    if (!plan.pushedAt) return res.status(409).json({ success: false, message: '尚未推送的方案请使用保存草稿' });
+    if (String(plan.updatedAt?.toISOString()) !== req.body.baseUpdatedAt) return res.status(409).json({ success: false, message: '年度方案已变化，请刷新后重新选择指标' });
+    const before = require('../../../shared/nutritionComparisonMetrics.cjs').selectedFromAnnualPlan(plan);
+    if (JSON.stringify(before) === JSON.stringify(metrics)) return res.json({ success: true, data: plan });
+    const saved = await AnnualPlan.findOneAndUpdate(
+      { _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt, pushedAt: { $ne: null } },
+      { $set: { 'moduleData.nutrition_assessment': { ...(plan.moduleData?.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: metrics } },
+        $push: { nutritionMetricHistory: { before, after: metrics, changedAt: new Date(), changedBy: req.staff._id, changedByName: req.staff.name || req.staff.username || '' } } },
+      { new: true }).select('+nutritionMetricHistory');
+    if (!saved) return res.status(409).json({ success: false, message: '年度方案已变化，请刷新后重试' });
+    res.json({ success: true, data: saved });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
 router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
     return res.status(403).json({ success: false, message: '仅健康顾问可生成/编辑年度管理方案' });
@@ -8156,7 +8182,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     let { moduleData } = req.body;
     moduleData = { ...(moduleData || {}), nutrition_assessment: {
       ...(moduleData?.nutrition_assessment || {}), enabled: true,
-      nutritionComparisonMetrics: moduleData?.nutrition_assessment?.nutritionComparisonMetrics || [],
+      nutritionComparisonMetrics: moduleData?.nutrition_assessment?.nutritionComparisonMetrics ?? ['体重'],
     } };
     try {
       const { isRow } = require('../../../shared/annualNutrition.cjs');
@@ -8426,7 +8452,7 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     const hasLegacyNutritionAssessment = (plan.moduleData?.personalized_followups?.records || []).some(row =>
       require('../../../shared/annualNutrition.cjs').isRow(row) || /营养评估/.test(row.standardPlanName || ''));
     if (!plan.moduleData?.nutrition_assessment && !hasLegacyNutritionAssessment) {
-      plan.moduleData = { ...(plan.moduleData || {}), nutrition_assessment: { enabled: true, nutritionComparisonMetrics: [] } };
+      plan.moduleData = { ...(plan.moduleData || {}), nutrition_assessment: { enabled: true, nutritionComparisonMetrics: ['体重'] } };
       plan.markModified('moduleData');
     }
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(plan.patientId);
@@ -16009,6 +16035,24 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
         const result = await User.collection.updateOne(mutation.filter, mutation.update);
         if (!result.matchedCount) return res.status(409).json({ success: false, message: '过敏档案已更新，请刷新并重新核对后生成方案' });
       }
+    }
+
+    // 营养师核实的主观感受写入生活方式档案，并保留字段级前后变化。
+    // 只处理本次实际保留的主观指标；顾问勾选和旧档案预填本身不写档。
+    const subjectiveArchive = await User.findById(user._id).select('lifestyle_data updatedAt').lean();
+    if (!subjectiveArchive) return res.status(409).json({ success: false, message: '客户档案已变化，请刷新后重试' });
+    const subjectiveChanges = require('../../../shared/nutritionSubjective.cjs').verifiedChanges(subjectiveArchive, assessment.nutritionTargets);
+    if (Object.keys(subjectiveChanges).length) {
+      const now = new Date();
+      const set = { updatedAt: now };
+      for (const [name, change] of Object.entries(subjectiveChanges)) set[`lifestyle_data.nutritionSubjective.${name}`] = change.to;
+      const result = await User.collection.updateOne({ _id: user._id, updatedAt: subjectiveArchive.updatedAt }, {
+        $set: set,
+        $push: { lifestyleHistory: { changes: { lifestyle_data: { nutritionSubjective: subjectiveChanges } }, source: 'nutrition_assessment',
+          recordedById: req.staff._id, recordedByName: req.staff.name || req.staff.username || '',
+          recordedByRole: req.staff.role, recordedAt: now, effectiveAt: now } },
+      });
+      if (!result.matchedCount) return res.status(409).json({ success: false, message: '生活方式档案已变化，请刷新并重新核对主观感受' });
     }
 
     const plan = await HealthPlan.create({

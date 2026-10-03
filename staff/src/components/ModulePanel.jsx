@@ -8,7 +8,7 @@ import DateInput from './DateInput'
 import { concretePlanText } from '../utils/annualItemLayout.mjs'
 import nutritionComparisonMetrics from '../../../shared/nutritionComparisonMetrics.cjs'
 
-const { COMMON_METRICS, MAX_METRICS } = nutritionComparisonMetrics
+const { COMMON_METRICS, OBJECTIVE_METRICS, SUBJECTIVE_METRICS, MAX_METRICS } = nutritionComparisonMetrics
 
 export function NutritionComparisonMetricPicker({ value, onChange, disabled = false }) {
   const [custom, setCustom] = useState('')
@@ -20,13 +20,16 @@ export function NutritionComparisonMetricPicker({ value, onChange, disabled = fa
     setCustom('')
   }
   return <div style={{ paddingTop: 5 }}>
-    <div style={{ fontSize: 12, color: '#62776A', marginBottom: 8 }}>勾选本年度营养评估需在干预前后对比的指标；不勾选则营养方案只保留四项固定体成分指标。</div>
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
-      {COMMON_METRICS.map(metric => <label key={metric} style={{ fontSize: 13, whiteSpace: 'nowrap' }}><input type="checkbox" checked={selected.includes(metric)} disabled={disabled || !selected.includes(metric) && selected.length >= MAX_METRICS} onChange={e => onChange(e.target.checked ? [...selected, metric] : selected.filter(item => item !== metric))} /> {metric}</label>)}
-    </div>
+    <div style={{ fontSize: 12, color: '#62776A', marginBottom: 8 }}>勾选本年度营养干预前后需要对比的项目；具体基线和阶段目标由营养师核实。未选时仍保留骨骼肌、体脂率和内脏脂肪。</div>
+    {[['客观数据', OBJECTIVE_METRICS.map(([name, unit]) => [name, unit])], ['主观感受', SUBJECTIVE_METRICS.map(name => [name, ''])]].map(([group, metrics]) => <div key={group} style={{ marginBottom: 9 }}>
+      <strong style={{ display: 'block', fontSize: 13, marginBottom: 5 }}>{group}</strong>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px 14px' }}>
+        {metrics.map(([metric, unit]) => <label key={metric} style={{ fontSize: 13, whiteSpace: 'nowrap' }}><input type="checkbox" checked={selected.includes(metric)} disabled={disabled || !selected.includes(metric) && selected.length >= MAX_METRICS} onChange={e => onChange(e.target.checked ? [...selected, metric] : selected.filter(item => item !== metric))} /> {metric}{unit ? `（${unit}）` : ''}</label>)}
+      </div>
+    </div>)}
     {selected.filter(metric => !COMMON_METRICS.includes(metric)).map(metric => <span key={metric} style={{ display: 'inline-flex', gap: 5, alignItems: 'center', margin: '8px 6px 0 0', padding: '3px 7px', borderRadius: 12, background: '#E8F5EF', fontSize: 12 }}>{metric}{!disabled && <button type="button" aria-label={`移除${metric}`} onClick={() => onChange(selected.filter(item => item !== metric))} style={{ border: 0, background: 'none', cursor: 'pointer' }}>×</button>}</span>)}
     {!disabled && <div style={{ display: 'flex', gap: 6, marginTop: 8 }}><input aria-label="其他对比指标名称" value={custom} maxLength={100} placeholder="其他指标名称" onChange={e => setCustom(e.target.value)} style={{ ...inputStyle, maxWidth: 220 }} /><button type="button" className="btn btn-secondary btn-sm" disabled={!custom.trim() || selected.length >= MAX_METRICS} onClick={() => add(custom)}>添加</button></div>}
-    <div style={{ fontSize: 11, color: '#8A958F', marginTop: 5 }}>最多选 {MAX_METRICS} 项；基线和阶段目标在营养方案中核实。</div>
+    <div style={{ fontSize: 11, color: '#8A958F', marginTop: 5 }}>消化功能可在营养评估中具体填写腹胀、便秘、腹泻或其他感受。最多选 {MAX_METRICS} 项。</div>
   </div>
 }
 

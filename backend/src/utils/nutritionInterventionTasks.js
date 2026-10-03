@@ -43,7 +43,7 @@ async function inputFor(plan) {
   const rawTargets = Array.isArray(c.nutritionTargets) && c.nutritionTargets.length
     ? c.nutritionTargets : [{ metric: c.nutritionMetric, baseline: c.nutritionBaseline, target: c.nutritionTarget }];
   const nutritionTargets = rawTargets.map(row => ({ metric: trim(row?.metric, 100), baseline: trim(row?.baseline, 200), target: trim(row?.target, 200) }));
-  if (nutritionTargets.length > 12 || nutritionTargets.some(row => !row.metric || !row.baseline || !row.target)) {
+  if (nutritionTargets.length > 32 || nutritionTargets.some(row => !row.metric || !row.baseline || !row.target)) {
     throw error('请在方案中逐项核实观察指标、基线和阶段目标', 400);
   }
   const sourceSnapshot = {

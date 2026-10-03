@@ -1,7 +1,9 @@
 import foodAllergy from '../../../shared/foodAllergy.cjs'
 import nutritionTargets from '../../../shared/nutritionTargets.cjs'
+import nutritionSubjective from '../../../shared/nutritionSubjective.cjs'
 const { isUsableFoodAllergy, foodAllergyEvidence, questionnaireFoodAllergyEvidence } = foodAllergy
-const { withFixedNutritionTargets, FIXED_METRICS, canonicalMetric } = nutritionTargets
+const { withFixedNutritionTargets, FIXED_METRICS, canonicalMetric, measuredBaseline } = nutritionTargets
+const { fromArchive } = nutritionSubjective
 
 const text = value => String(value ?? '').trim()
 const row = (label, value) => text(value) ? `${label}：${text(value)}` : ''
@@ -51,8 +53,11 @@ export function nutritionAssessmentPrefill(patient = {}, previous = null) {
   const recordedAllergy = foodAllergyEvidence(patient) || questionnaireFoodAllergyEvidence(patient)
   const previousRows = priorTargets(prior)
   const selectedMetrics = Array.isArray(prior.annualNutritionMetrics) ? prior.annualNutritionMetrics : []
-  const selectedRows = selectedMetrics.map(metric => previousRows.find(row => canonicalMetric(row.metric) === metric)
-    || { metric, baseline: '', target: '' })
+  const archivedSubjective = fromArchive(patient)
+  const selectedRows = selectedMetrics.map(metric => {
+    const old = previousRows.find(row => canonicalMetric(row.metric) === metric)
+    return { metric, baseline: archivedSubjective[metric] || (metric === '体重' ? measuredBaseline(patient, metric) : '') || old?.baseline || '', target: old?.target || '' }
+  })
   return {
     goal: text(prior.goal),
     assessment: {
