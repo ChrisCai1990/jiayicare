@@ -36,7 +36,8 @@ function createHuaweiPushTransport({ clientId, clientSecret, fetchImpl = global.
           notification: { title: '嘉医汇健康管家', body: '您有一条新的服务消息，请打开App查看。' },
           android: {
             ttl: '300s',
-            notification: { click_action: { type: 3 }, category: 'IM', tag: String(messageId),
+            category: 'IM', // Huawei AndroidConfig classification.
+            notification: { click_action: { type: 3 }, tag: String(messageId),
               badge: { class: 'com.jiayicare.app.MainActivity', set_num: Math.max(0, Math.min(99, Math.floor(Number(count) || 0))) } },
           },
         },

@@ -1314,7 +1314,7 @@ function childQuestionnaireError(questions, patientCategory, archivePurpose) {
   if (!['all', 'adult', 'child'].includes(patientCategory) || !['', 'child_health'].includes(archivePurpose)) return '问卷适用人群或档案用途无效';
   const paths = questions.map(q => q.archiveField).filter(Boolean);
   if (archivePurpose !== 'child_health') return paths.some(path => path.startsWith('childProfile.')) ? '儿童档案字段仅可用于儿童健康问卷' : '';
-  if (patientCategory !== 'child' || !paths.length || paths.some(path => !path.startsWith('childProfile.'))) return '儿童健康问卷须仅面向儿童，并将档案题映射到儿童档案字段';
+  if (patientCategory !== 'child' || !paths.length || paths.some(path => !path.startsWith('childProfile.') && !['bloodTypeABO', 'bloodTypeRH'].includes(path))) return '儿童健康问卷须仅面向儿童，并将档案题映射到儿童档案字段';
   if (new Set(paths).size !== paths.length) return '同一儿童档案字段只能绑定一道题';
   const { FIELD_MAP } = require('../config/archiveFields');
   if (paths.some(path => !FIELD_MAP[path])) return '包含无效的儿童档案字段';

@@ -1,5 +1,5 @@
 {
-  "title": "儿童健康问卷（分龄标准版·出生指标修订）",
+  "title": "儿童健康问卷",
   "description": "由监护人填写。按出生日期显示适龄题；回答自动进入儿童基础档案，空字段标记待核实，已有字段变化由医护确认。问卷回答不替代体检或诊断。",
   "fields": [
     ["motherAge", "分娩时母亲年龄是多少岁？", "number"],
@@ -21,6 +21,8 @@
     ["eyeScreening", "眼底筛查结果是什么？", "text"],
     ["visionScreening", "近期视力筛查情况如何？", "text", ["preschool", "school", "adolescent"]],
     ["neonatalDiseaseScreen", "新生儿疾病筛查结果是什么？", "text"],
+    ["bloodTypeABO", "孩子的 ABO 血型是什么？（不清楚可不填）", "dropdown"],
+    ["bloodTypeRH", "孩子的 Rh 血型是什么？（不清楚可不填）", "dropdown"],
     ["familyAllergyHistory", "家族中是否有过敏史？", "text"],
     ["familyDiseaseHistory", "家族中是否有需要关注的疾病史？", "text"],
     ["pastMedicalHistory", "孩子既往有哪些疾病或住院经历？", "text"],
