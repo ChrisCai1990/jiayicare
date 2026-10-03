@@ -1,5 +1,5 @@
 import DateField from '../../../shared/DateField.jsx'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { adminAPI, API_ORIGIN } from '../api'
 import { useToast } from '../App'
 
@@ -435,6 +435,7 @@ const STATUS_BADGE = { active: 'badge-green', expired: 'badge-gray', suspended: 
 
 function SharedFundModal({ enterprise, onClose }) {
   const [year, setYear] = useState(Number(new Date().getFullYear()))
+  const initialYearSelected = useRef(false)
   const [accounts, setAccounts] = useState([])
   const [policies, setPolicies] = useState([])
   const [products, setProducts] = useState([])
@@ -447,7 +448,16 @@ function SharedFundModal({ enterprise, onClose }) {
     const [funds, insurance, catalog] = await Promise.all([
       adminAPI.enterpriseSharedFunds(enterprise._id), adminAPI.enterpriseInsurancePolicies(enterprise._id), adminAPI.products({ limit: 500 }),
     ])
-    setAccounts(funds.data || []); setPolicies(insurance.data || []); setProducts(catalog.data || [])
+    const nextAccounts = funds.data || []
+    setAccounts(nextAccounts); setPolicies(insurance.data || []); setProducts(catalog.data || [])
+    if (!initialYearSelected.current) {
+      const fundedYears = nextAccounts.filter(a => (a.credits?.length || 0) > 0).map(a => Number(a.year))
+      const configuredYears = nextAccounts.map(a => Number(a.year))
+      const hrYears = Object.keys(enterprise.hrDataByYear || {}).map(Number)
+      const preferredYears = fundedYears.length ? fundedYears : configuredYears.length ? configuredYears : hrYears
+      if (preferredYears.length) setYear(Math.max(...preferredYears))
+      initialYearSelected.current = true
+    }
   }
   useEffect(() => { reload().catch(e => setError(e.message)) }, [enterprise._id])
   const account = accounts.find(a => a.year === Number(year))
@@ -473,7 +483,7 @@ function SharedFundModal({ enterprise, onClose }) {
     <div className="modal-header"><div className="modal-title">💚 {enterprise.name} · 企业共享健康基金</div><button className="modal-close" onClick={onClose}>×</button></div>
     <div className="modal-body">
       <p style={{ color: '#4A6558', fontSize: 13 }}>基金归企业所有，HR只读。适用员工、配偶和子女中的有效高端险参保人；每单最多抵扣优惠后金额的 50%，剩余由客户支付。</p>
-      <label className="form-group"><span className="form-label">健康管理年度</span><select className="form-input" value={year} onChange={e => setYear(Number(e.target.value))}>{[...new Set([new Date().getFullYear(), ...Object.keys(enterprise.hrDataByYear || {}).map(Number), ...accounts.map(a => a.year)])].sort((a,b) => b-a).map(y => <option key={y} value={y}>{y} 年</option>)}</select></label>
+      <label className="form-group"><span className="form-label">健康管理年度</span><select className="form-input" value={year} onChange={e => { initialYearSelected.current = true; setYear(Number(e.target.value)) }}>{[...new Set([new Date().getFullYear(), ...Object.keys(enterprise.hrDataByYear || {}).map(Number), ...accounts.map(a => a.year)])].sort((a,b) => b-a).map(y => <option key={y} value={y}>{y} 年{accounts.some(a => Number(a.year) === y && (a.credits?.length || 0) > 0) ? ' · 已入账' : accounts.some(a => Number(a.year) === y) ? ' · 已配置' : ''}</option>)}</select></label>
       <p style={{ fontSize: 13 }}>基金有效期与健康管理服务一致：{period.healthMgmtStartAt || '未录入'} ～ {period.healthMgmtEndAt || '未录入'}</p>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '12px 0' }}>{[['企业自有入账',account?.creditedBySource?.enterprise],['平台赠送入账',account?.creditedBySource?.platformGift],['累计入账',account?.credited],['可用余额（合计）',account?.available],['待支付预留',account?.reserved],['已使用',account?.spent]].map(([label,value]) => <div key={label} style={{ padding: 12, background: '#F7FBF9', borderRadius: 8, minWidth: 135 }}><div style={{ fontSize: 12 }}>{label}</div><b>¥{Number(value || 0).toFixed(2)}</b></div>)}</div>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '14px 0' }}><input type="checkbox" checked={form.enabled} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />启用该年度共享基金</label>
