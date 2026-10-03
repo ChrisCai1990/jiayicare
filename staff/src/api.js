@@ -279,7 +279,7 @@ export const staffAPI = {
   updateAiCaseReviewMessage: (patientId, topicId, messageId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/messages/${messageId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAiCaseReviewMessage: (patientId, topicId, messageId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/messages/${messageId}`, { method: 'DELETE' }),
   generateAiCaseReviewConclusion: (patientId, topicId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'POST' }),
-  confirmAiCaseReviewConclusion: (patientId, topicId, content, writeToPhaseAssessment = false, managementTargets = []) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'PATCH', body: JSON.stringify({ content, writeToPhaseAssessment, managementTargets }) }),
+  confirmAiCaseReviewConclusion: (patientId, topicId, content, writeToPhaseAssessment = false, managementTargets = [], targetChangeNote = '') => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'PATCH', body: JSON.stringify({ content, writeToPhaseAssessment, managementTargets, targetChangeNote }) }),
   reviewMedicalAssistPlan: (planId, action, reviewNote = '') => req(`/staff/plans/${planId}/medical-assist-review`, { method: 'PATCH', body: JSON.stringify({ action, reviewNote }) }),
 
   // Knowledge

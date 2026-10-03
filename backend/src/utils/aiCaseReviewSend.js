@@ -72,12 +72,16 @@ async function finishSend(Model, topic, generate) {
   try {
     const { result, snapshot } = await generate();
     if (!result.content) throw new Error('AI未返回可展示的分析内容');
+    const set = { 'generation.status': 'completed', 'generation.error': '',
+      providerSessionId: result.sessionId || topic.providerSessionId, lastActivityAt: new Date() };
+    if (!topic.conclusion?.managementTargets?.length && result.managementTargets?.length) {
+      set['conclusion.managementTargets'] = require('./caseReviewManagementTargets').normalizeTargets(result.managementTargets);
+    }
     await Model.updateOne(filter, { $push: { messages: {
       role: 'ai', requestId: topic.generation.requestId, content: result.content,
       provider: result.provider, providerModel: result.model, durationMs: result.durationMs,
       attachments: result.files || [], evidenceRefs: snapshot.sources, contextSnapshot: snapshot,
-    } }, $set: { 'generation.status': 'completed', 'generation.error': '',
-      providerSessionId: result.sessionId || topic.providerSessionId, lastActivityAt: new Date() }, $inc: { __v: 1 } });
+    } }, $set: set, $inc: { __v: 1 } });
   } catch (err) {
     await Model.updateOne(filter, { $set: { 'generation.status': 'failed',
       'generation.error': String(err.message || 'AI回复失败').slice(0, 500) }, $inc: { __v: 1 } });

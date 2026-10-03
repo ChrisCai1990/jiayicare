@@ -742,6 +742,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setAnnualReviewBusy(true)
     try {
       const result = await staffAPI.prepareAnnualComprehensiveReview(id, year)
+      if (!result.data.reused) {
+        try { await staffAPI.sendAiCaseReviewMessage(id, result.data._id, { autoStart: true, requestId: `auto_${result.data._id}` }) }
+        catch (error) { toast(`年度研判已建立，自动分析未启动：${error.message}`) }
+      }
       nav(`/patients/${id}?tab=aiCase&caseReviewId=${result.data._id}`)
     } catch (err) { toast(err.message || '准备年度综合研判失败') }
     finally { setAnnualReviewBusy(false) }

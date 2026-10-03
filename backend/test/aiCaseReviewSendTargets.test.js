@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { acceptSend } = require('../src/utils/aiCaseReviewSend');
+const { acceptSend, finishSend } = require('../src/utils/aiCaseReviewSend');
 
 function modelFor(conclusion) {
   const topic = {
@@ -38,4 +38,17 @@ test('sending after confirmation archives the conclusion and retains its targets
   assert.equal(topic.conclusion.status, 'draft');
   assert.equal(topic.conclusionHistory[0].content, '已确认结论');
   assert.deepEqual(topic.conclusionHistory[0].managementTargets, targets);
+});
+
+test('automatic AI proposals are saved as draft targets with the first reply', async () => {
+  let update;
+  const model = { updateOne: async (_filter, value) => { update = value; } };
+  const topic = { _id: 'topic', generation: { status: 'running', token: 'token', requestId: 'auto_topic_1234567890' },
+    conclusion: { status: 'draft', managementTargets: [] } };
+  await finishSend(model, topic, async () => ({
+    result: { content: '初步分析', managementTargets: targets, provider: 'qwen', model: 'qwen-plus' },
+    snapshot: { sources: ['最近一次体检报告'] },
+  }));
+  assert.deepEqual(update.$set['conclusion.managementTargets'], targets);
+  assert.equal(update.$push.messages.content, '初步分析');
 });

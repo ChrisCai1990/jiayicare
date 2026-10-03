@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
+const MedicalReport = require('../models/MedicalReport');
 const AiCaseReview = require('../models/AiCaseReview');
 const PhaseAssessment = require('../models/PhaseAssessment');
 const PlanTemplate = require('../models/PlanTemplate');
@@ -20,6 +21,13 @@ const { DEFAULT_SCOPES, ensureAiCaseReviewTemplates } = require('../utils/aiCase
 const VALID_SCOPES = new Set(DEFAULT_SCOPES);
 const VALID_REVIEW_TYPES = new Set(['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'specialty', 'custom']);
 const ROLE_LABEL = { superadmin: '超级管理员', familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', healthPlanner: '健康规划师', medicalAssistant: '就医专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师', specialist: '专科医师' };
+const AUTO_REVIEW_MESSAGE = '【系统自动启动研判】请从最近一次已审核体检报告提炼关键健康问题，结合健康档案与既有服务提出待核实的管理目标和干预重点，再形成初步研判分析及待审核方案。';
+const PHYSICAL_EXAM_FILTER = { $or: [
+  { documentCategory: 'physical_exam' },
+  { documentCategory: null, type: { $in: ['annual', 'general_exam'] } },
+] };
+const latestExam = patientId => MedicalReport.findOne({ user: patientId, audit_status: 'audited', ...PHYSICAL_EXAM_FILTER })
+  .sort({ checkDate: -1, createdAt: -1 }).select('title type documentCategory reportYear checkDate institution examConclusion reportItems aiSummary').lean();
 
 function sanitizeScopes(scopes) {
   return [...new Set((Array.isArray(scopes) ? scopes : DEFAULT_SCOPES).filter(item => VALID_SCOPES.has(item)))];
@@ -264,7 +272,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
-    if (topic.annualPlanYear && ['title', 'description', 'reviewType', 'contextScopes', 'managementTargets', 'status'].some(key => req.body[key] !== undefined)) return res.status(409).json({ success: false, message: '年度综合研判固定议题和资料范围不可修改' });
+    if (topic.annualPlanYear && ['title', 'description', 'reviewType', 'contextScopes', 'status'].some(key => req.body[key] !== undefined)) return res.status(409).json({ success: false, message: '年度综合研判固定议题和资料范围不可修改' });
     if (req.body.title !== undefined) topic.title = String(req.body.title).trim();
     if (req.body.description !== undefined) topic.description = String(req.body.description).trim();
     if (req.body.reviewType !== undefined && VALID_REVIEW_TYPES.has(req.body.reviewType)) topic.reviewType = req.body.reviewType;
@@ -273,8 +281,20 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
       let targets;
       try { targets = require('../utils/caseReviewManagementTargets').normalizeTargets(req.body.managementTargets); }
       catch (error) { return res.status(400).json({ success: false, message: error.message }); }
-      if (topic.conclusion?.status === 'confirmed' && JSON.stringify(targets) !== JSON.stringify((topic.conclusion.managementTargets || []).map(row => ({ goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true })))) {
-        return res.status(409).json({ success: false, message: '已确认的管理目标请在结论区修订并重新确认' });
+      const changed = JSON.stringify(targets) !== JSON.stringify((topic.conclusion?.managementTargets || []).map(row => ({ goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true })));
+      if (topic.conclusion?.status === 'confirmed' && changed) {
+        if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可调整已确认目标' });
+        const note = String(req.body.targetChangeNote || '').trim();
+        if (!note || note.length > 500) return res.status(400).json({ success: false, message: '修改已确认目标时，请填写500字以内的沟通调整说明' });
+        topic.conclusionHistory.push({ content: topic.conclusion.content,
+          managementTargets: topic.conclusion.managementTargets || [], confirmedAt: topic.conclusion.confirmedAt,
+          confirmedBy: topic.conclusion.confirmedBy, confirmedByName: topic.conclusion.confirmedByName,
+          targetChangeNote: topic.conclusion.targetChangeNote || '' });
+        topic.conclusion.managementTargets = targets;
+        topic.conclusion.targetChangeNote = note;
+        topic.conclusion.confirmedAt = new Date();
+        topic.conclusion.confirmedBy = req.staff._id;
+        topic.conclusion.confirmedByName = req.staff.name || '';
       }
       if (topic.conclusion?.status !== 'confirmed') topic.conclusion.managementTargets = targets;
     }
@@ -304,10 +324,22 @@ router.delete('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async 
 router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth, async (req, res) => {
   try {
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
+    const autoStart = req.body.autoStart === true;
+    let exam = null;
+    if (autoStart) {
+      const candidate = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id, status: { $ne: 'archived' } });
+      if (!candidate) return res.status(404).json({ success: false, message: '研判主题不存在' });
+      const existingStart = candidate.messages.find(item => item.role === 'staff' && item.requestId === req.body.requestId && item.content === AUTO_REVIEW_MESSAGE);
+      if (!['annual', 'checkup'].includes(candidate.reviewType) || (candidate.messages.length && !existingStart) || !candidate.contextScopes.includes('reports'))
+        return res.status(409).json({ success: false, message: '自动首轮研判仅用于尚未讨论且包含体检报告的年度或体检主题' });
+      exam = await latestExam(user._id);
+      if (!exam) return res.status(409).json({ success: false, message: '尚无已审核的体检报告；请先核实报告，或手动输入研判问题' });
+    }
     const accepted = await acceptSend(AiCaseReview, {
       patientId: user._id, topicId: req.params.topicId,
       staff: { _id: req.staff._id, name: req.staff.name, role: req.staff.role, roleLabel: ROLE_LABEL[req.staff.role] },
-      ...Object.fromEntries(['content', 'attachments', 'requestId'].map(key => [key, req.body[key]])),
+      content: autoStart ? AUTO_REVIEW_MESSAGE : req.body.content,
+      attachments: autoStart ? [] : req.body.attachments, requestId: req.body.requestId,
     });
     const { topic } = accepted;
     const legacy = req.body.requestId === undefined || req.body.requestId === null || req.body.requestId === '';
@@ -320,6 +352,13 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const message = topic.messages.find(item => item.role === 'staff' && item.requestId === topic.generation.requestId);
       const { content, attachments } = message;
       const snapshot = await buildContext(user, topic.contextScopes);
+      const automatic = content === AUTO_REVIEW_MESSAGE;
+      if (automatic) {
+        exam ||= await latestExam(user._id);
+        if (!exam) throw new Error('已审核体检报告已不可用，请核实后重试');
+        snapshot.reports = [exam, ...(snapshot.reports || []).filter(item => String(item._id) !== String(exam._id))].slice(0, 30);
+        snapshot.sources.unshift(`优先分析最近一次已审核体检报告：${exam.checkDate || exam.reportYear || '日期待核实'} · ${exam.title}`);
+      }
       const isSupplement = topic.messages.length > 1;
       const history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
       const proposedTargets = topic.conclusion?.managementTargets || [];
@@ -331,7 +370,11 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
         : isAnnualReview
           ? '这是年度综合研判首次讨论。按固定六项议题依次给出初步分析，每项最多3个要点，全文不超过1200个中文字；优先列明有来源的关键事实、管理目标与待核实资料，不重复罗列全部病史、检查数值或旧方案。资料不足的议题明确写待核实，不编造结论。'
           : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
-      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${incrementalGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 900 : isAnnualReview ? 3200 : 1800 });
+      const autoGuide = automatic
+        ? `${isAnnualReview ? '这是年度综合研判首次讨论，保持主题规定的固定六项议题，每项最多3点，全文不超过1200个中文字。' : '这是本主题首次讨论。'}先从最近一次已审核体检报告列出关键问题及报告日期/项目依据（最多5条），区分已确认事实与待核实信息；再逐条写拟目标，严格使用“目标：……；干预重点：……”格式（最多5条，资料不足不编造数值）；最后结合既有资料给出简明研判分析和待审核方案。目标仅是草稿，须由健康顾问确认。`
+        : incrementalGuide;
+      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 900 : isAnnualReview || automatic ? 3200 : 1800 });
+      if (automatic && !proposedTargets.length) result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
       return { result, snapshot: result.contextSnapshot || snapshot };
     });
     if (legacy) {
@@ -359,7 +402,11 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId'
     message.content = content;
     const messageIndex = topic.messages.findIndex(item => String(item._id) === req.params.messageId);
     if (message.role === 'staff' && topic.messages[messageIndex + 1]?.role === 'ai') topic.messages.splice(messageIndex + 1, 1);
-    topic.conclusion = { content: '', structured: null, status: 'draft' };
+    if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({
+      content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
+      confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
+    });
+    topic.conclusion = { content: '', structured: null, managementTargets: topic.conclusion?.managementTargets || [], status: 'draft' };
     topic.status = 'active'; topic.lastActivityAt = new Date();
     await topic.save();
     res.json({ success: true, data: forClient(topic) });
@@ -376,7 +423,11 @@ router.delete('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId
     if (index < 0) return res.status(404).json({ success: false, message: '讨论记录不存在' });
     const deleteCount = topic.messages[index].role === 'staff' && topic.messages[index + 1]?.role === 'ai' ? 2 : 1;
     topic.messages.splice(index, deleteCount);
-    topic.conclusion = { content: '', structured: null, status: 'draft' };
+    if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({
+      content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
+      confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
+    });
+    topic.conclusion = { content: '', structured: null, managementTargets: topic.conclusion?.managementTargets || [], status: 'draft' };
     topic.status = 'active'; topic.lastActivityAt = new Date();
     await topic.save();
     res.json({ success: true, data: forClient(topic) });
@@ -428,13 +479,18 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     if (shouldArchive) {
       return res.status(409).json({ success: false, message: '阶段性健康评估必须先进入营养师初审，不能从AI辅助研判直接入档；请使用页面中的“生成阶段评估草稿”入口' });
     }
+    const targetsChanged = topic.conclusion?.status === 'confirmed' && JSON.stringify(managementTargets) !== JSON.stringify((topic.conclusion.managementTargets || []).map(row => ({ goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true })));
+    const targetChangeNote = String(req.body.targetChangeNote || '').trim();
+    if (targetsChanged && (!targetChangeNote || targetChangeNote.length > 500)) return res.status(400).json({ success: false, message: '修改已确认目标时，请填写500字以内的沟通调整说明' });
     if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({
       content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
       confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
+      confirmedByName: topic.conclusion.confirmedByName, targetChangeNote: topic.conclusion.targetChangeNote || '',
     });
     topic.conclusion = { content: assessmentToPlainText(structured), structured, managementTargets,
       status: 'confirmed', generatedAt: topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(),
-      confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', serviceRecordId: serviceRecord?._id || topic.conclusion?.serviceRecordId || null };
+      confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', targetChangeNote: targetsChanged ? targetChangeNote : topic.conclusion?.targetChangeNote || '',
+      serviceRecordId: serviceRecord?._id || topic.conclusion?.serviceRecordId || null };
     topic.status = 'concluded'; topic.lastActivityAt = new Date();
     await topic.save();
     res.json({ success: true, data: forClient(topic), archivedToPhaseAssessment: Boolean(serviceRecord), customerPushEligible: serviceRecord?.structuredContent?.customerPushEligible === true, serviceRecordId: serviceRecord?._id || null });

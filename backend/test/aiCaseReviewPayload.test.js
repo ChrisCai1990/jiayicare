@@ -85,7 +85,7 @@ test('message route persists the exact context returned by the provider', async 
   const contextSnapshot = prepareContext(fixture());
   const topic = { _id: 'topic', generation: { requestId: 'request', status: 'running' }, messages: [{ role: 'staff', requestId: 'request', content: '核对用药' }], contextScopes: ['medications'] };
   vm.runInNewContext(source.slice(start, end), {
-    router: { post(_path, _auth, fn) { handler = fn; } }, staffAuth() {}, ROLE_LABEL: {},
+    router: { post(_path, _auth, fn) { handler = fn; } }, staffAuth() {}, ROLE_LABEL: {}, AUTO_REVIEW_MESSAGE: '【系统自动启动研判】',
     caseReviewPatientOr404: async () => ({ _id: 'patient' }), acceptSend: async () => ({ topic, claimed: true }),
     finishSend: async (_model, _topic, generate) => { stored = await generate(); },
     buildContext: async () => fixture(), providerAdapter: { reply: async () => ({ content: '测试', contextSnapshot }) },
@@ -103,7 +103,7 @@ test('年度综合研判首次讨论留足输出空间并约束篇幅', async ()
   let handler, options;
   const topic = { _id: 'topic', reviewType: 'annual', annualPlanYear: 2026, generation: { requestId: 'saved-request', status: 'running' }, messages: [{ role: 'staff', requestId: 'saved-request', content: '结合客户资料分析' }], contextScopes: ['basic'] };
   vm.runInNewContext(source.slice(start, end), {
-    router: { post(_path, _auth, fn) { handler = fn; } }, staffAuth() {}, ROLE_LABEL: {},
+    router: { post(_path, _auth, fn) { handler = fn; } }, staffAuth() {}, ROLE_LABEL: {}, AUTO_REVIEW_MESSAGE: '【系统自动启动研判】',
     caseReviewPatientOr404: async () => ({ _id: 'patient' }), acceptSend: async () => ({ topic, claimed: true }),
     finishSend: async (_model, _topic, generate) => { await generate(); },
     buildContext: async () => ({ sources: [] }), providerAdapter: { reply: async value => { options = value; return { content: '测试回复' }; } },

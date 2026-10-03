@@ -26,6 +26,7 @@ const conclusionSchema = new mongoose.Schema({
   content: { type: String, default: '' },
   structured: { type: mongoose.Schema.Types.Mixed, default: null },
   managementTargets: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  targetChangeNote: { type: String, default: '' },
   status: { type: String, enum: ['draft', 'confirmed'], default: 'draft' },
   generatedAt: { type: Date, default: null },
   confirmedAt: { type: Date, default: null },
