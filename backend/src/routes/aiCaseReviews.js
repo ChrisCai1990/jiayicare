@@ -240,6 +240,9 @@ router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) 
     if (!selectedTemplate && settings?.content?.allowCustomTopic === false) return res.status(400).json({ success: false, message: '请选择专项研判主题' });
     const title = String(req.body.title || '').trim();
     if (!title) return res.status(400).json({ success: false, message: '请输入研判主题' });
+    let proposedTargets;
+    try { proposedTargets = require('../utils/caseReviewManagementTargets').normalizeTargets(req.body.managementTargets || []); }
+    catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     const topic = await AiCaseReview.create({
       user: user._id, tenantId: user.tenantId || null, title,
       description: String(req.body.description || '').trim(),
@@ -248,6 +251,7 @@ router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) 
       templateSnapshot: selectedTemplate ? { name: selectedTemplate.name, target: selectedTemplate.content?.target || '研判结论', outputGuide: selectedTemplate.content?.outputGuide || '' } : null,
       contextScopes: sanitizeScopes(req.body.contextScopes),
       preferredProvider: 'qwen',
+      conclusion: { status: 'draft', managementTargets: proposedTargets },
       createdBy: req.staff._id, createdByName: req.staff.name || '',
     });
     res.status(201).json({ success: true, data: forClient(topic) });
@@ -307,7 +311,9 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const snapshot = await buildContext(user, topic.contextScopes);
       const isSupplement = topic.messages.length > 1;
       const history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
-      const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : ''].filter(Boolean).join('\n');
+      const proposedTargets = topic.conclusion?.managementTargets || [];
+      const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : '',
+        proposedTargets.length ? `创建主题时填写的拟管理目标和干预重点（尚未核实，只作为研判方向，不能当作已确认事实）：${JSON.stringify(proposedTargets)}` : ''].filter(Boolean).join('\n');
       const incrementalGuide = isSupplement
         ? '这是一次补充讨论。只回答本轮新增信息，严禁重述既往完整病史、检查清单、管理方案或原分析。输出最多3个短段：1.新增信息解读；2.修订说明（没有则写“无修订”）；3.对阶段性结论的影响。全文控制在300个中文字以内，每段最多3点。最新更正信息优先于旧信息。'
         : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
