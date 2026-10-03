@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { familyLinksAPI } from '../../services/api';
+import { familyLinksAPI, guardianChildrenAPI } from '../../services/api';
 
 const RELATIONS = ['配偶', '父亲', '母亲', '子女', '兄弟', '姐妹', '祖父', '祖母', '其他'];
 
@@ -138,6 +138,43 @@ function AddLinkModal({ onClose, onSaved }) {
   );
 }
 
+function AddChildModal({ onClose, onSaved, onQuestionnaire }) {
+  const [name, setName] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [gender, setGender] = useState('未知');
+  const [relation, setRelation] = useState('');
+  const [idNumber, setIdNumber] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const save = async () => {
+    if (!name.trim() || !birthDate || !relation || !consent) { setError('请填写基础信息并确认监护关系'); return; }
+    setSaving(true); setError('');
+    try {
+      const result = await guardianChildrenAPI.create({ name: name.trim(), birthDate, gender, relation,
+        idNumber: idNumber.trim(), guardianConsent: true });
+      onSaved(); onClose();
+      Alert.alert('孩子档案已建立', '现在填写儿童健康问卷吗？也可以稍后从孩子的档案卡片进入。', [
+        { text: '稍后填写', style: 'cancel' },
+        { text: '现在填写', onPress: () => onQuestionnaire(result.data.id) },
+      ]);
+    } catch (e) { setError(e.message || '建档失败'); }
+    finally { setSaving(false); }
+  };
+  return <Modal visible animationType="slide" transparent onRequestClose={onClose}><View style={styles.overlay}><ScrollView style={[styles.sheet, { maxHeight: '85%' }]}>
+    <Text style={styles.sheetTitle}>为未成年孩子建档</Text>
+    <Text style={styles.sheetDesc}>只建立基础档案。问卷可稍后填写；已有档案请联系医护核实关联。</Text>
+    <TextInput style={styles.searchBox} placeholder="孩子姓名" value={name} onChangeText={setName} />
+    <TextInput style={styles.searchBox} placeholder="出生日期 YYYY-MM-DD" value={birthDate} onChangeText={setBirthDate} keyboardType="numbers-and-punctuation" />
+    <Text style={styles.fieldLabel}>性别</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>{['男', '女', '未知'].map(item => <TouchableOpacity key={item} onPress={() => setGender(item)} style={[styles.relChip, gender === item && styles.relChipActive]}><Text style={gender === item ? styles.relChipTextActive : styles.relChipText}>{item}</Text></TouchableOpacity>)}</View>
+    <Text style={styles.fieldLabel}>与孩子的关系</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>{['父亲', '母亲', '其他监护人'].map(item => <TouchableOpacity key={item} onPress={() => setRelation(item)} style={[styles.relChip, relation === item && styles.relChipActive]}><Text style={relation === item ? styles.relChipTextActive : styles.relChipText}>{item}</Text></TouchableOpacity>)}</View>
+    <TextInput style={styles.searchBox} placeholder="孩子身份证号（选填）" value={idNumber} onChangeText={setIdNumber} />
+    <TouchableOpacity onPress={() => setConsent(!consent)} style={{ paddingVertical: 12 }}><Text style={{ color: consent ? colors.primary : colors.textMuted }}>{consent ? '☑' : '□'} 我是孩子的监护人，同意为其建立健康档案并录入健康信息</Text></TouchableOpacity>
+    {!!error && <Text style={styles.errText}>{error}</Text>}
+    <View style={styles.btnRow}><TouchableOpacity style={styles.cancelBtn} onPress={onClose}><Text style={styles.cancelBtnText}>取消</Text></TouchableOpacity><TouchableOpacity style={styles.saveBtn} onPress={save} disabled={saving}><Text style={styles.saveBtnText}>{saving ? '保存中…' : '建立孩子档案'}</Text></TouchableOpacity></View>
+  </ScrollView></View></Modal>;
+}
+
 function LinkCard({ link, onDelete }) {
   const u = link.user;
   const icon = { '配偶': 'heart', '父亲': 'man', '母亲': 'woman', '子女': 'happy', '兄弟': 'people', '姐妹': 'people' }[link.relation] || 'person';
@@ -165,20 +202,24 @@ function LinkCard({ link, onDelete }) {
 
 export default function FamilyMembersScreen({ navigation }) {
   const [links, setLinks]           = useState([]);
+  const [children, setChildren] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [loading, setLoading]       = useState(true);
-  const [showAdd, setShowAdd]       = useState(false);
+  const [showAdd, setShowAdd]       = useState('');
   const [handlingInvite, setHandlingInvite] = useState(null);
+  const [childArchive, setChildArchive] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [linkRes, invRes] = await Promise.allSettled([
+      const [linkRes, invRes, childRes] = await Promise.allSettled([
         familyLinksAPI.list(),
         familyLinksAPI.pendingInvites(),
+        guardianChildrenAPI.list(),
       ]);
       if (linkRes.status === 'fulfilled') setLinks(linkRes.value.data || []);
       if (invRes.status === 'fulfilled') setPendingInvites(invRes.value.data || []);
+      if (childRes.status === 'fulfilled') setChildren(childRes.value.data || []);
     } catch {}
     finally { setLoading(false); }
   }, []);
@@ -223,6 +264,18 @@ export default function FamilyMembersScreen({ navigation }) {
     ]);
   };
 
+  const openChildQuestionnaire = async (childId) => {
+    try {
+      const result = await guardianChildrenAPI.startQuestionnaire(childId);
+      if (result.data?.pushStatus === 'answered_stage') { Alert.alert('已填写', '当前年龄段问卷已提交'); return; }
+      navigation.navigate('Questionnaire', { childId });
+    } catch (e) { Alert.alert('打开失败', e.message || '儿童问卷暂不可用'); }
+  };
+  const openChildArchive = async (childId) => {
+    try { const result = await guardianChildrenAPI.archive(childId); setChildArchive(result.data); }
+    catch (e) { Alert.alert('加载失败', e.message || '无法获取孩子档案'); }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -230,13 +283,13 @@ export default function FamilyMembersScreen({ navigation }) {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>家庭成员</Text>
-        <TouchableOpacity onPress={() => setShowAdd(true)} style={styles.addBtn}>
+        <TouchableOpacity onPress={() => setShowAdd('choice')} style={styles.addBtn}>
           <Ionicons name="add" size={24} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.lg }}>
-        <Text style={styles.subtext}>只能关联系统内已注册的客户，双向建立家庭成员关系，方便后续健康基金和就医协助服务共享。</Text>
+        <Text style={styles.subtext}>可为未成年孩子建立独立健康档案；添加成年家人需由本人接受邀请。健康问卷可稍后填写。</Text>
 
         {/* 待确认邀请 */}
         {pendingInvites.length > 0 && (
@@ -280,18 +333,19 @@ export default function FamilyMembersScreen({ navigation }) {
 
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
-        ) : links.length === 0 && pendingInvites.length === 0 ? (
+        ) : links.length === 0 && children.length === 0 && pendingInvites.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="people-outline" size={48} color={colors.textMuted} />
             <Text style={styles.emptyTitle}>暂未关联家庭成员</Text>
-            <Text style={styles.emptyDesc}>点击右上角「+」搜索并关联家庭成员</Text>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => setShowAdd(true)}>
+            <Text style={styles.emptyDesc}>添加孩子档案，或邀请已注册的成年家人</Text>
+            <TouchableOpacity style={styles.emptyBtn} onPress={() => setShowAdd('choice')}>
               <Text style={styles.emptyBtnText}>立即添加</Text>
             </TouchableOpacity>
           </View>
-        ) : links.length > 0 ? (
+        ) : children.length > 0 || links.length > 0 ? (
           <>
-            <Text style={styles.sectionLabel}>共 {links.length} 位家庭成员</Text>
+            {!!children.length && <><Text style={styles.sectionLabel}>我的孩子（{children.length}）</Text>{children.map(child => <View key={child.id} style={styles.memberCard}><View style={styles.memberIcon}><Ionicons name="happy-outline" size={24} color={colors.primary} /></View><View style={{ flex: 1 }}><Text style={styles.memberName}>{child.name} · {child.relation}</Text><Text style={styles.memberMeta}>{child.birthDate} · {child.ageStage?.label || '年龄待核实'}</Text><View style={{ flexDirection: 'row', gap: 16, paddingTop: 8 }}><TouchableOpacity onPress={() => openChildArchive(child.id)}><Text style={{ color: colors.primary, fontWeight: '600' }}>查看孩子档案</Text></TouchableOpacity><TouchableOpacity onPress={() => openChildQuestionnaire(child.id)}><Text style={{ color: colors.primary, fontWeight: '600' }}>填写问卷</Text></TouchableOpacity></View></View></View>)}</>}
+            {!!links.length && <Text style={styles.sectionLabel}>已关联家人（{links.length}）</Text>}
             {links.map(link => (
               <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} />
             ))}
@@ -299,7 +353,10 @@ export default function FamilyMembersScreen({ navigation }) {
         ) : null}
       </ScrollView>
 
-      {showAdd && <AddLinkModal onClose={() => setShowAdd(false)} onSaved={load} />}
+      <Modal visible={showAdd === 'choice'} transparent animationType="slide" onRequestClose={() => setShowAdd('')}><View style={styles.overlay}><View style={styles.sheet}><Text style={styles.sheetTitle}>添加家庭成员</Text><TouchableOpacity onPress={() => setShowAdd('child')} style={[styles.selectedBox, { marginBottom: 12 }]}><Text>为未成年孩子建档</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowAdd('adult')} style={[styles.selectedBox, { marginBottom: 12 }]}><Text>邀请成年家人（需本人确认）</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowAdd('')} style={styles.cancelBtn}><Text style={styles.cancelBtnText}>取消</Text></TouchableOpacity></View></View></Modal>
+      {showAdd === 'adult' && <AddLinkModal onClose={() => setShowAdd('')} onSaved={load} />}
+      {showAdd === 'child' && <AddChildModal onClose={() => setShowAdd('')} onSaved={load} onQuestionnaire={openChildQuestionnaire} />}
+      <Modal visible={!!childArchive} transparent animationType="slide" onRequestClose={() => setChildArchive(null)}><View style={styles.overlay}><ScrollView style={[styles.sheet, { maxHeight: '82%' }]}><Text style={styles.sheetTitle}>{childArchive?.name}的健康档案</Text><Text style={styles.sheetDesc}>{childArchive?.birthDate} · {childArchive?.ageStage?.label || '年龄待核实'} · 监护人自报资料须经医护核实</Text>{childArchive?.pendingReviewCount > 0 && <Text style={{ color: colors.warning, marginBottom: 10 }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}{[['birthWeight','出生体重（克）'],['birthLength','出生身长（厘米）'],['reportedHeightCm','最近身高/身长（厘米）'],['reportedWeightKg','最近体重（千克）'],['reportedMeasuredAt','测量日期'],['feeding','喂养与饮食'],['sleep','睡眠'],['development','生长发育与行为'],['caregiverConcerns','监护人关注问题']].map(([key,label]) => <View key={key} style={{ paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.border }}><Text style={styles.memberMeta}>{label}{childArchive?.pendingPaths?.includes(`childProfile.${key}`) ? ' · 待核实' : ''}</Text><Text style={styles.memberName}>{childArchive?.childProfile?.[key] ?? '未记录'}</Text></View>)}<TouchableOpacity onPress={() => setChildArchive(null)} style={[styles.saveBtn, { marginTop: 16 }]}><Text style={styles.saveBtnText}>关闭</Text></TouchableOpacity></ScrollView></View></Modal>
     </SafeAreaView>
   );
 }

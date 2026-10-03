@@ -47,7 +47,7 @@ function ReviewForm({ user, submission, onSaved, canEdit }) {
   }
   return <div style={{ border: '1px solid #D8EDE3', borderRadius: 8, padding: 14, marginTop: 12, background: '#FAFCFB' }}>
     <div style={{ fontWeight: 700, color: '#1E6B50' }}>{submission.kind === 'initial' ? '首次建档待核实' : '后续问卷变化待确认'} · {submission.questionnaireTitle || '儿童健康问卷'}</div>
-    <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>提交于 {new Date(submission.submittedAt).toLocaleString('zh-CN')} · {stageLabel(submission.ageStage)}。空字段先写入并标记待核实；与已有记录不同的回答，须经医护确认后才更新。</div>
+    <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>提交于 {new Date(submission.submittedAt).toLocaleString('zh-CN')} · {stageLabel(submission.ageStage)}{submission.submittedBy ? ` · 监护人${submission.submittedByName || ''}代填` : ''}。空字段先写入并标记待核实；与已有记录不同的回答，须经医护确认后才更新。</div>
     {(submission.items || []).map((item, index) => <div key={`${item.path}-${index}`} style={{ borderTop: '1px solid #E5EEE8', padding: '12px 0' }}>
       <div style={{ fontWeight: 600, fontSize: 13 }}>{item.label} {item.conflict && <span style={{ color: '#A65A00', fontWeight: 400 }}>· 与原档案不同</span>}</div>
       <div style={{ fontSize: 12, color: '#65776F', margin: '4px 0' }}>问卷：{item.questionText}　回答：{fmt(item.valueStr)}　原档案：{fmt(item.before)}</div>
@@ -71,6 +71,10 @@ export default function ChildHealthArchive({ user, onSaved, canEdit }) {
   const [manual, setManual] = useState({ key: 'feeding', value: '', reason: '', clear: false })
   const [manualBusy, setManualBusy] = useState(false)
   const [manualError, setManualError] = useState('')
+  const [linkingGuardian, setLinkingGuardian] = useState(false)
+  const [guardianForm, setGuardianForm] = useState({ guardianPhone: '', relation: '母亲', note: '', consentConfirmed: false })
+  const [guardianBusy, setGuardianBusy] = useState(false)
+  const [guardianError, setGuardianError] = useState('')
   if (user?.patientCategory !== 'child') return null
   const submissions = user.childArchiveSubmissions || []
   const pending = submissions.filter(row => row.status === 'pending')
@@ -80,6 +84,15 @@ export default function ChildHealthArchive({ user, onSaved, canEdit }) {
     <div className="card-header"><div><div className="card-title">儿童健康档案</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>围产与出生、筛查与健康史、成长近况；问卷来源与人工核实记录持续保留。用药和症状自述不自动修改专业记录。</div></div></div>
     <div className="card-body">
       <div style={{ background: '#F2F8F5', padding: '9px 12px', borderRadius: 8, fontSize: 13 }}>当前年龄段：{currentStage(user.birthDate)?.label || (user.birthDate ? '已超出儿童阶段或出生日期有误，请核实' : '出生日期待核实')}。历次问卷按提交时的年龄段保存，跨阶段沿用同一份基础档案。</div>
+      {!!user.childGuardians?.length && <div style={{ background: '#F8F7ED', padding: '9px 12px', borderRadius: 8, fontSize: 13, marginTop: 8 }}>监护人联系方式：{user.childGuardians.map((item, index) => <span key={item.id || index}>{index ? '；' : ''}{item.relation} {item.name} {item.phone}{item.verifiedAt ? '（医护已核实）' : item.createdByGuardian ? '（关系由监护人声明，待核实）' : ''}{canEdit && !item.verifiedAt && <button className="btn btn-secondary btn-sm" style={{ marginLeft: 6 }} onClick={async () => { const note = window.prompt('请填写核实依据（如已核对监护关系证明及联系电话）'); if (!note?.trim()) return; try { await staffAPI.verifyChildGuardian(user._id, item.id, note.trim()); await onSaved() } catch (error) { window.alert(error.message || '核实失败') } }}>核实关系</button>}</span>)}</div>}
+      {canEdit && <div style={{ marginTop: 10 }}><button className="btn btn-secondary btn-sm" onClick={() => setLinkingGuardian(value => !value)}>{linkingGuardian ? '收起监护人关联' : '为已有儿童档案关联监护人'}</button>{linkingGuardian && <div style={{ border: '1px solid #D8EDE3', borderRadius: 8, padding: 12, marginTop: 8 }}>
+        <div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>核对儿童与监护人身份、监护关系及同意后，关联本机构已建档的成人账号。关联后监护人可查看儿童档案并代填问卷。</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><input className="form-input" style={{ flex: '1 1 180px' }} placeholder="监护人登录手机号" value={guardianForm.guardianPhone} onChange={e => setGuardianForm(form => ({ ...form, guardianPhone: e.target.value }))} /><select className="form-input" style={{ flex: '1 1 140px' }} value={guardianForm.relation} onChange={e => setGuardianForm(form => ({ ...form, relation: e.target.value }))}><option>母亲</option><option>父亲</option><option>其他监护人</option></select></div>
+        <textarea className="form-input" rows={2} style={{ marginTop: 8 }} placeholder="关系及同意的核实依据（必填）" value={guardianForm.note} onChange={e => setGuardianForm(form => ({ ...form, note: e.target.value }))} />
+        <label style={{ display: 'block', fontSize: 12, marginTop: 8 }}><input type="checkbox" checked={guardianForm.consentConfirmed} onChange={e => setGuardianForm(form => ({ ...form, consentConfirmed: e.target.checked }))} /> 已取得监护人同意并核实其有权管理该儿童档案</label>
+        {guardianError && <div style={{ color: '#B42318', fontSize: 12, marginTop: 6 }}>{guardianError}</div>}
+        <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }} disabled={guardianBusy} onClick={async () => { setGuardianBusy(true); setGuardianError(''); try { await staffAPI.linkChildGuardian(user._id, guardianForm); setLinkingGuardian(false); setGuardianForm({ guardianPhone: '', relation: '母亲', note: '', consentConfirmed: false }); await onSaved() } catch (error) { setGuardianError(error.message || '关联失败') } finally { setGuardianBusy(false) } }}>{guardianBusy ? '关联中…' : '确认关联'}</button>
+      </div>}</div>}
       {user.childArchiveImportPending && <div style={{ background: '#FFF4DB', padding: 12, borderRadius: 8, marginBottom: 12 }}>儿童问卷已保存，档案承接待恢复。{canEdit && <button className="btn btn-secondary btn-sm" disabled={retryBusy} onClick={async () => { setRetryBusy(true); setRetryError(''); try { await staffAPI.retryChildArchive(user._id); await onSaved() } catch (err) { setRetryError(err.message || '恢复失败') } finally { setRetryBusy(false) } }}>重试承接</button>}{retryError && <div style={{ color: '#B42318' }}>{retryError}</div>}</div>}
       {pending.map(row => <ReviewForm key={String(row.responseId)} user={user} submission={row} onSaved={onSaved} canEdit={canEdit} />)}
       {!submissions.length && <div style={{ fontSize: 13, color: '#65776F', marginBottom: 12 }}>暂无儿童健康问卷。可在问卷管理中创建儿童问卷草稿，并由医护端推送给监护人填写。</div>}

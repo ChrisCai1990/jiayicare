@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, Input, ScrollView } from '@tarojs/components';
+import { View, Text, Input, ScrollView, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { familyLinksAPI } from '../../../services/api';
+import { familyLinksAPI, guardianChildrenAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
@@ -127,6 +127,46 @@ function AddLinkModal({ onClose, onSaved }) {
   );
 }
 
+function AddChildModal({ onClose, onSaved, onQuestionnaire }) {
+  const [name, setName] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [gender, setGender] = useState('未知');
+  const [relation, setRelation] = useState('');
+  const [idNumber, setIdNumber] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const save = async () => {
+    if (!name.trim() || !birthDate || !relation || !consent) { setError('请填写基础信息并确认监护关系'); return; }
+    setSaving(true); setError('');
+    try {
+      const result = await guardianChildrenAPI.create({ name: name.trim(), birthDate, gender, relation,
+        idNumber: idNumber.trim(), guardianConsent: true });
+      onSaved(); onClose();
+      Taro.showModal({ title: '孩子档案已建立', content: '现在填写儿童健康问卷吗？也可以稍后从孩子的档案卡片进入。',
+        confirmText: '现在填写', cancelText: '稍后填写',
+        success: ({ confirm }) => { if (confirm) onQuestionnaire(result.data.id); } });
+    } catch (e) { setError(e.message || '建档失败'); }
+    finally { setSaving(false); }
+  };
+  return <View style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
+    <ScrollView scrollY style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '86vh', boxSizing: 'border-box' }}>
+      <Text style={{ fontSize: '18px', fontWeight: 700, display: 'block', marginBottom: '8px' }}>为未成年人建档</Text>
+      <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '16px' }}>仅建立孩子的基础档案，健康问卷可以稍后填写。若孩子已有档案，请联系医护人员核实关联。</Text>
+      <Input placeholder="孩子姓名" value={name} onInput={e => setName(e.detail.value)} style={{ border: `1px solid ${colors.border}`, padding: '12px', marginBottom: '10px', borderRadius: '8px' }} />
+      <Picker mode="date" end={new Date().toISOString().slice(0, 10)} onChange={e => setBirthDate(e.detail.value)}><View style={{ border: `1px solid ${colors.border}`, padding: '12px', marginBottom: '10px', borderRadius: '8px', color: birthDate ? colors.textPrimary : colors.textMuted }}>{birthDate || '选择出生日期'}</View></Picker>
+      <Text style={{ fontSize: '13px', display: 'block', marginBottom: '6px' }}>性别</Text>
+      <View style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>{['男', '女', '未知'].map(item => <View key={item} onClick={() => setGender(item)} style={{ padding: '8px 16px', border: `1px solid ${gender === item ? colors.primary : colors.border}`, borderRadius: '8px', color: gender === item ? colors.primary : colors.textMuted }}>{item}</View>)}</View>
+      <Text style={{ fontSize: '13px', display: 'block', marginBottom: '6px' }}>与孩子的关系</Text>
+      <View style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>{['父亲', '母亲', '其他监护人'].map(item => <View key={item} onClick={() => setRelation(item)} style={{ padding: '8px 12px', border: `1px solid ${relation === item ? colors.primary : colors.border}`, borderRadius: '8px', color: relation === item ? colors.primary : colors.textMuted }}>{item}</View>)}</View>
+      <Input placeholder="孩子身份证号（选填；已有档案请由医护关联）" value={idNumber} onInput={e => setIdNumber(e.detail.value)} style={{ border: `1px solid ${colors.border}`, padding: '12px', marginBottom: '12px', borderRadius: '8px' }} />
+      <View onClick={() => setConsent(!consent)} style={{ padding: '8px 0', marginBottom: '12px' }}><Text style={{ color: consent ? colors.primary : colors.textMuted }}>{consent ? '☑' : '□'} 我是孩子的监护人，同意为其建立健康档案并录入健康信息</Text></View>
+      {!!error && <Text style={{ color: colors.danger, display: 'block', marginBottom: '8px' }}>{error}</Text>}
+      <View style={{ display: 'flex', gap: '10px', paddingBottom: '20px' }}><View onClick={onClose} style={{ flex: 1, padding: '13px', textAlign: 'center', border: `1px solid ${colors.border}`, borderRadius: '8px' }}>取消</View><View onClick={saving ? undefined : save} style={{ flex: 2, padding: '13px', textAlign: 'center', borderRadius: '8px', backgroundColor: colors.primary, color: '#fff' }}>{saving ? '保存中…' : '建立孩子档案'}</View></View>
+    </ScrollView>
+  </View>;
+}
+
 function FamilyServiceModal({ data, onClose }) {
   const appointments = data?.appointments || [];
   const dateText = (value) => value ? new Date(value).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) : '待安排';
@@ -182,18 +222,21 @@ function LinkCard({ link, onDelete, onView }) {
 export default function FamilyMembersPage() {
   const { statusBarHeight } = useNavBar();
   const [links, setLinks] = useState([]);
+  const [children, setChildren] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
+  const [showAdd, setShowAdd] = useState('');
   const [handlingInvite, setHandlingInvite] = useState(null);
   const [serviceOverview, setServiceOverview] = useState(null);
+  const [childArchive, setChildArchive] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [linkRes, invRes] = await Promise.allSettled([familyLinksAPI.list(), familyLinksAPI.pendingInvites()]);
+      const [linkRes, invRes, childRes] = await Promise.allSettled([familyLinksAPI.list(), familyLinksAPI.pendingInvites(), guardianChildrenAPI.list()]);
       if (linkRes.status === 'fulfilled') setLinks(linkRes.value.data || []);
       if (invRes.status === 'fulfilled') setPendingInvites(invRes.value.data || []);
+      if (childRes.status === 'fulfilled') setChildren(childRes.value.data || []);
     } catch {} finally { setLoading(false); }
   }, []);
 
@@ -239,6 +282,18 @@ export default function FamilyMembersPage() {
     }
   };
 
+  const openChildQuestionnaire = async (childId) => {
+    try {
+      const result = await guardianChildrenAPI.startQuestionnaire(childId);
+      if (result.data?.pushStatus === 'answered_stage') { Taro.showToast({ title: '当前年龄段问卷已填写', icon: 'none' }); return; }
+      Taro.navigateTo({ url: `/pages/questionnaire/index?childId=${encodeURIComponent(childId)}` });
+    } catch (e) { Taro.showToast({ title: e.message || '儿童问卷暂不可用', icon: 'none' }); }
+  };
+  const openChildArchive = async (childId) => {
+    try { const result = await guardianChildrenAPI.archive(childId); setChildArchive(result.data); }
+    catch (e) { Taro.showToast({ title: e.message || '档案加载失败', icon: 'none' }); }
+  };
+
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
@@ -246,12 +301,12 @@ export default function FamilyMembersPage() {
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
         <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>家庭成员</Text>
-        <Text onClick={() => setShowAdd(true)} style={{ fontSize: '22px', color: colors.primary, padding: '4px' }}>+</Text>
+        <Text onClick={() => setShowAdd('choice')} style={{ fontSize: '22px', color: colors.primary, padding: '4px' }}>+</Text>
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>
         <Text style={{ fontSize: '13px', color: colors.textMuted, lineHeight: '20px', display: 'block', marginBottom: `${spacing.lg}px` }}>
-          只能关联系统内已注册的客户，双向建立家庭成员关系，方便后续健康基金和家庭健康管理服务共享。
+          可为未成年孩子建立独立健康档案；添加成年家人需由本人接受邀请。健康问卷可以稍后填写。
         </Text>
 
         {pendingInvites.length > 0 && (
@@ -282,18 +337,19 @@ export default function FamilyMembersPage() {
 
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
-        ) : links.length === 0 && pendingInvites.length === 0 ? (
+        ) : links.length === 0 && children.length === 0 && pendingInvites.length === 0 ? (
           <View style={{ textAlign: 'center', paddingTop: '60px' }}>
             <Text style={{ fontSize: '40px', display: 'block', marginBottom: `${spacing.sm}px` }}>👨‍👩‍👧</Text>
             <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>暂未关联家庭成员</Text>
-            <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>点击右上角「+」搜索并关联家庭成员</Text>
-            <View onClick={() => setShowAdd(true)} style={{ display: 'inline-block', backgroundColor: colors.primary, padding: '12px 32px', borderRadius: `${radius.full}px` }}>
+            <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>添加孩子档案，或邀请已注册的成年家人</Text>
+            <View onClick={() => setShowAdd('choice')} style={{ display: 'inline-block', backgroundColor: colors.primary, padding: '12px 32px', borderRadius: `${radius.full}px` }}>
               <Text style={{ color: '#fff', fontWeight: 700, fontSize: '14px' }}>立即添加</Text>
             </View>
           </View>
-        ) : links.length > 0 ? (
+        ) : children.length > 0 || links.length > 0 ? (
           <>
-            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>共 {links.length} 位家庭成员</Text>
+            {!!children.length && <><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700, display: 'block', marginBottom: `${spacing.sm}px` }}>我的孩子（{children.length}）</Text>{children.map(child => <View key={child.id} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}><Text style={{ fontSize: '15px', fontWeight: 700, display: 'block' }}>{child.name} · {child.relation}</Text><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>{child.birthDate} · {child.ageStage?.label || '年龄待核实'}</Text><View style={{ display: 'flex', gap: '12px', marginTop: '10px' }}><View onClick={() => openChildArchive(child.id)} style={{ padding: '9px 12px', borderRadius: '8px', backgroundColor: colors.primary10 }}><Text style={{ color: colors.primary, fontSize: '13px' }}>查看孩子档案</Text></View><View onClick={() => openChildQuestionnaire(child.id)} style={{ padding: '9px 12px', borderRadius: '8px', backgroundColor: colors.primary10 }}><Text style={{ color: colors.primary, fontSize: '13px' }}>填写问卷</Text></View></View></View>)}</>}
+            {!!links.length && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>已关联家人（{links.length}）</Text>}
             {links.map((link) => (
               <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} onView={() => handleViewService(link)} />
             ))}
@@ -301,7 +357,10 @@ export default function FamilyMembersPage() {
         ) : null}
       </View>
 
-      {showAdd && <AddLinkModal onClose={() => setShowAdd(false)} onSaved={load} />}
+      {showAdd === 'choice' && <View style={{ position: 'fixed', inset: 0, zIndex: 100, backgroundColor: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end' }}><View style={{ width: '100%', backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px`, boxSizing: 'border-box' }}><Text style={{ fontSize: '18px', fontWeight: 700, display: 'block', marginBottom: '12px' }}>添加家庭成员</Text><View onClick={() => setShowAdd('child')} style={{ padding: '15px', borderRadius: '8px', backgroundColor: colors.primary10, marginBottom: '10px' }}>为未成年孩子建档</View><View onClick={() => setShowAdd('adult')} style={{ padding: '15px', borderRadius: '8px', backgroundColor: colors.background, marginBottom: '10px' }}>邀请成年家人（需本人确认）</View><View onClick={() => setShowAdd('')} style={{ padding: '13px', textAlign: 'center' }}>取消</View></View></View>}
+      {showAdd === 'adult' && <AddLinkModal onClose={() => setShowAdd('')} onSaved={load} />}
+      {showAdd === 'child' && <AddChildModal onClose={() => setShowAdd('')} onSaved={load} onQuestionnaire={openChildQuestionnaire} />}
+      {!!childArchive && <View style={{ position: 'fixed', inset: 0, zIndex: 110, backgroundColor: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end' }}><ScrollView scrollY style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '82vh', boxSizing: 'border-box' }}><Text style={{ fontSize: '18px', fontWeight: 700, display: 'block' }}>{childArchive.name}的健康档案</Text><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', margin: '6px 0 12px' }}>{childArchive.birthDate} · {childArchive.ageStage?.label || '年龄待核实'} · 监护人自报资料须经医护核实</Text>{childArchive.pendingReviewCount > 0 && <Text style={{ color: colors.warning, display: 'block', marginBottom: '10px' }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}{[['birthWeight','出生体重（克）'],['birthLength','出生身长（厘米）'],['reportedHeightCm','最近身高/身长（厘米）'],['reportedWeightKg','最近体重（千克）'],['reportedMeasuredAt','测量日期'],['feeding','喂养与饮食'],['sleep','睡眠'],['development','生长发育与行为'],['caregiverConcerns','监护人关注问题']].map(([key,label]) => <View key={key} style={{ borderBottom: `1px solid ${colors.borderLight}`, padding: '9px 0' }}><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{label}{childArchive.pendingPaths?.includes(`childProfile.${key}`) ? ' · 待核实' : ''}</Text><Text style={{ fontSize: '14px', display: 'block', marginTop: '3px' }}>{childArchive.childProfile?.[key] ?? '未记录'}</Text></View>)}<View onClick={() => setChildArchive(null)} style={{ textAlign: 'center', padding: '14px', backgroundColor: colors.primary, color: '#fff', borderRadius: '8px', margin: '16px 0' }}>关闭</View></ScrollView></View>}
       {serviceOverview && <FamilyServiceModal data={serviceOverview} onClose={() => setServiceOverview(null)} />}
     </View>
   );

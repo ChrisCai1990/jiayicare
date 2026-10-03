@@ -1718,6 +1718,9 @@ router.delete('/family/:index', auth, async (req, res) => {
   }
 });
 
+// 监护人代建儿童档案独立授权，不能使用自动扩散的普通家庭关系作为病历权限。
+router.use('/guardian-children', auth, require('./guardianChildren'));
+
 // ── 系统内家庭成员关联（需求6/18）──────────────────────────────────
 // GET /api/user/family-links — 获取已关联的家庭成员
 router.get('/family-links', auth, async (req, res) => {
@@ -1754,6 +1757,7 @@ router.get('/family-links/search', auth, async (req, res) => {
     if (!q) return res.json({ success: true, data: [] });
     const query = {
       _id: { $ne: req.user._id },
+      patientCategory: 'adult',
       $or: [
         { phone: { $regex: q, $options: 'i' } },
         { name:  { $regex: q, $options: 'i' } },
@@ -1801,9 +1805,10 @@ router.post('/family-links', auth, async (req, res) => {
 
     const [userA, userB] = await Promise.all([
       User.findById(req.user._id).select('familyLinks familyInvites name'),
-      User.findById(linkedUserId).select('familyLinks familyInvites name'),
+      User.findById(linkedUserId).select('familyLinks familyInvites name patientCategory'),
     ]);
     if (!userB) return res.status(404).json({ success: false, message: '用户不存在' });
+    if (userB.patientCategory !== 'adult') return res.status(400).json({ success: false, message: '未成年人请使用监护人建档入口' });
     if (userA.familyLinks.find(l => String(l.linkedUser) === String(linkedUserId))) {
       return res.status(400).json({ success: false, message: '已是家庭成员' });
     }

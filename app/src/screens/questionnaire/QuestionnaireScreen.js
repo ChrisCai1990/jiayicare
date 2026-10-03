@@ -393,8 +393,9 @@ function LandingScreen({ navigation, pendingQs, loading, onSelectStatic, onSelec
 }
 
 // ── 主屏幕 ────────────────────────────────────────────────────────
-export default function QuestionnaireScreen({ navigation }) {
+export default function QuestionnaireScreen({ navigation, route }) {
   const { updateUser } = useAuth();
+  const childId = route?.params?.childId || '';
 
   const [mode, setMode] = useState('select');
   const [pendingQs, setPendingQs] = useState([]);
@@ -411,11 +412,11 @@ export default function QuestionnaireScreen({ navigation }) {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    questionnaireAPI.pending()
+    questionnaireAPI.pending(childId)
       .then(res => setPendingQs(res.data || []))
       .catch(() => {})
       .finally(() => setLoadingPending(false));
-  }, []);
+  }, [childId]);
 
   const activeQuestions = mode === 'dynamic' ? (selectedDynamic?.questions || []) : QUESTIONS;
 
@@ -556,7 +557,7 @@ export default function QuestionnaireScreen({ navigation }) {
     const finalAnswers = buildFinalAnswers();
     try {
       if (mode === 'dynamic' && selectedDynamic) {
-        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers, selectedDynamic.assignmentId, selectedDynamic.ageStage?.id);
+        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers, selectedDynamic.assignmentId, selectedDynamic.ageStage?.id, childId);
         if (res.success) {
           setSubmitResult({ dynamic: true, message: res.message, totalScore: res.totalScore, scoreRange: res.scoreRange || null });
           setPendingQs(prev => prev.filter(dq => dq.assignmentId !== selectedDynamic.assignmentId));

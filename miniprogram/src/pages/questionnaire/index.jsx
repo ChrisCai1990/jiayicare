@@ -209,6 +209,7 @@ function DropdownQuestion({ q, answer, onAnswer }) {
 export default function QuestionnairePage() {
   const router = useRouter();
   const targetQuestionnaireId = router.params?.id ? decodeURIComponent(router.params.id) : '';
+  const childId = router.params?.childId ? decodeURIComponent(router.params.childId) : '';
   const { statusBarHeight } = useNavBar();
   const { updateUser } = useAuth();
   const [mode, setMode] = useState('select');
@@ -246,7 +247,7 @@ export default function QuestionnairePage() {
   const closeQuestionnaire = () => Taro.navigateBack({ delta: 1, fail: () => setMode('select') });
 
   useEffect(() => {
-    questionnaireAPI.pending()
+    questionnaireAPI.pending(childId)
       .then((res) => {
         const pending = res.data || [];
         setPendingQs(pending);
@@ -260,7 +261,7 @@ export default function QuestionnairePage() {
       })
       .catch(() => {})
       .finally(() => setLoadingPending(false));
-  }, [targetQuestionnaireId]);
+  }, [targetQuestionnaireId, childId]);
 
   const activeQuestions = mode === 'dynamic' ? (selectedDynamic?.questions || []) : QUESTIONS;
   const q = activeQuestions[currentQ] || activeQuestions[0];
@@ -357,7 +358,7 @@ export default function QuestionnairePage() {
     const finalAnswers = buildFinalAnswers();
     try {
       if (mode === 'dynamic' && selectedDynamic) {
-        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers, selectedDynamic.assignmentId, selectedDynamic.ageStage?.id);
+        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers, selectedDynamic.assignmentId, selectedDynamic.ageStage?.id, childId);
         if (res.success) {
           setSubmitResult({ dynamic: true, message: res.message, totalScore: res.totalScore, scoreRange: res.scoreRange || null });
           setPendingQs((prev) => prev.filter((dq) => dq.assignmentId !== selectedDynamic.assignmentId));

@@ -1225,6 +1225,14 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   }
 
   const displayedUser = user.toObject();
+  if (user.patientCategory === 'child') {
+    const guardianLinks = await require('../models/ChildGuardianLink').find({ child: user._id, status: 'active' })
+      .populate('guardian', 'name phone contactPhone isDeleted').lean();
+    displayedUser.childGuardians = guardianLinks.filter(link => link.guardian && !link.guardian.isDeleted)
+      .map(link => ({ id: link._id, name: link.guardian.name, phone: link.guardian.phone || link.guardian.contactPhone || '',
+        relation: link.relation, createdByGuardian: link.createdByGuardian, consentAt: link.consentAt,
+        verifiedAt: link.verifiedAt, verificationNote: link.verificationNote }));
+  }
   displayedUser.aiHealthSummary = withReviewTokens(displayedUser.aiHealthSummary);
   displayedUser.lifestyle_data = require('../utils/effectiveLifestyle').effectiveLifestyle(displayedUser);
   res.json({ success: true, data: { user: displayedUser, recentFollowUps, recentRecords, insuranceCoverage, insuranceCases } });
@@ -6770,6 +6778,7 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
       recipient:      roleKey,
     });
     ssePublish(conversationId, { type: 'message', data: msg });
+    await require('../utils/nativePush').enqueueNativePush(msg);
     res.json({ success: true, data: msg });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -10502,6 +10511,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     });
 
     const responseMessage = withSignedMessageMedia(replyMsg);
+    await require('../utils/nativePush').enqueueNativePush(replyMsg);
     ssePublish(conversationId, { type: 'message', data: responseMessage });
     res.json({ success: true, message: '回复已发送', data: responseMessage });
   } catch (err) {

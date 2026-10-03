@@ -64,6 +64,7 @@ const questionnaireSchema = new mongoose.Schema({
 const questionnaireResponseSchema = new mongoose.Schema({
   questionnaire: { type: mongoose.Schema.Types.ObjectId, ref: 'DynamicQuestionnaire', required: true },
   user:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  submittedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // 监护人代填时保留填写人
   answers:       { type: mongoose.Schema.Types.Mixed, default: {} },
   questionnaireSnapshot: { type: mongoose.Schema.Types.Mixed, default: null }, // 儿童档案答卷保留提交时题目与映射，供失败恢复
   proxyEntry: { type: mongoose.Schema.Types.Mixed, default: null }, // 营养师访谈代填来源及待确认题目
