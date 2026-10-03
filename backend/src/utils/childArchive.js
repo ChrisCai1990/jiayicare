@@ -14,6 +14,8 @@ function childSubmission(user, questionnaire, response, kind) {
   return {
     responseId: response._id, questionnaireId: questionnaire._id,
     questionnaireTitle: questionnaire.title, submittedAt: response.submittedAt || new Date(),
+    submittedBy: response.submittedBy || null,
+    submittedByName: response.questionnaireSnapshot?.submittedByName || '',
     ageStage: response.questionnaireSnapshot?.ageStage || null,
     kind, status: kind === 'followup' && !items.length ? 'unchanged' : 'pending', revision: 0, items,
   };

@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const User = require('../models/User');
+const ChildGuardianLink = require('../models/ChildGuardianLink');
+const { childAgeStage } = require('../utils/childAgeStage');
 const { saveSection, reviewSection } = require('../utils/initialArchiveReview');
 
 module.exports = ({ getVisiblePlanPatientIds }) => {
@@ -58,6 +60,52 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       if (!result.matchedCount) return res.status(409).json({ success: false, message: '儿童档案已变化，请刷新后重新核实' });
       res.json({ success: true });
     } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
+  });
+  router.post('/:id/child-guardians/:linkId/verify', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+    try {
+      if (!['healthManager', 'familyDoctor', 'medicalAssistant', 'superadmin', 'platformSuper'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由负责此客户的医护人员核实' });
+      if (!mongoose.isValidObjectId(req.params.id) || !mongoose.isValidObjectId(req.params.linkId)) return res.status(400).json({ success: false, message: '编号无效' });
+      const scope = await getVisiblePlanPatientIds(req.staff);
+      if (scope && !scope.some(id => String(id) === req.params.id)) return res.status(403).json({ success: false, message: '无此客户权限' });
+      const note = String(req.body?.note || '').trim();
+      if (!note || note.length > 1000) return res.status(400).json({ success: false, message: '请填写监护关系核实依据' });
+      const link = await require('../models/ChildGuardianLink').findOneAndUpdate({ _id: req.params.linkId,
+        child: req.params.id, status: 'active', verifiedAt: null }, { $set: {
+        verifiedAt: new Date(), verifiedBy: req.staff._id, verificationNote: note,
+      } }, { new: true }).lean();
+      if (!link) return res.status(409).json({ success: false, message: '关系已核实或已变化，请刷新' });
+      res.json({ success: true });
+    } catch (error) { res.status(500).json({ success: false, message: '核实监护关系失败' }); }
+  });
+  router.post('/:id/child-guardians/link', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+    try {
+      if (!['healthManager', 'familyDoctor', 'medicalAssistant', 'superadmin', 'platformSuper'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由负责此客户的医护人员关联' });
+      if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '儿童编号无效' });
+      const scope = await getVisiblePlanPatientIds(req.staff);
+      if (scope && !scope.some(id => String(id) === req.params.id)) return res.status(403).json({ success: false, message: '无此客户权限' });
+      const child = await User.findById(req.params.id).select('patientCategory birthDate tenantId isDeleted').lean();
+      if (!child || child.isDeleted || child.patientCategory !== 'child' || !childAgeStage(child.birthDate)
+        || String(child.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(404).json({ success: false, message: '未找到有效的未成年儿童档案' });
+      const phone = String(req.body?.guardianPhone || '').trim();
+      const relation = String(req.body?.relation || '').trim();
+      const note = String(req.body?.note || '').trim();
+      if (!/^1\d{10}$/.test(phone) || !['父亲', '母亲', '其他监护人'].includes(relation)
+        || !note || note.length > 1000 || req.body?.consentConfirmed !== true) {
+        return res.status(400).json({ success: false, message: '请填写监护人手机号、关系、核实依据并确认已取得监护人同意' });
+      }
+      const guardian = await User.findOne({ phone, patientCategory: 'adult', onboardingCompleted: true,
+        tenantId: child.tenantId || null, isDeleted: { $ne: true } }).select('_id name').lean();
+      if (!guardian) return res.status(404).json({ success: false, message: '未找到本机构已建档的成人监护人' });
+      const existing = await ChildGuardianLink.findOne({ child: child._id, guardian: guardian._id }).lean();
+      if (existing) return res.status(409).json({ success: false, message: '此监护关系已存在，请核实原记录' });
+      await ChildGuardianLink.create({ child: child._id, guardian: guardian._id, relation,
+        consentAt: new Date(), createdByGuardian: false, verifiedAt: new Date(),
+        verifiedBy: req.staff._id, verificationNote: note });
+      res.status(201).json({ success: true, data: { guardianName: guardian.name } });
+    } catch (error) {
+      if (error?.code === 11000) return res.status(409).json({ success: false, message: '此监护关系已存在' });
+      res.status(500).json({ success: false, message: '关联监护人失败' });
+    }
   });
   router.put('/:id/child-archive/manual', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
     try {

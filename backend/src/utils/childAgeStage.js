@@ -19,9 +19,18 @@ function childAgeStage(birthDate, at = new Date()) {
   return id ? { id, label: stages.find(stage => stage.id === id).label } : null;
 }
 
-function applicableChildQuestions(questions, stageId, gender) {
+const INTAKE_ONLY_FIELDS = new Set([
+  'motherAge', 'gravida', 'para', 'motherPregnancyStatus', 'gestationalWeeks',
+  'birthWeight', 'birthLength', 'birthHeadCirc', 'birthChestCirc',
+  'deliveryMode', 'deliveryComplications', 'apgar1min', 'apgar5min',
+  'neonatalConditions', 'birthDefects', 'hearingScreening', 'eyeScreening',
+  'neonatalDiseaseScreen', 'familyAllergyHistory', 'familyDiseaseHistory',
+]);
+
+function applicableChildQuestions(questions, stageId, gender, followup = false) {
   return (questions || []).filter(q => (!q.genderOnly || q.genderOnly === gender)
-    && (!q.ageStages?.length || q.ageStages.includes(stageId)));
+    && (!q.ageStages?.length || q.ageStages.includes(stageId))
+    && (!followup || !INTAKE_ONLY_FIELDS.has(String(q.archiveField || '').replace(/^childProfile\./, ''))));
 }
 
 module.exports = { stages, ids, childAgeStage, applicableChildQuestions };

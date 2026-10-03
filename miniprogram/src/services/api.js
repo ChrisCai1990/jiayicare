@@ -329,8 +329,8 @@ export const chatAPI = {
 // ── Questionnaire ─────────────────────────────────────────────────
 export const questionnaireAPI = {
   submit: (answers) => request('/questionnaire', { method: 'POST', body: JSON.stringify({ answers }) }),
-  pending: () => request('/questionnaire/pending'),
-  submitDynamic: (id, answers, assignmentId, ageStageId) => request(`/questionnaire/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers, assignmentId, ageStageId }) }),
+  pending: (childId) => request(`/questionnaire/pending${childId ? `?childId=${encodeURIComponent(childId)}` : ''}`),
+  submitDynamic: (id, answers, assignmentId, ageStageId, childId) => request(`/questionnaire/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers, assignmentId, ageStageId, childId }) }),
 };
 
 // ── Checkup Plan ────────────────────────────────────────────────
@@ -428,6 +428,13 @@ export const familyLinksAPI = {
   pendingInvites: () => request('/user/family-links/pending-invites'),
   acceptInvite: (inviteId) => request(`/user/family-links/invites/${inviteId}/accept`, { method: 'PATCH' }),
   rejectInvite: (inviteId) => request(`/user/family-links/invites/${inviteId}/reject`, { method: 'PATCH' }),
+};
+
+export const guardianChildrenAPI = {
+  list: () => request('/user/guardian-children'),
+  create: (data) => request('/user/guardian-children', { method: 'POST', body: JSON.stringify(data) }),
+  archive: (childId) => request(`/user/guardian-children/${childId}/archive`),
+  startQuestionnaire: (childId) => request(`/user/guardian-children/${childId}/questionnaire/start`, { method: 'POST' }),
 };
 
 // ── Share ──────────────────────────────────────────────────────
