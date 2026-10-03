@@ -3,7 +3,7 @@ function annualCaseReviewQuery(patientId, year) {
   const end = new Date(`${Number(year) + 1}-01-01T00:00:00+08:00`);
   return { user: patientId, status: { $ne: 'archived' }, $and: [
     { $or: [{ reviewType: { $in: ['annual', 'medical', 'specialty', 'checkup'] } }, { reviewType: { $exists: false }, title: /年度管理研判/ }] },
-    { $or: [{ 'conclusion.confirmedAt': { $gte: start, $lt: end } }, { createdAt: { $gte: start, $lt: end } }] },
+    { $or: [{ annualPlanYear: Number(year) }, { annualPlanYear: null, 'conclusion.confirmedAt': { $gte: start, $lt: end } }, { annualPlanYear: null, createdAt: { $gte: start, $lt: end } }] },
   ] };
 }
 function markRequiredCaseReviews(reviews, requiredIds = []) {

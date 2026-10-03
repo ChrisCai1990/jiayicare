@@ -402,6 +402,7 @@ export const staffAPI = {
   completeMonthlyReviewAction: (reviewId, actionId) => req(`/staff/monthly-service-reviews/${reviewId}/actions/${actionId}/complete`, { method: 'POST' }),
   getMonthlyReviewWorkbench: () => req('/staff/monthly-service-reviews/workbench'),
   getAnnualPlanPreparation: (patientId, year) => req(`/staff/patients/${patientId}/annual-plan-preparation?year=${year}`),
+  prepareAnnualComprehensiveReview: (patientId, year) => req(`/staff/patients/${patientId}/annual-comprehensive-review`, { method: 'POST', body: JSON.stringify({ year }) }),
   updateAnnualPlanPreparation: (patientId, data) => req(`/staff/patients/${patientId}/annual-plan-preparation`, { method: 'PUT', body: JSON.stringify(data) }),
   getProfessionalHealthAssessments: (patientId, query = {}) => req(`/staff/patients/${patientId}/professional-health-assessments?${qs(query)}`),
   createProfessionalHealthAssessment: (patientId, data) => req(`/staff/patients/${patientId}/professional-health-assessments`, { method: 'POST', body: JSON.stringify(data) }),

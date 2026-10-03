@@ -1,6 +1,6 @@
 const hasWaiver = (preparation, key) => (preparation?.waivers || []).some(item => item.key === key && String(item.reason || '').trim());
 
-function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, auditedReportCount = 0, activeMedicationCount = 0, activeSupplementCount = 0, assessments = [], continuity = null, caseReviews }) {
+function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, year = preparation?.year, auditedReportCount = 0, activeMedicationCount = 0, activeSupplementCount = 0, assessments = [], continuity = null, caseReviews }) {
   const items = [];
   const add = (key, label, complete, options = {}) => {
     const waived = !complete && options.waivable === true && hasWaiver(preparation, key);
@@ -27,6 +27,8 @@ function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null,
   requiredDomains.forEach(domain => add(`assessment:${domain}`, `${domain}专业健康评估已审核`, approvedAnnualDomains.has(domain)));
   add('advisor_ready', '健康顾问已确认资料足够生成方案', !!preparation?.advisorReadyConfirmedAt);
   if (caseReviews) {
+    const annualReview = require('./annualComprehensiveReview').annualReviewForYear(caseReviews, year);
+    add('annual_comprehensive_review', '本年度综合研判已由健康顾问确认', annualReview?.conclusion?.status === 'confirmed', { detail: annualReview ? annualReview.title : '尚未创建年度综合研判' });
     const pending = caseReviews.filter(item => item.required && item.conclusion?.status !== 'confirmed');
     add('case_reviews', pending.length ? `本次必需研判待确认：${pending.map(item => item.title).join('、')}` : '本次必需研判已就绪（未指定的草稿不阻断、不引用）', pending.length === 0);
   }

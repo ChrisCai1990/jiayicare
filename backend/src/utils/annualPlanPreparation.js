@@ -18,9 +18,9 @@ async function loadAnnualPlanPreparationChecklist(patientId, year = new Date().g
     loadAnnualPlanContinuity(patientId, year),
   ]);
   if (!patient) return null;
-  const reviews = await require('../models/AiCaseReview').find(require('./annualCaseReviewScope').annualCaseReviewQuery(patientId, year)).select('title conclusion.status conclusion.confirmedAt').sort({ _id: 1 }).lean();
+  const reviews = await require('../models/AiCaseReview').find(require('./annualCaseReviewScope').annualCaseReviewQuery(patientId, year)).select('title reviewType annualPlanYear conclusion.status conclusion.confirmedAt').sort({ _id: 1 }).lean();
   const caseReviews = require('./annualCaseReviewScope').markRequiredCaseReviews(reviews, preparation?.requiredCaseReviewIds || []);
-  return { preparation, continuity, caseReviews, checklist: buildAnnualPlanPreparationChecklist({ patient, preparation, auditedReportCount, activeMedicationCount, activeSupplementCount, assessments, continuity, caseReviews }) };
+  return { preparation, continuity, caseReviews, checklist: buildAnnualPlanPreparationChecklist({ patient, preparation, year, auditedReportCount, activeMedicationCount, activeSupplementCount, assessments, continuity, caseReviews }) };
 }
 
 module.exports = { buildAnnualPlanPreparationChecklist, loadAnnualPlanPreparationChecklist };

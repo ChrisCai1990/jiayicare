@@ -128,6 +128,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         ? await Promise.all([staffAPI.getAiCaseReviews(patientId), Promise.resolve({ data: [] }), staffAPI.getAiCaseReviewTemplates()])
         : await Promise.all([staffAPI.getAiCaseReviews(patientId), staffAPI.getPhaseAssessments(patientId, new URLSearchParams(window.location.search).get('phaseAssessmentId') || ''), Promise.resolve({ data: [] })])
       setTopics(topicRes.data || []); setManagedTemplates(templateRes.data || []); setReviewSettings(templateRes.settings || { allowCustomTopic: true })
+      const requestedTopicId = new URLSearchParams(window.location.search).get('caseReviewId')
+      if ((topicRes.data || []).some(item => item._id === requestedTopicId)) setActiveId(requestedTopicId)
       setAssessments(assessmentRes.data || [])
       setClosedLoop(assessmentRes.healthManagementEnabled === true)
       const targetId = new URLSearchParams(window.location.search).get('phaseAssessmentId')
@@ -379,7 +381,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 5 }}>{topic.status === 'concluded' ? '已形成确认结论' : `${topic.messages?.length || 0} 条讨论`} · {formatDateTime(topic.updatedAt)}</div>
             <div style={{ fontSize: 12, color: '#4A6558', marginTop: 5 }}>类型：{topicTypeLabel(topic)}</div>
           </button>
-          <div style={{ display: 'flex', gap: 6, padding: '0 10px 9px' }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => openTopicEdit(topic)}>编辑</button><button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => deleteTopic(topic)}>删除</button></div>
+          {!topic.annualPlanYear && <div style={{ display: 'flex', gap: 6, padding: '0 10px 9px' }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => openTopicEdit(topic)}>编辑</button><button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => deleteTopic(topic)}>删除</button></div>}
         </div>)}
       </div>
     </div>

@@ -39,6 +39,7 @@ const aiCaseReviewSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true, maxlength: 100 },
   description: { type: String, default: '', maxlength: 1000 },
   reviewType: { type: String, enum: ['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'specialty', 'custom'], default: 'custom', index: true },
+  annualPlanYear: { type: Number, default: null },
   templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanTemplate', default: null },
   templateSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   status: { type: String, enum: ['active', 'concluded', 'archived'], default: 'active', index: true },
@@ -64,5 +65,6 @@ const aiCaseReviewSchema = new mongoose.Schema({
 }, { timestamps: true, optimisticConcurrency: true });
 
 aiCaseReviewSchema.index({ user: 1, status: 1, lastActivityAt: -1 });
+aiCaseReviewSchema.index({ user: 1, annualPlanYear: 1 }, { unique: true, partialFilterExpression: { annualPlanYear: { $type: 'number' }, reviewType: 'annual' } });
 
 module.exports = mongoose.model('AiCaseReview', aiCaseReviewSchema);

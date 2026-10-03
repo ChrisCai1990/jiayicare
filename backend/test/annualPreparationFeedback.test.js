@@ -4,6 +4,7 @@ const criteria = require('../../shared/annualAssessmentCriteria.json');
 const { supplementalAssessmentNote } = require('../src/utils/annualAssessmentDecision');
 const { markRequiredCaseReviews } = require('../src/utils/annualCaseReviewScope');
 const { buildAnnualPlanPreparationChecklist } = require('../src/utils/annualPlanPreparationChecklist');
+const { annualReviewForYear, descriptionForYear } = require('../src/utils/annualComprehensiveReview');
 test('legacy generated labels removed while additional manual content survives in frontend and backend', async () => {
   const value = criteria.map(item => item.label).join('；') + '\n客户沟通补充，保留原话';
   assert.equal(supplementalAssessmentNote(value), '客户沟通补充，保留原话');
@@ -24,4 +25,16 @@ test('missing required review does not silently unlock; unassigned legacy review
   const check = buildAnnualPlanPreparationChecklist({ caseReviews: rows });
   assert.ok(check.blockingKeys.includes('case_reviews'));
   assert.equal(markRequiredCaseReviews([{ _id: 'old' }])[0].required, false);
+});
+test('年度综合研判按目标年度确认后才解除统一门槛，其他专项仍可按需追加', () => {
+  const specialty = { _id: 'specialty', reviewType: 'specialty', title: '甲状腺专项', conclusion: { status: 'confirmed' } };
+  const annual = { _id: 'annual', reviewType: 'annual', annualPlanYear: 2027, title: '2027年度综合研判', conclusion: { status: 'draft' } };
+  const checklist = rows => buildAnnualPlanPreparationChecklist({ year: 2027, caseReviews: rows });
+  assert.ok(checklist([specialty]).blockingKeys.includes('annual_comprehensive_review'));
+  assert.ok(checklist([specialty, annual]).blockingKeys.includes('annual_comprehensive_review'));
+  annual.conclusion.status = 'confirmed';
+  assert.equal(checklist([specialty, annual]).blockingKeys.includes('annual_comprehensive_review'), false);
+  assert.equal(annualReviewForYear([{ ...annual, annualPlanYear: 2026 }, annual], 2027)._id, 'annual');
+  assert.match(descriptionForYear(2027), /管理目标/);
+  assert.match(descriptionForYear(2027), /营养师/);
 });

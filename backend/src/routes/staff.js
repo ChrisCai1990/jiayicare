@@ -7783,6 +7783,37 @@ router.post('/professional-health-assessments/:assessmentId/ai-followup-draft', 
 });
 
 // ── 首次年度方案准备清单 ───────────────────────────────────────────────
+router.post('/patients/:id/annual-comprehensive-review', staffAuth, async (req, res) => {
+  try {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可准备年度综合研判' });
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员的年度综合研判' });
+  if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) return res.status(403).json({ success: false, message: '该客户暂未开放新版健康管理闭环' });
+  const year = Number(req.body.year);
+  if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
+  const patient = await User.findById(req.params.id).select('_id tenantId').lean();
+  if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+  const existing = await AiCaseReview.findOne({ user: patient._id, reviewType: 'annual', annualPlanYear: year, status: { $ne: 'archived' } });
+  if (existing) return res.json({ success: true, data: { _id: existing._id, title: existing.title, status: existing.conclusion?.status, reused: true } });
+  const standard = require('../utils/annualComprehensiveReview');
+  let topic;
+  try { topic = await AiCaseReview.create({
+    user: patient._id, tenantId: patient.tenantId || null,
+    title: standard.titleForYear(year), description: standard.descriptionForYear(year),
+    reviewType: 'annual', annualPlanYear: year,
+    templateSnapshot: { name: '年度综合研判', target: '年度管理方案', outputGuide: standard.outputGuide },
+    contextScopes: ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'],
+    preferredProvider: 'qwen', createdBy: req.staff._id, createdByName: req.staff.name || '',
+  }); } catch (error) {
+    if (error.code !== 11000) throw error;
+    topic = await AiCaseReview.findOne({ user: patient._id, reviewType: 'annual', annualPlanYear: year });
+    if (!topic) throw error;
+    return res.json({ success: true, data: { _id: topic._id, title: topic.title, status: topic.conclusion?.status, reused: true } });
+  }
+  return res.status(201).json({ success: true, data: { _id: topic._id, title: topic.title, status: topic.conclusion?.status, reused: false } });
+  } catch (error) { return res.status(500).json({ success: false, message: '准备年度综合研判失败，请重试' }); }
+});
+
 router.get('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) => {
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的年度方案准备情况' });
