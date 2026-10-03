@@ -35,7 +35,9 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   const items = [];
   Object.entries(moduleData).forEach(([moduleKey, module]) => {
     if (!module || module.enabled === false) return;
-    const records = Array.isArray(module) ? module : Array.isArray(module.records) ? module.records : [module];
+    const records = moduleKey === 'nutrition_assessment' && Array.isArray(module.records)
+      ? [{...module, records: undefined}, ...module.records]
+      : Array.isArray(module) ? module : Array.isArray(module.records) ? module.records : [module];
     records.forEach((record, index) => { if (record && Object.keys(record).length) items.push(normalizeItem(moduleKey, record, index)); });
   });
   return items;

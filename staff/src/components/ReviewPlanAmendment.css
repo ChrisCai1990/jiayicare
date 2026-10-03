@@ -13,4 +13,5 @@
 .amendment-history small{color:#8a978f}
 .amendment-editor{padding:16px;border:1px solid #dbe5df;border-radius:10px;margin:14px 0;background:#fff}
 .amendment-editor>label{display:block;margin-top:12px;font-size:13px;color:#4b6557}
+.amendment-editor__evidence{min-height:180px;resize:vertical;line-height:1.55}
 @media(max-width:640px){.amendment-picker__grid{grid-template-columns:1fr}.amendment-picker{padding:12px}}

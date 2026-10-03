@@ -10,7 +10,8 @@ function taskId(planId, attempt = 1) {
 function contentForPlan(plan) {
   const metrics = selectedFromAnnualPlan(plan);
   const goals = nutritionGoalsForPlan(plan);
-  return `营养师核实膳食与生活方式；${metrics.length ? `本年度重点对比指标：${metrics.join('、')}` : '本年度按固定体成分指标评估'}。${goals.length ? `已确认的营养相关管理目标：${goals.map(row => `${row.goal}（重点：${row.focus}）`).join('；')}。` : ''}基线与阶段目标在营养方案中逐项确认。`;
+  const focus = plan?.moduleData?.nutrition_assessment?.records || [];
+  return `营养师核实膳食与生活方式；${metrics.length ? `本年度重点对比指标：${metrics.join('、')}` : '本年度按固定体成分指标评估'}。${goals.length ? `已确认的营养相关管理目标：${goals.map(row => `${row.goal}（重点：${row.focus}）`).join('；')}。` : ''}${focus.length ? `专项评估重点：${focus.map(row => `${row.items || '评估事项'}（${row.personalizedAdvice || row.reason || '待评估'}）`).join('；')}。` : ''}基线与阶段目标在营养方案中逐项确认。`;
 }
 
 function nutritionGoalsForPlan(plan) {

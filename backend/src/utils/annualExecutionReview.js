@@ -1,5 +1,5 @@
 const { createHash } = require('crypto');
-const labels = { medical_treatment: '医疗问题解决', checkup_completion: '体检完善', abnormal_followup: '异常复查', vaccine: '疫苗接种', personalized_followups: '个性化方案' };
+const labels = { medical_treatment: '医疗问题解决', checkup_completion: '体检完善', abnormal_followup: '异常复查', vaccine: '疫苗接种', nutrition_assessment: '标准营养评估', personalized_followups: '个性化方案' };
 const fields = ['items', 'name', 'department', 'standardPlanId', 'standardContent', 'standardSchedule', 'sourceCycles', 'defaultRole', 'personalizedAdvice', 'personalization', 'time', 'visit_time', 'executionDate', 'timeWindow', 'timingStatus'];
 function comparable(row) {
   if (!row) return null;

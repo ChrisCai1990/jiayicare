@@ -2,7 +2,7 @@ import DateField from '../../../shared/DateField.jsx'
 import './ReviewPlanAmendment.css'
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
-const labels={medical_treatment:'医疗问题解决',checkup_completion:'体检完善',abnormal_followup:'异常复查提醒',vaccine:'疫苗接种',personalized_followups:'个性化方案（Admin模板）'}
+const labels={medical_treatment:'医疗问题解决',checkup_completion:'体检完善',abnormal_followup:'异常复查提醒',vaccine:'疫苗接种',nutrition_assessment:'标准方案 · 营养评估',personalized_followups:'个性化方案（Admin模板）'}
 const rowTitle=row=>row?.items||row?.name||row?.department||row?.standardPlanName||'已移除原分类事项'
 function TemplateSearch({catalog,value,onChange,disabled}) {
   const [query,setQuery]=useState('')
@@ -85,7 +85,7 @@ export default function ReviewPlanAmendment({patientId,topicId,message,scope = '
           {item.moveFrom&&<div style={{background:'#FFF4D6',padding:8}}>确认后从“{labels[item.moveFrom.key]}”移除：{rowTitle(plan?.moduleData?.[item.moveFrom.key]?.records?.[item.moveFrom.index])}，并保留迁移记录。请将下方处理建议修订为最终确认内容。</div>}
           <label>新增或更新<select className="form-input" value={item.target??-1} onChange={e=>edit(index,'target',Number(e.target.value))}><option value={-1}>新增（同名事项自动合并）</option>{(plan?.moduleData?.[item.key]?.records||[]).map((r,i)=><option key={i} value={i}>更新：{rowTitle(r)}</option>)}</select></label>
           {Number(item.target)>=0&&<div style={{whiteSpace:'pre-wrap',background:'#F3F6F4'}}>原内容：{plan?.moduleData?.[item.key]?.records?.[item.target]?.reason||'未填写原因'}</div>}
-          {[['title','事项'],['reason','客观依据'],['advice','处理建议'],['timeWindow','建议时机（如三个月后）'],['date','明确日期（可留空）'],['timingReason','时间依据']].map(([k,l])=><label key={k} style={{display:'block'}}>{l}{['reason','advice','timingReason'].includes(k)?<textarea className="form-input" value={item[k]||''} onChange={e=>edit(index,k,e.target.value)}/>:<DateField className="form-input" disabled={busy||(k==='date'&&item.datePending)} type={k==='date'?'date':'text'} value={item[k]||''} onChange={e=>edit(index,k,e.target.value)}/>}</label>)}
+          {[['title','事项'],['reason','客观依据'],['advice','处理建议'],['timeWindow','建议时机（如三个月后）'],['date','明确日期（可留空）'],['timingReason','时间依据']].map(([k,l])=><label key={k} style={{display:'block'}}>{l}{['reason','advice','timingReason'].includes(k)?<textarea className={`form-input ${k==='reason'?'amendment-editor__evidence':''}`} rows={k==='reason'?7:undefined} value={item[k]||''} onChange={e=>edit(index,k,e.target.value)}/>:<DateField className="form-input" disabled={busy||(k==='date'&&item.datePending)} type={k==='date'?'date':'text'} value={item[k]||''} onChange={e=>edit(index,k,e.target.value)}/>}</label>)}
           <label><input type="checkbox" checked={!!item.datePending} onChange={e=>edit(index,'datePending',e.target.checked)}/> 日期待确认（先保存建议；若更新旧事项，将清除其原日期）</label>
           <details open={['precautions','customerAction','frequency'].some(k=>!!item[k])}>
             <summary>研判带入的执行要求</summary>

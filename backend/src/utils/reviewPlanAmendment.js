@@ -1,5 +1,5 @@
 const { createHash } = require('crypto');
-const fields = { medical_treatment: 'department', checkup_completion: 'items', abnormal_followup: 'items', vaccine: 'name', personalized_followups:'items' };
+const fields = { medical_treatment: 'department', checkup_completion: 'items', abnormal_followup: 'items', vaccine: 'name', nutrition_assessment: 'items', personalized_followups:'items' };
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const title = row => row.items || row.name || row.department || row.standardPlanName || '';
 const normalize = value => String(value || '').normalize('NFKC').toLowerCase().replace(/[\s\-－—:：()（）]/g, '');
@@ -43,6 +43,8 @@ function previewItems(items) {
   if (!items.length) return [];
   if(items.some(item=>item.operation==='remove')) throw Error('删除须由顾问手动选择，不能由AI直接提出删除操作');
   return clean(items.map(item=>{
+    // 营养师专项评估属于年度标准营养评估，不依赖个性化 Admin 模板。
+    if (item.key === 'personalized_followups' && /营养师.*评估|营养.*专项评估|营养评估/.test(item.title || '')) item = {...item,key:'nutrition_assessment',target:-1,standardPlanId:'',templateHash:''};
     const uncertain=!!item.date && (!validDate(item.date)||!String(item.timingReason||'').trim());
     return {...item,date:uncertain?'':item.date,timeWindow:item.timeWindow||(uncertain?String(item.date):''),datePending:uncertain||item.datePending===true};
   }));

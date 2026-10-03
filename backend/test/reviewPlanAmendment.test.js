@@ -61,6 +61,18 @@ test('不规范/相对日期可进入预览，待确认可保存而不编造日�
  }
  assert.equal(previewItems([{...item,date:'2026-11-01',timingReason:'已核实原文日期'}])[0].date,'2026-11-01');
 });
+test('营养师专项评估进入标准营养评估并保留原标准模块',()=>{
+ const {previewItems}=require('../src/utils/reviewPlanAmendment');
+ const [suggestion]=previewItems([{...item,key:'personalized_followups',title:'营养师专项评估（限盐、酒精）',standardPlanId:'legacy'}]);
+ assert.equal(suggestion.key,'nutrition_assessment');
+ assert.equal(suggestion.standardPlanId,'');
+ const result=apply({nutrition_assessment:{enabled:true,nutritionComparisonMetrics:['体重']}},[suggestion],{});
+ assert.deepEqual(result.moduleData.nutrition_assessment.nutritionComparisonMetrics,['体重']);
+ assert.equal(result.moduleData.nutrition_assessment.records[0].items,suggestion.title);
+ assert.equal(require('../src/utils/annualNutritionDispatch').contentForPlan({moduleData:result.moduleData}).includes(suggestion.title),true);
+ const display=require('../src/utils/annualPlanPresentation').buildAnnualPlanDisplayItems(result.moduleData);
+ assert.equal(display.filter(row=>row.moduleKey==='nutrition_assessment').length,2);
+});
 
 test('跨板块迁移两项不串位，标准内容来自目录并保留原依据',()=>{
  const catalog=[{id:'water',hash:'v1',name:'饮水指导',content:'库内标准',schedule:'顾问确认',cycles:[],role:'healthManager'},{id:'nutrition',hash:'v2',name:'营养师评估',content:'库内评估标准',schedule:'顾问确认',cycles:[],role:'nutritionist'}];
