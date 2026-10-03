@@ -316,10 +316,13 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const proposedTargets = topic.conclusion?.managementTargets || [];
       const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : '',
         proposedTargets.length ? `创建主题时填写的拟管理目标和干预重点（尚未核实，只作为研判方向，不能当作已确认事实）：${JSON.stringify(proposedTargets)}` : ''].filter(Boolean).join('\n');
+      const isAnnualReview = topic.reviewType === 'annual' && !!topic.annualPlanYear;
       const incrementalGuide = isSupplement
         ? '这是一次补充讨论。只回答本轮新增信息，严禁重述既往完整病史、检查清单、管理方案或原分析。输出最多3个短段：1.新增信息解读；2.修订说明（没有则写“无修订”）；3.对阶段性结论的影响。全文控制在300个中文字以内，每段最多3点。最新更正信息优先于旧信息。'
-        : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
-      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${incrementalGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 500 : 1800 });
+        : isAnnualReview
+          ? '这是年度综合研判首次讨论。按固定六项议题依次给出初步分析，每项最多3个要点，全文不超过1200个中文字；优先列明有来源的关键事实、管理目标与待核实资料，不重复罗列全部病史、检查数值或旧方案。资料不足的议题明确写待核实，不编造结论。'
+          : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
+      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${incrementalGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 900 : isAnnualReview ? 3200 : 1800 });
       return { result, snapshot: result.contextSnapshot || snapshot };
     });
     if (legacy) {

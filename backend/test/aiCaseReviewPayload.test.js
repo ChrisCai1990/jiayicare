@@ -96,6 +96,26 @@ test('message route persists the exact context returned by the provider', async 
   assert.equal(stored.snapshot, contextSnapshot);
 });
 
+test('年度综合研判首次讨论留足输出空间并约束篇幅', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/aiCaseReviews.js'), 'utf8');
+  const start = source.indexOf("router.post('/patients/:patientId/ai-case-reviews/:topicId/messages'");
+  const end = source.indexOf("router.patch('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId'", start);
+  let handler, options;
+  const topic = { _id: 'topic', reviewType: 'annual', annualPlanYear: 2026, generation: { requestId: 'saved-request', status: 'running' }, messages: [{ role: 'staff', requestId: 'saved-request', content: '结合客户资料分析' }], contextScopes: ['basic'] };
+  vm.runInNewContext(source.slice(start, end), {
+    router: { post(_path, _auth, fn) { handler = fn; } }, staffAuth() {}, ROLE_LABEL: {},
+    caseReviewPatientOr404: async () => ({ _id: 'patient' }), acceptSend: async () => ({ topic, claimed: true }),
+    finishSend: async (_model, _topic, generate) => { await generate(); },
+    buildContext: async () => ({ sources: [] }), providerAdapter: { reply: async value => { options = value; return { content: '测试回复' }; } },
+    AiCaseReview: { findOne: async () => ({ ...topic, generation: { status: 'completed' } }) }, forClient: value => value, console,
+  });
+  const response = { status() { return this; }, json() { return this; } };
+  await handler({ params: { topicId: 'topic' }, staff: { _id: 'staff' }, body: { content: '结合客户资料分析' } }, response);
+  assert.equal(options.maxTokens, 3200);
+  assert.match(options.prompt, /全文不超过1200个中文字/);
+  assert.match(options.prompt, /结合客户资料分析/);
+});
+
 test('provider sends and returns exactly the same packed snapshot, prioritizing latest records', async () => {
   let sent, options;
   const sandbox = { module: { exports: {} }, process: { env: { QWEN_API_KEY: 'synthetic' } }, require: key => key === './ai' ? { chat: async (messages, config) => { sent = messages; options = config; return '测试回复'; } } : { prepareContext } };
