@@ -625,7 +625,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const reframeAnnual = isAnnualReview && content.startsWith('【按问题重整年度研判】');
       const specialtySummary = isAnnualReview ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
       const annualBoundary = isAnnualReview ? '年度研判把健康顾问纳入的具体问题、五年健康趋势、慢性病风险维度及重大疾病风险维度作为同一组资料。风险维度是待核实的分析方向，不等于已确诊疾病。先逐项核实依据，再分析具体问题之间及其与五年趋势之间有证据支持的关联、时间变化和共同影响，最后形成综合优先级、医疗管理目标和专科/就医、营养师评估或随访去向。不得把仅仅共存当作因果，必要的专科意见未取得时标记待确认。营养干预具体方案由营养师独立制定和发出。' : '';
-      const issueCardGuide = '以问题为阅读单位，不按“来源、筛选、去向、目标”横向分栏。每个纳入的问题或风险维度单独输出一张卡，相关问题可合并，但标题须列出被合并的名称。严格使用纯文本格式：每张卡以独占一行的“【问题：具体名称】”开头，然后各占一行写“依据与趋势：…”“当前判断：…”“与其他问题的关联：…”“专业去向：…”“管理目标：…；干预重点：…”“沟通与待补：…”。证据、时间和来源写在该问题卡内；缺乏依据的目标只写“管理目标：待确认”，不要编造干预重点。所有问题卡之后独占一行写“【综合关联与优先级】”，再按行写“共同关联：…”“优先级：…”“年度方案衔接：…”。不要重复长篇病史、不要输出六议题总表；关系仅在有证据时提出，推测标明待核实。既有主题说明若要求六议题输出，以本格式为准。';
+      const issueCardGuide = '以问题为阅读单位，不按“来源、筛选、去向、目标”横向分栏。每个纳入的问题或风险维度单独输出一张卡，相关问题可合并，但标题须列出被合并的名称。严格使用纯文本格式：每张卡以独占一行的“【问题：具体名称】”开头，然后各占一行写“依据与趋势：…”“当前判断：…”“与其他问题的关联：…”“专业去向：…”“管理目标：…；干预重点：…”“沟通与待补：…”。证据、时间和来源写在该问题卡内；缺乏依据的目标只写“管理目标：待确认”，不要编造干预重点。每张卡最多260个汉字，全文不超过2000个汉字；只保留关键证据，不堆砌检查清单。所有问题卡之后独占一行写“【综合关联与优先级】”，再按行写“共同关联：…”“优先级：…”“年度方案衔接：…”。不要重复长篇病史、不要输出六议题总表；关系仅在有证据时提出，推测标明待核实。既有主题说明若要求六议题输出，以本格式为准。';
       const incrementalGuide = reframeAnnual
         ? `这是基于当前清单和已审核资料的完整重新整理，不是只分析新增变化。旧回复仅供比对，不可作为独立证据。${issueCardGuide}`
         : isSupplement
@@ -636,7 +636,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const autoGuide = automatic
         ? `${isAnnualReview ? `这是年度综合研判首次讨论。${issueCardGuide}` : '这是本主题首次讨论。'}${exam ? '优先核对最近一次已审核体检报告及其日期/项目依据' : '暂无已审核的体检报告，请依据已审核健康趋势、AI风险提示及已纳入问题，不得虚构体检所见'}。区分已确认事实与待核实信息，目标仅为草稿，须由健康顾问确认。`
         : incrementalGuide;
-      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: reframeAnnual ? 4500 : isSupplement ? 900 : isAnnualReview || automatic ? 3200 : 1800 });
+      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isAnnualReview ? 5000 : isSupplement ? 900 : automatic ? 3200 : 1800, retryOnEmptyOrLength: isAnnualReview });
       if (automatic && !proposedTargets.length) result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
       return { result, snapshot: result.contextSnapshot || snapshot };
     });

@@ -106,13 +106,14 @@ test('年度综合研判首次讨论留足输出空间并约束篇幅', async ()
     router: { post(_path, _auth, fn) { handler = fn; } }, staffAuth() {}, ROLE_LABEL: {}, AUTO_REVIEW_MESSAGE: '【系统自动启动研判】',
     caseReviewPatientOr404: async () => ({ _id: 'patient' }), acceptSend: async () => ({ topic, claimed: true }),
     finishSend: async (_model, _topic, generate) => { await generate(); },
-    buildContext: async () => ({ sources: [] }), providerAdapter: { reply: async value => { options = value; return { content: '测试回复' }; } },
+    buildContext: async () => ({ sources: [] }), annualSpecialtySummary: async () => [], providerAdapter: { reply: async value => { options = value; return { content: '测试回复' }; } },
     AiCaseReview: { findOne: async () => ({ ...topic, generation: { status: 'completed' } }) }, forClient: value => value, console,
   });
   const response = { status() { return this; }, json() { return this; } };
   await handler({ params: { topicId: 'topic' }, staff: { _id: 'staff' }, body: { content: '结合客户资料分析' } }, response);
-  assert.equal(options.maxTokens, 3200);
-  assert.match(options.prompt, /全文不超过1200个中文字/);
+  assert.equal(options.maxTokens, 5000);
+  assert.equal(options.retryOnEmptyOrLength, true);
+  assert.match(options.prompt, /每张卡最多260个汉字/);
   assert.match(options.prompt, /结合客户资料分析/);
 });
 
@@ -126,4 +127,20 @@ test('provider sends and returns exactly the same packed snapshot, prioritizing 
   assert.deepEqual(JSON.parse(delivered).medications, medications);
   assert(options.systemPrompt.includes('档案字段为空不能否定'));
   assert(options.systemPrompt.includes('最新资料快照优先于旧AI回复'));
+});
+
+test('annual provider retries one empty or truncated reply with shorter cards and more output space', async () => {
+  const calls = [];
+  const sandbox = { module: { exports: {} }, process: { env: { QWEN_API_KEY: 'synthetic' } }, require: key => key === './ai' ? { chat: async (messages, config) => {
+    calls.push({ messages, config });
+    if (calls.length === 1) throw new Error('AI 返回空内容或输出被截断，请人工核对');
+    return '【问题：血压】\n当前判断：待复核。';
+  } } : { prepareContext } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/utils/aiCaseReviewProvider.js'), 'utf8'), sandbox);
+  const result = await sandbox.module.exports.reply({ prompt: '年度综合研判', context: { sources: ['已审核记录'] }, maxTokens: 5000, retryOnEmptyOrLength: true });
+  assert.match(result.content, /血压/);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].config.maxTokens, 6500);
+  assert.match(calls[1].messages.at(-1).content, /每个问题最多180字/);
+  assert.equal(calls[0].messages.at(-1).content.includes('已审核记录'), true);
 });
