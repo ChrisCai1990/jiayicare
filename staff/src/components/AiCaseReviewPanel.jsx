@@ -110,6 +110,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [form, setForm] = useState({ title: '', description: '', reviewType: 'custom', templateId: '', preferredProvider: 'qwen', contextScopes: SCOPES.map(([key]) => key) })
   const [editForm, setEditForm] = useState({ title: '', description: '' })
   const [conclusionText, setConclusionText] = useState('')
+  const [managementTargets, setManagementTargets] = useState([])
   const chatRef = useRef(null)
   const active = useMemo(() => topics.find(item => item._id === activeId) || null, [topics, activeId])
   const sendStalled = active?.generation?.status === 'running' && Date.now() - new Date(active.generation.startedAt).getTime() > 300000
@@ -176,6 +177,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   }, [patientId, needsSendRefresh])
   useEffect(() => {
     setConclusionText(active?.conclusion?.content || '')
+    setManagementTargets(active?.conclusion?.managementTargets || [])
     setTimeout(() => { if (chatRef.current) chatRef.current.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }) }, 30)
   }, [active?._id, active?.messages?.length])
 
@@ -253,7 +255,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   }
   const generateConclusion = async () => {
     setBusy(true)
-    try { const res = await staffAPI.generateAiCaseReviewConclusion(patientId, active._id); replaceTopic(res.data); setConclusionText(res.data.conclusion?.content || '') }
+    try { const res = await staffAPI.generateAiCaseReviewConclusion(patientId, active._id); replaceTopic(res.data); setConclusionText(res.data.conclusion?.content || ''); setManagementTargets(res.data.conclusion?.managementTargets || []) }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const confirmConclusion = async () => {
@@ -261,7 +263,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     setBusy(true)
     try {
       const writeToPhaseAssessment = /阶段性.*评估/.test(`${active.title} ${active.description || ''}`)
-      const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText, writeToPhaseAssessment)
+      const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText, writeToPhaseAssessment, managementTargets)
       replaceTopic(res.data)
       if (res.archivedToPhaseAssessment) toast('结论已确认，并已写入阶段性健康评估')
       else {
@@ -428,6 +430,17 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论（当前有效信息）</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">
         <StructuredAssessment data={active.conclusion?.structured} />
         <textarea className="form-input" rows={10} value={conclusionText} onChange={e => setConclusionText(e.target.value)} placeholder="AI整理后由健康顾问复核确认；只有已确认结论会进入管理方案上下文。" />
+        {!isStageAssessmentTopic && <div style={{ marginTop: 14, padding: 12, background: '#F4F8F5', borderRadius: 8 }}>
+          <div style={{ fontWeight: 700 }}>管理目标与干预重点</div>
+          <div style={{ fontSize: 12, color: '#62776A', margin: '4px 0 10px' }}>逐条确认后带入年度方案；勾选“营养相关”的条目也会带给营养师。数值尚未核实时可写方向，由对应专业人员核实基线和阶段目标。</div>
+          {managementTargets.map((row, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'start', marginBottom: 8 }}>
+            <input className="form-input" value={row.goal || ''} onChange={e => setManagementTargets(items => items.map((item, i) => i === index ? { ...item, goal: e.target.value } : item))} placeholder="管理目标，如控制体重或改善空腹血糖" />
+            <input className="form-input" value={row.focus || ''} onChange={e => setManagementTargets(items => items.map((item, i) => i === index ? { ...item, focus: e.target.value } : item))} placeholder="干预重点，如膳食结构与运动" />
+            <label style={{ whiteSpace: 'nowrap', paddingTop: 8 }}><input type="checkbox" checked={row.nutritionRelevant === true} onChange={e => setManagementTargets(items => items.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养相关</label>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setManagementTargets(items => items.filter((_, i) => i !== index))}>删除</button>
+          </div>)}
+          <button type="button" className="btn btn-secondary btn-sm" disabled={managementTargets.length >= 12} onClick={() => setManagementTargets(items => [...items, { goal: '', focus: '', nutritionRelevant: false }])}>添加目标</button>
+        </div>}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方专业审核流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{`确认并用于${active.templateSnapshot?.target || '对应方案'}`}</button>}</div>
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}

@@ -371,10 +371,17 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     if (!topic.messages.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
     const transcript = topic.messages.map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
-    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实，不得提出与本主题无关的疫苗、营养、就医或检查建议。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n${transcript}`;
+    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实，不得提出与本主题无关的疫苗、营养、就医或检查建议。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n${transcript}`;
     const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt, context: { sources: [] }, attachments: [], history: [] });
     const structured = toStructuredAssessment(result.content, topic.title);
-    topic.conclusion = { content: assessmentToPlainText(structured), structured, status: 'draft', generatedAt: new Date(), confirmedAt: null, confirmedBy: null, confirmedByName: '', serviceRecordId: null };
+    if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({
+      content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
+      confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
+    });
+    topic.conclusion = { content: assessmentToPlainText(structured), structured,
+      managementTargets: topic.conclusion?.managementTargets?.length ? topic.conclusion.managementTargets
+        : require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(structured.actions),
+      status: 'draft', generatedAt: new Date(), confirmedAt: null, confirmedBy: null, confirmedByName: '', serviceRecordId: null };
     topic.lastActivityAt = new Date();
     await topic.save();
     res.json({ success: true, data: forClient(topic) });
@@ -391,6 +398,9 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     const content = String(req.body.content || topic.conclusion?.content || '').trim();
     if (!content) return res.status(400).json({ success: false, message: '结论不能为空' });
     const structured = toStructuredAssessment(content, topic.title);
+    let managementTargets;
+    try { managementTargets = require('../utils/caseReviewManagementTargets').normalizeTargets(req.body.managementTargets ?? topic.conclusion?.managementTargets ?? []); }
+    catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     const shouldArchive = req.body.writeToPhaseAssessment === true
       || /阶段性.*评估/.test(`${topic.title} ${topic.description}`)
       || topic.messages.some(item => item.role === 'staff' && /写入.{0,8}阶段性健康评估|阶段性健康评估.{0,8}写入/.test(item.content));
@@ -398,7 +408,13 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     if (shouldArchive) {
       return res.status(409).json({ success: false, message: '阶段性健康评估必须先进入营养师初审，不能从AI辅助研判直接入档；请使用页面中的“生成阶段评估草稿”入口' });
     }
-    topic.conclusion = { content: assessmentToPlainText(structured), structured, status: 'confirmed', generatedAt: topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(), confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', serviceRecordId: serviceRecord?._id || topic.conclusion?.serviceRecordId || null };
+    if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({
+      content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
+      confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
+    });
+    topic.conclusion = { content: assessmentToPlainText(structured), structured, managementTargets,
+      status: 'confirmed', generatedAt: topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(),
+      confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', serviceRecordId: serviceRecord?._id || topic.conclusion?.serviceRecordId || null };
     topic.status = 'concluded'; topic.lastActivityAt = new Date();
     await topic.save();
     res.json({ success: true, data: forClient(topic), archivedToPhaseAssessment: Boolean(serviceRecord), customerPushEligible: serviceRecord?.structuredContent?.customerPushEligible === true, serviceRecordId: serviceRecord?._id || null });

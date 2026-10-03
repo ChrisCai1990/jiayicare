@@ -43,6 +43,15 @@ test('年度标准营养评估带入体重与慢病指标；未勾选时只保�
   assert.equal(selected.nutritionTargets[5].baseline, '')
 });
 
+test('年度方案中的营养相关目标与来源随预填资料交给营养师核实', () => {
+  const source = { goal: '改善空腹血糖；干预重点：调整主食分配', annualNutritionGoals: [
+    { goal: '改善空腹血糖', focus: '调整主食分配', sourceReviewId: 'review-1' },
+  ] }
+  const result = nutritionAssessmentPrefill({}, source)
+  assert.match(result.goal, /改善空腹血糖/)
+  assert.equal(result.assessment.annualNutritionGoals[0].sourceReviewId, 'review-1')
+})
+
 test('主观感受优先取档案最新记录，消化功能可继续手工修改', () => {
   const patient = { lifestyle: { sleep: '偶尔入睡困难', bowel: '每日一次' }, lifestyle_data: { nutritionSubjective: { 睡眠质量: '最近夜醒两次', 消化功能: '腹胀' } } }
   const result = nutritionAssessmentPrefill(patient, { annualNutritionMetrics: ['睡眠质量', '消化功能'], nutritionTargets: [{ metric: '睡眠质量', baseline: '过去睡得好', target: '整夜安睡' }] }).assessment

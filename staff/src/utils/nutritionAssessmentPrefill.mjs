@@ -66,6 +66,7 @@ export function nutritionAssessmentPrefill(patient = {}, previous = null) {
       nutritionTargets: withFixedNutritionTargets([...previousRows.filter(row => FIXED_METRICS.includes(canonicalMetric(row.metric))), ...selectedRows], patient),
       annualNutritionSource: prior.annualNutritionSource || null,
       annualNutritionMetrics: selectedMetrics,
+      annualNutritionGoals: Array.isArray(prior.annualNutritionGoals) ? prior.annualNutritionGoals : [],
       reviewDate: '', medicalReview: text(prior.medicalReview) || medicalFromArchive(patient),
       practicalConstraints: text(prior.practicalConstraints) || constraintsFromArchive(patient),
       allergyStatus: '', allergyDetails: recordedAllergy || (isUsableFoodAllergy(prior.allergyDetails) ? text(prior.allergyDetails) : ''),
