@@ -35,6 +35,7 @@ test('年度综合研判按目标年度确认后才解除统一门槛，其他�
   annual.conclusion.status = 'confirmed';
   assert.equal(checklist([specialty, annual]).blockingKeys.includes('annual_comprehensive_review'), false);
   assert.equal(annualReviewForYear([{ ...annual, annualPlanYear: 2026 }, annual], 2027)._id, 'annual');
+  assert.equal(annualReviewForYear([{ ...annual, annualPlanYear: null }], 2027), undefined);
   assert.match(descriptionForYear(2027), /管理目标/);
   assert.match(descriptionForYear(2027), /营养师/);
 });

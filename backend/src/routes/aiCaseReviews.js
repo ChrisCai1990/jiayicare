@@ -264,7 +264,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
-    if (topic.annualPlanYear && ['title', 'description', 'reviewType'].some(key => req.body[key] !== undefined)) return res.status(409).json({ success: false, message: '年度综合研判固定议题不可修改' });
+    if (topic.annualPlanYear && ['title', 'description', 'reviewType', 'contextScopes', 'status'].some(key => req.body[key] !== undefined)) return res.status(409).json({ success: false, message: '年度综合研判固定议题和资料范围不可修改' });
     if (req.body.title !== undefined) topic.title = String(req.body.title).trim();
     if (req.body.description !== undefined) topic.description = String(req.body.description).trim();
     if (req.body.reviewType !== undefined && VALID_REVIEW_TYPES.has(req.body.reviewType)) topic.reviewType = req.body.reviewType;
