@@ -152,6 +152,7 @@ export const userAPI = {
   getMembershipBenefits: () => request('/user/membership-benefits'),
   referrals: () => request('/user/referrals'),
   getMe: () => request('/user/me'),
+  enterpriseSharedFundQuote: (productId, amount) => request(`/user/enterprise-shared-fund/quote?productId=${encodeURIComponent(productId)}&amount=${encodeURIComponent(amount)}`),
   getHealthFund: () => request('/user/health-fund'),
   getDashboard: () => request('/user/dashboard'),
   updateMe: (data) => request('/user/me', { method: 'PUT', body: JSON.stringify(data) }),
@@ -235,6 +236,7 @@ export const messagesAPI = {
 
 // ── Push Records (医护端推送) ─────────────────────────────────────
 export const pushRecordsAPI = {
+  sharedFundQuote: (id, selectedProductIds, couponId) => request(`/user/push-records/${id}/shared-fund-quote`, { method: 'POST', body: JSON.stringify({ selectedProductIds, couponId }) }),
   list: () => request('/user/push-records'),
   markRead: (id) => request(`/user/push-records/${id}/read`, { method: 'PATCH' }),
   pay: (id, data) => request(`/user/push-records/${id}/pay`, { method: 'POST', body: JSON.stringify(data) }),
@@ -344,8 +346,8 @@ export const servicesAPI = {
   claimProductShare: (token) => request(`/services/product-shares/${token}/claim`, { method: 'POST' }),
   list: () => request('/services'),
   packages: () => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount) =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount, useEnterpriseSharedFund = false) =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount, useEnterpriseSharedFund }) }),
   inquire: (serviceId, note, specificationLabel) =>
     request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel }) }),
   coupons: () => request('/services/coupons'),

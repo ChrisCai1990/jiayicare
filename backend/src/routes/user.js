@@ -159,6 +159,15 @@ router.get('/membership-benefits', auth, async (req, res) => {
 });
 
 // 获取当前用户信息（含健康基金汇总 + 责任团队真实数据）
+router.get('/enterprise-shared-fund/quote', auth, async (req, res) => {
+  try {
+    const amount = Number(req.query.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ success: false, message: '请提供有效商品金额' });
+    const quoted = await require('../utils/enterpriseSharedFund').quote(req.user, req.query.productId, amount);
+    res.json({ success: true, data: { amount: quoted.amount, year: quoted.account?.year || null } });
+  } catch (err) { res.status(400).json({ success: false, message: err.message }); }
+});
+
 router.get('/me', auth, async (req, res) => {
   try {
       const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
@@ -1374,12 +1383,28 @@ router.get('/push-records', auth, async (req, res) => {
 });
 
 // POST /api/user/push-records/:id/pay — 从推送记录直接下单
+router.post('/push-records/:id/shared-fund-quote', auth, async (req, res) => {
+  try {
+    const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id });
+    if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
+    const selected = new Set((req.body.selectedProductIds || []).map(String));
+    const items = (record.products?.length ? record.products : record.productId ? [{ productId: record.productId, name: record.productName, price: record.price }] : [])
+      .filter(item => selected.has(String(item.productId)));
+    if (!items.length || items.length !== selected.size) return res.status(400).json({ success: false, message: '所选商品无效' });
+    const products = await Promise.all(items.map(item => Product.findOne({ _id: item.productId, status: 'on' })));
+    if (products.some(item => !item)) return res.status(409).json({ success: false, message: '商品已下架' });
+    const quote = await require('../utils/pushGroupCheckout').quoteGroup(req.user, items, products, { couponId: req.body.couponId, useEnterpriseSharedFund: true });
+    res.json({ success: true, data: quote.summary });
+  } catch (err) { res.status(err.status || 400).json({ success: false, message: err.message }); }
+});
+
 // useHealthFund: 抵扣的健康基金金额（作用于勾选产品合计）；couponId: 使用的优惠券；paymentMethod: 支付方式
 router.post('/push-records/:id/pay', auth, async (req, res) => {
   try {
     const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
-    const { selectedProductIds, useHealthFund, couponId, paymentMethod, paymentCapability } = req.body;
+    const { selectedProductIds, useHealthFund, useEnterpriseSharedFund, couponId, paymentMethod, paymentCapability } = req.body;
+    if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
     if (!Array.isArray(selectedProductIds) || !selectedProductIds.length) return res.status(400).json({ success: false, message: '请选择要购买的产品' });
     // Released clients before 1.0.166 never call requestPayment and would show
     // success immediately after this API returned. Refuse to create any order
@@ -1462,11 +1487,18 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         fundUsed=checked.allowed; fundEnterprise=checked.enterprise; fundBreakdown=checked.breakdown;
       } catch(err) { return res.status(400).json({success:false,message:err.message}); }
     }
-    const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
+    let sharedFund = null;
+    let sharedFundAmount = 0;
+    if (useEnterpriseSharedFund) {
+      const quoted = await require('../utils/enterpriseSharedFund').quote(req.user, toPay[0].productId, priceAfterCoupon);
+      if (!quoted.amount) return res.status(409).json({ success: false, message: '企业共享基金当前不可用，请刷新后重试' });
+      sharedFund = quoted.account; sharedFundAmount = quoted.amount;
+    }
+    const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundUsed - sharedFundAmount) * 100) / 100);
     if (req.body.expectedAmount != null && require('../utils/checkoutAmounts').cents(req.body.expectedAmount) !== require('../utils/checkoutAmounts').cents(finalPrice)) {
       return res.json({ success: false, code: 'CHECKOUT_QUOTE_CHANGED', message: '抵扣金额已按商品规则重新核算，请确认合计后再次支付', summary: { totalPrice, couponDiscount, fundUsed, finalPrice } });
     }
-    const totalDiscount = couponDiscount + fundUsed;
+    const totalDiscount = couponDiscount + fundUsed + sharedFundAmount;
 
     // 按各产品价格占比分摊抵扣，得到每个订单的实付金额（最后一项吸收舍入误差）
     // referrerId/servicePerformers 沿用推送记录里的推送人/各岗位服务人（推送人=转介绍人，与 services.js
@@ -1496,6 +1528,8 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         paidAmount: paid,
         healthFundAmount: idx === 0 ? fundUsed : 0,
         healthFundBreakdown: idx === 0 ? fundBreakdown : { personal: 0, corporate: 0 },
+        enterpriseSharedFundId: idx === 0 ? sharedFund?._id || null : null,
+        enterpriseSharedFundAmount: idx === 0 ? sharedFundAmount : 0,
       };
     });
 
@@ -1555,9 +1589,15 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     orderDoc.couponId = coupon?._id || null;
     orderDoc.couponDiscount = couponDiscount;
     orderDoc.healthFundEnterpriseId = fundEnterprise?._id || null;
+    orderDoc._id = new mongoose.Types.ObjectId();
     let orders;
+    if (sharedFundAmount > 0) {
+      try { await require('../utils/enterpriseSharedFund').reserve({ account: sharedFund, orderId: orderDoc._id, userId: req.user._id, amount: sharedFundAmount }); }
+      catch (err) { if (inventory.reserved) await Product.updateOne({ _id: product._id }, { $inc: { stock: 1 } }); return res.status(err.status || 409).json({ success: false, message: err.message }); }
+    }
     try { orders = [await Order.create(orderDoc)]; }
     catch (error) {
+      if (sharedFundAmount > 0) await require('../utils/enterpriseSharedFund').release(orderDoc);
       if (inventory.reserved) await Product.updateOne({ _id: product._id }, { $inc: { stock: 1 } });
       throw error;
     }
@@ -1583,6 +1623,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         await payment.save();
         orders[0].tradeStatus = 'closed'; orders[0].paymentStatus = 'failed'; await orders[0].save();
         await require('../utils/orderInventory').releaseOrderInventory(orders[0]);
+        await require('../utils/enterpriseSharedFund').release(orders[0]);
         return res.status(503).json({ success: false, message: `微信支付下单失败：${error.message}`, data: { orderId: orders[0]._id } });
       }
     }

@@ -69,6 +69,8 @@ async function settlePaidOrder(payment, order, cashAmount) {
   // 后续副作用若暂时失败，不应让已支付订单在对话页完全不可见。
   await require('./orderPlannerConversation').ensureOrderPlannerPrompt(order);
 
+  if (order.enterpriseSharedFundAmount > 0) await require('./enterpriseSharedFund').settle(order);
+
   if (order.healthFundAmount > 0 && !order.healthFundSettledAt) {
     const enterprise = order.healthFundEnterpriseId ? { _id: order.healthFundEnterpriseId } : null;
     const user = await User.findById(order.user);
@@ -189,6 +191,7 @@ async function confirmRefund(refund, snapshot) {
     if (order.healthFundAmount > 0) {
       await require('./healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}退款返还` });
     }
+    if (order.enterpriseSharedFundAmount > 0) await require('./enterpriseSharedFund').refund(order);
     await require('./productShareRewards').reverseProductShareRewards(order);
     if (order.orderType === 'package' || order.annualServiceSnapshot?.memberBundleSnapshot?.productId) {
       await require('../models/PackageEntitlement').updateOne(

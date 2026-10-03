@@ -158,6 +158,7 @@ export default function OrdersPage() {
                 <Text style={{ fontSize: '15px', fontWeight: 800, color: colors.primary, display: 'block', marginTop: '6px' }}>¥{o.servicePrice}</Text>
               )}
               {!!o.checkoutGroupId && <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginTop: '6px' }}>合并付款商品 · 本项{['paid', 'refunded'].includes(o.paymentStatus) ? '实付' : '待付'} ¥{Number(['paid', 'refunded'].includes(o.paymentStatus) ? o.paidAmount : o.paymentExpectedAmount).toFixed(2)}，售后按本项金额处理</Text>}
+              {Number(o.enterpriseSharedFundAmount || 0) > 0 && <Text style={{ fontSize: '12px', color: colors.primary, display: 'block', marginTop: '6px' }}>企业共享基金抵扣 ¥{Number(o.enterpriseSharedFundAmount).toFixed(2)} · 本项{['paid', 'refunded'].includes(o.paymentStatus) ? '实付' : '待付'} ¥{Number(['paid', 'refunded'].includes(o.paymentStatus) ? o.paidAmount : o.paymentExpectedAmount).toFixed(2)}</Text>}
               {!!o.fulfillmentId?.status && (
                 <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginTop: '6px' }}>
                   服务进度：{FULFILLMENT_LABELS[o.fulfillmentId.status] || o.fulfillmentId.status}

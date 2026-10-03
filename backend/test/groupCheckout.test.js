@@ -22,6 +22,11 @@ function harness(config = {}) {
     '../models/PushRecord': { findOneAndUpdate: async () => config.locked ? null : record, updateOne: async () => {} },
     '../models/Enterprise': { findById: async () => null },
     './healthFundPayment': { ...actualFund, getHealthFundPolicy: async () => ({ ...actualFund.DEFAULT_HEALTH_FUND_POLICY, ...(config.policy || {}) }), getPersonalFundAvailable: async () => config.personal || 0, getCorporateFundAvailable: async () => config.corporate || 0 },
+    './enterpriseSharedFund': {
+      eligibleAccount: async (_user, productId) => config.sharedAccount?.productIds.includes(productId) ? config.sharedAccount : null,
+      reserve: async args => events.push(['sharedReserve', String(args.orderId), args.amount]),
+      release: async order => events.push(['sharedRelease', String(order._id)]),
+    },
     './checkoutAmounts': require('../src/utils/checkoutAmounts'),
     './packageFeatureEntitlements': { hasHealthFundAccess: async checkedUser => {
       assert.equal(checkedUser, user);
@@ -64,6 +69,17 @@ test('two items create two independent owned orders and one WeChat charge for 71
   assert.deepEqual(h.orders.map(o => o.servicePerformers[0].staffId), ['n1', 'n2']);
   assert.ok(h.orders.every(o => String(o.checkoutGroupId) === String(h.orders[0]._id) && o.supervisorId === 'planner'));
   assert.equal(paymentAllocations(h.payments[0]).length, 2);
+});
+
+test('shared enterprise pool covers only selected items and no more than half their after-coupon price', async () => {
+  const h = harness({ sharedAccount: { _id: 'pool', productIds: ['a'], availableCents: 500000 } });
+  const result = await h.run({ useEnterpriseSharedFund: true, expectedAmount: 3718.44 });
+  assert.equal(result.summary.enterpriseSharedFundUsed, 3400);
+  assert.equal(h.orders[0].enterpriseSharedFundAmount, 3400);
+  assert.equal(h.orders[1].enterpriseSharedFundAmount, 0);
+  assert.equal(h.payments[0].amount, 3718.44);
+  assert.equal(h.events.filter(e => e[0] === 'sharedReserve').length, 1);
+  for (const order of h.orders) assert.equal(cents(order.servicePrice), cents(order.couponDiscount) + cents(order.healthFundAmount) + cents(order.enterpriseSharedFundAmount) + cents(order.paymentExpectedAmount));
 });
 
 test('coupon and fund are allocated per item; cash sums to the single gateway charge', async () => {

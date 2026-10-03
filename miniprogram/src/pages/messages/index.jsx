@@ -515,6 +515,8 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
   const fundBalance = checkoutUser?.healthFund?.total || 0;
   const fundRuleDescription = checkoutUser?.healthFund?.rule?.description || '';
   const [useFund, setUseFund] = useState(false);
+  const [useSharedFund, setUseSharedFund] = useState(false);
+  const [sharedQuote, setSharedQuote] = useState(0);
   const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
   const [couponId, setCouponId] = useState(null);
@@ -539,11 +541,19 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     ? Math.min(selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(total * (100 - selectedCoupon.value)) / 100, total)
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((total - couponDiscount) * 100) / 100);
+  useEffect(() => {
+    if (!checkedIds.length) { setSharedQuote(0); return; }
+    let live = true;
+    setSharedQuote(0);
+    pushRecordsAPI.sharedFundQuote(msg._id, checkedIds, couponId).then(r => { if (live) setSharedQuote(Number(r.data?.enterpriseSharedFundUsed || 0)); }).catch(() => { if (live) setSharedQuote(0); });
+    return () => { live = false; };
+  }, [msg._id, checkedIds.join(','), couponId]);
   const fundMaximum = checkedItems.length === 1
     ? (checkedItems[0].fundProduct ? maxSingleFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems[0].fundProduct) : 0)
     : maxGroupFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems);
   const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
-  const finalPrice = checkoutQuote?.finalPrice ?? Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
+  const sharedApplied = useSharedFund ? sharedQuote : 0;
+  const finalPrice = checkoutQuote?.finalPrice ?? Math.max(0, Math.round((priceAfterCoupon - fundApplied - sharedApplied) * 100) / 100);
 
   const handlePay = async () => {
     if (!checkedIds.length || payingRef.current) return;
@@ -552,7 +562,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     paymentActivityRef.current = true;
     setPaying(true); setPayError('');
     try {
-      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
+      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, useEnterpriseSharedFund: useSharedFund, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
       if (result.code === 'CHECKOUT_QUOTE_CHANGED') { setCheckoutQuote(result.summary); throw new Error(result.message); }
       if (!result.success) throw new Error(result.message || '下单失败，请稍后重试');
       if (result.summary) setCheckoutQuote(result.summary);
@@ -659,6 +669,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
                 setCheckoutQuote(null);
                 const next = !useFund;
                 setUseFund(next);
+                if (next) setUseSharedFund(false);
                 if (next) setFundAmountInput(String(fundMaximum));
               }} style={{ padding: '6px 12px', borderRadius: `${radius.full}px`, border: `1.5px solid ${useFund ? colors.primary : colors.border}`, backgroundColor: useFund ? colors.primary : '#fff' }}>
                 <Text style={{ fontSize: '12px', fontWeight: 600, color: useFund ? '#fff' : colors.textMuted }}>{useFund ? '已启用' : '使用基金'}</Text>
@@ -667,6 +678,10 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
             {useFund && !!fundRuleDescription && <Text style={{ fontSize: '11px', color: colors.textSecondary, lineHeight: '17px', display: 'block', marginTop: '6px' }}>使用规则：{fundRuleDescription}</Text>}
           </View>
         )}
+
+        {sharedQuote > 0 && <View onClick={() => { if (payingRef.current) return; setCheckoutQuote(null); const next = !useSharedFund; setUseSharedFund(next); if (next) setUseFund(false); }} style={{ padding: '10px 12px', marginBottom: `${spacing.sm}px`, border: `1px solid ${useSharedFund ? colors.primary : colors.border}`, borderRadius: `${radius.md}px` }}>
+          <Text style={{ fontSize: '12px', color: colors.textPrimary }}>企业共享基金可抵 ¥{sharedQuote.toFixed(2)} · {useSharedFund ? '已启用' : '点击使用'}（最高 50%）</Text>
+        </View>}
 
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
           {RENEWAL_PAYMENT_METHODS.map((m) => (
@@ -684,7 +699,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
 
         <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>
-            已选 {checkedIds.length}/{productList.length} 项{(couponDiscount > 0 || fundApplied > 0) ? `（原价¥${total}）` : ''}
+            已选 {checkedIds.length}/{productList.length} 项{(couponDiscount > 0 || fundApplied > 0 || sharedApplied > 0) ? `（原价¥${total}，企业基金抵扣¥${sharedApplied.toFixed(2)}）` : ''}
           </Text>
           <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>合计 ¥{finalPrice}</Text>
         </View>

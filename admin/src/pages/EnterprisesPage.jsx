@@ -433,6 +433,71 @@ function HrAccountModal({ enterprise, onClose, onSaved }) {
 const STATUS_LABEL = { active: '合作中', expired: '已到期', suspended: '已暂停' }
 const STATUS_BADGE = { active: 'badge-green', expired: 'badge-gray', suspended: 'badge-gray' }
 
+function SharedFundModal({ enterprise, onClose }) {
+  const [year, setYear] = useState(Number(new Date().getFullYear()))
+  const [accounts, setAccounts] = useState([])
+  const [policies, setPolicies] = useState([])
+  const [products, setProducts] = useState([])
+  const [form, setForm] = useState({ enabled: false, policyIds: [], productIds: [] })
+  const [credit, setCredit] = useState({ amount: '', reference: '', source: '企业自有', note: '' })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const reload = async () => {
+    const [funds, insurance, catalog] = await Promise.all([
+      adminAPI.enterpriseSharedFunds(enterprise._id), adminAPI.enterpriseInsurancePolicies(enterprise._id), adminAPI.products({ limit: 500 }),
+    ])
+    setAccounts(funds.data || []); setPolicies(insurance.data || []); setProducts(catalog.data || [])
+  }
+  useEffect(() => { reload().catch(e => setError(e.message)) }, [enterprise._id])
+  const account = accounts.find(a => a.year === Number(year))
+  useEffect(() => { setForm({ enabled: !!account?.enabled, policyIds: (account?.policyIds || []).map(String), productIds: (account?.productIds || []).map(String) }) }, [year, accounts])
+  const period = enterprise.hrDataByYear?.[String(year)] || {}
+  const toggle = (key, id) => setForm(f => ({ ...f, [key]: f[key].includes(id) ? f[key].filter(v => v !== id) : [...f[key], id] }))
+  const save = async () => {
+    setBusy(true); setError(''); setMessage('')
+    try { await adminAPI.saveEnterpriseSharedFund(enterprise._id, year, form); await reload(); setMessage('规则已保存。启用后仅有效参保人可对勾选商品使用。') }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  const deposit = async () => {
+    setBusy(true); setError(''); setMessage('')
+    try { await adminAPI.creditEnterpriseSharedFund(enterprise._id, year, credit); await reload(); setCredit({ amount: '', reference: '', source: '企业自有', note: '' }); setMessage('凭证已入账。') }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  const reconcile = async () => {
+    setBusy(true); setError(''); setMessage('')
+    try { const result = await adminAPI.reconcileEnterpriseSharedFund(enterprise._id, year); await reload(); setMessage(`已核对账本：修复 ${result.data?.repaired || 0} 笔，待人工核对 ${result.data?.unresolved?.length || 0} 笔。`) }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  return <div className="modal-overlay"><div className="modal" style={{ width: 'min(880px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}>
+    <div className="modal-header"><div className="modal-title">💚 {enterprise.name} · 企业共享健康基金</div><button className="modal-close" onClick={onClose}>×</button></div>
+    <div className="modal-body">
+      <p style={{ color: '#4A6558', fontSize: 13 }}>基金归企业所有，HR只读。适用员工、配偶和子女中的有效高端险参保人；每单最多抵扣优惠后金额的 50%，剩余由客户支付。</p>
+      <label className="form-group"><span className="form-label">健康管理年度</span><select className="form-input" value={year} onChange={e => setYear(Number(e.target.value))}>{[...new Set([new Date().getFullYear(), ...Object.keys(enterprise.hrDataByYear || {}).map(Number), ...accounts.map(a => a.year)])].sort((a,b) => b-a).map(y => <option key={y} value={y}>{y} 年</option>)}</select></label>
+      <p style={{ fontSize: 13 }}>基金有效期与健康管理服务一致：{period.healthMgmtStartAt || '未录入'} ～ {period.healthMgmtEndAt || '未录入'}</p>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '12px 0' }}>{[['累计入账',account?.credited],['可用余额',account?.available],['待支付预留',account?.reserved],['已使用',account?.spent]].map(([label,value]) => <div key={label} style={{ padding: 12, background: '#F7FBF9', borderRadius: 8, minWidth: 135 }}><div style={{ fontSize: 12 }}>{label}</div><b>¥{Number(value || 0).toFixed(2)}</b></div>)}</div>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '14px 0' }}><input type="checkbox" checked={form.enabled} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />启用该年度共享基金</label>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>适用高端险方案（逐项勾选）</div>
+      {policies.filter(p => Number(p.year) === Number(year)).map(p => <label key={p._id} style={{ display: 'block', marginBottom: 6 }}><input type="checkbox" checked={form.policyIds.includes(p._id)} onChange={() => toggle('policyIds', p._id)} /> {p.name} · {p.status === 'active' ? '生效中' : '未生效'} · 参保 {p.enrolledCount || 0} 人</label>)}
+      <div style={{ fontWeight: 700, margin: '16px 0 8px' }}>适用额外健康管理商品（逐项勾选）</div>
+      <div style={{ maxHeight: 190, overflow: 'auto', border: '1px solid #D8E7DF', padding: 10, borderRadius: 8 }}>{products.map(p => <label key={p._id} style={{ display: 'block', marginBottom: 6 }}><input type="checkbox" checked={form.productIds.includes(p._id)} onChange={() => toggle('productIds', p._id)} /> {p.name} · {p.category || '未分类'} {p.status !== 'on' ? '（未上架）' : ''}</label>)}</div>
+      <button className="btn btn-primary" disabled={busy} onClick={save} style={{ marginTop: 12 }}>保存适用规则</button>
+      <div style={{ fontWeight: 700, margin: '22px 0 8px' }}>确认入账</div>
+      <div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>HR 看板原有手工金额不会自动成为可支付余额；请核对实际入账后，按唯一凭证号登记。</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+        <input className="form-input" type="number" min="0.01" step="0.01" placeholder="入账金额（元）" value={credit.amount} onChange={e => setCredit(c => ({ ...c, amount: e.target.value }))} />
+        <select className="form-input" value={credit.source} onChange={e => setCredit(c => ({ ...c, source: e.target.value }))}><option>企业自有</option><option>平台赠送</option></select>
+        <input className="form-input" placeholder="唯一入账凭证号（8-64位字母数字）" value={credit.reference} onChange={e => setCredit(c => ({ ...c, reference: e.target.value }))} />
+        <input className="form-input" placeholder="入账依据备注" value={credit.note} onChange={e => setCredit(c => ({ ...c, note: e.target.value }))} />
+      </div>
+      <button className="btn btn-secondary" disabled={busy || !account} onClick={deposit} style={{ marginTop: 10 }}>确认入账</button>
+      <button className="btn btn-secondary" disabled={busy || !account} onClick={reconcile} style={{ marginTop: 10, marginLeft: 8 }}>核对订单账本</button>
+      {error && <div style={{ color: '#c00', marginTop: 10 }}>{error}</div>}{message && <div style={{ color: '#1E6B50', marginTop: 10 }}>{message}</div>}
+      {!!account?.credits?.length && <div style={{ marginTop: 16, fontSize: 12 }}>最近入账：{account.credits.slice(-5).map(c => `${c.reference} ¥${c.amount}`).join(' · ')}</div>}
+    </div>
+  </div></div>
+}
+
 export default function EnterprisesPage() {
   const toast = useToast()
   const [list, setList] = useState([])
@@ -447,6 +512,7 @@ export default function EnterprisesPage() {
   const [showHrModal, setShowHrModal] = useState(false)
   const [hrDataEnt, setHrDataEnt] = useState(null)   // 正在录入HR看板数据的企业
   const [insuranceEnt, setInsuranceEnt] = useState(null)
+  const [sharedFundEnt, setSharedFundEnt] = useState(null)
   const [servicePackages, setServicePackages] = useState([])
 
   const load = async (name) => {
@@ -550,6 +616,7 @@ export default function EnterprisesPage() {
                   <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(e); setShowEditModal(true) }}>编辑</button>
                   <button className="btn btn-sm btn-ghost" onClick={() => setHrDataEnt(e)}>📊 HR数据</button>
                   <button className="btn btn-sm btn-ghost" onClick={() => { if (!employeesByEnt[e._id]) loadDetail(e._id); setInsuranceEnt(e) }}>🛡️ 高端医疗险</button>
+                  <button className="btn btn-sm btn-ghost" onClick={() => setSharedFundEnt(e)}>💚 共享基金</button>
                   <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => del(e)}>删除</button>
                 </div>
               </div>
@@ -607,6 +674,7 @@ export default function EnterprisesPage() {
         <HrDataModal enterprise={hrDataEnt} onClose={() => setHrDataEnt(null)} onSaved={() => load(q)} toast={toast} />
       )}
       {insuranceEnt && <InsurancePolicyModal enterprise={insuranceEnt} employees={employeesByEnt[insuranceEnt._id] || []} onClose={() => setInsuranceEnt(null)} toast={toast} />}
+      {sharedFundEnt && <SharedFundModal enterprise={sharedFundEnt} onClose={() => setSharedFundEnt(null)} />}
     </div>
   )
 }

@@ -245,7 +245,8 @@ router.post('/inquiries', auth, async (req, res) => {
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
   const appPayment = req.body.paymentScene === 'app';
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [] } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [] } = req.body;
+  if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
@@ -460,7 +461,16 @@ router.post('/order', auth, async (req, res) => {
     } catch (err) { return res.status(400).json({ success:false, message:err.message }); }
   }
 
-  const paidAmount = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
+  let sharedFund = null;
+  let sharedFundAmount = 0;
+  if (useEnterpriseSharedFund) {
+    if (!product || isPkg) return res.status(400).json({ success: false, message: '该服务不支持企业共享基金' });
+    const quote = await require('../utils/enterpriseSharedFund').quote(req.user, product._id, priceAfterCoupon);
+    if (!quote.amount) return res.status(409).json({ success: false, message: '企业共享基金当前不可用，请刷新后重试' });
+    sharedFund = quote.account; sharedFundAmount = quote.amount;
+  }
+
+  const paidAmount = Math.max(0, Math.round((priceAfterCoupon - fundUsed - sharedFundAmount) * 100) / 100);
   if (appPayment && paidAmount > 0) { try { require('../utils/wechatPay').assertAppReady(); } catch (e) { return res.status(503).json({ success: false, message: e.message }); } }
 
   // Check the amount the customer actually confirmed before reserving stock or creating an order.
@@ -485,6 +495,7 @@ router.post('/order', auth, async (req, res) => {
 
   const paymentParts = [];
   if (fundUsed > 0) paymentParts.push(`健康基金抵扣¥${fundUsed}`);
+  if (sharedFundAmount > 0) paymentParts.push(`企业共享基金抵扣¥${sharedFundAmount}`);
   if (couponDiscount > 0) paymentParts.push(`优惠券抵扣¥${couponDiscount}`);
   if (paymentMethod) paymentParts.push(`支付方式：${paymentMethod}`);
   const orderNote = [note, paymentParts.join('；')].filter(Boolean).join('；');
@@ -519,7 +530,13 @@ router.post('/order', auth, async (req, res) => {
     ? await require('../utils/packageEntitlementSnapshot').buildPackageEntitlementSnapshot(servicePackage)
     : null;
   let order;
+  const sharedOrderId = new mongoose.Types.ObjectId();
+  if (sharedFundAmount > 0) {
+    try { await require('../utils/enterpriseSharedFund').reserve({ account: sharedFund, orderId: sharedOrderId, userId: req.user._id, amount: sharedFundAmount }); }
+    catch (err) { if (inventory.reserved) await Product.updateOne({ _id: product._id }, { $inc: { stock: 1 } }); return res.status(err.status || 409).json({ success: false, message: err.message }); }
+  }
   try { order = await Order.create({
+    _id: sharedOrderId,
     user:         req.user._id,
     serviceId:    service.id,
     serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
@@ -570,6 +587,8 @@ router.post('/order', auth, async (req, res) => {
     healthFundAmount: fundUsed,
     healthFundBreakdown: fundBreakdown,
     healthFundEnterpriseId: fundEnterprise?._id || null,
+    enterpriseSharedFundId: sharedFund?._id || null,
+    enterpriseSharedFundAmount: sharedFundAmount,
     couponId: coupon?._id || null,
     couponDiscount,
     ...orderOwnershipFields({
@@ -578,6 +597,7 @@ router.post('/order', auth, async (req, res) => {
       closureMode: product?.serviceWorkflow?.closureMode,
     }),
   }); } catch (error) {
+    if (sharedFundAmount > 0) await require('../utils/enterpriseSharedFund').release({ _id: sharedOrderId, enterpriseSharedFundId: sharedFund._id, enterpriseSharedFundAmount: sharedFundAmount });
     if (inventory.reserved) await Product.updateOne({ _id: product._id }, { $inc: { stock: 1 } });
     throw error;
   }
@@ -687,6 +707,7 @@ router.post('/order', auth, async (req, res) => {
       order.paymentStatus = 'failed';
       await order.save();
       await require('../utils/orderInventory').releaseOrderInventory(order);
+      await require('../utils/enterpriseSharedFund').release(order);
       return res.status(503).json({ success: false, message: `微信支付下单失败：${err.message}`, data: { orderId: order._id } });
     }
   }
@@ -701,6 +722,7 @@ router.post('/order', auth, async (req, res) => {
       orderNo: order.orderNo || order._id.toString().slice(-8).toUpperCase(),
       originalPrice: service.price,
       fundUsed,
+      enterpriseSharedFundUsed: sharedFundAmount,
       couponDiscount,
       paidAmount,
       paymentParams,

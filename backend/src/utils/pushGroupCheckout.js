@@ -12,7 +12,8 @@ const wechatPay = require('./wechatPay');
 
 function checkoutError(message, status = 409) { return Object.assign(new Error(message), { status }); }
 
-async function quoteGroup(user, items, products, { couponId, useHealthFund }) {
+async function quoteGroup(user, items, products, { couponId, useHealthFund, useEnterpriseSharedFund }) {
+  if (useEnterpriseSharedFund && Number(useHealthFund) > 0) throw checkoutError('企业共享基金与个人健康基金请择一使用', 400);
   const prices = items.map(item => cents(item.price));
   const total = prices.reduce((sum, value) => sum + value, 0);
   const policy = await fund.getHealthFundPolicy();
@@ -28,6 +29,8 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund }) {
   const coupons = splitCents(couponTotal, prices);
   const afterCoupon = prices.map((price, index) => price - coupons[index]);
   let personal = prices.map(() => 0), corporate = prices.map(() => 0), enterprise = null;
+  let sharedAccount = null;
+  let shared = prices.map(() => 0);
   if (Number(useHealthFund) > 0) {
     if (!(await require('./packageFeatureEntitlements').hasHealthFundAccess(user))) {
       throw checkoutError('健康基金仅限有效的365、年度、疗程或企业会员使用；基础会员可按原价购买服务', 400);
@@ -52,12 +55,24 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund }) {
     const remainingCapacities = capacities.map((value, index) => Math.max(0, value - personal[index]));
     corporate = splitCents(Math.min(requested - personal.reduce((s, v) => s + v, 0), corporateAvailable, remainingCapacities.reduce((s, v) => s + v, 0)), remainingCapacities);
   }
+  if (useEnterpriseSharedFund) {
+    const sharedFund = require('./enterpriseSharedFund');
+    for (let index = 0; index < products.length; index++) {
+      const candidate = await sharedFund.eligibleAccount(user, products[index]._id);
+      if (candidate && (!sharedAccount || String(candidate._id) === String(sharedAccount._id))) sharedAccount = candidate;
+    }
+    if (!sharedAccount) throw checkoutError('企业共享基金当前不可用，请刷新后重试');
+    const capacities = products.map((product, index) => sharedAccount.productIds.some(id => String(id) === String(product._id)) ? Math.floor(afterCoupon[index] / 2) : 0);
+    shared = splitCents(Math.min(sharedAccount.availableCents, capacities.reduce((a, b) => a + b, 0)), capacities);
+    if (!shared.some(Boolean)) throw checkoutError('所选商品暂无可用的企业共享基金');
+  }
   const allocations = prices.map((price, index) => ({
-    price: price / 100, coupon: coupons[index] / 100, personal: personal[index] / 100, corporate: corporate[index] / 100,
-    cash: (afterCoupon[index] - personal[index] - corporate[index]) / 100,
+    price: price / 100, coupon: coupons[index] / 100, personal: personal[index] / 100, corporate: corporate[index] / 100, shared: shared[index] / 100,
+    cash: (afterCoupon[index] - personal[index] - corporate[index] - shared[index]) / 100,
   }));
   const fundUsed = (personal.reduce((s, v) => s + v, 0) + corporate.reduce((s, v) => s + v, 0)) / 100;
-  return { allocations, coupon, enterprise, summary: { totalPrice: total / 100, couponDiscount: couponTotal / 100, fundUsed, finalPrice: (total - couponTotal - cents(fundUsed)) / 100 } };
+  const enterpriseSharedFundUsed = shared.reduce((a, b) => a + b, 0) / 100;
+  return { allocations, coupon, enterprise, sharedAccount, summary: { totalPrice: total / 100, couponDiscount: couponTotal / 100, fundUsed, enterpriseSharedFundUsed, finalPrice: (total - couponTotal - cents(fundUsed) - cents(enterpriseSharedFundUsed)) / 100 } };
 }
 
 // Kept separate from the released single-item path. Every selected product is
@@ -103,6 +118,7 @@ async function createLocked({ record, user, items, options }) {
   const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
   const ids = items.map(() => new mongoose.Types.ObjectId());
   const orders = [];
+  const sharedReservations = [];
   const unownedReservations = new Set();
   let payment;
   let gatewayAttempted = false;
@@ -113,6 +129,11 @@ async function createLocked({ record, user, items, options }) {
       if (!inventory.available) throw checkoutError(`“${items[index].name}”已售罄，请重新选择`);
       if (inventory.reserved) unownedReservations.add(product._id);
       const allocation = quote.allocations[index];
+      if (allocation.shared > 0) {
+        const reservation = { _id: ids[index], enterpriseSharedFundId: quote.sharedAccount._id, enterpriseSharedFundAmount: allocation.shared };
+        await require('./enterpriseSharedFund').reserve({ account: quote.sharedAccount, orderId: ids[index], userId: user._id, amount: allocation.shared });
+        sharedReservations.push(reservation);
+      }
       const order = await Order.create({
         _id: ids[index], checkoutGroupId: ids[0], user: user._id, serviceId: String(product._id), serviceName: items[index].name,
         ...(index === 0 ? { checkoutActionLockToken: outTradeNo, checkoutActionLockUntil: new Date(Date.now() + 120000) } : {}),
@@ -130,6 +151,7 @@ async function createLocked({ record, user, items, options }) {
         couponId: quote.coupon?._id || null, couponDiscount: allocation.coupon,
         healthFundAmount: (cents(allocation.personal) + cents(allocation.corporate)) / 100,
         healthFundBreakdown: { personal: allocation.personal, corporate: allocation.corporate }, healthFundEnterpriseId: quote.enterprise?._id || null,
+        enterpriseSharedFundId: allocation.shared > 0 ? quote.sharedAccount._id : null, enterpriseSharedFundAmount: allocation.shared,
       });
       orders.push(order);
       unownedReservations.delete(product._id);
@@ -158,6 +180,7 @@ async function createLocked({ record, user, items, options }) {
       order.tradeStatus = 'closed'; order.status = 'cancelled'; order.paymentStatus = 'failed'; await order.save();
       await releaseOrderInventory(order);
     }
+    for (const reservation of sharedReservations) await require('./enterpriseSharedFund').release(reservation);
     for (const id of unownedReservations) await Product.updateOne({ _id: id }, { $inc: { stock: 1 } });
     throw error;
   } finally {

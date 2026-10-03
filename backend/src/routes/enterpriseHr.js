@@ -47,6 +47,7 @@ router.get('/overview', enterpriseHrAuth, async (req, res) => {
   else if (hrByYear[currentYear]) year = currentYear;
   else year = availableYears[0] || currentYear;
   const hrData = hrByYear[year] || null;
+  const account = await require('../models/EnterpriseSharedFund').findOne({ enterpriseId: enterprise._id, year: Number(year) }).lean();
 
   res.json({
     success: true,
@@ -62,6 +63,7 @@ router.get('/overview', enterpriseHrAuth, async (req, res) => {
       year,
       availableYears,
       hrData,   // 体检机构/人数/客单价/总额、保险、健康管理费、其他付费服务、当年采购名额（无数据时为 null）
+      sharedFund: require('../utils/enterpriseSharedFund').summary(account, enterprise),
     },
   });
 });

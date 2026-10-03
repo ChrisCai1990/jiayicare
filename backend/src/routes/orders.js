@@ -158,6 +158,7 @@ router.patch('/:id/cancel', auth, async (req, res) => {
       await order.save();
       await require('../utils/orderInventory').releaseOrderInventory(order);
       await require('../utils/healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}取消返还` });
+      await require('../utils/enterpriseSharedFund').release(order);
       if (order.couponId) {
         const Coupon = require('../models/Coupon');
         await Coupon.updateOne(
@@ -187,7 +188,7 @@ router.post('/:id/refund-request', auth, async (req, res) => {
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请输入退款原因' });
   const payment = await Payment.findOne({ ...require('../utils/checkoutAmounts').paymentOrderQuery(order._id), status: 'succeeded', channel: 'wechat_pay' }).sort({ createdAt: -1 });
-  if (!payment && !(order.healthFundAmount > 0)) return res.status(409).json({ success: false, message: '未找到可原路退回的支付记录，请联系客服' });
+  if (!payment && !(order.healthFundAmount > 0 || order.enterpriseSharedFundAmount > 0)) return res.status(409).json({ success: false, message: '未找到可原路退回的支付记录，请联系客服' });
   const existing = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing', 'succeeded'] } });
   if (existing) return res.json({ success: true, data: existing, message: '退款申请已提交，请勿重复申请' });
   const refund = await Refund.create({

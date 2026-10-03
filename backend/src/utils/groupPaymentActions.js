@@ -78,6 +78,7 @@ async function cancelGroupPayment(order) {
     for (const item of orders) {
       item.status = 'cancelled'; item.tradeStatus = 'closed'; await item.save();
       await require('./orderInventory').releaseOrderInventory(item);
+      await require('./enterpriseSharedFund').release(item);
     }
     return { success: true, message: '本次合并付款的全部待支付订单已取消，可重新选择商品', data: await Order.findById(order._id) };
   });

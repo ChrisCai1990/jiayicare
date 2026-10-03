@@ -169,6 +169,8 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const corporateFund = checkoutUser?.healthFund?.corporate || 0;
   const fundRuleDescription = checkoutUser?.healthFund?.rule?.description || '';
   const [useFund, setUseFund] = useState(false);
+  const [useSharedFund, setUseSharedFund] = useState(false);
+  const [sharedQuote, setSharedQuote] = useState(0);
   const [coupons, setCoupons] = useState([]);
   const [couponId, setCouponId] = useState(null);
   const [benefitsLoading, setBenefitsLoading] = useState(false);
@@ -203,10 +205,18 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
     ? Math.min(selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(currentPrice * (100 - selectedCoupon.value)) / 100, currentPrice)
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
+  useEffect(() => {
+    if (!isPay || !item?.id || !priceAfterCoupon) { setSharedQuote(0); return; }
+    let live = true;
+    setSharedQuote(0);
+    userAPI.enterpriseSharedFundQuote(item.id, priceAfterCoupon).then(r => { if (live) setSharedQuote(Number(r.data?.amount || 0)); }).catch(() => { if (live) setSharedQuote(0); });
+    return () => { live = false; };
+  }, [isPay, item?.id, priceAfterCoupon, benefitsRefresh]);
   const fundMaximum = maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, item);
   const canUseFund = fundBalance > 0 && fundMaximum > 0;
   const fundApplied = canUseFund && useFund ? Math.round(Math.min(fundBalance, fundMaximum) * 100) / 100 : 0;
-  const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
+  const sharedApplied = useSharedFund ? sharedQuote : 0;
+  const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied - sharedApplied) * 100) / 100);
 
   const handleSubmit = async () => {
     if (submittingRef.current) return;
@@ -240,14 +250,14 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
         updateUser(boundUser);
       }
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
-      const checkoutKey = JSON.stringify([currentSpecLabel, couponId, fundApplied, finalPrice, desiredServiceDate, serviceRequirements.trim(), note.trim()]);
+      const checkoutKey = JSON.stringify([currentSpecLabel, couponId, fundApplied, sharedApplied, finalPrice, desiredServiceDate, serviceRequirements.trim(), note.trim()]);
       if (isPay && pendingOrderRef.current && pendingOrderRef.current.key !== checkoutKey) {
         throw new Error('已有待支付订单；如需修改，请先到“我的订单”取消原订单后重新购买');
       }
       const res = isPay
         ? (pendingOrderRef.current
           ? await paymentsAPI.retry(pendingOrderRef.current.id)
-          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice))
+          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice, useSharedFund))
         : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined);
       if (res.success) {
         if (res.data?.packageCovered) {
@@ -392,7 +402,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
                 <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>健康基金抵扣（余额¥{fundBalance.toFixed(2)}）</Text>
                 <View onClick={() => {
                   const next = !useFund;
-                  setUseFund(next);
+                  setUseFund(next); if (next) setUseSharedFund(false);
                 }} style={{ padding: '6px 12px', borderRadius: `${radius.full}px`, border: `1.5px solid ${useFund ? colors.primary : colors.border}`, backgroundColor: useFund ? colors.primary : '#fff' }}>
                   <Text style={{ fontSize: '12px', fontWeight: 600, color: useFund ? '#fff' : colors.textSecondary }}>{useFund ? '已启用' : '使用基金'}</Text>
                 </View>
@@ -407,6 +417,11 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
             </>
           )}
 
+          {isPay && sharedQuote > 0 && <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <Text style={{ fontSize: '13px', color: colors.textPrimary }}>企业共享基金 · 本单可抵 ¥{sharedQuote.toFixed(2)}（最高 50%）</Text>
+            <View onClick={() => { const next = !useSharedFund; setUseSharedFund(next); if (next) setUseFund(false); }} style={{ padding: '6px 12px', borderRadius: `${radius.full}px`, border: `1px solid ${useSharedFund ? colors.primary : colors.border}` }}><Text>{useSharedFund ? '已启用' : '使用'}</Text></View>
+          </View>}
+
           {isPay && !benefitsLoading && !canUseFund && (
             <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>{benefitsError ? '基金资格暂未核实，请重试加载' : `基金余额 ¥${fundBalance.toFixed(2)}；${checkoutUser?.healthFund?.eligible === false ? '当前会员计划资格未通过，请联系团队核对' : '本商品按当前抵扣规则暂无可用额度'}`}</Text>
           )}
@@ -414,7 +429,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
             <Text onClick={() => setBenefitsRefresh(n => n + 1)} style={{ fontSize: '12px', color: colors.danger, display: 'block', marginBottom: `${spacing.md}px` }}>{benefitsError}</Text>
           )}
 
-          {isPay && (couponDiscount > 0 || fundApplied > 0) && (
+          {isPay && (couponDiscount > 0 || fundApplied > 0 || sharedApplied > 0) && (
             <View style={{ backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
               <View style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                 <Text style={{ fontSize: '13px', color: colors.textSecondary }}>商品原价</Text>
@@ -432,6 +447,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
                   <Text style={{ fontSize: '13px', color: colors.danger, fontWeight: 600 }}>-¥{fundApplied.toFixed(2)}</Text>
                 </View>
               )}
+              {sharedApplied > 0 && <View style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}><Text>企业共享基金抵扣</Text><Text>-¥{sharedApplied.toFixed(2)}</Text></View>}
               <View style={{ display: 'flex', justifyContent: 'space-between', borderTop: `1px solid ${colors.border}`, paddingTop: '6px', marginTop: '2px' }}>
                 <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 700 }}>应付金额</Text>
                 <Text style={{ fontSize: '18px', color: colors.danger, fontWeight: 800 }}>¥{finalPrice.toFixed(2)}</Text>

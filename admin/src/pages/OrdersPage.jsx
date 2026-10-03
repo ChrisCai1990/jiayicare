@@ -247,7 +247,7 @@ export default function OrdersPage() {
                           <strong>{o.serviceName}</strong>
                         </div>
                       </td>
-                      <td style={{ color: 'var(--primary)', fontWeight: 700 }}>¥{o.servicePrice}</td>
+                      <td style={{ color: 'var(--primary)', fontWeight: 700 }}>¥{o.servicePrice}{Number(o.enterpriseSharedFundAmount || 0) > 0 && <div style={{ fontSize: 11, color: '#1E6B50' }}>企业基金 -¥{Number(o.enterpriseSharedFundAmount).toFixed(2)}</div>}</td>
                       <td><span className={`badge ${sm.badge}`}>{sm.label}</span></td>
                       <td>
                         <span className={`badge ${(PAY_STATUS_META[o.paymentStatus] || PAY_STATUS_META.unpaid).badge}`}>

@@ -805,7 +805,7 @@ async function handleOrderRefund(req, res) {
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请输入退款原因' });
   const payment = await Payment.findOne({ ...require('../utils/checkoutAmounts').paymentOrderQuery(order._id), status: 'succeeded', channel: 'wechat_pay' }).sort({ createdAt: -1 });
-  const isFundOnly = Number(order.paidAmount || 0) === 0 && (order.healthFundAmount > 0 || !!order.checkoutGroupId);
+  const isFundOnly = Number(order.paidAmount || 0) === 0 && (order.healthFundAmount > 0 || order.enterpriseSharedFundAmount > 0 || !!order.checkoutGroupId);
   if (!payment?.outTradeNo && !isFundOnly) {
     return res.status(409).json({ success: false, message: '该订单没有真实微信支付流水，不能在此标记为已退款；请按历史订单流程人工核对' });
   }
@@ -2269,6 +2269,70 @@ router.delete('/partner-benefits/:id', adminAuth, async (req, res) => {
 // ── 企业客户管理（B2B2C）──────────────────────────────────────────
 // 仅超级管理员可维护；企业HR自身数据通过 /api/enterprise-hr 独立只读接口访问，不复用此处
 
+// 企业共享健康基金独立于个人基金和 HR 手工台账。充值必须有真实入账依据。
+router.get('/enterprises/:id/shared-funds', adminAuth, async (req, res) => {
+  if (!['superadmin', 'platformSuper'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '仅超级管理员可查看共享基金账本' });
+  const EnterpriseSharedFund = require('../models/EnterpriseSharedFund');
+  const enterprise = await Enterprise.findById(req.params.id).lean();
+  if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
+  const accounts = await EnterpriseSharedFund.find({ enterpriseId: enterprise._id }).sort({ year: -1 }).lean();
+  res.json({ success: true, data: accounts.map(account => ({
+    ...require('../utils/enterpriseSharedFund').summary(account, enterprise),
+    credits: Object.values(account.credits || {}), entryCount: Object.keys(account.entries || {}).length,
+  })) });
+});
+
+router.put('/enterprises/:id/shared-funds/:year', adminAuth, async (req, res) => {
+  if (!['superadmin', 'platformSuper'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '仅超级管理员可配置共享基金' });
+  const year = Number(req.params.year);
+  if (!Array.isArray(req.body?.policyIds) || !Array.isArray(req.body?.productIds)) return res.status(400).json({ success: false, message: '请提供保险方案和商品清单' });
+  const policyIds = [...new Set(req.body.policyIds.map(String))];
+  const productIds = [...new Set(req.body.productIds.map(String))];
+  if (!Number.isInteger(year) || year < 2020 || year > 2100 ||
+    [...policyIds, ...productIds].some(id => !mongoose.isValidObjectId(id))) return res.status(400).json({ success: false, message: '年度或关联编号无效' });
+  try {
+    const shared = require('../utils/enterpriseSharedFund');
+    await shared.validateConfiguration(req.params.id, year, policyIds, productIds);
+    if (req.body.enabled && (!policyIds.length || !productIds.length)) return res.status(400).json({ success: false, message: '启用前请逐项选择保险方案和商品' });
+    const account = await require('../models/EnterpriseSharedFund').findOneAndUpdate(
+      { enterpriseId: req.params.id, year },
+      { $set: { enabled: req.body.enabled === true, policyIds, productIds }, $setOnInsert: { creditedCents: 0, availableCents: 0, reservedCents: 0, spentCents: 0 } },
+      { upsert: true, new: true, runValidators: true },
+    );
+    res.json({ success: true, data: shared.summary(account, await Enterprise.findById(req.params.id)), message: '共享基金规则已保存' });
+  } catch (err) { res.status(err.status || 400).json({ success: false, message: err.message }); }
+});
+
+router.post('/enterprises/:id/shared-funds/:year/credits', adminAuth, async (req, res) => {
+  if (!['superadmin', 'platformSuper'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '仅超级管理员可确认基金入账' });
+  const { cents } = require('../utils/checkoutAmounts');
+  let amountCents;
+  try { amountCents = cents(req.body.amount); }
+  catch { return res.status(400).json({ success: false, message: '入账金额无效' }); }
+  const key = String(req.body.reference || '').trim();
+  const source = String(req.body.source || '').trim();
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || !/^[A-Za-z0-9_-]{8,64}$/.test(key) ||
+    !['企业自有', '平台赠送'].includes(source) || !String(req.body.note || '').trim()) {
+    return res.status(400).json({ success: false, message: '请输入正数金额、来源、入账凭证号和备注' });
+  }
+  const EnterpriseSharedFund = require('../models/EnterpriseSharedFund');
+  const path = `credits.${key}`;
+  const account = await EnterpriseSharedFund.findOneAndUpdate({ enterpriseId: req.params.id, year: Number(req.params.year), [path]: { $exists: false } }, {
+    $inc: { creditedCents: amountCents, availableCents: amountCents },
+    $set: { [path]: { reference: key, source, amount: amountCents / 100, note: String(req.body.note).trim(), at: new Date(), by: String(req.admin._id) } },
+  }, { new: true });
+  if (!account) return res.status(409).json({ success: false, message: '账本未建立或该凭证号已入账，请核对后重试' });
+  res.json({ success: true, data: require('../utils/enterpriseSharedFund').summary(account, await Enterprise.findById(req.params.id)), message: '入账成功' });
+});
+
+router.post('/enterprises/:id/shared-funds/:year/reconcile', adminAuth, async (req, res) => {
+  if (!['superadmin', 'platformSuper'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '仅超级管理员可核对共享基金账本' });
+  const account = await require('../models/EnterpriseSharedFund').findOne({ enterpriseId: req.params.id, year: Number(req.params.year) }).lean();
+  if (!account) return res.status(404).json({ success: false, message: '账本不存在' });
+  try { res.json({ success: true, data: await require('../utils/enterpriseSharedFund').reconcile(account) }); }
+  catch (err) { res.status(409).json({ success: false, message: err.message }); }
+});
+
 // GET /api/admin/enterprises
 router.get('/enterprises', adminAuth, async (req, res) => {
   const { name, status } = req.query;
@@ -2320,6 +2384,8 @@ router.put('/enterprises/:id', adminAuth, async (req, res) => {
 
 // DELETE /api/admin/enterprises/:id
 router.delete('/enterprises/:id', adminAuth, async (req, res) => {
+  const account = await require('../models/EnterpriseSharedFund').exists({ enterpriseId: req.params.id, creditedCents: { $gt: 0 } });
+  if (account) return res.status(409).json({ success: false, message: '该企业有共享基金账本，请先完成财务对账，不能直接删除' });
   const seatsUsed = await User.countDocuments({ enterpriseId: req.params.id });
   if (seatsUsed > 0) {
     return res.status(400).json({ success: false, message: `该企业名下还有 ${seatsUsed} 名员工，请先解除关联再删除` });

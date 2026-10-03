@@ -112,6 +112,8 @@ const orderSchema = new mongoose.Schema({
   healthFundAmount: { type: Number, default: 0 },
   healthFundBreakdown: { personal: { type: Number, default: 0 }, corporate: { type: Number, default: 0 } },
   healthFundEnterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null },
+  enterpriseSharedFundId: { type: mongoose.Schema.Types.ObjectId, ref: 'EnterpriseSharedFund', default: null },
+  enterpriseSharedFundAmount: { type: Number, default: 0 },
   couponId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
   couponDiscount: { type: Number, default: 0 },
   healthFundSettledAt: { type: Date, default: null },

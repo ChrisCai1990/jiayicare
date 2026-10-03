@@ -267,6 +267,16 @@ export default function HrDashboardPage() {
                 <StatCard label="服务人数" value={hr.healthMgmtCount || 0} sub="人" />
                 <StatCard label="健康管理费" value={`¥${(hr.healthMgmtFee || 0).toLocaleString()}`} color="#D97706" />
               </div>
+              {overview.sharedFund && <div style={{ marginTop: 18 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#4A6558', marginBottom: 8 }}>企业共享基金 · 实时账本 {overview.sharedFund.enabled ? '（已启用）' : '（未启用）'}</div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <StatCard label="累计入账" value={`¥${Number(overview.sharedFund.credited || 0).toLocaleString()}`} />
+                  <StatCard label="可用余额" value={`¥${Number(overview.sharedFund.available || 0).toLocaleString()}`} color="#1E6B50" />
+                  <StatCard label="待支付预留" value={`¥${Number(overview.sharedFund.reserved || 0).toLocaleString()}`} />
+                  <StatCard label="已抵扣" value={`¥${Number(overview.sharedFund.spent || 0).toLocaleString()}`} color="#D97706" />
+                </div>
+                <div style={{ fontSize: 12, color: '#65776F', marginTop: 8 }}>适用已参保员工、配偶及子女；仅限企业勾选商品，单笔最高抵扣优惠后金额的 50%。到期后停止新抵扣，余额留待对账。</div>
+              </div>}
 
               {/* 付费服务清单：让企业看清过去一年提供了哪些服务、频次及具体内容 */}
               {(hr.otherServices || []).length > 0 && (
@@ -297,7 +307,7 @@ export default function HrDashboardPage() {
               {/* 健康基金账户：总额-已用=余额，充值流水区分企业自有/平台赠送 */}
               {(fund.total > 0 || (fund.transactions || []).length > 0) && (
                 <div style={{ marginTop: 18 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 8 }}>健康基金账户</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 8 }}>历史手工基金台账（不参与线上支付）</div>
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <StatCard label="基金总额" value={`¥${(fund.total || 0).toLocaleString()}`} />
                     <StatCard label="已使用" value={`¥${(fund.used || 0).toLocaleString()}`} color="#D97706" />
