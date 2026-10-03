@@ -391,6 +391,12 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/concerns', staffAuth,
     if (!topic) return res.status(404).json({ success: false, message: '年度研判不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在分析，请等待完成后纳入关注' });
     const source = await concernSource(user, req.body || {});
+    if (req.body.issueTitle !== undefined) {
+      const issueTitle = String(req.body.issueTitle || '').trim();
+      if (issueTitle.length < 2 || issueTitle.length > 60) return res.status(400).json({ success: false, message: '请填写2至60字的具体问题' });
+      source.key += `:issue:${issueTitle.toLocaleLowerCase().replace(/[\s，。；：、]+/g, '')}`;
+      source.title = issueTitle;
+    }
     const existing = (topic.concerns || []).find(row => row.key === source.key);
     if (existing) {
       if (existing.evidence === source.evidence && JSON.stringify(existing.source) === JSON.stringify(source.source))
@@ -411,6 +417,36 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/concerns', staffAuth,
   } catch (error) { return res.status(error.status || (error.name === 'VersionError' ? 409 : 500)).json({ success: false, message: error.message }); }
 });
 
+router.post('/patients/:patientId/ai-case-reviews/:topicId/import-specialty', staffAuth, async (req, res) => {
+  try {
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role) || (req.staff.role !== 'superadmin' && String(user.assignedFamilyDoctor) !== String(req.staff._id)))
+      return res.status(403).json({ success: false, message: '仅该客户健康顾问可整合年度研判' });
+    const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id, reviewType: 'annual', status: { $ne: 'archived' } });
+    if (!topic) return res.status(404).json({ success: false, message: '年度研判不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在分析，请等待完成后整合问题' });
+    const end = new Date(`${Number(topic.annualPlanYear) + 1}-01-01T00:00:00+08:00`);
+    const specialty = await AiCaseReview.find({ user: user._id, reviewType: 'specialty', issueKey: { $ne: '' }, status: { $ne: 'archived' }, createdAt: { $lt: end } }).sort({ createdAt: 1 }).limit(100).lean();
+    const existingKeys = new Set((topic.concerns || []).map(row => row.key));
+    const additions = specialty.filter(row => !existingKeys.has(`legacy_specialty:${row._id}`)).map(row => ({
+      id: new mongoose.Types.ObjectId().toString(), key: `legacy_specialty:${row._id}`, kind: 'specialty_issue',
+      title: String(row.title || '').replace(/专项研判$/, ''),
+      evidence: (row.sourceLinks || []).map(link => `${link.source?.checkDate || link.source?.year || '日期待核实'}：${link.title}${link.evidence ? `；${link.evidence}` : ''}`).join('\n').slice(0, 1600),
+      source: { topicId: String(row._id), links: row.sourceLinks || [] }, status: 'included', pathway: 'undecided',
+      note: row.conclusion?.status === 'confirmed' ? `原单项研判已确认，请在综合研判中复核：${String(row.conclusion.content || '').slice(0, 400)}` : '原单项研判尚未确认，请结合其他问题及五年趋势重新核对',
+      includedByName: '既有单项主题', includedAt: new Date(),
+    }));
+    if ((topic.concerns || []).length + additions.length > 100) return res.status(409).json({ success: false, message: '本年度关注问题已达上限，请先整理研判' });
+    if (additions.length) {
+      topic.concerns.push(...additions);
+      topic.markModified('concerns');
+      reopenAfterConcernChange(topic);
+      await topic.save();
+    }
+    return res.json({ success: true, data: forClient(topic), added: additions.length });
+  } catch (error) { return res.status(error.name === 'VersionError' ? 409 : 500).json({ success: false, message: error.message }); }
+});
+
 router.patch('/patients/:patientId/ai-case-reviews/:topicId/concerns/:concernId', staffAuth, async (req, res) => {
   try {
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
@@ -427,7 +463,9 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/concerns/:concernId'
       return res.status(400).json({ success: false, message: '研判去向无效' });
     const note = String(req.body.note || '').trim();
     if (note.length > 500 || (['excluded', 'duplicate'].includes(status) && !note)) return res.status(400).json({ success: false, message: '排除或合并重复问题时请填写原因（500字以内）' });
-    topic.concerns[index] = { ...topic.concerns[index], status, pathway, note, reviewedBy: req.staff._id,
+    const title = req.body.title === undefined ? topic.concerns[index].title : String(req.body.title || '').trim();
+    if (title.length < 2 || title.length > 60) return res.status(400).json({ success: false, message: '请填写2至60字的具体问题' });
+    topic.concerns[index] = { ...topic.concerns[index], title, status, pathway, note, reviewedBy: req.staff._id,
       reviewedByName: req.staff.name || '', reviewedAt: new Date() };
     topic.markModified('concerns');
     reopenAfterConcernChange(topic);
@@ -585,7 +623,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
         proposedTargets.length ? `创建主题时填写的拟管理目标和干预重点（尚未核实，只作为研判方向，不能当作已确认事实）：${JSON.stringify(proposedTargets)}` : ''].filter(Boolean).join('\n');
       const isAnnualReview = topic.reviewType === 'annual' && !!topic.annualPlanYear;
       const specialtySummary = isAnnualReview ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
-      const annualBoundary = isAnnualReview ? '年度研判先筛选问题并判断专科/就医、营养师评估或随访观察去向；必要的专科意见未取得时标记待确认。营养干预具体方案由营养师独立制定和发出，年度研判不得代写膳食处方。' : '';
+      const annualBoundary = isAnnualReview ? '年度研判把健康顾问纳入的具体问题、五年健康趋势、慢病线索及重大疾病风险维度作为同一组资料。先逐项核实依据，再分析具体问题之间及其与五年趋势之间有证据支持的关联、时间变化和共同影响，最后形成综合优先级、医疗管理目标和专科/就医、营养师评估或随访去向。不得把仅仅共存当作因果，必要的专科意见未取得时标记待确认。营养干预具体方案由营养师独立制定和发出。' : '';
       const incrementalGuide = isSupplement
         ? '这是一次补充讨论。只回答本轮新增信息，严禁重述既往完整病史、检查清单、管理方案或原分析。输出最多3个短段：1.新增信息解读；2.修订说明（没有则写“无修订”）；3.对阶段性结论的影响。全文控制在300个中文字以内，每段最多3点。最新更正信息优先于旧信息。'
         : isAnnualReview
@@ -594,7 +632,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const autoGuide = automatic
         ? `${isAnnualReview ? '这是年度综合研判首次讨论，保持主题规定的固定六项议题，每项最多3点，全文不超过1200个中文字。' : '这是本主题首次讨论。'}${exam ? '先从最近一次已审核体检报告列出关键问题及报告日期/项目依据（最多5条）' : '暂无已审核的体检报告，请从已审核健康趋势、AI风险提示及已纳入问题列出可核对的关键问题（最多5条），不得虚构报告所见'}，区分已确认事实与待核实信息；再逐条写拟目标，严格使用“目标：……；干预重点：……”格式（最多5条，资料不足不编造数值）；最后结合既有资料给出简明研判分析和待审核方案。目标仅是草稿，须由健康顾问确认。`
         : incrementalGuide;
-      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【健康顾问纳入的单项专病研判】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。不要凭空生成单项研判结论。'}\n请先逐项核对单项问题，再做年度综合判断；未确认的单项仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 900 : isAnnualReview || automatic ? 3200 : 1800 });
+      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 900 : isAnnualReview || automatic ? 3200 : 1800 });
       if (automatic && !proposedTargets.length) result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
       return { result, snapshot: result.contextSnapshot || snapshot };
     });
@@ -667,7 +705,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
     const transcript = topic.messages.map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
     const concernSummary = (topic.concerns || []).map(row => `${row.status} / ${row.pathway}：${row.title}；依据：${row.evidence || '待核实'}；说明：${row.note || '无'}`).join('\n');
     const specialtySummary = topic.reviewType === 'annual' && topic.annualPlanYear ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
-    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实。营养相关事项只写明转营养师评估，不代营养师制定具体干预方案。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n待研判问题及人工分流：\n${concernSummary || '暂无结构化问题'}\n${topic.annualPlanYear ? `单项专病研判（已确认的可引用，未确认的仅列待核实）：\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无'}\n` : ''}讨论记录：\n${transcript}`;
+    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。年度研判须综合具体问题、五年趋势、慢病与重大疾病风险，说明有证据支持的问题间关联及共同管理优先级，不逐项割裂罗列，也不把共存误写成因果。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实。营养相关事项只写明转营养师评估，不代营养师制定具体干预方案。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n待研判问题及人工分流：\n${concernSummary || '暂无结构化问题'}\n${topic.annualPlanYear ? `既有单项主题历史资料（已确认的可引用，未确认的仅列待核实）：\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无'}\n` : ''}讨论记录：\n${transcript}`;
     const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt, context: { sources: [] }, attachments: [], history: [] });
     const structured = toStructuredAssessment(result.content, topic.title);
     if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({

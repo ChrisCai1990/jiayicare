@@ -6,10 +6,10 @@ const PATHWAY = [['undecided', '待判断'], ['specialist', '专科评估或就�
 const SOURCE = { screening: '专项筛查报告', ai_health_trend: '已审核的5年健康趋势', ai_risk_scan: '已审核的AI风险提示', reviewed_chronic_tag: '已审核慢病关注标签' }
 
 function ConcernRow({ concern, number, patientId, topicId, canEdit, toast, onUpdate }) {
-  const [form, setForm] = useState({ status: concern.status || 'suggested', pathway: concern.pathway || 'undecided', note: concern.note || '' })
+  const [form, setForm] = useState({ title: concern.title || '', status: concern.status || 'suggested', pathway: concern.pathway || 'undecided', note: concern.note || '' })
   const [busy, setBusy] = useState(false)
-  useEffect(() => setForm({ status: concern.status || 'suggested', pathway: concern.pathway || 'undecided', note: concern.note || '' }), [concern.id, concern.reviewedAt])
-  const changed = form.status !== concern.status || form.pathway !== concern.pathway || form.note !== (concern.note || '')
+  useEffect(() => setForm({ title: concern.title || '', status: concern.status || 'suggested', pathway: concern.pathway || 'undecided', note: concern.note || '' }), [concern.id, concern.reviewedAt])
+  const changed = form.title !== concern.title || form.status !== concern.status || form.pathway !== concern.pathway || form.note !== (concern.note || '')
   const save = async () => {
     setBusy(true)
     try { const result = await staffAPI.updateAiCaseReviewConcern(patientId, topicId, concern.id, form); onUpdate(result.data); toast('问题去向已保存') }
@@ -20,6 +20,8 @@ function ConcernRow({ concern, number, patientId, topicId, canEdit, toast, onUpd
     <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{number}. {concern.title}<span style={{ color: '#65776F', fontSize: 12, fontWeight: 400, marginLeft: 8 }}>{STATUS.find(([value]) => value === concern.status)?.[1] || '待核实'} · {PATHWAY.find(([value]) => value === concern.pathway)?.[1] || '待判断'}</span></summary>
     <div style={{ fontSize: 12, color: '#65776F', marginTop: 3 }}>{SOURCE[concern.kind] || '其他资料'} · {concern.source?.checkDate || concern.source?.year || ''} · {concern.includedByName || '系统'}</div>
     {concern.evidence && <div style={{ fontSize: 12, lineHeight: 1.6, marginTop: 5 }}>依据：{concern.evidence}</div>}
+    {concern.kind === 'specialty_issue' && concern.source?.topicId && <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>由既有单项主题并入；原始资料与讨论保留。</div>}
+    {canEdit && <input className="form-input" style={{ marginTop: 8 }} maxLength={60} disabled={busy} value={form.title} onChange={e => setForm(value => ({ ...value, title: e.target.value }))} aria-label="具体问题名称" />}
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
       <select className="form-input" style={{ width: 170 }} disabled={!canEdit || busy} value={form.status} onChange={e => setForm(value => ({ ...value, status: e.target.value }))}>{STATUS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
       <select className="form-input" style={{ width: 185 }} disabled={!canEdit || busy} value={form.pathway} onChange={e => setForm(value => ({ ...value, pathway: e.target.value }))}>{PATHWAY.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
@@ -29,8 +31,9 @@ function ConcernRow({ concern, number, patientId, topicId, canEdit, toast, onUpd
   </details>
 }
 
-export default function AnnualConcernsPanel({ topic, patientId, staff, toast, onUpdate, onAnalyze }) {
+export default function AnnualConcernsPanel({ topic, patientId, staff, toast, onUpdate, onAnalyze, legacyTopics = [] }) {
   const [syncing, setSyncing] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [syncMessage, setSyncMessage] = useState('')
   if (!topic?.annualPlanYear) return null
   const canEdit = ['familyDoctor', 'superadmin'].includes(staff?.role)
@@ -38,6 +41,13 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
   const autoScan = concerns.filter(row => row.includedByName === '已审核AI风险扫描')
   const chronicTrend = concerns.filter(row => ['已审核5年健康趋势（慢病）', '已审核慢病关注标签'].includes(row.includedByName))
   const manuallyIncluded = concerns.filter(row => row.includedByName !== '已审核AI风险扫描' && !['已审核5年健康趋势（慢病）', '已审核慢病关注标签'].includes(row.includedByName))
+  const pendingLegacy = legacyTopics.filter(row => !(topic.concerns || []).some(concern => concern.key === `legacy_specialty:${row._id}`))
+  const importLegacy = async () => {
+    setImporting(true)
+    try { const result = await staffAPI.importSpecialtyIntoAnnual(patientId, topic._id); onUpdate(result.data); toast(result.added ? `已并入 ${result.added} 个既有单项问题` : '既有单项问题均已并入') }
+    catch (error) { toast(error.message || '整合既有问题失败', 'error') }
+    finally { setImporting(false) }
+  }
   const syncChronic = async () => {
     setSyncing(true); setSyncMessage('')
     try {
@@ -47,16 +57,17 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
     } catch (error) { setSyncMessage(error.message || '慢病线索同步失败') }
     finally { setSyncing(false) }
   }
-  return <div className="card" id="annual-concerns"><div className="card-header"><div className="card-title">年度风险维度与分析线索（共 {concerns.length} 项）</div></div><div className="card-body">
-    <div style={{ fontSize: 12, color: '#65776F' }}>AI风险扫描含心血管、血糖、肿瘤和肾功能四类；这里只自动列出已审核且达到持续关注及以上的维度。慢病相关线索还会从已审核五年趋势或慢病关注标签带入，均需健康顾问核对。展开每项可查看依据和去向。</div>
+  return <div className="card" id="annual-concerns"><div className="card-header"><div className="card-title">年度综合研判的问题与风险线索（共 {concerns.length} 项）</div></div><div className="card-body">
+    <div style={{ fontSize: 12, color: '#65776F' }}>具体问题、五年趋势、慢病线索与重大疾病风险在同一次研判中一起分析。逐项核对依据和去向，并分析问题之间的联系；资料不足时标明待核实。</div>
+    {canEdit && pendingLegacy.length > 0 && <div style={{ marginTop: 10, padding: 10, background: '#FFF8ED', borderRadius: 8, fontSize: 12 }}>已有 {pendingLegacy.length} 个单项主题尚未并入本年度研判。<button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} disabled={importing} onClick={importLegacy}>{importing ? '正在整合…' : '并入年度综合研判'}</button></div>}
     {canEdit && <div style={{ marginTop: 10 }}><button type="button" className="btn btn-secondary btn-sm" disabled={syncing} onClick={syncChronic}>{syncing ? '正在核对…' : '核对并同步慢病线索'}</button>{syncMessage && <span role="status" style={{ marginLeft: 8, fontSize: 12, color: '#52685D' }}>{syncMessage}</span>}</div>}
     {!concerns.length && <div style={{ marginTop: 12, color: '#8AA89C' }}>暂无纳入的问题，可在专项筛查结果或AI健康信息整理中一键纳入。</div>}
-    {!!autoScan.length && <div style={{ marginTop: 12, fontWeight: 700 }}>系统从已审核AI风险扫描带入的维度（{autoScan.length}项）</div>}
-    {autoScan.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {!!manuallyIncluded.length && <div style={{ marginTop: 12, fontWeight: 700 }}>具体问题（{manuallyIncluded.length}项）</div>}
+    {manuallyIncluded.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {!!autoScan.length && <div style={{ marginTop: 12, fontWeight: 700 }}>重大疾病风险维度（{autoScan.length}项）</div>}
+    {autoScan.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={manuallyIncluded.length + index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
     {!!chronicTrend.length && <div style={{ marginTop: 12, fontWeight: 700 }}>已审核资料中的慢病相关线索（{chronicTrend.length}项）</div>}
-    {chronicTrend.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={autoScan.length + index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
-    {!!manuallyIncluded.length && <div style={{ marginTop: 12, fontWeight: 700 }}>人工纳入的分析线索（{manuallyIncluded.length}项）</div>}
-    {manuallyIncluded.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={autoScan.length + chronicTrend.length + index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {chronicTrend.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={manuallyIncluded.length + autoScan.length + index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
     {canEdit && concerns.length > 0 && topic.messages?.length > 0 && <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={onAnalyze}>依据当前关注问题继续AI研判</button>}
   </div></div>
 }

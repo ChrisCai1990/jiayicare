@@ -62,17 +62,14 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
     <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 6 }}>客户沟通前的研判核对 · {year}年度</div>
     {loading ? <div style={{ fontSize: 13 }}>正在读取研判…</div> : <>
       <div style={{ marginTop: 10, padding: 12, background: '#fff', border: '1px solid #D9E9E1', borderRadius: 8 }}>
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>① 单个专病问题 · {specialtyReviews.length}</div>
-        {!specialtyReviews.length && <div style={{ fontSize: 13, color: '#65776F' }}>尚未纳入单个问题。可从下方具体筛查结果，将肺结节等问题纳入专病研判。</div>}
-        {specialtyReviews.map(item => <div key={item._id} style={{ padding: '9px 0', borderTop: '1px solid #EDF1EE', fontSize: 13 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><strong>{item.title}</strong><span style={{ color: item.conclusion?.status === 'confirmed' ? '#16845B' : '#A16620' }}>{item.conclusion?.status === 'confirmed' ? '已确认单项结论' : item.messages?.length ? '分析中，待确认' : '尚未分析'}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenReview(item._id)}>打开单项研判</button></div>
-          <div style={{ color: '#65776F', marginTop: 3 }}>来源：{(item.sourceLinks || []).map(row => row.source?.checkDate || row.source?.year || row.title).filter(Boolean).join('、') || '待核对'}</div>
-          {item.conclusion?.status === 'confirmed' && <details style={{ marginTop: 5 }}><summary>查看已确认的单项判断与目标</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>{item.conclusion.content || '暂无结论正文'}</div></details>}
-        </div>)}
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>① 年度研判中的具体问题 · {(review?.concerns || []).filter(item => item.includedByName !== '已审核AI风险扫描').length}</div>
+        {!review && <div style={{ fontSize: 13, color: '#65776F' }}>可从下方筛查结果或五年健康趋势纳入具体问题；它们将与其他问题一起进行年度综合分析。</div>}
+        {(review?.concerns || []).filter(item => item.includedByName !== '已审核AI风险扫描').map(item => <div key={item.id} style={{ padding: '6px 0', borderTop: '1px solid #EDF1EE', fontSize: 13 }}><strong>{item.title}</strong><span style={{ color: '#65776F', marginLeft: 8 }}>{item.status === 'suggested' ? '待核实' : item.status === 'excluded' ? '不纳入' : '纳入综合研判'}</span></div>)}
+        {review && specialtyReviews.some(item => !(review.concerns || []).some(concern => concern.key === `legacy_specialty:${item._id}`)) && <div style={{ fontSize: 12, color: '#A16620', marginTop: 7 }}>既有单项主题尚未全部并入；打开年度综合研判后可一键整合。</div>}
       </div>
       <div style={{ marginTop: 10, padding: 12, background: '#fff', border: '1px solid #D9E9E1', borderRadius: 8 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>② 年度综合判断</div>
-        {!review ? <div style={{ fontSize: 13 }}>综合重大疾病筛查维度与单项问题，确定管理优先级和目标。<button className="btn btn-primary btn-sm" style={{ marginLeft: 10 }} disabled={!canConfirm || busy} onClick={openReview}>建立年度综合研判</button></div>
+        {!review ? <div style={{ fontSize: 13 }}>综合具体问题、五年趋势和重大疾病风险，确定管理优先级和目标。<button className="btn btn-primary btn-sm" style={{ marginLeft: 10 }} disabled={!canConfirm || busy} onClick={openReview}>建立年度综合研判</button></div>
       : <>
         <div style={{ fontSize: 13 }}>内部综合判断：{review.conclusion?.status === 'confirmed' ? '健康顾问已确认' : '待确认'} <button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={openReview}>打开年度综合研判</button></div>
         {review.conclusion?.status === 'confirmed' ? <>
