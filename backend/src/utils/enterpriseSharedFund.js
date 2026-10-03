@@ -20,11 +20,19 @@ function withinPeriod(value, now = new Date()) {
 }
 function summary(account, enterprise) {
   if (!account) return null;
+  const sourceCents = { enterprise: 0, platformGift: 0 };
+  for (const credit of Object.values(account.credits || {})) {
+    const amount = Math.round(Number(credit?.amount || 0) * 100);
+    if (!Number.isSafeInteger(amount) || amount <= 0) continue;
+    if (credit.source === '企业自有') sourceCents.enterprise += amount;
+    if (credit.source === '平台赠送') sourceCents.platformGift += amount;
+  }
   return {
     year: account.year, enabled: account.enabled, ...period(enterprise, account.year),
     policyIds: account.policyIds || [], productIds: account.productIds || [],
     credited: account.creditedCents / 100, available: account.availableCents / 100,
     reserved: account.reservedCents / 100, spent: account.spentCents / 100,
+    creditedBySource: { enterprise: sourceCents.enterprise / 100, platformGift: sourceCents.platformGift / 100 },
   };
 }
 async function eligibleAccount(user, productId, now = new Date()) {

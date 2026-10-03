@@ -475,7 +475,7 @@ function SharedFundModal({ enterprise, onClose }) {
       <p style={{ color: '#4A6558', fontSize: 13 }}>基金归企业所有，HR只读。适用员工、配偶和子女中的有效高端险参保人；每单最多抵扣优惠后金额的 50%，剩余由客户支付。</p>
       <label className="form-group"><span className="form-label">健康管理年度</span><select className="form-input" value={year} onChange={e => setYear(Number(e.target.value))}>{[...new Set([new Date().getFullYear(), ...Object.keys(enterprise.hrDataByYear || {}).map(Number), ...accounts.map(a => a.year)])].sort((a,b) => b-a).map(y => <option key={y} value={y}>{y} 年</option>)}</select></label>
       <p style={{ fontSize: 13 }}>基金有效期与健康管理服务一致：{period.healthMgmtStartAt || '未录入'} ～ {period.healthMgmtEndAt || '未录入'}</p>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '12px 0' }}>{[['累计入账',account?.credited],['可用余额',account?.available],['待支付预留',account?.reserved],['已使用',account?.spent]].map(([label,value]) => <div key={label} style={{ padding: 12, background: '#F7FBF9', borderRadius: 8, minWidth: 135 }}><div style={{ fontSize: 12 }}>{label}</div><b>¥{Number(value || 0).toFixed(2)}</b></div>)}</div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '12px 0' }}>{[['企业自有入账',account?.creditedBySource?.enterprise],['平台赠送入账',account?.creditedBySource?.platformGift],['累计入账',account?.credited],['可用余额（合计）',account?.available],['待支付预留',account?.reserved],['已使用',account?.spent]].map(([label,value]) => <div key={label} style={{ padding: 12, background: '#F7FBF9', borderRadius: 8, minWidth: 135 }}><div style={{ fontSize: 12 }}>{label}</div><b>¥{Number(value || 0).toFixed(2)}</b></div>)}</div>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '14px 0' }}><input type="checkbox" checked={form.enabled} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />启用该年度共享基金</label>
       <div style={{ fontWeight: 700, marginBottom: 8 }}>适用高端险方案（逐项勾选）</div>
       {policies.filter(p => Number(p.year) === Number(year)).map(p => <label key={p._id} style={{ display: 'block', marginBottom: 6 }}><input type="checkbox" checked={form.policyIds.includes(p._id)} onChange={() => toggle('policyIds', p._id)} /> {p.name} · {p.status === 'active' ? '生效中' : '未生效'} · 参保 {p.enrolledCount || 0} 人</label>)}
@@ -493,7 +493,7 @@ function SharedFundModal({ enterprise, onClose }) {
       <button className="btn btn-secondary" disabled={busy || !account} onClick={deposit} style={{ marginTop: 10 }}>确认入账</button>
       <button className="btn btn-secondary" disabled={busy || !account} onClick={reconcile} style={{ marginTop: 10, marginLeft: 8 }}>核对订单账本</button>
       {error && <div style={{ color: '#c00', marginTop: 10 }}>{error}</div>}{message && <div style={{ color: '#1E6B50', marginTop: 10 }}>{message}</div>}
-      {!!account?.credits?.length && <div style={{ marginTop: 16, fontSize: 12 }}>最近入账：{account.credits.slice(-5).map(c => `${c.reference} ¥${c.amount}`).join(' · ')}</div>}
+      {!!account?.credits?.length && <div style={{ marginTop: 16, fontSize: 12 }}>最近入账：{account.credits.slice(-5).map(c => `${c.source} · ${c.reference} ¥${c.amount}`).join('；')}</div>}
     </div>
   </div></div>
 }

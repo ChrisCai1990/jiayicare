@@ -270,8 +270,10 @@ export default function HrDashboardPage() {
               {overview.sharedFund && <div style={{ marginTop: 18 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#4A6558', marginBottom: 8 }}>企业共享基金 · 实时账本 {overview.sharedFund.enabled ? '（已启用）' : '（未启用）'}</div>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <StatCard label="企业自有入账" value={`¥${Number(overview.sharedFund.creditedBySource?.enterprise || 0).toLocaleString()}`} />
+                  <StatCard label="平台赠送入账" value={`¥${Number(overview.sharedFund.creditedBySource?.platformGift || 0).toLocaleString()}`} />
                   <StatCard label="累计入账" value={`¥${Number(overview.sharedFund.credited || 0).toLocaleString()}`} />
-                  <StatCard label="可用余额" value={`¥${Number(overview.sharedFund.available || 0).toLocaleString()}`} color="#1E6B50" />
+                  <StatCard label="可用余额（合计）" value={`¥${Number(overview.sharedFund.available || 0).toLocaleString()}`} color="#1E6B50" />
                   <StatCard label="待支付预留" value={`¥${Number(overview.sharedFund.reserved || 0).toLocaleString()}`} />
                   <StatCard label="已抵扣" value={`¥${Number(overview.sharedFund.spent || 0).toLocaleString()}`} color="#D97706" />
                 </div>

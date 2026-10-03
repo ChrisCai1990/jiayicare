@@ -9,6 +9,15 @@ const shared = require('../src/utils/enterpriseSharedFund');
 
 const id = () => new mongoose.Types.ObjectId();
 
+test('summary separates enterprise deposits and platform gifts without inventing source balances', () => {
+  const account = { year: 2025, enabled: true, creditedCents: 3300000, availableCents: 3300000, reservedCents: 0, spentCents: 0,
+    credits: { a: { source: '企业自有', amount: 30000 }, b: { source: '平台赠送', amount: 3000 } } };
+  const result = shared.summary(account, { hrDataByYear: {} });
+  assert.deepEqual(result.creditedBySource, { enterprise: 30000, platformGift: 3000 });
+  assert.equal(result.credited, 33000);
+  assert.equal(result.available, 33000);
+});
+
 test('shared fund requires a selected product, active insured spouse, and health management dates', async t => {
   const enterpriseId = id(), userId = id(), policyId = id(), productId = id();
   const enterprise = { _id: enterpriseId, status: 'active', hrDataByYear: { 2026: { healthMgmtStartAt: '2026-07-01', healthMgmtEndAt: '2026-08-31' } } };
