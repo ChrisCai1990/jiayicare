@@ -52,6 +52,7 @@ async function scanAndPushBatch2() {
   const cutoff = new Date(Date.now() - BATCH2_DELAY_DAYS * 24 * 60 * 60 * 1000);
   const users = await User.find({
     onboardingCompleted: true,
+    patientCategory: { $ne: 'child' },
     onboardingCompletedAt: { $ne: null, $lte: cutoff },
     onboardingBatch2PushedAt: null,
   }).select('_id');

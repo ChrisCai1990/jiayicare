@@ -499,6 +499,7 @@ router.post('/onboarding', auth, async (req, res) => {
       updateData.gender = parsed.gender;
       updateData.birthDate = parsed.birthDate;
       updateData.age = parsed.age;
+      if (require('../utils/childAgeStage').childAgeStage(parsed.birthDate)) updateData.patientCategory = 'child';
     }
     let user;
     let token;
@@ -542,6 +543,7 @@ router.post('/onboarding', auth, async (req, res) => {
         : '';
       if (transferredReferralCode) setData.referralCode = transferredReferralCode;
       if (!idOwner.name || idOwner.name === '微信用户') setData.name = name.trim();
+      if (updateData.patientCategory === 'child') setData.patientCategory = 'child';
       if (verifiedEntrySource && !String(idOwner.source || '').trim()) setData.source = verifiedEntrySource;
 
       // 先释放临时账号上的唯一登录字段，再写入既有档案。
@@ -583,12 +585,15 @@ router.post('/onboarding', auth, async (req, res) => {
     user = await User.findById(user._id);
     await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(user._id);
 
-    // 立即推送第一批问卷（健康问卷表），失败不影响 onboarding 本身完成
+    // 实名建档后推送适龄儿童问卷；成人仍按既有批次推送。
     try {
-      const { pushBatch1 } = require('../utils/onboardingPush');
-      if (!idOwner) await pushBatch1(user._id);
+      if (user.patientCategory === 'child') {
+        await require('../utils/childQuestionnaireAutoPush').ensureChildQuestionnairePush(user);
+      } else if (!idOwner) {
+        await require('../utils/onboardingPush').pushBatch1(user._id);
+      }
     } catch (e) {
-      console.error('[onboarding] 第一批问卷推送失败', e.message);
+      console.error('[onboarding] 问卷推送失败', e.message);
     }
 
     res.json({ success: true, message: merged ? '已关联到您的既有健康档案' : '健康档案创建成功', data: { user, token, merged } });
