@@ -7800,16 +7800,21 @@ router.post('/patients/:id/annual-comprehensive-review', staffAuth, async (req, 
   if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) return res.status(403).json({ success: false, message: '该客户暂未开放新版健康管理闭环' });
   const year = Number(req.body.year);
   if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
-  const patient = await User.findById(req.params.id).select('_id tenantId').lean();
+  const patient = await User.findById(req.params.id).select('_id tenantId aiRiskAssessment').lean();
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
   const existing = await AiCaseReview.findOne({ user: patient._id, reviewType: 'annual', annualPlanYear: year, status: { $ne: 'archived' } });
   if (existing) return res.json({ success: true, data: { _id: existing._id, title: existing.title, status: existing.conclusion?.status, reused: true } });
   const standard = require('../utils/annualComprehensiveReview');
+  const riskRoot = patient.aiRiskAssessment || {};
+  const riskForYear = riskRoot.byYear?.[String(year)] || (!riskRoot.byYear && riskRoot.dimensions ? riskRoot : null);
+  const seededConcerns = standard.suggestedRiskConcerns(riskForYear, year).map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() }));
   let topic;
   try { topic = await AiCaseReview.create({
     user: patient._id, tenantId: patient.tenantId || null,
     title: standard.titleForYear(year), description: standard.descriptionForYear(year),
     reviewType: 'annual', annualPlanYear: year,
+    requiresCustomerDiscussion: true,
+    concerns: seededConcerns,
     templateSnapshot: { name: '年度综合研判', target: '年度管理方案', outputGuide: standard.outputGuide },
     contextScopes: ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'],
     preferredProvider: 'qwen', createdBy: req.staff._id, createdByName: req.staff.name || '',

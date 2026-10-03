@@ -50,7 +50,8 @@ async function acceptSend(Model, { patientId, topicId, staff, content, attachmen
     goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true,
   }));
   const update = {
-    $set: { generation, status: 'active', lastActivityAt: new Date(), conclusion: { content: '', structured: null, managementTargets, status: 'draft' } },
+    $set: { generation, status: 'active', lastActivityAt: new Date(), conclusion: { content: '', structured: null, managementTargets, status: 'draft' },
+      customerDiscussion: { status: 'pending' } },
     $inc: { __v: 1 },
   };
   const push = {};
@@ -58,6 +59,7 @@ async function acceptSend(Model, { patientId, topicId, staff, content, attachmen
     content: topic.conclusion.content, managementTargets, confirmedAt: topic.conclusion.confirmedAt,
     confirmedBy: topic.conclusion.confirmedBy, confirmedByName: topic.conclusion.confirmedByName,
   };
+  if (topic.customerDiscussion?.status && topic.customerDiscussion.status !== 'pending') push.customerDiscussionHistory = topic.customerDiscussion;
   if (!previous) push.messages = { role: 'staff', requestId, content, attachments,
     staff: staff._id, staffName: staff.name || '', staffRole: staff.roleLabel || staff.role };
   if (Object.keys(push).length) update.$push = push;

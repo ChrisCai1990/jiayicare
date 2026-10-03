@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { staffAPI, API_ORIGIN } from '../api'
 import ReviewPlanAmendment from './ReviewPlanAmendment'
+import AnnualConcernsPanel from './AnnualConcernsPanel'
 
 const PHASE_ROLES = { familyDoctor: '健康顾问', nutritionist: '营养师', rehabSpecialist: '运动复健师', tcmDoctor: '药食同源专业人员' }
 const PHASE_DOMAINS = { comprehensive: '综合健康', nutrition: '营养', exercise: '运动', tcm: '药食同源' }
@@ -273,9 +274,9 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       setFiles(list => [...list, ...uploaded].slice(0, 6))
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false); event.target.value = '' }
   }
-  const send = async (retryMessage = null) => {
+  const send = async (retryMessage = null, explicitContent = '') => {
     if (busy || sendingRef.current || !active || (active.generation?.status === 'running' && !(retryMessage && sendStalled))) return
-    const content = retryMessage ? retryMessage.content : draft
+    const content = retryMessage ? retryMessage.content : (explicitContent || draft)
     const attachments = retryMessage ? retryMessage.attachments || [] : files
     if (!content.trim() && !attachments.length) return
     const signature = JSON.stringify([patientId, active._id, content, attachments])
@@ -446,6 +447,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         </>}
       </div></div>
 
+      <AnnualConcernsPanel topic={active} patientId={patientId} staff={staff} toast={toast} onUpdate={replaceTopic}
+        onAnalyze={() => send(null, '请根据当前已纳入的关注问题和已标注去向，核对来源并更新研判。区分专科评估或就医、营养师评估和随访观察；营养具体方案由营养师制定。')} />
       <div className="card" style={{ flex: 1 }}><div ref={chatRef} className="card-body" style={{ height: 'clamp(560px, 66vh, 780px)', overflowY: 'auto', background: '#F7F8F6', padding: 16 }}>
         {!active.messages?.length && <div style={{ color: '#65776F', textAlign: 'center', paddingTop: 100 }}>尚未开始研判。{['annual', 'checkup'].includes(active.reviewType) && active.contextScopes?.includes('reports') && <div style={{ marginTop: 16 }}><button className="btn btn-primary" disabled={busy} onClick={startAutomaticReview}>从最近一次体检报告开始AI研判</button></div>}</div>}
         {(active.messages || []).map(message => <div key={message._id} style={{ display: 'flex', justifyContent: message.role === 'staff' ? 'flex-end' : 'flex-start', marginBottom: 14 }}><div style={{ maxWidth: '82%', background: message.role === 'staff' ? '#DDF2E7' : '#fff', border: '1px solid #DCE5E0', borderRadius: 12, padding: '10px 13px' }}>

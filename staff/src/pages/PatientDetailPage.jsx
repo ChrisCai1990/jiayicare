@@ -46,6 +46,8 @@ import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
+import AnnualConcernButton from '../components/AnnualConcernButton'
+import AnnualReviewCommunicationPanel from '../components/AnnualReviewCommunicationPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
 import CheckupConclusionForm from '../components/CheckupConclusionForm'
@@ -6156,6 +6158,8 @@ export default function PatientDetailPage() {
                             </td>
                             <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
                             <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
+                            <td style={{ padding: '4px 8px' }}><AnnualConcernButton patientId={id} year={screeningSummaryYear} staff={staff} toast={toast}
+                              source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }} /></td>
                           </tr>
                         )),
                       ]
@@ -6165,7 +6169,7 @@ export default function PatientDetailPage() {
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                             <thead>
                               <tr style={{ background: '#f5f2ec' }}>
-                                {['项目','结果','参考范围','状态'].map(h => (
+                                {['项目','结果','参考范围','状态','研判'].map(h => (
                                   <th key={h} style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>{h}</th>
                                 ))}
                               </tr>
@@ -6175,7 +6179,7 @@ export default function PatientDetailPage() {
                                 key
                                   ? [
                                     <tr key={`g-${key}`} style={{ background: '#E8F5EF' }}>
-                                      <td colSpan={4} style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, color: '#1E6B50' }}>{key}</td>
+                                      <td colSpan={5} style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, color: '#1E6B50' }}>{key}</td>
                                     </tr>,
                                     ...renderItemRows(groupMap[key])
                                   ]
@@ -6319,6 +6323,7 @@ export default function PatientDetailPage() {
                   }}>+ 录入筛查结果</button>
                 </div>
               </div>
+              <AnnualReviewCommunicationPanel patientId={id} year={screeningSummaryYear} staff={staff} toast={toast} />
               {(() => {
                 const current = screeningYearSummaries.find(item => Number(item.year) === Number(screeningSummaryYear))
                 const summaryRecords = current
@@ -8007,6 +8012,8 @@ export default function PatientDetailPage() {
                     {item.nextAction && <div style={{ color: isAttention ? '#B91C1C' : accent }}><b>下一步：</b>{item.nextAction}</div>}
                     {!item.trend && item.note && <div style={{ color: '#64748B' }}>{item.note}</div>}
                     {sectionKey && <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(item, sectionKey)}>🔗 按年份查看对应材料</button>}
+                    {sectionKey && <AnnualConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast}
+                      source={{ kind: 'ai_health', year: Number(curYear), sectionKey, itemName: item.name }} />}
                     {sectionKey && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem(sectionKey, item.name)}>✎ 录入问题并单项重新生成</button>}
                   </div>
                 </details>
@@ -8478,6 +8485,8 @@ export default function PatientDetailPage() {
                                   {cancer.nextAction && <div style={{ color: meta.color }}><b>下一步：</b>{cancer.nextAction}</div>}
                                   {cancer.riskBasis && cancer.status === 'unknown' && <div><b style={{ color: '#64748B' }}>待核对：</b>{cancer.riskBasis}</div>}
                                   <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(cancer, 'tumor_risk')}>🔗 按年份查看对应材料</button>
+                                  <AnnualConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast}
+                                    source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'tumor_risk', itemName: cancer.name }} />
                                   <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem('tumor_risk', cancer.name)}>✎ 录入问题并单项重新生成</button>
                                 </div>
                               </details>
@@ -8570,6 +8579,8 @@ export default function PatientDetailPage() {
                                 <button className="btn btn-secondary btn-sm" style={{ marginTop: 5 }}
                                   onClick={() => openAIAnalysisSource(item.sourceReportId)}>🔗 查看分析依据</button>
                               )}
+                              <AnnualConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast}
+                                source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'medical_priority', itemName: item.name }} />
                             </div>
                           </div>
                         ))}
@@ -8847,6 +8858,8 @@ export default function PatientDetailPage() {
                           <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{d.label}</span>
                           <span style={{ fontSize: 12, fontWeight: 700, color: lv.color, background: lv.bg, borderRadius: 6, padding: '2px 10px' }}>{lv.label}</span>
                           {typeof d.score === 'number' && <span style={{ fontSize: 12, color: '#8AA89C' }}>{d.score}分</span>}
+                          {ra.approvedAt && <AnnualConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast}
+                            source={{ kind: 'ai_risk', year: Number(curYear), dimensionKey: d.key }} />}
                         </div>
                         <div style={{ padding: '10px 16px 14px' }}>
                           {Array.isArray(d.factors) && d.factors.length > 0 && (

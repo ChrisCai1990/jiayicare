@@ -272,6 +272,8 @@ export const staffAPI = {
   generatePhaseAssessment: (patientId, mode = 'routine', domain = 'comprehensive', frequency = 'quarterly') => req(`/staff/patients/${patientId}/phase-assessments/generate`, { method: 'POST', body: JSON.stringify({ mode, domain, frequency }) }),
   reviewPhaseAssessment: (patientId, assessmentId, data) => req(`/staff/patients/${patientId}/phase-assessments/${assessmentId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAiCaseReviews: (patientId) => req(`/staff/patients/${patientId}/ai-case-reviews`),
+  addAiCaseReviewConcern: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/concerns`, { method: 'POST', body: JSON.stringify(data) }),
+  updateAiCaseReviewConcern: (patientId, topicId, concernId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/concerns/${concernId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   createAiCaseReview: (patientId, data) => req(`/staff/patients/${patientId}/ai-case-reviews`, { method: 'POST', body: JSON.stringify(data) }),
   updateAiCaseReview: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAiCaseReview: (patientId, topicId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}`, { method: 'DELETE' }),
@@ -280,6 +282,7 @@ export const staffAPI = {
   deleteAiCaseReviewMessage: (patientId, topicId, messageId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/messages/${messageId}`, { method: 'DELETE' }),
   generateAiCaseReviewConclusion: (patientId, topicId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'POST' }),
   confirmAiCaseReviewConclusion: (patientId, topicId, content, writeToPhaseAssessment = false, managementTargets = [], targetChangeNote = '') => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'PATCH', body: JSON.stringify({ content, writeToPhaseAssessment, managementTargets, targetChangeNote }) }),
+  confirmAiCaseReviewCustomerDiscussion: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/customer-discussion`, { method: 'POST', body: JSON.stringify(data) }),
   reviewMedicalAssistPlan: (planId, action, reviewNote = '') => req(`/staff/plans/${planId}/medical-assist-review`, { method: 'PATCH', body: JSON.stringify({ action, reviewNote }) }),
 
   // Knowledge

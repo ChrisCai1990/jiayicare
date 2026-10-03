@@ -21,7 +21,7 @@ const { DEFAULT_SCOPES, ensureAiCaseReviewTemplates } = require('../utils/aiCase
 const VALID_SCOPES = new Set(DEFAULT_SCOPES);
 const VALID_REVIEW_TYPES = new Set(['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'specialty', 'custom']);
 const ROLE_LABEL = { superadmin: '超级管理员', familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', healthPlanner: '健康规划师', medicalAssistant: '就医专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师', specialist: '专科医师' };
-const AUTO_REVIEW_MESSAGE = '【系统自动启动研判】请从最近一次已审核体检报告提炼关键健康问题，结合健康档案与既有服务提出待核实的管理目标和干预重点，再形成初步研判分析及待审核方案。';
+const AUTO_REVIEW_MESSAGE = '【系统自动启动研判】请核对最近一次已审核体检报告、健康顾问纳入的问题和已审核的5年健康趋势，提出待研判问题、专科或营养师评估去向、待核实目标及初步分析。';
 const PHYSICAL_EXAM_FILTER = { $or: [
   { documentCategory: 'physical_exam' },
   { documentCategory: null, type: { $in: ['annual', 'general_exam'] } },
@@ -31,6 +31,66 @@ const latestExam = patientId => MedicalReport.findOne({ user: patientId, audit_s
 
 function sanitizeScopes(scopes) {
   return [...new Set((Array.isArray(scopes) ? scopes : DEFAULT_SCOPES).filter(item => VALID_SCOPES.has(item)))];
+}
+
+function invalidateCustomerDiscussion(topic) {
+  if (topic.customerDiscussion?.status && topic.customerDiscussion.status !== 'pending') {
+    topic.customerDiscussionHistory.push(topic.customerDiscussion);
+  }
+  topic.customerDiscussion = { status: 'pending' };
+  topic.markModified?.('customerDiscussion');
+}
+
+const CONCERN_SECTIONS = new Set(['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness']);
+function approvedDoctorRecord(user, year) {
+  const root = user.aiHealthSummary || {};
+  const entry = root.byYear?.[String(year)] || (!root.byYear && root.sections ? root : null);
+  const records = Array.isArray(entry?.records) ? entry.records : entry?.sections ? [entry] : [];
+  const latest = records.find(row => row.scope === 'doctor' || row.scope === 'all' || !row.scope);
+  return latest && (latest.doctorApprovedAt || latest.approvedAt) ? latest : null;
+}
+
+async function concernSource(user, input) {
+  if (input.kind === 'ai_risk') {
+    const year = Number(input.year);
+    const root = user.aiRiskAssessment || {};
+    const record = root.byYear?.[String(year)] || (!root.byYear && root.dimensions ? root : null);
+    if (!Number.isInteger(year) || !record?.approvedAt) throw Object.assign(new Error('请先审核该年度AI风险提示，再纳入关注'), { status: 409 });
+    const dimension = (record.dimensions || []).find(row => row.key === input.dimensionKey);
+    if (!dimension) throw Object.assign(new Error('风险提示已变化，请刷新后重试'), { status: 409 });
+    return { key: `ai_risk:${year}:${dimension.key}`, kind: 'ai_risk_scan', title: String(dimension.label || dimension.key),
+      evidence: [dimension.level, ...(dimension.factors || []), dimension.advice].filter(Boolean).join('；').slice(0, 600),
+      source: { year, dimensionKey: dimension.key, approvedAt: record.approvedAt } };
+  }
+  if (input.kind === 'screening') {
+    if (!mongoose.isValidObjectId(input.reportId)) throw Object.assign(new Error('报告来源无效'), { status: 400 });
+    const report = await MedicalReport.findOne({ _id: input.reportId, user: user._id, audit_status: 'audited' }).lean();
+    if (!report) throw Object.assign(new Error('请先完成该报告审核，再纳入关注'), { status: 409 });
+    const item = (report.reportItems || []).find(row => String(row.itemId || '') === String(input.itemId || '') || (!input.itemId && row.name === input.itemName));
+    if (!item) throw Object.assign(new Error('报告项目已变化，请刷新后重试'), { status: 409 });
+    const title = String(item.name || '').trim();
+    return { key: `screening:${report._id}:${item.itemId || title}`, kind: 'screening', title,
+      evidence: [item.value, item.unit, item.conclusion || item.diagnosis || item.findings].filter(Boolean).join(' · ').slice(0, 600),
+      source: { reportId: String(report._id), itemId: item.itemId || '', reportTitle: report.title, checkDate: report.checkDate || '' } };
+  }
+  if (input.kind === 'ai_health') {
+    const year = Number(input.year);
+    if (!Number.isInteger(year) || !CONCERN_SECTIONS.has(input.sectionKey)) throw Object.assign(new Error('健康趋势来源无效'), { status: 400 });
+    const record = approvedDoctorRecord(user, year);
+    if (!record) throw Object.assign(new Error('请先审核该年度健康信息整理，再纳入关注'), { status: 409 });
+    if (record.sectionReviews?.[input.sectionKey] && record.sectionReviews[input.sectionKey].status !== 'approved')
+      throw Object.assign(new Error('请先审核该板块，再纳入关注'), { status: 409 });
+    const section = record.sections?.[input.sectionKey] || {};
+    const rows = section.items || section.topics || section.cancers || [];
+    const row = rows.find(item => item.name === input.itemName);
+    if (!row) throw Object.assign(new Error('健康信息整理项目已变化，请刷新后重试'), { status: 409 });
+    const title = String(row.name || '').trim();
+    return { key: `ai_health:${year}:${input.sectionKey}:${title}`, kind: input.sectionKey === 'medical_priority' ? 'ai_risk_scan' : 'ai_health_trend', title,
+      evidence: [row.latest || row.current, row.trend, ...(row.keyChanges || []), row.meaning || row.riskBasis].filter(Boolean).join('；').slice(0, 600),
+      source: { year, sectionKey: input.sectionKey, approvedAt: record.doctorApprovedAt || record.approvedAt,
+        reportIds: [...new Set([row.sourceReportId, ...(section.sourceReportIds || [])].filter(Boolean).map(String))] } };
+  }
+  throw Object.assign(new Error('关注来源类型无效'), { status: 400 });
 }
 
 async function caseReviewPatientOr404(req, res) {
@@ -237,6 +297,74 @@ router.get('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) =
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+function reopenAfterConcernChange(topic) {
+  if (topic.conclusion?.status === 'confirmed') {
+    topic.conclusionHistory.push({ content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
+      confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
+      confirmedByName: topic.conclusion.confirmedByName, reason: '待研判问题发生变化' });
+    topic.conclusion.status = 'draft';
+    topic.conclusion.confirmedAt = null;
+    topic.conclusion.confirmedBy = null;
+    topic.conclusion.confirmedByName = '';
+  }
+  invalidateCustomerDiscussion(topic);
+  topic.lastActivityAt = new Date();
+}
+
+router.post('/patients/:patientId/ai-case-reviews/:topicId/concerns', staffAuth, async (req, res) => {
+  try {
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role) || (req.staff.role !== 'superadmin' && String(user.assignedFamilyDoctor) !== String(req.staff._id)))
+      return res.status(403).json({ success: false, message: '仅该客户健康顾问可纳入关注' });
+    const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id, reviewType: 'annual', status: { $ne: 'archived' } });
+    if (!topic) return res.status(404).json({ success: false, message: '年度研判不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在分析，请等待完成后纳入关注' });
+    const source = await concernSource(user, req.body || {});
+    const existing = (topic.concerns || []).find(row => row.key === source.key);
+    if (existing) {
+      if (existing.evidence === source.evidence && JSON.stringify(existing.source) === JSON.stringify(source.source))
+        return res.json({ success: true, data: forClient(topic), reused: true });
+      Object.assign(existing, { evidence: source.evidence, source: source.source, status: 'suggested', pathway: 'undecided', note: '', sourceUpdatedAt: new Date() });
+      topic.markModified('concerns');
+      reopenAfterConcernChange(topic);
+      await topic.save();
+      return res.json({ success: true, data: forClient(topic), updated: true });
+    }
+    if ((topic.concerns || []).length >= 100) return res.status(409).json({ success: false, message: '本年度关注问题已达上限，请先整理研判' });
+    topic.concerns.push({ id: new mongoose.Types.ObjectId().toString(), ...source,
+      status: source.kind === 'ai_risk_scan' ? 'suggested' : 'included', pathway: 'undecided',
+      includedBy: req.staff._id, includedByName: req.staff.name || '', includedAt: new Date() });
+    reopenAfterConcernChange(topic);
+    await topic.save();
+    return res.status(201).json({ success: true, data: forClient(topic), reused: false });
+  } catch (error) { return res.status(error.status || (error.name === 'VersionError' ? 409 : 500)).json({ success: false, message: error.message }); }
+});
+
+router.patch('/patients/:patientId/ai-case-reviews/:topicId/concerns/:concernId', staffAuth, async (req, res) => {
+  try {
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role) || (req.staff.role !== 'superadmin' && String(user.assignedFamilyDoctor) !== String(req.staff._id)))
+      return res.status(403).json({ success: false, message: '仅该客户健康顾问可整理关注问题' });
+    const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id, reviewType: 'annual', status: { $ne: 'archived' } });
+    if (!topic) return res.status(404).json({ success: false, message: '年度研判不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在分析，请等待完成后调整问题去向' });
+    const index = (topic.concerns || []).findIndex(row => row.id === req.params.concernId);
+    if (index < 0) return res.status(404).json({ success: false, message: '关注问题不存在' });
+    const status = req.body.status;
+    const pathway = req.body.pathway;
+    if (!['suggested', 'included', 'watch', 'excluded', 'duplicate'].includes(status) || !['undecided', 'specialist', 'nutrition', 'both', 'followup'].includes(pathway))
+      return res.status(400).json({ success: false, message: '研判去向无效' });
+    const note = String(req.body.note || '').trim();
+    if (note.length > 500 || (['excluded', 'duplicate'].includes(status) && !note)) return res.status(400).json({ success: false, message: '排除或合并重复问题时请填写原因（500字以内）' });
+    topic.concerns[index] = { ...topic.concerns[index], status, pathway, note, reviewedBy: req.staff._id,
+      reviewedByName: req.staff.name || '', reviewedAt: new Date() };
+    topic.markModified('concerns');
+    reopenAfterConcernChange(topic);
+    await topic.save();
+    return res.json({ success: true, data: forClient(topic) });
+  } catch (error) { return res.status(error.name === 'VersionError' ? 409 : 500).json({ success: false, message: error.message }); }
+});
+
 router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) => {
   try {
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
@@ -255,6 +383,7 @@ router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) 
       user: user._id, tenantId: user.tenantId || null, title,
       description: String(req.body.description || '').trim(),
       reviewType: VALID_REVIEW_TYPES.has(req.body.reviewType) ? req.body.reviewType : 'custom',
+      requiresCustomerDiscussion: req.body.reviewType === 'annual',
       templateId: selectedTemplate?._id || null,
       templateSnapshot: selectedTemplate ? { name: selectedTemplate.name, target: selectedTemplate.content?.target || '研判结论', outputGuide: selectedTemplate.content?.outputGuide || '' } : null,
       contextScopes: sanitizeScopes(req.body.contextScopes),
@@ -295,6 +424,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
         topic.conclusion.confirmedAt = new Date();
         topic.conclusion.confirmedBy = req.staff._id;
         topic.conclusion.confirmedByName = req.staff.name || '';
+        invalidateCustomerDiscussion(topic);
       }
       if (topic.conclusion?.status !== 'confirmed') topic.conclusion.managementTargets = targets;
     }
@@ -362,9 +492,14 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const isSupplement = topic.messages.length > 1;
       const history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
       const proposedTargets = topic.conclusion?.managementTargets || [];
+      const concerns = (topic.concerns || []).filter(row => !['excluded', 'duplicate'].includes(row.status));
+      snapshot.reviewConcerns = concerns;
+      if (concerns.length) snapshot.sources.push(`年度待研判问题：${concerns.length}项（逐项保留报告或已审趋势来源）`);
       const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : '',
+        concerns.length ? `健康顾问纳入及AI扫描的待研判问题（均须核实，不能当作已确诊；按已标注去向讨论）：${JSON.stringify(concerns.map(row => ({ title: row.title, evidence: row.evidence, kind: row.kind, status: row.status, pathway: row.pathway, note: row.note, source: row.source })))}` : '',
         proposedTargets.length ? `创建主题时填写的拟管理目标和干预重点（尚未核实，只作为研判方向，不能当作已确认事实）：${JSON.stringify(proposedTargets)}` : ''].filter(Boolean).join('\n');
       const isAnnualReview = topic.reviewType === 'annual' && !!topic.annualPlanYear;
+      const annualBoundary = isAnnualReview ? '年度研判先筛选问题并判断专科/就医、营养师评估或随访观察去向；必要的专科意见未取得时标记待确认。营养干预具体方案由营养师独立制定和发出，年度研判不得代写膳食处方。' : '';
       const incrementalGuide = isSupplement
         ? '这是一次补充讨论。只回答本轮新增信息，严禁重述既往完整病史、检查清单、管理方案或原分析。输出最多3个短段：1.新增信息解读；2.修订说明（没有则写“无修订”）；3.对阶段性结论的影响。全文控制在300个中文字以内，每段最多3点。最新更正信息优先于旧信息。'
         : isAnnualReview
@@ -373,7 +508,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const autoGuide = automatic
         ? `${isAnnualReview ? '这是年度综合研判首次讨论，保持主题规定的固定六项议题，每项最多3点，全文不超过1200个中文字。' : '这是本主题首次讨论。'}先从最近一次已审核体检报告列出关键问题及报告日期/项目依据（最多5条），区分已确认事实与待核实信息；再逐条写拟目标，严格使用“目标：……；干预重点：……”格式（最多5条，资料不足不编造数值）；最后结合既有资料给出简明研判分析和待审核方案。目标仅是草稿，须由健康顾问确认。`
         : incrementalGuide;
-      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 900 : isAnnualReview || automatic ? 3200 : 1800 });
+      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 900 : isAnnualReview || automatic ? 3200 : 1800 });
       if (automatic && !proposedTargets.length) result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
       return { result, snapshot: result.contextSnapshot || snapshot };
     });
@@ -407,6 +542,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId'
       confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
     });
     topic.conclusion = { content: '', structured: null, managementTargets: topic.conclusion?.managementTargets || [], status: 'draft' };
+    invalidateCustomerDiscussion(topic);
     topic.status = 'active'; topic.lastActivityAt = new Date();
     await topic.save();
     res.json({ success: true, data: forClient(topic) });
@@ -428,6 +564,7 @@ router.delete('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId
       confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
     });
     topic.conclusion = { content: '', structured: null, managementTargets: topic.conclusion?.managementTargets || [], status: 'draft' };
+    invalidateCustomerDiscussion(topic);
     topic.status = 'active'; topic.lastActivityAt = new Date();
     await topic.save();
     res.json({ success: true, data: forClient(topic) });
@@ -442,7 +579,8 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     if (!topic.messages.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
     const transcript = topic.messages.map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
-    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实，不得提出与本主题无关的疫苗、营养、就医或检查建议。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n${transcript}`;
+    const concernSummary = (topic.concerns || []).map(row => `${row.status} / ${row.pathway}：${row.title}；依据：${row.evidence || '待核实'}；说明：${row.note || '无'}`).join('\n');
+    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实。营养相关事项只写明转营养师评估，不代营养师制定具体干预方案。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n待研判问题及人工分流：\n${concernSummary || '暂无结构化问题'}\n讨论记录：\n${transcript}`;
     const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt, context: { sources: [] }, attachments: [], history: [] });
     const structured = toStructuredAssessment(result.content, topic.title);
     if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({
@@ -466,6 +604,8 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
+    if (topic.annualPlanYear && (topic.concerns || []).some(row => row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
+      return res.status(409).json({ success: false, message: '请先逐条核实AI提示，并确定已纳入问题的专业去向' });
     const content = String(req.body.content || topic.conclusion?.content || '').trim();
     if (!content) return res.status(400).json({ success: false, message: '结论不能为空' });
     const structured = toStructuredAssessment(content, topic.title);
@@ -491,10 +631,34 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
       status: 'confirmed', generatedAt: topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(),
       confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', targetChangeNote: targetsChanged ? targetChangeNote : topic.conclusion?.targetChangeNote || '',
       serviceRecordId: serviceRecord?._id || topic.conclusion?.serviceRecordId || null };
+    invalidateCustomerDiscussion(topic);
     topic.status = 'concluded'; topic.lastActivityAt = new Date();
     await topic.save();
     res.json({ success: true, data: forClient(topic), archivedToPhaseAssessment: Boolean(serviceRecord), customerPushEligible: serviceRecord?.structuredContent?.customerPushEligible === true, serviceRecordId: serviceRecord?._id || null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/patients/:patientId/ai-case-reviews/:topicId/customer-discussion', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认客户沟通结果' });
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
+    const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id, status: { $ne: 'archived' } });
+    if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
+    if (topic.reviewType !== 'annual' || topic.conclusion?.status !== 'confirmed') return res.status(409).json({ success: false, message: '请先由健康顾问确认年度研判结论' });
+    const version = topic.conclusion.confirmedAt?.toISOString();
+    if (!version || req.body.confirmedAt !== version) return res.status(409).json({ success: false, message: '研判目标已更新，请刷新后重新核对沟通结果' });
+    const status = req.body.status;
+    if (!['no_change', 'adjusted'].includes(status)) return res.status(400).json({ success: false, message: '请选择无调整或已调整并确认' });
+    const note = String(req.body.note || '').trim();
+    if (note.length > 1000 || (status === 'adjusted' && !note)) return res.status(400).json({ success: false, message: '已调整时请填写1000字以内的客户沟通说明' });
+    if (topic.customerDiscussion?.status && topic.customerDiscussion.status !== 'pending') topic.customerDiscussionHistory.push(topic.customerDiscussion);
+    topic.customerDiscussion = { status, note, confirmedAt: new Date(), confirmedBy: req.staff._id,
+      confirmedByName: req.staff.name || '', conclusionConfirmedAt: topic.conclusion.confirmedAt };
+    topic.markModified('customerDiscussion');
+    topic.lastActivityAt = new Date();
+    await topic.save();
+    return res.json({ success: true, data: forClient(topic) });
+  } catch (error) { return res.status(error.name === 'VersionError' ? 409 : 500).json({ success: false, message: error.name === 'VersionError' ? '研判已被更新，请刷新后重试' : error.message }); }
 });
 
 module.exports = router;
