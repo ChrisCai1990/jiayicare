@@ -101,6 +101,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState([])
   const [sendNotice, setSendNotice] = useState(null)
+  const [automaticStartError, setAutomaticStartError] = useState('')
   const sendingRef = useRef(false)
   const pendingSendRef = useRef(null)
   const patientRef = useRef(patientId)
@@ -148,7 +149,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   }
   useEffect(() => { load() }, [patientId])
   useEffect(() => {
-    setDraft(''); setFiles([]); setSendNotice(null); pendingSendRef.current = null
+    setDraft(''); setFiles([]); setSendNotice(null); setAutomaticStartError(''); pendingSendRef.current = null
   }, [patientId])
   const acceptTopic = topic => {
     setTopics(items => [topic, ...items.filter(item => item._id !== topic._id)])
@@ -216,12 +217,13 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   }
   const startAutomaticReview = async () => {
     if (!active || busy) return
+    setAutomaticStartError('')
     setBusy(true)
     try {
       const res = await staffAPI.sendAiCaseReviewMessage(patientId, active._id, { autoStart: true, requestId: `auto_${active._id}` })
       replaceTopic(res.data)
-      toast('已开始从最近一次体检报告自动研判')
-    } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+      toast('AI研判已启动，分析结果会自动显示')
+    } catch (err) { setAutomaticStartError(err.message || '启动失败，请稍后重试') } finally { setBusy(false) }
   }
   const updateScopes = async contextScopes => {
     try { const res = await staffAPI.updateAiCaseReview(patientId, active._id, { contextScopes }); replaceTopic(res.data) }
@@ -459,7 +461,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       </div></div>
 
       {!!active.annualPlanYear && <div className="card"><div className="card-header"><div className="card-title">单个专病问题</div></div><div className="card-body">
-        <div style={{ fontSize: 12, color: '#65776F' }}>先核对健康顾问纳入的具体问题，再形成年度综合判断。单项结论独立确认；尚缺专科意见时应标明待核实。</div>
+        <div style={{ fontSize: 12, color: '#65776F' }}>这里只显示健康顾问已从筛查结果或健康趋势纳入的具体问题；AI不会自动建立或确认专病主题。单项结论独立确认，尚缺专科意见时标明待核实。</div>
         {topics.filter(item => item.issueKey && item.reviewType === 'specialty').length === 0 && <div style={{ marginTop: 9, fontSize: 13, color: '#8AA89C' }}>暂无单项专病研判，可从专项筛查结果或健康趋势纳入。</div>}
         {topics.filter(item => item.issueKey && item.reviewType === 'specialty').map(item => <div key={item._id} style={{ borderTop: '1px solid #E5ECE8', padding: '9px 0', marginTop: 7, fontSize: 13 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><strong>{item.title}</strong><span style={{ color: item.conclusion?.status === 'confirmed' ? '#16845B' : '#A16620' }}>{item.conclusion?.status === 'confirmed' ? '已确认' : item.messages?.length ? '待确认' : '待分析'}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => setActiveId(item._id)}>查看单项研判</button></div>
@@ -471,7 +473,9 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         onAnalyze={() => send(null, '请根据当前已纳入的关注问题和已标注去向，核对来源并更新研判。区分专科评估或就医、营养师评估和随访观察；营养具体方案由营养师制定。')} />
       <div className="card" style={{ flex: 1 }}><div ref={chatRef} className="card-body" style={{ height: 'clamp(560px, 66vh, 780px)', overflowY: 'auto', background: '#F7F8F6', padding: 16 }}>
         {!active.messages?.length && <div style={{ color: '#65776F', textAlign: 'center', paddingTop: 100 }}>尚未开始AI分析。{active.issueKey ? <div style={{ marginTop: 16 }}><button className="btn btn-primary" disabled={busy} onClick={() => send(null, `请围绕“${active.title}”开展首次专项研判：先核对已关联的报告或趋势资料，再判断是否需要专科进一步评估、就医意见、营养师评估或随访复评。逐项区分已确认事实与待核实信息。`)}>开始分析这个专病问题</button></div>
-          : ['annual', 'checkup'].includes(active.reviewType) && active.contextScopes?.includes('reports') && <div style={{ marginTop: 16 }}><button className="btn btn-primary" disabled={busy} onClick={startAutomaticReview}>从最近一次体检报告开始AI研判</button></div>}</div>}
+          : ['annual', 'checkup'].includes(active.reviewType) && active.contextScopes?.includes('reports') && <div style={{ marginTop: 16 }}><button className="btn btn-primary" disabled={busy} onClick={startAutomaticReview}>{busy ? '正在启动…' : active.annualPlanYear ? '开始年度综合AI研判' : '从最近一次体检报告开始AI研判'}</button>{active.annualPlanYear && <div style={{ fontSize: 12, marginTop: 9 }}>优先使用最近已审核体检报告；若暂无体检报告，则依据已审核健康趋势、风险提示和已纳入问题分析。</div>}{automaticStartError && <div role="alert" style={{ color: '#B42318', fontSize: 13, marginTop: 10 }}>启动失败：{automaticStartError}</div>}</div>}</div>}
+        {active.generation?.status === 'running' && <div role="status" style={{ color: '#1E6B50', textAlign: 'center', marginBottom: 12 }}>AI正在分析，结果完成后会自动显示。</div>}
+        {active.generation?.status === 'failed' && <div role="alert" style={{ color: '#B42318', textAlign: 'center', marginBottom: 12 }}>AI分析失败：{active.generation.error || '请稍后重试'}。可在下方重试原消息。</div>}
         {(active.messages || []).map(message => <div key={message._id} style={{ display: 'flex', justifyContent: message.role === 'staff' ? 'flex-end' : 'flex-start', marginBottom: 14 }}><div style={{ maxWidth: '82%', background: message.role === 'staff' ? '#DDF2E7' : '#fff', border: '1px solid #DCE5E0', borderRadius: 12, padding: '10px 13px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11, color: '#8AA89C', marginBottom: 5 }}><span>{message.role === 'ai' ? `AI助手 · ${message.provider || ''}${message.durationMs ? ` · ${(message.durationMs / 1000).toFixed(1)}秒` : ''}` : `${message.staffName} · ${message.staffRole}`} · {formatDateTime(message.createdAt)}</span><span>{message.role === 'staff' && <button type="button" onClick={() => editMessage(message)} style={{ border: 0, background: 'none', color: '#1E6B50', cursor: 'pointer' }}>编辑</button>}<button type="button" onClick={() => deleteMessage(message)} style={{ border: 0, background: 'none', color: '#B42318', cursor: 'pointer' }}>删除</button></span></div>
           <CleanText>{message.content}</CleanText>

@@ -21,7 +21,7 @@ const { DEFAULT_SCOPES, ensureAiCaseReviewTemplates } = require('../utils/aiCase
 const VALID_SCOPES = new Set(DEFAULT_SCOPES);
 const VALID_REVIEW_TYPES = new Set(['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'specialty', 'custom']);
 const ROLE_LABEL = { superadmin: '超级管理员', familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', healthPlanner: '健康规划师', medicalAssistant: '就医专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师', specialist: '专科医师' };
-const AUTO_REVIEW_MESSAGE = '【系统自动启动研判】请核对最近一次已审核体检报告、健康顾问纳入的问题和已审核的5年健康趋势，提出待研判问题、专科或营养师评估去向、待核实目标及初步分析。';
+const AUTO_REVIEW_MESSAGE = '【系统自动启动研判】优先核对最近一次已审核体检报告（如有），结合健康顾问纳入的问题和已审核的5年健康趋势、风险提示，提出待研判问题、专科或营养师评估去向、待核实目标及初步分析。';
 const PHYSICAL_EXAM_FILTER = { $or: [
   { documentCategory: 'physical_exam' },
   { documentCategory: null, type: { $in: ['annual', 'general_exam'] } },
@@ -511,7 +511,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       if (!['annual', 'checkup'].includes(candidate.reviewType) || (candidate.messages.length && !existingStart) || !candidate.contextScopes.includes('reports'))
         return res.status(409).json({ success: false, message: '自动首轮研判仅用于尚未讨论且包含体检报告的年度或体检主题' });
       exam = await latestExam(user._id);
-      if (!exam) return res.status(409).json({ success: false, message: '尚无已审核的体检报告；请先核实报告，或手动输入研判问题' });
+      if (!exam && candidate.reviewType !== 'annual') return res.status(409).json({ success: false, message: '尚无已审核的体检报告；请先核实报告，或手动输入研判问题' });
     }
     const accepted = await acceptSend(AiCaseReview, {
       patientId: user._id, topicId: req.params.topicId,
@@ -539,9 +539,12 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const automatic = content === AUTO_REVIEW_MESSAGE;
       if (automatic) {
         exam ||= await latestExam(user._id);
-        if (!exam) throw new Error('已审核体检报告已不可用，请核实后重试');
-        snapshot.reports = [exam, ...(snapshot.reports || []).filter(item => String(item._id) !== String(exam._id))].slice(0, 30);
-        snapshot.sources.unshift(`优先分析最近一次已审核体检报告：${exam.checkDate || exam.reportYear || '日期待核实'} · ${exam.title}`);
+        if (exam) {
+          snapshot.reports = [exam, ...(snapshot.reports || []).filter(item => String(item._id) !== String(exam._id))].slice(0, 30);
+          snapshot.sources.unshift(`优先分析最近一次已审核体检报告：${exam.checkDate || exam.reportYear || '日期待核实'} · ${exam.title}`);
+        } else if (topic.reviewType === 'annual') {
+          snapshot.sources.unshift('暂无已审核的体检报告；仅依据已审核资料和已纳入问题提出待核实判断，不编造体检所见');
+        } else throw new Error('已审核体检报告已不可用，请核实后重试');
       }
       const isSupplement = topic.messages.length > 1;
       const history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
@@ -566,7 +569,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
           ? '这是年度综合研判首次讨论。按固定六项议题依次给出初步分析，每项最多3个要点，全文不超过1200个中文字；优先列明有来源的关键事实、管理目标与待核实资料，不重复罗列全部病史、检查数值或旧方案。资料不足的议题明确写待核实，不编造结论。'
           : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
       const autoGuide = automatic
-        ? `${isAnnualReview ? '这是年度综合研判首次讨论，保持主题规定的固定六项议题，每项最多3点，全文不超过1200个中文字。' : '这是本主题首次讨论。'}先从最近一次已审核体检报告列出关键问题及报告日期/项目依据（最多5条），区分已确认事实与待核实信息；再逐条写拟目标，严格使用“目标：……；干预重点：……”格式（最多5条，资料不足不编造数值）；最后结合既有资料给出简明研判分析和待审核方案。目标仅是草稿，须由健康顾问确认。`
+        ? `${isAnnualReview ? '这是年度综合研判首次讨论，保持主题规定的固定六项议题，每项最多3点，全文不超过1200个中文字。' : '这是本主题首次讨论。'}${exam ? '先从最近一次已审核体检报告列出关键问题及报告日期/项目依据（最多5条）' : '暂无已审核的体检报告，请从已审核健康趋势、AI风险提示及已纳入问题列出可核对的关键问题（最多5条），不得虚构报告所见'}，区分已确认事实与待核实信息；再逐条写拟目标，严格使用“目标：……；干预重点：……”格式（最多5条，资料不足不编造数值）；最后结合既有资料给出简明研判分析和待审核方案。目标仅是草稿，须由健康顾问确认。`
         : incrementalGuide;
       const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【健康顾问纳入的单项专病研判】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。不要凭空生成单项研判结论。'}\n请先逐项核对单项问题，再做年度综合判断；未确认的单项仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 900 : isAnnualReview || automatic ? 3200 : 1800 });
       if (automatic && !proposedTargets.length) result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
