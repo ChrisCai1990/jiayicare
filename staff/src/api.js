@@ -277,7 +277,7 @@ export const staffAPI = {
   updateAiCaseReviewMessage: (patientId, topicId, messageId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/messages/${messageId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAiCaseReviewMessage: (patientId, topicId, messageId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/messages/${messageId}`, { method: 'DELETE' }),
   generateAiCaseReviewConclusion: (patientId, topicId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'POST' }),
-  confirmAiCaseReviewConclusion: (patientId, topicId, content, writeToPhaseAssessment = false) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'PATCH', body: JSON.stringify({ content, writeToPhaseAssessment }) }),
+  confirmAiCaseReviewConclusion: (patientId, topicId, content, writeToPhaseAssessment = false, managementTargets = []) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'PATCH', body: JSON.stringify({ content, writeToPhaseAssessment, managementTargets }) }),
   reviewMedicalAssistPlan: (planId, action, reviewNote = '') => req(`/staff/plans/${planId}/medical-assist-review`, { method: 'PATCH', body: JSON.stringify({ action, reviewNote }) }),
 
   // Knowledge
@@ -415,6 +415,7 @@ export const staffAPI = {
   generateReportFollowUpDraft: (id, data) => req(`/staff/report-followups/${id}/generate`, { method: 'POST', body: JSON.stringify(data) }),
   reviewReportFollowUpDraft: (id, data) => req(`/staff/report-followups/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
   saveAnnualPlan:       (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
+  getAnnualManagementTargets: (patientId, year) => req(`/staff/patients/${patientId}/annual-management-targets?year=${encodeURIComponent(year)}`),
   reviseAnnualNutritionMetrics: (patientId, data) => req(`/staff/patients/${patientId}/annual-nutrition-metrics`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAnnualNutritionTask: (patientId, planId) => req(`/staff/patients/${patientId}/annual-nutrition-task?planId=${encodeURIComponent(planId)}`),
   dispatchAnnualNutritionTask: (patientId, data) => req(`/staff/patients/${patientId}/annual-nutrition-dispatch`, { method: 'POST', body: JSON.stringify(data) }),

@@ -8147,6 +8147,22 @@ router.post('/annual-plans/:planId/service-recommendations/:recommendationId/han
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.get('/patients/:id/annual-management-targets', staffAuth, async (req, res) => {
+  try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
+    const patient = await User.findById(req.params.id).select('tenantId').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '无权查看该会员' });
+    const year = Number(req.query.year);
+    if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
+    const confirmed = await AiCaseReview.find({
+      ...require('../utils/annualCaseReviewScope').annualCaseReviewQuery(req.params.id, year),
+      'conclusion.status': 'confirmed',
+    }).select('title conclusion.managementTargets conclusion.confirmedAt').lean();
+    res.json({ success: true, data: require('../utils/caseReviewManagementTargets').fromConfirmedReviews(confirmed).slice(0, 32) });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的年度管理方案' });
@@ -8274,6 +8290,20 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (issue) return res.status(400).json({ success:false, message:issue });
     }
     const targetYear = year || new Date().getFullYear();
+    if (moduleData.management_targets?.records !== undefined) {
+      const records = moduleData.management_targets.records;
+      if (!Array.isArray(records) || records.length > 32 || records.some(row => !String(row?.goal || '').trim() || !String(row?.focus || '').trim()
+        || String(row.goal).length > 240 || String(row.focus).length > 500)) {
+        return res.status(400).json({ success: false, message: '请逐条填写管理目标和干预重点（最多 32 条）' });
+      }
+    } else {
+      const confirmed = await AiCaseReview.find({
+        ...require('../utils/annualCaseReviewScope').annualCaseReviewQuery(req.params.id, targetYear),
+        'conclusion.status': 'confirmed',
+      }).select('title conclusion.managementTargets conclusion.confirmedAt').lean();
+      const records = require('../utils/caseReviewManagementTargets').fromConfirmedReviews(confirmed).slice(0, 32);
+      if (records.length) moduleData.management_targets = { enabled: true, records };
+    }
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(req.params.id);
     const continuity = closedLoop ? await require('../utils/annualPlanContinuity').loadAnnualPlanContinuity(req.params.id, targetYear) : {};
     if (continuity.mode === 'renewal' && (!continuity.ready || !require('../utils/annualPlanContinuity').matchesContinuitySource(req.body.continuitySource, continuity.source))) {
@@ -11369,8 +11399,9 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
         { reviewType: { $exists: false }, title: /年度管理研判/ },
       ],
     })
-      .sort({ 'conclusion.confirmedAt': -1, _id: 1 }).limit(closedLoop ? 0 : 20).select('title reviewType conclusion.content conclusion.structured conclusion.confirmedAt').lean();
+      .sort({ 'conclusion.confirmedAt': -1, _id: 1 }).limit(closedLoop ? 0 : 20).select('title reviewType conclusion.content conclusion.structured conclusion.managementTargets conclusion.confirmedAt').lean();
     if (supplement) confirmedCaseReviews = [...new Map([...confirmedCaseReviews, ...supplement.reviews].map(row => [String(row._id), row])).values()];
+    const confirmedManagementTargets = require('../utils/caseReviewManagementTargets').fromConfirmedReviews(confirmedCaseReviews).slice(0, 32);
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
       : '无已确认的专题研判结论';
@@ -11443,6 +11474,10 @@ ${closedLoop ? require('../utils/annualPlanContinuity').continuityPrompt(prepara
 
 【医护团队已确认的AI辅助研判结论】
 ${confirmedReviewText}
+
+【健康顾问已确认的管理目标与干预重点】
+${confirmedManagementTargets.length ? JSON.stringify(confirmedManagementTargets) : '暂无逐条确认的目标；不得虚构量化目标'}
+请优先对齐这些目标；标记为营养相关的条目应供营养师后续核实，不要替营养师编造基线或能量处方。
 
 ${closedLoop ? `【已由专业人员提出、健康顾问终审的年度综合健康评估】
 ${professionalAssessmentText}
@@ -11604,7 +11639,8 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       result.annual_checkup = { ...result.annual_checkup, date: suggestedCheckupDate };
     }
 
-    res.json({ success: true, data: result, generation: { fingerprint: generation.fingerprint, reused: generation.reused, evidenceCoverage: raw.evidenceCoverage || [] }, basis: assessmentFocus, continuitySource: preparation.continuity?.source || null, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
+    res.json({ success: true, data: result, managementTargets: confirmedManagementTargets,
+      generation: { fingerprint: generation.fingerprint, reused: generation.reused, evidenceCoverage: raw.evidenceCoverage || [] }, basis: assessmentFocus, continuitySource: preparation.continuity?.source || null, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: require('../utils/annualGenerationContract').annualGenerationError(err.message) });
   }
@@ -15961,19 +15997,24 @@ router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, 
     const annualPlan = annualPlans.find(plan => (plan.moduleData?.nutrition_assessment?.enabled !== false && Boolean(plan.moduleData?.nutrition_assessment))
       || (plan.moduleData?.personalized_followups?.records || []).some(annualNutrition.isRow));
     const annualNutritionMetrics = selection.selectedFromAnnualPlan(annualPlan);
+    const annualNutritionGoals = (annualPlan?.moduleData?.management_targets?.records || [])
+      .filter(row => row.nutritionRelevant === true && String(row.goal || '').trim())
+      .map(row => ({ goal: String(row.goal).trim(), focus: String(row.focus || '').trim(),
+        sourceReviewId: row.sourceReviewId || '', sourceTitle: row.sourceTitle || '' }));
+    const annualGoalText = annualNutritionGoals.map((row, index) => `${index + 1}. ${row.goal}${row.focus ? `；干预重点：${row.focus}` : ''}`).join('\n');
     const annualNutritionSource = annualPlan ? {
       planId: String(annualPlan._id), year: annualPlan.year, pushed: Boolean(annualPlan.pushedAt),
     } : null;
     res.json({ success: true, data: assessment || annualPlan ? {
       planId: previous?._id || null, recordedAt: assessment?.verifiedAt || previous?.createdAt || null,
-      goal: previous?.content?.goal || assessment?.goal || '',
+      goal: annualGoalText || previous?.content?.goal || assessment?.goal || '',
       height: assessment?.height, weight: assessment?.weight,
       nutritionTargets: assessment?.nutritionTargets || [],
       metric: assessment?.metric || '', baseline: assessment?.baseline || '', target: assessment?.target || '',
       currentDiet: assessment?.currentDiet || '', medicalReview: assessment?.medicalReview || '',
       practicalConstraints: assessment?.practicalConstraints || '',
       allergyDetails: assessment?.allergyDetails || '',
-      annualNutritionMetrics, annualNutritionSource,
+      annualNutritionMetrics, annualNutritionGoals, annualNutritionSource,
     } : null });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });

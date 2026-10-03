@@ -614,13 +614,14 @@ export default function ServicePlansScreen({ navigation }) {
       const displayItemNotes = item => [
         item.problem && `当前问题：${item.problem}`, item.evidence && `设置依据：${item.evidence}`,
         item.goal && `管理目标：${item.goal}`, item.completionStandard && `完成标准：${item.completionStandard}`, item.schedule && `建议时间：${item.schedule}`,
+        item.interventionFocus && `干预重点：${item.interventionFocus}`,
         item.frequency && `执行频率：${item.frequency}`,
         item.careTarget?.hospital && `建议机构：${item.careTarget.hospital}`,
         item.careTarget?.department && `建议科室：${item.careTarget.department}`,
         item.careTarget?.expert && `建议专家：${item.careTarget.expert}`,
         item.customerAction && `需要您完成：${item.customerAction}`,
         item.precautions && `注意事项：${item.precautions}`,
-        `服务方式：${item.service?.modeLabel || '仅提醒'}${item.service?.typeLabel ? ` · ${item.service.typeLabel}` : ''}`,
+        item.moduleKey !== 'management_targets' && `服务方式：${item.service?.modeLabel || '仅提醒'}${item.service?.typeLabel ? ` · ${item.service.typeLabel}` : ''}`,
       ].filter(Boolean).join('\n');
       const annualMgmtPlans = (annualRes.success && annualRes.data?.length > 0)
         ? annualRes.data.map(ap => ({

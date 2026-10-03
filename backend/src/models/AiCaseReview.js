@@ -25,6 +25,7 @@ const messageSchema = new mongoose.Schema({
 const conclusionSchema = new mongoose.Schema({
   content: { type: String, default: '' },
   structured: { type: mongoose.Schema.Types.Mixed, default: null },
+  managementTargets: { type: [mongoose.Schema.Types.Mixed], default: [] },
   status: { type: String, enum: ['draft', 'confirmed'], default: 'draft' },
   generatedAt: { type: Date, default: null },
   confirmedAt: { type: Date, default: null },
@@ -59,6 +60,7 @@ const aiCaseReviewSchema = new mongoose.Schema({
     error: String,
   },
   conclusion: { type: conclusionSchema, default: () => ({}) },
+  conclusionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   createdByName: { type: String, default: '' },
   lastActivityAt: { type: Date, default: Date.now, index: true },

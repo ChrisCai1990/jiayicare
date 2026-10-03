@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildAnnualPlanDisplayItems } = require('../src/utils/annualPlanPresentation');
+const { buildAnnualPlanDisplayItems, customerModuleData } = require('../src/utils/annualPlanPresentation');
 
 test('年度方案生成统一的客户展示卡片字段', () => {
   const items = buildAnnualPlanDisplayItems({ abnormal_followup: { records: [{
@@ -26,4 +26,16 @@ test('家庭医生年度目标和完成标准进入客户年度方案', () => {
   }] } });
   assert.equal(item.goal, '明确后续管理方向');
   assert.equal(item.completionStandard, '回收专科意见并由健康顾问确认下一步');
+});
+
+test('已确认研判目标以目标和干预重点展示，内部研判来源不外显', () => {
+  const source = { management_targets: { enabled: true, records: [{
+    goal: '改善空腹血糖', focus: '核实餐次与主食分配', nutritionRelevant: true,
+    sourceReviewId: 'internal-id', sourceTitle: '代谢专项研判', sourceGoal: '改善空腹血糖',
+  }] } };
+  const [item] = buildAnnualPlanDisplayItems(source);
+  assert.equal(item.category, '年度管理目标');
+  assert.equal(item.goal, '改善空腹血糖');
+  assert.equal(item.interventionFocus, '核实餐次与主食分配');
+  assert.equal(customerModuleData(source).management_targets.records[0].sourceReviewId, undefined);
 });

@@ -612,6 +612,19 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     finally { setNutritionDispatching(false) }
   }
 
+  const reloadManagementTargets = async () => {
+    if (pushedAt) return toast('已推送年度方案不能直接覆盖目标')
+    const existing = moduleData.management_targets?.records || []
+    if (existing.length && !window.confirm('将用当前年度已确认的专项研判目标替换年度草稿中的目标，确认继续？')) return
+    try {
+      const res = await staffAPI.getAnnualManagementTargets(id, year)
+      if (!res.data?.length) return toast('本年度尚无已确认的逐条管理目标')
+      setModuleData(prev => ({ ...prev, management_targets: { enabled: true, records: res.data } }))
+      setDirty(true)
+      toast(`已带入 ${res.data.length} 条目标，请核对并保存草稿`)
+    } catch (error) { toast(error.message || '读取研判目标失败') }
+  }
+
   const handleSave = async () => {
     if (remotePlanChanged) { toast('方案已有补录，请先加载最新方案再保存'); return }
     if (!planType) { toast('请先选择方案类型'); return }
@@ -684,6 +697,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       const allowedKeys = [...new Set([...configuredKeys, ...BASIC_STANDARD_MODULE_KEYS])]
       setModuleData(prev => {
         const merged = { ...prev }
+        if (Array.isArray(res.managementTargets)) merged.management_targets = { enabled: true, records: res.managementTargets }
         // 本次为覆盖式重新筛选。先清掉旧的筛选结果，避免“不适用”的旧方案继续残留。
         ;[...allowedKeys, 'personalized_followups'].forEach(key => { delete merged[key] })
         Object.entries(aiData).forEach(([key, val]) => {
@@ -1176,6 +1190,20 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               </div>
             ))}
           </div>
+          {patientMode && <section style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度管理目标与干预重点">
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>专项研判带入 · 管理目标与干预重点</div>
+            <div style={{ fontSize: 12, color: '#62776A', margin: '5px 0 12px' }}>仅带入健康顾问已确认的研判；年度草稿可调整，勾选营养相关的目标会提供给营养师核实。修改请保存草稿。</div>
+            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" onClick={reloadManagementTargets}>读取本年度已确认研判目标</button>}
+            {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。请先在专项研判中确认，保存年度草稿时也会自动带入。</div>}
+            {(moduleData.management_targets?.records || []).map((row, index) => <div key={`${row.sourceReviewId || 'new'}-${index}`} style={{ borderTop: '1px solid #E5ECE7', padding: '10px 0' }}>
+              <div style={{ fontSize: 12, color: '#62776A', marginBottom: 5 }}>来源：{row.sourceTitle || '年度方案补充'}{row.sourceConfirmedAt ? ` · ${new Date(row.sourceConfirmedAt).toLocaleDateString('zh-CN')}` : ''}{row.sourceGoal && (row.goal !== row.sourceGoal || row.focus !== row.sourceFocus) ? ' · 年度草稿已调整' : ''}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <input className="form-input" aria-label={`管理目标 ${index + 1}`} value={row.goal || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, goal: e.target.value } : item))} />
+                <input className="form-input" aria-label={`干预重点 ${index + 1}`} value={row.focus || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, focus: e.target.value } : item))} />
+              </div>
+              <label style={{ fontSize: 13, display: 'inline-block', marginTop: 7 }}><input type="checkbox" checked={row.nutritionRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养相关，带给营养师</label>
+            </div>)}
+          </section>}
           {patientMode && <section style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
             <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 标准方案 · 营养评估</div>
             <div style={{ fontSize: 12, color: '#62776A', margin: '5px 0 12px' }}>每位客户均保留营养评估。健康顾问勾选本年度需要前后对比的客观数据与主观感受；体重也在此选择。骨骼肌、体脂率和内脏脂肪由营养方案固定提供。</div>

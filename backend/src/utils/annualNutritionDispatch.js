@@ -9,11 +9,17 @@ function taskId(planId, attempt = 1) {
 
 function contentForPlan(plan) {
   const metrics = selectedFromAnnualPlan(plan);
-  return `营养师核实膳食与生活方式；${metrics.length ? `本年度重点对比指标：${metrics.join('、')}` : '本年度按固定体成分指标评估'}。基线与目标在营养方案中逐项确认。`;
+  const goals = nutritionGoalsForPlan(plan);
+  return `营养师核实膳食与生活方式；${metrics.length ? `本年度重点对比指标：${metrics.join('、')}` : '本年度按固定体成分指标评估'}。${goals.length ? `已确认的营养相关管理目标：${goals.map(row => `${row.goal}（重点：${row.focus}）`).join('；')}。` : ''}基线与阶段目标在营养方案中逐项确认。`;
+}
+
+function nutritionGoalsForPlan(plan) {
+  return (plan?.moduleData?.management_targets?.records || []).filter(row => row.nutritionRelevant === true && row.goal);
 }
 
 function buildTask(plan, patient, actor, attempt = 1, now = new Date()) {
   const metrics = selectedFromAnnualPlan(plan);
+  const goals = nutritionGoalsForPlan(plan);
   const plannedDate = plan.moduleData?.nutrition_assessment?.executionDate;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(plannedDate || '')
     ? new Date(`${plannedDate}T09:00:00+08:00`) : now;
@@ -27,7 +33,7 @@ function buildTask(plan, patient, actor, attempt = 1, now = new Date()) {
     sourceScheduleKey: `nutrition-assessment:standalone:${attempt}`, workflowKey: 'annual_nutrition_assessment',
     deliveryMode: 'single', deliveryType: 'nutrition_assessment', taskRole: 'executor',
     aiStatus: 'approved', reviewRole: null, reviewAssignedTo: null,
-    formData: { annualNutritionMetrics: metrics, annualYear: plan.year,
+    formData: { annualNutritionMetrics: metrics, annualNutritionGoals: goals, annualYear: plan.year,
       plannedAssessmentDate: plannedDate || '' },
   };
 }
@@ -43,4 +49,4 @@ async function dispatch(plan, patient, actor, FollowUp) {
   return { task: saved, reused: !inserted.upsertedCount };
 }
 
-module.exports = { taskId, buildTask, contentForPlan, dispatch };
+module.exports = { taskId, buildTask, contentForPlan, nutritionGoalsForPlan, dispatch };
