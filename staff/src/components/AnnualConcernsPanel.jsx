@@ -5,7 +5,7 @@ const STATUS = [['suggested', 'AI提示，待核实'], ['included', '纳入研�
 const PATHWAY = [['undecided', '待判断'], ['specialist', '专科评估或就医'], ['nutrition', '交营养师评估'], ['both', '专科和营养师均介入'], ['followup', '随访与复评']]
 const SOURCE = { screening: '专项筛查报告', ai_health_trend: '已审核的5年健康趋势', ai_risk_scan: '已审核的AI风险提示' }
 
-function ConcernRow({ concern, patientId, topicId, canEdit, toast, onUpdate }) {
+function ConcernRow({ concern, number, patientId, topicId, canEdit, toast, onUpdate }) {
   const [form, setForm] = useState({ status: concern.status || 'suggested', pathway: concern.pathway || 'undecided', note: concern.note || '' })
   const [busy, setBusy] = useState(false)
   useEffect(() => setForm({ status: concern.status || 'suggested', pathway: concern.pathway || 'undecided', note: concern.note || '' }), [concern.id, concern.reviewedAt])
@@ -17,7 +17,7 @@ function ConcernRow({ concern, patientId, topicId, canEdit, toast, onUpdate }) {
     finally { setBusy(false) }
   }
   return <details style={{ border: '1px solid #DCE8E1', borderRadius: 9, padding: 11, marginTop: 8, background: '#fff' }}>
-    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{concern.title}<span style={{ color: '#65776F', fontSize: 12, fontWeight: 400, marginLeft: 8 }}>{STATUS.find(([value]) => value === concern.status)?.[1] || '待核实'} · {PATHWAY.find(([value]) => value === concern.pathway)?.[1] || '待判断'}</span></summary>
+    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{number}. {concern.title}<span style={{ color: '#65776F', fontSize: 12, fontWeight: 400, marginLeft: 8 }}>{STATUS.find(([value]) => value === concern.status)?.[1] || '待核实'} · {PATHWAY.find(([value]) => value === concern.pathway)?.[1] || '待判断'}</span></summary>
     <div style={{ fontSize: 12, color: '#65776F', marginTop: 3 }}>{SOURCE[concern.kind] || '其他资料'} · {concern.source?.checkDate || concern.source?.year || ''} · {concern.includedByName || '系统'}</div>
     {concern.evidence && <div style={{ fontSize: 12, lineHeight: 1.6, marginTop: 5 }}>依据：{concern.evidence}</div>}
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
@@ -35,13 +35,13 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
   const concerns = topic.concerns || []
   const autoScan = concerns.filter(row => row.includedByName === '已审核AI风险扫描')
   const manuallyIncluded = concerns.filter(row => row.includedByName !== '已审核AI风险扫描')
-  return <div className="card"><div className="card-header"><div className="card-title">年度待研判问题 · {concerns.length}</div></div><div className="card-body">
+  return <div className="card" id="annual-concerns"><div className="card-header"><div className="card-title">年度风险维度与分析线索（共 {concerns.length} 项）</div></div><div className="card-body">
     <div style={{ fontSize: 12, color: '#65776F' }}>这里判断重大疾病风险维度的优先级和专业去向；上方单个专病问题单独研判，再一起形成年度结论。展开每项可核对依据和去向。</div>
     {!concerns.length && <div style={{ marginTop: 12, color: '#8AA89C' }}>暂无纳入的问题，可在专项筛查结果或AI健康信息整理中一键纳入。</div>}
-    {!!autoScan.length && <div style={{ marginTop: 12, fontWeight: 700 }}>系统从已审核AI风险扫描自动带入的维度 · {autoScan.length}</div>}
-    {autoScan.map(concern => <ConcernRow key={concern.id} concern={concern} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
-    {!!manuallyIncluded.length && <div style={{ marginTop: 12, fontWeight: 700 }}>人工纳入的分析线索 · {manuallyIncluded.length}</div>}
-    {manuallyIncluded.map(concern => <ConcernRow key={concern.id} concern={concern} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {!!autoScan.length && <div style={{ marginTop: 12, fontWeight: 700 }}>系统从已审核AI风险扫描带入的维度（{autoScan.length}项）</div>}
+    {autoScan.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {!!manuallyIncluded.length && <div style={{ marginTop: 12, fontWeight: 700 }}>人工纳入的分析线索（{manuallyIncluded.length}项）</div>}
+    {manuallyIncluded.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={autoScan.length + index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
     {canEdit && concerns.length > 0 && topic.messages?.length > 0 && <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={onAnalyze}>依据当前关注问题继续AI研判</button>}
   </div></div>
 }

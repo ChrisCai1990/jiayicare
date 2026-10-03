@@ -447,7 +447,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         {headerExpanded && <>
         {active.annualPlanYear ? <div style={{ marginTop: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 8 }}>
-            {[['1. 核对单项问题', '查看具体专病研判的事实、待核实点及专科意见'], ['2. 形成综合判断', '汇总重大疾病风险维度，确定优先级和医疗管理目标'], ['3. 准备客户沟通', '说明目标、待补资料与后续专业协作']].map(([title, note]) => <div key={title} style={{ padding: 10, background: '#F4F8F5', borderRadius: 8 }}><strong>{title}</strong><div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>{note}</div></div>)}
+            {[['步骤一 · 核对单项问题', '查看具体专病研判的事实、待核实点及专科意见', 'annual-specialty'], ['步骤二 · 形成综合判断', '汇总重大疾病风险维度，确定优先级和医疗管理目标', 'annual-concerns'], ['步骤三 · 准备客户沟通', '说明目标、待补资料与后续专业协作', 'screening']].map(([title, note, target]) => <button type="button" key={title} onClick={() => target === 'screening' ? onNavigate?.('screening') : document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })} style={{ padding: 10, background: '#F4F8F5', border: '1px solid #DCE8E1', borderRadius: 8, textAlign: 'left', cursor: target === 'screening' && !onNavigate ? 'default' : 'pointer' }}><strong>{title}</strong><div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>{note}</div><div style={{ color: '#1E6B50', fontSize: 12, marginTop: 6 }}>点击查看 →</div></button>)}
           </div>
           <details style={{ color: '#65776F', fontSize: 12, marginTop: 9 }}><summary>查看完整研判规则</summary><div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, marginTop: 7 }}>{active.description}</div></details>
         </div> : <div style={{ color: '#4A6558', fontSize: 13, marginTop: 9 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div>}
@@ -460,7 +460,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         </>}
       </div></div>
 
-      {!!active.annualPlanYear && <div className="card"><div className="card-header"><div className="card-title">单个专病问题</div></div><div className="card-body">
+      {!!active.annualPlanYear && <div className="card" id="annual-specialty"><div className="card-header"><div className="card-title">单个专病问题</div></div><div className="card-body">
         <div style={{ fontSize: 12, color: '#65776F' }}>这里只显示健康顾问已从筛查结果或健康趋势纳入的具体问题；AI不会自动建立或确认专病主题。单项结论独立确认，尚缺专科意见时标明待核实。</div>
         {topics.filter(item => item.issueKey && item.reviewType === 'specialty').length === 0 && <div style={{ marginTop: 9, fontSize: 13, color: '#8AA89C' }}>暂无单项专病研判，可从专项筛查结果或健康趋势纳入。</div>}
         {topics.filter(item => item.issueKey && item.reviewType === 'specialty').map(item => <div key={item._id} style={{ borderTop: '1px solid #E5ECE8', padding: '9px 0', marginTop: 7, fontSize: 13 }}>

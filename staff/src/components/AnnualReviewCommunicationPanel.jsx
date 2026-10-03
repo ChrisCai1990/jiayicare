@@ -58,7 +58,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
     finally { setBusy(false) }
   }
 
-  return <section style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
+  return <section id="annual-review-communication" style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
     <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 6 }}>客户沟通前的研判核对 · {year}年度</div>
     {loading ? <div style={{ fontSize: 13 }}>正在读取研判…</div> : <>
       <div style={{ marginTop: 10, padding: 12, background: '#fff', border: '1px solid #D9E9E1', borderRadius: 8 }}>
