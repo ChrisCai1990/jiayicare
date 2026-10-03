@@ -18,7 +18,7 @@ function reviews(plan) {
 function pending(plan) { return reviews(plan).filter(r => r.executionReview.status === 'pending'); }
 function title(row) { return row?.items || row?.name || row?.department || row?.standardPlanName || '事项'; }
 function summary(change) {
-  return { module: labels[change.key], title: title(change.after || change.before),
+  return { key: change.key, index: change.index, module: labels[change.key], title: title(change.after || change.before),
     action: !change.before ? '新增' : !change.after ? (change.operation === 'remove' ? '移除事项' : '移出原分类') : '更新',
     deletionReason: change.deletionReason || '',
     before: change.before ? { title: title(change.before), advice: change.before.personalizedAdvice || change.before.personalization || change.before.reason || '', date: change.before.executionDate || change.before.visit_time || change.before.time || '', timing: change.before.timeWindow || '' } : null,

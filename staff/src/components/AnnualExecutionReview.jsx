@@ -8,9 +8,7 @@ const dateText = value => {
   const date = new Date(value)
   return Number.isFinite(date.getTime()) ? date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : String(value)
 }
-const display = row => row ? `${row.title} · ${row.datePending ? '日期待确认' : dateText(row.date)}${row.timing ? ` · ${row.timing}` : ''}\n${row.advice || '未填写建议'}` : '无'
-
-export default function AnnualExecutionReview({ patientId, planId, planVersion, canEdit }) {
+export default function AnnualExecutionReview({ patientId, planId, planVersion, canEdit, onDataChange }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [note, setNote] = useState(''), [outcome, setOutcome] = useState('unchanged'), [message, setMessage] = useState('')
   const seq = useRef(0), section = useRef(null)
@@ -18,11 +16,11 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
     const version = ++seq.current
     try {
       const response = await staffAPI.getAnnualExecutionReview(patientId, planId)
-      if (version === seq.current) { setData(response.data); setError('') }
-    } catch (e) { if (version === seq.current) setError(e.message || '加载执行核对失败') }
+      if (version === seq.current) { setData(response.data); onDataChange?.(response.data); setError('') }
+    } catch (e) { if (version === seq.current) { setData(null); onDataChange?.(null); setError(e.message || '加载执行核对失败') } }
   }
   useEffect(() => {
-    setData(null); setNote(''); setMessage('')
+    setData(null); onDataChange?.(null); setNote(''); setMessage('')
     return () => { seq.current++ }
   }, [patientId, planId])
   useEffect(() => { reload(); return () => { seq.current++ } }, [patientId, planId, planVersion])
@@ -47,16 +45,8 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
     {error && <div role="alert">{error} <button className="btn btn-secondary btn-sm" disabled={busy} onClick={reload}>刷新核对</button></div>}
     {message && <p role="status">{message}</p>}
     {pending.length > 0 && <>
-      <p>健康顾问核对以下变更是否影响执行；需要调整时，请先到原服务流程完成安排，再记录结果。</p>
-      {pending.map(r => <details key={r.id} open={pending.length === 1} style={{ marginBottom: 10 }}>
-        <summary>{dateText(r.createdAt)} · {r.changes.map(c => c.title).join('、')}</summary>
-        {r.changes.map((change, index) => <div key={index} style={{ background: '#F7F9F8', marginTop: 8, padding: 10 }}>
-          <strong>{change.module} · {change.action}：{change.title}</strong>
-          {change.deletionReason && <p>移除原因：{change.deletionReason}</p>}
-          <p style={{ whiteSpace: 'pre-wrap' }}>原方案：{display(change.before)}</p>
-          <p style={{ whiteSpace: 'pre-wrap' }}>修订后方案：{display(change.after)}</p>
-        </div>)}
-      </details>)}
+      <p>有 {pending.reduce((count, review) => count + review.changes.length, 0)} 项方案变更待核对。变更已标在对应方案事项中；请先核对原服务流程中的执行安排，再记录结果。</p>
+      <p><a href="#annual-plan-content">查看对应方案事项</a></p>
       <details style={{ margin: '12px 0' }}>
         <summary>本方案直接关联的执行安排：{data.totals.followUps}条医护事项、{data.totals.tasks}条会员任务</summary>
         <p>以下为核对时的参考。就医、订单等其他关联服务请在会员原流程核对。</p>

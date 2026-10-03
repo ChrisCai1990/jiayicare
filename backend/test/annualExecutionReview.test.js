@@ -12,6 +12,8 @@ test('add/remove/move and pending dates remain reviewable without inferred dates
   for (const c of [{ ...change, before: null }, { ...change, after: null }, { ...change, after: { ...change.before, time: '', timingStatus: 'pending_confirmation' } }]) assert.equal(logic.changesForExecution([c]).length, 1);
   const row = logic.summary({ ...change, after: { ...change.before, time: '', timingStatus: 'pending_confirmation' } });
   assert.equal(row.after.date, ''); assert.equal(row.after.datePending, true);
+  assert.equal(logic.summary({ ...change, index: 2 }).key, 'abnormal_followup');
+  assert.equal(logic.summary({ ...change, index: 2 }).index, 2);
 });
 test('legacy and handled amendments do not produce tasks; pending revisions group by plan', () => {
   const plan = { _id: 'p', patientId: { _id: 'u', name: '合成会员' }, year: 2026, planType: 'jygj_light', supplementRevisions: [{ id: 'legacy', status: 'applied', changes: [change] }] };

@@ -412,6 +412,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [preparation, setPreparation] = useState(null)
+  const [executionReviewData, setExecutionReviewData] = useState(null)
   const [closedLoopEnabled, setClosedLoopEnabled] = useState(true)
   const [monthlyReviewEnabled, setMonthlyReviewEnabled] = useState(false)
   useEffect(() => {
@@ -857,7 +858,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const templateModuleEntries = selectedAdminTemplate
     ? templateEntries(selectedAdminTemplate)
     : (PLAN_TYPE_MODULES[strategyOf(planType)] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
+  const pendingExecutionChanges = (executionReviewData?.reviews || []).filter(review => review.status === 'pending').flatMap(review => review.changes || [])
   const visibleModuleEntries = templateModuleEntries.filter(entry => {
+    if (pendingExecutionChanges.some(change => change.key === entry.key)) return true
     const data = moduleData[entry.key]
     if (!data) return false
     return entry.def.multi ? (data.records || []).length > 0 : data.enabled !== false && entry.def.fields.some(field => data[field.key] !== undefined && data[field.key] !== '' && data[field.key] !== false)
@@ -953,6 +956,115 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
+      <details id="annual-plan-preparation" className="annual-plan-secondary" open={(!preparation?.checklist?.ready || ['#professional-assessments', '#annual-execution-review'].includes(window.location.hash)) || undefined}>
+        <summary>准备资料、专业评估与修订记录{preparation?.checklist && ` · 已完成 ${preparation.checklist.progress.completed}/${preparation.checklist.progress.total}`}</summary>
+      {patientMode && closedLoopEnabled && preparation?.checklist && (
+        <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>{preparation.continuity?.mode === 'renewal' ? '下一年度方案准备清单' : '首次方案准备清单'}</div>
+              <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>已完成 {preparation.checklist.progress.completed}/{preparation.checklist.progress.total}；未完成前不能由 AI 生成或正式发布年度方案。</div>
+              {preparationSelectionChanged && <div style={{ color: '#9A5B13', marginTop: 6 }}>当前选择尚未满足或与已保存记录不同，请核对并保存准备情况。</div>}
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: preparation.checklist.ready ? '#15803D' : '#B45309' }}>{preparation.checklist.ready ? '✓ 已就绪' : '待完善'}</span>
+          </div>
+          {preparation.continuity?.mode === 'renewal' && <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558' }}>引用 {preparation.continuity.previousYear} 年度总评；不重复要求首次会诊。<a href={`/patients/${id}?tab=aiReview${preparation.continuity.source?.annualReviewId ? `&phaseAssessmentId=${preparation.continuity.source.annualReviewId}` : ''}`}>查看/准备年度总评</a>{preparation.continuity.summary && <details style={{ marginTop: 8 }}><summary>已审核总评内容</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{preparation.continuity.summary}</div></details>}</div>}
+          <div style={{ marginTop: 12, padding: 12, border: '1px solid #DDEAE0', borderRadius: 8, background: '#F7FAF8' }}>
+            <div style={{ fontWeight: 700 }}>本年度综合研判 · 固定议题</div>
+            <div style={{ fontSize: 13, color: '#4A6558', marginTop: 5 }}>年度研判汇总专项筛查、已审核的5年趋势和AI风险提示；健康顾问核对问题、判断专科或营养师去向，并与客户确认目标后作为本方案依据。具体营养干预方案由营养师单独发出。</div>
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={!canEdit || annualReviewBusy} onClick={openAnnualComprehensiveReview}>{annualReviewBusy ? '正在打开…' : preparation.caseReviews?.some(item => item.reviewType === 'annual' && Number(item.annualPlanYear) === Number(year)) ? '继续年度综合研判' : '开始年度综合研判'}</button>
+          </div>
+          {!!preparation.caseReviews?.length && <details open={preparation.caseReviews.some(item => item.required && item.conclusion?.status !== 'confirmed')} style={{ marginTop: 10 }}><summary>本年度研判依据</summary><div>年度综合研判固定必需。其他专项研判按本次方案需要勾选；已确认结论自动引用，草稿不引用。</div>{preparation.caseReviews.map(item => <label key={item._id} style={{ display: 'block', marginTop: 6 }}><input type="checkbox" disabled={!canEdit || !!item.annualPlanYear} checked={!!item.annualPlanYear || (preparationDraft.requiredCaseReviewIds || []).includes(String(item._id))} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredCaseReviewIds: e.target.checked ? [...(prev.requiredCaseReviewIds || []), String(item._id)] : (prev.requiredCaseReviewIds || []).filter(id => id !== String(item._id)), advisorReady: false }))} /> {item.annualPlanYear ? '固定必需：' : '本次必需：'}{item.title}（{item.conclusion?.status === 'confirmed' ? '已确认，将引用' : item.annualPlanYear || item.required ? '待确认，阻断生成' : '未引用，不阻断'}）</label>)}<a href={`/patients/${id}?tab=aiCase`}>查看研判</a></details>}
+          {!!generationCoverage.length && <details open style={{ marginTop: 10 }}><summary>本次来源核对（含待确认及未采用原因）</summary>{generationCoverage.map(item => <div key={item.sourceId}>{item.sourceId}：{{ included: '已纳入', deferred: '待确认', not_applicable: '未采用' }[item.status]}；{item.reason}</div>)}</details>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
+            {preparation.checklist.items.map(item => (
+              <div key={item.key} style={{ fontSize: 13, color: item.complete ? '#287A50' : '#9A5B13' }}>{item.complete ? '✓' : '○'} {item.label}{item.waived ? '（已说明豁免）' : ''}</div>
+            ))}
+          </div>
+          {canEdit && (
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'end', marginTop: 16 }}>
+              <label style={{ gridColumn: '1 / -1', fontSize: 13 }}>本年度专科评估需求
+                <select aria-label="本年度专科评估需求" value={preparationDraft.assessmentMode} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentMode: e.target.value, assessmentConfirmedCriteria: [], advisorReady: false }))} className="form-control">
+                  <option value="required">需要专科评估</option><option value="none">本次无需新增专科评估（健康顾问确认）</option>
+                </select>
+              </label>
+              {preparationDraft.assessmentMode === 'none' && <div style={{ gridColumn: '1 / -1', fontSize: 13 }}>
+                <div>以下五项必须全部符合并由顾问确认，仅适用于本年度本次判断：</div>
+                {assessmentCriteria.map(item => <label key={item.key} style={{ display: 'block', marginTop: 8 }}><input type="checkbox" checked={preparationDraft.assessmentConfirmedCriteria.includes(item.key)} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentConfirmedCriteria: e.target.checked ? [...prev.assessmentConfirmedCriteria, item.key] : prev.assessmentConfirmedCriteria.filter(key => key !== item.key), advisorReady: false }))} /> {item.label}</label>)}
+                <div style={{ marginTop: 8, color: '#9A5B13' }}>任一项不符合或不确定，不得确认无需新增。客户拒绝、时间或费用原因属于暂缓/未完成，不代表无需；出现新情况应重新核对。本清单不替代医生判断。</div>
+                <label>补充说明（选填，仅填写额外说明）<textarea aria-label="无需专科评估补充说明" className="form-control" rows={Math.max(3, String(preparationDraft.assessmentNotRequiredReason || '').split('\n').length + 1)} style={{ lineHeight: 1.8, resize: 'vertical' }} value={preparationDraft.assessmentNotRequiredReason} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentNotRequiredReason: e.target.value, advisorReady: false }))} /></label>
+              </div>}
+              <label style={{ fontSize: 12, color: '#4A6558' }}>{preparation.continuity?.mode === 'renewal' ? '按需补充的专业评估领域（可留空）' : '所需专业评估领域（用顿号分隔）'}
+                <input disabled={preparationDraft.assessmentMode === 'none'} value={preparationDraft.assessmentMode === 'none' ? '' : preparationDraft.requiredAssessmentDomains} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredAssessmentDomains: e.target.value }))} placeholder="如：心血管、营养、中医健康" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '8px 10px', border: '1px solid #D9D4CA', borderRadius: 8 }} />
+              </label>
+              <label style={{ fontSize: 12, color: '#4A6558' }}>用药档案
+                <select value={preparationDraft.medicationStatus} onChange={e => setPreparationDraft(prev => ({ ...prev, medicationStatus: e.target.value }))} style={{ display: 'block', width: '100%', marginTop: 5, padding: '8px', border: '1px solid #D9D4CA', borderRadius: 8 }}><option value="unknown">待完善</option><option value="documented">已完善</option><option value="none">确认无</option></select>
+              </label>
+              <label style={{ fontSize: 12, color: '#4A6558' }}>营养素档案
+                <select value={preparationDraft.supplementStatus} onChange={e => setPreparationDraft(prev => ({ ...prev, supplementStatus: e.target.value }))} style={{ display: 'block', width: '100%', marginTop: 5, padding: '8px', border: '1px solid #D9D4CA', borderRadius: 8 }}><option value="unknown">待完善</option><option value="documented">已完善</option><option value="none">确认无</option></select>
+              </label>
+              <button onClick={handleSavePreparation} disabled={preparationSaving} style={{ padding: '9px 14px', border: 'none', borderRadius: 8, color: '#fff', background: '#1E6B50', cursor: 'pointer' }}>{preparationSaving ? '保存中…' : '保存准备情况'}</button>
+              <label style={{ gridColumn: '1 / -1', fontSize: 13, color: '#4A6558' }}><input type="checkbox" checked={preparationDraft.advisorReady} onChange={e => setPreparationDraft(prev => ({ ...prev, advisorReady: e.target.checked }))} /> 健康顾问已确认资料足够生成本年度方案</label>
+            </div>
+          )}
+        </div>
+      )}
+      {patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} onDataChange={setExecutionReviewData} />}
+      {patientMode && closedLoopEnabled && canEdit && <AnnualPlanSupplement key={`${id}:${year}:${planType}:${selectedTemplateId}`} patientId={id} year={year} planType={planType} template={adminTemplates.find(t => t._id === selectedTemplateId)} templateId={selectedTemplateId} plan={plansByType[planType]} moduleData={moduleData} canEdit={canEdit} blocked={preparationBlocked} toast={toast} onApply={data => { setModuleData(data); setDirty(true) }} />}
+      {patientMode && ['superadmin', 'healthPlanner', 'familyDoctor', 'healthManager'].includes(staff?.role) && preparation?.continuity?.mode === 'renewal' && <AnnualServicePeriodPanel key={`${year}:${planType}`} planId={plansByType[planType]?._id} staff={staff} />}
+
+      {patientMode && closedLoopEnabled && (
+        <div id="professional-assessments" style={{ background: '#fff', border: '1px solid #D7E4DD', borderRadius: 12, padding: 18, marginBottom: 20 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>专业健康评估</div>
+          <button disabled={assessmentBusy} onClick={refreshAssessments} className="btn btn-secondary btn-sm">刷新评估与草稿状态</button>
+          <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>年度综合评估输入经终审后用于年度方案；后续专项协作生成动态随访，不重建年度方案。</div>
+          <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+            {professionalAssessments.map(item => <div key={item._id} style={{ border: '1px solid #E8E3DA', borderRadius: 9, padding: 11, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1 }}><b>{item.domain} · {item.title}</b><div style={{ fontSize: 12, color: '#6B7F75', marginTop: 3 }}>{item.purpose === 'annual_input' ? '年度综合评估输入' : '专项协作评估'} · {(item.facts || []).join('；') || '暂无结论摘要'}</div></div>
+              <span style={{ fontSize: 12, color: item.status === 'approved' ? '#15803D' : '#B45309' }}>{{ approved: '已终审', advisor_review: '待健康顾问终审', superseded: '已被修订版本替代', rejected: '已退回' }[item.status] || '待专业审核'}</span>
+              {item.followUpAutomation?.message && <div style={{ flexBasis: '100%', color: item.followUpAutomation.status === 'failed' ? '#DC2626' : '#6B7F75', fontSize: 13 }}>{item.followUpAutomation.message}</div>}
+              {canEdit && item.status === 'advisor_review' && <>
+                {item.purpose !== 'annual_input' && item.followUpAutomation?.status !== 'ready' && <button disabled={assessmentBusy || ['queued', 'running'].includes(item.followUpAutomation?.status)} onClick={() => handleAssessmentFollowUpDraft(item._id)} className="btn btn-secondary btn-sm">{item.followUpAutomation?.status === 'failed' ? '重试生成草稿' : 'AI随访草稿'}</button>}
+                {item.followUpAutomation?.status === 'failed' && <button disabled={assessmentBusy} onClick={() => handleReviewAssessment(item._id, 'take_over_followups')} className="btn btn-secondary btn-sm">改为人工核对</button>}
+                {item.purpose !== 'annual_input' && !['queued', 'running', 'failed'].includes(item.followUpAutomation?.status) && <button disabled={assessmentBusy} className="btn btn-secondary btn-sm" onClick={() => setProfessionalAssessments(prev => prev.map(row => row._id === item._id ? { ...row, followUpDrafts: [...(row.followUpDrafts || []), { title: '', content: '', date: '', category: 'information', requiresService: false }] } : row))}>补充随访草稿</button>}
+                <button disabled={assessmentBusy || ['queued', 'running', 'failed'].includes(item.followUpAutomation?.status)} onClick={() => handleReviewAssessment(item._id, 'approve_advisor')} className="btn btn-primary btn-sm">终审通过</button>
+              </>}
+              {!canEdit && item.status === 'professional_review' && <button disabled={assessmentBusy} onClick={() => handleReviewAssessment(item._id, 'submit_advisor')} className="btn btn-primary btn-sm">提交顾问审核</button>}
+              {item.status === 'approved' && item.followUpPublication?.status !== 'published' && !!item.followUpDrafts?.length && <div style={{ flexBasis: '100%', color: '#B45309' }}>
+                {item.followUpPublication?.message || '随访尚未完整发布'}
+                {canEdit && <button disabled={assessmentBusy} onClick={() => handleReviewAssessment(item._id, 'approve_advisor')} className="btn btn-secondary btn-sm">重试发布</button>}
+              </div>}
+              {!!item.followUpDrafts?.length && <div style={{ flexBasis: '100%', fontSize: 13, color: '#52685D' }}>
+                <b>{item.followUpPublication?.status === 'published' ? '已发布随访' : '随访草稿（终审后发布）'}</b>
+                {item.followUpDrafts.map((draft, index) => <fieldset key={index} disabled={assessmentBusy || !canEdit || item.status !== 'advisor_review'} style={{ border: '1px solid #E8E3DA', borderRadius: 8, padding: 10, marginTop: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <input aria-label={`随访${index + 1}标题`} value={draft.title} maxLength={40} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { title: e.target.value })} style={{ flex: 1, minWidth: 150 }} />
+                    <DateField aria-label={`随访${index + 1}日期`} type="date" value={draft.date} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { date: e.target.value })} />
+                    <select aria-label={`随访${index + 1}类型`} value={draft.category} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { category: e.target.value })}>
+                      <option value="medical_visit">安排就医</option><option value="examination">完善检查</option><option value="review">复查随访</option><option value="lifestyle">生活方式</option><option value="information">资料核对</option>
+                    </select>
+                  </div>
+                  <textarea aria-label={`随访${index + 1}内容`} value={draft.content} maxLength={3000} rows={3} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { content: e.target.value })} style={{ width: '100%', boxSizing: 'border-box', marginTop: 8 }} />
+                  <label><input type="checkbox" checked={draft.requiresService === true} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { requiresService: e.target.checked })} />需健康规划师安排服务</label>
+                  {canEdit && item.status === 'advisor_review' && <button onClick={() => removeAssessmentFollowUpDraft(item._id, index)} style={{ border: 0, background: 'none', color: '#DC2626', cursor: 'pointer', marginLeft: 12 }}>移除</button>}
+                </fieldset>)}
+              </div>}
+            </div>)}
+            {!professionalAssessments.length && <div style={{ color: '#9A6A28', fontSize: 13 }}>暂无专业评估记录；请完成所需评估，或由健康顾问在准备清单中确认“无需新增专科评估”的全部五项条件。其余准备要求仍保留。</div>}
+          </div>
+          <details style={{ marginTop: 14 }}>
+            <summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>＋ 新建专业评估记录</summary>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginTop: 12 }}>
+              <div style={{gridColumn:"1 / -1"}}><ProfessionalAssessmentFields value={assessmentDraft} onChange={setAssessmentDraft}/></div>
+              <button onClick={handleCreateAssessment} disabled={assessmentSaving} className="btn btn-primary" style={{ justifySelf: 'start' }}>{assessmentSaving ? '保存中…' : '保存评估草稿'}</button>
+            </div>
+          </details>
+        </div>
+      )}
+
+      </details>
+
+
       {patientMode && planType && <details style={{ background: '#F4F8F5', border: '1px solid #DDEAE0', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
         <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#4A6558' }}>正式阶段评估：{{ biweekly: '每 2 周', monthly: '每月', quarterly: '每季度' }[phaseAssessmentFrequency] || '按服务包周期'}</summary>
         <label htmlFor="phase-assessment-frequency" style={{ display: 'block', fontSize: 13, margin: '12px 0 8px' }}>调整评估周期</label>
@@ -1017,6 +1129,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <div style={{ marginTop: 5, fontSize: 13, color: '#62776A' }}>
               {(moduleData.management_targets?.records || []).length} 项管理目标 · {visibleModuleEntries.reduce((count, entry) => count + (entry.def.multi ? (moduleData[entry.key]?.records || []).length : 1), 0)} 项服务与行动
               {preparation?.checklist && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; panel.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: preparation.checklist.ready ? '#287A50' : '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>准备情况：{preparation.checklist.progress.completed}/{preparation.checklist.progress.total} · 查看</button>}
+              {pendingExecutionChanges.length > 0 && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; document.getElementById('annual-execution-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>{pendingExecutionChanges.length} 项执行待核对 · 处理</button>}
             </div>
           </div>
           {patientMode && <section style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度管理目标与干预重点">
@@ -1034,13 +1147,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             </div>)}
           </section>}
           {patientMode && <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
-            <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 营养评估 · {(moduleData.nutrition_assessment?.nutritionComparisonMetrics || []).length} 项对比指标{nutritionTask ? ' · 已派发营养师' : ' · 待派发'}</summary>
+            <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 营养评估 · {(moduleData.nutrition_assessment?.nutritionComparisonMetrics || []).length} 项对比指标{nutritionTask ? ' · 已派发营养师' : ' · 待派发'}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment') && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</summary>
             <div style={{ fontSize: 12, color: '#62776A', margin: '5px 0 12px' }}>每位客户均保留营养评估。健康顾问勾选本年度需要前后对比的客观数据与主观感受；体重也在此选择。骨骼肌、体脂率和内脏脂肪由营养方案固定提供。</div>
             <label style={{ display: 'block', fontSize: 13, color: '#4A6558' }}>计划评估日期（可留空；单独派发时留空按当天安排）<DateField type="date" className="form-input" value={moduleData.nutrition_assessment?.executionDate || ''} disabled={!canEdit || Boolean(pushedAt)} onChange={e => handleModuleChange('nutrition_assessment', 'executionDate', e.target.value)} style={{ display: 'block', maxWidth: 240, marginTop: 5 }} /></label>
             <div style={{ fontSize: 13, marginTop: 12, color: '#4A6558' }}>责任营养师：{patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name || '待分配'}</div>
             <div style={{ fontSize: 13, color: '#4A6558', marginTop: 12 }}>本年度营养干预前后对比指标</div>
             <NutritionComparisonMetricPicker value={moduleData.nutrition_assessment?.nutritionComparisonMetrics ?? (plansByType[planType] ? [] : ['体重'])} onChange={handleNutritionMetricChange} disabled={!canEdit} />
-            {!!moduleData.nutrition_assessment?.records?.length && <div style={{marginTop:12}}><strong>专项评估重点</strong>{moduleData.nutrition_assessment.records.map((row,index)=><div key={index} style={{padding:'9px 0',borderBottom:'1px solid #E5ECE7'}}><div>{row.items}</div><div style={{fontSize:12,color:'#62776A',whiteSpace:'pre-wrap'}}>依据：{row.basisSummary||row.reason||'待核对'}</div><div style={{fontSize:12,color:'#62776A',whiteSpace:'pre-wrap'}}>评估建议：{row.personalizedAdvice||'待确认'}</div></div>)}</div>}
+            {!!moduleData.nutrition_assessment?.records?.length && <div style={{marginTop:12}}><strong>专项评估重点</strong>{moduleData.nutrition_assessment.records.map((row,index)=><div key={index} style={{padding:'9px 0',borderBottom:'1px solid #E5ECE7'}}><div>{row.items}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment' && change.after?.title === row.items) && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</div><div style={{fontSize:12,color:'#62776A',whiteSpace:'pre-wrap'}}>依据：{row.basisSummary||row.reason||'待核对'}</div><div style={{fontSize:12,color:'#62776A',whiteSpace:'pre-wrap'}}>评估建议：{row.personalizedAdvice||'待确认'}</div></div>)}</div>}
+            {pendingExecutionChanges.filter(change => change.key === 'nutrition_assessment').map((change, index) => <details key={`nutrition-review-${index}`} style={{ marginTop: 8, color: '#9A5B13', fontSize: 12 }}><summary style={{ cursor: 'pointer' }}>{change.action}：{change.title} · 查看本项修订</summary><div style={{ whiteSpace: 'pre-wrap' }}>原方案：{change.before?.title || '无'} · {change.before?.date || '日期待确认'} · {change.before?.advice || ''}</div><div style={{ whiteSpace: 'pre-wrap' }}>当前方案：{change.after?.title || '无'} · {change.after?.datePending ? '日期待确认' : change.after?.date || '日期待确认'} · {change.after?.advice || ''}</div></details>)}
             {pushedAt && canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={!metricSelectionDirty || metricSelectionSaving} onClick={savePublishedNutritionMetrics}>{metricSelectionSaving ? '保存中…' : '保存指标调整（留痕）'}</button>}
             <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               {nutritionTask ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=followups&followUpId=${nutritionTask._id}`)}>营养师任务已派发 · 查看{nutritionTask.status === 'completed' ? '结果' : '任务'}</button>
@@ -1057,6 +1171,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               data={moduleData[entry.key] || {}}
               onChange={handleModuleChange}
               showPlanSummary
+              executionReviewChanges={pendingExecutionChanges.filter(change => change.key === entry.key)}
             />
           ))}
           {patientMode && <AnnualServiceRecommendations patient={patient} staffList={staffList} planId={plansByType[planType]?._id} pushedAt={pushedAt} canEdit={canEdit} toast={toast} />}
@@ -1071,114 +1186,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           请先选择方案类型，然后填写对应板块内容
         </div>
       )}
-
-      <details id="annual-plan-preparation" className="annual-plan-secondary" open={window.location.hash === '#professional-assessments' || undefined}>
-        <summary>准备资料、专业评估与修订记录{preparation?.checklist && ` · 已完成 ${preparation.checklist.progress.completed}/${preparation.checklist.progress.total}`}</summary>
-      {patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} />}
-      {patientMode && closedLoopEnabled && canEdit && <AnnualPlanSupplement key={`${id}:${year}:${planType}:${selectedTemplateId}`} patientId={id} year={year} planType={planType} template={adminTemplates.find(t => t._id === selectedTemplateId)} templateId={selectedTemplateId} plan={plansByType[planType]} moduleData={moduleData} canEdit={canEdit} blocked={preparationBlocked} toast={toast} onApply={data => { setModuleData(data); setDirty(true) }} />}
-      {patientMode && closedLoopEnabled && preparation?.checklist && (
-        <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>{preparation.continuity?.mode === 'renewal' ? '下一年度方案准备清单' : '首次方案准备清单'}</div>
-              <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>已完成 {preparation.checklist.progress.completed}/{preparation.checklist.progress.total}；未完成前不能由 AI 生成或正式发布年度方案。</div>
-              {preparationSelectionChanged && <div style={{ color: '#9A5B13', marginTop: 6 }}>当前选择尚未满足或与已保存记录不同，请核对并保存准备情况。</div>}
-            </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: preparation.checklist.ready ? '#15803D' : '#B45309' }}>{preparation.checklist.ready ? '✓ 已就绪' : '待完善'}</span>
-          </div>
-          {preparation.continuity?.mode === 'renewal' && <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558' }}>引用 {preparation.continuity.previousYear} 年度总评；不重复要求首次会诊。<a href={`/patients/${id}?tab=aiReview${preparation.continuity.source?.annualReviewId ? `&phaseAssessmentId=${preparation.continuity.source.annualReviewId}` : ''}`}>查看/准备年度总评</a>{preparation.continuity.summary && <details style={{ marginTop: 8 }}><summary>已审核总评内容</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{preparation.continuity.summary}</div></details>}</div>}
-          <div style={{ marginTop: 12, padding: 12, border: '1px solid #DDEAE0', borderRadius: 8, background: '#F7FAF8' }}>
-            <div style={{ fontWeight: 700 }}>本年度综合研判 · 固定议题</div>
-            <div style={{ fontSize: 13, color: '#4A6558', marginTop: 5 }}>年度研判汇总专项筛查、已审核的5年趋势和AI风险提示；健康顾问核对问题、判断专科或营养师去向，并与客户确认目标后作为本方案依据。具体营养干预方案由营养师单独发出。</div>
-            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={!canEdit || annualReviewBusy} onClick={openAnnualComprehensiveReview}>{annualReviewBusy ? '正在打开…' : preparation.caseReviews?.some(item => item.reviewType === 'annual' && Number(item.annualPlanYear) === Number(year)) ? '继续年度综合研判' : '开始年度综合研判'}</button>
-          </div>
-          {!!preparation.caseReviews?.length && <details open={preparation.caseReviews.some(item => item.required && item.conclusion?.status !== 'confirmed')} style={{ marginTop: 10 }}><summary>本年度研判依据</summary><div>年度综合研判固定必需。其他专项研判按本次方案需要勾选；已确认结论自动引用，草稿不引用。</div>{preparation.caseReviews.map(item => <label key={item._id} style={{ display: 'block', marginTop: 6 }}><input type="checkbox" disabled={!canEdit || !!item.annualPlanYear} checked={!!item.annualPlanYear || (preparationDraft.requiredCaseReviewIds || []).includes(String(item._id))} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredCaseReviewIds: e.target.checked ? [...(prev.requiredCaseReviewIds || []), String(item._id)] : (prev.requiredCaseReviewIds || []).filter(id => id !== String(item._id)), advisorReady: false }))} /> {item.annualPlanYear ? '固定必需：' : '本次必需：'}{item.title}（{item.conclusion?.status === 'confirmed' ? '已确认，将引用' : item.annualPlanYear || item.required ? '待确认，阻断生成' : '未引用，不阻断'}）</label>)}<a href={`/patients/${id}?tab=aiCase`}>查看研判</a></details>}
-          {!!generationCoverage.length && <details open style={{ marginTop: 10 }}><summary>本次来源核对（含待确认及未采用原因）</summary>{generationCoverage.map(item => <div key={item.sourceId}>{item.sourceId}：{{ included: '已纳入', deferred: '待确认', not_applicable: '未采用' }[item.status]}；{item.reason}</div>)}</details>}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
-            {preparation.checklist.items.map(item => (
-              <div key={item.key} style={{ fontSize: 13, color: item.complete ? '#287A50' : '#9A5B13' }}>{item.complete ? '✓' : '○'} {item.label}{item.waived ? '（已说明豁免）' : ''}</div>
-            ))}
-          </div>
-          {canEdit && (
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'end', marginTop: 16 }}>
-              <label style={{ gridColumn: '1 / -1', fontSize: 13 }}>本年度专科评估需求
-                <select aria-label="本年度专科评估需求" value={preparationDraft.assessmentMode} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentMode: e.target.value, assessmentConfirmedCriteria: [], advisorReady: false }))} className="form-control">
-                  <option value="required">需要专科评估</option><option value="none">本次无需新增专科评估（健康顾问确认）</option>
-                </select>
-              </label>
-              {preparationDraft.assessmentMode === 'none' && <div style={{ gridColumn: '1 / -1', fontSize: 13 }}>
-                <div>以下五项必须全部符合并由顾问确认，仅适用于本年度本次判断：</div>
-                {assessmentCriteria.map(item => <label key={item.key} style={{ display: 'block', marginTop: 8 }}><input type="checkbox" checked={preparationDraft.assessmentConfirmedCriteria.includes(item.key)} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentConfirmedCriteria: e.target.checked ? [...prev.assessmentConfirmedCriteria, item.key] : prev.assessmentConfirmedCriteria.filter(key => key !== item.key), advisorReady: false }))} /> {item.label}</label>)}
-                <div style={{ marginTop: 8, color: '#9A5B13' }}>任一项不符合或不确定，不得确认无需新增。客户拒绝、时间或费用原因属于暂缓/未完成，不代表无需；出现新情况应重新核对。本清单不替代医生判断。</div>
-                <label>补充说明（选填，仅填写额外说明）<textarea aria-label="无需专科评估补充说明" className="form-control" rows={Math.max(3, String(preparationDraft.assessmentNotRequiredReason || '').split('\n').length + 1)} style={{ lineHeight: 1.8, resize: 'vertical' }} value={preparationDraft.assessmentNotRequiredReason} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentNotRequiredReason: e.target.value, advisorReady: false }))} /></label>
-              </div>}
-              <label style={{ fontSize: 12, color: '#4A6558' }}>{preparation.continuity?.mode === 'renewal' ? '按需补充的专业评估领域（可留空）' : '所需专业评估领域（用顿号分隔）'}
-                <input disabled={preparationDraft.assessmentMode === 'none'} value={preparationDraft.assessmentMode === 'none' ? '' : preparationDraft.requiredAssessmentDomains} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredAssessmentDomains: e.target.value }))} placeholder="如：心血管、营养、中医健康" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '8px 10px', border: '1px solid #D9D4CA', borderRadius: 8 }} />
-              </label>
-              <label style={{ fontSize: 12, color: '#4A6558' }}>用药档案
-                <select value={preparationDraft.medicationStatus} onChange={e => setPreparationDraft(prev => ({ ...prev, medicationStatus: e.target.value }))} style={{ display: 'block', width: '100%', marginTop: 5, padding: '8px', border: '1px solid #D9D4CA', borderRadius: 8 }}><option value="unknown">待完善</option><option value="documented">已完善</option><option value="none">确认无</option></select>
-              </label>
-              <label style={{ fontSize: 12, color: '#4A6558' }}>营养素档案
-                <select value={preparationDraft.supplementStatus} onChange={e => setPreparationDraft(prev => ({ ...prev, supplementStatus: e.target.value }))} style={{ display: 'block', width: '100%', marginTop: 5, padding: '8px', border: '1px solid #D9D4CA', borderRadius: 8 }}><option value="unknown">待完善</option><option value="documented">已完善</option><option value="none">确认无</option></select>
-              </label>
-              <button onClick={handleSavePreparation} disabled={preparationSaving} style={{ padding: '9px 14px', border: 'none', borderRadius: 8, color: '#fff', background: '#1E6B50', cursor: 'pointer' }}>{preparationSaving ? '保存中…' : '保存准备情况'}</button>
-              <label style={{ gridColumn: '1 / -1', fontSize: 13, color: '#4A6558' }}><input type="checkbox" checked={preparationDraft.advisorReady} onChange={e => setPreparationDraft(prev => ({ ...prev, advisorReady: e.target.checked }))} /> 健康顾问已确认资料足够生成本年度方案</label>
-            </div>
-          )}
-        </div>
-      )}
-      {patientMode && ['superadmin', 'healthPlanner', 'familyDoctor', 'healthManager'].includes(staff?.role) && preparation?.continuity?.mode === 'renewal' && <AnnualServicePeriodPanel key={`${year}:${planType}`} planId={plansByType[planType]?._id} staff={staff} />}
-
-      {patientMode && closedLoopEnabled && (
-        <div id="professional-assessments" style={{ background: '#fff', border: '1px solid #D7E4DD', borderRadius: 12, padding: 18, marginBottom: 20 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>专业健康评估</div>
-          <button disabled={assessmentBusy} onClick={refreshAssessments} className="btn btn-secondary btn-sm">刷新评估与草稿状态</button>
-          <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>年度综合评估输入经终审后用于年度方案；后续专项协作生成动态随访，不重建年度方案。</div>
-          <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-            {professionalAssessments.map(item => <div key={item._id} style={{ border: '1px solid #E8E3DA', borderRadius: 9, padding: 11, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1 }}><b>{item.domain} · {item.title}</b><div style={{ fontSize: 12, color: '#6B7F75', marginTop: 3 }}>{item.purpose === 'annual_input' ? '年度综合评估输入' : '专项协作评估'} · {(item.facts || []).join('；') || '暂无结论摘要'}</div></div>
-              <span style={{ fontSize: 12, color: item.status === 'approved' ? '#15803D' : '#B45309' }}>{{ approved: '已终审', advisor_review: '待健康顾问终审', superseded: '已被修订版本替代', rejected: '已退回' }[item.status] || '待专业审核'}</span>
-              {item.followUpAutomation?.message && <div style={{ flexBasis: '100%', color: item.followUpAutomation.status === 'failed' ? '#DC2626' : '#6B7F75', fontSize: 13 }}>{item.followUpAutomation.message}</div>}
-              {canEdit && item.status === 'advisor_review' && <>
-                {item.purpose !== 'annual_input' && item.followUpAutomation?.status !== 'ready' && <button disabled={assessmentBusy || ['queued', 'running'].includes(item.followUpAutomation?.status)} onClick={() => handleAssessmentFollowUpDraft(item._id)} className="btn btn-secondary btn-sm">{item.followUpAutomation?.status === 'failed' ? '重试生成草稿' : 'AI随访草稿'}</button>}
-                {item.followUpAutomation?.status === 'failed' && <button disabled={assessmentBusy} onClick={() => handleReviewAssessment(item._id, 'take_over_followups')} className="btn btn-secondary btn-sm">改为人工核对</button>}
-                {item.purpose !== 'annual_input' && !['queued', 'running', 'failed'].includes(item.followUpAutomation?.status) && <button disabled={assessmentBusy} className="btn btn-secondary btn-sm" onClick={() => setProfessionalAssessments(prev => prev.map(row => row._id === item._id ? { ...row, followUpDrafts: [...(row.followUpDrafts || []), { title: '', content: '', date: '', category: 'information', requiresService: false }] } : row))}>补充随访草稿</button>}
-                <button disabled={assessmentBusy || ['queued', 'running', 'failed'].includes(item.followUpAutomation?.status)} onClick={() => handleReviewAssessment(item._id, 'approve_advisor')} className="btn btn-primary btn-sm">终审通过</button>
-              </>}
-              {!canEdit && item.status === 'professional_review' && <button disabled={assessmentBusy} onClick={() => handleReviewAssessment(item._id, 'submit_advisor')} className="btn btn-primary btn-sm">提交顾问审核</button>}
-              {item.status === 'approved' && item.followUpPublication?.status !== 'published' && !!item.followUpDrafts?.length && <div style={{ flexBasis: '100%', color: '#B45309' }}>
-                {item.followUpPublication?.message || '随访尚未完整发布'}
-                {canEdit && <button disabled={assessmentBusy} onClick={() => handleReviewAssessment(item._id, 'approve_advisor')} className="btn btn-secondary btn-sm">重试发布</button>}
-              </div>}
-              {!!item.followUpDrafts?.length && <div style={{ flexBasis: '100%', fontSize: 13, color: '#52685D' }}>
-                <b>{item.followUpPublication?.status === 'published' ? '已发布随访' : '随访草稿（终审后发布）'}</b>
-                {item.followUpDrafts.map((draft, index) => <fieldset key={index} disabled={assessmentBusy || !canEdit || item.status !== 'advisor_review'} style={{ border: '1px solid #E8E3DA', borderRadius: 8, padding: 10, marginTop: 8 }}>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <input aria-label={`随访${index + 1}标题`} value={draft.title} maxLength={40} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { title: e.target.value })} style={{ flex: 1, minWidth: 150 }} />
-                    <DateField aria-label={`随访${index + 1}日期`} type="date" value={draft.date} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { date: e.target.value })} />
-                    <select aria-label={`随访${index + 1}类型`} value={draft.category} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { category: e.target.value })}>
-                      <option value="medical_visit">安排就医</option><option value="examination">完善检查</option><option value="review">复查随访</option><option value="lifestyle">生活方式</option><option value="information">资料核对</option>
-                    </select>
-                  </div>
-                  <textarea aria-label={`随访${index + 1}内容`} value={draft.content} maxLength={3000} rows={3} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { content: e.target.value })} style={{ width: '100%', boxSizing: 'border-box', marginTop: 8 }} />
-                  <label><input type="checkbox" checked={draft.requiresService === true} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { requiresService: e.target.checked })} />需健康规划师安排服务</label>
-                  {canEdit && item.status === 'advisor_review' && <button onClick={() => removeAssessmentFollowUpDraft(item._id, index)} style={{ border: 0, background: 'none', color: '#DC2626', cursor: 'pointer', marginLeft: 12 }}>移除</button>}
-                </fieldset>)}
-              </div>}
-            </div>)}
-            {!professionalAssessments.length && <div style={{ color: '#9A6A28', fontSize: 13 }}>暂无专业评估记录；请完成所需评估，或由健康顾问在准备清单中确认“无需新增专科评估”的全部五项条件。其余准备要求仍保留。</div>}
-          </div>
-          <details style={{ marginTop: 14 }}>
-            <summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>＋ 新建专业评估记录</summary>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginTop: 12 }}>
-              <div style={{gridColumn:"1 / -1"}}><ProfessionalAssessmentFields value={assessmentDraft} onChange={setAssessmentDraft}/></div>
-              <button onClick={handleCreateAssessment} disabled={assessmentSaving} className="btn btn-primary" style={{ justifySelf: 'start' }}>{assessmentSaving ? '保存中…' : '保存评估草稿'}</button>
-            </div>
-          </details>
-        </div>
-      )}
-
-      </details>
 
       <div className="annual-plan-footer">
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>

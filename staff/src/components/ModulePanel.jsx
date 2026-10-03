@@ -38,6 +38,7 @@ function readableValue(value) {
   if (value && typeof value === 'object') return Object.entries(value).map(([key, val]) => `${key}：${readableValue(val)}`).join('\n')
   return value == null ? '' : String(value)
 }
+const reviewSnapshot = row => row ? [row.title, row.datePending ? '日期待确认' : row.date, row.timing, row.advice].filter(Boolean).join(' · ') : '无'
 
 // 板块化方案编辑的通用UI组件，从 AnnualMgmtPlanPage.jsx 抽出（2026-07-13），
 // 供年度管理方案/营养干预方案/就医协助方案共用同一套"板块折叠+多条记录行内展开+开关板块"交互，
@@ -170,7 +171,7 @@ export function FieldInput({ field, value, onChange }) {
 }
 
 // ── 单条记录编辑区（多条模块用）─────────────────────────────────────
-export function RecordEditor({ def, record, onChange, onDelete, index, total }) {
+export function RecordEditor({ def, record, onChange, onDelete, index, total, executionReviewChanges = [] }) {
   const [open, setOpen] = useState(index === 0 && total === 1)
   const directNutrition = def.personalizedAssignment && annualNutrition.isRow(record)
   const summary = record[def.summaryKey] || `${def.summaryLabel} ${index + 1}`
@@ -184,6 +185,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
       <div style={{ display: 'flex', alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }} onClick={() => setOpen(v => !v)}>
         <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#1A2B24' }}>
           {summary}
+          {executionReviewChanges.length > 0 && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 11 }}>执行安排待核对</span>}
         </span>
         <button
           onClick={e => { e.stopPropagation(); if (window.confirm('确定删除这条记录？')) onDelete() }}
@@ -193,6 +195,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
       </div>
       {open && (
         <div style={{ padding: '0 12px 12px', borderTop: '1px solid #F0EDE7' }}>
+          {executionReviewChanges.map((change, reviewIndex) => <details key={reviewIndex} style={{ marginTop: 10, padding: 10, background: '#FFF9ED', borderRadius: 8, fontSize: 12 }}><summary style={{ cursor: 'pointer', color: '#9A5B13' }}>查看本项修订 · {change.action}</summary><div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>原方案：{reviewSnapshot(change.before)}</div><div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>当前方案：{reviewSnapshot(change.after)}</div></details>)}
           {def.reviewDriven && <p style={{fontSize:12,color:'#64796E'}}>内容由研判补入后带入，顾问核对即可；缺项可回研判提取补充，无需重新生成整份方案。</p>}
           {def.fields.filter(field=>!optionalEmpty(field)).map(renderField)}
           {def.fields.some(optionalEmpty) && <details style={{marginTop:12}}><summary style={{cursor:'pointer'}}>其他补充（研判未明确）</summary>{def.fields.filter(optionalEmpty).map(renderField)}</details>}
@@ -218,7 +221,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
 }
 
 // ── 板块折叠面板 ───────────────────────────────────────────────────────
-export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = false }) {
+export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = false, executionReviewChanges = [] }) {
   const [open, setOpen] = useState(false)
   const enabled = data.enabled !== false
 
@@ -238,7 +241,9 @@ export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = 
   const planSummaryRows = (def.multi ? records : [data]).map((record, index) => ({
     title: readableValue(record.items || record.name || record.reason || record.focus || record[def.summaryKey] || record.standardPlanName || `${def.name} ${index + 1}`).trim(),
     date: record.executionDate || record.visit_time || record.plan_time || record.time || record.date || '',
+    reviewChanges: executionReviewChanges.filter(change => change.after?.title && change.after.title === (record.items || record.name || record.department || record.standardPlanName)),
   }))
+  const unmatchedReviewChanges = executionReviewChanges.filter(change => !planSummaryRows.some(row => row.reviewChanges.includes(change)))
   const setRecords = (newRecords) => onChange(moduleKey, 'records', newRecords)
   const addRecord = () => {
     setRecords([...records, {}])
@@ -265,6 +270,7 @@ export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = 
         <span style={{ fontSize: 20, marginRight: 10 }}>{def.icon}</span>
         <span style={{ flex: 1, fontWeight: 600, fontSize: 15, color: '#1A2B24', display: 'flex', alignItems: 'center', gap: 8 }}>
           {def.name}
+          {executionReviewChanges.length > 0 && <span style={{ color: '#9A5B13', fontSize: 11, fontWeight: 500 }}>执行待核对 {executionReviewChanges.length}</span>}
           {hasContent && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1E6B50', flexShrink: 0 }} title="已有内容" />}
           {def.multi && records.length > 0 && (
             <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>{records.length} 条{records.some(row => row.reviewAmendmentSource) && ` · 含研判补录 ${records.filter(row => row.reviewAmendmentSource).length} 项`}</span>
@@ -284,16 +290,18 @@ export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = 
         <span style={{ color: '#aaa', fontSize: 13, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>▼</span>
       </div>
 
-      {showPlanSummary && !open && enabled && hasContent && (
+      {showPlanSummary && !open && (hasContent || executionReviewChanges.length > 0) && (
         <div style={{ padding: '0 18px 13px 48px', color: '#4A6558', fontSize: 13, lineHeight: 1.55 }}>
-          {planSummaryRows.slice(0, 3).map((row, index) => <div key={index} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {row.title}{row.date ? ` · ${row.date}` : ''}</div>)}
+          {hasContent && planSummaryRows.slice(0, 3).map((row, index) => <div key={index} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {row.title}{row.date ? ` · ${row.date}` : ''}{row.reviewChanges.length > 0 && <span style={{ marginLeft: 6, color: '#9A5B13' }}>待核对执行</span>}</div>)}
           {planSummaryRows.length > 3 && <div style={{ color: '#8AA89C' }}>另有 {planSummaryRows.length - 3} 项，展开查看</div>}
+          {unmatchedReviewChanges.map((change, index) => <div key={`review-${index}`} style={{ color: '#9A5B13' }}>• {change.action}：{change.title} · 执行待核对</div>)}
         </div>
       )}
 
       {/* 板块内容 */}
       {open && (
         <div style={{ padding: '4px 18px 18px', borderTop: '1px solid #F0EDE7' }}>
+          {unmatchedReviewChanges.map((change, index) => <details key={`review-${index}`} style={{ padding: '8px 0', color: '#9A5B13', fontSize: 13 }}><summary style={{ cursor: 'pointer' }}>{change.action}：{change.title} · 执行待核对</summary>{change.deletionReason && <div>移除原因：{change.deletionReason}</div>}<div style={{ whiteSpace: 'pre-wrap' }}>原方案：{reviewSnapshot(change.before)}</div><div style={{ whiteSpace: 'pre-wrap' }}>当前方案：{reviewSnapshot(change.after)}</div></details>)}
           {def.description && <div style={{ padding: '10px 0 2px', color: '#789087', fontSize: 12 }}>{def.description}</div>}
           {def.multi ? (
             records.length === 0 ? (
@@ -309,6 +317,7 @@ export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = 
                     record={rec}
                     index={i}
                     total={records.length}
+                    executionReviewChanges={planSummaryRows[i]?.reviewChanges || []}
                     onChange={newRec => updateRecord(i, newRec)}
                     onDelete={() => deleteRecord(i)}
                   />
