@@ -46,12 +46,21 @@ async function acceptSend(Model, { patientId, topicId, staff, content, attachmen
   }
   if (topic.generation?.status === 'running' && !stalled) throw failure(409, 'AI正在回复，请等待本轮完成');
   const generation = { requestId, token: randomUUID(), status: 'running', startedAt: new Date(), error: '' };
+  const managementTargets = (topic.conclusion?.managementTargets || []).map(row => ({
+    goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true,
+  }));
   const update = {
-    $set: { generation, status: 'active', lastActivityAt: new Date(), conclusion: { content: '', status: 'draft' } },
+    $set: { generation, status: 'active', lastActivityAt: new Date(), conclusion: { content: '', structured: null, managementTargets, status: 'draft' } },
     $inc: { __v: 1 },
   };
-  if (!previous) update.$push = { messages: { role: 'staff', requestId, content, attachments,
-    staff: staff._id, staffName: staff.name || '', staffRole: staff.roleLabel || staff.role } };
+  const push = {};
+  if (topic.conclusion?.status === 'confirmed') push.conclusionHistory = {
+    content: topic.conclusion.content, managementTargets, confirmedAt: topic.conclusion.confirmedAt,
+    confirmedBy: topic.conclusion.confirmedBy, confirmedByName: topic.conclusion.confirmedByName,
+  };
+  if (!previous) push.messages = { role: 'staff', requestId, content, attachments,
+    staff: staff._id, staffName: staff.name || '', staffRole: staff.roleLabel || staff.role };
+  if (Object.keys(push).length) update.$push = push;
   const claimed = await Model.findOneAndUpdate({ _id: topic._id, user: patientId, __v: topic.__v,
     'generation.status': stalled ? 'running' : { $ne: 'running' }, status: { $ne: 'archived' } }, update, { new: true, runValidators: true });
   if (!claimed) throw failure(409, '讨论状态已更新，请重试核对本次发送');

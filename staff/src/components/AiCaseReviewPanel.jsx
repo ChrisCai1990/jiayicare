@@ -108,7 +108,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [showEdit, setShowEdit] = useState(false)
   const [headerExpanded, setHeaderExpanded] = useState(false)
   const [form, setForm] = useState({ title: '', description: '', reviewType: 'custom', templateId: '', preferredProvider: 'qwen', contextScopes: SCOPES.map(([key]) => key), managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] })
-  const [editForm, setEditForm] = useState({ title: '', description: '' })
+  const [editForm, setEditForm] = useState({ title: '', description: '', contextScopes: [], managementTargets: [] })
   const [conclusionText, setConclusionText] = useState('')
   const [managementTargets, setManagementTargets] = useState([])
   const chatRef = useRef(null)
@@ -197,12 +197,17 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     catch (err) { toast(err.message, 'error') }
   }
   const openTopicEdit = topic => {
-    setActiveId(topic._id); setEditForm({ title: topic.title || '', description: topic.description || '' }); setShowEdit(true)
+    setActiveId(topic._id)
+    setEditForm({ title: topic.title || '', description: topic.description || '', contextScopes: topic.contextScopes || [],
+      managementTargets: topic.conclusion?.managementTargets?.length ? topic.conclusion.managementTargets.map(row => ({ goal: row.goal || '', focus: row.focus || '', nutritionRelevant: row.nutritionRelevant === true })) : [{ goal: '', focus: '', nutritionRelevant: false }] })
+    setShowEdit(true)
   }
   const saveTopicEdit = async () => {
     if (!editForm.title.trim()) return toast('主题名称不能为空', 'error')
+    const managementTargets = (editForm.managementTargets || []).filter(row => row.goal?.trim() || row.focus?.trim())
+    if (managementTargets.some(row => !row.goal?.trim() || !row.focus?.trim())) return toast('拟目标和拟干预重点需成对填写', 'error')
     setBusy(true)
-    try { const res = await staffAPI.updateAiCaseReview(patientId, active._id, editForm); replaceTopic(res.data); setShowEdit(false); toast('主题已修改') }
+    try { const res = await staffAPI.updateAiCaseReview(patientId, active._id, { ...editForm, ...(active.conclusion?.status === 'confirmed' ? {} : { managementTargets }) }); replaceTopic(res.data); setShowEdit(false); toast('主题已修改') }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const deleteTopic = async topic => {
@@ -465,9 +470,19 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       </div>
       <div className="form-group"><label className="form-label">测试模型</label><div className="form-input" style={{ background: '#F7F8F6', color: '#4A6558' }}>{PROVIDER_LABEL}</div></div>
     </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowCreate(false)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={createTopic}>创建主题</button></div></div></div>}
-    {showEdit && active && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">编辑专项研判主题</div><button className="modal-close" onClick={() => setShowEdit(false)}>×</button></div><div className="modal-body">
+    {showEdit && active && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">编辑专项研判主题</div><button className="modal-close" onClick={() => setShowEdit(false)}>×</button></div><div className="modal-body" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
+      <div style={{ fontSize: 13, color: '#65776F', marginBottom: 12 }}>类型：{topicTypeLabel(active)}{active.templateSnapshot?.name ? ` · 模板：${active.templateSnapshot.name}` : ''}</div>
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={editForm.title} onChange={e => setEditForm(value => ({ ...value, title: e.target.value }))} /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={5} value={editForm.description} onChange={e => setEditForm(value => ({ ...value, description: e.target.value }))} /></div>
+      <div className="form-group"><label className="form-label">研判资料范围</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={editForm.contextScopes.includes(key)} onChange={e => setEditForm(value => ({ ...value, contextScopes: e.target.checked ? [...value.contextScopes, key] : value.contextScopes.filter(item => item !== key) }))} /> {label}</label>)}</div></div>
+      <div className="form-group"><label className="form-label">拟管理目标与拟干预重点</label>{active.conclusion?.status === 'confirmed' && <div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>这些目标已确认。如需调整，请在下方研判结论区修订并重新确认。</div>}
+        {(editForm.managementTargets || []).map((row, index) => <div key={index} style={{ border: '1px solid #E1E9E3', borderRadius: 8, padding: 9, marginBottom: 8 }}>
+          <input className="form-input" aria-label={`编辑拟管理目标 ${index + 1}`} value={row.goal || ''} disabled={active.conclusion?.status === 'confirmed'} onChange={e => setEditForm(value => ({ ...value, managementTargets: value.managementTargets.map((item, i) => i === index ? { ...item, goal: e.target.value } : item) }))} placeholder="拟管理目标" style={{ marginBottom: 7 }} />
+          <input className="form-input" aria-label={`编辑拟干预重点 ${index + 1}`} value={row.focus || ''} disabled={active.conclusion?.status === 'confirmed'} onChange={e => setEditForm(value => ({ ...value, managementTargets: value.managementTargets.map((item, i) => i === index ? { ...item, focus: e.target.value } : item) }))} placeholder="拟干预重点" />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}><label><input type="checkbox" checked={row.nutritionRelevant === true} disabled={active.conclusion?.status === 'confirmed'} onChange={e => setEditForm(value => ({ ...value, managementTargets: value.managementTargets.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item) }))} /> 营养相关</label>{active.conclusion?.status !== 'confirmed' && editForm.managementTargets.length > 1 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditForm(value => ({ ...value, managementTargets: value.managementTargets.filter((_, i) => i !== index) }))}>删除</button>}</div>
+        </div>)}
+        {active.conclusion?.status !== 'confirmed' && <button type="button" className="btn btn-secondary btn-sm" disabled={editForm.managementTargets.length >= 12} onClick={() => setEditForm(value => ({ ...value, managementTargets: [...value.managementTargets, { goal: '', focus: '', nutritionRelevant: false }] }))}>添加一条</button>}
+      </div>
     </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowEdit(false)}>取消</button><button className="btn btn-primary" disabled={busy || !editForm.title.trim()} onClick={saveTopicEdit}>保存修改</button></div></div></div>}
   </div>
 }

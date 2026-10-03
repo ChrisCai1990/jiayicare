@@ -264,11 +264,20 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
-    if (topic.annualPlanYear && ['title', 'description', 'reviewType', 'contextScopes', 'status'].some(key => req.body[key] !== undefined)) return res.status(409).json({ success: false, message: '年度综合研判固定议题和资料范围不可修改' });
+    if (topic.annualPlanYear && ['title', 'description', 'reviewType', 'contextScopes', 'managementTargets', 'status'].some(key => req.body[key] !== undefined)) return res.status(409).json({ success: false, message: '年度综合研判固定议题和资料范围不可修改' });
     if (req.body.title !== undefined) topic.title = String(req.body.title).trim();
     if (req.body.description !== undefined) topic.description = String(req.body.description).trim();
     if (req.body.reviewType !== undefined && VALID_REVIEW_TYPES.has(req.body.reviewType)) topic.reviewType = req.body.reviewType;
     if (req.body.contextScopes !== undefined) topic.contextScopes = sanitizeScopes(req.body.contextScopes);
+    if (req.body.managementTargets !== undefined) {
+      let targets;
+      try { targets = require('../utils/caseReviewManagementTargets').normalizeTargets(req.body.managementTargets); }
+      catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+      if (topic.conclusion?.status === 'confirmed' && JSON.stringify(targets) !== JSON.stringify((topic.conclusion.managementTargets || []).map(row => ({ goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true })))) {
+        return res.status(409).json({ success: false, message: '已确认的管理目标请在结论区修订并重新确认' });
+      }
+      if (topic.conclusion?.status !== 'confirmed') topic.conclusion.managementTargets = targets;
+    }
     // 测试阶段固定走通义千问，防止旧客户端或历史专题切回其他供应商。
     topic.preferredProvider = 'qwen';
     if (req.body.status !== undefined) topic.status = req.body.status;
