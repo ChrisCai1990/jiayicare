@@ -735,12 +735,14 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     if (topic.annualPlanYear && (topic.concerns || []).some(row => row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
       return res.status(409).json({ success: false, message: '请先逐条核实AI提示，并确定已纳入问题的专业去向' });
-    const content = String(req.body.content || topic.conclusion?.content || '').trim();
-    if (!content) return res.status(400).json({ success: false, message: '结论不能为空' });
-    const structured = toStructuredAssessment(content, topic.title);
+    const suppliedContent = String(req.body.content ?? topic.conclusion?.content ?? '').trim();
     let managementTargets;
-    try { managementTargets = require('../utils/caseReviewManagementTargets').normalizeTargets(req.body.managementTargets ?? topic.conclusion?.managementTargets ?? []); }
+    const targetLogic = require('../utils/caseReviewManagementTargets');
+    try { managementTargets = targetLogic.normalizeTargets(req.body.managementTargets ?? topic.conclusion?.managementTargets ?? []); }
     catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+    const content = suppliedContent || targetLogic.conclusionFromTargets(managementTargets);
+    if (!content) return res.status(400).json({ success: false, message: '请填写阶段性结论，或至少一条完整的管理目标与干预重点' });
+    const structured = toStructuredAssessment(content, topic.title);
     const shouldArchive = req.body.writeToPhaseAssessment === true
       || /阶段性.*评估/.test(`${topic.title} ${topic.description}`)
       || topic.messages.some(item => item.role === 'staff' && /写入.{0,8}阶段性健康评估|阶段性健康评估.{0,8}写入/.test(item.content));

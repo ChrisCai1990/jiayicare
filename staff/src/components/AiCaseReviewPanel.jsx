@@ -151,6 +151,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const participantNames = useMemo(() => active ? [...new Set([active.createdByName, ...(active.messages || []).filter(item => item.role === 'staff').map(item => item.staffName)].filter(Boolean))] : [], [active])
   const reviewTemplates = managedTemplates
   const isStageAssessmentTopic = active?.reviewType === 'assessment' || /阶段性.*评估/.test(`${active?.title || ''} ${active?.description || ''}`)
+  const completeManagementTargets = managementTargets.length > 0 && managementTargets.every(row => row.goal?.trim() && row.focus?.trim())
   const lastAnnualAiAt = active?.annualPlanYear ? (active.messages || []).filter(message => message.role === 'ai').at(-1)?.createdAt : null
   const newerSpecialtyConclusion = !!lastAnnualAiAt && topics.some(item => item.issueKey && item.reviewType === 'specialty' && item.conclusion?.status === 'confirmed' && new Date(item.conclusion.confirmedAt || item.updatedAt) > new Date(lastAnnualAiAt))
 
@@ -335,7 +336,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const confirmConclusion = async () => {
-    if (!conclusionText.trim()) return toast('结论不能为空', 'error')
+    if (!conclusionText.trim() && !completeManagementTargets) return toast('请填写阶段性结论，或至少一条完整的管理目标与干预重点', 'error')
     const targetsChanged = active.conclusion?.status === 'confirmed' && JSON.stringify(managementTargets) !== JSON.stringify(active.conclusion.managementTargets || [])
     if (targetsChanged && !targetChangeNote.trim()) return toast('请填写与客户沟通后的目标调整说明', 'error')
     setBusy(true)
@@ -539,7 +540,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           {active.conclusion?.status === 'confirmed' && <div style={{ marginTop: 10 }}><label className="form-label">与客户沟通后的目标调整说明</label><textarea className="form-input" rows={2} maxLength={500} value={targetChangeNote} onChange={e => setTargetChangeNote(e.target.value)} placeholder="修改已确认目标时填写；系统保留上一版目标" /></div>}
           {!!active.conclusionHistory?.length && <details style={{ marginTop: 10, color: '#52685D', fontSize: 12 }}><summary>查看历史确认目标（{active.conclusionHistory.length}版）</summary>{active.conclusionHistory.slice().reverse().map((version, index) => <div key={index} style={{ borderTop: '1px solid #DCE8E1', paddingTop: 8, marginTop: 8 }}><div>{formatDateTime(version.confirmedAt)} · {version.confirmedByName || '健康顾问'}</div>{(version.managementTargets || []).map((row, rowIndex) => <div key={rowIndex}>{rowIndex + 1}. {row.goal}；干预重点：{row.focus}</div>)}{version.targetChangeNote && <div>调整说明：{version.targetChangeNote}</div>}</div>)}</details>}
         </div>}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方专业审核流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{`确认并用于${active.templateSnapshot?.target || '对应方案'}`}</button>}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方专业审核流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}{!conclusionText.trim() && completeManagementTargets ? '；将根据已填目标生成结论摘要' : ''}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || (!conclusionText.trim() && !completeManagementTargets)} onClick={confirmConclusion}>{`确认并用于${active.templateSnapshot?.target || '对应方案'}`}</button>}</div>
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
     </>}

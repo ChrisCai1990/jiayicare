@@ -9,6 +9,14 @@ function normalizeTargets(value) {
   });
 }
 
+function conclusionFromTargets(targets) {
+  if (!targets.length) return '';
+  const lines = targets.map(row => `目标：${row.goal}；干预重点：${row.focus}${row.nutritionRelevant ? '；营养相关：交营养师评估' : ''}`);
+  const groups = [];
+  for (let index = 0; index < lines.length; index += 2) groups.push(lines.slice(index, index + 2).join('；'));
+  return `核心结论\n健康顾问已确认以下管理目标与干预重点。\n下一步行动\n${groups.join('\n')}`;
+}
+
 function fromConfirmedReviews(reviews) {
   return (reviews || []).flatMap(review => (review.conclusion?.managementTargets || []).map((row, index) => ({
     ...row,
@@ -26,4 +34,4 @@ function proposeTargetsFromActions(actions) {
   }).slice(0, 12);
 }
 
-module.exports = { normalizeTargets, fromConfirmedReviews, proposeTargetsFromActions };
+module.exports = { normalizeTargets, conclusionFromTargets, fromConfirmedReviews, proposeTargetsFromActions };
