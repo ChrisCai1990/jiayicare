@@ -16,8 +16,8 @@ function ConcernRow({ concern, patientId, topicId, canEdit, toast, onUpdate }) {
     catch (error) { toast(error.message || '保存失败', 'error') }
     finally { setBusy(false) }
   }
-  return <div style={{ border: '1px solid #DCE8E1', borderRadius: 9, padding: 11, marginTop: 8, background: '#fff' }}>
-    <div style={{ fontWeight: 700 }}>{concern.title}</div>
+  return <details style={{ border: '1px solid #DCE8E1', borderRadius: 9, padding: 11, marginTop: 8, background: '#fff' }}>
+    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{concern.title}<span style={{ color: '#65776F', fontSize: 12, fontWeight: 400, marginLeft: 8 }}>{STATUS.find(([value]) => value === concern.status)?.[1] || '待核实'} · {PATHWAY.find(([value]) => value === concern.pathway)?.[1] || '待判断'}</span></summary>
     <div style={{ fontSize: 12, color: '#65776F', marginTop: 3 }}>{SOURCE[concern.kind] || '其他资料'} · {concern.source?.checkDate || concern.source?.year || ''} · {concern.includedByName || '系统'}</div>
     {concern.evidence && <div style={{ fontSize: 12, lineHeight: 1.6, marginTop: 5 }}>依据：{concern.evidence}</div>}
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
@@ -26,7 +26,7 @@ function ConcernRow({ concern, patientId, topicId, canEdit, toast, onUpdate }) {
     </div>
     <input className="form-input" style={{ marginTop: 7 }} disabled={!canEdit || busy} maxLength={500} value={form.note} onChange={e => setForm(value => ({ ...value, note: e.target.value }))} placeholder="补充判断依据；排除或重复时必填" />
     {canEdit && <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={!changed || busy} onClick={save}>{busy ? '保存中…' : '保存去向'}</button>}
-  </div>
+  </details>
 }
 
 export default function AnnualConcernsPanel({ topic, patientId, staff, toast, onUpdate, onAnalyze }) {
@@ -36,7 +36,7 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
   const autoScan = concerns.filter(row => row.includedByName === '已审核AI风险扫描')
   const manuallyIncluded = concerns.filter(row => row.includedByName !== '已审核AI风险扫描')
   return <div className="card"><div className="card-header"><div className="card-title">年度待研判问题 · {concerns.length}</div></div><div className="card-body">
-    <div style={{ fontSize: 12, color: '#65776F' }}>这里按重大疾病筛查维度综合分析。健康顾问从具体报告纳入的肺结节等问题，会另建单个专病研判主题。营养干预方案由营养师独立发出。</div>
+    <div style={{ fontSize: 12, color: '#65776F' }}>这里判断重大疾病风险维度的优先级和专业去向；上方单个专病问题单独研判，再一起形成年度结论。展开每项可核对依据和去向。</div>
     {!concerns.length && <div style={{ marginTop: 12, color: '#8AA89C' }}>暂无纳入的问题，可在专项筛查结果或AI健康信息整理中一键纳入。</div>}
     {!!autoScan.length && <div style={{ marginTop: 12, fontWeight: 700 }}>系统从已审核AI风险扫描自动带入的维度 · {autoScan.length}</div>}
     {autoScan.map(concern => <ConcernRow key={concern.id} concern={concern} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}

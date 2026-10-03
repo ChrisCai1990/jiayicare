@@ -119,6 +119,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const participantNames = useMemo(() => active ? [...new Set([active.createdByName, ...(active.messages || []).filter(item => item.role === 'staff').map(item => item.staffName)].filter(Boolean))] : [], [active])
   const reviewTemplates = managedTemplates
   const isStageAssessmentTopic = active?.reviewType === 'assessment' || /阶段性.*评估/.test(`${active?.title || ''} ${active?.description || ''}`)
+  const lastAnnualAiAt = active?.annualPlanYear ? (active.messages || []).filter(message => message.role === 'ai').at(-1)?.createdAt : null
+  const newerSpecialtyConclusion = !!lastAnnualAiAt && topics.some(item => item.issueKey && item.reviewType === 'specialty' && item.conclusion?.status === 'confirmed' && new Date(item.conclusion.confirmedAt || item.updatedAt) > new Date(lastAnnualAiAt))
 
   const replaceTopic = topic => {
     setTopics(items => [topic, ...items.filter(item => item._id !== topic._id)])
@@ -441,7 +443,12 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         </div>}
         {['familyDoctor','superadmin'].includes(staff?.role) && <ReviewPlanAmendment key={active._id} patientId={patientId} topicId={active._id} scope="topic" />}
         {headerExpanded && <>
-        <div style={{ color: '#4A6558', fontSize: 13, marginTop: 9 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div>
+        {active.annualPlanYear ? <div style={{ marginTop: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 8 }}>
+            {[['1. 核对单项问题', '查看具体专病研判的事实、待核实点及专科意见'], ['2. 形成综合判断', '汇总重大疾病风险维度，确定优先级和医疗管理目标'], ['3. 准备客户沟通', '说明目标、待补资料与后续专业协作']].map(([title, note]) => <div key={title} style={{ padding: 10, background: '#F4F8F5', borderRadius: 8 }}><strong>{title}</strong><div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>{note}</div></div>)}
+          </div>
+          <details style={{ color: '#65776F', fontSize: 12, marginTop: 9 }}><summary>查看完整研判规则</summary><div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, marginTop: 7 }}>{active.description}</div></details>
+        </div> : <div style={{ color: '#4A6558', fontSize: 13, marginTop: 9 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div>}
         <div style={{ color: '#4A6558', fontSize: 12, marginTop: 7 }}>参与人员：{participantNames.join('、') || '待记录'} · 当前模型：{PROVIDER_LABEL}</div>
         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => {
           const checked = active.contextScopes?.includes(key)
@@ -451,6 +458,15 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         </>}
       </div></div>
 
+      {!!active.annualPlanYear && <div className="card"><div className="card-header"><div className="card-title">单个专病问题</div></div><div className="card-body">
+        <div style={{ fontSize: 12, color: '#65776F' }}>先核对健康顾问纳入的具体问题，再形成年度综合判断。单项结论独立确认；尚缺专科意见时应标明待核实。</div>
+        {topics.filter(item => item.issueKey && item.reviewType === 'specialty').length === 0 && <div style={{ marginTop: 9, fontSize: 13, color: '#8AA89C' }}>暂无单项专病研判，可从专项筛查结果或健康趋势纳入。</div>}
+        {topics.filter(item => item.issueKey && item.reviewType === 'specialty').map(item => <div key={item._id} style={{ borderTop: '1px solid #E5ECE8', padding: '9px 0', marginTop: 7, fontSize: 13 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><strong>{item.title}</strong><span style={{ color: item.conclusion?.status === 'confirmed' ? '#16845B' : '#A16620' }}>{item.conclusion?.status === 'confirmed' ? '已确认' : item.messages?.length ? '待确认' : '待分析'}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => setActiveId(item._id)}>查看单项研判</button></div>
+          {item.conclusion?.status === 'confirmed' && <details style={{ marginTop: 5 }}><summary>查看单项结论</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>{item.conclusion.content}</div></details>}
+        </div>)}
+        {newerSpecialtyConclusion && <div style={{ marginTop: 8, color: '#A16620', fontSize: 12 }}>有单项结论晚于当前综合分析。<button type="button" className="btn btn-secondary btn-sm" disabled={busy} style={{ marginLeft: 8 }} onClick={() => send(null, '请结合新确认的单项专病结论，更新年度综合判断、管理目标及待核实事项。只说明变化，不重述全部资料。')}>纳入新结论继续分析</button></div>}
+      </div></div>}
       <AnnualConcernsPanel topic={active} patientId={patientId} staff={staff} toast={toast} onUpdate={replaceTopic}
         onAnalyze={() => send(null, '请根据当前已纳入的关注问题和已标注去向，核对来源并更新研判。区分专科评估或就医、营养师评估和随访观察；营养具体方案由营养师制定。')} />
       <div className="card" style={{ flex: 1 }}><div ref={chatRef} className="card-body" style={{ height: 'clamp(560px, 66vh, 780px)', overflowY: 'auto', background: '#F7F8F6', padding: 16 }}>
