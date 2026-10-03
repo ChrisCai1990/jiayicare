@@ -75,9 +75,10 @@ router.get('/health-summary', enterpriseHrAuth, async (req, res) => {
   const activated = users.filter(u => u.onboardingCompleted).length;
 
   // 健康分分布（分段计数，不暴露个人分数与身份）
-  const scoreBuckets = { '优秀(90+)': 0, '良好(75-89)': 0, '中等(60-74)': 0, '待改善(<60)': 0 };
+  const scoreBuckets = { '优秀(90+)': 0, '良好(75-89)': 0, '中等(60-74)': 0, '待改善(<60)': 0, '未评估': 0 };
   users.forEach(u => {
-    const s = u.healthScore || 0;
+    const s = u.healthScore;
+    if (!Number.isFinite(s) || s <= 0) { scoreBuckets['未评估']++; return; }
     if (s >= 90) scoreBuckets['优秀(90+)']++;
     else if (s >= 75) scoreBuckets['良好(75-89)']++;
     else if (s >= 60) scoreBuckets['中等(60-74)']++;
@@ -109,7 +110,7 @@ router.get('/health-summary', enterpriseHrAuth, async (req, res) => {
 
   res.json({
     success: true,
-    data: { total, activated, scoreBuckets, ascvdBuckets, ageBuckets },
+    data: { total, activated, scoreBuckets, ascvdBuckets, ageBuckets, generatedAt: new Date().toISOString() },
   });
 });
 
