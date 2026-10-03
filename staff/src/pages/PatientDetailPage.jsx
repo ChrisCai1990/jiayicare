@@ -47,6 +47,7 @@ import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import AnnualConcernButton from '../components/AnnualConcernButton'
+import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
 import AnnualReviewCommunicationPanel from '../components/AnnualReviewCommunicationPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
@@ -2011,6 +2012,7 @@ export default function PatientDetailPage() {
   const requestedServiceView = new URLSearchParams(location.search).get('serviceView') || 'overview'
   const initialTab = new URLSearchParams(location.search).has('healthRecordId') && requestedTab === 'portrait' ? 'symptoms' : ['monitoring', 'archive'].includes(requestedTab) ? 'records' : requestedTab
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
+  const openSpecialtyReview = topicId => { setTab('aiCase'); nav(`/patients/${id}?tab=aiCase&caseReviewId=${topicId}`) }
   const [healthBaseView, setHealthBaseView] = useState(requestedTab === 'monitoring' ? 'monitoring' : 'profile')
   const [screeningWorkspaceView, setScreeningWorkspaceView] = useState('screening')
   const [lifestyleDetailsOpen, setLifestyleDetailsOpen] = useState(false)
@@ -6104,6 +6106,9 @@ export default function PatientDetailPage() {
                     {totalCount > 0 && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{totalCount} 项</span>}
                     <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
                   </div>
+                  <SpecialtyConcernButton patientId={id} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
+                    source={{ kind: 'screening_report', reportId: (r._sourceItems || [])[0]?.reportId || r._id }}
+                    sourceLabel={`${r.checkDate || '日期待核实'} · ${r.title || r.screeningL3 || '专项筛查记录'}`} />
                   {r.isAI
                     ? (<>
                         <button onClick={() => {
@@ -6158,8 +6163,9 @@ export default function PatientDetailPage() {
                             </td>
                             <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
                             <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
-                            <td style={{ padding: '4px 8px' }}><AnnualConcernButton patientId={id} year={screeningSummaryYear} staff={staff} toast={toast}
-                              source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }} /></td>
+                            <td style={{ padding: '4px 8px' }}><SpecialtyConcernButton patientId={id} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
+                              source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                              sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} /></td>
                           </tr>
                         )),
                       ]
@@ -6323,7 +6329,7 @@ export default function PatientDetailPage() {
                   }}>+ 录入筛查结果</button>
                 </div>
               </div>
-              <AnnualReviewCommunicationPanel patientId={id} year={screeningSummaryYear} staff={staff} toast={toast} />
+              <AnnualReviewCommunicationPanel patientId={id} year={screeningSummaryYear} staff={staff} toast={toast} onOpenReview={openSpecialtyReview} />
               {(() => {
                 const current = screeningYearSummaries.find(item => Number(item.year) === Number(screeningSummaryYear))
                 const summaryRecords = current
@@ -8012,8 +8018,9 @@ export default function PatientDetailPage() {
                     {item.nextAction && <div style={{ color: isAttention ? '#B91C1C' : accent }}><b>下一步：</b>{item.nextAction}</div>}
                     {!item.trend && item.note && <div style={{ color: '#64748B' }}>{item.note}</div>}
                     {sectionKey && <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(item, sectionKey)}>🔗 按年份查看对应材料</button>}
-                    {sectionKey && <AnnualConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast}
-                      source={{ kind: 'ai_health', year: Number(curYear), sectionKey, itemName: item.name }} />}
+                    {sectionKey && <SpecialtyConcernButton patientId={id} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
+                      source={{ kind: 'ai_health', year: Number(curYear), sectionKey, itemName: item.name }} suggestedIssue={item.name}
+                      sourceLabel={`${curYear}年度已审核健康趋势 · ${item.name}`} />}
                     {sectionKey && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem(sectionKey, item.name)}>✎ 录入问题并单项重新生成</button>}
                   </div>
                 </details>
@@ -8485,8 +8492,9 @@ export default function PatientDetailPage() {
                                   {cancer.nextAction && <div style={{ color: meta.color }}><b>下一步：</b>{cancer.nextAction}</div>}
                                   {cancer.riskBasis && cancer.status === 'unknown' && <div><b style={{ color: '#64748B' }}>待核对：</b>{cancer.riskBasis}</div>}
                                   <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(cancer, 'tumor_risk')}>🔗 按年份查看对应材料</button>
-                                  <AnnualConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast}
-                                    source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'tumor_risk', itemName: cancer.name }} />
+                                  <SpecialtyConcernButton patientId={id} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
+                                    source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'tumor_risk', itemName: cancer.name }} suggestedIssue={cancer.name}
+                                    sourceLabel={`${curYear}年度已审核健康趋势 · ${cancer.name}`} />
                                   <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem('tumor_risk', cancer.name)}>✎ 录入问题并单项重新生成</button>
                                 </div>
                               </details>
@@ -8579,8 +8587,9 @@ export default function PatientDetailPage() {
                                 <button className="btn btn-secondary btn-sm" style={{ marginTop: 5 }}
                                   onClick={() => openAIAnalysisSource(item.sourceReportId)}>🔗 查看分析依据</button>
                               )}
-                              <AnnualConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast}
-                                source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'medical_priority', itemName: item.name }} />
+                              <SpecialtyConcernButton patientId={id} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
+                                source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'medical_priority', itemName: item.name }} suggestedIssue={item.name}
+                                sourceLabel={`${curYear}年度已审核健康信息整理 · ${item.name}`} />
                             </div>
                           </div>
                         ))}

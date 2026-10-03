@@ -17,5 +17,5 @@ export default function AnnualConcernButton({ patientId, year, source, staff, to
     finally { setBusy(false) }
   }
   return <button type="button" className="btn btn-secondary btn-sm" disabled={busy || added} onClick={add}
-    title={`纳入${year}年度专项研判，稍后核对证据并决定去向`}>{added ? '已纳入研判' : busy ? '纳入中…' : '＋ 纳入关注'}</button>
+    title={`纳入${year}年度重大疾病筛查维度分析，稍后核对证据并决定去向`}>{added ? '已纳入年度分析' : busy ? '纳入中…' : '＋ 纳入年度分析'}</button>
 }

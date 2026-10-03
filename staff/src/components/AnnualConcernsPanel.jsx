@@ -33,10 +33,15 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
   if (!topic?.annualPlanYear) return null
   const canEdit = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const concerns = topic.concerns || []
+  const autoScan = concerns.filter(row => row.includedByName === '已审核AI风险扫描')
+  const manuallyIncluded = concerns.filter(row => row.includedByName !== '已审核AI风险扫描')
   return <div className="card"><div className="card-header"><div className="card-title">年度待研判问题 · {concerns.length}</div></div><div className="card-body">
-    <div style={{ fontSize: 12, color: '#65776F' }}>来源于专项筛查结果、已审核的5年健康趋势和AI风险提示；纳入关注不代表确诊或已确定年度目标。营养去向由营养师独立评估并发出具体方案。</div>
+    <div style={{ fontSize: 12, color: '#65776F' }}>这里按重大疾病筛查维度综合分析。健康顾问从具体报告纳入的肺结节等问题，会另建单个专病研判主题。营养干预方案由营养师独立发出。</div>
     {!concerns.length && <div style={{ marginTop: 12, color: '#8AA89C' }}>暂无纳入的问题，可在专项筛查结果或AI健康信息整理中一键纳入。</div>}
-    {concerns.map(concern => <ConcernRow key={concern.id} concern={concern} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {!!autoScan.length && <div style={{ marginTop: 12, fontWeight: 700 }}>系统从已审核AI风险扫描自动带入的维度 · {autoScan.length}</div>}
+    {autoScan.map(concern => <ConcernRow key={concern.id} concern={concern} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {!!manuallyIncluded.length && <div style={{ marginTop: 12, fontWeight: 700 }}>人工纳入的分析线索 · {manuallyIncluded.length}</div>}
+    {manuallyIncluded.map(concern => <ConcernRow key={concern.id} concern={concern} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
     {canEdit && concerns.length > 0 && topic.messages?.length > 0 && <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={onAnalyze}>依据当前关注问题继续AI研判</button>}
   </div></div>
 }

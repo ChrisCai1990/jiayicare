@@ -272,6 +272,7 @@ export const staffAPI = {
   generatePhaseAssessment: (patientId, mode = 'routine', domain = 'comprehensive', frequency = 'quarterly') => req(`/staff/patients/${patientId}/phase-assessments/generate`, { method: 'POST', body: JSON.stringify({ mode, domain, frequency }) }),
   reviewPhaseAssessment: (patientId, assessmentId, data) => req(`/staff/patients/${patientId}/phase-assessments/${assessmentId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAiCaseReviews: (patientId) => req(`/staff/patients/${patientId}/ai-case-reviews`),
+  createSpecialtyReviewFromSource: (patientId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/specialty-from-source`, { method: 'POST', body: JSON.stringify(data) }),
   addAiCaseReviewConcern: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/concerns`, { method: 'POST', body: JSON.stringify(data) }),
   updateAiCaseReviewConcern: (patientId, topicId, concernId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/concerns/${concernId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   createAiCaseReview: (patientId, data) => req(`/staff/patients/${patientId}/ai-case-reviews`, { method: 'POST', body: JSON.stringify(data) }),

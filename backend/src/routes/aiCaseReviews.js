@@ -51,6 +51,14 @@ function approvedDoctorRecord(user, year) {
 }
 
 async function concernSource(user, input) {
+  if (input.kind === 'screening_report') {
+    if (!mongoose.isValidObjectId(input.reportId)) throw Object.assign(new Error('报告来源无效'), { status: 400 });
+    const report = await MedicalReport.findOne({ _id: input.reportId, user: user._id, audit_status: 'audited' }).lean();
+    if (!report) throw Object.assign(new Error('请先完成该报告审核，再发起专病研判'), { status: 409 });
+    return { key: `screening_report:${report._id}`, kind: 'screening', title: report.title || '专项筛查报告',
+      evidence: [report.note, report.examConclusion, ...(report.reportItems || []).filter(row => row.status === 'abnormal' || row.status === 'attention').slice(0, 8).map(row => `${row.name}：${row.conclusion || row.diagnosis || row.value || ''}`)].filter(Boolean).join('；').slice(0, 800),
+      source: { reportId: String(report._id), reportTitle: report.title, checkDate: report.checkDate || '' } };
+  }
   if (input.kind === 'ai_risk') {
     const year = Number(input.year);
     const root = user.aiRiskAssessment || {};
@@ -297,6 +305,35 @@ router.get('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) =
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.post('/patients/:patientId/ai-case-reviews/specialty-from-source', staffAuth, async (req, res) => {
+  try {
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role) || (req.staff.role !== 'superadmin' && String(user.assignedFamilyDoctor) !== String(req.staff._id)))
+      return res.status(403).json({ success: false, message: '仅该客户健康顾问可纳入专病研判' });
+    const issueTitle = String(req.body.issueTitle || '').trim();
+    if (issueTitle.length < 2 || issueTitle.length > 60) return res.status(400).json({ success: false, message: '请填写2至60字的具体健康问题，例如肺结节' });
+    const issueKey = issueTitle.toLocaleLowerCase().replace(/[\s，。；：、]+/g, '');
+    const source = await concernSource(user, req.body || {});
+    const existing = await AiCaseReview.findOne({ user: user._id, reviewType: 'specialty', issueKey, status: { $ne: 'archived' } });
+    if (existing) {
+      if (!existing.sourceLinks.some(row => row.key === source.key)) {
+        if (existing.generation?.status === 'running') return res.status(409).json({ success: false, message: '该专病正在AI分析，请稍后再补充来源' });
+        existing.sourceLinks.push({ ...source, linkedAt: new Date(), linkedByName: req.staff.name || '' });
+        reopenAfterConcernChange(existing);
+        existing.status = 'active';
+        await existing.save();
+      }
+      return res.json({ success: true, data: forClient(existing), reused: true });
+    }
+    const topic = await AiCaseReview.create({ user: user._id, tenantId: user.tenantId || null,
+      title: `${issueTitle}专项研判`, description: `围绕“${issueTitle}”核对已审核资料和历年变化，判断是否需要专科评估或就医、营养师评估及随访复评。`,
+      reviewType: 'specialty', issueKey, sourceLinks: [{ ...source, linkedAt: new Date(), linkedByName: req.staff.name || '' }],
+      contextScopes: ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'],
+      preferredProvider: 'qwen', createdBy: req.staff._id, createdByName: req.staff.name || '' });
+    return res.status(201).json({ success: true, data: forClient(topic), reused: false });
+  } catch (error) { return res.status(error.status || (error.name === 'VersionError' ? 409 : 500)).json({ success: false, message: error.message }); }
+});
+
 function reopenAfterConcernChange(topic) {
   if (topic.conclusion?.status === 'confirmed') {
     topic.conclusionHistory.push({ content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
@@ -482,6 +519,12 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const message = topic.messages.find(item => item.role === 'staff' && item.requestId === topic.generation.requestId);
       const { content, attachments } = message;
       const snapshot = await buildContext(user, topic.contextScopes);
+      const linkedReportIds = [...new Set((topic.sourceLinks || []).flatMap(row => [row.source?.reportId, ...(row.source?.reportIds || [])]).filter(id => mongoose.isValidObjectId(id)).map(String))];
+      if (linkedReportIds.length) {
+        const linkedReports = await MedicalReport.find({ _id: { $in: linkedReportIds }, user: user._id, audit_status: 'audited' })
+          .select('title reportYear checkDate institution examConclusion reportItems aiSummary').lean();
+        snapshot.reports = [...linkedReports, ...(snapshot.reports || []).filter(row => !linkedReportIds.includes(String(row._id)))].slice(0, 30);
+      }
       const automatic = content === AUTO_REVIEW_MESSAGE;
       if (automatic) {
         exam ||= await latestExam(user._id);
@@ -495,7 +538,12 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const concerns = (topic.concerns || []).filter(row => !['excluded', 'duplicate'].includes(row.status));
       snapshot.reviewConcerns = concerns;
       if (concerns.length) snapshot.sources.push(`年度待研判问题：${concerns.length}项（逐项保留报告或已审趋势来源）`);
+      if (topic.sourceLinks?.length) {
+        snapshot.specialtySources = topic.sourceLinks;
+        snapshot.sources.push(...topic.sourceLinks.map(row => `专病问题来源：${row.source?.checkDate || row.source?.year || '日期待核实'} · ${row.title}`));
+      }
       const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : '',
+        topic.sourceLinks?.length ? `健康顾问选定的单个专病问题及来源（优先核对，不可将报告所见直接当诊断）：${JSON.stringify(topic.sourceLinks.map(row => ({ title: row.title, evidence: row.evidence, source: row.source })))}` : '',
         concerns.length ? `健康顾问纳入及AI扫描的待研判问题（均须核实，不能当作已确诊；按已标注去向讨论）：${JSON.stringify(concerns.map(row => ({ title: row.title, evidence: row.evidence, kind: row.kind, status: row.status, pathway: row.pathway, note: row.note, source: row.source })))}` : '',
         proposedTargets.length ? `创建主题时填写的拟管理目标和干预重点（尚未核实，只作为研判方向，不能当作已确认事实）：${JSON.stringify(proposedTargets)}` : ''].filter(Boolean).join('\n');
       const isAnnualReview = topic.reviewType === 'annual' && !!topic.annualPlanYear;

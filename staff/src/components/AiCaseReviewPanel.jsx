@@ -422,7 +422,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           <button type="button" onClick={() => setActiveId(value => value === topic._id ? '' : topic._id)} style={{ width: '100%', textAlign: 'left', border: 0, background: 'transparent', padding: 11, cursor: 'pointer' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}><span style={{ fontWeight: 700, color: '#1A2B24' }}>{topic.title}</span><span>{topic._id === active?._id ? '收起⌃' : '查看⌄'}</span></div>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 5 }}>{topic.status === 'concluded' ? '已形成确认结论' : `${topic.messages?.length || 0} 条讨论`} · {formatDateTime(topic.updatedAt)}</div>
-            <div style={{ fontSize: 12, color: '#4A6558', marginTop: 5 }}>类型：{topicTypeLabel(topic)}</div>
+            <div style={{ fontSize: 12, color: '#4A6558', marginTop: 5 }}>类型：{topic.issueKey ? '健康顾问纳入的单个专病问题' : topic.annualPlanYear ? '年度重大疾病筛查综合分析' : topicTypeLabel(topic)}</div>
           </button>
           {!topic.annualPlanYear && <div style={{ display: 'flex', gap: 6, padding: '0 10px 9px' }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => openTopicEdit(topic)}>编辑</button><button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => deleteTopic(topic)}>删除</button></div>}
         </div>)}
@@ -435,6 +435,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           <div><div style={{ fontSize: 18, fontWeight: 700 }}>{active.title}</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', color: '#65776F', fontSize: 12, marginTop: 5 }}><span style={{ background: '#E8F4EE', color: '#176347', borderRadius: 12, padding: '2px 8px' }}>{topicTypeLabel(active)}</span><span>创建：{formatDateTime(active.createdAt)}</span><span>更新：{formatDateTime(active.updatedAt)}</span><span>参与人员：{participantNames.join('、') || '待记录'}</span></div></div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setHeaderExpanded(value => !value)}>{headerExpanded ? '收起主题资料' : '展开主题资料'}</button>
         </div>
+        {!!active.issueKey && <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: '#EEF8F3', fontSize: 12 }}><b>健康顾问纳入的单个专病问题</b>
+          {(active.sourceLinks || []).map((row, index) => <div key={`${row.key}-${index}`} style={{ marginTop: 5 }}>来源 {index + 1}：{row.source?.checkDate || row.source?.year || '日期待核实'} · {row.title}{row.evidence ? `；${row.evidence}` : ''}</div>)}
+          <div style={{ color: '#65776F', marginTop: 6 }}>资料已关联；下面的 AI 分析需明确点击启动。</div>
+        </div>}
         {['familyDoctor','superadmin'].includes(staff?.role) && <ReviewPlanAmendment key={active._id} patientId={patientId} topicId={active._id} scope="topic" />}
         {headerExpanded && <>
         <div style={{ color: '#4A6558', fontSize: 13, marginTop: 9 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div>
@@ -450,7 +454,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       <AnnualConcernsPanel topic={active} patientId={patientId} staff={staff} toast={toast} onUpdate={replaceTopic}
         onAnalyze={() => send(null, '请根据当前已纳入的关注问题和已标注去向，核对来源并更新研判。区分专科评估或就医、营养师评估和随访观察；营养具体方案由营养师制定。')} />
       <div className="card" style={{ flex: 1 }}><div ref={chatRef} className="card-body" style={{ height: 'clamp(560px, 66vh, 780px)', overflowY: 'auto', background: '#F7F8F6', padding: 16 }}>
-        {!active.messages?.length && <div style={{ color: '#65776F', textAlign: 'center', paddingTop: 100 }}>尚未开始研判。{['annual', 'checkup'].includes(active.reviewType) && active.contextScopes?.includes('reports') && <div style={{ marginTop: 16 }}><button className="btn btn-primary" disabled={busy} onClick={startAutomaticReview}>从最近一次体检报告开始AI研判</button></div>}</div>}
+        {!active.messages?.length && <div style={{ color: '#65776F', textAlign: 'center', paddingTop: 100 }}>尚未开始AI分析。{active.issueKey ? <div style={{ marginTop: 16 }}><button className="btn btn-primary" disabled={busy} onClick={() => send(null, `请围绕“${active.title}”开展首次专项研判：先核对已关联的报告或趋势资料，再判断是否需要专科进一步评估、就医意见、营养师评估或随访复评。逐项区分已确认事实与待核实信息。`)}>开始分析这个专病问题</button></div>
+          : ['annual', 'checkup'].includes(active.reviewType) && active.contextScopes?.includes('reports') && <div style={{ marginTop: 16 }}><button className="btn btn-primary" disabled={busy} onClick={startAutomaticReview}>从最近一次体检报告开始AI研判</button></div>}</div>}
         {(active.messages || []).map(message => <div key={message._id} style={{ display: 'flex', justifyContent: message.role === 'staff' ? 'flex-end' : 'flex-start', marginBottom: 14 }}><div style={{ maxWidth: '82%', background: message.role === 'staff' ? '#DDF2E7' : '#fff', border: '1px solid #DCE5E0', borderRadius: 12, padding: '10px 13px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11, color: '#8AA89C', marginBottom: 5 }}><span>{message.role === 'ai' ? `AI助手 · ${message.provider || ''}${message.durationMs ? ` · ${(message.durationMs / 1000).toFixed(1)}秒` : ''}` : `${message.staffName} · ${message.staffRole}`} · {formatDateTime(message.createdAt)}</span><span>{message.role === 'staff' && <button type="button" onClick={() => editMessage(message)} style={{ border: 0, background: 'none', color: '#1E6B50', cursor: 'pointer' }}>编辑</button>}<button type="button" onClick={() => deleteMessage(message)} style={{ border: 0, background: 'none', color: '#B42318', cursor: 'pointer' }}>删除</button></span></div>
           <CleanText>{message.content}</CleanText>

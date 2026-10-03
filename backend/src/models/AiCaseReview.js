@@ -46,6 +46,8 @@ const aiCaseReviewSchema = new mongoose.Schema({
   customerDiscussion: { type: mongoose.Schema.Types.Mixed, default: null },
   customerDiscussionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   concerns: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  issueKey: { type: String, default: '' },
+  sourceLinks: { type: [mongoose.Schema.Types.Mixed], default: [] },
   templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanTemplate', default: null },
   templateSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   status: { type: String, enum: ['active', 'concluded', 'archived'], default: 'active', index: true },

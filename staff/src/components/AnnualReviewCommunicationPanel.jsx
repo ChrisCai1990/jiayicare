@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 
-export default function AnnualReviewCommunicationPanel({ patientId, year, staff, toast }) {
+export default function AnnualReviewCommunicationPanel({ patientId, year, staff, toast, onOpenReview }) {
   const nav = useNavigate()
   const [review, setReview] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -28,7 +28,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
   }, [patientId, year])
 
   const openReview = async () => {
-    if (review) return nav(`/patients/${patientId}?tab=aiCase&caseReviewId=${review._id}`)
+    if (review) return onOpenReview(review._id)
     setBusy(true)
     try {
       const created = await staffAPI.prepareAnnualComprehensiveReview(patientId, year)
@@ -36,7 +36,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
         try { await staffAPI.sendAiCaseReviewMessage(patientId, created.data._id, { autoStart: true, requestId: `auto_${created.data._id}` }) }
         catch (error) { toast(`研判已建立，自动分析待处理：${error.message}`, 'error') }
       }
-      nav(`/patients/${patientId}?tab=aiCase&caseReviewId=${created.data._id}`)
+      onOpenReview(created.data._id)
     } catch (error) { toast(error.message || '建立年度研判失败', 'error') }
     finally { setBusy(false) }
   }
@@ -56,10 +56,10 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
   }
 
   return <section style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
-    <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 6 }}>报告分析与客户沟通 · {year}年度</div>
-    {loading ? <div style={{ fontSize: 13 }}>正在读取年度研判…</div> : !review ? <div style={{ fontSize: 13 }}>请先围绕体检报告重点问题完成内部年度综合研判。<button className="btn btn-primary btn-sm" style={{ marginLeft: 10 }} disabled={!canConfirm || busy} onClick={openReview}>发起年度研判</button></div>
+    <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 6 }}>重大疾病筛查综合分析与客户沟通 · {year}年度</div>
+    {loading ? <div style={{ fontSize: 13 }}>正在读取年度研判…</div> : !review ? <div style={{ fontSize: 13 }}>这里按重大疾病筛查维度综合分析；肺结节等单个专病请从下方具体结果纳入专项研判。<button className="btn btn-primary btn-sm" style={{ marginLeft: 10 }} disabled={!canConfirm || busy} onClick={openReview}>打开年度综合分析</button></div>
       : <>
-        <div style={{ fontSize: 13 }}>内部研判：{review.conclusion?.status === 'confirmed' ? '健康顾问已确认' : '待确认'} <button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={openReview}>查看并调整研判</button></div>
+        <div style={{ fontSize: 13 }}>内部综合分析：{review.conclusion?.status === 'confirmed' ? '健康顾问已确认' : '待确认'} <button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={openReview}>打开综合分析</button></div>
         {review.conclusion?.status === 'confirmed' ? <>
           <div style={{ fontSize: 13, marginTop: 10 }}>已确认的管理目标与干预重点：</div>
           {(review.conclusion.managementTargets || []).length ? (review.conclusion.managementTargets || []).map((row, index) => <div key={index} style={{ fontSize: 13, marginTop: 5 }}>{index + 1}. {row.goal}；干预重点：{row.focus}</div>) : <div style={{ fontSize: 13, color: '#A16620' }}>尚无逐条目标，请先核对研判结论。</div>}
