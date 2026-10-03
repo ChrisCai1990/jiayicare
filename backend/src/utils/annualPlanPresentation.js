@@ -17,7 +17,8 @@ function normalizeItem(moduleKey, record, index) {
     evidence: first(record.basisSummary, record.matchReason, record.sourceRule),
     goal: moduleKey === 'nutrition_assessment'
       ? (record.nutritionComparisonMetrics?.length ? `前后对比：${record.nutritionComparisonMetrics.join('、')}` : '核实膳食与体成分情况')
-      : first(record.purpose, record.goal, record.focus, record.personalization),
+      : first(record.goal, record.purpose, record.focus, record.personalization),
+    completionStandard: record.completionStandard || '',
     schedule, frequency: record.frequency || '',
     careTarget: { hospital: record.hospital || record.institution || '', department: record.department || record.order_dept || '', expert: record.expert || record.order_expert || '' },
     customerAction: record.customerAction || '', precautions: record.precautions || '',

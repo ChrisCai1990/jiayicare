@@ -52,7 +52,7 @@ const FIELD_LABEL = {
 const PLAN_TYPE_LABEL = { health_reshape: '健康重塑方案', young_state: '健康年轻态方案', chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案' };
 const displayItemNotes = item => [
   item.problem && `当前问题：${item.problem}`, item.evidence && `设置依据：${item.evidence}`,
-  item.goal && `管理目标：${item.goal}`, item.schedule && `建议时间：${item.schedule}`,
+  item.goal && `管理目标：${item.goal}`, item.completionStandard && `完成标准：${item.completionStandard}`, item.schedule && `建议时间：${item.schedule}`,
   item.frequency && `执行频率：${item.frequency}`,
   item.careTarget?.hospital && `建议机构：${item.careTarget.hospital}`,
   item.careTarget?.department && `建议科室：${item.careTarget.department}`,

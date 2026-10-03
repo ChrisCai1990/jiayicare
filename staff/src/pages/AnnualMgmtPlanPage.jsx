@@ -248,10 +248,20 @@ const COMMON_ACTION_FIELDS = [
   { key: 'customerAction', label: '客户行动', type: 'textarea', placeholder: '客户需要查看、记录或完成的事项' },
   { key: 'ownerRole', label: '责任角色', type: 'text', placeholder: '如：健管专员、健康规划师' },
 ]
+const FAMILY_DOCTOR_MODULES = ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup']
+const FAMILY_DOCTOR_GOAL_FIELDS = [
+  { key: 'goal', label: '本年度管理目标', type: 'textarea', placeholder: '写清本事项希望解决或明确的问题，由健康顾问核对' },
+  { key: 'completionStandard', label: '完成标准', type: 'textarea', placeholder: '写清需要回收的检查、专科意见或复查结果，以及由谁确认' },
+]
 Object.values(MODULE_DEFS).forEach(def => {
   if (!def.multi) return
   const existing = new Set(def.fields.map(field => field.key))
   def.fields = [...def.fields, ...COMMON_ACTION_FIELDS.filter(field => !existing.has(field.key))]
+})
+FAMILY_DOCTOR_MODULES.forEach(key => {
+  const def = MODULE_DEFS[key]
+  const existing = new Set(def.fields.map(field => field.key))
+  def.fields = [...def.fields, ...FAMILY_DOCTOR_GOAL_FIELDS.filter(field => !existing.has(field.key))]
 })
 
 // Admin“具体方案”名称 → 医护端可编辑板块。顺序完全采用模板 followUpPlans，不再按前端套餐类型猜测。
