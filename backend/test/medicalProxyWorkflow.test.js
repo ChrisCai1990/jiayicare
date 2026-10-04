@@ -6,9 +6,10 @@ const Admin = require('../src/models/Admin');
 const FollowUp = require('../src/models/FollowUp');
 const HealthPlan = require('../src/models/HealthPlan');
 const MedicalReport = require('../src/models/MedicalReport');
+const ServiceRecord = require('../src/models/ServiceRecord');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
-const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow, startMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
+const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, upsertMedicalProxyServiceRecord, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow, startMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
 
 test('starting a second paid medical order does not cancel the first order executor', async () => {
   const previous = { exists: FollowUp.exists, find: FollowUp.find, upsert: FollowUp.findOneAndUpdate, updateMany: FollowUp.updateMany, userFind: User.findById };
@@ -213,6 +214,24 @@ test('storefront and staff orders resolve to the same proxy workflow', () => {
 test('service record upsert does not update result through conflicting operators', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   assert.doesNotMatch(workflow, /\$setOnInsert:\s*\{[^}]*result:/);
+});
+
+test('escort service records use escort title and accompany type', async () => {
+  const previous = { findPlan: HealthPlan.findOne, upsert: ServiceRecord.findOneAndUpdate };
+  try {
+    HealthPlan.findOne = () => ({ select: () => ({ sort: () => ({ lean: async () => null }) }) });
+    ServiceRecord.findOneAndUpdate = async (_filter, update) => update.$set;
+    const task = { patientId: 'patient', assignedTo: 'assistant', date: new Date('2026-09-23'), workflowKey: 'medical_proxy:execute', sourceType: 'order', formData: { medicalEscort: true } };
+    const escort = await upsertMedicalProxyServiceRecord(task, { _id: 'escort', serviceName: '陪同看诊服务', medicalProxyPlan: { medicalEscort: true } });
+    assert.equal(escort.title, '就医陪同服务');
+    assert.equal(escort.medicalEscort.serviceType, 'accompany');
+    const proxy = await upsertMedicalProxyServiceRecord({ ...task, formData: {} }, { _id: 'proxy', serviceName: '医疗代诊服务', medicalProxyPlan: {} });
+    assert.equal(proxy.title, '医疗代诊服务');
+    assert.equal(proxy.medicalEscort.serviceType, 'proxy_visit');
+  } finally {
+    HealthPlan.findOne = previous.findPlan;
+    ServiceRecord.findOneAndUpdate = previous.upsert;
+  }
 });
 
 test('collection is due three days before proxy visit or immediately inside the window', () => {

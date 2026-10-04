@@ -13429,6 +13429,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [switchingMode, setSwitchingMode] = useState(false)
   const [currentBooking, setCurrentBooking] = useState(serviceBooking || (initialOrder ? { sourceOrderId: initialOrder } : null))
   const order = currentBooking?.sourceOrderId
+  const isMedicalEscortOrder = order?.medicalProxyPlan?.medicalEscort === true || /陪同|陪诊/.test(order?.serviceName || '')
   const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊|就医规划/.test(order?.serviceName || '')
   const isCheckupAppointment = /checkup_appointment|待约检|代约检|常规约检|特殊约检/.test([order?.serviceName, order?.specificationLabel, order?.serviceRequirements, order?.note, order?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' '))
   const isMedicationProxy = /代配药|代取药/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
@@ -13803,7 +13804,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               </div>
             </div>
             {!bookingCollapsed && <>
-            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isSupplementOrder ? '先登记履约订单号，待客户确认收到后结束订单。' : isCheckupAppointment ? '请根据对话确认约检信息。确认后将直接转交健管专员预约开检查单号和检查日专家号。' : isMedicalReminder ? 'AI可从完整对话中整理六项复查信息；确认后自动生成随访计划并转健康顾问审核。' : isMedicationProxy ? '启动后从订单对话和持续用药档案整理药品信息，再由规划师人工核对。' : isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '请在本单对话中确认服务信息，确认后进入后续执行流程。'}</div>
+            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isSupplementOrder ? '先登记履约订单号，待客户确认收到后结束订单。' : isCheckupAppointment ? '请根据对话确认约检信息。确认后将直接转交健管专员预约开检查单号和检查日专家号。' : isMedicalReminder ? 'AI可从完整对话中整理六项复查信息；确认后自动生成随访计划并转健康顾问审核。' : isMedicationProxy ? '启动后从订单对话和持续用药档案整理药品信息，再由规划师人工核对。' : isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalEscortOrder ? '请核对陪同安排；执行时按门诊病历、处方和检查报告分别上传，健管专员逐份审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '请在本单对话中确认服务信息，确认后进入后续执行流程。'}</div>
             {isMedicalReminder ? <div style={{ display: 'grid', gap: 8 }}>
               <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" disabled={extractingReminder} onClick={extractMedicalReminder}>{extractingReminder ? 'AI整理中…' : 'AI获取对话信息'}</button></div>
               {[['visitDate','就医日期','date'],['medicalIssue','就医问题'],['visitGoal','就医目标'],['hospitalSuggestion','医院建议'],['departmentSuggestion','科室建议'],['expertSuggestion','专家建议']].map(([key,label,type]) => <label key={key} style={{ fontSize: 12, fontWeight: 600 }}>{label} *{type === 'date' ? <DateField className="form-input" type="date" value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} /> : <textarea className="form-input" rows={2} value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} />}</label>)}

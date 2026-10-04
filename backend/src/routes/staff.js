@@ -14755,7 +14755,7 @@ async function runReportParse(reportId) {
 
 async function runOutpatientRecordParse(report, rawParseImage) {
   const { fetchReportBuffer, fetchReportBuffers, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage } = require('../utils/pdf');
-  const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages } = require('../utils/outpatientRecordExtraction');
+  const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, isExplicitExamReport } = require('../utils/outpatientRecordExtraction');
   const MedicalReport = require('../models/MedicalReport');
   const revision = Number(report.reviewRevision || 0);
   try {
@@ -14776,6 +14776,15 @@ async function runOutpatientRecordParse(report, rawParseImage) {
         sourcePage: index + 1, isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096, timeoutMs: 120000,
       });
       pages.push(normalizeOutpatientPage(safeParseJSON(raw)));
+    }
+    if (isExplicitExamReport(pages)) {
+      const corrected = await MedicalReport.updateOne(
+        { _id: report._id, reviewRevision: revision, documentCategory: 'outpatient_record', audit_status: { $ne: 'audited' } },
+        { $set: { documentCategory: 'exam_report', clinicalReview: null, reportItems: [], aiSummary: '原件标题表明这是检查报告，已纠正资料分类，正在按检查报告重新解析。',
+          parseJob: { status: 'processing', message: '已从门诊病历纠正为检查报告，继续解析' } }, $inc: { reviewRevision: 1 } },
+      );
+      if (corrected.modifiedCount) return runReportParseControlled(report._id);
+      throw new Error('分类纠正期间资料被人工修改，请刷新后核对');
     }
     const { draft, reviewIssues } = mergeOutpatientPages(pages);
     const result = await MedicalReport.updateOne(
