@@ -65,7 +65,19 @@ async function uploadBuffer(rawBuffer, mimeType, folder = 'reports') {
     : extensionForMime(effectiveMime);
 
   const key = `${folder}/${uuidv4()}.${ext}`;
-  await client.put(key, buffer, { mime: effectiveMime });
+  // A single PUT of a scanned PDF can exceed the SDK's 60-second response
+  // timeout after the browser has already finished sending it to our server.
+  // Send large buffers in smaller parallel parts so a slow object write does
+  // not leave the UI stuck at "server processing" before failing.
+  if (buffer.length >= 8 * 1024 * 1024) {
+    await client.multipartUpload(key, buffer, {
+      mime: effectiveMime,
+      partSize: 4 * 1024 * 1024,
+      parallel: 3,
+    });
+  } else {
+    await client.put(key, buffer, { mime: effectiveMime });
+  }
 
   const endpoint = process.env.OSS_ENDPOINT || 'https://oss-cn-beijing.aliyuncs.com';
   const bucket = process.env.OSS_BUCKET;
@@ -92,6 +104,7 @@ function getClient() {
     bucket: process.env.OSS_BUCKET,
     secure: true,
     timeout,
+    retryMax: 2,
   });
 }
 
