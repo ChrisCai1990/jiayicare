@@ -4792,12 +4792,11 @@ function applyAuditedInstitution(report) {
   }
 }
 
-// 仅设备导出/功能医学等明确不支持结构化识别的资料可走直接人工审核。
-// 其余资料（包括标题为“用药”、处方、病历、检验检查）必须先经 AI 解析并由健管专员核对结果，
-// 不能靠旧的直接审核接口绕过解析。
+// 门诊病历使用 clinicalReview 栏目审核，AI 仅预填草稿；没有可读原文时也可人工录入。
+// 处方和检验检查仍须先经各自解析入口，设备导出/功能医学沿用人工审核。
 function isManualOnlyReportAudit(report) {
   return report?.type === 'home_monitor' || report?.type === 'functional'
-    || report?.documentCategory === 'functional_medicine';
+    || report?.documentCategory === 'functional_medicine' || report?.documentCategory === 'outpatient_record';
 }
 
 router.post('/medical-reports/:id/review-activity', staffAuth, async (req, res) => {
@@ -4840,6 +4839,9 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision, clinicalReview } = req.body;
+    if ((documentCategory || report.documentCategory) === 'outpatient_record' && (reportItems !== undefined || aiStatus === 'reviewed')) {
+      return res.status(409).json({ success: false, message: '门诊病历请核对结构化病历栏目后使用资料审核入口，不能按体检项目提交' });
+    }
     const isCalendarDate = value => {
       const normalized = String(value || '').trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
@@ -4891,7 +4893,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       }
     }
     if (note !== undefined) report.note = note;
-    if (clinicalReview !== undefined) report.clinicalReview = require('../utils/clinicalDocumentReview').normalizeClinicalReview(documentCategory || report.documentCategory, clinicalReview);
+    if (clinicalReview !== undefined) {
+      report.clinicalReview = require('../utils/clinicalDocumentReview').normalizeClinicalReview(documentCategory || report.documentCategory, clinicalReview);
+      report.reviewRevision = Number(report.reviewRevision || 0) + 1;
+    }
     if (pageDates !== undefined) {
       const validPageDates = Object.fromEntries(
         Object.entries(pageDates || {}).filter(([page, value]) =>
@@ -5291,6 +5296,10 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     if (metadataError) return res.status(400).json({ success: false, message: metadataError });
     const clinicalReviewError = require('../utils/clinicalDocumentReview').validateClinicalReview(report.documentCategory, report.clinicalReview);
     if (clinicalReviewError) return res.status(400).json({ success: false, message: clinicalReviewError });
+    if (report.documentCategory === 'outpatient_record' && report.reportItems?.length) {
+      report.parseJob = { ...(report.parseJob || {}), legacyReportItems: report.reportItems };
+      report.reportItems = [];
+    }
     const isRequiredOutpatientDocument = report.sourceHealthPlanId
       && ['prescription_order', 'outpatient_record'].includes(report.documentCategory);
     if (isRequiredOutpatientDocument && !(report.fileUrl || report.content || report.fileUrls?.length)) {
@@ -14691,6 +14700,53 @@ async function runReportParse(reportId) {
   return withAiContext({ actorId: String(owner?.parseJob?.resumedBy || owner?.parseJob?.actorId || ''), tenantId: String(owner?.tenantId || ''), business: 'ocr', reportId: String(reportId), stopState: {}, stage: 'recognize', deadline: Date.now() + 45 * 60000 }, () => runReportParseControlled(reportId));
 }
 
+async function runOutpatientRecordParse(report, rawParseImage) {
+  const { fetchReportBuffer, fetchReportBuffers, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage } = require('../utils/pdf');
+  const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages } = require('../utils/outpatientRecordExtraction');
+  const MedicalReport = require('../models/MedicalReport');
+  const revision = Number(report.reviewRevision || 0);
+  try {
+    const sources = [];
+    if (isPdfReport(report)) {
+      const pdf = await fetchReportBuffer(report, UPLOADS_DIR);
+      const count = await getPdfPageCountFromBuffer(pdf);
+      if (!count || count > 50) throw new Error('门诊病历页数异常，请人工核对原件');
+      for (let page = 1; page <= count; page++) sources.push(await renderSinglePage(pdf, page, 160));
+    } else {
+      const buffers = report.fileUrls?.length ? await fetchReportBuffers(report, UPLOADS_DIR) : [await fetchReportBuffer(report, UPLOADS_DIR)];
+      for (const buffer of buffers) sources.push(buffer.toString('base64'));
+    }
+    if (!sources.length) throw new Error('门诊病历没有可识别的图片');
+    const pages = [];
+    for (let index = 0; index < sources.length; index++) {
+      const raw = await rawParseImage(sources[index], OUTPATIENT_RECORD_PARSE_PROMPT, {
+        sourcePage: index + 1, isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096, timeoutMs: 120000,
+      });
+      pages.push(normalizeOutpatientPage(safeParseJSON(raw)));
+    }
+    const { draft, reviewIssues } = mergeOutpatientPages(pages);
+    const result = await MedicalReport.updateOne(
+      { _id: report._id, reviewRevision: revision, audit_status: { $ne: 'audited' } },
+      { $set: {
+        clinicalReview: draft, reportItems: [], aiStatus: 'pending',
+        aiSummary: `门诊病历已按病历栏目提取待核对草稿。${reviewIssues.length ? `识别疑点：${reviewIssues.join('；')}` : '请对照原件逐项核对。'}`,
+        parseJob: { status: 'completed', completedAt: new Date(), message: `病历栏目提取完成：${sources.length}页，待结构化审核`,
+          legacyReportItems: report.reportItems?.length ? report.reportItems : report.parseJob?.legacyReportItems },
+      }, $inc: { reviewRevision: 1 } },
+    );
+    if (!result.modifiedCount) await MedicalReport.updateOne({ _id: report._id, 'parseJob.status': 'processing' }, {
+      $set: { 'parseJob.status': 'failed', 'parseJob.message': '识别期间报告被人工修改，未覆盖审核内容' },
+    });
+  } catch (error) {
+    const paused = isAiControlError(error);
+    await MedicalReport.updateOne({ _id: report._id, reviewRevision: revision, audit_status: { $ne: 'audited' }, 'parseJob.status': 'processing' }, { $set: {
+      aiStatus: 'failed', 'parseJob.status': paused ? 'paused' : 'failed',
+      'parseJob.message': error.message, 'parseJob.completedAt': new Date(),
+    } });
+    console.error('[outpatient-record-parse] failed', String(report._id), error.message);
+  }
+}
+
 async function runReportParseControlled(reportId) {
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
@@ -14702,6 +14758,10 @@ async function runReportParseControlled(reportId) {
   if (!report) return;
   if (isManualOnlyReport(report)) {
     await markReportManualOnly(report);
+    return;
+  }
+  if (report.documentCategory === 'outpatient_record') {
+    await runOutpatientRecordParse(report, rawParseImage);
     return;
   }
   const parseStartRevision = Number(report.reviewRevision || 0);
@@ -15614,6 +15674,8 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const forcePrescriptionParse = req.body?.forcePrescriptionParse === true
       && report.documentCategory === 'prescription_order' && report.audit_status !== 'audited';
+    const forceOutpatientParse = req.body?.forceOutpatientParse === true
+      && report.documentCategory === 'outpatient_record' && report.audit_status !== 'audited';
 
     const hasFile = !!report.fileUrl || !!report.content;
     const isImage = report.mimeType?.startsWith('image/');
@@ -15641,7 +15703,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     // 但此前完成的 parseJob 会保留作审计记录。不能仅因该历史任务是 completed
     // 就阻止这次明确的重试，否则前端提示“可重新触发AI识别”实际无法完成。
     const retryAfterRejectedReview = report.aiStatus === 'none' && report.audit_status !== 'audited';
-    if ((report.parseJob?.status === 'completed' && !retryAfterRejectedReview && !forcePrescriptionParse) || report.audit_status === 'audited') {
+    if ((report.parseJob?.status === 'completed' && !retryAfterRejectedReview && !forcePrescriptionParse && !forceOutpatientParse) || report.audit_status === 'audited') {
       return res.status(409).json({ success: false, message: '报告已完成识别，请使用审核中的补提本页，避免重复解析整份报告' });
     }
     if (report.parseJob?.status === 'paused') return res.status(409).json({ success: false, message: report.parseJob.message + '；请管理员在 AI 用量管理中恢复' });
@@ -15676,6 +15738,7 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
     const { isActivePageParse } = require('../utils/reportPageSupplement');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (report.documentCategory === 'outpatient_record') return res.status(400).json({ success: false, message: '门诊病历按整份病历栏目提取，请使用病历专用解析入口' });
     if (isManualOnlyReport(report)) return res.status(400).json({ success: false, message: manualOnlyReportMessage(report), skipAi: true });
     if (isActivePageParse(report.pageParseStatus, pageNum)) {
       return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });

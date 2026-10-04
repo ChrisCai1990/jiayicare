@@ -10377,6 +10377,7 @@ export default function PatientDetailPage() {
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const manualOnly = isManualOnlyReport(r)
                         const isClinicalDocument = CLINICAL_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r))
+                        const isOutpatientRecord = inferDocumentCategory(r) === 'outpatient_record'
                         const canParseLegacyClinical = isClinicalDocument && r.parseJob?.status === 'skipped' && !r.reportItems?.length
                         const needsAIParse = !manualOnly && (['none', 'failed'].includes(r.aiStatus) || canParseLegacyClinical)
                         return (
@@ -10393,7 +10394,19 @@ export default function PatientDetailPage() {
                             <td style={{ fontSize: 11 }}>{r.audited_at ? new Date(r.audited_at).toLocaleString() : '未完成'}<br />{r.audited_by || ''}<br />{Object.keys(r.reviewActivity || {}).length ? `有效时长 ${Math.round(Object.values(r.reviewActivity).reduce((sum, session) => sum + (session.durationMs || 0), 0) / 60000)} 分钟` : '时长未记录'}</td>
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              {manualOnly ? (
+                              {isOutpatientRecord ? <>
+                                {r.audit_status !== 'audited' && (r.fileUrl || r.content || r.hasContent || r.fileUrls?.length) && r.aiStatus !== 'processing' && !r.clinicalReview && <button className="btn btn-sm report-action-review"
+                                  disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
+                                  onClick={() => handleParseReportAI(r._id, { forceOutpatientParse: true })}>
+                                  {r.parseJob?.status === 'paused' ? '等待管理员恢复' : r.reportItems?.length ? '按病历重新解析' : 'AI提取病历草稿'}
+                                </button>}
+                                {r.aiStatus === 'processing' && <span style={{ fontSize: 12, color: '#65776F' }}>病历提取中…</span>}
+                                {r.aiStatus !== 'processing' && <button className="btn btn-sm report-action-primary" onClick={() => {
+                                  if (['audited', 'rejected'].includes(r.audit_status)) { openReportDetail(r); return }
+                                  setEditingReport(r)
+                                  setEditingReportForm({ title: r.title || '', hospital: r.hospital || r.institution || '', date: r.date || r.checkDate || '', note: r.note || '', documentCategory: 'outpatient_record', clinicalReview: r.clinicalReview || {} })
+                                }}>{r.audit_status === 'audited' ? '查看资料' : '核对门诊病历'}</button>}
+                              </> : manualOnly ? (
                                 <button className="btn btn-sm report-action-primary" onClick={() => {
                                   if (['audited', 'rejected'].includes(r.audit_status)) { openReportDetail(r); return }
                                   setEditingReport(r)
@@ -10410,13 +10423,13 @@ export default function PatientDetailPage() {
                               ) : needsAIParse ? (
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
                               ) : null}
-                              {!manualOnly && r.aiStatus === 'processing' && (
+                              {!manualOnly && !isOutpatientRecord && r.aiStatus === 'processing' && (
                                 <button className="btn btn-sm report-action-muted" disabled>
                                   <span style={{ display:'inline-block', width:10, height:10, border:'2px solid #7C3AED', borderTopColor:'transparent', borderRadius:'50%', marginRight:6, verticalAlign:'middle', animation:'spin 0.8s linear infinite' }} />
                                   识别中…
                                 </button>
                               )}
-                              {(!manualOnly && (r.aiStatus === 'pending' || r.aiStatus === 'reviewed') || manualOnly && r.reportItems?.length > 0) && (
+                              {!isOutpatientRecord && (!manualOnly && (r.aiStatus === 'pending' || r.aiStatus === 'reviewed') || manualOnly && r.reportItems?.length > 0) && (
                                 <button className={`btn btn-sm ${r.aiStatus === 'reviewed' ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
                                   onClick={() => handleOpenOCRReview(r)}>
                                   {manualOnly ? '核对已有数据' : r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
@@ -11644,7 +11657,7 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setEditingReport(null) }}>
           <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">编辑报告信息</h3>
+              <h3 className="modal-title">{editingReportForm.documentCategory === 'outpatient_record' ? '核对门诊病历' : '编辑报告信息'}</h3>
               <button className="modal-close" onClick={() => setEditingReport(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
