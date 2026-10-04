@@ -5521,11 +5521,12 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
       });
       return { ...stored, reportId: report._id };
     } catch (error) {
-      await deleteFile(stored.key);
-      if (error.code === 11000) {
-        const duplicate = await MedicalReport.findOne({ user: metadata.patientId, sourceSha256 });
-        if (duplicate) return { url: duplicate.fileUrl, key: duplicate.ossKey, mimeType: duplicate.mimeType, size: duplicate.fileSize, reportId: duplicate._id };
+      const saved = await MedicalReport.findOne({ user: metadata.patientId, sourceSha256 });
+      if (saved) {
+        if (saved.ossKey !== stored.key) await deleteFile(stored.key);
+        return { url: saved.fileUrl, key: saved.ossKey, mimeType: saved.mimeType, size: saved.fileSize, reportId: saved._id };
       }
+      await deleteFile(stored.key);
       throw error;
     }
   });
