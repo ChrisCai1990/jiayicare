@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const { createReportUploadJob, getReportUploadJob } = require('../utils/reportUploadJobs');
 const { calculateHealthScore } = require('../utils/healthScore');
 const { buildStandardAssessments, matchesAssessment } = require('../../../shared/standardDiseaseAssessment.cjs');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
@@ -5465,15 +5466,19 @@ const uploadReportFile = multer({
 });
 
 // POST /api/staff/upload/report-file
-router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), async (req, res) => {
+router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
-  try {
-    const result = await uploadBuffer(req.file.buffer, req.file.mimetype, 'reports');
-    res.json({ success: true, data: { url: result.url, previewUrl: signStoredUrl(result.url, result.key), ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected } });
-  } catch (err) {
-    console.error('[staff-report-upload] failed', { staffId: String(req.staff?._id || ''), message: err.message });
-    res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });
-  }
+  const jobId = createReportUploadJob(req.staff._id, req.file, (buffer, mimeType) => uploadBuffer(buffer, mimeType, 'reports'));
+  res.status(202).json({ success: true, data: { jobId } });
+});
+
+router.get('/upload/report-file/:jobId', staffAuth, (req, res) => {
+  const job = getReportUploadJob(req.params.jobId, req.staff._id);
+  if (!job) return res.status(404).json({ success: false, message: '上传任务已中断，请重新选择文件' });
+  if (job.state === 'failed') return res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });
+  if (job.state !== 'done') return res.json({ success: true, data: { state: 'processing' } });
+  const result = job.result;
+  res.json({ success: true, data: { state: 'done', url: result.url, previewUrl: signStoredUrl(result.url, result.key), ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected } });
 });
 
 // 只提取"检查机构"+"检查日期"两个字段的精简prompt，供上传报告时自动回填表单用——

@@ -13986,7 +13986,9 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
     // 单份上传时，自动识别报告上印刷的机构名/日期回填表单，专员不用每次手动重复填写
     // （2026-07-21需求：单份上传是主流场景，报告原文本来就印着这两项）；多文件一次选择时
     // 语义不明确（可能是多页同一份报告，也可能是多份不同报告），不做自动识别，交回手动填写
-    if (files.length === 1 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
+    // Large PDFs may take minutes to store. Uploading once here and again on
+    // submit starts two simultaneous copies when staff confirms immediately.
+    if (files.length === 1 && files[0].size < 8 * 1024 * 1024 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
       setMetaDetecting(true)
       try {
         const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
@@ -14127,6 +14129,9 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
                 {fileDatas.map((fd, i) => (
                   <div key={i} style={{ fontSize: 12, color: '#22A06B' }}>✓ {fd.name}</div>
                 ))}
+                {fileDatas.length === 1 && fileDatas[0].file.size >= 8 * 1024 * 1024 && (
+                  <div style={{ fontSize: 11, color: '#6B7B73' }}>大文件请手动填写机构和日期；确认后仅上传一次。</div>
+                )}
                 {fileDatas.length > 1 && (
                   <>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: '#4A6558', cursor: 'pointer' }}>
@@ -14154,7 +14159,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
           {saving && (
             <div style={{ width: '100%' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#4A6558', marginBottom: 4 }}>
-                <span>{uploadProgress < 100 ? (uploadStep || '正在上传...') : '服务器处理中，请稍候...'}</span>
+                <span>{uploadProgress >= 90 ? '服务器存储中，请稍候...' : (uploadStep || '正在上传...')}</span>
                 {uploadProgress < 100 && <span>{uploadProgress}%</span>}
               </div>
               <div style={{ width: '100%', height: 6, background: '#E0D9CE', borderRadius: 99, overflow: 'hidden' }}>

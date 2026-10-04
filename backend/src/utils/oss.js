@@ -72,8 +72,9 @@ async function uploadBuffer(rawBuffer, mimeType, folder = 'reports') {
   if (buffer.length >= 8 * 1024 * 1024) {
     await client.multipartUpload(key, buffer, {
       mime: effectiveMime,
-      partSize: 4 * 1024 * 1024,
-      parallel: 3,
+      partSize: 1024 * 1024,
+      parallel: 2,
+      timeout: 120_000,
     });
   } else {
     await client.put(key, buffer, { mime: effectiveMime });

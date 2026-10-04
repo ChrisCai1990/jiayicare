@@ -22,7 +22,8 @@ test('large report buffers use multipart upload while small buffers use put', as
     const large = await uploadBuffer(Buffer.alloc(12 * 1024 * 1024), 'application/pdf');
     assert.equal(calls.filter(call => call.method === 'put').length, 1);
     assert.equal(calls.filter(call => call.method === 'multipart').length, 1);
-    assert.equal(calls.find(call => call.method === 'multipart').options.partSize, 4 * 1024 * 1024);
+    assert.equal(calls.find(call => call.method === 'multipart').options.partSize, 1024 * 1024);
+    assert.equal(calls.find(call => call.method === 'multipart').options.timeout, 120_000);
     assert.equal(calls.find(call => call.method === 'multipart').options.mime, 'application/pdf');
     assert.equal(large.size, 12 * 1024 * 1024);
     assert.match(small.url, /^https:\/\/test-bucket\./);

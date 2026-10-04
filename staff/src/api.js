@@ -11,6 +11,16 @@ export const clearToken = ()  => {
   localStorage.removeItem('jy_staff_info')
 }
 
+async function waitForReportUpload(jobId) {
+  const deadline = Date.now() + 30 * 60 * 1000
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    const response = await req(`/staff/upload/report-file/${encodeURIComponent(jobId)}`)
+    if (response.data?.state === 'done') return response.data
+  }
+  throw new Error('报告存储超时，请检查资料列表后重试')
+}
+
 async function req(path, options = {}) {
   const token = getToken()
   const isFormData = options.body instanceof FormData
@@ -212,9 +222,14 @@ export const staffAPI = {
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)) }
     xhr.onload = () => {
-      const res = JSON.parse(xhr.responseText)
+      let res
+      try { res = JSON.parse(xhr.responseText) } catch {
+        reject(new Error(xhr.status === 413 ? '文件超过服务器上传限制（100MB）' : `上传服务响应异常（${xhr.status}）`))
+        return
+      }
       if (xhr.status === 401) { clearToken(); window.location.href = '/login'; reject(new Error('Token 无效')) }
       else if (xhr.status >= 400) reject(new Error(res.message || '上传失败'))
+      else if (res.data?.jobId) waitForReportUpload(res.data.jobId).then(resolve, reject)
       else resolve(res.data)
     }
     xhr.onerror = () => reject(new Error('网络错误，上传失败'))
