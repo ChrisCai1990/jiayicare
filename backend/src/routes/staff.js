@@ -4936,7 +4936,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       const nextItems = (Array.isArray(reportItems) ? reportItems : []).filter(it => {
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
-      });
+      }).map(item => ({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
       // Reviewers may choose existing Admin nodes for this item; no taxonomy/rule creation.
       const previousById = new Map((report.reportItems || []).map(item => [item.itemId, item]));
       const classificationFields = ['screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence', 'classificationSource', 'classificationReviewedBy', 'classificationReviewedAt'];
@@ -13609,7 +13609,7 @@ router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
   }
 });
 
-const { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, reviewMetadataError } = require('../utils/reportExtractionPolicy');
+const { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, normalizeReportDate, reviewMetadataError } = require('../utils/reportExtractionPolicy');
 
 function safeParseJSON(text) {
   try { return JSON.parse(String(text).trim().replace(/^```json\n?|\n?```$/g, '')); }
@@ -15201,9 +15201,9 @@ async function runReportParseControlled(reportId) {
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
       const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
-      const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
-      const parsedItemDates = [...new Set(classified.map(item => String(item.examDate || '').slice(0, 10)).filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))];
-      const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : checkDate;
+      const classified = (await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))))).map(item => ({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
+      const parsedItemDates = [...new Set(classified.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
+      const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : normalizeReportDate(checkDate);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set([...summaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -15402,13 +15402,13 @@ async function runReportParseControlled(reportId) {
     const cleanedImageItems = fillEmptyDiagnosisFromFindings(
       realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(imageExamNormalized))
     );
-    const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
+    const classifiedImg = (await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))))).map(item => ({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
     // 使用完成时的最新版本判断，不能用任务启动时的旧快照。AI迟到或空结果都不得覆盖人工审核内容。
     const latestReport = await MedicalReport.findById(reportId).select('reportItems reviewRevision').lean();
     const completion = resolveImageParseCompletion(parseStartRevision, latestReport?.reviewRevision, latestReport?.reportItems, classifiedImg);
     const resolvedImageItems = completion.items;
-    const parsedImageItemDates = [...new Set(resolvedImageItems.map(item => String(item.examDate || '').slice(0, 10)).filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))];
-    const resolvedImageCheckDate = parsedImageItemDates.length === 1 ? parsedImageItemDates[0] : parsedImageItemDates.length > 1 ? '' : imageCheckDate;
+    const parsedImageItemDates = [...new Set(resolvedImageItems.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
+    const resolvedImageCheckDate = parsedImageItemDates.length === 1 ? parsedImageItemDates[0] : parsedImageItemDates.length > 1 ? '' : normalizeReportDate(imageCheckDate);
     const keepExistingItems = !completion.shouldWriteItems && resolvedImageItems.length > 0;
     if (completion.reason === 'revision_changed') console.log(`[parse-ai] 图片识别期间报告版本已变化，保留人工最新${resolvedImageItems.length}项，未覆盖`);
     else if (completion.reason === 'empty_result' && resolvedImageItems.length) console.log(`[parse-ai] 图片识别后无有效项，保留既有${resolvedImageItems.length}项，未覆盖`);

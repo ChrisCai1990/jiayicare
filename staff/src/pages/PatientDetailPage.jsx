@@ -3863,12 +3863,12 @@ export default function PatientDetailPage() {
     const dates = [
       ...ocrEditItemsRef.current.map(item => {
         const page = String(Number(item.sourcePage) || 1)
-        return String(pageHasExplicitDate(page) ? explicitPageDates[page] : item.examDate || '').slice(0, 10)
+        return calendarDate(pageHasExplicitDate(page) ? explicitPageDates[page] : item.examDate)
       }),
       ...Object.entries(explicitPageDates)
         .filter(([page]) => !ocrEditItemsRef.current.some(item => String(Number(item.sourcePage) || 1) === page))
-        .map(([, value]) => String(value || '').slice(0, 10)),
-    ].filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
+        .map(([, value]) => calendarDate(value)),
+    ].filter(Boolean)
     const unique = [...new Set(dates)]
     const enteredDate = String(ocrReportMeta.checkDate || '').trim()
     const fallbackDate = calendarDate(enteredDate)
@@ -12324,7 +12324,7 @@ export default function PatientDetailPage() {
                     <>
                       {(() => {
                         const currentPageItems = indexed
-                        const inferredDates = [...new Set(currentPageItems.map(({ it }) => String(it.examDate || '').slice(0, 10)).filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))]
+                        const inferredDates = [...new Set(currentPageItems.map(({ it }) => calendarDate(it.examDate)).filter(Boolean))]
                         const currentPageDate = ocrPageDates[activePage] ?? (inferredDates.length === 1 ? inferredDates[0] : (activePage === 1 ? ocrReportMeta.checkDate : ''))
                         const normalizePageDate = raw => {
                           const digits = String(raw || '').replace(/\D/g, '').slice(0, 8)
@@ -12471,7 +12471,7 @@ export default function PatientDetailPage() {
                                 <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                               </div>
                               <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>{isPrescription ? '处方开具日期（仅原件明确归属时填写）' : '项目检查日期（仅原件明确归属时填写）'}
-                                <DateField type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={String(it.examDate || '').slice(0, 10)} onChange={e => updItem(i, { examDate: e.target.value })} />
+                                <DateField type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={calendarDate(it.examDate) || String(it.examDate || '')} onChange={e => updItem(i, { examDate: e.target.value })} />
                               </label>
                               {isPrescription && <label style={{ display: 'block', fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 6 }}>匹配当前用药信息
                                 <select style={{ ...inp, width: '100%', marginTop: 4 }} value={it.medicationId || (it.medicationAction === 'keep' ? '__keep__' : '__create__')} onChange={e => {
