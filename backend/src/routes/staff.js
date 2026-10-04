@@ -4996,6 +4996,16 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       report.reportItems = nextItems;
       report.reviewRevision = Number(report.reviewRevision || 0) + 1;
     }
+    if (editSource === 'ocr_review' && date !== undefined && !report.checkDate) {
+      // A stale header value must not erase the one date that the reviewer
+      // confirmed on every result page. Distinct or incomplete dates stay blank.
+      const confirmedDate = require('../utils/reportExtractionPolicy').singleItemDate(report);
+      if (confirmedDate) {
+        report.checkDate = confirmedDate;
+        report.date = confirmedDate;
+        if (reportYear === undefined) report.reportYear = Number(confirmedDate.slice(0, 4));
+      }
+    }
     if (autoAuditPending) {
       const metadataError = reviewMetadataError(report);
       if (metadataError) return res.status(400).json({ success: false, message: metadataError });

@@ -36,4 +36,20 @@ function reviewMetadataError(report) {
   return '';
 }
 
-module.exports = { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, reviewMetadataError };
+function singleItemDate(report) {
+  const items = (report.reportItems || []).filter(item => String(item?.name || '').trim());
+  if (!items.length) return '';
+  const pageDates = report.pageDates instanceof Map ? Object.fromEntries(report.pageDates) : (report.pageDates || {});
+  const dates = items.map(item => {
+    const page = String(Number(item.sourcePage) || 1);
+    return Object.prototype.hasOwnProperty.call(pageDates, page) ? pageDates[page] : item.examDate;
+  });
+  const validDate = value => {
+    const date = String(value || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date))
+      && new Date(date).toISOString().slice(0, 10) === date;
+  };
+  return dates.every(validDate) && new Set(dates).size === 1 ? dates[0] : '';
+}
+
+module.exports = { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, reviewMetadataError, singleItemDate };

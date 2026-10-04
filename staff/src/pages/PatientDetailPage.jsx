@@ -2450,6 +2450,7 @@ export default function PatientDetailPage() {
   const ocrCurrentPageDateInputRef = useRef(null)
   const ocrSaveQueueRef = useRef(Promise.resolve())
   const ocrRevisionRef = useRef(0)
+  const ocrActionInFlightRef = useRef(false)
 
   useEffect(() => { ocrEditItemsRef.current = ocrEditItems }, [ocrEditItems])
 
@@ -3876,10 +3877,12 @@ export default function PatientDetailPage() {
   }
 
   const handleApproveOCR = async () => {
-    await reviewActivityFlush.current()
-    await ocrSaveQueueRef.current.catch(() => {})
+    if (ocrActionInFlightRef.current) return
+    ocrActionInFlightRef.current = true
     setOcrSaving(true)
     try {
+      await reviewActivityFlush.current()
+      await ocrSaveQueueRef.current.catch(() => {})
       const pageDates = captureCurrentOcrPageDate()
       const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, pageDates, hospital: ocrReportMeta.institution, date: resolvedOcrReportDate(pageDates), institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
@@ -3887,11 +3890,13 @@ export default function PatientDetailPage() {
       setOcrReviewReport(null)
       loadReports()
     } catch (err) { toast(err.message || '保存失败') }
-    finally { setOcrSaving(false) }
+    finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
   }
 
   // 存草稿：保存归类/编辑结果但保持「待审核」，可稍后继续
   const handleSaveOCRDraft = async () => {
+    if (ocrActionInFlightRef.current) return
+    ocrActionInFlightRef.current = true
     setOcrSaving(true)
     try {
       await ocrSaveQueueRef.current.catch(() => {})
@@ -3909,11 +3914,13 @@ export default function PatientDetailPage() {
       await loadReports()
       toast('草稿已保存并已从服务器确认，审核窗口继续保留')
     } catch (err) { toast(err.message || '保存失败') }
-    finally { setOcrSaving(false) }
+    finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
   }
 
   const handleParseCurrentPage = async () => {
     if (!ocrReviewReport || !ocrReviewPage) return
+    if (ocrActionInFlightRef.current) return
+    ocrActionInFlightRef.current = true
     setOcrSaving(true)
     try {
       // 先保存当前人工修改，再启动单页补提，避免覆盖尚未保存的审核内容。
@@ -3944,10 +3951,12 @@ export default function PatientDetailPage() {
         }
       }
     } catch (err) { toast(err.message || '单页补提失败') }
-    finally { setOcrSaving(false) }
+    finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
   }
 
   const handleReclassifyOCR = async () => {
+    if (ocrActionInFlightRef.current) return
+    ocrActionInFlightRef.current = true
     setOcrSaving(true)
     try {
       // 先持久化当前人工编辑，再让后端只对待归类项重跑；否则后端读取旧版本后返回整表，
@@ -3963,10 +3972,12 @@ export default function PatientDetailPage() {
       setOcrReviewReport(current => current ? { ...current, reportItems: res.data || [] } : current)
       toast(`重新归类完成，已自动匹配 ${res.matchedCount || 0} 项`)
     } catch (err) { toast(err.message || '归类失败') }
-    finally { setOcrSaving(false) }
+    finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
   }
 
   const handleRejectOCR = async () => {
+    if (ocrActionInFlightRef.current) return
+    ocrActionInFlightRef.current = true
     setOcrSaving(true)
     try {
       await staffAPI.updateReport(ocrReviewReport._id, { aiStatus: 'none', reportItems: [] })
@@ -3974,7 +3985,7 @@ export default function PatientDetailPage() {
       setOcrReviewReport(null)
       loadReports()
     } catch (err) { toast(err.message || '操作失败') }
-    finally { setOcrSaving(false) }
+    finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
   }
 
   // 保存前清理数组字段里的空行/首尾空格（编辑时为了流畅保留了空行）
