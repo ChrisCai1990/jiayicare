@@ -2120,6 +2120,12 @@ export default function PatientDetailPage() {
   const [editingFollowUp, setEditingFollowUp] = useState(null)
   const [followUpSaving, setFollowUpSaving] = useState(false)
   const [showUploadReport, setShowUploadReport] = useState(false)
+  const [pendingReportJobId, setPendingReportJobId] = useState(() => {
+    try { return localStorage.getItem(`jy_staff_report_upload_${id}`) || '' } catch { return '' }
+  })
+  useEffect(() => {
+    try { setPendingReportJobId(localStorage.getItem(`jy_staff_report_upload_${id}`) || '') } catch { setPendingReportJobId('') }
+  }, [id])
   const [showMessageModal, setShowMessageModal] = useState(() => new URLSearchParams(location.search).get('openChat') === '1')
   useEffect(() => {
     if (new URLSearchParams(location.search).get('openChat') === '1' && location.state?.serviceBooking) setShowMessageModal(true)
@@ -2892,6 +2898,32 @@ export default function PatientDetailPage() {
     try { const res = await staffAPI.getPatientReports(id); setReports(res.data); setStandardReportLoadState('ready') }
     catch { setStandardReportLoadState('error') }
   }
+
+  useEffect(() => {
+    if (!pendingReportJobId) return
+    let active = true
+    let timer
+    const storageKey = `jy_staff_report_upload_${id}`
+    const poll = async () => {
+      try {
+        const result = await staffAPI.getReportUploadStatus(pendingReportJobId)
+        if (!active) return
+        if (result.data?.state !== 'done') { timer = setTimeout(poll, 3000); return }
+        try { localStorage.removeItem(storageKey) } catch {}
+        setPendingReportJobId('')
+        loadReports()
+        toast('原始资料已上传完成')
+      } catch (err) {
+        if (!active) return
+        try { localStorage.removeItem(storageKey) } catch {}
+        setPendingReportJobId('')
+        loadReports()
+        toast(err.message || '上传任务状态未能确认，请查看原始资料')
+      }
+    }
+    poll()
+    return () => { active = false; clearTimeout(timer) }
+  }, [id, pendingReportJobId])
 
   const openRiskEvidence = async (tag, categoryLabel) => {
     setRiskEvidenceModal({ tag, categoryLabel, loading: true, sources: [] })
@@ -10375,9 +10407,10 @@ export default function PatientDetailPage() {
                 </select>
                 <input className="form-input report-search-input" style={{ width: 240 }} placeholder="搜索资料名称/来源机构"
                   value={reportSearchKw} onChange={e => { setReportSearchKw(e.target.value); setReportPage(1); setOpenReportActionId(null) }} />
-                <button className="btn btn-primary btn-sm report-upload-btn" onClick={() => setShowUploadReport(true)}>＋ 上传原始资料</button>
+                <button className="btn btn-primary btn-sm report-upload-btn" disabled={!!pendingReportJobId} onClick={() => setShowUploadReport(true)}>{pendingReportJobId ? '后台上传中…' : '＋ 上传原始资料'}</button>
               </div>
             </div>
+            {pendingReportJobId && <div role="status" style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#EAF5F0', color: '#245343', fontSize: 13 }}>文件已由服务器接收，正在后台存储并建档。可以离开此页；返回后会继续查询结果，请勿重复上传。</div>}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 8, marginBottom: 12 }}>
               <button type="button" onClick={() => { setReportDocumentCategory('all'); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === 'all' ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === 'all' ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>全部资料</strong><span style={{ float: 'right', color: '#789287' }}>{reportsInBaseScope.length}</span></button>
               {DOCUMENT_CATEGORIES.map(item => <button key={item.key} type="button" onClick={() => { setReportDocumentCategory(item.key); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === item.key ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === item.key ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>{item.label}</strong><span style={{ float: 'right', color: '#789287' }}>{categoryCount(item.key)}</span></button>)}
@@ -13203,6 +13236,12 @@ export default function PatientDetailPage() {
           screeningTree={screeningTree}
           onClose={() => setShowUploadReport(false)}
           onSaved={() => { setShowUploadReport(false); toast('原始资料已上传'); loadReports() }}
+          onQueued={jobId => {
+            try { localStorage.setItem(`jy_staff_report_upload_${id}`, jobId) } catch {}
+            setPendingReportJobId(jobId)
+            setShowUploadReport(false)
+            toast('文件已接收，后台处理中；完成后会显示在原始资料')
+          }}
         />
       )}
 
@@ -14042,7 +14081,7 @@ const DOCUMENT_CATEGORY_REPORT_TYPE = {
   prescription_order: 'other', questionnaire: 'other', other_customer_material: 'other',
 }
 
-function UploadReportModal({ patientId, onClose, onSaved }) {
+function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
   const [form, setForm] = useState({ documentCategory: 'physical_exam', title: '', hospital: '', date: '', note: '' })
   const [fileDatas, setFileDatas] = useState([])
   // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
@@ -14140,7 +14179,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
           } else {
             setUploadStep(total > 1 ? `上传第 ${i + 1}/${total} 个文件...` : '上传中...')
             const serverCreatesReport = total === 1 && fd.file.size >= 8 * 1024 * 1024
-            ;({ url, ossKey, mimeType, fileSize, reportId } = await staffAPI.uploadReportFile(
+            const uploadResult = await staffAPI.uploadReportFile(
               fd.file,
               (p) => setUploadProgress(Math.round(((i + p) / total) * 90)),
               serverCreatesReport ? {
@@ -14149,7 +14188,9 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
                 date: normalizedDate, note: form.note,
               } : undefined,
               serverCreatesReport ? () => setServerAccepted(true) : undefined
-            ))
+            )
+            if (uploadResult.state === 'accepted') { onQueued(uploadResult.jobId); return }
+            ;({ url, ossKey, mimeType, fileSize, reportId } = uploadResult)
           }
           if (!reportId) await staffAPI.uploadReport({
             patientId,

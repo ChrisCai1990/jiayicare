@@ -229,7 +229,11 @@ export const staffAPI = {
       }
       if (xhr.status === 401) { clearToken(); window.location.href = '/login'; reject(new Error('Token 无效')) }
       else if (xhr.status >= 400) reject(new Error(res.message || '上传失败'))
-      else if (res.data?.jobId) { onAccepted?.(); waitForReportUpload(res.data.jobId).then(resolve, reject) }
+      else if (res.data?.jobId) {
+        onAccepted?.()
+        if (reportMetadata) resolve({ state: 'accepted', jobId: res.data.jobId })
+        else waitForReportUpload(res.data.jobId).then(resolve, reject)
+      }
       else resolve(res.data)
     }
     xhr.onerror = () => reject(new Error('网络错误，上传失败'))
@@ -238,6 +242,7 @@ export const staffAPI = {
     if (reportMetadata) fd.append('reportMetadata', JSON.stringify(reportMetadata))
     xhr.send(fd)
   }),
+  getReportUploadStatus: (jobId) => req(`/staff/upload/report-file/${encodeURIComponent(jobId)}?poll=${Date.now()}`, { cache: 'no-store' }),
   uploadReportWithProgress: (data, onProgress) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE}/staff/medical-reports`)
