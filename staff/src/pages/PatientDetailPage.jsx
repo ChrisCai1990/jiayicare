@@ -85,6 +85,29 @@ function PdfDocumentPreview({ src, activePage, title, zoom = 100 }) {
   return <iframe src={`${src}#page=${activePage}&zoom=${zoom}`} title={title} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
 }
 
+function ClinicalReportSource({ report, loading, error }) {
+  if (loading) return <div className="clinical-report-source-empty">原始资料加载中…</div>
+  if (error) return <div className="clinical-report-source-empty">原始资料加载失败：{error}。请关闭后重新打开。</div>
+  const rawUrls = report?.content ? [report.content]
+    : report?.previewUrls?.filter(Boolean).length ? report.previewUrls.filter(Boolean)
+      : report?.fileUrls?.filter(Boolean).length ? report.fileUrls.filter(Boolean)
+        : [report?.previewUrl || report?.fileUrl].filter(Boolean)
+  if (!rawUrls.length) return <div className="clinical-report-source-empty">暂无原始文件，请先补传资料后核对。</div>
+  return <div className="clinical-report-source-pages">
+    {rawUrls.map((rawUrl, index) => {
+      const src = rawUrl.startsWith('/') ? API_ORIGIN + rawUrl : rawUrl
+      const pdf = isPdfReportFile(report, rawUrl)
+      const image = isImageReportFile(report, rawUrl) || rawUrl.startsWith('data:image/')
+      return <div className="clinical-report-source-page" key={`${index}:${rawUrl.slice(0, 80)}`}>
+        <div className="clinical-report-source-page-title">原件 {index + 1} / {rawUrls.length} <a href={src} target="_blank" rel="noopener noreferrer">新窗口打开</a></div>
+        {pdf ? <iframe src={src} title={`原始资料第 ${index + 1} 页`} />
+          : image ? <img src={src} alt={`原始资料第 ${index + 1} 页`} />
+            : <div className="clinical-report-source-empty">此文件无法在页面预览，请点击“新窗口打开”。</div>}
+      </div>
+    })}
+  </div>
+}
+
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 const MEMBERSHIP_TIER_LABEL = {
   basic: '基础会员',
@@ -2119,6 +2142,9 @@ export default function PatientDetailPage() {
   const [editingReport, setEditingReport] = useState(null)
   const [editingReportForm, setEditingReportForm] = useState({})
   const [editingReportSaving, setEditingReportSaving] = useState(false)
+  const [editingReportLoading, setEditingReportLoading] = useState(false)
+  const [editingReportLoadError, setEditingReportLoadError] = useState('')
+  const editingReportIdRef = useRef(null)
   const [editingHealth, setEditingHealth] = useState(false)
   const [medicalRecordView, setMedicalRecordView] = useState('summary')
   const [editingMedicalSummary, setEditingMedicalSummary] = useState(false)
@@ -2966,6 +2992,26 @@ export default function PatientDetailPage() {
 
   const [reportScreeningData, setReportScreeningData] = useState([])
   const [reportSourceFocus, setReportSourceFocus] = useState(null)
+
+  const openClinicalReportReview = async (report) => {
+    editingReportIdRef.current = report._id
+    setEditingReport(report)
+    setEditingReportForm({ title: report.title || '', hospital: report.hospital || report.institution || '', date: report.date || report.checkDate || '', note: report.note || '', documentCategory: inferDocumentCategory(report), clinicalReview: report.clinicalReview || {} })
+    setEditingReportLoadError('')
+    setEditingReportLoading(true)
+    try {
+      const { data: fresh } = await staffAPI.getReport(report._id)
+      if (editingReportIdRef.current === report._id) {
+        setEditingReport(fresh)
+        setEditingReportForm({ title: fresh.title || '', hospital: fresh.hospital || fresh.institution || '', date: fresh.date || fresh.checkDate || '', note: fresh.note || '', documentCategory: inferDocumentCategory(fresh), clinicalReview: fresh.clinicalReview || {} })
+      }
+    } catch (error) {
+      if (editingReportIdRef.current === report._id) setEditingReportLoadError(error.message || '未知错误')
+      toast(error.message || '原始资料加载失败，请重新打开')
+    } finally {
+      if (editingReportIdRef.current === report._id) setEditingReportLoading(false)
+    }
+  }
 
   const openReportDetail = (r) => {
     // 立即显示弹窗（用列表里已有的数据）
@@ -10403,14 +10449,12 @@ export default function PatientDetailPage() {
                                 {r.aiStatus === 'processing' && <span style={{ fontSize: 12, color: '#65776F' }}>病历提取中…</span>}
                                 {r.aiStatus !== 'processing' && <button className="btn btn-sm report-action-primary" onClick={() => {
                                   if (['audited', 'rejected'].includes(r.audit_status)) { openReportDetail(r); return }
-                                  setEditingReport(r)
-                                  setEditingReportForm({ title: r.title || '', hospital: r.hospital || r.institution || '', date: r.date || r.checkDate || '', note: r.note || '', documentCategory: 'outpatient_record', clinicalReview: r.clinicalReview || {} })
+                                  openClinicalReportReview(r)
                                 }}>{r.audit_status === 'audited' ? '查看资料' : '核对门诊病历'}</button>}
                               </> : manualOnly ? (
                                 <button className="btn btn-sm report-action-primary" onClick={() => {
                                   if (['audited', 'rejected'].includes(r.audit_status)) { openReportDetail(r); return }
-                                  setEditingReport(r)
-                                  setEditingReportForm({ title: r.title || '', hospital: r.hospital || r.institution || '', date: r.date || r.checkDate || '', note: r.note || '', documentCategory: inferDocumentCategory(r), clinicalReview: r.clinicalReview || {} })
+                                  openClinicalReportReview(r)
                                 }}>
                                   {['audited', 'rejected'].includes(r.audit_status) ? '查看资料' : ['prescription_order', 'outpatient_record', 'inpatient_record'].includes(inferDocumentCategory(r)) ? '结构化审核' : '人工审核'}
                                 </button>
@@ -11654,13 +11698,18 @@ export default function PatientDetailPage() {
 
       {/* 体检报告编辑弹窗 */}
       {editingReport && (
-        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setEditingReport(null) }}>
-          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className={`modal ${editingReportForm.documentCategory === 'outpatient_record' ? 'clinical-report-review-modal' : ''}`} style={{ maxWidth: editingReportForm.documentCategory === 'outpatient_record' ? 1280 : 480 }}>
             <div className="modal-header">
               <h3 className="modal-title">{editingReportForm.documentCategory === 'outpatient_record' ? '核对门诊病历' : '编辑报告信息'}</h3>
-              <button className="modal-close" onClick={() => setEditingReport(null)}>✕</button>
+              <button className="modal-close" onClick={() => { editingReportIdRef.current = null; setEditingReport(null) }}>✕</button>
             </div>
-            <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+            <div className={`modal-body ${editingReportForm.documentCategory === 'outpatient_record' ? 'clinical-report-review-body' : ''}`}>
+              {editingReportForm.documentCategory === 'outpatient_record' && <section className="clinical-report-source-pane" aria-label="原始门诊病历">
+                <div className="clinical-report-pane-heading">原始资料 <span>对照右侧逐项核对</span></div>
+                <ClinicalReportSource report={editingReport} loading={editingReportLoading} error={editingReportLoadError} />
+              </section>}
+              <div className="clinical-report-review-fields" style={{ display: 'grid', gap: 12, pointerEvents: editingReportLoading ? 'none' : undefined, opacity: editingReportLoading ? 0.6 : 1 }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">报告标题</label>
                 <input className="form-input" value={editingReportForm.title || ''}
@@ -11690,19 +11739,37 @@ export default function PatientDetailPage() {
                   onChange={e => setEditingReportForm(f => ({ ...f, note: e.target.value }))} />
               </div>
               <ClinicalDocumentReviewFields category={editingReportForm.documentCategory} value={editingReportForm.clinicalReview} onChange={clinicalReview => setEditingReportForm(f => ({ ...f, clinicalReview }))} />
+              </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => setEditingReport(null)}>取消</button>
-              <button className="btn btn-primary" disabled={editingReportSaving} onClick={async () => {
-                if (!editingReportForm.title) { toast('请填写报告标题'); return }
+              <button className="btn btn-ghost" onClick={() => { editingReportIdRef.current = null; setEditingReport(null) }}>取消</button>
+              <button className="btn btn-secondary" disabled={editingReportSaving || editingReportLoading} onClick={async () => {
+                if (!editingReportForm.title?.trim()) { toast('请填写报告标题'); return }
                 setEditingReportSaving(true)
                 try {
                   await staffAPI.updateReport(editingReport._id, editingReportForm)
+                  editingReportIdRef.current = null
                   setEditingReport(null)
                   loadReports()
-                } catch (err) { toast(err.message) }
+                  toast('草稿已保存')
+                } catch (err) { toast(err.message || '保存失败') }
                 finally { setEditingReportSaving(false) }
-              }}>{editingReportSaving ? '保存中…' : '保存'}</button>
+              }}>{editingReportSaving ? '保存中…' : editingReportForm.documentCategory === 'outpatient_record' ? '保存草稿' : '保存'}</button>
+              {editingReportForm.documentCategory === 'outpatient_record' && <button className="btn btn-primary" disabled={editingReportSaving || editingReportLoading || !!editingReportLoadError} onClick={async () => {
+                if (!editingReportForm.title?.trim()) { toast('请填写报告标题'); return }
+                if (!editingReportForm.clinicalReview?.sourceReviewed) { toast('请先核对左侧原始资料并勾选确认'); return }
+                if (!editingReportForm.clinicalReview?.reviewConclusion?.trim()) { toast('请填写本次结构化审核结论'); return }
+                setEditingReportSaving(true)
+                try {
+                  await staffAPI.updateReport(editingReport._id, editingReportForm)
+                  await staffAPI.auditReport(editingReport._id, { action: 'approve' })
+                  editingReportIdRef.current = null
+                  setEditingReport(null)
+                  loadReports()
+                  toast('门诊病历已审核通过')
+                } catch (err) { toast(err.message || '审核失败，已填写内容请核对后重试') }
+                finally { setEditingReportSaving(false) }
+              }}>{editingReportSaving ? '提交中…' : '确认审核通过'}</button>}
             </div>
           </div>
         </div>
