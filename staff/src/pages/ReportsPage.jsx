@@ -1,4 +1,5 @@
 import DateField from '../../../shared/DateField.jsx'
+import { calendarDate } from '../../../shared/calendarDate.mjs'
 import PatientPicker from '../components/PatientPicker'
 import { useReportReviewActivity } from '../components/ReportReviewQuality'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
@@ -72,9 +73,11 @@ export default function ReportsPage() {
 
   const handleEditSave = async () => {
     if (!editForm.title.trim()) { toast('标题不能为空'); return }
+    const normalizedDate = editForm.date ? calendarDate(editForm.date) : ''
+    if (editForm.date && !normalizedDate) { toast('检查日期无效，请填写完整日期（如 2026-09-23）'); return }
     setEditSaving(true)
     try {
-      await staffAPI.updateReport(editModal._id, editForm)
+      await staffAPI.updateReport(editModal._id, { ...editForm, date: normalizedDate })
       toast('修改成功'); setEditModal(null); load()
     } catch (err) { toast(err.message) }
     finally { setEditSaving(false) }

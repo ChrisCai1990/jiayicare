@@ -4848,9 +4848,13 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       const parsed = new Date(`${normalized}T00:00:00`);
       return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized;
     };
-    // 历史数据里可能已有半截日期（如 2025070）。审核保存不能被它锁死：
-    // 这类值按空日期处理，页面仍可保存本页日期和审核内容。
-    const safeDate = date !== undefined && String(date || '').trim() && !isCalendarDate(date) ? '' : date;
+    // 历史半截日期不应阻止修改其他信息；新输入的无效日期必须报错，
+    // 不能默默写成空值，导致已填写的检查日期从资料列表消失。
+    const invalidDate = date !== undefined && String(date || '').trim() && !isCalendarDate(date);
+    if (invalidDate && date !== report.date && date !== report.checkDate) {
+      return res.status(400).json({ success: false, message: '检查日期无效，请填写完整日期（如 2026-09-23）' });
+    }
+    const safeDate = invalidDate ? undefined : date;
     if (reportItems !== undefined && editSource === 'ocr_review') {
       const requestedRevision = Number(expectedRevision);
       if (!Number.isInteger(requestedRevision) || requestedRevision !== Number(report.reviewRevision || 0)) {
@@ -4882,7 +4886,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     }
     if (hospital !== undefined) { report.hospital = hospital; report.institution = hospital; }
     if (['pending', 'confirmed', 'unknown'].includes(req.body.institutionStatus)) report.institutionStatus = req.body.institutionStatus;
-    if (date !== undefined) {
+    if (safeDate !== undefined) {
       report.date = safeDate; report.checkDate = safeDate;
       // 2026-07-09修复"同一检查同时出现在2025和2026"：编辑改了检查日期时，reportYear 必须跟着日期重算，
       // 否则会出现 checkDate=2025-08-06 但 reportYear 仍停留在旧值2026 的错位，导致这份报告在两个年度里都出现。

@@ -11745,9 +11745,11 @@ export default function PatientDetailPage() {
               <button className="btn btn-ghost" onClick={() => { editingReportIdRef.current = null; setEditingReport(null) }}>取消</button>
               <button className="btn btn-secondary" disabled={editingReportSaving || editingReportLoading} onClick={async () => {
                 if (!editingReportForm.title?.trim()) { toast('请填写报告标题'); return }
+                const normalizedDate = editingReportForm.date ? calendarDate(editingReportForm.date) : ''
+                if (editingReportForm.date && !normalizedDate) { toast('检查日期无效，请填写完整日期（如 2026-09-23）'); return }
                 setEditingReportSaving(true)
                 try {
-                  await staffAPI.updateReport(editingReport._id, editingReportForm)
+                  await staffAPI.updateReport(editingReport._id, { ...editingReportForm, date: normalizedDate })
                   editingReportIdRef.current = null
                   setEditingReport(null)
                   loadReports()
@@ -14047,6 +14049,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
   // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
   const [mergeFiles, setMergeFiles] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [serverAccepted, setServerAccepted] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadStep, setUploadStep] = useState('')
   const [error, setError] = useState('')
@@ -14088,8 +14091,10 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
   const handleSubmit = async () => {
     if (!form.title) { setError('请填写资料名称'); return }
     if (!fileDatas.length) { setError('请选择资料文件（图片或PDF）'); return }
+    const normalizedDate = form.date ? calendarDate(form.date) : ''
+    if (form.date && !normalizedDate) { setError('报告日期无效，请填写完整日期（如 2026-09-23）'); return }
     try {
-      setSaving(true); setError(''); setUploadProgress(0)
+      setSaving(true); setServerAccepted(false); setError(''); setUploadProgress(0)
       const total = fileDatas.length
       if (mergeFiles && total > 1) {
         // 合并模式：全部文件先各自上传拿到url，最后只建一条报告记录、fileUrls存全部url，
@@ -14112,7 +14117,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
           type: selectedReportType,
           documentCategory: form.documentCategory,
           hospital: form.hospital,
-          date: form.date,
+          date: normalizedDate,
           note: form.note,
           fileUrl: urls[0],
           fileUrls: urls,
@@ -14141,8 +14146,9 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
               serverCreatesReport ? {
                 patientId, title: form.title, type: selectedReportType,
                 documentCategory: form.documentCategory, hospital: form.hospital,
-                date: form.date, note: form.note,
-              } : undefined
+                date: normalizedDate, note: form.note,
+              } : undefined,
+              serverCreatesReport ? () => setServerAccepted(true) : undefined
             ))
           }
           if (!reportId) await staffAPI.uploadReport({
@@ -14151,7 +14157,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
             type: selectedReportType,
             documentCategory: form.documentCategory,
             hospital: form.hospital,
-            date: form.date,
+            date: normalizedDate,
             note: form.note,
             fileUrl: url,
             fileUrls: [url],
@@ -14168,6 +14174,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
       setError(err.message || '上传失败')
     } finally {
       setSaving(false)
+      setServerAccepted(false)
       setUploadProgress(0)
       setUploadStep('')
     }
@@ -14246,7 +14253,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
           {saving && (
             <div style={{ width: '100%' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#4A6558', marginBottom: 4 }}>
-                <span>{uploadProgress >= 90 ? '服务器存储中，请稍候...' : (uploadStep || '正在上传...')}</span>
+                <span>{serverAccepted ? '已送达服务器，正在后台入档' : uploadProgress >= 90 ? '服务器存储中，请稍候...' : (uploadStep || '正在上传...')}</span>
                 {uploadProgress < 100 && <span>{uploadProgress}%</span>}
               </div>
               <div style={{ width: '100%', height: 6, background: '#E0D9CE', borderRadius: 99, overflow: 'hidden' }}>
@@ -14255,10 +14262,11 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
                   : <div style={{ height: '100%', width: '100%', background: 'linear-gradient(90deg, #1E6B50 0%, #4CAF8A 50%, #1E6B50 100%)', backgroundSize: '200% 100%', borderRadius: 99, animation: 'progressPulse 1.2s linear infinite' }} />
                 }
               </div>
+              {serverAccepted && <div style={{ marginTop: 6, fontSize: 12, color: '#4A6558' }}>可关闭弹窗，稍后刷新“原始资料”查看结果；请勿重复上传。</div>}
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button className="btn btn-secondary" onClick={onClose} disabled={saving}>取消</button>
+            <button className="btn btn-secondary" onClick={onClose} disabled={saving && !serverAccepted}>{serverAccepted ? '关闭弹窗' : '取消'}</button>
             <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
               {saving ? (uploadProgress < 100 ? `上传中 ${uploadProgress}%` : '处理中...') : '确认上传'}
             </button>

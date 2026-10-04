@@ -215,7 +215,7 @@ export const staffAPI = {
   nutritionistReviewResponse: (patientId, responseId) => req(`/staff/patients/${patientId}/questionnaire-responses/${responseId}/nutritionist-review`, { method: 'POST' }),
   // 上传报告后自动识别机构/日期回填表单
   quickMetaFromReportFile: (url, mimeType) => req('/staff/upload/quick-meta', { method: 'POST', body: JSON.stringify({ url, mimeType }) }),
-  uploadReportFile: (file, onProgress, reportMetadata) => new Promise((resolve, reject) => {
+  uploadReportFile: (file, onProgress, reportMetadata, onAccepted) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE}/staff/upload/report-file`)
     const token = getToken()
@@ -229,7 +229,7 @@ export const staffAPI = {
       }
       if (xhr.status === 401) { clearToken(); window.location.href = '/login'; reject(new Error('Token 无效')) }
       else if (xhr.status >= 400) reject(new Error(res.message || '上传失败'))
-      else if (res.data?.jobId) waitForReportUpload(res.data.jobId).then(resolve, reject)
+      else if (res.data?.jobId) { onAccepted?.(); waitForReportUpload(res.data.jobId).then(resolve, reject) }
       else resolve(res.data)
     }
     xhr.onerror = () => reject(new Error('网络错误，上传失败'))
