@@ -138,6 +138,7 @@ const medicalEscortAttachmentEntries = formData => MEDICAL_ESCORT_ATTACHMENT_TYP
   return files.map((file, index) => ({ file, key: group.key, documentCategory: group.documentCategory, title: files.length > 1 ? `${group.title}（${index + 1}）` : group.title }));
 });
 const medicalEscortAttachments = formData => medicalEscortAttachmentEntries(formData).map(entry => entry.file);
+const archivedExecutionNote = (task, medicalEscort) => `${medicalEscort ? '就医陪同' : '医疗代诊'}执行任务：${task.theme || ''}`;
 
 const chineseNumber = value => {
   if (/^\d+$/.test(value)) return Number(value);
@@ -169,6 +170,7 @@ function extractMedicalProxyRechecks(text, baseDate = new Date()) {
 
 async function archiveMedicalProxyRecords(task, order, tenantId) {
   const medicalEscort = task.formData?.medicalEscort === true || task.formData?.planSnapshot?.medicalEscort === true || order.medicalProxyPlan?.medicalEscort === true;
+  const note = archivedExecutionNote(task, medicalEscort);
   const entries = medicalEscort ? medicalEscortAttachmentEntries(task.formData) : (Array.isArray(task.formData?.medicalRecordAttachments) ? task.formData.medicalRecordAttachments : [])
     .filter(file => nonempty(file?.url)).map((file, index, files) => ({ file, documentCategory: 'outpatient_record', title: files.length > 1 ? `医疗代诊病历（${index + 1}）` : '医疗代诊病历' }));
   const checkDate = dateInput(task.date || new Date());
@@ -180,7 +182,7 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
     sourceType: 'order',
     sourceOrderId: order._id,
     uploadedBy: task.assignedTo,
-    note: `医疗代诊执行任务：${task.theme || ''}`,
+    note: { $in: [archivedExecutionNote(task, false), archivedExecutionNote(task, true)] },
     ...(currentUrls.length ? { fileUrl: { $nin: currentUrls } } : {}),
   });
   const archivedIds = [];
@@ -194,10 +196,13 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
         reportYear: Number(checkDate.slice(0, 4)) || new Date().getFullYear(), fileUrl: file.url, fileUrls: [file.url],
         ossKey: file.ossKey || '', ossKeys: file.ossKey ? [file.ossKey] : [], mimeType: file.mimeType || '', fileSize: String(file.fileSize || ''),
         uploadedBy: task.assignedTo, uploadedByRole: 'medicalAssistant', sourceType: 'order', sourceOrderId: order._id,
-        audit_status: 'unaudited', aiStatus: 'none', note: `医疗代诊执行任务：${task.theme || ''}`,
+        audit_status: 'unaudited', aiStatus: 'none', note,
       } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
+    if (medicalEscort && report?.note === archivedExecutionNote(task, false)) {
+      await MedicalReport.updateOne({ _id: report._id, note: archivedExecutionNote(task, false) }, { $set: { note } });
+    }
     if (report?._id) archivedIds.push(String(report._id));
   }
   return archivedIds;
@@ -441,7 +446,7 @@ async function purgeStaleMedicalEscortReports(task, order) {
     user: task.patientId,
     sourceType: 'order',
     sourceOrderId: order._id,
-    note: /^医疗代诊执行任务：/,
+    note: /^(?:医疗代诊|就医陪同)执行任务：/,
     ...(currentUrls.length ? { fileUrl: { $nin: currentUrls } } : {}),
   });
 }
@@ -1349,4 +1354,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

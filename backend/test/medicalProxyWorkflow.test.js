@@ -8,7 +8,7 @@ const HealthPlan = require('../src/models/HealthPlan');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
-const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow, startMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
+const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow, startMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
 
 test('starting a second paid medical order does not cancel the first order executor', async () => {
   const previous = { exists: FollowUp.exists, find: FollowUp.find, upsert: FollowUp.findOneAndUpdate, updateMany: FollowUp.updateMany, userFind: User.findById };
@@ -558,6 +558,30 @@ test('medical escort attachments retain their document categories', () => {
     ['/rx.pdf', 'prescription_order', '就医陪同处方/医嘱单'],
     ['/exam.pdf', 'exam_report', '就医陪同检验检查报告'],
   ]);
+});
+test('archived escort records use escort wording and still remove stale legacy attachments', async () => {
+  const previous = { deleteMany: MedicalReport.deleteMany, upsert: MedicalReport.findOneAndUpdate, updateOne: MedicalReport.updateOne };
+  const deleted = [];
+  const inserted = [];
+  const renamed = [];
+  try {
+    MedicalReport.deleteMany = async filter => { deleted.push(filter); return { deletedCount: 0 }; };
+    MedicalReport.findOneAndUpdate = async (filter, update) => { inserted.push({ filter, update }); return { _id: `report-${inserted.length}`, note: inserted.length === 1 ? '医疗代诊执行任务：就医陪同：执行' : undefined }; };
+    MedicalReport.updateOne = async (filter, update) => { renamed.push({ filter, update }); return { modifiedCount: 1 }; };
+    const task = { patientId: 'patient', assignedTo: 'assistant', theme: '就医陪同：执行', date: new Date('2026-09-23T00:00:00Z'), formData: { medicalEscort: true, medicalRecordAttachments: [{ url: '/record.pdf' }] } };
+    const order = { _id: 'escort-order', medicalProxyPlan: { medicalEscort: true } };
+    await archiveMedicalProxyRecords(task, order, null);
+    assert.equal(inserted[0].update.$setOnInsert.note, '就医陪同执行任务：就医陪同：执行');
+    assert.equal(inserted[0].update.$setOnInsert.title, '就医陪同门诊病历');
+    assert.deepEqual(deleted[0].note.$in, ['医疗代诊执行任务：就医陪同：执行', '就医陪同执行任务：就医陪同：执行']);
+    assert.deepEqual(renamed[0], { filter: { _id: 'report-1', note: '医疗代诊执行任务：就医陪同：执行' }, update: { $set: { note: '就医陪同执行任务：就医陪同：执行' } } });
+    await archiveMedicalProxyRecords({ ...task, theme: '医疗代诊：执行', formData: { medicalRecordAttachments: [{ url: '/proxy.pdf' }] } }, { _id: 'proxy-order' }, null);
+    assert.equal(inserted[1].update.$setOnInsert.note, '医疗代诊执行任务：医疗代诊：执行');
+  } finally {
+    MedicalReport.deleteMany = previous.deleteMany;
+    MedicalReport.findOneAndUpdate = previous.upsert;
+    MedicalReport.updateOne = previous.updateOne;
+  }
 });
 test('booking and execution write the shared hospital visit service archive', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
