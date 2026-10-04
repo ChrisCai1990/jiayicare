@@ -5482,6 +5482,7 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), (
 });
 
 router.get('/upload/report-file/:jobId', staffAuth, (req, res) => {
+  res.set('Cache-Control', 'private, no-store, max-age=0');
   const job = getReportUploadJob(req.params.jobId, req.staff._id);
   if (!job) return res.status(404).json({ success: false, message: '上传任务已中断，请重新选择文件' });
   if (job.state === 'failed') return res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });

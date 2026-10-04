@@ -15,7 +15,7 @@ async function waitForReportUpload(jobId) {
   const deadline = Date.now() + 30 * 60 * 1000
   while (Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 2000))
-    const response = await req(`/staff/upload/report-file/${encodeURIComponent(jobId)}`)
+    const response = await req(`/staff/upload/report-file/${encodeURIComponent(jobId)}?poll=${Date.now()}`, { cache: 'no-store' })
     if (response.data?.state === 'done') return response.data
   }
   throw new Error('报告存储超时，请检查资料列表后重试')
