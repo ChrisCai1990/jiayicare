@@ -200,8 +200,19 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
       } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
-    if (medicalEscort && report?.note === archivedExecutionNote(task, false)) {
-      await MedicalReport.updateOne({ _id: report._id, note: archivedExecutionNote(task, false) }, { $set: { note } });
+    if (medicalEscort && report?._id) {
+      const legacyTitle = /^医疗代诊病历(（\d+）)?$/.exec(report.title || '');
+      const correction = {};
+      const filter = { _id: report._id };
+      if (report.note === archivedExecutionNote(task, false)) {
+        correction.note = note;
+        filter.note = report.note;
+      }
+      if (legacyTitle) {
+        correction.title = `就医陪同门诊病历${legacyTitle[1] || ''}`;
+        filter.title = report.title;
+      }
+      if (Object.keys(correction).length) await MedicalReport.updateOne(filter, { $set: correction });
     }
     if (report?._id) archivedIds.push(String(report._id));
   }
