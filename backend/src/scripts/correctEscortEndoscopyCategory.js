@@ -12,7 +12,7 @@ async function main() {
   await mongoose.connect(process.env.MONGODB_URI);
   const report = await MedicalReport.findOne({
     _id: REPORT_ID, sourceType: 'order', sourceOrderId: ORDER_ID,
-  }).select('title documentCategory audit_status aiStatus clinicalReview reportItems reviewRevision audited_by audited_at reviewedAt reviewedByStaff').lean();
+  }).select('sourceType sourceOrderId title documentCategory audit_status aiStatus clinicalReview reportItems reviewRevision audited_by audited_at reviewedAt reviewedByStaff').lean();
   if (!report) throw new Error('目标报告不存在或不属于预期陪同订单');
   if (report.documentCategory === 'exam_report') {
     console.log(JSON.stringify({ report: REPORT_ID, alreadyCorrected: true }));
