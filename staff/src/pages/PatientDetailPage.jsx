@@ -2,6 +2,7 @@ import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessme
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
+import { calendarDate } from '../../../shared/calendarDate.mjs'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
 import ChildHealthArchive from '../components/ChildHealthArchive'
 import followUpReview from '../../../shared/followUpReview.cjs'
@@ -3868,7 +3869,9 @@ export default function PatientDetailPage() {
         .map(([, value]) => String(value || '').slice(0, 10)),
     ].filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
     const unique = [...new Set(dates)]
-    const fallbackDate = /^\d{4}-\d{2}-\d{2}$/.test(ocrReportMeta.checkDate || '') ? ocrReportMeta.checkDate : ''
+    const enteredDate = String(ocrReportMeta.checkDate || '').trim()
+    const fallbackDate = calendarDate(enteredDate)
+    if (enteredDate && !fallbackDate) throw new Error('请填写完整有效的检查日期后保存')
     return unique.length === 1 ? unique[0] : unique.length > 1 ? '' : fallbackDate
   }
 
@@ -12187,7 +12190,17 @@ export default function PatientDetailPage() {
           // 审核AI识别结果、会长时间编辑的弹窗，之前漏改了）
           <div className="modal-overlay">
             <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
-              <ReportReviewQuality report={ocrReviewReport} items={ocrEditItems} onChange={patch => setOcrReviewReport(current => ({ ...current, ...patch }))} onFocus={index => { setOcrReviewPage(Number(ocrEditItems[index]?.sourcePage) || 1); setOcrFocusItemIndex(index) }} />
+              <ReportReviewQuality report={ocrReviewReport} items={ocrEditItems} onChange={patch => {
+                setOcrReviewReport(current => ({ ...current, ...patch }))
+                // The save handlers read ocrReportMeta. Keep the header edits in that
+                // same state so a draft save or review submission cannot drop them.
+                if (Object.prototype.hasOwnProperty.call(patch, 'checkDate') || Object.prototype.hasOwnProperty.call(patch, 'institution')) {
+                  setOcrReportMeta(current => ({ ...current,
+                    ...(Object.prototype.hasOwnProperty.call(patch, 'checkDate') ? { checkDate: patch.checkDate } : {}),
+                    ...(Object.prototype.hasOwnProperty.call(patch, 'institution') ? { institution: patch.institution } : {}),
+                  }))
+                }
+              }} onFocus={index => { setOcrReviewPage(Number(ocrEditItems[index]?.sourcePage) || 1); setOcrFocusItemIndex(index) }} />
               <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h3 className="modal-title">审核AI识别结果 · {ocrReviewReport.title}</h3>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
