@@ -5475,9 +5475,60 @@ const uploadReportFile = multer({
 });
 
 // POST /api/staff/upload/report-file
-router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), (req, res) => {
+router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
-  const jobId = createReportUploadJob(req.staff._id, req.file, (buffer, mimeType) => uploadBuffer(buffer, mimeType, 'reports'));
+  let metadata;
+  if (req.body.reportMetadata) {
+    try { metadata = JSON.parse(req.body.reportMetadata); } catch {
+      return res.status(400).json({ success: false, message: '报告信息格式错误' });
+    }
+    if (!metadata || !mongoose.isValidObjectId(metadata.patientId) || !String(metadata.title || '').trim()) {
+      return res.status(400).json({ success: false, message: '会员和标题不能为空' });
+    }
+    if (metadata.date && !/^\d{4}-\d{2}-\d{2}$/.test(metadata.date)) {
+      return res.status(400).json({ success: false, message: '报告日期格式错误' });
+    }
+    const patient = await User.findOne({ _id: metadata.patientId, tenantId: req.staff.tenantId, isDeleted: { $ne: true } }).select('_id tenantId').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    metadata = {
+      patientId: patient._id, tenantId: patient.tenantId,
+      title: String(metadata.title).trim().slice(0, 200),
+      type: String(metadata.type || 'other').slice(0, 40),
+      documentCategory: String(metadata.documentCategory || 'physical_exam').slice(0, 50),
+      hospital: String(metadata.hospital || '').slice(0, 200),
+      date: metadata.date || '',
+      note: String(metadata.note || '').slice(0, 1000),
+      uploadedBy: req.staff._id, uploadedByRole: req.staff.role || '',
+    };
+  }
+  const jobId = createReportUploadJob(req.staff._id, req.file, async (buffer, mimeType) => {
+    if (!metadata) return uploadBuffer(buffer, mimeType, 'reports');
+    const sourceSha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+    const existing = await MedicalReport.findOne({ user: metadata.patientId, sourceSha256 });
+    if (existing) return { url: existing.fileUrl, key: existing.ossKey, mimeType: existing.mimeType, size: existing.fileSize, reportId: existing._id };
+    const stored = await uploadBuffer(buffer, mimeType, 'reports');
+    try {
+      const report = await MedicalReport.create({
+        user: metadata.patientId, tenantId: metadata.tenantId, title: metadata.title,
+        type: metadata.type, documentCategory: metadata.documentCategory,
+        hospital: metadata.hospital, date: metadata.date, checkDate: metadata.date,
+        reportYear: metadata.date ? Number(metadata.date.slice(0, 4)) : new Date().getFullYear(),
+        note: metadata.note, fileUrl: stored.url, fileUrls: [stored.url],
+        ossKey: stored.key, ossKeys: [stored.key], mimeType: stored.mimeType,
+        fileSize: String(stored.size), sourceSha256,
+        uploadedBy: metadata.uploadedBy, uploadedByRole: metadata.uploadedByRole,
+        audit_status: 'unaudited', sourceType: 'staff_upload',
+      });
+      return { ...stored, reportId: report._id };
+    } catch (error) {
+      await deleteFile(stored.key);
+      if (error.code === 11000) {
+        const duplicate = await MedicalReport.findOne({ user: metadata.patientId, sourceSha256 });
+        if (duplicate) return { url: duplicate.fileUrl, key: duplicate.ossKey, mimeType: duplicate.mimeType, size: duplicate.fileSize, reportId: duplicate._id };
+      }
+      throw error;
+    }
+  });
   res.status(202).json({ success: true, data: { jobId } });
 });
 
@@ -5488,7 +5539,7 @@ router.get('/upload/report-file/:jobId', staffAuth, (req, res) => {
   if (job.state === 'failed') return res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });
   if (job.state !== 'done') return res.json({ success: true, data: { state: 'processing' } });
   const result = job.result;
-  res.json({ success: true, data: { state: 'done', url: result.url, previewUrl: signStoredUrl(result.url, result.key), ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected } });
+  res.json({ success: true, data: { state: 'done', url: result.url, previewUrl: signStoredUrl(result.url, result.key), ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected, reportId: result.reportId } });
 });
 
 // 只提取"检查机构"+"检查日期"两个字段的精简prompt，供上传报告时自动回填表单用——

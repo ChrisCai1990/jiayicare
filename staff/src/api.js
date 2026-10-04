@@ -215,7 +215,7 @@ export const staffAPI = {
   nutritionistReviewResponse: (patientId, responseId) => req(`/staff/patients/${patientId}/questionnaire-responses/${responseId}/nutritionist-review`, { method: 'POST' }),
   // 上传报告后自动识别机构/日期回填表单
   quickMetaFromReportFile: (url, mimeType) => req('/staff/upload/quick-meta', { method: 'POST', body: JSON.stringify({ url, mimeType }) }),
-  uploadReportFile: (file, onProgress) => new Promise((resolve, reject) => {
+  uploadReportFile: (file, onProgress, reportMetadata) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE}/staff/upload/report-file`)
     const token = getToken()
@@ -235,6 +235,7 @@ export const staffAPI = {
     xhr.onerror = () => reject(new Error('网络错误，上传失败'))
     const fd = new FormData()
     fd.append('file', file)
+    if (reportMetadata) fd.append('reportMetadata', JSON.stringify(reportMetadata))
     xhr.send(fd)
   }),
   uploadReportWithProgress: (data, onProgress) => new Promise((resolve, reject) => {

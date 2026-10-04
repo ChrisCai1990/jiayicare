@@ -14060,18 +14060,24 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
           // 单文件且已在选择时预上传过（用于自动识别机构/日期），直接复用那次的URL，
           // 避免同一个文件重复上传一遍浪费流量和等待时间
           const cached = (total === 1 && preUploadedRef.current?.file === fd.file) ? preUploadedRef.current : null
-          let url, ossKey, mimeType, fileSize
+          let url, ossKey, mimeType, fileSize, reportId
           if (cached) {
             ({ url, ossKey, mimeType, fileSize } = cached)
             setUploadProgress(90)
           } else {
             setUploadStep(total > 1 ? `上传第 ${i + 1}/${total} 个文件...` : '上传中...')
-            ;({ url, ossKey, mimeType, fileSize } = await staffAPI.uploadReportFile(
+            const serverCreatesReport = total === 1 && fd.file.size >= 8 * 1024 * 1024
+            ;({ url, ossKey, mimeType, fileSize, reportId } = await staffAPI.uploadReportFile(
               fd.file,
-              (p) => setUploadProgress(Math.round(((i + p) / total) * 90))
+              (p) => setUploadProgress(Math.round(((i + p) / total) * 90)),
+              serverCreatesReport ? {
+                patientId, title: form.title, type: selectedReportType,
+                documentCategory: form.documentCategory, hospital: form.hospital,
+                date: form.date, note: form.note,
+              } : undefined
             ))
           }
-          await staffAPI.uploadReport({
+          if (!reportId) await staffAPI.uploadReport({
             patientId,
             title: form.title + titleSuffix,
             type: selectedReportType,
