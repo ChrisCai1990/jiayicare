@@ -1235,6 +1235,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
         { workflowKey: 'medication:staff-followup' },
         { sourceType: 'annual_service' },
         { sourceType: 'annual_coordination' },
+        { sourceType: 'ai_no_response' },
         { sourceType: 'order', workflowKey: { $not: /^medical_reminder:(?:followup|documents)$/ } },
         { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
         { sourceType: { $in: ['professional_assessment', 'report_followup'] }, taskRole: { $in: ['executor', 'supervisor'] } },
@@ -1276,6 +1277,7 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     if (followup.formData?.healthDataPlan?.enabled || followup.workflowKey === 'medication:staff-followup') return res.status(403).json({ success: false, message: '该事项由健管专员持续跟进' });
     if(followup.careFlowId)return res.status(409).json({success:false,message:'本事项已进入资料与随访审核，请从健康计划上传本次资料；不能直接标记服务结束'});
     if (followup.sourceType === 'annual_service') return res.status(403).json({ message: '派单及办理任务仅由医护工作台处理' });
+    if (followup.sourceType === 'ai_no_response') return res.status(403).json({ success: false, message: '该事项由健管专员人工跟进' });
     if (require('../utils/followUpContinuity').requiresOutcomeReview(followup)) {
       try {
         const updated = await require('../utils/followUpHelp').requestHelp({ FollowUp, task: followup, body: req.body });

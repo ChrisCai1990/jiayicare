@@ -165,6 +165,9 @@ app.listen(PORT, () => {
   require('./utils/bpMonitorScheduler').startBPMonitorScheduler();
   require('./utils/healthRiskReconciler').startHealthRiskReconciler();
 
+  // 已确认个性化随访：独立开关控制隔日三次未回应转健管专员，不改现有提醒调度。
+  require('./utils/aiNoResponseFollowUp').start();
+
   // 首页「健康团队今日动态」：每天凌晨批量生成健康顾问/营养师/健康管理师/AI健康分析反馈，次日首页直接读现成结果
   require('./utils/dailyTeamInsightScheduler').startDailyTeamInsightScheduler();
 

@@ -115,6 +115,9 @@ async function buildAnnualPlanFollowUps(plan) {
       // 也不重复进入家庭医生审核；负责人可直接在工作台按计划执行。
       aiStatus: 'approved',
       reviewRole: null,
+      ...(process.env.AI_NO_RESPONSE_FOLLOWUP_ENABLED === 'true' && delivery.aiNoResponseEligible === true
+        && plan.servicePackageSnapshot?.noResponseRule === '连续3次（隔日）未配合转人工'
+        ? { aiNoResponse: { state: 'pending', attemptCount: 0, nextAt: d } } : {}),
     });
   };
 
@@ -261,7 +264,7 @@ async function buildAnnualPlanFollowUps(plan) {
       dates.filter(date => !isNaN(date.getTime()) && date >= todayStart && date <= horizonEnd).forEach((date, cycleIndex) => {
         const nutrition = rec.directNutritionAssessment === true;
         push(date, `${nutrition ? '营养评估' : '标准随访'} · ${rec.standardPlanName || rec.items || '年度管理'}`, content, nutrition ? patient?.assignedNutritionist : patient?.assignedHealthManager,
-          `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`, rec);
+          `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`, { ...rec, aiNoResponseEligible: !nutrition });
         if (nutrition && created.length && patient?.assignedNutritionist) Object.assign(created[created.length-1], {workflowKey:'annual_nutrition_assessment',reviewAssignedTo:null,reviewRole:null});
       });
       if (!rec.managementFollowUpVersion && rec.collaborator && rec.collaborationDate) {

@@ -8439,7 +8439,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       { ...selector, ...(existingVersion ? {updatedAt:existingVersion.updatedAt} : {}), ...(frozen ? {confirmedAt:null,frozenAt:null,pushedAt:null} : {}) },
       { planType: servicePlanCode, servicePlanCode, strategyType: version.strategyType, clientBrand: patient.clientBrand,
         memberTypeSnapshot: patient.memberType || '',
-        servicePackageSnapshot: packageRecord ? { id: packageRecord._id, name: packageRecord.name, capturedAt: new Date() } : { name: patient.servicePackage || '', capturedAt: new Date() },
+        servicePackageSnapshot: packageRecord ? { id: packageRecord._id, name: packageRecord.name, noResponseRule: packageRecord.configuration?.noResponseRule || '', capturedAt: new Date() } : { name: patient.servicePackage || '', capturedAt: new Date() },
         entitlementSnapshot: packageRecord?.entitlements || {}, resourceSnapshot: normalizedTemplate.content?.resourceConfig || {},
         moduleData: moduleData || {}, phaseAssessmentFrequency, notes: notes || '', ...(closedLoop ? { continuitySource: continuity.source || null } : {}), templateId: templateId || null, templateName: templateName || normalizedTemplate.content?.planName || template.name || '',
         templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
