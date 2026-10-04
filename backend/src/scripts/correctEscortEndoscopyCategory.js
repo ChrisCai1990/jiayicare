@@ -12,9 +12,20 @@ async function main() {
   await mongoose.connect(process.env.MONGODB_URI);
   const report = await MedicalReport.findOne({
     _id: REPORT_ID, sourceType: 'order', sourceOrderId: ORDER_ID,
-  }).select('sourceType sourceOrderId title documentCategory audit_status aiStatus clinicalReview reportItems reviewRevision audited_by audited_at reviewedAt reviewedByStaff').lean();
+  }).select('sourceType sourceOrderId title documentCategory audit_status aiStatus clinicalReview classificationCorrection reportItems reviewRevision audited_by audited_at reviewedAt reviewedByStaff').lean();
   if (!report) throw new Error('目标报告不存在或不属于预期陪同订单');
   if (report.documentCategory === 'exam_report') {
+    if (process.argv.includes('--queue')) {
+      const result = await MedicalReport.collection.updateOne({
+        _id: report._id, sourceOrderId: report.sourceOrderId,
+        documentCategory: 'exam_report', audit_status: 'unaudited', aiStatus: 'none',
+      }, { $set: { aiStatus: 'processing', parseJob: { status: 'processing',
+        actorId: String(report.classificationCorrection?.previous?.reviewedByStaff || ''),
+        queuedAt: new Date(), message: '资料分类已纠正，等待按检查报告重新识别' } } });
+      if (result.modifiedCount !== 1) throw new Error('报告状态已变化，未加入解析队列');
+      console.log(JSON.stringify({ report: REPORT_ID, queued: true }));
+      return;
+    }
     console.log(JSON.stringify({ report: REPORT_ID, alreadyCorrected: true }));
     return;
   }
