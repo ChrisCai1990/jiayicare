@@ -116,7 +116,7 @@ async function syncRecordRisk(record) {
     eventKey: `monitoring_trend:bloodPressure:${record.user}`, candidate });
   return single;
 }
-function syncReportRisk(report) {
+async function syncReportRisk(report) {
   if (!enabledForPatient(report.user)) return null;
   return syncRiskEvent({ patientId: report.user, tenantId: report.tenantId, sourceType: 'medical_report', sourceId: report._id, candidate: reportCandidate(report) });
 }

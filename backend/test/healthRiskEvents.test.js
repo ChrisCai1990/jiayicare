@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { recordCandidate, reportCandidate, bloodPressureTrendCandidate, syncRiskEvent } = require('../src/utils/healthRiskEvents');
+const { recordCandidate, reportCandidate, bloodPressureTrendCandidate, syncRiskEvent, syncReportRisk } = require('../src/utils/healthRiskEvents');
 const { ruleEngineSignals, ruleEngineFloor, snapshotRiskAssessment } = require('../src/utils/aiRiskAssessment');
 const riskRollout = require('../src/utils/healthRiskRollout');
 
@@ -83,6 +83,12 @@ test('范围外会员不会访问事件或会员数据', async () => {
     { Event, Patient, enabledForPatient: () => false });
   assert.equal(result, null);
   assert.equal(touched, false);
+});
+
+test('范围外报告的风险同步仍返回可等待的结果', async () => {
+  const operation = syncReportRisk({ _id: 'report', user: 'other', audit_status: 'audited' });
+  assert.equal(typeof operation.catch, 'function');
+  assert.equal(await operation, null);
 });
 
 test('已存在的明显异常规则信号给年度评估设置最低关注级别，并保留有限历史', () => {
