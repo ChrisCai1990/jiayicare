@@ -20,7 +20,7 @@ const completionLabel = { completed: '已完成', partial: '部分完成', incom
 
 const fileUrl = url => url?.startsWith('/') ? `${API_ORIGIN}${url}` : url
 
-export function ChecklistAttachments({ item, index, mode, update, uploadLabel = '+ 上传对应检查单', errorLabel = '文件上传失败', emptyLabel = '未上传文件' }) {
+export function ChecklistAttachments({ item, index, mode, update, uploadLabel = '+ 上传对应检查单', errorLabel = '文件上传失败', emptyLabel = '未上传文件', categoryKey, categoryOptions, onMove }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
@@ -48,6 +48,9 @@ export function ChecklistAttachments({ item, index, mode, update, uploadLabel = 
     {attachments.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
       {attachments.map((file, fileIndex) => <span key={`${file.url}-${fileIndex}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 8px', borderRadius: 7, background: '#F2F8F5', fontSize: 11 }}>
         <button type="button" onClick={() => setPreview(file)} style={{ padding: 0, border: 0, background: 'transparent', color: '#1E6B50', cursor: 'pointer', fontSize: 11 }}>{file.mimeType === 'application/pdf' ? '📄' : '🖼'} 查看：{file.name || `检查单${fileIndex + 1}`}</button>
+        {mode === 'executor' && categoryOptions?.length > 0 && <select aria-label="资料分类" value={categoryKey} onChange={event => onMove?.(fileIndex, event.target.value)} style={{ border: '1px solid #BCD8CB', borderRadius: 5, background: '#fff', color: '#1E6B50', fontSize: 11 }}>
+          {categoryOptions.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+        </select>}
         {mode === 'executor' && <button type="button" onClick={() => update(index, { attachments: attachments.filter((_, i) => i !== fileIndex) })} style={{ padding: 0, border: 0, background: 'transparent', color: '#DC3545', cursor: 'pointer' }}>×</button>}
       </span>)}
     </div>}

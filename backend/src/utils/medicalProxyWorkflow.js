@@ -201,6 +201,16 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     if (medicalEscort && report?._id) {
+      if (report.documentCategory !== documentCategory) {
+        const moved = await MedicalReport.updateOne({
+          _id: report._id, audit_status: 'unaudited', documentCategory: report.documentCategory,
+          aiStatus: { $ne: 'processing' },
+        }, { $set: { title, documentCategory, clinicalReview: null, reportItems: [],
+          aiStatus: 'none', aiSummary: '', parseJob: null, healthCourseDraft: null }, $inc: { reviewRevision: 1 } });
+        if (!moved.modifiedCount) throw Object.assign(new Error('该资料已审核或正在解析，不能在陪同执行页改分类；请在报告管理中核对'), { status: 409 });
+        report.title = title;
+        report.documentCategory = documentCategory;
+      }
       const legacyTitle = /^医疗代诊病历(（\d+）)?$/.exec(report.title || '');
       const correction = {};
       const filter = { _id: report._id };

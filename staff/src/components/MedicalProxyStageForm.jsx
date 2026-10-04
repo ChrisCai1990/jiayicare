@@ -2,6 +2,12 @@ import DateField from '../../../shared/DateField.jsx'
 import React from 'react'
 import { ChecklistAttachments } from './ServiceTaskChecklist'
 
+const ESCORT_ATTACHMENT_CATEGORIES = [
+  { key: 'medicalRecordAttachments', label: '门诊病历' },
+  { key: 'prescriptionAttachments', label: '处方/医嘱单' },
+  { key: 'examReportAttachments', label: '检验检查报告' },
+]
+
 export const medicalProxyStage = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith('medical_proxy:')
   ? String(task.workflowKey).slice('medical_proxy:'.length) : ''
 
@@ -373,6 +379,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </label>
     {value.executionOutcome === 'failed' && <div style={{ color: '#B45309', fontSize: 12 }}>未执行成功时附件不强制上传，请在执行结果中写明原因及后续处理。</div>}
     {input('executionResult', isMedicalEscort ? '陪同执行结果、现场情况和后续事项' : isSupplyProxy ? `${isSupplementProxy ? '购买' : '配药'}结果、数量核对与交付说明` : fields.execute[0][1], 5)}
+    {isMedicalEscort && <div style={{ color: '#63766D', fontSize: 12 }}>请按原件类型上传；内窥镜、影像、化验等结果报告选“检验检查报告”。上传后可在每份文件旁修改分类。</div>}
     {(isMedicalEscort ? [
       ['medicalRecordAttachments', `门诊病历${value.executionOutcome === 'failed' ? '（未成功时选填）' : ''}`, '+ 上传门诊病历'],
       ['prescriptionAttachments', `处方/医嘱单${value.executionOutcome === 'failed' ? '（未成功时选填）' : ''}`, '+ 上传处方/医嘱单'],
@@ -385,9 +392,17 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       ['medicationInstructionAttachments', `药品服用单（服用方式和方法）${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传药品服用单'],
       ['medicalRecordAttachments', `病历${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传病历'],
       ['chargeReceiptAttachments', `收费单${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传收费单'],
-    ] : [['medicalRecordAttachments', '代诊病历附件', '+ 上传代诊病历']]).map(([key, label, uploadLabel]) => <label key={key} style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{label}
-      <ChecklistAttachments item={{ attachments: value[key] || [] }} index={0} mode="executor" update={(_, patch) => set(key, patch.attachments || [])} uploadLabel={uploadLabel} errorLabel={`${label.replace(/ \*$/, '')}上传失败`} />
-    </label>)}
+    ] : [['medicalRecordAttachments', '代诊病历附件', '+ 上传代诊病历']]).map(([key, label, uploadLabel]) => <div key={key} style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}><span>{label}</span>
+      <ChecklistAttachments item={{ attachments: value[key] || [] }} index={0} mode="executor" update={(_, patch) => set(key, patch.attachments || [])} uploadLabel={uploadLabel} errorLabel={`${label.replace(/ \*$/, '')}上传失败`}
+        categoryKey={isMedicalEscort ? key : undefined} categoryOptions={isMedicalEscort ? ESCORT_ATTACHMENT_CATEGORIES : undefined}
+        onMove={isMedicalEscort ? (fileIndex, nextKey) => {
+          if (nextKey === key || !ESCORT_ATTACHMENT_CATEGORIES.some(category => category.key === nextKey)) return
+          const current = value[key] || []
+          const file = current[fileIndex]
+          if (!file) return
+          onChange({ ...value, [key]: current.filter((_, index) => index !== fileIndex), [nextKey]: [...(value[nextKey] || []), file] })
+        } : undefined} />
+    </div>)}
   </div>
   }
   if (stage === 'resolution') return <div style={{ display: 'grid', gap: 12 }}>

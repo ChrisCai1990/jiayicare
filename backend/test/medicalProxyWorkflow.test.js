@@ -585,7 +585,7 @@ test('archived escort records use escort wording and still remove stale legacy a
   const renamed = [];
   try {
     MedicalReport.deleteMany = async filter => { deleted.push(filter); return { deletedCount: 0 }; };
-    MedicalReport.findOneAndUpdate = async (filter, update) => { inserted.push({ filter, update }); return { _id: `report-${inserted.length}`, note: inserted.length === 1 ? '医疗代诊执行任务：就医陪同：执行' : undefined, title: inserted.length === 1 ? '医疗代诊病历（1）' : undefined }; };
+    MedicalReport.findOneAndUpdate = async (filter, update) => { inserted.push({ filter, update }); return { _id: `report-${inserted.length}`, documentCategory: 'outpatient_record', note: inserted.length === 1 ? '医疗代诊执行任务：就医陪同：执行' : undefined, title: inserted.length === 1 ? '医疗代诊病历（1）' : undefined }; };
     MedicalReport.updateOne = async (filter, update) => { renamed.push({ filter, update }); return { modifiedCount: 1 }; };
     const task = { patientId: 'patient', assignedTo: 'assistant', theme: '就医陪同：执行', date: new Date('2026-09-23T00:00:00Z'), formData: { medicalEscort: true, medicalRecordAttachments: [{ url: '/record.pdf' }] } };
     const order = { _id: 'escort-order', medicalProxyPlan: { medicalEscort: true } };
@@ -596,6 +596,26 @@ test('archived escort records use escort wording and still remove stale legacy a
     assert.deepEqual(renamed[0], { filter: { _id: 'report-1', note: '医疗代诊执行任务：就医陪同：执行', title: '医疗代诊病历（1）' }, update: { $set: { note: '就医陪同执行任务：就医陪同：执行', title: '就医陪同门诊病历（1）' } } });
     await archiveMedicalProxyRecords({ ...task, theme: '医疗代诊：执行', formData: { medicalRecordAttachments: [{ url: '/proxy.pdf' }] } }, { _id: 'proxy-order' }, null);
     assert.equal(inserted[1].update.$setOnInsert.note, '医疗代诊执行任务：医疗代诊：执行');
+  } finally {
+    MedicalReport.deleteMany = previous.deleteMany;
+    MedicalReport.findOneAndUpdate = previous.upsert;
+    MedicalReport.updateOne = previous.updateOne;
+  }
+});
+
+test('moving an unaudited escort file changes its saved category before review', async () => {
+  const previous = { deleteMany: MedicalReport.deleteMany, upsert: MedicalReport.findOneAndUpdate, updateOne: MedicalReport.updateOne };
+  const changes = [];
+  try {
+    MedicalReport.deleteMany = async () => ({ deletedCount: 0 });
+    MedicalReport.findOneAndUpdate = async () => ({ _id: 'existing-report', title: '就医陪同门诊病历', documentCategory: 'outpatient_record', audit_status: 'unaudited' });
+    MedicalReport.updateOne = async (filter, update) => { changes.push({ filter, update }); return { modifiedCount: 1 }; };
+    await archiveMedicalProxyRecords({ patientId: 'patient', assignedTo: 'assistant', theme: '就医陪同：执行', date: new Date('2026-09-23'),
+      formData: { medicalEscort: true, examReportAttachments: [{ url: '/moved.pdf' }] } },
+    { _id: 'escort-order', serviceName: '陪同看诊服务', medicalProxyPlan: { medicalEscort: true } }, null);
+    assert.equal(changes[0].update.$set.documentCategory, 'exam_report');
+    assert.equal(changes[0].update.$set.title, '就医陪同检验检查报告');
+    assert.equal(changes[0].update.$set.clinicalReview, null);
   } finally {
     MedicalReport.deleteMany = previous.deleteMany;
     MedicalReport.findOneAndUpdate = previous.upsert;
