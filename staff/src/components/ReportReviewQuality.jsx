@@ -38,7 +38,7 @@ export default function ReportReviewQuality({ report, items, onChange, onFocus }
   }, {})
   return <div style={{ padding: 12, background: '#fff9ed', borderBottom: '1px solid #eadfc9', maxHeight: 180, overflow: 'auto' }}>
     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-      <label>检查日期 <DateField type="date" value={report.checkDate || report.date || ''} onChange={e => onChange({ checkDate: e.target.value, date: e.target.value })} /></label>
+      <label>{report.documentCategory === 'prescription_order' ? '处方日期' : '检查日期'} <DateField type="date" value={report.checkDate || report.date || ''} onChange={e => onChange({ checkDate: e.target.value, date: e.target.value })} /></label>
       <label>来源机构 <input value={report.institution || report.hospital || ''} onChange={e => onChange({ institution: e.target.value, hospital: e.target.value, institutionStatus: e.target.value ? 'confirmed' : 'pending' })} /></label>
       <label><input type="checkbox" checked={report.institutionStatus === 'unknown'} onChange={e => onChange({ institutionStatus: e.target.checked ? 'unknown' : 'pending', ...(e.target.checked ? { institution: '', hospital: '' } : {}) })} />已核实，来源机构不明</label>
     </div>

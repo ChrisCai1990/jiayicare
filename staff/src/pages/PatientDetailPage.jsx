@@ -3764,14 +3764,14 @@ export default function PatientDetailPage() {
     ocrRevisionRef.current = Number(latestReport.reviewRevision || 0)
     setOcrReviewReport(latestReport)
     const validStoredDate = [latestReport.checkDate, latestReport.date]
-      .map(value => String(value || '').slice(0, 10))
-      .find(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || ''
+      .map(calendarDate)
+      .find(Boolean) || ''
     setOcrReportMeta({
       // 历史中可能留有 2025070 这类半截日期；不能让它阻塞用户保存。
       checkDate: validStoredDate,
       institution: latestReport.institution || latestReport.hospital || '',
     })
-    const storedPageDates = Object.fromEntries(Object.entries(latestReport.pageDates || {}).map(([page, value]) => [page, String(value || '').slice(0, 10)]))
+    const storedPageDates = Object.fromEntries(Object.entries(latestReport.pageDates || {}).map(([page, value]) => [page, calendarDate(value)]))
     ocrPageDatesRef.current = storedPageDates
     setOcrPageDates(storedPageDates)
     setOcrDraftSavedAt(null)
@@ -12349,7 +12349,7 @@ export default function PatientDetailPage() {
                           } catch (error) { toast(error.message || '本页日期保存失败') }
                         }
                         return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 0.7fr) minmax(220px, 1fr)', gap: 8, padding: '10px 12px', marginBottom: 12, background: '#F6F9F7', border: '1px solid #D8EDE3', borderRadius: 8 }}>
-                        <label style={{ fontSize: 12, color: '#4A6558' }}>当前页检查日期（第 {activePage} 页）
+                        <label style={{ fontSize: 12, color: '#4A6558' }}>当前页{isPrescription ? '处方' : '检查'}日期（第 {activePage} 页）
                           <input ref={ocrCurrentPageDateInputRef} data-report-page={activePage} type="text" inputMode="numeric" maxLength={10} placeholder="YYYY-MM-DD" style={{ ...inp, marginTop: 4 }} value={currentPageDate} onChange={e => updateCurrentPageDate(normalizePageDate(e.target.value))} onBlur={e => persistCurrentPageDate(e.target.value)} />
                         </label>
                         <label style={{ fontSize: 12, color: '#4A6558' }}>来源机构
