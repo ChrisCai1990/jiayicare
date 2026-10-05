@@ -10467,6 +10467,7 @@ export default function PatientDetailPage() {
                             <td>
                               <button type="button" onClick={() => openReportDetail(r)} className="report-table-list-title-btn">{r.title || '未命名报告'}</button>
                               {!manualOnly && r.parseJob?.status === 'paused' && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}；请联系管理员恢复。</div>}
+                              {r.parseJob?.status === 'completed' && r.parseJob.message?.includes('识别失败') && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}</div>}
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
                             <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
@@ -12362,6 +12363,7 @@ export default function PatientDetailPage() {
               }} onFocus={index => { setOcrReviewPage(Number(ocrEditItems[index]?.sourcePage) || 1); setOcrFocusItemIndex(index) }} />
               <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h3 className="modal-title">审核AI识别结果 · {ocrReviewReport.title}</h3>
+                {ocrReviewReport.parseJob?.message?.includes('识别失败') && <span style={{ fontSize: 12, color: '#B86A19', marginLeft: 12 }}>{ocrReviewReport.parseJob.message}</span>}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
                   <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
                   <select value={activePage} onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>

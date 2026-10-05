@@ -198,6 +198,7 @@ for (const mode of ['normal', 'budget-pause', 'checkpoint']) for (const pdf of [
     findUnderExtractedPages: () => ({ pagesToRetry: [], underOrders: [] }),
     findUnderExtractedCBC: () => ({ pagesToRetry: [], missingGroups: [] }),
     str: value => String(value || ''), sanitizeInstitution: value => value || '',
+    normalizeReportDate: value => value || '',
     console: { log: () => {}, error: (...args) => errors.push(args.join(' ')) },
   };
   // Post-processing is out of scope here; the integration contract is that no candidate reaches it.

@@ -14887,6 +14887,7 @@ async function runReportParseControlled(reportId) {
       let okPages = Number(savedProgress?.okPages) || 0;
       const bodyCompCandidatePages = new Set(savedProgress?.bodyCompCandidatePages || []);
       const detailPages = new Set(savedProgress?.detailPages || []);
+      const failedPageNumbers = new Set(savedProgress?.failedPageNumbers || []);
       // 大 PDF 不再把“合法 JSON + 空值”误记为成功。只有异常页才进行一次高分辨率回退，
       // 正常页仍保持快速首轮，避免整份报告翻倍消耗视觉 token。
       const qualityRetryPages = new Set(savedProgress?.qualityRetryPages || []);
@@ -14932,8 +14933,8 @@ async function runReportParseControlled(reportId) {
                     await MedicalReport.findByIdAndUpdate(reportId, { $set: { [`parseJob.firstPassPages.${pageNum}`]: p } });
                     break;
                   }
-                  if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
-                } catch (e) { rethrowAiControl(e); if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${i + 1}异常: ${e.message}`); }
+                  if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${pageNum}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
+                } catch (e) { rethrowAiControl(e); if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${pageNum}异常: ${e.message}`); }
               }
             }
           };
@@ -14943,8 +14944,12 @@ async function runReportParseControlled(reportId) {
 
           for (let i = 0; i < batchResults.length; i++) {
             const p = batchResults[i];
-            if (!p) continue;
             const pageNum = batchIndex * BATCH_SIZE + i + 1;
+            if (!p) {
+              failedPageNumbers.add(pageNum);
+              if (isLargeScannedPdf && report.type !== 'body_comp') qualityRetryPages.add(pageNum);
+              continue;
+            }
             if (p.imageEvidence?.status === 'image_only') { okPages++; continue; }
             if (p._templateSkip) { okPages++; continue; }
             const firstPassItems = tagReportPageItems(p.items, pageNum);
@@ -14988,6 +14993,7 @@ async function runReportParseControlled(reportId) {
                 checkDate,
                 bodyCompCandidatePages: [...bodyCompCandidatePages],
                 detailPages: [...detailPages],
+                failedPageNumbers: [...failedPageNumbers],
                 qualityRetryPages: [...qualityRetryPages],
                 checkpointedAt: new Date(),
               },
@@ -15011,6 +15017,8 @@ async function runReportParseControlled(reportId) {
             if (retryItems.length && reportPageEvidenceScore(retryItems) >= reportPageEvidenceScore(oldPage)) {
               allItems = allItems.filter(item => item._page !== pageNum).concat(retryItems);
               qualityRetryPages.delete(pageNum);
+              failedPageNumbers.delete(pageNum);
+              detailPages.add(pageNum);
               okPages++;
               console.log(`[parse-ai] 页${pageNum}高分辨率质量回退生效：${oldPage.length}项→${retryItems.length}项`);
             }
@@ -15334,14 +15342,16 @@ async function runReportParseControlled(reportId) {
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set([...summaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
+      const failedPageList = [...new Set([...failedPageNumbers, ...qualityRetryPages])].sort((a, b) => a - b);
+      const failedPageLabel = failedPageList.length ? `（第${failedPageList.join('、')}页）` : '';
       const allFailed = totalPageCount > 0 && okPages === 0;
       const qualityWarning = qualityRetryPages.size
-        ? `⚠️ 有${qualityRetryPages.size}页未取得可核对的完整原文，未将空白项目视为成功；请使用“补提本页”或人工录入。`
+        ? `⚠️ 有${qualityRetryPages.size}页${failedPageLabel}未取得可核对的完整原文，未将空白项目视为成功；请使用“补提本页”或人工录入。`
         : '';
       const aiSummaryOut = allFailed
         ? `⚠️ 自动识别失败：全部${totalPageCount}页均未能识别成功（可能是AI服务额度不足或网络异常），未提取到任何数据，请重新识别或人工录入`
         : failedPages > 0
-          ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败，请核对是否有遗漏项目${qualityWarning ? `\n${qualityWarning}` : ''}`
+          ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败${failedPageLabel}，请核对是否有遗漏项目${qualityWarning ? `\n${qualityWarning}` : ''}`
           : [summaryText, qualityWarning].filter(Boolean).join('\n');
       const savedPdf = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: parseStartRevision }, {
         $inc: { reviewRevision: 1 },
@@ -15349,7 +15359,7 @@ async function runReportParseControlled(reportId) {
         imagePageEvidence,
         aiSummary:   aiSummaryOut,
         aiStatus:    allFailed ? 'failed' : 'pending',
-        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项` },
+        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}` },
         institution, checkDate: resolvedCheckDate,
       });
       if (!savedPdf) throw new Error('审核期间内容已修改，AI结果未覆盖人工数据');
