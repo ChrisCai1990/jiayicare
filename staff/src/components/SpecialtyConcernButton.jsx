@@ -7,25 +7,30 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const suggestions = specialtyIssueSuggestions(sourceText)
   const [issueTitle, setIssueTitle] = useState('')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
   if (!['familyDoctor', 'superadmin'].includes(staff?.role) || !source) return null
   const submit = async () => {
     const title = issueTitle.trim()
-    if (title.length < 2 || title.length > 60) return toast('请填写2至60字的具体问题，如“肺结节”', 'error')
+    if (title.length < 2 || title.length > 60) { setError('请填写2至60字的具体问题，如“肺结节”'); return }
+    setError('')
     setBusy(true)
     try {
       const prepared = await staffAPI.prepareAnnualComprehensiveReview(patientId, year)
       const result = await staffAPI.addAiCaseReviewConcern(patientId, prepared.data._id, { ...source, issueTitle: title })
       setOpen(false)
-      toast(result.reused ? '该问题已在年度综合研判中，可在年度研判页查看' : '纳入成功，可在年度研判页查看')
-    } catch (error) { toast(error.message || '纳入年度研判失败', 'error') }
+      setSaved(true)
+      toast(result.reused ? '该问题已在年度综合研判中，可在年度研判页查看' : '纳入成功，可在年度研判页查看', 5000)
+    } catch (error) { setError(error.message || '纳入年度研判失败，请重试') }
     finally { setBusy(false) }
   }
   return <>
-    <button type="button" className="btn btn-secondary btn-sm" onClick={event => { event.stopPropagation(); setIssueTitle(suggestedIssue || suggestions[0] || ''); setOpen(true) }}>＋ 纳入年度研判</button>
+    <button type="button" className="btn btn-secondary btn-sm" onClick={event => { event.stopPropagation(); setIssueTitle(suggestedIssue || suggestions[0] || ''); setError(''); setOpen(true) }}>{saved ? '✓ 已纳入年度研判' : '＋ 纳入年度研判'}</button>
     {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 500 }}>
       <div className="modal-header"><div className="modal-title">纳入年度综合研判 · 具体问题</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
       <div className="modal-body"><div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核资料'}。请填写要研判的具体问题，系统会保留原始资料关联。</div>
         <label className="form-label">具体问题名称（可修改）</label><input autoFocus className="form-input" maxLength={60} value={issueTitle} onChange={event => setIssueTitle(event.target.value)} placeholder="例如：肺结节" onKeyDown={event => { if (event.key === 'Enter') submit() }} />
+        {error && <div role="alert" style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: '#FEF2F2', color: '#B42318', fontSize: 13 }}>{error}</div>}
         {!suggestedIssue && suggestions.length > 0 && <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>从当前资料提取的候选问题，请核对：<div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 5 }}>{suggestions.map(title => <button key={title} type="button" className="btn btn-secondary btn-sm" onClick={() => setIssueTitle(title)}>{title}</button>)}</div></div>}
         {!suggestedIssue && suggestions.length === 0 && <div style={{ fontSize: 12, color: '#A16620', marginTop: 8 }}>当前资料未识别出明确的问题名称，请健康顾问填写。</div>}
         <div style={{ fontSize: 12, color: '#65776F', marginTop: 8 }}>该问题将和其他具体问题、五年趋势及风险维度一起分析；请在年度研判页启动或更新 AI 分析。</div>

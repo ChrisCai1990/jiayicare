@@ -358,6 +358,7 @@ textarea.form-control { resize: vertical; }
   box-shadow: var(--shadow-md); z-index: 9999;
   animation: fadeUp 0.25s ease;
 }
+.toast-error { background: #B42318; }
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }

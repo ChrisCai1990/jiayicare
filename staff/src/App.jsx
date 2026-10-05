@@ -135,14 +135,17 @@ export function useToast() { return useContext(ToastCtx) }
 
 function ToastProvider({ children }) {
   const [toast, setToast] = useState(null)
-  const show = (msg, duration = 2500) => {
-    setToast(msg)
-    setTimeout(() => setToast(null), duration)
+  const show = (msg, durationOrType = 2500) => {
+    const type = typeof durationOrType === 'string' ? durationOrType : 'info'
+    const duration = typeof durationOrType === 'number' ? durationOrType : type === 'error' ? 5000 : 2500
+    const id = Date.now() + Math.random()
+    setToast({ id, msg, type })
+    setTimeout(() => setToast(current => current?.id === id ? null : current), duration)
   }
   return (
     <ToastCtx.Provider value={show}>
       {children}
-      {toast && <div className="toast">{toast}</div>}
+      {toast && <div className={`toast ${toast.type === 'error' ? 'toast-error' : ''}`} role={toast.type === 'error' ? 'alert' : 'status'}>{toast.msg}</div>}
     </ToastCtx.Provider>
   )
 }
