@@ -44,4 +44,14 @@ function mergeOutpatientPages(pages) {
   return { draft, reviewIssues: pages.flatMap(page => page.reviewIssues) };
 }
 
-module.exports = { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, isExplicitExamReport };
+function supplementOutpatientDraft(existing, extracted) {
+  const previous = normalizeClinicalReview('outpatient_record', existing || {});
+  const next = { ...extracted };
+  for (const field of EXTRACTED_FIELDS) if (previous[field]) next[field] = previous[field];
+  if (previous.diagnoses?.length) next.diagnoses = previous.diagnoses;
+  next.sourceReviewed = previous.sourceReviewed;
+  next.reviewConclusion = previous.reviewConclusion;
+  return normalizeClinicalReview('outpatient_record', next);
+}
+
+module.exports = { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, supplementOutpatientDraft, isExplicitExamReport };

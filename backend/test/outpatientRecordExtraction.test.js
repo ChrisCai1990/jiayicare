@@ -1,6 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, isExplicitExamReport } = require('../src/utils/outpatientRecordExtraction');
+const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, supplementOutpatientDraft, isExplicitExamReport } = require('../src/utils/outpatientRecordExtraction');
+
+test('补提只填空字段并保留人工审核内容', () => {
+  const result = supplementOutpatientDraft(
+    { chiefComplaint: '人工核对主诉', sourceReviewed: true, reviewConclusion: '人工结论' },
+    { chiefComplaint: 'AI 主诉', treatmentPlan: '原件处理方案', sourceReviewed: false, reviewConclusion: '' },
+  );
+  assert.equal(result.chiefComplaint, '人工核对主诉');
+  assert.equal(result.treatmentPlan, '原件处理方案');
+  assert.equal(result.sourceReviewed, true);
+  assert.equal(result.reviewConclusion, '人工结论');
+});
 
 test('outpatient extraction produces clinical review draft requiring source review', () => {
   const first = normalizeOutpatientPage({ visitDate: '2026-09-23', chiefComplaint: '原文主诉', diagnoses: ['原文诊断'], reviewIssues: [] });
