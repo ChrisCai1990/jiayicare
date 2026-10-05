@@ -3,6 +3,7 @@ import NutritionAssessmentFields, { initialNutritionAssessment, missingNutrition
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import { calendarDate } from '../../../shared/calendarDate.mjs'
+import { resolveReportReviewDate } from '../../../shared/reportReviewDate.mjs'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
 import ChildHealthArchive from '../components/ChildHealthArchive'
 import followUpReview from '../../../shared/followUpReview.cjs'
@@ -3943,17 +3944,11 @@ export default function PatientDetailPage() {
         const page = String(Number(item.sourcePage) || 1)
         return calendarDate(pageHasExplicitDate(page) ? explicitPageDates[page] : item.examDate)
       })
-    const dates = [
-      ...itemDates,
-      ...Object.entries(explicitPageDates)
-        .filter(([page]) => !ocrEditItemsRef.current.some(item => String(Number(item.sourcePage) || 1) === page))
-        .map(([, value]) => calendarDate(value)),
-    ].filter(Boolean)
-    const unique = [...new Set(dates)]
-    const enteredDate = String(ocrReportMeta.checkDate || '').trim()
-    const fallbackDate = calendarDate(enteredDate)
-    if (enteredDate && !fallbackDate) throw new Error('请填写完整有效的检查日期后保存')
-    return unique.length > 1 ? '' : unique.length === 1 && itemDates.every(Boolean) ? unique[0] : fallbackDate
+    const extraPageDates = Object.entries(explicitPageDates)
+      .filter(([page]) => !ocrEditItemsRef.current.some(item => String(Number(item.sourcePage) || 1) === page))
+      .map(([, value]) => value)
+    // 审核者明确填写的报告统一日期优先；其他页遗留的 OCR 项目日期不能清空它。
+    return resolveReportReviewDate(ocrReportMeta.checkDate, itemDates, extraPageDates)
   }
 
   const handleApproveOCR = async () => {
@@ -12505,7 +12500,7 @@ export default function PatientDetailPage() {
                         <label style={{ fontSize: 12, color: '#4A6558' }}>来源机构
                           <input style={{ ...inp, marginTop: 4 }} value={ocrReportMeta.institution} onChange={e => setOcrReportMeta(meta => ({ ...meta, institution: e.target.value }))} placeholder="原件未写可留空" />
                         </label>
-                        <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#6B7E75', lineHeight: 1.55 }}>修改只应用并保存到当前页；其他页日期保持原样。不同页日期不同时，报告级日期会自动留空。</div>
+                        <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#6B7E75', lineHeight: 1.55 }}>修改只应用并保存到当前页；其他页日期保持原样。若整份报告同日检查，请在上方填写报告统一检查日期。</div>
                       </div>
                       })()}
                       <ReportImageEvidenceNotice evidence={activeImageEvidence} hasItems={indexed.length > 0} />
