@@ -7881,6 +7881,7 @@ router.post('/patients/:id/annual-comprehensive-review', staffAuth, async (req, 
   const riskForYear = riskRoot.byYear?.[String(year)] || (!riskRoot.byYear && riskRoot.dimensions ? riskRoot : null);
   const seededConcerns = standard.suggestedRiskConcerns(riskForYear, year).map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() }));
   seededConcerns.push(...standard.reviewedChronicConcerns(patient.aiHealthSummary, year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
+  seededConcerns.push(...standard.reviewedCardiovascularConcerns(patient.aiHealthSummary, year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
   let topic;
   try { topic = await AiCaseReview.create({
     user: patient._id, tenantId: patient.tenantId || null,

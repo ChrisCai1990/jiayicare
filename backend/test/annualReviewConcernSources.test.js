@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { suggestedRiskConcerns, reviewedChronicConcerns, descriptionForYear } = require('../src/utils/annualComprehensiveReview');
+const { suggestedRiskConcerns, reviewedChronicConcerns, reviewedCardiovascularConcerns, descriptionForYear } = require('../src/utils/annualComprehensiveReview');
 const { buildAnnualPlanPreparationChecklist } = require('../src/utils/annualPlanPreparationChecklist');
 
 test('only reviewed material risk dimensions enter annual review as suggestions', () => {
@@ -42,6 +42,22 @@ test('reviewed abnormal chronic trend enters annual discussion, while normal and
   assert.equal(fromTags.sourceStatus, 'reviewed');
   assert.deepEqual(fromTags.concerns.map(row => row.title), ['高血压']);
   assert.match(fromTags.concerns[0].evidence, /核对诊断依据/);
+});
+
+test('reviewed cardiovascular concerns enter as suggestions, while stable and unreviewed topics do not', () => {
+  const summary = { byYear: { 2026: { records: [{ scope: 'doctor', doctorApprovedAt: new Date('2026-10-03'),
+    sectionReviews: { cardiovascular_risk: { status: 'approved' } },
+    sections: { cardiovascular_risk: { topics: [
+      { name: '颈动脉超声', status: 'attention', latest: '斑块需关注' },
+      { name: '心电图', status: 'monitor', latest: '建议持续监测' },
+      { name: '心脏超声', status: 'stable', latest: '基本稳定' },
+    ] } },
+  }] } } };
+  const result = reviewedCardiovascularConcerns(summary, 2026, { status: 'reviewed', cardiovascular_risk: ['颈动脉超声', '血管风险标签'] });
+  assert.deepEqual(result.concerns.map(row => row.title), ['颈动脉超声', '心电图', '血管风险标签']);
+  assert.ok(result.concerns.every(row => row.status === 'suggested'));
+  summary.byYear[2026].records[0].sectionReviews.cardiovascular_risk.status = 'pending';
+  assert.deepEqual(reviewedCardiovascularConcerns(summary, 2026).concerns, []);
 });
 
 test('customer discussion must refer to the current confirmed review version', () => {

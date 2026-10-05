@@ -44,6 +44,17 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
     finally { setBusy(false) }
   }
 
+  const syncReviewedConcerns = async () => {
+    if (!review) return
+    setBusy(true)
+    try {
+      const result = await staffAPI.syncAnnualChronicConcerns(patientId, review._id)
+      setReview(result.data)
+      toast(result.added ? `已补入 ${result.added} 项待核实问题，请逐项核对` : '已审核的心脑血管和慢病线索均已核对', 5000)
+    } catch (error) { toast(error.message || '同步关注问题失败', 'error') }
+    finally { setBusy(false) }
+  }
+
   const confirm = async () => {
     if (!review?.conclusion?.confirmedAt) return
     if (status === 'adjusted' && !note.trim()) return toast('请记录与客户沟通后的调整内容', 'error')
@@ -63,6 +74,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
     {loading ? <div style={{ fontSize: 13 }}>正在读取研判…</div> : <>
       <div style={{ marginTop: 10, padding: 12, background: '#fff', border: '1px solid #D9E9E1', borderRadius: 8 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>① 年度研判中的具体问题 · {(review?.concerns || []).filter(item => item.includedByName !== '已审核AI风险扫描').length}</div>
+        {review && canConfirm && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={syncReviewedConcerns} style={{ marginBottom: 8 }}>{busy ? '核对中…' : '同步已审核心脑血管及慢病线索'}</button>}
         {!review && <div style={{ fontSize: 13, color: '#65776F' }}>可从下方筛查结果或五年健康趋势纳入具体问题；它们将与其他问题一起进行年度综合分析。</div>}
         {(review?.concerns || []).filter(item => item.includedByName !== '已审核AI风险扫描').map(item => <div key={item.id} style={{ padding: '6px 0', borderTop: '1px solid #EDF1EE', fontSize: 13 }}><strong>{item.title}</strong><span style={{ color: '#65776F', marginLeft: 8 }}>{item.status === 'suggested' ? '待核实' : item.status === 'excluded' ? '不纳入' : '纳入综合研判'}</span><div style={{ color: '#65776F', fontSize: 12, marginTop: 3 }}>来源：{item.includedByName || (item.kind === 'ai_health_trend' ? '已审核健康趋势' : item.kind === 'screening' ? '已审核筛查报告' : '年度研判资料')}</div></div>)}
         {review && specialtyReviews.some(item => !(review.concerns || []).some(concern => concern.key === `legacy_specialty:${item._id}`)) && <div style={{ fontSize: 12, color: '#A16620', marginTop: 7 }}>既有单项主题尚未全部并入；打开年度综合研判后可一键整合。</div>}

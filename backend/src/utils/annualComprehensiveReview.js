@@ -52,4 +52,32 @@ function reviewedChronicConcerns(summary, year, healthRiskTags = {}) {
   return { sourceStatus: section || healthRiskTags?.status === 'reviewed' ? 'reviewed' : record ? 'missing' : 'unreviewed', concerns };
 }
 
-module.exports = { TOPICS, titleForYear, descriptionForYear, outputGuide, annualReviewForYear, suggestedRiskConcerns, reviewedChronicConcerns };
+function reviewedCardiovascularConcerns(summary, year, healthRiskTags = {}) {
+  const entry = summary?.byYear?.[String(year)] || (!summary?.byYear && summary?.sections ? summary : null);
+  const records = Array.isArray(entry?.records) ? entry.records : entry?.sections ? [entry] : [];
+  const record = records.find(row => (row.scope === 'doctor' || row.scope === 'all' || !row.scope) && (row.doctorApprovedAt || row.approvedAt));
+  const section = record && (!record.sectionReviews?.cardiovascular_risk || record.sectionReviews.cardiovascular_risk.status === 'approved')
+    ? record.sections?.cardiovascular_risk : null;
+  const concerns = (section?.topics || []).filter(row => row.name && ['attention', 'monitor'].includes(row.status)).map(row => ({
+    key: `ai_health:${year}:cardiovascular_risk:${String(row.name).trim()}`, kind: 'ai_health_trend', title: String(row.name).trim(),
+    evidence: [row.latest || row.current, row.trend, ...(row.keyChanges || []), row.meaning || row.riskBasis || row.note].filter(Boolean).join('；').slice(0, 600),
+    source: { year, sectionKey: 'cardiovascular_risk', approvedAt: record.doctorApprovedAt || record.approvedAt,
+      reportIds: [...new Set([row.sourceReportId, ...(section.sourceReportIds || [])].filter(Boolean).map(String))] },
+    status: 'suggested', pathway: 'undecided', includedByName: '已审核5年健康趋势（心脑血管）', includedAt: new Date(),
+  }));
+  if (healthRiskTags?.status === 'reviewed') {
+    const names = new Set(concerns.map(row => row.title));
+    for (const name of healthRiskTags.cardiovascular_risk || []) {
+      const title = String(name || '').trim();
+      if (!title || names.has(title)) continue;
+      names.add(title);
+      concerns.push({ key: `cardiovascular_tag:${year}:${title}`, kind: 'reviewed_cardiovascular_tag', title,
+        evidence: `已审核的心脑血管关注标签：${title}；请核对原始依据及当前管理状态`,
+        source: { year, reviewedAt: healthRiskTags.reviewedAt }, status: 'suggested', pathway: 'undecided',
+        includedByName: '已审核心脑血管关注标签', includedAt: new Date() });
+    }
+  }
+  return { sourceStatus: section || healthRiskTags?.status === 'reviewed' ? 'reviewed' : record ? 'missing' : 'unreviewed', concerns };
+}
+
+module.exports = { TOPICS, titleForYear, descriptionForYear, outputGuide, annualReviewForYear, suggestedRiskConcerns, reviewedChronicConcerns, reviewedCardiovascularConcerns };
