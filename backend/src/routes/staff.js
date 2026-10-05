@@ -6507,10 +6507,6 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
   annualFollowUps.forEach(item => progressByPlan.get(String(item.sourceAnnualPlanId))?.followUps.push(item));
   annualClientTasks.forEach(item => progressByPlan.get(String(item.sourceAnnualPlanId))?.clientTasks.push(item));
 
-  const PLAN_TYPE_LABEL = {
-    health_reshape: '健康重塑方案', young_state: '健康年轻态方案',
-    chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案',
-  };
   const MODULE_NAME = {
     medical_treatment: '医疗问题解决', specialist_collab: '全专联合会诊',
     abnormal_followup: '异常复查提醒', vaccine: '疫苗接种',
@@ -6536,7 +6532,7 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
         : total > 0 && completed >= total ? 'completed' : 'in_progress';
     return ({
     _id: ap._id,
-    title: `${ap.year}年 年度管理方案${ap.templateName || ap.planType ? ` · ${ap.templateName || PLAN_TYPE_LABEL[ap.strategyType || ap.planType] || ''}` : ''}`,
+    title: `${ap.year}年 年度管理方案`,
     type: 'annual_mgmt',
     status: ap.pushedAt ? 'active' : 'draft',
     year: ap.year,
