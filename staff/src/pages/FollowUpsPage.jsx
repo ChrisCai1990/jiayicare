@@ -22,6 +22,7 @@ import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckup
 import CheckupReportCollectionForm, { isCheckupReportCollectionTask } from '../components/CheckupReportCollectionForm'
 import CheckupAppointmentBookingForm, { checkupAppointmentBookingFromTask, isCheckupAppointmentBookingTask } from '../components/CheckupAppointmentBookingForm'
 import ServiceTaskContextBanner from '../components/ServiceTaskContextBanner'
+import FollowUpDueDateBanner from '../components/FollowUpDueDateBanner'
 import OutpatientAdvisorAssessmentForm, { emptyOutpatientAssessment, isOutpatientAdvisorAssessmentTask, validateOutpatientAssessment } from '../components/OutpatientAdvisorAssessmentForm'
 import OutpatientAppointmentForm, { emptyOutpatientAppointment, isOutpatientAppointmentTask, validateOutpatientAppointment } from '../components/OutpatientAppointmentForm'
 import OutpatientStaffAssignmentForm, { emptyOutpatientStaffAssignment, isOutpatientStaffAssignmentTask, validateOutpatientStaffAssignment } from '../components/OutpatientStaffAssignmentForm'
@@ -599,6 +600,7 @@ export default function FollowUpsPage() {
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
+              <FollowUpDueDateBanner task={execItem} />
               {!nutritionStageType && <ServiceTaskContextBanner task={execItem} />}
               {checkupConclusionStage(execItem) ? <CheckupConclusionForm onMergedMode={checkupMerged => setExecForm(form => ({ ...form, checkupMerged }))} onSaved={() => window.location.reload()} task={execItem} value={execForm.content} onChange={content => setExecForm(form => ({ ...form, content }))} /> : isCheckupAppointmentBookingTask(execItem) ? <CheckupAppointmentBookingForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientEscortVisitTask(execItem) ? <OutpatientEscortVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientPostVisitReviewTask(execItem) ? <OutpatientPostVisitReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAppointmentTask(execItem) ? <OutpatientAppointmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientStaffAssignmentTask(execItem) ? <OutpatientStaffAssignmentForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientProxyVisitTask(execItem) ? <OutpatientProxyVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAdvisorAssessmentTask(execItem) ? <OutpatientAdvisorAssessmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && !nutritionStageType && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {nutritionStageType && <div style={{ padding: 12, borderRadius: 8, background: '#F0F8F4', fontSize: 13 }}>
@@ -623,10 +625,6 @@ export default function FollowUpsPage() {
               </details>}
               {!execItem.taskRole && !nutritionStageType && <MedicalAssistRequirementsCard text={getMedicalAssistRequirements(execItem)} />}
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: execItem.taskRole || nutritionStageType ? 'none' : 'grid', gap: 6 }}>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划日期：</span>
-                  <span style={{ fontSize: 13 }}>{formatChineseDate(execItem.date)}</span>
-                </div>
                 {execItem.theme && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{execItem.taskRole ? '事务名称：' : '随访主题：'}</span>

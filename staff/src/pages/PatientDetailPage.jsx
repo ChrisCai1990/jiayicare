@@ -61,6 +61,7 @@ import CheckupMedicalExecutionForm, { checkupMedicalExecutionFromTask, isCheckup
 import CheckupManagerReviewForm, { checkupManagerReviewFromTask, isCheckupManagerReviewTask, validateCheckupManagerReview } from '../components/CheckupManagerReviewForm'
 import CheckupAdvisorReviewModal, { isCheckupAdvisorReviewTask } from '../components/CheckupAdvisorReviewModal'
 import ServiceTaskContextBanner from '../components/ServiceTaskContextBanner'
+import FollowUpDueDateBanner from '../components/FollowUpDueDateBanner'
 import OutpatientAdvisorAssessmentForm, { emptyOutpatientAssessment, isOutpatientAdvisorAssessmentTask, validateOutpatientAssessment } from '../components/OutpatientAdvisorAssessmentForm'
 import OutpatientAppointmentForm, { emptyOutpatientAppointment, isOutpatientAppointmentTask, validateOutpatientAppointment } from '../components/OutpatientAppointmentForm'
 import OutpatientStaffAssignmentForm, { emptyOutpatientStaffAssignment, isOutpatientStaffAssignmentTask, validateOutpatientStaffAssignment } from '../components/OutpatientStaffAssignmentForm'
@@ -11337,6 +11338,7 @@ export default function PatientDetailPage() {
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
+              <FollowUpDueDateBanner task={execItem} />
               <ServiceTaskContextBanner task={execItem} />
               {staff?.role === 'healthManager' && medicalProxyStage(execItem) === 'post_visit_audit' && /专家约诊/.test(execItem.sourceOrderId?.serviceName || '') && <ExpertAppointmentRescheduleForm task={execItem} onSaved={() => { setExecItem(null); loadFollowUps(); loadServiceRecords(); toast('已补记预约改期，原服务任务继续等待就诊资料') }} />}
               <OnsiteBookingCard key={`onsite-exec-${execItem._id}`} task={execItem} staff={staff} />
@@ -11352,10 +11354,6 @@ export default function PatientDetailPage() {
               </details>}
               {!execItem.taskRole && <MedicalAssistRequirementsCard text={execItem.taskRequirements} />}
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: execItem.taskRole ? 'none' : 'grid', gap: 6 }}>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划日期：</span>
-                  <span style={{ fontSize: 13 }}>{new Date(execItem.date).toLocaleDateString('zh-CN')}</span>
-                </div>
                 {execItem.theme && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{execItem.taskRole ? '事务名称：' : '随访主题：'}</span>
