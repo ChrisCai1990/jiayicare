@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import { specialtyIssueSuggestions } from '../utils/specialtyIssueSuggestion.mjs'
 
-export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast, onOpenReview }) {
+export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast }) {
   const [open, setOpen] = useState(false)
   const suggestions = specialtyIssueSuggestions(sourceText)
   const [issueTitle, setIssueTitle] = useState('')
@@ -16,8 +16,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       const prepared = await staffAPI.prepareAnnualComprehensiveReview(patientId, year)
       const result = await staffAPI.addAiCaseReviewConcern(patientId, prepared.data._id, { ...source, issueTitle: title })
       setOpen(false)
-      toast(result.reused ? '该问题已在年度综合研判中' : '具体问题已纳入年度综合研判')
-      onOpenReview(prepared.data._id)
+      toast(result.reused ? '该问题已在年度综合研判中，可在年度研判页查看' : '纳入成功，可在年度研判页查看')
     } catch (error) { toast(error.message || '纳入年度研判失败', 'error') }
     finally { setBusy(false) }
   }
