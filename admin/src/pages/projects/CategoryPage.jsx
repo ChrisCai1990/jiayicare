@@ -150,7 +150,7 @@ export default function CategoryPage() {
               <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
                 <label className="form-label">报告项目别名</label>
                 <textarea className="form-input" rows={4} value={form.aliasesText} onChange={e => setForm(f => ({ ...f, aliasesText: e.target.value }))} placeholder="多个别名用逗号、顿号或换行分隔" />
-                <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>二级分类的别名用于归并历史筛查页签；叶子分类的别名用于报告项目归类。仅精确匹配，同名有歧义时保留原分类。</div>
+                <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>分类别名用于归并历史筛查页签；叶子分类的别名也用于报告项目归类。仅精确匹配，同名有歧义时保留原分类。</div>
               </div>
             </div>
             <div className="modal-footer">

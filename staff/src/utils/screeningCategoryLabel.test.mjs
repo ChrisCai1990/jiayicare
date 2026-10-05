@@ -6,6 +6,11 @@ const tree = [
   { _id: 'functional', children: [
     { label: '端粒长度检测', aliases: ['端粒长度'] },
     { label: '精准基因检测（阖家欢）', aliases: [] },
+  ], catalogLabels: [
+    { label: '基因检测', aliases: [] },
+    { label: '健康生活', aliases: [] },
+    { label: '端粒长度检测', aliases: ['端粒长度'] },
+    { label: '精准基因检测（阖家欢）', aliases: [] },
   ] },
   { _id: 'other', children: [{ label: '另一项目', aliases: ['端粒长度'] }] },
 ]
@@ -17,7 +22,7 @@ test('historical alias uses admin category name within its top-level category', 
 })
 
 test('unknown and ambiguous names remain separate', () => {
-  tree[0].children.push({ label: '其他端粒项目', aliases: ['端粒长度'] })
+  tree[0].catalogLabels.push({ label: '其他端粒项目', aliases: ['端粒长度'] })
   assert.equal(screeningCategoryLabel(tree, 'functional', '端粒长度'), '端粒长度')
   assert.equal(screeningCategoryLabel(tree, 'missing', '端粒长度'), '端粒长度')
 })

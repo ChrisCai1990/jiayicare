@@ -12707,6 +12707,18 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
     });
     const tree = l1s.map(l1 => {
       const l1id = String(l1._id);
+      const catalogLabels = [];
+      const visited = new Set([l1id]);
+      const collectCatalog = parentId => {
+        (l2sByParent[parentId] || []).forEach(node => {
+          const nodeId = String(node._id);
+          if (visited.has(nodeId)) return;
+          visited.add(nodeId);
+          catalogLabels.push({ label: node.name, aliases: node.aliases || [] });
+          collectCatalog(nodeId);
+        });
+      };
+      collectCatalog(l1id);
       const children = (l2sByParent[l1id] || []).map(l2 => {
         const l2id = String(l2._id);
         const matchPkgs = pkgByCat[l2id] || [];
@@ -12751,7 +12763,7 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
           packageIds: matchPkgs.map(p => p._id),
         };
       });
-      return { _id: l1._id, label: l1.name, children };
+      return { _id: l1._id, label: l1.name, children, catalogLabels };
     });
     res.json({ success: true, data: tree });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }

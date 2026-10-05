@@ -6,7 +6,7 @@ export function screeningCategoryLabel(tree, l1Id, historicalLabel) {
   const parent = (tree || []).find(node => String(node._id) === String(l1Id))
   if (!parent || !original) return original
   const key = original.toLocaleLowerCase('zh-CN')
-  const matches = (parent.children || []).filter(child =>
+  const matches = (parent.catalogLabels || parent.children || []).filter(child =>
     [child.label, ...(child.aliases || [])].some(value => String(value || '').trim().toLocaleLowerCase('zh-CN') === key)
   )
   return matches.length === 1 ? matches[0].label : original
