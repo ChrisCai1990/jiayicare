@@ -10476,10 +10476,10 @@ export default function PatientDetailPage() {
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {isOutpatientRecord ? <>
-                                {r.audit_status !== 'audited' && (r.fileUrl || r.content || r.hasContent || r.fileUrls?.length) && r.aiStatus !== 'processing' && !r.clinicalReview && <button className="btn btn-sm report-action-review"
+                                {!['audited', 'rejected'].includes(r.audit_status) && (r.fileUrl || r.content || r.hasContent || r.fileUrls?.length) && r.aiStatus !== 'processing' && <button className="btn btn-sm report-action-review"
                                   disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
                                   onClick={() => handleParseReportAI(r._id, { forceOutpatientParse: true })}>
-                                  {r.parseJob?.status === 'paused' ? '等待管理员恢复' : r.reportItems?.length ? '按病历重新解析' : 'AI提取病历草稿'}
+                                  {r.parseJob?.status === 'paused' ? '等待管理员恢复' : r.clinicalReview ? 'AI补提病历草稿' : 'AI提取病历草稿'}
                                 </button>}
                                 {r.aiStatus === 'processing' && <span style={{ fontSize: 12, color: '#65776F' }}>病历提取中…</span>}
                                 {r.aiStatus !== 'processing' && <button className="btn btn-sm report-action-primary" onClick={() => {
@@ -11761,7 +11761,7 @@ export default function PatientDetailPage() {
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">报告归类</label>
                 <select className="form-input" value={editingReportForm.documentCategory || ''}
-                  onChange={e => setEditingReportForm(f => ({ ...f, documentCategory: e.target.value }))}>
+                  onChange={e => setEditingReportForm(f => ({ ...f, documentCategory: e.target.value, clinicalReview: {} }))}>
                   {DOCUMENT_CATEGORIES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </div>
@@ -11786,9 +11786,43 @@ export default function PatientDetailPage() {
                   setEditingReport(null)
                   loadReports()
                   toast('草稿已保存')
+                  if (editingReportForm.documentCategory === 'outpatient_record' && inferDocumentCategory(editingReport) !== 'outpatient_record'
+                    && (editingReport.fileUrl || editingReport.hasContent || editingReport.fileUrls?.length)) {
+                    try {
+                      const extraction = await staffAPI.parseReportAI(editingReport._id, { forceOutpatientParse: true })
+                      toast(extraction.message || '门诊病历提取已开始')
+                      loadReports()
+                    } catch (error) { toast(`分类已保存，自动提取未启动：${error.message}`) }
+                  }
                 } catch (err) { toast(err.message || '保存失败') }
                 finally { setEditingReportSaving(false) }
               }}>{editingReportSaving ? '保存中…' : editingReportForm.documentCategory === 'outpatient_record' ? '保存草稿' : '保存'}</button>
+              {editingReportForm.documentCategory === 'outpatient_record' && <button className="btn btn-secondary" disabled={editingReportSaving || editingReportLoading || editingReport.aiStatus === 'processing'} onClick={async () => {
+                setEditingReportSaving(true)
+                try {
+                  await staffAPI.updateReport(editingReport._id, editingReportForm)
+                  const result = await staffAPI.parseReportAI(editingReport._id, { forceOutpatientParse: true })
+                  toast(result.message || '病历补提已开始')
+                  editingReportIdRef.current = null
+                  setEditingReport(null)
+                  loadReports()
+                } catch (error) { toast(error.message || '病历补提失败') }
+                finally { setEditingReportSaving(false) }
+              }}>AI提取／补提病历</button>}
+              {editingReportForm.documentCategory === 'outpatient_record' && <button className="btn btn-secondary" disabled={editingReportSaving} onClick={async () => {
+                const reason = window.prompt('请填写退回原因：', '')
+                if (reason === null) return
+                if (!reason.trim()) { toast('请填写退回原因'); return }
+                setEditingReportSaving(true)
+                try {
+                  await staffAPI.auditReport(editingReport._id, { action: 'reject', rejectReason: reason.trim() })
+                  editingReportIdRef.current = null
+                  setEditingReport(null)
+                  loadReports()
+                  toast('门诊病历已退回')
+                } catch (error) { toast(error.message || '退回失败') }
+                finally { setEditingReportSaving(false) }
+              }}>退回</button>}
               {editingReportForm.documentCategory === 'outpatient_record' && <button className="btn btn-primary" disabled={editingReportSaving || editingReportLoading || !!editingReportLoadError} onClick={async () => {
                 if (!editingReportForm.title?.trim()) { toast('请填写报告标题'); return }
                 if (!editingReportForm.clinicalReview?.sourceReviewed) { toast('请先核对左侧原始资料并勾选确认'); return }

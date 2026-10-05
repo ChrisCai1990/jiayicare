@@ -14755,7 +14755,7 @@ async function runReportParse(reportId) {
 
 async function runOutpatientRecordParse(report, rawParseImage) {
   const { fetchReportBuffer, fetchReportBuffers, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage } = require('../utils/pdf');
-  const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, isExplicitExamReport } = require('../utils/outpatientRecordExtraction');
+  const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, supplementOutpatientDraft, isExplicitExamReport } = require('../utils/outpatientRecordExtraction');
   const MedicalReport = require('../models/MedicalReport');
   const revision = Number(report.reviewRevision || 0);
   try {
@@ -14790,7 +14790,7 @@ async function runOutpatientRecordParse(report, rawParseImage) {
     const result = await MedicalReport.updateOne(
       { _id: report._id, reviewRevision: revision, audit_status: { $ne: 'audited' } },
       { $set: {
-        clinicalReview: draft, reportItems: [], aiStatus: 'pending',
+        clinicalReview: supplementOutpatientDraft(report.clinicalReview, draft), reportItems: [], aiStatus: 'pending',
         aiSummary: `门诊病历已按病历栏目提取待核对草稿。${reviewIssues.length ? `识别疑点：${reviewIssues.join('；')}` : '请对照原件逐项核对。'}`,
         parseJob: { status: 'completed', completedAt: new Date(), message: `病历栏目提取完成：${sources.length}页，待结构化审核`,
           legacyReportItems: report.reportItems?.length ? report.reportItems : report.parseJob?.legacyReportItems },
