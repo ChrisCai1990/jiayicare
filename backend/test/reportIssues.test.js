@@ -6,6 +6,12 @@ const report = { reportItems: [
   { itemId: 'dental', name: '口腔', status: 'unknown', findings: '牙结石', sourcePage: 4 },
   { itemId: 'normal', name: '血常规', status: 'normal', value: '正常' },
 ] };
+test('issue evidence uses the confirmed page date', () => {
+  const sources = issueSources({ checkDate: '', pageDates: { 12: '2026-09-23' }, reportItems: [
+    { itemId: 'us', name: '肝脏超声', sourcePage: 12, examDate: '2026-09-22' },
+  ] });
+  assert.equal(sources[0].date, '2026-09-23');
+});
 test('明确正常结论归档，复查要求、异常标记及混合所见不能被忽略', () => {
   const { explicitNormal, reviewView } = require('../src/utils/reportIssues');
   const source = { id: 'us', name: '甲状腺超声', status: 'unknown', evidence: '未见明显异常' };

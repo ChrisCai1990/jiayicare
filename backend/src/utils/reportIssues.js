@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const PURPOSE = 'annual_report_input';
 const text = value => typeof value === 'string' ? value.trim() : '';
 const { GROUPS, identity, groupFor, mergeProblems } = require('../../../shared/reportProblems.cjs');
+const { effectiveItemDate } = require('./reportExtractionPolicy');
 
 // Compare only an unambiguous single value with its own closed reference range.
 // No medical thresholds, unit conversion, or inference from narrative findings.
@@ -29,7 +30,7 @@ function explicitNormal(source) {
 function issueSources(report) {
   const sources = (report.reportItems || []).map((item, index) => ({
     id: `item:${item.itemId || index}`, name: item.name || item.sourceSection || `检查项目${index + 1}`,
-    page: item.sourcePage || null, section: item.sourceSection || '', status: item.status || 'unknown', date: item.examDate || report.checkDate || '',
+    page: item.sourcePage || null, section: item.sourceSection || '', status: item.status || 'unknown', date: effectiveItemDate(report, item) || report.checkDate || '',
     evidence: [item.value && `结果：${item.value}${item.unit || ''}`, item.referenceRange && `参考范围：${item.referenceRange}`,
       item.findings, item.diagnosis, item.conclusion, ...(item.reviewIssues || [])].filter(Boolean).join('\n'),
   }));

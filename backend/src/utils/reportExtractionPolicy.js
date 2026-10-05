@@ -32,8 +32,8 @@ function reviewMetadataError(report) {
   const hasReportDate = validDate(report.checkDate || report.date);
   const namedItems = (report.reportItems || []).filter(item => String(item?.name || '').trim());
   // 多日合并资料不应硬塞一个报告级日期；这时每个有结果的项目必须有可追溯日期。
-  if (!hasReportDate && (!namedItems.length || namedItems.some(item => !validDate(item.examDate)))) {
-    return '请填写报告统一检查日期；若为多日合并资料，请逐项填写有效检查日期后完成审核，可先保存草稿';
+  if (!hasReportDate && (!namedItems.length || namedItems.some(item => !validDate(effectiveItemDate(report, item))))) {
+    return '请填写报告统一检查日期；若为多日合并资料，请逐页填写有效检查日期后完成审核，可先保存草稿';
   }
   if (!String(report.institution || report.hospital || '').trim() && report.institutionStatus !== 'unknown') {
     return '请填写来源机构，或核实后标记“来源机构不明”，可先保存草稿';
@@ -42,16 +42,18 @@ function reviewMetadataError(report) {
   return '';
 }
 
+function effectiveItemDate(report, item) {
+  const pageDates = report.pageDates instanceof Map ? Object.fromEntries(report.pageDates) : (report.pageDates || {});
+  const page = String(Number(item.sourcePage) || 1);
+  return Object.prototype.hasOwnProperty.call(pageDates, page) ? pageDates[page] : item.examDate;
+}
+
 function singleItemDate(report) {
   const items = (report.reportItems || []).filter(item => String(item?.name || '').trim());
   if (!items.length) return '';
-  const pageDates = report.pageDates instanceof Map ? Object.fromEntries(report.pageDates) : (report.pageDates || {});
-  const dates = items.map(item => {
-    const page = String(Number(item.sourcePage) || 1);
-    return Object.prototype.hasOwnProperty.call(pageDates, page) ? pageDates[page] : item.examDate;
-  });
+  const dates = items.map(item => effectiveItemDate(report, item));
   const normalizedDates = dates.map(normalizeReportDate);
   return normalizedDates.every(Boolean) && new Set(normalizedDates).size === 1 ? normalizedDates[0] : '';
 }
 
-module.exports = { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, normalizeReportDate, reviewMetadataError, singleItemDate };
+module.exports = { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, normalizeReportDate, reviewMetadataError, effectiveItemDate, singleItemDate };

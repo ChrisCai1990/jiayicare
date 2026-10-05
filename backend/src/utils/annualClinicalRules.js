@@ -1,4 +1,5 @@
 const { validDay } = require('../../../shared/annualAppointment.cjs');
+const { effectiveItemDate } = require('./reportExtractionPolicy');
 const text = value => typeof value === 'string' ? value.trim() : '';
 const stem = value => text(value).split(/[（(]/)[0].replace(/[\s、，,：:]/g, '').toLowerCase();
 const relatedGroup = name => /(?:阴道|子宫|附件).*(?:超声|彩超)|(?:超声|彩超).*(?:子宫|附件)/.test(name) ? '盆腔超声（方式未必相同）' : stem(name);
@@ -10,11 +11,14 @@ function reportTimeline(reports = []) {
     const date = validDay(report.checkDate) ? report.checkDate : '';
     const items = report.reportItems?.length ? report.reportItems : [{ name: report.title }];
     items.forEach((item, index) => {
-      const itemDate = text(item.examDate);
+      const page = String(Number(item.sourcePage) || 1);
+      const pageDates = report.pageDates instanceof Map ? Object.fromEntries(report.pageDates) : (report.pageDates || {});
+      const hasPageDate = Object.prototype.hasOwnProperty.call(pageDates, page);
+      const itemDate = text(effectiveItemDate(report, item));
       const name = text(item.name) || text(report.title);
       rows.push({ id: `report:${report._id}:${item.itemId || index}`, reportTitle: report.title || '', name,
         date: itemDate ? (validDay(itemDate) ? itemDate : '') : date,
-        dateSource: itemDate ? '项目检查日期' : '报告检查日期（项目未单列日期）',
+        dateSource: hasPageDate ? '页检查日期' : itemDate ? '项目检查日期' : '报告检查日期（页和项目未单列日期）',
         modality: item.modality || '', group: /病理/.test(report.title || '') || report.type === 'pathology' ? `病理:${stem(name)}` : relatedGroup(name),
         result: [item.value, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join('；'),
       });

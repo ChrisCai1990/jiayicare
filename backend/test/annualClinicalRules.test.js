@@ -7,6 +7,18 @@ const reports = [
   { _id: 'endo', title: '胃镜', checkDate: '2024-12-09', reportItems: [] },
 ];
 const timeline = reportTimeline(reports);
+test('confirmed page date is used for every item in a multi-day report', () => {
+  const rows = reportTimeline([{ _id: 'combined', checkDate: '', pageDates: { 40: '2026-09-23', 41: '2026-09-24' }, reportItems: [
+    { name: '肝脏超声', sourcePage: 40, examDate: '' },
+    { name: '胆囊超声', sourcePage: 40, examDate: '2026-09-22' },
+    { name: '心脏超声', sourcePage: 41 },
+  ] }]);
+  assert.deepEqual(rows.map(row => [row.name, row.date, row.dateSource]), [
+    ['心脏超声', '2026-09-24', '页检查日期'],
+    ['肝脏超声', '2026-09-23', '页检查日期'],
+    ['胆囊超声', '2026-09-23', '页检查日期'],
+  ]);
+});
 test('latest item evidence includes comprehensive report; preserves method and exact source date', () => {
   assert.equal(timeline[0].date, '2026-06-01'); assert.equal(timeline[0].name, '子宫附件彩超');
   assert.equal(timeline[0].modality, ''); assert.equal(timeline[0].group, timeline[1].group);

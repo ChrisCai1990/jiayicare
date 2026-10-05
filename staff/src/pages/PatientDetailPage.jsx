@@ -3939,11 +3939,12 @@ export default function PatientDetailPage() {
     const pageHasExplicitDate = page => Object.prototype.hasOwnProperty.call(explicitPageDates, page)
     // 页日期一旦人工改过，就以它为准，不能再把同页旧项目日期混进来；否则
     // 单页从 2025-01-01 改为 2025-01-02 时，会错误地留下两个日期。
-    const dates = [
-      ...ocrEditItemsRef.current.map(item => {
+    const itemDates = ocrEditItemsRef.current.filter(item => String(item.name || '').trim()).map(item => {
         const page = String(Number(item.sourcePage) || 1)
         return calendarDate(pageHasExplicitDate(page) ? explicitPageDates[page] : item.examDate)
-      }),
+      })
+    const dates = [
+      ...itemDates,
       ...Object.entries(explicitPageDates)
         .filter(([page]) => !ocrEditItemsRef.current.some(item => String(Number(item.sourcePage) || 1) === page))
         .map(([, value]) => calendarDate(value)),
@@ -3952,7 +3953,7 @@ export default function PatientDetailPage() {
     const enteredDate = String(ocrReportMeta.checkDate || '').trim()
     const fallbackDate = calendarDate(enteredDate)
     if (enteredDate && !fallbackDate) throw new Error('请填写完整有效的检查日期后保存')
-    return unique.length === 1 ? unique[0] : unique.length > 1 ? '' : fallbackDate
+    return unique.length > 1 ? '' : unique.length === 1 && itemDates.every(Boolean) ? unique[0] : fallbackDate
   }
 
   const handleApproveOCR = async () => {
@@ -12583,9 +12584,9 @@ export default function PatientDetailPage() {
                                 </button>
                                 <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                               </div>
-                              <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>{isPrescription ? '处方开具日期（仅原件明确归属时填写）' : '项目检查日期（仅原件明确归属时填写）'}
+                              {isPrescription && <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>处方开具日期（仅原件明确归属时填写）
                                 <DateField type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={calendarDate(it.examDate) || String(it.examDate || '')} onChange={e => updItem(i, { examDate: e.target.value })} />
-                              </label>
+                              </label>}
                               {isPrescription && <label style={{ display: 'block', fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 6 }}>匹配当前用药信息
                                 <select style={{ ...inp, width: '100%', marginTop: 4 }} value={it.medicationId || (it.medicationAction === 'keep' ? '__keep__' : '__create__')} onChange={e => {
                                   const matched = medications.find(med => String(med._id) === e.target.value)

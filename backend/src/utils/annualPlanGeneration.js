@@ -1,3 +1,4 @@
+const { effectiveItemDate } = require('./reportExtractionPolicy');
 function parseReportDate(value) {
   const text = String(value || '').trim();
   const match = text.match(/(20\d{2})[年\-\/.](\d{1,2})[月\-\/.](\d{1,2})/);
@@ -11,7 +12,7 @@ function formatDate(date) { return date.toISOString().slice(0, 10); }
 function nextAnnualCheckupDate(reports = []) {
   const dates = reports.flatMap(report => [
     parseReportDate(report.checkDate),
-    ...(report.reportItems || []).map(item => parseReportDate(item.examDate)),
+    ...(report.reportItems || []).map(item => parseReportDate(effectiveItemDate(report, item))),
   ]).filter(Boolean);
   if (!dates.length) return '';
   const latest = new Date(Math.max(...dates.map(date => date.getTime())));
@@ -38,7 +39,7 @@ function hepatitisBAllNegative(reports = []) {
     const matches = [];
     reports.forEach(report => (report.reportItems || []).forEach(item => {
       if (pattern.test(String(item.name || ''))) {
-        matches.push({ value: item.value, date: parseReportDate(item.examDate || report.checkDate)?.getTime() || 0 });
+        matches.push({ value: item.value, date: parseReportDate(effectiveItemDate(report, item) || report.checkDate)?.getTime() || 0 });
       }
     }));
     return matches.sort((a, b) => b.date - a.date)[0];
