@@ -4842,12 +4842,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if ((documentCategory || report.documentCategory) === 'outpatient_record' && (reportItems !== undefined || aiStatus === 'reviewed')) {
       return res.status(409).json({ success: false, message: '门诊病历请核对结构化病历栏目后使用资料审核入口，不能按体检项目提交' });
     }
-    const isCalendarDate = value => {
-      const normalized = String(value || '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
-      const parsed = new Date(`${normalized}T00:00:00`);
-      return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized;
-    };
+    const isCalendarDate = isCalendarReportDate;
     // 历史半截日期不应阻止修改其他信息；新输入的无效日期必须报错，
     // 不能默默写成空值，导致已填写的检查日期从资料列表消失。
     const invalidDate = date !== undefined && String(date || '').trim() && !isCalendarDate(date);
@@ -13676,7 +13671,7 @@ router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
   }
 });
 
-const { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, normalizeReportDate, reviewMetadataError } = require('../utils/reportExtractionPolicy');
+const { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, normalizeReportDate, isCalendarReportDate, reviewMetadataError } = require('../utils/reportExtractionPolicy');
 
 function safeParseJSON(text) {
   try { return JSON.parse(String(text).trim().replace(/^```json\n?|\n?```$/g, '')); }

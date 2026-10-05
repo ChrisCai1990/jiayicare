@@ -10,7 +10,7 @@ test('specific ultrasound name refines broad body context while generic names re
 });
 const assert = require('node:assert/strict');
 const { selectMatchesForItem, norm } = require('../src/utils/screeningMatch');
-const { reviewMetadataError, REPORT_PARSE_PROMPT } = require('../src/utils/reportExtractionPolicy');
+const { reviewMetadataError, isCalendarReportDate, REPORT_PARSE_PROMPT } = require('../src/utils/reportExtractionPolicy');
 const { filterMissingReportItems, mergeSupplementItems } = require('../src/utils/reportPageSupplement');
 const { createBudgetRunner } = require('../src/utils/aiBudget');
 const { DEFAULT_POLICY, rethrowAiControl } = require('../src/utils/aiBudgetPolicy');
@@ -51,6 +51,12 @@ test('metadata completion requires actual calendar date and explicitly resolved 
   assert.ok(reviewMetadataError({ checkDate: '2026-02-28' }));
   assert.equal(reviewMetadataError({ checkDate: '2026-02-28', institutionStatus: 'unknown' }), '');
   assert.equal(reviewMetadataError({ date: '2026-02-28', hospital: '机构' }), '');
+});
+
+test('report update accepts a valid date in China timezone', () => {
+  assert.equal(isCalendarReportDate('2026-09-23'), true);
+  assert.equal(isCalendarReportDate('2026-02-30'), false);
+  assert.equal(isCalendarReportDate('20260923'), false);
 });
 
 test('duplicate suggestions retain dates and do not mutate report content', async () => {

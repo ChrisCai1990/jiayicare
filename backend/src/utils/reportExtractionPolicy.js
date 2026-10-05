@@ -26,6 +26,11 @@ function normalizeReportDate(value) {
   return Number(year) > 0 && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized ? normalized : '';
 }
 
+function isCalendarReportDate(value) {
+  const date = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && normalizeReportDate(date) === date;
+}
+
 function reviewMetadataError(report) {
   if (report.documentCategory && !['physical_exam', 'lab_report', 'exam_report', 'body_composition', 'functional_medicine', 'genetic_test'].includes(report.documentCategory)) return '';
   const validDate = value => Boolean(normalizeReportDate(value));
@@ -56,4 +61,4 @@ function singleItemDate(report) {
   return normalizedDates.every(Boolean) && new Set(normalizedDates).size === 1 ? normalizedDates[0] : '';
 }
 
-module.exports = { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, normalizeReportDate, reviewMetadataError, effectiveItemDate, singleItemDate };
+module.exports = { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, normalizeReportDate, isCalendarReportDate, reviewMetadataError, effectiveItemDate, singleItemDate };
