@@ -80,6 +80,7 @@ import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
 import { insertReportItemBelow } from '../utils/reportItemOrder'
 import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
+import { screeningCategoryLabel } from '../utils/screeningCategoryLabel.mjs'
 
 // 使用浏览器原生 PDF 阅读器，保留缩放、页码跳转、旋转、查找、打印及下载等常规功能。
 // 预览链接仍是绑定报告与短时令牌的私有 API，不改为公开直链。
@@ -6072,7 +6073,7 @@ export default function PatientDetailPage() {
           screeningReports.forEach(r => {
             if (reportIdsWithScreeningItems.has(String(r._id))) return // 已由 UserScreeningItem 展示，避免重复
             const l1 = r.screeningL1 || r.screeningCategory || 'other'
-            const l2 = r.screeningL2 || r.title || '未分类'
+            const l2 = screeningCategoryLabel(screeningTree, l1, r.screeningL2 || r.title || '未分类')
             const l3 = r.screeningL3 || r.title || '未命名'
             if (!treeData[l1]) treeData[l1] = {}
             if (!treeData[l1][l2]) treeData[l1][l2] = {}
@@ -6602,7 +6603,7 @@ export default function PatientDetailPage() {
                 const aiVirtualMap = {}
                 screeningItems.forEach(it => {
                   const l1Key = knownTreeIds.has(String(it.category)) ? String(it.category) : (catToTreeId[it.category] || `ai_${it.category}`)
-                  const l2 = it.parentLabel || '其他'
+                  const l2 = screeningCategoryLabel(screeningTree, l1Key, it.parentLabel || '其他')
                   const l3 = it.itemLabel || '未知'
                   const rid = String(it.reportId || 'unknown')
                   const vKey = `${l1Key}||${l2}||${l3}||${rid}`

@@ -12743,6 +12743,7 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
         return {
           _id: l2._id,
           label: l2.name,
+          aliases: l2.aliases || [],
           labOrders,
           examItems: [...examMap.values()],
           funcItems: [...funcSet],
