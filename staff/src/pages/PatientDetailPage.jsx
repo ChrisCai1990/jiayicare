@@ -6084,6 +6084,10 @@ export default function PatientDetailPage() {
           const reportIdsWithScreeningItems = new Set(
             (screeningItems || []).map(it => String(it.reportId || '')).filter(Boolean)
           )
+          const screeningItemLabel = (parent, label) =>
+            /^动态心电(?:图)?$/.test(String(parent || '').trim())
+              && /^(动态心电图|动态心电|动态心电报告)$/.test(String(label || '').trim())
+              ? '动态心电' : label
           const treeData = {}
           screeningReports.forEach(r => {
             if (reportIdsWithScreeningItems.has(String(r._id))) return // 已由 UserScreeningItem 展示，避免重复
@@ -6091,7 +6095,7 @@ export default function PatientDetailPage() {
             const category = resolveScreeningCategory(screeningTree, originalL1, r.screeningL2 || r.title || '未分类')
             const l1 = category.l1Id || originalL1
             const l2 = category.label
-            const l3 = r.screeningL3 || r.title || '未命名'
+            const l3 = screeningItemLabel(l2, r.screeningL3 || r.title || '未命名')
             if (!treeData[l1]) treeData[l1] = {}
             if (!treeData[l1][l2]) treeData[l1][l2] = {}
             if (!treeData[l1][l2][l3]) treeData[l1][l2][l3] = []
@@ -6623,7 +6627,7 @@ export default function PatientDetailPage() {
                   const category = resolveScreeningCategory(screeningTree, originalL1, it.parentLabel || '其他')
                   const l1Key = category.l1Id || originalL1
                   const l2 = category.label
-                  const l3 = it.itemLabel || '未知'
+                  const l3 = screeningItemLabel(l2, it.itemLabel || '未知')
                   const rid = String(it.reportId || 'unknown')
                   const vKey = `${l1Key}||${l2}||${l3}||${rid}`
                   if (!aiVirtualMap[vKey]) {
