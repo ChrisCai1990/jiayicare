@@ -11,6 +11,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('no_change')
   const [note, setNote] = useState('')
+  const [expanded, setExpanded] = useState(false)
   const canConfirm = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const newerSpecialtyConclusion = specialtyReviews.some(item => item.conclusion?.status === 'confirmed' && review?.conclusion?.confirmedAt && new Date(item.conclusion.confirmedAt) > new Date(review.conclusion.confirmedAt))
   const annualConclusionStale = !!review?.concernsUpdatedAt && (!review.conclusion?.generatedAt || new Date(review.conclusion.generatedAt) < new Date(review.concernsUpdatedAt))
@@ -29,6 +30,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
     finally { setLoading(false) }
   }
   useEffect(() => { load() }, [patientId, year])
+  useEffect(() => { setExpanded(false) }, [patientId, year])
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === 'visible') load() }
     window.addEventListener('focus', refresh)
@@ -75,8 +77,11 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
   }
 
   return <section id="annual-review-communication" style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
-    <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 6 }}>客户沟通前的研判核对 · {year}年度</div>
-    {loading ? <div style={{ fontSize: 13 }}>正在读取研判…</div> : <>
+    <button type="button" aria-expanded={expanded} aria-controls="annual-review-communication-content" onClick={() => setExpanded(value => !value)}
+      style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: 0, padding: 0, background: 'transparent', textAlign: 'left', cursor: 'pointer', fontWeight: 700, color: '#1E6B50', fontSize: 16 }}>
+      <span>客户沟通前的研判核对 · {year}年度</span><span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>{expanded ? '收起 ▲' : '展开 ▼'}</span>
+    </button>
+    {expanded && <div id="annual-review-communication-content">{loading ? <div style={{ fontSize: 13, marginTop: 10 }}>正在读取研判…</div> : <>
       <div style={{ marginTop: 10, padding: 12, background: '#fff', border: '1px solid #D9E9E1', borderRadius: 8 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>① 年度研判中的健康问题与发现 · {problemRows.length}</div>
         {review && canConfirm && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={syncReviewedConcerns} style={{ marginBottom: 8 }}>{busy ? '核对中…' : '同步已审核关注线索'}</button>}
@@ -110,6 +115,6 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
         </> : <div style={{ marginTop: 8, fontSize: 13, color: '#A16620' }}>研判尚未确认，请先完成内部讨论和目标确认，再与客户分析报告。</div>}
       </>}
       </div>
-    </>}
+    </>}</div>}
   </section>
 }
