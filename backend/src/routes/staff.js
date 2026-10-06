@@ -972,6 +972,9 @@ router.post('/patients/assign', staffAuth, async (req, res) => {
 // 新建会员（录入）
 router.post('/patients', staffAuth, checkPermission('patients', 'create'), async (req, res) => {
   const staff = req.staff;
+  let culturalConsent;
+  try { culturalConsent = require('../utils/culturalPreferencesConsent').culturalPreferencesConsent(req.body, {}, staff._id); }
+  catch (err) { return res.status(400).json({ success: false, message: err.message }); }
   const {
     name, phone, gender, age, height, weight,
     birthDate, idNumber, idType, maritalStatus, ethnicity, belief, memberType, clientBrand,
@@ -1051,8 +1054,9 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     idNumber: idNumber || '',
     idType: idType === 'passport' ? 'passport' : 'idCard',
     maritalStatus: maritalStatus || '',
-    ethnicity: ethnicity || '',
-    belief: belief || '',
+    ethnicity: culturalConsent.values.ethnicity || '',
+    belief: culturalConsent.values.belief || '',
+    culturalPreferencesAttestations: culturalConsent.record ? [culturalConsent.record] : [],
     clientBrand: clientBrand || '',
     memberType: memberType || '',
     chronicDiseases: chronicDiseases || [],
@@ -1562,8 +1566,11 @@ router.post('/patients/:id/medical-record/course-entries', staffAuth, checkPermi
 
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
 router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
-  const existingPatient = await User.findById(req.params.id).select('phone contactPhone lifestyle lifestyle_data coreHealthArchive healthProfile').lean();
+  const existingPatient = await User.findById(req.params.id).select('phone contactPhone lifestyle lifestyle_data coreHealthArchive healthProfile ethnicity belief').lean();
   if (!existingPatient) return res.status(404).json({ success: false, message: '会员不存在' });
+  let culturalConsent;
+  try { culturalConsent = require('../utils/culturalPreferencesConsent').culturalPreferencesConsent(req.body, existingPatient, req.staff._id); }
+  catch (err) { return res.status(400).json({ success: false, message: err.message }); }
   const allowed = [
     'name', 'phone', 'gender', 'age', 'height', 'weight', 'preferredTitle',
     'birthDate', 'memberType', 'clientBrand', 'belief',
@@ -1773,6 +1780,8 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     pushOps['bodyCompHistory'] = entry;
   }
 
+  Object.assign(updateData, culturalConsent.values);
+  if (culturalConsent.record) pushOps.culturalPreferencesAttestations = culturalConsent.record;
   const ops = { $set: updateData };
   if (Object.keys(pushOps).length > 0) ops.$push = pushOps;
 

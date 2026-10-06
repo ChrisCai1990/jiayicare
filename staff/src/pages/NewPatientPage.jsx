@@ -137,7 +137,7 @@ export default function NewPatientPage() {
     staffAPI.serviceOptions(form.clientBrand).then(r => setServiceOptions(r.data || [])).catch(() => setServiceOptions([]))
   }, [form.clientBrand])
 
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value, ...(['ethnicity', 'belief'].includes(k) ? { culturalPreferencesConfirmed: false } : {}) }))
   const setChild = k => e => setForm(f => ({ ...f, childProfile: { ...f.childProfile, [k]: e.target.value } }))
   const setLifestyle = k => e => setForm(f => ({ ...f, lifestyle: { ...f.lifestyle, [k]: e.target.value } }))
   const toggleDisease = d => setSelectedDiseases(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])
@@ -187,6 +187,7 @@ export default function NewPatientPage() {
 
   const handleSubmit = async e => {
     e.preventDefault()
+    if ((form.ethnicity?.trim() || form.belief?.trim()) && form.culturalPreferencesConfirmed !== true) return toast('请确认已说明用途且客户自愿提供，或将民族与宗教信仰留空')
     if (form.phone && !/^1[3-9]\d{9}$/.test(form.phone)) return toast('手机号格式不正确')
     if (form.idType !== 'passport' && form.idNumber && !validateIdCard(form.idNumber)) return toast('身份证号格式不正确')
     if (form.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate)) return toast('出生日期格式须为 YYYY-MM-DD')
@@ -339,13 +340,13 @@ export default function NewPatientPage() {
               {!isChild && <>
                 <F label="婚姻状况"><select className="form-input" value={form.maritalStatus} onChange={set('maritalStatus')}><option value="">未填写</option><option>未婚</option><option>已婚</option><option>离异</option><option>丧偶</option></select></F>
                 {/* 民族：可搜索下拉 */}
-                <F label="民族">
+                <F label="民族（选填）">
                   <div style={{ position: 'relative' }}>
                     <input
                       className="form-input"
                       placeholder="搜索或选择民族"
                       value={form.ethnicity}
-                      onChange={e => { setForm(f => ({ ...f, ethnicity: e.target.value })); setEthnicitySearch(e.target.value); setShowEthnicityList(true) }}
+                      onChange={e => { setForm(f => ({ ...f, ethnicity: e.target.value, culturalPreferencesConfirmed: false })); setEthnicitySearch(e.target.value); setShowEthnicityList(true) }}
                       onFocus={() => setShowEthnicityList(true)}
                       onBlur={() => setTimeout(() => setShowEthnicityList(false), 150)}
                       autoComplete="off"
@@ -353,7 +354,7 @@ export default function NewPatientPage() {
                     {showEthnicityList && (
                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: 180, overflowY: 'auto', marginTop: 2 }}>
                         {filteredEthnicities.map(eth => (
-                          <div key={eth} onMouseDown={() => { setForm(f => ({ ...f, ethnicity: eth })); setEthnicitySearch(''); setShowEthnicityList(false) }}
+                          <div key={eth} onMouseDown={() => { setForm(f => ({ ...f, ethnicity: eth, culturalPreferencesConfirmed: false })); setEthnicitySearch(''); setShowEthnicityList(false) }}
                             style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f5f5f5' }}
                             onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'}
                             onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
@@ -367,7 +368,14 @@ export default function NewPatientPage() {
                     )}
                   </div>
                 </F>
-                <F label="信仰"><input className="form-input" placeholder="宗教信仰" value={form.belief} onChange={set('belief')} /></F>
+                <F label="宗教信仰（选填）"><input className="form-input" placeholder="客户自愿提供，可留空" value={form.belief} onChange={set('belief')} /></F>
+                <div style={{ gridColumn: '1 / -1', fontSize: 13, lineHeight: 1.7 }}>
+                  民族与宗教信仰用于尊重文化习俗、避免服务触及禁忌；不填写不影响基础服务。
+                  {(form.ethnicity?.trim() || form.belief?.trim()) && <label style={{ display: 'block' }}>
+                    <input type="checkbox" checked={form.culturalPreferencesConfirmed === true} onChange={e => setForm(f => ({ ...f, culturalPreferencesConfirmed: e.target.checked }))} />
+                    我已向客户说明用途，并确认客户自愿提供上述信息（工作人员确认）。
+                  </label>}
+                </div>
                 <F label="所在企业" span={2}><input className="form-input" value={form.workplace} onChange={set('workplace')} /></F>
                 <F label="所在行业"><input className="form-input" value={form.occupation} onChange={set('occupation')} /></F>
                 <F label="学历">

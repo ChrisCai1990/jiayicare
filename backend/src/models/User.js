@@ -164,6 +164,7 @@ const userSchema = new mongoose.Schema({
   otherDiseaseHistory:{ type: String, default: '' },// 其他特殊疾病史
   vaccinationHistory:{ type: String, default: '' }, // 预防接种史
   // 信仰
+  culturalPreferencesAttestations: { type: [mongoose.Schema.Types.Mixed], default: [] },
   belief:          { type: String, default: '' },   // 宗教信仰
   memberType:      { type: String, default: '' },   // 会员类型
   // 固定系统客户分层；与运营可维护的 memberType 树、客户归属及具体服务包分开。

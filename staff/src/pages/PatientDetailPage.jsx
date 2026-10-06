@@ -3367,6 +3367,7 @@ export default function PatientDetailPage() {
     idNumber: u.idNumber || '',
     maritalStatus: u.maritalStatus || '',
     ethnicity: u.ethnicity || '',
+    culturalPreferencesConfirmed: false,
     workplace: u.workplace || '',
     occupation: u.occupation || '',
     education: u.education || '',
@@ -3393,6 +3394,7 @@ export default function PatientDetailPage() {
         toast('请输入正确的11位手机号码')
         return
       }
+      if (basicInfoForm.ethnicity?.trim() && basicInfoForm.ethnicity.trim() !== String(user.ethnicity || '').trim() && basicInfoForm.culturalPreferencesConfirmed !== true) { toast('请先确认客户自愿提供民族信息'); return }
       await staffAPI.updatePatient(id, basicInfoForm)
       toast('基本信息已保存')
       setEditingBasicInfo(false)
@@ -4794,8 +4796,12 @@ export default function PatientDetailPage() {
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label style={{ fontSize: 12, color: '#8AA89C' }}>民族</label>
-                    <input className="form-input" value={basicInfoForm.ethnicity || ''} onChange={e => setBasicInfoForm(f => ({ ...f, ethnicity: e.target.value }))} />
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>民族（选填，用于尊重服务禁忌）</label>
+                    <input className="form-input" value={basicInfoForm.ethnicity || ''} onChange={e => setBasicInfoForm(f => ({ ...f, ethnicity: e.target.value, culturalPreferencesConfirmed: false }))} />
+                    {basicInfoForm.ethnicity?.trim() && basicInfoForm.ethnicity.trim() !== String(user.ethnicity || '').trim() && <label style={{ display: 'block', fontSize: 12, marginTop: 6 }}>
+                      <input type="checkbox" checked={basicInfoForm.culturalPreferencesConfirmed === true} onChange={e => setBasicInfoForm(f => ({ ...f, culturalPreferencesConfirmed: e.target.checked }))} />
+                      我已说明用途，确认客户自愿提供；留空不影响基础服务（工作人员确认）。
+                    </label>}
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>学历</label>
