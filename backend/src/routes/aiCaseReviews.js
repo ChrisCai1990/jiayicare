@@ -372,16 +372,17 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/sync-chronic-concerns
     const cardiovascular = standard.reviewedCardiovascularConcerns(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags);
     const reviewed = [chronic, cardiovascular].filter(result => result.sourceStatus === 'reviewed');
     if (!reviewed.length) return res.json({ success: true, data: forClient(topic), added: 0, sourceStatus: chronic.sourceStatus === 'unreviewed' && cardiovascular.sourceStatus === 'unreviewed' ? 'unreviewed' : 'missing' });
-    const existingKeys = new Set((topic.concerns || []).map(row => row.key));
-    const additions = reviewed.flatMap(result => result.concerns).filter(row => !existingKeys.has(row.key));
-    if ((topic.concerns || []).length + additions.length > 100) return res.status(409).json({ success: false, message: '本年度关注问题已达上限，请先整理研判' });
-    if (additions.length) {
-      topic.concerns.push(...additions.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
+    const { reconcileReviewedConcerns } = require('../utils/annualConcernReconcile');
+    const incoming = reviewed.flatMap(result => result.concerns).map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() }));
+    const reconciled = reconcileReviewedConcerns(topic.concerns || [], incoming);
+    if (reconciled.rows.length > 100) return res.status(409).json({ success: false, message: '本年度关注问题已达上限，请先整理研判' });
+    if (reconciled.changed) {
+      topic.concerns = reconciled.rows;
       topic.markModified('concerns');
       reopenAfterConcernChange(topic);
       await topic.save();
     }
-    return res.json({ success: true, data: forClient(topic), added: additions.length, sourceStatus: 'reviewed', reviewedCount: reviewed.reduce((count, result) => count + result.concerns.length, 0) });
+    return res.json({ success: true, data: forClient(topic), added: reconciled.added, merged: reconciled.merged, sourceStatus: 'reviewed', reviewedCount: reviewed.reduce((count, result) => count + result.concerns.length, 0) });
   } catch (error) { return res.status(error.name === 'VersionError' ? 409 : 500).json({ success: false, message: error.message }); }
 });
 

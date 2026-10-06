@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
+import { concernStatusLabel, concernSourceLabel } from '../utils/annualConcernLabels'
 
 const STATUS = [['suggested', 'AI提示，待核实'], ['included', '纳入研判'], ['watch', '继续观察'], ['duplicate', '与其他问题重复'], ['excluded', '不纳入']]
 const PATHWAY = [['undecided', '待判断'], ['specialist', '专科评估或就医'], ['nutrition', '交营养师评估'], ['both', '专科和营养师均介入'], ['followup', '随访与复评']]
@@ -17,13 +18,13 @@ function ConcernRow({ concern, number, patientId, topicId, canEdit, toast, onUpd
     finally { setBusy(false) }
   }
   return <details style={{ border: '1px solid #DCE8E1', borderRadius: 9, padding: 11, marginTop: 8, background: '#fff' }}>
-    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{number}. {concern.title}<span style={{ color: '#65776F', fontSize: 12, fontWeight: 400, marginLeft: 8 }}>{STATUS.find(([value]) => value === concern.status)?.[1] || '待核实'} · {PATHWAY.find(([value]) => value === concern.pathway)?.[1] || '待判断'}</span></summary>
-    <div style={{ fontSize: 12, color: '#65776F', marginTop: 3 }}>{SOURCE[concern.kind] || '其他资料'} · {concern.source?.checkDate || concern.source?.year || ''} · {concern.includedByName || '系统'}</div>
+    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{number}. {concern.title}<span style={{ color: '#65776F', fontSize: 12, fontWeight: 400, marginLeft: 8 }}>{concernStatusLabel(concern)} · {PATHWAY.find(([value]) => value === concern.pathway)?.[1] || '待判断'}</span></summary>
+    <div style={{ fontSize: 12, color: '#65776F', marginTop: 3 }}>{SOURCE[concern.kind] || '其他资料'} · {concern.source?.checkDate || concern.source?.year || ''} · {concernSourceLabel(concern)}</div>
     {concern.evidence && <div style={{ fontSize: 12, lineHeight: 1.6, marginTop: 5 }}>依据：{concern.evidence}</div>}
     {concern.kind === 'specialty_issue' && concern.source?.topicId && <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>由既有单项主题并入；原始资料与讨论保留。</div>}
     {canEdit && <input className="form-input" style={{ marginTop: 8 }} maxLength={60} disabled={busy} value={form.title} onChange={e => setForm(value => ({ ...value, title: e.target.value }))} aria-label="具体问题名称" />}
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-      <select className="form-input" style={{ width: 170 }} disabled={!canEdit || busy} value={form.status} onChange={e => setForm(value => ({ ...value, status: e.target.value }))}>{STATUS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      <select className="form-input" style={{ width: 210 }} disabled={!canEdit || busy} value={form.status} onChange={e => setForm(value => ({ ...value, status: e.target.value }))}>{STATUS.map(([value, label]) => <option key={value} value={value}>{value === 'suggested' ? concernStatusLabel({ ...concern, status: value }) : label}</option>)}</select>
       <select className="form-input" style={{ width: 185 }} disabled={!canEdit || busy} value={form.pathway} onChange={e => setForm(value => ({ ...value, pathway: e.target.value }))}>{PATHWAY.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
     </div>
     <input className="form-input" style={{ marginTop: 7 }} disabled={!canEdit || busy} maxLength={500} value={form.note} onChange={e => setForm(value => ({ ...value, note: e.target.value }))} placeholder="补充判断依据；排除或重复时必填" />
@@ -54,7 +55,7 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
     try {
       const result = await staffAPI.syncAnnualChronicConcerns(patientId, topic._id)
       onUpdate(result.data)
-      setSyncMessage(result.sourceStatus === 'unreviewed' ? '心脑血管与慢病健康趋势及关注标签均未审核，暂不能自动带入。' : result.sourceStatus === 'missing' ? '已审核资料中没有可同步的心脑血管或慢病板块。' : result.reviewedCount === 0 ? '已审核资料未列出需关注的心脑血管或慢病风险线索。' : result.added ? `已补入 ${result.added} 项风险线索，仍需健康顾问逐项核对。` : '已审核的心脑血管与慢病风险线索均在本年度列表中。')
+      setSyncMessage(result.sourceStatus === 'unreviewed' ? '心脑血管与慢病健康趋势及关注标签均未审核，暂不能自动带入。' : result.sourceStatus === 'missing' ? '已审核资料中没有可同步的心脑血管或慢病板块。' : result.reviewedCount === 0 ? '已审核资料未列出需关注的心脑血管或慢病风险线索。' : result.added || result.merged ? `已补入 ${result.added || 0} 项、合并 ${result.merged || 0} 项重复线索；请确定年度去向。` : '已审核的心脑血管与慢病风险线索均在本年度列表中。')
     } catch (error) { setSyncMessage(error.message || '慢性病风险维度同步失败') }
     finally { setSyncing(false) }
   }
