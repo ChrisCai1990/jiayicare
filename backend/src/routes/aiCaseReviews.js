@@ -655,9 +655,6 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const reframeAnnual = isAnnualReview && content.startsWith('【按问题重整年度研判】');
       if (reframeAnnual) history = [];
       const specialtySummary = isAnnualReview ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
-      const archiveEvidence = isAnnualReview
-        ? await require('../utils/annualCaseReviewEvidence').loadAnnualCaseReviewEvidence(user._id, `${topicGuide}\n${content}`) : null;
-      if (archiveEvidence) snapshot.sources.push(`全档案已审核报告索引：${archiveEvidence.auditedReportCount}份；相关报告项目已补入本轮研判`);
       const annualBoundary = isAnnualReview ? '年度研判以最新已审核的具体健康问题、检查发现和五年趋势为准。旧版泛化AI风险扫描仅保留历史，不作为当前判断依据；若旧分析与新资料冲突，以新资料为准。检查项目和检验指标仅作为相关问题的依据，不能作为独立诊断。先核实来源，再分析问题之间有证据支持的关联、时间变化和共同影响，最后形成优先级、医疗管理目标及专业去向。不得把共存当作因果，必要的专科意见未取得时标记待确认。营养干预具体方案由营养师独立制定和发出。' : '';
       const issueCardGuide = '以问题为阅读单位，不按“来源、筛选、去向、目标”横向分栏。每个纳入的问题或风险维度单独输出一张卡，相关问题可合并，但标题须列出被合并的名称。严格使用纯文本格式：每张卡以独占一行的“【问题：具体名称】”开头，然后各占一行写“依据与趋势：…”“当前判断：…”“与其他问题的关联：…”“专业去向：…”“管理目标：…；干预重点：…”“沟通与待补：…”。证据、时间和来源写在该问题卡内；缺乏依据的目标只写“管理目标：待确认”，不要编造干预重点。每张卡最多260个汉字，全文不超过2000个汉字；只保留关键证据，不堆砌检查清单。所有问题卡之后独占一行写“【综合关联与优先级】”，再按行写“共同关联：…”“优先级：…”“年度方案衔接：…”。不要重复长篇病史、不要输出六议题总表；关系仅在有证据时提出，推测标明待核实。既有主题说明若要求六议题输出，以本格式为准。';
       const incrementalGuide = reframeAnnual
@@ -670,7 +667,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const autoGuide = automatic
         ? `${isAnnualReview ? `这是年度综合研判首次讨论。${issueCardGuide}` : '这是本主题首次讨论。'}${exam ? '优先核对最近一次已审核体检报告及其日期/项目依据' : '暂无已审核的体检报告，请依据已审核健康趋势、AI风险提示及已纳入问题，不得虚构体检所见'}。区分已确认事实与待核实信息，目标仅为草稿，须由健康顾问确认。`
         : incrementalGuide;
-      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。\n【全量已审核报告索引与相关原始项目】\n${JSON.stringify(archiveEvidence)}` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isAnnualReview ? 5000 : isSupplement ? 900 : automatic ? 3200 : 1800, retryOnEmptyOrLength: isAnnualReview });
+      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isAnnualReview ? 5000 : isSupplement ? 900 : automatic ? 3200 : 1800, retryOnEmptyOrLength: isAnnualReview });
       if (automatic && !proposedTargets.length) result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
       return { result, snapshot: result.contextSnapshot || snapshot };
     });
@@ -751,11 +748,16 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
       auditedGlucose ? `最新已审核糖化血红蛋白报告：${auditedGlucose.date}，HbA1c ${auditedGlucose.value}%；报告标记：${auditedGlucose.status || '未标记'}；不得沿用更早的矛盾风险扫描` : '',
     ].filter(Boolean).join('\n');
     const specialtySummary = topic.reviewType === 'annual' && topic.annualPlanYear ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
-    const archiveEvidence = topic.annualPlanYear
-      ? await require('../utils/annualCaseReviewEvidence').loadAnnualCaseReviewEvidence(user._id, `${concernSummary}\n${transcript}`) : null;
-    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。年度研判须综合具体问题、五年趋势、慢病与重大疾病风险，说明有证据支持的问题间关联及共同管理优先级，不逐项割裂罗列，也不把共存误写成因果。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实。营养相关事项只写转营养师评估，不代营养师制定具体干预方案。检查和指标只能作为相关问题的证据，不得作为独立诊断。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n待研判问题及人工分流：\n${concernSummary || '暂无结构化问题'}\n检查和指标依据（不要作为独立问题）：\n${evidenceSummary || '暂无'}\n${topic.annualPlanYear ? `既有单项主题历史资料（已确认的可引用，未确认的仅列待核实）：\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无'}\n全量已审核报告索引与相关原始项目（列“待补”前须核对）：\n${JSON.stringify(archiveEvidence)}\n` : ''}讨论记录：\n${transcript}`;
+    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。年度研判须综合具体问题、五年趋势、慢病与重大疾病风险，说明有证据支持的问题间关联及共同管理优先级，不逐项割裂罗列，也不把共存当作因果。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实。营养相关事项只写转营养师评估，不代营养师制定具体干预方案。检查和指标只能作为相关问题的证据，不得作为独立诊断。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n待研判问题及人工分流：\n${concernSummary || '暂无结构化问题'}\n检查和指标依据（不要作为独立问题）：\n${evidenceSummary || '暂无'}\n${topic.annualPlanYear ? `既有单项主题历史资料（已确认的可引用，未确认的仅列待核实）：\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无'}\n` : ''}讨论记录：\n${transcript}`;
     const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt, context: { sources: [] }, attachments: [], history: [] });
     const structured = toStructuredAssessment(result.content, topic.title);
+    if (topic.annualPlanYear && structured.missing?.length) {
+      const { reconcileMissingInfo } = require('../utils/annualCaseReviewEvidence');
+      const correction = await reconcileMissingInfo(user._id, structured.missing);
+      structured.missing = correction.missing;
+      if (correction.found.length) structured.facts.push(...correction.found);
+      if (correction.actions.length) structured.actions.push(...correction.actions);
+    }
     if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({
       content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
       confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,

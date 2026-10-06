@@ -51,6 +51,31 @@ function compileArchiveEvidence(reports, query, bloodPressure = []) {
   };
 }
 
+function reconcileMissingAgainstEvidence(missing = [], evidence = {}) {
+  const kept = [], found = [], actions = [];
+  for (const item of missing) {
+    const text = String(item || '').trim();
+    const dates = text.match(/20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}/g) || [];
+    const range = text.match(/(20\d{2})\s*[–—-]\s*(20\d{2})/);
+    const patterns = TOPIC_PATTERNS.filter(([topic]) => topic.test(text)).map(([, pattern]) => pattern);
+    if (!patterns.length) { kept.push(item); continue; }
+    const detailed = new Set((evidence.relevantReports || []).filter(report => patterns.some(pattern =>
+      pattern.test(`${report.title || ''} ${(report.items || []).map(row => row.name).join(' ')}`))).map(report => report.reportId));
+    const matches = (evidence.reportIndex || []).filter(report => {
+      const reportYear = Number(String(report.date || '').slice(0, 4));
+      const dateMatch = dates.some(date => date.replace(/[/.]/g, '-') === report.date)
+        || (range && reportYear >= Number(range[1]) && reportYear <= Number(range[2]));
+      const topicMatch = detailed.has(report.reportId) || patterns.some(pattern => pattern.test(report.title || ''));
+      return topicMatch && (dates.length || range ? dateMatch : true);
+    });
+    if (!matches.length) { kept.push(item); continue; }
+    const labels = matches.slice(0, 6).map(report => `${report.date || '日期待核实'} ${report.title}`).join('、');
+    found.push(`档案已收录相关已审核报告：${labels}${matches.length > 6 ? `等${matches.length}份` : ''}；已存报告不能视为未提供。`);
+    actions.push(`核对已归档报告中特定字段及原件：${text}`);
+  }
+  return { missing: kept, found, actions };
+}
+
 async function loadAnnualCaseReviewEvidence(patientId, query) {
   const MedicalReport = require('../models/MedicalReport');
   const HealthRecord = require('../models/HealthRecord');
@@ -64,4 +89,9 @@ async function loadAnnualCaseReviewEvidence(patientId, query) {
   return compileArchiveEvidence(reports, query, bloodPressure);
 }
 
-module.exports = { compileArchiveEvidence, loadAnnualCaseReviewEvidence };
+async function reconcileMissingInfo(patientId, missing) {
+  const evidence = await loadAnnualCaseReviewEvidence(patientId, missing.join('\n'));
+  return reconcileMissingAgainstEvidence(missing, evidence);
+}
+
+module.exports = { compileArchiveEvidence, loadAnnualCaseReviewEvidence, reconcileMissingAgainstEvidence, reconcileMissingInfo };

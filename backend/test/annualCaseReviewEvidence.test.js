@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { compileArchiveEvidence } = require('../src/utils/annualCaseReviewEvidence');
+const { compileArchiveEvidence, reconcileMissingAgainstEvidence } = require('../src/utils/annualCaseReviewEvidence');
 
 test('annual review retrieves a relevant audited result beyond the latest 30 reports', () => {
   const recent = Array.from({ length: 110 }, (_, index) => ({ _id: `recent-${index}`, checkDate: '2026-09-01', title: `其他检查${index}`, reportItems: [] }));
@@ -24,4 +24,17 @@ test('annual review keeps imaging and pathology reports in the archive index', (
   const evidence = compileArchiveEvidence(reports, '颈动脉斑块、肠镜病理切缘和肺结节基线');
   assert.deepEqual(evidence.reportIndex.map(item => item.reportId), ['carotid', 'pathology', 'chest']);
   assert.equal(evidence.relevantReports.length, 3);
+});
+
+test('locally moves already archived reports out of missing while preserving absent blood pressure', () => {
+  const reports = [
+    { _id: 'lab', checkDate: '2024-03-01', title: '生化+TRF饱和度', reportItems: [{ name: '铁蛋白Fer', value: '659.10', referenceRange: '30-400' }] },
+    { _id: 'chest', checkDate: '2022-05-30', title: '肺CT', reportItems: [] },
+  ];
+  const missing = ['2024-03-01血红蛋白与铁蛋白原始结果', '2022–2025年全部胸部影像报告', '近7日家庭血压记录'];
+  const evidence = compileArchiveEvidence(reports, missing.join('\n'));
+  const result = reconcileMissingAgainstEvidence(missing, evidence);
+  assert.deepEqual(result.missing, ['近7日家庭血压记录']);
+  assert.equal(result.found.length, 2);
+  assert.equal(result.actions.length, 2);
 });
