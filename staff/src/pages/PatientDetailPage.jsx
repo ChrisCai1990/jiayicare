@@ -3801,7 +3801,7 @@ export default function PatientDetailPage() {
       const res = await staffAPI.regenerateAIHealthSummaryItem(id, { year: aiYear, scope, recordIndex: aiRecordIndex.doctor, sectionKey, itemName, instruction: instruction.trim(), expectedRecordToken })
       applyAIHealthSummary(res.data)
       setLastRegeneratedItem(`${sectionKey}:${itemName}`)
-      toast(`${itemName}及板块整体意见已更新，请重新审核`)
+      toast(`${itemName}、整体意见及相关关注问题已同步，请重新审核`)
     } catch (err) { toast(err.message || '单项重新生成失败') }
     finally { setAiSummaryLoading(false) }
   }
@@ -3811,7 +3811,7 @@ export default function PatientDetailPage() {
       setAiSummaryLoading(true)
       const res = await staffAPI.refreshAIHealthSummaryOverview(id, { year, recordIndex, sectionKey, expectedRecordToken })
       applyAIHealthSummary(res.data)
-      toast('整体意见已依据当前卡片更新，请核对并重新审核')
+      toast('整体意见及相关关注问题已依据当前卡片同步，请核对并重新审核')
     } catch (err) { toast(err.message || '整体意见刷新失败') }
     finally { setAiSummaryLoading(false) }
   }
@@ -8112,7 +8112,7 @@ export default function PatientDetailPage() {
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ fontWeight: 800, color: accent, flex: 1 }}>{overview?.headline || '健康指标趋势总览'}</div>
                 <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading}
-                  onClick={() => handleRefreshAISummaryOverview(curYear, doctorRecord._recordIndex || 0, sectionKey, doctorRecord._reviewToken)}>刷新整体意见</button>
+                  onClick={() => handleRefreshAISummaryOverview(curYear, doctorRecord._recordIndex || 0, sectionKey, doctorRecord._reviewToken)}>同步整体意见与关注问题</button>
               </div>
               <div style={{ marginTop: 5, fontSize: 12, color: '#64748B' }}>共 {list.length} 个主题 · 需关注 {Number(overview?.attentionCount) || list.filter(attention).length} 项</div>
             </div>
@@ -8585,7 +8585,7 @@ export default function PatientDetailPage() {
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
                               <div style={{ fontWeight: 800, color: '#5B21B6', flex: 1 }}>{ov.headline || sec.tumor_risk.summary || '常见肿瘤筛查与趋势总览'}</div>
                               <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading}
-                                onClick={() => handleRefreshAISummaryOverview(curYear, doctorRecord._recordIndex || 0, 'tumor_risk', doctorRecord._reviewToken)}>刷新整体意见</button>
+                                onClick={() => handleRefreshAISummaryOverview(curYear, doctorRecord._recordIndex || 0, 'tumor_risk', doctorRecord._reviewToken)}>同步整体意见与关注问题</button>
                             </div>
                             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: '#6B7280' }}>
                               <span>常见肿瘤目录 {cancers.length} 项</span>

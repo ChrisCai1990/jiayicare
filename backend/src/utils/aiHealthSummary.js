@@ -2,6 +2,7 @@ const { chat } = require('./ai');
 const { deriveLabFromReports, buildLatestLabText, buildTrendText, extractTumorMarkers, buildTumorMarkerText, extractGeneticFindings, extractExamFindings } = require('./labFromScreening');
 const { assessCancerCoverage, buildCoverageText } = require('./cancerScreeningCoverage');
 const { buildEvidenceCatalog } = require('./aiFactGuard');
+const { priorityLinksToCard } = require('./healthPriorityLinks');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
@@ -827,6 +828,15 @@ function attachSourceLinks(sections, allReports) {
     mp.items.forEach(item => {
       const match = findSourceMatch(item.name, index);
       if (match) Object.assign(item, match);
+      const linkedCards = [['chronic_disease', sections.chronic_disease?.items],
+        ['cardiovascular_risk', sections.cardiovascular_risk?.topics],
+        ['tumor_risk', sections.tumor_risk?.cancers]]
+        .flatMap(([key, cards]) => (cards || []).filter(card => priorityLinksToCard(item, key, card.name))
+          .map(card => ({ key, name: card.name })));
+      if (linkedCards.length === 1) {
+        item.sourceSectionKey = linkedCards[0].key;
+        item.sourceItemName = linkedCards[0].name;
+      }
     });
   }
 

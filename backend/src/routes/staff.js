@@ -10931,6 +10931,60 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 });
 
 const HEALTH_TREND_FIELDS = { tumor_risk: 'cancers', cardiovascular_risk: 'topics', chronic_disease: 'items' };
+const { linkedPriorityIndexes, priorityLinksToCard } = require('../utils/healthPriorityLinks');
+
+async function syncMedicalPriorities(record, sectionKey, staff) {
+  const cards = record.sections?.[sectionKey]?.[HEALTH_TREND_FIELDS[sectionKey]];
+  if (!Array.isArray(cards)) return;
+  const prioritySection = record.sections.medical_priority || { items: [] };
+  const existing = Array.isArray(prioritySection.items) ? prioritySection.items : [];
+  const linked = linkedPriorityIndexes(sectionKey, cards, existing);
+  const needsAttention = card => ['abnormal', 'mild_abnormal', 'attention', 'monitor', 'worsening',
+    'follow_up_due', 'overdue', 'due_soon'].includes(card.status) || card.trendStatus === 'worsening';
+  const focus = cards.filter(card => needsAttention(card)
+    || existing.some(item => priorityLinksToCard(item, sectionKey, card.name)));
+  if (!focus.length && !linked.length) return;
+  const eligible = focus.filter(needsAttention);
+  let generated = [];
+  if (eligible.length) {
+    const { chat } = require('../utils/ai');
+    const input = eligible.map(card => ({ name: card.name, status: card.status, latest: card.latest,
+      trendStatus: card.trendStatus, trend: card.trend, nextAction: card.nextAction }));
+    const raw = await chat([{ role: 'user', content: `依据以下已核对的健康趋势卡片，更新“需优先关注的信息”中属于本板块的条目。卡片是当前可信事实；旧关注条目可能含错误数值，不得照抄。仅保留确实需要优先跟进的事项，正常且无恶化的卡片不输出。不得诊断、开药或补造数值。\n卡片：${JSON.stringify(input)}\n只输出JSON：{"items":[{"sourceItemName":"必须与卡片name完全一致","name":"问题名称","current":"当前数值及日期","meaning":"信息说明","action":"建议行动","department":"","urgency":"high或medium或low"}]}；无优先事项则items为空数组。` }],
+      { maxTokens: 2400, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    const match = raw.match(/\{[\s\S]*\}/);
+    let result;
+    try { result = JSON.parse(match?.[0] || ''); } catch {}
+    if (!Array.isArray(result?.items) || result.items.length > eligible.length) throw new Error('关注问题同步失败，原分析未修改，请重试');
+    const cardByName = new Map(eligible.map(card => [card.name, card]));
+    const seen = new Set();
+    generated = result.items.map(item => {
+      const card = cardByName.get(item.sourceItemName);
+      if (!card || seen.has(item.sourceItemName) || !['high', 'medium', 'low'].includes(item.urgency)) {
+        throw new Error('关注问题同步结果无法对应原卡片，原分析未修改，请重试');
+      }
+      seen.add(item.sourceItemName);
+      const previous = existing.find(old => priorityLinksToCard(old, sectionKey, card.name));
+      return { name: String(item.name || '').trim(), current: String(item.current || '').trim(),
+        meaning: String(item.meaning || '').trim(), action: String(item.action || '').trim(),
+        department: String(item.department || '').trim(), urgency: item.urgency,
+        sourceSectionKey: sectionKey, sourceItemName: card.name,
+        sourceReportId: card.sourceReportId || previous?.sourceReportId || null };
+    });
+    if (generated.some(item => !item.name)) throw new Error('关注问题同步结果为空，原分析未修改，请重试');
+  }
+  const retained = existing.filter((_, index) => !linked.includes(index));
+  const updated = [...retained, ...generated];
+  if (JSON.stringify(existing) === JSON.stringify(updated)) return;
+  record.sections.medical_priority = { ...prioritySection, items: updated };
+  const now = new Date();
+  record.sectionReviews = { ...(record.sectionReviews || {}), medical_priority: {
+    ...(record.sectionReviews?.medical_priority || {}), status: 'draft', updatedAt: now, updatedBy: staff.name,
+  } };
+  record.prioritySyncLog = [...(record.prioritySyncLog || []), {
+    sectionKey, before: existing, after: updated, at: now, by: staff._id,
+  }];
+}
 
 async function buildHealthTrendOverview(sectionKey, list, instruction = '') {
   const overviewInput = list.map(item => ({ name: item.name, status: item.status,
@@ -10974,7 +11028,8 @@ function applyHealthTrendOverview(summary, year, entry, records, candidates, rec
   entry.sections = records[0]?.sections || entry.sections;
   summary.byYear[year] = entry;
   if ((String(summary.latestYear) === year || !summary.latestYear) && candidates[0] === record) {
-    summary.sections = { ...(summary.sections || {}), [sectionKey]: section };
+    summary.sections = { ...(summary.sections || {}), [sectionKey]: section,
+      ...(record.sections.medical_priority ? { medical_priority: record.sections.medical_priority } : {}) };
     summary.doctorApprovedAt = null;
     summary.doctorApprovedBy = null;
     summary.approvedAt = null;
@@ -11038,6 +11093,7 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     // 总览是独立的 AI 字段。卡片纠错后必须依据整组最新卡片重新归纳。
     const overview = await buildHealthTrendOverview(sectionKey, updatedList, String(instruction).trim());
     record.sections[sectionKey][field] = updatedList;
+    await syncMedicalPriorities(record, sectionKey, req.staff);
     record.itemRegenerationLog = [...(record.itemRegenerationLog || []), { sectionKey, itemName, instruction: String(instruction).trim(), at: new Date(), by: req.staff._id }];
     applyHealthTrendOverview(summary, y, entry, records, candidates, record, sectionKey, overview, req.staff);
     const saved = await User.collection.updateOne({ _id: user._id, aiHealthSummary: existingSummary }, { $set: { aiHealthSummary: summary } });
@@ -11071,6 +11127,7 @@ router.post('/patients/:id/ai-health-summary/refresh-overview', staffAuth, async
     const list = record.sections?.[sectionKey]?.[field];
     if (!Array.isArray(list) || !list.length) return res.status(400).json({ success: false, message: '当前板块没有可汇总的卡片' });
     const overview = await buildHealthTrendOverview(sectionKey, list);
+    await syncMedicalPriorities(record, sectionKey, req.staff);
     applyHealthTrendOverview(summary, y, entry, records, candidates, record, sectionKey, overview, req.staff);
     const saved = await User.collection.updateOne({ _id: user._id, aiHealthSummary: existingSummary }, { $set: { aiHealthSummary: summary } });
     if (!saved.matchedCount) return res.status(409).json({ success: false, message: '生成期间分析记录已变化，请刷新后重新核对；本次结果未保存' });
@@ -11100,6 +11157,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const idx = resolveReviewRecord(records, expectedRecordToken);
     if (idx < 0) return res.status(409).json({ success: false, message: '该分析记录已变化或页面版本过旧，请刷新后重新核对再提交' });
     const entry = { ...records[idx] };
+    const beforeSections = entry.sections || {};
     const beforeSection = sectionKey ? entry.sections?.[sectionKey] : null;
     if (sections !== undefined) {
       entry.sections = sectionKey
@@ -11107,6 +11165,17 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         : sections;
     }
     if (sectionNotes !== undefined) entry.sectionNotes = sectionNotes;
+    if (sections !== undefined && (sc === 'doctor' || sc === 'all')) {
+      for (const [key, field] of Object.entries(HEALTH_TREND_FIELDS)) {
+        if (sectionKey && sectionKey !== key) continue;
+        if (JSON.stringify(beforeSections[key]?.[field]) === JSON.stringify(entry.sections?.[key]?.[field])) continue;
+        await syncMedicalPriorities(entry, key, req.staff);
+        entry.doctorApprovedAt = null;
+        entry.doctorApprovedBy = null;
+        entry.approvedAt = null;
+        entry.approvedBy = null;
+      }
+    }
     if (sectionKey && sections !== undefined) {
       entry.sectionReviews = { ...(entry.sectionReviews || {}), [sectionKey]: {
         ...(entry.sectionReviews?.[sectionKey] || {}), status: 'draft', updatedAt: new Date(), updatedBy: req.staff.name,

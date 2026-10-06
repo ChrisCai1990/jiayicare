@@ -17,6 +17,7 @@ test('rejected duplicate requests cannot release the running generation lock', a
     User: { findById: () => query }, DOCTOR_KEYS: ['medical_priority'], LIFESTYLE_KEY: 'lifestyle_assessment',
     generateHealthSummarySections: async () => { calls++; return pending; },
     require: name => {
+      if (name.endsWith('healthPriorityLinks')) return require('../src/utils/healthPriorityLinks');
       if (name.endsWith('packageFeatureEntitlements')) return { getAiEntitlements: async () => ({ aiHealthAnalysis: true }) };
       if (name.endsWith('serviceAccess')) return { resolveServiceAccess: async () => ({}) };
       if (name.endsWith('reportAuditGate')) return { checkReportAuditGate: async () => null };
@@ -67,6 +68,7 @@ test('generation cannot overwrite a concurrent review; successful generation sup
     withReviewTokens: require('../src/utils/summaryReviewVersion').withReviewTokens,
     generateHealthSummarySections: async () => ({ sections: { medical_priority: { summary: '合成结果' } }, failed: false }),
     require: name => {
+      if (name.endsWith('healthPriorityLinks')) return require('../src/utils/healthPriorityLinks');
       if (name.endsWith('packageFeatureEntitlements')) return { getAiEntitlements: async () => ({ aiHealthAnalysis: true }) };
       if (name.endsWith('serviceAccess')) return { resolveServiceAccess: async () => ({}) };
       if (name.endsWith('reportAuditGate')) return { checkReportAuditGate: async () => null };
@@ -91,6 +93,7 @@ test('single-card correction refreshes the overview and invalidates its approval
   const record = { scope: 'doctor', doctorApprovedAt: '2026-09-06', sections: {
     chronic_disease: { overview: { headline: '血糖由5.5%升至7.0%', attentionCount: 1 },
       items: [{ name: '血糖', status: 'abnormal', latest: 'HbA1c 7.0%' }, { name: '血压', status: 'normal', latest: '正常' }] },
+    medical_priority: { items: [{ name: '糖化血红蛋白升高', current: '7.0%' }, { name: '胃炎', current: '需复查' }] },
   } };
   const original = { latestYear: '2026', sections: record.sections, byYear: { 2026: { ...record, records: [record] } } };
   const handlers = {};
@@ -101,7 +104,7 @@ test('single-card correction refreshes the overview and invalidates its approval
       collection: { updateOne: async (filter, update) => { saved = update.$set.aiHealthSummary; assert.equal(filter.aiHealthSummary, original); return { matchedCount: 1 }; } } },
     MedicalReport: { find: () => ({ sort: () => ({ select: () => ({ lean: async () => [] }) }) }) },
     reviewToken, withReviewTokens, Date, JSON,
-    require: () => ({
+    require: name => name.endsWith('healthPriorityLinks') ? require('../src/utils/healthPriorityLinks') : ({
       chat: async () => ++calls === 1
         ? JSON.stringify({ status: 'normal', latest: 'HbA1c 5.6%', trendStatus: 'stable' })
         : JSON.stringify({ headline: '血糖目前处于正常范围，继续监测。' }),
@@ -115,6 +118,7 @@ test('single-card correction refreshes the overview and invalidates its approval
   assert.equal(saved.byYear[2026].records[0].sections.chronic_disease.items[0].latest, 'HbA1c 5.6%');
   assert.equal(saved.sections.chronic_disease.overview.headline, '血糖目前处于正常范围，继续监测。');
   assert.equal(saved.sections.chronic_disease.overview.attentionCount, 0);
+  assert.deepEqual(Array.from(saved.sections.medical_priority.items, item => item.name), ['胃炎']);
   assert.equal(saved.doctorApprovedAt, null);
   assert.equal(saved.byYear[2026].records[0].sectionReviews.chronic_disease.status, 'draft');
   assert.equal(original.sections.chronic_disease.items[0].latest, 'HbA1c 7.0%', 'failed CAS would leave old data intact');
@@ -127,6 +131,7 @@ test('overview refresh updates an already corrected record without regenerating 
   const doctor = { scope: 'doctor', doctorApprovedAt: '2026-09-06', sections: {
     chronic_disease: { overview: { headline: '血糖由5.5%升至7.0%', attentionCount: 1 },
       items: [{ name: '血糖', status: 'normal', latest: '2026-09-05 HbA1c 5.6%', trendStatus: 'stable' }] },
+    medical_priority: { items: [{ name: '糖化血红蛋白升高', current: '7.0%' }, { name: '胃炎', current: '需复查' }] },
   } };
   const nutrition = { scope: 'nutrition', sections: { lifestyle_assessment: { summary: '已审核' } } };
   const original = { latestYear: '2026', sections: doctor.sections, byYear: { 2026: { ...nutrition, records: [nutrition, doctor] } } };
@@ -137,7 +142,8 @@ test('overview refresh updates an already corrected record without regenerating 
     User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
       collection: { updateOne: async (_filter, update) => { saved = update.$set.aiHealthSummary; return { matchedCount: 1 }; } } },
     reviewToken, withReviewTokens, Date, JSON,
-    require: () => ({ chat: async () => { calls++; return JSON.stringify({ headline: '血糖目前在正常范围，继续监测。' }); } }),
+    require: name => name.endsWith('healthPriorityLinks') ? require('../src/utils/healthPriorityLinks')
+      : { chat: async () => { calls++; return JSON.stringify({ headline: '血糖目前在正常范围，继续监测。' }); } },
   });
   const response = () => ({ statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } });
   const request = { params: { id: 'member' }, staff: { role: 'familyDoctor', name: '医生', _id: 'staff' },
@@ -148,10 +154,31 @@ test('overview refresh updates an already corrected record without regenerating 
   assert.equal(calls, 1);
   assert.equal(saved.byYear[2026].records[1].sections.chronic_disease.items[0].latest, '2026-09-05 HbA1c 5.6%');
   assert.equal(saved.sections.chronic_disease.overview.headline, '血糖目前在正常范围，继续监测。');
+  assert.deepEqual(Array.from(saved.sections.medical_priority.items, item => item.name), ['胃炎']);
   assert.equal(saved.byYear[2026].records[1].doctorApprovedAt, null);
   assert.equal(original.sections.chronic_disease.overview.headline, '血糖由5.5%升至7.0%');
   const stale = response();
   await handlers['/patients/:id/ai-health-summary/refresh-overview']({ ...request, body: { ...request.body, expectedRecordToken: 'stale' } }, stale);
   assert.equal(stale.statusCode, 409);
   assert.equal(calls, 1);
+});
+
+test('priority synchronization replaces only linked abnormal concerns', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('async function buildHealthTrendOverview'));
+  const context = { require: name => name.endsWith('healthPriorityLinks')
+    ? require('../src/utils/healthPriorityLinks')
+    : { chat: async () => JSON.stringify({ items: [{ sourceItemName: '血糖', name: '血糖需关注',
+      current: 'HbA1c 7.2%', meaning: '较前次升高', action: '携带报告咨询医生', department: '', urgency: 'medium' }] }) },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${code}\nglobalThis.sync = syncMedicalPriorities;`, context);
+  const record = { sections: { chronic_disease: { items: [{ name: '血糖', status: 'abnormal', latest: 'HbA1c 7.2%' }] },
+    medical_priority: { items: [{ name: '糖化血红蛋白升高', current: '7.0%' }, { name: '胃炎', current: '需复查' }] } } };
+  await context.sync(record, 'chronic_disease', { name: '医生', _id: 'staff' });
+  const items = record.sections.medical_priority.items;
+  assert.deepEqual(Array.from(items, item => item.name), ['胃炎', '血糖需关注']);
+  assert.equal(items[1].current, 'HbA1c 7.2%');
+  assert.equal(items[1].sourceItemName, '血糖');
+  assert.equal(record.sectionReviews.medical_priority.status, 'draft');
 });
