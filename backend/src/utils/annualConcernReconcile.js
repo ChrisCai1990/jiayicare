@@ -1,4 +1,5 @@
 const REVIEWED_KINDS = new Set(['ai_health_trend', 'reviewed_chronic_tag', 'reviewed_cardiovascular_tag', 'reviewed_tumor_tag']);
+const { clinicalType } = require('./annualConcernTypes');
 
 function conceptKey(title) {
   const name = String(title || '').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
@@ -41,7 +42,13 @@ function reconcileReviewedConcerns(existing = [], incoming = []) {
   const conceptIndex = new Map();
   let merged = 0;
   let added = 0;
+  let reclassified = 0;
   const process = (row, isIncoming) => {
+    if (REVIEWED_KINDS.has(row.kind)) {
+      const type = clinicalType(row);
+      if (!isIncoming && row.clinicalType !== type) reclassified++;
+      row = { ...row, clinicalType: type };
+    }
     if (!REVIEWED_KINDS.has(row.kind)) {
       if (!isIncoming) rows.push(row);
       return;
@@ -61,7 +68,7 @@ function reconcileReviewedConcerns(existing = [], incoming = []) {
   };
   existing.forEach(row => process(row, false));
   incoming.forEach(row => process(row, true));
-  return { rows, added, merged, changed: added > 0 || merged > 0 };
+  return { rows, added, merged, reclassified, changed: added > 0 || merged > 0 || reclassified > 0 };
 }
 
 module.exports = { REVIEWED_KINDS, conceptKey, reconcileReviewedConcerns };

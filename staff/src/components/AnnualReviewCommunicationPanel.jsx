@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { concernStatusLabel, concernSourceLabel } from '../utils/annualConcernLabels'
+import { concernStatusLabel, concernSourceLabel, concernTypeLabel, isEvidenceConcern } from '../utils/annualConcernLabels'
 
 export default function AnnualReviewCommunicationPanel({ patientId, year, staff, toast, onOpenReview }) {
   const nav = useNavigate()
@@ -14,6 +14,9 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
   const canConfirm = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const newerSpecialtyConclusion = specialtyReviews.some(item => item.conclusion?.status === 'confirmed' && review?.conclusion?.confirmedAt && new Date(item.conclusion.confirmedAt) > new Date(review.conclusion.confirmedAt))
   const annualConclusionStale = !!review?.concernsUpdatedAt && (!review.conclusion?.generatedAt || new Date(review.conclusion.generatedAt) < new Date(review.concernsUpdatedAt))
+  const annualRows = (review?.concerns || []).filter(item => item.includedByName !== '已审核AI风险扫描')
+  const problemRows = annualRows.filter(item => !isEvidenceConcern(item))
+  const evidenceRows = annualRows.filter(isEvidenceConcern)
 
   const load = async () => {
     setLoading(true)
@@ -75,10 +78,12 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
     <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 6 }}>客户沟通前的研判核对 · {year}年度</div>
     {loading ? <div style={{ fontSize: 13 }}>正在读取研判…</div> : <>
       <div style={{ marginTop: 10, padding: 12, background: '#fff', border: '1px solid #D9E9E1', borderRadius: 8 }}>
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>① 年度研判中的具体问题 · {(review?.concerns || []).filter(item => item.includedByName !== '已审核AI风险扫描').length}</div>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>① 年度研判中的健康问题与发现 · {problemRows.length}</div>
         {review && canConfirm && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={syncReviewedConcerns} style={{ marginBottom: 8 }}>{busy ? '核对中…' : '同步已审核关注线索'}</button>}
         {!review && <div style={{ fontSize: 13, color: '#65776F' }}>可从下方筛查结果或五年健康趋势纳入具体问题；它们将与其他问题一起进行年度综合分析。</div>}
-        {(review?.concerns || []).filter(item => item.includedByName !== '已审核AI风险扫描').map(item => <div key={item.id} style={{ padding: '6px 0', borderTop: '1px solid #EDF1EE', fontSize: 13 }}><strong>{item.title}</strong><span style={{ color: '#65776F', marginLeft: 8 }}>{concernStatusLabel(item)}</span><div style={{ color: '#65776F', fontSize: 12, marginTop: 3 }}>来源：{concernSourceLabel(item)}</div></div>)}
+        {problemRows.map(item => <div key={item.id} style={{ padding: '6px 0', borderTop: '1px solid #EDF1EE', fontSize: 13 }}><strong>{item.title}</strong><span style={{ color: '#65776F', marginLeft: 8 }}>{concernTypeLabel(item)} · {concernStatusLabel(item)}</span><div style={{ color: '#65776F', fontSize: 12, marginTop: 3 }}>来源：{concernSourceLabel(item)}</div></div>)}
+        {!!evidenceRows.length && <div style={{ fontWeight: 700, marginTop: 12, marginBottom: 5 }}>检查与指标依据 · {evidenceRows.length}</div>}
+        {evidenceRows.map(item => <details key={item.id} style={{ padding: '6px 0', borderTop: '1px solid #EDF1EE', fontSize: 13 }}><summary><strong>{item.title}</strong><span style={{ color: '#65776F', marginLeft: 8 }}>{concernTypeLabel(item)} · {concernStatusLabel(item)}</span></summary><div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>来源：{concernSourceLabel(item)}</div>{item.evidence && <div style={{ fontSize: 12, marginTop: 4, whiteSpace: 'pre-wrap' }}>检查所见与趋势：{item.evidence}</div>}</details>)}
         {review && specialtyReviews.some(item => !(review.concerns || []).some(concern => concern.key === `legacy_specialty:${item._id}`)) && <div style={{ fontSize: 12, color: '#A16620', marginTop: 7 }}>既有单项主题尚未全部并入；打开年度综合研判后可一键整合。</div>}
       </div>
       <div style={{ marginTop: 10, padding: 12, background: '#fff', border: '1px solid #D9E9E1', borderRadius: 8 }}>

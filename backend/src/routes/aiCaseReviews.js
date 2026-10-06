@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const { isEvidenceConcern, clinicalType } = require('../utils/annualConcernTypes');
 const router = express.Router();
 const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
@@ -616,8 +617,11 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const isSupplement = topic.messages.length > 1;
       const history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
       const proposedTargets = topic.conclusion?.managementTargets || [];
-      const concerns = (topic.concerns || []).filter(row => !['excluded', 'duplicate'].includes(row.status));
+      const activeConcerns = (topic.concerns || []).filter(row => !['excluded', 'duplicate'].includes(row.status));
+      const concerns = activeConcerns.filter(row => !isEvidenceConcern(row));
+      const supportingEvidence = activeConcerns.filter(isEvidenceConcern);
       snapshot.reviewConcerns = concerns;
+      snapshot.supportingEvidence = supportingEvidence;
       if (concerns.length) snapshot.sources.push(`年度待研判问题：${concerns.length}项（逐项保留报告或已审趋势来源）`);
       if (topic.sourceLinks?.length) {
         snapshot.specialtySources = topic.sourceLinks;
@@ -625,12 +629,13 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       }
       const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : '',
         topic.sourceLinks?.length ? `健康顾问选定的单个专病问题及来源（优先核对，不可将报告所见直接当诊断）：${JSON.stringify(topic.sourceLinks.map(row => ({ title: row.title, evidence: row.evidence, source: row.source })))}` : '',
-        concerns.length ? `健康顾问纳入及AI扫描的待研判问题（均须核实，不能当作已确诊；按已标注去向讨论）：${JSON.stringify(concerns.map(row => ({ title: row.title, evidence: row.evidence, kind: row.kind, status: row.status, pathway: row.pathway, note: row.note, source: row.source })))}` : '',
+        concerns.length ? `健康顾问纳入及AI扫描的待研判问题（均须核实，不能当作已确诊；按已标注去向讨论）：${JSON.stringify(concerns.map(row => ({ title: row.title, clinicalType: clinicalType(row), evidence: row.evidence, kind: row.kind, status: row.status, pathway: row.pathway, note: row.note, source: row.source })))}` : '',
+        supportingEvidence.length ? `以下是检查与指标依据，不是独立诊断或待研判问题。提取其中有来源的异常结果并关联到相关问题，不要以检查名称创建问题卡：${JSON.stringify(supportingEvidence.map(row => ({ title: row.title, clinicalType: clinicalType(row), evidence: row.evidence, source: row.source })))}` : '',
         proposedTargets.length ? `创建主题时填写的拟管理目标和干预重点（尚未核实，只作为研判方向，不能当作已确认事实）：${JSON.stringify(proposedTargets)}` : ''].filter(Boolean).join('\n');
       const isAnnualReview = topic.reviewType === 'annual' && !!topic.annualPlanYear;
       const reframeAnnual = isAnnualReview && content.startsWith('【按问题重整年度研判】');
       const specialtySummary = isAnnualReview ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
-      const annualBoundary = isAnnualReview ? '年度研判把健康顾问纳入的具体问题、五年健康趋势、慢性病风险维度及重大疾病风险维度作为同一组资料。风险维度是待核实的分析方向，不等于已确诊疾病。先逐项核实依据，再分析具体问题之间及其与五年趋势之间有证据支持的关联、时间变化和共同影响，最后形成综合优先级、医疗管理目标和专科/就医、营养师评估或随访去向。不得把仅仅共存当作因果，必要的专科意见未取得时标记待确认。营养干预具体方案由营养师独立制定和发出。' : '';
+      const annualBoundary = isAnnualReview ? '年度研判把健康顾问纳入的具体问题、五年健康趋势、慢性病风险维度及重大疾病风险维度作为同一组资料。检查项目和检验指标仅作为问题依据，不能作为独立诊断或问题；有具体异常结果时关联到相应健康问题。风险维度是待核实的分析方向，不等于已确诊疾病。先逐项核实依据，再分析具体问题之间及其与五年趋势之间有证据支持的关联、时间变化和共同影响，最后形成综合优先级、医疗管理目标和专科/就医、营养师评估或随访去向。不得把仅仅共存当作因果，必要的专科意见未取得时标记待确认。营养干预具体方案由营养师独立制定和发出。' : '';
       const issueCardGuide = '以问题为阅读单位，不按“来源、筛选、去向、目标”横向分栏。每个纳入的问题或风险维度单独输出一张卡，相关问题可合并，但标题须列出被合并的名称。严格使用纯文本格式：每张卡以独占一行的“【问题：具体名称】”开头，然后各占一行写“依据与趋势：…”“当前判断：…”“与其他问题的关联：…”“专业去向：…”“管理目标：…；干预重点：…”“沟通与待补：…”。证据、时间和来源写在该问题卡内；缺乏依据的目标只写“管理目标：待确认”，不要编造干预重点。每张卡最多260个汉字，全文不超过2000个汉字；只保留关键证据，不堆砌检查清单。所有问题卡之后独占一行写“【综合关联与优先级】”，再按行写“共同关联：…”“优先级：…”“年度方案衔接：…”。不要重复长篇病史、不要输出六议题总表；关系仅在有证据时提出，推测标明待核实。既有主题说明若要求六议题输出，以本格式为准。';
       const incrementalGuide = reframeAnnual
         ? `这是基于当前清单和已审核资料的完整重新整理，不是只分析新增变化。旧回复仅供比对，不可作为独立证据。${issueCardGuide}`
@@ -713,9 +718,10 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     if (!topic.messages.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
     const transcript = topic.messages.map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
-    const concernSummary = (topic.concerns || []).map(row => `${row.status} / ${row.pathway}：${row.title}；依据：${row.evidence || '待核实'}；说明：${row.note || '无'}`).join('\n');
+    const concernSummary = (topic.concerns || []).filter(row => !isEvidenceConcern(row) && !['excluded', 'duplicate'].includes(row.status)).map(row => `${row.status} / ${row.pathway}：${row.title}；依据：${row.evidence || '待核实'}；说明：${row.note || '无'}`).join('\n');
+    const evidenceSummary = (topic.concerns || []).filter(row => isEvidenceConcern(row) && !['excluded', 'duplicate'].includes(row.status)).map(row => `${row.title}：${row.evidence || '待核对检查结果'}`).join('\n');
     const specialtySummary = topic.reviewType === 'annual' && topic.annualPlanYear ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
-    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。年度研判须综合具体问题、五年趋势、慢病与重大疾病风险，说明有证据支持的问题间关联及共同管理优先级，不逐项割裂罗列，也不把共存误写成因果。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实。营养相关事项只写明转营养师评估，不代营养师制定具体干预方案。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n待研判问题及人工分流：\n${concernSummary || '暂无结构化问题'}\n${topic.annualPlanYear ? `既有单项主题历史资料（已确认的可引用，未确认的仅列待核实）：\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无'}\n` : ''}讨论记录：\n${transcript}`;
+    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。年度研判须综合具体问题、五年趋势、慢病与重大疾病风险，说明有证据支持的问题间关联及共同管理优先级，不逐项割裂罗列，也不把共存误写成因果。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实。营养相关事项只写转营养师评估，不代营养师制定具体干预方案。检查和指标只能作为相关问题的证据，不得作为独立诊断。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n待研判问题及人工分流：\n${concernSummary || '暂无结构化问题'}\n检查和指标依据（不要作为独立问题）：\n${evidenceSummary || '暂无'}\n${topic.annualPlanYear ? `既有单项主题历史资料（已确认的可引用，未确认的仅列待核实）：\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无'}\n` : ''}讨论记录：\n${transcript}`;
     const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt, context: { sources: [] }, attachments: [], history: [] });
     const structured = toStructuredAssessment(result.content, topic.title);
     if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({
@@ -739,7 +745,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
-    if (topic.annualPlanYear && (topic.concerns || []).some(row => row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
+    if (topic.annualPlanYear && (topic.concerns || []).filter(row => !isEvidenceConcern(row)).some(row => row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
       return res.status(409).json({ success: false, message: '请先逐条核实AI提示，并确定已纳入问题的专业去向' });
     if (topic.annualPlanYear && topic.concernsUpdatedAt && (!topic.conclusion?.generatedAt || new Date(topic.conclusion.generatedAt) < new Date(topic.concernsUpdatedAt)))
       return res.status(409).json({ success: false, message: '年度问题清单已更新，请先按当前问题重新整理阶段性结论' });
