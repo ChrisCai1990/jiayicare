@@ -225,7 +225,11 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   useEffect(() => {
     setConclusionText(active?.conclusion?.content || '')
     if (active?.annualPlanYear) setHeaderExpanded(true)
-    setManagementTargets(active?.conclusion?.managementTargets || [])
+    const savedTargets = active?.conclusion?.managementTargets || []
+    const included = active?.annualPlanYear ? (active.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row) && row.status === 'included') : []
+    setManagementTargets(active?.annualPlanYear && (savedTargets.length !== included.length || included.some(concern => !savedTargets.some(row => row.issueId === concern.id)))
+      ? included.map(concern => ({ issueId: concern.id, goal: '', focus: '', nutritionRelevant: ['nutrition', 'both'].includes(concern.pathway) }))
+      : savedTargets)
     setTargetChangeNote('')
     setTimeout(() => { if (chatRef.current) chatRef.current.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }) }, 30)
   }, [active?._id, active?.messages?.length, active?.concernsUpdatedAt, active?.conclusion?.generatedAt])
