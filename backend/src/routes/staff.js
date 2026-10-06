@@ -1566,8 +1566,13 @@ router.post('/patients/:id/medical-record/course-entries', staffAuth, checkPermi
 
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
 router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
-  const existingPatient = await User.findById(req.params.id).select('phone contactPhone lifestyle lifestyle_data coreHealthArchive healthProfile ethnicity belief').lean();
-  if (!existingPatient) return res.status(404).json({ success: false, message: '会员不存在' });
+  const visibleIds = req.staff.role === 'superadmin' ? [] : await getVisibleStaffIds(req.staff);
+  const editFilter = {
+    _id: new mongoose.Types.ObjectId(req.params.id),
+    ...require('../utils/patientEditScope').patientEditScope(req.staff, visibleIds, id => new mongoose.Types.ObjectId(String(id))),
+  };
+  const existingPatient = await User.findOne(editFilter).select('phone contactPhone lifestyle lifestyle_data coreHealthArchive healthProfile ethnicity belief').lean();
+  if (!existingPatient) return res.status(403).json({ success: false, message: '会员不存在或无权限修改该会员' });
   let culturalConsent;
   try { culturalConsent = require('../utils/culturalPreferencesConsent').culturalPreferencesConsent(req.body, existingPatient, req.staff._id); }
   catch (err) { return res.status(400).json({ success: false, message: err.message }); }
@@ -1785,7 +1790,10 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   const ops = { $set: updateData };
   if (Object.keys(pushOps).length > 0) ops.$push = pushOps;
 
-  await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, ops);
+  // Raw collection writes bypass Mongoose tenant middleware. Recheck both tenant
+  // and assignment atomically, so reassignment during editing fails closed.
+  const editResult = await User.collection.updateOne(editFilter, ops);
+  if (!editResult.matchedCount) return res.status(403).json({ success: false, message: '会员归属已变化，请刷新后重试' });
   await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.params.id);
   // 保存设备档案时，把最近一次维护日期同步为负责人工作台任务；稳定键避免重复保存产生重复任务。
   if (Array.isArray(req.body.healthEquipment)) {
