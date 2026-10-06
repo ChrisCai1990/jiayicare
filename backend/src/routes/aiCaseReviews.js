@@ -781,10 +781,26 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
         && targetLogic.issueCards(item.content).length);
       const included = (topic.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row) && row.status === 'included');
       if (included.length) {
-        const draftPrompt = `请根据本轮已审核资料和当前年度研判，给下列已确定纳入年度管理的问题逐项写管理目标与干预重点的AI初稿，供健康顾问修改确认。目标写本年度希望达到或明确的可核对结果；干预重点写为实现目标需做的监测、资料核对、专科评估或随访动作。每项一条，短句、具体、用词统一；同类动作允许协调，但每条必须对应本问题。不要引入清单外的问题，不要把待确认的诊断当成确诊，不要臆造检查结果、数值阈值、药物或复查频次。具体药物方案由专科医生确定，营养方案由营养师确定。证据不足时，目标可写成“核实本问题的基线与年度复评安排”，干预重点必须说明要核对的具体资料和责任去向，不得用空泛的“由健康顾问逐项确认”。只输出合法JSON，不要代码块或解释，格式严格为：{"targets":[{"issueId":"原样ID","goal":"管理目标","focus":"干预重点"}]}。每个ID恰好出现一次。\n已纳入问题及人工去向：${JSON.stringify(included.map(row => ({ issueId: String(row.id), title: row.title, pathway: row.pathway, evidence: row.evidence || '', note: row.note || '' })))}\n本轮完整研判：${String(fullReview?.content || '').slice(0, 12000)}\n本轮阶段性结论：${assessmentToPlainText(structured).slice(0, 6500)}`;
+        const draftPrompt = `请根据本轮已审核资料和当前年度研判，给下列已确定纳入年度管理的问题逐项写管理目标与干预重点的AI初稿，供健康顾问修改确认。目标写本年度希望达到或明确的可核对结果；干预重点写为实现目标需做的监测、资料核对、专科评估或随访动作。每项一条，短句、具体、用词统一；同类动作允许协调，但每条必须只对应本问题。若讨论把多个问题合写在一张卡，必须拆成各自独立的目标，不得复制整段联合随访内容。不要引入清单外的问题，不要把待确认的诊断当成确诊，不要臆造检查结果、数值阈值、药物或复查频次。具体药物方案由专科医生确定，营养方案由营养师确定。证据不足时，目标可写成“核实本问题的基线与年度复评安排”，干预重点必须说明要核对的具体资料和责任去向，不得用空泛的“由健康顾问逐项确认”。只输出合法JSON，不要代码块或解释，格式严格为：{"targets":[{"issueId":"原样ID","goal":"管理目标","focus":"干预重点"}]}。每个ID恰好出现一次。\n已纳入问题及人工去向：${JSON.stringify(included.map(row => ({ issueId: String(row.id), title: row.title, pathway: row.pathway, evidence: row.evidence || '', note: row.note || '' })))}\n本轮完整研判：${String(fullReview?.content || '').slice(0, 12000)}\n本轮阶段性结论：${assessmentToPlainText(structured).slice(0, 6500)}`;
         const draftReply = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: String(topic._id),
           prompt: draftPrompt, context: { sources: [] }, attachments: [], history: [], maxTokens: 2800 });
-        managementTargets = targetLogic.parseAnnualTargetDraft(draftReply.content, topic.concerns);
+        try { managementTargets = targetLogic.parseAnnualTargetDraft(draftReply.content, topic.concerns); }
+        catch {
+          // A combined analysis card can make the model copy one goal to several
+          // organs. Retry separately with only the current problem as the output scope.
+          const cards = targetLogic.issueCards(fullReview?.content || '');
+          const individual = [];
+          for (const concern of included) {
+            const card = cards.find(item => item.title.includes(String(concern.title || '')));
+            const relevantDiscussion = (card?.body || '').split(/\r?\n/).filter(line =>
+              /^(依据与趋势|当前判断|专业去向|沟通与待补)[：:]/.test(line.trim())).join('\n').slice(0, 2200);
+            const onePrompt = `只为这一个已纳入年度管理的问题起草目标，不得写入其他器官或其他问题的随访事项。即使讨论把多个问题合成一张卡，也只保留与本问题直接相关的事实和动作。目标写该问题本年度可核对的结果；干预重点写监测、资料核对、专科评估及复评动作。不得臆造数值、药物、诊断或复查频次。只输出合法JSON：{"targets":[{"issueId":"${String(concern.id)}","goal":"管理目标","focus":"干预重点"}]}。\n本问题：${JSON.stringify({ title: concern.title, evidence: concern.evidence || '', pathway: concern.pathway, note: concern.note || '' })}\n相关讨论资料：${relevantDiscussion}`;
+            const oneReply = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: String(topic._id),
+              prompt: onePrompt, context: { sources: [] }, attachments: [], history: [], maxTokens: 550 });
+            individual.push(targetLogic.parseAnnualTargetDraft(oneReply.content, [concern])[0]);
+          }
+          managementTargets = targetLogic.parseAnnualTargetDraft(JSON.stringify({ targets: individual }), topic.concerns);
+        }
       } else managementTargets = [];
     }
     topic.conclusion = { content: assessmentToPlainText(structured), structured, managementTargets,

@@ -51,20 +51,24 @@ function issueCards(content) {
 // supply wording only; they cannot add a concern or turn an excluded one into a goal.
 function targetsFromIncludedConcerns(concerns, content, previous = []) {
   const cards = issueCards(content);
-  return (concerns || []).filter(row => row.status === 'included' && require('./annualConcernRetirement').isActiveAnnualConcern(row)
-    && !require('./annualConcernTypes').isEvidenceConcern(row)).map(row => {
+  const included = (concerns || []).filter(row => row.status === 'included' && require('./annualConcernRetirement').isActiveAnnualConcern(row)
+    && !require('./annualConcernTypes').isEvidenceConcern(row));
+  return included.map(row => {
     const title = String(row.title || '').trim();
     const card = cards.find(item => item.title.includes(title) || title.includes(item.title));
+    // A combined discussion card is context for several issues, not an identical
+    // management target to copy into every issue row.
+    const sharedCard = card && included.filter(item => card.title.includes(String(item.title || '').trim())).length > 1;
     const line = card?.body.match(/管理目标[：:]\s*([^\n]*)/)?.[1] || '';
     const goal = line.split(/[；;]\s*干预重点[：:]/)[0].trim();
     const focus = (line.match(/[；;]\s*干预重点[：:]\s*(.*)/)?.[1]?.trim() ||
       card?.body.match(/(?:^|\n)干预重点[：:]\s*([^\n]*)/)?.[1]?.trim() || '')
       .split(/[；;]\s*(?:时间|频次|责任角色)[：:]/)[0].trim();
-    const old = previous.find(item => String(item.issueId || '') === String(row.id));
+    const old = sharedCard ? null : previous.find(item => String(item.issueId || '') === String(row.id));
     const unresolved = /^(待确认|待核实|待确定)/;
     return { issueId: String(row.id),
-      goal: unresolved.test(goal) ? '' : goal.slice(0, 240) || old?.goal || '',
-      focus: unresolved.test(focus) || unresolved.test(goal) ? '' : focus.slice(0, 500) || old?.focus || '',
+      goal: sharedCard || unresolved.test(goal) ? '' : goal.slice(0, 240) || old?.goal || '',
+      focus: sharedCard || unresolved.test(focus) || unresolved.test(goal) ? '' : focus.slice(0, 500) || old?.focus || '',
       nutritionRelevant: old?.nutritionRelevant === true || ['nutrition', 'both'].includes(row.pathway) };
   });
 }
@@ -91,14 +95,22 @@ function parseAnnualTargetDraft(content, concerns) {
     if (!id || byId.has(id) || !included.some(item => item.issueId === id)) throw new Error('AI目标与已纳入问题不对应，请重试');
     byId.set(id, row);
   }
-  return normalizeTargets(included.map(item => {
+  const drafted = included.map(item => {
     const row = byId.get(item.issueId);
     const goal = String(row?.goal || '').trim();
     const focus = String(row?.focus || '').trim();
     if (!goal || !focus || /^(待确认|待核实|待确定|暂无)/.test(goal) || /^(待确认|待核实|待确定|暂无)/.test(focus))
       throw new Error('AI目标初稿有空缺，请重试');
+    const title = String((concerns || []).find(concern => String(concern.id) === item.issueId)?.title || '');
+    const combined = `${goal} ${focus}`;
+    if ((/肺|呼吸/.test(title) && /肠镜|结直肠|直肠|盲肠|肠道|腺瘤/.test(combined))
+      || (/直肠|盲肠|结肠|肠息肉|肠腺瘤/.test(title) && /肺结节|肺部|LDCT|胸部CT/.test(combined)))
+      throw new Error('AI目标混入了其他器官的问题，请重试');
     return { ...item, goal, focus };
-  }));
+  });
+  const uniqueGoals = new Set(drafted.map(row => row.goal.replace(/[\s，。；;、]/g, '')));
+  if (uniqueGoals.size !== drafted.length) throw new Error('AI给不同项目重复了同一管理目标，请重试');
+  return normalizeTargets(drafted);
 }
 
 module.exports = { normalizeTargets, conclusionFromTargets, fromConfirmedReviews, proposeTargetsFromActions, issueCards, targetsFromIncludedConcerns, validateAnnualTargets, parseAnnualTargetDraft };

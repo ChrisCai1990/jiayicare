@@ -46,4 +46,17 @@ test('AI draft is accepted only for every included issue, with pathway flags kep
   assert.throws(() => parseAnnualTargetDraft(JSON.stringify({ targets: answer.targets.slice(0, 1) }), concerns), /逐项完成/);
   assert.throws(() => parseAnnualTargetDraft(JSON.stringify({ targets: [answer.targets[0], { ...answer.targets[1], issueId: 'excluded' }] }), concerns), /不对应/);
   assert.throws(() => parseAnnualTargetDraft(JSON.stringify({ targets: [{ ...answer.targets[0], focus: '待确认' }, answer.targets[1]] }), concerns), /空缺/);
+  assert.throws(() => parseAnnualTargetDraft(JSON.stringify({ targets: [answer.targets[0], { ...answer.targets[1], goal: answer.targets[0].goal }] }), concerns), /重复/);
+  assert.throws(() => parseAnnualTargetDraft(JSON.stringify({ targets: [{ ...answer.targets[0], focus: '同时安排结直肠肠镜' }, answer.targets[1]] }), concerns), /其他器官/);
+});
+
+test('a combined discussion card cannot be copied into several management projects', () => {
+  const concerns = [
+    { id: 'lung', title: '肺磨玻璃结节', status: 'included' },
+    { id: 'rectal', title: '直肠息肉', status: 'included' },
+    { id: 'cecal', title: '（盲肠）管状腺瘤伴上皮内瘤样变', status: 'included' },
+  ];
+  const content = '【问题：肺磨玻璃结节、直肠息肉、（盲肠）管状腺瘤伴上皮内瘤样变】\n管理目标：肺结节随访；结直肠肠镜随访';
+  const rows = targetsFromIncludedConcerns(concerns, content);
+  assert.deepEqual(rows.map(row => row.goal), ['', '', '']);
 });
