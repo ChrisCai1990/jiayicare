@@ -799,8 +799,11 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
-    if (topic.annualPlanYear && (topic.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row)).some(row => row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
-      return res.status(409).json({ success: false, message: '请先逐条核实AI提示，并确定已纳入问题的专业去向' });
+    const pendingConcerns = topic.annualPlanYear ? (topic.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row)
+      && (row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided')))) : [];
+    if (pendingConcerns.length) return res.status(409).json({ success: false,
+      message: `还有${pendingConcerns.length}项年度问题待核实或待确定专业去向；请到上方“年度综合研判的问题与风险线索”逐项保存`,
+      pendingConcernIds: pendingConcerns.map(row => row.id) });
     if (topic.annualPlanYear && topic.concernsUpdatedAt && (!topic.conclusion?.generatedAt || new Date(topic.conclusion.generatedAt) < new Date(topic.concernsUpdatedAt)))
       return res.status(409).json({ success: false, message: '年度问题清单已更新，请先按当前问题重新整理阶段性结论' });
     const suppliedContent = String(req.body.content ?? topic.conclusion?.content ?? '').trim();

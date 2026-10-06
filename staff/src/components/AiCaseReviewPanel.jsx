@@ -3,6 +3,7 @@ import { staffAPI, API_ORIGIN } from '../api'
 import ReviewPlanAmendment from './ReviewPlanAmendment'
 import AnnualConcernsPanel from './AnnualConcernsPanel'
 import { parseAnnualReviewMessage } from '../utils/annualReviewMessage.mjs'
+import { isActiveAnnualConcern, isEvidenceConcern } from '../utils/annualConcernLabels'
 
 const PHASE_ROLES = { familyDoctor: '健康顾问', nutritionist: '营养师', rehabSpecialist: '运动复健师', tcmDoctor: '药食同源专业人员' }
 const PHASE_DOMAINS = { comprehensive: '综合健康', nutrition: '营养', exercise: '运动', tcm: '药食同源' }
@@ -154,6 +155,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const completeManagementTargets = managementTargets.length > 0 && managementTargets.every(row => row.goal?.trim() && row.focus?.trim())
   const lastAnnualAiAt = active?.annualPlanYear ? (active.messages || []).filter(message => message.role === 'ai').at(-1)?.createdAt : null
   const annualConclusionStale = !!active?.annualPlanYear && !!active.concernsUpdatedAt && (!active.conclusion?.generatedAt || new Date(active.conclusion.generatedAt) < new Date(active.concernsUpdatedAt))
+  const pendingAnnualConcerns = active?.annualPlanYear ? (active.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row)
+    && (row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided')))) : []
   const newerSpecialtyConclusion = !!lastAnnualAiAt && topics.some(item => item.issueKey && item.reviewType === 'specialty' && item.conclusion?.status === 'confirmed' && new Date(item.conclusion.confirmedAt || item.updatedAt) > new Date(lastAnnualAiAt))
 
   const replaceTopic = topic => {
@@ -221,7 +224,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     setManagementTargets(active?.conclusion?.managementTargets || [])
     setTargetChangeNote('')
     setTimeout(() => { if (chatRef.current) chatRef.current.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }) }, 30)
-  }, [active?._id, active?.messages?.length])
+  }, [active?._id, active?.messages?.length, active?.concernsUpdatedAt, active?.conclusion?.generatedAt])
 
   const createTopic = async () => {
     if (!form.title.trim()) return toast('请输入研判主题', 'error')
@@ -337,6 +340,18 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const confirmConclusion = async () => {
+    if (pendingAnnualConcerns.length) {
+      const first = document.getElementById(`annual-concern-${pendingAnnualConcerns[0].id}`)
+      if (first) { first.open = true; first.scrollIntoView({ behavior: 'smooth', block: 'center' }) }
+      else document.getElementById('annual-concerns')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      toast(`还有 ${pendingAnnualConcerns.length} 项年度问题待核实；请逐项保存状态和专业去向`, 'error')
+      return
+    }
+    if (annualConclusionStale) {
+      document.getElementById('annual-concerns')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      toast('问题清单已更新；请先按当前问题更新完整研判，再点击“AI整理结论”', 'error')
+      return
+    }
     if (!conclusionText.trim() && !completeManagementTargets) return toast('请填写阶段性结论，或至少一条完整的管理目标与干预重点', 'error')
     const targetsChanged = active.conclusion?.status === 'confirmed' && JSON.stringify(managementTargets) !== JSON.stringify(active.conclusion.managementTargets || [])
     if (targetsChanged && !targetChangeNote.trim()) return toast('请填写与客户沟通后的目标调整说明', 'error')
@@ -543,6 +558,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           {active.conclusion?.status === 'confirmed' && <div style={{ marginTop: 10 }}><label className="form-label">与客户沟通后的目标调整说明</label><textarea className="form-input" rows={2} maxLength={500} value={targetChangeNote} onChange={e => setTargetChangeNote(e.target.value)} placeholder="修改已确认目标时填写；系统保留上一版目标" /></div>}
           {!!active.conclusionHistory?.length && <details style={{ marginTop: 10, color: '#52685D', fontSize: 12 }}><summary>查看历史确认目标（{active.conclusionHistory.length}版）</summary>{active.conclusionHistory.slice().reverse().map((version, index) => <div key={index} style={{ borderTop: '1px solid #DCE8E1', paddingTop: 8, marginTop: 8 }}><div>{formatDateTime(version.confirmedAt)} · {version.confirmedByName || '健康顾问'}</div>{(version.managementTargets || []).map((row, rowIndex) => <div key={rowIndex}>{rowIndex + 1}. {row.goal}；干预重点：{row.focus}</div>)}{version.targetChangeNote && <div>调整说明：{version.targetChangeNote}</div>}</div>)}</details>}
         </div>}
+        {!!pendingAnnualConcerns.length && <div role="alert" style={{ marginTop: 10, padding: 10, borderRadius: 8, background: '#FFF4E5', color: '#8A5414', fontSize: 13 }}>确认前还有 {pendingAnnualConcerns.length} 项年度问题待核实。<button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => { const first = document.getElementById(`annual-concern-${pendingAnnualConcerns[0].id}`); if (first) { first.open = true; first.scrollIntoView({ behavior: 'smooth', block: 'center' }) } }}>查看第一项</button></div>}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方专业审核流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}{!conclusionText.trim() && completeManagementTargets ? '；将根据已填目标生成结论摘要' : ''}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || (!conclusionText.trim() && !completeManagementTargets)} onClick={confirmConclusion}>{active.annualPlanYear ? '确认年度研判结论与目标' : `确认并用于${active.templateSnapshot?.target || '对应方案'}`}</button>}</div>
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
