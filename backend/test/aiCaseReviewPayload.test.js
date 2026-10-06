@@ -129,6 +129,19 @@ test('provider sends and returns exactly the same packed snapshot, prioritizing 
   assert(options.systemPrompt.includes('最新资料快照优先于旧AI回复'));
 });
 
+test('provider reads uploaded report images before answering and includes extracted values', async () => {
+  let sent;
+  const sandbox = { module: { exports: {} }, process: { env: { QWEN_API_KEY: 'synthetic' } }, require: key => {
+    if (key === './ai') return { chat: async messages => { sent = messages; return '图中有血红蛋白结果'; } };
+    if (key === './aiCaseReviewAttachments') return { readAttachmentImages: async () => '第1张：2024-03-01 血红蛋白 93.2 g/L' };
+    return { prepareContext };
+  } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/utils/aiCaseReviewProvider.js'), 'utf8'), sandbox);
+  const result = await sandbox.module.exports.reply({ prompt: '核对贫血', context: { sources: [] }, attachments: [{ name: '报告.png', url: '/api/uploads/image.png' }] });
+  assert.match(sent.at(-1).content, /血红蛋白 93\.2 g\/L/);
+  assert.match(result.contextSnapshot.sources.at(-1), /已逐张视觉识别/);
+});
+
 test('annual provider retries one empty or truncated reply with shorter cards and more output space', async () => {
   const calls = [];
   const sandbox = { module: { exports: {} }, process: { env: { QWEN_API_KEY: 'synthetic' } }, require: key => key === './ai' ? { chat: async (messages, config) => {

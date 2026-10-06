@@ -311,10 +311,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       setFiles(list => [...list, ...uploaded].slice(0, 6))
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false); event.target.value = '' }
   }
-  const send = async (retryMessage = null, explicitContent = '') => {
+  const send = async (retryMessage = null, explicitContent = '', attachmentOverride = null) => {
     if (busy || sendingRef.current || !active || (active.generation?.status === 'running' && !(retryMessage && sendStalled))) return
     const content = retryMessage ? retryMessage.content : (explicitContent || draft)
-    const attachments = retryMessage ? retryMessage.attachments || [] : files
+    const attachments = retryMessage ? retryMessage.attachments || [] : attachmentOverride || files
     if (!content.trim() && !attachments.length) return
     const signature = JSON.stringify([patientId, active._id, content, attachments])
     const previous = pendingSendRef.current
@@ -507,6 +507,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11, color: '#8AA89C', marginBottom: 5 }}><span>{message.role === 'ai' ? `AI助手 · ${message.provider || ''}${message.durationMs ? ` · ${(message.durationMs / 1000).toFixed(1)}秒` : ''}` : `${message.staffName} · ${message.staffRole}`} · {formatDateTime(message.createdAt)}</span><span>{message.role === 'staff' && <button type="button" onClick={() => editMessage(message)} style={{ border: 0, background: 'none', color: '#1E6B50', cursor: 'pointer' }}>编辑</button>}<button type="button" onClick={() => deleteMessage(message)} style={{ border: 0, background: 'none', color: '#B42318', cursor: 'pointer' }}>删除</button></span></div>
           {active.annualPlanYear && message.role === 'ai' ? <AnnualReviewAnalysis content={message.content} busy={busy} onReframe={message._id === (active.messages || []).filter(item => item.role === 'ai').at(-1)?._id ? () => send(null, ANNUAL_REFRAME_MESSAGE) : null} /> : <CleanText>{message.content}</CleanText>}
           {!!message.attachments?.length && <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>{message.attachments.map((file, index) => <a key={index} href={file.url?.startsWith('/') ? `${API_ORIGIN}${file.url}` : file.url} target="_blank" rel="noreferrer"><img src={file.url?.startsWith('/') ? `${API_ORIGIN}${file.url}` : file.url} alt={file.name || '附件'} style={{ width: 90, height: 72, objectFit: 'cover', borderRadius: 6 }} /></a>)}</div>}
+          {message.role === 'staff' && !!message.attachments?.length && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={busy || active.generation?.status === 'running'} onClick={() => send(null, '请逐张读取这组已上传的报告原图，核对项目、数值、单位、参考范围和日期；如果此前称缺少原始数值但图片中有结果，请明确修正。', message.attachments)}>用原图重新分析</button>}
           {!!message.contextSnapshot?.sources?.length && <details style={{ marginTop: 8, fontSize: 12, color: '#4A6558' }}><summary>本轮依据 {message.contextSnapshot.sources.length} 项资料</summary><div style={{ marginTop: 5 }}>{message.contextSnapshot.sources.map((s, i) => <div key={i}>· {s}</div>)}</div></details>}
           {!active.annualPlanYear && message.role === 'ai' && ['familyDoctor','superadmin'].includes(staff?.role) && <ReviewPlanAmendment patientId={patientId} topicId={active._id} message={message} />}
         </div></div>)}
@@ -521,7 +522,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         })()}</div>}
         {sendNotice?.topicId === active._id && <div role="alert" style={{ color: '#B42318', marginBottom: 8 }}>{sendNotice.text}</div>}
         <textarea className="form-input" rows={3} value={draft} onChange={e => setDraft(e.target.value)} placeholder="补充本轮新信息或修订意见，AI将只分析新增变化，不再从头重复…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); send() } }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}><label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>添加图片<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={uploadSelected} /></label><button className="btn btn-primary btn-sm" disabled={busy || active.generation?.status === 'running' || (!draft.trim() && !files.length)} onClick={() => send()}>{busy ? '处理中…' : active.generation?.status === 'running' ? 'AI回复中…' : '发送给AI'}</button></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}><label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>添加图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden disabled={busy} onChange={uploadSelected} /></label><button className="btn btn-primary btn-sm" disabled={busy || active.generation?.status === 'running' || (!draft.trim() && !files.length)} onClick={() => send()}>{busy ? '处理中…' : active.generation?.status === 'running' ? 'AI回复中…' : '发送给AI'}</button></div>
       </div></div>
 
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论（当前有效信息）</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">
