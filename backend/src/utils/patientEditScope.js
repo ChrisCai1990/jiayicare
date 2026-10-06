@@ -11,4 +11,12 @@ function patientEditScope(staff, visibleIds, toId) {
   }
   return filter;
 }
-module.exports = { patientEditScope };
+function patientClaimScope(user, staff, visibleIds) {
+  if (!user || user.isDeleted || !staff?.tenantId || String(user.tenantId) !== String(staff.tenantId)) return null;
+  const assigned = fields.map(field => user[field]).filter(Boolean).map(String);
+  if (staff.role !== 'superadmin' && assigned.length && !assigned.some(id => visibleIds.map(String).includes(id))) return null;
+  // Preserve assignment state between the permission check and the write.
+  return { _id: user._id, tenantId: user.tenantId, isDeleted: { $ne: true },
+    ...Object.fromEntries(fields.map(field => [field, user[field] || null])) };
+}
+module.exports = { patientEditScope, patientClaimScope };

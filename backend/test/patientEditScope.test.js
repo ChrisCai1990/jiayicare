@@ -12,9 +12,9 @@ function matches(doc, query) {
     ? value.some(q => matches(doc, q))
     : value?.$in ? value.$in.some(id => String(doc[key]) === String(id))
     : value && typeof value === 'object' && '$ne' in value ? doc[key] !== value.$ne
-    : String(doc[key]) === String(value));
+    : value === null ? doc[key] == null : String(doc[key]) === String(value));
 }
-async function call({ patient = {}, staff = {}, visible = ['owner'], body = {}, race = false } = {}) {
+async function call({ patient = {}, staff = {}, visible = ['owner'], body = {}, race = false, claim = false } = {}) {
   const doc = { _id: 'patient', tenantId: 'tenant', assignedHealthManager: 'owner', ...patient };
   let handler, writes = 0, sideEffects = 0, status = 200, response;
   const User = {
@@ -26,8 +26,11 @@ async function call({ patient = {}, staff = {}, visible = ['owner'], body = {}, 
     } },
     findById() { return { populate() { return this; }, then(resolve) { resolve(doc); } }; },
   };
-  vm.runInNewContext(route, {
-    router: { put(...args) { handler = args.at(-1); } }, staffAuth() {}, checkPermission: () => () => {},
+  const claimStart = source.indexOf("router.post('/patients/assign',");
+  const testedRoute = claim ? source.slice(claimStart, source.indexOf('\nrouter.', claimStart + 1)) : route;
+  const capture = (...args) => { handler = args.at(-1); };
+  vm.runInNewContext(testedRoute, {
+    router: { put: capture, post: capture }, staffAuth() {}, checkPermission: () => () => {},
     User, mongoose: { Types: { ObjectId } }, getVisibleStaffIds: async () => visible,
     require(name) {
       if (name === '../utils/annualPlanMonitoringReminders') return { async syncServiceCycleMonitoringReminders() { sideEffects++; } };
@@ -63,4 +66,20 @@ test('authorized staff still need explicit cultural preference confirmation', as
 test('assignment changed during editing prevents write and subsequent side effects', async () => {
   const r = await call({ race: true, body: { name: 'blocked' } });
   assert.equal(r.status, 403); assert.equal(r.writes, 0); assert.equal(r.sideEffects, 0);
+});
+test('self-assignment cannot bypass another team or tenant boundary', async () => {
+  for (const options of [{ visible: ['outsider'] }, { patient: { tenantId: 'other' }, staff: { role: 'superadmin' } }, { patient: { isDeleted: true } }]) {
+    const r = await call({ ...options, claim: true, body: { userId: 'patient' } });
+    assert.equal(r.status, 403); assert.equal(r.writes, 0);
+  }
+});
+test('unassigned claim and existing team assignment remain supported', async () => {
+  for (const options of [{ patient: { assignedHealthManager: null } }, {}, { staff: { role: 'superadmin' }, visible: [] }]) {
+    const r = await call({ ...options, claim: true, body: { userId: 'patient' } });
+    assert.equal(r.status, 200); assert.equal(r.writes, 1);
+  }
+});
+test('concurrent assignment cannot overwrite a changed team', async () => {
+  const r = await call({ claim: true, race: true, body: { userId: 'patient' } });
+  assert.equal(r.status, 409); assert.equal(r.writes, 0);
 });

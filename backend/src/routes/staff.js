@@ -939,11 +939,15 @@ router.get('/patients/search-registered', staffAuth, async (req, res) => {
 });
 
 // ── POST /api/staff/patients/assign — 将已注册用户分配给当前医护
-router.post('/patients/assign', staffAuth, async (req, res) => {
+router.post('/patients/assign', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ success: false, message: '缺少 userId' });
   const user = await User.findById(userId);
   if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
+
+  const visibleIds = req.staff.role === 'superadmin' ? [] : await getVisibleStaffIds(req.staff);
+  const claimFilter = require('../utils/patientEditScope').patientClaimScope(user, req.staff, visibleIds);
+  if (!claimFilter) return res.status(403).json({ success: false, message: '无权限接管其他团队的会员，请联系管理员分配' });
 
   const role = req.staff.role;
   const fieldMap = {
@@ -961,10 +965,11 @@ router.post('/patients/assign', staffAuth, async (req, res) => {
     family_doctor:    'assignedFamilyDoctor',
   };
   const field = fieldMap[role] || 'assignedHealthManager';
-  await User.collection.updateOne(
-    { _id: user._id },
+  const claimResult = await User.collection.updateOne(
+    claimFilter,
     { $set: { [field]: req.staff._id } }
   );
+  if (!claimResult.matchedCount) return res.status(409).json({ success: false, message: '会员归属已变化，请刷新后重试' });
   res.json({ success: true, message: '分配成功' });
 });
 
