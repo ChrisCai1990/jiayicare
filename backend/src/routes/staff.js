@@ -1,5 +1,5 @@
 const followUpReview = require('../../../shared/followUpReview.cjs');
-const { withReviewTokens, resolveReviewRecord } = require('../utils/summaryReviewVersion');
+const { reviewToken, withReviewTokens, resolveReviewRecord } = require('../utils/summaryReviewVersion');
 const { withAiContext } = require('../utils/aiBudget');
 const { ROLE_FIELDS: PHASE_ROLE_FIELDS, ROLE_LABELS: PHASE_ROLE_LABELS, currentReviewer: phaseReviewer, isAssignedPhaseReviewer, reviewQueueFilter } = require('../utils/phaseAssessmentRouting');
 const { isAiControlError, rethrowAiControl } = require('../utils/aiBudgetPolicy');
@@ -10920,19 +10920,23 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 // 单项重新生成：只核对并替换指定趋势卡，不重跑整份健康信息整理。
 router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async (req, res) => {
   try {
-    const { year, scope = 'doctor', recordIndex = 0, sectionKey, itemName, instruction } = req.body || {};
+    const { year, scope = 'doctor', recordIndex = 0, sectionKey, itemName, instruction, expectedRecordToken } = req.body || {};
     const fieldMap = { tumor_risk: 'cancers', cardiovascular_risk: 'topics', chronic_disease: 'items' };
     const field = fieldMap[sectionKey];
     if (!field || !itemName || !String(instruction || '').trim()) return res.status(400).json({ success: false, message: '请选择项目并填写修正问题' });
     if (!['superadmin', 'familyDoctor'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '无单项重新生成权限' });
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
-    const summary = user.aiHealthSummary || {};
+    const existingSummary = user.aiHealthSummary || {};
+    const summary = JSON.parse(JSON.stringify(existingSummary));
     const y = String(year || summary.latestYear || new Date().getFullYear());
     const entry = summary.byYear?.[y];
     const records = Array.isArray(entry?.records) ? entry.records : (entry?.sections ? [entry] : []);
     const candidates = records.filter(r => scope === 'doctor' ? (r.scope === 'doctor' || r.scope === 'all' || !r.scope) : true);
     const record = candidates[Number(recordIndex) || 0];
+    if (expectedRecordToken && reviewToken(record) !== expectedRecordToken) {
+      return res.status(409).json({ success: false, message: '该分析记录已变化，请刷新后重新核对' });
+    }
     const list = record?.sections?.[sectionKey]?.[field];
     const itemIndex = Array.isArray(list) ? list.findIndex(item => item.name === itemName) : -1;
     if (itemIndex < 0) return res.status(404).json({ success: false, message: '未找到需要重新生成的卡片' });
@@ -10961,15 +10965,54 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return res.status(500).json({ success: false, message: '单项生成结果格式错误，请重试' });
     const updatedItem = JSON.parse(match[0]);
+    if (!updatedItem || typeof updatedItem !== 'object' || Array.isArray(updatedItem)) {
+      return res.status(500).json({ success: false, message: '单项生成结果格式错误，请重试' });
+    }
     updatedItem.name = itemName;
-    list[itemIndex] = updatedItem;
-    record.sections[sectionKey][field] = list;
+    const updatedList = list.map((item, index) => index === itemIndex ? updatedItem : item);
+    // 总览是独立的 AI 字段。卡片纠错后必须依据整组最新卡片重新归纳，不能沿用旧总览。
+    const overviewInput = updatedList.map(item => ({ name: item.name, status: item.status,
+      latest: item.latest, trendStatus: item.trendStatus, trend: item.trend, nextAction: item.nextAction }));
+    const overviewRaw = await chat([{ role: 'user', content: `你是健康信息整理助手。以下是“${sectionKey}”板块全部已更新卡片：${JSON.stringify(overviewInput)}\n用户本次纠正：${String(instruction).trim()}\n只依据这些卡片写一句整体意见，优先反映目前状态及最重要的变化。不得沿用旧总览，不得引入卡片以外的数值、诊断或建议。只输出JSON对象：{"headline":"一句话整体意见"}。` }],
+      { maxTokens: 220, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    const overviewMatch = overviewRaw.match(/\{[\s\S]*\}/);
+    let headline;
+    try { headline = JSON.parse(overviewMatch?.[0] || '').headline?.trim(); } catch {}
+    if (!headline || typeof headline !== 'string') return res.status(500).json({ success: false, message: '整体意见生成失败，原分析未修改，请重试' });
+    const attention = item => sectionKey === 'tumor_risk'
+      ? ['follow_up_due', 'overdue', 'due_soon'].includes(item.status)
+      : ['attention', 'abnormal', 'worsening'].includes(item.status) || item.trendStatus === 'worsening';
+    const overview = { ...(record.sections[sectionKey].overview || {}), headline };
+    if (sectionKey === 'tumor_risk') {
+      overview.coveredCount = updatedList.filter(item => item.status === 'covered').length;
+      overview.unknownCount = updatedList.filter(item => item.status === 'unknown').length;
+    } else {
+      overview.stableCount = updatedList.filter(item => ['normal', 'stable'].includes(item.status)).length;
+    }
+    overview.attentionCount = updatedList.filter(attention).length;
+    record.sections[sectionKey][field] = updatedList;
+    record.sections[sectionKey].overview = overview;
+    const now = new Date();
+    record.sectionReviews = { ...(record.sectionReviews || {}), [sectionKey]: {
+      ...(record.sectionReviews?.[sectionKey] || {}), status: 'draft', updatedAt: now, updatedBy: req.staff.name,
+    } };
+    record.doctorApprovedAt = null;
+    record.doctorApprovedBy = null;
+    record.approvedAt = null;
+    record.approvedBy = null;
     record.itemRegenerationLog = [...(record.itemRegenerationLog || []), { sectionKey, itemName, instruction: String(instruction).trim(), at: new Date(), by: req.staff._id }];
     entry.records = records;
     entry.sections = records[0]?.sections || entry.sections;
     summary.byYear[y] = entry;
-    if (String(summary.latestYear) === y || !summary.latestYear) summary.sections = entry.sections;
-    await User.collection.updateOne({ _id: user._id }, { $set: { aiHealthSummary: summary } });
+    if ((String(summary.latestYear) === y || !summary.latestYear) && candidates[0] === record) {
+      summary.sections = { ...(summary.sections || {}), [sectionKey]: record.sections[sectionKey] };
+      summary.doctorApprovedAt = null;
+      summary.doctorApprovedBy = null;
+      summary.approvedAt = null;
+      summary.approvedBy = null;
+    }
+    const saved = await User.collection.updateOne({ _id: user._id, aiHealthSummary: existingSummary }, { $set: { aiHealthSummary: summary } });
+    if (!saved.matchedCount) return res.status(409).json({ success: false, message: '生成期间分析记录已变化，请刷新后重新核对；本次结果未保存' });
     res.json({ success: true, data: withReviewTokens(summary), item: updatedItem });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
