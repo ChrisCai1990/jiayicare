@@ -371,12 +371,13 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/sync-chronic-concerns
     if (!topic) return res.status(404).json({ success: false, message: '年度研判不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在分析，请等待完成后同步' });
     const standard = require('../utils/annualComprehensiveReview');
-    const chronic = standard.reviewedChronicConcerns(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags);
-    const cardiovascular = standard.reviewedCardiovascularConcerns(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags);
+    const auditedGlucose = await require('../utils/annualAuditedGlucose').latestAuditedGlucose(user._id, topic.annualPlanYear);
+    const chronic = standard.reviewedChronicConcerns(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags, auditedGlucose);
+    const cardiovascular = standard.reviewedCardiovascularConcerns(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags, auditedGlucose);
     const tumor = standard.reviewedTumorConcerns(topic.annualPlanYear, user.healthRiskTags);
     const reviewed = [chronic, cardiovascular, tumor].filter(result => result.sourceStatus === 'reviewed');
     const retirement = retireAnnualConcerns(topic.concerns || [], {
-      isGlucoseSuperseded: row => standard.reviewedNormalGlucoseAfter(user.aiHealthSummary, topic.annualPlanYear, latestSourceApproval(row)),
+      isGlucoseSuperseded: row => standard.reviewedNormalGlucoseAfter(user.aiHealthSummary, topic.annualPlanYear, latestSourceApproval(row), auditedGlucose),
     });
     const { reconcileReviewedConcerns } = require('../utils/annualConcernReconcile');
     const incoming = reviewed.flatMap(result => result.concerns).map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() }));
@@ -612,7 +613,8 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
         snapshot.sources.push('已审核健康信息整理；旧版泛化AI风险扫描不作当前研判依据');
       }
       if (topic.reviewType === 'annual' && Array.isArray(snapshot.basic?.chronicDiseases)
-          && require('../utils/annualComprehensiveReview').reviewedNormalGlucoseAfter(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags?.reviewedAt)) {
+          && require('../utils/annualComprehensiveReview').reviewedNormalGlucoseAfter(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags?.reviewedAt,
+            await require('../utils/annualAuditedGlucose').latestAuditedGlucose(user._id, topic.annualPlanYear))) {
         snapshot.basic.chronicDiseases = snapshot.basic.chronicDiseases.filter(name => !/^(糖代谢异常|糖尿病前期|糖耐量受损|空腹血糖受损|血糖异常)$/.test(String(name || '').trim()));
       }
       const linkedReportIds = [...new Set((topic.sourceLinks || []).flatMap(row => [row.source?.reportId, ...(row.source?.reportIds || [])]).filter(id => mongoose.isValidObjectId(id)).map(String))];
@@ -739,11 +741,11 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
       .map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
     const concernSummary = (topic.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row) && !['excluded', 'duplicate'].includes(row.status)).map(row => `${row.status} / ${row.pathway}：${row.title}；依据：${row.evidence || '待核实'}；说明：${row.note || '无'}`).join('\n');
     const approved = topic.annualPlanYear ? approvedDoctorRecord(user, topic.annualPlanYear) : null;
-    const currentGlucose = approved?.sectionReviews?.chronic_disease?.status === 'approved'
-      ? (approved.sections?.chronic_disease?.items || []).find(row => String(row.name || '').trim() === '血糖') : null;
+    const auditedGlucose = topic.annualPlanYear
+      ? await require('../utils/annualAuditedGlucose').latestAuditedGlucose(user._id, topic.annualPlanYear) : null;
     const evidenceSummary = [
       ...(topic.concerns || []).filter(row => isActiveAnnualConcern(row) && isEvidenceConcern(row) && !['excluded', 'duplicate'].includes(row.status)).map(row => `${row.title}：${row.evidence || '待核对检查结果'}`),
-      currentGlucose ? `最新已审核血糖趋势：${currentGlucose.latest || currentGlucose.value || ''}；状态：${currentGlucose.status}；不得沿用更早的矛盾风险扫描` : '',
+      auditedGlucose ? `最新已审核糖化血红蛋白报告：${auditedGlucose.date}，HbA1c ${auditedGlucose.value}%；报告标记：${auditedGlucose.status || '未标记'}；不得沿用更早的矛盾风险扫描` : '',
     ].filter(Boolean).join('\n');
     const specialtySummary = topic.reviewType === 'annual' && topic.annualPlanYear ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
     const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。年度研判须综合具体问题、五年趋势、慢病与重大疾病风险，说明有证据支持的问题间关联及共同管理优先级，不逐项割裂罗列，也不把共存误写成因果。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实。营养相关事项只写转营养师评估，不代营养师制定具体干预方案。检查和指标只能作为相关问题的证据，不得作为独立诊断。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n待研判问题及人工分流：\n${concernSummary || '暂无结构化问题'}\n检查和指标依据（不要作为独立问题）：\n${evidenceSummary || '暂无'}\n${topic.annualPlanYear ? `既有单项主题历史资料（已确认的可引用，未确认的仅列待核实）：\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无'}\n` : ''}讨论记录：\n${transcript}`;

@@ -7899,9 +7899,10 @@ router.post('/patients/:id/annual-comprehensive-review', staffAuth, async (req, 
   const existing = await AiCaseReview.findOne({ user: patient._id, reviewType: 'annual', annualPlanYear: year, status: { $ne: 'archived' } });
   if (existing) return res.json({ success: true, data: { _id: existing._id, title: existing.title, status: existing.conclusion?.status, reused: true } });
   const standard = require('../utils/annualComprehensiveReview');
+  const auditedGlucose = await require('../utils/annualAuditedGlucose').latestAuditedGlucose(patient._id, year);
   const seededConcerns = [];
-  seededConcerns.push(...standard.reviewedChronicConcerns(patient.aiHealthSummary, year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
-  seededConcerns.push(...standard.reviewedCardiovascularConcerns(patient.aiHealthSummary, year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
+  seededConcerns.push(...standard.reviewedChronicConcerns(patient.aiHealthSummary, year, patient.healthRiskTags, auditedGlucose).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
+  seededConcerns.push(...standard.reviewedCardiovascularConcerns(patient.aiHealthSummary, year, patient.healthRiskTags, auditedGlucose).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
   seededConcerns.push(...standard.reviewedTumorConcerns(year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
   const reviewedConcerns = require('../utils/annualConcernReconcile').reconcileReviewedConcerns(seededConcerns).rows;
   let topic;

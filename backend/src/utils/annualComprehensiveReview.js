@@ -10,14 +10,20 @@ const titleForYear = year => `${year}年度综合研判`;
 const descriptionForYear = year => `${year}年度方案制定前的综合研判。请围绕以下固定议题讨论，引用已审核资料和专业评估，不重复录入原始数据；结论由健康顾问逐项核实后确认。\n${TOPICS.map((topic, index) => `${index + 1}. ${topic}`).join('\n')}`;
 const outputGuide = '按问题逐项输出依据与趋势、当前判断、与其他问题的关联、专业去向、医疗管理目标、客户沟通与待补信息；最后汇总问题之间的关联、优先级和年度方案衔接。营养相关只写转营养师评估，不制定具体营养方案；区分已确认与待确认，不编造检查值或诊断。';
 
-function reviewedNormalGlucoseAfter(summary, year, earlierApproval) {
+function reviewedNormalGlucoseAfter(summary, year, earlierApproval, auditedGlucose = null) {
   if (!earlierApproval) return false;
   const entry = summary?.byYear?.[String(year)] || (!summary?.byYear && summary?.sections ? summary : null);
   const records = Array.isArray(entry?.records) ? entry.records : entry?.sections ? [entry] : [];
   const record = records.find(row => (row.scope === 'doctor' || row.scope === 'all' || !row.scope) && (row.doctorApprovedAt || row.approvedAt));
   const approvedAt = record?.doctorApprovedAt || record?.approvedAt;
-  if (!approvedAt || new Date(approvedAt) <= new Date(earlierApproval) || record.sectionReviews?.chronic_disease?.status !== 'approved') return false;
-  return (record.sections?.chronic_disease?.items || []).some(row => /^(血糖|糖代谢)$/.test(String(row.name || '').trim()) && row.status === 'normal');
+  if (!approvedAt || new Date(approvedAt) <= new Date(earlierApproval)) return false;
+  return (record.sections?.chronic_disease?.items || []).some(row => {
+    if (!/^(血糖|糖代谢)$/.test(String(row.name || '').trim()) || row.status !== 'normal') return false;
+    if (record.sectionReviews?.chronic_disease?.status === 'approved') return true;
+    const latest = String(row.latest || row.value || '');
+    return auditedGlucose?.status === 'normal' && auditedGlucose.date && auditedGlucose.value
+      && latest.includes(auditedGlucose.date) && latest.includes(auditedGlucose.value);
+  });
 }
 
 const GLUCOSE_TAG = /^(糖代谢异常|糖尿病前期|糖耐量受损|空腹血糖受损|血糖异常)$/;
@@ -36,7 +42,7 @@ function suggestedRiskConcerns(assessment, year) {
   }));
 }
 
-function reviewedChronicConcerns(summary, year, healthRiskTags = {}) {
+function reviewedChronicConcerns(summary, year, healthRiskTags = {}, auditedGlucose = null) {
   const entry = summary?.byYear?.[String(year)] || (!summary?.byYear && summary?.sections ? summary : null);
   const records = Array.isArray(entry?.records) ? entry.records : entry?.sections ? [entry] : [];
   const record = records.find(row => (row.scope === 'doctor' || row.scope === 'all' || !row.scope) && (row.doctorApprovedAt || row.approvedAt));
@@ -53,7 +59,7 @@ function reviewedChronicConcerns(summary, year, healthRiskTags = {}) {
     const names = new Set(concerns.map(row => row.title));
     for (const name of healthRiskTags.chronic_disease || []) {
       const title = String(name || '').trim();
-      if (GLUCOSE_TAG.test(title) && reviewedNormalGlucoseAfter(summary, year, healthRiskTags.reviewedAt)) continue;
+      if (GLUCOSE_TAG.test(title) && reviewedNormalGlucoseAfter(summary, year, healthRiskTags.reviewedAt, auditedGlucose)) continue;
       if (!title || names.has(title)) continue;
       names.add(title);
       concerns.push({ key: `chronic_tag:${year}:${title}`, kind: 'reviewed_chronic_tag', title,
@@ -65,7 +71,7 @@ function reviewedChronicConcerns(summary, year, healthRiskTags = {}) {
   return { sourceStatus: section || healthRiskTags?.status === 'reviewed' ? 'reviewed' : record ? 'missing' : 'unreviewed', concerns };
 }
 
-function reviewedCardiovascularConcerns(summary, year, healthRiskTags = {}) {
+function reviewedCardiovascularConcerns(summary, year, healthRiskTags = {}, auditedGlucose = null) {
   const entry = summary?.byYear?.[String(year)] || (!summary?.byYear && summary?.sections ? summary : null);
   const records = Array.isArray(entry?.records) ? entry.records : entry?.sections ? [entry] : [];
   const record = records.find(row => (row.scope === 'doctor' || row.scope === 'all' || !row.scope) && (row.doctorApprovedAt || row.approvedAt));
@@ -82,7 +88,7 @@ function reviewedCardiovascularConcerns(summary, year, healthRiskTags = {}) {
     const names = new Set(concerns.map(row => row.title));
     for (const name of healthRiskTags.cardiovascular_risk || []) {
       const title = String(name || '').trim();
-      if (GLUCOSE_TAG.test(title) && reviewedNormalGlucoseAfter(summary, year, healthRiskTags.reviewedAt)) continue;
+      if (GLUCOSE_TAG.test(title) && reviewedNormalGlucoseAfter(summary, year, healthRiskTags.reviewedAt, auditedGlucose)) continue;
       if (!title || names.has(title)) continue;
       names.add(title);
       concerns.push({ key: `cardiovascular_tag:${year}:${title}`, kind: 'reviewed_cardiovascular_tag', title,
