@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { suggestedRiskConcerns, reviewedChronicConcerns, reviewedCardiovascularConcerns, descriptionForYear } = require('../src/utils/annualComprehensiveReview');
+const { suggestedRiskConcerns, reviewedChronicConcerns, reviewedCardiovascularConcerns, reviewedTumorConcerns, descriptionForYear } = require('../src/utils/annualComprehensiveReview');
 const { buildAnnualPlanPreparationChecklist } = require('../src/utils/annualPlanPreparationChecklist');
 
 test('only reviewed material risk dimensions enter annual review as suggestions', () => {
@@ -58,6 +58,16 @@ test('reviewed cardiovascular concerns enter as suggestions, while stable and un
   assert.ok(result.concerns.every(row => row.status === 'suggested'));
   summary.byYear[2026].records[0].sectionReviews.cardiovascular_risk.status = 'pending';
   assert.deepEqual(reviewedCardiovascularConcerns(summary, 2026).concerns, []);
+});
+
+test('reviewed tumor concern tags, including lung ground-glass nodules, enter annual discussion', () => {
+  const tags = { status: 'reviewed', reviewedAt: new Date('2026-10-03'), tumor_risk: ['肺磨玻璃结节', '肺磨玻璃结节', '直肠息肉'] };
+  const result = reviewedTumorConcerns(2026, tags);
+  assert.equal(result.sourceStatus, 'reviewed');
+  assert.deepEqual(result.concerns.map(row => row.title), ['肺磨玻璃结节', '直肠息肉']);
+  assert.equal(result.concerns[0].kind, 'reviewed_tumor_tag');
+  assert.equal(result.concerns[0].status, 'suggested');
+  assert.deepEqual(reviewedTumorConcerns(2026, { ...tags, status: 'unreviewed' }).concerns, []);
 });
 
 test('customer discussion must refer to the current confirmed review version', () => {

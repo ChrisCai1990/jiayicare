@@ -1,10 +1,11 @@
-const REVIEWED_KINDS = new Set(['ai_health_trend', 'reviewed_chronic_tag', 'reviewed_cardiovascular_tag']);
+const REVIEWED_KINDS = new Set(['ai_health_trend', 'reviewed_chronic_tag', 'reviewed_cardiovascular_tag', 'reviewed_tumor_tag']);
 
 function conceptKey(title) {
   const name = String(title || '').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
   if (/^(高血压|血压|血压升高|血压异常)$/.test(name)) return 'hypertension';
   if (/^(糖代谢异常|糖尿病前期|糖耐量受损|空腹血糖受损|血糖异常|血糖)$/.test(name)) return 'prediabetes_glucose';
   if (/^(动脉粥样硬化|动脉硬化|颈动脉粥样硬化)$/.test(name)) return 'atherosclerosis';
+  if (name.includes('萎缩') && name.includes('胃炎') && name.includes('肠化')) return 'atrophic_gastritis_metaplasia';
   return `title:${name}`;
 }
 

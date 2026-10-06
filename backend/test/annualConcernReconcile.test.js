@@ -30,3 +30,17 @@ test('merges duplicate and synonymous reviewed concerns while retaining decision
   assert.equal(again.rows.length, 4);
   assert.equal(again.changed, false);
 });
+
+test('tumor tag for atrophic gastritis merges with the reviewed chronic finding', () => {
+  const result = reconcileReviewedConcerns([
+    row('gastritis-trend', '慢性胃炎（萎缩性+肠化）', 'ai_health_trend'),
+  ], [
+    row('gastritis-tag', '慢性萎缩性胃炎伴轻度肠化', 'reviewed_tumor_tag'),
+    row('lung-tag', '肺磨玻璃结节', 'reviewed_tumor_tag'),
+  ]);
+  assert.equal(result.rows.length, 2);
+  assert.equal(result.added, 1);
+  assert.equal(result.merged, 1);
+  assert.deepEqual(result.rows[0].mergedSourceKeys, ['gastritis-trend', 'gastritis-tag']);
+  assert.equal(result.rows[1].title, '肺磨玻璃结节');
+});

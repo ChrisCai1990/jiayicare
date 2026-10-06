@@ -370,8 +370,9 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/sync-chronic-concerns
     const standard = require('../utils/annualComprehensiveReview');
     const chronic = standard.reviewedChronicConcerns(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags);
     const cardiovascular = standard.reviewedCardiovascularConcerns(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags);
-    const reviewed = [chronic, cardiovascular].filter(result => result.sourceStatus === 'reviewed');
-    if (!reviewed.length) return res.json({ success: true, data: forClient(topic), added: 0, sourceStatus: chronic.sourceStatus === 'unreviewed' && cardiovascular.sourceStatus === 'unreviewed' ? 'unreviewed' : 'missing' });
+    const tumor = standard.reviewedTumorConcerns(topic.annualPlanYear, user.healthRiskTags);
+    const reviewed = [chronic, cardiovascular, tumor].filter(result => result.sourceStatus === 'reviewed');
+    if (!reviewed.length) return res.json({ success: true, data: forClient(topic), added: 0, sourceStatus: chronic.sourceStatus === 'unreviewed' && cardiovascular.sourceStatus === 'unreviewed' && tumor.sourceStatus === 'unreviewed' ? 'unreviewed' : 'missing' });
     const { reconcileReviewedConcerns } = require('../utils/annualConcernReconcile');
     const incoming = reviewed.flatMap(result => result.concerns).map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() }));
     const reconciled = reconcileReviewedConcerns(topic.concerns || [], incoming);

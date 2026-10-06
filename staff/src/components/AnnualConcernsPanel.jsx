@@ -4,7 +4,7 @@ import { concernStatusLabel, concernSourceLabel } from '../utils/annualConcernLa
 
 const STATUS = [['suggested', 'AI提示，待核实'], ['included', '纳入研判'], ['watch', '继续观察'], ['duplicate', '与其他问题重复'], ['excluded', '不纳入']]
 const PATHWAY = [['undecided', '待判断'], ['specialist', '专科评估或就医'], ['nutrition', '交营养师评估'], ['both', '专科和营养师均介入'], ['followup', '随访与复评']]
-const SOURCE = { screening: '专项筛查报告', ai_health_trend: '已审核的5年健康趋势', ai_risk_scan: '已审核的AI风险提示', reviewed_chronic_tag: '已审核慢病关注标签', reviewed_cardiovascular_tag: '已审核心脑血管关注标签' }
+const SOURCE = { screening: '专项筛查报告', ai_health_trend: '已审核的5年健康趋势', ai_risk_scan: '已审核的AI风险提示', reviewed_chronic_tag: '已审核慢病关注标签', reviewed_cardiovascular_tag: '已审核心脑血管关注标签', reviewed_tumor_tag: '已审核肿瘤风险关注标签' }
 
 function ConcernRow({ concern, number, patientId, topicId, canEdit, toast, onUpdate }) {
   const [form, setForm] = useState({ title: concern.title || '', status: concern.status || 'suggested', pathway: concern.pathway || 'undecided', note: concern.note || '' })
@@ -40,7 +40,7 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
   const canEdit = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const concerns = topic.concerns || []
   const autoScan = concerns.filter(row => row.includedByName === '已审核AI风险扫描')
-  const reviewedTrendSources = ['已审核5年健康趋势（慢病）', '已审核慢病关注标签', '已审核5年健康趋势（心脑血管）', '已审核心脑血管关注标签']
+  const reviewedTrendSources = ['已审核5年健康趋势（慢病）', '已审核慢病关注标签', '已审核5年健康趋势（心脑血管）', '已审核心脑血管关注标签', '已审核肿瘤风险关注标签']
   const chronicTrend = concerns.filter(row => reviewedTrendSources.includes(row.includedByName))
   const manuallyIncluded = concerns.filter(row => row.includedByName !== '已审核AI风险扫描' && !reviewedTrendSources.includes(row.includedByName))
   const pendingLegacy = legacyTopics.filter(row => !(topic.concerns || []).some(concern => concern.key === `legacy_specialty:${row._id}`))
@@ -55,14 +55,14 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
     try {
       const result = await staffAPI.syncAnnualChronicConcerns(patientId, topic._id)
       onUpdate(result.data)
-      setSyncMessage(result.sourceStatus === 'unreviewed' ? '心脑血管与慢病健康趋势及关注标签均未审核，暂不能自动带入。' : result.sourceStatus === 'missing' ? '已审核资料中没有可同步的心脑血管或慢病板块。' : result.reviewedCount === 0 ? '已审核资料未列出需关注的心脑血管或慢病风险线索。' : result.added || result.merged ? `已补入 ${result.added || 0} 项、合并 ${result.merged || 0} 项重复线索；请确定年度去向。` : '已审核的心脑血管与慢病风险线索均在本年度列表中。')
+      setSyncMessage(result.sourceStatus === 'unreviewed' ? '健康趋势与关注标签均未审核，暂不能自动带入。' : result.sourceStatus === 'missing' ? '已审核资料中没有可同步的关注线索。' : result.reviewedCount === 0 ? '已审核资料未列出需关注的风险线索。' : result.added || result.merged ? `已补入 ${result.added || 0} 项、合并 ${result.merged || 0} 项重复线索；请确定年度去向。` : '已审核的关注线索均在本年度列表中。')
     } catch (error) { setSyncMessage(error.message || '慢性病风险维度同步失败') }
     finally { setSyncing(false) }
   }
   return <div className="card" id="annual-concerns"><div className="card-header"><div className="card-title">年度综合研判的问题与风险线索（共 {concerns.length} 项）</div></div><div className="card-body">
     <div style={{ fontSize: 12, color: '#65776F' }}>具体问题、五年趋势、慢性病与重大疾病风险维度在同一次研判中一起分析。风险维度依据已审核资料提示，仍须核实，不代表已确诊。逐项核对依据和去向，并分析问题之间的联系。</div>
     {canEdit && pendingLegacy.length > 0 && <div style={{ marginTop: 10, padding: 10, background: '#FFF8ED', borderRadius: 8, fontSize: 12 }}>已有 {pendingLegacy.length} 个单项主题尚未并入本年度研判。<button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} disabled={importing} onClick={importLegacy}>{importing ? '正在整合…' : '并入年度综合研判'}</button></div>}
-    {canEdit && <div style={{ marginTop: 10 }}><button type="button" className="btn btn-secondary btn-sm" disabled={syncing} onClick={syncChronic}>{syncing ? '正在核对…' : '核对并同步心脑血管及慢病线索'}</button>{syncMessage && <span role="status" style={{ marginLeft: 8, fontSize: 12, color: '#52685D' }}>{syncMessage}</span>}</div>}
+    {canEdit && <div style={{ marginTop: 10 }}><button type="button" className="btn btn-secondary btn-sm" disabled={syncing} onClick={syncChronic}>{syncing ? '正在核对…' : '核对并同步已审核关注线索'}</button>{syncMessage && <span role="status" style={{ marginLeft: 8, fontSize: 12, color: '#52685D' }}>{syncMessage}</span>}</div>}
     {!concerns.length && <div style={{ marginTop: 12, color: '#8AA89C' }}>暂无纳入的问题，可在专项筛查结果或AI健康信息整理中一键纳入。</div>}
     {!!manuallyIncluded.length && <div style={{ marginTop: 12, fontWeight: 700 }}>具体问题（{manuallyIncluded.length}项）</div>}
     {manuallyIncluded.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}

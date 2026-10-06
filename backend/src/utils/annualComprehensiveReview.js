@@ -80,4 +80,15 @@ function reviewedCardiovascularConcerns(summary, year, healthRiskTags = {}) {
   return { sourceStatus: section || healthRiskTags?.status === 'reviewed' ? 'reviewed' : record ? 'missing' : 'unreviewed', concerns };
 }
 
-module.exports = { TOPICS, titleForYear, descriptionForYear, outputGuide, annualReviewForYear, suggestedRiskConcerns, reviewedChronicConcerns, reviewedCardiovascularConcerns };
+function reviewedTumorConcerns(year, healthRiskTags = {}) {
+  if (healthRiskTags?.status !== 'reviewed') return { sourceStatus: 'unreviewed', concerns: [] };
+  const concerns = [...new Set((healthRiskTags.tumor_risk || []).map(name => String(name || '').trim()).filter(Boolean))].map(title => ({
+    key: `tumor_tag:${year}:${title}`, kind: 'reviewed_tumor_tag', title,
+    evidence: `已审核的肿瘤风险关注标签：${title}；请结合原始报告核对具体所见及随访要求`,
+    source: { year, reviewedAt: healthRiskTags.reviewedAt }, status: 'suggested', pathway: 'undecided',
+    includedByName: '已审核肿瘤风险关注标签', includedAt: new Date(),
+  }));
+  return { sourceStatus: 'reviewed', concerns };
+}
+
+module.exports = { TOPICS, titleForYear, descriptionForYear, outputGuide, annualReviewForYear, suggestedRiskConcerns, reviewedChronicConcerns, reviewedCardiovascularConcerns, reviewedTumorConcerns };

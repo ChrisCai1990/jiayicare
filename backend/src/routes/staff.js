@@ -7904,13 +7904,15 @@ router.post('/patients/:id/annual-comprehensive-review', staffAuth, async (req, 
   const seededConcerns = standard.suggestedRiskConcerns(riskForYear, year).map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() }));
   seededConcerns.push(...standard.reviewedChronicConcerns(patient.aiHealthSummary, year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
   seededConcerns.push(...standard.reviewedCardiovascularConcerns(patient.aiHealthSummary, year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
+  seededConcerns.push(...standard.reviewedTumorConcerns(year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
+  const reviewedConcerns = require('../utils/annualConcernReconcile').reconcileReviewedConcerns(seededConcerns).rows;
   let topic;
   try { topic = await AiCaseReview.create({
     user: patient._id, tenantId: patient.tenantId || null,
     title: standard.titleForYear(year), description: standard.descriptionForYear(year),
     reviewType: 'annual', annualPlanYear: year,
     requiresCustomerDiscussion: true,
-    concerns: seededConcerns,
+    concerns: reviewedConcerns,
     templateSnapshot: { name: '年度综合研判', target: '年度管理方案', outputGuide: standard.outputGuide },
     contextScopes: ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'],
     preferredProvider: 'qwen', createdBy: req.staff._id, createdByName: req.staff.name || '',

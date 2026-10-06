@@ -1,4 +1,4 @@
-const reviewedKinds = new Set(['ai_health_trend', 'reviewed_chronic_tag', 'reviewed_cardiovascular_tag'])
+const reviewedKinds = new Set(['ai_health_trend', 'reviewed_chronic_tag', 'reviewed_cardiovascular_tag', 'reviewed_tumor_tag'])
 
 export function concernStatusLabel(row) {
   if (row.status === 'included') return '纳入综合研判'
