@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const { isEvidenceConcern, clinicalType } = require('../utils/annualConcernTypes');
+const { isActiveAnnualConcern, latestSourceApproval, retireAnnualConcerns } = require('../utils/annualConcernRetirement');
 const router = express.Router();
 const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
@@ -22,7 +23,7 @@ const { DEFAULT_SCOPES, ensureAiCaseReviewTemplates } = require('../utils/aiCase
 const VALID_SCOPES = new Set(DEFAULT_SCOPES);
 const VALID_REVIEW_TYPES = new Set(['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'specialty', 'custom']);
 const ROLE_LABEL = { superadmin: '超级管理员', familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', healthPlanner: '健康规划师', medicalAssistant: '就医专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师', specialist: '专科医师' };
-const AUTO_REVIEW_MESSAGE = '【系统自动启动研判】优先核对最近一次已审核体检报告（如有），结合健康顾问纳入的问题和已审核的5年健康趋势、风险提示，提出待研判问题、专科或营养师评估去向、待核实目标及初步分析。';
+const AUTO_REVIEW_MESSAGE = '【系统自动启动研判】优先核对最近一次已审核体检报告（如有），结合健康顾问纳入的问题和已审核的5年健康趋势，提出待研判问题、专科或营养师评估去向、待核实目标及初步分析。';
 const PHYSICAL_EXAM_FILTER = { $or: [
   { documentCategory: 'physical_exam' },
   { documentCategory: null, type: { $in: ['annual', 'general_exam'] } },
@@ -374,18 +375,22 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/sync-chronic-concerns
     const cardiovascular = standard.reviewedCardiovascularConcerns(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags);
     const tumor = standard.reviewedTumorConcerns(topic.annualPlanYear, user.healthRiskTags);
     const reviewed = [chronic, cardiovascular, tumor].filter(result => result.sourceStatus === 'reviewed');
-    if (!reviewed.length) return res.json({ success: true, data: forClient(topic), added: 0, sourceStatus: chronic.sourceStatus === 'unreviewed' && cardiovascular.sourceStatus === 'unreviewed' && tumor.sourceStatus === 'unreviewed' ? 'unreviewed' : 'missing' });
+    const retirement = retireAnnualConcerns(topic.concerns || [], {
+      isGlucoseSuperseded: row => standard.reviewedNormalGlucoseAfter(user.aiHealthSummary, topic.annualPlanYear, latestSourceApproval(row)),
+    });
     const { reconcileReviewedConcerns } = require('../utils/annualConcernReconcile');
     const incoming = reviewed.flatMap(result => result.concerns).map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() }));
-    const reconciled = reconcileReviewedConcerns(topic.concerns || [], incoming);
+    const reconciled = reconcileReviewedConcerns(retirement.rows, incoming);
     if (reconciled.rows.length > 100) return res.status(409).json({ success: false, message: '本年度关注问题已达上限，请先整理研判' });
-    if (reconciled.changed) {
+    if (reconciled.changed || retirement.changed) {
       topic.concerns = reconciled.rows;
+      if (retirement.retired.length) topic.retiredConcerns.push(...retirement.retired);
       topic.markModified('concerns');
       reopenAfterConcernChange(topic);
       await topic.save();
     }
-    return res.json({ success: true, data: forClient(topic), added: reconciled.added, merged: reconciled.merged, sourceStatus: 'reviewed', reviewedCount: reviewed.reduce((count, result) => count + result.concerns.length, 0) });
+    const sourceStatus = reviewed.length ? 'reviewed' : chronic.sourceStatus === 'unreviewed' && cardiovascular.sourceStatus === 'unreviewed' && tumor.sourceStatus === 'unreviewed' ? 'unreviewed' : 'missing';
+    return res.json({ success: true, data: forClient(topic), added: reconciled.added, merged: reconciled.merged, retired: retirement.retired.length, sourceStatus, reviewedCount: reviewed.reduce((count, result) => count + result.concerns.length, 0) });
   } catch (error) { return res.status(error.name === 'VersionError' ? 409 : 500).json({ success: false, message: error.message }); }
 });
 
@@ -397,6 +402,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/concerns', staffAuth,
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id, reviewType: 'annual', status: { $ne: 'archived' } });
     if (!topic) return res.status(404).json({ success: false, message: '年度研判不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在分析，请等待完成后纳入关注' });
+    if (req.body?.kind === 'ai_risk') return res.status(409).json({ success: false, message: '泛化AI风险扫描仅作历史参考；请从已审核趋势或报告纳入具体问题' });
     const source = await concernSource(user, req.body || {});
     if (req.body.issueTitle !== undefined) {
       const issueTitle = String(req.body.issueTitle || '').trim();
@@ -598,6 +604,17 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const message = topic.messages.find(item => item.role === 'staff' && item.requestId === topic.generation.requestId);
       const { content, attachments } = message;
       const snapshot = await buildContext(user, topic.contextScopes);
+      if (topic.reviewType === 'annual' && snapshot.aiAnalysis) {
+        const approved = approvedDoctorRecord(user, topic.annualPlanYear);
+        snapshot.aiAnalysis = { approvedHealthSummary: approved ? { year: topic.annualPlanYear,
+          approvedAt: approved.doctorApprovedAt || approved.approvedAt, sections: approved.sections } : null };
+        snapshot.sources = snapshot.sources.filter(source => source !== '已保存的AI健康信息整理与风险评估');
+        snapshot.sources.push('已审核健康信息整理；旧版泛化AI风险扫描不作当前研判依据');
+      }
+      if (topic.reviewType === 'annual' && Array.isArray(snapshot.basic?.chronicDiseases)
+          && require('../utils/annualComprehensiveReview').reviewedNormalGlucoseAfter(user.aiHealthSummary, topic.annualPlanYear, user.healthRiskTags?.reviewedAt)) {
+        snapshot.basic.chronicDiseases = snapshot.basic.chronicDiseases.filter(name => !/^(糖代谢异常|糖尿病前期|糖耐量受损|空腹血糖受损|血糖异常)$/.test(String(name || '').trim()));
+      }
       const linkedReportIds = [...new Set((topic.sourceLinks || []).flatMap(row => [row.source?.reportId, ...(row.source?.reportIds || [])]).filter(id => mongoose.isValidObjectId(id)).map(String))];
       if (linkedReportIds.length) {
         const linkedReports = await MedicalReport.find({ _id: { $in: linkedReportIds }, user: user._id, audit_status: 'audited' })
@@ -615,9 +632,9 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
         } else throw new Error('已审核体检报告已不可用，请核实后重试');
       }
       const isSupplement = topic.messages.length > 1;
-      const history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
+      let history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
       const proposedTargets = topic.conclusion?.managementTargets || [];
-      const activeConcerns = (topic.concerns || []).filter(row => !['excluded', 'duplicate'].includes(row.status));
+      const activeConcerns = (topic.concerns || []).filter(row => isActiveAnnualConcern(row) && !['excluded', 'duplicate'].includes(row.status));
       const concerns = activeConcerns.filter(row => !isEvidenceConcern(row));
       const supportingEvidence = activeConcerns.filter(isEvidenceConcern);
       snapshot.reviewConcerns = concerns;
@@ -629,13 +646,14 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       }
       const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : '',
         topic.sourceLinks?.length ? `健康顾问选定的单个专病问题及来源（优先核对，不可将报告所见直接当诊断）：${JSON.stringify(topic.sourceLinks.map(row => ({ title: row.title, evidence: row.evidence, source: row.source })))}` : '',
-        concerns.length ? `健康顾问纳入及AI扫描的待研判问题（均须核实，不能当作已确诊；按已标注去向讨论）：${JSON.stringify(concerns.map(row => ({ title: row.title, clinicalType: clinicalType(row), evidence: row.evidence, kind: row.kind, status: row.status, pathway: row.pathway, note: row.note, source: row.source })))}` : '',
+        concerns.length ? `健康顾问纳入的具体待研判问题（均须核实，不能当作已确诊；按已标注去向讨论）：${JSON.stringify(concerns.map(row => ({ title: row.title, clinicalType: clinicalType(row), evidence: row.evidence, kind: row.kind, status: row.status, pathway: row.pathway, note: row.note, source: row.source })))}` : '',
         supportingEvidence.length ? `以下是检查与指标依据，不是独立诊断或待研判问题。提取其中有来源的异常结果并关联到相关问题，不要以检查名称创建问题卡：${JSON.stringify(supportingEvidence.map(row => ({ title: row.title, clinicalType: clinicalType(row), evidence: row.evidence, source: row.source })))}` : '',
         proposedTargets.length ? `创建主题时填写的拟管理目标和干预重点（尚未核实，只作为研判方向，不能当作已确认事实）：${JSON.stringify(proposedTargets)}` : ''].filter(Boolean).join('\n');
       const isAnnualReview = topic.reviewType === 'annual' && !!topic.annualPlanYear;
       const reframeAnnual = isAnnualReview && content.startsWith('【按问题重整年度研判】');
+      if (reframeAnnual) history = [];
       const specialtySummary = isAnnualReview ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
-      const annualBoundary = isAnnualReview ? '年度研判把健康顾问纳入的具体问题、五年健康趋势、慢性病风险维度及重大疾病风险维度作为同一组资料。检查项目和检验指标仅作为问题依据，不能作为独立诊断或问题；有具体异常结果时关联到相应健康问题。风险维度是待核实的分析方向，不等于已确诊疾病。先逐项核实依据，再分析具体问题之间及其与五年趋势之间有证据支持的关联、时间变化和共同影响，最后形成综合优先级、医疗管理目标和专科/就医、营养师评估或随访去向。不得把仅仅共存当作因果，必要的专科意见未取得时标记待确认。营养干预具体方案由营养师独立制定和发出。' : '';
+      const annualBoundary = isAnnualReview ? '年度研判以最新已审核的具体健康问题、检查发现和五年趋势为准。旧版泛化AI风险扫描仅保留历史，不作为当前判断依据；若旧分析与新资料冲突，以新资料为准。检查项目和检验指标仅作为相关问题的依据，不能作为独立诊断。先核实来源，再分析问题之间有证据支持的关联、时间变化和共同影响，最后形成优先级、医疗管理目标及专业去向。不得把共存当作因果，必要的专科意见未取得时标记待确认。营养干预具体方案由营养师独立制定和发出。' : '';
       const issueCardGuide = '以问题为阅读单位，不按“来源、筛选、去向、目标”横向分栏。每个纳入的问题或风险维度单独输出一张卡，相关问题可合并，但标题须列出被合并的名称。严格使用纯文本格式：每张卡以独占一行的“【问题：具体名称】”开头，然后各占一行写“依据与趋势：…”“当前判断：…”“与其他问题的关联：…”“专业去向：…”“管理目标：…；干预重点：…”“沟通与待补：…”。证据、时间和来源写在该问题卡内；缺乏依据的目标只写“管理目标：待确认”，不要编造干预重点。每张卡最多260个汉字，全文不超过2000个汉字；只保留关键证据，不堆砌检查清单。所有问题卡之后独占一行写“【综合关联与优先级】”，再按行写“共同关联：…”“优先级：…”“年度方案衔接：…”。不要重复长篇病史、不要输出六议题总表；关系仅在有证据时提出，推测标明待核实。既有主题说明若要求六议题输出，以本格式为准。';
       const incrementalGuide = reframeAnnual
         ? `这是基于当前清单和已审核资料的完整重新整理，不是只分析新增变化。旧回复仅供比对，不可作为独立证据。${issueCardGuide}`
@@ -717,9 +735,16 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     if (!topic.messages.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
-    const transcript = topic.messages.map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
-    const concernSummary = (topic.concerns || []).filter(row => !isEvidenceConcern(row) && !['excluded', 'duplicate'].includes(row.status)).map(row => `${row.status} / ${row.pathway}：${row.title}；依据：${row.evidence || '待核实'}；说明：${row.note || '无'}`).join('\n');
-    const evidenceSummary = (topic.concerns || []).filter(row => isEvidenceConcern(row) && !['excluded', 'duplicate'].includes(row.status)).map(row => `${row.title}：${row.evidence || '待核对检查结果'}`).join('\n');
+    const transcript = topic.messages.filter(item => !topic.annualPlanYear || !topic.concernsUpdatedAt || new Date(item.createdAt) > new Date(topic.concernsUpdatedAt))
+      .map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
+    const concernSummary = (topic.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row) && !['excluded', 'duplicate'].includes(row.status)).map(row => `${row.status} / ${row.pathway}：${row.title}；依据：${row.evidence || '待核实'}；说明：${row.note || '无'}`).join('\n');
+    const approved = topic.annualPlanYear ? approvedDoctorRecord(user, topic.annualPlanYear) : null;
+    const currentGlucose = approved?.sectionReviews?.chronic_disease?.status === 'approved'
+      ? (approved.sections?.chronic_disease?.items || []).find(row => String(row.name || '').trim() === '血糖') : null;
+    const evidenceSummary = [
+      ...(topic.concerns || []).filter(row => isActiveAnnualConcern(row) && isEvidenceConcern(row) && !['excluded', 'duplicate'].includes(row.status)).map(row => `${row.title}：${row.evidence || '待核对检查结果'}`),
+      currentGlucose ? `最新已审核血糖趋势：${currentGlucose.latest || currentGlucose.value || ''}；状态：${currentGlucose.status}；不得沿用更早的矛盾风险扫描` : '',
+    ].filter(Boolean).join('\n');
     const specialtySummary = topic.reviewType === 'annual' && topic.annualPlanYear ? await annualSpecialtySummary(user._id, topic.annualPlanYear) : [];
     const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。年度研判须综合具体问题、五年趋势、慢病与重大疾病风险，说明有证据支持的问题间关联及共同管理优先级，不逐项割裂罗列，也不把共存误写成因果。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。涉及持续管理的行动请采用“目标：……；干预重点：……；时间/频次：……；责任角色：……”格式，目标仅来自已确认依据；单次就医或检查照常写行动，不强行编造管理目标。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实。营养相关事项只写转营养师评估，不代营养师制定具体干预方案。检查和指标只能作为相关问题的证据，不得作为独立诊断。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n待研判问题及人工分流：\n${concernSummary || '暂无结构化问题'}\n检查和指标依据（不要作为独立问题）：\n${evidenceSummary || '暂无'}\n${topic.annualPlanYear ? `既有单项主题历史资料（已确认的可引用，未确认的仅列待核实）：\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无'}\n` : ''}讨论记录：\n${transcript}`;
     const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt, context: { sources: [] }, attachments: [], history: [] });
@@ -745,7 +770,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
-    if (topic.annualPlanYear && (topic.concerns || []).filter(row => !isEvidenceConcern(row)).some(row => row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
+    if (topic.annualPlanYear && (topic.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row)).some(row => row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
       return res.status(409).json({ success: false, message: '请先逐条核实AI提示，并确定已纳入问题的专业去向' });
     if (topic.annualPlanYear && topic.concernsUpdatedAt && (!topic.conclusion?.generatedAt || new Date(topic.conclusion.generatedAt) < new Date(topic.concernsUpdatedAt)))
       return res.status(409).json({ success: false, message: '年度问题清单已更新，请先按当前问题重新整理阶段性结论' });

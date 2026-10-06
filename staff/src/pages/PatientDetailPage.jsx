@@ -48,7 +48,6 @@ import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
-import AnnualConcernButton from '../components/AnnualConcernButton'
 import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
 import AnnualReviewCommunicationPanel from '../components/AnnualReviewCommunicationPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
@@ -8987,8 +8986,7 @@ export default function PatientDetailPage() {
                           <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{d.label}</span>
                           <span style={{ fontSize: 12, fontWeight: 700, color: lv.color, background: lv.bg, borderRadius: 6, padding: '2px 10px' }}>{lv.label}</span>
                           {typeof d.score === 'number' && <span style={{ fontSize: 12, color: '#8AA89C' }}>{d.score}分</span>}
-                          {ra.approvedAt && <AnnualConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast}
-                            source={{ kind: 'ai_risk', year: Number(curYear), dimensionKey: d.key }} />}
+                          {ra.approvedAt && <span style={{ fontSize: 11, color: '#65776F' }}>风险维度作背景；年度研判纳入具体发现</span>}
                         </div>
                         <div style={{ padding: '10px 16px 14px' }}>
                           {Array.isArray(d.factors) && d.factors.length > 0 && (

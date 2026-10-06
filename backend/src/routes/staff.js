@@ -7894,14 +7894,12 @@ router.post('/patients/:id/annual-comprehensive-review', staffAuth, async (req, 
   if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) return res.status(403).json({ success: false, message: '该客户暂未开放新版健康管理闭环' });
   const year = Number(req.body.year);
   if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
-  const patient = await User.findById(req.params.id).select('_id tenantId aiRiskAssessment aiHealthSummary healthRiskTags').lean();
+  const patient = await User.findById(req.params.id).select('_id tenantId aiHealthSummary healthRiskTags').lean();
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
   const existing = await AiCaseReview.findOne({ user: patient._id, reviewType: 'annual', annualPlanYear: year, status: { $ne: 'archived' } });
   if (existing) return res.json({ success: true, data: { _id: existing._id, title: existing.title, status: existing.conclusion?.status, reused: true } });
   const standard = require('../utils/annualComprehensiveReview');
-  const riskRoot = patient.aiRiskAssessment || {};
-  const riskForYear = riskRoot.byYear?.[String(year)] || (!riskRoot.byYear && riskRoot.dimensions ? riskRoot : null);
-  const seededConcerns = standard.suggestedRiskConcerns(riskForYear, year).map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() }));
+  const seededConcerns = [];
   seededConcerns.push(...standard.reviewedChronicConcerns(patient.aiHealthSummary, year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
   seededConcerns.push(...standard.reviewedCardiovascularConcerns(patient.aiHealthSummary, year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));
   seededConcerns.push(...standard.reviewedTumorConcerns(year, patient.healthRiskTags).concerns.map(row => ({ ...row, id: new mongoose.Types.ObjectId().toString() })));

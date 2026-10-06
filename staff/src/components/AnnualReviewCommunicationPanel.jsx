@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { concernStatusLabel, concernSourceLabel, concernTypeLabel, isEvidenceConcern } from '../utils/annualConcernLabels'
+import { concernStatusLabel, concernSourceLabel, concernTypeLabel, isEvidenceConcern, isActiveAnnualConcern } from '../utils/annualConcernLabels'
 
 export default function AnnualReviewCommunicationPanel({ patientId, year, staff, toast, onOpenReview }) {
   const nav = useNavigate()
@@ -14,7 +14,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
   const canConfirm = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const newerSpecialtyConclusion = specialtyReviews.some(item => item.conclusion?.status === 'confirmed' && review?.conclusion?.confirmedAt && new Date(item.conclusion.confirmedAt) > new Date(review.conclusion.confirmedAt))
   const annualConclusionStale = !!review?.concernsUpdatedAt && (!review.conclusion?.generatedAt || new Date(review.conclusion.generatedAt) < new Date(review.concernsUpdatedAt))
-  const annualRows = (review?.concerns || []).filter(item => item.includedByName !== '已审核AI风险扫描')
+  const annualRows = (review?.concerns || []).filter(isActiveAnnualConcern)
   const problemRows = annualRows.filter(item => !isEvidenceConcern(item))
   const evidenceRows = annualRows.filter(isEvidenceConcern)
 
@@ -55,7 +55,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
     try {
       const result = await staffAPI.syncAnnualChronicConcerns(patientId, review._id)
       setReview(result.data)
-      toast(result.added || result.merged ? `已补入 ${result.added || 0} 项、合并 ${result.merged || 0} 项重复线索；请确定年度去向` : '已审核的关注线索均已核对', 5000)
+      toast(result.retired ? `已将 ${result.retired} 项旧线索移至历史；当前研判按最新审核资料更新` : result.added || result.merged ? `已补入 ${result.added || 0} 项、合并 ${result.merged || 0} 项重复线索；请确定年度去向` : '已审核的关注线索均已核对', 5000)
     } catch (error) { toast(error.message || '同步关注问题失败', 'error') }
     finally { setBusy(false) }
   }

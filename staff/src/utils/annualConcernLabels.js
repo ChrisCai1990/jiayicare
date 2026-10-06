@@ -14,6 +14,10 @@ export function isEvidenceConcern(row) {
   return ['examination', 'marker'].includes(concernClinicalType(row))
 }
 
+export function isActiveAnnualConcern(row) {
+  return row.sourceState !== 'historical' && !(row.kind === 'ai_risk_scan' && String(row.key || '').startsWith('ai_risk:'))
+}
+
 export function concernTypeLabel(row) {
   return { examination: '检查依据', marker: '检验指标', question: '待确认疑点', finding: '检查发现', health_issue: '健康问题' }[concernClinicalType(row)]
 }

@@ -1,5 +1,5 @@
 const TOPICS = [
-  '逐个问题：每个具体问题或风险维度分别核对来源、五年趋势、已确认事实与待核实点。',
+  '逐个问题：按当前已审核的具体健康问题和检查发现核对来源、五年趋势、已确认事实与待核实点；旧版泛化风险扫描仅作历史资料。',
   '关联判断：分析问题彼此之间及与五年趋势之间有证据支持的联系，不把共存当作因果。',
   '专业去向：在每个问题下判断是否需要专科评估、就医意见、营养师评估或随访复评。',
   '医疗管理目标：在每个问题下拟定有依据的目标、完成标准和复评时间；缺少基线或专科意见时标为待确认。',
@@ -9,6 +9,18 @@ const TOPICS = [
 const titleForYear = year => `${year}年度综合研判`;
 const descriptionForYear = year => `${year}年度方案制定前的综合研判。请围绕以下固定议题讨论，引用已审核资料和专业评估，不重复录入原始数据；结论由健康顾问逐项核实后确认。\n${TOPICS.map((topic, index) => `${index + 1}. ${topic}`).join('\n')}`;
 const outputGuide = '按问题逐项输出依据与趋势、当前判断、与其他问题的关联、专业去向、医疗管理目标、客户沟通与待补信息；最后汇总问题之间的关联、优先级和年度方案衔接。营养相关只写转营养师评估，不制定具体营养方案；区分已确认与待确认，不编造检查值或诊断。';
+
+function reviewedNormalGlucoseAfter(summary, year, earlierApproval) {
+  if (!earlierApproval) return false;
+  const entry = summary?.byYear?.[String(year)] || (!summary?.byYear && summary?.sections ? summary : null);
+  const records = Array.isArray(entry?.records) ? entry.records : entry?.sections ? [entry] : [];
+  const record = records.find(row => (row.scope === 'doctor' || row.scope === 'all' || !row.scope) && (row.doctorApprovedAt || row.approvedAt));
+  const approvedAt = record?.doctorApprovedAt || record?.approvedAt;
+  if (!approvedAt || new Date(approvedAt) <= new Date(earlierApproval) || record.sectionReviews?.chronic_disease?.status !== 'approved') return false;
+  return (record.sections?.chronic_disease?.items || []).some(row => /^(血糖|糖代谢)$/.test(String(row.name || '').trim()) && row.status === 'normal');
+}
+
+const GLUCOSE_TAG = /^(糖代谢异常|糖尿病前期|糖耐量受损|空腹血糖受损|血糖异常)$/;
 
 function annualReviewForYear(reviews = [], year) {
   return reviews.find(item => item.reviewType === 'annual' && item.annualPlanYear && Number(item.annualPlanYear) === Number(year));
@@ -41,6 +53,7 @@ function reviewedChronicConcerns(summary, year, healthRiskTags = {}) {
     const names = new Set(concerns.map(row => row.title));
     for (const name of healthRiskTags.chronic_disease || []) {
       const title = String(name || '').trim();
+      if (GLUCOSE_TAG.test(title) && reviewedNormalGlucoseAfter(summary, year, healthRiskTags.reviewedAt)) continue;
       if (!title || names.has(title)) continue;
       names.add(title);
       concerns.push({ key: `chronic_tag:${year}:${title}`, kind: 'reviewed_chronic_tag', title,
@@ -69,6 +82,7 @@ function reviewedCardiovascularConcerns(summary, year, healthRiskTags = {}) {
     const names = new Set(concerns.map(row => row.title));
     for (const name of healthRiskTags.cardiovascular_risk || []) {
       const title = String(name || '').trim();
+      if (GLUCOSE_TAG.test(title) && reviewedNormalGlucoseAfter(summary, year, healthRiskTags.reviewedAt)) continue;
       if (!title || names.has(title)) continue;
       names.add(title);
       concerns.push({ key: `cardiovascular_tag:${year}:${title}`, kind: 'reviewed_cardiovascular_tag', title,
@@ -91,4 +105,4 @@ function reviewedTumorConcerns(year, healthRiskTags = {}) {
   return { sourceStatus: 'reviewed', concerns };
 }
 
-module.exports = { TOPICS, titleForYear, descriptionForYear, outputGuide, annualReviewForYear, suggestedRiskConcerns, reviewedChronicConcerns, reviewedCardiovascularConcerns, reviewedTumorConcerns };
+module.exports = { TOPICS, titleForYear, descriptionForYear, outputGuide, annualReviewForYear, suggestedRiskConcerns, reviewedChronicConcerns, reviewedCardiovascularConcerns, reviewedTumorConcerns, reviewedNormalGlucoseAfter };

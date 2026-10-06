@@ -46,6 +46,7 @@ const aiCaseReviewSchema = new mongoose.Schema({
   customerDiscussion: { type: mongoose.Schema.Types.Mixed, default: null },
   customerDiscussionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   concerns: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  retiredConcerns: { type: [mongoose.Schema.Types.Mixed], default: [] },
   concernsUpdatedAt: { type: Date, default: null },
   issueKey: { type: String, default: '' },
   sourceLinks: { type: [mongoose.Schema.Types.Mixed], default: [] },
