@@ -668,7 +668,16 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
         ? `${isAnnualReview ? `这是年度综合研判首次讨论。${issueCardGuide}` : '这是本主题首次讨论。'}${exam ? '优先核对最近一次已审核体检报告及其日期/项目依据' : '暂无已审核的体检报告，请依据已审核健康趋势、AI风险提示及已纳入问题，不得虚构体检所见'}。区分已确认事实与待核实信息，目标仅为草稿，须由健康顾问确认。`
         : incrementalGuide;
       const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isAnnualReview ? 5000 : isSupplement ? 900 : automatic ? 3200 : 1800, retryOnEmptyOrLength: isAnnualReview });
-      if (automatic && !proposedTargets.length) result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
+      if (isAnnualReview && (automatic || reframeAnnual)) {
+        const targetLogic = require('../utils/caseReviewManagementTargets');
+        if (targetLogic.issueCards(result.content).length) {
+          const coverage = targetLogic.reconcileAnnualIssueTargets(proposedTargets, result.content);
+          result.managementTargets = coverage.targets;
+          if (coverage.uncovered.length) result.content += `\n【管理目标覆盖提示】目标已达12条上限，以下问题尚未列入目标草稿，请健康顾问合并或调整：${coverage.uncovered.join('、')}`;
+        } else if (!proposedTargets.length) result.managementTargets = targetLogic.proposeTargetsFromActions(result.content.split(/\r?\n/));
+      } else if (automatic && !proposedTargets.length) {
+        result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
+      }
       return { result, snapshot: result.contextSnapshot || snapshot };
     });
     if (legacy) {
@@ -762,9 +771,20 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
       content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
       confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
     });
-    topic.conclusion = { content: assessmentToPlainText(structured), structured,
-      managementTargets: topic.conclusion?.managementTargets?.length ? topic.conclusion.managementTargets
-        : require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(structured.actions),
+    const targetLogic = require('../utils/caseReviewManagementTargets');
+    let managementTargets = topic.conclusion?.managementTargets?.length ? topic.conclusion.managementTargets
+      : targetLogic.proposeTargetsFromActions(structured.actions);
+    if (topic.annualPlanYear) {
+      const fullReview = [...topic.messages].reverse().find(item => item.role === 'ai'
+        && (!topic.concernsUpdatedAt || new Date(item.createdAt) > new Date(topic.concernsUpdatedAt))
+        && targetLogic.issueCards(item.content).length);
+      if (fullReview) {
+        const coverage = targetLogic.reconcileAnnualIssueTargets(managementTargets, fullReview.content);
+        managementTargets = coverage.targets;
+        if (coverage.uncovered.length) structured.missing.push(`管理目标条数已达上限，以下问题尚未覆盖：${coverage.uncovered.join('、')}`);
+      }
+    }
+    topic.conclusion = { content: assessmentToPlainText(structured), structured, managementTargets,
       status: 'draft', generatedAt: new Date(), confirmedAt: null, confirmedBy: null, confirmedByName: '', serviceRecordId: null };
     topic.lastActivityAt = new Date();
     await topic.save();

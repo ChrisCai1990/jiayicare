@@ -76,8 +76,11 @@ async function finishSend(Model, topic, generate) {
     if (!result.content) throw new Error('AI未返回可展示的分析内容');
     const set = { 'generation.status': 'completed', 'generation.error': '',
       providerSessionId: result.sessionId || topic.providerSessionId, lastActivityAt: new Date() };
-    if (!topic.conclusion?.managementTargets?.length && result.managementTargets?.length) {
-      set['conclusion.managementTargets'] = require('./caseReviewManagementTargets').normalizeTargets(result.managementTargets);
+    if (result.managementTargets?.length) {
+      const targets = require('./caseReviewManagementTargets').normalizeTargets(result.managementTargets);
+      if (JSON.stringify(targets) !== JSON.stringify((topic.conclusion?.managementTargets || []).map(row => ({
+        goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true,
+      })))) set['conclusion.managementTargets'] = targets;
     }
     await Model.updateOne(filter, { $push: { messages: {
       role: 'ai', requestId: topic.generation.requestId, content: result.content,

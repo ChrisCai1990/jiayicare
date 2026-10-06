@@ -35,4 +35,44 @@ function proposeTargetsFromActions(actions) {
   }).slice(0, 12);
 }
 
-module.exports = { normalizeTargets, conclusionFromTargets, fromConfirmedReviews, proposeTargetsFromActions };
+const ISSUE_FAMILIES = [
+  /高血压|血压/, /动脉粥样|动脉硬化|斑块/, /胃炎|胃黏膜|肠化|胃镜/,
+  /前列腺/, /地中海贫血|贫血|HBB/, /肺磨玻璃|肺结节|肺CT|LDCT/,
+  /直肠|盲肠|结肠|肠镜|腺瘤|肠息肉/,
+];
+
+function issueCards(content) {
+  const lines = String(content || '').split(/\r?\n/);
+  const cards = [];
+  for (const line of lines) {
+    const heading = line.trim().match(/^【问题[：:]\s*([^】]+)】$/);
+    if (heading) cards.push({ title: heading[1].trim(), body: '' });
+    else if (cards.length && !/^【综合关联与优先级】/.test(line.trim())) cards.at(-1).body += `${line}\n`;
+  }
+  return cards.filter(card => /管理目标[：:]|专业去向[：:]/.test(card.body));
+}
+
+function targetCoversIssue(target, title) {
+  const text = `${target.goal || ''} ${target.focus || ''}`;
+  const family = ISSUE_FAMILIES.find(pattern => pattern.test(title));
+  if (family) return family.test(text);
+  const compact = title.replace(/[（(].*?[）)]/g, '').replace(/[\s?？]/g, '').trim().slice(0, 80);
+  return compact.length >= 2 && text.includes(compact);
+}
+
+function reconcileAnnualIssueTargets(existing, content) {
+  const targets = normalizeTargets(existing || []);
+  const uncovered = [];
+  for (const card of issueCards(content)) {
+    if (targets.some(target => targetCoversIssue(target, card.title))) continue;
+    if (targets.length >= 12) { uncovered.push(card.title); continue; }
+    targets.push({
+      goal: `${card.title.slice(0, 100)}：明确年度管理目标与复评安排`,
+      focus: '核对已审核依据和专业意见，确定管理措施、责任人及复评时间；由健康顾问逐项确认',
+      nutritionRelevant: false,
+    });
+  }
+  return { targets, uncovered };
+}
+
+module.exports = { normalizeTargets, conclusionFromTargets, fromConfirmedReviews, proposeTargetsFromActions, issueCards, reconcileAnnualIssueTargets };

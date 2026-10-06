@@ -52,3 +52,13 @@ test('automatic AI proposals are saved as draft targets with the first reply', a
   assert.deepEqual(update.$set['conclusion.managementTargets'], targets);
   assert.equal(update.$push.messages.content, '初步分析');
 });
+
+test('complete reanalysis adds missing draft targets while retaining existing entries', async () => {
+  let update;
+  const model = { updateOne: async (_filter, value) => { update = value; } };
+  const topic = { _id: 'topic', generation: { status: 'running', token: 'token', requestId: 'review_1234567890123456' },
+    conclusion: { status: 'draft', managementTargets: targets } };
+  const added = { goal: '肺磨玻璃结节：明确随访安排', focus: '核对报告并确定复评时间', nutritionRelevant: false };
+  await finishSend(model, topic, async () => ({ result: { content: '年度重整', managementTargets: [...targets, added] }, snapshot: { sources: [] } }));
+  assert.deepEqual(update.$set['conclusion.managementTargets'], [...targets, added]);
+});
