@@ -13,6 +13,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
   const [note, setNote] = useState('')
   const canConfirm = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const newerSpecialtyConclusion = specialtyReviews.some(item => item.conclusion?.status === 'confirmed' && review?.conclusion?.confirmedAt && new Date(item.conclusion.confirmedAt) > new Date(review.conclusion.confirmedAt))
+  const annualConclusionStale = !!review?.concernsUpdatedAt && (!review.conclusion?.generatedAt || new Date(review.conclusion.generatedAt) < new Date(review.concernsUpdatedAt))
 
   const load = async () => {
     setLoading(true)
@@ -85,6 +86,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
         {!review ? <div style={{ fontSize: 13 }}>综合具体问题、五年趋势和重大疾病风险，确定管理优先级和目标。<button className="btn btn-primary btn-sm" style={{ marginLeft: 10 }} disabled={!canConfirm || busy} onClick={openReview}>建立年度综合研判</button></div>
       : <>
         <div style={{ fontSize: 13 }}>内部综合判断：{review.conclusion?.status === 'confirmed' ? '健康顾问已确认' : '待确认'} <button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={openReview}>打开年度综合研判</button></div>
+        {annualConclusionStale && <div role="alert" style={{ marginTop: 8, color: '#A16620', fontSize: 12 }}>问题清单已更新，原有分析尚未覆盖最新线索。请打开年度综合研判，重新整理结论后再用于客户沟通。</div>}
         {review.conclusion?.status === 'confirmed' ? <>
           <div style={{ fontSize: 13, marginTop: 10 }}>已确认的管理目标与干预重点：</div>
           {(review.conclusion.managementTargets || []).length ? (review.conclusion.managementTargets || []).map((row, index) => <div key={index} style={{ fontSize: 13, marginTop: 5 }}>{index + 1}. {row.goal}；干预重点：{row.focus}</div>) : <div style={{ fontSize: 13, color: '#A16620' }}>尚无逐条目标，请先核对研判结论。</div>}

@@ -153,6 +153,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const isStageAssessmentTopic = active?.reviewType === 'assessment' || /阶段性.*评估/.test(`${active?.title || ''} ${active?.description || ''}`)
   const completeManagementTargets = managementTargets.length > 0 && managementTargets.every(row => row.goal?.trim() && row.focus?.trim())
   const lastAnnualAiAt = active?.annualPlanYear ? (active.messages || []).filter(message => message.role === 'ai').at(-1)?.createdAt : null
+  const annualConclusionStale = !!active?.annualPlanYear && !!active.concernsUpdatedAt && (!active.conclusion?.generatedAt || new Date(active.conclusion.generatedAt) < new Date(active.concernsUpdatedAt))
   const newerSpecialtyConclusion = !!lastAnnualAiAt && topics.some(item => item.issueKey && item.reviewType === 'specialty' && item.conclusion?.status === 'confirmed' && new Date(item.conclusion.confirmedAt || item.updatedAt) > new Date(lastAnnualAiAt))
 
   const replaceTopic = topic => {
@@ -524,6 +525,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       </div></div>
 
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论（当前有效信息）</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">
+        {annualConclusionStale && <div role="alert" style={{ padding: 10, marginBottom: 10, borderRadius: 8, background: '#FFF4E5', color: '#8A5414' }}>年度问题清单已更新，现有结论草稿尚未包含最新线索。请点击“AI整理结论”重新生成并核对。</div>}
         <StructuredAssessment data={active.conclusion?.structured} />
         <textarea className="form-input" rows={10} value={conclusionText} onChange={e => setConclusionText(e.target.value)} placeholder="AI整理后由健康顾问复核确认；只有已确认结论会进入管理方案上下文。" />
         {!isStageAssessmentTopic && <div style={{ marginTop: 14, padding: 12, background: '#F4F8F5', borderRadius: 8 }}>

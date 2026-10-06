@@ -346,6 +346,7 @@ router.post('/patients/:patientId/ai-case-reviews/specialty-from-source', staffA
 });
 
 function reopenAfterConcernChange(topic) {
+  topic.concernsUpdatedAt = new Date();
   if (topic.conclusion?.status === 'confirmed') {
     topic.conclusionHistory.push({ content: topic.conclusion.content, managementTargets: topic.conclusion.managementTargets || [],
       confirmedAt: topic.conclusion.confirmedAt, confirmedBy: topic.conclusion.confirmedBy,
@@ -740,6 +741,8 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     if (topic.annualPlanYear && (topic.concerns || []).some(row => row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
       return res.status(409).json({ success: false, message: '请先逐条核实AI提示，并确定已纳入问题的专业去向' });
+    if (topic.annualPlanYear && topic.concernsUpdatedAt && (!topic.conclusion?.generatedAt || new Date(topic.conclusion.generatedAt) < new Date(topic.concernsUpdatedAt)))
+      return res.status(409).json({ success: false, message: '年度问题清单已更新，请先按当前问题重新整理阶段性结论' });
     const suppliedContent = String(req.body.content ?? topic.conclusion?.content ?? '').trim();
     let managementTargets;
     const targetLogic = require('../utils/caseReviewManagementTargets');

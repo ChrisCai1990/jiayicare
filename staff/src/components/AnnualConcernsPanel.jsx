@@ -39,6 +39,8 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
   if (!topic?.annualPlanYear) return null
   const canEdit = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const concerns = topic.concerns || []
+  const latestAiAt = (topic.messages || []).filter(row => row.role === 'ai').at(-1)?.createdAt
+  const analysisStale = !!topic.concernsUpdatedAt && (!latestAiAt || new Date(latestAiAt) < new Date(topic.concernsUpdatedAt))
   const autoScan = concerns.filter(row => row.includedByName === '已审核AI风险扫描')
   const reviewedTrendSources = ['已审核5年健康趋势（慢病）', '已审核慢病关注标签', '已审核5年健康趋势（心脑血管）', '已审核心脑血管关注标签', '已审核肿瘤风险关注标签']
   const chronicTrend = concerns.filter(row => reviewedTrendSources.includes(row.includedByName))
@@ -70,6 +72,7 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
     {autoScan.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={manuallyIncluded.length + index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
     {!!chronicTrend.length && <div style={{ marginTop: 12, fontWeight: 700 }}>已审核健康趋势与关注标签（{chronicTrend.length}项）</div>}
     {chronicTrend.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={manuallyIncluded.length + autoScan.length + index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {analysisStale && <div role="alert" style={{ marginTop: 12, color: '#A16620', fontSize: 12 }}>问题清单已更新，既有 AI 分析尚未覆盖最新线索。</div>}
     {canEdit && concerns.length > 0 && topic.messages?.length > 0 && <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={onAnalyze}>按当前问题更新完整年度研判</button>}
   </div></div>
 }
