@@ -3806,6 +3806,16 @@ export default function PatientDetailPage() {
     finally { setAiSummaryLoading(false) }
   }
 
+  const handleRefreshAISummaryOverview = async (year, recordIndex, sectionKey, expectedRecordToken) => {
+    try {
+      setAiSummaryLoading(true)
+      const res = await staffAPI.refreshAIHealthSummaryOverview(id, { year, recordIndex, sectionKey, expectedRecordToken })
+      applyAIHealthSummary(res.data)
+      toast('整体意见已依据当前卡片更新，请核对并重新审核')
+    } catch (err) { toast(err.message || '整体意见刷新失败') }
+    finally { setAiSummaryLoading(false) }
+  }
+
   const handleParseReportAI = async (reportId, options = {}) => {
     setParsingReportId(reportId)
     try {
@@ -8099,7 +8109,11 @@ export default function PatientDetailPage() {
               : { label: '基本稳定', color: '#15803D', bg: '#DCFCE7' }
           return <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: '11px 13px' }}>
-              <div style={{ fontWeight: 800, color: accent }}>{overview?.headline || '健康指标趋势总览'}</div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ fontWeight: 800, color: accent, flex: 1 }}>{overview?.headline || '健康指标趋势总览'}</div>
+                <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading}
+                  onClick={() => handleRefreshAISummaryOverview(curYear, doctorRecord._recordIndex || 0, sectionKey, doctorRecord._reviewToken)}>刷新整体意见</button>
+              </div>
               <div style={{ marginTop: 5, fontSize: 12, color: '#64748B' }}>共 {list.length} 个主题 · 需关注 {Number(overview?.attentionCount) || list.filter(attention).length} 项</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
@@ -8568,7 +8582,11 @@ export default function PatientDetailPage() {
                         const ov = sec.tumor_risk.overview || {}
                         return <>
                           <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: '11px 13px' }}>
-                            <div style={{ fontWeight: 800, color: '#5B21B6', marginBottom: 5 }}>{ov.headline || sec.tumor_risk.summary || '常见肿瘤筛查与趋势总览'}</div>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
+                              <div style={{ fontWeight: 800, color: '#5B21B6', flex: 1 }}>{ov.headline || sec.tumor_risk.summary || '常见肿瘤筛查与趋势总览'}</div>
+                              <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading}
+                                onClick={() => handleRefreshAISummaryOverview(curYear, doctorRecord._recordIndex || 0, 'tumor_risk', doctorRecord._reviewToken)}>刷新整体意见</button>
+                            </div>
                             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: '#6B7280' }}>
                               <span>常见肿瘤目录 {cancers.length} 项</span>
                               <span style={{ color: '#15803D' }}>已覆盖 {Number(ov.coveredCount) || cancers.filter(c => c.status === 'covered').length} 项</span>

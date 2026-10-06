@@ -86,16 +86,17 @@ test('generation cannot overwrite a concurrent review; successful generation sup
 
 test('single-card correction refreshes the overview and invalidates its approval atomically', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
-  const code = source.slice(source.indexOf('// 单项重新生成'), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));
+  const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));
   const { reviewToken, withReviewTokens } = require('../src/utils/summaryReviewVersion');
   const record = { scope: 'doctor', doctorApprovedAt: '2026-09-06', sections: {
     chronic_disease: { overview: { headline: '血糖由5.5%升至7.0%', attentionCount: 1 },
       items: [{ name: '血糖', status: 'abnormal', latest: 'HbA1c 7.0%' }, { name: '血压', status: 'normal', latest: '正常' }] },
   } };
   const original = { latestYear: '2026', sections: record.sections, byYear: { 2026: { ...record, records: [record] } } };
-  let handler, saved, calls = 0;
+  const handlers = {};
+  let saved, calls = 0;
   vm.runInNewContext(code, {
-    router: { post(_path, _auth, callback) { handler = callback; } }, staffAuth() {},
+    router: { post(route, _auth, callback) { handlers[route] = callback; } }, staffAuth() {},
     User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
       collection: { updateOne: async (filter, update) => { saved = update.$set.aiHealthSummary; assert.equal(filter.aiHealthSummary, original); return { matchedCount: 1 }; } } },
     MedicalReport: { find: () => ({ sort: () => ({ select: () => ({ lean: async () => [] }) }) }) },
@@ -107,7 +108,7 @@ test('single-card correction refreshes the overview and invalidates its approval
     }),
   });
   const res = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
-  await handler({ params: { id: 'member' }, staff: { role: 'familyDoctor', name: '医生', _id: 'staff' },
+  await handlers['/patients/:id/ai-health-summary/regenerate-item']({ params: { id: 'member' }, staff: { role: 'familyDoctor', name: '医生', _id: 'staff' },
     body: { year: '2026', sectionKey: 'chronic_disease', itemName: '血糖', instruction: '7%是误录，实际5.6%', expectedRecordToken: reviewToken(record) } }, res);
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
   assert.equal(calls, 2);
@@ -117,4 +118,40 @@ test('single-card correction refreshes the overview and invalidates its approval
   assert.equal(saved.doctorApprovedAt, null);
   assert.equal(saved.byYear[2026].records[0].sectionReviews.chronic_disease.status, 'draft');
   assert.equal(original.sections.chronic_disease.items[0].latest, 'HbA1c 7.0%', 'failed CAS would leave old data intact');
+});
+
+test('overview refresh updates an already corrected record without regenerating cards', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));
+  const { reviewToken, withReviewTokens } = require('../src/utils/summaryReviewVersion');
+  const doctor = { scope: 'doctor', doctorApprovedAt: '2026-09-06', sections: {
+    chronic_disease: { overview: { headline: '血糖由5.5%升至7.0%', attentionCount: 1 },
+      items: [{ name: '血糖', status: 'normal', latest: '2026-09-05 HbA1c 5.6%', trendStatus: 'stable' }] },
+  } };
+  const nutrition = { scope: 'nutrition', sections: { lifestyle_assessment: { summary: '已审核' } } };
+  const original = { latestYear: '2026', sections: doctor.sections, byYear: { 2026: { ...nutrition, records: [nutrition, doctor] } } };
+  const handlers = {};
+  let saved, calls = 0;
+  vm.runInNewContext(code, {
+    router: { post(route, _auth, callback) { handlers[route] = callback; } }, staffAuth() {},
+    User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
+      collection: { updateOne: async (_filter, update) => { saved = update.$set.aiHealthSummary; return { matchedCount: 1 }; } } },
+    reviewToken, withReviewTokens, Date, JSON,
+    require: () => ({ chat: async () => { calls++; return JSON.stringify({ headline: '血糖目前在正常范围，继续监测。' }); } }),
+  });
+  const response = () => ({ statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } });
+  const request = { params: { id: 'member' }, staff: { role: 'familyDoctor', name: '医生', _id: 'staff' },
+    body: { year: '2026', recordIndex: 1, sectionKey: 'chronic_disease', expectedRecordToken: reviewToken(doctor) } };
+  const res = response();
+  await handlers['/patients/:id/ai-health-summary/refresh-overview'](request, res);
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(calls, 1);
+  assert.equal(saved.byYear[2026].records[1].sections.chronic_disease.items[0].latest, '2026-09-05 HbA1c 5.6%');
+  assert.equal(saved.sections.chronic_disease.overview.headline, '血糖目前在正常范围，继续监测。');
+  assert.equal(saved.byYear[2026].records[1].doctorApprovedAt, null);
+  assert.equal(original.sections.chronic_disease.overview.headline, '血糖由5.5%升至7.0%');
+  const stale = response();
+  await handlers['/patients/:id/ai-health-summary/refresh-overview']({ ...request, body: { ...request.body, expectedRecordToken: 'stale' } }, stale);
+  assert.equal(stale.statusCode, 409);
+  assert.equal(calls, 1);
 });

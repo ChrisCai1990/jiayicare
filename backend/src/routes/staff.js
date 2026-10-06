@@ -10925,12 +10925,63 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   }
 });
 
+const HEALTH_TREND_FIELDS = { tumor_risk: 'cancers', cardiovascular_risk: 'topics', chronic_disease: 'items' };
+
+async function buildHealthTrendOverview(sectionKey, list, instruction = '') {
+  const overviewInput = list.map(item => ({ name: item.name, status: item.status,
+    latest: item.latest, trendStatus: item.trendStatus, trend: item.trend, nextAction: item.nextAction }));
+  const { chat } = require('../utils/ai');
+  const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。以下是“${sectionKey}”板块全部当前卡片：${JSON.stringify(overviewInput)}\n${instruction ? `本次核对说明：${instruction}\n` : ''}只依据这些卡片写一句整体意见，优先反映目前状态及最重要的变化。不得沿用旧总览，不得引入卡片以外的数值、诊断或建议。只输出JSON对象：{"headline":"一句话整体意见"}。` }],
+    { maxTokens: 220, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+  const match = raw.match(/\{[\s\S]*\}/);
+  let headline;
+  try { headline = JSON.parse(match?.[0] || '').headline?.trim(); } catch {}
+  if (!headline || typeof headline !== 'string') throw new Error('整体意见生成失败，原分析未修改，请重试');
+  const attention = item => sectionKey === 'tumor_risk'
+    ? ['follow_up_due', 'overdue', 'due_soon'].includes(item.status)
+    : ['attention', 'abnormal', 'worsening'].includes(item.status) || item.trendStatus === 'worsening';
+  const overview = { headline, attentionCount: list.filter(attention).length };
+  if (sectionKey === 'tumor_risk') {
+    overview.coveredCount = list.filter(item => item.status === 'covered').length;
+    overview.unknownCount = list.filter(item => item.status === 'unknown').length;
+  } else {
+    overview.stableCount = list.filter(item => ['normal', 'stable'].includes(item.status)).length;
+  }
+  return overview;
+}
+
+function applyHealthTrendOverview(summary, year, entry, records, candidates, record, sectionKey, overview, staff) {
+  const section = record.sections[sectionKey];
+  const before = section.overview || {};
+  section.overview = { ...before, ...overview };
+  const now = new Date();
+  record.sectionReviews = { ...(record.sectionReviews || {}), [sectionKey]: {
+    ...(record.sectionReviews?.[sectionKey] || {}), status: 'draft', updatedAt: now, updatedBy: staff.name,
+  } };
+  record.overviewRefreshLog = [...(record.overviewRefreshLog || []), {
+    sectionKey, before, after: section.overview, at: now, by: staff._id,
+  }];
+  record.doctorApprovedAt = null;
+  record.doctorApprovedBy = null;
+  record.approvedAt = null;
+  record.approvedBy = null;
+  entry.records = records;
+  entry.sections = records[0]?.sections || entry.sections;
+  summary.byYear[year] = entry;
+  if ((String(summary.latestYear) === year || !summary.latestYear) && candidates[0] === record) {
+    summary.sections = { ...(summary.sections || {}), [sectionKey]: section };
+    summary.doctorApprovedAt = null;
+    summary.doctorApprovedBy = null;
+    summary.approvedAt = null;
+    summary.approvedBy = null;
+  }
+}
+
 // 单项重新生成：只核对并替换指定趋势卡，不重跑整份健康信息整理。
 router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async (req, res) => {
   try {
     const { year, scope = 'doctor', recordIndex = 0, sectionKey, itemName, instruction, expectedRecordToken } = req.body || {};
-    const fieldMap = { tumor_risk: 'cancers', cardiovascular_risk: 'topics', chronic_disease: 'items' };
-    const field = fieldMap[sectionKey];
+    const field = HEALTH_TREND_FIELDS[sectionKey];
     if (!field || !itemName || !String(instruction || '').trim()) return res.status(400).json({ success: false, message: '请选择项目并填写修正问题' });
     if (!['superadmin', 'familyDoctor'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '无单项重新生成权限' });
     const user = await User.findById(req.params.id);
@@ -10941,7 +10992,8 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     const entry = summary.byYear?.[y];
     const records = Array.isArray(entry?.records) ? entry.records : (entry?.sections ? [entry] : []);
     const candidates = records.filter(r => scope === 'doctor' ? (r.scope === 'doctor' || r.scope === 'all' || !r.scope) : true);
-    const record = candidates[Number(recordIndex) || 0];
+    const record = records[Number(recordIndex) || 0];
+    if (!record || !candidates.includes(record)) return res.status(404).json({ success: false, message: '未找到需要重新生成的分析记录' });
     if (expectedRecordToken && reviewToken(record) !== expectedRecordToken) {
       return res.status(409).json({ success: false, message: '该分析记录已变化，请刷新后重新核对' });
     }
@@ -10978,50 +11030,46 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     }
     updatedItem.name = itemName;
     const updatedList = list.map((item, index) => index === itemIndex ? updatedItem : item);
-    // 总览是独立的 AI 字段。卡片纠错后必须依据整组最新卡片重新归纳，不能沿用旧总览。
-    const overviewInput = updatedList.map(item => ({ name: item.name, status: item.status,
-      latest: item.latest, trendStatus: item.trendStatus, trend: item.trend, nextAction: item.nextAction }));
-    const overviewRaw = await chat([{ role: 'user', content: `你是健康信息整理助手。以下是“${sectionKey}”板块全部已更新卡片：${JSON.stringify(overviewInput)}\n用户本次纠正：${String(instruction).trim()}\n只依据这些卡片写一句整体意见，优先反映目前状态及最重要的变化。不得沿用旧总览，不得引入卡片以外的数值、诊断或建议。只输出JSON对象：{"headline":"一句话整体意见"}。` }],
-      { maxTokens: 220, temperature: 0, jsonMode: true, timeoutMs: 60000 });
-    const overviewMatch = overviewRaw.match(/\{[\s\S]*\}/);
-    let headline;
-    try { headline = JSON.parse(overviewMatch?.[0] || '').headline?.trim(); } catch {}
-    if (!headline || typeof headline !== 'string') return res.status(500).json({ success: false, message: '整体意见生成失败，原分析未修改，请重试' });
-    const attention = item => sectionKey === 'tumor_risk'
-      ? ['follow_up_due', 'overdue', 'due_soon'].includes(item.status)
-      : ['attention', 'abnormal', 'worsening'].includes(item.status) || item.trendStatus === 'worsening';
-    const overview = { ...(record.sections[sectionKey].overview || {}), headline };
-    if (sectionKey === 'tumor_risk') {
-      overview.coveredCount = updatedList.filter(item => item.status === 'covered').length;
-      overview.unknownCount = updatedList.filter(item => item.status === 'unknown').length;
-    } else {
-      overview.stableCount = updatedList.filter(item => ['normal', 'stable'].includes(item.status)).length;
-    }
-    overview.attentionCount = updatedList.filter(attention).length;
+    // 总览是独立的 AI 字段。卡片纠错后必须依据整组最新卡片重新归纳。
+    const overview = await buildHealthTrendOverview(sectionKey, updatedList, String(instruction).trim());
     record.sections[sectionKey][field] = updatedList;
-    record.sections[sectionKey].overview = overview;
-    const now = new Date();
-    record.sectionReviews = { ...(record.sectionReviews || {}), [sectionKey]: {
-      ...(record.sectionReviews?.[sectionKey] || {}), status: 'draft', updatedAt: now, updatedBy: req.staff.name,
-    } };
-    record.doctorApprovedAt = null;
-    record.doctorApprovedBy = null;
-    record.approvedAt = null;
-    record.approvedBy = null;
     record.itemRegenerationLog = [...(record.itemRegenerationLog || []), { sectionKey, itemName, instruction: String(instruction).trim(), at: new Date(), by: req.staff._id }];
-    entry.records = records;
-    entry.sections = records[0]?.sections || entry.sections;
-    summary.byYear[y] = entry;
-    if ((String(summary.latestYear) === y || !summary.latestYear) && candidates[0] === record) {
-      summary.sections = { ...(summary.sections || {}), [sectionKey]: record.sections[sectionKey] };
-      summary.doctorApprovedAt = null;
-      summary.doctorApprovedBy = null;
-      summary.approvedAt = null;
-      summary.approvedBy = null;
-    }
+    applyHealthTrendOverview(summary, y, entry, records, candidates, record, sectionKey, overview, req.staff);
     const saved = await User.collection.updateOne({ _id: user._id, aiHealthSummary: existingSummary }, { $set: { aiHealthSummary: summary } });
     if (!saved.matchedCount) return res.status(409).json({ success: false, message: '生成期间分析记录已变化，请刷新后重新核对；本次结果未保存' });
     res.json({ success: true, data: withReviewTokens(summary), item: updatedItem });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 已核对的卡片可单独刷新板块整体意见，卡片内容保持原样。
+router.post('/patients/:id/ai-health-summary/refresh-overview', staffAuth, async (req, res) => {
+  try {
+    const { year, recordIndex = 0, sectionKey, expectedRecordToken } = req.body || {};
+    const field = HEALTH_TREND_FIELDS[sectionKey];
+    if (!field || !expectedRecordToken) return res.status(400).json({ success: false, message: '请选择板块并刷新记录版本' });
+    if (!['superadmin', 'familyDoctor'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '无整体意见刷新权限' });
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    const existingSummary = user.aiHealthSummary || {};
+    const summary = JSON.parse(JSON.stringify(existingSummary));
+    const y = String(year || summary.latestYear || new Date().getFullYear());
+    const entry = summary.byYear?.[y];
+    const records = Array.isArray(entry?.records) ? entry.records : (entry?.sections ? [entry] : []);
+    const candidates = records.filter(r => r.scope === 'doctor' || r.scope === 'all' || !r.scope);
+    const record = records[Number(recordIndex) || 0];
+    if (!record || !candidates.includes(record)) return res.status(404).json({ success: false, message: '未找到需要刷新的分析记录' });
+    if (reviewToken(record) !== expectedRecordToken) {
+      return res.status(409).json({ success: false, message: '该分析记录已变化，请刷新后重新核对' });
+    }
+    const list = record.sections?.[sectionKey]?.[field];
+    if (!Array.isArray(list) || !list.length) return res.status(400).json({ success: false, message: '当前板块没有可汇总的卡片' });
+    const overview = await buildHealthTrendOverview(sectionKey, list);
+    applyHealthTrendOverview(summary, y, entry, records, candidates, record, sectionKey, overview, req.staff);
+    const saved = await User.collection.updateOne({ _id: user._id, aiHealthSummary: existingSummary }, { $set: { aiHealthSummary: summary } });
+    if (!saved.matchedCount) return res.status(409).json({ success: false, message: '生成期间分析记录已变化，请刷新后重新核对；本次结果未保存' });
+    res.json({ success: true, data: withReviewTokens(summary), overview: record.sections[sectionKey].overview });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
