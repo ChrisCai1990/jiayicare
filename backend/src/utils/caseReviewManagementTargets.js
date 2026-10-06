@@ -77,4 +77,28 @@ function validateAnnualTargets(concerns, targets) {
     throw new Error('年度管理目标必须与已纳入的问题逐项对应；请重新整理结论并核对目标');
 }
 
-module.exports = { normalizeTargets, conclusionFromTargets, fromConfirmedReviews, proposeTargetsFromActions, issueCards, targetsFromIncludedConcerns, validateAnnualTargets };
+function parseAnnualTargetDraft(content, concerns) {
+  const raw = String(content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch { throw new Error('AI目标初稿格式无效，请重试'); }
+  const rows = parsed?.targets;
+  const included = targetsFromIncludedConcerns(concerns, '');
+  if (!Array.isArray(rows) || rows.length !== included.length) throw new Error('AI未逐项完成目标初稿，请重试');
+  const byId = new Map();
+  for (const row of rows) {
+    const id = String(row?.issueId || '');
+    if (!id || byId.has(id) || !included.some(item => item.issueId === id)) throw new Error('AI目标与已纳入问题不对应，请重试');
+    byId.set(id, row);
+  }
+  return normalizeTargets(included.map(item => {
+    const row = byId.get(item.issueId);
+    const goal = String(row?.goal || '').trim();
+    const focus = String(row?.focus || '').trim();
+    if (!goal || !focus || /^(待确认|待核实|待确定|暂无)/.test(goal) || /^(待确认|待核实|待确定|暂无)/.test(focus))
+      throw new Error('AI目标初稿有空缺，请重试');
+    return { ...item, goal, focus };
+  }));
+}
+
+module.exports = { normalizeTargets, conclusionFromTargets, fromConfirmedReviews, proposeTargetsFromActions, issueCards, targetsFromIncludedConcerns, validateAnnualTargets, parseAnnualTargetDraft };

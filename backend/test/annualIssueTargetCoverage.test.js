@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { targetsFromIncludedConcerns, validateAnnualTargets, normalizeTargets } = require('../src/utils/caseReviewManagementTargets');
+const { targetsFromIncludedConcerns, validateAnnualTargets, normalizeTargets, parseAnnualTargetDraft } = require('../src/utils/caseReviewManagementTargets');
 
 test('only included concerns become annual targets; discussion supplies their wording', () => {
   const concerns = [
@@ -28,4 +28,22 @@ test('missing discussion details remain blank for staff; linked edits survive re
   const edited = [{ ...draft[0], goal: '控制血压', focus: '监测家庭血压' }];
   assert.deepEqual(targetsFromIncludedConcerns(concerns, '', edited), edited);
   assert.deepEqual(targetsFromIncludedConcerns([{ ...concerns[0], status: 'excluded' }], '', edited), []);
+});
+
+test('AI draft is accepted only for every included issue, with pathway flags kept from staff', () => {
+  const concerns = [
+    { id: 'bp', title: '高血压', status: 'included', pathway: 'specialist' },
+    { id: 'lung', title: '肺磨玻璃结节', status: 'included', pathway: 'both' },
+    { id: 'excluded', title: '其他', status: 'excluded' },
+  ];
+  const answer = { targets: [
+    { issueId: 'lung', goal: '明确结节随访基线', focus: '核对既往影像并请专科评估' },
+    { issueId: 'bp', goal: '明确血压管理基线', focus: '记录家庭血压并复评' },
+  ] };
+  const rows = parseAnnualTargetDraft('```json\n' + JSON.stringify(answer) + '\n```', concerns);
+  assert.deepEqual(rows.map(row => row.issueId), ['bp', 'lung']);
+  assert.deepEqual(rows.map(row => row.nutritionRelevant), [false, true]);
+  assert.throws(() => parseAnnualTargetDraft(JSON.stringify({ targets: answer.targets.slice(0, 1) }), concerns), /逐项完成/);
+  assert.throws(() => parseAnnualTargetDraft(JSON.stringify({ targets: [answer.targets[0], { ...answer.targets[1], issueId: 'excluded' }] }), concerns), /不对应/);
+  assert.throws(() => parseAnnualTargetDraft(JSON.stringify({ targets: [{ ...answer.targets[0], focus: '待确认' }, answer.targets[1]] }), concerns), /空缺/);
 });
