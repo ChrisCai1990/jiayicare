@@ -8,12 +8,12 @@ test('complete issue cards fill draft targets omitted by same-line extraction', 
     '【问题：高血压】', '管理目标：核实血压节律与负荷。',
     '【问题：慢性胃炎（萎缩性+肠化）】', '管理目标：明确随访。',
     '【问题：肺磨玻璃结节】', '管理目标：明确随访。',
-    '【问题：直肠息肉、盲肠管状腺瘤】', '管理目标：明确随访。',
+    '【问题：直肠息肉、盲肠管状腺瘤、十二指肠球部胃黏膜异位】', '管理目标：明确随访。',
   ].join('\n');
   const result = reconcileAnnualIssueTargets(existing, review);
   assert.equal(result.targets.length, 4);
   assert.equal(result.targets[0].goal, existing[0].goal);
-  assert.deepEqual(result.targets.slice(1).map(row => row.goal.split('：')[0]), ['高血压', '肺磨玻璃结节', '直肠息肉、盲肠管状腺瘤']);
+  assert.deepEqual(result.targets.slice(1).map(row => row.goal.split('：')[0]), ['高血压', '肺磨玻璃结节', '直肠息肉、盲肠管状腺瘤、十二指肠球部胃黏膜异位']);
   assert.ok(result.targets.slice(1).every(row => row.focus.includes('健康顾问逐项确认')));
   assert.deepEqual(reconcileAnnualIssueTargets(result.targets, review).targets, result.targets);
 });

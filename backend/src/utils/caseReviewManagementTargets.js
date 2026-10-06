@@ -36,9 +36,9 @@ function proposeTargetsFromActions(actions) {
 }
 
 const ISSUE_FAMILIES = [
-  /高血压|血压/, /动脉粥样|动脉硬化|斑块/, /胃炎|胃黏膜|肠化|胃镜/,
+  /高血压|血压/, /动脉粥样|动脉硬化|斑块/,
+  /直肠|盲肠|结肠|肠镜|腺瘤|肠息肉/, /胃炎|胃黏膜|肠化|胃镜/,
   /前列腺/, /地中海贫血|贫血|HBB/, /肺磨玻璃|肺结节|肺CT|LDCT/,
-  /直肠|盲肠|结肠|肠镜|腺瘤|肠息肉/,
 ];
 
 function issueCards(content) {
