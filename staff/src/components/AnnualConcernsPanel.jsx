@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { concernStatusLabel, concernSourceLabel, concernTypeLabel, isEvidenceConcern, isActiveAnnualConcern } from '../utils/annualConcernLabels'
 
-const STATUS = [['suggested', 'AI提示，待核实'], ['included', '纳入研判'], ['watch', '继续观察'], ['duplicate', '与其他问题重复'], ['excluded', '不纳入']]
+const STATUS = [['suggested', 'AI提示，待核实'], ['included', '纳入年度管理'], ['watch', '继续观察'], ['duplicate', '与其他问题重复'], ['excluded', '不纳入']]
 const PATHWAY = [['undecided', '待判断'], ['specialist', '专科评估或就医'], ['nutrition', '交营养师评估'], ['both', '专科和营养师均介入'], ['followup', '随访与复评']]
 const SOURCE = { screening: '专项筛查报告', ai_health_trend: '已审核的5年健康趋势', ai_risk_scan: '已审核的AI风险提示', reviewed_chronic_tag: '已审核慢病关注标签', reviewed_cardiovascular_tag: '已审核心脑血管关注标签', reviewed_tumor_tag: '已审核肿瘤风险关注标签' }
 
@@ -44,9 +44,10 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
   const analysisStale = !!topic.concernsUpdatedAt && (!latestAiAt || new Date(latestAiAt) < new Date(topic.concernsUpdatedAt))
   const evidenceRows = concerns.filter(isEvidenceConcern)
   const pending = concerns.filter(row => !isEvidenceConcern(row) && (row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
-  const reviewedTrendSources = ['已审核5年健康趋势（慢病）', '已审核慢病关注标签', '已审核5年健康趋势（心脑血管）', '已审核心脑血管关注标签', '已审核肿瘤风险关注标签']
-  const chronicTrend = concerns.filter(row => !isEvidenceConcern(row) && reviewedTrendSources.includes(row.includedByName))
-  const manuallyIncluded = concerns.filter(row => !isEvidenceConcern(row) && !reviewedTrendSources.includes(row.includedByName))
+  const issues = concerns.filter(row => !isEvidenceConcern(row))
+  const undecided = issues.filter(row => row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided')))
+  const included = issues.filter(row => row.status === 'included' && !undecided.includes(row))
+  const other = issues.filter(row => !undecided.includes(row) && !included.includes(row))
   const pendingLegacy = legacyTopics.filter(row => !(topic.concerns || []).some(concern => concern.key === `legacy_specialty:${row._id}`))
   const importLegacy = async () => {
     setImporting(true)
@@ -69,12 +70,12 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
     {canEdit && pendingLegacy.length > 0 && <div style={{ marginTop: 10, padding: 10, background: '#FFF8ED', borderRadius: 8, fontSize: 12 }}>已有 {pendingLegacy.length} 个单项主题尚未并入本年度研判。<button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} disabled={importing} onClick={importLegacy}>{importing ? '正在整合…' : '并入年度综合研判'}</button></div>}
     {canEdit && <div style={{ marginTop: 10 }}><button type="button" className="btn btn-secondary btn-sm" disabled={syncing} onClick={syncChronic}>{syncing ? '正在核对…' : '核对并同步已审核关注线索'}</button>{syncMessage && <span role="status" style={{ marginLeft: 8, fontSize: 12, color: '#52685D' }}>{syncMessage}</span>}</div>}
     {!concerns.length && <div style={{ marginTop: 12, color: '#8AA89C' }}>暂无纳入的问题，可在专项筛查结果或AI健康信息整理中一键纳入。</div>}
-    {!!manuallyIncluded.length && <div style={{ marginTop: 12, fontWeight: 700 }}>具体问题（{manuallyIncluded.length}项）</div>}
-    {manuallyIncluded.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
-    {!!chronicTrend.length && <div style={{ marginTop: 12, fontWeight: 700 }}>已审核健康趋势与关注标签（{chronicTrend.length}项）</div>}
-    {chronicTrend.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={manuallyIncluded.length + index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
-    {!!evidenceRows.length && <div style={{ marginTop: 12, fontWeight: 700 }}>检查与指标依据（{evidenceRows.length}项，不作为独立诊断）</div>}
-    {evidenceRows.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {!!undecided.length && <div style={{ marginTop: 12, fontWeight: 700 }}>待讨论和确定去向（{undecided.length}项）</div>}
+    {undecided.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {!!included.length && <div style={{ marginTop: 12, fontWeight: 700 }}>已决定纳入年度管理（{included.length}项）</div>}
+    {included.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}
+    {!!other.length && <details style={{ marginTop: 14 }}><summary style={{ cursor: 'pointer', fontWeight: 700 }}>未纳入管理或继续观察（{other.length}项）</summary>{other.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}</details>}
+    {!!evidenceRows.length && <details style={{ marginTop: 14 }}><summary style={{ cursor: 'pointer', fontWeight: 700 }}>检查与指标依据（{evidenceRows.length}项）</summary>{evidenceRows.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}</details>}
     {!!(topic.retiredConcerns || []).length && <details style={{ marginTop: 12, color: '#65776F', fontSize: 12 }}><summary>历史线索（{topic.retiredConcerns.length}项，已退出当前研判）</summary>{topic.retiredConcerns.map(row => <div key={row.id || row.key} style={{ marginTop: 5 }}>{row.title}：{row.retiredReason}</div>)}</details>}
     {analysisStale && <div role="alert" style={{ marginTop: 12, color: '#A16620', fontSize: 12 }}>问题清单已更新，既有 AI 分析尚未覆盖最新线索。</div>}
     {canEdit && concerns.length > 0 && topic.messages?.length > 0 && <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={onAnalyze}>按当前问题更新完整年度研判</button>}

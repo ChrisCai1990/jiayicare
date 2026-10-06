@@ -48,6 +48,7 @@ async function acceptSend(Model, { patientId, topicId, staff, content, attachmen
   const generation = { requestId, token: randomUUID(), status: 'running', startedAt: new Date(), error: '' };
   const managementTargets = (topic.conclusion?.managementTargets || []).map(row => ({
     goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true,
+    ...(row.issueId ? { issueId: row.issueId } : {}),
   }));
   const update = {
     $set: { generation, status: 'active', lastActivityAt: new Date(), conclusion: { content: '', structured: null, managementTargets, status: 'draft' },
@@ -76,10 +77,12 @@ async function finishSend(Model, topic, generate) {
     if (!result.content) throw new Error('AI未返回可展示的分析内容');
     const set = { 'generation.status': 'completed', 'generation.error': '',
       providerSessionId: result.sessionId || topic.providerSessionId, lastActivityAt: new Date() };
-    if (result.managementTargets?.length) {
-      const targets = require('./caseReviewManagementTargets').normalizeTargets(result.managementTargets);
+    if (result.managementTargets) {
+      const targets = topic.annualPlanYear ? result.managementTargets
+        : require('./caseReviewManagementTargets').normalizeTargets(result.managementTargets);
       if (JSON.stringify(targets) !== JSON.stringify((topic.conclusion?.managementTargets || []).map(row => ({
         goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true,
+        ...(row.issueId ? { issueId: row.issueId } : {}),
       })))) set['conclusion.managementTargets'] = targets;
     }
     await Model.updateOne(filter, { $push: { messages: {

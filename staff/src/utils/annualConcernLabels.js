@@ -24,7 +24,7 @@ export function concernTypeLabel(row) {
 
 export function concernStatusLabel(row) {
   if (isEvidenceConcern(row)) return row.status === 'excluded' ? '不采用此依据' : row.status === 'duplicate' ? '重复依据' : row.status === 'watch' ? '待复核依据' : '来源已审核 · 作为依据'
-  if (row.status === 'included') return '纳入综合研判'
+  if (row.status === 'included') return '纳入年度管理'
   if (row.status === 'watch') return '继续观察'
   if (row.status === 'duplicate') return '与其他问题重复'
   if (row.status === 'excluded') return '不纳入'

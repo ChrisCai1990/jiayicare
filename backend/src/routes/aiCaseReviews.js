@@ -358,6 +358,8 @@ function reopenAfterConcernChange(topic) {
     topic.conclusion.confirmedBy = null;
     topic.conclusion.confirmedByName = '';
   }
+  if (topic.annualPlanYear) topic.conclusion.managementTargets = require('../utils/caseReviewManagementTargets')
+    .targetsFromIncludedConcerns(topic.concerns, '', topic.conclusion?.managementTargets || []);
   invalidateCustomerDiscussion(topic);
   topic.lastActivityAt = new Date();
 }
@@ -533,7 +535,8 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
       let targets;
       try { targets = require('../utils/caseReviewManagementTargets').normalizeTargets(req.body.managementTargets); }
       catch (error) { return res.status(400).json({ success: false, message: error.message }); }
-      const changed = JSON.stringify(targets) !== JSON.stringify((topic.conclusion?.managementTargets || []).map(row => ({ goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true })));
+      const changed = JSON.stringify(targets) !== JSON.stringify((topic.conclusion?.managementTargets || []).map(row => ({ goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true,
+        ...(row.issueId ? { issueId: row.issueId } : {}) })));
       if (topic.conclusion?.status === 'confirmed' && changed) {
         if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可调整已确认目标' });
         const note = String(req.body.targetChangeNote || '').trim();
@@ -669,12 +672,8 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
         : incrementalGuide;
       const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isAnnualReview ? 5000 : isSupplement ? 900 : automatic ? 3200 : 1800, retryOnEmptyOrLength: isAnnualReview });
       if (isAnnualReview && (automatic || reframeAnnual)) {
-        const targetLogic = require('../utils/caseReviewManagementTargets');
-        if (targetLogic.issueCards(result.content).length) {
-          const coverage = targetLogic.reconcileAnnualIssueTargets(proposedTargets, result.content);
-          result.managementTargets = coverage.targets;
-          if (coverage.uncovered.length) result.content += `\n【管理目标覆盖提示】目标已达12条上限，以下问题尚未列入目标草稿，请健康顾问合并或调整：${coverage.uncovered.join('、')}`;
-        } else if (!proposedTargets.length) result.managementTargets = targetLogic.proposeTargetsFromActions(result.content.split(/\r?\n/));
+        result.managementTargets = require('../utils/caseReviewManagementTargets')
+          .targetsFromIncludedConcerns(topic.concerns, result.content, proposedTargets);
       } else if (automatic && !proposedTargets.length) {
         result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
       }
@@ -746,6 +745,8 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     if (!topic.messages.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
+    if (topic.annualPlanYear && topic.concernsUpdatedAt && !topic.messages.some(item => item.role === 'ai' && new Date(item.createdAt) > new Date(topic.concernsUpdatedAt)))
+      return res.status(409).json({ success: false, message: '问题去向已调整，请先按当前问题更新完整年度研判，再整理目标' });
     const transcript = topic.messages.filter(item => !topic.annualPlanYear || !topic.concernsUpdatedAt || new Date(item.createdAt) > new Date(topic.concernsUpdatedAt))
       .map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
     const concernSummary = (topic.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row) && !['excluded', 'duplicate'].includes(row.status)).map(row => `${row.status} / ${row.pathway}：${row.title}；依据：${row.evidence || '待核实'}；说明：${row.note || '无'}`).join('\n');
@@ -778,11 +779,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
       const fullReview = [...topic.messages].reverse().find(item => item.role === 'ai'
         && (!topic.concernsUpdatedAt || new Date(item.createdAt) > new Date(topic.concernsUpdatedAt))
         && targetLogic.issueCards(item.content).length);
-      if (fullReview) {
-        const coverage = targetLogic.reconcileAnnualIssueTargets(managementTargets, fullReview.content);
-        managementTargets = coverage.targets;
-        if (coverage.uncovered.length) structured.missing.push(`管理目标条数已达上限，以下问题尚未覆盖：${coverage.uncovered.join('、')}`);
-      }
+      managementTargets = targetLogic.targetsFromIncludedConcerns(topic.concerns, fullReview?.content || '', managementTargets);
     }
     topic.conclusion = { content: assessmentToPlainText(structured), structured, managementTargets,
       status: 'draft', generatedAt: new Date(), confirmedAt: null, confirmedBy: null, confirmedByName: '', serviceRecordId: null };
@@ -806,11 +803,17 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
       pendingConcernIds: pendingConcerns.map(row => row.id) });
     if (topic.annualPlanYear && topic.concernsUpdatedAt && (!topic.conclusion?.generatedAt || new Date(topic.conclusion.generatedAt) < new Date(topic.concernsUpdatedAt)))
       return res.status(409).json({ success: false, message: '年度问题清单已更新，请先按当前问题重新整理阶段性结论' });
+    if (topic.annualPlanYear && topic.concernsUpdatedAt && !topic.messages.some(item => item.role === 'ai' && new Date(item.createdAt) > new Date(topic.concernsUpdatedAt)))
+      return res.status(409).json({ success: false, message: '问题去向已调整，请先按当前问题更新完整年度研判' });
     const suppliedContent = String(req.body.content ?? topic.conclusion?.content ?? '').trim();
     let managementTargets;
     const targetLogic = require('../utils/caseReviewManagementTargets');
     try { managementTargets = targetLogic.normalizeTargets(req.body.managementTargets ?? topic.conclusion?.managementTargets ?? []); }
     catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+    if (topic.annualPlanYear) {
+      try { targetLogic.validateAnnualTargets(topic.concerns, managementTargets); }
+      catch (error) { return res.status(409).json({ success: false, message: error.message }); }
+    }
     const content = suppliedContent || targetLogic.conclusionFromTargets(managementTargets);
     if (!content) return res.status(400).json({ success: false, message: '请填写阶段性结论，或至少一条完整的管理目标与干预重点' });
     const structured = toStructuredAssessment(content, topic.title);
@@ -821,7 +824,8 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     if (shouldArchive) {
       return res.status(409).json({ success: false, message: '阶段性健康评估必须先进入营养师初审，不能从AI辅助研判直接入档；请使用页面中的“生成阶段评估草稿”入口' });
     }
-    const targetsChanged = topic.conclusion?.status === 'confirmed' && JSON.stringify(managementTargets) !== JSON.stringify((topic.conclusion.managementTargets || []).map(row => ({ goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true })));
+    const targetsChanged = topic.conclusion?.status === 'confirmed' && JSON.stringify(managementTargets) !== JSON.stringify((topic.conclusion.managementTargets || []).map(row => ({ goal: row.goal, focus: row.focus, nutritionRelevant: row.nutritionRelevant === true,
+      ...(row.issueId ? { issueId: row.issueId } : {}) })));
     const targetChangeNote = String(req.body.targetChangeNote || '').trim();
     if (targetsChanged && (!targetChangeNote || targetChangeNote.length > 500)) return res.status(400).json({ success: false, message: '修改已确认目标时，请填写500字以内的沟通调整说明' });
     if (topic.conclusion?.status === 'confirmed') topic.conclusionHistory.push({

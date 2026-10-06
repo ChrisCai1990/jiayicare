@@ -5,7 +5,8 @@ function normalizeTargets(value) {
     const goal = String(row?.goal || '').trim();
     const focus = String(row?.focus || '').trim();
     if (!goal || !focus || goal.length > 240 || focus.length > 500) throw new Error(`第 ${index + 1} 条需填写管理目标和干预重点`);
-    return { goal, focus, nutritionRelevant: row?.nutritionRelevant === true };
+    return { goal, focus, nutritionRelevant: row?.nutritionRelevant === true,
+      ...(row?.issueId ? { issueId: String(row.issueId) } : {}) };
   });
 }
 
@@ -35,12 +36,6 @@ function proposeTargetsFromActions(actions) {
   }).slice(0, 12);
 }
 
-const ISSUE_FAMILIES = [
-  /高血压|血压/, /动脉粥样|动脉硬化|斑块/,
-  /直肠|盲肠|结肠|肠镜|腺瘤|肠息肉/, /胃炎|胃黏膜|肠化|胃镜/,
-  /前列腺/, /地中海贫血|贫血|HBB/, /肺磨玻璃|肺结节|肺CT|LDCT/,
-];
-
 function issueCards(content) {
   const lines = String(content || '').split(/\r?\n/);
   const cards = [];
@@ -52,27 +47,34 @@ function issueCards(content) {
   return cards.filter(card => /管理目标[：:]|专业去向[：:]/.test(card.body));
 }
 
-function targetCoversIssue(target, title) {
-  const text = `${target.goal || ''} ${target.focus || ''}`;
-  const family = ISSUE_FAMILIES.find(pattern => pattern.test(title));
-  if (family) return family.test(text);
-  const compact = title.replace(/[（(].*?[）)]/g, '').replace(/[\s?？]/g, '').trim().slice(0, 80);
-  return compact.length >= 2 && text.includes(compact);
+// The reviewed concern list decides what enters annual management. Discussion cards
+// supply wording only; they cannot add a concern or turn an excluded one into a goal.
+function targetsFromIncludedConcerns(concerns, content, previous = []) {
+  const cards = issueCards(content);
+  return (concerns || []).filter(row => row.status === 'included' && require('./annualConcernRetirement').isActiveAnnualConcern(row)
+    && !require('./annualConcernTypes').isEvidenceConcern(row)).map(row => {
+    const title = String(row.title || '').trim();
+    const card = cards.find(item => item.title.includes(title) || title.includes(item.title));
+    const line = card?.body.match(/管理目标[：:]\s*([^\n]*)/)?.[1] || '';
+    const goal = line.split(/[；;]\s*干预重点[：:]/)[0].trim();
+    const focus = (line.match(/[；;]\s*干预重点[：:]\s*(.*)/)?.[1]?.trim() ||
+      card?.body.match(/(?:^|\n)干预重点[：:]\s*([^\n]*)/)?.[1]?.trim() || '')
+      .split(/[；;]\s*(?:时间|频次|责任角色)[：:]/)[0].trim();
+    const old = previous.find(item => String(item.issueId || '') === String(row.id));
+    const unresolved = /^(待确认|待核实|待确定)/;
+    return { issueId: String(row.id),
+      goal: unresolved.test(goal) ? '' : goal.slice(0, 240) || old?.goal || '',
+      focus: unresolved.test(focus) || unresolved.test(goal) ? '' : focus.slice(0, 500) || old?.focus || '',
+      nutritionRelevant: old?.nutritionRelevant === true || ['nutrition', 'both'].includes(row.pathway) };
+  });
 }
 
-function reconcileAnnualIssueTargets(existing, content) {
-  const targets = normalizeTargets(existing || []);
-  const uncovered = [];
-  for (const card of issueCards(content)) {
-    if (targets.some(target => targetCoversIssue(target, card.title))) continue;
-    if (targets.length >= 12) { uncovered.push(card.title); continue; }
-    targets.push({
-      goal: `${card.title.slice(0, 100)}：明确年度管理目标与复评安排`,
-      focus: '核对已审核依据和专业意见，确定管理措施、责任人及复评时间；由健康顾问逐项确认',
-      nutritionRelevant: false,
-    });
-  }
-  return { targets, uncovered };
+function validateAnnualTargets(concerns, targets) {
+  const included = (concerns || []).filter(row => row.status === 'included' && require('./annualConcernRetirement').isActiveAnnualConcern(row)
+    && !require('./annualConcernTypes').isEvidenceConcern(row));
+  const ids = included.map(row => String(row.id));
+  if (ids.length !== targets.length || ids.some(id => targets.filter(row => row.issueId === id).length !== 1))
+    throw new Error('年度管理目标必须与已纳入的问题逐项对应；请重新整理结论并核对目标');
 }
 
-module.exports = { normalizeTargets, conclusionFromTargets, fromConfirmedReviews, proposeTargetsFromActions, issueCards, reconcileAnnualIssueTargets };
+module.exports = { normalizeTargets, conclusionFromTargets, fromConfirmedReviews, proposeTargetsFromActions, issueCards, targetsFromIncludedConcerns, validateAnnualTargets };
