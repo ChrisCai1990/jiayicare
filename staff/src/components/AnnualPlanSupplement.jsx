@@ -45,7 +45,7 @@ export default function AnnualPlanSupplement({ patientId, year, planType, templa
       setPreview(null)
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
-  return <section id="annual-plan-supplement" style={{ background: '#fff', border: '1px solid #B2D8C7', padding: 18, borderRadius: 12, marginBottom: 20 }}>
+  return <section style={{ background: '#fff', border: '1px solid #B2D8C7', padding: 18, borderRadius: 12, marginBottom: 20 }}>
     <h3 style={{ marginTop: 0 }}>补充依据／更新方案</h3>
     <p>选择已确认研判（不限类型）、已审核报告，或顾问确认的补充意见。仅生成调整建议，逐项审核后应用；未涉及的内容保留。</p>
     {published && <p style={{ color: '#9A5B13' }}>当前是已推送方案：本入口只保存独立修订草稿，不能直接发布或改动已派任务。</p>}
