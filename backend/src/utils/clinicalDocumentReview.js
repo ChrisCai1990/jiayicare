@@ -2,6 +2,7 @@ const CLINICAL_CATEGORIES = new Set(['prescription_order', 'outpatient_record', 
 
 const text = value => String(value || '').trim();
 const cleanText = value => text(value).slice(0, 2000);
+const cleanRecordText = value => text(value).slice(0, 10000);
 
 function cleanMedication(row = {}) {
   return {
@@ -28,10 +29,14 @@ function normalizeClinicalReview(category, value = {}) {
   };
   if (category === 'outpatient_record') return {
     ...base, visitDate: cleanText(value.visitDate), visitType: cleanText(value.visitType),
-    chiefComplaint: cleanText(value.chiefComplaint), diagnoses: Array.isArray(value.diagnoses) ? value.diagnoses.slice(0, 20).map(cleanText).filter(Boolean) : [],
-    examination: cleanText(value.examination), testsAndOrders: cleanText(value.testsAndOrders),
-    treatmentPlan: cleanText(value.treatmentPlan), medicationInstruction: cleanText(value.medicationInstruction),
-    referralAndFollowUp: cleanText(value.referralAndFollowUp),
+    chiefComplaint: cleanRecordText(value.chiefComplaint), presentIllness: cleanRecordText(value.presentIllness),
+    pastHistory: cleanRecordText(value.pastHistory), allergyHistory: cleanRecordText(value.allergyHistory),
+    familyHistory: cleanRecordText(value.familyHistory), vitalSigns: cleanRecordText(value.vitalSigns),
+    otherRecordContent: cleanRecordText(value.otherRecordContent),
+    diagnoses: Array.isArray(value.diagnoses) ? value.diagnoses.slice(0, 20).map(cleanRecordText).filter(Boolean) : [],
+    examination: cleanRecordText(value.examination), testsAndOrders: cleanRecordText(value.testsAndOrders),
+    treatmentPlan: cleanRecordText(value.treatmentPlan), medicationInstruction: cleanRecordText(value.medicationInstruction),
+    referralAndFollowUp: cleanRecordText(value.referralAndFollowUp),
   };
   return {
     ...base, admissionDate: cleanText(value.admissionDate), dischargeDate: cleanText(value.dischargeDate),

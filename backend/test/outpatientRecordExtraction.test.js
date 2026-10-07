@@ -14,11 +14,18 @@ test('补提只填空字段并保留人工审核内容', () => {
 });
 
 test('outpatient extraction produces clinical review draft requiring source review', () => {
-  const first = normalizeOutpatientPage({ visitDate: '2026-09-23', chiefComplaint: '原文主诉', diagnoses: ['原文诊断'], reviewIssues: [] });
-  const second = normalizeOutpatientPage({ treatmentPlan: '原文处理方案', diagnoses: ['原文诊断'], reviewIssues: ['用药文字不清'] });
+  const first = normalizeOutpatientPage({ visitDate: '2026-09-23', visitType:'复诊', chiefComplaint: '原文主诉', presentIllness:'症状三日，无发热', pastHistory:'既往高血压', allergyHistory:'青霉素过敏', diagnoses: ['原文诊断'], reviewIssues: [] });
+  const second = normalizeOutpatientPage({ familyHistory:'父亲患病', vitalSigns:'血压 130/80', otherRecordContent:'病历备注：已告知', treatmentPlan: '原文处理方案', diagnoses: ['原文诊断'], reviewIssues: ['用药文字不清'] });
   const { draft, reviewIssues } = mergeOutpatientPages([first, second]);
   assert.equal(draft.chiefComplaint, '原文主诉');
+  assert.equal(draft.visitType, '复诊');
   assert.equal(draft.treatmentPlan, '原文处理方案');
+  assert.equal(draft.presentIllness, '症状三日，无发热');
+  assert.equal(draft.pastHistory, '既往高血压');
+  assert.equal(draft.allergyHistory, '青霉素过敏');
+  assert.equal(draft.familyHistory, '父亲患病');
+  assert.equal(draft.vitalSigns, '血压 130/80');
+  assert.equal(draft.otherRecordContent, '病历备注：已告知');
   assert.deepEqual(draft.diagnoses, ['原文诊断']);
   assert.equal(draft.sourceReviewed, false);
   assert.equal(draft.reviewConclusion, '');
