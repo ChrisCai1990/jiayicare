@@ -61,6 +61,30 @@ test('repairs timing source on an existing checkup without replacing action or b
   await assert.rejects(validateOrRepairAnnual(raw, check, async () => reply('')), /缺少有效事项/);
 });
 
+test('repairs omitted source links on existing actions without rewriting their clinical content', async () => {
+  const raw = rawPlan();
+  raw.evidenceCoverage.push({ sourceId: 'review:action:0', status: 'included', reason: '检查甲的已审建议' });
+  const sources = [...evidence, { id: 'review:action:0' }];
+  const check = candidate => validateAnnualRaw(candidate, catalog, sources, keys);
+  const corrected = await validateOrRepairAnnual(raw, check, async (candidate, message) => {
+    assert.match(message, /review:action:0/);
+    return JSON.stringify({
+    annual_checkup: raw.annual_checkup,
+    evidenceCoverage: raw.evidenceCoverage,
+    sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: ['review:action:0'] }],
+    checkup_completion: [],
+    });
+  });
+  assert.deepEqual(corrected.checkup_completion[0].sourceIds, ['missing:0', 'review:action:0']);
+  assert.equal(corrected.checkup_completion[0].items, raw.checkup_completion[0].items);
+  assert.deepEqual(raw.checkup_completion[0].sourceIds, ['missing:0']);
+  check(corrected);
+  await assert.rejects(validateOrRepairAnnual(raw, check, async () => JSON.stringify({
+    annual_checkup: raw.annual_checkup, evidenceCoverage: raw.evidenceCoverage,
+    sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: ['fabricated'] }],
+  })), /有效来源|遗漏对应事项/);
+});
+
 
 test('valid corrected candidate is retained when AI appends an unnecessary invalid timing patch', async () => {
   const raw = rawPlan(); raw.annual_checkup.focus = '';

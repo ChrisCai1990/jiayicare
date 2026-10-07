@@ -5,6 +5,14 @@ function normalizeAnnualOutput(raw) {
   return { ...raw, annual_checkup: { ...raw.annual_checkup, focus: focus.map(line => line.trim()).filter(Boolean).join('\n') } };
 }
 
+function missingIncludedSourceIds(raw) {
+  const rows = Object.entries(raw || {}).filter(([key]) => key !== 'evidenceCoverage')
+    .flatMap(([, value]) => Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : []);
+  return (Array.isArray(raw?.evidenceCoverage) ? raw.evidenceCoverage : [])
+    .filter(item => item.status === 'included' && !rows.some(row => row.sourceIds?.includes(item.sourceId)))
+    .map(item => item.sourceId);
+}
+
 // A single bounded correction replaces the former focus-only call. Both attempts go
 // through the identical source/template/clinical checks; invalid output is never cached ready.
 async function validateOrRepairAnnual(raw, validate, complete) {
@@ -12,7 +20,9 @@ async function validateOrRepairAnnual(raw, validate, complete) {
   let initialError;
   try { validate(candidate); return candidate; } catch (error) { initialError = error; }
   try {
-    const reply = await complete(candidate, initialError.message);
+    const missingLinks = missingIncludedSourceIds(candidate);
+    const reply = await complete(candidate, initialError.message + (missingLinks.length
+      ? `；已标记纳入但未关联到事项的来源ID：${missingLinks.join('、')}` : ''));
     let parsed;
     try { parsed = JSON.parse(reply.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
     catch { throw Object.assign(new Error('AI校正返回格式不完整，未替换原方案'), { statusCode: 502 }); }
@@ -24,6 +34,26 @@ async function validateOrRepairAnnual(raw, validate, complete) {
     // The annual/coverage correction may already resolve all failures. Extra patches
     // are not authoritative and must not invalidate a fully checked candidate.
     try { validate(candidate); return candidate; } catch { /* Repair remaining failures below. */ }
+    // Add missing provenance to existing actions only. The final validator still checks
+    // every source and every included coverage entry; clinical action text is immutable.
+    if (parsed.sourceLinkCorrections !== undefined) {
+      if (!Array.isArray(parsed.sourceLinkCorrections)) throw new Error('事项来源校正格式无效');
+      const seen = new Set();
+      for (const patch of parsed.sourceLinkCorrections) {
+        const key = patch?.module, index = patch?.index;
+        const row = key === 'annual_checkup' ? candidate.annual_checkup : candidate[key]?.[index];
+        const sourceIds = patch?.sourceIds;
+        if (!['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'templateNodes', 'annual_checkup'].includes(key)
+          || !Number.isInteger(index) || index < 0 || (key === 'annual_checkup' && index !== 0)
+          || !row?.standardPlanId || seen.has(`${key}:${index}`)
+          || !Array.isArray(sourceIds) || !sourceIds.length
+          || sourceIds.some(id => typeof id !== 'string' || !id.trim())) throw new Error('事项来源校正缺少有效事项或来源');
+        seen.add(`${key}:${index}`);
+        const linked = [...new Set([...(Array.isArray(row.sourceIds) ? row.sourceIds : []), ...sourceIds])];
+        candidate = { ...candidate, [key]: key === 'annual_checkup' ? { ...row, sourceIds: linked }
+          : candidate[key].map((item, i) => i === index ? { ...item, sourceIds: linked } : item) };
+      }
+    }
     // Permit only source/date metadata corrections on existing actions; never remove or rewrite actions.
     if (parsed.timingCorrections !== undefined) {
       if (!Array.isArray(parsed.timingCorrections)) throw new Error('时间来源校正格式无效');
@@ -49,5 +79,5 @@ async function validateOrRepairAnnual(raw, validate, complete) {
 }
 const correctionInstruction = `这是同一次生成的格式/规则校正，不是另拟新方案。只修复下列校验问题及相关来源关联，其余项目和临床建议保持原样；禁止为通过验证删除其他已有行动或虚构依据。
 annual_checkup.focus必须逐行文本；纯字符串列表可无损转为文本。年度focus只列实际安排项目，“不重复安排/已在近期安排”的说明应放内部notes，不能伪装成年度项目。每个保留项目必须引用真实对应sourceIds；如项目来自missing:0、missing:1，不能错挂priority:0。evidenceCoverage与保留事项同步，纳入年度同样算included。
-如已审依据确实不支持任何年度项目，可返回annual_checkup:{}，并在对应evidenceCoverage明确说明未纳入原因；不得用空focus的非空模块占位，更不能以忽略有依据项目换取通过。日期、科室、来源及统筹规则仍必须满足。返回annual_checkup与完整evidenceCoverage。若其他模块的timingSourceId或timingBaseDate有误，额外返回timingCorrections数组：[{"module":"checkup_completion","index":0,"timingSourceId":"report_history中真实项目id","timingBaseDate":"该项目真实date","dateSelectionReason":"选用此日期的依据"}]。index为原数组从0开始的位置。仅校正已有事项的时间来源元数据，禁止编造来源、清空日期绕过校验或改变行动内容及执行时间；不需要时返回空数组。系统保留其他字段并重新进行全部校验。`;
-module.exports = { normalizeAnnualOutput, validateOrRepairAnnual, correctionInstruction };
+如已审依据确实不支持任何年度项目，可返回annual_checkup:{}，并在对应evidenceCoverage明确说明未纳入原因；不得用空focus的非空模块占位，更不能以忽略有依据项目换取通过。日期、科室、来源及统筹规则仍必须满足。返回annual_checkup与完整evidenceCoverage。若已生成事项实际涵盖某来源，却遗漏sourceIds关联，额外返回sourceLinkCorrections数组：[{"module":"medical_treatment","index":0,"sourceIds":["真实来源id"]}]；module也可为annual_checkup（index固定为0）。只给已有事项补充真实且语义对应的来源，不得把无关来源挂到事项上；若确实没有对应事项，须如实把该来源改为deferred或not_applicable并说明原因，不能仅靠修改状态掩盖已确认的行动需求。若其他模块的timingSourceId或timingBaseDate有误，额外返回timingCorrections数组：[{"module":"checkup_completion","index":0,"timingSourceId":"report_history中真实项目id","timingBaseDate":"该项目真实date","dateSelectionReason":"选用此日期的依据"}]。index为原数组从0开始的位置。仅校正已有事项的时间来源元数据，禁止编造来源、清空日期绕过校验或改变行动内容及执行时间；不需要时返回空数组。系统保留其他字段并重新进行全部校验。`;
+module.exports = { normalizeAnnualOutput, missingIncludedSourceIds, validateOrRepairAnnual, correctionInstruction };
