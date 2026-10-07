@@ -11,7 +11,9 @@ function contentForPlan(plan) {
   const metrics = selectedFromAnnualPlan(plan);
   const goals = nutritionGoalsForPlan(plan);
   const focus = plan?.moduleData?.nutrition_assessment?.records || [];
-  return `营养师核实膳食与生活方式；${metrics.length ? `本年度重点对比指标：${metrics.join('、')}` : '本年度按固定体成分指标评估'}。${goals.length ? `已确认的营养相关管理目标：${goals.map(row => `${row.goal}（重点：${row.focus}）`).join('；')}。` : ''}${focus.length ? `专项评估重点：${focus.map(row => `${row.items || '评估事项'}（${row.personalizedAdvice || row.reason || '待评估'}）`).join('；')}。` : ''}基线与阶段目标在营养方案中逐项确认。`;
+  const summary = require('../../../shared/nutritionComparisonMetrics.cjs').nutritionSummary(plan);
+  return `营养师评估膳食、生活方式及体成分，形成营养方案。相关问题：${summary.problems.join('、') || '研判中的营养相关问题'}。对比指标：${metrics.join('、') || '基础体成分指标'}。研判参考目标：${summary.references.join('；') || '未给出明确数值，由营养师结合原报告参考范围及实际情况制定'}。基线依据已有资料核实，阶段目标由营养师调整。${focus.length ? `专项重点：${focus.map(r=>r.personalizedAdvice || r.items || '').join('；')}。` : ''}医疗背景仅供参考，就医、检查及用药评估由对应医疗安排执行。`;
+
 }
 
 function nutritionGoalsForPlan(plan) {
@@ -34,7 +36,7 @@ function buildTask(plan, patient, actor, attempt = 1, now = new Date()) {
     sourceScheduleKey: `nutrition-assessment:standalone:${attempt}`, workflowKey: 'annual_nutrition_assessment',
     deliveryMode: 'single', deliveryType: 'nutrition_assessment', taskRole: 'executor',
     aiStatus: 'approved', reviewRole: null, reviewAssignedTo: null,
-    formData: { annualNutritionMetrics: metrics, annualNutritionGoals: goals, annualYear: plan.year,
+    formData: { annualNutritionMetrics: metrics, annualNutritionGoals: goals, annualNutritionSummary: require('../../../shared/nutritionComparisonMetrics.cjs').nutritionSummary(plan), annualYear: plan.year,
       plannedAssessmentDate: plannedDate || '' },
   };
 }

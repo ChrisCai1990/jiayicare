@@ -34,12 +34,13 @@ function metricsFromTargets(targets = []) {
   const selected = COMMON_METRICS.filter(name => text.includes(name));
   const aliases = [[/HbA1c|糖化/i,'糖化血红蛋白'],[/LDL[-－]?C/i,'低密度脂蛋白'],[/HDL[-－]?C/i,'高密度脂蛋白'],[/Lp[-－]?PLA2/i,'脂蛋白磷脂酶A2']];
   aliases.forEach(([pattern,name]) => { if (pattern.test(text)) selected.push(name); });
+  if (/血脂/.test(text)) selected.push('总胆固醇','甘油三酯','低密度脂蛋白','高密度脂蛋白');
   return normalizeMetrics([...new Set(selected)]);
 }
 function selectedFromAnnualPlan(plan) {
   const standard = plan?.moduleData?.nutrition_assessment;
   if (standard && standard.enabled !== false) {
-    try { return standard.nutritionComparisonMetrics === undefined ? metricsFromTargets(plan?.moduleData?.management_targets?.records) : normalizeMetrics(standard.nutritionComparisonMetrics); } catch { return []; }
+    try { return standard.metricsManuallyAdjusted || standard.nutritionComparisonMetrics?.length ? normalizeMetrics(standard.nutritionComparisonMetrics) : metricsFromTargets(plan?.moduleData?.management_targets?.records); } catch { return []; }
   }
   const records = plan?.moduleData?.personalized_followups?.enabled === false
     ? [] : plan?.moduleData?.personalized_followups?.records || [];
@@ -50,3 +51,13 @@ function selectedFromAnnualPlan(plan) {
 }
 
 module.exports = { OBJECTIVE_METRICS, SUBJECTIVE_METRICS, COMMON_METRICS, MAX_METRICS, normalizeMetrics, metricsFromTargets, selectedFromAnnualPlan };
+
+// Keep medical decisions as context. Only explicit metric targets become reference text.
+function nutritionSummary(plan) {
+  const goals = (plan?.moduleData?.management_targets?.records || []).filter(r => r.nutritionRelevant === true);
+  const text = goals.map(r => `${r.goal || ''} ${r.focus || ''}`).join('；');
+  const problems = [[/动脉|斑块|血脂|PLA2/i,'动脉粥样硬化相关营养评估'],[/胃镜|胃炎|胃黏膜/,'胃部疾病相关营养评估'],[/息肉|腺瘤|结肠|直肠/,'肠道疾病相关营养评估']].filter(([pattern])=>pattern.test(text)).map(([,label])=>label);
+  const references = goals.flatMap(r => String(r.goal || '').split(/[；;。]/)).filter(clause => /降至|控制在|维持在|达到/.test(clause) && /血脂|胆固醇|甘油三酯|血糖|糖化|HbA1c|LDL|HDL|PLA2|体重|体脂|尿酸/i.test(clause));
+  return { problems: [...new Set(problems)], metrics: selectedFromAnnualPlan(plan), references: [...new Set(references.map(v=>v.trim()))], background: goals };
+}
+module.exports.nutritionSummary = nutritionSummary;
