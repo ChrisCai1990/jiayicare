@@ -25,9 +25,9 @@ async function buildContext(user, scopes = [], options = {}) {
     if (options.annual === true) {
       const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 5);
       const today = new Date().toISOString().slice(0,10);
-      const exams = await MedicalReport.find({ user: user._id, audit_status: 'audited', $or: [{ documentCategory: 'physical_exam' }, { documentCategory: null, type: 'annual' }] })
-        .select('title checkDate date institution reportItems.name reportItems.value reportItems.unit reportItems.referenceRange reportItems.status reportItems.conclusion examConclusion').sort({checkDate:-1}).lean();
-      snapshot.annualCheckupHistory = clean(exams.filter(r => {
+      const exams = await MedicalReport.find({ user: user._id, audit_status: 'audited' })
+        .select('title type documentCategory audit_status screeningL1 screeningL2 screeningCategory checkDate date institution reportItems.orderName reportItems.sourceSection reportItems.name reportItems.value reportItems.unit reportItems.referenceRange reportItems.status reportItems.conclusion examConclusion').sort({checkDate:-1}).lean();
+      snapshot.annualCheckupHistory = clean(require('./annualReviewEligibility').examReports(exams).filter(r => {
         const date = require('./annualReviewEligibility').day(r.checkDate || r.date);
         return date && date >= cutoff.toISOString().slice(0,10) && date <= today;
       }));
