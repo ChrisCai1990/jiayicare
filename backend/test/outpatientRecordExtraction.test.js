@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, supplementOutpatientDraft, isExplicitExamReport } = require('../src/utils/outpatientRecordExtraction');
+const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, supplementOutpatientDraft, isExplicitExamReport, hasOutpatientRecordContent } = require('../src/utils/outpatientRecordExtraction');
 
 test('补提只填空字段并保留人工审核内容', () => {
   const result = supplementOutpatientDraft(
@@ -36,6 +36,13 @@ test('outpatient extraction produces clinical review draft requiring source revi
 test('empty or malformed outpatient output cannot replace an existing report', () => {
   assert.throws(() => mergeOutpatientPages([normalizeOutpatientPage({ items: [{ name: '血常规', value: '正常' }] })]), /未提取到可核对的文字/);
   assert.throws(() => normalizeOutpatientPage(null), /未返回有效结构/);
+});
+
+test('legacy audited record without structured fields must be extracted from its attachment', () => {
+  assert.equal(hasOutpatientRecordContent(null), false);
+  assert.equal(hasOutpatientRecordContent({ sourceReviewed:true, reviewConclusion:'已审核' }), false);
+  assert.equal(hasOutpatientRecordContent({ diagnoses:['原件诊断'] }), true);
+  assert.equal(hasOutpatientRecordContent({ presentIllness:'头晕三日' }), true);
 });
 
 test('only an explicit printed exam report title changes the parser route', () => {

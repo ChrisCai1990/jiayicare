@@ -1324,8 +1324,17 @@ async function generateHealthCourseDraft(report) {
   if (archived) return { alreadyArchived:true, archive:archived };
   const diseaseNames = (patient.diseaseRecords || []).map(item => item.name).filter(Boolean);
   const evidence = courseEvidence(report);
-  const outpatient = report.documentCategory === 'outpatient_record' && report.clinicalReview?.sourceReviewed
+  const { hasOutpatientRecordContent } = require('../utils/outpatientRecordExtraction');
+  let outpatient = report.documentCategory === 'outpatient_record' && hasOutpatientRecordContent(report.clinicalReview)
     ? require('../utils/clinicalDocumentReview').normalizeClinicalReview('outpatient_record', report.clinicalReview) : null;
+  let outpatientReviewIssues = [];
+  if (report.documentCategory === 'outpatient_record' && !outpatient) {
+    const extracted = await withAiContext({ business:'ocr', reportId:String(report._id), stage:'legacy-outpatient', deadline:Date.now() + 10 * 60000 },
+      () => extractOutpatientRecordAttachment(report, require('../utils/ai').parseImage));
+    if (extracted.explicitExamReport) throw new Error('原件标题显示为检查报告，请先更正资料分类后再入档');
+    outpatient = extracted.draft;
+    outpatientReviewIssues = extracted.reviewIssues;
+  }
   const input = JSON.stringify({ ...evidence, existingDiseases:diseaseNames });
   if (!outpatient && input.length > 120000) throw new Error('病历资料超出单次提取范围，请人工核对；未截断原始资料');
   let parsed;
@@ -1351,7 +1360,7 @@ async function generateHealthCourseDraft(report) {
     recommendedDiseaseName:cleanMedicalText(parsed.recommendedDiseaseName,100),
     content:cleanMedicalText(parsed.content,20000), examination:cleanMedicalText(parsed.examination,5000), diagnosis:cleanMedicalText(parsed.diagnosis,5000),
     medicationChange:cleanMedicalText(parsed.medicationChange,5000), treatmentResponse:cleanMedicalText(parsed.treatmentResponse,5000), nextPlan:cleanMedicalText(parsed.nextPlan,5000),
-    ...(outpatient ? { outpatientRecord:outpatient } : {}),
+    ...(outpatient ? { outpatientRecord:outpatient, outpatientReviewIssues } : {}),
   };
   const written = await MedicalReport.updateOne({ _id:report._id, updatedAt:report.updatedAt, audit_status:'audited' }, { $set:{ healthCourseDraft:draft } });
   if (!written.matchedCount) throw new Error('生成期间病历或草稿已更新，请重新打开核对');
@@ -5144,8 +5153,39 @@ router.post('/medical-reports/:id/health-course-draft', staffAuth, async (req, r
     if (report.healthCourseDraft?.status === 'approved') return res.status(409).json({ success:false, message:'该病历已归档，请在诊疗时间轴修订原记录' });
     if (!HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) return res.status(400).json({ success:false, message:'仅门诊病历、住院病历和检验检查资料支持提取健康变化；用药信息请在用药模块审核' });
     if (report.audit_status !== 'audited') return res.status(409).json({ success:false, message:'请先完成医疗资料审核，再生成入档草稿' });
+    const { hasOutpatientRecordContent } = require('../utils/outpatientRecordExtraction');
+    const needsAttachmentExtraction = report.documentCategory === 'outpatient_record'
+      && !hasOutpatientRecordContent(report.clinicalReview) && !hasOutpatientRecordContent(report.healthCourseDraft?.outpatientRecord);
+    if (needsAttachmentExtraction) {
+      const previous = report.healthCourseDraft || {};
+      if (previous.status === 'extracting' && Date.now() - Date.parse(previous.startedAt || 0) < 10 * 60000) {
+        return res.json({ success:true, data:{ processing:true } });
+      }
+      if (!report.fileUrl && !report.content && !report.fileUrls?.length) return res.status(400).json({ success:false, message:'旧病历缺少原始附件，请先补充原件再提取' });
+      const attemptId = crypto.randomUUID();
+      const claimed = await MedicalReport.updateOne({ _id:report._id, updatedAt:report.updatedAt, audit_status:'audited' }, {
+        $set:{ healthCourseDraft:{ status:'extracting', startedAt:new Date(), attemptId } },
+      });
+      if (!claimed.matchedCount) return res.status(409).json({ success:false, message:'病历正在更新，请刷新后重试' });
+      const actorId = String(req.staff._id);
+      const tenantId = String(report.tenantId || '');
+      setImmediate(async () => {
+        try {
+          const latest = await MedicalReport.findById(report._id);
+          if (latest?.healthCourseDraft?.attemptId !== attemptId) return;
+          await withAiContext({ actorId, tenantId, business:'ocr', reportId:String(report._id), stage:'legacy-outpatient', deadline:Date.now() + 10 * 60000 },
+            () => generateHealthCourseDraft(latest));
+        } catch (error) {
+          console.error('[health-course-draft] legacy outpatient extraction failed', String(report._id), error.message);
+          await MedicalReport.updateOne({ _id:report._id, 'healthCourseDraft.status':'extracting', 'healthCourseDraft.attemptId':attemptId }, {
+            $set:{ 'healthCourseDraft.status':'failed', 'healthCourseDraft.message':error.message, 'healthCourseDraft.failedAt':new Date() },
+          });
+        }
+      });
+      return res.json({ success:true, data:{ processing:true } });
+    }
     const draft = report.healthCourseDraft?.status === 'pending_review' && !req.body.force
-      && (report.documentCategory !== 'outpatient_record' || report.healthCourseDraft.outpatientRecord || !report.clinicalReview?.sourceReviewed)
+      && (report.documentCategory !== 'outpatient_record' || hasOutpatientRecordContent(report.healthCourseDraft.outpatientRecord))
       ? report.healthCourseDraft : await generateHealthCourseDraft(report);
     res.json({ success:true, data:draft });
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }
@@ -14987,31 +15027,39 @@ async function runReportParse(reportId) {
   return withAiContext({ actorId: String(owner?.parseJob?.resumedBy || owner?.parseJob?.actorId || ''), tenantId: String(owner?.tenantId || ''), business: 'ocr', reportId: String(reportId), stopState: {}, stage: 'recognize', deadline: Date.now() + 45 * 60000 }, () => runReportParseControlled(reportId));
 }
 
-async function runOutpatientRecordParse(report, rawParseImage) {
+async function extractOutpatientRecordAttachment(report, rawParseImage) {
   const { fetchReportBuffer, fetchReportBuffers, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage } = require('../utils/pdf');
-  const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, supplementOutpatientDraft, isExplicitExamReport } = require('../utils/outpatientRecordExtraction');
+  const { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, isExplicitExamReport } = require('../utils/outpatientRecordExtraction');
+  const sources = [];
+  if (isPdfReport(report)) {
+    const pdf = await fetchReportBuffer(report, UPLOADS_DIR);
+    const count = await getPdfPageCountFromBuffer(pdf);
+    if (!count || count > 50) throw new Error('门诊病历页数异常，请人工核对原件');
+    for (let page = 1; page <= count; page++) sources.push(await renderSinglePage(pdf, page, 160));
+  } else {
+    const buffers = report.fileUrls?.length ? await fetchReportBuffers(report, UPLOADS_DIR) : [await fetchReportBuffer(report, UPLOADS_DIR)];
+    for (const buffer of buffers) sources.push(buffer.toString('base64'));
+  }
+  if (!sources.length) throw new Error('门诊病历没有可识别的图片');
+  const pages = [];
+  for (let index = 0; index < sources.length; index++) {
+    const raw = await rawParseImage(sources[index], OUTPATIENT_RECORD_PARSE_PROMPT, {
+      sourcePage: index + 1, reportId:report._id, isUrl: false, model: 'qwen-vl-plus', maxTokens: 8192, timeoutMs: 120000,
+    });
+    pages.push(normalizeOutpatientPage(safeParseJSON(raw)));
+  }
+  const explicitExamReport = isExplicitExamReport(pages);
+  const { draft, reviewIssues } = explicitExamReport ? { draft:null, reviewIssues:[] } : mergeOutpatientPages(pages);
+  return { draft, reviewIssues, sourceCount:sources.length, explicitExamReport };
+}
+
+async function runOutpatientRecordParse(report, rawParseImage) {
+  const { supplementOutpatientDraft } = require('../utils/outpatientRecordExtraction');
   const MedicalReport = require('../models/MedicalReport');
   const revision = Number(report.reviewRevision || 0);
   try {
-    const sources = [];
-    if (isPdfReport(report)) {
-      const pdf = await fetchReportBuffer(report, UPLOADS_DIR);
-      const count = await getPdfPageCountFromBuffer(pdf);
-      if (!count || count > 50) throw new Error('门诊病历页数异常，请人工核对原件');
-      for (let page = 1; page <= count; page++) sources.push(await renderSinglePage(pdf, page, 160));
-    } else {
-      const buffers = report.fileUrls?.length ? await fetchReportBuffers(report, UPLOADS_DIR) : [await fetchReportBuffer(report, UPLOADS_DIR)];
-      for (const buffer of buffers) sources.push(buffer.toString('base64'));
-    }
-    if (!sources.length) throw new Error('门诊病历没有可识别的图片');
-    const pages = [];
-    for (let index = 0; index < sources.length; index++) {
-      const raw = await rawParseImage(sources[index], OUTPATIENT_RECORD_PARSE_PROMPT, {
-        sourcePage: index + 1, isUrl: false, model: 'qwen-vl-plus', maxTokens: 8192, timeoutMs: 120000,
-      });
-      pages.push(normalizeOutpatientPage(safeParseJSON(raw)));
-    }
-    if (isExplicitExamReport(pages)) {
+    const { draft, reviewIssues, sourceCount, explicitExamReport } = await extractOutpatientRecordAttachment(report, rawParseImage);
+    if (explicitExamReport) {
       const corrected = await MedicalReport.updateOne(
         { _id: report._id, reviewRevision: revision, documentCategory: 'outpatient_record', audit_status: { $ne: 'audited' } },
         { $set: { documentCategory: 'exam_report', clinicalReview: null, reportItems: [], aiSummary: '原件标题表明这是检查报告，已纠正资料分类，正在按检查报告重新解析。',
@@ -15020,13 +15068,12 @@ async function runOutpatientRecordParse(report, rawParseImage) {
       if (corrected.modifiedCount) return runReportParseControlled(report._id);
       throw new Error('分类纠正期间资料被人工修改，请刷新后核对');
     }
-    const { draft, reviewIssues } = mergeOutpatientPages(pages);
     const result = await MedicalReport.updateOne(
       { _id: report._id, reviewRevision: revision, audit_status: { $ne: 'audited' } },
       { $set: {
         clinicalReview: supplementOutpatientDraft(report.clinicalReview, draft), reportItems: [], aiStatus: 'pending',
         aiSummary: `门诊病历已按病历栏目提取待核对草稿。${reviewIssues.length ? `识别疑点：${reviewIssues.join('；')}` : '请对照原件逐项核对。'}`,
-        parseJob: { status: 'completed', completedAt: new Date(), message: `病历栏目提取完成：${sources.length}页，待结构化审核`,
+        parseJob: { status: 'completed', completedAt: new Date(), message: `病历栏目提取完成：${sourceCount}页，待结构化审核`,
           legacyReportItems: report.reportItems?.length ? report.reportItems : report.parseJob?.legacyReportItems },
       }, $inc: { reviewRevision: 1 } },
     );

@@ -57,4 +57,12 @@ function supplementOutpatientDraft(existing, extracted) {
   return normalizeClinicalReview('outpatient_record', next);
 }
 
-module.exports = { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, supplementOutpatientDraft, isExplicitExamReport };
+function hasOutpatientRecordContent(value) {
+  if (!value || typeof value !== 'object') return false;
+  return ['chiefComplaint', 'presentIllness', 'pastHistory', 'allergyHistory', 'familyHistory', 'vitalSigns',
+    'examination', 'testsAndOrders', 'treatmentPlan', 'medicationInstruction', 'referralAndFollowUp', 'otherRecordContent']
+    .some(field => typeof value[field] === 'string' && value[field].trim())
+    || (Array.isArray(value.diagnoses) && value.diagnoses.some(item => typeof item === 'string' && item.trim()));
+}
+
+module.exports = { OUTPATIENT_RECORD_PARSE_PROMPT, normalizeOutpatientPage, mergeOutpatientPages, supplementOutpatientDraft, isExplicitExamReport, hasOutpatientRecordContent };
