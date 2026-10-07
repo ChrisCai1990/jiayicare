@@ -2269,7 +2269,7 @@ export default function PatientDetailPage() {
   const [showScreeningForm, setShowScreeningForm] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [screeningYearSummaries, setScreeningYearSummaries] = useState([])
-  const [screeningSummaryYear, setScreeningSummaryYear] = useState(new Date().getFullYear())
+  const [screeningSummaryYear, setScreeningSummaryYear] = useState(() => Number(new URLSearchParams(location.search).get('annualCommunication')) || new Date().getFullYear())
   const [screeningSummaryExpanded, setScreeningSummaryExpanded] = useState(true)
   const [screeningSectionExpanded, setScreeningSectionExpanded] = useState({})
   const [screeningSummaryBusy, setScreeningSummaryBusy] = useState(false)
