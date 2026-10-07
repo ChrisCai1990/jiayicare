@@ -20,7 +20,8 @@ export default function AnnualPlanSupplement({ patientId, year, planType, templa
   }
   const toggle = (id, setter) => { setter(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id]); setPreview(null) }
   const generate = async () => {
-    if (!templateId || blocked) { setError('请先完成准备清单并选择模板'); return }
+    if (!templateId) { setError('请先在“方案版本”中选择Admin模板'); return }
+    if (blocked) { setError('请先完成准备清单'); return }
     setBusy(true); setError(''); setPreview(null)
     const input = { reviewIds, reportIds, note, noteConfirmed, baseModuleData: moduleData }
     try {

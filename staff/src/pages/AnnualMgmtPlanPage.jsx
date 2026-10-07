@@ -417,6 +417,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     .map(row => row.conclusion?.confirmedAt).filter(Boolean).sort().at(-1)
   const latestPlanEvidenceAt = [latestConfirmedReviewAt, patient?.aiHealthSummary?.generatedAt].filter(Boolean).sort().at(-1)
   const planPredatesEvidence = !!currentPlanVersion && !!latestPlanEvidenceAt && new Date(currentPlanVersion) < new Date(latestPlanEvidenceAt)
+  const openAnnualPlanSupplement = () => {
+    const preparationPanel = document.getElementById('annual-plan-preparation')
+    if (preparationPanel) preparationPanel.open = true
+    requestAnimationFrame(() => document.getElementById('annual-plan-supplement')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
   const [executionReviewData, setExecutionReviewData] = useState(null)
   const [closedLoopEnabled, setClosedLoopEnabled] = useState(true)
   const [monthlyReviewEnabled, setMonthlyReviewEnabled] = useState(false)
@@ -666,7 +671,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   // 还没有任何内容，不存在"覆盖"风险，不用弹确认框打断体验）
   const runAIGenerate = async (type, skipConfirm = false) => {
     if (!type) { toast('请先在下方选择一个方案类型，再点AI生成'); return }
-    if (pushedAt) { toast('已推送方案请在“补充依据／更新方案”中生成修订草稿'); document.getElementById('annual-plan-supplement')?.scrollIntoView({ behavior: 'smooth' }); return }
+    if (pushedAt) { openAnnualPlanSupplement(); return }
     const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
     if (patientMode && !selectedTemplate) { toast('请先选择从Admin后台调取的健康管理方案模板'); return }
     let requestType = type
@@ -954,7 +959,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           {patientMode && canEdit && (
             <>
               <button
-                onClick={pushedAt ? () => document.getElementById('annual-plan-supplement')?.scrollIntoView({ behavior: 'smooth' }) : handleGenerateAIAnnualPlan}
+                onClick={pushedAt ? openAnnualPlanSupplement : handleGenerateAIAnnualPlan}
                 disabled={aiPlanLoading || (!pushedAt && (!patient?.aiHealthSummary?.sections || preparationBlocked))}
                 title={pushedAt ? '已推送方案请使用下方“补充依据／更新方案”生成修订草稿' : preparationBlocked ? '请先完成首次方案准备清单' : (!patient?.aiHealthSummary?.sections ? '请先在AI信息整理及方案标签页生成健康信息整理结果' : 'AI自动填充方案板块')}
                 style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || (!pushedAt && (!patient?.aiHealthSummary?.sections || preparationBlocked))) ? 0.5 : 1 }}
@@ -985,7 +990,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
-      {patientMode && planPredatesEvidence && <div role="alert" style={{ padding: 12, marginBottom: 16, borderRadius: 8, background: '#FFF4E5', color: '#8A5414' }}>这份方案早于最新已确认研判或健康信息整理，原有内容不会自动更新。{pushedAt ? <>请在<a href="#annual-plan-supplement">补充依据／更新方案</a>中选择新研判和已审核报告，逐项生成并审核修订草稿。</> : '请核对新依据后重新生成方案草稿。'}</div>}
+      {patientMode && planPredatesEvidence && <div role="alert" style={{ padding: 12, marginBottom: 16, borderRadius: 8, background: '#FFF4E5', color: '#8A5414' }}>这份方案早于最新已确认研判或健康信息整理，原有内容不会自动更新。{pushedAt ? <>请在<button type="button" onClick={openAnnualPlanSupplement} style={{ border: 0, padding: 0, background: 'none', color: 'inherit', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}>补充依据／更新方案</button>中选择新研判和已审核报告，逐项生成并审核修订草稿。</> : '请核对新依据后重新生成方案草稿。'}</div>}
       <details id="annual-plan-preparation" className="annual-plan-secondary" open={['#professional-assessments', '#annual-execution-review'].includes(window.location.hash) || undefined}>
         <summary>方案准备{preparation?.checklist && ` · ${preparation.checklist.ready ? '已就绪' : `还差 ${preparation.checklist.progress.total - preparation.checklist.progress.completed} 项`}`}{!preparation?.checklist?.ready && preparation?.checklist?.items?.length ? `：${preparation.checklist.items.filter(item => !item.complete).map(item => item.label).slice(0, 2).join('、')}${preparation.checklist.items.filter(item => !item.complete).length > 2 ? '等' : ''}` : ''} · 展开办理</summary>
       {patientMode && closedLoopEnabled && preparation?.checklist && (
@@ -1041,7 +1046,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       )}
       {patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} onDataChange={setExecutionReviewData} />}
-      {patientMode && closedLoopEnabled && canEdit && <AnnualPlanSupplement key={`${id}:${year}:${planType}:${selectedTemplateId}`} patientId={id} year={year} planType={planType} template={adminTemplates.find(t => t._id === selectedTemplateId)} templateId={selectedTemplateId} plan={plansByType[planType]} moduleData={moduleData} canEdit={canEdit} blocked={preparationBlocked} toast={toast} onApply={data => { setModuleData(data); setDirty(true) }} />}
+      {patientMode && closedLoopEnabled && canEdit && <AnnualPlanSupplement key={`${id}:${year}:${planType}:${selectedTemplateId}`} patientId={id} year={year} planType={planType} template={adminTemplates.find(t => t._id === selectedTemplateId)} templateId={selectedTemplateId} plan={plansByType[planType]} moduleData={moduleData} canEdit={canEdit} blocked={preparationBlocked && !pushedAt} toast={toast} onApply={data => { setModuleData(data); setDirty(true) }} />}
       {patientMode && ['superadmin', 'healthPlanner', 'familyDoctor', 'healthManager'].includes(staff?.role) && preparation?.continuity?.mode === 'renewal' && <AnnualServicePeriodPanel key={`${year}:${planType}`} planId={plansByType[planType]?._id} staff={staff} />}
 
       {patientMode && closedLoopEnabled && (

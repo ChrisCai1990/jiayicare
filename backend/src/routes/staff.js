@@ -11566,7 +11566,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (req.body.supplement && !closedLoop) return res.status(403).json({ success: false, message: '当前客户尚未开放方案补充入口' });
     const supplement = req.body.supplement ? await require('../utils/annualSupplementSources').loadSupplement(req.body.supplement, user._id, AiCaseReview, MedicalReport) : null;
     const preparation = closedLoop ? await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(user._id, targetYear) : {};
-    if (closedLoop && !preparation?.checklist?.ready) {
+    if (closedLoop && !supplement && !preparation?.checklist?.ready) {
       return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
     }
 
