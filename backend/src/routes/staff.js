@@ -11809,6 +11809,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     const consistency = require('../utils/annualGenerationConsistency');
     const clinicalRules = require('../utils/annualClinicalRules');
     const timeline = clinicalRules.reportTimeline(reports);
+    const promptEvidence = require('../utils/annualGenerationEvidence');
     const confirmedReportIssues = closedLoop ? await require('../utils/reportIssues').annualIssueEvidence(user._id, { year }) : [];
     const evidence = [
       ...confirmedReportIssues,
@@ -11817,8 +11818,8 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       ...professionalAssessments.map(item => ({ id: `assessment:${item._id}`, content: item })),
       ...(s.medical_priority?.items || []).map((item, i) => ({ id: `priority:${i}`, content: item })),
       ...(s.checkup_completeness?.missing || []).map((item, i) => ({ id: `missing:${i}`, content: item })),
-      { id: 'summary', content: s },
-      { id: 'report_history', content: timeline },
+      { id: 'summary', content: promptEvidence.compactHealthSummary(s) },
+      { id: 'report_history', content: promptEvidence.compactReportTimeline(timeline) },
       ...(supplement ? [{ id: 'supplement', content: { reviews: supplement.reviews, reports: supplement.reports, advisorConfirmedNote: supplement.note } }] : []),
     ];
     const carePreferences = require('../utils/carePreferences').carePreferenceContext(user);
@@ -11826,7 +11827,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     const generate = async (resumeRaw = null) => {
       let parsed = resumeRaw;
       if (!parsed) {
-        const text = await chat([{ role: 'user', content: checkedPrompt }], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 90000 });
+        const text = await chat([{ role: 'user', content: checkedPrompt }], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 120000 });
         try { parsed = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
         catch { throw Object.assign(new Error('AI返回的方案内容不完整，未替换现有方案'), { statusCode: 502 }); }
       }
@@ -11848,7 +11849,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 6, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, confirmedReportIssues, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 7, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, confirmedReportIssues, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;
