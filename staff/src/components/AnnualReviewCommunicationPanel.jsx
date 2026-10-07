@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { concernStatusLabel, concernSourceLabel, concernTypeLabel, isEvidenceConcern, isActiveAnnualConcern } from '../utils/annualConcernLabels'
 
 export default function AnnualReviewCommunicationPanel({ patientId, year, staff, toast, onOpenReview }) {
   const nav = useNavigate()
-  const location = useLocation()
-  const focused = Number(new URLSearchParams(location.search).get('annualCommunication')) === Number(year)
   const [review, setReview] = useState(null)
   const [specialtyReviews, setSpecialtyReviews] = useState([])
   const [loading, setLoading] = useState(true)
@@ -33,15 +31,6 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
   }
   useEffect(() => { load() }, [patientId, year])
   useEffect(() => { setExpanded(false) }, [patientId, year])
-  useEffect(() => {
-    if (!focused) return
-    setExpanded(true)
-  }, [focused, patientId, year])
-  useEffect(() => {
-    if (!focused || loading || !expanded) return
-    const frame = requestAnimationFrame(() => (document.getElementById('annual-review-communication-confirm') || document.getElementById('annual-review-communication'))?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
-    return () => cancelAnimationFrame(frame)
-  }, [focused, loading, expanded, review])
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === 'visible') load() }
     window.addEventListener('focus', refresh)
@@ -113,7 +102,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
           {(review.conclusion.managementTargets || []).length ? (review.conclusion.managementTargets || []).map((row, index) => <div key={index} style={{ fontSize: 13, marginTop: 5 }}>{index + 1}. {row.goal}；干预重点：{row.focus}</div>) : <div style={{ fontSize: 13, color: '#A16620' }}>尚无逐条目标，请先核对研判结论。</div>}
           <details style={{ marginTop: 8, fontSize: 13 }}><summary>查看研判分析及待审核方案</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{review.conclusion.content}</div></details>
           {review.customerDiscussion?.status && review.customerDiscussion.status !== 'pending' && <div style={{ marginTop: 10, fontSize: 12, color: '#1E6B50' }}>最近沟通：{review.customerDiscussion.status === 'no_change' ? '无调整' : '已调整并确认'} · {review.customerDiscussion.confirmedByName || '健康顾问'}{review.customerDiscussion.note ? ` · ${review.customerDiscussion.note}` : ''}</div>}
-          {canConfirm && <div id="annual-review-communication-confirm" style={{ borderTop: '1px solid #D9E9E1', marginTop: 12, paddingTop: 12 }}>
+          {canConfirm && <div style={{ borderTop: '1px solid #D9E9E1', marginTop: 12, paddingTop: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>③ 与客户沟通后的结论</div>
             {newerSpecialtyConclusion && <div style={{ color: '#A16620', fontSize: 12, marginTop: 6 }}>单项专病结论有更新，请先重新核对并确认年度综合研判，再记录客户沟通。</div>}
             {specialtyReviews.some(item => item.conclusion?.status !== 'confirmed') && <div style={{ color: '#A16620', fontSize: 12, marginTop: 6 }}>仍有单项问题未形成确认结论。沟通时请说明哪些判断或专科意见仍待核实。</div>}

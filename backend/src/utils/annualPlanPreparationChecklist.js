@@ -29,12 +29,6 @@ function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null,
   if (caseReviews) {
     const annualReview = require('./annualComprehensiveReview').annualReviewForYear(caseReviews, year);
     add('annual_comprehensive_review', '本年度综合研判已由健康顾问确认', annualReview?.conclusion?.status === 'confirmed', { detail: annualReview ? annualReview.title : '尚未创建年度综合研判' });
-    if (annualReview?.requiresCustomerDiscussion) {
-      const discussion = annualReview.customerDiscussion;
-      add('annual_review_customer_discussion', '已与客户沟通并确认本年度研判目标',
-        ['no_change', 'adjusted'].includes(discussion?.status)
-          && new Date(discussion.conclusionConfirmedAt).getTime() === new Date(annualReview.conclusion?.confirmedAt).getTime());
-    }
     const pending = caseReviews.filter(item => item.required && item.conclusion?.status !== 'confirmed');
     add('case_reviews', pending.length ? `本次必需研判待确认：${pending.map(item => item.title).join('、')}` : '本次必需研判已就绪（未指定的草稿不阻断、不引用）', pending.length === 0);
   }

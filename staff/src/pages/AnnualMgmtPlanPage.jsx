@@ -1002,10 +1002,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           {!!generationCoverage.length && <details style={{ marginTop: 10 }}><summary>本次来源核对（含待确认及未采用原因）</summary>{generationCoverage.map(item => <div key={item.sourceId}>{item.sourceId}：{{ included: '已纳入', deferred: '待确认', not_applicable: '未采用' }[item.status]}；{item.reason}</div>)}</details>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
             {preparation.checklist.items.filter(item => !item.complete).map(item => (
-              <div key={item.key} style={{ fontSize: 13, color: '#9A5B13' }}>
-                ○ {item.label}
-                {item.key === 'annual_review_customer_discussion' && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={() => nav(`/patients/${id}?tab=ai&annualCommunication=${year}`)}>去记录客户沟通结果 →</button>}
-              </div>
+              <div key={item.key} style={{ fontSize: 13, color: item.complete ? '#287A50' : '#9A5B13' }}>{item.complete ? '✓' : '○'} {item.label}{item.waived ? '（已说明豁免）' : ''}</div>
             ))}
           </div>
           <details style={{ marginTop: 8, fontSize: 12, color: '#62776A' }}><summary>已完成 {preparation.checklist.progress.completed} 项</summary><div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{preparation.checklist.items.filter(item => item.complete).map(item => <span key={item.key}>✓ {item.label}</span>)}</div></details>

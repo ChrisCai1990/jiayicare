@@ -70,12 +70,11 @@ test('reviewed tumor concern tags, including lung ground-glass nodules, enter an
   assert.deepEqual(reviewedTumorConcerns(2026, { ...tags, status: 'unreviewed' }).concerns, []);
 });
 
-test('customer discussion must refer to the current confirmed review version', () => {
+test('annual plan preparation uses confirmed review without a second customer discussion gate', () => {
   const confirmedAt = new Date('2026-10-03T05:00:00Z');
   const review = { reviewType: 'annual', annualPlanYear: 2026, requiresCustomerDiscussion: true,
-    conclusion: { status: 'confirmed', confirmedAt }, customerDiscussion: { status: 'no_change', conclusionConfirmedAt: confirmedAt } };
-  const item = () => buildAnnualPlanPreparationChecklist({ year: 2026, caseReviews: [review] }).items.find(row => row.key === 'annual_review_customer_discussion');
-  assert.equal(item().complete, true);
-  review.conclusion.confirmedAt = new Date('2026-10-03T06:00:00Z');
-  assert.equal(item().complete, false);
+    conclusion: { status: 'confirmed', confirmedAt }, customerDiscussion: { status: 'pending' } };
+  const checklist = buildAnnualPlanPreparationChecklist({ year: 2026, caseReviews: [review] });
+  assert.equal(checklist.items.some(row => row.key === 'annual_review_customer_discussion'), false);
+  assert.equal(checklist.items.find(row => row.key === 'annual_comprehensive_review').complete, true);
 });
