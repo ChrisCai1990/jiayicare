@@ -11802,6 +11802,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' })
       .select('title type documentCategory institution hospital checkDate reportItems.institution reportItems.itemId reportItems.name reportItems.value reportItems.status reportItems.examDate reportItems.modality reportItems.findings reportItems.diagnosis reportItems.conclusion')
       .sort({ checkDate: -1, createdAt: -1 }).lean();
+    const previousVisits = await require('../utils/annualArrangementHistory').loadVisits(user._id);
     const auditedGlucose = await require('../utils/annualAuditedGlucose').latestAuditedGlucose(user._id, year);
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
@@ -11990,7 +11991,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
             ? chat([{ role: 'user', content: repair.sourceLinkRepairPrompt(candidate, evidence, missingLinks, message) }],
               { maxTokens: 2000, temperature: 0, jsonMode: true, timeoutMs: 90000 })
             : chat([{ role: 'user', content: repair.annualCorrectionPrompt(candidate, evidence, message) }],
-              { maxTokens: 2500, temperature: 0, jsonMode: true, timeoutMs: 90000 }), candidate => require('../utils/annualArrangementHistory').inheritArrangements(repair.applyAnnualSchedule(candidate, reports), reports));
+              { maxTokens: 2500, temperature: 0, jsonMode: true, timeoutMs: 90000 }), candidate => require('../utils/annualArrangementHistory').inheritArrangements(repair.applyAnnualSchedule(candidate, reports), reports, previousVisits));
         }
         return parsed;
       }
