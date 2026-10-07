@@ -103,6 +103,21 @@ test('source-only correction uses a bounded prompt and still rejects false cover
   })), /有效依据/);
 });
 
+test('source-link repair also corrects an empty annual checkup focus', async () => {
+  const raw = rawPlan(); raw.annual_checkup.focus = '';
+  raw.evidenceCoverage.push({ sourceId: 'review:action:0', status: 'included', reason: '已审检查建议' });
+  const sources = [...evidence, { id: 'review:action:0', content: { instruction: '检查甲' } }];
+  const check = candidate => validateAnnualRaw(candidate, catalog, sources, keys);
+  const prompt = sourceLinkRepairPrompt(raw, sources, ['review:action:0'], '年度体检缺少明确内容');
+  assert.match(prompt, /annual_checkup有模板却缺少focus/);
+  const result = await validateOrRepairAnnual(raw, check, async () => JSON.stringify({
+    annual_checkup: { ...raw.annual_checkup, focus: '检查乙' },
+    sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: ['review:action:0'] }],
+  }));
+  check(result);
+  assert.equal(result.annual_checkup.focus, '检查乙');
+});
+
 
 test('valid corrected candidate is retained when AI appends an unnecessary invalid timing patch', async () => {
   const raw = rawPlan(); raw.annual_checkup.focus = '';
