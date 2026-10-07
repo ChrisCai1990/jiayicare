@@ -11837,11 +11837,14 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
           parsed = await repair.validateOrRepairAnnual(parsed, candidate => {
             consistency.validateAnnualRaw(candidate, availableAnnualFollowUpCatalog, evidence, allowedKeys);
             clinicalRules.validateClinicalRules(candidate, timeline, evidence);
-          }, (candidate, message) => chat([
-            { role: 'user', content: checkedPrompt },
-            { role: 'assistant', content: JSON.stringify(candidate) },
-            { role: 'user', content: repair.correctionInstruction + '\n校验问题：' + message },
-          ], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 120000 }));
+          }, (candidate, message, missingLinks) => missingLinks.length
+            ? chat([{ role: 'user', content: repair.sourceLinkRepairPrompt(candidate, evidence, missingLinks, message) }],
+              { maxTokens: 2000, temperature: 0, jsonMode: true, timeoutMs: 90000 })
+            : chat([
+              { role: 'user', content: checkedPrompt },
+              { role: 'assistant', content: JSON.stringify(candidate) },
+              { role: 'user', content: repair.correctionInstruction + '\n校验问题：' + message },
+            ], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 120000 }));
         }
         return parsed;
       }

@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { normalizeAnnualOutput, validateOrRepairAnnual } = require('../src/utils/annualOutputRepair');
+const { normalizeAnnualOutput, sourceLinkRepairPrompt, validateOrRepairAnnual } = require('../src/utils/annualOutputRepair');
 const { validateAnnualRaw } = require('../src/utils/annualGenerationConsistency');
 const { validateClinicalRules } = require('../src/utils/annualClinicalRules');
 const keys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
@@ -83,6 +83,24 @@ test('repairs omitted source links on existing actions without rewriting their c
     annual_checkup: raw.annual_checkup, evidenceCoverage: raw.evidenceCoverage,
     sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: ['fabricated'] }],
   })), /有效来源|遗漏对应事项/);
+});
+
+test('source-only correction uses a bounded prompt and still rejects false coverage downgrade', async () => {
+  const raw = rawPlan();
+  const source = { id: 'review:action:0', content: { instruction: '检查甲的已审建议' } };
+  raw.evidenceCoverage.push({ sourceId: source.id, status: 'included', reason: '已审建议' });
+  const check = candidate => validateAnnualRaw(candidate, catalog, [...evidence, source], keys);
+  const prompt = sourceLinkRepairPrompt(raw, [...evidence, source], [source.id], '遗漏来源');
+  assert.match(prompt, /review:action:0/);
+  assert.ok(prompt.length < 4000);
+  const result = await validateOrRepairAnnual(raw, check, async () => JSON.stringify({
+    sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: [source.id] }],
+    coverageCorrections: [],
+  }));
+  check(result);
+  await assert.rejects(validateOrRepairAnnual(raw, check, async () => JSON.stringify({
+    sourceLinkCorrections: [], coverageCorrections: [{ sourceId: source.id, status: 'deferred', reason: '回避已审行动' }],
+  })), /有效依据/);
 });
 
 
