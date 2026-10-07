@@ -7,7 +7,7 @@ const AnnualPlan = require('../models/AnnualPlan');
 
 const clean = value => JSON.parse(JSON.stringify(value == null ? null : value));
 
-async function buildContext(user, scopes = []) {
+async function buildContext(user, scopes = [], options = {}) {
   const wanted = new Set(scopes);
   const snapshot = { capturedAt: new Date(), patientId: String(user._id), sources: [] };
   if (wanted.has('basic')) {
@@ -22,6 +22,17 @@ async function buildContext(user, scopes = []) {
     const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' }).sort({ checkDate: -1, createdAt: -1 }).limit(30)
       .select('title reportYear checkDate institution examConclusion reportItems aiSummary').lean();
     snapshot.reports = clean(reports);
+    if (options.annual === true) {
+      const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 5);
+      const today = new Date().toISOString().slice(0,10);
+      const exams = await MedicalReport.find({ user: user._id, audit_status: 'audited', $or: [{ documentCategory: 'physical_exam' }, { documentCategory: null, type: 'annual' }] })
+        .select('title checkDate date institution reportItems.name reportItems.value reportItems.unit reportItems.referenceRange reportItems.status reportItems.conclusion examConclusion').sort({checkDate:-1}).lean();
+      snapshot.annualCheckupHistory = clean(exams.filter(r => {
+        const date = require('./annualReviewEligibility').day(r.checkDate || r.date);
+        return date && date >= cutoff.toISOString().slice(0,10) && date <= today;
+      }));
+      snapshot.annualReviewRule = '近12个月体检用于当前就医及定期复查判断；近5年体检用于趋势及检查完整性评估。既往已完成项目不得重复列为缺项。';
+    }
     snapshot.sources.push(...reports.map(r => `${r.checkDate || r.reportYear || '日期未知'} · ${r.title}`));
   }
   if (wanted.has('healthRecords')) {

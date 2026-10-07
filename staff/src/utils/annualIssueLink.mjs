@@ -10,7 +10,7 @@ export function linkedIssueId(record, targets) {
 }
 
 export function actionTitle(record, fallback) {
-  return String(record?.items || record?.name || record?.standardPlanName || record?.focus || record?.reason || fallback).trim()
+  return String(record?.items || record?.name || record?.reason || record?.focus || record?.standardPlanName || fallback).trim()
 }
 
 // Presentation only: ambiguous actions remain visible in the shared arrangements.

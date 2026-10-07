@@ -151,7 +151,7 @@ test('system annual scheduling replaces AI provenance before validation without 
   const check = value => { validateAnnualRaw(value,catalog,evidence,keys); validateClinicalRules(value,timeline,evidence); };
   assert.throws(() => check(raw), /原检查日期/);
   const result = await validateOrRepairAnnual(raw, check, () => assert.fail('no AI needed'), value => applyAnnualSchedule(value,reports));
-  assert.equal(result.annual_checkup.date, '2027-08-05');
+  assert.equal(result.annual_checkup.date, '2027-09-05');
   assert.equal(result.annual_checkup.timingBaseDate,'2026-09-05');
   assert.equal(result.annual_checkup.timingSourceId,'report:verified:0');
   assert.deepEqual(result.checkup_completion,raw.checkup_completion);

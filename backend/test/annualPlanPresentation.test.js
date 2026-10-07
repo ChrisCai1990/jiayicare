@@ -8,7 +8,7 @@ test('年度方案生成统一的客户展示卡片字段', () => {
     frequency: '单次', customerAction: '空腹完成复查', serviceMode: 'single', serviceType: 'proxy_booking', department: '心内科',
   }] } });
   assert.equal(items.length, 1);
-  assert.equal(items[0].category, '定期复查');
+  assert.equal(items[0].category, '需要定期复查');
   assert.equal(items[0].evidence, '2026-05-20体检报告');
   assert.equal(items[0].service.modeLabel, '单项服务');
   assert.equal(items[0].service.typeLabel, '代约/代办');

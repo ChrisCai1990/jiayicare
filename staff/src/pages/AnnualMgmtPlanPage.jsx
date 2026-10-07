@@ -1,3 +1,4 @@
+import nutritionMetricRules from '../../../shared/nutritionComparisonMetrics.cjs'
 import ProfessionalAssessmentFields from '../components/ProfessionalAssessmentFields'
 import DateField from '../../../shared/DateField.jsx'
 import '../components/ReportFollowUpDrafts.css'
@@ -51,7 +52,7 @@ const SERVICE_MODE_FIELDS = [
 // ── 板块定义（key → { name, icon, fields }）──────────────────────────
 const MODULE_DEFS = {
   medical_treatment: {
-    name: '医疗问题解决', icon: '🏥', multi: true, summaryKey: 'hospital', summaryLabel: '就医医院',
+    name: '需要安排就医', icon: '🏥', multi: true, summaryKey: 'hospital', summaryLabel: '就医医院',
     fields: [
       { key: 'standardPlanName', label: '来源标准模板', type: 'text' },
       { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
@@ -83,7 +84,7 @@ const MODULE_DEFS = {
     ],
   },
   abnormal_followup: {
-    name: '异常复查提醒', icon: '🔔', multi: true, summaryKey: 'items', summaryLabel: '复查项目',
+    name: '需要定期复查', icon: '🔔', multi: true, summaryKey: 'items', summaryLabel: '复查项目',
     fields: [
       { key: 'standardPlanName', label: '来源标准模板', type: 'text' },
       { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
@@ -207,7 +208,7 @@ const MODULE_DEFS = {
     ],
   },
   checkup_completion: {
-    name: '体检完善', icon: '🧾', multi: true, summaryKey: 'items', summaryLabel: '待完善项目',
+    name: '需要完善体检', icon: '🧾', multi: true, summaryKey: 'items', summaryLabel: '待完善项目',
     fields: [
       { key: 'standardPlanName', label: '来源标准模板', type: 'text' },
       { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
@@ -571,8 +572,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }
 
   const handleNutritionMetricChange = metrics => {
-    if (!pushedAt) { handleModuleChange('nutrition_assessment', 'nutritionComparisonMetrics', metrics); return }
-    setModuleData(prev => ({ ...prev, nutrition_assessment: { ...(prev.nutrition_assessment || {}), nutritionComparisonMetrics: metrics } }))
+    if (!pushedAt) { setModuleData(prev => ({ ...prev, nutrition_assessment: { ...(prev.nutrition_assessment || {}), nutritionComparisonMetrics: metrics, metricsManuallyAdjusted: true } })); setDirty(true); return }
+    setModuleData(prev => ({ ...prev, nutrition_assessment: { ...(prev.nutrition_assessment || {}), nutritionComparisonMetrics: metrics, metricsManuallyAdjusted: true } }))
     setMetricSelectionDirty(true)
   }
 
@@ -637,7 +638,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
         const servicePlanCode = annualTemplateCode(planType, selectedTemplate)
-        const annualModuleData = { ...moduleData, nutrition_assessment: { ...(moduleData.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: moduleData.nutrition_assessment?.nutritionComparisonMetrics ?? ['体重'] } }
+        const annualModuleData = { ...moduleData, nutrition_assessment: { ...(moduleData.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: moduleData.nutrition_assessment?.nutritionComparisonMetrics ?? nutritionMetricRules.metricsFromTargets(moduleData.management_targets?.records) } }
         const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData: annualModuleData, phaseAssessmentFrequency, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
@@ -700,7 +701,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           if (key === 'templateNodes') return
           if (!allowedKeys.includes(key)) return
           if (val && (val.records?.length > 0 || val.enabled)) {
-            merged[key] = val
+            const oldRows = prev[key]?.records || []
+            const identity = row => String(row.items || row.reason || row.focus || '').trim()
+            const retain = row => {
+              const matches = oldRows.filter(old => identity(old) && identity(old) === identity(row))
+              const old = matches.length === 1 ? matches[0] : key === 'annual_checkup' ? prev[key] : null
+              if (!old) return row
+              const next = { ...row }
+              for (const field of ['hospital', 'institution', 'department', 'expert', 'order_dept', 'order_expert']) if (old[field]) next[field] = old[field]
+              return next
+            }
+            merged[key] = Array.isArray(val.records) ? { ...val, records: val.records.map(retain) } : retain(val)
           }
         })
         const personalized = (aiData.templateNodes || [])
@@ -717,9 +728,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           }))
         if (personalized.length) merged.personalized_followups = { records: personalized }
         const targets = merged.management_targets?.records || []
+        merged.nutrition_assessment = { ...(prev.nutrition_assessment || {}), enabled: prev.nutrition_assessment?.enabled !== false, nutritionComparisonMetrics: prev.nutrition_assessment?.metricsManuallyAdjusted ? (prev.nutrition_assessment.nutritionComparisonMetrics || []) : [...new Set([...(prev.nutrition_assessment?.nutritionComparisonMetrics || []), ...nutritionMetricRules.metricsFromTargets(targets)])] }
         Object.keys(merged).forEach(key => {
           if (!Array.isArray(merged[key]?.records) || key === 'management_targets') return
-          merged[key] = { ...merged[key], records: merged[key].records.map(record => ({ ...record, issueId: linkedIssueId(record, targets) || record.issueId || '' })) }
+          merged[key] = { ...merged[key], records: merged[key].records.map(record => { const issueId = displayIssueId(record, targets) || record.issueId || ''; const target = targets.find((row, index) => targetIssueId(row, index) === issueId); return { ...record, issueId, ...(target ? { goal: target.goal } : {}) } }) }
         })
         return merged
       })
@@ -893,6 +905,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const renderPlanAction = action => {
     const entry = visibleModuleEntries.find(item => item.key === action.key)
     const def = annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name, patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name, currentPlanId, dirty)
+    if (action.issueId) def.fields = def.fields.filter(field => field.key !== 'goal' && (field.key !== 'completionStandard' || action.record.completionStandard))
     const changes = pendingExecutionChanges.filter(change => change.key === action.key && (!change.after?.title || change.after.title === (action.record.items || action.record.name || action.record.department || action.record.standardPlanName)))
     return <div key={`${action.key}:${action.index}`} style={{ marginTop: 8 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 4 }}>{action.date || '时间待确认'}{action.record.hospital ? ` · ${action.record.hospital}` : ''}{action.record.department ? ` · ${action.record.department}` : ''}</div>

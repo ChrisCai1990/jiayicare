@@ -5,7 +5,7 @@ import CheckupPreparationReadiness from './CheckupPreparationReadiness'
 
 export const isAnnualCheckupPreparation = task => task?.sourceType === 'annual_service'
   && task.formData?.annualCheckupPreparation?.version === 1
-  && ['annual_checkup_preparation:familyDoctor', 'annual_checkup_preparation:healthPlanner'].includes(task.workflowKey)
+  && ['annual_checkup_preparation:familyDoctor', 'annual_checkup_preparation:healthPlanner', 'annual_checkup_preparation:healthManager'].includes(task.workflowKey)
 
 export default function AnnualCheckupPreparationCard({ task, staff, onSaved }) {
   const nav = useNavigate()
@@ -44,15 +44,17 @@ export default function AnnualCheckupPreparationCard({ task, staff, onSaved }) {
   if (!canOpen) return null
   const current = data?.task
   const meta = current?.formData?.annualCheckupPreparation
+  const supervision = role === 'healthPlanner' && meta?.scheduleVersion === 2
   const editable = current && ['planned', 'in_progress', 'missed'].includes(current.status) && !current.isBlocked
   const change = (key, value) => setForm(previous => ({ ...previous, [key]: value }))
   const openPlan = () => nav(`/plans/${form.healthPlanId}`, { state: { returnTo: `/patients/${task.patientId?._id || task.patientId}?tab=followups` } })
   return <section style={{ border: '1px solid #B2D8C7', borderRadius: 8, padding: 12, background: '#F6FBF8', fontSize: 13 }}>
-    <b>年度体检准备 · {role === 'familyDoctor' ? '健康顾问' : '健康规划师'}</b>
+    <b>年度体检准备 · {role === 'familyDoctor' ? '健康顾问' : role === 'healthManager' ? '健管专员' : '健康规划师'}</b>
     {error && <p role="alert" style={{ color: '#DC3545' }}>{error}</p>}
     {busy && !current && <p>正在读取…</p>}
     {current && <>
-      <p>计划体检日期：{meta.targetDate}{meta.latePreparation ? '（准备时间不足14天）' : ''}</p>
+      <p>计划体检日期：{meta.targetDate}{meta.latePreparation ? `（准备时间不足${meta.leadDays || 14}天）` : ''}</p>
+      {data.questionnaire && <details><summary>体检前问卷 · {data.questionnaire.submittedAt ? '已填写' : '待客户填写，健管专员跟进'}</summary>{data.questionnaire.questions.map((q,i) => <p key={i}>{q.text}：{typeof q.answer === 'object' ? JSON.stringify(q.answer) : String(q.answer)}</p>)}</details>}
       <CheckupPreparationReadiness task={current} staff={staff} />
       {current.status === 'completed' && <p>已保存实际准备结果，无需再次确认完成。准备完成不等于预约或体检已完成。</p>}
       {current.status === 'cancelled' && <p>此准备任务已取消，仅保留记录。</p>}
@@ -82,7 +84,7 @@ export default function AnnualCheckupPreparationCard({ task, staff, onSaved }) {
           }}>建立并打开准备草稿</button>
         </>}
         {form.healthPlanId && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={openPlan}>打开所选体检方案</button>}
-      </div> : <div style={{ display: 'grid', gap: 8 }}>
+      </div> : supervision ? <label>督办进度与异常处理<textarea className="form-input" value={form.note} maxLength={2000} disabled={busy || !editable} onChange={e => change('note', e.target.value)} /></label> : <div style={{ display: 'grid', gap: 8 }}>
         <label>拟安排体检机构<input className="form-input" value={form.institution} maxLength={200} disabled={busy || !editable} onChange={e => change('institution', e.target.value)} /></label>
         <label>与客户及机构沟通的实际结果<textarea className="form-input" value={form.note} maxLength={2000} disabled={busy || !editable} onChange={e => change('note', e.target.value)} /></label>
         <label><input type="checkbox" checked={form.customerConfirmed} disabled={busy || !editable} onChange={e => change('customerConfirmed', e.target.checked)} /> 已与客户确认该日期可行</label>
@@ -90,7 +92,7 @@ export default function AnnualCheckupPreparationCard({ task, staff, onSaved }) {
         <div>这是资源准备记录，不是正式预约。日期变化需先核对年度排期，不在此处直接改期。</div>
       </div>}
       {editable && <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} disabled={busy || (role === 'familyDoctor'
-        ? !form.healthPlanId : !form.institution.trim() || !form.note.trim() || !form.customerConfirmed || !form.resourceConfirmed)} onClick={async () => {
+        ? !form.healthPlanId : supervision ? !form.note.trim() : !form.institution.trim() || !form.note.trim() || !form.customerConfirmed || !form.resourceConfirmed)} onClick={async () => {
         setBusy(true); setError('')
         try {
           const res = await staffAPI.saveCheckupPreparation(task._id, { ...form, date: meta.targetDate, updatedAt: current.updatedAt })

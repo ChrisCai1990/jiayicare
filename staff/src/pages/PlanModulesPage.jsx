@@ -122,7 +122,7 @@ function medicalAssistModuleDefs(content = {}, planTitle = '', assignedReviewerI
         { key: 'reviewerId', label: '方案审核医生（健康顾问）', type: 'staff-select', roles: ['familyDoctor'], disabled: !!assignedReviewerId },
         { key: 'visitDate', label: '体检日期', type: 'date' },
         { key: 'serviceTime', label: '集合/签到时间', type: 'text', placeholder: '如：08:00前或上午' },
-        { key: 'bookingPlannerId', label: '体检预约负责人（健康规划师）', type: 'staff-select', roles: ['healthPlanner'] },
+        { key: 'bookingPlannerId', label: content.annualWorkflowVersion === 2 ? '体检督办负责人（健康规划师；预约由健管专员办理）' : '体检预约负责人（健康规划师）', type: 'staff-select', roles: ['healthPlanner'] },
         { key: 'escortStaffId', label: '陪同人员', type: 'staff-select', roles: ['medicalAssistant'] },
       ],
     },
@@ -434,7 +434,7 @@ export default function PlanModulesPage() {
       const checkupService = isCheckupMedicalAssist(plan.content || {}, plan.title)
       const outpatientService = isOutpatientOneStop(plan.content || {}, plan.title)
       if (!visit.visitDate) { toast('请选择服务日期'); return }
-      if (checkupService && !visit.bookingPlannerId) { toast('请选择体检预约负责人（健康规划师）'); return }
+      if (checkupService && !visit.bookingPlannerId) { toast(plan.content?.annualWorkflowVersion === 2 ? '请选择体检督办负责人（健康规划师）' : '请选择体检预约负责人（健康规划师）'); return }
       if (checkupService && !visit.escortStaffId) { toast('请选择陪同人员'); return }
       if (!checkupService && !outpatientService && !visit.staffId) { toast('请选择就医专员'); return }
       if (checkupService && !visit.reviewerId) { toast('客户尚未归属健康顾问，请先选择方案审核医生'); return }

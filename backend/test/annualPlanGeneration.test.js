@@ -2,9 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { nextAnnualCheckupDate, hepatitisBAllNegative, conciseTitle } = require('../src/utils/annualPlanGeneration');
 
-test('annual checkup is scheduled eleven months after the latest exam', () => {
-  assert.equal(nextAnnualCheckupDate([{ checkDate: '2025-09-20' }, { checkDate: '2024-12-01' }]), '2026-08-20');
-  assert.equal(nextAnnualCheckupDate([{ checkDate: '2025-03-31' }]), '2026-02-28');
+test('annual checkup is scheduled twelve months after the latest exam', () => {
+  assert.equal(nextAnnualCheckupDate([{ checkDate: '2025-09-20' }, { checkDate: '2024-12-01' }]), '2026-09-20');
+  assert.equal(nextAnnualCheckupDate([{ checkDate: '2024-02-29' }]), '2025-02-28');
 });
 
 test('detects all five hepatitis B markers as negative', () => {

@@ -501,6 +501,10 @@ router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) 
     if (!selectedTemplate && settings?.content?.allowCustomTopic === false) return res.status(400).json({ success: false, message: '请选择专项研判主题' });
     const title = String(req.body.title || '').trim();
     if (!title) return res.status(400).json({ success: false, message: '请输入研判主题' });
+    if (req.body.reviewType === 'annual') {
+      const eligibility = await require('../utils/annualReviewEligibility').check(user._id);
+      if (!eligibility.allowed) return res.status(409).json({ success: false, code: 'RECENT_CHECKUP_REQUIRED', message: eligibility.message });
+    }
     let proposedTargets;
     try { proposedTargets = require('../utils/caseReviewManagementTargets').normalizeTargets(req.body.managementTargets || []); }
     catch (error) { return res.status(400).json({ success: false, message: error.message }); }
@@ -529,6 +533,10 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
     if (topic.annualPlanYear && ['title', 'description', 'reviewType', 'contextScopes', 'status'].some(key => req.body[key] !== undefined)) return res.status(409).json({ success: false, message: '年度综合研判固定议题和资料范围不可修改' });
     if (req.body.title !== undefined) topic.title = String(req.body.title).trim();
     if (req.body.description !== undefined) topic.description = String(req.body.description).trim();
+    if (req.body.reviewType === 'annual' && topic.reviewType !== 'annual') {
+      const eligibility = await require('../utils/annualReviewEligibility').check(user._id);
+      if (!eligibility.allowed) return res.status(409).json({ success: false, code: 'RECENT_CHECKUP_REQUIRED', message: eligibility.message });
+    }
     if (req.body.reviewType !== undefined && VALID_REVIEW_TYPES.has(req.body.reviewType)) topic.reviewType = req.body.reviewType;
     if (req.body.contextScopes !== undefined) topic.contextScopes = sanitizeScopes(req.body.contextScopes);
     if (req.body.managementTargets !== undefined) {
@@ -607,7 +615,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
     const completion = finishSend(AiCaseReview, topic, async () => {
       const message = topic.messages.find(item => item.role === 'staff' && item.requestId === topic.generation.requestId);
       const { content, attachments } = message;
-      const snapshot = await buildContext(user, topic.contextScopes);
+      const snapshot = await buildContext(user, topic.contextScopes, { annual: topic.reviewType === 'annual' });
       if (topic.reviewType === 'annual' && snapshot.aiAnalysis) {
         const approved = approvedDoctorRecord(user, topic.annualPlanYear);
         snapshot.aiAnalysis = { approvedHealthSummary: approved ? { year: topic.annualPlanYear,
@@ -696,6 +704,10 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId'
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
+    if (topic.reviewType === 'annual') {
+      const eligibility = await require('../utils/annualReviewEligibility').check(user._id);
+      if (!eligibility.allowed) return res.status(409).json({ success: false, code: 'RECENT_CHECKUP_REQUIRED', message: eligibility.message });
+    }
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     const message = topic.messages.id(req.params.messageId);
     if (!message) return res.status(404).json({ success: false, message: '讨论记录不存在' });

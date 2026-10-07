@@ -12,7 +12,7 @@ test('单项服务只生成健康规划师服务需求单，不提前创建跨�
   assert.equal(rows.length, 1);
   assert.equal(rows[0].assignedTo, 'planner-1');
   assert.equal(rows[0].stage, 'service_request');
-  assert.match(rows[0].content, /选择已经跑通的服务流程/);
+  assert.match(rows[0].content, /预约和随访由健管专员办理/);
 });
 
 test('全托管先形成服务需求单并保留原始管理事项快照', () => {

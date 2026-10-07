@@ -1,12 +1,13 @@
 const hasWaiver = (preparation, key) => (preparation?.waivers || []).some(item => item.key === key && String(item.reason || '').trim());
 
-function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, year = preparation?.year, auditedReportCount = 0, activeMedicationCount = 0, activeSupplementCount = 0, assessments = [], continuity = null, caseReviews }) {
+function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, year = preparation?.year, auditedReportCount = 0, activeMedicationCount = 0, activeSupplementCount = 0, assessments = [], continuity = null, caseReviews, recentCheckup }) {
   const items = [];
   const add = (key, label, complete, options = {}) => {
     const waived = !complete && options.waivable === true && hasWaiver(preparation, key);
     items.push({ key, label, complete: !!complete || waived, waived, blocking: options.blocking !== false, detail: options.detail || '' });
   };
 
+  if (recentCheckup) add('recent_checkup', '近12个月内有已审核体检资料', recentCheckup.allowed, { detail: recentCheckup.allowed ? `最近体检：${recentCheckup.latest.date}` : recentCheckup.message });
   add('onboarding', '基础健康档案已完成', patient.onboardingCompleted === true);
   add('family_doctor', '已分配健康顾问', !!patient.assignedFamilyDoctor);
   add('health_manager', '已分配健管专员', !!patient.assignedHealthManager);

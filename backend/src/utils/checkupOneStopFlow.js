@@ -60,7 +60,7 @@ async function ensureCheckupTasks(servicePlan) {
   const chain = ['plan_design', 'booking', 'onsite', 'report_collection', 'result_review', 'final_acceptance']
   for (const scheme of schemes.filter(item => !conditionalIds.has(String(item._id)) && chain.includes(stageForScheme(item)))) {
     const stage = stageForScheme(scheme)
-    const assignedTo = assignees[scheme.executorRole]
+    const assignedTo = stage === 'booking' && c.annualWorkflowVersion === 2 ? patient?.assignedHealthManager : assignees[scheme.executorRole]
     if (!assignedTo) continue
     const taskRole = scheme.workflowTaskRole || 'executor'
     const date = stage === 'onsite' ? serviceDate

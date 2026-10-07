@@ -8,7 +8,7 @@ function preparationRole(task) {
   const data = task?.formData?.annualCheckupPreparation;
   const role = data?.role;
   return task?.sourceType === 'annual_service' && task.sourceAnnualPlanId && data?.version === 1
-    && ['familyDoctor', 'healthPlanner'].includes(role)
+    && ['familyDoctor', 'healthPlanner', 'healthManager'].includes(role)
     && task.workflowKey === `annual_checkup_preparation:${role}`
     && new RegExp(`^annual_checkup:\\d{4}-\\d{2}-\\d{2}:prepare:${role}$`).test(task.sourceScheduleKey || '') ? role : '';
 }
@@ -72,6 +72,11 @@ async function savePreparationEvidence(task, annual, input, actor, models, now =
     evidence = { healthPlanId: idOf(plan._id), title: plan.title || '', selectedBy: actor._id, selectedAt: now };
     ready = checkupPlanReady(plan, task, annual);
     if (ready) evidence.review = { by: plan.content.reviewedBy || plan.content.aiApprovedBy, at: plan.content.reviewedAt || plan.content.aiApprovedAt, publishedAt: plan.pushedAt };
+  } else if (role === 'healthPlanner' && task.formData.annualCheckupPreparation.scheduleVersion === 2) {
+    const note = String(input.note || '').trim();
+    if (!note || note.length > 2000) throw fail('请记录实际督办进度或异常处理结果', 400);
+    evidence = { note, recordedBy: actor._id, recordedAt: now };
+    ready = true;
   } else {
     evidence = { ...plannerEvidence(input, task, now), recordedBy: actor._id, recordedAt: now };
     ready = true;
@@ -81,7 +86,7 @@ async function savePreparationEvidence(task, annual, input, actor, models, now =
     status: ready ? 'completed' : 'in_progress',
     completedAt: ready ? now : null, completedBy: ready ? 'staff' : null,
     executedContent: role === 'familyDoctor' ? `已关联本次体检方案：${evidence.title}${ready ? '（已审核发布）' : '（等待原方案审核发布）'}`
-      : `体检时间：${evidence.date}；机构：${evidence.institution}；沟通结果：${evidence.note}`,
+      : role === 'healthPlanner' && task.formData.annualCheckupPreparation.scheduleVersion === 2 ? `督办记录：${evidence.note}` : `体检时间：${evidence.date}；机构：${evidence.institution}；沟通结果：${evidence.note}`,
   }, $push: { 'formData.annualCheckupPreparation.history': {
     at: now, by: actor._id, event: role === 'familyDoctor' ? 'plan_selected' : 'resources_recorded', evidence,
   } } });

@@ -14,6 +14,7 @@ const pushRecordSchema = new mongoose.Schema({
   knowledgeId:     { type: mongoose.Schema.Types.ObjectId, ref: 'KnowledgeItem', default: null },
   planId:          { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan',    default: null },
   questionnaireId: { type: mongoose.Schema.Types.ObjectId, ref: 'DynamicQuestionnaire', default: null },
+  sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceOrderId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
   // 内容摘要（用于列表展示）

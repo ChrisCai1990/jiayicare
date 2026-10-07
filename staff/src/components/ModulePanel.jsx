@@ -20,7 +20,7 @@ export function NutritionComparisonMetricPicker({ value, onChange, disabled = fa
     setCustom('')
   }
   return <div style={{ paddingTop: 5 }}>
-    <div style={{ fontSize: 12, color: '#62776A', marginBottom: 8 }}>勾选本年度营养干预前后需要对比的项目；具体基线和阶段目标由营养师核实。未选时仍保留骨骼肌、体脂率和内脏脂肪。</div>
+    <div style={{ fontSize: 12, color: '#62776A', marginBottom: 8 }}>研判中的营养相关指标自动带入，可按需调整；具体基线和个体目标由营养师核实。未选时仍保留骨骼肌、体脂率和内脏脂肪。</div>
     {[['客观数据', OBJECTIVE_METRICS.map(([name, unit]) => [name, unit])], ['主观感受', SUBJECTIVE_METRICS.map(name => [name, ''])]].map(([group, metrics]) => <div key={group} style={{ marginBottom: 9 }}>
       <strong style={{ display: 'block', fontSize: 13, marginBottom: 5 }}>{group}</strong>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px 14px' }}>

@@ -89,6 +89,7 @@ async function ensureStaffInitiatedCheckupService({ patient, staff, productId, d
       workflowModuleDecisions: modules.filter(item => item.mode === 'conditional')
         .map(item => ({ ...item, decision: 'pending', decidedAt: null, decidedBy: null })),
       reviewerId: patient.assignedFamilyDoctor || (staff.role === 'familyDoctor' ? staff._id : null),
+      annualWorkflowVersion: 2,
       bookingPlannerId: supervisorId,
       escortStaffId: patient.assignedMedicalAssistant || null,
       notes: product.serviceWorkflow?.notes || '',

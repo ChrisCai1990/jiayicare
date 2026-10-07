@@ -1,6 +1,6 @@
 const MODULE_NAME = {
-  medical_treatment: '安排就医', specialist_collab: '全专联合会诊', checkup_completion: '完善检查',
-  abnormal_followup: '定期复查', vaccine: '疫苗接种', monitoring: '家庭健康监测', lifestyle: '生活方式干预',
+  medical_treatment: '需要安排就医', specialist_collab: '全专联合会诊', checkup_completion: '需要完善体检',
+  abnormal_followup: '需要定期复查', vaccine: '疫苗接种', monitoring: '家庭健康监测', lifestyle: '生活方式干预',
   medication: '用药管理', supplement: '营养素管理', nutrition_intervention: '营养干预', nutrition_assessment: '营养评估',
   annual_checkup: '年度体检', functional_medicine: '功能医学检测', quarterly_eval: '阶段评估', personalized_followups: '个性化管理', management_targets: '年度管理目标',
 };
@@ -43,7 +43,7 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   return items;
 }
 
-const internalFields = new Set(['notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceFocus', 'nutritionRelevant']);
+const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjusted', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceFocus', 'nutritionRelevant']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.map(customerModuleData);

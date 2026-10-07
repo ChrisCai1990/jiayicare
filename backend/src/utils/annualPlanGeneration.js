@@ -10,15 +10,13 @@ function parseReportDate(value) {
 function formatDate(date) { return date.toISOString().slice(0, 10); }
 
 function nextAnnualCheckupDate(reports = []) {
-  const dates = reports.flatMap(report => [
-    parseReportDate(report.checkDate),
-    ...(report.reportItems || []).map(item => parseReportDate(effectiveItemDate(report, item))),
-  ]).filter(Boolean);
+  const exams = reports.filter(report => report.documentCategory === 'physical_exam' || (!report.documentCategory && (!report.type || report.type === 'annual')));
+  const dates = exams.map(report => parseReportDate(report.checkDate)).filter(Boolean);
   if (!dates.length) return '';
   const latest = new Date(Math.max(...dates.map(date => date.getTime())));
   const originalDay = latest.getUTCDate();
   latest.setUTCDate(1);
-  latest.setUTCMonth(latest.getUTCMonth() + 11);
+  latest.setUTCMonth(latest.getUTCMonth() + 12);
   const lastDayOfTargetMonth = new Date(Date.UTC(latest.getUTCFullYear(), latest.getUTCMonth() + 1, 0)).getUTCDate();
   latest.setUTCDate(Math.min(originalDay, lastDayOfTargetMonth));
   return formatDate(latest);

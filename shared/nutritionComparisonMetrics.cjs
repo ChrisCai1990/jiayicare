@@ -28,10 +28,18 @@ function normalizeMetrics(value) {
   return result;
 }
 
+// Extract only metrics explicitly mentioned by confirmed nutrition-related goals.
+function metricsFromTargets(targets = []) {
+  const text = targets.filter(r => r.nutritionRelevant === true).map(r => `${r.goal || ''} ${r.focus || ''}`).join('；');
+  const selected = COMMON_METRICS.filter(name => text.includes(name));
+  const aliases = [[/HbA1c|糖化/i,'糖化血红蛋白'],[/LDL[-－]?C/i,'低密度脂蛋白'],[/HDL[-－]?C/i,'高密度脂蛋白'],[/Lp[-－]?PLA2/i,'脂蛋白磷脂酶A2']];
+  aliases.forEach(([pattern,name]) => { if (pattern.test(text)) selected.push(name); });
+  return normalizeMetrics([...new Set(selected)]);
+}
 function selectedFromAnnualPlan(plan) {
   const standard = plan?.moduleData?.nutrition_assessment;
   if (standard && standard.enabled !== false) {
-    try { return normalizeMetrics(standard.nutritionComparisonMetrics); } catch { return []; }
+    try { return standard.nutritionComparisonMetrics === undefined ? metricsFromTargets(plan?.moduleData?.management_targets?.records) : normalizeMetrics(standard.nutritionComparisonMetrics); } catch { return []; }
   }
   const records = plan?.moduleData?.personalized_followups?.enabled === false
     ? [] : plan?.moduleData?.personalized_followups?.records || [];
@@ -41,4 +49,4 @@ function selectedFromAnnualPlan(plan) {
   }))].slice(0, MAX_METRICS);
 }
 
-module.exports = { OBJECTIVE_METRICS, SUBJECTIVE_METRICS, COMMON_METRICS, MAX_METRICS, normalizeMetrics, selectedFromAnnualPlan };
+module.exports = { OBJECTIVE_METRICS, SUBJECTIVE_METRICS, COMMON_METRICS, MAX_METRICS, normalizeMetrics, metricsFromTargets, selectedFromAnnualPlan };

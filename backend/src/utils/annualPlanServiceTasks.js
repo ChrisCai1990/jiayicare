@@ -15,7 +15,9 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
   const add = (moduleKey, record, index, date, fallback) => {
     if (record.directNutritionAssessment === true) return;
     const mode = record.serviceMode || 'reminder';
-    if (!['single', 'managed'].includes(mode)) return;
+    if (moduleKey === 'annual_checkup' && mode === 'reminder' && plan.checkupPreparationVersion === 2 && plan.checkupPreparationAutoConfirmedAt) return; // 体检准备已有同项目规划师督办，不重复派发。
+    const supervisionOnly = plan.checkupPreparationVersion === 2 && ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'annual_checkup'].includes(moduleKey) && mode === 'reminder';
+    if (!['single', 'managed'].includes(mode) && !supervisionOnly) return;
     const executionDate = validDate(date) || new Date(plan.confirmedAt || Date.now());
     const identityDate = validDate(sourceDate(plan, moduleKey, index, FIELDS[moduleKey], date)) || executionDate;
     const label = labelOf(record, fallback);
@@ -23,15 +25,15 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
     rows.push({
       key: `service-request:${moduleKey}:${index}:${identityDate.toISOString().slice(0, 10)}`,
       date: executionDate, assignedTo: (moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? patient.assignedHealthManager : patient.assignedHealthPlanner) || null,
-      stage: 'service_request', taskRole: 'supervisor', theme: `服务需求待安排 · ${label}`,
+      stage: supervisionOnly ? 'service_supervision' : 'service_request', taskRole: 'supervisor', theme: `${supervisionOnly ? '服务进度督办' : '服务需求待安排'} · ${label}`,
       content: [
-        `服务模式：${mode === 'managed' ? '全托管' : '单项服务'}`, record.serviceType && `服务类型：${record.serviceType}`,
+        `服务模式：${supervisionOnly ? '预约与检查进度督办' : mode === 'managed' ? '全托管' : '单项服务'}`, record.serviceType && `服务类型：${record.serviceType}`,
         mode === 'managed' && record.managedServiceType && `一站式类型：${record.managedServiceType === 'checkup' ? '体检一站式' : '门诊一站式'}`,
         `管理事项：${label}`, evidence && `设置依据：${evidence}`,
         record.goal && `管理目标：${record.goal}`, record.completionStandard && `完成标准：${record.completionStandard}`,
         record.customerAction && `客户行动：${record.customerAction}`,
         record.precautions && `注意事项：${record.precautions}`,
-        moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? '处理要求：健管专员跟进并安排所选服务；营养评估通过营养服务流程确认营养师及评估日期，再关联实际服务。' : '处理要求：健康规划师核对信息后，选择已经跑通的服务流程并安排后续岗位流转。',
+        moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? '处理要求：健管专员跟进并安排所选服务；营养评估通过营养服务流程确认营养师及评估日期，再关联实际服务。' : '处理要求：健康规划师督办进度、协调资源及处理异常；预约和随访由健管专员办理，代办、代诊、陪诊按需转交就医协助团队。',
       ].filter(Boolean).join('\n'),
       formData: { serviceRequest: { moduleKey, recordIndex: index, mode, serviceType: record.serviceType || '', itemSnapshot: record } },
     });
@@ -77,7 +79,7 @@ async function syncAnnualPlanServiceTasks(plan) {
     else { await FollowUp.create({ ...payload, sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: row.key }); created++; }
   }
   const desired = (plan.continuitySource?.previousPlanId ? rows : assignableRows).map(row => row.key);
-  await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', workflowKey: 'service_request', annualDispatch: null, careFlowId: null, sourceScheduleKey: { $nin: desired }, status: { $in: ['planned', 'in_progress'] }, ...(plan.continuitySource?.previousPlanId ? { 'serviceTracking.linkId': null } : {}) }, { $set: { status: 'cancelled', cancelReason: '年度方案已调整或改为仅提醒' } });
+  await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', workflowKey: { $in: ['service_request', 'service_supervision'] }, annualDispatch: null, careFlowId: null, sourceScheduleKey: { $nin: desired }, status: { $in: ['planned', 'in_progress'] }, ...(plan.continuitySource?.previousPlanId ? { 'serviceTracking.linkId': null } : {}) }, { $set: { status: 'cancelled', cancelReason: '年度方案已调整或改为仅提醒' } });
   return { created, updated, warnings: rows.filter(row=>!row.assignedTo).map(row => `${row.theme}尚未绑定对应负责人`) };
 }
 

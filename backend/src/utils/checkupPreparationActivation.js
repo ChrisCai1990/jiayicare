@@ -87,7 +87,7 @@ function createActivationService(models, readinessFor, validateTarget) {
           return candidates[0];
         }
         const design = select('plan_design', patient?.assignedFamilyDoctor);
-        const booking = select('booking', patient?.assignedHealthPlanner);
+        const booking = select('booking', service.content?.annualWorkflowVersion === 2 ? patient?.assignedHealthManager : patient?.assignedHealthPlanner);
         if (idOf(booking.dependsOnTaskId) !== idOf(design._id)) throw fail('原预约前置关系不符，请核对流程');
         if (design.dependsOnTaskId) {
           const parent = await FollowUp.findById(design.dependsOnTaskId).lean();

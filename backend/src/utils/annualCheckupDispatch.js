@@ -45,6 +45,10 @@ function createCheckupDispatch({ AnnualPlan, User, FollowUp }, gateFor, isEnable
         issues.push({ role: 'healthPlanner', code: 'dispatch_failed', message: '体检准备派发未完成，请核对索引、岗位及服务期；系统每日重试' })
       }
     }
+    if (result.state === 'due' && !issues.some(x => x.code === 'dispatch_failed')) {
+      try { const warning = await require('./annualCheckupQuestionnaire').sync(plan, patient, result.tasks); if(warning) issues.push(warning); }
+      catch { issues.push({ role: 'familyDoctor', code: 'questionnaire_failed', message: '体检问卷推送未完成，系统将重试' }); }
+    }
     await AnnualPlan.updateOne({ _id: plan._id, updatedAt: plan.updatedAt, checkupPreparationAutoConfirmedAt: plan.checkupPreparationAutoConfirmedAt },
       { $set: { checkupPreparationDispatch: { state: result.state, issues, checkedAt: now } } })
     return { created, issues }

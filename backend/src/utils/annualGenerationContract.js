@@ -31,7 +31,7 @@ function annualGenerationPrompt(prompt, catalog, evidence, allowedKeys) {
     + '\n【必须逐项核对的来源】' + JSON.stringify(evidence)
     + '\nreport_issue开头的来源是顾问已确认的报告问题及建议，同样属于年度方案主题范围，不得因主评估未提及而忽略。逐项与现有建议合并去重；顾问确认建议为准，原文时间要求须保留。仅待核实/待评估的问题不能直接升级为治疗或检查安排。每个问题均须在evidenceCoverage中记录纳入或暂缓及具体原因。'
     + '\n每个来源在evidenceCoverage中恰好出现一次，status仅限included/deferred/not_applicable；reason必须具体。included必须有事项的sourceIds引用；存在矛盾或信息不足时deferred交顾问确认，不自行编造。项目名称简短。'
-    + '\n日期为建议就医/复查日期，不是已预约：优先承接已确认研判目标中的复评期限和明确安排；其他事项以原检查日期timingBaseDate（YYYY-MM-DD）及有依据的timingIntervalMonths换算具体visit_time/time/date（YYYY-MM-DD）。timingReason解释日期依据及不确定性，供健康顾问审核。无法可靠确定时日期字段留空字符串，不得填“待确认”或捏造检查日期。预约安排日期由系统提前7天计算，不由AI重复生成。科室可给初步建议；顾问讨论中明确的对应意向医院可带入hospital，但不表示已预约，未明确则留空。focus必须为逐行文本，不得为对象。';
+    + '\n日期为建议就医/复查日期，不是已预约：优先承接已确认研判目标中的复评期限和明确安排；其他事项以原检查日期timingBaseDate（YYYY-MM-DD）及有依据的timingIntervalMonths换算具体visit_time/time/date（YYYY-MM-DD）。timingReason解释日期依据及不确定性，供健康顾问审核。无法可靠确定时日期字段留空字符串，不得填“待确认”或捏造检查日期。预约安排日期由系统提前7天计算，不由AI重复生成。医院、科室、专家优先保留顾问已确认安排；否则只沿用输入中上一次对应问题或同类检查的真实记录，年度体检沿用上次体检机构。不可从无关就诊记录移植，不可猜测，没有依据留空。这些安排不表示已经预约。同一就医安排内的检查写明具体项目，不再以相同目的在复查类别重复列项。管理目标及预期沿用已确认研判，不为每个执行事项另造目标。focus必须为逐行文本，不得为对象。';
 }
 function annualGenerationError(message) {
   let result = String(message || '生成未完成，请稍后重试');

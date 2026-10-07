@@ -31,7 +31,8 @@ function evaluateReadiness({ annual, patient, gate, tasks, plan, now = new Date(
     result.roles.push({ role, taskId: idOf(task._id), state: 'completed' });
   }
   const advisor = matched.familyDoctor;
-  const planner = matched.healthPlanner;
+  const planner = annual.checkupPreparationVersion === 2 ? matched.healthManager : matched.healthPlanner;
+  if (annual.checkupPreparationVersion === 2 && !advisor && !result.issues.some(x => x.role === 'familyDoctor')) result.issues.push({ code: 'advisor_pending', role: 'familyDoctor', message: '等待体检前一周顾问定制方案' });
   if (advisor) {
     const selected = advisor.formData.annualCheckupPreparation.evidence?.healthPlanId;
     if (!selected || idOf(plan?._id) !== idOf(selected) || !checkupPlanReady(plan, advisor, annual)

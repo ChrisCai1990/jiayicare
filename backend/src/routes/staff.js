@@ -8036,6 +8036,8 @@ router.post('/patients/:id/annual-comprehensive-review', staffAuth, async (req, 
   if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
   const patient = await User.findById(req.params.id).select('_id tenantId aiHealthSummary healthRiskTags').lean();
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+  const eligibility = await require('../utils/annualReviewEligibility').check(patient._id);
+  if (!eligibility.allowed) return res.status(409).json({ success: false, code: 'RECENT_CHECKUP_REQUIRED', message: eligibility.message });
   const existing = await AiCaseReview.findOne({ user: patient._id, reviewType: 'annual', annualPlanYear: year, status: { $ne: 'archived' } });
   if (existing) return res.json({ success: true, data: { _id: existing._id, title: existing.title, status: existing.conclusion?.status, reused: true } });
   const standard = require('../utils/annualComprehensiveReview');
@@ -8499,7 +8501,7 @@ router.patch('/patients/:id/annual-nutrition-metrics', staffAuth, async (req, re
     if (JSON.stringify(before) === JSON.stringify(metrics)) return res.json({ success: true, data: plan });
     const saved = await AnnualPlan.findOneAndUpdate(
       { _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt, pushedAt: { $ne: null } },
-      { $set: { 'moduleData.nutrition_assessment': { ...(plan.moduleData?.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: metrics } },
+      { $set: { 'moduleData.nutrition_assessment': { ...(plan.moduleData?.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: metrics, metricsManuallyAdjusted: true } },
         $push: { nutritionMetricHistory: { before, after: metrics, changedAt: new Date(), changedBy: req.staff._id, changedByName: req.staff.name || req.staff.username || '' } } },
       { new: true }).select('+nutritionMetricHistory');
     if (!saved) return res.status(409).json({ success: false, message: '年度方案已变化，请刷新后重试' });
@@ -8518,7 +8520,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     let { moduleData } = req.body;
     moduleData = { ...(moduleData || {}), nutrition_assessment: {
       ...(moduleData?.nutrition_assessment || {}), enabled: true,
-      nutritionComparisonMetrics: moduleData?.nutrition_assessment?.nutritionComparisonMetrics ?? ['体重'],
+      nutritionComparisonMetrics: moduleData?.nutrition_assessment?.nutritionComparisonMetrics ?? require('../../../shared/nutritionComparisonMetrics.cjs').metricsFromTargets(moduleData?.management_targets?.records),
     } };
     try {
       const { isRow } = require('../../../shared/annualNutrition.cjs');
@@ -11798,7 +11800,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const year = targetYear;
 
     const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' })
-      .select('title type checkDate reportItems.itemId reportItems.name reportItems.value reportItems.status reportItems.examDate reportItems.modality reportItems.findings reportItems.diagnosis reportItems.conclusion')
+      .select('title type documentCategory institution hospital checkDate reportItems.institution reportItems.itemId reportItems.name reportItems.value reportItems.status reportItems.examDate reportItems.modality reportItems.findings reportItems.diagnosis reportItems.conclusion')
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const auditedGlucose = await require('../utils/annualAuditedGlucose').latestAuditedGlucose(user._id, year);
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
@@ -11970,7 +11972,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       ...(supplement ? [{ id: 'supplement', content: { reviews: supplement.reviews, reports: supplement.reports, advisorConfirmedNote: supplement.note } }] : []),
     ];
     const carePreferences = require('../utils/carePreferences').carePreferenceContext(user);
-    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n' + clinicalRules.clinicalRulesPrompt + '\n就医偏好（仅物流参考，不作为医学依据或生成门槛；无已核实医院库时医院留空）：' + JSON.stringify(carePreferences) + (supplement ? '\n【补充生成模式】只针对supplement中的顾问选定依据提出新增或需调整事项，不重新生成整份，不重复已落实行动。原方案仅供对照，不是新的医学依据：' + JSON.stringify(supplement.baseModuleData) + '\n未涉及的模块返回空，不能把未输出当作取消。年度focus只给新增重点，不重复原项目；其他原内容由系统保留。每项补充建议sourceIds必须包含supplement及具体来源。' : '') : prompt;
+    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n' + clinicalRules.clinicalRulesPrompt + '\n就医偏好（仅物流参考；医院科室专家沿用已核实的上次对应记录或顾问已确认安排，无来源留空，不猜测）：' + JSON.stringify(carePreferences) + (supplement ? '\n【补充生成模式】只针对supplement中的顾问选定依据提出新增或需调整事项，不重新生成整份，不重复已落实行动。原方案仅供对照，不是新的医学依据：' + JSON.stringify(supplement.baseModuleData) + '\n未涉及的模块返回空，不能把未输出当作取消。年度focus只给新增重点，不重复原项目；其他原内容由系统保留。每项补充建议sourceIds必须包含supplement及具体来源。' : '') : prompt;
     const generate = async (resumeRaw = null) => {
       let parsed = resumeRaw;
       if (!parsed) {
@@ -11988,7 +11990,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
             ? chat([{ role: 'user', content: repair.sourceLinkRepairPrompt(candidate, evidence, missingLinks, message) }],
               { maxTokens: 2000, temperature: 0, jsonMode: true, timeoutMs: 90000 })
             : chat([{ role: 'user', content: repair.annualCorrectionPrompt(candidate, evidence, message) }],
-              { maxTokens: 2500, temperature: 0, jsonMode: true, timeoutMs: 90000 }), candidate => repair.applyAnnualSchedule(candidate, reports));
+              { maxTokens: 2500, temperature: 0, jsonMode: true, timeoutMs: 90000 }), candidate => require('../utils/annualArrangementHistory').inheritArrangements(repair.applyAnnualSchedule(candidate, reports), reports));
         }
         return parsed;
       }

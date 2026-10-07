@@ -56,7 +56,8 @@ function buildAnnualCheckupPreparation(plan, patient, gate, now = new Date()) {
     || (startDate && today < startDate) || (endDate && today > endDate)) {
     return { ...result, state: 'blocked', issues: [issue('invalid_anchor', '方案执行起点或当前服务期不满足准备条件')] };
   }
-  const preparationDate = [shiftDay(targetDate, -LEAD_DAYS), confirmationDate, anchorDate, startDate].filter(Boolean).sort().at(-1);
+  const modern = plan.checkupPreparationVersion === 2;
+  const preparationDate = [shiftDay(targetDate, -(modern ? 30 : LEAD_DAYS)), confirmationDate, anchorDate, startDate].filter(Boolean).sort().at(-1);
   result.preparationDate = preparationDate;
   result.latePreparation = preparationDate > shiftDay(targetDate, -LEAD_DAYS);
   // 历史过期体检不补发新执行任务；交由顾问确认是否已做/需调整，不能当作新预约。
@@ -65,7 +66,14 @@ function buildAnnualCheckupPreparation(plan, patient, gate, now = new Date()) {
   }
   if (preparationDate > today) return { ...result, state: 'waiting' };
   result.state = 'due';
-  for (const spec of ROLES) {
+  const roles = modern ? [
+    { ...ROLES[0], lead: 7 },
+    { ...ROLES[1], lead: 30, theme: '年度体检督办', content: '督办健管专员预约及顾问方案定制进度，协调资源并处理异常；预约由健管专员办理。' },
+    { role: 'healthManager', field: 'assignedHealthManager', label: '健管专员', lead: 30, taskRole: 'executor', theme: '年度体检准备 · 预约与跟进', content: '沿用上次体检机构，确认客户时间，预约体检并跟进问卷填写、报告回收；需要代办或陪诊时从本项目发起就医协助。' },
+  ] : ROLES;
+  for (const spec of roles) {
+    const roleDate = modern ? [shiftDay(targetDate, -spec.lead), confirmationDate, anchorDate, startDate].filter(Boolean).sort().at(-1) : preparationDate;
+    if (roleDate > today) continue;
     const assignedTo = idOf(patient[spec.field]);
     if (!assignedTo) {
       result.issues.push(issue('missing_assignment', `客户尚未绑定${spec.label}，无法派发体检准备事项`, spec.role));
@@ -75,13 +83,13 @@ function buildAnnualCheckupPreparation(plan, patient, gate, now = new Date()) {
     result.tasks.push({
       patientId: patient._id, sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: key,
       assignedTo, staffId: plan.createdBy || assignedTo,
-      date: new Date(`${preparationDate}T09:00:00+08:00`), remindAt: new Date(`${preparationDate}T09:00:00+08:00`),
+      date: new Date(`${roleDate}T09:00:00+08:00`), remindAt: new Date(`${roleDate}T09:00:00+08:00`),
       theme: spec.theme, content: spec.content, plannedContent: spec.content,
       status: 'planned', aiStatus: 'approved', reviewRole: null,
       taskRole: spec.taskRole, workflowKey: `annual_checkup_preparation:${spec.role}`,
       // 两个岗位并行，不互相阻塞；管理端同时可见时也不能折叠掉其中一个。
       coordinationGroupId: `annual-checkup:${plan._id}:${originalDate}:${spec.role}`, isBlocked: false,
-      formData: { annualCheckupPreparation: { version: 1, role: spec.role, targetDate, preparationDate, latePreparation: result.latePreparation } },
+      formData: { annualCheckupPreparation: { version: 1, scheduleVersion: modern ? 2 : 1, role: spec.role, targetDate, preparationDate: roleDate, leadDays: spec.lead || LEAD_DAYS, latePreparation: roleDate > shiftDay(targetDate, -(spec.lead || LEAD_DAYS)) } },
     });
   }
   return result;

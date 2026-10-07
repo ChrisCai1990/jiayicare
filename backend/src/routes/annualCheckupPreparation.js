@@ -25,7 +25,7 @@ router.get('/:id/checkup-preparation', staffAuth, checkPermission('followups', '
   const plans = evidence.preparationRole(task) === 'familyDoctor'
     ? await HealthPlan.find({ patientId: task.patientId, type: 'annual_checkup', status: { $in: ['draft', 'active'] }, createdAt: { $gte: req.checkupAnnual.confirmedAt }, $or: [{ preparationTaskId: null }, { preparationTaskId: task._id }] })
       .select('title status content.aiStatus pushedAt createdAt').sort({ createdAt: -1 }).limit(100).lean() : [];
-  res.json({ success: true, data: { task, plans } });
+  res.json({ success: true, data: { task, plans, questionnaire: await require('../utils/annualCheckupQuestionnaire').response(req.checkupAnnual._id, task.patientId) } });
 });
 
 router.get('/:id/checkup-preparation/readiness', staffAuth, checkPermission('followups', 'view'), load, async (req, res) => {
