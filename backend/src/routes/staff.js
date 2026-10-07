@@ -7986,6 +7986,29 @@ router.patch('/professional-health-assessments/:assessmentId/review', staffAuth,
   res.json({ success: true, data: row });
 });
 
+// 顾问可在终审后补充年度适用领域；原评估领域和终审内容保持原样，操作单独留痕。
+router.patch('/professional-health-assessments/:assessmentId/annual-domain', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认年度适用领域' });
+  const row = await ProfessionalHealthAssessment.findById(req.params.assessmentId);
+  if (!row) return res.status(404).json({ success: false, message: '专业健康评估不存在' });
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(row.patientId))) return res.status(403).json({ success: false, message: '无权处理该会员的评估' });
+  if (!require('../utils/healthManagementRollout').enabledForPatient(row.patientId)) return res.status(403).json({ success: false, message: '该客户暂未开放新版健康管理闭环' });
+  if (row.status !== 'approved' || row.purpose !== 'annual_input') return res.status(409).json({ success: false, message: '仅已终审的年度评估可确认适用领域' });
+  if (!(await require('../utils/referralAssessmentWorkflow').isAssessmentSourceCurrent(row))) return res.status(409).json({ success: false, message: '转介反馈已修订，请核对最新评估' });
+  const domain = String(req.body.domain || '').trim();
+  const reason = String(req.body.reason || '').trim();
+  if (!domain || domain.length > 60 || reason.length < 5 || reason.length > 500) return res.status(400).json({ success: false, message: '请填写适用领域及至少5字的确认依据' });
+  if (req.body.revision !== row.__v) return res.status(409).json({ success: false, message: '评估已更新，请刷新后重试' });
+  const updated = await ProfessionalHealthAssessment.findOneAndUpdate(
+    { _id: row._id, status: 'approved', __v: row.__v },
+    { $addToSet: { annualDomains: domain }, $inc: { __v: 1 }, $push: { auditLog: { action: 'confirm_annual_domain', at: new Date(), by: req.staff._id, role: req.staff.role, domain, reason } } },
+    { new: true, runValidators: true },
+  );
+  if (!updated) return res.status(409).json({ success: false, message: '评估已更新，请刷新后重试' });
+  res.json({ success: true, data: updated });
+});
+
 router.post('/professional-health-assessments/:assessmentId/ai-followup-draft', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可生成并审核动态随访草稿' });
   const row = await ProfessionalHealthAssessment.findById(req.params.assessmentId).populate('patientId', 'name gender age chronicDiseases');

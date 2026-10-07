@@ -437,6 +437,7 @@ export const staffAPI = {
   getProfessionalHealthAssessments: (patientId, query = {}) => req(`/staff/patients/${patientId}/professional-health-assessments?${qs(query)}`),
   createProfessionalHealthAssessment: (patientId, data) => req(`/staff/patients/${patientId}/professional-health-assessments`, { method: 'POST', body: JSON.stringify(data) }),
   reviewProfessionalHealthAssessment: (assessmentId, data) => req(`/staff/professional-health-assessments/${assessmentId}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
+  confirmProfessionalAssessmentAnnualDomain: (assessmentId, data) => req(`/staff/professional-health-assessments/${assessmentId}/annual-domain`, { method: 'PATCH', body: JSON.stringify(data) }),
   generateAssessmentFollowUpDraft: (assessmentId, data = {}) => req(`/staff/professional-health-assessments/${assessmentId}/ai-followup-draft`, { method: 'POST', body: JSON.stringify(data) }),
   getReportFollowUpDrafts: patientId => req(`/staff/report-followups/patients/${patientId}`),
   getAnnualReportProblems: (patientId, year) => req(`/staff/report-followups/patients/${patientId}/annual-problems/${year}`),

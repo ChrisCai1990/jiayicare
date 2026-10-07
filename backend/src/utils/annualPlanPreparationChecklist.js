@@ -17,14 +17,19 @@ function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null,
 
   const isRenewal = continuity?.mode === 'renewal';
   if (isRenewal) add('annual_review', '上一年度健康管理总评已由顾问终审并归档', continuity.ready === true);
-  const approvedAnnualDomains = new Set(assessments
-    .filter(item => (item.purpose === 'annual_input' || (isRenewal && item.purpose === 'issue_collaboration')) && item.status === 'approved')
-    .map(item => String(item.domain || '').trim()).filter(Boolean));
+  const approvedAssessments = assessments
+    .filter(item => (item.purpose === 'annual_input' || (isRenewal && item.purpose === 'issue_collaboration')) && item.status === 'approved');
+  const approvedAnnualDomains = new Set(approvedAssessments
+    .flatMap(item => [item.domain, ...(item.annualDomains || [])])
+    .map(domain => String(domain || '').trim()).filter(Boolean));
   const noneSelected = preparation?.assessmentMode === 'none';
   const noAssessmentConfirmed = noneSelected && preparation.assessmentCriteriaVersion === 1 && require('./annualAssessmentDecision').allAssessmentCriteriaConfirmed(preparation.assessmentConfirmedCriteria) && !!preparation.assessmentDecisionBy && !!preparation.assessmentDecisionAt;
   const requiredDomains = noneSelected ? [] : [...new Set((preparation?.requiredAssessmentDomains || []).map(item => String(item).trim()).filter(Boolean))];
   if (!isRenewal || noneSelected) add('assessment_scope', noneSelected ? '健康顾问已确认本年度无需新增专科评估的全部五项条件' : '已确定首次方案所需专业评估领域', noAssessmentConfirmed || (!noneSelected && requiredDomains.length > 0));
-  requiredDomains.forEach(domain => add(`assessment:${domain}`, `${domain}专业健康评估已审核`, approvedAnnualDomains.has(domain)));
+  requiredDomains.forEach(domain => add(`assessment:${domain}`, approvedAnnualDomains.has(domain)
+    ? `${domain}专业健康评估已审核`
+    : `${domain}尚无匹配的已终审专业健康评估${approvedAssessments.length ? '（已有其他领域的已终审评估）' : ''}`,
+  approvedAnnualDomains.has(domain)));
   add('advisor_ready', '健康顾问已确认资料足够生成方案', !!preparation?.advisorReadyConfirmedAt);
   if (caseReviews) {
     const annualReview = require('./annualComprehensiveReview').annualReviewForYear(caseReviews, year);
