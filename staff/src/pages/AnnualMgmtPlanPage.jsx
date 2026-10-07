@@ -596,11 +596,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }
 
   const dispatchNutritionTask = async () => {
-    const current = plansByType[planType]
-    if (!current?._id) return toast('请先保存年度方案草稿')
-    if (dirty || metricSelectionDirty || remotePlanChanged) return toast('请先保存指标和方案更改')
+    let current = plansByType[planType]
+    if (remotePlanChanged) return toast('方案已更新，请先加载最新方案')
+    if (pushedAt && (dirty || metricSelectionDirty)) return toast('请先保存已发布方案的指标调整')
     setNutritionDispatching(true)
     try {
+      if (!current?._id || dirty) {
+        current = await handleSave({ quiet: true })
+        if (!current?._id) return
+      }
       const res = await staffAPI.dispatchAnnualNutritionTask(id, { planId: current._id, baseUpdatedAt: current.updatedAt })
       setNutritionTask(res.data)
       toast(res.reused ? '营养师任务已存在，未重复派发' : '营养评估任务已单独派发给责任营养师')
@@ -622,7 +626,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     } catch (error) { toast(error.message || '读取研判目标失败') }
   }
 
-  const handleSave = async () => {
+  const handleSave = async (options = {}) => {
     if (remotePlanChanged) { toast('方案已有补录，请先加载最新方案再保存'); return }
     if (!planType) { toast('请先选择方案类型'); return }
     for (const { key, def } of templateModuleEntries) {
@@ -634,6 +638,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       }
     }
     setSaving(true)
+    let savedPlan = null
     try {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
@@ -641,6 +646,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const annualModuleData = { ...moduleData, nutrition_assessment: { ...(moduleData.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: nutritionMetricRules.selectedFromAnnualPlan({ moduleData }) } }
         const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData: annualModuleData, phaseAssessmentFrequency, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
+        savedPlan = saved
         if (saved) {
           setModuleData(saved.moduleData || annualModuleData)
           setPlansByType(prev => {
@@ -652,12 +658,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setPushedAt(saved.pushedAt || null)
           setConfirmedAt(saved.confirmedAt || null)
         }
-        toast('方案草稿已保存；审核并推送后才会生成正式执行任务')
+        if (!options.quiet) toast('方案草稿已保存；审核并推送后才会生成正式执行任务')
       } else {
         await staffAPI.updatePlan(id, { content: { planType, moduleData } })
         toast('方案已保存')
       }
       setDirty(false)
+      return savedPlan
     } catch (err) {
       toast(err.message || '保存失败')
     } finally {
@@ -1221,8 +1228,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             {pushedAt && canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={!metricSelectionDirty || metricSelectionSaving} onClick={savePublishedNutritionMetrics}>{metricSelectionSaving ? '保存中…' : '保存指标调整（留痕）'}</button>}
             <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               {nutritionTask ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=followups&followUpId=${nutritionTask._id}`)}>营养师任务已派发 · 查看{nutritionTask.status === 'completed' ? '结果' : '任务'}</button>
-                : canEdit && <button type="button" className="btn btn-primary btn-sm" disabled={!currentPlanId || dirty || metricSelectionDirty || remotePlanChanged || nutritionDispatching || nutritionTaskLoading || !patient?.assignedNutritionist} onClick={dispatchNutritionTask}>{nutritionDispatching ? '派发中…' : '单独派发给营养师'}</button>}
-              <span style={{ fontSize: 12, color: '#62776A' }}>{nutritionTask ? '已有任务不会因年度方案确认再次派发。' : !patient?.assignedNutritionist ? '请先为客户分配责任营养师。' : '保存草稿后即可派发，无需先推送整个年度方案；仅生成营养师内部任务。'}</span>
+                : canEdit && <button type="button" className="btn btn-primary btn-sm" disabled={saving || (pushedAt && (dirty || metricSelectionDirty)) || remotePlanChanged || nutritionDispatching || nutritionTaskLoading || !patient?.assignedNutritionist} onClick={dispatchNutritionTask}>{nutritionDispatching ? (saving ? '保存中…' : '派发中…') : dirty || !currentPlanId ? '保存并派发给营养师' : '单独派发给营养师'}</button>}
+              <span style={{ fontSize: 12, color: '#62776A' }}>{nutritionTask ? '已有任务不会因年度方案确认再次派发。' : !patient?.assignedNutritionist ? '请先为客户分配责任营养师。' : remotePlanChanged ? '方案已更新，请先加载最新方案。' : (pushedAt && (dirty || metricSelectionDirty)) ? '请先保存上方指标调整。' : dirty || !currentPlanId ? '将先保存当前草稿及评估日期，再派发营养师任务。' : '无需推送整个年度方案，可单独派发营养师任务。'}</span>
             </div>
             {!!plansByType[planType]?.nutritionMetricHistory?.length && <details style={{ marginTop: 10, fontSize: 12, color: '#52675D' }}><summary>指标调整记录（{plansByType[planType].nutritionMetricHistory.length}次）</summary>{plansByType[planType].nutritionMetricHistory.map((entry, index) => <div key={index} style={{ padding: '6px 0' }}>{new Date(entry.changedAt).toLocaleString('zh-CN')} · {entry.changedByName || '健康顾问'}：{(entry.before || []).join('、') || '未选'} → {(entry.after || []).join('、') || '未选'}</div>)}</details>}
           </details>}
