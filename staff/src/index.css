@@ -330,10 +330,16 @@ textarea.form-control { resize: vertical; }
 .clinical-report-source-page img { display: block; width: 100%; height: auto; background: white; }
 .clinical-report-source-page iframe { width: 100%; height: 65vh; border: 0; background: white; }
 .clinical-report-source-empty { padding: 24px; color: #60756b; font-size: 13px; }
+.report-detail-layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.report-detail-layout > .modal-body { min-width: 0; }
+.report-detail-layout-side-by-side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 0 20px; }
+.report-detail-layout-side-by-side > .modal-body { padding: 0 0 16px; }
 @media (max-width: 850px) {
   .clinical-report-review-body { display: block; overflow-y: auto; }
   .clinical-report-source-pane { height: 45vh; margin-bottom: 16px; }
   .clinical-report-review-fields { overflow: visible; }
+  .report-detail-layout-side-by-side { display: block; overflow-y: auto; }
+  .report-detail-layout-side-by-side > .modal-body { overflow: visible !important; }
 }
 
 /* ── Login ─────────────────────────────────────────────── */

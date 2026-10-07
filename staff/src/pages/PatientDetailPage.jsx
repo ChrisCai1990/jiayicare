@@ -11948,11 +11948,18 @@ export default function PatientDetailPage() {
           去掉点遮罩关闭，只能点右上角✕关闭 */}
       {showReportDetail && (
         <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="modal" style={{ maxWidth: ['familyDoctor', 'superadmin'].includes(staff?.role) ? 1200 : 560, width: '96vw', height: ['familyDoctor', 'superadmin'].includes(staff?.role) ? '90vh' : undefined, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
             <div className="modal-header" style={{ flexShrink: 0 }}>
               <h3 className="modal-title">{showReportDetail.title}</h3>
               <button className="modal-close" onClick={() => setShowReportDetail(null)}>✕</button>
             </div>
+            <div className={`report-detail-layout${['familyDoctor', 'superadmin'].includes(staff?.role) ? ' report-detail-layout-side-by-side' : ''}`}>
+            {['familyDoctor', 'superadmin'].includes(staff?.role) && (
+              <section className="clinical-report-source-pane" aria-label="报告原件">
+                <div className="clinical-report-pane-heading">报告原件<span>与健管专员审核结果对照</span></div>
+                <ClinicalReportSource report={showReportDetail} loading={reportDetailLoading} />
+              </section>
+            )}
             <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               <ReportPlanConflictCard key={`${showReportDetail._id}:${showReportDetail.planItemSync?.token || ''}`} report={showReportDetail} plans={plans} role={staff?.role} />
               {(() => {
@@ -12213,6 +12220,7 @@ export default function PatientDetailPage() {
                   </div>
                 )}
               </div>
+            </div>
             </div>
             <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
               {/* 只有明确无需结构化解析的资料可直接人工审核。用药、处方、病历和检验检查
