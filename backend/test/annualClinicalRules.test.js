@@ -59,6 +59,18 @@ test('annual focus cannot repeat near-term checks without independent sourced re
   assert.equal(validateClinicalRules(raw, []), raw);
   assert.match(clinicalRulesPrompt, /胃镜\/肠镜/); assert.match(clinicalRulesPrompt, /不得.*按年重复/);
 });
+test('annual draft cannot label a different hemoglobin fraction as HbA1c', () => {
+  const audited = reportTimeline([
+    { _id: 'recent', checkDate: '2026-09-05', reportItems: [{ name: '糖化血红蛋白A1', value: '7.0' }, { name: '*糖化血红蛋白A1c', value: '5.6' }] },
+    { _id: 'older', checkDate: '2026-06-01', reportItems: [{ name: '糖化血红蛋白A1', value: '7.5' }, { name: '糖化血红蛋白A1c', value: '6.0' }] },
+  ]);
+  const raw = { abnormal_followup: [{ reason: 'HbA1c由≤6.5%升至7.5%，需复查' }] };
+  assert.throws(() => validateClinicalRules(raw, audited), /HbA1c 7.5%与已审核原始报告不符/);
+  raw.abnormal_followup[0].reason = '2026-09-05 HbA1c 5.6%，较2026-06-01的6.0%下降';
+  assert.equal(validateClinicalRules(raw, audited), raw);
+  raw.abnormal_followup[0].reason = '最新HbA1c 6.0%';
+  assert.throws(() => validateClinicalRules(raw, audited), /最新HbA1c应以2026-09-05报告的5.6%为准/);
+});
 test('customer legacy raw data and display cards exclude internal timing reasoning without altering staff data', () => {
   const data = { medical_treatment: { records: [{ reason: '就医', timingReason: '内部推理', notes: '内部备注', timingSourceId: 'report:x', visit_time: '2026-10-01' }] }, annual_checkup: { enabled: true, focus: '关注', timingReason: '内部推理' } };
   const clean = customerModuleData(data);

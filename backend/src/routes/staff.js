@@ -11660,6 +11660,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' })
       .select('title type checkDate reportItems.itemId reportItems.name reportItems.value reportItems.examDate reportItems.modality reportItems.findings reportItems.diagnosis reportItems.conclusion')
       .sort({ checkDate: -1, createdAt: -1 }).lean();
+    const auditedGlucose = await require('../utils/annualAuditedGlucose').latestAuditedGlucose(user._id, year);
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
     let confirmedCaseReviews = await AiCaseReview.find(closedLoop ? {
@@ -11728,6 +11729,9 @@ ${abnormalText}
 
 【慢病及其他指标】
 ${chronicText}
+
+【已审核糖化血红蛋白A1c原始结果】
+${auditedGlucose ? `${auditedGlucose.date}：HbA1c ${auditedGlucose.value}%。同份报告中的“糖化血红蛋白A1”是另一检测项，不得把A1数值写作HbA1c；旧方案或旧AI结论若与此冲突，以此原始结果为准。` : '未找到可核实的HbA1c原始结果；不得推断数值。'}
 
 【缺失体检项目】
 ${missingCheckups}
@@ -11844,7 +11848,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 5, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedReportIssues, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 6, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, confirmedReportIssues, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;

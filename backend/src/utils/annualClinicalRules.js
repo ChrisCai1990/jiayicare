@@ -3,6 +3,35 @@ const { effectiveItemDate } = require('./reportExtractionPolicy');
 const text = value => typeof value === 'string' ? value.trim() : '';
 const stem = value => text(value).split(/[（(]/)[0].replace(/[\s、，,：:]/g, '').toLowerCase();
 const relatedGroup = name => /(?:阴道|子宫|附件).*(?:超声|彩超)|(?:超声|彩超).*(?:子宫|附件)/.test(name) ? '盆腔超声（方式未必相同）' : stem(name);
+const isHbA1c = name => /(?:HbA1c|糖化血红蛋白\s*\*?\s*A1c)/i.test(String(name || ''));
+
+function validateHbA1cClaims(raw, timeline, fail) {
+  const verified = timeline.filter(row => isHbA1c(row.name) && row.date)
+    .map(row => ({ date: row.date, value: Number(String(row.result).match(/\d+(?:\.\d+)?/)?.[0]) }))
+    .filter(row => Number.isFinite(row.value));
+  if (!verified.length) return;
+  const known = new Set(verified.map(row => row.value));
+  const latest = verified[0];
+  const fields = [...(raw.medical_treatment || []), ...(raw.checkup_completion || []),
+    ...(raw.abnormal_followup || []), ...(raw.vaccine || []), ...(raw.templateNodes || []),
+    raw.annual_checkup || {}, raw.lifestyle || {}];
+  for (const row of fields) for (const value of Object.values(row || {})) {
+    if (typeof value !== 'string') continue;
+    for (const sentence of value.split(/[。；;\n]/)) {
+      const label = sentence.search(/(?:HbA1c|糖化血红蛋白\s*\*?\s*A1c)/i);
+      if (label < 0) continue;
+      const nearby = sentence.slice(label, label + 80);
+      for (const match of nearby.matchAll(/(\d+(?:\.\d+)?)\s*%/g)) {
+        const prefix = nearby.slice(0, match.index);
+        if (/[<>=≤≥]\s*$/.test(prefix) || /(?:阈值|诊断标准|控制目标)\s*$/.test(prefix)) continue;
+        const value = Number(match[1]);
+        if (!known.has(value)) fail(`HbA1c ${value}%与已审核原始报告不符`);
+        if (/(?:最新|当前|最近|本次)\s*(?:的)?\s*$/.test(sentence.slice(Math.max(0, label - 12), label)) && value !== latest.value)
+          fail(`最新HbA1c应以${latest.date}报告的${latest.value}%为准`);
+      }
+    }
+  }
+}
 
 // Audit data only. Never substitute upload time, report year, or pathology date for an examination date.
 function reportTimeline(reports = []) {
@@ -36,6 +65,7 @@ medical_treatment/checkup_completion/abnormal_followup中相隔1—14天的事�
 
 function validateClinicalRules(raw, timeline, evidence = []) {
   const fail = message => { throw Object.assign(new Error(message + '；未替换原方案，请核对生成依据'), { statusCode: 409 }); };
+  validateHbA1cClaims(raw, timeline, fail);
   const indexed = new Map(timeline.map(row => [row.id, row]));
   const scheduled = ['medical_treatment', 'checkup_completion', 'abnormal_followup'].flatMap(key =>
     (raw[key] || []).map(row => ({ ...row, scheduledDate: key === 'medical_treatment' ? row.visit_time : row.time })));
