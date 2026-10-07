@@ -36,6 +36,8 @@ function annualCorrectionPrompt(candidate, evidence, errorMessage) {
     sourceIds: row.sourceIds || [], date: row.visit_time || row.time || row.executionDate || '',
     basisSummary: String(row.basisSummary || row.matchReason || '').slice(0, 500),
     timingSourceId: row.timingSourceId || '', timingBaseDate: row.timingBaseDate || '',
+    hospital: row.hospital || '', department: row.department || '',
+    timingReason: row.timingReason || '', scheduleSeparationReason: row.scheduleSeparationReason || '',
   })));
   const referenced = new Set(actions.map(row => row.timingSourceId).filter(Boolean));
   const topic = JSON.stringify([candidate.annual_checkup, ...actions]);
@@ -54,7 +56,7 @@ function annualCorrectionPrompt(candidate, evidence, errorMessage) {
     }
     return { id: item.id, content: { rows, omittedCount: ordered.length - rows.length, note: '仅为本次校正提供的摘要；未列项目不能视为资料缺失，完整来源仍由服务端校验。' } };
   });
-  return `${correctionInstruction}\n校验问题：${errorMessage}\n当前年度体检项：${JSON.stringify(candidate.annual_checkup || {})}\n已有行动（仅可修正来源元数据）：${JSON.stringify(actions)}\n当前来源核对：${JSON.stringify(candidate.evidenceCoverage || [])}\n校正依据：${JSON.stringify(sources)}`;
+  return `${correctionInstruction}\n${require('./annualClinicalRules').clinicalRulesPrompt}\n校验问题：${errorMessage}\n当前年度体检项：${JSON.stringify(candidate.annual_checkup || {})}\n已有行动（仅可修正来源元数据和排期说明）：${JSON.stringify(actions)}\n当前来源核对：${JSON.stringify(candidate.evidenceCoverage || [])}\n校正依据：${JSON.stringify(sources)}`;
 }
 
 // A single bounded correction replaces the former focus-only call. Both attempts go
@@ -127,6 +129,20 @@ async function validateOrRepairAnnual(raw, validate, complete) {
         } : item) };
       }
     }
+    if (parsed.scheduleCorrections !== undefined) {
+      if (!Array.isArray(parsed.scheduleCorrections)) throw new Error('排期说明校正格式无效');
+      const seen = new Set();
+      for (const patch of parsed.scheduleCorrections) {
+        const key = patch?.module, index = patch?.index;
+        if (!['medical_treatment', 'checkup_completion', 'abnormal_followup'].includes(key)
+          || !Number.isInteger(index) || index < 0 || !candidate[key]?.[index] || seen.has(`${key}:${index}`)
+          || typeof patch.scheduleSeparationReason !== 'string' || !patch.scheduleSeparationReason.trim())
+          throw new Error('排期说明校正缺少有效事项或原因');
+        seen.add(`${key}:${index}`);
+        candidate = { ...candidate, [key]: candidate[key].map((item, i) => i === index
+          ? { ...item, scheduleSeparationReason: patch.scheduleSeparationReason.trim() } : item) };
+      }
+    }
     validate(candidate);
     return candidate;
   } catch (error) {
@@ -135,6 +151,7 @@ async function validateOrRepairAnnual(raw, validate, complete) {
   }
 }
 const correctionInstruction = `仅输出一个合法JSON对象，不要Markdown或额外解释。这是同一次生成的格式/规则校正，不是另拟新方案。只修复下列校验问题及相关来源关联，其余项目和临床建议保持原样；禁止为通过验证删除其他已有行动或虚构依据。
+对相近日期未统筹的问题，逐对核对已有排期依据，返回scheduleCorrections数组：[{"module":"medical_treatment","index":0,"scheduleSeparationReason":"保留分别安排的实际依据或具体待核实原因"}]。仅允许补充排期说明，不改已讨论的日期、医院或行动。依据不足时明确指出需要核实的兼容性或先后条件，不能编造医嘱、号源或声称已经确认；不能用空泛的“已统筹”冒充依据。无此问题时不返回该字段。
 annual_checkup.focus必须逐行文本；纯字符串列表可无损转为文本。年度focus只列实际安排项目，“不重复安排/已在近期安排”的说明应放内部notes，不能伪装成年度项目。每个保留项目必须引用真实对应sourceIds；如项目来自missing:0、missing:1，不能错挂priority:0。evidenceCoverage与保留事项同步，纳入年度同样算included。
 如已审依据确实不支持任何年度项目，可返回annual_checkup:{}，并在对应evidenceCoverage明确说明未纳入原因；不得用空focus的非空模块占位，更不能以忽略有依据项目换取通过。日期、科室、来源及统筹规则仍必须满足。返回annual_checkup与完整evidenceCoverage。若已生成事项实际涵盖某来源，却遗漏sourceIds关联，额外返回sourceLinkCorrections数组：[{"module":"medical_treatment","index":0,"sourceIds":["真实来源id"]}]；module也可为annual_checkup（index固定为0）。只给已有事项补充真实且语义对应的来源，不得把无关来源挂到事项上；若确实没有对应事项，须如实把该来源改为deferred或not_applicable并说明原因，不能仅靠修改状态掩盖已确认的行动需求。若其他模块的timingSourceId或timingBaseDate有误，额外返回timingCorrections数组：[{"module":"checkup_completion","index":0,"timingSourceId":"report_history中真实项目id","timingBaseDate":"该项目真实date","dateSelectionReason":"选用此日期的依据"}]。index为原数组从0开始的位置。仅校正已有事项的时间来源元数据，禁止编造来源、清空日期绕过校验或改变行动内容及执行时间；不需要时返回空数组。系统保留其他字段并重新进行全部校验。`;
 module.exports = { normalizeAnnualOutput, missingIncludedSourceIds, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, correctionInstruction };

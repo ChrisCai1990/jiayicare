@@ -142,6 +142,27 @@ test('repair requests satisfy provider JSON mode even without JSON in source dat
   assert.match(sourceLinkRepairPrompt({}, [], [], 'missing source'), /json/i);
 });
 
+test('nearby scheduling correction survives merge without changing agreed dates or hospital', async () => {
+  const { validateClinicalRules } = require('../src/utils/annualClinicalRules');
+  const raw = { medical_treatment: [{visit_time:'2026-11-05', hospital:'已讨论医院', timingReason:'先就诊评估'}],
+    abnormal_followup: [{time:'2026-11-10', items:'复查'}], annual_checkup:{}, evidenceCoverage:[] };
+  const check = value => validateClinicalRules(value, []);
+  assert.throws(() => check(raw), /尚未统筹/);
+  const prompt = annualCorrectionPrompt(raw, [], '尚未统筹');
+  assert.match(prompt, /先就诊评估/); assert.match(prompt, /scheduleCorrections/);
+  const result = await validateOrRepairAnnual(raw, check, async () => JSON.stringify({
+    annual_checkup:{}, evidenceCoverage:[], scheduleCorrections:[{module:'abnormal_followup', index:0,
+      scheduleSeparationReason:'先完成就诊评估，再核实复查开单和准备条件', time:'2026-12-01', hospital:'其他医院'}],
+  }));
+  check(result);
+  assert.deepEqual(result.medical_treatment, raw.medical_treatment);
+  assert.equal(result.abnormal_followup[0].time, '2026-11-10');
+  assert.equal(result.abnormal_followup[0].hospital, undefined);
+  await assert.rejects(validateOrRepairAnnual(raw, check, async () => JSON.stringify({
+    annual_checkup:{}, evidenceCoverage:[], scheduleCorrections:[{module:'abnormal_followup',index:99,scheduleSeparationReason:'错误事项'}],
+  })), /缺少有效事项/);
+});
+
 test('annual focus correction bounds historical evidence and keeps referenced timing source', async () => {
   const raw = rawPlan(); raw.annual_checkup.focus = '';
   raw.checkup_completion[0].timingSourceId = 'report:499';
