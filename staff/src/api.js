@@ -381,6 +381,7 @@ export const staffAPI = {
   // P4 — Gift Service
   giftToPatient:    (id, data) => req(`/staff/patients/${id}/gift`, { method: 'POST', body: JSON.stringify(data) }),
   getPatientGifts:  (id)       => req(`/staff/patients/${id}/gifts`),
+  correctGiftValidity: (patientId, giftId, data) => req(`/staff/patients/${patientId}/gifts/${giftId}/validity`, { method: 'PATCH', body: JSON.stringify(data) }),
   giveCoupon:       (id, data) => req(`/staff/patients/${id}/coupons`, { method: 'POST', body: JSON.stringify(data) }),
   getPatientCoupons:(id)       => req(`/staff/patients/${id}/coupons`),
 

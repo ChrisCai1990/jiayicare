@@ -11,14 +11,45 @@ const mongoose = require('mongoose');
 const { createHash } = require('node:crypto');
 const { needsPlannerDispatch } = require('./proxyPlannerDispatch');
 const PackageEntitlement = require('../models/PackageEntitlement');
+const GiftRecord = require('../models/GiftRecord');
 const { applicableEntitlements } = require('./packageEntitlements');
 
 const PREFIX = 'medical_proxy:';
 const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
 const ALL_STAGES = [...STAGES, 'appointment_review', 'post_visit_audit', 'post_visit_review'];
 const STAFF_DIRECT_SOURCE = 'staff_direct';
+function shanghaiDateStart(now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map(part => [part.type, part.value]));
+  return new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00.000Z`);
+}
+async function reserveGiftMedicalBenefit(patientId, giftId, order, serviceName) {
+  if (!mongoose.isValidObjectId(giftId)) return { status: 'gift_unavailable' };
+  const day = shanghaiDateStart();
+  const gift = await GiftRecord.findOneAndUpdate({ _id: giftId, patientId, giftType: 'service', status: 'active',
+    serviceName: { $in: ['就医协助服务', serviceName] },
+    $and: [{ $or: [{ validFrom: null }, { validFrom: { $lte: day } }] }, { $or: [{ validTo: null }, { validTo: { $gte: day } }] }],
+    $expr: { $lt: [{ $ifNull: ['$usedCount', 0] }, '$serviceCount'] },
+  }, { $inc: { usedCount: 1 }, $push: { usageRecords: { executionOrderId: order._id, usedAt: new Date(), serviceName } } }, { new: true });
+  if (!gift) return { status: 'gift_unavailable' };
+  try {
+    order.serviceId = `gift:${gift._id}`;
+    order.paymentStatus = 'paid';
+    order.tradeStatus = 'paid';
+    order.paidAmount = 0;
+    order.paymentExpectedAmount = 0;
+    order.paidAt = new Date();
+    order.status = 'scheduled';
+    order.giftRecordUsage = { giftId: gift._id, usedAt: new Date(), serviceName };
+    await order.save();
+    return { status: 'reserved' };
+  } catch (error) {
+    await GiftRecord.updateOne({ _id: gift._id, 'usageRecords.executionOrderId': order._id },
+      { $inc: { usedCount: -1 }, $pull: { usageRecords: { executionOrderId: order._id } } });
+    throw error;
+  }
+}
 async function settleCompletedMedicalOrder(order, actorId) {
-  if ((order.packageEntitlementUsage || Number(order.paidAmount || 0) > 0)
+  if ((order.packageEntitlementUsage || order.giftRecordUsage || Number(order.paidAmount || 0) > 0)
     && Number(order.totalUnits || 1) === 1 && Number(order.usedUnits || 0) < 1 && actorId) {
     const completedAt = order.completedAt || new Date();
     const updated = await Order.findOneAndUpdate({ _id: order._id, status: 'completed', usedUnits: { $lt: 1 } }, {
@@ -759,23 +790,28 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
   let order;
   if (executionOrder) {
     order = await Order.findOneAndUpdate({ _id: executionOrder._id, user: patient._id,
-      status: 'pending', serviceStartedAt: null, 'packageEntitlementUsage.entitlementId': { $exists: true } },
+      status: { $in: ['pending', 'scheduled'] }, serviceStartedAt: null,
+      $or: [{ 'packageEntitlementUsage.entitlementId': { $exists: true } },
+        { orderType: 'service', paymentStatus: 'paid', paidAmount: { $gt: 0 } }] },
     { $set: { desiredServiceDate: orderFields.desiredServiceDate,
       desiredServiceDateEnd: orderFields.desiredServiceDateEnd, scheduledAt: orderFields.scheduledAt,
       serviceRequirements: orderFields.serviceRequirements,
       serviceWorkflowSnapshot: { ...(executionOrder.serviceWorkflowSnapshot || {}), key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
       medicalProxyPlan: orderFields.medicalProxyPlan, status: 'scheduled', tradeStatus: 'fulfilling' } }, { new: true });
-    if (!order) throw Object.assign(new Error('该套餐履约单已办理或已取消，请刷新后查看'), { status: 409 });
+    if (!order) throw Object.assign(new Error('该服务订单已办理或已取消，请刷新后查看'), { status: 409 });
   } else order = await Order.create(orderFields);
   let benefit;
-  try { benefit = executionOrder ? { status: 'reserved' } : await reserveStaffMedicalBenefit(patient._id, order, serviceName); }
+  try { benefit = executionOrder ? { status: 'reserved' } : plan.giftId
+    ? await reserveGiftMedicalBenefit(patient._id, plan.giftId, order, serviceName)
+    : await reserveStaffMedicalBenefit(patient._id, order, serviceName); }
   catch (error) {
     if (!executionOrder) await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
     throw error;
   }
-  if (['history_pending', 'exhausted', 'ambiguous', 'paid_required'].includes(benefit.status)) {
+  if (['gift_unavailable', 'history_pending', 'exhausted', 'ambiguous', 'paid_required'].includes(benefit.status)) {
     if (!executionOrder) await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
-    throw Object.assign(new Error(benefit.status === 'history_pending'
+    throw Object.assign(new Error(benefit.status === 'gift_unavailable' ? '赠送权益未生效、已用尽或与本次服务不匹配，请刷新会员权益'
+      : benefit.status === 'history_pending'
       ? '服务包历史次数待核对，请先由医护端超管核对'
       : benefit.status === 'ambiguous' ? '同名服务有多个收费规格，请在会员权益中选择具体服务'
         : '套餐无可用次数，请先购买对应付费服务'), { status: 409 });

@@ -2078,6 +2078,12 @@ export default function PatientDetailPage() {
   const [reportPage, setReportPage] = useState(1)
   const [openReportActionId, setOpenReportActionId] = useState(null)
   const [patientOrders, setPatientOrders] = useState([])
+  const [patientOrdersLoading, setPatientOrdersLoading] = useState(false)
+  const [patientOrdersError, setPatientOrdersError] = useState('')
+  const [medicalLaunchRequested, setMedicalLaunchRequested] = useState(new URLSearchParams(location.search).get('medicalLaunch') === '1')
+  const [giftRecords, setGiftRecords] = useState([])
+  const [giftRecordsLoading, setGiftRecordsLoading] = useState(false)
+  const [giftRecordsError, setGiftRecordsError] = useState('')
   const [packageEntitlements, setPackageEntitlements] = useState([])
   const [membershipSummary, setMembershipSummary] = useState(null)
   const [membershipError, setMembershipError] = useState('')
@@ -3336,10 +3342,13 @@ export default function PatientDetailPage() {
       if (reports.length === 0) loadReports()
     }
     else if (tab === 'consumption' || tab === 'membership') {
-      if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
+      setPatientOrdersLoading(true); setPatientOrdersError('')
+      staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => { setPatientOrders([]); setPatientOrdersError('付费订单加载失败，请刷新重试') }).finally(() => setPatientOrdersLoading(false))
       setMembershipSummary(null)
       loadMembership()
       if (tab === 'membership') {
+        setGiftRecordsLoading(true); setGiftRecordsError('')
+        staffAPI.getPatientGifts(id).then(r => setGiftRecords(r.data || [])).catch(() => { setGiftRecords([]); setGiftRecordsError('赠送权益加载失败，请刷新重试') }).finally(() => setGiftRecordsLoading(false))
         setPartnerBenefitsError('')
         staffAPI.getPatientPartnerBenefits(id).then(r => setPartnerBenefits(r.data || [])).catch(() => { setPartnerBenefits([]); setPartnerBenefitsError('合作伙伴权益加载失败') })
       }
@@ -9578,8 +9587,8 @@ export default function PatientDetailPage() {
                 </button>
               )}
               {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => { setMedicalServiceOnly(true); setTab('consumption'); requestAnimationFrame(() => document.getElementById('patient-service-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}>
-                  发起就医协助服务 · 套餐优先
+                <button className="btn btn-secondary btn-sm" onClick={() => { setMedicalLaunchRequested(true); setTab('membership') }}>
+                  发起就医协助服务 · 核对会员权益
                 </button>
               )}
               {['healthPlanner', 'superadmin'].includes(staff?.role) && (
@@ -11036,7 +11045,7 @@ export default function PatientDetailPage() {
                           <div>{order.serviceName || order.serviceId}</div>
                           {order.specificationLabel && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{order.specificationLabel}</div>}
                         </td>
-                        <td style={{ fontSize: 12 }}>{order.packageEntitlementUsage ? <><strong style={{ color: '#1E6B50' }}>套餐 ¥0 履约单</strong><div style={{ color: '#718579' }}>已预占套餐次数</div></> : order.orderType === 'package' ? '购买服务包' : '单独下单'}</td>
+                        <td style={{ fontSize: 12 }}>{order.giftRecordUsage ? <strong style={{ color: '#1E6B50' }}>赠送服务 · ¥0</strong> : order.packageEntitlementUsage ? <><strong style={{ color: '#1E6B50' }}>套餐 ¥0 履约单</strong><div style={{ color: '#718579' }}>已预占套餐次数</div></> : order.orderType === 'package' ? '购买服务包' : '单独下单'}</td>
                         <td style={{ color: '#D97706', fontWeight: 600 }}>
                           {order.servicePrice != null ? `¥${order.servicePrice}` : '-'}
                         </td>
@@ -11218,7 +11227,54 @@ export default function PatientDetailPage() {
 
       {/* ── Membership Tab ── */}
       {tab === 'membership' && (
-        <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} onViewRedemption={() => setTab('consumption')} historyReviewNeeded={historyReviewNeeded} isSuperadmin={staff?.role === 'superadmin' || membershipSummary?.canReviewHistory === true} onReviewHistory={openPackageHistoryReview} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
+        <>
+          {medicalLaunchRequested && (() => {
+            const today = shanghaiDateInput()
+            const datePart = value => value ? String(value).slice(0, 10) : ''
+            const medicalName = value => /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号/.test(value || '')
+            const gifts = giftRecords.filter(gift => gift.giftType === 'service' && gift.status === 'active' && medicalName(gift.serviceName)
+              && (!gift.validFrom || datePart(gift.validFrom) <= today) && (!gift.validTo || datePart(gift.validTo) >= today)
+              && Number(gift.serviceCount || 0) > Number(gift.usedCount || 0))
+            const packageRights = packageEntitlements.flatMap(entitlement => {
+              if (entitlement.status !== 'active' || entitlement.historyVerified === false
+                || (entitlement.validFrom && datePart(entitlement.validFrom) > today)
+                || (entitlement.validUntil && datePart(entitlement.validUntil) < today)) return []
+              const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
+              return (entitlement.rights?.productEntitlements || []).filter(right => medicalName(right.productName)
+                && Number((pools.get(right.poolKey) || right).remainingCount || 0) > 0).map(right => ({ name: right.productName, packageName: entitlement.packageName }))
+            })
+            const paidOrders = patientOrders.filter(order => order.orderType === 'service' && order.paymentStatus === 'paid'
+              && Number(order.paidAmount || 0) > 0 && ['pending', 'scheduled'].includes(order.status)
+              && !order.serviceStartedAt && medicalName(order.serviceName))
+            const loadingRights = giftRecordsLoading || patientOrdersLoading || (!membershipSummary && !membershipError)
+            const loadError = giftRecordsError || patientOrdersError || membershipError
+            const launchUrl = extra => `/plans?type=medical_assist&openPlan=medical_assist&patientId=${id}&patientName=${encodeURIComponent(user.name || '')}&${extra}`
+            return <div className="card" style={{ gridColumn: '1 / -1', marginBottom: 16 }}>
+              <div className="card-header"><div className="card-title">发起就医协助 · 先核对会员权益</div></div>
+              <div className="card-body" style={{ display: 'grid', gap: 10 }}>
+                {loadingRights ? <div>正在核对赠送、套餐和付费服务…</div> : loadError ? <div role="alert" style={{ color: '#B45309' }}>{loadError}；请刷新后再发起。</div> : <>
+                  {gifts.map(gift => <div key={gift._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#EFF8F4', borderRadius: 8 }}>
+                    <span>赠送权益 · {gift.serviceName} · 可用 {Number(gift.serviceCount) - Number(gift.usedCount || 0)} 次 · 有效至 {datePart(gift.validTo) || '不限'}</span>
+                    <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl(`giftId=${gift._id}`))}>使用赠送权益发起</button>
+                  </div>)}
+                  {packageRights.map((right, index) => <div key={`${right.packageName}:${right.name}:${index}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#F4F7F3', borderRadius: 8 }}>
+                    <span>套餐权益 · {right.packageName} · {right.name}</span>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setMedicalServiceOnly(true); setTab('consumption') }}>查看可用次数并发起</button>
+                  </div>)}
+                  {!gifts.length && !packageRights.length && <>
+                    <div>当前没有可用于就医协助的会员权益，正在使用已付费服务。</div>
+                    {paidOrders.map(order => <div key={order._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#F6F8F5', borderRadius: 8 }}>
+                      <span>已付费 · {order.serviceName} · 实付 ¥{Number(order.paidAmount).toFixed(2)}</span>
+                      <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl(`reservedOrderId=${order._id}&reservedProductName=${encodeURIComponent(order.serviceName)}`))}>沿用此订单发起</button>
+                    </div>)}
+                    {!paidOrders.length && <div role="alert" style={{ color: '#B45309' }}>没有可用会员权益，也没有已付费的就医协助服务。请先确认赠送有效期或完成服务购买，再发起。</div>}
+                  </>}
+                </>}
+              </div>
+            </div>
+          })()}
+          <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} onViewRedemption={() => setTab('consumption')} historyReviewNeeded={historyReviewNeeded} isSuperadmin={staff?.role === 'superadmin' || membershipSummary?.canReviewHistory === true} onReviewHistory={openPackageHistoryReview} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
+        </>
       )}
 
       {/* 随访详情弹窗 */}

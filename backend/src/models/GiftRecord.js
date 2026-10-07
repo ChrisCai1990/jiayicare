@@ -8,6 +8,8 @@ const giftRecordSchema = new Schema({
   // 赠送服务
   serviceName:  { type: String, default: '' },
   serviceCount: { type: Number, default: 0 },
+  usedCount:    { type: Number, default: 0, min: 0 },
+  usageRecords: [{ executionOrderId: { type: Schema.Types.ObjectId, ref: 'Order' }, usedAt: Date, serviceName: String }],
   // 赠送健康基金
   fundAmount:   { type: Number, default: 0 },   // 元
   fundType:     { type: String, enum: ['enterprise', 'promotion', 'other'], default: 'enterprise' },
@@ -16,6 +18,12 @@ const giftRecordSchema = new Schema({
   validTo:      { type: Date, default: null },
   remark:       { type: String, default: '' },
   status:       { type: String, enum: ['active', 'used', 'expired'], default: 'active' },
+  dateCorrections: [{
+    previousValidFrom: Date, previousValidTo: Date,
+    validFrom: Date, validTo: Date,
+    correctedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
+    correctedAt: Date, reason: String,
+  }],
 }, { timestamps: true });
 
 giftRecordSchema.index({ patientId: 1 });

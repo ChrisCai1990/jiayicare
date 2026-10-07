@@ -27,6 +27,23 @@ return <View style={s.card}><View style={s.row}><Text style={s.name}>{item.name}
 {shared && <Text style={s.body}>以上服务合计共用，并非每项各有此次数</Text>}
 <Text style={s.body}>{item.usageKnown?item.detail:'使用情况待核对 · 暂不显示剩余次数'}</Text></View>;
 }
+function dateOnly(value) { return value ? String(value).slice(0,10) : ''; }
+function localToday() { const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`; }
+function GiftServices({gifts,loading,error,onRefresh}) {
+const services=(gifts||[]).filter(gift=>gift.giftType==='service');
+const today=localToday();
+return <View style={style({paddingHorizontal:18,paddingBottom:18})}>
+<Text style={s.section}>单独赠送的服务</Text>
+{loading ? <Text style={s.muted}>加载赠送记录中…</Text> : error ? <><Text style={s.muted}>{error}</Text><Action onPress={onRefresh}>重试</Action></> : !services.length ? <Text style={s.muted}>暂无单独赠送的服务</Text> : services.map(gift=>{
+const from=dateOnly(gift.validFrom),to=dateOnly(gift.validTo);
+const status=gift.status==='used'||(Number(gift.serviceCount||0)>0&&Number(gift.usedCount||0)>=Number(gift.serviceCount))?'已使用':gift.status==='expired'||(to&&to<today)?'已过期':from&&from>today?'未生效':'有效';
+return <View key={gift._id} style={s.card}><View style={s.row}><Text style={s.name}>{gift.serviceName||'服务权益'}</Text><Text style={s.count}>可用 {Math.max(0,Number(gift.serviceCount||0)-Number(gift.usedCount||0))} 次</Text></View>
+<Text style={s.body}>{status} · {from||'赠送日起'} — {to||'长期有效'}</Text>
+{!!gift.remark&&<Text style={s.body}>{gift.remark}</Text>}
+<Text style={s.body}>赠送记录；具体使用情况请向服务团队核对。</Text></View>;
+})}
+</View>;
+}
 function Plan({plan}) {
 const [expanded,setExpanded]=useState(false),g=plan.groups;
 return <View style={style({padding:18,paddingTop:0})}>
@@ -40,9 +57,10 @@ return <View style={style({padding:18,paddingTop:0})}>
 {expanded && <>{(plan.usage||[]).map((item,i)=><View key={i} style={s.card}><Text style={s.name}>{item.name}</Text><Text style={s.body}>{String(item.usedAt||'待核对').slice(0,10)}</Text></View>)}{!plan.usage?.length && <Text style={s.muted}>{plan.source==='configuration'?'历史记录待核对，不代表尚未使用。':'暂无本人使用记录；共用额度可能包含其他成员使用。'}</Text>}</>}
 <Text style={s.body}>{plan.source==='configuration'?'按当前计划配置展示，历史已用及剩余次数待核对。':plan.notice}</Text></View>;
 }
-export default function MembershipBenefits(){
+export default function MembershipBenefits({gifts,giftsLoading,giftsError,onRefreshGifts}){
 const [data,setData]=useState(null),[error,setError]=useState(''),[refresh,setRefresh]=useState(0),[loading,setLoading]=useState(true);
 useEffect(()=>{let live=true;setLoading(true);setError('');userAPI.getMembershipBenefits().then(r=>{if(!r.success)throw Error();if(live)setData(r.data);}).catch(()=>{if(live)setError('加载失败，请刷新重试');}).finally(()=>{if(live)setLoading(false);});return()=>{live=false};},[refresh]);
 return <View style={s.root}><View style={s.top}><Text style={s.title}>我的会员权益</Text><Action onPress={()=>{if(!loading)setRefresh(v=>v+1)}}>{loading?'加载中':'刷新'}</Action></View>
-{!!error && <Text style={s.body}>{error}</Text>}{!!data?.message && <Text style={s.body}>{data.message}</Text>}{(data?.plans||[]).map(plan=><Plan key={plan.id} plan={plan}/>)}</View>;
+{!!error && <Text style={s.body}>{error}</Text>}{!!data?.message && <Text style={s.body}>{(gifts||[]).some(gift=>gift.giftType==='service')?'暂无会员计划权益；单独赠送的服务见下方。':data.message}</Text>}{(data?.plans||[]).map(plan=><Plan key={plan.id} plan={plan}/>) }
+<GiftServices gifts={gifts} loading={giftsLoading} error={giftsError} onRefresh={onRefreshGifts}/></View>;
 }

@@ -44,6 +44,7 @@ export default function PlansPage() {
   const initialPatientId = searchParams.get('patientId') || ''
   const initialPatientName = searchParams.get('patientName') || ''
   const reservedOrderId = searchParams.get('reservedOrderId') || ''
+  const giftId = searchParams.get('giftId') || ''
   const reservedProductName = searchParams.get('reservedProductName') || ''
   const requestedPlanType = searchParams.get('openPlan') || (searchParams.get('openMedicalAssist') === '1' ? 'medical_assist' : '')
 
@@ -98,7 +99,8 @@ export default function PlansPage() {
     if (requestedPlanType === 'annual_mgmt') setShowAhModal(true)
     if (requestedPlanType === 'nutrition') setShowNutritionModal(true)
     if (requestedPlanType === 'medical_assist') {
-      if (reservedOrderId || (staff?.role === 'superadmin' && searchParams.get('legacyPlan') === '1')) setShowMedicalModal(true)
+      if (reservedOrderId || giftId || (staff?.role === 'superadmin' && searchParams.get('legacyPlan') === '1')) setShowMedicalModal(true)
+      else if (initialPatientId) nav(`/patients/${initialPatientId}?tab=membership&medicalLaunch=1`)
       else if (['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role)) setShowMedicalServicePicker(true)
     }
   }, [requestedPlanType, staff?.role, searchParams])
@@ -165,7 +167,7 @@ export default function PlansPage() {
           选择会员后核对就医服务产品、套餐剩余权益及已付款订单；套餐优先，确认实际启动后自动核销。下方保留历史方案。
         </div>
       )}
-      {showMedicalServicePicker && <SelectPatientForAhModal title="发起就医协助服务 — 选择会员" actionLabel="选择服务与权益" initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowMedicalServicePicker)} onSelected={patientId => { closePlanModal(setShowMedicalServicePicker); nav(`/patients/${patientId}?tab=consumption&serviceFilter=medical`) }} />}
+      {showMedicalServicePicker && <SelectPatientForAhModal title="发起就医协助服务 — 选择会员" actionLabel="核对会员权益" initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowMedicalServicePicker)} onSelected={patientId => { closePlanModal(setShowMedicalServicePicker); nav(`/patients/${patientId}?tab=membership&medicalLaunch=1`) }} />}
 
       {/* ── 年度管理方案（AnnualPlan） ── */}
       {isAnnualMgmt && (
@@ -264,7 +266,7 @@ export default function PlansPage() {
               </table>}
           </div>
           {showCheckupModal   && <AnnualCheckupPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowCheckupModal)} onSaved={() => { closePlanModal(setShowCheckupModal); loadPlans(); toast('体检方案已创建') }} />}
-          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} reservedOrderId={reservedOrderId} reservedProductName={reservedProductName} onClose={() => { closePlanModal(setShowMedicalModal); if (reservedOrderId) nav(`/patients/${initialPatientId}?tab=consumption&serviceFilter=medical`) }} onSaved={result => { closePlanModal(setShowMedicalModal); loadPlans(); toast(result?.warning || (reservedOrderId ? '原套餐履约单已进入就医协助流程并自动核销' : '就医协助方案已创建')); if (reservedOrderId) nav(result?.warning && result?.planId ? `/plans/${result.planId}/modules` : `/patients/${initialPatientId}?tab=followups`) }} />}
+          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} reservedOrderId={reservedOrderId} reservedProductName={reservedProductName} giftId={giftId} onClose={() => { closePlanModal(setShowMedicalModal); if (reservedOrderId || giftId) nav(`/patients/${initialPatientId}?tab=membership`) }} onSaved={result => { closePlanModal(setShowMedicalModal); loadPlans(); toast(result?.warning || (giftId ? '已使用赠送权益发起就医协助' : reservedOrderId ? '原服务订单已进入就医协助流程' : '就医协助方案已创建')); if (reservedOrderId || giftId) nav(result?.warning && result?.planId ? `/plans/${result.planId}/modules` : `/patients/${initialPatientId}?tab=followups`) }} />}
           {showNutritionModal && <NutritionAIDraftModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowNutritionModal)} onSaved={plan => { closePlanModal(setShowNutritionModal); loadPlans(); toast('AI营养草稿已生成，请核对后推送'); nav(`/plans/${plan._id}/modules`) }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
@@ -599,7 +601,7 @@ function templateToItems(tpl) {
 }
 
 // ── 就医协助方案：两步创建弹窗 ────────────────────────────────────────
-function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '', reservedOrderId = '', reservedProductName = '' }) {
+function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '', reservedOrderId = '', reservedProductName = '', giftId = '' }) {
   const canViewMedicalResources = usePermission()('medical_resources', 'view')
   const [step, setStep] = useState(1)
   const [templates, setTemplates] = useState([])
@@ -818,7 +820,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       if (isMedicalProxy || isExpertAppointment || isMedicationProxy) {
         const medicationItems = isMedicationProxy ? form.medicationItems.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value || '').trim()]))) : []
         const firstMedication = medicationItems[0] || {}
-        await staffAPI.startStaffMedicalProxy(patientId, { reservedOrderId, hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, ...firstMedication, medicationItems, institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
+        await staffAPI.startStaffMedicalProxy(patientId, { reservedOrderId, giftId, hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, ...firstMedication, medicationItems, institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
         onSaved()
         return
       }
@@ -826,6 +828,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
         await staffAPI.startStaffMedicalProxy(patientId, {
           medicalEscort: true,
           reservedOrderId,
+          giftId,
           escortCategory: isExamEscort ? 'exam' : isTreatmentEscort ? 'treatment' : 'consultation',
           escortDate: form.serviceDate,
           escortTime: form.serviceTime.trim(),
@@ -889,9 +892,11 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     ? templates.filter(tpl => [tpl.name, tpl.content?.hospital, tpl.content?.campus, tpl.content?.department, tpl.content?.expert]
       .some(value => String(value || '').toLocaleLowerCase().includes(normalizedTemplateQuery)))
     : templates
-  const matchingTemplates = reservedProductName
+  const supportedMedicalTemplate = tpl => /医疗代诊|专家约诊|代配药|代取药|陪同检查|陪同治疗|陪同就医|就医陪同/.test(tpl.name || '')
+  const matchingTemplates = giftId ? visibleTemplates.filter(supportedMedicalTemplate) : reservedProductName
     ? visibleTemplates.filter(tpl => {
       const name = String(tpl.name || '')
+      if (reservedProductName === '就医协助服务') return supportedMedicalTemplate(tpl)
       if (/代办/.test(reservedProductName)) return /代办/.test(name)
       if (/陪同|陪诊/.test(reservedProductName)) return /陪同|陪诊/.test(name)
       if (/代诊/.test(reservedProductName)) return /代诊/.test(name)
@@ -934,7 +939,8 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
           {!loadingTpls && !tplError && templates.length > 0 && matchingTemplates.length === 0 && (
             <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>没有匹配的方案模板</div>
           )}
-          {reservedOrderId && <div style={{ marginBottom: 12, color: '#1E6B50', fontSize: 13 }}>本次服务：{reservedProductName} · 已预占套餐 1 次；提交后沿用原订单。</div>}
+          {reservedOrderId && <div style={{ marginBottom: 12, color: '#1E6B50', fontSize: 13 }}>本次服务：{reservedProductName} · 已关联现有服务订单；提交后沿用原订单。</div>}
+          {giftId && <div style={{ marginBottom: 12, color: '#1E6B50', fontSize: 13 }}>本次使用会员赠送权益；提交服务后记入该赠送记录，不生成付费订单。</div>}
           {matchingTemplates.map(tpl => {
             const c = tpl.content || {}
             const summary = [c.hospital, c.campus, c.department, c.expert].filter(Boolean).join(' · ')
