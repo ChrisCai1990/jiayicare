@@ -873,22 +873,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     return entry.def.multi ? (data.records || []).length > 0 : data.enabled !== false && entry.def.fields.some(field => data[field.key] !== undefined && data[field.key] !== '' && data[field.key] !== false)
   })
   const managementTargets = moduleData.management_targets?.records || []
-  const issueOptions = managementTargets.map((target, index) => ({ id: targetIssueId(target, index), label: (target.goal || target.sourceTitle || `管理问题 ${index + 1}`).slice(0, 60) }))
   const planActions = visibleModuleEntries.flatMap(entry => {
     const data = moduleData[entry.key] || {}
     return (entry.def.multi ? data.records || [] : [data]).map((record, index) => ({
       key: entry.key, index, record, moduleName: entry.def.name,
-      issueId: linkedIssueId(record, managementTargets),
       title: actionTitle(record, entry.def.name),
       date: record.executionDate || record.visit_time || record.plan_time || record.time || record.date || '',
     }))
   })
-  const setActionIssue = (action, issueId) => {
-    const entry = visibleModuleEntries.find(item => item.key === action.key)
-    if (!entry) return
-    if (!entry.def.multi) return handleModuleChange(action.key, 'issueId', issueId)
-    handleModuleChange(action.key, 'records', (moduleData[action.key]?.records || []).map((record, index) => index === action.index ? { ...record, issueId } : record))
-  }
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === strategyOf(planType)) || PLAN_TYPES[3]), key: planType, name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
     : PLAN_TYPES.find(pt => pt.key === strategyOf(planType))
@@ -1161,7 +1153,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             </div>
           </div>
           {patientMode && <section style={{ marginBottom: 16 }} aria-label="按问题查看年度管理方案">
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>按问题查看方案</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>研判已确认的管理目标与干预重点</div>
             {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>更新已确认研判目标</button>}
             {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。请先在专项研判中确认，保存年度草稿时也会自动带入。</div>}
             {managementTargets.map((row, index) => <div key={targetIssueId(row, index)} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
@@ -1172,11 +1164,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                 <label style={{ fontSize: 12, color: '#62776A' }}>干预重点<textarea className="form-input" aria-label={`干预重点 ${index + 1}`} rows={2} style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} value={row.focus || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, focus: e.target.value } : item))} /></label>
               </div>
               <label style={{ fontSize: 13, display: 'inline-block', marginTop: 7 }}><input type="checkbox" checked={row.nutritionRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养相关，带给营养师</label>
-              <div style={{ borderTop: '1px solid #E5ECE7', marginTop: 12, paddingTop: 10 }}>
-                <b style={{ fontSize: 13 }}>对应行动</b>
-                {planActions.filter(action => action.issueId === targetIssueId(row, index)).map(action => <div key={`${action.key}-${action.index}`} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '6px 0', fontSize: 13 }}><span style={{ color: '#62776A', minWidth: 90 }}>{action.moduleName}</span><span style={{ flex: 1 }}>{action.title}</span><span style={{ color: '#62776A' }}>{action.date || '时间待确认'}</span></div>)}
-                {!planActions.some(action => action.issueId === targetIssueId(row, index)) && <div style={{ color: '#789087', fontSize: 12, marginTop: 5 }}>暂无已关联行动，可在下方为方案事项选择管理问题。</div>}
-              </div>
             </div>)}
           </section>}
           {patientMode && <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
@@ -1196,17 +1183,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             </div>
             {!!plansByType[planType]?.nutritionMetricHistory?.length && <details style={{ marginTop: 10, fontSize: 12, color: '#52675D' }}><summary>指标调整记录（{plansByType[planType].nutritionMetricHistory.length}次）</summary>{plansByType[planType].nutritionMetricHistory.map((entry, index) => <div key={index} style={{ padding: '6px 0' }}>{new Date(entry.changedAt).toLocaleString('zh-CN')} · {entry.changedByName || '健康顾问'}：{(entry.before || []).join('、') || '未选'} → {(entry.after || []).join('、') || '未选'}</div>)}</details>}
           </details>}
-          {planActions.filter(action => !action.issueId).length > 0 && <section style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度固定服务与待关联行动">
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>年度固定服务与待关联行动</div>
-            <div style={{ fontSize: 12, color: '#62776A', margin: '4px 0 8px' }}>固定服务保留在年度方案；与具体问题有关的行动，请选择关联问题。</div>
-            {planActions.filter(action => !action.issueId).map(action => <div key={`${action.key}-${action.index}`} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #EDF1EE', fontSize: 13 }}>
-              <span style={{ minWidth: 95, color: '#62776A' }}>{action.moduleName}</span><span style={{ flex: 1, minWidth: 150 }}>{action.title}{action.date ? ` · ${action.date}` : ''}</span>
-              {canEdit && !pushedAt && issueOptions.length > 0 && <select aria-label={`关联问题 ${action.title}`} className="form-input" style={{ width: 'auto', maxWidth: 230 }} value={action.record.issueId || ''} onChange={e => setActionIssue(action, e.target.value)}><option value="">待关联</option><option value="fixed">年度固定服务</option>{issueOptions.map(issue => <option key={issue.id} value={issue.id}>{issue.label}</option>)}</select>}
-            </div>)}
-          </section>}
           <details style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: 16, marginBottom: 12 }}>
             <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>编辑服务安排与行动细节 · {planActions.length} 项</summary>
-            <div style={{ marginTop: 12, fontSize: 12, color: '#62776A' }}>按服务类别编辑执行时间、人员和服务方式；上方按问题汇总的内容会同步更新。</div>
+            <div style={{ marginTop: 12, fontSize: 12, color: '#62776A' }}>研判确认的目标保留在上方；在此核对对应服务的建议时间、医院和执行方式。</div>
           {visibleModuleEntries.map(entry => (
             <ModulePanel
               key={entry.key}
@@ -1215,7 +1194,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               data={moduleData[entry.key] || {}}
               onChange={handleModuleChange}
               showPlanSummary
-              issues={issueOptions}
               executionReviewChanges={pendingExecutionChanges.filter(change => change.key === entry.key)}
             />
           ))}

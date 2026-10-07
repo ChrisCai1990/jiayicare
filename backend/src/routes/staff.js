@@ -11672,12 +11672,16 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
         { reviewType: { $exists: false }, title: /年度管理研判/ },
       ],
     })
-      .sort({ 'conclusion.confirmedAt': -1, _id: 1 }).limit(closedLoop ? 0 : 20).select('title reviewType concerns.title conclusion.content conclusion.structured conclusion.managementTargets conclusion.confirmedAt').lean();
+      .sort({ 'conclusion.confirmedAt': -1, _id: 1 }).limit(closedLoop ? 0 : 20).select('title reviewType concerns.title conclusion.content conclusion.structured conclusion.managementTargets conclusion.confirmedAt messages.role messages.content').lean();
     if (supplement) confirmedCaseReviews = [...new Map([...confirmedCaseReviews, ...supplement.reviews].map(row => [String(row._id), row])).values()];
     const confirmedManagementTargets = require('../utils/caseReviewManagementTargets').fromConfirmedReviews(confirmedCaseReviews).slice(0, 32);
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
       : '无已确认的专题研判结论';
+    const discussedScheduling = confirmedCaseReviews.flatMap(item => (item.messages || [])
+      .filter(message => message.role === 'staff' && /医院|院区|专家|复诊|就医时间|预约/.test(message.content || ''))
+      .map(message => `【${item.title}的顾问讨论】${String(message.content || '').slice(0, 2000)}`))
+      .slice(-6).join('\n').slice(0, 6000);
     const professionalAssessments = closedLoop ? await ProfessionalHealthAssessment.find({
       patientId: user._id, purpose: preparation.continuity?.mode === 'renewal' ? { $in: ['annual_input', 'issue_collaboration'] } : 'annual_input', status: 'approved',
       $or: [{ validUntil: null }, { validUntil: { $gte: new Date() } }],
@@ -11741,7 +11745,7 @@ ${missingCheckups}
 【疫苗证据】乙肝三系是否五项全阴：${allHepatitisBMarkersNegative ? '是' : '否或资料不完整'}。只有本次服务目标或已确认阶段性评估明确把疫苗列为行动项时，才允许生成疫苗模块。
 
 【年度体检计划日期】${suggestedCheckupDate || '无可靠的上次体检日期，请给出建议并由健康顾问确认'}${suggestedCheckupDate ? '（按上次体检后11个月，即满一年提前1个月自动计算）' : ''}
-【就医与检查统筹】同一客户的本次就医、完善检查和复查，无来源明确的先后顺序、准备冲突、时限差异或实际预约限制时，优先建议同一天协调办理，减少往返；不得为分散项目随意错开日期。有必要拆开时在notes写明来源依据，不能编造号源或预约限制。不能为凑同一天延误有明确时限的事项。日期仅为建议，未确认可写待确认，绝不宣称已预约。只生成本次事项，frequency固定单次，后续时间由本次结果审核后决定；随访负责人由系统关联客户健管专员，AI不得指定协调人员或虚构服务选择。
+【就医与检查统筹】同一客户的本次就医、完善检查和复查，无来源明确的先后顺序、准备冲突、时限差异或实际预约限制时，优先建议同一天协调办理，减少往返；不得为分散项目随意错开日期。有必要拆开时在notes写明来源依据，不能编造号源或预约限制。不能为凑同一天延误有明确时限的事项。日期仅为建议，未确认且无可靠建议日期时日期字段留空，并在notes写明待确认；绝不宣称已预约。只生成本次事项，frequency固定单次，后续时间由本次结果审核后决定；随访负责人由系统关联客户健管专员，AI不得指定协调人员或虚构服务选择。
 
 【本次服务目标（健康顾问填写，方案要朝这个方向靠）】
 ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
@@ -11751,9 +11755,13 @@ ${closedLoop ? require('../utils/annualPlanContinuity').continuityPrompt(prepara
 【医护团队已确认的AI辅助研判结论】
 ${confirmedReviewText}
 
+【已确认研判中的顾问讨论安排线索】
+${discussedScheduling || '无明确的医院或时间线索'}
+这些讨论只用于对应已纳入问题的医院意向、既有复诊安排与时间线索，不新增诊断或行动。讨论中明确的医院可作为建议医院带入方案，不能写成已预约；未明确的医院留空。已确认管理目标中的明确复评期限须体现在相关行动的建议日期或时间评估依据中，不得丢失。
+
 【健康顾问已确认的管理目标与干预重点】
 ${confirmedManagementTargets.length ? JSON.stringify(confirmedManagementTargets) : '暂无逐条确认的目标；不得虚构量化目标'}
-请优先对齐这些目标；标记为营养相关的条目应供营养师后续核实，不要替营养师编造基线或能量处方。
+这些已确认目标和干预重点是年度方案的内容边界。逐条落实对应行动、复评期限和预期，不得改写目标或自行扩展新问题；年度体检和近五年趋势仅用于核对事实与完善执行细节。标记为营养相关的条目应供营养师后续核实，不要替营养师编造基线或能量处方。
 
 ${closedLoop ? `【已由专业人员提出、健康顾问终审的年度综合健康评估】
 ${professionalAssessmentText}
@@ -11785,7 +11793,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     { "standardPlanId": "必须来自方案库的id", "standardPlanName": "必须来自方案库的name且不可改名", "matchReason": "与研判的匹配依据", "personalization": "只写相对标准方案需要增加、删减或重点关注的调整，无调整写空字符串", "executionDate": "不早于${todayText}的YYYY-MM-DD日期", "frequency": "执行频次", "precautions": "注意事项", "customerAction": "客户行动" }
   ],
   "medical_treatment": [
-    { "standardPlanId": "category=medical_treatment的真实模板id", "reason": "就医原因", "department": "就诊科室", "visit_time": "不早于${todayText}的日期", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
+    { "standardPlanId": "category=medical_treatment的真实模板id", "reason": "就医原因", "hospital": "顾问讨论中明确的对应意向医院；未明确留空", "department": "就诊科室", "visit_time": "不早于${todayText}的建议日期", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
   ],
   "specialist_collab": [],
   "checkup_completion": [
@@ -11804,7 +11812,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
   "annual_checkup": { "standardPlanId": "category=annual_checkup的真实模板id", "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
 }
 
-注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items和name不超过20个汉字。templateNodes不是AI新建方案，而是从Admin标准随访方案库调用后做客户级调整；standardPlanId和standardPlanName必须原样引用，禁止另起名称、改写模板或为了填满页面创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
+注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items和name不超过20个汉字。templateNodes不是AI新建方案，而是从Admin标准随访方案库调用后做客户级调整；standardPlanId和standardPlanName必须原样引用，禁止另起名称、改写模板或为了填满页面创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期，日期字段只可填写YYYY-MM-DD或空字符串。无相关内容用空数组。`;
 
     const consistency = require('../utils/annualGenerationConsistency');
     const clinicalRules = require('../utils/annualClinicalRules');
@@ -11852,7 +11860,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 8, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, confirmedReportIssues, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 9, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, confirmedReportIssues, confirmedCaseReviews: confirmedCaseReviews.map(({ messages, ...review }) => review), discussedScheduling, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;
@@ -11884,7 +11892,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
         records = records.map(record => hydrateStandardRecord(record, key)).filter(Boolean);
       }
       result[key] = { records: records.map(record => ({
-        ...(closedLoop && ['medical_treatment', 'checkup_completion', 'abnormal_followup'].includes(key) ? require('../../../shared/annualAppointment.cjs').evaluatedTiming(record, key === 'medical_treatment' ? 'visit_time' : 'time') : record),
+        ...(closedLoop && ['medical_treatment', 'checkup_completion', 'abnormal_followup'].includes(key) ? require('../../../shared/annualAppointment.cjs').evaluatedTiming(record, key === 'medical_treatment' ? 'visit_time' : 'time', generationDay) : record),
         serviceMode: 'reminder',
         serviceType: '',
         reviewStatus: 'pending_family_doctor_review',
@@ -11896,7 +11904,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     if (allowedKeys.includes('lifestyle') && raw.lifestyle && !Array.isArray(raw.lifestyle) && raw.lifestyle.focus) result.lifestyle = { enabled: true, ...raw.lifestyle };
     if (allowedKeys.includes('annual_checkup') && raw.annual_checkup && !Array.isArray(raw.annual_checkup) && raw.annual_checkup.focus) {
       const hydrated = hydrateStandardRecord(raw.annual_checkup, 'annual_checkup');
-      if (hydrated) result.annual_checkup = { enabled: true, ...(closedLoop ? require('../../../shared/annualAppointment.cjs').evaluatedTiming(hydrated, 'date') : hydrated) };
+      if (hydrated) result.annual_checkup = { enabled: true, ...(closedLoop ? require('../../../shared/annualAppointment.cjs').evaluatedTiming(hydrated, 'date', generationDay) : hydrated) };
     }
     const standardPlanByName = new Map(availableAnnualFollowUpCatalog.map(item => [item.name, item]));
     result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => {

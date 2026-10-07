@@ -20,6 +20,9 @@ test('calendar month evaluation and seven-day booking schedule cross leap/month/
   assert.equal(evaluatedTiming({ time: '2026-10-25', timingBaseDate: '2026-09-22', timingIntervalMonths: 1 }, 'time').time, '2026-10-25');
   assert.equal(evaluatedTiming({ time: '' }, 'time').appointmentSchedulingVersion, undefined);
   assert.throws(() => evaluatedTiming({ time: '2026-02-30' }, 'time'), /日期无效/);
+  const planned = evaluatedTiming({ visit_time: '待确认', timingReason: 'ABPM于2026-03-09开具但未执行；原复评截止日为2026-12-15，建议最迟于2026-11-30前完成。' }, 'visit_time', '2026-10-07');
+  assert.equal(planned.visit_time, '2026-11-30');
+  assert.equal(evaluatedTiming({ visit_time: '待确认', timingReason: '待专科确认后安排' }, 'visit_time', '2026-10-07').visit_time, '');
 });
 test('existing schedule remains unchanged unless explicitly using appointment scheduling', () => {
   const { normalizeAnnualItems } = require('../src/utils/annualItemManagement');

@@ -13,9 +13,21 @@ function addMonths(day, months) {
 function appointmentDay(day) {
   return validDay(day) ? new Date(Date.parse(day) - 7 * 86400000).toISOString().slice(0, 10) : '';
 }
-function evaluatedTiming(row, dateKey) {
-  if (row[dateKey] && row[dateKey] !== '待确认' && !validDay(row[dateKey])) throw Object.assign(new Error('AI建议日期无效，请重新评估，不替换现有方案'), { statusCode: 409 });
-  const day = validDay(row[dateKey]) ? row[dateKey] : addMonths(row.timingBaseDate, row.timingIntervalMonths);
-  return day ? { ...row, [dateKey]: day, appointmentSchedulingVersion: 1 } : row;
+function explicitSuggestedDay(row, minDate = '') {
+  const text = [row.dateSelectionReason, row.timingReason, row.notes].filter(Boolean).join('；');
+  const dates = [...text.matchAll(/\d{4}-\d{2}-\d{2}/g)].filter(match => {
+    const before = text.slice(Math.max(0, match.index - 22), match.index);
+    const after = text.slice(match.index + 10, match.index + 22);
+    return /建议|最迟|不晚于|应于|安排|复评时间|计划|截止/.test(before) || /前完成|前就医|前复查/.test(after);
+  }).map(match => match[0]).filter(day => validDay(day) && (!minDate || day >= minDate));
+  return dates.sort()[0] || '';
 }
-module.exports = { validDay, addMonths, appointmentDay, evaluatedTiming };
+function evaluatedTiming(row, dateKey, minDate = '') {
+  if (row[dateKey] && row[dateKey] !== '待确认' && !validDay(row[dateKey])) throw Object.assign(new Error('AI建议日期无效，请重新评估，不替换现有方案'), { statusCode: 409 });
+  const intervalDay = addMonths(row.timingBaseDate, row.timingIntervalMonths);
+  const day = validDay(row[dateKey]) ? row[dateKey]
+    : explicitSuggestedDay(row, minDate) || (intervalDay && (!minDate || intervalDay >= minDate) ? intervalDay : '');
+  return day ? { ...row, [dateKey]: day, appointmentSchedulingVersion: 1 }
+    : row[dateKey] === '待确认' ? { ...row, [dateKey]: '' } : row;
+}
+module.exports = { validDay, addMonths, appointmentDay, explicitSuggestedDay, evaluatedTiming };

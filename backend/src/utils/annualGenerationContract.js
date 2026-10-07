@@ -6,16 +6,16 @@ function annualGenerationExample(catalog, evidence, allowedKeys) {
     const template = catalog.find(item => item.category === key);
     const row = { standardPlanId: template?.id, basisSummary: '必须引用输入中明确的原建议，不得虚构', sourceIds, timingBaseDate: '', timingSourceId: '', timingIntervalMonths: null, timingReason: '根据来源检查日期评估间隔及具体建议日期，交顾问审核', dateSelectionReason: '', scheduleSeparationReason: '', hospital: '' };
     if (key === 'annual_checkup') {
-      example[key] = template ? { ...row, focus: '仅填写有来源的体检重点，无依据返回空对象', date: '待确认', escort: false } : {};
+      example[key] = template ? { ...row, focus: '仅填写有来源的体检重点，无依据返回空对象', date: '', escort: false } : {};
     } else {
-      const details = key === 'medical_treatment' ? { reason: '来源明确的本次就医建议', department: '来源科室', visit_time: '待确认' }
-        : key === 'vaccine' ? { name: '来源明确的疫苗名称', reason: '来源原建议', time: '待确认' }
-          : { items: '来源明确的本次项目', reason: '来源原建议', time: '待确认', department: '建议检查科室，交顾问审核', order_dept: '建议开单科室，交顾问审核' };
+    const details = key === 'medical_treatment' ? { reason: '来源明确的本次就医建议', hospital: '顾问讨论中明确的对应意向医院；没有则留空', department: '来源科室', visit_time: '来源支持的建议日期' }
+        : key === 'vaccine' ? { name: '来源明确的疫苗名称', reason: '来源原建议', time: '' }
+          : { items: '来源明确的本次项目', reason: '来源原建议', time: '', department: '建议检查科室，交顾问审核', order_dept: '建议开单科室，交顾问审核' };
       example[key] = template ? [{ ...row, ...details, frequency: '单次', precautions: '待检查机构确认', customerAction: '按审核后安排执行', ownerRole: '健管专员' }] : [];
     }
   }
   const personalized = catalog.find(item => item.category === 'personalized');
-  if (personalized) example.templateNodes = [{ standardPlanId: personalized.id, standardPlanName: personalized.name, basisSummary: '来源原建议', sourceIds, matchReason: '适用依据', personalization: '', executionDate: '待确认' }];
+  if (personalized) example.templateNodes = [{ standardPlanId: personalized.id, standardPlanName: personalized.name, basisSummary: '来源原建议', sourceIds, matchReason: '适用依据', personalization: '', executionDate: '' }];
   if (allowedKeys.includes('specialist_collab')) example.specialist_collab = [];
   if (allowedKeys.includes('lifestyle')) example.lifestyle = {};
   const linked = Object.values(example).flatMap(value => Array.isArray(value) ? value : [value]).some(row => row.sourceIds?.length);
@@ -31,7 +31,7 @@ function annualGenerationPrompt(prompt, catalog, evidence, allowedKeys) {
     + '\n【必须逐项核对的来源】' + JSON.stringify(evidence)
     + '\nreport_issue开头的来源是顾问已确认的报告问题及建议，同样属于年度方案主题范围，不得因主评估未提及而忽略。逐项与现有建议合并去重；顾问确认建议为准，原文时间要求须保留。仅待核实/待评估的问题不能直接升级为治疗或检查安排。每个问题均须在evidenceCoverage中记录纳入或暂缓及具体原因。'
     + '\n每个来源在evidenceCoverage中恰好出现一次，status仅限included/deferred/not_applicable；reason必须具体。included必须有事项的sourceIds引用；存在矛盾或信息不足时deferred交顾问确认，不自行编造。项目名称简短。'
-    + '\n日期为AI建议就医/复查日期，不是已预约：以原检查日期timingBaseDate（YYYY-MM-DD）起算，根据已审来源及风险评估间隔timingIntervalMonths，换算具体visit_time/time/date（YYYY-MM-DD）；timingReason解释依据及不确定性，供健康顾问审核。已有明确医嘱优先。不能因尚未预约就全部填待确认；无法可靠确定基准或间隔才留空并说明，不得捏造检查日期。预约安排日期由系统提前7天计算，不由AI重复生成。科室可给初步建议；医院和专家不确定留空，不把偏好当已预约。focus必须为逐行文本，不得为对象。';
+    + '\n日期为建议就医/复查日期，不是已预约：优先承接已确认研判目标中的复评期限和明确安排；其他事项以原检查日期timingBaseDate（YYYY-MM-DD）及有依据的timingIntervalMonths换算具体visit_time/time/date（YYYY-MM-DD）。timingReason解释日期依据及不确定性，供健康顾问审核。无法可靠确定时日期字段留空字符串，不得填“待确认”或捏造检查日期。预约安排日期由系统提前7天计算，不由AI重复生成。科室可给初步建议；顾问讨论中明确的对应意向医院可带入hospital，但不表示已预约，未明确则留空。focus必须为逐行文本，不得为对象。';
 }
 function annualGenerationError(message) {
   let result = String(message || '生成未完成，请稍后重试');
