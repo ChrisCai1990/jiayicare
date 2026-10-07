@@ -58,7 +58,7 @@ test('repairs timing source on an existing checkup without replacing action or b
   assert.equal(result.checkup_completion[0].time, raw.checkup_completion[0].time);
   assert.equal(raw.checkup_completion[0].timingSourceId, 'missing:0'); check(result);
   await assert.rejects(validateOrRepairAnnual(raw, check, async () => reply('fake')), /原检查日期/);
-  await assert.rejects(validateOrRepairAnnual(raw, check, async () => reply('')), /缺少有效事项/);
+  await assert.rejects(validateOrRepairAnnual(raw, check, async () => reply('')), /原检查日期/);
 });
 
 test('repairs omitted source links on existing actions without rewriting their clinical content', async () => {
@@ -148,10 +148,12 @@ test('nearby scheduling correction survives merge without changing agreed dates 
     abnormal_followup: [{time:'2026-11-10', items:'复查'}], annual_checkup:{}, evidenceCoverage:[] };
   const check = value => validateClinicalRules(value, []);
   assert.throws(() => check(raw), /尚未统筹/);
-  const prompt = annualCorrectionPrompt(raw, [], '尚未统筹');
+  const prompt = annualCorrectionPrompt(raw, [], '相近就医检查日期尚未统筹');
   assert.match(prompt, /先就诊评估/); assert.match(prompt, /scheduleCorrections/);
+  assert.doesNotMatch(prompt, /"annual_checkup"|"evidenceCoverage"/);
   const result = await validateOrRepairAnnual(raw, check, async () => JSON.stringify({
-    annual_checkup:{}, evidenceCoverage:[], scheduleCorrections:[{module:'abnormal_followup', index:0,
+    timingCorrections:[{module:'annual_checkup',index:0,timingSourceId:'',timingBaseDate:''}],
+    scheduleCorrections:[{module:'abnormal_followup', index:0,
       scheduleSeparationReason:'先完成就诊评估，再核实复查开单和准备条件', time:'2026-12-01', hospital:'其他医院'}],
   }));
   check(result);
@@ -160,7 +162,7 @@ test('nearby scheduling correction survives merge without changing agreed dates 
   assert.equal(result.abnormal_followup[0].hospital, undefined);
   await assert.rejects(validateOrRepairAnnual(raw, check, async () => JSON.stringify({
     annual_checkup:{}, evidenceCoverage:[], scheduleCorrections:[{module:'abnormal_followup',index:99,scheduleSeparationReason:'错误事项'}],
-  })), /缺少有效事项/);
+  })), /尚未统筹/);
 });
 
 test('annual focus correction bounds historical evidence and keeps referenced timing source', async () => {

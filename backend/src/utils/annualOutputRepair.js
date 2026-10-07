@@ -40,6 +40,9 @@ function annualCorrectionPrompt(candidate, evidence, errorMessage) {
     timingReason: row.timingReason || '', scheduleSeparationReason: row.scheduleSeparationReason || '',
   })));
   const referenced = new Set(actions.map(row => row.timingSourceId).filter(Boolean));
+  if (/相近就医检查日期/.test(errorMessage)) {
+    return `仅输出JSON对象：{"scheduleCorrections":[{"module":"medical_treatment","index":0,"scheduleSeparationReason":"具体分开依据或待核实条件"}]}。只核对相隔1—14天的现有行动，依据原排期理由说明分开安排的原因；缺少兼容性依据时明确实际待核实条件，不虚构医嘱、号源或确认结果。保持医院、日期和行动不变。不要返回年度体检、来源核对或时间来源校正。\n已有行动：${JSON.stringify(actions)}`;
+  }
   const topic = JSON.stringify([candidate.annual_checkup, ...actions]);
   const sources = evidence.map(item => {
     if (item.id !== 'report_history' || !Array.isArray(item.content)) return item;
@@ -73,7 +76,7 @@ async function validateOrRepairAnnual(raw, validate, complete) {
     try { parsed = JSON.parse(reply.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
     catch { throw Object.assign(new Error('AI校正返回格式不完整，未替换原方案'), { statusCode: 502 }); }
     if ((!Object.hasOwn(parsed || {}, 'annual_checkup') || !Array.isArray(parsed.evidenceCoverage))
-      && !(missingLinks.length && Array.isArray(parsed?.sourceLinkCorrections))) {
+      && !['sourceLinkCorrections', 'timingCorrections', 'scheduleCorrections'].some(key => Array.isArray(parsed?.[key]))) {
       throw Object.assign(new Error('AI年度体检校正缺少模块或来源核对，未替换原方案'), { statusCode: 502 });
     }
     // A source-only reply leaves the clinical plan and other coverage untouched.
@@ -114,30 +117,28 @@ async function validateOrRepairAnnual(raw, validate, complete) {
       }
     }
     // Permit only source/date metadata corrections on existing actions; never remove or rewrite actions.
-    if (parsed.timingCorrections !== undefined) {
-      if (!Array.isArray(parsed.timingCorrections)) throw new Error('时间来源校正格式无效');
+    if (Array.isArray(parsed.timingCorrections)) {
       const seen = new Set();
       for (const patch of parsed.timingCorrections) {
         const key = patch?.module, index = patch?.index;
         if (!['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'templateNodes'].includes(key)
           || !Number.isInteger(index) || index < 0 || !candidate[key]?.[index] || seen.has(`${key}:${index}`)
           || !['timingSourceId', 'timingBaseDate', 'dateSelectionReason'].every(field => typeof patch[field] === 'string')
-          || !patch.timingSourceId.trim() || !patch.timingBaseDate.trim()) throw new Error('时间来源校正缺少有效事项或依据');
+          || !patch.timingSourceId.trim() || !patch.timingBaseDate.trim()) continue;
         seen.add(`${key}:${index}`);
         candidate = { ...candidate, [key]: candidate[key].map((item, i) => i === index ? { ...item,
           timingSourceId: patch.timingSourceId.trim(), timingBaseDate: patch.timingBaseDate.trim(), dateSelectionReason: patch.dateSelectionReason.trim(),
         } : item) };
       }
     }
-    if (parsed.scheduleCorrections !== undefined) {
-      if (!Array.isArray(parsed.scheduleCorrections)) throw new Error('排期说明校正格式无效');
+    if (Array.isArray(parsed.scheduleCorrections)) {
       const seen = new Set();
       for (const patch of parsed.scheduleCorrections) {
         const key = patch?.module, index = patch?.index;
         if (!['medical_treatment', 'checkup_completion', 'abnormal_followup'].includes(key)
           || !Number.isInteger(index) || index < 0 || !candidate[key]?.[index] || seen.has(`${key}:${index}`)
           || typeof patch.scheduleSeparationReason !== 'string' || !patch.scheduleSeparationReason.trim())
-          throw new Error('排期说明校正缺少有效事项或原因');
+          continue;
         seen.add(`${key}:${index}`);
         candidate = { ...candidate, [key]: candidate[key].map((item, i) => i === index
           ? { ...item, scheduleSeparationReason: patch.scheduleSeparationReason.trim() } : item) };
