@@ -20,10 +20,11 @@ function sourceLinkRepairPrompt(candidate, evidence, missingLinks, errorMessage)
       .map((row, index) => ({ module, index, name: String(row.items || row.name || row.reason || row.focus || '').slice(0, 600),
         basisSummary: String(row.basisSummary || row.matchReason || '').slice(0, 600), sourceIds: row.sourceIds || [] })));
   const annualSources = annualNeedsCorrection ? candidate.annual_checkup.sourceIds || [] : [];
+  const annualExample = annualNeedsCorrection ? `,"annual_checkup":${JSON.stringify({ ...candidate.annual_checkup, focus: '有来源的具体年度体检项目' })}` : '';
   const sources = evidence.filter(item => missingLinks.includes(item.id) || annualSources.includes(item.id)).map(item => ({
     id: item.id, content: JSON.stringify(item.content || '').slice(0, item.id === 'report_history' ? 3500 : 2400),
   }));
-  return `你只修复年度方案的来源关联和空白年度体检项，不重新生成方案。以下已有行动内容、日期和模板不可改。把确实对应的来源ID补到已有行动，按module和index分组返回sourceLinkCorrections；不能为了过校验关联无关事项。仅summary、report_history这两类汇总来源如确实没有独立对应行动，可用coverageCorrections改为deferred或not_applicable并说明具体原因；已确认的具体来源必须关联行动。${annualNeedsCorrection ? '当前annual_checkup有模板却缺少focus。请根据其已关联的真实来源填写明确、简短的focus，并返回完整annual_checkup对象；若来源不支持年度体检行动，返回annual_checkup:{}，同时如实修正对应evidenceCoverage。不能保留空focus占位。' : ''}只输出JSON，包含需要的字段：{"sourceLinkCorrections":[{"module":"medical_treatment","index":0,"sourceIds":["真实来源ID"]}],"coverageCorrections":[{"sourceId":"summary","status":"deferred","reason":"具体原因"}]${annualNeedsCorrection ? ',"annual_checkup":{"focus":"有来源的年度重点及原有其他字段"}' : ''}}。无须重复整份方案。\n校验问题：${errorMessage}\n已有行动：${JSON.stringify(actions)}\n相关来源：${JSON.stringify(sources)}`;
+  return `你只修复年度方案的来源关联和空白年度体检项，不重新生成方案。以下已有行动内容、日期和模板不可改。把确实对应的来源ID补到已有行动，按module和index分组返回sourceLinkCorrections；不能为了过校验关联无关事项。仅summary、report_history这两类汇总来源如确实没有独立对应行动，可用coverageCorrections改为deferred或not_applicable并说明具体原因；已确认的具体来源必须关联行动。${annualNeedsCorrection ? '当前annual_checkup有模板却缺少focus。请根据其已关联的真实来源填写明确、简短的focus，并返回完整annual_checkup对象；若来源不支持年度体检行动，返回annual_checkup:{}，同时如实修正对应evidenceCoverage。不能保留空focus占位。' : ''}只输出JSON，包含需要的字段：{"sourceLinkCorrections":[{"module":"medical_treatment","index":0,"sourceIds":["真实来源ID"]}],"coverageCorrections":[{"sourceId":"summary","status":"deferred","reason":"具体原因"}]${annualExample}}。无须重复整份方案。\n校验问题：${errorMessage}\n已有行动：${JSON.stringify(actions)}\n相关来源：${JSON.stringify(sources)}`;
 }
 
 // A single bounded correction replaces the former focus-only call. Both attempts go
