@@ -11960,7 +11960,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
           const repair = require('../utils/annualOutputRepair');
           parsed = await repair.validateOrRepairAnnual(parsed, candidate => {
             consistency.validateAnnualRaw(candidate, availableAnnualFollowUpCatalog, evidence, allowedKeys);
-            clinicalRules.validateClinicalRules(candidate, timeline, evidence);
+            clinicalRules.validateClinicalRules(candidate, timeline, evidence, { scheduleAsNote: true });
           }, (candidate, message, missingLinks) => missingLinks.length
             ? chat([{ role: 'user', content: repair.sourceLinkRepairPrompt(candidate, evidence, missingLinks, message) }],
               { maxTokens: 2000, temperature: 0, jsonMode: true, timeoutMs: 90000 })

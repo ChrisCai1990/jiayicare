@@ -63,12 +63,12 @@ medical_treatment/checkup_completion/abnormal_followup中相隔1—14天的事�
 年度体检focus每行一个具体项目；不能把今年近期已安排的完善检查清单复制到明年。确需再次复查，必须提供futureRepeatReason及futureRepeatSourceId（输入来源ID）说明独立的复查依据/间隔；否则只保留确应在年度体检关注的事项。完善检查通常安排近期2—4周，若医嘱不同以医嘱为准；不急且有依据延后的放入下次年度体检，不能两处重复排期。
 逐项核对已有胃镜/肠镜及病理的检查日期、结果和明确复查建议：只有证据支持在下一年度复查才加入年度关注；没有明确间隔时在report_history的evidenceCoverage.reason说明待顾问评估，不得遗漏核对或擅自按年重复。以上都是待顾问审核建议，不是预约确认。`;
 
-function validateClinicalRules(raw, timeline, evidence = []) {
+function validateClinicalRules(raw, timeline, evidence = [], { scheduleAsNote = false } = {}) {
   const fail = message => { throw Object.assign(new Error(message + '；未替换原方案，请核对生成依据'), { statusCode: 409 }); };
   validateHbA1cClaims(raw, timeline, fail);
   const indexed = new Map(timeline.map(row => [row.id, row]));
   const scheduled = ['medical_treatment', 'checkup_completion', 'abnormal_followup'].flatMap(key =>
-    (raw[key] || []).map(row => ({ ...row, scheduledDate: key === 'medical_treatment' ? row.visit_time : row.time })));
+    (raw[key] || []).map(row => ({ ...row, original: row, scheduledDate: key === 'medical_treatment' ? row.visit_time : row.time })));
   const all = [...scheduled, ...(raw.vaccine || []), ...(raw.templateNodes || []), raw.annual_checkup || {}];
   for (const row of all) {
     if (!row.timingBaseDate) continue;
@@ -80,7 +80,11 @@ function validateClinicalRules(raw, timeline, evidence = []) {
     const a = scheduled[i], b = scheduled[j];
     if (!validDay(a.scheduledDate) || !validDay(b.scheduledDate)) continue;
     const days = Math.abs(Date.parse(a.scheduledDate) - Date.parse(b.scheduledDate)) / 86400000;
-    if (days > 0 && days <= 14 && !text(a.scheduleSeparationReason) && !text(b.scheduleSeparationReason)) fail('相近就医检查日期尚未统筹，也未说明分开原因');
+    if (days > 0 && days <= 14 && !text(a.scheduleSeparationReason) && !text(b.scheduleSeparationReason)) {
+      if (!scheduleAsNote) fail('相近就医检查日期尚未统筹，也未说明分开原因');
+      const note = '预约统筹提示：存在相近日期的就医或检查，预约时核对是否可合并；当前保留原建议日期。';
+      for (const row of [a.original, b.original]) if (!text(row.notes).includes(note)) row.notes = [text(row.notes), note].filter(Boolean).join('\n');
+    }
   }
   const annual = raw.annual_checkup || {};
   const focus = text(annual.focus).split(/[\n；;]/).map(stem).filter(Boolean);

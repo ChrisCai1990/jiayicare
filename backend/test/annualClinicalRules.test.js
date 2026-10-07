@@ -59,6 +59,18 @@ test('annual focus cannot repeat near-term checks without independent sourced re
   assert.equal(validateClinicalRules(raw, []), raw);
   assert.match(clinicalRulesPrompt, /胃镜\/肠镜/); assert.match(clinicalRulesPrompt, /不得.*按年重复/);
 });
+
+test('draft scheduling is advisory without altering dates or bypassing report contradictions', () => {
+  const raw={medical_treatment:[{visit_time:'2026-11-05',notes:'保留原说明'}], abnormal_followup:[{time:'2026-11-10'}]};
+  validateClinicalRules(raw,[],[],{scheduleAsNote:true});
+  const once=JSON.stringify(raw); validateClinicalRules(raw,[],[],{scheduleAsNote:true});
+  assert.equal(JSON.stringify(raw),once);
+  assert.match(raw.medical_treatment[0].notes,/保留原说明/);
+  assert.match(raw.abnormal_followup[0].notes,/预约统筹提示/);
+  assert.equal(raw.medical_treatment[0].visit_time,'2026-11-05');
+  raw.medical_treatment[0].timingBaseDate='2026-01-01';
+  assert.throws(()=>validateClinicalRules(raw,[],[],{scheduleAsNote:true}),/原检查日期/);
+});
 test('annual draft cannot label a different hemoglobin fraction as HbA1c', () => {
   const audited = reportTimeline([
     { _id: 'recent', checkDate: '2026-09-05', reportItems: [{ name: '糖化血红蛋白A1', value: '7.0' }, { name: '*糖化血红蛋白A1c', value: '5.6' }] },
