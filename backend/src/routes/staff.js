@@ -3548,7 +3548,9 @@ router.get('/patients/:id/medication-proxy/defaults', staffAuth, async (req, res
 
 router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'healthManager', 'healthPlanner', 'superadmin'].includes(req.staff.role)
-    || (req.staff.role === 'healthPlanner' && !req.body.reservedOrderId)) return res.status(403).json({ success: false, message: '请从已匹配套餐的服务清单发起就医协助' });
+    || (req.staff.role === 'healthPlanner' && !req.body.reservedOrderId && !req.body.giftId)) return res.status(403).json({ success: false, message: '请从会员权益或已付费订单发起就医协助' });
+  if (req.staff.role !== 'healthManager' && !req.body.reservedOrderId && !req.body.giftId)
+    return res.status(409).json({ success: false, message: '请先到会员权益核对赠送或套餐权益；没有权益时需关联已付费服务订单' });
   try {
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权为该会员发起服务' });
@@ -3638,12 +3640,15 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     if (appointmentOnly && (req.body.preferredDateEnd < req.body.preferredDateStart || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateEnd))) return res.status(400).json({ success: false, message: '请填写有效的期望日期区间' });
     if (appointmentOnly && (!['general', 'expert', 'special', 'international'].includes(req.body.clinicType) || !['self_pay', 'medical_insurance', 'commercial_insurance', 'high_end'].includes(req.body.insuranceUse))) return res.status(400).json({ success: false, message: '请选择门诊类型和费用与保险方式' });
     let executionOrder = null;
+    if (req.body.giftId && req.body.reservedOrderId) return res.status(400).json({ success: false, message: '赠送权益与已有订单不能同时使用' });
     if (req.body.reservedOrderId) {
       executionOrder = await Order.findOne({ _id: req.body.reservedOrderId, user: patient._id,
-        status: 'pending', serviceStartedAt: null, 'packageEntitlementUsage.entitlementId': { $exists: true } });
-      if (!executionOrder) return res.status(409).json({ success: false, message: '套餐履约单不存在或已办理，请刷新服务清单' });
-      const compatible = medicalEscort ? /陪同|陪诊/.test(executionOrder.serviceName || '')
-        : /代办|代诊|约诊|挂号|复诊/.test(executionOrder.serviceName || '');
+        status: { $in: ['pending', 'scheduled'] }, serviceStartedAt: null,
+        $or: [{ 'packageEntitlementUsage.entitlementId': { $exists: true } },
+          { orderType: 'service', paymentStatus: 'paid', paidAmount: { $gt: 0 } }] });
+      if (!executionOrder) return res.status(409).json({ success: false, message: '可用服务订单不存在或已办理，请刷新会员权益' });
+      const compatible = medicalEscort ? /陪同|陪诊|就医协助服务/.test(executionOrder.serviceName || '')
+        : /代办|代诊|约诊|挂号|复诊|就医协助服务/.test(executionOrder.serviceName || '');
       if (!compatible) return res.status(400).json({ success: false, message: '所选方案与预占的服务产品不匹配' });
       if (await HealthPlan.exists({ patientId: patient._id, sourceOrderId: executionOrder._id, type: 'medical_assist' })
         || await FollowUp.exists({ sourceType: 'order', sourceOrderId: executionOrder._id, workflowKey: /^medical_proxy:/ }))
@@ -3657,6 +3662,10 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
         { $set: { serviceStartedAt: new Date(), serviceStartedBy: req.staff._id,
           serviceStartEvidence: '已提交就医协助服务方案并生成岗位任务' } }, { new: true });
       if (started) await require('../utils/packageServiceRedemption').safeReconcilePackageOrder(started);
+    } else if (req.body.giftId) {
+      await Order.updateOne({ _id: result.order._id, giftRecordUsage: { $ne: null }, serviceStartedAt: null },
+        { $set: { serviceStartedAt: new Date(), serviceStartedBy: req.staff._id,
+          serviceStartEvidence: '已使用赠送权益发起就医协助并生成岗位任务' } });
     }
     res.json({ success: true, data: { orderId: result.order._id, supervisorTaskId: result.supervisor?._id || null, bookingTaskId: result.booking?._id || null, plannerTaskId: result.planner?._id || null } });
   } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
@@ -6878,6 +6887,48 @@ router.get('/patients/:id/gifts', staffAuth, async (req, res) => {
     .sort({ createdAt: -1 })
     .populate('staffId', 'name role');
   res.json({ success: true, data: gifts });
+});
+
+// 更正原服务赠送记录的有效期，保留记录身份和更正历史。
+router.patch('/patients/:id/gifts/:giftId/validity', staffAuth, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id) || !mongoose.isValidObjectId(req.params.giftId))
+      return res.status(400).json({ success: false, message: '无效的会员或赠送记录' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id)))
+      return res.status(403).json({ success: false, message: '无权查看该会员' });
+    const current = await GiftRecord.findOne({ _id: req.params.giftId, patientId: req.params.id, giftType: 'service' }).lean();
+    if (!current) return res.status(404).json({ success: false, message: '服务赠送记录不存在' });
+    if (Number(current.usedCount || 0) > 0) return res.status(409).json({ success: false, message: '赠送权益已有使用记录，不能直接更正有效期' });
+    if (!['superadmin', 'platformSuper'].includes(req.staff.role) && String(current.staffId) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅原赠送人或超级管理员可更正日期' });
+    const parseDate = value => {
+      if (value === null || value === '') return null;
+      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+      const date = new Date(`${value}T00:00:00.000Z`);
+      return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : undefined;
+    };
+    const validFrom = parseDate(req.body.validFrom);
+    const validTo = parseDate(req.body.validTo);
+    const reason = String(req.body.reason || '').trim();
+    if (validFrom === undefined || validTo === undefined || (validFrom && validTo && validFrom > validTo))
+      return res.status(400).json({ success: false, message: '请填写正确的有效期，结束日期不得早于开始日期' });
+    if (!reason || reason.length > 200)
+      return res.status(400).json({ success: false, message: '请填写不超过200字的日期更正原因' });
+    const sameDate = (a, b) => String(a?.toISOString?.().slice(0, 10) || '') === String(b?.toISOString?.().slice(0, 10) || '');
+    if (sameDate(current.validFrom, validFrom) && sameDate(current.validTo, validTo))
+      return res.json({ success: true, data: current });
+    const updated = await GiftRecord.findOneAndUpdate({ _id: current._id, patientId: current.patientId,
+      validFrom: current.validFrom || null, validTo: current.validTo || null, updatedAt: current.updatedAt }, {
+      $set: { validFrom, validTo },
+      $push: { dateCorrections: { previousValidFrom: current.validFrom, previousValidTo: current.validTo,
+        validFrom, validTo, correctedBy: req.staff._id, correctedAt: new Date(), reason } },
+    }, { new: true }).populate('staffId', 'name role');
+    if (!updated) return res.status(409).json({ success: false, message: '赠送记录已变化，请刷新后重试' });
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '更正赠送日期失败', error: err.message });
+  }
 });
 
 // ── 优惠券（商城下单抵用，健管/超管手动发放） ───────────────────

@@ -14,6 +14,15 @@ const SERVICE_TYPE_OPTIONS = [
   { v: 'specialist', l: '专科会诊' },
 ]
 
+function giftDisplayStatus(gift) {
+  if (gift.status === 'used' || (gift.giftType === 'service' && Number(gift.serviceCount || 0) > 0 && Number(gift.usedCount || 0) >= Number(gift.serviceCount))) return '已使用'
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  if (gift.status === 'expired' || (gift.validTo && String(gift.validTo).slice(0, 10) < today)) return '已过期'
+  if (gift.validFrom && String(gift.validFrom).slice(0, 10) > today) return '未生效'
+  return '有效'
+}
+
 // ── 会员等级 ──────────────────────────────────────────────
 function LevelsTab({ toast }) {
   const [levels, setLevels] = useState([])
@@ -444,6 +453,27 @@ function GiftsTab({ toast }) {
   const [showGiftModal, setShowGiftModal] = useState(false)
   const [gifts, setGifts] = useState([])
   const [loading, setLoading] = useState(false)
+  const [editingGift, setEditingGift] = useState(null)
+  const [correction, setCorrection] = useState({ validFrom: '', validTo: '', reason: '' })
+  const [correctionError, setCorrectionError] = useState('')
+  const [savingCorrection, setSavingCorrection] = useState(false)
+
+  const openCorrection = gift => {
+    setEditingGift(gift)
+    setCorrection({ validFrom: gift.validFrom ? String(gift.validFrom).slice(0, 10) : '', validTo: gift.validTo ? String(gift.validTo).slice(0, 10) : '', reason: '' })
+    setCorrectionError('')
+  }
+  const saveCorrection = async () => {
+    if (!correction.reason.trim()) { setCorrectionError('请填写更正原因'); return }
+    setSavingCorrection(true); setCorrectionError('')
+    try {
+      await staffAPI.correctGiftValidity(selected._id, editingGift._id, correction)
+      setEditingGift(null)
+      toast('赠送有效期已更正')
+      await loadGifts(selected._id)
+    } catch (err) { setCorrectionError(err.message || '更正失败，请重试') }
+    finally { setSavingCorrection(false) }
+  }
 
   const searchPatients = async (q) => {
     if (!q.trim()) { setPatients([]); return }
@@ -531,11 +561,11 @@ function GiftsTab({ toast }) {
                     {g.validFrom ? new Date(g.validFrom).toLocaleDateString('zh-CN') : '-'}
                     {g.validTo ? ` ~ ${new Date(g.validTo).toLocaleDateString('zh-CN')}` : ''}
                   </td>
-                  <td><span style={{ color: g.status === 'active' ? '#22A06B' : g.status === 'used' ? '#0077B6' : '#aaa', fontWeight: 500, fontSize: 13 }}>
-                    {g.status === 'active' ? '有效' : g.status === 'used' ? '已使用' : '已过期'}
+                  <td><span style={{ color: giftDisplayStatus(g) === '有效' ? '#22A06B' : giftDisplayStatus(g) === '已使用' ? '#0077B6' : '#aaa', fontWeight: 500, fontSize: 13 }}>
+                    {giftDisplayStatus(g)}
                   </span></td>
                   <td style={{ fontSize: 13, color: '#666' }}>{g.staffId?.name || '-'}</td>
-                  <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(g.createdAt).toLocaleDateString('zh-CN')}</td>
+                  <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(g.createdAt).toLocaleDateString('zh-CN')}{g.giftType === 'service' && <button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => openCorrection(g)}>更正日期</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -551,6 +581,19 @@ function GiftsTab({ toast }) {
           onSaved={() => { setShowGiftModal(false); toast('权益已赠送'); loadGifts(selected._id) }}
         />
       )}
+      {editingGift && <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setEditingGift(null) }}>
+        <div className="modal" style={{ maxWidth: 430 }}>
+          <div className="modal-header"><h3 className="modal-title">更正赠送有效期 · {editingGift.serviceName}</h3><button className="modal-close" onClick={() => setEditingGift(null)}>✕</button></div>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 13, color: '#65776F' }}>更正原赠送记录，不会新增一次赠送；原日期和操作人将留痕。</div>
+            <label className="form-group"><span className="form-label">开始日期</span><DateField className="form-input" type="date" value={correction.validFrom} onChange={e => setCorrection(c => ({ ...c, validFrom: e.target.value }))} /></label>
+            <label className="form-group"><span className="form-label">结束日期</span><DateField className="form-input" type="date" value={correction.validTo} onChange={e => setCorrection(c => ({ ...c, validTo: e.target.value }))} /></label>
+            <label className="form-group"><span className="form-label">更正原因 *</span><input className="form-input" maxLength={200} value={correction.reason} onChange={e => setCorrection(c => ({ ...c, reason: e.target.value }))} /></label>
+            {!!correctionError && <div className="login-err">{correctionError}</div>}
+          </div>
+          <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setEditingGift(null)}>取消</button><button className="btn btn-primary" onClick={saveCorrection} disabled={savingCorrection}>{savingCorrection ? '保存中…' : '保存更正'}</button></div>
+        </div>
+      </div>}
     </div>
   )
 }

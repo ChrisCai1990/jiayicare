@@ -16,9 +16,17 @@ const GIFT_TYPE_LABEL  = { fund: '健康基金', service: '服务权益' };
 const GIFT_TYPE_COLOR  = { fund: '#D97706', service: colors.primary };
 const GIFT_TYPE_BG     = { fund: '#FEF3E2', service: colors.primary + '14' };
 const GIFT_TYPE_ICON   = { fund: 'wallet-outline', service: 'gift-outline' };
-const STATUS_LABEL     = { active: '有效', used: '已使用', expired: '已过期' };
-const STATUS_COLOR     = { active: '#D97706', used: colors.textMuted, expired: colors.textMuted };
-const STATUS_BG        = { active: '#FEF3E2', used: colors.border, expired: '#F5F5F5' };
+const STATUS_LABEL     = { active: '有效', upcoming: '未生效', used: '已使用', expired: '已过期' };
+const STATUS_COLOR     = { active: '#D97706', upcoming: colors.textSecondary, used: colors.textMuted, expired: colors.textMuted };
+const STATUS_BG        = { active: '#FEF3E2', upcoming: colors.border, used: colors.border, expired: '#F5F5F5' };
+const giftStatus = gift => {
+  if (gift.status === 'used' || (gift.giftType === 'service' && Number(gift.serviceCount || 0) > 0 && Number(gift.usedCount || 0) >= Number(gift.serviceCount))) return 'used';
+  const today = new Date();
+  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  if (gift.status === 'expired' || (gift.validTo && String(gift.validTo).slice(0, 10) < date)) return 'expired';
+  if (gift.validFrom && String(gift.validFrom).slice(0, 10) > date) return 'upcoming';
+  return 'active';
+};
 
 const CATEGORY_ICON = {
   '口腔': 'medical-outline',
@@ -162,13 +170,11 @@ function GiftCard({ gift, onPress }) {
   const color     = GIFT_TYPE_COLOR[gift.giftType] || colors.primary;
   const bg        = GIFT_TYPE_BG[gift.giftType]    || colors.primary + '14';
   const icon      = GIFT_TYPE_ICON[gift.giftType]  || 'gift-outline';
-  const isExpired = gift.validTo && new Date(gift.validTo) < new Date();
-  const isUsed    = gift.status === 'used';
-  const statusKey = isUsed ? 'used' : isExpired ? 'expired' : 'active';
+  const statusKey = giftStatus(gift);
 
   return (
     <TouchableOpacity
-      style={[styles.giftCard, (isExpired || isUsed) && { opacity: 0.6 }]}
+      style={[styles.giftCard, (statusKey === 'expired' || statusKey === 'used') && { opacity: 0.6 }]}
       activeOpacity={0.8}
       onPress={() => onPress && onPress(gift)}
     >
@@ -222,6 +228,7 @@ export default function BenefitsScreen({ navigation, route }) {
   // ── 我的专属权益（健康基金 + 赠送服务次数）──
   const [gifts, setGifts]       = useState([]);
   const [giftsLoading, setGiftsLoading]   = useState(true);
+  const [giftsError, setGiftsError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [detailGift, setDetailGift] = useState(null);
 
@@ -237,9 +244,11 @@ export default function BenefitsScreen({ navigation, route }) {
 
   const loadGifts = useCallback(async () => {
     try {
+      setGiftsError('');
       const res = await giftsAPI.list();
-      if (res.success) setGifts(res.data);
-    } catch {}
+      if (!res.success) throw new Error(res.message || '赠送记录加载失败');
+      setGifts(res.data || []);
+    } catch { setGiftsError('赠送记录加载失败，请重试'); }
     finally { setGiftsLoading(false); setRefreshing(false); }
   }, []);
   const loadFund = useCallback(async () => {
@@ -277,16 +286,15 @@ export default function BenefitsScreen({ navigation, route }) {
     if (tab === 'mine') loadGifts(); else loadPartnerBenefits();
   };
 
-  const activeGifts  = gifts.filter(g => g.status === 'active');
-  const historyGifts = gifts.filter(g => g.status !== 'active');
+  const activeGifts  = gifts.filter(g => ['active', 'upcoming'].includes(giftStatus(g)));
+  const historyGifts = gifts.filter(g => ['used', 'expired'].includes(giftStatus(g)));
 
   // 专属权益详情弹窗辅助
   const dg = detailGift;
   const dgColor  = dg ? (GIFT_TYPE_COLOR[dg.giftType]  || colors.primary) : colors.primary;
   const dgBg     = dg ? (GIFT_TYPE_BG[dg.giftType]     || colors.primary + '14') : '';
   const dgIcon   = dg ? (GIFT_TYPE_ICON[dg.giftType]   || 'gift-outline') : 'gift-outline';
-  const dgExpired = dg?.validTo && new Date(dg.validTo) < new Date();
-  const dgStatusKey = dg?.status === 'used' ? 'used' : dgExpired ? 'expired' : 'active';
+  const dgStatusKey = dg ? giftStatus(dg) : 'active';
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '不限';
 
@@ -319,7 +327,7 @@ export default function BenefitsScreen({ navigation, route }) {
           <>
             {/* 健康基金卡 */}
             <View style={{flexDirection:'row',marginHorizontal:20,marginBottom:14,gap:8}}>{[['plan','健康服务'],['fund','健康基金'],['gift','赠送权益']].map(([key,label])=><TouchableOpacity key={key} onPress={()=>setMineSection(key)} style={{flex:1,alignItems:'center',paddingVertical:10,borderRadius:10,backgroundColor:mineSection===key?colors.primary:'#fff'}}><Text style={{fontSize:13,color:mineSection===key?'#fff':colors.textSecondary}}>{label}</Text></TouchableOpacity>)}</View>
-            {mineSection==='plan' && <MembershipBenefits />}
+            {mineSection==='plan' && <MembershipBenefits gifts={gifts} giftsLoading={giftsLoading} giftsError={giftsError} onRefreshGifts={loadGifts} />}
             {mineSection==='fund' && <>
             <View style={styles.fundCard}>
               <Text style={styles.fundLabel}>健康基金余额</Text>
@@ -380,7 +388,8 @@ export default function BenefitsScreen({ navigation, route }) {
               <View style={styles.loadingWrap}><ActivityIndicator color={colors.primary} /></View>
             ) : (
               <>
-                <Text style={styles.sectionTitle}>有效权益</Text>
+                {!!giftsError && <Text style={styles.sectionTitle}>{giftsError}</Text>}
+                <Text style={styles.sectionTitle}>有效及待生效权益</Text>
                 {activeGifts.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <Ionicons name="gift-outline" size={48} color={colors.border} style={styles.emptyIcon} />
