@@ -14,7 +14,7 @@ async function loadAnnualPlanPreparationChecklist(patientId, year = new Date().g
     MedicalReport.countDocuments({ user: patientId, audit_status: 'audited' }),
     Medication.countDocuments({ user: patientId, active: { $ne: false }, stopped: { $ne: true }, aiStatus: { $ne: 'rejected' } }),
     Supplement.countDocuments({ user: patientId, stopped: { $ne: true }, aiStatus: { $ne: 'rejected' } }),
-    ProfessionalHealthAssessment.find({ patientId, purpose: { $in: ['annual_input', 'issue_collaboration'] }, status: 'approved', $or: [{ validUntil: null }, { validUntil: { $gte: new Date() } }] }).select('purpose domain status').lean(),
+    ProfessionalHealthAssessment.find({ patientId, purpose: { $in: ['annual_input', 'issue_collaboration'] }, status: 'approved', $or: [{ validUntil: null }, { validUntil: { $gte: new Date() } }] }).select('purpose domain annualDomains status').lean(),
     loadAnnualPlanContinuity(patientId, year),
   ]);
   if (!patient) return null;

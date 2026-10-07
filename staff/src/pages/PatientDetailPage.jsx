@@ -2069,6 +2069,9 @@ export default function PatientDetailPage() {
   const [serviceRecords, setServiceRecords] = useState([])
   const [serviceRecordCategory, setServiceRecordCategory] = useState('营养干预')
   const [patientReferrals, setPatientReferrals] = useState([])
+  const [referralAssessments, setReferralAssessments] = useState([])
+  const [referralAssessmentBusy, setReferralAssessmentBusy] = useState('')
+  const [annualDomainDrafts, setAnnualDomainDrafts] = useState({})
   const [expandedReferralCats, setExpandedReferralCats] = useState({})
   const [reportSearchKw, setReportSearchKw] = useState('')
   const [reportYearFilter, setReportYearFilter] = useState('')
@@ -3008,7 +3011,36 @@ export default function PatientDetailPage() {
     }
   }
   const loadPatientReferrals = async () => {
-    try { const res = await staffAPI.getPatientReferrals(id); setPatientReferrals(res.data?.referrals || []) } catch {}
+    const [referrals, assessments] = await Promise.allSettled([
+      staffAPI.getPatientReferrals(id),
+      staffAPI.getProfessionalHealthAssessments(id),
+    ])
+    if (referrals.status === 'fulfilled') setPatientReferrals(referrals.value.data?.referrals || [])
+    if (assessments.status === 'fulfilled') setReferralAssessments(assessments.value.data || [])
+  }
+  const reviewReferralAssessment = async assessment => {
+    setReferralAssessmentBusy(assessment._id)
+    try {
+      const result = await staffAPI.reviewProfessionalHealthAssessment(assessment._id, {
+        action: 'approve_advisor', revision: assessment.__v, followUpDrafts: assessment.followUpDrafts || [],
+      })
+      toast(result.dynamicFollowUps?.warnings?.length ? result.dynamicFollowUps.warnings.join('；') : '专业健康评估已终审')
+      await loadPatientReferrals()
+    } catch (error) { toast(error.message || '终审失败，请刷新后重试') }
+    finally { setReferralAssessmentBusy('') }
+  }
+  const confirmReferralAnnualDomain = async assessment => {
+    const draft = annualDomainDrafts[assessment._id] || {}
+    setReferralAssessmentBusy(assessment._id)
+    try {
+      await staffAPI.confirmProfessionalAssessmentAnnualDomain(assessment._id, {
+        domain: draft.domain, reason: draft.reason, revision: assessment.__v,
+      })
+      toast('年度适用领域已确认；原评估领域和终审内容保留')
+      setAnnualDomainDrafts(prev => ({ ...prev, [assessment._id]: { domain: '', reason: '' } }))
+      await loadPatientReferrals()
+    } catch (error) { toast(error.message || '确认领域失败，请刷新后重试') }
+    finally { setReferralAssessmentBusy('') }
   }
   const loadRequisitions = async () => {
     try { const res = await staffAPI.getPatientRequisitions(id); setRequisitions(res.data) } catch {}
@@ -10797,6 +10829,26 @@ export default function PatientDetailPage() {
                           )}
                         </div>
                       )}
+                      {r.status === 'completed' && (() => {
+                        const related = referralAssessments
+                          .filter(item => (item.sourceReferralIds || []).some(sourceId => String(sourceId?._id || sourceId) === String(r._id)))
+                          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                        const assessment = related[0]
+                        const advisor = ['familyDoctor', 'superadmin'].includes(staff?.role)
+                        const draft = annualDomainDrafts[assessment?._id] || {}
+                        return <div style={{ marginTop: 10, padding: '12px 14px', border: '1px solid #D7E4DD', borderRadius: 8, background: '#FAFCFB', fontSize: 13 }}>
+                          <div style={{ fontWeight: 700, marginBottom: 6 }}>关联专业健康评估</div>
+                          {assessment ? <>
+                            <div>{assessment.domain} · {assessment.purpose === 'annual_input' ? '年度方案输入' : '日常专项协作'} · <strong style={{ color: assessment.status === 'approved' ? '#15803D' : '#B45309' }}>{{ approved: '已终审', advisor_review: '待健康顾问终审', superseded: '已被新反馈替代', rejected: '已退回' }[assessment.status] || '待专业审核'}</strong></div>
+                            {!!assessment.annualDomains?.length && <div style={{ color: '#4A6558', marginTop: 4 }}>顾问确认的年度适用领域：{assessment.annualDomains.join('、')}</div>}
+                            {!!assessment.followUpDrafts?.length && assessment.status === 'advisor_review' && <div style={{ marginTop: 8 }}><strong>待核对的随访草稿</strong>{assessment.followUpDrafts.map((item, index) => <div key={index}>{item.title || `第${index + 1}项`}：{item.content || '无内容'}</div>)}</div>}
+                            {assessment.followUpAutomation?.message && <div style={{ color: '#9A5B13', marginTop: 6 }}>{assessment.followUpAutomation.message}</div>}
+                            {advisor && assessment.status === 'advisor_review' && <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }} disabled={!!referralAssessmentBusy || ['queued', 'running', 'failed'].includes(assessment.followUpAutomation?.status)} onClick={() => reviewReferralAssessment(assessment)}>核对反馈后终审通过</button>}
+                            {advisor && assessment.status === 'approved' && assessment.purpose === 'annual_input' && <details style={{ marginTop: 9 }}><summary>确认这份评估适用于其他年度专科领域</summary><div style={{ color: '#65776F', margin: '6px 0' }}>仅在已终审内容确实覆盖该领域时填写；原始评估领域和结论不会改变。</div><input aria-label="年度适用领域" placeholder="如：肝病科" value={draft.domain || ''} onChange={e => setAnnualDomainDrafts(prev => ({ ...prev, [assessment._id]: { ...prev[assessment._id], domain: e.target.value } }))} style={{ marginRight: 8, padding: 7 }} /><input aria-label="领域确认依据" placeholder="说明本次评估为何覆盖该领域" value={draft.reason || ''} onChange={e => setAnnualDomainDrafts(prev => ({ ...prev, [assessment._id]: { ...prev[assessment._id], reason: e.target.value } }))} style={{ marginRight: 8, padding: 7, minWidth: 260 }} /><button className="btn btn-secondary btn-sm" disabled={!!referralAssessmentBusy || !draft.domain?.trim() || (draft.reason?.trim().length || 0) < 5} onClick={() => confirmReferralAnnualDomain(assessment)}>确认适用领域</button></details>}
+                          </> : <div style={{ color: '#9A5B13' }}>尚无关联评估记录；请核对转介反馈与评估生成状态。</div>}
+                          {advisor && <button className="btn btn-secondary btn-sm" style={{ marginTop: 9, marginLeft: assessment?.status === 'advisor_review' ? 8 : 0 }} onClick={() => { setEditingReferral(null); setShowReferralModal(true) }}>需要补充意见？再次发起转介</button>}
+                        </div>
+                      })()}
                       {r.courseDraftStatus === 'pending_review' && <div style={{ marginTop:10, padding:'10px 12px', background:'#FFF8E8', borderRadius:7, color:'#8A5A00', fontSize:12 }}><div style={{ fontWeight:700, marginBottom:5 }}>健康变化草稿待人工审核</div><div style={{ whiteSpace:'pre-wrap', marginBottom:8 }}>{r.courseDraft?.content}</div><div style={{ display:'flex', gap:8 }}><button className="btn btn-primary btn-sm" onClick={async () => { try { await staffAPI.reviewReferralCourseDraft(r._id,'approve'); toast('已写入健康变化时间轴'); loadPatientReferrals(); load(false) } catch (err) { toast(err.message) } }}>审核通过并写入时间轴</button><button className="btn btn-secondary btn-sm" onClick={async () => { try { await staffAPI.reviewReferralCourseDraft(r._id,'reject'); toast('已退回草稿'); loadPatientReferrals() } catch (err) { toast(err.message) } }}>不采纳</button></div></div>}
                       {r.courseDraftStatus === 'approved' && <div style={{ marginTop:8, color:'#22A06B', fontSize:12 }}>✓ 已由人工审核并写入专病健康变化时间轴</div>}
                     </div>

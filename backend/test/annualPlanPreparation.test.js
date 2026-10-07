@@ -43,6 +43,23 @@ test('所有必需专业领域都必须存在已审核年度输入评估', () =>
   assert.deepEqual(result.blockingKeys, ['assessment:营养']);
 });
 
+test('综合健康终审不自动满足肝病科，顾问确认适用领域后才满足', () => {
+  const preparation = {
+    medicationStatus: 'none', supplementStatus: 'none',
+    requiredAssessmentDomains: ['肝病科'], advisorReadyConfirmedAt: new Date(),
+  };
+  const base = { patient: assignedPatient, preparation, auditedReportCount: 1 };
+  const unmatched = buildAnnualPlanPreparationChecklist({
+    ...base, assessments: [{ purpose: 'annual_input', domain: '综合健康', status: 'approved' }],
+  });
+  assert.deepEqual(unmatched.blockingKeys, ['assessment:肝病科']);
+  assert.match(unmatched.items.find(item => item.key === 'assessment:肝病科').label, /尚无匹配/);
+  const confirmed = buildAnnualPlanPreparationChecklist({
+    ...base, assessments: [{ purpose: 'annual_input', domain: '综合健康', annualDomains: ['肝病科'], status: 'approved' }],
+  });
+  assert.equal(confirmed.ready, true);
+});
+
 test('固定三岗位未分配时不得生成正式年度方案', () => {
   const preparation = {
     medicationStatus: 'none', supplementStatus: 'none', requiredAssessmentDomains: ['综合'], advisorReadyConfirmedAt: new Date(),

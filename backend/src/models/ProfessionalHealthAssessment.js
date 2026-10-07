@@ -4,6 +4,8 @@ const professionalHealthAssessmentSchema = new mongoose.Schema({
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   purpose: { type: String, enum: ['annual_input', 'issue_collaboration'], required: true },
   domain: { type: String, required: true, trim: true },
+  // 顾问明确确认可用于年度准备清单的领域；保留原始评估领域和终审快照。
+  annualDomains: { type: [String], default: [] },
   title: { type: String, required: true, trim: true },
   collaborationMode: { type: String, enum: ['single_discipline', 'multidisciplinary'], default: 'single_discipline' },
   linkedDiseaseRecordId: { type: mongoose.Schema.Types.ObjectId, default: null },
