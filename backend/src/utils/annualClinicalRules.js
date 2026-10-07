@@ -48,7 +48,7 @@ function reportTimeline(reports = []) {
       rows.push({ id: `report:${report._id}:${item.itemId || index}`, reportTitle: report.title || '', name,
         date: itemDate ? (validDay(itemDate) ? itemDate : '') : date,
         dateSource: hasPageDate ? '页检查日期' : itemDate ? '项目检查日期' : '报告检查日期（页和项目未单列日期）',
-        modality: item.modality || '', group: /病理/.test(report.title || '') || report.type === 'pathology' ? `病理:${stem(name)}` : relatedGroup(name),
+        modality: item.modality || '', status: item.status || '', group: /病理/.test(report.title || '') || report.type === 'pathology' ? `病理:${stem(name)}` : relatedGroup(name),
         result: [item.value, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join('；'),
       });
     });
@@ -57,7 +57,7 @@ function reportTimeline(reports = []) {
 }
 
 const clinicalRulesPrompt = `【逐项日期与跨模块核对——必须执行】
-report_history是已审核原报告按同类项目保留最近结果的时间线摘要；较早的重复化验可能未列出，不得据此称原报告不存在。完整原报告仍由服务端核验日期及HbA1c。日期取项目检查日期，否则取报告检查日期，不能用上传时间或报告年份推算。引用旧检查时必须对比同项目及相关部位的更新检查；例如子宫附件彩超与阴道超声有关联，但检查途径不一定相同，不得擅自改名或认定完全替代。原汇总与原报告冲突需明确指出，由顾问核对。
+report_history是已审核原报告中与已确认研判主题、异常指标及结构性检查相关的时间线摘要；未列出的项目仍可能存在，不能据此称原报告不存在。完整原报告仍由服务端核验日期及HbA1c。日期取项目检查日期，否则取报告检查日期，不能用上传时间或报告年份推算。引用旧检查时必须对比同项目及相关部位的更新检查；例如子宫附件彩超与阴道超声有关联，但检查途径不一定相同，不得擅自改名或认定完全替代。原汇总与原报告冲突需明确指出，由顾问核对。
 任何非空timingBaseDate必须同时给timingSourceId，精确引用时间线项目id与date；引用较旧的同组检查时，dateSelectionReason必须解释为何更新检查不能代替，不能把旧检查称为最近一次。没有可靠日期不编造，留空说明。医学间隔建议仍交顾问审核。
 medical_treatment/checkup_completion/abnormal_followup中相隔1—14天的事项必须逐对统筹：可合并时优先同一天，优先较早可行日期，不得延误紧急事项。需要拆开或兼容性不确定时，在相应事项scheduleSeparationReason写明医嘱、准备/先后顺序、时限或待核实原因，不编造医院号源。无证据不得强行合并，医院不确定留空。
 年度体检focus每行一个具体项目；不能把今年近期已安排的完善检查清单复制到明年。确需再次复查，必须提供futureRepeatReason及futureRepeatSourceId（输入来源ID）说明独立的复查依据/间隔；否则只保留确应在年度体检关注的事项。完善检查通常安排近期2—4周，若医嘱不同以医嘱为准；不急且有依据延后的放入下次年度体检，不能两处重复排期。

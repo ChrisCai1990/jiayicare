@@ -11658,7 +11658,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const year = targetYear;
 
     const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' })
-      .select('title type checkDate reportItems.itemId reportItems.name reportItems.value reportItems.examDate reportItems.modality reportItems.findings reportItems.diagnosis reportItems.conclusion')
+      .select('title type checkDate reportItems.itemId reportItems.name reportItems.value reportItems.status reportItems.examDate reportItems.modality reportItems.findings reportItems.diagnosis reportItems.conclusion')
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const auditedGlucose = await require('../utils/annualAuditedGlucose').latestAuditedGlucose(user._id, year);
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
@@ -11672,7 +11672,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
         { reviewType: { $exists: false }, title: /年度管理研判/ },
       ],
     })
-      .sort({ 'conclusion.confirmedAt': -1, _id: 1 }).limit(closedLoop ? 0 : 20).select('title reviewType conclusion.content conclusion.structured conclusion.managementTargets conclusion.confirmedAt').lean();
+      .sort({ 'conclusion.confirmedAt': -1, _id: 1 }).limit(closedLoop ? 0 : 20).select('title reviewType concerns.title conclusion.content conclusion.structured conclusion.managementTargets conclusion.confirmedAt').lean();
     if (supplement) confirmedCaseReviews = [...new Map([...confirmedCaseReviews, ...supplement.reviews].map(row => [String(row._id), row])).values()];
     const confirmedManagementTargets = require('../utils/caseReviewManagementTargets').fromConfirmedReviews(confirmedCaseReviews).slice(0, 32);
     const confirmedReviewText = confirmedCaseReviews.length
@@ -11819,7 +11819,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       ...(s.medical_priority?.items || []).map((item, i) => ({ id: `priority:${i}`, content: item })),
       ...(s.checkup_completeness?.missing || []).map((item, i) => ({ id: `missing:${i}`, content: item })),
       { id: 'summary', content: promptEvidence.compactHealthSummary(s) },
-      { id: 'report_history', content: promptEvidence.compactReportTimeline(timeline) },
+      { id: 'report_history', content: promptEvidence.compactReportTimeline(timeline, [confirmedReviewText, ...confirmedManagementTargets.flatMap(row => [row.goal, row.focus]), ...confirmedCaseReviews.flatMap(row => (row.concerns || []).map(concern => concern.title))].filter(Boolean).join('；')) },
       ...(supplement ? [{ id: 'supplement', content: { reviews: supplement.reviews, reports: supplement.reports, advisorConfirmedNote: supplement.note } }] : []),
     ];
     const carePreferences = require('../utils/carePreferences').carePreferenceContext(user);
@@ -11849,7 +11849,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 7, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, confirmedReportIssues, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 8, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, confirmedReportIssues, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;

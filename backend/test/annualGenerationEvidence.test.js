@@ -11,7 +11,7 @@ test('generation evidence keeps latest lab and comparison imaging with original 
     { id: 'new-ct', group: '肺CT', date: '2026-06-01', name: '肺CT', result: '磨玻璃结节' },
     { id: 'old-ct', group: '肺CT', date: '2025-06-01', name: '肺CT', result: '较小结节' },
   ];
-  const compact = compactReportTimeline(rows);
+  const compact = compactReportTimeline(rows, '血糖与肺CT需对照');
   assert.deepEqual(compact.map(row => row.id), ['new-glucose', 'new-a1c', 'old-a1c', 'new-ct', 'old-ct']);
   assert.equal(compact.find(row => row.id === 'new-a1c').result, '5.6%');
 });
@@ -25,4 +25,12 @@ test('generation summary retains confirmed abnormal findings and drops unrelated
   assert.deepEqual(result.chronicFindings, [{ name: '血压', latest: '偏高', status: 'abnormal' }]);
   assert.equal(result.medicalPriority[0].bulky, undefined);
   assert.deepEqual(result.tumorFindings, ['肺结节']);
+});
+
+test('a historical abnormal result keeps the newer normal comparison', () => {
+  const rows = [
+    { id: 'new', group: '肝酶', date: '2026-09-01', name: '肝酶', status: 'normal', result: '正常' },
+    { id: 'old', group: '肝酶', date: '2025-09-01', name: '肝酶', status: 'abnormal', result: '升高' },
+  ];
+  assert.deepEqual(compactReportTimeline(rows).map(row => row.id), ['new', 'old']);
 });
