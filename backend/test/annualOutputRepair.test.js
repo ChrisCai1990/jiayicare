@@ -137,6 +137,11 @@ test('stored valid rejected candidate completes without any further AI request',
   assert.equal(db.doc.status,'ready');validate(result.raw);
 });
 
+test('repair requests satisfy provider JSON mode even without JSON in source data', () => {
+  assert.match(annualCorrectionPrompt({}, [], 'missing focus'), /json/i);
+  assert.match(sourceLinkRepairPrompt({}, [], [], 'missing source'), /json/i);
+});
+
 test('annual focus correction bounds historical evidence and keeps referenced timing source', async () => {
   const raw = rawPlan(); raw.annual_checkup.focus = '';
   raw.checkup_completion[0].timingSourceId = 'report:499';
