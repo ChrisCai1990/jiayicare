@@ -27,6 +27,36 @@ function sourceLinkRepairPrompt(candidate, evidence, missingLinks, errorMessage)
   return `你只修复年度方案的来源关联和空白年度体检项，不重新生成方案。以下已有行动内容、日期和模板不可改。把确实对应的来源ID补到已有行动，按module和index分组返回sourceLinkCorrections；不能为了过校验关联无关事项。仅summary、report_history这两类汇总来源如确实没有独立对应行动，可用coverageCorrections改为deferred或not_applicable并说明具体原因；已确认的具体来源必须关联行动。${annualNeedsCorrection ? '当前annual_checkup有模板却缺少focus。请根据其已关联的真实来源填写明确、简短的focus，并返回完整annual_checkup对象；若来源不支持年度体检行动，返回annual_checkup:{}，同时如实修正对应evidenceCoverage。不能保留空focus占位。' : ''}只输出JSON，包含需要的字段：{"sourceLinkCorrections":[{"module":"medical_treatment","index":0,"sourceIds":["真实来源ID"]}],"coverageCorrections":[{"sourceId":"summary","status":"deferred","reason":"具体原因"}]${annualExample}}。无须重复整份方案。\n校验问题：${errorMessage}\n已有行动：${JSON.stringify(actions)}\n相关来源：${JSON.stringify(sources)}`;
 }
 
+// A repair edits a small part of an existing plan, so never resend the original
+// generation prompt (which contains the complete historical report timeline).
+function annualCorrectionPrompt(candidate, evidence, errorMessage) {
+  const modules = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'templateNodes'];
+  const actions = modules.flatMap(module => (candidate[module] || []).map((row, index) => ({
+    module, index, name: row.items || row.name || row.reason || row.standardPlanName || '',
+    sourceIds: row.sourceIds || [], date: row.visit_time || row.time || row.executionDate || '',
+    basisSummary: String(row.basisSummary || row.matchReason || '').slice(0, 500),
+    timingSourceId: row.timingSourceId || '', timingBaseDate: row.timingBaseDate || '',
+  })));
+  const referenced = new Set(actions.map(row => row.timingSourceId).filter(Boolean));
+  const topic = JSON.stringify([candidate.annual_checkup, ...actions]);
+  const sources = evidence.map(item => {
+    if (item.id !== 'report_history' || !Array.isArray(item.content)) return item;
+    const ordered = [...item.content].sort((a, b) => {
+      const rank = row => referenced.has(row.id) ? 2 : row.name?.length >= 2 && topic.includes(row.name) ? 1 : 0;
+      return rank(b) - rank(a);
+    });
+    const rows = []; let size = 0;
+    for (const row of ordered) {
+      const compact = { id: row.id, date: row.date, name: row.name, group: row.group, result: String(row.result || '').slice(0, 240) };
+      const length = JSON.stringify(compact).length;
+      if (size + length > 7000) continue;
+      rows.push(compact); size += length;
+    }
+    return { id: item.id, content: { rows, omittedCount: ordered.length - rows.length, note: '仅为本次校正提供的摘要；未列项目不能视为资料缺失，完整来源仍由服务端校验。' } };
+  });
+  return `${correctionInstruction}\n校验问题：${errorMessage}\n当前年度体检项：${JSON.stringify(candidate.annual_checkup || {})}\n已有行动（仅可修正来源元数据）：${JSON.stringify(actions)}\n当前来源核对：${JSON.stringify(candidate.evidenceCoverage || [])}\n校正依据：${JSON.stringify(sources)}`;
+}
+
 // A single bounded correction replaces the former focus-only call. Both attempts go
 // through the identical source/template/clinical checks; invalid output is never cached ready.
 async function validateOrRepairAnnual(raw, validate, complete) {
@@ -107,4 +137,4 @@ async function validateOrRepairAnnual(raw, validate, complete) {
 const correctionInstruction = `这是同一次生成的格式/规则校正，不是另拟新方案。只修复下列校验问题及相关来源关联，其余项目和临床建议保持原样；禁止为通过验证删除其他已有行动或虚构依据。
 annual_checkup.focus必须逐行文本；纯字符串列表可无损转为文本。年度focus只列实际安排项目，“不重复安排/已在近期安排”的说明应放内部notes，不能伪装成年度项目。每个保留项目必须引用真实对应sourceIds；如项目来自missing:0、missing:1，不能错挂priority:0。evidenceCoverage与保留事项同步，纳入年度同样算included。
 如已审依据确实不支持任何年度项目，可返回annual_checkup:{}，并在对应evidenceCoverage明确说明未纳入原因；不得用空focus的非空模块占位，更不能以忽略有依据项目换取通过。日期、科室、来源及统筹规则仍必须满足。返回annual_checkup与完整evidenceCoverage。若已生成事项实际涵盖某来源，却遗漏sourceIds关联，额外返回sourceLinkCorrections数组：[{"module":"medical_treatment","index":0,"sourceIds":["真实来源id"]}]；module也可为annual_checkup（index固定为0）。只给已有事项补充真实且语义对应的来源，不得把无关来源挂到事项上；若确实没有对应事项，须如实把该来源改为deferred或not_applicable并说明原因，不能仅靠修改状态掩盖已确认的行动需求。若其他模块的timingSourceId或timingBaseDate有误，额外返回timingCorrections数组：[{"module":"checkup_completion","index":0,"timingSourceId":"report_history中真实项目id","timingBaseDate":"该项目真实date","dateSelectionReason":"选用此日期的依据"}]。index为原数组从0开始的位置。仅校正已有事项的时间来源元数据，禁止编造来源、清空日期绕过校验或改变行动内容及执行时间；不需要时返回空数组。系统保留其他字段并重新进行全部校验。`;
-module.exports = { normalizeAnnualOutput, missingIncludedSourceIds, sourceLinkRepairPrompt, validateOrRepairAnnual, correctionInstruction };
+module.exports = { normalizeAnnualOutput, missingIncludedSourceIds, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, correctionInstruction };

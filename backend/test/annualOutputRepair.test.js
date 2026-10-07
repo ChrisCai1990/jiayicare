@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { normalizeAnnualOutput, sourceLinkRepairPrompt, validateOrRepairAnnual } = require('../src/utils/annualOutputRepair');
+const { normalizeAnnualOutput, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual } = require('../src/utils/annualOutputRepair');
 const { validateAnnualRaw } = require('../src/utils/annualGenerationConsistency');
 const { validateClinicalRules } = require('../src/utils/annualClinicalRules');
 const keys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
@@ -135,4 +135,24 @@ test('stored valid rejected candidate completes without any further AI request',
   const input={patientId:'p'};db.doc={_id:fingerprint(input),status:'failed',owner:'old',rejectedRaw:rawPlan()};
   const result=await reuseAnnualGeneration(db,input,raw=>validateOrRepairAnnual(raw,validate,()=>assert.fail('no AI request')));
   assert.equal(db.doc.status,'ready');validate(result.raw);
+});
+
+test('annual focus correction bounds historical evidence and keeps referenced timing source', async () => {
+  const raw = rawPlan(); raw.annual_checkup.focus = '';
+  raw.checkup_completion[0].timingSourceId = 'report:499';
+  const history = Array.from({length: 500}, (_, i) => ({id: `report:${i}`, name: `历史项目${i}`, date: '2026-01-01', result: '原始结果'.repeat(300)}));
+  const prompt = annualCorrectionPrompt(raw, [...evidence, {id:'report_history', content:history}], '年度体检缺少明确内容');
+  assert.ok(prompt.length < 14000);
+  assert.match(prompt, /report:499/);
+  assert.match(prompt, /omittedCount/);
+  assert.equal(history[499].result.length, 1200);
+  const db = {doc:null, async findOne(){return structuredClone(this.doc)}, async updateOne(q,u){Object.assign(this.doc,u.$set);return {modifiedCount:1}}};
+  const {fingerprint,reuseAnnualGeneration}=require('../src/utils/annualGenerationConsistency');
+  const input={patientId:'p'};db.doc={_id:fingerprint(input),status:'failed',owner:'old',rejectedRaw:raw};
+  let repairs=0;
+  const result=await reuseAnnualGeneration(db,input,saved=>{
+    assert.ok(saved, 'resume stored result instead of generating the entire plan');
+    return validateOrRepairAnnual(saved,validate,async()=>{repairs++;return JSON.stringify({annual_checkup:{...saved.annual_checkup,focus:'检查乙'},evidenceCoverage:saved.evidenceCoverage})});
+  });
+  assert.equal(repairs,1);assert.equal(result.raw.annual_checkup.focus,'检查乙');
 });

@@ -348,6 +348,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [plan, setPlan]             = useState(null)
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
+  const [confirmedReviewTargets, setConfirmedReviewTargets] = useState([])
   const [phaseAssessmentFrequency, setPhaseAssessmentFrequency] = useState('')
   const [lastGenerationKey, setLastGenerationKey] = useState('')
   const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
@@ -465,7 +466,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         staffAPI.getAnnualPlan(id, year),
         staffAPI.getAnnualPlanPreparation(id, year),
         staffAPI.getProfessionalHealthAssessments(id),
-      ]).then(([patRes, planRes, preparationRes, assessmentRes]) => {
+        staffAPI.getAnnualManagementTargets(id, year),
+      ]).then(([patRes, planRes, preparationRes, assessmentRes, targetsRes]) => {
         if (cancelled) return
         setClosedLoopEnabled(preparationRes.enabled !== false)
         setPatient(patRes.data?.user || patRes.data)
@@ -493,11 +495,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const target = queryPlanType && map[queryPlanType]
           ? map[queryPlanType]
           : (queryPlanType ? map[strategyOf(queryPlanType)] || null : list.find(p => p.servicePlanCode || p.planType))
+        const confirmedTargets = targetsRes.data || []
+        setConfirmedReviewTargets(confirmedTargets)
+        const targetModules = target?.moduleData || {}
+        const carryTargets = !target?.pushedAt && !targetModules.management_targets?.records?.length && confirmedTargets.length > 0
+        setModuleData(carryTargets ? { ...targetModules, management_targets: { enabled: true, records: confirmedTargets } } : targetModules)
         setContinuitySource(target?.continuitySource || preparationData?.continuity?.source || null)
         if (target) {
           setPlanType(target.servicePlanCode || target.planType)
           setSelectedTemplateId(target.templateId || '')
-          setModuleData(target.moduleData || {})
           setPhaseAssessmentFrequency(target.phaseAssessmentFrequency || '')
           setPushedAt(target.pushedAt || null)
           setConfirmedAt(target.confirmedAt || null)
@@ -505,19 +511,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           // 该类型还没有任何已保存数据，选中类型但板块留空，等用户点AI生成
           setPlanType(queryPlanType)
           setSelectedTemplateId('')
-          setModuleData({})
           setPhaseAssessmentFrequency('')
           setPushedAt(null)
           setConfirmedAt(null)
         } else {
           setPlanType('')
           setSelectedTemplateId('')
-          setModuleData({})
           setPhaseAssessmentFrequency('')
           setPushedAt(null)
           setConfirmedAt(null)
         }
-        setDirty(false)
+        setDirty(carryTargets)
         setMetricSelectionDirty(false)
       }).catch(err => { if (!cancelled) toast(err.message || '加载失败') })
         .finally(() => { if (!cancelled) setLoading(false) })
@@ -556,11 +560,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setContinuitySource(p?.continuitySource || preparation?.continuity?.source || null)
     setPlanType(key)
     setSelectedTemplateId(template?._id || p?.templateId || '')
-    setModuleData(p?.moduleData || {})
+    const existingModules = p?.moduleData || {}
+    const carryTargets = !p?.pushedAt && !existingModules.management_targets?.records?.length && confirmedReviewTargets.length > 0
+    setModuleData(carryTargets ? { ...existingModules, management_targets: { enabled: true, records: confirmedReviewTargets } } : existingModules)
     setPhaseAssessmentFrequency(p?.phaseAssessmentFrequency || '')
     setPushedAt(p?.pushedAt || null)
     setConfirmedAt(p?.confirmedAt || null)
-    setDirty(false)
+    setDirty(carryTargets)
     setMetricSelectionDirty(false)
   }
 
@@ -608,6 +614,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     try {
       const res = await staffAPI.getAnnualManagementTargets(id, year)
       if (!res.data?.length) return toast('本年度尚无已确认的逐条管理目标')
+      setConfirmedReviewTargets(res.data)
       setModuleData(prev => ({ ...prev, management_targets: { enabled: true, records: res.data } }))
       setDirty(true)
       toast(`已带入 ${res.data.length} 条目标，请核对并保存草稿`)
@@ -674,7 +681,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     try {
       const res = await staffAPI.generateAIAnnualPlan(id, requestType, '', selectedTemplateId, year)
       setGenerationCoverage(res.generation?.evidenceCoverage || [])
-      if (res.generation?.fingerprint && (res.generation.fingerprint === lastGenerationKey || (res.generation.reused && dirty))) { toast('依据未变化，保留同一版本及您的编辑，不重复覆盖'); return }
+      if (res.generation?.fingerprint && (res.generation.fingerprint === lastGenerationKey || (res.generation.reused && dirty && planActions.length > 0))) { toast('依据未变化，保留同一版本及您的编辑，不重复覆盖'); return }
       setLastGenerationKey(res.generation?.fingerprint || '')
       setContinuitySource(res.continuitySource || null)
       const aiData = res.data || {}
