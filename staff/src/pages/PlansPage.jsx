@@ -4,6 +4,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, usePermission, useStaff } from '../App'
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
+import noReportMedicalProxyPilot from '../../../shared/noReportMedicalProxyPilot.cjs'
+
+const { isNoReportMedicalProxyPilot } = noReportMedicalProxyPilot
 
 const TYPE_LABEL = {
   annual_checkup:  '年度体检方案',
@@ -631,6 +634,8 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [assignedPlanner, setAssignedPlanner] = useState(null)
   const [patientReports, setPatientReports] = useState([])
   const [selectedReportIds, setSelectedReportIds] = useState([])
+  const [noMaterialsConfirmed, setNoMaterialsConfirmed] = useState(false)
+  const [patientReportsLoaded, setPatientReportsLoaded] = useState(false)
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -692,11 +697,19 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
   }, [patientId, isMedicationProxy])
 
   useEffect(() => {
-    if (!patientId || !isMedicalProxy) { setPatientReports([]); setSelectedReportIds([]); return }
+    let active = true
+    setNoMaterialsConfirmed(false)
+    setPatientReportsLoaded(false)
+    setPatientReports([])
+    setSelectedReportIds([])
+    if (!patientId || !isMedicalProxy) return () => { active = false }
     staffAPI.getPatientReports(patientId).then(res => {
+      if (!active) return
       const audited = (res.data || []).filter(report => report.audit_status === 'audited')
       setPatientReports(audited)
-    }).catch(err => setError(err.message || '加载客户资料失败'))
+      setPatientReportsLoaded(true)
+    }).catch(err => { if (active) setError(err.message || '加载客户资料失败') })
+    return () => { active = false }
   }, [patientId, isMedicalProxy])
 
   useEffect(() => {
@@ -802,7 +815,8 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     if (isExpertAppointment && (!form.hospital.trim() || !form.department.trim() || !form.preferredDateStart || !form.preferredDateEnd || form.preferredDateEnd < form.preferredDateStart)) { setError('请完整填写医院、科室和有效的期望日期区间'); return }
     if (isExpertAppointment && (!form.clinicType || !form.insuranceUse)) { setError('请选择门诊类型和费用与保险方式'); return }
     if (isMedicalProxy && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.proxyGoal?.trim() || !form.communicationContent?.trim())) { setError('请完整填写医院、科室、专家、代诊目标和交流内容'); return }
-    if (isMedicalProxy && !selectedReportIds.length) { setError('请从客户既有资料中选择至少一份已审核资料'); return }
+    if (isMedicalProxy && !patientReportsLoaded) { setError('客户资料尚未加载完成，请稍后重试'); return }
+    if (isMedicalProxy && !selectedReportIds.length && !(isNoReportMedicalProxyPilot(patientId) && noMaterialsConfirmed)) { setError('请从客户既有资料中选择至少一份已审核资料'); return }
     if (checkupOneStop && !workflowProductId) { setError('请选择 Admin 已发布的体检服务流程'); return }
     if (checkupOneStop && !description.trim()) { setError('请填写具体服务需求'); return }
     if (isAgencyExamBooking && (!form.agencyExams?.length || form.agencyExams.length > 12 || form.agencyExams.some(row => !row.item.trim()))) { setError('请逐项填写1至12个代约检查项目'); return }
@@ -820,7 +834,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       if (isMedicalProxy || isExpertAppointment || isMedicationProxy) {
         const medicationItems = isMedicationProxy ? form.medicationItems.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value || '').trim()]))) : []
         const firstMedication = medicationItems[0] || {}
-        await staffAPI.startStaffMedicalProxy(patientId, { reservedOrderId, giftId, hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, ...firstMedication, medicationItems, institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
+        await staffAPI.startStaffMedicalProxy(patientId, { reservedOrderId, giftId, hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, noMaterialsConfirmed: isMedicalProxy && !selectedReportIds.length && noMaterialsConfirmed, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, ...firstMedication, medicationItems, institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
         onSaved()
         return
       }
@@ -1136,7 +1150,8 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
                   <input type="checkbox" checked={selectedReportIds.includes(String(report._id))} onChange={e => setSelectedReportIds(ids => e.target.checked ? [...ids, String(report._id)] : ids.filter(id => id !== String(report._id)))} /> {report.title || report.type || '资料'} · {report.checkDate || report.date || ''} <span style={{ color: '#1E6B50' }}>已审核</span>
                 </label>)}
                 {!patientId && <span style={{ color: '#8AA89C', fontSize: 13 }}>请先选择会员</span>}
-                {patientId && !patientReports.length && <span style={{ color: '#B45309', fontSize: 13 }}>该会员暂无已审核资料，不能直接发起</span>}
+                {patientId && patientReportsLoaded && !patientReports.length && !isNoReportMedicalProxyPilot(patientId) && <span style={{ color: '#B45309', fontSize: 13 }}>该会员暂无已审核资料，不能直接发起</span>}
+                {patientId && patientReportsLoaded && !patientReports.length && isNoReportMedicalProxyPilot(patientId) && <label style={{ color: '#B45309', fontSize: 13 }}><input type="checkbox" checked={noMaterialsConfirmed} onChange={e => setNoMaterialsConfirmed(e.target.checked)} /> 确认这是模拟测试客户，本次无检查资料或病历；代诊问题仅依据上方人工填写内容。</label>}
               </div>
             </div>
             <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康顾问提交后，将自动生成健康规划师全程督办任务，并直接流转给健管专员预约专家。</div>

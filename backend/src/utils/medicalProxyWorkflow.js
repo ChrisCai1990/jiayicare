@@ -13,11 +13,30 @@ const { needsPlannerDispatch } = require('./proxyPlannerDispatch');
 const PackageEntitlement = require('../models/PackageEntitlement');
 const GiftRecord = require('../models/GiftRecord');
 const { applicableEntitlements } = require('./packageEntitlements');
+const { isNoReportMedicalProxyPilot } = require('../../../shared/noReportMedicalProxyPilot.cjs');
 
 const PREFIX = 'medical_proxy:';
 const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
 const ALL_STAGES = [...STAGES, 'appointment_review', 'post_visit_audit', 'post_visit_review'];
 const STAFF_DIRECT_SOURCE = 'staff_direct';
+async function validateDirectProxyMaterials(patientId, plan) {
+  const reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
+  const reportCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patientId, audit_status: 'audited' });
+  if (reportIds.length && reportCount !== reportIds.length) throw Object.assign(new Error('所选资料必须属于该客户且已审核'), { status: 400 });
+  if (!reportIds.length) {
+    if (!isNoReportMedicalProxyPilot(patientId) || plan.noMaterialsConfirmed !== true) {
+      throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
+    }
+    if (await MedicalReport.countDocuments({ user: patientId })) {
+      throw Object.assign(new Error('该客户已有资料，请先审核并选择资料'), { status: 400 });
+    }
+    plan.noMaterialsConfirmed = true;
+    plan.simulationTest = true;
+  } else {
+    plan.noMaterialsConfirmed = false;
+  }
+  return reportIds;
+}
 function shanghaiDateStart(now = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map(part => [part.type, part.value]));
   return new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00.000Z`);
@@ -750,10 +769,9 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
   if (!patient.assignedHealthManager || !patient.assignedHealthPlanner) {
     throw Object.assign(new Error('请先为客户分配健康规划师和健管专员'), { status: 409 });
   }
-  const reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
+  let reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
   if (!appointmentOnly && !supplyProxy && !medicalEscort) {
-    const reportCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' });
-    if (!reportIds.length || reportCount !== reportIds.length) throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
+    reportIds = await validateDirectProxyMaterials(patient._id, plan);
   }
   const date = new Date();
   // 代配服务的工作台日期必须来自建档时设置的计划，而不是任务生成时间。
@@ -927,7 +945,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
     patientId: patient._id, staffId: advisorId, assignedTo: advisorId, type: 'other', status: 'completed',
     date: new Date(), remindAt: new Date(), completedAt: new Date(), completedBy: 'staff', sourceType: 'order', sourceOrderId: order._id,
     workflowKey: `${PREFIX}advisor`, taskRole: 'executor', theme: '医疗代诊：健康顾问确认代诊方案 · 医疗代诊服务',
-    plannedContent: '健康顾问直接从既有已审核资料制定代诊方案。',
+    plannedContent: plan.noMaterialsConfirmed ? '模拟测试客户确认本次无资料，健康顾问已填写代诊目标和交流内容。' : '健康顾问直接从既有已审核资料制定代诊方案。',
     formData: { ...plan, selectedReportIds: reportIds, initiationSource: STAFF_DIRECT_SOURCE },
   });
   await advanceMedicalProxyWorkflow(advisorTask);
@@ -1412,4 +1430,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, validateDirectProxyMaterials, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
