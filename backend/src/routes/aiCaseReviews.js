@@ -823,10 +823,10 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     if (pendingConcerns.length) return res.status(409).json({ success: false,
       message: `还有${pendingConcerns.length}项年度问题待核实或待确定专业去向；请到上方“年度综合研判的问题与风险线索”逐项保存`,
       pendingConcernIds: pendingConcerns.map(row => row.id) });
-    if (topic.annualPlanYear && topic.concernsUpdatedAt && (!topic.conclusion?.generatedAt || new Date(topic.conclusion.generatedAt) < new Date(topic.concernsUpdatedAt)))
-      return res.status(409).json({ success: false, message: '年度问题清单已更新，请先按当前问题重新整理阶段性结论' });
     if (topic.annualPlanYear && topic.concernsUpdatedAt && !topic.messages.some(item => item.role === 'ai' && new Date(item.createdAt) > new Date(topic.concernsUpdatedAt)))
       return res.status(409).json({ success: false, message: '问题去向已调整，请先按当前问题更新完整年度研判' });
+    const annualConclusionStale = !!topic.annualPlanYear && !!topic.concernsUpdatedAt
+      && (!topic.conclusion?.generatedAt || new Date(topic.conclusion.generatedAt) < new Date(topic.concernsUpdatedAt));
     const suppliedContent = String(req.body.content ?? topic.conclusion?.content ?? '').trim();
     let managementTargets;
     const targetLogic = require('../utils/caseReviewManagementTargets');
@@ -836,7 +836,10 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
       try { targetLogic.validateAnnualTargets(topic.concerns, managementTargets); }
       catch (error) { return res.status(409).json({ success: false, message: error.message }); }
     }
-    const content = suppliedContent || targetLogic.conclusionFromTargets(managementTargets);
+    // The current issue discussion and individually confirmed targets are enough
+    // to build a fresh summary; an older or absent summary must not block approval.
+    const content = annualConclusionStale ? targetLogic.conclusionFromTargets(managementTargets)
+      : suppliedContent || targetLogic.conclusionFromTargets(managementTargets);
     if (!content) return res.status(400).json({ success: false, message: '请填写阶段性结论，或至少一条完整的管理目标与干预重点' });
     const structured = toStructuredAssessment(content, topic.title);
     const shouldArchive = req.body.writeToPhaseAssessment === true
@@ -856,7 +859,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
       confirmedByName: topic.conclusion.confirmedByName, targetChangeNote: topic.conclusion.targetChangeNote || '',
     });
     topic.conclusion = { content: assessmentToPlainText(structured), structured, managementTargets,
-      status: 'confirmed', generatedAt: topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(),
+      status: 'confirmed', generatedAt: annualConclusionStale ? new Date() : topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(),
       confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', targetChangeNote: targetsChanged ? targetChangeNote : topic.conclusion?.targetChangeNote || '',
       serviceRecordId: serviceRecord?._id || topic.conclusion?.serviceRecordId || null };
     invalidateCustomerDiscussion(topic);

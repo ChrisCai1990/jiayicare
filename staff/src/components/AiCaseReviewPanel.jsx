@@ -159,6 +159,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const lastAnnualAiAt = active?.annualPlanYear ? (active.messages || []).filter(message => message.role === 'ai').at(-1)?.createdAt : null
   const annualDiscussionStale = !!active?.annualPlanYear && !!active.concernsUpdatedAt && (!lastAnnualAiAt || new Date(lastAnnualAiAt) <= new Date(active.concernsUpdatedAt))
   const annualConclusionStale = !!active?.annualPlanYear && !!active.concernsUpdatedAt && (!active.conclusion?.generatedAt || new Date(active.conclusion.generatedAt) < new Date(active.concernsUpdatedAt))
+  const incompleteAnnualTargets = active?.annualPlanYear ? managementTargets.filter(row => !row.goal?.trim() || !row.focus?.trim()) : []
   const pendingAnnualConcerns = active?.annualPlanYear ? (active.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row)
     && (row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided')))) : []
   const newerSpecialtyConclusion = !!lastAnnualAiAt && topics.some(item => item.issueKey && item.reviewType === 'specialty' && item.conclusion?.status === 'confirmed' && new Date(item.conclusion.confirmedAt || item.updatedAt) > new Date(lastAnnualAiAt))
@@ -357,11 +358,6 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       toast(`还有 ${pendingAnnualConcerns.length} 项年度问题待核实；请逐项保存状态和专业去向`, 'error')
       return
     }
-    if (annualConclusionStale) {
-      document.getElementById('annual-concerns')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      toast('问题清单已更新；请先按当前问题更新完整研判，再点击“AI整理结论”', 'error')
-      return
-    }
     if (!annualTargetsReady) return toast('请先根据已纳入的问题逐项核对目标与干预重点', 'error')
     if (!conclusionText.trim() && !completeManagementTargets) return toast('请填写阶段性结论，或至少一条完整的管理目标与干预重点', 'error')
     const targetsChanged = active.conclusion?.status === 'confirmed' && JSON.stringify(managementTargets) !== JSON.stringify(active.conclusion.managementTargets || [])
@@ -552,7 +548,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       </div></div>
 
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">{active.annualPlanYear ? '年度管理项目（来自已纳入的问题）' : '阶段性结论（当前有效信息）'}</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>{active.annualPlanYear ? 'AI起草并标准化目标' : 'AI整理结论'}</button></div><div className="card-body">
-        {(annualConclusionStale || annualDiscussionStale) && <div role="alert" style={{ padding: 10, marginBottom: 10, borderRadius: 8, background: '#FFF4E5', color: '#8A5414' }}>{annualDiscussionStale ? '问题去向已调整，请先在上方按当前问题更新完整年度研判，再整理目标。' : '年度问题清单已更新，请根据最新讨论重新整理并核对目标。'}</div>}
+        {(annualConclusionStale || annualDiscussionStale) && <div role="alert" style={{ padding: 10, marginBottom: 10, borderRadius: 8, background: '#FFF4E5', color: '#8A5414' }}>{annualDiscussionStale ? '问题去向已调整，请先在上方按当前问题更新完整年度研判，再整理目标。' : '阶段性结论尚未按当前问题生成；可核对下方逐项目标后直接确认，系统将据此整理结论摘要。'}</div>}
         {active.annualPlanYear ? <details style={{ marginBottom: 12 }}><summary style={{ cursor: 'pointer', color: '#52685D' }}>查看阶段性讨论摘要与完整结论</summary><div style={{ marginTop: 10 }}><StructuredAssessment data={active.conclusion?.structured} /><textarea className="form-input" rows={10} value={conclusionText} onChange={e => setConclusionText(e.target.value)} placeholder="AI整理后由健康顾问复核确认" /></div></details> : <><StructuredAssessment data={active.conclusion?.structured} /><textarea className="form-input" rows={10} value={conclusionText} onChange={e => setConclusionText(e.target.value)} placeholder="AI整理后由健康顾问复核确认；只有已确认结论会进入管理方案上下文。" /></>}
         {!isStageAssessmentTopic && <div style={{ marginTop: 14, padding: 12, background: '#F4F8F5', borderRadius: 8 }}>
           <div style={{ fontWeight: 700 }}>{active.annualPlanYear ? `已纳入年度管理的项目（${includedAnnualConcerns.length}项）` : '管理目标与干预重点'}</div>
@@ -572,6 +568,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           {!!active.conclusionHistory?.length && <details style={{ marginTop: 10, color: '#52685D', fontSize: 12 }}><summary>查看历史确认目标（{active.conclusionHistory.length}版）</summary>{active.conclusionHistory.slice().reverse().map((version, index) => <div key={index} style={{ borderTop: '1px solid #DCE8E1', paddingTop: 8, marginTop: 8 }}><div>{formatDateTime(version.confirmedAt)} · {version.confirmedByName || '健康顾问'}</div>{(version.managementTargets || []).map((row, rowIndex) => <div key={rowIndex}>{rowIndex + 1}. {row.goal}；干预重点：{row.focus}</div>)}{version.targetChangeNote && <div>调整说明：{version.targetChangeNote}</div>}</div>)}</details>}
         </div>}
         {!!pendingAnnualConcerns.length && <div role="alert" style={{ marginTop: 10, padding: 10, borderRadius: 8, background: '#FFF4E5', color: '#8A5414', fontSize: 13 }}>确认前还有 {pendingAnnualConcerns.length} 项年度问题待核实。<button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => { const first = document.getElementById(`annual-concern-${pendingAnnualConcerns[0].id}`); if (first) { first.open = true; first.scrollIntoView({ behavior: 'smooth', block: 'center' }) } }}>查看第一项</button></div>}
+        {!!incompleteAnnualTargets.length && <div role="alert" style={{ marginTop: 10, color: '#8A5414', fontSize: 13 }}>还需补齐 {incompleteAnnualTargets.length} 项的目标或干预重点：{incompleteAnnualTargets.map(row => includedAnnualConcerns.find(item => item.id === row.issueId)?.title || '未关联问题').join('、')}。</div>}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方专业审核流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}{!conclusionText.trim() && completeManagementTargets ? '；将根据已填目标生成结论摘要' : ''}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !annualTargetsReady || (!conclusionText.trim() && !completeManagementTargets)} onClick={confirmConclusion}>{active.annualPlanYear ? '确认年度管理项目与目标' : `确认并用于${active.templateSnapshot?.target || '对应方案'}`}</button>}</div>
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
