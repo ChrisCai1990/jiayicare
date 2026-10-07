@@ -19,14 +19,9 @@ function inheritArrangements(raw, reports = [], visits = []) {
           else match = { ...match, institution: item.institution || match.institution };
         }
       }
-      if (!match && !row.timingSourceId && key !== 'annual_checkup') {
-        const text = [row.items,row.reason,row.focus].filter(Boolean).join(' ').replace(/ABPM/gi,'动态血压');
-        match = reports.filter(r => r.title && r.title.length >= 4 && text.includes(r.title) && r.checkDate && r.checkDate <= new Date().toISOString().slice(0,10))
-          .sort((a,b) => b.checkDate.localeCompare(a.checkDate))[0];
-      }
       // A known prior same-department visit can supply a named specialist.
       // Do not copy names from unrelated departments or from a different hospital.
-      const history = visits.filter(v => v.department && v.department === row.department && v.hospital)
+      const history = visits.filter(v => v.department && v.department.replace(/内科$|科$/,'') === String(row.department || '').replace(/内科$|科$/,'') && v.hospital)
         .sort((a,b) => String(b.date).localeCompare(String(a.date)))[0];
       const hospital = match?.institution || match?.hospital || history?.hospital;
       if (hospital && !row.hospital && !row.institution) {
