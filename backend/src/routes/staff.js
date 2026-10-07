@@ -11965,7 +11965,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
             ? chat([{ role: 'user', content: repair.sourceLinkRepairPrompt(candidate, evidence, missingLinks, message) }],
               { maxTokens: 2000, temperature: 0, jsonMode: true, timeoutMs: 90000 })
             : chat([{ role: 'user', content: repair.annualCorrectionPrompt(candidate, evidence, message) }],
-              { maxTokens: 2500, temperature: 0, jsonMode: true, timeoutMs: 90000 }));
+              { maxTokens: 2500, temperature: 0, jsonMode: true, timeoutMs: 90000 }), candidate => repair.applyAnnualSchedule(candidate, reports));
         }
         return parsed;
       }

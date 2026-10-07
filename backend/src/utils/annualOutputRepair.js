@@ -5,6 +5,18 @@ function normalizeAnnualOutput(raw) {
   return { ...raw, annual_checkup: { ...raw.annual_checkup, focus: focus.map(line => line.trim()).filter(Boolean).join('\n') } };
 }
 
+function applyAnnualSchedule(raw, reports) {
+  if (!raw?.annual_checkup?.standardPlanId) return raw;
+  const date = require('./annualPlanGeneration').nextAnnualCheckupDate(reports);
+  const source = require('./annualClinicalRules').reportTimeline(reports).find(row => row.date
+    && require('./annualPlanGeneration').nextAnnualCheckupDate([{checkDate:row.date}]) === date);
+  if (!date || !source) return raw;
+  const reason = `按系统现有年度体检排期规则，依据已审核检查日期计算建议日期；具体安排由顾问确认。`;
+  return { ...raw, annual_checkup: { ...raw.annual_checkup, date,
+    timingSourceId: source.id, timingBaseDate: source.date,
+    timingReason: reason, dateSelectionReason: reason } };
+}
+
 function missingIncludedSourceIds(raw) {
   const rows = Object.entries(raw || {}).filter(([key]) => key !== 'evidenceCoverage')
     .flatMap(([, value]) => Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : []);
@@ -64,8 +76,8 @@ function annualCorrectionPrompt(candidate, evidence, errorMessage) {
 
 // A single bounded correction replaces the former focus-only call. Both attempts go
 // through the identical source/template/clinical checks; invalid output is never cached ready.
-async function validateOrRepairAnnual(raw, validate, complete) {
-  let candidate = normalizeAnnualOutput(raw);
+async function validateOrRepairAnnual(raw, validate, complete, normalize = value => value) {
+  let candidate = normalize(normalizeAnnualOutput(raw));
   let initialError;
   try { validate(candidate); return candidate; } catch (error) { initialError = error; }
   try {
@@ -80,9 +92,9 @@ async function validateOrRepairAnnual(raw, validate, complete) {
       throw Object.assign(new Error('AI年度体检校正缺少模块或来源核对，未替换原方案'), { statusCode: 502 });
     }
     // A source-only reply leaves the clinical plan and other coverage untouched.
-    candidate = normalizeAnnualOutput({ ...candidate,
+    candidate = normalize(normalizeAnnualOutput({ ...candidate,
       annual_checkup: Object.hasOwn(parsed, 'annual_checkup') ? parsed.annual_checkup : candidate.annual_checkup,
-      evidenceCoverage: Array.isArray(parsed.evidenceCoverage) ? parsed.evidenceCoverage : candidate.evidenceCoverage });
+      evidenceCoverage: Array.isArray(parsed.evidenceCoverage) ? parsed.evidenceCoverage : candidate.evidenceCoverage }));
     if (parsed.coverageCorrections !== undefined) {
       if (!Array.isArray(parsed.coverageCorrections)) throw new Error('来源状态校正格式无效');
       const pending = new Map();
@@ -155,4 +167,4 @@ const correctionInstruction = `仅输出一个合法JSON对象，不要Markdown�
 对相近日期未统筹的问题，逐对核对已有排期依据，返回scheduleCorrections数组：[{"module":"medical_treatment","index":0,"scheduleSeparationReason":"保留分别安排的实际依据或具体待核实原因"}]。仅允许补充排期说明，不改已讨论的日期、医院或行动。依据不足时明确指出需要核实的兼容性或先后条件，不能编造医嘱、号源或声称已经确认；不能用空泛的“已统筹”冒充依据。无此问题时不返回该字段。
 annual_checkup.focus必须逐行文本；纯字符串列表可无损转为文本。年度focus只列实际安排项目，“不重复安排/已在近期安排”的说明应放内部notes，不能伪装成年度项目。每个保留项目必须引用真实对应sourceIds；如项目来自missing:0、missing:1，不能错挂priority:0。evidenceCoverage与保留事项同步，纳入年度同样算included。
 如已审依据确实不支持任何年度项目，可返回annual_checkup:{}，并在对应evidenceCoverage明确说明未纳入原因；不得用空focus的非空模块占位，更不能以忽略有依据项目换取通过。日期、科室、来源及统筹规则仍必须满足。返回annual_checkup与完整evidenceCoverage。若已生成事项实际涵盖某来源，却遗漏sourceIds关联，额外返回sourceLinkCorrections数组：[{"module":"medical_treatment","index":0,"sourceIds":["真实来源id"]}]；module也可为annual_checkup（index固定为0）。只给已有事项补充真实且语义对应的来源，不得把无关来源挂到事项上；若确实没有对应事项，须如实把该来源改为deferred或not_applicable并说明原因，不能仅靠修改状态掩盖已确认的行动需求。若其他模块的timingSourceId或timingBaseDate有误，额外返回timingCorrections数组：[{"module":"checkup_completion","index":0,"timingSourceId":"report_history中真实项目id","timingBaseDate":"该项目真实date","dateSelectionReason":"选用此日期的依据"}]。index为原数组从0开始的位置。仅校正已有事项的时间来源元数据，禁止编造来源、清空日期绕过校验或改变行动内容及执行时间；不需要时返回空数组。系统保留其他字段并重新进行全部校验。`;
-module.exports = { normalizeAnnualOutput, missingIncludedSourceIds, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, correctionInstruction };
+module.exports = { normalizeAnnualOutput, applyAnnualSchedule, missingIncludedSourceIds, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, correctionInstruction };

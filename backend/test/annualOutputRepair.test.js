@@ -142,6 +142,23 @@ test('repair requests satisfy provider JSON mode even without JSON in source dat
   assert.match(sourceLinkRepairPrompt({}, [], [], 'missing source'), /json/i);
 });
 
+test('system annual scheduling replaces AI provenance before validation without another AI call', async () => {
+  const { applyAnnualSchedule } = require('../src/utils/annualOutputRepair');
+  const reports = [{_id:'verified', checkDate:'2026-09-05', reportItems:[{name:'年度检查'}]}];
+  const raw = rawPlan();
+  Object.assign(raw.annual_checkup, {focus:'检查乙',timingSourceId:'report_history',timingBaseDate:'2026-08-15',date:'2027-08-15'});
+  const timeline = require('../src/utils/annualClinicalRules').reportTimeline(reports);
+  const check = value => { validate(value); validateClinicalRules(value,timeline,evidence); };
+  assert.throws(() => check(raw), /原检查日期/);
+  const result = await validateOrRepairAnnual(raw, check, () => assert.fail('no AI needed'), value => applyAnnualSchedule(value,reports));
+  assert.equal(result.annual_checkup.date, '2027-08-05');
+  assert.equal(result.annual_checkup.timingBaseDate,'2026-09-05');
+  assert.equal(result.annual_checkup.timingSourceId,'report:verified:0');
+  assert.deepEqual(result.checkup_completion,raw.checkup_completion);
+  assert.equal(result.annual_checkup.focus,raw.annual_checkup.focus);
+  assert.equal(applyAnnualSchedule(raw,[]),raw);
+});
+
 test('nearby scheduling correction survives merge without changing agreed dates or hospital', async () => {
   const { validateClinicalRules } = require('../src/utils/annualClinicalRules');
   const raw = { medical_treatment: [{visit_time:'2026-11-05', hospital:'已讨论医院', timingReason:'先就诊评估'}],
