@@ -56,6 +56,7 @@ export const metabolicPilotAPI = {
 }
 export const adminAPI = {
   specialtyLibrary: () => req('/specialty-library'),
+  specialtyReviewers: () => req('/specialty-library/reviewers'),
   createSpecialtyLibrary: data => req('/specialty-library', { method: 'POST', body: JSON.stringify(data) }),
   updateSpecialtyLibrary: (id, data) => req(`/specialty-library/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   publishSpecialtyLibrary: id => req(`/specialty-library/${id}/publish`, { method: 'PATCH' }),

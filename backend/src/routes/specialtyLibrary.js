@@ -2,7 +2,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const SpecialtyLibrary = require('../models/SpecialtyLibrary');
 const Admin = require('../models/Admin');
-const employeeRoles = require('../utils/employeeRoles');
 const adminAuth = require('../middleware/adminAuth');
 const staffAuth = require('../middleware/staffAuth');
 
@@ -51,13 +50,22 @@ function requireEditor(req, res, next) {
 
 async function reviewerFields(reviewerId, tenantId) {
   if (!reviewerId) return { clinicalReviewerId: null, clinicalReviewer: '' };
-  if (typeof reviewerId !== 'string' || !mongoose.isValidObjectId(reviewerId)) throw new Error('请选择员工库中的临床审核人');
-  const reviewer = await Admin.findOne({ _id: reviewerId, tenantId, staffStatus: 'active', role: { $in: employeeRoles } }).select('name').lean();
-  if (!reviewer) throw new Error('临床审核人不在本机构员工库中或已停用，请重新选择');
+  if (typeof reviewerId !== 'string' || !mongoose.isValidObjectId(reviewerId)) throw new Error('请从员工库选择审核健康顾问');
+  const reviewer = await Admin.findOne({ _id: reviewerId, tenantId, staffStatus: 'active', role: { $in: ['familyDoctor', 'institutionStaff'] } }).populate('customRoleId', 'name').select('name role customRoleId').lean();
+  if (!reviewer || !isHealthAdvisor(reviewer)) throw new Error('审核人须为本机构在职健康顾问，请重新选择');
   return { clinicalReviewerId: reviewer._id, clinicalReviewer: reviewer.name };
 }
 
+function isHealthAdvisor(employee) {
+  return employee.role === 'familyDoctor' || (employee.role === 'institutionStaff' && /健康顾问/.test(employee.customRoleId?.name || ''));
+}
+
 adminRouter.use(adminAuth, requireEditor);
+adminRouter.get('/reviewers', async (req, res) => {
+  const employees = await Admin.find({ tenantId: req.admin.tenantId, staffStatus: 'active', role: { $in: ['familyDoctor', 'institutionStaff'] } })
+    .populate('customRoleId', 'name').populate('deptId', 'name').select('name role title customRoleId deptId').sort({ name: 1 }).lean();
+  res.json({ success: true, data: employees.filter(isHealthAdvisor) });
+});
 adminRouter.get('/', async (req, res) => {
   const items = await SpecialtyLibrary.find({ tenantId: req.admin.tenantId }).sort({ updatedAt: -1 }).lean();
   res.json({ success: true, data: items });
@@ -99,7 +107,7 @@ adminRouter.patch('/:id/publish', requireEditor, async (req, res) => {
   if (!validId(req, res)) return;
   const current = await SpecialtyLibrary.findOne({ _id: req.params.id, tenantId: req.admin.tenantId, status: 'draft' });
   if (!current) return res.status(404).json({ success: false, message: '草稿不存在或已发布' });
-  if (!current.title || !current.stages.length || !current.serviceBoundary || !current.roles || !current.clinicalReviewerId) return res.status(400).json({ success: false, message: '发布前请填写标题、服务阶段、服务边界、岗位职责并从员工库选择审核人' });
+  if (!current.title || !current.stages.length || !current.serviceBoundary || !current.roles || !current.clinicalReviewerId) return res.status(400).json({ success: false, message: '发布前请填写标题、服务阶段、服务边界、岗位职责并从员工库选择审核健康顾问' });
   let reviewer;
   try { reviewer = await reviewerFields(String(current.clinicalReviewerId), req.admin.tenantId); }
   catch (error) { return res.status(400).json({ success: false, message: error.message }); }
