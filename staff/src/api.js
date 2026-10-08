@@ -5,6 +5,7 @@ const BASE = resolveApiBase(import.meta.env)
 export const API_ORIGIN = BASE.replace(/\/api$/, '')
 
 export const getToken   = ()  => localStorage.getItem('jy_staff_token')
+export const getSpecialtyLibrary = () => req('/staff/specialty-library')
 export const setToken   = (t) => localStorage.setItem('jy_staff_token', t)
 export const clearToken = ()  => {
   localStorage.removeItem('jy_staff_token')

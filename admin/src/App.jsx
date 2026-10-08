@@ -53,6 +53,7 @@ import MedicalDeliveryResourcesPage from './pages/settings/MedicalDeliveryResour
 // 项目设置
 import CategoryPage       from './pages/projects/CategoryPage'
 import DiseasePage        from './pages/projects/DiseasePage'
+import SpecialtyLibraryPage from './pages/projects/SpecialtyLibraryPage'
 import LabTestItemPage    from './pages/projects/LabTestItemPage'
 import LabTestOrderPage   from './pages/projects/LabTestOrderPage'
 import LabTestPackagePage from './pages/projects/LabTestPackagePage'
@@ -189,6 +190,7 @@ export default function App() {
               {/* 项目设置 */}
               <Route path="projects/categories"       element={<CategoryPage />} />
               <Route path="projects/diseases"         element={<DiseasePage />} />
+              <Route path="projects/specialty-library" element={<SpecialtyLibraryPage />} />
               <Route path="projects/lab-test-items"   element={<LabTestItemPage />} />
               <Route path="projects/lab-test-orders"  element={<LabTestOrderPage />} />
               <Route path="projects/lab-test-packages" element={<LabTestPackagePage />} />

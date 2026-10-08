@@ -61,6 +61,7 @@ const NAV_SECTIONS = [
     items: [
       { label: '分类管理', icon: 'category', path: '/projects/categories' },
       { label: '疾病名称库', icon: 'disease', path: '/projects/diseases' },
+      { label: '专病管理库', icon: 'medical', path: '/projects/specialty-library', superadminOnly: true },
       { label: '检验项目', icon: 'lab', path: '/projects/lab-test-items' },
       { label: '检验医嘱', icon: 'order', path: '/projects/lab-test-orders' },
       { label: '专项筛查项目', icon: 'screen', path: '/projects/lab-test-packages' },
@@ -92,7 +93,7 @@ const NAV_GROUPS = {
     '智能与服务流程': ['/settings/daily-care', '/settings/health-assistant', '/settings/ai-usage', '/settings/supply-workflow', '/settings/service-workflow-alignment', '/settings/review-experience'],
   },
   '项目设置': {
-    '基础项目库': ['/projects/categories', '/projects/diseases', '/projects/lab-test-items', '/projects/lab-test-orders', '/projects/lab-test-packages', '/projects/special-exams', '/projects/functional-medicine'],
+    '基础项目库': ['/projects/categories', '/projects/diseases', '/projects/specialty-library', '/projects/lab-test-items', '/projects/lab-test-orders', '/projects/lab-test-packages', '/projects/special-exams', '/projects/functional-medicine'],
     '服务与随访': ['/projects/service-items', '/projects/other-charges', '/projects/templates', '/projects/followup-forms', '/projects/followup-plans'],
   },
 }

@@ -55,6 +55,12 @@ export const metabolicPilotAPI = {
   access: (id,action) => reqRoot(`/metabolic-pilot/admin/${id}`, {method:'PATCH',body:JSON.stringify({action})}),
 }
 export const adminAPI = {
+  specialtyLibrary: () => req('/specialty-library'),
+  createSpecialtyLibrary: data => req('/specialty-library', { method: 'POST', body: JSON.stringify(data) }),
+  updateSpecialtyLibrary: (id, data) => req(`/specialty-library/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  publishSpecialtyLibrary: id => req(`/specialty-library/${id}/publish`, { method: 'PATCH' }),
+  archiveSpecialtyLibrary: id => req(`/specialty-library/${id}/archive`, { method: 'PATCH' }),
+  reviseSpecialtyLibrary: id => req(`/specialty-library/${id}/revise`, { method: 'POST' }),
   clinicalStandards: (updatePage = 1) => req(`/clinical-standards?updatePage=${updatePage}`),
   delegateClinicalStandards: tenantId => req('/clinical-standards/delegation', { method: 'PUT', body: JSON.stringify({ tenantId, confirmed: true }) }),
   setClinicalStandardReviewer: staffId => req('/clinical-standards/reviewer', { method: 'PUT', body: JSON.stringify({ staffId, confirmed: true }) }),
