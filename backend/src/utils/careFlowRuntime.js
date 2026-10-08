@@ -125,7 +125,9 @@ function runtime(injected = {}) {
       people[role] = { id: id(person._id), name: person.name, role };
     }
     const stage = request.annualDispatch?.status === 'pending_review' ? 'upload' : request.annualDispatch ? 'execute' : require('../../../shared/annualBookingPlan.cjs').bookingReady(parent.annualBooking) ? 'planner' : 'booking';
-    const plan = request.annualDispatch?.advisorPlanText || parent.plannedContent || parent.content;
+    const visitItems = request.annualDispatch?.itemSnapshot?.visitItems || request.formData?.serviceRequest?.itemSnapshot?.visitItems || [];
+    const visitBrief = visitItems.length > 1 ? `\n同次就诊需逐项核对：\n${visitItems.map((item, index) => `${index + 1}. ${item.title}${item.reason ? `；原因：${item.reason}` : ''}${item.basisSummary ? `；依据：${item.basisSummary}` : ''}${item.goal ? `；目标：${item.goal}` : ''}${item.precautions ? `；注意事项：${item.precautions}` : ''}`).join('\n')}` : '';
+    const plan = `${request.annualDispatch?.advisorPlanText || parent.plannedContent || parent.content || ''}${visitBrief}`;
     const state = { stage, sequence: 0, title: request.formData.serviceRequest.itemSnapshot?.items || request.theme,
       people, returns: [], initialDueAt: parent.remindAt || parent.date || null, data: { advisor: { text: plan }, booking: parent.annualBooking || null, planner: request.annualDispatch || null,
         execute: request.annualDispatch?.result || null, upload: { reportIds: [] } }, sourceScheduleKey: parent.sourceScheduleKey };

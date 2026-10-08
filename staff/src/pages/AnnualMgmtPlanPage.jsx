@@ -216,6 +216,7 @@ const MODULE_DEFS = {
       { key: 'items', label: '待完善项目', type: 'text' },
       { key: 'reason', label: '完善依据', type: 'textarea' },
       { key: 'time', label: '计划日期', type: 'date' },
+      { key: 'hospital', label: '计划医院', type: 'text', placeholder: '与同次就诊的医院一致' },
       { key: 'followUpStaff', label: '执行人', type: 'staff-select' },
       ...SERVICE_MODE_FIELDS,
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },

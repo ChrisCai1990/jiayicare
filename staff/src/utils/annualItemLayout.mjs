@@ -15,7 +15,12 @@ export function annualItemLayout(key, def, managerName, nutritionName, nutrition
   const hidden = new Set(['standardPlanName', 'standardContent', 'standardSchedule', 'coordinator', 'followUpStaff', 'frequency', 'ownerRole', 'serviceMode', 'serviceType'])
   return { ...def, reviewDriven: true, annualServiceArrangement: true, managerName: managerName || '未分配健管专员，请先完善客户归属',
     fields: def.fields.filter(f => !hidden.has(f.key)).flatMap(f => ['visit_time', 'time', 'date'].includes(f.key) ? [{ ...f, label: '建议就医/检查日期', appointmentDate: true }, { key: 'timingReason', label: '时间评估依据', type: 'textarea', internal: true }] : [f]),
-    serviceFields: def.fields.filter(f => ['serviceMode', 'serviceType'].includes(f.key)),
+    serviceFields: [
+      ...def.fields.filter(f => ['serviceMode', 'serviceType'].includes(f.key)).map(f => f.key === 'serviceMode' && ['medical_treatment', 'checkup_completion', 'abnormal_followup'].includes(key)
+        ? { ...f, options: [...f.options, { value: 'shared', label: '随同本次就诊（不重复派单）' }] } : f),
+      ...(['medical_treatment', 'checkup_completion', 'abnormal_followup'].includes(key)
+        ? [{ key: 'visitGroupId', label: '同次就诊名称', type: 'text', placeholder: '相关事项填写相同名称，如：11月浙二消化内科' }] : []),
+    ],
   }
 }
 

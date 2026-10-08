@@ -10,6 +10,7 @@ import CareFlowCard from './CareFlowCard'
 export default function AnnualDispatchCard({ task, staff, onLinked }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [assigneeId, setAssignee] = useState(''), [note, setNote] = useState(''), [result, setResult] = useState(''), [confirmed, setConfirmed] = useState(false)
+  const [itemResults, setItemResults] = useState({})
   const [fullFlow,setFullFlow] = useState(false)
   const [flowData,setFlowData] = useState(null)
   const openReturn = async () => {
@@ -37,6 +38,7 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
       <h3 style={{ margin: '0 0 8px' }}>办理事项</h3>
       <b>{item.items || item.name || item.purpose || '顾问指定事项'}</b>
       <div>服务：{mode === 'managed' ? '全托管服务' : tools.labels[request.deliveryType || request.formData?.serviceRequest?.serviceType] || '就医协助'}</div>
+      {item.visitItems?.length > 1 && <div style={{ marginTop: 10 }}><b>本次就诊需处理的事项</b><ol style={{ paddingLeft: 22, margin: '6px 0' }}>{item.visitItems.map((entry, index) => <li key={`${entry.moduleKey}:${entry.recordIndex}:${index}`}><b>{entry.title}</b>{entry.reason && <div>就医原因：{entry.reason}</div>}{entry.basisSummary && <div>依据：{entry.basisSummary}</div>}{entry.goal && <div>目标：{entry.goal}</div>}{entry.completionStandard && <div>完成标准：{entry.completionStandard}</div>}{entry.precautions && <div>注意事项：{entry.precautions}</div>}</li>)}</ol></div>}
       {(item.precautions || item.notes) && <div>注意事项：{item.precautions || item.notes}</div>}
     </div>
     <section aria-label="专家沟通交接" style={{ border: '1px solid #CDE3D8', borderRadius: 12, padding: 16 }}>
@@ -70,9 +72,9 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
       <div style={{ background: '#F6FBF8', borderRadius: 12, padding: 16 }}><b>办理进度</b><div>就医专员：{d.assigneeName}</div><div>状态：{{ active: '已派单，待办理', pending_review: '已提交结果，待规划师验收', completed: '代办已验收' }[d.status]}</div>{d.note && <div>派单备注：{d.note}</div>}{d.result && <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>办理结果：{d.result.text}</div>}</div>
       {!child && !execution && <button className="btn btn-primary" disabled={busy} onClick={() => act(staffAPI.annualDispatch, { assigneeId: String(d.assigneeId), note: d.note })}>恢复本次派单（不会重复创建）</button>}
       {execution && d.status === 'active' && <>
-        <label>专家沟通与办理结果<textarea className="form-input" rows={4} maxLength={5000} placeholder="记录专家意见、实际开单项目、预约结果及需反馈健康顾问的问题；未完成事项请如实说明。" value={result} onChange={e => setResult(e.target.value)} /></label>
+        {item.visitItems?.length > 1 ? item.visitItems.map((entry, index) => <label key={`${entry.moduleKey}:${entry.recordIndex}:${index}`}>{entry.title} · 办理结果<textarea className="form-input" rows={3} maxLength={1800} placeholder="记录专家意见、实际开单与未完成原因；未完成请写明" value={itemResults[index] || ''} onChange={e => setItemResults(previous => ({ ...previous, [index]: e.target.value }))} /></label>) : <label>专家沟通与办理结果<textarea className="form-input" rows={4} maxLength={5000} placeholder="记录专家意见、实际开单项目、预约结果及需反馈健康顾问的问题；未完成事项请如实说明。" value={result} onChange={e => setResult(e.target.value)} /></label>}
         <label><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> 已逐项核对顾问要求与本次交接，并如实记录办理结果</label>
-        <button className="btn btn-primary" disabled={busy || !confirmed || !result.trim()} onClick={() => act(staffAPI.annualDispatchResult, { result, confirmed })}>提交办理结果，交规划师验收</button>
+        <button className="btn btn-primary" disabled={busy || !confirmed || (item.visitItems?.length > 1 ? item.visitItems.some((_, index) => !itemResults[index]?.trim()) || item.visitItems.map((entry, index) => `${entry.title}：${itemResults[index].trim()}`).join('\n').length > 5000 : !result.trim())} onClick={() => act(staffAPI.annualDispatchResult, { result: item.visitItems?.length > 1 ? item.visitItems.map((entry, index) => `${entry.title}：${itemResults[index].trim()}`).join('\n') : result, confirmed })}>提交办理结果，交规划师验收</button>
       </>}
       {!execution && d.status === 'pending_review' && <button className="btn btn-primary" disabled={busy} onClick={() => act(staffAPI.annualDispatchReview, { confirmed: true })}>确认代办结果并验收</button>}
       {!execution && d.status === 'completed' && child?.status !== 'completed' && <button className="btn btn-primary" disabled={busy} onClick={() => act(staffAPI.annualDispatchReview, { confirmed: true })}>同步已验收的执行状态</button>}

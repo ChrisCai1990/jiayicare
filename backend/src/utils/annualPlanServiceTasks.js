@@ -1,4 +1,5 @@
 const { sourceDate, FIELDS, assertAmendedRowUnchanged } = require('./annualScheduleAmendments');
+const { sharedVisitItems } = require('./annualVisitGroups');
 const MODULES = [
   ['medical_treatment', 'visit_time', '医疗问题解决'], ['specialist_collab', 'plan_time', '全专联合会诊'],
   ['checkup_completion', 'time', '体检完善'], ['abnormal_followup', 'time', '定期复查'],
@@ -21,7 +22,14 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
     const executionDate = validDate(date) || new Date(plan.confirmedAt || Date.now());
     const identityDate = validDate(sourceDate(plan, moduleKey, index, FIELDS[moduleKey], date)) || executionDate;
     const label = labelOf(record, fallback);
-    const evidence = record.basisSummary || record.reason || record.matchReason || '';
+    const visitItems = mode === 'single' && record.visitGroupId ? sharedVisitItems(moduleData, record.visitGroupId) : [];
+    const itemSnapshot = visitItems.length > 1 ? {
+      ...record, visitItems, items: visitItems.map(item => item.title).join('；'),
+      reason: visitItems.map(item => `${item.title}：${item.reason}`).filter(line => !line.endsWith('：')).join('\n'),
+      basisSummary: visitItems.map(item => `${item.title}：${item.basisSummary}`).filter(line => !line.endsWith('：')).join('\n'),
+      communicationContent: visitItems.map(item => `${item.title}：${item.communicationContent}`).filter(line => !line.endsWith('：')).join('\n'),
+    } : record;
+    const evidence = itemSnapshot.basisSummary || itemSnapshot.reason || record.matchReason || '';
     rows.push({
       key: `service-request:${moduleKey}:${index}:${identityDate.toISOString().slice(0, 10)}`,
       date: executionDate, assignedTo: (moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? patient.assignedHealthManager : patient.assignedHealthPlanner) || null,
@@ -29,13 +37,14 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
       content: [
         `服务模式：${supervisionOnly ? '预约与检查进度督办' : mode === 'managed' ? '全托管' : '单项服务'}`, record.serviceType && `服务类型：${record.serviceType}`,
         mode === 'managed' && record.managedServiceType && `一站式类型：${record.managedServiceType === 'checkup' ? '体检一站式' : '门诊一站式'}`,
-        `管理事项：${label}`, evidence && `设置依据：${evidence}`,
+        `管理事项：${itemSnapshot.items || label}`, evidence && `设置依据：${evidence}`,
+        visitItems.length > 1 && `同次就诊事项：${visitItems.map(item => item.title).join('；')}`,
         record.goal && `管理目标：${record.goal}`, record.completionStandard && `完成标准：${record.completionStandard}`,
         record.customerAction && `客户行动：${record.customerAction}`,
         record.precautions && `注意事项：${record.precautions}`,
         moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? '处理要求：健管专员跟进并安排所选服务；营养评估通过营养服务流程确认营养师及评估日期，再关联实际服务。' : '处理要求：健康规划师督办进度、协调资源及处理异常；预约和随访由健管专员办理，代办、代诊、陪诊按需转交就医协助团队。',
       ].filter(Boolean).join('\n'),
-      formData: { serviceRequest: { moduleKey, recordIndex: index, mode, serviceType: record.serviceType || '', itemSnapshot: record } },
+      formData: { serviceRequest: { moduleKey, recordIndex: index, mode, serviceType: record.serviceType || '', itemSnapshot } },
     });
   };
   MODULES.forEach(([key, dateField, fallback]) => { if (moduleData[key]?.enabled !== false) (moduleData[key]?.records || []).forEach((record, index) => add(key, record, index, record[dateField], fallback)); });
