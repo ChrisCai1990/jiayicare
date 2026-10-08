@@ -23,6 +23,7 @@ const schema = new mongoose.Schema({
   stages: { type: [stageSchema], default: [] },
   sourceNote: { type: String, default: '', maxlength: 2000 },
   clinicalReviewer: { type: String, default: '', maxlength: 160 },
+  clinicalReviewerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   publishedAt: { type: Date, default: null },
   publishedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },

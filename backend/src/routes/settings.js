@@ -135,12 +135,7 @@ router.get('/roles', adminAuth, async (req, res) => {
   res.json({ success: true, data: list });
 });
 
-const SYSTEM_ROLES = [
-  'familyDoctor', 'nutritionist', 'healthManager',
-  'medicalAssistant', 'psychologist', 'rehabSpecialist',
-  'tcmDoctor', 'specialist', 'healthPlanner',
-  'institutionStaff',
-];
+const SYSTEM_ROLES = require('../utils/employeeRoles');
 
 async function ownInstitutionRoles(req) {
   const tenant = await Tenant.findById(req.admin.tenantId).select('code').lean();

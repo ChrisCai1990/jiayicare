@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useAdmin } from '../../App'
 
-const empty = { title: '', diseases: [], overview: '', serviceBoundary: '', roles: '', diaryGuide: '', exceptionGuide: '', sourceNote: '', clinicalReviewer: '', stages: [] }
+const empty = { title: '', diseases: [], overview: '', serviceBoundary: '', roles: '', diaryGuide: '', exceptionGuide: '', sourceNote: '', clinicalReviewerId: '', stages: [] }
 const ibd = {
   title: 'IBD 院外全程管理', diseases: ['克罗恩病', '溃疡性结肠炎', '未定型结肠炎（IBD-U）'],
   overview: '管理期限为 1 年。以专科医师意见为依据，由健康顾问负责个性化方案与专科沟通，健管专员执行预约、陪诊、日常跟进与反馈。标准路径仅供参考，实际节点按客户情况调整。',
@@ -10,7 +10,7 @@ const ibd = {
   roles: '健康规划师：接单后了解客户并转介。健康顾问：客户负责人，确定医院、科室、专家；审核病历及 AI 随访草案；对接专科医师并确认个性化方案。健管专员：预约与陪诊；跟进日常记录，将情况反馈健康顾问。专科医师：诊疗并决定治疗与复诊安排。',
   diaryGuide: '供客户日常记录：排便次数及性状、便血、腹痛、体温、疲劳、用药及漏服、肠外表现；体重和饮食生活情况可按方案记录。记录频次及需要追踪的指标由健康顾问结合专科方案确定。',
   exceptionGuide: '客户改期、健康变化、药物遗漏、专家停诊或检查延迟时，只处理当前节点并记录原因；由健康顾问与专科医师确认需要改变的后续安排。未到达的节点不提前生成待办。',
-  sourceNote: '初稿依据合作方提供的 CD、UC、IBD-U 一年管理路径与转归问答材料整理；发布前应由本机构临床负责人审核。', clinicalReviewer: '',
+  sourceNote: '初稿依据合作方提供的 CD、UC、IBD-U 一年管理路径与转归问答材料整理；发布前应由本机构临床负责人审核。', clinicalReviewerId: '',
   stages: [
     { title: '接单与初步接触', purpose: '核对服务权益、联系方式及既往诊疗资料。', owner: '健康规划师', trigger: '商城订单进入工作台后', handoff: '向健康顾问交接客户需求与已有资料。' },
     { title: '专科资源确认', purpose: '确定适合的医院、科室与专家，并与客户确认就诊安排。', owner: '健康顾问', trigger: '完成初步接触后', handoff: '将预约要求交健管专员执行。' },
@@ -22,19 +22,34 @@ const ibd = {
 }
 
 const statusText = { draft: '草稿', published: '已发布', archived: '已归档' }
-const fieldLabels = { title: '专病名称', overview: '服务概述', serviceBoundary: '服务边界', roles: '岗位职责与交接', diaryGuide: '客户日常记录参考', exceptionGuide: '延误与异常处理', sourceNote: '来源与审核备注', clinicalReviewer: '临床审核人（发布前填写）' }
+const fieldLabels = { title: '专病名称', overview: '服务概述', serviceBoundary: '服务边界', roles: '岗位职责与交接', diaryGuide: '客户日常记录参考', exceptionGuide: '延误与异常处理', sourceNote: '来源与审核备注' }
+const roleLabels = { familyDoctor: '健康顾问', specialist: '专科医师', tcmDoctor: '中医师', healthManager: '健管专员', nutritionist: '营养师', medicalAssistant: '就医专员', healthPlanner: '健康规划师' }
 const stageFields = { title: '阶段名称', purpose: '目标与工作内容', owner: '责任岗位', trigger: '启动条件', handoff: '完成与交接要求' }
 
 export default function SpecialtyLibraryPage() {
   const { admin } = useAdmin()
   const canEdit = admin?.role === 'superadmin'
   const [items, setItems] = useState([])
+  const [employees, setEmployees] = useState([])
+  const [employeeError, setEmployeeError] = useState('')
+  const [employeeLoading, setEmployeeLoading] = useState(true)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const load = async () => { try { setItems((await adminAPI.specialtyLibrary()).data || []) } catch (e) { setError(e.message) } }
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    const loadEmployees = async () => {
+      try {
+        const first = await adminAPI.employees({ staffStatus: 'active', limit: 500, page: 1 })
+        const pageCount = Math.ceil((first.total || first.data?.length || 0) / 500)
+        const rest = await Promise.all(Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => adminAPI.employees({ staffStatus: 'active', limit: 500, page: index + 2 })))
+        setEmployees([...(first.data || []), ...rest.flatMap(result => result.data || [])])
+      } catch (e) { setEmployeeError(e.message) } finally { setEmployeeLoading(false) }
+    }
+    loadEmployees()
+  }, [])
   const start = (item, template = empty) => { setEditing(item || null); setForm(JSON.parse(JSON.stringify(item || template))); setError('') }
   const change = (field, value) => setForm(current => ({ ...current, [field]: value }))
   const stageChange = (index, field, value) => setForm(current => ({ ...current, stages: current.stages.map((stage, i) => i === index ? { ...stage, [field]: value } : stage) }))
@@ -59,6 +74,15 @@ export default function SpecialtyLibraryPage() {
     <div className="card"><div className="card-body">{!items.length ? <div style={{ padding: 30, textAlign: 'center' }}>暂无专病条目，可由机构管理员建立 IBD 草稿。</div> : <table className="table"><thead><tr><th>专病</th><th>适用类型</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody>{items.map(item => <tr key={item._id}><td><b>{item.title}</b></td><td>{item.diseases?.join('、') || '-'}</td><td>v{item.version}</td><td>{statusText[item.status]}</td><td style={{ whiteSpace: 'nowrap' }}><button className="btn btn-secondary btn-sm" onClick={() => start(item)}>{item.status === 'draft' && canEdit ? '编辑' : '查看'}</button> {canEdit && (item.status === 'draft' ? <button disabled={busy} className="btn btn-primary btn-sm" onClick={() => act(item, 'publish')}>发布</button> : <button disabled={busy} className="btn btn-secondary btn-sm" onClick={() => act(item, 'revise')}>修订为新版本</button>)} {canEdit && item.status === 'published' && <button disabled={busy} className="btn btn-secondary btn-sm" onClick={() => act(item, 'archive')}>归档</button>}</td></tr>)}</tbody></table>}</div></div>
     {form && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 900, maxHeight: '90vh', overflowY: 'auto' }}><div className="modal-header"><h3 className="modal-title">{editing ? `${editing.title} · v${editing.version}` : '新建专病草稿'}</h3><button className="modal-close" onClick={() => setForm(null)}>×</button></div><div className="modal-body">
       {Object.entries(fieldLabels).map(([key, label]) => <label key={key} style={{ display: 'block', marginBottom: 12, fontSize: 13, fontWeight: 600 }}>{label}{key === 'title' ? ' *' : ''}{key === 'title' ? <input className="form-input" style={{ width: '100%', marginTop: 5 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={form[key] || ''} onChange={e => change(key, e.target.value)} /> : <textarea className="form-input" style={{ width: '100%', minHeight: 75, marginTop: 5 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={form[key] || ''} onChange={e => change(key, e.target.value)} />}</label>)}
+      <label style={{ display: 'block', marginBottom: 12, fontSize: 13, fontWeight: 600 }}>临床审核人（发布前从员工库选择）
+        {editing?.status !== 'draft' && editing ? <input className="form-input" style={{ width: '100%', marginTop: 5 }} disabled value={form.clinicalReviewer || '未记录'} /> : <select className="form-input" style={{ width: '100%', marginTop: 5 }} disabled={!canEdit || employeeLoading || !!employeeError} value={form.clinicalReviewerId || ''} onChange={e => change('clinicalReviewerId', e.target.value)}>
+          <option value="">{employeeLoading ? '正在加载员工…' : '请选择在职员工'}</option>
+          {form.clinicalReviewerId && !employees.some(employee => employee._id === form.clinicalReviewerId) && <option value={form.clinicalReviewerId} disabled>原审核人已停用或不在当前员工列表，请重新选择</option>}
+          {employees.map(employee => <option key={employee._id} value={employee._id}>{employee.name} · {employee.customRoleId?.name || roleLabels[employee.role] || employee.title || employee.role}{employee.deptId?.name ? ` · ${employee.deptId.name}` : ''}</option>)}
+        </select>}
+        {employeeError && <div style={{ color: '#B42318', fontWeight: 400, marginTop: 4 }}>员工列表加载失败：{employeeError}。请刷新页面后重试。</div>}
+        {editing?.status === 'draft' && !form.clinicalReviewerId && form.clinicalReviewer && <div style={{ color: '#B42318', fontWeight: 400, marginTop: 4 }}>原记录仅保存了“{form.clinicalReviewer}”文字，发布前请重新从员工库选择。</div>}
+      </label>
       <label style={{ display: 'block', marginBottom: 12, fontSize: 13, fontWeight: 600 }}>适用疾病类型<input className="form-input" style={{ width: '100%', marginTop: 5 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={form.diseases?.join('、') || ''} onChange={e => change('diseases', e.target.value.split(/[、,，]/).map(x => x.trim()).filter(Boolean))} placeholder="用顿号分隔" /></label>
       <h3>标准服务阶段</h3>{(form.stages || []).map((stage, index) => <div key={index} style={{ background: '#F7FAF9', padding: 12, borderRadius: 8, marginBottom: 12 }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b>阶段 {index + 1}</b>{canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary btn-sm" onClick={() => change('stages', form.stages.filter((_, i) => i !== index))}>移除</button>}</div>{Object.entries(stageFields).map(([key, label]) => <label key={key} style={{ display: 'block', fontSize: 13, marginTop: 8 }}>{label}<input className="form-input" style={{ width: '100%', marginTop: 3 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={stage[key] || ''} onChange={e => stageChange(index, key, e.target.value)} /></label>)}</div>)}
       {canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary" onClick={() => change('stages', [...(form.stages || []), { title: '', purpose: '', owner: '', trigger: '', handoff: '' }])}>＋ 添加阶段</button>}
