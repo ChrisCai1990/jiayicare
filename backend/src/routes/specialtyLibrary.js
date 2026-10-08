@@ -7,8 +7,8 @@ const staffAuth = require('../middleware/staffAuth');
 
 const adminRouter = express.Router();
 const staffRouter = express.Router();
-const fields = ['title', 'overview', 'serviceBoundary', 'roles', 'diaryGuide', 'exceptionGuide', 'sourceNote'];
-const maxLength = { title: 160, overview: 4000, serviceBoundary: 4000, roles: 4000, diaryGuide: 4000, exceptionGuide: 4000, sourceNote: 2000 };
+const fields = ['title', 'overview', 'serviceBoundary', 'roles', 'diaryGuide', 'exceptionGuide', 'visitGuide', 'recordGuide', 'educationGuide', 'sourceNote'];
+const maxLength = { title: 160, overview: 4000, serviceBoundary: 4000, roles: 4000, diaryGuide: 4000, exceptionGuide: 4000, visitGuide: 4000, recordGuide: 4000, educationGuide: 4000, sourceNote: 2000 };
 
 function payload(body) {
   const value = {};
@@ -27,9 +27,21 @@ function payload(body) {
     value.stages = body.stages.map(stage => {
       if (!stage || typeof stage !== 'object' || !stage.title || typeof stage.title !== 'string' || stage.title.length > 100) throw new Error('阶段标题不符合要求');
       const entry = {};
-      for (const [field, limit] of Object.entries({ title: 100, purpose: 2000, owner: 100, trigger: 1000, handoff: 2000 })) {
+      for (const [field, limit] of Object.entries({ title: 100, purpose: 2000, owner: 100, trigger: 1000, handoff: 2000, actions: 3000, deliverables: 2000, exceptionHandling: 2000 })) {
         if (stage[field] !== undefined && (typeof stage[field] !== 'string' || stage[field].length > limit)) throw new Error('阶段内容不符合要求');
         entry[field] = (stage[field] || '').trim();
+      }
+      return entry;
+    });
+  }
+  if (body.variantGuides !== undefined) {
+    if (!Array.isArray(body.variantGuides) || body.variantGuides.length > 10) throw new Error('病型差异内容不符合要求');
+    value.variantGuides = body.variantGuides.map(variant => {
+      if (!variant || typeof variant !== 'object' || typeof variant.name !== 'string' || !variant.name.trim() || variant.name.length > 100) throw new Error('请填写病型名称');
+      const entry = {};
+      for (const [field, limit] of Object.entries({ name: 100, monitoringFocus: 2000, diaryFocus: 2000, specialistQuestions: 2000, exceptionNotes: 2000 })) {
+        if (variant[field] !== undefined && (typeof variant[field] !== 'string' || variant[field].length > limit)) throw new Error('病型差异内容不符合要求');
+        entry[field] = (variant[field] || '').trim();
       }
       return entry;
     });

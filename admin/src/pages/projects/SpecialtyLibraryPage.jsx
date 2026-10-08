@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useAdmin } from '../../App'
 
-const empty = { title: '', diseases: [], overview: '', serviceBoundary: '', roles: '', diaryGuide: '', exceptionGuide: '', sourceNote: '', clinicalReviewerId: '', stages: [] }
+const empty = { title: '', diseases: [], overview: '', serviceBoundary: '', roles: '', diaryGuide: '', exceptionGuide: '', visitGuide: '', recordGuide: '', educationGuide: '', sourceNote: '', clinicalReviewerId: '', stages: [], variantGuides: [] }
 const ibd = {
   title: 'IBD 院外全程管理', diseases: ['克罗恩病', '溃疡性结肠炎', '未定型结肠炎（IBD-U）'],
   overview: '管理期限为 1 年。以专科医师意见为依据，由健康顾问负责个性化方案与专科沟通，健管专员执行预约、陪诊、日常跟进与反馈。标准路径仅供参考，实际节点按客户情况调整。',
@@ -10,20 +10,29 @@ const ibd = {
   roles: '健康规划师：接单后了解客户并转介。健康顾问：客户负责人，确定医院、科室、专家；审核病历及 AI 随访草案；对接专科医师并确认个性化方案。健管专员：预约与陪诊；跟进日常记录，将情况反馈健康顾问。专科医师：诊疗并决定治疗与复诊安排。',
   diaryGuide: '供客户日常记录：排便次数及性状、便血、腹痛、体温、疲劳、用药及漏服、肠外表现；体重和饮食生活情况可按方案记录。记录频次及需要追踪的指标由健康顾问结合专科方案确定。',
   exceptionGuide: '客户改期、健康变化、药物遗漏、专家停诊或检查延迟时，只处理当前节点并记录原因；由健康顾问与专科医师确认需要改变的后续安排。未到达的节点不提前生成待办。',
+  visitGuide: '首诊及每次复诊前：核对就诊目的、医院院区、科室、专家、日期和陪诊安排；向客户确认既往病历、肠镜/病理/影像与化验报告、在用药物清单及需要向医生询问的问题。具体检查准备以医院当次通知为准。就诊后回收病历和医嘱，核对实际就诊日期、医生及资料来源。',
+  recordGuide: '每次就诊形成一条可追溯病历记录，区分医生原文、AI草稿、健康顾问审核意见和健管执行反馈。记录变更原因、责任人、时间及所依据的专科意见；首次本服务周期专科就诊作为本次专病管理档案起点。客户日记只记录事实，不由系统据此自行诊断或调整药物。',
+  educationGuide: '宣教内容按病型、治疗阶段和客户当前问题选择；不按固定日历批量推送。有关用药、检查准备、营养及复发处理的内容须经健康顾问和合作专科审核。发送后记录客户是否理解、有无疑问；需要医学判断的问题交健康顾问对接专科。',
   sourceNote: '初稿依据合作方提供的 CD、UC、IBD-U 一年管理路径与转归问答材料整理；发布前应由本机构临床负责人审核。', clinicalReviewerId: '',
   stages: [
-    { title: '接单与初步接触', purpose: '核对服务权益、联系方式及既往诊疗资料。', owner: '健康规划师', trigger: '商城订单进入工作台后', handoff: '向健康顾问交接客户需求与已有资料。' },
-    { title: '专科资源确认', purpose: '确定适合的医院、科室与专家，并与客户确认就诊安排。', owner: '健康顾问', trigger: '完成初步接触后', handoff: '将预约要求交健管专员执行。' },
-    { title: '首次预约与陪诊', purpose: '完成首次就诊陪诊，收集专科意见与病历。', owner: '健管专员', trigger: '医院与专家确定后', handoff: '病历归档至客户专病管理档案，反馈健康顾问。' },
-    { title: '个性化方案确认', purpose: '依据专科医师意见形成随访安排。AI 可起草，健康顾问审核。', owner: '健康顾问', trigger: '收到首诊病历后', handoff: '向健管专员下达当前可执行的跟进事项。' },
-    { title: '日常跟进与动态调整', purpose: '按客户实际方案跟进记录、检查、复诊及药物执行情况。', owner: '健管专员', trigger: '健康顾问确认个性化方案后', handoff: '异常反馈健康顾问；涉及诊疗变更由健康顾问对接专科医师。' },
-    { title: '复诊与年度回顾', purpose: '按专科意见预约和陪诊，记录病历及方案变化，年度总结。', owner: '健康顾问、健管专员', trigger: '专科方案或客户情况要求复诊时', handoff: '更新客户实际方案；不机械沿用标准时间点。' },
+    { title: '接单与初步接触', purpose: '核对服务权益、联系方式及既往诊疗资料。', owner: '健康规划师', trigger: '商城订单进入工作台后', actions: '确认服务期与陪诊权益；联系客户了解诊断、当前治疗和就诊诉求；收集既往病历、检查及药物清单，标明尚缺资料。', deliverables: '客户需求摘要、资料清单、待补资料及向健康顾问的交接记录。', handoff: '向健康顾问交接客户需求与已有资料。', exceptionHandling: '客户暂时无法联系或资料不全时记录原因和下次联系时间，不预先启动首诊后节点。' },
+    { title: '专科资源确认', purpose: '确定适合的医院、科室与专家，并与客户确认就诊安排。', owner: '健康顾问', trigger: '完成初步接触后', actions: '核对病型和此次就诊目的；结合已有资料与合作资源确认医院、科室、专家及备选方案；需医学判断的问题由健康顾问联系专科。', deliverables: '就诊目的、首选及备选资源、客户可就诊时段、向健管专员的预约要求。', handoff: '将预约要求交健管专员执行。', exceptionHandling: '专家停诊、号源变化或客户改期时，健康顾问确认替代安排；健管只更新当前预约，不顺延生成全年任务。' },
+    { title: '首次预约与陪诊', purpose: '完成首次就诊陪诊，收集专科意见与病历。', owner: '健管专员', trigger: '医院与专家确定后', actions: '核实院区、时间、资料和陪诊人；提前与客户确认到院方式；陪诊中记录实际就诊与检查安排；就诊后回收病历、处方和检查资料。', deliverables: '预约与陪诊记录、实际就诊日期、病历和医嘱资料、未取得资料清单。', handoff: '将原始资料归档至本次专病管理档案并反馈健康顾问。', exceptionHandling: '就诊取消、检查延迟或病历未回收时保留当前事项及原因，明确补办责任人和下一次核实时间。' },
+    { title: '个性化方案确认', purpose: '依据专科医师意见形成随访安排。AI 可起草，健康顾问审核。', owner: '健康顾问', trigger: '收到并核实首诊病历后', actions: '核对医生原文、来源和日期；记录诊疗与复诊要求；AI仅对已核实资料形成草稿；健康顾问审核频次、提醒对象及当前可执行事项，必要时向专科确认。', deliverables: '已核实的病历记录、医生方案依据、顾问确认的个性化随访方案及当前执行事项。', handoff: '向健管专员交接可执行的跟进事项和异常反馈要求。', exceptionHandling: '医生意见不清、资料缺失或方案发生变化时保持草稿，待健康顾问与专科确认后再发布。' },
+    { title: '日常跟进与动态调整', purpose: '按客户实际方案跟进记录、检查、复诊及药物执行情况。', owner: '健管专员', trigger: '健康顾问确认个性化方案后', actions: '按方案联系客户，核对症状日记、用药执行与漏服、检查和复诊落实情况；记录客户原话及客观资料，不自行解释治疗效果或调整药物。', deliverables: '联系与客户反馈记录、缺失记录提醒、需要顾问处理的异常及其处理结果。', handoff: '将异常反馈健康顾问；涉及诊疗变更由健康顾问对接专科医师。', exceptionHandling: '客户失联、漏服、症状变化或检查延误时只处理受影响的当前事项；紧急情况提示及时就医并同步健康顾问。' },
+    { title: '复诊与年度回顾', purpose: '按专科意见预约和陪诊，记录病历及方案变化，年度总结。', owner: '健康顾问、健管专员', trigger: '专科方案或客户情况要求复诊时', actions: '健康顾问确认复诊目的；健管预约并安排陪诊；复诊后回收病历、核对医生新意见，必要时修订客户方案；服务期末汇总就诊、随访与未完成事项。', deliverables: '复诊陪诊及病历记录、方案变更依据、年度服务摘要与后续交接清单。', handoff: '更新客户实际方案；不机械沿用标准时间点。', exceptionHandling: '复诊改期、专家停诊或年末仍有待完成检查时保留原因和后续责任，不将标准节点标记为已完成。' },
+  ],
+  variantGuides: [
+    { name: '克罗恩病（CD）', monitoringFocus: '关注腹痛、腹泻、体重与食欲变化，以及肛周症状和既往狭窄、瘘管等病史；按专科意见跟踪相应化验、内镜或影像资料。', diaryFocus: '除共通记录外，重点记录腹痛部位、体重与食欲、肛周不适或分泌物等客户可观察事实。', specialistQuestions: '复诊前汇总症状与指标趋势、既往影像及肠镜结果、治疗执行情况；检查种类和时间由专科医师决定。', exceptionNotes: '持续或加重的腹痛、腹胀、呕吐、肛周异常等及时反馈健康顾问；急重症直接就医。' },
+    { name: '溃疡性结肠炎（UC）', monitoringFocus: '关注排便频率、便血、便急、夜间排便和腹痛变化，并与客户稳定期基线比较；按专科意见跟踪检查结果。', diaryFocus: '重点记录每日便次、便血程度、便急、夜间排便及相关用药执行情况。', specialistQuestions: '复诊前整理症状变化、治疗执行、检查和肠镜/病理资料，供专科医师决定是否调整方案。', exceptionNotes: '便血、便次或全身状态明显变化时记录并反馈健康顾问；急重症直接就医。' },
+    { name: '未定型结肠炎（IBD-U）', monitoringFocus: '除结肠炎症状外，持续整理有助于分类复评的病理、内镜和影像资料；诊断名称变化必须有专科医师依据。', diaryFocus: '记录便次、便血、腹痛、体重和用药执行，并标注新取得的检查资料。', specialistQuestions: '复诊时请专科医师核对现有分类、是否需要进一步检查及其时间；本库不自行将 IBD-U 判为 UC 或 CD。', exceptionNotes: '分类变化时保留原诊断及日期，更新客户个性化方案和记录重点，不重建全年待办。' },
   ],
 }
 
 const statusText = { draft: '草稿', published: '已发布', archived: '已归档' }
-const fieldLabels = { title: '专病名称', overview: '服务概述', serviceBoundary: '服务边界', roles: '岗位职责与交接', diaryGuide: '客户日常记录参考', exceptionGuide: '延误与异常处理', sourceNote: '来源与审核备注' }
-const stageFields = { title: '阶段名称', purpose: '目标与工作内容', owner: '责任岗位', trigger: '启动条件', handoff: '完成与交接要求' }
+const fieldLabels = { title: '专病名称', overview: '服务概述', serviceBoundary: '服务边界', roles: '岗位职责与交接', diaryGuide: '客户日常记录参考', exceptionGuide: '延误与异常处理', visitGuide: '就诊与陪诊标准', recordGuide: '病历与记录规范', educationGuide: '宣教与沟通原则', sourceNote: '来源与审核备注' }
+const stageFields = { title: '阶段名称', purpose: '目标与工作内容', owner: '责任岗位', trigger: '启动条件', actions: '标准执行动作', deliverables: '交付物与完成证据', handoff: '完成与交接要求', exceptionHandling: '延误与异常处理' }
+const variantFields = { name: '病型名称', monitoringFocus: '重点关注', diaryFocus: '日记记录重点', specialistQuestions: '复诊时与专科确认', exceptionNotes: '异常及分类变化' }
 
 function ReviewerPicker({ employees, value, onChange, disabled, loading }) {
   const selected = employees.find(employee => employee._id === value)
@@ -69,6 +78,17 @@ export default function SpecialtyLibraryPage() {
   const start = (item, template = empty) => { setEditing(item || null); setForm(JSON.parse(JSON.stringify(item || template))); setError('') }
   const change = (field, value) => setForm(current => ({ ...current, [field]: value }))
   const stageChange = (index, field, value) => setForm(current => ({ ...current, stages: current.stages.map((stage, i) => i === index ? { ...stage, [field]: value } : stage) }))
+  const variantChange = (index, field, value) => setForm(current => ({ ...current, variantGuides: (current.variantGuides || []).map((variant, i) => i === index ? { ...variant, [field]: value } : variant) }))
+  const fillIbdDetails = () => setForm(current => ({
+    ...current,
+    ...Object.fromEntries(['visitGuide', 'recordGuide', 'educationGuide'].filter(key => !current[key]?.trim()).map(key => [key, ibd[key]])),
+    stages: (current.stages || []).map(stage => {
+      const sample = ibd.stages.find(item => item.title === stage.title)
+      if (!sample) return stage
+      return { ...stage, ...Object.fromEntries(['actions', 'deliverables', 'exceptionHandling'].filter(key => !stage[key]?.trim()).map(key => [key, sample[key]])) }
+    }),
+    variantGuides: current.variantGuides?.length ? current.variantGuides : ibd.variantGuides.map(item => ({ ...item })),
+  }))
   const save = async () => {
     setBusy(true); setError('')
     try { editing ? await adminAPI.updateSpecialtyLibrary(editing._id, form) : await adminAPI.createSpecialtyLibrary(form); setForm(null); await load() } catch (e) { setError(e.message) } finally { setBusy(false) }
@@ -97,8 +117,12 @@ export default function SpecialtyLibraryPage() {
         {editing?.status === 'draft' && !form.clinicalReviewerId && form.clinicalReviewer && <div style={{ color: '#B42318', fontWeight: 400, marginTop: 4 }}>原记录仅保存了“{form.clinicalReviewer}”文字，发布前请重新从员工库选择。</div>}
       </div>
       <label style={{ display: 'block', marginBottom: 12, fontSize: 13, fontWeight: 600 }}>适用疾病类型<input className="form-input" style={{ width: '100%', marginTop: 5 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={form.diseases?.join('、') || ''} onChange={e => change('diseases', e.target.value.split(/[、,，]/).map(x => x.trim()).filter(Boolean))} placeholder="用顿号分隔" /></label>
-      <h3>标准服务阶段</h3>{(form.stages || []).map((stage, index) => <div key={index} style={{ background: '#F7FAF9', padding: 12, borderRadius: 8, marginBottom: 12 }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b>阶段 {index + 1}</b>{canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary btn-sm" onClick={() => change('stages', form.stages.filter((_, i) => i !== index))}>移除</button>}</div>{Object.entries(stageFields).map(([key, label]) => <label key={key} style={{ display: 'block', fontSize: 13, marginTop: 8 }}>{label}<input className="form-input" style={{ width: '100%', marginTop: 3 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={stage[key] || ''} onChange={e => stageChange(index, key, e.target.value)} /></label>)}</div>)}
-      {canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary" onClick={() => change('stages', [...(form.stages || []), { title: '', purpose: '', owner: '', trigger: '', handoff: '' }])}>＋ 添加阶段</button>}
+      {canEdit && (!editing || editing.status === 'draft') && /IBD|炎症性肠病/i.test(form.title || '') && <div style={{ marginBottom: 16 }}><button className="btn btn-secondary" onClick={fillIbdDetails}>补入 IBD 标准服务细则</button><div style={{ fontSize: 12, color: '#60776C', marginTop: 5 }}>只填空白字段及同名阶段的细则；请审核后保存草稿。已填写内容不会覆盖。</div></div>}
+      <h3>标准服务阶段</h3>{(form.stages || []).map((stage, index) => <div key={index} style={{ background: '#F7FAF9', padding: 12, borderRadius: 8, marginBottom: 12 }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b>阶段 {index + 1} · {stage.title || '未命名'}</b>{canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary btn-sm" onClick={() => change('stages', form.stages.filter((_, i) => i !== index))}>移除</button>}</div>{Object.entries(stageFields).map(([key, label]) => <label key={key} style={{ display: 'block', fontSize: 13, marginTop: 8 }}>{label}{['title', 'owner'].includes(key) ? <input className="form-input" style={{ width: '100%', marginTop: 3 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={stage[key] || ''} onChange={e => stageChange(index, key, e.target.value)} /> : <textarea className="form-input" style={{ width: '100%', minHeight: 68, marginTop: 3 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={stage[key] || ''} onChange={e => stageChange(index, key, e.target.value)} />}</label>)}</div>)}
+      {canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary" onClick={() => change('stages', [...(form.stages || []), { title: '', purpose: '', owner: '', trigger: '', actions: '', deliverables: '', handoff: '', exceptionHandling: '' }])}>＋ 添加阶段</button>}
+      <h3>病型差异</h3><div style={{ color: '#60776C', fontSize: 13, marginBottom: 10 }}>记录各病型的工作关注点；诊疗和检查安排以专科医师的客户个性化意见为准。</div>
+      {(form.variantGuides || []).map((variant, index) => <div key={index} style={{ background: '#F7FAF9', padding: 12, borderRadius: 8, marginBottom: 12 }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b>{variant.name || `病型 ${index + 1}`}</b>{canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary btn-sm" onClick={() => change('variantGuides', form.variantGuides.filter((_, i) => i !== index))}>移除</button>}</div>{Object.entries(variantFields).map(([key, label]) => <label key={key} style={{ display: 'block', fontSize: 13, marginTop: 8 }}>{label}{key === 'name' ? <input className="form-input" style={{ width: '100%', marginTop: 3 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={variant[key] || ''} onChange={e => variantChange(index, key, e.target.value)} /> : <textarea className="form-input" style={{ width: '100%', minHeight: 68, marginTop: 3 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={variant[key] || ''} onChange={e => variantChange(index, key, e.target.value)} />}</label>)}</div>)}
+      {canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary" onClick={() => change('variantGuides', [...(form.variantGuides || []), { name: '', monitoringFocus: '', diaryFocus: '', specialistQuestions: '', exceptionNotes: '' }])}>＋ 添加病型</button>}
     </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setForm(null)}>关闭</button>{canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? '保存中…' : '保存草稿'}</button>}</div></div></div>}
   </div>
 }

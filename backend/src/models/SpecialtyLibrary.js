@@ -6,6 +6,17 @@ const stageSchema = new mongoose.Schema({
   owner: { type: String, default: '', maxlength: 100 },
   trigger: { type: String, default: '', maxlength: 1000 },
   handoff: { type: String, default: '', maxlength: 2000 },
+  actions: { type: String, default: '', maxlength: 3000 },
+  deliverables: { type: String, default: '', maxlength: 2000 },
+  exceptionHandling: { type: String, default: '', maxlength: 2000 },
+}, { _id: false });
+
+const variantSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true, maxlength: 100 },
+  monitoringFocus: { type: String, default: '', maxlength: 2000 },
+  diaryFocus: { type: String, default: '', maxlength: 2000 },
+  specialistQuestions: { type: String, default: '', maxlength: 2000 },
+  exceptionNotes: { type: String, default: '', maxlength: 2000 },
 }, { _id: false });
 
 const schema = new mongoose.Schema({
@@ -20,7 +31,11 @@ const schema = new mongoose.Schema({
   roles: { type: String, default: '', maxlength: 4000 },
   diaryGuide: { type: String, default: '', maxlength: 4000 },
   exceptionGuide: { type: String, default: '', maxlength: 4000 },
+  visitGuide: { type: String, default: '', maxlength: 4000 },
+  recordGuide: { type: String, default: '', maxlength: 4000 },
+  educationGuide: { type: String, default: '', maxlength: 4000 },
   stages: { type: [stageSchema], default: [] },
+  variantGuides: { type: [variantSchema], default: [] },
   sourceNote: { type: String, default: '', maxlength: 2000 },
   clinicalReviewer: { type: String, default: '', maxlength: 160 },
   clinicalReviewerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
