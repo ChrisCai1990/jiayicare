@@ -2,6 +2,7 @@ const FollowUp = require('../models/FollowUp');
 const { appointmentDay } = require('../../../shared/annualAppointment.cjs');
 const { sourceDate, assertAmendedRowUnchanged } = require('./annualScheduleAmendments');
 const { isAnnualUmbrellaRecord, obsoleteAnnualUmbrellaQuery } = require('./annualUmbrellaTask');
+const { sharedVisitItems } = require('./annualVisitGroups');
 
 // 占位记录预生成窗口：只提前生成未来 N 天内的，而不是一次性铺满全年。
 // 此前"每天"频率的监测项会一次性生成365条占位，单个客户能堆到几百条，
@@ -140,6 +141,9 @@ async function buildAnnualPlanFollowUps(plan) {
     const records = moduleData[mod.key]?.records;
     if (!Array.isArray(records)) continue;
     records.forEach((rec, i) => {
+      // A shared item belongs to the leader's single visit; it must not create
+      // another manager follow-up or store the unsupported deliveryMode=shared.
+      if (rec.serviceMode === 'shared') return;
       const fallbackLabels = {
         medical_treatment: '就医安排', specialist_collab: '联合会诊', checkup_completion: '体检完善',
         abnormal_followup: '异常复查', vaccine: '疫苗接种', functional_medicine: '功能医学检测',
@@ -148,6 +152,7 @@ async function buildAnnualPlanFollowUps(plan) {
       // 年度方案随访统一由客户的健管专员承接；patientId 让同一计划同步展示给客户。
       // 其他岗位的代约、陪同、会诊等服务任务由 annualPlanServiceTasks 另行拆分。
       const executor = patient?.assignedHealthManager;
+      const visitItems = rec.visitGroupId ? sharedVisitItems(moduleData, rec.visitGroupId) : [];
       const details = [
         rec.appointmentSchedulingVersion === 1 && `预约安排日期：${appointmentDay(rec[mod.dateField])}；建议就医/检查日期：${rec[mod.dateField]}。一周内完成预约安排，日期已过则立即处理；实际就医时间以预约确认为准。`,
         rec.standardPlanName && `执行方案：${rec.standardPlanName}`,
@@ -165,6 +170,9 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.brand && `品牌：${rec.brand}`,
         rec.order_dept && `开单科室：${rec.order_dept}`,
         rec.order_expert && rec.order_expert !== '无' && `开单专家：${rec.order_expert}`,
+        visitItems.length > 1 && `同次就诊事项：${visitItems.map(item => item.title).join('；')}`,
+        ...visitItems.filter(item => item.moduleKey !== mod.key || item.recordIndex !== i).map(item =>
+          `${item.title}：${[item.department && `科室${item.department}`, item.expert && `专家${item.expert}`, item.reason && `原因${item.reason}`].filter(Boolean).join('；')}`),
         rec.standardContent && `标准执行内容：${rec.standardContent}`,
         rec.frequency && `执行频次：${rec.frequency}`,
         rec.customerAction && `客户行动：${rec.customerAction}`,
