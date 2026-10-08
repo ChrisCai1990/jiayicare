@@ -1,4 +1,5 @@
 import React from 'react'
+import AnnualVisitHandoff from './AnnualVisitHandoff'
 import { ChecklistAttachments } from './ServiceTaskChecklist'
 
 export const isOutpatientEscortVisitTask = task => task?.taskRole === 'executor' && /门诊一站式.*检查及专家门诊陪诊与归档/.test(task?.theme || '')
@@ -47,6 +48,7 @@ export default function OutpatientEscortVisitForm({ task, value, onChange }) {
   const update = patch => onChange({ ...data, ...patch })
   const attachmentUpdate = key => (_, patch) => update({ [key]: patch.attachments || [] })
   return <div style={{ display: 'grid', gap: 14 }}>
+    <AnnualVisitHandoff items={task.annualVisitItems} />
     <section style={{ padding: 15, borderRadius: 10, background: '#FFFAF2', border: '1px solid #E8DCC8', display: 'grid', gap: 9 }}>
       <b style={{ color: '#6F5222' }}>陪诊日安排（只读）</b>
       <div><b>{booking.hospital || '医院待确认'} · {booking.campus || '院区待确认'}</b></div>

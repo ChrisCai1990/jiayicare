@@ -60,3 +60,15 @@ test('同次就诊阻止无主服务、重复主服务及跨医院混派', () =>
   second.hospital = '浙二医院'; second.visit_time = '2026-11-11';
   assert.match(validate(data, '2026-10-08'), /日期须一致/);
 });
+
+test('一站式主服务汇总同院同日不同科室事项，不增加服务需求单', () => {
+  const moduleData = { medical_treatment: { records: [
+    { items: '心血管评估', visit_time: '2026-12-04', hospital: '浙二医院', department: '心血管内科', serviceMode: 'managed', managedServiceType: 'outpatient', visitGroupId: '12月浙二就医行程' },
+    { items: '消化内科复诊', visit_time: '2026-12-04', hospital: '浙江大学医学院附属第二医院', department: '消化内科', serviceMode: 'shared', visitGroupId: '12月浙二就医行程' },
+  ] } };
+  assert.equal(validate(moduleData, '2026-10-08'), '');
+  const rows = buildAnnualPlanServiceTasks({ confirmedAt: new Date(), moduleData }, { assignedHealthPlanner: 'planner-1' });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].formData.serviceRequest.mode, 'managed');
+  assert.equal(rows[0].formData.serviceRequest.itemSnapshot.visitItems.length, 2);
+});

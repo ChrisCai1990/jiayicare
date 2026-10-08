@@ -83,6 +83,8 @@ router.post('/:id/service-link', staffAuth, loadServiceRequest, async (req, res)
   if (!parent?.assignedTo) return res.status(400).json({ success: false, message: '请选择同一来源、已审核且已分配健管专员的未完成随访' });
   if (require('../../../shared/annualServiceItem.cjs').isBookingRequest(task) && !existing && !require('../../../shared/annualBookingPlan.cjs').bookingReady(parent.annualBooking)) return res.status(409).json({ success: false, message: '请先由健管专员确认本事项预约安排，规划师再安排服务' });
   if (!target || serviceOutcome(targetType, target).status !== 'waiting') return res.status(409).json({ success: false, message: '服务不可关联，请确认属于本客户且正在有效执行' });
+  const groupedOneStop = task.formData?.serviceRequest?.mode === 'managed' && (task.formData.serviceRequest.itemSnapshot?.visitItems?.length || 0) > 1;
+  if (groupedOneStop && (targetType !== 'health_plan' || !/门诊一站式/.test(`${target.title || ''} ${target.content?.templateName || ''}`))) return res.status(400).json({ success: false, message: '同次一站式就医事项请关联本客户的门诊一站式服务方案，以便就医专员看到完整交接' });
   if (require('../../../shared/annualServiceItem.cjs').isNutritionRequest(task) && (targetType !== 'health_plan' || target.type !== 'nutrition')) return res.status(400).json({ success:false, message:'营养评估请关联本客户有效的营养服务方案' });
   const title = targetType === 'order' ? target.serviceName : target.title;
   let link;

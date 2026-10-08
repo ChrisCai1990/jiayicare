@@ -30,12 +30,14 @@ function LegacyServiceLinkCard({ task, staff, onLinked }) {
     return () => { active = false }
   }, [task._id, canLink])
   const tracking = data?.link ? { ...data.link, revision: data.link.__v } : task.serviceTracking
+  const groupedManaged = task.formData?.serviceRequest?.mode === 'managed' && task.formData.serviceRequest.itemSnapshot?.visitItems?.length > 1
   if (!request && !tracking) return itemTools.isAssistance(task) ? <AnnualBookingCard task={task} staff={staff} onLinked={onLinked} /> : null
   const booking = data?.followUps?.find(row => row._id === followUpId)?.annualBooking
   const bookingRequired = itemTools.isBookingRequest(task) && !planTools.bookingReady(booking)
   const canChoose = canLink && data && (!data.link || data.link.status === 'attention') && !['completed', 'cancelled'].includes(task.status)
   return <section style={{ border: '1px solid #B2D8C7', borderRadius: 8, padding: 12, background: '#F6FBF8', fontSize: 13 }}>
     <b>服务与随访关联</b>
+    {groupedManaged && <div style={{ marginTop: 8, padding: 10, background: '#fff', borderRadius: 6 }}><b>本次一站式就医共 {task.formData.serviceRequest.itemSnapshot.visitItems.length} 项</b><ol style={{ margin: '6px 0', paddingLeft: 20 }}>{task.formData.serviceRequest.itemSnapshot.visitItems.map((item, index) => <li key={`${item.moduleKey}:${item.recordIndex}:${index}`}>{item.title}</li>)}</ol><small>请关联“门诊一站式”服务方案；关联后代诊和陪诊就医专员可在原任务中看到全部交接。</small></div>}
     {itemTools.isNutritionRequest(task) && <p>请按营养服务流程安排营养师及评估日期，再关联本客户的营养服务方案；原健管随访保留进度记录。</p>}
     {tracking && <div style={{ marginTop: 8 }}>{tracking.title}<br />{tracking.message || '等待服务进度同步'}</div>}
     {loading && <p>正在读取服务…</p>}
@@ -51,8 +53,8 @@ function LegacyServiceLinkCard({ task, staff, onLinked }) {
       <label>实际服务
         <select className="form-input" value={target} disabled={loading} onChange={e => setTarget(e.target.value)}>
           <option value="">请选择已建立的订单或服务方案</option>
-          {(data.orders || []).map(item => <option key={`order:${item._id}`} value={`order:${item._id}`}>订单：{item.serviceName} · {item.orderNo || item.createdAt?.slice(0, 10)}{item.totalUnits > 1 ? `（整单${item.totalUnits}次全部完成后关闭随访）` : ''}</option>)}
-          {(data.plans || []).map(item => <option key={`health_plan:${item._id}`} value={`health_plan:${item._id}`}>方案：{item.title} · {item.createdAt?.slice(0, 10)}</option>)}
+          {!groupedManaged && (data.orders || []).map(item => <option key={`order:${item._id}`} value={`order:${item._id}`}>订单：{item.serviceName} · {item.orderNo || item.createdAt?.slice(0, 10)}{item.totalUnits > 1 ? `（整单${item.totalUnits}次全部完成后关闭随访）` : ''}</option>)}
+          {(data.plans || []).filter(item => !groupedManaged || /门诊一站式/.test(item.title || '')).map(item => <option key={`health_plan:${item._id}`} value={`health_plan:${item._id}`}>方案：{item.title} · {item.createdAt?.slice(0, 10)}</option>)}
         </select>
       </label>
       <div>请确认服务能完成上方随访事项。关联后，随访保留为进度查看；服务结束后自动更新。没有可选服务时，先按现有流程建立服务。</div>

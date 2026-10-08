@@ -750,6 +750,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     return true;
   }).sort((a,b)=>Number(!!feedbackFor(b))-Number(!!feedbackFor(a))).slice(0, requestedLimit);
   const supervisionProgress = await require('../utils/supervisionProgress').loadSupervisionProgress(tasks, FollowUp);
+  const annualVisitHandoffs = await require('../utils/annualManagedVisitHandoff').handoffsForTasks(tasks);
   res.json({ success: true, data: tasks.map(task => {
     const item = withSignedServiceChecklist(task);
     const feedbackReview=feedbackFor(task);
@@ -762,7 +763,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       }
     }
     const annualBookingTask = require('../utils/healthManagementRollout').enabledForPatient(task.patientId?._id || task.patientId) && require('../../../shared/annualServiceItem.cjs').needsBooking(task);
-    return { ...item, ...(annualBookingTask ? { annualBookingTask: true, taskRole: 'executor', theme: `预约安排 · ${task.theme}` } : {}), supervisionProgress: supervisionProgress.get(String(task._id)), taskRequirements: followUpTaskRequirements(task), taskPurposes: followUpTaskPurposes(task) };
+    return { ...item, ...(annualBookingTask ? { annualBookingTask: true, taskRole: 'executor', theme: `预约安排 · ${task.theme}` } : {}), annualVisitItems: require('../utils/annualManagedVisitHandoff').handoffForTask(task, annualVisitHandoffs), supervisionProgress: supervisionProgress.get(String(task._id)), taskRequirements: followUpTaskRequirements(task), taskPurposes: followUpTaskPurposes(task) };
   }) });
 });
 
@@ -2005,11 +2006,13 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo initiationSource serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt'),
     FollowUp.countDocuments(filter),
   ]);
+  const annualVisitHandoffs = await require('../utils/annualManagedVisitHandoff').handoffsForTasks(followUps);
   res.json({
     success: true,
     data: {
       followUps: followUps.map(followUp => ({
         ...withSignedServiceChecklist(followUp),
+        annualVisitItems: require('../utils/annualManagedVisitHandoff').handoffForTask(followUp, annualVisitHandoffs),
         taskRequirements: followUpTaskRequirements(followUp),
         taskPurposes: followUpTaskPurposes(followUp),
       })),
@@ -2129,8 +2132,10 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   ]);
   const lastRecordMap = {};
   lastRecords.forEach(r => { lastRecordMap[String(r._id)] = r.lastAt; });
+  const annualVisitHandoffs = await require('../utils/annualManagedVisitHandoff').handoffsForTasks(followUps);
   const followUpsWithRecord = followUps.map(f => ({
     ...withSignedServiceChecklist(f),
+    annualVisitItems: require('../utils/annualManagedVisitHandoff').handoffForTask(f, annualVisitHandoffs),
     taskRequirements: followUpTaskRequirements(f),
     taskPurposes: followUpTaskPurposes(f),
     patientLastRecord: f.patientId ? (lastRecordMap[String(f.patientId._id)] || null) : null,

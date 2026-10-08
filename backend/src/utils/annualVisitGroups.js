@@ -32,8 +32,8 @@ function validateVisitGroups(data = {}) {
     }
   }
   for (const [id, entries] of visitGroups(data)) {
-    const leaders = entries.filter(e => e.row.serviceMode === 'single');
-    if (leaders.length !== 1 || entries.some(e => !['single', 'shared'].includes(e.row.serviceMode))) return `“${id}”须恰好有一项单项服务，其余选择随同本次就诊`;
+    const leaders = entries.filter(e => ['single', 'managed'].includes(e.row.serviceMode));
+    if (leaders.length !== 1 || entries.some(e => !['single', 'managed', 'shared'].includes(e.row.serviceMode))) return `“${id}”须恰好有一项单项或一站式服务，其余选择随同本次就诊`;
     if (entries.some(e => !validDay(e.date) || e.date !== leaders[0].date)) return `“${id}”的就诊日期须一致且有效`;
     if (entries.some(e => !e.hospital || e.hospital !== leaders[0].hospital)) return `“${id}”的就诊医院须一致；不同医院请分别派单`;
   }
@@ -42,7 +42,7 @@ function validateVisitGroups(data = {}) {
 
 function sharedVisitItems(data, id) {
   return (visitGroups(data).get(text(id)) || []).map(({ moduleKey, index, row, title }) => ({
-    moduleKey, recordIndex: index, title, reason: text(row.reason || row.purpose),
+    moduleKey, recordIndex: index, title, department: text(row.department || row.order_dept), expert: text(row.expert || row.order_expert), reason: text(row.reason || row.purpose),
     basisSummary: text(row.basisSummary), goal: text(row.goal), completionStandard: text(row.completionStandard),
     communicationContent: text(row.communicationContent), customerAction: text(row.customerAction),
     precautions: text(row.precautions || row.notes), issueId: row.issueId || null, issueIds: row.issueIds || [],

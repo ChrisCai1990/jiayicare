@@ -23,7 +23,7 @@ const {MongoClient,ObjectId}=require('mongoose').mongo;
   const dates={medical_treatment:'visit_time',checkup_completion:'time',abnormal_followup:'time'};
   const rows=Object.entries(dates).flatMap(([module,dateKey])=>(plan.moduleData?.[module]?.records||[]).map((row,index)=>({
    module,index,date:row[dateKey]||'',hospital:row.hospital||'',department:row.department||'',expert:row.expert||'',
-   title:row.items||row.name||row.reason||'',mode:row.serviceMode||'reminder',visitGroupId:row.visitGroupId||''})));
+   title:row.items||row.name||row.reason||'',mode:row.serviceMode||'reminder',managedServiceType:row.managedServiceType||'',visitGroupId:row.visitGroupId||''})));
   console.log(Buffer.from(JSON.stringify({updatedAt:plan.updatedAt,pushedAt:plan.pushedAt,confirmedAt:plan.confirmedAt,rows})).toString('base64'));
  }finally{await client.close();}
 })().catch(error=>{console.error(error.message);process.exitCode=1});

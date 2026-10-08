@@ -1,5 +1,6 @@
 import DateField from '../../../shared/DateField.jsx'
 import React from 'react'
+import AnnualVisitHandoff from './AnnualVisitHandoff'
 
 export const isOutpatientProxyVisitTask = task => task?.taskRole === 'executor' && /门诊一站式.*首次代诊开检查单/.test(task?.theme || '')
 const bookingFromTask = task => task?.dependsOnTaskId?.formData?.bookingSnapshot || {}
@@ -30,6 +31,7 @@ export default function OutpatientProxyVisitForm({ task, value, onChange }) {
   const data = emptyOutpatientProxyVisit(task, value); const booking = data.bookingSnapshot || {}; const inspectionDate = inspectionDateFrom(booking)
   const update = patch => onChange({ ...data, ...patch }); const updateCheck = (index, patch) => update({ checkAppointments: data.checkAppointments.map((row, i) => i === index ? { ...row, ...patch } : row) })
   return <div style={{ display: 'grid', gap: 14 }}>
+    <AnnualVisitHandoff items={task.annualVisitItems} />
     <section style={{ padding: 13, borderRadius: 10, background: '#FFFAF2', border: '1px solid #E8DCC8', display: 'grid', gap: 9 }}><b style={{ color: '#6F5222' }}>健管专员确认的代诊日信息（首次代诊执行，只读）</b><div><b>{booking.hospital || '医院待确认'} · {booking.campus || '院区待确认'}</b></div>{(booking.prescribingAppointments || []).map((row, index) => <div key={index}><div>代诊科室/专家：{row.department || '待确认'} · {row.doctorName || '待确认'} · {scheduleText(row)}</div><div>需要开具：<b>{row.coveredChecks || '未填写'}</b></div><div>需向专家沟通：{row.communicationContent || '无特别说明'}</div></div>)}<div>预约补充说明：{booking.bookingNote || '无'}</div></section>
     <section style={{ padding: 13, borderRadius: 10, background: '#F2F8F5', border: '1px solid #B9DDD0', display: 'grid', gap: 6 }}><b style={{ color: '#1E6B50' }}>检查安排（只读）</b>{(booking.specialCheckAppointments || []).map((row, index) => <div key={index}>已知特殊检查：{row.item || '待确认'}{row.expertName ? ` · ${row.expertName}` : ''} · {scheduleText(row)}</div>)}{expertVisitsFrom(booking).map((row, index) => <div key={`expert-${index}`}>检查后专家门诊{index + 1}：{row.department || '科室待确认'} · {row.expertName || '专家待确认'} · {scheduleText(row)}</div>)}<div style={{ fontSize: 12, color: '#65776F' }}>各项检查可安排不同日期，但必须早于最早的检查后专家门诊。</div></section>
     <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={data.proxyVisitCompleted} onChange={e => update({ proxyVisitCompleted: e.target.checked })} />确认已完成首次代诊</label>
