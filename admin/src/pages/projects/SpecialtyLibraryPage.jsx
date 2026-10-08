@@ -33,6 +33,34 @@ const statusText = { draft: '草稿', published: '已发布', archived: '已归�
 const fieldLabels = { title: '专病名称', overview: '服务概述', serviceBoundary: '服务边界', roles: '岗位职责与交接', diaryGuide: '客户日常记录参考', exceptionGuide: '延误与异常处理', visitGuide: '就诊与陪诊标准', recordGuide: '病历与记录规范', educationGuide: '宣教与沟通原则', sourceNote: '来源与审核备注' }
 const stageFields = { title: '阶段名称', purpose: '目标与工作内容', owner: '责任岗位', trigger: '启动条件', actions: '标准执行动作', deliverables: '交付物与完成证据', handoff: '完成与交接要求', exceptionHandling: '延误与异常处理' }
 const variantFields = { name: '病型名称', monitoringFocus: '重点关注', diaryFocus: '日记记录重点', specialistQuestions: '复诊时与专科确认', exceptionNotes: '异常及分类变化' }
+const isIbd = item => /IBD|炎症性肠病/i.test(item?.title || '')
+const fillIbdDetails = current => {
+  const result = { ...current }
+  for (const key of Object.keys(fieldLabels)) if (key !== 'title' && !result[key]?.trim()) result[key] = ibd[key]
+  if (!result.diseases?.length) result.diseases = [...ibd.diseases]
+  result.stages = current.stages?.length ? current.stages.map(stage => {
+    const sample = ibd.stages.find(item => item.title === stage.title)
+    const next = { ...stage }
+    for (const key of Object.keys(stageFields)) {
+      if (key === 'title' || next[key]?.trim()) continue
+      next[key] = sample?.[key] || ({
+        purpose: `完成“${stage.title}”对应的服务目标。`, owner: '健康顾问', trigger: '由上一阶段完成或健康顾问确认后启动。',
+        actions: `核对“${stage.title}”的启动依据和客户当前情况，按健康顾问确认的要求执行本阶段事项，记录实际完成时间与过程。`,
+        deliverables: `保存“${stage.title}”的执行记录、客户反馈及相关资料，标明完成状态、责任人与时间。`,
+        handoff: '记录完成凭据，并将需继续处理的事项交接给下一责任岗位。',
+        exceptionHandling: '发生客户改期、资料缺失或其他延误时记录原因与下一次核实时间；需要医学判断时反馈健康顾问，由其联系专科医师。',
+      })[key]
+    }
+    return next
+  }) : ibd.stages.map(stage => ({ ...stage }))
+  result.variantGuides = current.variantGuides?.length ? current.variantGuides.map(variant => {
+    const source = ibd.variantGuides.find(item => item.name === variant.name)
+    const next = { ...variant }
+    for (const key of Object.keys(variantFields)) if (key !== 'name' && !next[key]?.trim()) next[key] = source?.[key] || '记录客户当前情况与专科意见；需要医学判断或方案变化时由健康顾问联系专科医师确认。'
+    return next
+  }) : ibd.variantGuides.map(variant => ({ ...variant }))
+  return result
+}
 
 function ReviewerPicker({ employees, value, onChange, disabled, loading }) {
   const selected = employees.find(employee => employee._id === value)
@@ -75,20 +103,10 @@ export default function SpecialtyLibraryPage() {
     load()
     adminAPI.specialtyReviewers().then(result => setEmployees(result.data || [])).catch(e => setEmployeeError(e.message)).finally(() => setEmployeeLoading(false))
   }, [])
-  const start = (item, template = empty) => { setEditing(item || null); setForm(JSON.parse(JSON.stringify(item || template))); setError('') }
+  const start = (item, template = empty) => { setEditing(item || null); const value = JSON.parse(JSON.stringify(item || template)); setForm(item?.status === 'draft' && isIbd(item) ? fillIbdDetails(value) : value); setError('') }
   const change = (field, value) => setForm(current => ({ ...current, [field]: value }))
   const stageChange = (index, field, value) => setForm(current => ({ ...current, stages: current.stages.map((stage, i) => i === index ? { ...stage, [field]: value } : stage) }))
   const variantChange = (index, field, value) => setForm(current => ({ ...current, variantGuides: (current.variantGuides || []).map((variant, i) => i === index ? { ...variant, [field]: value } : variant) }))
-  const fillIbdDetails = () => setForm(current => ({
-    ...current,
-    ...Object.fromEntries(['visitGuide', 'recordGuide', 'educationGuide'].filter(key => !current[key]?.trim()).map(key => [key, ibd[key]])),
-    stages: (current.stages || []).map(stage => {
-      const sample = ibd.stages.find(item => item.title === stage.title)
-      if (!sample) return stage
-      return { ...stage, ...Object.fromEntries(['actions', 'deliverables', 'exceptionHandling'].filter(key => !stage[key]?.trim()).map(key => [key, sample[key]])) }
-    }),
-    variantGuides: current.variantGuides?.length ? current.variantGuides : ibd.variantGuides.map(item => ({ ...item })),
-  }))
   const save = async () => {
     setBusy(true); setError('')
     try { editing ? await adminAPI.updateSpecialtyLibrary(editing._id, form) : await adminAPI.createSpecialtyLibrary(form); setForm(null); await load() } catch (e) { setError(e.message) } finally { setBusy(false) }
@@ -117,7 +135,7 @@ export default function SpecialtyLibraryPage() {
         {editing?.status === 'draft' && !form.clinicalReviewerId && form.clinicalReviewer && <div style={{ color: '#B42318', fontWeight: 400, marginTop: 4 }}>原记录仅保存了“{form.clinicalReviewer}”文字，发布前请重新从员工库选择。</div>}
       </div>
       <label style={{ display: 'block', marginBottom: 12, fontSize: 13, fontWeight: 600 }}>适用疾病类型<input className="form-input" style={{ width: '100%', marginTop: 5 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={form.diseases?.join('、') || ''} onChange={e => change('diseases', e.target.value.split(/[、,，]/).map(x => x.trim()).filter(Boolean))} placeholder="用顿号分隔" /></label>
-      {canEdit && (!editing || editing.status === 'draft') && /IBD|炎症性肠病/i.test(form.title || '') && <div style={{ marginBottom: 16 }}><button className="btn btn-secondary" onClick={fillIbdDetails}>补入 IBD 标准服务细则</button><div style={{ fontSize: 12, color: '#60776C', marginTop: 5 }}>只填空白字段及同名阶段的细则；请审核后保存草稿。已填写内容不会覆盖。</div></div>}
+      {canEdit && (!editing || editing.status === 'draft') && isIbd(form) && <div style={{ marginBottom: 16 }}><button className="btn btn-secondary" onClick={() => setForm(current => fillIbdDetails(current))}>补齐 IBD 标准服务细则</button><div style={{ fontSize: 12, color: '#60776C', marginTop: 5 }}>只补空白字段；请审核后保存草稿。已填写内容不会覆盖。</div></div>}
       <h3>标准服务阶段</h3>{(form.stages || []).map((stage, index) => <div key={index} style={{ background: '#F7FAF9', padding: 12, borderRadius: 8, marginBottom: 12 }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b>阶段 {index + 1} · {stage.title || '未命名'}</b>{canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary btn-sm" onClick={() => change('stages', form.stages.filter((_, i) => i !== index))}>移除</button>}</div>{Object.entries(stageFields).map(([key, label]) => <label key={key} style={{ display: 'block', fontSize: 13, marginTop: 8 }}>{label}{['title', 'owner'].includes(key) ? <input className="form-input" style={{ width: '100%', marginTop: 3 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={stage[key] || ''} onChange={e => stageChange(index, key, e.target.value)} /> : <textarea className="form-input" style={{ width: '100%', minHeight: 68, marginTop: 3 }} disabled={!canEdit || editing?.status !== 'draft' && !!editing} value={stage[key] || ''} onChange={e => stageChange(index, key, e.target.value)} />}</label>)}</div>)}
       {canEdit && (!editing || editing.status === 'draft') && <button className="btn btn-secondary" onClick={() => change('stages', [...(form.stages || []), { title: '', purpose: '', owner: '', trigger: '', actions: '', deliverables: '', handoff: '', exceptionHandling: '' }])}>＋ 添加阶段</button>}
       <h3>病型差异</h3><div style={{ color: '#60776C', fontSize: 13, marginBottom: 10 }}>记录各病型的工作关注点；诊疗和检查安排以专科医师的客户个性化意见为准。</div>
