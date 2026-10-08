@@ -19,7 +19,7 @@ export default function FollowUpsPanel() {
   const [searchName, setSearchName] = useState('')
   const [timeGroup, setTimeGroup] = useState('all')
   const params = { status: 'active', includeFuture: '1', workbench: 'human', page: page + 1,
-    limit: PAGE_SIZE, assigneeName: searchName.trim(), workbenchTime: timeGroup }
+    limit: PAGE_SIZE, patientName: searchName.trim(), workbenchTime: timeGroup }
   const { data, loading, error, refresh } = useWorkbenchResource(async () => {
     const now = new Date()
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
@@ -69,7 +69,7 @@ export default function FollowUpsPanel() {
         {error && <div role="alert" style={{ color: '#B42318', padding: 12 }}>随访任务加载失败：{error} <button onClick={refresh}>重试</button></div>}
         {(
           <input
-            placeholder="搜索随访人员姓名"
+            placeholder="搜索客户姓名"
             value={searchName}
             onChange={e => { setSearchName(e.target.value); setPage(0) }}
             style={{ width: '100%', fontSize: 12, padding: '5px 8px', border: '1px solid #E0D9CE', borderRadius: 6, marginBottom: 8, boxSizing: 'border-box' }}
