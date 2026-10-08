@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { displayIssueId, targetIssueId } from '../src/utils/annualIssueLink.mjs'
+import { displayIssueId, targetIssueId, groupTargetsBySharedActions } from '../src/utils/annualIssueLink.mjs'
 
 test('integrated plan keeps explicit links and conservatively groups unlinked legacy actions', () => {
   const targets = [{goal:'明确血压目标',sourceReviewId:'r',sourceIndex:0},{goal:'完成颈动脉检查',sourceReviewId:'r',sourceIndex:1}]
@@ -16,4 +16,13 @@ test('ambiguous gut actions remain visible in shared arrangements without mergin
   const targets=[{goal:'直肠息肉随访'},{goal:'盲肠腺瘤随访'}]
   assert.equal(displayIssueId({reason:'直肠息肉及盲肠腺瘤评估'},targets),'')
   assert.equal(displayIssueId({items:'复查'},targets),'')
+})
+
+test('one consultation groups two source goals without deleting their evidence', () => {
+  const targets = [{ issueId: 'rectal', goal: '核实直肠息肉' }, { issueId: 'cecal', goal: '核实盲肠腺瘤' }, { issueId: 'other', goal: '其他目标' }]
+  const actions = [{ record: { issueId: 'rectal', issueIds: ['rectal', 'cecal'], reason: '同次消化内科复核' } }]
+  const groups = groupTargetsBySharedActions(targets, actions)
+  assert.deepEqual(groups.map(group => group.ids), [['rectal', 'cecal'], ['other']])
+  assert.equal(groups[0].entries.length, 2)
+  assert.equal(targets.length, 3)
 })

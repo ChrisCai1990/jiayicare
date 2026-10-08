@@ -17,7 +17,7 @@ import { annualTemplateCode, matchingAnnualTemplate } from '../utils/annualTempl
 import { annualItemLayout } from '../utils/annualItemLayout.mjs'
 import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
-import { targetIssueId, linkedIssueId, displayIssueId, actionTitle } from '../utils/annualIssueLink.mjs'
+import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -909,6 +909,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }))
   })
   const integratedActions = planActions.map(action => ({ ...action, issueId: patientMode ? displayIssueId(action.record, managementTargets) : '' }))
+  const managementTargetGroups = groupTargetsBySharedActions(managementTargets, integratedActions)
   const sharedActions = integratedActions.filter(action => !action.issueId)
   const renderPlanAction = action => {
     const entry = visibleModuleEntries.find(item => item.key === action.key)
@@ -1198,7 +1199,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>年度管理项目 · 目标与执行安排</div>
             {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>更新已确认研判目标</button>}
             {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。请先在专项研判中确认，保存年度草稿时也会自动带入。</div>}
-            {managementTargets.map((row, index) => <div key={targetIssueId(row, index)} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
+            {managementTargetGroups.map(group => <div key={group.ids[0]} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
+              {group.entries.length > 1 && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>联合就诊安排 · {group.entries.length} 项问题，一次执行</div>}
+              {group.entries.map(({ row, index }) => <div key={targetIssueId(row, index)} style={group.entries.length > 1 ? { paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid #E4ECE7' } : undefined}>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', marginBottom: 5 }}>{index + 1}. {row.goal || row.sourceTitle || '管理问题'}</div>
               <details><summary style={{ cursor: 'pointer', fontSize: 12, color: '#62776A' }}>查看研判依据、调整目标与干预重点</summary>
               <div style={{ fontSize: 12, color: '#62776A', marginBottom: 10 }}>来源：{row.sourceTitle || '年度方案补充'}{row.sourceConfirmedAt ? ` · ${new Date(row.sourceConfirmedAt).toLocaleDateString('zh-CN')}` : ''}{row.sourceGoal && (row.goal !== row.sourceGoal || row.focus !== row.sourceFocus) ? ' · 年度草稿已调整' : ''}</div>
@@ -1209,7 +1212,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               <label style={{ fontSize: 13, display: 'inline-block', marginTop: 7 }}><input type="checkbox" checked={row.nutritionRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养师参与此项目</label>
               </details>
               {row.nutritionRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>营养师参与 · 纳入下方统一评估</div>}
-              {integratedActions.filter(action => action.issueId === targetIssueId(row, index)).map(renderPlanAction)}
+              </div>)}
+              {integratedActions.filter(action => group.ids.includes(action.issueId) || (action.record.issueIds || []).some(id => group.ids.includes(String(id)))).map(renderPlanAction)}
             </div>)}
           </section>}
           {patientMode && <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">

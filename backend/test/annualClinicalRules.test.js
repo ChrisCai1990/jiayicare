@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { reportTimeline, validateClinicalRules, clinicalRulesPrompt } = require('../src/utils/annualClinicalRules');
+const { reportTimeline, validateClinicalRules, clinicalRulesPrompt, consolidateSameDayConsultations } = require('../src/utils/annualClinicalRules');
 const { customerModuleData, buildAnnualPlanDisplayItems } = require('../src/utils/annualPlanPresentation');
 const reports = [
   { _id: 'jan', title: '阴道超声', checkDate: '2026-01-23', reportItems: [{ name: '子宫附件超声', value: '既往结果' }] },
@@ -48,6 +48,28 @@ test('nearby cross-module appointments require coordination or explicit separati
   raw.checkup_completion[0].time = '2026-10-01'; assert.equal(validateClinicalRules(raw, []), raw);
   raw.checkup_completion[0].time = '2026-10-04'; raw.checkup_completion[0].scheduleSeparationReason = '需先完成就医评估后由医生开单';
   assert.equal(validateClinicalRules(raw, []), raw); assert.equal(raw.medical_treatment[0].visit_time, '2026-10-01');
+});
+test('same-day same-clinic consultation cannot be split by a merge note or a hospital alias', () => {
+  const first = { standardPlanId: 'template', sourceIds: ['review:r'], visit_time: '2026-11-10', hospital: '浙二医院', department: '消化内科', reason: '核实直肠息肉', scheduleSeparationReason: '同一天协调合并办理' };
+  const second = { ...first, hospital: '浙江大学医学院附属第二医院', reason: '核实盲肠管状腺瘤', scheduleSeparationReason: '合并至同一次就诊' };
+  assert.throws(() => validateClinicalRules({ medical_treatment: [first, second] }, []), /拆成多条/);
+  assert.equal(validateClinicalRules({ medical_treatment: [{ ...first, reason: '核实直肠息肉及盲肠管状腺瘤', scheduleSeparationReason: '' }] }, []).medical_treatment.length, 1);
+  assert.equal(validateClinicalRules({ medical_treatment: [first, { ...second, hospital: '浙江医院' }] }, []).medical_treatment.length, 2);
+  assert.equal(validateClinicalRules({ medical_treatment: [first, { ...second, scheduleSeparationReason: '不同医生分别预约，需两次就诊' }] }, []).medical_treatment.length, 2);
+});
+test('same-day consultation consolidation retains both issues and timing sources', () => {
+  const first = { standardPlanId: 'template', sourceIds: ['review:r'], issueId: 'rectal', visit_time: '2026-11-10', hospital: '浙二医院', department: '消化内科', reason: '核实直肠息肉', timingSourceId: 'report:a', timingBaseDate: '2026-06-09' };
+  const second = { ...first, issueId: 'cecal', hospital: '浙江大学医学院附属第二医院', reason: '核实盲肠腺瘤', timingSourceId: 'report:b', timingBaseDate: '2026-06-11' };
+  const raw = { medical_treatment: [first, second] };
+  const merged = consolidateSameDayConsultations(raw);
+  assert.equal(merged.medical_treatment.length, 1);
+  assert.deepEqual(merged.medical_treatment[0].issueIds, ['rectal', 'cecal']);
+  assert.match(merged.medical_treatment[0].reason, /直肠息肉.*盲肠腺瘤/);
+  assert.equal(merged.medical_treatment[0].additionalTimingSources.length, 2);
+  assert.equal(consolidateSameDayConsultations(merged), merged);
+  assert.equal(raw.medical_treatment.length, 2);
+  assert.throws(() => validateClinicalRules(merged, [{ id: 'report:a', date: '2026-06-09', group: '直肠' }]), /日期与报告不一致/);
+  assert.equal(validateClinicalRules(merged, [{ id: 'report:a', date: '2026-06-09', group: '直肠' }, { id: 'report:b', date: '2026-06-11', group: '盲肠' }]), merged);
 });
 test('annual focus cannot repeat near-term checks without independent sourced repeat reason', () => {
   const raw = { checkup_completion: [{ items: '骨密度检测（DXA）', time: '2026-10-01' }], annual_checkup: { date: '2027-05-01', focus: '骨密度检测（DXA，已有近期安排）' } };

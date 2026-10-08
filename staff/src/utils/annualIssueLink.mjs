@@ -26,3 +26,23 @@ export function displayIssueId(record, targets) {
   const matches = hits.filter(row => row.score === best)
   return best > 0 && matches.length === 1 ? matches[0].id : ''
 }
+
+// A single reviewed visit may address several separately documented problems.
+// Keep the original goals intact while rendering their shared action once.
+export function groupTargetsBySharedActions(targets, actions) {
+  const groups = targets.map((row, index) => ({ entries: [{ row, index }], ids: [targetIssueId(row, index)] }))
+  for (const action of actions) {
+    const ids = [...new Set((action.record?.issueIds || []).map(String))]
+    if (ids.length < 2) continue
+    const matching = groups.filter(group => group.ids.some(id => ids.includes(id)))
+    if (matching.length < 2 || !ids.every(id => matching.some(group => group.ids.includes(id)))) continue
+    const first = matching[0]
+    for (const group of matching.slice(1)) {
+      first.entries.push(...group.entries)
+      first.ids.push(...group.ids)
+      groups.splice(groups.indexOf(group), 1)
+    }
+    first.entries.sort((a, b) => a.index - b.index)
+  }
+  return groups
+}

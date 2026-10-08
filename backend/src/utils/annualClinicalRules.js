@@ -4,6 +4,58 @@ const text = value => typeof value === 'string' ? value.trim() : '';
 const stem = value => text(value).split(/[（(]/)[0].replace(/[\s、，,：:]/g, '').toLowerCase();
 const relatedGroup = name => /(?:阴道|子宫|附件).*(?:超声|彩超)|(?:超声|彩超).*(?:子宫|附件)/.test(name) ? '盆腔超声（方式未必相同）' : stem(name);
 const isHbA1c = name => /(?:HbA1c|糖化血红蛋白\s*\*?\s*A1c)/i.test(String(name || ''));
+const hospitalIdentity = value => {
+  const name = text(value).replace(/[\s（）()·・]/g, '');
+  return /^(?:浙二医院|浙大二院|浙江大学医学院附属二院|浙江大学医学院附属第二医院)$/.test(name)
+    ? '浙江大学医学院附属第二医院' : name;
+};
+
+function sameUnsplitConsultation(a, b) {
+  if (!validDay(a.visit_time) || a.visit_time !== b.visit_time) return false;
+  if (!hospitalIdentity(a.hospital) || hospitalIdentity(a.hospital) !== hospitalIdentity(b.hospital)) return false;
+  if (!text(a.department) || stem(a.department) !== stem(b.department)) return false;
+  if (String(a.standardPlanId || '') !== String(b.standardPlanId || '')) return false;
+  if (text(a.campus) !== text(b.campus) || text(a.expert) !== text(b.expert)) return false;
+  const firstSources = new Set(Array.isArray(a.sourceIds) ? a.sourceIds.map(String) : []);
+  if (![...(Array.isArray(b.sourceIds) ? b.sourceIds : [])].some(id => firstSources.has(String(id)))) return false;
+  // A real reason for two appointments must describe a separate clinician,
+  // campus, booking or required sequence. "Coordinate/merge" is not one.
+  const separation = [a.scheduleSeparationReason, b.scheduleSeparationReason].map(text).join('；');
+  return !/(?:不同医生|不同专家|不同院区|不同号源|分别预约|不能同次|必须分开|需要两次|先.+再)/.test(separation);
+}
+
+const combinedText = (left, right, separator = '；') => [...new Set([text(left), text(right)].filter(Boolean))].join(separator);
+
+function consolidateSameDayConsultations(raw) {
+  const visits = raw?.medical_treatment;
+  if (!Array.isArray(visits) || visits.length < 2) return raw;
+  const merged = [];
+  for (const visit of visits) {
+    const index = merged.findIndex(existing => sameUnsplitConsultation(existing, visit));
+    if (index < 0) { merged.push(visit); continue; }
+    const previous = merged[index];
+    const timingSources = [...(previous.additionalTimingSources || []),
+      ...[previous, visit].filter(row => row.timingSourceId && row.timingBaseDate)
+        .map(row => ({ timingSourceId: row.timingSourceId, timingBaseDate: row.timingBaseDate, dateSelectionReason: row.dateSelectionReason || '' }))];
+    merged[index] = {
+      ...previous,
+      hospital: hospitalIdentity(previous.hospital),
+      sourceIds: [...new Set([...(previous.sourceIds || []), ...(visit.sourceIds || [])])],
+      issueIds: [...new Set([...(previous.issueIds || []), previous.issueId, ...(visit.issueIds || []), visit.issueId].filter(Boolean).map(String))],
+      additionalTimingSources: [...new Map(timingSources.map(row => [`${row.timingSourceId}:${row.timingBaseDate}`, row])).values()],
+      reason: combinedText(previous.reason, visit.reason),
+      goal: combinedText(previous.goal, visit.goal),
+      basisSummary: combinedText(previous.basisSummary, visit.basisSummary, '\n'),
+      timingReason: combinedText(previous.timingReason, visit.timingReason, '\n'),
+      dateSelectionReason: combinedText(previous.dateSelectionReason, visit.dateSelectionReason, '\n'),
+      precautions: combinedText(previous.precautions, visit.precautions),
+      customerAction: combinedText(previous.customerAction, visit.customerAction),
+      notes: combinedText(previous.notes, visit.notes, '\n'),
+      scheduleSeparationReason: '',
+    };
+  }
+  return merged.length === visits.length ? raw : { ...raw, medical_treatment: merged };
+}
 
 function validateHbA1cClaims(raw, timeline, fail) {
   const verified = timeline.filter(row => isHbA1c(row.name) && row.date)
@@ -60,21 +112,28 @@ const clinicalRulesPrompt = `【逐项日期与跨模块核对——必须执行
 report_history是已审核原报告中与已确认研判主题、异常指标及结构性检查相关的时间线摘要；未列出的项目仍可能存在，不能据此称原报告不存在。完整原报告仍由服务端核验日期及HbA1c。日期取项目检查日期，否则取报告检查日期，不能用上传时间或报告年份推算。引用旧检查时必须对比同项目及相关部位的更新检查；例如子宫附件彩超与阴道超声有关联，但检查途径不一定相同，不得擅自改名或认定完全替代。原汇总与原报告冲突需明确指出，由顾问核对。
 任何非空timingBaseDate必须同时给timingSourceId，精确引用时间线项目id与date；引用较旧的同组检查时，dateSelectionReason必须解释为何更新检查不能代替，不能把旧检查称为最近一次。没有可靠日期不编造，留空说明。医学间隔建议仍交顾问审核。
 medical_treatment/checkup_completion/abnormal_followup中相隔1—14天的事项必须逐对统筹：可合并时优先同一天，优先较早可行日期，不得延误紧急事项。需要拆开或兼容性不确定时，在相应事项scheduleSeparationReason写明医嘱、准备/先后顺序、时限或待核实原因，不编造医院号源。无证据不得强行合并，医院不确定留空。
+同日同院同科室、同一来源和同一就医模板的多个单次就诊目标，若无不同医生、院区、号源或必须分两次的依据，只输出一条medical_treatment，reason、basisSummary和sourceIds须覆盖所有相关问题；不得把“合并”“同日协调”写进scheduleSeparationReason后仍输出两条。
 年度体检focus每行一个具体项目；不能把今年近期已安排的完善检查清单复制到明年。确需再次复查，必须提供futureRepeatReason及futureRepeatSourceId（输入来源ID）说明独立的复查依据/间隔；否则只保留确应在年度体检关注的事项。完善检查通常安排近期2—4周，若医嘱不同以医嘱为准；不急且有依据延后的放入下次年度体检，不能两处重复排期。
 逐项核对已有胃镜/肠镜及病理的检查日期、结果和明确复查建议：只有证据支持在下一年度复查才加入年度关注；没有明确间隔时在report_history的evidenceCoverage.reason说明待顾问评估，不得遗漏核对或擅自按年重复。以上都是待顾问审核建议，不是预约确认。`;
 
 function validateClinicalRules(raw, timeline, evidence = [], { scheduleAsNote = false } = {}) {
   const fail = message => { throw Object.assign(new Error(message + '；未替换原方案，请核对生成依据'), { statusCode: 409 }); };
   validateHbA1cClaims(raw, timeline, fail);
+  const visits = raw.medical_treatment || [];
+  for (let i = 0; i < visits.length; i++) for (let j = i + 1; j < visits.length; j++) {
+    if (sameUnsplitConsultation(visits[i], visits[j])) fail('同日同院同科室的相关就诊被拆成多条，请合并为一次并保留全部核实事项');
+  }
   const indexed = new Map(timeline.map(row => [row.id, row]));
   const scheduled = ['medical_treatment', 'checkup_completion', 'abnormal_followup'].flatMap(key =>
     (raw[key] || []).map(row => ({ ...row, original: row, scheduledDate: key === 'medical_treatment' ? row.visit_time : row.time })));
   const all = [...scheduled, ...(raw.vaccine || []), ...(raw.templateNodes || []), raw.annual_checkup || {}];
   for (const row of all) {
-    if (!row.timingBaseDate) continue;
-    const source = indexed.get(row.timingSourceId);
-    if (!source?.date || source.date !== row.timingBaseDate) fail('建议时间的原检查日期与报告不一致');
-    if (timeline.some(other => other.group === source.group && other.date > source.date) && !text(row.dateSelectionReason)) fail('引用旧检查但未说明较新相关检查的处理');
+    for (const timing of [row, ...(row.additionalTimingSources || [])]) {
+      if (!timing.timingBaseDate) continue;
+      const source = indexed.get(timing.timingSourceId);
+      if (!source?.date || source.date !== timing.timingBaseDate) fail('建议时间的原检查日期与报告不一致');
+      if (timeline.some(other => other.group === source.group && other.date > source.date) && !text(timing.dateSelectionReason)) fail('引用旧检查但未说明较新相关检查的处理');
+    }
   }
   for (let i = 0; i < scheduled.length; i++) for (let j = i + 1; j < scheduled.length; j++) {
     const a = scheduled[i], b = scheduled[j];
@@ -95,4 +154,4 @@ function validateClinicalRules(raw, timeline, evidence = [], { scheduleAsNote = 
   if (duplicate && (!text(annual.futureRepeatReason) || !evidence.some(item => item.id === annual.futureRepeatSourceId))) fail('年度关注重复近期检查，缺少再次复查依据');
   return raw;
 }
-module.exports = { reportTimeline, clinicalRulesPrompt, validateClinicalRules };
+module.exports = { reportTimeline, clinicalRulesPrompt, validateClinicalRules, consolidateSameDayConsultations };
