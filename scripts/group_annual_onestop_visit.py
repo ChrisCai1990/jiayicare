@@ -39,9 +39,9 @@ const hospital=value=>/^(?:浙二医院|浙大二院|浙江大学医学院附属
    if(index===4){row.serviceMode='managed';row.managedServiceType='outpatient';row.serviceType='';}
   });
   const issue=validateVisitGroups(next);if(issue)throw Error(issue);
-  const before=buildAnnualPlanServiceTasks({moduleData:plan.moduleData,confirmedAt:new Date()}).filter(row=>row.stage==='service_request');
-  const after=buildAnnualPlanServiceTasks({moduleData:next,confirmedAt:new Date()}).filter(row=>row.stage==='service_request');
-  if(before.length!==1||after.length!==2||after[0].formData.serviceRequest.itemSnapshot.visitItems?.length!==4||after[1].formData.serviceRequest.mode!=='managed')throw Error('服务需求数量或交接清单不符');
+  const before=buildAnnualPlanServiceTasks({moduleData:plan.moduleData,confirmedAt:new Date()}).filter(row=>row.stage==='service_request'&&row.formData.serviceRequest.moduleKey==='medical_treatment');
+  const after=buildAnnualPlanServiceTasks({moduleData:next,confirmedAt:new Date()}).filter(row=>row.stage==='service_request'&&row.formData.serviceRequest.moduleKey==='medical_treatment');
+  if(before.length!==1||after.length!==2||after[0].formData.serviceRequest.itemSnapshot.visitItems?.length!==4||after[1].formData.serviceRequest.mode!=='managed')throw Error('EXPECTED_SERVICE_REQUESTS_MISMATCH '+JSON.stringify({before:before.length,after:after.length,items:after[0]?.formData.serviceRequest.itemSnapshot.visitItems?.length,modes:after.map(row=>row.formData.serviceRequest.mode)}));
   const summary={planId:input.planId,beforeRequests:before.length,afterRequests:after.length,groupedItems:4,dates:['2026-11-10','2026-12-04'],applied:false};
   if(input.apply){
    const backupKey=`annual-onestop-group:${input.planId}:${input.updatedAt}`;
