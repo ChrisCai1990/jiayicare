@@ -11,6 +11,7 @@ import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
 import AnnualPlanSupplement from '../components/AnnualPlanSupplement'
 import AnnualExecutionReview from '../components/AnnualExecutionReview'
 import AnnualServiceRecommendations from '../components/AnnualServiceRecommendations'
+import AnnualVisitScheduleReview from '../components/AnnualVisitScheduleReview'
 import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 import assessmentCriteria from '../../../shared/annualAssessmentCriteria.json'
 import { annualTemplateCode, matchingAnnualTemplate } from '../utils/annualTemplateSelection.mjs'
@@ -18,6 +19,7 @@ import { annualItemLayout } from '../utils/annualItemLayout.mjs'
 import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
+import { VISIT_DATE_FIELDS, changeVisitDate } from '../utils/annualVisitScheduling.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -551,6 +553,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }))
     setDirty(true)
   }, [])
+  const handleVisitScheduleChange = useCallback(next => {
+    setModuleData(next)
+    setDirty(true)
+  }, [])
 
   const handlePlanTypeChange = (key, template = null) => {
     // 旧流程（HealthPlan）只有一份数据，保持原行为
@@ -920,7 +926,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     return <div key={`${action.key}:${action.index}`} style={{ marginTop: 8 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 4 }}>{action.date || '时间待确认'}{action.record.hospital ? ` · ${action.record.hospital}` : ''}{action.record.department ? ` · ${action.record.department}` : ''}</div>
       {entry.def.multi ? <RecordEditor def={{ ...def, summaryKey: '__displayTitle' }} record={{ ...action.record, __displayTitle: action.title }} index={action.index} total={Math.max(2, planActions.length)} executionReviewChanges={changes}
-        onChange={record => { const { __displayTitle, ...saved } = record; handleModuleChange(action.key, 'records', moduleData[action.key].records.map((row, index) => index === action.index ? saved : row)) }}
+        onChange={record => { const { __displayTitle, ...saved } = record; const next = { ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? saved : row) } }; const dateKey = VISIT_DATE_FIELDS[action.key]; handleVisitScheduleChange(dateKey && saved[dateKey] !== action.record[dateKey] ? changeVisitDate(next, action.key, action.index, saved[dateKey]) : next) }}
         onDelete={() => handleModuleChange(action.key, 'records', moduleData[action.key].records.filter((_, index) => index !== action.index))} />
         : <ModulePanel moduleKey={action.key} def={def} data={moduleData[action.key]} onChange={handleModuleChange} showPlanSummary executionReviewChanges={changes} />}
     </div>
@@ -1196,6 +1202,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               {pendingExecutionChanges.length > 0 && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; document.getElementById('annual-execution-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>{pendingExecutionChanges.length} 项执行待核对 · 处理</button>}
             </div>
           </div>
+          <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
           {patientMode && <section style={{ marginBottom: 16 }} aria-label="按问题查看年度管理方案">
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>年度管理项目 · 目标与执行安排</div>
             {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>更新已确认研判目标</button>}
