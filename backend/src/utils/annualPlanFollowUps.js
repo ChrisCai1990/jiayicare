@@ -298,7 +298,7 @@ async function syncAnnualPlanFollowUps(plan) {
     status: { $ne: 'completed' },
   });
   const toCreate = await withoutSeparatelyDispatchedNutrition(await buildAnnualPlanFollowUps(plan), plan._id);
-  await require('./annualHealthDataReminders').sync(plan);
+  if (!require('./annualInternalTaskException').serviceReleased(plan)) await require('./annualHealthDataReminders').sync(plan);
   const existing = await FollowUp.find({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled' }).sort({ createdAt: 1 });
   const desiredKeys = new Set(toCreate.map(row => row.sourceScheduleKey));
   let created = 0;

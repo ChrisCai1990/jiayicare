@@ -360,6 +360,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
   const [pushing, setPushing]       = useState(false)
+  const [internalTaskStarting, setInternalTaskStarting] = useState(false)
+  const [internalTaskReason, setInternalTaskReason] = useState('')
   const [dirty, setDirty]           = useState(false)
   const [metricSelectionDirty, setMetricSelectionDirty] = useState(false)
   const [metricSelectionSaving, setMetricSelectionSaving] = useState(false)
@@ -875,6 +877,21 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
   }
 
+  const handleInternalTaskRelease = async () => {
+    const current = plansByType[planType]
+    if (!current?.internalTaskReleaseEligible || dirty) { toast('请先刷新并核对已推送方案'); return }
+    if (!current.serviceTaskReleasedAt && internalTaskReason.trim().length < 10) { toast('请填写沟通情况与提前启动原因，至少10字'); return }
+    if (!window.confirm('确认已核对郭学清的沟通情况，并启动内部随访和服务任务？这不会记录为客户确认。')) return
+    setInternalTaskStarting(true)
+    try {
+      const res = await staffAPI.releaseAnnualInternalTasks(id, { planId: current._id, baseUpdatedAt: current.updatedAt, reason: internalTaskReason.trim() })
+      setPlansByType(prev => ({ ...prev, [planType]: { ...prev[planType], ...res.data.plan, internalTaskReleaseEligible: true } }))
+      setInternalTaskReason('')
+      toast(`内部任务已同步：新增随访 ${res.data.followUps || 0} 条，服务需求 ${res.data.serviceTasks?.created || 0} 条；客户仍待确认`)
+    } catch (err) { toast(err.message || '内部任务同步失败，请稍后重试') }
+    finally { setInternalTaskStarting(false) }
+  }
+
   const handleDelete = async () => {
     if (patientMode && !plansByType[planType]) return
     const reason = window.prompt('请输入删除原因（例如：模板类型选择错误）')
@@ -1032,6 +1049,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
+      {patientMode && plansByType[planType]?.internalTaskReleaseEligible && !confirmedAt && <section aria-label="郭学清年度方案内部任务启动" style={{ background: '#FFF9ED', border: '1px solid #E9D3A3', borderRadius: 10, padding: 14, marginBottom: 14 }}>
+        <strong style={{ fontSize: 14 }}>郭学清 · 内部执行任务</strong>
+        <div style={{ fontSize: 12, color: '#6B5C3D', marginTop: 5 }}>客户暂无法在客户端确认。健康顾问核对已沟通的方案后，可先把随访交给健管专员、服务需求交给健康规划师；此操作不代表客户确认，也不会生成客户的方案启动任务。</div>
+        {plansByType[planType].serviceTaskReleasedAt ? <div style={{ marginTop: 9, fontSize: 13, color: '#1E6B50' }}>内部任务已启动：{new Date(plansByType[planType].serviceTaskReleasedAt).toLocaleString('zh-CN')}。客户仍待确认。</div>
+          : <textarea aria-label="沟通情况与提前启动原因" value={internalTaskReason} onChange={event => setInternalTaskReason(event.target.value)} maxLength={500} rows={2} placeholder="记录已沟通情况、客户暂无法确认的原因及提前启动内部工作的依据" style={{ width: '100%', boxSizing: 'border-box', marginTop: 10, padding: 8, border: '1px solid #D9C9A7', borderRadius: 7, fontFamily: 'inherit' }} />}
+        {canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={internalTaskStarting || dirty || remotePlanChanged} onClick={handleInternalTaskRelease} style={{ marginTop: 8 }}>{internalTaskStarting ? '同步中…' : plansByType[planType].serviceTaskReleasedAt ? '重新同步内部任务' : '确认并启动内部任务'}</button>}
+      </section>}
       <details id="annual-plan-preparation" className="annual-plan-secondary" open={['#professional-assessments', '#annual-execution-review'].includes(window.location.hash) || undefined}>
         <summary>方案准备{preparation?.checklist && ` · ${preparation.checklist.ready ? '已就绪' : `还差 ${preparation.checklist.progress.total - preparation.checklist.progress.completed} 项`}`}{!preparation?.checklist?.ready && preparation?.checklist?.items?.length ? `：${preparation.checklist.items.filter(item => !item.complete).map(item => item.label).slice(0, 2).join('、')}${preparation.checklist.items.filter(item => !item.complete).length > 2 ? '等' : ''}` : ''} · 展开办理</summary>
       {patientMode && closedLoopEnabled && preparation?.checklist && (

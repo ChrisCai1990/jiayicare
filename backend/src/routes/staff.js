@@ -8432,7 +8432,8 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (!plan) return null;
       const value = plan.toObject ? plan.toObject() : plan;
       const inferred = inferServiceVersion({ code: value.servicePlanCode, planType: value.planType, name: value.templateName || value.templateSnapshot?.name, clientBrand: value.clientBrand || patient?.clientBrand });
-      return { ...value, servicePlanCode: value.servicePlanCode || inferred?.code || value.planType, strategyType: value.strategyType || inferred?.strategyType || value.planType };
+      return { ...value, servicePlanCode: value.servicePlanCode || inferred?.code || value.planType, strategyType: value.strategyType || inferred?.strategyType || value.planType,
+        internalTaskReleaseEligible: require('../utils/annualInternalTaskException').eligible(value) };
     };
     const query = { patientId: req.params.id };
     if (year) query.year = parseInt(year);
@@ -8865,6 +8866,37 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// One named plan: advisor can start internal work after a documented conversation.
+// Customer confirmation remains null; customer-facing kickoff and reminders wait.
+router.patch('/patients/:id/annual-plan/internal-task-release', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可核对并启动内部任务' });
+  try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
+    const patient = await User.findById(req.params.id).select('tenantId').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '无权处理该会员' });
+    const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: req.params.id });
+    const exception = require('../utils/annualInternalTaskException');
+    if (!exception.eligible(plan)) return res.status(409).json({ success: false, message: '该方案不符合单客户内部启动条件，请刷新核对' });
+    const reason = String(req.body.reason || '').trim();
+    if (!plan.serviceTaskReleasedAt && (reason.length < 10 || reason.length > 500)) return res.status(400).json({ success: false, message: '请填写10至500字的沟通情况与提前启动原因' });
+    if (!req.body.baseUpdatedAt || new Date(req.body.baseUpdatedAt).getTime() !== plan.updatedAt.getTime()) return res.status(409).json({ success: false, message: '方案已更新，请刷新后重新核对' });
+    let released = plan;
+    if (!plan.serviceTaskReleasedAt) {
+      const now = new Date();
+      released = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: patient._id, updatedAt: plan.updatedAt,
+        confirmedAt: null, serviceTaskReleasedAt: null, pushedAt: plan.pushedAt, reviewStatus: 'approved' },
+        { $set: { followUpReleasedAt: now, serviceTaskReleasedAt: now, staffTaskReleasedBy: req.staff._id, staffTaskReleaseReason: reason } }, { new: true });
+      if (!released) return res.status(409).json({ success: false, message: '方案状态已变化，请刷新后重试' });
+    }
+    const [followUps, serviceTasks] = await Promise.all([
+      require('../utils/annualPlanFollowUps').syncAnnualPlanFollowUps(released),
+      require('../utils/annualPlanServiceTasks').syncAnnualPlanServiceTasks(released),
+    ]);
+    res.json({ success: true, data: { plan: released, followUps, serviceTasks, customerConfirmed: false } });
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.statusCode ? err.message : '内部任务同步失败，可在本页重试；客户仍未确认方案' }); }
 });
 
 // ── GET /api/staff/patients/:id/orders ───────────────────────────

@@ -55,8 +55,9 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
 }
 
 async function syncAnnualPlanServiceTasks(plan) {
-  if (!plan.confirmedAt) return { created: 0, updated: 0, warnings: ['客户尚未确认方案'] };
-  const gate = await require('./annualServicePeriod').annualExecutionGate(plan);
+  const internalRelease = require('./annualInternalTaskException').serviceReleased(plan);
+  if (!plan.confirmedAt && !internalRelease) return { created: 0, updated: 0, warnings: ['客户尚未确认方案'] };
+  const gate = internalRelease ? { allowed: true } : await require('./annualServicePeriod').annualExecutionGate(plan);
   if (!gate.allowed) return { created: 0, updated: 0, warnings: [gate.reason] };
   if (plan.continuitySource?.previousPlanId) plan = { ...(gate.executionPlan || (plan.toObject ? plan.toObject() : plan)), confirmedAt: gate.anchor };
   const FollowUp = require('../models/FollowUp');

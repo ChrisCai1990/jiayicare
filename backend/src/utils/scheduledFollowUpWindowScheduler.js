@@ -37,6 +37,7 @@ async function scanAndSyncScheduledWindow() {
         total += result.scheduledFollowUps || 0;
       } else {
         total += await syncAnnualPlanFollowUps(plan);
+        if (recoveryEnabled && require('./annualInternalTaskException').serviceReleased(plan)) await require('./annualPlanServiceTasks').syncAnnualPlanServiceTasks(plan);
         if (recoveryEnabled) await require('./annualCheckupDispatch').runtime().sync(plan);
       }
     } catch (e) {

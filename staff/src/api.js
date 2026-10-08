@@ -462,6 +462,7 @@ export const staffAPI = {
   updateSupplyFulfillment: (planId, data) => req(`/staff/supply-plans/${planId}/fulfillment`, { method: 'PATCH', body: JSON.stringify(data) }),
   confirmSupplyReceipt: (planId, data) => req(`/staff/supply-plans/${planId}/receipt`, { method: 'PATCH', body: JSON.stringify(data) }),
   pushAnnualPlan:       (patientId, year, planType) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}` + (planType ? `&planType=${planType}` : ''), { method: 'PATCH' }),
+  releaseAnnualInternalTasks: (patientId, data) => req(`/staff/patients/${patientId}/annual-plan/internal-task-release`, { method: 'PATCH', body: JSON.stringify(data) }),
   // 订单管理
   getPatientOrders:     (patientId)       => req(`/staff/patients/${patientId}/orders`),
   getPackageEntitlements: (patientId)     => req(`/staff/patients/${patientId}/package-entitlements`),
