@@ -19,7 +19,7 @@ import { annualItemLayout } from '../utils/annualItemLayout.mjs'
 import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
-import { VISIT_DATE_FIELDS, changeVisitDate } from '../utils/annualVisitScheduling.mjs'
+import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -923,9 +923,19 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     const def = annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name, patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name, currentPlanId, dirty)
     if (action.issueId) def.fields = def.fields.filter(field => field.key !== 'goal' && (field.key !== 'completionStandard' || action.record.completionStandard))
     const changes = pendingExecutionChanges.filter(change => change.key === action.key && (!change.after?.title || change.after.title === (action.record.items || action.record.name || action.record.department || action.record.standardPlanName)))
+    const visitCandidates = VISIT_DATE_FIELDS[action.key] ? matchingVisitLeaders(moduleData, action.key, action.index) : []
+    const selectVisitLeader = leaderKey => {
+      try { handleVisitScheduleChange(assignSharedVisit(moduleData, action.key, action.index, leaderKey)) }
+      catch (error) { toast(error.message) }
+    }
     return <div key={`${action.key}:${action.index}`} style={{ marginTop: 8 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 4 }}>{action.date || '时间待确认'}{action.record.hospital ? ` · ${action.record.hospital}` : ''}{action.record.department ? ` · ${action.record.department}` : ''}</div>
       {entry.def.multi ? <RecordEditor def={{ ...def, summaryKey: '__displayTitle' }} record={{ ...action.record, __displayTitle: action.title }} index={action.index} total={Math.max(2, planActions.length)} executionReviewChanges={changes}
+        visitCandidates={visitCandidates} onShareVisit={() => {
+          if (visitCandidates.length === 1) { selectVisitLeader(visitCandidates[0].key); return }
+          if (!visitCandidates.length) { toast('请先核对日期和医院，并将其中一项设为门诊一站式或单项服务'); return }
+          handleVisitScheduleChange({ ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? { ...row, serviceMode: 'shared', serviceType: '', managedServiceType: '', visitGroupId: '' } : row) } })
+        }} onSelectVisitLeader={selectVisitLeader}
         onChange={record => { const { __displayTitle, ...saved } = record; const next = { ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? saved : row) } }; const dateKey = VISIT_DATE_FIELDS[action.key]; handleVisitScheduleChange(dateKey && saved[dateKey] !== action.record[dateKey] ? changeVisitDate(next, action.key, action.index, saved[dateKey]) : next) }}
         onDelete={() => handleModuleChange(action.key, 'records', moduleData[action.key].records.filter((_, index) => index !== action.index))} />
         : <ModulePanel moduleKey={action.key} def={def} data={moduleData[action.key]} onChange={handleModuleChange} showPlanSummary executionReviewChanges={changes} />}

@@ -50,6 +50,34 @@ export function changeVisitSeparationReason(data, moduleKey, index, reason) {
   return { ...data, [moduleKey]: { ...module, records } }
 }
 
+export function matchingVisitLeaders(data, moduleKey, index) {
+  const rows = visitRows(data)
+  const target = rows.find(row => row.moduleKey === moduleKey && row.index === index)
+  if (!target?.date || !target.hospital) return []
+  return rows.filter(row => row.key !== target.key && row.date === target.date && row.hospital === target.hospital
+    && (row.row.serviceMode === 'single' || row.row.serviceMode === 'managed' && row.row.managedServiceType === 'outpatient'))
+}
+
+export function assignSharedVisit(data, moduleKey, index, leaderKey) {
+  const rows = visitRows(data)
+  const target = rows.find(row => row.moduleKey === moduleKey && row.index === index)
+  const leader = matchingVisitLeaders(data, moduleKey, index).find(row => row.key === leaderKey)
+  if (!target || !leader) throw new Error('没有匹配的同日同院主服务，请先核实日期、医院及服务方式')
+  if (target.row.scheduleSeparationReason?.trim() || leader.row.scheduleSeparationReason?.trim()) throw new Error('已有分开安排原因或待核实条件，请核实后清除说明再关联')
+  const existingIds = new Set(rows.map(row => row.row.visitGroupId).filter(Boolean))
+  const base = `${leader.date} ${leader.row.hospital.trim()}同次就诊`.slice(0, 76)
+  let groupId = leader.row.visitGroupId || base
+  for (let suffix = 2; !leader.row.visitGroupId && existingIds.has(groupId); suffix++) groupId = `${base.slice(0, 74)}${suffix}`
+  const next = { ...data }
+  for (const row of [leader, target]) {
+    if (!next[row.moduleKey] || next[row.moduleKey] === data[row.moduleKey]) next[row.moduleKey] = { ...data[row.moduleKey], records: [...data[row.moduleKey].records] }
+    next[row.moduleKey].records[row.index] = row.key === leader.key
+      ? { ...row.row, visitGroupId: groupId }
+      : { ...row.row, visitGroupId: groupId, serviceMode: 'shared', serviceType: '', managedServiceType: '' }
+  }
+  return next
+}
+
 export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, serviceType = '' }) {
   const rows = visitRows(data)
   const selected = rows.filter(row => keys.includes(row.key))

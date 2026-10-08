@@ -2,7 +2,7 @@ import HealthDataPlanFields from './HealthDataPlanFields'
 import AnnualLifestyleLink from './AnnualLifestyleLink'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
-import React, { useState, createContext, useContext } from 'react'
+import React, { useState, useEffect, createContext, useContext } from 'react'
 import appointment from '../../../shared/annualAppointment.cjs'
 import DateInput from './DateInput'
 import { concretePlanText } from '../utils/annualItemLayout.mjs'
@@ -171,8 +171,12 @@ export function FieldInput({ field, value, onChange }) {
 }
 
 // ── 单条记录编辑区（多条模块用）─────────────────────────────────────
-export function RecordEditor({ def, record, onChange, onDelete, index, total, executionReviewChanges = [], issues = [] }) {
+export function RecordEditor({ def, record, onChange, onDelete, index, total, executionReviewChanges = [], issues = [], visitCandidates = [], onShareVisit, onSelectVisitLeader }) {
   const [open, setOpen] = useState(index === 0 && total === 1)
+  const soleVisitLeaderKey = visitCandidates.length === 1 ? visitCandidates[0].key : ''
+  useEffect(() => {
+    if (def.visitGrouping && record.serviceMode === 'shared' && !record.visitGroupId && soleVisitLeaderKey && !record.scheduleSeparationReason?.trim() && !visitCandidates[0].row.scheduleSeparationReason?.trim()) onSelectVisitLeader?.(soleVisitLeaderKey)
+  }, [def.visitGrouping, record.serviceMode, record.visitGroupId, record.scheduleSeparationReason, soleVisitLeaderKey, visitCandidates[0]?.row.scheduleSeparationReason])
   const directNutrition = def.personalizedAssignment && annualNutrition.isRow(record)
   const summary = record[def.summaryKey] || `${def.summaryLabel} ${index + 1}`
   const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['notes','basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
@@ -217,8 +221,19 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
           {def.annualServiceArrangement && !directNutrition && <>
             <FieldRow label="随访人员"><div style={{ paddingTop: 8 }}>{def.managerName}</div></FieldRow>
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #D7E4DD' }}><b>服务安排</b><div style={{ fontSize: 12, marginTop: 4 }}>先确定本项管理内容，再按客户需求选择服务；原健管随访持续保留。</div>
-              {(def.serviceFields || []).filter(f => (f.key !== 'serviceType' || record.serviceMode === 'single') && (f.key !== 'visitGroupId' || ['single', 'managed', 'shared'].includes(record.serviceMode))).map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.key === 'serviceMode' ? { serviceType: '', managedServiceType: '', ...(['single', 'managed', 'shared'].includes(val) ? {} : { visitGroupId: '' }) } : {}) })} /></FieldRow>)}
-              {def.serviceFields?.some(f => f.key === 'visitGroupId') && ['single', 'managed', 'shared'].includes(record.serviceMode) && <p style={{ fontSize: 12, color: '#64796E' }}>同一天、同一医院且确属同一就医行程的事项填写相同名称；其中一项选“单项服务”或“全托管”，其余选“随同本次就诊”。关联实际服务后，就医专员将在原服务任务中看到全部事项。</p>}
+              {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || record.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={record[field.key]} onChange={val => {
+                if (field.key === 'serviceMode' && val === 'shared' && onShareVisit) { onShareVisit(); return }
+                onChange({ ...record, [field.key]: val, ...(field.key === 'serviceMode' ? { serviceType: '', managedServiceType: '', ...((record.serviceMode === 'shared' || val === 'reminder') ? { visitGroupId: '' } : {}) } : {}) })
+              }} /></FieldRow>)}
+              {def.visitGrouping && record.serviceMode === 'shared' && <FieldRow label="随同的就医协助"><div style={{ fontSize: 13, paddingTop: 5 }}>
+                {visitCandidates.length === 0 ? <span style={{ color: '#9A5B13' }}>未找到同日同院的主服务，请先核对日期、医院，并设置一项门诊一站式或单项服务。</span> : <>
+                  {visitCandidates.length === 1 && record.visitGroupId === visitCandidates[0].row.visitGroupId && record.visitGroupId
+                    ? <span>{visitCandidates[0].date} · {visitCandidates[0].row.hospital} · {visitCandidates[0].title}</span>
+                    : <select aria-label="选择随同的就医协助" value={visitCandidates.find(candidate => candidate.row.visitGroupId && candidate.row.visitGroupId === record.visitGroupId)?.key || ''} onChange={event => event.target.value && onSelectVisitLeader?.(event.target.value)} style={inputStyle}><option value="">请选择主服务</option>{visitCandidates.map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.date} · {candidate.row.hospital} · {candidate.title}</option>)}</select>}
+                </>}
+                <div style={{ fontSize: 12, color: '#64796E', marginTop: 5 }}>同次就诊关联由系统生成，顾问核对后保存；只派一次服务，就医专员会看到全部事项。</div>
+              </div></FieldRow>}
+              {def.visitGrouping && ['single', 'managed'].includes(record.serviceMode) && record.visitGroupId && <div style={{ fontSize: 12, color: '#64796E', marginTop: 6 }}>本项为同次就诊的主服务，其他事项会随同办理。</div>}
               {record.serviceMode === 'managed' && <FieldRow label="一站式服务类型"><FieldInput field={{ type: 'select', options: [{ value: '', label: '请选择' }, { value: 'outpatient', label: '门诊一站式' }, { value: 'checkup', label: '体检一站式' }] }} value={record.managedServiceType} onChange={val => onChange({ ...record, managedServiceType: val })} /></FieldRow>}
             </div>
           </>}

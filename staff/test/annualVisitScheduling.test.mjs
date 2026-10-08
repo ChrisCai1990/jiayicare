@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { nearbyVisitRows, changeVisitDate, changeVisitSeparationReason, groupVisitRows } from '../src/utils/annualVisitScheduling.mjs'
+import { nearbyVisitRows, changeVisitDate, changeVisitSeparationReason, groupVisitRows, matchingVisitLeaders, assignSharedVisit } from '../src/utils/annualVisitScheduling.mjs'
 const require = createRequire(import.meta.url)
 const { validate } = require('../../backend/src/utils/annualPlanPublishValidation.js')
 
@@ -56,4 +56,35 @@ test('已有分开依据须先核实，清除后才允许归类', () => {
   assert.throws(() => groupVisitRows(data, keys, options), /分开安排/)
   const reviewed = changeVisitSeparationReason(data, 'abnormal_followup', 0, '')
   assert.equal(validate(groupVisitRows(reviewed, keys, options), '2026-10-08'), '')
+})
+
+test('选择随同就诊时系统从同日同院主服务生成关联，无需手填名称', () => {
+  const data = sample()
+  assert.deepEqual(matchingVisitLeaders(data, 'abnormal_followup', 0).map(row => row.key), [])
+  const aligned = changeVisitDate(data, 'abnormal_followup', 0, '2026-12-04')
+  const candidates = matchingVisitLeaders(aligned, 'abnormal_followup', 0)
+  assert.deepEqual(candidates.map(row => row.key), ['medical_treatment:1'])
+  const linked = assignSharedVisit(aligned, 'abnormal_followup', 0, candidates[0].key)
+  assert.equal(linked.abnormal_followup.records[0].visitGroupId, linked.medical_treatment.records[1].visitGroupId)
+  assert.equal(linked.abnormal_followup.records[0].serviceMode, 'shared')
+  assert.equal(validate(linked, '2026-10-08'), '')
+})
+
+test('多个同日同院主服务交由顾问选择，分开依据阻止自动关联', () => {
+  const data = sample()
+  data.medical_treatment.records[0].visit_time = '2026-12-04'
+  data.abnormal_followup.records[0].time = '2026-12-04'
+  assert.equal(matchingVisitLeaders(data, 'abnormal_followup', 0).length, 2)
+  data.abnormal_followup.records[0].scheduleSeparationReason = '准备要求待核实'
+  assert.throws(() => assignSharedVisit(data, 'abnormal_followup', 0, 'medical_treatment:1'), /分开安排/)
+})
+
+test('单项服务客户也使用同一自动关联规则', () => {
+  const data = sample()
+  data.medical_treatment.records[1] = { ...data.medical_treatment.records[1], hospital: '省人民医院', serviceMode: 'single', serviceType: 'escort_visit', managedServiceType: '' }
+  data.abnormal_followup.records[0] = { ...data.abnormal_followup.records[0], hospital: '省人民医院', time: '2026-12-04' }
+  const linked = assignSharedVisit(data, 'abnormal_followup', 0, matchingVisitLeaders(data, 'abnormal_followup', 0)[0].key)
+  assert.equal(linked.medical_treatment.records[1].serviceType, 'escort_visit')
+  assert.equal(linked.abnormal_followup.records[0].serviceMode, 'shared')
+  assert.equal(validate(linked, '2026-10-08'), '')
 })
