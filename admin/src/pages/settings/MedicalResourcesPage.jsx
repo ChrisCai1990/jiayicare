@@ -21,6 +21,7 @@ export default function MedicalResourcesPage() {
   const [form, setForm] = useState(null)
   const [collapsedHospitals, setCollapsedHospitals] = useState({})
   const [busy, setBusy] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const load = async () => { try { const [r,s] = await Promise.all([adminAPI.medicalResources(), adminAPI.employees({ limit:500 })]); setData(r.data); setStaff((s.data || []).filter(x=>x.staffStatus !== 'inactive')) } catch(e) { toast(e.message) } }
   useEffect(()=>{ load() },[])
   const institutions = data.institutions || [], departments = data.departments || [], experts = data.experts || []
@@ -43,6 +44,7 @@ export default function MedicalResourcesPage() {
   }, [rows])
   const open = (type, item=null) => {
     setTab(type); setEditing(item)
+    setSaveError('')
     const base = { ...blanks[type], ...(item || {}) }
     ;['aliases','specialties','expertise','diseaseTags','serviceModes'].forEach(k => { if (base[k]) base[k] = displayList(base[k]) })
     if (type === 'institution') base.campusDetails = item?.campusDetails?.length ? item.campusDetails.map(c=>({name:c.name||'',address:c.address||'',contactName:c.contactName||'',contactTitle:c.contactTitle||'',phone:c.phone||''})) : (item?.campuses || []).map(name=>({name,address:item.address||'',contactName:'',contactTitle:'',phone:''}))
@@ -53,12 +55,15 @@ export default function MedicalResourcesPage() {
   }
   const set = k => e => setForm(f=>({...f,[k]:e.target.value}))
   const save = async () => {
+    setSaveError('')
     setBusy(true)
     try {
       const api = tab === 'institution' ? ['createMedicalInstitution','updateMedicalInstitution'] : tab === 'department' ? ['createMedicalDepartment','updateMedicalDepartment'] : ['createMedicalExpert','updateMedicalExpert']
-      editing ? await adminAPI[api[1]](editing._id, form) : await adminAPI[api[0]](form)
+      const expertFields = ['name','title','institutionId','departmentId','campus','expertise','diseaseTags','introduction','licenseNumber','serviceModes','outpatientSchedule','contactNote','linkedStaffId','status']
+      const payload = tab === 'expert' ? Object.fromEntries(expertFields.map(key => [key, form[key]])) : form
+      editing ? await adminAPI[api[1]](editing._id, payload) : await adminAPI[api[0]](payload)
       toast(`${labels[tab]}已保存`); setEditing(null); setForm(null); await load()
-    } catch(e) { toast(e.message) } finally { setBusy(false) }
+    } catch(e) { setSaveError(e.message) } finally { setBusy(false) }
   }
   const toggle = async item => { const fn = tab === 'institution' ? 'toggleMedicalInstitution' : tab === 'department' ? 'toggleMedicalDepartment' : 'toggleMedicalExpert'; try { await adminAPI[fn](item._id); await load() } catch(e) { toast(e.message) } }
   return <div>
@@ -74,7 +79,7 @@ export default function MedicalResourcesPage() {
       {tab==='institution' && <><Field label="医院名称 *" value={form.name} onChange={set('name')}/><Field label="医院等级" value={form.level} onChange={set('level')} placeholder="如：三级甲等"/><Select label="性质" value={form.nature} onChange={set('nature')} options={[['','请选择'],['public','公立'],['private','民营'],['other','其他']]}/><Field label="地区" value={form.region} onChange={set('region')}/><Field label="医院总联系人" value={form.contactName} onChange={set('contactName')}/><Field label="总联系人职位" value={form.contactTitle} onChange={set('contactTitle')} placeholder="如：医务处主任"/><Field span label="医院总联系电话" value={form.phone} onChange={set('phone')}/><CampusEditor campuses={form.campusDetails||[]} onChange={campusDetails=>setForm(f=>({...f,campusDetails}))}/></>}
       {tab==='department' && <><Select label="医院 *" value={form.institutionId} onChange={set('institutionId')} options={[['','请选择'],...institutions.filter(x=>x.status==='active').map(x=>[x._id,x.name])]}/><Field label="院区" value={form.campus} onChange={set('campus')}/><Field label="科室名称 *" value={form.name} onChange={set('name')}/><Field label="特色方向" value={form.specialties} onChange={set('specialties')} placeholder="多个用顿号分隔"/><Text span label="科室简介" value={form.introduction} onChange={set('introduction')}/></>}
       {tab==='expert' && <><Field label="姓名 *" value={form.name} onChange={set('name')}/><Field label="职称" value={form.title} onChange={set('title')} placeholder="如：主任医师"/><Select label="医院 *" value={form.institutionId} onChange={e=>setForm(f=>({...f,institutionId:e.target.value,departmentId:''}))} options={[['','请选择'],...institutions.filter(x=>x.status==='active').map(x=>[x._id,x.name])]}/><Select label="科室 *" value={form.departmentId} onChange={set('departmentId')} options={[['','请选择'],...filteredDepartments.filter(x=>x.status==='active').map(x=>[x._id,x.name])]}/><Field label="院区" value={form.campus} onChange={set('campus')}/><Select label="关联员工账号" value={form.linkedStaffId} onChange={set('linkedStaffId')} options={[['','不关联（外部专家）'],...staff.filter(x=>x.role==='specialist').map(x=>[x._id,`${x.name}${x.title?` · ${x.title}`:''}`])]}/><Field span label="擅长领域" value={form.expertise} onChange={set('expertise')} placeholder="如：眩晕、前庭疾病、头痛"/><Field span label="疾病标签" value={form.diseaseTags} onChange={set('diseaseTags')} placeholder="用于转介搜索，多个用顿号分隔"/><Field label="执业证号" value={form.licenseNumber} onChange={set('licenseNumber')}/><Field label="服务方式" value={form.serviceModes} onChange={set('serviceModes')} placeholder="门诊、线上咨询等"/><Field span label="出诊信息" value={form.outpatientSchedule} onChange={set('outpatientSchedule')}/><Text span label="专家简介" value={form.introduction} onChange={set('introduction')}/><Text span label="内部联络备注" value={form.contactNote} onChange={set('contactNote')}/></>}
-    </div><div className="modal-footer"><button className="btn btn-secondary" onClick={()=>setForm(null)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={save}>{busy?'保存中…':'保存'}</button></div></div></div>}
+    </div>{saveError && <div role="alert" style={{margin:'0 20px 12px',padding:10,color:'#B42318',background:'#FEF3F2',borderRadius:8}}>{saveError}</div>}<div className="modal-footer"><button className="btn btn-secondary" onClick={()=>setForm(null)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={save}>{busy?'保存中…':'保存'}</button></div></div></div>}
   </div>
 }
 
