@@ -265,6 +265,10 @@ export default function CheckinPage() {
       Taro.showToast({ title: measureType === 'sleep' ? '请填写入睡和醒来时间' : '请填写完整数值', icon: 'none' });
       return;
     }
+    if (measureType === 'bloodPressure' && !measureOption) {
+      Taro.showToast({ title: '请选择左臂或右臂', icon: 'none' });
+      return;
+    }
 
     let payload = {
       category: item.category || 'vitals',
@@ -280,7 +284,7 @@ export default function CheckinPage() {
       const sys = parseInt(measureValues.sys, 10);
       const dia = parseInt(measureValues.dia, 10);
       payload.value = `${sys}/${dia}`;
-      payload.extra = { sys, dia };
+      payload.extra = { sys, dia, ...(measureOption ? { arm: measureOption } : {}) };
       payload.status = sys >= 140 || dia >= 90 ? 'warning' : sys < 90 || dia < 60 ? 'low' : 'normal';
     } else if (measureType === 'sleep') {
       const dur = calcSleepDuration(measureValues.sleepTime, measureValues.wakeTime);

@@ -17,6 +17,7 @@ export default function BloodPressurePhoto({ onSaved }) {
   const [draft, setDraft] = useState(null);
   const [photo, setPhoto] = useState(null);
   const [values, setValues] = useState({});
+  const [arm, setArm] = useState('');
   const [when, setWhen] = useState(localTime);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -46,13 +47,14 @@ export default function BloodPressurePhoto({ onSaved }) {
   const submit = async () => {
     if (lock.current || !draft) return;
     if (!confirmed) { setError('请勾选确认原图、数值和测量时间无误'); return; }
+    if (!arm) { setError('请选择左臂或右臂'); return; }
     if (!/^\d+$/.test(values.sys || '') || !/^\d+$/.test(values.dia || '') || (values.pulse && !/^\d+$/.test(values.pulse))) { setError('请填写完整的整数读数，脉搏可留空'); return; }
     lock.current = true; setBusy(true); setError('');
     try {
       await recordsAPI.create({
         type: 'bloodPressure', category: 'vitals', label: '血压', unit: 'mmHg',
         value: Number(values.sys) + '/' + Number(values.dia),
-        extra: { sys: Number(values.sys), dia: Number(values.dia), pulse: values.pulse ? Number(values.pulse) : null },
+        extra: { sys: Number(values.sys), dia: Number(values.dia), pulse: values.pulse ? Number(values.pulse) : null, arm },
         recordedAt: when.date + 'T' + when.time + ':00+08:00', imageUrl: photo.image,
         photoRecognition: { token: draft.token, confirmed: true },
       });
@@ -68,6 +70,10 @@ export default function BloodPressurePhoto({ onSaved }) {
     {photo && <Image src={photo.path} mode="aspectFit" style={{ width: '100%', height: '180px' }} onClick={() => Taro.previewImage({ current: photo.path, urls: [photo.path] })} />}
     {draft && <View>
       <Text>{draft.message}</Text>
+      <Text style={{ display: 'block', marginTop: '8px' }}>测量手臂</Text>
+      <View style={{ display: 'flex', gap: '8px' }}>
+        {['左臂', '右臂'].map(option => <View key={option} onClick={() => { setArm(option); setConfirmed(false); }} style={{ ...field, backgroundColor: arm === option ? '#d7ece2' : '#fff' }}><Text>{option}</Text></View>)}
+      </View>
       {[['sys', '收缩压 / 高压（mmHg）'], ['dia', '舒张压 / 低压（mmHg）'], ['pulse', '脉搏（次/分，可留空）']].map(([key, label]) => <View key={key}>
         <Text>{label}</Text><Input disabled={busy} style={inputField} type="number" value={values[key] || ''} placeholder="未识别，请核对补填" onInput={e => update(key, e.detail.value)} />
       </View>)}

@@ -4,6 +4,8 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { recordsAPI, userAPI, ibdAPI } from '../../../services/api';
 import TrendChart from '../../../components/TrendChart';
+import BloodPressureChart from '../../../components/BloodPressureChart';
+import { bloodPressurePoints } from '../../../utils/bloodPressureTrend';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { useAuth } from '../../../context/AuthContext';
@@ -91,6 +93,7 @@ export default function RecordsIndexPage() {
     setTrendError(results.some(result=>result.status==='rejected'||result.value?.success===false)?'部分趋势更新失败，点击重试':'');
     results.forEach((result,index)=>{
       if(result.status!=='fulfilled'||result.value?.success===false||!Array.isArray(result.value?.data))return;
+      if(index===0){setBpTrend(result.value.data);return;}
       const points=result.value.data.map(row=>{
         const date=new Date(row.recordedAt);
         const value=Number.parseFloat(index===0?(row.extra?.sys??row.value):row.value);
@@ -103,8 +106,10 @@ export default function RecordsIndexPage() {
   const filtered = records.filter((r) => r.type === filter);
   const dailyRecords = records.filter((r) => DAILY_TYPES.includes(r.type));
   const symptoms = records.filter((r) => r.type === 'symptom');
+  const bpPoints = bloodPressurePoints(bpTrend, 60);
+  const bpLatestByArm = ['左臂', '右臂', '未标注'].map(arm => ({ arm, point: [...bpPoints].reverse().find(point => point.arm === arm) })).filter(item => item.point);
   const trendMap = {
-    bloodPressure: { data: bpTrend, color: colors.danger, label: '血压 (mmHg)' },
+    bloodPressure: { data: bpTrend, color: colors.danger, label: '近30天血压趋势 (mmHg)' },
     bloodSugar: { data: bsTrend, color: colors.warning, label: '血糖 (mmol/L)' },
     sleep: { data: sleepTrend, color: '#7C3AED', label: '睡眠 (小时)' },
     heartRate: { data: heartTrend, color: '#DC2626', label: '心率 (次/分)' },
@@ -154,11 +159,16 @@ export default function RecordsIndexPage() {
               ))}
             </View>
             <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{trendMap[trendTab].label}</Text>
-            {trendMap[trendTab].data.length>0?<View style={{marginBottom:'10px'}}>
+            {trendTab === 'bloodPressure' ? <View style={{ marginBottom: '10px' }}>
+              {bpLatestByArm.map(({ arm, point }) => <View key={arm} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                <Text style={{ fontSize: '13px', color: colors.textSecondary }}>{arm} · {formatRecordDate(point.recordedAt)}</Text>
+                <Text style={{ fontSize: '15px', fontWeight: 700, color: arm === '右臂' ? colors.danger : colors.primary }}>{point.sys}/{point.dia} mmHg</Text>
+              </View>)}
+            </View> : trendMap[trendTab].data.length>0?<View style={{marginBottom:'10px'}}>
               <Text style={{fontSize:'26px',fontWeight:800,color:trendMap[trendTab].color,display:'block'}}>{trendMap[trendTab].data[trendMap[trendTab].data.length-1].displayValue} {TYPE_META[trendTab].unit}</Text>
               <Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'4px'}}>最近记录：{formatRecordDate(trendMap[trendTab].data[trendMap[trendTab].data.length-1].recordedAt)}</Text>
             </View>:<Text style={{display:'block',color:colors.textSecondary}}>暂无{TYPE_META[trendTab].label}记录</Text>}
-            <TrendChart points={trendMap[trendTab].data} height={120} color={trendMap[trendTab].color} mode="line" />
+            {trendTab === 'bloodPressure' ? <BloodPressureChart records={bpTrend} height={105} /> : <TrendChart points={trendMap[trendTab].data} height={120} color={trendMap[trendTab].color} mode="line" />}
           </View>
         )}
       </View>

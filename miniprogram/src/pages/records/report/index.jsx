@@ -4,11 +4,23 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { userAPI, recordsAPI } from '../../../services/api';
 import TrendChart from '../../../components/TrendChart';
+import BloodPressureChart from '../../../components/BloodPressureChart';
+import { recordsWithinDays } from '../../../utils/reportTrend';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/HealthReportScreen.js 的核心信息：周期评分+指标趋势图化展示+任务完成率+亮点。
 const TREND_ICON = { down: '↓', up: '↑', stable: '–' };
+const bloodPressureArm = record => {
+  const arm = record?.arm || record?.extra?.arm || record?.note || '';
+  if (/左[臂手]/.test(arm)) return '左臂';
+  if (/右[臂手]/.test(arm)) return '右臂';
+  return '未标注手臂';
+};
+const recordDate = value => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '时间未记录' : `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
 
 export default function HealthReportPage() {
   const { statusBarHeight } = useNavBar();
@@ -16,13 +28,39 @@ export default function HealthReportPage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState({});
+  const [showRecords, setShowRecords] = useState(false);
+  const [records, setRecords] = useState([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState('');
 
   useEffect(() => {
     setLoading(true);
+    setReport(null);
+    setShowRecords(false);
     userAPI.getReport(period).then((res) => {
       if (res.success) setReport(res.data);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [period]);
+
+  useEffect(() => {
+    if (!report) return;
+    let active = true;
+    setRecords([]);
+    setRecordsError('');
+    setRecordsLoading(true);
+    (async () => {
+      const all = [];
+      for (let page = 1; page <= 20; page += 1) {
+        const result = await recordsAPI.list({ days: period === 'month' ? 30 : 7, limit: 100, page });
+        if (!result.success || !Array.isArray(result.data)) throw new Error('健康记录加载失败');
+        all.push(...result.data);
+        if (result.data.length < 100) break;
+      }
+      if (active) setRecords(all.filter(record => ['bloodPressure', 'bloodSugar', 'heartRate', 'weight'].includes(record.type)));
+    })().catch(() => { if (active) setRecordsError('明细加载失败，请稍后重试'); })
+      .finally(() => { if (active) setRecordsLoading(false); });
+    return () => { active = false; };
+  }, [report, period]);
 
   useEffect(() => {
     if (!report?.metrics?.length) return;
@@ -32,9 +70,10 @@ export default function HealthReportPage() {
       results.forEach((r, i) => {
         if (r.status === 'fulfilled' && r.value?.data) {
           const m = report.metrics[i];
-          next[m.type || m.key || m.label] = r.value.data.slice(-days).map((rec) => ({
-            label: new Date(rec.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
+          next[m.type || m.key || m.label] = recordsWithinDays(r.value.data, days).map((rec) => ({
+            label: `${new Date(rec.recordedAt).getMonth() + 1}/${new Date(rec.recordedAt).getDate()}`,
             value: rec.extra?.sys || parseFloat(rec.value) || 0,
+            arm: m.type === 'bloodPressure' ? bloodPressureArm(rec) : '',
           }));
         }
       });
@@ -43,6 +82,8 @@ export default function HealthReportPage() {
   }, [report, period]);
 
   const score = report?.healthScore ?? report?.score;
+  const bpRecords = records.filter(record => record.type === 'bloodPressure');
+  const bpByArm = ['左臂', '右臂'].map(arm => ({ arm, record: bpRecords.find(record => bloodPressureArm(record) === arm) })).filter(item => item.record);
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -130,12 +171,21 @@ export default function HealthReportPage() {
                       <View style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Text style={{ fontSize: '16px', fontWeight: 800, color: statusColor }}>{m.value ?? m.displayValue}</Text>
                         <Text style={{ fontSize: '11px', color: colors.textMuted }}>{m.unit}</Text>
-                        {!!m.delta && (
+                        {!!m.delta && (m.type !== 'bloodPressure' || bpByArm.length === 0) && (
                           <Text style={{ fontSize: '11px', fontWeight: 600, color: trendColor, backgroundColor: trendColor + '20', padding: '2px 6px', borderRadius: `${radius.full}px` }}>{TREND_ICON[m.trend] || ''} {m.delta}</Text>
                         )}
                       </View>
                     </View>
-                    {points?.length > 1 && <TrendChart points={points} height={70} color={statusColor} />}
+                    {m.type === 'bloodPressure' && bpByArm.length > 0 && (
+                      <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                        {bpByArm.map(({ arm, record }) => <Text key={arm} style={{ fontSize: '12px', color: colors.textSecondary, backgroundColor: colors.background, padding: '5px 8px', borderRadius: `${radius.sm}px` }}>{arm} {record.value} mmHg · {recordDate(record.recordedAt)}</Text>)}
+                      </View>
+                    )}
+                    {m.type === 'bloodPressure' ? (recordsLoading
+                      ? <Text style={{ fontSize: '12px', color: colors.textMuted }}>血压趋势加载中...</Text>
+                      : recordsError ? <Text style={{ fontSize: '12px', color: colors.danger }}>{recordsError}</Text>
+                      : <View><Text style={{ display: 'block', fontSize: '11px', color: colors.textMuted, marginBottom: '6px' }}>{period === 'month' ? '近30天' : '近7天'}血压趋势</Text><BloodPressureChart records={bpRecords} height={105} /></View>)
+                      : points?.length > 1 && <TrendChart points={points} height={70} color={statusColor} />}
                   </View>
                 );
               })}
@@ -143,9 +193,26 @@ export default function HealthReportPage() {
           )}
 
           {!!report.recordCount && (
-            <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
+            <View onClick={() => setShowRecords(value => !value)} style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
               <Text style={{ fontSize: '18px' }}>📋</Text>
               <Text style={{ fontSize: '14px', color: colors.textSecondary }}>本期共记录 <Text style={{ fontSize: '16px', fontWeight: 800, color: colors.primary }}>{report.recordCount}</Text> 条健康数据</Text>
+              <Text style={{ marginLeft: 'auto', fontSize: '13px', color: colors.primary }}>{showRecords ? '收起 ▲' : '查看明细 ›'}</Text>
+            </View>
+          )}
+
+          {showRecords && (
+            <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, marginTop: '8px', padding: `0 ${spacing.md}px`, boxShadow: shadow.card }}>
+              {recordsLoading ? <Text style={{ display: 'block', padding: '12px 0', fontSize: '12px', color: colors.textMuted }}>加载明细中...</Text>
+                : recordsError ? <Text style={{ display: 'block', padding: '12px 0', fontSize: '12px', color: colors.danger }}>{recordsError}</Text>
+                : records.length ? records.map((record, index) => (
+                <View key={record._id || index} style={{ padding: '12px 0', borderBottom: index < records.length - 1 ? `1px solid ${colors.border}` : 'none' }}>
+                  <View style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                    <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 600 }}>{record.label}{record.type === 'bloodPressure' ? ` · ${bloodPressureArm(record)}` : ''}</Text>
+                    <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 700 }}>{record.value} {record.unit}</Text>
+                  </View>
+                  <Text style={{ display: 'block', marginTop: '4px', fontSize: '11px', color: colors.textMuted }}>{recordDate(record.recordedAt)}</Text>
+                </View>
+              )) : <Text style={{ display: 'block', padding: '12px 0', fontSize: '12px', color: colors.textMuted }}>暂无可查看的记录明细</Text>}
             </View>
           )}
 

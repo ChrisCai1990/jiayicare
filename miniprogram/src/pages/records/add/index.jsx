@@ -56,6 +56,7 @@ export default function AddRecordPage() {
   const [wakeTime, setWakeTime] = useState('06:30');
   const [moodScore, setMoodScore] = useState(7);
   const [note, setNote] = useState('');
+  const [bloodPressureArm, setBloodPressureArm] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -69,9 +70,10 @@ export default function AddRecordPage() {
       const sys = parseInt(values.sys, 10);
       const dia = parseInt(values.dia, 10);
       if (!sys || !dia) { setError('请填写完整的收缩压/舒张压'); return; }
+      if (!bloodPressureArm) { setError('请选择左臂或右臂'); return; }
       payload = {
         type: 'bloodPressure', category: 'vitals', label: '血压', unit: 'mmHg',
-        value: `${sys}/${dia}`, extra: { sys, dia },
+        value: `${sys}/${dia}`, extra: { sys, dia, arm: bloodPressureArm },
         status: sys >= 140 || dia >= 90 ? 'warning' : sys < 90 || dia < 60 ? 'low' : 'normal',
         note,
       };
@@ -155,6 +157,12 @@ export default function AddRecordPage() {
 
       <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px` }}>
         {activeType.id === 'bloodPressure' && <BloodPressurePhoto onSaved={() => Taro.navigateBack()} />}
+        {activeType.id === 'bloodPressure' && <View style={{ margin: '12px 0' }}>
+          <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>手工录入测量手臂</Text>
+          <View style={{ display: 'flex', gap: '8px' }}>
+            {['左臂', '右臂'].map(arm => <View key={arm} onClick={() => setBloodPressureArm(arm)} style={{ padding: '8px 16px', borderRadius: `${radius.full}px`, backgroundColor: bloodPressureArm === arm ? colors.primary : colors.background }}><Text style={{ color: bloodPressureArm === arm ? '#fff' : colors.textPrimary }}>{arm}</Text></View>)}
+          </View>
+        </View>}
         {activeType.id === 'bloodSugar' && <BloodSugarPhoto onSaved={() => Taro.navigateBack()} />}
         {activeType.id === 'weight' && <WeightPhoto onSaved={() => Taro.navigateBack()} />}
         {activeType.id === 'sleep' ? (
