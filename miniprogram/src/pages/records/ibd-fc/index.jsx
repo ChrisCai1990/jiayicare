@@ -102,12 +102,13 @@ export default function IbdFcPage() {
       });
       if (!created?.data?._id) throw new Error('报告存档未完成');
       setReportId(created.data._id);
+      setDate(''); setValue(''); setInstitution('');
       setUploadMessage('报告已保存，正在识别…');
       const recognized = await ibdAPI.recognizeFc(created.data._id);
       const result = recognized?.data || {};
-      if (result.date) setDate(result.date);
-      if (result.value !== '') setValue(String(result.value));
-      if (result.institution) setInstitution(result.institution);
+      setDate(result.date || '');
+      setValue(result.recognized ? String(result.value) : '');
+      setInstitution(result.institution || '');
       setUploadMessage(result.recognized ? '已提取候选结果，请核对报告后保存。' : '未识别到明确的 FC 数值，请依据报告手工填写。');
     } catch (err) {
       if (isImagePickerCancelled(err)) return;
@@ -147,7 +148,7 @@ export default function IbdFcPage() {
             <Text style={{ display: 'block', fontSize: '12px', color: colors.textSecondary, marginBottom: '12px' }}>请依据检验报告填写；客户录入结果标记为待核验。</Text>
             <View onClick={uploading ? undefined : uploadReport} style={{ border: `1px solid ${colors.primary}`, borderRadius: '9px', padding: '12px', textAlign: 'center', marginBottom: '8px', opacity: uploading ? 0.6 : 1 }}><Text style={{ color: colors.primary, fontWeight: 700 }}>{uploading ? '报告处理中…' : '上传 FC 检验报告并识别'}</Text></View>
             {!!uploadMessage && <Text style={{ display: 'block', fontSize: '12px', color: colors.textSecondary, marginBottom: '12px' }}>{uploadMessage}</Text>}
-            <Text style={{ color: colors.textPrimary }}>采样日期</Text><Picker mode="date" value={date} end={today()} onChange={event => setDate(event.detail.value)}><View style={field}>{date}</View></Picker>
+            <Text style={{ color: colors.textPrimary }}>采样日期</Text><Picker mode="date" value={date || today()} end={today()} onChange={event => setDate(event.detail.value)}><View style={field}>{date || '请选择报告上的采样日期'}</View></Picker>
             <Text style={{ color: colors.textPrimary }}>FC 数值（μg/g）</Text><Input type="digit" value={value} onInput={event => setValue(event.detail.value)} style={inputField} placeholder="填写报告上的数值" />
             <Text style={{ color: colors.textPrimary }}>检测机构（选填）</Text><Input value={institution} onInput={event => setInstitution(event.detail.value)} style={inputField} placeholder="例如医院或检验机构" />
             <View onClick={saving ? undefined : save} style={{ backgroundColor: colors.primary, borderRadius: '9px', padding: '12px', textAlign: 'center', opacity: saving ? 0.6 : 1 }}><Text style={{ color: '#fff', fontWeight: 700 }}>{saving ? '保存中…' : '保存 FC 结果'}</Text></View>
