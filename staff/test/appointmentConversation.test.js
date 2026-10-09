@@ -41,3 +41,23 @@ test('extracts a specific communication time window', () => {
   assert.equal(result.preferredTimeStart, '14:00')
   assert.equal(result.preferredTimeEnd, '16:00')
 })
+
+test('IBD booking uses the customer confirmed weekday and institution', () => {
+  const result = inferAppointmentConversation([
+    { type: 'planner', content: '目前是周二、三、五的下午，您看哪天方便' },
+    { type: 'user', content: '下周二吧' },
+    { type: 'user', content: '医院：浙江大学医学院附属第二医院' },
+  ], new Date('2026-10-09T12:00:00+08:00'))
+  assert.equal(result.preferredDateStart, '2026-10-13')
+  assert.equal(result.preferredDateEnd, '2026-10-13')
+  assert.equal(result.institution, '浙江大学医学院附属第二医院')
+})
+
+test('latest customer date overrides an older AI proposal without treating staff suggestion as confirmation', () => {
+  const result = inferAppointmentConversation([
+    { type: 'planner', isAI: true, content: '期望时间：2026年10月20日；建议医院：浙二医院' },
+    { type: 'user', content: '下周二吧' },
+  ], new Date('2026-10-09T12:00:00+08:00'))
+  assert.equal(result.preferredDateStart, '2026-10-13')
+  assert.equal(result.institution, '')
+})

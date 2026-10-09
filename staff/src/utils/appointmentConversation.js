@@ -16,13 +16,18 @@ export function inferAppointmentConversation(messages = [], now = new Date()) {
   const aiText = messages.filter(message => message.isAI && !message.recalled)
     .map(message => message.content || message.text || '').filter(Boolean).join('；')
   const text = [customerText, aiText].filter(Boolean).join('；')
+  // 客户最后确认的时间优先于旧的候选日期和 AI 摘要。
+  const hasDate = value => /\d{1,2}[月/-]\d{1,2}|(?:下|本|这)?(?:周|星期)[一二三四五六日天]|明天|后天/.test(value)
+  const lastCustomerDate = [...customerMessages].reverse().find(message => hasDate(message.content || message.text || ''))
+  const dateText = lastCustomerDate ? (lastCustomerDate.content || lastCustomerDate.text || '') : (aiText || customerText)
   let start = ''
   let end = ''
   let timeStart = ''
   let timeEnd = ''
-  const explicitRange = text.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?\s*[-到至~—－]\s*(?:(\d{4})[年/-])?(?:(\d{1,2})[月/-])?(\d{1,2})日?/)
-  const explicitDate = text.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?/)
-  const weekRange = text.match(/(?:周|星期)([一二三四五六日天])\s*[-到至~—－]\s*(?:周|星期)?([一二三四五六日天])/)
+  const explicitRange = dateText.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?\s*[-到至~—－]\s*(?:(\d{4})[年/-])?(?:(\d{1,2})[月/-])?(\d{1,2})日?/)
+  const explicitDate = dateText.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?/)
+  const weekRange = dateText.match(/(下周|本周|这周)?\s*(?:周|星期)([一二三四五六日天])\s*[-到至~—－]\s*(?:周|星期)?([一二三四五六日天])/)
+  const singleWeekday = dateText.match(/(下周|本周|这周)?\s*(?:周|星期)([一二三四五六日天])/)
   const weekday = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7 }
   const calendarDate = (year, month, day) => dateInput(new Date(Number(year), Number(month) - 1, Number(day)))
   if (explicitRange) {
@@ -36,19 +41,26 @@ export function inferAppointmentConversation(messages = [], now = new Date()) {
     end = start
   } else if (weekRange) {
     const base = startOfWeek(now)
-    const first = new Date(base); first.setDate(base.getDate() + weekday[weekRange[1]] - 1)
-    const last = new Date(base); last.setDate(base.getDate() + weekday[weekRange[2]] - 1)
+    if (weekRange[1] === '下周') base.setDate(base.getDate() + 7)
+    const first = new Date(base); first.setDate(base.getDate() + weekday[weekRange[2]] - 1)
+    const last = new Date(base); last.setDate(base.getDate() + weekday[weekRange[3]] - 1)
     start = dateInput(first); end = dateInput(last)
-  } else if (/下周/.test(text)) {
+  } else if (singleWeekday) {
+    const base = startOfWeek(now)
+    if (singleWeekday[1] === '下周') base.setDate(base.getDate() + 7)
+    const selected = new Date(base); selected.setDate(base.getDate() + weekday[singleWeekday[2]] - 1)
+    if (!singleWeekday[1] && selected < new Date(now.getFullYear(), now.getMonth(), now.getDate())) selected.setDate(selected.getDate() + 7)
+    start = dateInput(selected); end = start
+  } else if (/下周/.test(dateText)) {
     const first = startOfWeek(now); first.setDate(first.getDate() + 7)
     const last = new Date(first); last.setDate(last.getDate() + 6)
     start = dateInput(first); end = dateInput(last)
-  } else if (/本周|这周/.test(text)) {
+  } else if (/本周|这周/.test(dateText)) {
     const first = new Date(now); const last = startOfWeek(now); last.setDate(last.getDate() + 6)
     start = dateInput(first); end = dateInput(last)
-  } else if (/明天|后天/.test(text)) {
+  } else if (/明天|后天/.test(dateText)) {
     const date = new Date(now)
-    date.setDate(date.getDate() + (/后天/.test(text) ? 2 : 1))
+    date.setDate(date.getDate() + (/后天/.test(dateText) ? 2 : 1))
     start = dateInput(date); end = start
   }
   const normalizedTimeText = text.replace(/(\d{1,2})点(?!\d)/g, '$1:00')
@@ -66,12 +78,18 @@ export function inferAppointmentConversation(messages = [], now = new Date()) {
   }
   const meaningfulCustomerText = customerText.split('；')
     .map(value => value.replace(/^(你好|您好)[，,。\s]*/g, '').trim())
-    .filter(value => value && !/^(好的|是的|对|可以|谢谢)[，,。！!\s]*$/.test(value))
+    .filter(value => value && !/^(好的|是的|对|可以|谢谢)[，,。！!\s]*$/.test(value) && !/^(?:下|本|这)?(?:周|星期)[一二三四五六日天](?:吧|可以)?[，,。！!\s]*$/.test(value))
     .join('；')
   const field = labels => aiText.match(new RegExp(`(?:${labels})[：:]\\s*([^；\\n]+)`))?.[1]?.trim() || ''
   const aiServiceContent = field('服务内容|约诊需求|就医安排')
   const aiCustomerNeed = field('客户诉求|客户需求|就医诉求|主诉')
   const request = meaningfulCustomerText || aiCustomerNeed || aiServiceContent
+  const institutionFromText = value => {
+    const labelled = value.match(/(?:医院|机构|院区|就诊地点)[：:]\s*([^，,。；\n]{2,60})/)
+    if (labelled) return labelled[1].trim()
+    return value.match(/(?:去|到|在|选|定在)\s*([^，,。；\s]{2,40}(?:医院|医疗中心|诊所))/)?.[1]?.trim() || ''
+  }
+  const institution = [...customerMessages].reverse().map(message => institutionFromText(message.content || message.text || '')).find(Boolean) || ''
   return {
     preferredDateStart: start,
     preferredDateEnd: end,
@@ -79,5 +97,6 @@ export function inferAppointmentConversation(messages = [], now = new Date()) {
     preferredTimeEnd: timeEnd,
     serviceContent: aiServiceContent || request,
     customerNeed: aiCustomerNeed || request,
+    institution,
   }
 }

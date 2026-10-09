@@ -13709,6 +13709,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const isMedicalReminder = isMedicalReminderOrder
   const isExpertAppointment = /专家约诊/.test(order?.serviceName || '')
   const isMedicalPlanning = /就医规划/.test(order?.serviceName || '')
+  const isIbdManagement = order?.specialtyTermsSnapshot?.key === 'ibd' || order?.specialtyService?.key === 'ibd' || /IBD.*专病管理/i.test(order?.serviceName || '')
   const orderId = order?._id || order
   const initialRequirement = String(initialBookingForm?.serviceContent || order?.serviceRequirements || order?.note || '')
   const customerTaskParts = initialRequirement
@@ -13742,7 +13743,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [proxyCustomerNeed, setProxyCustomerNeed] = useState(order?.aiIntake?.customerNeed || '')
   const categoryText = `${order?.aiIntake?.serviceContent || ''} ${initialRequirement}`
   const categoryValue = label => categoryText.match(new RegExp(`${label}：([^；\\n]+)`))?.[1]?.trim() || ''
-  const [suggestedHospital, setSuggestedHospital] = useState(categoryValue('建议医院'))
+  const [suggestedHospital, setSuggestedHospital] = useState(isIbdManagement ? categoryValue('客户意向机构') : categoryValue('建议医院'))
   const [department, setDepartment] = useState(categoryValue('科室'))
   const [expert, setExpert] = useState(categoryValue('专家'))
   const [clinicType, setClinicType] = useState(/国际门诊/.test(categoryText) ? 'international' : /特需门诊/.test(categoryText) ? 'special' : /专家门诊/.test(categoryText) ? 'expert' : '')
@@ -13792,9 +13793,18 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
     // The AI planning dialogue commonly happens before checkout, so it can sit
     // just outside the order-only window. Use the recent unified planner thread
     // for extraction while keeping the message display scoped to this order.
-    const inferred = inferAppointmentConversation(msgs.slice(-50))
+    const source = isIbdManagement ? visibleMsgs : msgs.slice(-50)
+    if (!source.length) { setBookingError('本单暂无可提取的对话，请手工填写'); return }
+    const inferred = inferAppointmentConversation(source)
     if (inferred.preferredDateStart) setServiceTime(inferred.preferredDateStart)
     if (inferred.preferredDateEnd) setServiceTimeEnd(inferred.preferredDateEnd)
+    if (isIbdManagement) {
+      if (inferred.institution) setSuggestedHospital(inferred.institution)
+      if (!serviceTask.trim()) setServiceTask('IBD 年度专病管理：安排专科首诊与首次陪诊，后续按专科方案跟进')
+      setBookingError('')
+      toast(inferred.preferredDateStart || inferred.institution ? '已填入本单对话信息，请核对日期和客户意向机构' : '未找到明确的日期或机构，请手工填写')
+      return
+    }
     if (inferred.preferredTimeStart) setCommunicationTimeStart(inferred.preferredTimeStart)
     if (inferred.preferredTimeEnd) setCommunicationTimeEnd(inferred.preferredTimeEnd)
     if (inferred.serviceContent) setProxyServiceContent(inferred.serviceContent)
@@ -14098,7 +14108,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               {order?.supplementFulfillment?.orderNo && <div style={{ fontSize: 12, color: '#4A6558' }}>已登记订单号：{order.supplementFulfillment.orderNo}。请联系客户确认是否收到。</div>}
             </div> : isMedicationProxy ? <MedicationProxyStageForm task={{ sourceType: 'order', workflowKey: 'medication_proxy:intake', sourceOrderId: order, patientId }} value={medicationData} staffList={medicationStaffList} onChange={setMedicationData} /> : <>
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
-              {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
+              {(isMedicalProxy || isIbdManagement) && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动提取</button></div>}
               <div style={{ display: 'grid', gridTemplateColumns: isMedicalPlanning ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600 }}>{isMedicalPlanning ? '预期沟通日期' : '期望开始日期'}<DateField className="form-input" type="date" value={serviceTime} onChange={e => { setServiceTime(e.target.value); if (isMedicalPlanning) setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>
                 {isMedicalPlanning ? <>
@@ -14106,6 +14116,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                   <label style={{ fontSize: 12, fontWeight: 600 }}>可沟通结束时间<input className="form-input" type="time" value={communicationTimeEnd} onChange={e => { setCommunicationTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>
                 </> : <label style={{ fontSize: 12, fontWeight: 600 }}>期望结束日期<DateField className="form-input" type="date" min={serviceTime} value={serviceTimeEnd} onChange={e => { setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>}
               </div>
+              {isIbdManagement && <label style={{ fontSize: 12, fontWeight: 600 }}>客户意向医院/机构（待健康顾问确认）<input className="form-input" value={suggestedHospital} onChange={e => setSuggestedHospital(e.target.value)} placeholder="仅填写客户已确认的意向机构" /></label>}
               {isMedicalProxy ? <>
                 {isExpertAppointment && <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -14168,7 +14179,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                   ].filter(Boolean).join('；') : ''
                   const confirmedContent = [proxyServiceContent.trim(), appointmentCategories].filter(Boolean).join('；')
                   const checkupAppointmentIntake = isCheckupAppointment ? { serviceType: checkupAppointmentType, preferredDateStart: serviceTime, preferredDateEnd: serviceTimeEnd, checkItems: serviceTask.split('\n').map(name => ({ name: name.trim() })).filter(item => item.name), institution: suggestedHospital.trim(), expert: expert.trim(), fastingRequired: checkupFastingRequired === 'yes', preparation: checkupPreparation.trim() } : undefined
-                  await onConfirmBooking?.({ orderId, serviceTime: isMedicalReminder ? medicalReminder.visitDate : serviceTime, serviceTimeEnd: isMedicalReminder ? medicalReminder.visitDate : isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalReminder ? `就医问题：${medicalReminder.medicalIssue}；就医目标：${medicalReminder.visitGoal}` : isMedicalProxy ? [confirmedContent, proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: confirmedContent, customerNeed: proxyCustomerNeed.trim(), medicationData, medicalReminderIntake: isMedicalReminder ? medicalReminder : undefined, checkupAppointmentIntake })
+                  await onConfirmBooking?.({ orderId, serviceTime: isMedicalReminder ? medicalReminder.visitDate : serviceTime, serviceTimeEnd: isMedicalReminder ? medicalReminder.visitDate : isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalReminder ? `就医问题：${medicalReminder.medicalIssue}；就医目标：${medicalReminder.visitGoal}` : isMedicalProxy ? [confirmedContent, proxyCustomerNeed.trim()].filter(Boolean).join('；') : isIbdManagement ? [serviceTask.trim(), suggestedHospital.trim() && `客户意向机构：${suggestedHospital.trim()}`].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: confirmedContent, customerNeed: proxyCustomerNeed.trim(), medicationData, medicalReminderIntake: isMedicalReminder ? medicalReminder : undefined, checkupAppointmentIntake })
                 }
                 catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }
