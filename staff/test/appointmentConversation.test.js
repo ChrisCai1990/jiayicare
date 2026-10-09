@@ -61,3 +61,12 @@ test('latest customer date overrides an older AI proposal without treating staff
   assert.equal(result.preferredDateStart, '2026-10-13')
   assert.equal(result.institution, '')
 })
+
+test('relative weekday is based on the message date even when reviewed a week later', () => {
+  const result = inferAppointmentConversation([
+    { type: 'user', content: '下周二吧', createdAt: '2026-10-09T05:33:00Z' },
+    { type: 'user', content: '就浙二医院', createdAt: '2026-10-09T05:34:00Z' },
+  ], new Date('2026-10-16T12:00:00+08:00'))
+  assert.equal(result.preferredDateStart, '2026-10-13')
+  assert.equal(result.institution, '浙二医院')
+})
