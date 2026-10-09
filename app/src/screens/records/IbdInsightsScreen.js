@@ -44,6 +44,25 @@ function SeriesChart({ title, rows, maxY, color, start, end, unit = '分', break
   </View>;
 }
 
+function OverlayChart({ series, start, end }) {
+  const span = Math.max(1, end - start);
+  const plotted = series.map(item => ({ ...item, points: item.rows.filter(row => Number.isFinite(Number(row.value)) && Number.isFinite(ms(row.date))).sort((a, b) => a.date.localeCompare(b.date)) }));
+  if (!plotted.some(item => item.points.length)) return <View style={styles.chartBox}><Text style={styles.empty}>暂无可对照的记录</Text></View>;
+  const xy = (row, max) => ({ x: 10 + ((ms(row.date) - start) / span) * (W - 20), y: 86 - Math.min(1, Number(row.value) / max) * 70 });
+  return <View style={styles.chartBox}><Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+    <Line x1="10" y1="86" x2={W - 10} y2="86" stroke="#DDE9E3" />
+    {plotted.flatMap(item => item.points.slice(1).map((row, index) => {
+      const prev = item.points[index];
+      if ((ms(row.date) - ms(prev.date)) / 86400000 > item.breakDays) return null;
+      const a = xy(prev, item.max), b = xy(row, item.max);
+      return <Line key={`${item.title}-line-${index}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={item.color} strokeWidth="2" />;
+    }))}
+    {plotted.flatMap(item => item.points.map((row, index) => { const p = xy(row, item.max); return <Circle key={`${item.title}-dot-${index}`} cx={p.x} cy={p.y} r="3.5" fill={item.color} />; }))}
+  </Svg><View style={styles.axis}><Text style={styles.axisText}>{new Date(start).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', timeZone: 'Asia/Shanghai' })}</Text><Text style={styles.axisText}>{new Date(end).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', timeZone: 'Asia/Shanghai' })}</Text></View>
+    <View style={styles.row}>{plotted.map(item => <Text key={item.title} style={{ fontSize: 11, color: item.color, marginRight: 8 }}>● {item.title}（0–{item.max}）</Text>)}</View>
+  </View>;
+}
+
 export default function IbdInsightsScreen({ navigation }) {
   const [data, setData] = useState(null);
   const [scales, setScales] = useState([]);
@@ -106,6 +125,7 @@ export default function IbdInsightsScreen({ navigation }) {
     { title: '每日排便次数', rows: diaryRows.map(row => ({ ...row, value: row.bowelCount })), color: '#1E6B50', unit: '次', breakDays: 3 },
     { title: '腹痛评分', rows: diaryRows.map(row => ({ ...row, value: row.pain })), maxY: 10, color: '#D97706', breakDays: 3 },
   ];
+  const overlaySeries = lines.map(line => ({ ...line, max: line.maxY || Math.max(10, ...line.rows.map(row => Number(row.value) || 0)), breakDays: line.breakDays || 60 }));
 
   return <View style={styles.page}><View style={styles.header}><TouchableOpacity onPress={() => navigation.goBack()}><Ionicons name="arrow-back" size={24} color={colors.textPrimary} /></TouchableOpacity><Text style={styles.title}>IBD 病情记录</Text><TouchableOpacity onPress={load}><Ionicons name="refresh" size={22} color={colors.primary} /></TouchableOpacity></View>
     {loading && !data ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : !data?.enabled ? <View style={styles.card}><Text style={styles.paragraph}>{error || '开通 IBD 专病管理服务后，可在这里记录病情并查看趋势。'}</Text></View> :
@@ -115,7 +135,8 @@ export default function IbdInsightsScreen({ navigation }) {
         {!!error && <Text style={styles.error}>{error}</Text>}
         {mode === 'trends' && <>
           <View style={styles.row}>{[[90, '近90天'], [365, '近1年']].map(([days, label]) => <Choice key={days} label={label} active={period === days} onPress={() => setPeriod(days)} />)}</View>
-          <Text style={styles.sectionTitle}>情绪—症状对照图</Text><Text style={styles.hint}>四条曲线共用日期范围，分别使用各自量程；仅在实际记录日显示数据点。</Text>
+          <Text style={styles.sectionTitle}>情绪—症状对照图</Text><Text style={styles.hint}>同图按各自量程比例定位，便于对照时间变化；不同指标的高度不能当作相同分数或因果关系。下方保留原始分数曲线。</Text>
+          <OverlayChart series={overlaySeries} start={start} end={end} />
           {lines.map(line => <SeriesChart key={line.title} {...line} start={start} end={end} />)}
           <Text style={styles.sectionTitle}>粪便钙卫蛋白（FC）</Text><SeriesChart title="FC 检测趋势" rows={fcRows} color="#0E7490" unit="μg/g" start={start} end={end} breakDays={120} />
           {fcRows.slice().reverse().map(row => <View key={row.id} style={styles.resultRow}><Text style={styles.paragraph}>{row.date}　{row.value} μg/g</Text><View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}><Text style={styles.meta}>{row.source}{row.institution ? ` · ${row.institution}` : ''}{!row.verified ? ' · 待核验' : ''}</Text>{!row.verified && <TouchableOpacity onPress={() => deleteFc(row)}><Text style={styles.error}>撤回</Text></TouchableOpacity>}</View></View>)}
