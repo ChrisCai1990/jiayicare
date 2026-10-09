@@ -475,6 +475,8 @@ export const staffAPI = {
   getMedicalReminderDraft: (orderId, messages) => req(`/staff/orders/${orderId}/medical-reminder-draft`, { method: 'POST', body: JSON.stringify({ messages }) }),
   getMedicationProxyDraft: (orderId, data) => req(`/staff/orders/${orderId}/medication-draft`, { method: 'POST', body: JSON.stringify(data) }),
   redeemOrder:          (orderId, note, serviceItemKey = '')   => req(`/staff/orders/${orderId}/redeem`, { method: 'POST', body: JSON.stringify({ note, serviceItemKey }) }),
+  recordIbdEscort:      (orderId, data) => req(`/staff/ibd-orders/${orderId}/escort`, { method: 'POST', body: JSON.stringify(data) }),
+  closeIbdOrder:        (orderId, summary) => req(`/staff/ibd-orders/${orderId}/close`, { method: 'POST', body: JSON.stringify({ summary }) }),
   setOrderFulfiller:    (orderId, fulfillerId) => req(`/staff/orders/${orderId}/fulfiller`, { method: 'PATCH', body: JSON.stringify({ fulfillerId }) }),
 
   // Abnormal Reviews

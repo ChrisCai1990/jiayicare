@@ -48,6 +48,13 @@ const productSchema = new mongoose.Schema({
   deliveryRequired: { type: Boolean, default: false },
   serviceLocation: { type: String, default: '' },
   validityDays: { type: Number, default: 365, min: 1 },
+  specialtyTerms: {
+    key: { type: String, enum: ['', 'ibd'], default: '' },
+    startDelayDays: { type: Number, default: 0, min: 0 },
+    durationMonths: { type: Number, default: 0, min: 0 },
+    includedEscorts: { type: Number, default: 0, min: 0 },
+    regions: [{ type: String, trim: true }],
+  },
   refundPolicy: { type: String, default: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。' },
   healthFundDeduction: {
     mode: { type: String, enum: ['inherit', 'disabled', 'unlimited', 'percentage', 'fixedAmount'], default: 'inherit' },

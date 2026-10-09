@@ -32,6 +32,28 @@ const orderSchema = new mongoose.Schema({
   performanceRuleSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   servicePerformerRolesSnapshot: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
   serviceWorkflowSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+  specialtyTermsSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+  specialtyService: {
+    key: { type: String, default: '' },
+    startsAt: { type: Date, default: null },
+    endsAt: { type: Date, default: null },
+    includedEscorts: { type: Number, default: 0 },
+    usedEscorts: { type: Number, default: 0 },
+    escortRecords: [{
+      visitKey: { type: String, required: true },
+      visitDate: { type: Date, required: true },
+      hospital: { type: String, required: true },
+      department: { type: String, default: '' },
+      expert: { type: String, default: '' },
+      companion: { type: String, default: '' },
+      evidence: { type: String, required: true },
+      recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
+      recordedAt: { type: Date, default: Date.now },
+    }],
+    annualSummary: { type: String, default: '' },
+    closedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    closedAt: { type: Date, default: null },
+  },
   // 下单时固定服务提供方与用户确认记录；后续商品配置调整不影响历史订单。
   serviceProviderSnapshot: {
     code: { type: String, enum: ['platform', 'jiayihui_health'], default: 'platform' },

@@ -26,6 +26,10 @@ function fmtDate(str) {
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
   } catch { return str; }
 }
+function fmtShanghaiDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '待确认' : date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
+}
 
 // ── 确认弹窗（替代 Alert.alert，Web 兼容）────────────────────────
 function ConfirmModal({ visible, title, message, onConfirm, onCancel, confirmText = '确定', cancelText = '取消', confirmDanger = false, loading = false }) {
@@ -60,6 +64,7 @@ function ConfirmModal({ visible, title, message, onConfirm, onCancel, confirmTex
 // ── 订单卡片 ──────────────────────────────────────────────────────
 function OrderCard({ order, onCancel }) {
   const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
+  const ibd = order.specialtyService?.key === 'ibd' ? order.specialtyService : null;
   const canCancel = order.status === 'pending' || order.status === 'scheduled';
   const totalUnits = Math.max(1, Number(order.totalUnits) || 1);
   const usedUnits = Math.min(totalUnits, Math.max(0, Number(order.usedUnits) || 0));
@@ -91,7 +96,15 @@ function OrderCard({ order, onCancel }) {
       </View>
 
       {/* 备注 */}
-      {(totalUnits > 1 || (order.serviceItemsSnapshot || []).length > 0) && (
+      {ibd && <View style={styles.usageCard}>
+        <View style={styles.usageHeader}>
+          <Text style={styles.usageTitle}>IBD 年度管理</Text>
+          <Text style={styles.usageSummary}>陪诊已用 {ibd.usedEscorts || 0}/{ibd.includedEscorts || 2} 次</Text>
+        </View>
+        <Text style={styles.usageNumberText}>服务期：{ibd.startsAt ? fmtShanghaiDate(ibd.startsAt) : '支付后第 7 天'} 至 {ibd.endsAt ? fmtShanghaiDate(new Date(ibd.endsAt).getTime() - 1) : '届满 12 个月'}</Text>
+        <Text style={styles.usageRemainingText}>诊疗、检查及药品费用由客户另付</Text>
+      </View>}
+      {!ibd && (totalUnits > 1 || (order.serviceItemsSnapshot || []).length > 0) && (
         <View style={styles.usageCard}>
           <View style={styles.usageHeader}>
             <Text style={styles.usageTitle}>服务使用进度</Text>

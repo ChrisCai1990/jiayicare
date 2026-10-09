@@ -104,6 +104,7 @@ app.use('/api/admin',         require('./routes/settings'));
 app.use('/api/admin/specialty-library', require('./routes/specialtyLibrary').adminRouter);
 app.use('/api/admin/ai-control', require('./routes/aiControl'));
 const staffRouter = require('./routes/staff');
+app.use('/api/staff/ibd-orders', require('./routes/ibdStaff'));
 app.use('/api/staff',         staffRouter);
 app.use('/api/staff/specialty-library', require('./routes/specialtyLibrary').staffRouter);
 app.use('/api/staff/clinical-standards', require('./routes/clinicalStandardsStaff'));

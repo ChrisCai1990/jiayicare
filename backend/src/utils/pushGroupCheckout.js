@@ -148,6 +148,7 @@ async function createLocked({ record, user, items, options }) {
         performanceRuleSnapshot: product.performanceRule?.toObject?.() || product.performanceRule || null,
         servicePerformerRolesSnapshot: (product.servicePerformerRoles || []).map(item => item.toObject ? item.toObject() : item),
         serviceWorkflowSnapshot: product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null,
+        specialtyTermsSnapshot: product.specialtyTerms?.toObject?.() || product.specialtyTerms || null,
         couponId: quote.coupon?._id || null, couponDiscount: allocation.coupon,
         healthFundAmount: (cents(allocation.personal) + cents(allocation.corporate)) / 100,
         healthFundBreakdown: { personal: allocation.personal, corporate: allocation.corporate }, healthFundEnterpriseId: quote.enterprise?._id || null,

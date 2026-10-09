@@ -1,11 +1,12 @@
 // Idempotent, unpublished catalogue draft. Run only for the Jiayihui tenant.
-// The draft has no price and cannot be purchased until commercial terms are confirmed.
+// The draft stays unpublished until the order and escort workflow is verified.
 require('dotenv').config();
 const mongoose = require('mongoose');
 const Tenant = require('../src/models/Tenant');
 const Product = require('../src/models/Product');
 const ProductCategory = require('../src/models/ProductCategory');
 const standard = require('../src/data/ibdStandardTemplate.json');
+const { PRICE, productTerms } = require('../src/utils/ibdServiceTerms');
 
 const NAME = 'IBD 年度专病管理服务';
 
@@ -30,18 +31,19 @@ async function main() {
     `服务概述\n${standard.overview}`,
     `岗位分工\n${standard.roles}`,
     '服务流程\n健康规划师接单和资料收集 → 健康顾问确定医院、科室、专家及就诊目的 → 健管专员预约并安排首次陪诊 → 回收病历、健康顾问审核 → AI 起草随访计划、健康顾问审核 → 健管按个性化方案跟进并反馈顾问 → 依专科意见安排复诊和陪诊 → 年度回顾。',
-    `服务范围与费用\n${standard.serviceBoundary} 首次及服务期内复诊陪诊均包含在售价内；跨城交通、住宿及异地陪诊安排须购买前确认。`,
+    `服务范围与费用\n售价 ¥${PRICE}，服务自支付成功后第 7 天起算，连续管理 12 个月，覆盖长三角和珠三角。服务期共含 2 次陪诊，可用于首次及复诊；超出 2 次的陪诊另行确认服务和费用。${standard.serviceBoundary.replace('首次及后续复诊陪诊包含在服务内；', '')} 跨城交通、住宿及具体陪诊安排须购买前确认。`,
     `记录与调整\n${standard.diaryGuide} ${standard.exceptionGuide}`,
-    '服务说明\n服务期为一年，具体起算规则、服务城市及售价以正式上架说明和服务协议为准。医院号源及专家出诊可能变化，不承诺特定专家或日期。',
+    '服务说明\n服务期为一年。医院号源及专家出诊可能变化，不承诺特定专家或日期；诊疗调整由专科医师决定。',
   ].join('\n\n');
   const product = await Product.create({
     tenantId, name: NAME, subtitle: '健康顾问负责制 · 专科协作 · 1 年院外管理',
-    category: '专病管理', originalPrice: null, servicePrices: [], memberPrices: {},
+    category: '专病管理', originalPrice: PRICE, servicePrices: [], memberPrices: {},
     sortOrder: 70, stock: 0, stockLimited: false, status: 'off',
-    features: ['健康顾问负责', '专科医师决定诊疗', '首次及复诊陪诊', '病历与随访管理', 'IBD 日记和趋势图'],
+    features: ['健康顾问负责', '专科医师决定诊疗', '含 2 次陪诊', '病历与随访管理', 'IBD 日记和趋势图'],
     description, fulfillmentType: 'subscription_service', paymentChannel: 'wechat_pay',
     bookingRequired: true, deliveryRequired: false, validityDays: 365,
-    serviceLocation: '院外线上管理；线下就诊与陪诊城市购买前确认',
+    serviceLocation: '长三角、珠三角（具体医院与陪诊安排由健康顾问确认）',
+    specialtyTerms: productTerms(),
     refundPolicy: '服务开始前可申请退款；服务开始后的退费根据已实际提供服务、陪诊安排及双方确认的服务协议核算。医院诊疗与检查费用由客户向院方另付。',
     healthFundDeduction: { mode: 'disabled', value: 0 },
     aiProfile: { enabledForRecommendation: false },

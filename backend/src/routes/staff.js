@@ -2790,7 +2790,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     );
     if (completedPlan?.sourceOrderId) {
       await Order.updateOne(
-        { _id: completedPlan.sourceOrderId, totalUnits: { $lte: 1 }, status: { $nin: ['completed', 'cancelled'] } },
+        { _id: completedPlan.sourceOrderId, totalUnits: { $lte: 1 }, 'specialtyTermsSnapshot.key': { $ne: 'ibd' }, status: { $nin: ['completed', 'cancelled'] } },
         { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt: new Date(), usedUnits: 1 } }
       );
     }
@@ -2895,7 +2895,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         : null;
       if (completedPlan?.sourceOrderId && completedScheme?.closesService) {
         await Order.updateOne(
-          { _id: completedPlan.sourceOrderId, totalUnits: { $lte: 1 }, status: { $nin: ['completed', 'cancelled'] } },
+          { _id: completedPlan.sourceOrderId, totalUnits: { $lte: 1 }, 'specialtyTermsSnapshot.key': { $ne: 'ibd' }, status: { $nin: ['completed', 'cancelled'] } },
           { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt: new Date(), usedUnits: 1 } }
         );
       }
@@ -9420,6 +9420,8 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (require('../utils/ibdServiceTerms').isIbdOrder(order))
+      return res.status(409).json({ success: false, message: 'IBD 年度服务按管理期限结案；陪诊请使用专病陪诊登记，不在此核销整单' });
     if (['cancelled', 'completed'].includes(order.status)) {
       return res.status(400).json({ success: false, message: order.status === 'completed' ? '该服务已全部核销' : '已取消订单不能核销' });
     }

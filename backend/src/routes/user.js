@@ -1588,6 +1588,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     orderDoc.performanceRuleSnapshot = product.performanceRule?.toObject?.() || product.performanceRule || null;
     orderDoc.servicePerformerRolesSnapshot = (product.servicePerformerRoles || []).map(item => item.toObject ? item.toObject() : item);
     orderDoc.serviceWorkflowSnapshot = product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null;
+    orderDoc.specialtyTermsSnapshot = product.specialtyTerms?.toObject?.() || product.specialtyTerms || null;
     orderDoc.couponId = coupon?._id || null;
     orderDoc.couponDiscount = couponDiscount;
     orderDoc.healthFundEnterpriseId = fundEnterprise?._id || null;

@@ -384,7 +384,7 @@ router.post('/order', auth, async (req, res) => {
   // Existing package rights are the first funding source for the same service.
   // Reserving at request time prevents a second paid checkout; actual redemption
   // still follows documented service completion or cancellation.
-  if (product && !isPkg) {
+  if (product && !isPkg && !require('../utils/ibdServiceTerms').isIbdProduct(product)) {
     const supervisorId = await resolveOrderWorkflowAssignee(req.user._id, service.name);
     const packageOrder = await require('../utils/packageFirstOrder').packageFirstOrder({
       user: req.user, product, service, totalUnits, serviceItems: productServiceItems,
@@ -574,6 +574,7 @@ router.post('/order', auth, async (req, res) => {
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
     servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
     serviceWorkflowSnapshot: product?.serviceWorkflow ? (product.serviceWorkflow.toObject ? product.serviceWorkflow.toObject() : product.serviceWorkflow) : null,
+    specialtyTermsSnapshot: product?.specialtyTerms?.key ? (product.specialtyTerms.toObject ? product.specialtyTerms.toObject() : product.specialtyTerms) : null,
     serviceProviderSnapshot: serviceProvider === 'jiayihui_health'
       ? { code: 'jiayihui_health', companyName: '杭州嘉医汇健康管理有限公司', consentVersion: '2026-09-24', consentedAt: new Date() }
       : { code: 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
@@ -616,6 +617,7 @@ router.post('/order', auth, async (req, res) => {
   const pendingTasks = [];
   const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
   const medicationProxy = require('../utils/orderPlannerConversation').isMedicationProxyOrder(order);
+  const ibdOrder = require('../utils/ibdServiceTerms').isIbdOrder(order);
   if (medicalReminderWorkflow.isMedicalReminderOrder(order)) {
     pendingTasks.push(medicalReminderWorkflow.ensureAdvisorIntakeTask(order));
   } else if (followUpStaffId) {
@@ -625,8 +627,10 @@ router.post('/order', auth, async (req, res) => {
       patientId: req.user._id,
       type: 'other',
       status: 'planned',
-      theme: medicationProxy ? `代配药：AI沟通后由健康规划师确认 · ${service.name}` : isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
-      content: medicationProxy ? '用户已完成支付，AI健康规划师正在收集药品、数量、配药机构、支付方式和送达日期；请查看本单对话并人工核对后启动代配药流程。' : (orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排')),
+      theme: medicationProxy ? `代配药：AI沟通后由健康规划师确认 · ${service.name}` : ibdOrder ? `IBD 年度管理：规划师接单 · ${service.name}` : isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
+      content: medicationProxy ? '用户已完成支付，AI健康规划师正在收集药品、数量、配药机构、支付方式和送达日期；请查看本单对话并人工核对后启动代配药流程。'
+        : ibdOrder ? '联系客户核对既往病历、用药、就诊城市和诉求；整理资料并交健康顾问确定医院、科室、专家。服务期从支付后第 7 天开始，含 2 次陪诊。后续频次按专科方案确定。'
+          : (orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排')),
       formData: medicationProxy ? { currentStage: 'ai_communication', medicationProxy: true } : {},
       sourceType: 'order',
       sourceOrderId: order._id,
@@ -647,6 +651,7 @@ router.post('/order', auth, async (req, res) => {
   pendingTasks.push(awardOrderPoints(order));
   await Promise.all(pendingTasks);
   order.paidAt = new Date();
+  require('../utils/ibdServiceTerms').ensurePeriod(order);
   await require('../utils/packageEntitlements').ensurePackageEntitlement(order, { syncCustomerMembership: true });
   await require('../utils/packageEntitlements').ensureMemberBundleEntitlement(order);
   const fulfillment = await Fulfillment.findOneAndUpdate(

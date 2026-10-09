@@ -55,6 +55,7 @@ async function settlePaidOrder(payment, order, cashAmount) {
   order.paidAmount = cashAmount;
   order.transactionId = payment.transactionId;
   order.paidAt = payment.paidAt;
+  require('./ibdServiceTerms').ensurePeriod(order);
   order.paymentId = payment._id;
   if (!order.verifyCode) order.verifyCode = require('crypto').randomBytes(4).toString('hex').toUpperCase();
   // 微信确认成功是资金事实，必须先落库，再执行基金、履约、消息等可重试副作用。
@@ -119,6 +120,7 @@ async function settlePaidOrder(payment, order, cashAmount) {
     const plannerId = await resolveHealthPlanner(order.user);
     if (plannerId) {
     const medicationProxy = require('./orderPlannerConversation').isMedicationProxyOrder(order);
+    const ibdOrder = require('./ibdServiceTerms').isIbdOrder(order);
     await FollowUp.findOneAndUpdate(
       { sourceType: 'order', sourceOrderId: order._id },
       { $setOnInsert: {
@@ -126,8 +128,10 @@ async function settlePaidOrder(payment, order, cashAmount) {
         assignedTo: plannerId,
         patientId: order.user,
         type: 'other', status: 'planned',
-        theme: medicationProxy ? `代配药：AI沟通后由健康规划师确认 · ${order.serviceName}` : `订单服务：${order.serviceName}`,
-        content: medicationProxy ? '用户已完成支付，AI健康规划师正在收集药品、数量、配药机构、支付方式和送达日期；请查看本单对话并人工核对后启动代配药流程。' : (order.note || '用户已完成支付，请联系确认服务安排'),
+        theme: medicationProxy ? `代配药：AI沟通后由健康规划师确认 · ${order.serviceName}` : ibdOrder ? `IBD 年度管理：规划师接单 · ${order.serviceName}` : `订单服务：${order.serviceName}`,
+        content: medicationProxy ? '用户已完成支付，AI健康规划师正在收集药品、数量、配药机构、支付方式和送达日期；请查看本单对话并人工核对后启动代配药流程。'
+          : ibdOrder ? '联系客户核对既往病历、用药、就诊城市和诉求；整理资料并交健康顾问确定医院、科室、专家。服务期从支付后第 7 天开始，含 2 次陪诊。后续频次按专科方案确定。'
+            : (order.note || '用户已完成支付，请联系确认服务安排'),
         formData: medicationProxy ? { currentStage: 'ai_communication', medicationProxy: true } : {},
       } },
       { upsert: true, new: true },

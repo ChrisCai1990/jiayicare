@@ -157,6 +157,10 @@ export default function OrdersPage() {
               {o.servicePrice != null && (
                 <Text style={{ fontSize: '15px', fontWeight: 800, color: colors.primary, display: 'block', marginTop: '6px' }}>¥{o.servicePrice}</Text>
               )}
+              {o.specialtyService?.key === 'ibd' && <View style={{ marginTop: '8px', padding: '9px', borderRadius: '8px', backgroundColor: colors.background }}>
+                <Text style={{ fontSize: '12px', color: colors.textPrimary, display: 'block' }}>IBD 年度管理 · 陪诊已用 {o.specialtyService.usedEscorts || 0}/{o.specialtyService.includedEscorts || 2} 次</Text>
+                <Text style={{ fontSize: '11px', color: colors.textSecondary, display: 'block', marginTop: '3px' }}>服务期：{o.specialtyService.startsAt ? new Date(o.specialtyService.startsAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '支付后第 7 天'} 至 {o.specialtyService.endsAt ? new Date(new Date(o.specialtyService.endsAt).getTime() - 1).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '届满 12 个月'}</Text>
+              </View>}
               {!!o.checkoutGroupId && <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginTop: '6px' }}>合并付款商品 · 本项{['paid', 'refunded'].includes(o.paymentStatus) ? '实付' : '待付'} ¥{Number(['paid', 'refunded'].includes(o.paymentStatus) ? o.paidAmount : o.paymentExpectedAmount).toFixed(2)}，售后按本项金额处理</Text>}
               {Number(o.enterpriseSharedFundAmount || 0) > 0 && <Text style={{ fontSize: '12px', color: colors.primary, display: 'block', marginTop: '6px' }}>企业共享基金抵扣 ¥{Number(o.enterpriseSharedFundAmount).toFixed(2)} · 本项{['paid', 'refunded'].includes(o.paymentStatus) ? '实付' : '待付'} ¥{Number(['paid', 'refunded'].includes(o.paymentStatus) ? o.paidAmount : o.paymentExpectedAmount).toFixed(2)}</Text>}
               {!!o.fulfillmentId?.status && (

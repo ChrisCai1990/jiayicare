@@ -39,15 +39,17 @@ const IBD_PRODUCT_TEMPLATE = {
   name: 'IBD 年度专病管理服务',
   subtitle: '健康顾问负责制 · 专科协作 · 1 年院外管理',
   category: '专病管理',
-  features: '健康顾问负责,专科医师制定诊疗方案,首次及复诊陪诊,病历与随访管理,IBD 症状日记与趋势图',
-  description: `服务对象\n已确诊或正在接受专科评估的克罗恩病、溃疡性结肠炎、未定型结肠炎（IBD-U）客户。具体病型及管理重点由健康顾问依据专科资料核实。\n\n服务内容\n1. 健康规划师承接订单、联系客户并整理已有资料，转交专属健康顾问。\n2. 健康顾问了解需求，确定医院、科室和专家方向，并负责与专科医师沟通。\n3. 健管专员依照顾问确认的要求协调预约，安排首次就诊陪诊；首次陪诊包含在本服务售价内。\n4. 就诊后回收病历、检查结果和专科意见。经健康顾问审核后建立本次专病管理档案。AI 可以根据已审核资料起草随访计划，由健康顾问审核确认后执行。\n5. 健管专员按实际方案跟进客户的症状日记、用药执行、检查和复诊安排，将变化反馈健康顾问；需要调整诊疗时由顾问对接专科医师。\n6. 服务期内依专科方案安排复诊，复诊陪诊包含在本服务售价内。复诊日期和跟进频次由专科意见与客户实际情况决定，不预先固定全年日期。\n7. 客户可在健康记录中填写 IBD 病情日记、PHQ-9/GAD-7 量表和粪钙卫蛋白（FC）结果，查看变化趋势。\n\n费用边界\n本商品包含服务期内首次和后续复诊的陪诊协调与执行。医院挂号、诊疗、检查、药品等院方费用由客户另付。跨城交通、住宿及异地陪诊安排须在购买前另行确认。\n\n服务边界\n诊断、检查与治疗方案由专科医师决定。健康顾问负责沟通和审核，健管专员负责跟进与反馈；AI 仅提供待审核草稿。预约受医院号源及专家出诊安排影响，不保证指定专家或日期。客户改期、健康变化或专家停诊时，团队记录原因并重新确认当前安排，不机械顺延全年计划；急重症应及时就医。`,
+  originalPrice: '2980',
+  features: '健康顾问负责,专科医师制定诊疗方案,含 2 次陪诊,病历与随访管理,IBD 症状日记与趋势图',
+  description: `服务期限与价格\n¥2980；支付成功后第 7 天起算，连续管理 12 个月。服务覆盖长三角和珠三角，包含 2 次陪诊。\n\n服务对象\n已确诊或正在接受专科评估的克罗恩病、溃疡性结肠炎、未定型结肠炎（IBD-U）客户。具体病型及管理重点由健康顾问依据专科资料核实。\n\n服务内容\n1. 健康规划师承接订单、联系客户并整理已有资料，转交专属健康顾问。\n2. 健康顾问了解需求，确定医院、科室和专家方向，并负责与专科医师沟通。\n3. 健管专员依照顾问确认的要求协调预约，安排首次就诊陪诊；首次陪诊计入本服务包含的 2 次陪诊权益。\n4. 就诊后回收病历、检查结果和专科意见。经健康顾问审核后建立本次专病管理档案。AI 可以根据已审核资料起草随访计划，由健康顾问审核确认后执行。\n5. 健管专员按实际方案跟进客户的症状日记、用药执行、检查和复诊安排，将变化反馈健康顾问；需要调整诊疗时由顾问对接专科医师。\n6. 服务期内依专科方案安排复诊，剩余陪诊权益可用于复诊；本服务共含 2 次陪诊。复诊日期和跟进频次由专科意见与客户实际情况决定，不预先固定全年日期。\n7. 客户可在健康记录中填写 IBD 病情日记、PHQ-9/GAD-7 量表和粪钙卫蛋白（FC）结果，查看变化趋势。\n\n费用边界\n本商品共包含 2 次陪诊（首次就诊陪诊及服务期内复诊陪诊各计入次数）；超出 2 次的陪诊需另行确认服务与费用。医院挂号、诊疗、检查、药品等院方费用由客户另付。服务覆盖长三角和珠三角；跨城交通、住宿及具体陪诊安排须在购买前确认。\n\n服务边界\n诊断、检查与治疗方案由专科医师决定。健康顾问负责沟通和审核，健管专员负责跟进与反馈；AI 仅提供待审核草稿。预约受医院号源及专家出诊安排影响，不保证指定专家或日期。客户改期、健康变化或专家停诊时，团队记录原因并重新确认当前安排，不机械顺延全年计划；急重症应及时就医。`,
   fulfillmentType: 'subscription_service',
   bookingRequired: true,
   deliveryRequired: false,
   validityDays: 365,
-  serviceLocation: '院外线上管理；线下就诊与陪诊城市购买前确认',
+  serviceLocation: '长三角、珠三角（具体医院与陪诊安排由健康顾问确认）',
   refundPolicy: '服务开始前可申请退款；服务开始后的退费根据已实际提供服务、陪诊安排及双方确认的服务协议核算。医院诊疗与检查费用由客户向院方另付。',
   healthFundDeduction: { mode: 'disabled', value: 0 },
+  specialtyTerms: { key: 'ibd', startDelayDays: 7, durationMonths: 12, includedEscorts: 2, regions: ['长三角', '珠三角'] },
   aiProfile: { ...EMPTY_FORM.aiProfile, enabledForRecommendation: false },
 }
 
@@ -427,6 +429,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         key: item.key, name: item.name, units: item.units || 1,
         performers: (item.performers || []).map(r => ({ role:r.role, ruleType:r.ruleType || 'percentage', rate:r.rate || 0, amount:r.amount || 0, defaultStaffId:r.defaultStaffId ? String(r.defaultStaffId) : '' })),
       })),
+      specialtyTerms: product.specialtyTerms || null,
       aiProfile: {
         ...EMPTY_FORM.aiProfile,
         ...(product.aiProfile || {}),
@@ -550,6 +553,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           key: item.key || `item_${Date.now()}`, name: item.name.trim(), units: Math.max(1, parseInt(item.units) || 1),
           performers: (item.performers || []).filter(r=>r.role).map(r=>({ role:r.role, ruleType:r.ruleType || 'percentage', rate:parseFloat(r.rate)||0, amount:parseFloat(r.amount)||0, defaultStaffId:r.defaultStaffId||null })),
         })),
+        specialtyTerms: form.specialtyTerms || undefined,
         aiProfile: form.aiProfile,
       }
       if (isEdit) {
@@ -946,6 +950,15 @@ export default function ProductsPage() {
 
   useEffect(() => { load() }, [load])
 
+  const openIbdProduct = async () => {
+    try {
+      const res = await adminAPI.products({ name: 'IBD 年度专病管理服务' })
+      const existing = (res.data || []).find(item => item.name === 'IBD 年度专病管理服务')
+      setEditing(existing || IBD_PRODUCT_TEMPLATE)
+      setShowModal(true)
+    } catch (err) { toast('❌ 加载 IBD 商品失败：' + err.message) }
+  }
+
   const toggle = async (p) => {
     try {
       const res = await adminAPI.toggleProduct(p._id)
@@ -999,7 +1012,7 @@ export default function ProductsPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost" onClick={() => setShowCatModal(true)}>⚙️ 管理分类</button>
-          <button className="btn btn-ghost" onClick={() => { setEditing(IBD_PRODUCT_TEMPLATE); setShowModal(true) }}>＋ IBD 年度专病商品</button>
+          <button className="btn btn-ghost" onClick={openIbdProduct}>IBD 年度专病商品</button>
           <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>＋ 新增产品</button>
         </div>
       </div>

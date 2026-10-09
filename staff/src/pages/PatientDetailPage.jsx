@@ -11102,13 +11102,15 @@ export default function PatientDetailPage() {
                           {order.servicePrice != null ? `¥${order.servicePrice}` : '-'}
                         </td>
                         <td style={{ fontSize: 13 }}>
-                          <div style={{ fontWeight: 600, color: '#1E6B50' }}>
-                            已使用 {order.usedUnits || 0}/{order.totalUnits || 1} 次
-                          </div>
-                          <div style={{ fontSize: 12, color: '#8AA89C' }}>
-                            剩余 {Math.max(0, (order.totalUnits || 1) - (order.usedUnits || 0))} 次
-                          </div>
-                          {(order.serviceItemsSnapshot || []).map(item => <div key={item.key} style={{fontSize:12,color:'#4A6558',marginTop:2}}>{item.name}：{item.usedUnits || 0}/{item.units}次</div>)}
+                          {order.specialtyService?.key === 'ibd' ? <>
+                            <div style={{ fontWeight: 600, color: '#1E6B50' }}>IBD 年度管理 · 陪诊 {order.specialtyService.usedEscorts || 0}/{order.specialtyService.includedEscorts || 2} 次</div>
+                            <div style={{ fontSize: 12, color: '#8AA89C' }}>服务期：{order.specialtyService.startsAt ? new Date(order.specialtyService.startsAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '待确认'} 至 {order.specialtyService.endsAt ? new Date(new Date(order.specialtyService.endsAt).getTime() - 1).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '待确认'}</div>
+                            {(order.specialtyService.escortRecords || []).map((record, i) => <div key={record.visitKey || i} style={{ fontSize: 12, color: '#4A6558', marginTop: 2 }}>第 {i + 1} 次：{new Date(record.visitDate).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })} · {record.hospital}</div>)}
+                          </> : <>
+                            <div style={{ fontWeight: 600, color: '#1E6B50' }}>已使用 {order.usedUnits || 0}/{order.totalUnits || 1} 次</div>
+                            <div style={{ fontSize: 12, color: '#8AA89C' }}>剩余 {Math.max(0, (order.totalUnits || 1) - (order.usedUnits || 0))} 次</div>
+                            {(order.serviceItemsSnapshot || []).map(item => <div key={item.key} style={{fontSize:12,color:'#4A6558',marginTop:2}}>{item.name}：{item.usedUnits || 0}/{item.units}次</div>)}
+                          </>}
                         </td>
                         <td style={{ fontSize: 13, color: '#8AA89C' }}>{new Date(order.createdAt).toLocaleDateString('zh-CN')}</td>
                         <td style={{ fontSize: 12 }}>
@@ -11138,7 +11140,33 @@ export default function PatientDetailPage() {
                                 setPatientOrders(prev => prev.map(o => o._id === order._id ? { ...o, status: 'scheduled', scheduledAt: new Date().toISOString() } : o))
                                 toast('已安排服务')
                               } catch (err) { toast(err.message || '操作失败') }
-                            }}>{order.packageEntitlementUsage ? '安排服务' : '启动服务'}</button>
+                            }}>{order.specialtyService?.key === 'ibd' ? '承接年度服务' : order.packageEntitlementUsage ? '安排服务' : '启动服务'}</button>
+                          )}
+                          {order.specialtyService?.key === 'ibd' && order.status === 'scheduled' && (order.specialtyService.usedEscorts || 0) < (order.specialtyService.includedEscorts || 2) && ['healthManager', 'superadmin'].includes(staff?.role) && (
+                            <button className="btn btn-sm" disabled={redeemingOrderId === order._id} onClick={async () => {
+                              const visitDate = window.prompt('实际陪诊日期（YYYY-MM-DD）：', new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }))
+                              if (visitDate === null) return
+                              const hospital = window.prompt('实际就诊医院：', '')
+                              if (hospital === null) return
+                              const companion = window.prompt('实际陪诊人：', staff?.name || '')
+                              if (companion === null) return
+                              const evidence = window.prompt('完成凭据（至少 10 字；请说明就诊及病历回收情况）：', '')
+                              if (evidence === null) return
+                              setRedeemingOrderId(order._id)
+                              try { const res = await staffAPI.recordIbdEscort(order._id, { visitDate, hospital, companion, evidence }); setPatientOrders(prev => prev.map(o => o._id === order._id ? res.data : o)); toast(res.message || '陪诊已登记') }
+                              catch (err) { toast(err.message || '登记失败') }
+                              finally { setRedeemingOrderId(null) }
+                            }}>登记实际陪诊</button>
+                          )}
+                          {order.specialtyService?.key === 'ibd' && order.status === 'scheduled' && order.specialtyService.endsAt && new Date(order.specialtyService.endsAt) <= new Date() && ['familyDoctor', 'superadmin'].includes(staff?.role) && (
+                            <button className="btn btn-sm" disabled={redeemingOrderId === order._id} onClick={async () => {
+                              const summary = window.prompt('请填写年度回顾、专科意见与未完成事项（至少 20 字）：', '')
+                              if (summary === null) return
+                              setRedeemingOrderId(order._id)
+                              try { const res = await staffAPI.closeIbdOrder(order._id, summary); setPatientOrders(prev => prev.map(o => o._id === order._id ? res.data : o)); toast(res.message || '年度服务已结案') }
+                              catch (err) { toast(err.message || '结案失败') }
+                              finally { setRedeemingOrderId(null) }
+                            }}>年度回顾并结案</button>
                           )}
                           {order.status === 'scheduled' && order.packageEntitlementUsage && !order.serviceStartedAt && (
                             <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
@@ -11184,7 +11212,7 @@ export default function PatientDetailPage() {
                               finally { setRedeemingOrderId(null) }
                             }}>完成服务</button>
                           )}
-                          {order.status === 'scheduled' && (Number(order.totalUnits || 1) > 1 || (!order.packageEntitlementUsage && !(order.orderType === 'service' && order.paymentStatus === 'paid' && Number(order.paidAmount || 0) > 0))) && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
+                          {order.specialtyService?.key !== 'ibd' && order.status === 'scheduled' && (Number(order.totalUnits || 1) > 1 || (!order.packageEntitlementUsage && !(order.orderType === 'service' && order.paymentStatus === 'paid' && Number(order.paidAmount || 0) > 0))) && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
                             <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
                               style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
                               const note = window.prompt(`确认核销第 ${(order.usedUnits || 0) + 1}/${order.totalUnits || 1} 次服务。\n可填写本次服务备注（可留空）：`, '')
