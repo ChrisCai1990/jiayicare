@@ -14074,7 +14074,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
           </div>}
         </div>}
         {showBookingConfirm && !isMedicalReminderOrder && (
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8, maxHeight: bookingCollapsed ? undefined : '38vh', overflowY: bookingCollapsed ? 'visible' : 'auto', flexShrink: 0 }}>
+          <div style={{ padding: '12px 16px 20px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gridAutoRows: 'max-content', alignContent: 'start', gap: 8, maxHeight: bookingCollapsed ? undefined : '58vh', overflowY: bookingCollapsed ? 'visible' : 'auto', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>{isSupplementOrder ? '营养素订单履约' : isCheckupAppointment ? '待约检服务信息确认' : isMedicalReminder ? '复查督办信息确认' : isMedicationProxy ? '代配药信息核对' : '健康顾问约诊建议'} · {order?.serviceName || '服务订单'}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -14132,7 +14132,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                 </>}
                 <label style={{ fontSize: 12, fontWeight: 600 }}>{/专家约诊/.test(order?.serviceName || '') ? '约诊需求' : '本次服务内容'}<textarea className="form-input" rows={2} value={proxyServiceContent} onChange={e => { setProxyServiceContent(e.target.value); setProxyReviewReady(false) }} placeholder={/专家约诊/.test(order?.serviceName || '') ? '填写意向医院、科室和专家' : '例如意向医院、科室及代诊事项'} /></label>
                 {!/专家约诊/.test(order?.serviceName || '') && <label style={{ fontSize: 12, fontWeight: 600 }}>客户主诉与希望向专家沟通的问题<textarea className="form-input" rows={2} value={proxyCustomerNeed} onChange={e => { setProxyCustomerNeed(e.target.value); setProxyReviewReady(false) }} placeholder="填写客户本次要解决的问题" /></label>}
-              </> : <textarea className="form-input" rows={2} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="服务内容与客户需求" />}
+              </> : <textarea className="form-input" rows={3} style={{ minHeight: 84 }} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="服务内容与客户需求" />}
             </> : <div style={{ border: '1px solid #C9DCD3', background: '#F4FAF6', borderRadius: 8, padding: 12, fontSize: 13, display: 'grid', gap: 6 }}>
               <div><b>{isMedicalPlanning ? '预期沟通时段' : '期望日期'}：</b>{isMedicalPlanning ? `${serviceTime} ${communicationTimeStart}–${communicationTimeEnd}` : `${serviceTime} 至 ${serviceTimeEnd}`}</div>
               <div><b>{/专家约诊/.test(order?.serviceName || '') ? '约诊需求' : '服务内容'}：</b>{proxyServiceContent}</div>
