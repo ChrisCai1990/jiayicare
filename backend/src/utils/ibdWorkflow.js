@@ -2,6 +2,7 @@ const Order = require('../models/Order');
 const FollowUp = require('../models/FollowUp');
 const User = require('../models/User');
 const { isIbdOrder } = require('./ibdServiceTerms');
+const { advisorDraft } = require('../../../shared/ibdIntake.cjs');
 
 const PREFIX = 'ibd:';
 const stageOf = task => String(task?.workflowKey || '').startsWith(PREFIX)
@@ -54,7 +55,7 @@ async function start(order, plannerId, { scheduledAt, serviceDateEnd, note } = {
   if (!patient?.assignedHealthManager) throw Object.assign(new Error('请先为客户分配健管专员'), { status: 409 });
   const advisor = await createTask(order, patient.assignedFamilyDoctor, 'advisor',
     '请核对客户资料、意向机构和就诊时间，确定医院、科室、专家及本次就诊目的；诊疗方案由专科医师决定。',
-    { customerRequest: note || order.note || '', preferredDateStart: scheduledAt || null, preferredDateEnd: serviceDateEnd || '' });
+    advisorDraft({ customerRequest: note || order.note || '', preferredDateStart: scheduledAt || null, preferredDateEnd: serviceDateEnd || '' }, note || order.note));
   await Order.updateOne({ _id: order._id }, { $set: {
     status: 'scheduled', handledBy: plannerId, supervisorId: plannerId,
     currentStage: 'ibd_advisor', currentAssignee: patient.assignedFamilyDoctor,

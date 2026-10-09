@@ -4,6 +4,7 @@ const Order = require('../src/models/Order');
 const FollowUp = require('../src/models/FollowUp');
 const User = require('../src/models/User');
 const workflow = require('../src/utils/ibdWorkflow');
+const { advisorDraft, customerHospitalFromText } = require('../../shared/ibdIntake.cjs');
 
 test('IBD planner handoff reaches advisor first, then manager after advisor confirmation', async () => {
   const original = {
@@ -30,8 +31,10 @@ test('IBD planner handoff reaches advisor first, then manager after advisor conf
     };
     FollowUp.updateMany = async () => ({ modifiedCount: 1 });
 
-    await workflow.start(order, 'planner1', { note: '已确认服务任务：客户希望下周就诊' });
+    await workflow.start(order, 'planner1', { note: '已确认服务任务：客户希望下周就诊；客户意向机构：浙一医院' });
     assert.equal(tasks.get('ibd:advisor').assignedTo, 'advisor1');
+    assert.equal(tasks.get('ibd:advisor').formData.hospital, '浙一医院');
+    assert.equal(tasks.get('ibd:advisor').formData.department, '消化内科');
     assert.equal(tasks.has('ibd:booking'), false);
     assert.equal(updates.at(-1).currentStage, 'ibd_advisor');
     const advisor = tasks.get('ibd:advisor');
@@ -48,6 +51,12 @@ test('IBD planner handoff reaches advisor first, then manager after advisor conf
     FollowUp.findOne = original.taskFindOne; FollowUp.findOneAndUpdate = original.taskFindOneAndUpdate;
     FollowUp.updateMany = original.taskUpdateMany; User.findById = original.userFindById;
   }
+});
+
+test('customer hospital is carried forward without overwriting an advisor edit', () => {
+  assert.equal(customerHospitalFromText('已确认服务任务：首诊；客户意向机构：浙一医院'), '浙一医院');
+  assert.equal(advisorDraft({ customerRequest: '客户意向医院：浙一医院' }).hospital, '浙一医院');
+  assert.equal(advisorDraft({ hospital: '顾问另选医院', department: '消化内科' }, '客户意向机构：浙一医院').hospital, '顾问另选医院');
 });
 
 test('IBD advisor cannot send incomplete recommendation and manager cannot claim unbooked visit', () => {
