@@ -34,6 +34,23 @@ const EMPTY_FORM = {
   },
 }
 
+const IBD_PRODUCT_TEMPLATE = {
+  ...EMPTY_FORM,
+  name: 'IBD 年度专病管理服务',
+  subtitle: '健康顾问负责制 · 专科协作 · 1 年院外管理',
+  category: '专病管理',
+  features: '健康顾问负责,专科医师制定诊疗方案,首次及复诊陪诊,病历与随访管理,IBD 症状日记与趋势图',
+  description: `服务对象\n已确诊或正在接受专科评估的克罗恩病、溃疡性结肠炎、未定型结肠炎（IBD-U）客户。具体病型及管理重点由健康顾问依据专科资料核实。\n\n服务内容\n1. 健康规划师承接订单、联系客户并整理已有资料，转交专属健康顾问。\n2. 健康顾问了解需求，确定医院、科室和专家方向，并负责与专科医师沟通。\n3. 健管专员依照顾问确认的要求协调预约，安排首次就诊陪诊；首次陪诊包含在本服务售价内。\n4. 就诊后回收病历、检查结果和专科意见。经健康顾问审核后建立本次专病管理档案。AI 可以根据已审核资料起草随访计划，由健康顾问审核确认后执行。\n5. 健管专员按实际方案跟进客户的症状日记、用药执行、检查和复诊安排，将变化反馈健康顾问；需要调整诊疗时由顾问对接专科医师。\n6. 服务期内依专科方案安排复诊，复诊陪诊包含在本服务售价内。复诊日期和跟进频次由专科意见与客户实际情况决定，不预先固定全年日期。\n7. 客户可在健康记录中填写 IBD 病情日记、PHQ-9/GAD-7 量表和粪钙卫蛋白（FC）结果，查看变化趋势。\n\n费用边界\n本商品包含服务期内首次和后续复诊的陪诊协调与执行。医院挂号、诊疗、检查、药品等院方费用由客户另付。跨城交通、住宿及异地陪诊安排须在购买前另行确认。\n\n服务边界\n诊断、检查与治疗方案由专科医师决定。健康顾问负责沟通和审核，健管专员负责跟进与反馈；AI 仅提供待审核草稿。预约受医院号源及专家出诊安排影响，不保证指定专家或日期。客户改期、健康变化或专家停诊时，团队记录原因并重新确认当前安排，不机械顺延全年计划；急重症应及时就医。`,
+  fulfillmentType: 'subscription_service',
+  bookingRequired: true,
+  deliveryRequired: false,
+  validityDays: 365,
+  serviceLocation: '院外线上管理；线下就诊与陪诊城市购买前确认',
+  refundPolicy: '服务开始前可申请退款；服务开始后的退费根据已实际提供服务、陪诊安排及双方确认的服务协议核算。医院诊疗与检查费用由客户向院方另付。',
+  healthFundDeduction: { mode: 'disabled', value: 0 },
+  aiProfile: { ...EMPTY_FORM.aiProfile, enabledForRecommendation: false },
+}
+
 const AI_LIST_FIELDS = [
   ['targetNeeds', '目标需求', '客户会用什么需求描述来匹配此产品，每行一项'],
   ['suitableFor', '适用人群', '明确适合的人群或场景，每行一项'],
@@ -374,12 +391,12 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   const toast = useToast()
   const isEdit = !!product?._id
   const [form, setForm] = useState(() => {
-    if (!isEdit) return { ...EMPTY_FORM, category: categories[0] || '' }
+    if (!isEdit) return product ? { ...product } : { ...EMPTY_FORM, category: categories[0] || '' }
     return {
       name: product.name,
       subtitle: product.subtitle || '',
       category: product.category,
-      originalPrice: String(product.originalPrice),
+      originalPrice: product.originalPrice == null ? '' : String(product.originalPrice),
       sortOrder: product.sortOrder,
       features: (product.features || []).join(', '),
       description: product.description || '',
@@ -470,8 +487,9 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   const save = async () => {
     const fundValue = Number(form.healthFundDeduction?.value)
     if (form.healthFundDeduction?.mode === 'percentage' && (!Number.isFinite(fundValue) || fundValue < 1 || fundValue > 100)) { toast('商品抵扣比例须为1%-100%'); return }
-    if (!form.name || !form.category || form.originalPrice === '') {
-      toast('❌ 产品名称、分类、原价为必填项')
+    const isUnpricedIbdDraft = form.category === '专病管理' && /IBD|炎症性肠病/i.test(form.name) && form.status === 'off'
+    if (!form.name || !form.category || (form.originalPrice === '' && !isUnpricedIbdDraft)) {
+      toast('❌ 产品名称、分类、原价为必填项；IBD 草稿可暂不定价')
       return
     }
     setLoading(true)
@@ -484,7 +502,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         name: form.name,
         subtitle: form.subtitle,
         category: form.category,
-        originalPrice: parseFloat(form.originalPrice),
+        originalPrice: form.originalPrice === '' ? null : parseFloat(form.originalPrice),
         sortOrder: parseInt(form.sortOrder) || 999,
         features: form.features.split(',').map(s => s.trim()).filter(Boolean),
         description: form.description,
@@ -980,6 +998,7 @@ export default function ProductsPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost" onClick={() => setShowCatModal(true)}>⚙️ 管理分类</button>
+          <button className="btn btn-ghost" onClick={() => { setEditing(IBD_PRODUCT_TEMPLATE); setShowModal(true) }}>＋ IBD 年度专病商品</button>
           <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>＋ 新增产品</button>
         </div>
       </div>

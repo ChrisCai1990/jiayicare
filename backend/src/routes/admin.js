@@ -1964,13 +1964,25 @@ router.post('/upload/image', adminAuth, (req, res, next) => {
 
 // ── 商城产品分类管理 ──────────────────────────────────────────────
 
-const DEFAULT_PRODUCT_CATEGORIES = ['检测套餐', '营养补充', '咨询服务', '上门服务', '健康课程', '中医调理'];
+const DEFAULT_PRODUCT_CATEGORIES = ['检测套餐', '营养补充', '咨询服务', '上门服务', '健康课程', '中医调理', '专病管理'];
 
 async function getProductCategories() {
   let cats = await ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 });
   if (cats.length === 0) {
     await ProductCategory.insertMany(DEFAULT_PRODUCT_CATEGORIES.map((name, i) => ({ name, sortOrder: i })));
     cats = await ProductCategory.find().sort({ sortOrder: 1 });
+  } else if (!cats.some(cat => cat.name === '专病管理')) {
+    // Existing malls predate the specialty category. Add it without changing their order.
+    try {
+      await ProductCategory.findOneAndUpdate(
+        { name: '专病管理' },
+        { $setOnInsert: { name: '专病管理', sortOrder: Math.max(...cats.map(cat => Number(cat.sortOrder) || 0), 0) + 10 } },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+    } catch (error) {
+      if (error.code !== 11000) throw error;
+    }
+    cats = await ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 });
   }
   return cats;
 }
@@ -2039,6 +2051,17 @@ router.delete('/product-categories/:id', adminAuth, async (req, res) => {
 
 // ── 商城产品管理 ──────────────────────────────────────────────────
 
+function productPriceError({ name, category, originalPrice, status }) {
+  const isIbd = category === '专病管理' && /IBD|炎症性肠病/i.test(String(name || ''));
+  if (originalPrice === null || originalPrice === undefined || originalPrice === '') {
+    if (isIbd && status !== 'on') return null;
+    return '请填写商品原价';
+  }
+  if (!Number.isFinite(Number(originalPrice)) || Number(originalPrice) < 0) return '商品原价无效';
+  if (isIbd && status === 'on' && Number(originalPrice) <= 0) return 'IBD 年度商品须先确认售价';
+  return null;
+}
+
 // GET /api/admin/products
 router.get('/products', adminAuth, async (req, res) => {
   const { name, category, status } = req.query;
@@ -2068,15 +2091,15 @@ router.post('/products', adminAuth, async (req, res) => {
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
-  if (!name || !category || originalPrice === undefined) {
-    return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
-  }
+  if (!name || !category) return res.status(400).json({ success: false, message: '名称、分类为必填项' });
+  const priceError = productPriceError({ name, category, originalPrice, status: status || 'off' });
+  if (priceError) return res.status(400).json({ success: false, message: priceError });
   if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
   const product = await Product.create({
     name, subtitle: subtitle || '', images: images || [],
-    originalPrice, servicePrices: servicePrices || [], memberPrices: memberPrices || {},
+    originalPrice: originalPrice === '' ? null : originalPrice, servicePrices: servicePrices || [], memberPrices: memberPrices || {},
     category, sortOrder: sortOrder ?? 999, features: features || [],
     description: description || '', stock: stock ?? 0, stockLimited: stockLimited === true || Number(stock) > 0, status: status || 'off',
     performanceRule: performanceRule || undefined,
@@ -2100,7 +2123,13 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
+  const existingProduct = await Product.findById(req.params.id);
+  if (!existingProduct) return res.status(404).json({ success: false, message: '产品不存在' });
+  const priceError = productPriceError({ name: name ?? existingProduct.name, category: category ?? existingProduct.category,
+    originalPrice: originalPrice === undefined ? existingProduct.originalPrice : originalPrice, status: status ?? existingProduct.status });
+  if (priceError) return res.status(400).json({ success: false, message: priceError });
   const updateData = { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, ...(healthFundDeduction !== undefined ? { healthFundDeduction } : {}), memberBundle: memberBundle || { enabled:false }, skus: skus || [] };
+  if (originalPrice === '') updateData.originalPrice = null;
   if (stock !== undefined) updateData.stockLimited = stockLimited === true || Number(stock) > 0;
   // 兼容尚未升级的管理端：请求未携带 aiProfile 时保留原配置，避免普通产品编辑意外关闭 AI 推荐。
   if (aiProfile !== undefined) updateData.aiProfile = require('../utils/productAiProfile').normalizeAiProfile(aiProfile);
@@ -2127,7 +2156,10 @@ router.patch('/products/:id/health-fund-deduction', adminAuth, async (req, res) 
 router.patch('/products/:id/toggle', adminAuth, async (req, res) => {
   const product = await Product.findById(req.params.id);
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
-  product.status = product.status === 'on' ? 'off' : 'on';
+  const nextStatus = product.status === 'on' ? 'off' : 'on';
+  const priceError = productPriceError({ name: product.name, category: product.category, originalPrice: product.originalPrice, status: nextStatus });
+  if (priceError) return res.status(400).json({ success: false, message: priceError });
+  product.status = nextStatus;
   await product.save();
   res.json({ success: true, data: product, message: product.status === 'on' ? '产品已上架' : '产品已下架' });
 });
@@ -2137,6 +2169,11 @@ router.patch('/products/batch-toggle', adminAuth, async (req, res) => {
   const { ids, status } = req.body;
   if (!ids || !ids.length || !['on', 'off'].includes(status)) {
     return res.status(400).json({ success: false, message: '参数错误' });
+  }
+  if (status === 'on') {
+    const selected = await Product.find({ _id: { $in: ids } });
+    const blocked = selected.find(product => productPriceError({ name: product.name, category: product.category, originalPrice: product.originalPrice, status }));
+    if (blocked) return res.status(400).json({ success: false, message: `${blocked.name}：${productPriceError({ name: blocked.name, category: blocked.category, originalPrice: blocked.originalPrice, status })}` });
   }
   await Product.updateMany({ _id: { $in: ids } }, { status });
   res.json({ success: true, message: `已批量${status === 'on' ? '上架' : '下架'} ${ids.length} 件产品` });
