@@ -34,6 +34,7 @@ export default defineAppConfig({
     'pages/questionnaire/index',
     'pages/records/ai-health/index',
     'pages/records/medical-reports/index',
+    'pages/records/ibd-fc/index',
     'pages/records/screening/index',
     'pages/services/plans/index',
     'pages/records/public-report/index',

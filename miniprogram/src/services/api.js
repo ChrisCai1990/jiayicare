@@ -187,6 +187,13 @@ export const recordsAPI = {
   checkinCalendar: (days = 90) => request(`/records/checkin-calendar?days=${days}`),
 };
 
+export const ibdAPI = {
+  status: () => request('/ibd/status'),
+  overview: (days = 365) => request(`/ibd/overview?days=${days}`),
+  addFc: (data) => request('/ibd/fc', { method: 'POST', body: JSON.stringify(data) }),
+  deleteFc: (id) => request(`/ibd/fc/${id}`, { method: 'DELETE' }),
+};
+
 // ── Medications ───────────────────────────────────────────────────
 export const medicationsAPI = {
   list: (status) => request(`/medications${status ? '?status=' + status : ''}`),

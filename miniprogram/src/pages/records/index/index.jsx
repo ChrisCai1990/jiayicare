@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { recordsAPI, userAPI } from '../../../services/api';
+import { recordsAPI, userAPI, ibdAPI } from '../../../services/api';
 import TrendChart from '../../../components/TrendChart';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
@@ -46,6 +46,7 @@ export default function RecordsIndexPage() {
   const [records, setRecords] = useState([]);
   const [filter, setFilter] = useState('bloodPressure');
   const [loading, setLoading] = useState(true);
+  const [ibdEnabled, setIbdEnabled] = useState(false);
   const [bpTrend, setBpTrend] = useState([]);
   const [bsTrend, setBsTrend] = useState([]);
   const [sleepTrend, setSleepTrend] = useState([]);
@@ -70,6 +71,7 @@ export default function RecordsIndexPage() {
 
   useDidShow(() => {
     load();
+    ibdAPI.status().then(res => setIbdEnabled(!!res.data?.enabled)).catch(() => setIbdEnabled(false));
     loadTrends();
     userAPI.getMe().then((res) => {
       if (res?.success && res.data) {
@@ -128,6 +130,11 @@ export default function RecordsIndexPage() {
             </View>
           ))}
         </View>
+
+        {ibdEnabled && <View onClick={() => Taro.navigateTo({ url: '/pages/records/ibd-fc/index' })} style={{ backgroundColor: '#E7F4EE', border: `1px solid ${colors.primary}`, borderRadius: `${radius.md}px`, padding: '14px', marginBottom: `${spacing.md}px` }}>
+          <Text style={{ display: 'block', color: colors.primary, fontSize: '15px', fontWeight: 700 }}>IBD · 粪便钙卫蛋白趋势</Text>
+          <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '12px', marginTop: '4px' }}>查看 FC 曲线与检测记录，录入新的检查结果 →</Text>
+        </View>}
 
         <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>健康数据趋势</Text>
 
