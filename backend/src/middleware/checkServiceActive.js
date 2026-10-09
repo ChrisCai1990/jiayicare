@@ -48,6 +48,18 @@ function isWhitelisted(req) {
 
 async function checkServiceActive(req, res, next) {
   if (isWhitelisted(req)) return next();
+  // 已购 IBD 专病服务可上传和管理本人的就诊/检验报告，用于 FC 曲线及专病档案；
+  // 该权益独立于通用会员服务期，仍由 reports 路由校验资料归属。
+  if (/^\/api\/reports(?:\/|$)/.test(req.originalUrl.split('?')[0])) {
+    try {
+      const hasIbdOrder = await require('../models/Order').exists({
+        user: req.user._id, paymentStatus: 'paid', status: { $in: ['pending', 'scheduled'] },
+        tradeStatus: { $nin: ['closed', 'refunded'] },
+        serviceName: /IBD|炎症性肠病|克罗恩病|溃疡性结肠炎|未定型结肠炎/i,
+      });
+      if (hasIbdOrder) return next();
+    } catch (error) { return res.status(503).json({ success: false, code: 'SERVICE_ACCESS_UNAVAILABLE', message: '暂时无法核验 IBD 服务状态，请稍后重试' }); }
+  }
   if (!require('../utils/healthManagementRollout').enabledForPatient(req.user?._id)) {
     if (!isServiceExpired(req.user)) return next();
     return res.status(403).json({ success: false, code: 'SERVICE_EXPIRED', message: '您的服务已到期，该功能已锁定。如需继续使用请联系健康管理师续费。' });

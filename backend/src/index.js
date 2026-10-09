@@ -74,7 +74,8 @@ const { checkServiceActive } = require('./middleware/checkServiceActive');
 const auth = require('./middleware/auth');
 app.use('/api/user', auth, checkServiceActive, require('./routes/user'));
 app.use('/api/records', auth, checkServiceActive, require('./routes/healthRecords'));
-app.use('/api/ibd', auth, checkServiceActive, require('./routes/ibd'));
+// IBD 购买权益由该路由按已支付订单独立核验；不依赖通用会员服务期。
+app.use('/api/ibd', auth, require('./routes/ibd'));
 app.use('/api/medications', auth, checkServiceActive, require('./routes/medications'));
 app.use('/api/supplements', auth, checkServiceActive, require('./routes/supplements'));
 app.use('/api/tasks',   auth, checkServiceActive, require('./routes/tasks'));

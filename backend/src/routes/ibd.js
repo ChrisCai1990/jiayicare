@@ -1,5 +1,4 @@
 const express = require('express');
-const auth = require('../middleware/auth');
 const Order = require('../models/Order');
 const HealthRecord = require('../models/HealthRecord');
 const MedicalReport = require('../models/MedicalReport');
@@ -7,7 +6,6 @@ const PsychAssessment = require('../models/PsychAssessment');
 const { SCALES, calcSeverity } = require('../config/psychScales');
 
 const router = express.Router();
-router.use(auth);
 
 const IBD_NAME = /IBD|炎症性肠病|克罗恩病|溃疡性结肠炎|未定型结肠炎/i;
 const FC_NAME = /粪(?:便)?钙卫蛋白|fecal\s+calprotectin|^FCP?$/i;
