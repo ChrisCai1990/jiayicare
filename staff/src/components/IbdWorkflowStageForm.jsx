@@ -4,6 +4,10 @@ import DateField from '../../../shared/DateField.jsx'
 export const ibdStage = task => String(task?.workflowKey || '').startsWith('ibd:')
   ? String(task.workflowKey).slice(4) : ''
 
+export const ibdSubmitLabel = (stage, status) => status === 'in_progress'
+  ? '保存处理进展'
+  : stage === 'advisor' ? '确认并转健管专员预约' : '确认首诊预约与陪诊'
+
 export function validateIbdStage(stage, data = {}) {
   const filled = value => String(value || '').trim()
   if (stage === 'advisor' && ['hospital', 'department', 'expert', 'visitPurpose'].some(key => !filled(data[key])))

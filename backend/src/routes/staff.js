@@ -2450,6 +2450,8 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   const ibdWorkflow = require('../utils/ibdWorkflow');
   const ibdStage = ibdWorkflow.stageOf(followUp);
   if (ibdStage) {
+    if (req.body.status === 'cancelled' || ['assignedTo', 'date', 'theme'].some(key => req.body[key] !== undefined))
+      return res.status(409).json({ success: false, message: 'IBD 岗位任务请在专病流程中办理，不能通过普通随访编辑或取消' });
     const error = ibdWorkflow.validate(followUp, req.body, req.staff);
     if (error) return res.status(400).json({ success: false, message: error });
     if (ibdStage === 'advisor' && req.body.status === 'completed'
@@ -3159,6 +3161,9 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
   }
   if (followUp.sourceType === 'order' && String(followUp.workflowKey || '').startsWith('medical_proxy:') && !['completed', 'cancelled'].includes(followUp.status)) {
     return res.status(409).json({ success: false, message: '医疗代诊流程进行中，不能删除岗位任务或督办任务' });
+  }
+  if (require('../utils/ibdWorkflow').stageOf(followUp)) {
+    return res.status(409).json({ success: false, message: 'IBD 岗位任务属于专病管理流程，不能删除' });
   }
   // “删除”与“取消”语义分开：删除后不再出现在医护端/客户端长列表；原因写入独立审计日志。
   const FollowUpDeletionLog = require('../models/FollowUpDeletionLog');

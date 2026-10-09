@@ -57,7 +57,7 @@ import { checkupConclusionStage } from '../utils/checkupTaskRouting'
 import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask, isCheckupOnsiteTask, normalizeCheckupOnsiteChecklist, validateAdditionalCheckupAppointments } from '../components/CheckupBookingForm'
 import CheckupReportCollectionForm, { isCheckupReportCollectionTask } from '../components/CheckupReportCollectionForm'
 import CheckupAppointmentBookingForm, { checkupAppointmentBookingFromTask, isCheckupAppointmentBookingTask } from '../components/CheckupAppointmentBookingForm'
-import IbdWorkflowStageForm, { ibdStage, validateIbdStage } from '../components/IbdWorkflowStageForm'
+import IbdWorkflowStageForm, { ibdStage, ibdSubmitLabel, validateIbdStage } from '../components/IbdWorkflowStageForm'
 import CheckupMedicalExecutionForm, { checkupMedicalExecutionFromTask, isCheckupMedicalExecutionTask, validateCheckupMedicalExecution } from '../components/CheckupMedicalExecutionForm'
 import CheckupManagerReviewForm, { checkupManagerReviewFromTask, isCheckupManagerReviewTask, validateCheckupManagerReview } from '../components/CheckupManagerReviewForm'
 import CheckupAdvisorReviewModal, { isCheckupAdvisorReviewTask } from '../components/CheckupAdvisorReviewModal'
@@ -2704,7 +2704,8 @@ export default function PatientDetailPage() {
       .then(res => {
         if (cancelled) return
         const target = res.data?.followUps?.[0]
-        if (annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
+        if (ibdStage(target) && ['planned', 'in_progress', 'missed'].includes(target.status)) openExec(target)
+        else if (annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
         else if (isCheckupAdvisorReviewTask(target)) setCheckupAdvisorReview(target)
         else if (target?.aiStatus === 'pending') setFollowUpDetail(target)
         else toast('该随访审核任务已处理或不存在')
@@ -3336,7 +3337,8 @@ export default function PatientDetailPage() {
         nav(`${location.pathname}?openChat=1`, { replace: true, state: { serviceBooking: f } })
         return
       }
-      if (f.sourceType === 'order') setFollowUpDetail(f)
+      if (f.sourceType === 'order' && ibdStage(f) && ['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
+      else if (f.sourceType === 'order') setFollowUpDetail(f)
       else if (['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
       else setFollowUpDetail(f)
       nav(location.pathname + location.search, { replace: true, state: {} })
@@ -9863,7 +9865,7 @@ export default function PatientDetailPage() {
                   const reviewRoleLabel = role => ({ familyDoctor: '健康顾问', nutritionist: '营养师', healthPlanner: '健康规划师' })[role || 'familyDoctor'] || '指定专员'
                   const canReview = f => followUpReview.canReview(f, staff, user)
                   const renderRow = (f) => (
-                    <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => (isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f) || isCheckupManagerReviewTask(f)) ? openExec(f) : isCheckupAdvisorReviewTask(f) ? setCheckupAdvisorReview(f) : setFollowUpDetail(f)}>
+                    <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => ((ibdStage(f) && ['planned', 'in_progress', 'missed'].includes(f.status)) || isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f) || isCheckupManagerReviewTask(f)) ? openExec(f) : isCheckupAdvisorReviewTask(f) ? setCheckupAdvisorReview(f) : setFollowUpDetail(f)}>
                       <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                       <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                       <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{f.completedAt ? new Date(f.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
@@ -9921,7 +9923,7 @@ export default function PatientDetailPage() {
                           <span style={{ fontSize: 12, color: '#8AA89C' }}>等待{reviewRoleLabel(f.reviewRole)}审核</span>
                         ) : medicalProxyStage(f) === 'supervise' ? (
                           <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看督办进度</button>
-                        ) : (medicalProxyStage(f) || medicationProxyStage(f)) && ['planned', 'in_progress', 'missed'].includes(f.status) ? (
+                        ) : (ibdStage(f) || medicalProxyStage(f) || medicationProxyStage(f)) && ['planned', 'in_progress', 'missed'].includes(f.status) ? (
                           <button className="btn btn-sm" onClick={() => openExec(f)}>办理本环节</button>
                         ) : isCheckupAppointmentBookingTask(f) ? (
                           <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>填写三号预约</button>
@@ -11547,18 +11549,18 @@ export default function PatientDetailPage() {
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: execItem.taskRole ? 'none' : 'grid', gap: 6 }}>
                 {execItem.theme && (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{execItem.taskRole ? '事务名称：' : '随访主题：'}</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{ibdStage(execItem) ? '当前环节：' : execItem.taskRole ? '事务名称：' : '随访主题：'}</span>
                     <span style={{ fontSize: 13 }}>{serviceTaskTitle(execItem)}</span>
                   </div>
                 )}
                 {execItem.content && (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划内容：</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{ibdStage(execItem) ? '交接要求：' : '计划内容：'}</span>
                     <span style={{ fontSize: 13, whiteSpace: 'pre-line', flex: 1 }}>{execItem.content}</span>
                   </div>
                 )}
               </div>
-              {!execItem.taskRole && <div>
+              {!execItem.taskRole && !ibdStage(execItem) && <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{execItem.taskRole ? '处理方式' : '随访方式'}</label>
                 <select className="form-control" value={execForm.type}
                   onChange={e => setExecForm(f => ({ ...f, type: e.target.value }))}>
@@ -11567,7 +11569,7 @@ export default function PatientDetailPage() {
               </div>}
               {!checkupConclusionStage(execItem) && !isCheckupAppointmentBookingTask(execItem) && !isCheckupManagerReviewTask(execItem) && !medicalProxyStage(execItem) && !isCheckupReportCollectionTask(execItem) && !isOutpatientEscortVisitTask(execItem) && !isOutpatientPostVisitReviewTask(execItem) && <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <label style={{ fontSize: 12, color: '#8AA89C' }}>{isCheckupOnsiteTask(execItem) ? '体检当日临时情况与追加任务（选填）' : execItem.taskRole ? '补充说明（选填）' : '随访结果 *'}</label>
+                  <label style={{ fontSize: 12, color: '#8AA89C' }}>{ibdStage(execItem) ? '处理记录（暂存进展时必填）' : isCheckupOnsiteTask(execItem) ? '体检当日临时情况与追加任务（选填）' : execItem.taskRole ? '补充说明（选填）' : '随访结果 *'}</label>
                   {!execItem.taskRole && !ibdStage(execItem) && <button type="button" className="btn btn-secondary"
                     style={{ fontSize: 12, padding: '2px 10px' }}
                     onClick={handleExecAIDraft} disabled={execDraftLoading}>
@@ -11575,17 +11577,17 @@ export default function PatientDetailPage() {
                   </button>}
                 </div>
                 <textarea className="form-control" rows={execItem.taskRole ? 3 : 5}
-                  placeholder={isCheckupOnsiteTask(execItem) ? '记录现场发现的异常、临时增加检查、临时门诊或专家安排，以及需交接的后续事项' : execItem.taskRole ? '仅填写清单之外需要说明的特殊情况' : '记录本次随访的实际情况、会员反馈、建议等...'}
+                  placeholder={ibdStage(execItem) ? '记录与客户或专科的沟通进展、时间变化及待处理事项' : isCheckupOnsiteTask(execItem) ? '记录现场发现的异常、临时增加检查、临时门诊或专家安排，以及需交接的后续事项' : execItem.taskRole ? '仅填写清单之外需要说明的特殊情况' : '记录本次随访的实际情况、会员反馈、建议等...'}
                   value={execForm.content}
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
               </div>}
-              <FollowUpProgressFields item={execItem} form={execForm} setForm={setExecForm} />
+              {!ibdStage(execItem) && <FollowUpProgressFields item={execItem} form={execForm} setForm={setExecForm} />}
               {!execItem.taskRole && !canRecordProgress(execItem) && <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>{execItem.taskRole ? '事务状态' : '随访结果状态'}</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>{ibdStage(execItem) ? '本环节办理状态' : execItem.taskRole ? '事务状态' : '随访结果状态'}</label>
                 <div style={{ display: 'flex', gap: 16 }}>
                   {[
-                    { v: 'completed',   l: execItem.taskRole === 'supervisor' ? '✅ 已核对并闭环' : execItem.taskRole ? '✅ 事务已完成' : '事项已全部完成（不是仅完成沟通）' },
-                    { v: 'in_progress', l: execItem.taskRole === 'supervisor' ? '🔄 有遗留，继续督办' : execItem.taskRole ? '🔄 事务处理中' : '🔄 随访中（未完成/未接通）' },
+                    { v: 'completed',   l: ibdStage(execItem) ? (ibdStage(execItem) === 'advisor' ? '方案已确定，转健管专员预约' : '首诊预约和陪诊已安排') : execItem.taskRole === 'supervisor' ? '✅ 已核对并闭环' : execItem.taskRole ? '✅ 事务已完成' : '事项已全部完成（不是仅完成沟通）' },
+                    { v: 'in_progress', l: ibdStage(execItem) ? '尚在沟通，保存处理进展' : execItem.taskRole === 'supervisor' ? '🔄 有遗留，继续督办' : execItem.taskRole ? '🔄 事务处理中' : '🔄 随访中（未完成/未接通）' },
                   ].filter(o => o.v !== 'completed' || !requiresOutcomeReview(execItem)).map(o => (
                     <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
                       <input type="radio" name="execStatus" value={o.v}
@@ -11603,7 +11605,7 @@ export default function PatientDetailPage() {
               {!execItem.isBlocked && !medicationProxyStage(execItem) && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && medicalProxyStage(execItem) !== 'appointment_review' && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               {!execItem.isBlocked && medicalProxyStage(execItem) === 'post_visit_audit' && <button className="btn btn-secondary" onClick={handleSavePostVisitAuditDraft} disabled={execSaving}>保存并继续资料审核</button>}
               {medicationProxyStage(execItem) !== 'progress' && !execForm.checkupMerged && <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execItem.isBlocked}>
-                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : ibdStage(execItem) ? (ibdStage(execItem) === 'advisor' ? '确认并转健管专员预约' : '确认首诊预约与陪诊') : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isCheckupManagerReviewTask(execItem) ? '确认资料审核并转健康顾问' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认预约并流转', planner: '确认执行人员并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '确认人员并转就医专员', execute: '完成陪同并提交资料审核', post_visit_audit: '确认资料审核并结束服务' }[medicalProxyStage(execItem)] || '保存') : medicalProxyStage(execItem) === 'planner' && isMedicalProxyMedicationTask(execItem) ? '确认执行人员并转就医专员' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) ? '确认预约并转健康规划师分配' : medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '资料审核完成并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}
+                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : ibdStage(execItem) ? ibdSubmitLabel(ibdStage(execItem), execForm.status) : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isCheckupManagerReviewTask(execItem) ? '确认资料审核并转健康顾问' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认预约并流转', planner: '确认执行人员并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '确认人员并转就医专员', execute: '完成陪同并提交资料审核', post_visit_audit: '确认资料审核并结束服务' }[medicalProxyStage(execItem)] || '保存') : medicalProxyStage(execItem) === 'planner' && isMedicalProxyMedicationTask(execItem) ? '确认执行人员并转就医专员' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) ? '确认预约并转健康规划师分配' : medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '资料审核完成并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}
               </button>}
             </div>
           </div>
@@ -11616,7 +11618,7 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={() => setFollowUpDetail(null)}>
           <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">{annualDispatch.dedicated(followUpDetail) ? (annualDispatch.isExecution(followUpDetail) ? '就医协助 · 办理记录' : '就医协助 · 派单安排') : annualServiceItem.isAssistance(followUpDetail) ? '就医协助 · 预约安排' : '随访详情'}</h3>
+              <h3 className="modal-title">{ibdStage(followUpDetail) ? 'IBD 专病管理 · 任务记录' : annualDispatch.dedicated(followUpDetail) ? (annualDispatch.isExecution(followUpDetail) ? '就医协助 · 办理记录' : '就医协助 · 派单安排') : annualServiceItem.isAssistance(followUpDetail) ? '就医协助 · 预约安排' : '随访详情'}</h3>
               <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -11805,7 +11807,7 @@ export default function PatientDetailPage() {
                   } catch (err) { toast(err.message || '审核失败') }
                 }}>{annualNutrition.isTask(followUpDetail) ? '通过评估审核' : '确认随访计划'}</button>
               </>}
-              {!annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
+              {!ibdStage(followUpDetail) && !annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
                 onClick={async () => {
                   if (!window.confirm('确认删除这条随访记录？删除后不可恢复。')) return
                   try {
@@ -11817,7 +11819,7 @@ export default function PatientDetailPage() {
                     setFollowUpDetail(null); loadFollowUps()
                   } catch (err) { toast(err.message || '删除失败') }
                 }}>删除</button>}
-              {!annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
+              {!ibdStage(followUpDetail) && !annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
                 date: followUpDetail.date ? new Date(followUpDetail.date).toISOString().slice(0, 10) : '',
                 type: followUpDetail.type || 'phone',
                 theme: serviceTaskTitle(followUpDetail),
