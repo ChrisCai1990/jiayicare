@@ -37,6 +37,7 @@ const EMPTY_FORM = {
 const IBD_PRODUCT_TEMPLATE = {
   ...EMPTY_FORM,
   name: 'IBD 年度专病管理服务',
+  images: ['/api/uploads/ibd-annual-v1.png'],
   subtitle: '健康顾问负责制 · 专科协作 · 1 年院外管理',
   category: '专病管理',
   originalPrice: '2980',

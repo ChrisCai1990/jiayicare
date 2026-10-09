@@ -37,6 +37,7 @@ async function main() {
   ].join('\n\n');
   const product = await Product.create({
     tenantId, name: NAME, subtitle: '健康顾问负责制 · 专科协作 · 1 年院外管理',
+    images: ['/api/uploads/ibd-annual-v1.png'],
     category: '专病管理', originalPrice: PRICE, servicePrices: [], memberPrices: {},
     sortOrder: 70, stock: 0, stockLimited: false, status: 'off',
     features: ['健康顾问负责', '专科医师决定诊疗', '含 2 次陪诊', '病历与随访管理', 'IBD 日记和趋势图'],
