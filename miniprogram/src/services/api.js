@@ -190,6 +190,7 @@ export const recordsAPI = {
 export const ibdAPI = {
   status: () => request('/ibd/status'),
   overview: (days = 365) => request(`/ibd/overview?days=${days}`),
+  recognizeFc: (reportId) => request('/ibd/fc/recognize', { method: 'POST', body: JSON.stringify({ reportId }), timeout: 60000 }),
   addFc: (data) => request('/ibd/fc', { method: 'POST', body: JSON.stringify(data) }),
   deleteFc: (id) => request(`/ibd/fc/${id}`, { method: 'DELETE' }),
 };

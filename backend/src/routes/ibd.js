@@ -3,6 +3,8 @@ const Order = require('../models/Order');
 const HealthRecord = require('../models/HealthRecord');
 const MedicalReport = require('../models/MedicalReport');
 const PsychAssessment = require('../models/PsychAssessment');
+const { parseImage } = require('../utils/ai');
+const { signStoredUrl } = require('../utils/oss');
 const { SCALES, calcSeverity } = require('../config/psychScales');
 
 const router = express.Router();
@@ -73,11 +75,47 @@ router.get('/overview', async (req, res) => {
       MedicalReport.find({ user: req.user._id, reviewedAt: { $ne: null }, checkDate: { $gte: since.toISOString().slice(0, 10) } }).select('checkDate institution reviewedAt reportItems.name reportItems.value reportItems.unit reportItems.itemId').lean(),
     ]);
     const diary = diaryRows.map(row => ({ id: String(row._id), date: row.extra?.date || row.recordedAt.toISOString().slice(0, 10), ...(row.extra || {}) }));
-    const fc = [...fcRows.map(row => ({ id: String(row._id), date: row.extra?.date || row.recordedAt.toISOString().slice(0, 10), value: Number(row.value), unit: 'μg/g', source: '客户录入', verified: false, institution: row.extra?.institution || '' })), ...reports.flatMap(fcFromReport)]
+    const reviewedReportIds = new Set(reports.filter(report => fcFromReport(report).length).map(report => String(report._id)));
+    const fc = [...fcRows.filter(row => !reviewedReportIds.has(String(row.extra?.reportId || ''))).map(row => ({ id: String(row._id), date: row.extra?.date || row.recordedAt.toISOString().slice(0, 10), value: Number(row.value), unit: 'μg/g', source: '客户录入', verified: false, institution: row.extra?.institution || '' })), ...reports.flatMap(fcFromReport)]
       .filter(row => Number.isFinite(row.value)).sort((a, b) => a.date.localeCompare(b.date));
     const scales = scaleRows.map(row => ({ id: String(row._id), date: row.filledAt.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }), type: row.scaleType, score: row.totalScore, severity: row.severity }));
     res.json({ success: true, data: { ...access, diary, fc, scales } });
   } catch (error) { res.status(500).json({ success: false, message: '获取 IBD 记录失败' }); }
+});
+
+// 已上传的 FC 报告原件留在客户健康档案；AI 仅提取候选字段，客户确认后才写入曲线。
+router.post('/fc/recognize', async (req, res) => {
+  try {
+    if (!(await accessFor(req.user._id)).canRecord) return res.status(403).json({ success: false, message: 'IBD 服务尚未处于管理期' });
+    const mongoose = require('mongoose');
+    if (!mongoose.isValidObjectId(req.body.reportId)) return res.status(400).json({ success: false, message: '报告编号无效' });
+    const report = await MedicalReport.findOne({ _id: req.body.reportId, user: req.user._id });
+    if (!report?.fileUrl || !report.mimeType?.startsWith('image/')) return res.status(400).json({ success: false, message: '请上传清晰的检验报告图片' });
+    if (report.reviewedAt || report.reportItems?.length) return res.status(409).json({ success: false, message: '该报告已有结果，请勿重复识别' });
+    if (!process.env.QWEN_API_KEY) return res.status(503).json({ success: false, message: '报告识别暂不可用，请手工填写' });
+    const signedUrl = signStoredUrl(report.fileUrl, report.ossKey);
+    const prompt = '只读取这张检验报告中清晰可见的信息，返回严格 JSON，不要解释：{"name":"原文项目名称","value":"原文检测结果","unit":"原文单位","date":"YYYY-MM-DD","institution":"报告上的检测机构"}。目标项目仅限粪便钙卫蛋白/粪钙卫蛋白/Fecal Calprotectin/FC/FCP；没有则 name、value、unit 留空。date 优先采样日期，缺失时可用报告日期；都没有则留空。机构必须是报告上可见的检测机构，缺失则留空。结果中的小于号、大于号要原样保留；绝不推断或补全。';
+    const raw = await parseImage(signedUrl, prompt, { isUrl: true, maxTokens: 350, reportId: String(report._id), stage: 'ibd_fc_recognition' });
+    let parsed;
+    try { parsed = JSON.parse(String(raw).trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
+    catch { return res.status(422).json({ success: false, message: '报告识别结果不完整，请手工填写' }); }
+    const name = String(parsed.name || '').trim();
+    const unit = String(parsed.unit || '').replace(/\s/g, '').toLowerCase();
+    const valueText = String(parsed.value || '').trim().replace(/,/g, '');
+    const validValue = FC_NAME.test(name) && /^(?:[μµu]g\/g|mg\/kg)$/.test(unit) && /^\d+(?:\.\d+)?$/.test(valueText) && Number(valueText) <= 1000000;
+    const date = dateAtNoon(parsed.date) ? parsed.date : '';
+    const institution = String(parsed.institution || '').trim().slice(0, 120);
+    await MedicalReport.updateOne({ _id: report._id, user: req.user._id }, { $set: {
+      aiStatus: 'pending',
+      ...(institution ? { institution } : {}),
+      ...(date ? { checkDate: date } : {}),
+      ...(validValue ? { reportItems: [{ name, value: valueText, unit: parsed.unit, itemType: 'lab', status: 'unknown' }] } : {}),
+    } });
+    res.json({ success: true, data: { reportId: String(report._id), date, value: validValue ? valueText : '', institution, recognized: validValue } });
+  } catch (error) {
+    console.error('[ibd-fc-recognize]', error);
+    res.status(502).json({ success: false, message: '报告识别失败，原件已保存，请手工填写' });
+  }
 });
 
 router.get('/scales', async (req, res) => {
@@ -109,7 +147,13 @@ router.post('/fc', async (req, res) => {
     if (!date) return res.status(400).json({ success: false, message: '请选择有效的采样日期' });
     const value = numberField(req.body.value, 'FC 数值', [0, 1000000], true);
     const institution = String(req.body.institution || '').trim().slice(0, 120);
-    const record = await HealthRecord.create({ user: req.user._id, category: 'vitals', type: 'ibd_fc', label: '粪便钙卫蛋白', value: String(value), unit: 'μg/g', extra: { date: req.body.date, institution, source: 'customer' }, recordedAt: date, recordedBy: { source: 'customer' } });
+    let reportId = '';
+    if (req.body.reportId) {
+      const report = await MedicalReport.findOne({ _id: req.body.reportId, user: req.user._id }).select('_id').lean();
+      if (!report) return res.status(400).json({ success: false, message: '关联报告不存在' });
+      reportId = String(report._id);
+    }
+    const record = await HealthRecord.create({ user: req.user._id, category: 'vitals', type: 'ibd_fc', label: '粪便钙卫蛋白', value: String(value), unit: 'μg/g', extra: { date: req.body.date, institution, source: 'customer', reportId }, recordedAt: date, recordedBy: { source: 'customer' } });
     res.status(201).json({ success: true, data: { id: String(record._id), date: req.body.date, value, unit: 'μg/g', verified: false } });
   } catch (error) { res.status(400).json({ success: false, message: error.message || '保存失败' }); }
 });
