@@ -123,6 +123,16 @@ export const recordsAPI = {
   delete: (id) => request(`/records/${id}`, { method: 'DELETE' }),
 };
 
+export const ibdAPI = {
+  status: () => request('/ibd/status'),
+  overview: days => request(`/ibd/overview?days=${days || 365}`),
+  scales: () => request('/ibd/scales'),
+  saveDiary: data => request('/ibd/diary', { method: 'POST', body: JSON.stringify(data) }),
+  addFc: data => request('/ibd/fc', { method: 'POST', body: JSON.stringify(data) }),
+  deleteFc: id => request(`/ibd/fc/${id}`, { method: 'DELETE' }),
+  submitScale: (type, answers) => request(`/ibd/scales/${type}`, { method: 'POST', body: JSON.stringify({ answers }) }),
+};
+
 // ── Medications ───────────────────────────────────────────────────
 export const medicationsAPI = {
   list: (status) => request(`/medications${status ? '?status=' + status : ''}`),

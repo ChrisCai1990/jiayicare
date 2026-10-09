@@ -41,6 +41,7 @@ import SpecialScreeningScreen from '../screens/records/SpecialScreeningScreen';
 import MedicalReportsScreen from '../screens/records/MedicalReportsScreen';
 import CheckinScreen from '../screens/checkin/CheckinScreen';
 import ProfileArchiveScreen from '../screens/records/ProfileArchiveScreen';
+import IbdInsightsScreen from '../screens/records/IbdInsightsScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -167,6 +168,7 @@ export default function Navigation() {
             <Stack.Screen name="MedicalReports" component={MedicalReportsScreen} />
             <Stack.Screen name="Checkin" component={CheckinScreen} />
             <Stack.Screen name="ProfileArchive" component={ProfileArchiveScreen} />
+            <Stack.Screen name="IbdInsights" component={IbdInsightsScreen} />
           </>
         )}
       </Stack.Navigator>

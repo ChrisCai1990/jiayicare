@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline, Circle, Path, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { mockBloodPressureData, mockBloodSugarData } from '../../data/mockData';
-import { recordsAPI, userAPI } from '../../services/api';
+import { recordsAPI, userAPI, ibdAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import BodyCompositionCharts from './BodyCompositionCharts';
 
@@ -388,6 +388,13 @@ export default function RecordsScreen({ navigation }) {
   const [bodyCompHistory, setBodyCompHistory] = useState([]);
   const [dailyCheckins, setDailyCheckins] = useState({});
   const [symptomHistory, setSymptomHistory] = useState([]);
+  const [ibdEnabled, setIbdEnabled] = useState(false);
+  useEffect(() => {
+    if (isDemo) return;
+    const refresh = () => ibdAPI.status().then(result => setIbdEnabled(!!result.data?.enabled)).catch(() => setIbdEnabled(false));
+    refresh();
+    return navigation.addListener('focus', refresh);
+  }, [isDemo, navigation]);
 
   // 个人档案/生活方式/医疗保障/年度复查计划已抽离到 ProfileArchiveScreen.js（2026-07-18 健康档案页瘦身）
 
@@ -657,6 +664,12 @@ export default function RecordsScreen({ navigation }) {
             <Text style={styles.reportManageText}>查看已上传报告</Text>
           </TouchableOpacity>
         </View>
+
+        {ibdEnabled && <View style={styles.section}><TouchableOpacity style={styles.aiEntryCard} onPress={() => navigation.navigate('IbdInsights')}>
+          <View style={[styles.aiEntryIcon, { backgroundColor: '#0E7490' }]}><Ionicons name="analytics-outline" size={20} color={colors.white} /></View>
+          <View style={{ flex: 1 }}><Text style={styles.aiEntryTitle}>IBD 病情记录</Text><Text style={styles.aiEntryDesc}>情绪—症状对照 · FC 曲线 · 每日日记</Text></View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity></View>}
 
         {/* ── AI健康信息整理入口 ───────────────────────────────── */}
         <View style={styles.section}>

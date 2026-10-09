@@ -72,6 +72,7 @@ const healthRecordSchema = new mongoose.Schema({
 // 索引：按用户+时间查询
 healthRecordSchema.index({ user: 1, recordedAt: -1 });
 healthRecordSchema.index({ user: 1, type: 1, recordedAt: -1 });
+healthRecordSchema.index({ user: 1, type: 1, recordedAt: 1 }, { unique: true, partialFilterExpression: { type: 'ibd_diary', deletedAt: null } });
 healthRecordSchema.index({ user: 1, 'photoRecognition.imageHash': 1 }, {
   unique: true,
   partialFilterExpression: { 'photoRecognition.imageHash': { $type: 'string' } },
