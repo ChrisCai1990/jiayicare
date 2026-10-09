@@ -2447,6 +2447,15 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const error = await medicationProxyWorkflow.validate(followUp, req.body, req.staff);
     if (error) return res.status(400).json({ success: false, message: error });
   }
+  const ibdWorkflow = require('../utils/ibdWorkflow');
+  const ibdStage = ibdWorkflow.stageOf(followUp);
+  if (ibdStage) {
+    const error = ibdWorkflow.validate(followUp, req.body, req.staff);
+    if (error) return res.status(400).json({ success: false, message: error });
+    if (ibdStage === 'advisor' && req.body.status === 'completed'
+      && !(await User.exists({ _id: followUp.patientId, assignedHealthManager: { $ne: null } })))
+      return res.status(409).json({ success: false, message: '客户尚未分配健管专员，不能转交预约' });
+  }
   const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
   const medicalReminderStage = medicalReminderWorkflow.stageOf(followUp);
   if (medicalReminderStage === 'documents' && req.body.status === 'completed') {
@@ -2701,6 +2710,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     await checkupAppointmentWorkflow.advance(followUp);
   }
   if (medicationStage && followUp.status === 'completed' && previousStatus !== 'completed') await medicationProxyWorkflow.advance(followUp);
+  if (ibdStage && followUp.status === 'completed') await ibdWorkflow.advance(followUp);
   if (medicalReminderStage && followUp.status === 'completed' && previousStatus !== 'completed') await medicalReminderWorkflow.advanceStaffStage(followUp, req.staff._id);
   if (isOutpatientEscortVisit && followUp.status === 'completed') {
     const patient = await User.findById(followUp.patientId).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
@@ -9142,6 +9152,14 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
       const task = await checkupAppointmentWorkflow.start(currentOrder, req.staff._id, req.body.checkupAppointmentIntake || {});
       const order = await Order.findByIdAndUpdate(req.params.id, { status: 'scheduled', handledBy: req.staff._id }, { new: true }).populate('user', 'name phone');
       return res.json({ success: true, data: order, task, message: '待约检信息已确认，已转健管专员预约两个号' });
+    }
+    if (require('../utils/ibdServiceTerms').isIbdOrder(currentOrder)) {
+      if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: 'IBD 接单信息由健康规划师确认' });
+      const task = await require('../utils/ibdWorkflow').start(currentOrder, req.staff._id, {
+        scheduledAt, serviceDateEnd: req.body.serviceDateEnd, note,
+      });
+      const order = await Order.findById(req.params.id).populate('user', 'name phone');
+      return res.json({ success: true, data: order, task, message: '客户需求已转健康顾问确定首诊方案' });
     }
     const newStatus = 'scheduled';
     const update = { status: newStatus, handledBy: req.staff._id };
