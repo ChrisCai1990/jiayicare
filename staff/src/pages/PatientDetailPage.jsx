@@ -3902,7 +3902,7 @@ export default function PatientDetailPage() {
     return () => { cancelAnimationFrame(frame); clearTimeout(timer) }
   }, [ocrReviewReport, ocrFocusItemIndex])
 
-  const handleOpenOCRReview = async (r, focusItems = []) => {
+  const handleOpenOCRReview = async (r, focusItems = [], options = {}) => {
     ocrFocusHandledRef.current = null
     setOcrSaving(true)
     // 每次打开先读取服务器最新版，再开放审核窗口；不能先展示旧副本，否则请求返回时
@@ -3913,7 +3913,7 @@ export default function PatientDetailPage() {
       if (latestRes.data) latestReport = latestRes.data
     } catch {}
     ocrRevisionRef.current = Number(latestReport.reviewRevision || 0)
-    setOcrReviewReport(latestReport)
+    setOcrReviewReport(options.screeningRecordEdit ? { ...latestReport, _screeningRecordEdit: true } : latestReport)
     const validStoredDate = [latestReport.checkDate, latestReport.date]
       .map(calendarDate)
       .find(Boolean) || ''
@@ -4030,11 +4030,13 @@ export default function PatientDetailPage() {
       await reviewActivityFlush.current()
       await ocrSaveQueueRef.current.catch(() => {})
       const pageDates = captureCurrentOcrPageDate()
-      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, pageDates, hospital: ocrReportMeta.institution, date: resolvedOcrReportDate(pageDates), institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      const screeningRecordEdit = Boolean(ocrReviewReport._screeningRecordEdit)
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, pageDates, hospital: ocrReportMeta.institution, date: resolvedOcrReportDate(pageDates), institutionStatus: ocrReviewReport.institutionStatus, ...(screeningRecordEdit ? { screeningReclassification: true } : { aiStatus: 'reviewed' }), editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
-      toast('内容审核完成，已归类项目已同步；未匹配项目可手动选择目录归类')
+      toast(screeningRecordEdit ? '筛查项目归类已更新' : '内容审核完成，已归类项目已同步；未匹配项目可手动选择目录归类')
       setOcrReviewReport(null)
       loadReports()
+      if (screeningRecordEdit) loadScreening()
     } catch (err) { toast(err.message || '保存失败') }
     finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
   }
@@ -6305,7 +6307,10 @@ export default function PatientDetailPage() {
                         }} style={{ background: 'none', border: '1px solid #DC3545', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#DC3545', cursor: 'pointer', flexShrink: 0 }}>删除</button>
                       </>)
                     : (<>
-                        <button onClick={() => handleEditScreening(r)}
+                        <button onClick={() => {
+                          if ((r.reportItems || []).length) handleOpenOCRReview(r, (r.reportItems || []).map(item => item.name), { screeningRecordEdit: true })
+                          else handleEditScreening(r)
+                        }}
                           style={{ background: 'none', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#4A6558', cursor: 'pointer', flexShrink: 0 }}>编辑</button>
                         <button onClick={() => handleDeleteScreening(r)}
                           style={{ background: 'none', border: '1px solid #DC3545', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#DC3545', cursor: 'pointer', flexShrink: 0 }}>删除</button>
@@ -12551,7 +12556,7 @@ export default function PatientDetailPage() {
                 }
               }} onFocus={index => { setOcrReviewPage(Number(ocrEditItems[index]?.sourcePage) || 1); setOcrFocusItemIndex(index) }} />
               <div className="modal-header" style={{ flexShrink: 0 }}>
-                <h3 className="modal-title">审核AI识别结果 · {ocrReviewReport.title}</h3>
+                <h3 className="modal-title">{ocrReviewReport._screeningRecordEdit ? '修改筛查项目归类' : '审核AI识别结果'} · {ocrReviewReport.title}</h3>
                 {ocrReviewReport.parseJob?.message?.includes('识别失败') && <span style={{ fontSize: 12, color: '#B86A19', marginLeft: 12 }}>{ocrReviewReport.parseJob.message}</span>}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
                   <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
@@ -12945,29 +12950,29 @@ export default function PatientDetailPage() {
               </div>
               </div>
               <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
-                {!isManualOnlyReport(ocrReviewReport) && <button className="btn btn-secondary" style={{ flex: 0.7 }}
+                {!ocrReviewReport._screeningRecordEdit && !isManualOnlyReport(ocrReviewReport) && <button className="btn btn-secondary" style={{ flex: 0.7 }}
                   disabled={ocrSaving || pageParsing || isImageOnlyPage} onClick={handleParseCurrentPage}
                   title={isImageOnlyPage ? '本页仅有影像资料，请查看文字报告或人工填写' : `只重新提取原报告第${activePage}页，其他页保持不变`}>
                   {isImageOnlyPage ? '本页无文字可补提' : pageParsing ? `第${activePage}页补提中…` : ocrSaving ? '处理中…' : `补提第${activePage}页`}
                 </button>}
-                <button className="btn btn-secondary" style={{ flex: 0.6 }}
+                {!ocrReviewReport._screeningRecordEdit && <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleReclassifyOCR}
                   title="用最新专项筛查目录仅对待归类项目重新自动归类，已有及人工归类不受影响">
                   {ocrSaving ? '处理中…' : '🔄 刷新系统分类'}
-                </button>
-                <button className="btn btn-secondary" style={{ flex: 0.6 }}
+                </button>}
+                {!ocrReviewReport._screeningRecordEdit && <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleSaveOCRDraft}>
                   {ocrSaving ? '保存中…' : '💾 保存草稿'}
-                </button>
+                </button>}
                 {ocrDraftSavedAt && <span style={{ alignSelf: 'center', color: '#16845B', fontSize: 11, whiteSpace: 'nowrap' }}>已保存 {ocrDraftSavedAt.toLocaleTimeString('zh-CN')}</span>}
                 <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
                   disabled={ocrSaving} onClick={handleApproveOCR}>
-                  {ocrSaving ? '保存中…' : '✓ 提交审核（写入专项筛查）'}
+                  {ocrSaving ? '保存中…' : ocrReviewReport._screeningRecordEdit ? '✓ 保存重新归类' : '✓ 提交审核（写入专项筛查）'}
                 </button>
-                <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
+                {!ocrReviewReport._screeningRecordEdit && <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
                   disabled={ocrSaving} onClick={handleRejectOCR}>
                   驳回
-                </button>
+                </button>}
                 <button className="btn btn-secondary" onClick={() => setOcrReviewReport(null)}>取消</button>
               </div>
             </div>

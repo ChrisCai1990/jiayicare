@@ -4897,7 +4897,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
-    const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision, clinicalReview } = req.body;
+    const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision, clinicalReview, screeningReclassification } = req.body;
+    if (screeningReclassification && (editSource !== 'ocr_review' || !Array.isArray(reportItems) || aiStatus !== undefined)) {
+      return res.status(400).json({ success: false, message: '重新归类请求无效' });
+    }
     if ((documentCategory || report.documentCategory) === 'outpatient_record' && (reportItems !== undefined || aiStatus === 'reviewed')) {
       return res.status(409).json({ success: false, message: '门诊病历请核对结构化病历栏目后使用资料审核入口，不能按体检项目提交' });
     }
@@ -5122,8 +5125,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // 2026-07-02修复：此前条件是 || 关系，"保存草稿"(aiStatus:'pending')只要带了reportItems字段
     // 也会触发同步，导致专项筛查在审核通过前就被写入。改成严格要求 aiStatus 变为 reviewed 才同步，
     // 跟前端"提交审核（写入专项筛查）"按钮的文案设计意图一致——只有审核通过后才应该出现在专项筛查。
-    if (aiStatus === 'reviewed' && report.user && report.documentCategory !== 'prescription_order') {
-      await syncScreeningItems(report.user, report._id, report.reportItems);
+    if ((aiStatus === 'reviewed' || screeningReclassification) && report.user && report.documentCategory !== 'prescription_order') {
+      await syncScreeningItems(report.user, report._id, report.reportItems, { reconcile: Boolean(screeningReclassification) });
       if (report.audit_status === 'audited') await syncBodyCompositionFromReport(report);
     }
     // 已审核报告后续若由医护修正提取项/归类并再次保存，也要用同一来源报告ID覆盖身体成分历史。
@@ -14961,20 +14964,26 @@ async function upsertScreeningKey(userId, reportId, key, fallbackName) {
 // 2026-07-09（用户决策"一项只归一类"）：每个检验项只写【一条】——优先医护在审核弹窗确认的单值 screeningKey，
 // 回退 screeningKeys 数组的第一个（最佳匹配）。不再对 AI 多匹配出的每个 screeningKey 都写一条，
 // 从根上消除金娟反馈的"专项筛查里多出 AI 单独生成的部分"（如球蛋白同时被写进肝功能+免疫球蛋白两处）。
-async function syncScreeningItems(userId, reportId, items) {
+async function syncScreeningItems(userId, reportId, items, { reconcile = false } = {}) {
   try {
     const matched = (items || []).filter(it => it.matchStatus === 'matched');
     let syncCount = 0;
+    const currentKeys = new Set();
     for (const it of matched) {
       // 单一归类键：人工确认值最优先，其次数组首位（最佳匹配），都没有则跳过
       const key = it.screeningKey || (it.screeningKeys && it.screeningKeys[0]) || '';
       if (!key) continue;
+      currentKeys.add(key);
       await upsertScreeningKey(userId, reportId, key, it.name);
       syncCount++;
+    }
+    if (reconcile) {
+      await UserScreeningItem.deleteMany({ user: userId, reportId, itemId: { $nin: [...currentKeys] } });
     }
     if (syncCount) console.log(`[screening-sync] userId=${userId} reportId=${reportId} 同步${syncCount}项`);
   } catch (err) {
     console.error('[screening-sync] 失败', String(reportId), err.message);
+    if (reconcile) throw err;
   }
 }
 

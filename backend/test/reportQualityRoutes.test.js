@@ -14,7 +14,7 @@ test('isolated Mongo: Admin confirmation, role checks, review metadata and idemp
   try {
     require('express-async-errors');
     const express = require('express'), jwt = require('jsonwebtoken');
-    const Admin = require('../src/models/Admin'), MedicalReport = require('../src/models/MedicalReport');
+    const Admin = require('../src/models/Admin'), MedicalReport = require('../src/models/MedicalReport'), UserScreeningItem = require('../src/models/UserScreeningItem');
     const Category = require('../src/models/ProjectCategory');
     const admin = new mongoose.Types.ObjectId(), staff = new mongoose.Types.ObjectId(), patient = new mongoose.Types.ObjectId();
     await Admin.collection.insertMany([{ _id: admin, username: 'quality_admin', name: '测试管理员', role: 'superadmin' }, { _id: staff, username: 'quality_staff', name: '测试审核员', role: 'healthManager' }]);
@@ -75,6 +75,13 @@ test('isolated Mongo: Admin confirmation, role checks, review metadata and idemp
     const approved = await call(base, { reportItems: beforeApproval.reportItems, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: beforeApproval.reviewRevision }, admin, 'PATCH');
     assert.equal(approved.status, 200, approved.body.message);
     assert.equal((await MedicalReport.findById(report._id)).audit_status, 'audited');
+    await UserScreeningItem.updateOne({ user: patient, reportId: report._id, itemId: manualKeys[1] }, { $set: { category: String(root._id), parentLabel: root.name, itemLabel: otherLeaf.name, status: 'completed' } }, { upsert: true });
+    const beforeReclassification = await MedicalReport.findById(report._id).lean();
+    const reclassified = await call(base, { reportItems: [{ ...beforeReclassification.reportItems[0], manualClassificationKeys: [manualKeys[0]] }], screeningReclassification: true, editSource: 'ocr_review', expectedRevision: beforeReclassification.reviewRevision }, staff, 'PATCH');
+    assert.equal(reclassified.status, 200, reclassified.body.message);
+    const currentScreeningKeys = (await UserScreeningItem.find({ user: patient, reportId: report._id }).lean()).map(row => row.itemId);
+    assert.deepEqual(currentScreeningKeys, [manualKeys[0]]);
+    assert.equal((await MedicalReport.findById(report._id)).aiStatus, 'reviewed');
     const sessionId = randomUUID(), path = `reviewActivity.${admin}_${sessionId}`;
     assert.equal((await call(base + '/review-activity', { sessionId, sequence: 1 })).status, 200);
     await MedicalReport.collection.updateOne({ _id: report._id }, { $set: { [path + '.at']: new Date(Date.now() - 15000) } });
