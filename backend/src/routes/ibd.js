@@ -91,7 +91,10 @@ router.post('/fc/recognize', async (req, res) => {
     if (!mongoose.isValidObjectId(req.body.reportId)) return res.status(400).json({ success: false, message: '报告编号无效' });
     const report = await MedicalReport.findOne({ _id: req.body.reportId, user: req.user._id });
     if (!report?.fileUrl || !report.mimeType?.startsWith('image/')) return res.status(400).json({ success: false, message: '请上传清晰的检验报告图片' });
+    if (report.sourceType !== 'customer_upload' || !String(report.title || '').startsWith('IBD 粪便钙卫蛋白检验报告')) return res.status(400).json({ success: false, message: '请选择 FC 检验报告' });
     if (report.reviewedAt || report.reportItems?.length) return res.status(409).json({ success: false, message: '该报告已有结果，请勿重复识别' });
+    // 上传日不是采样日。识别失败时医护端也应看到“日期待补”，避免误审为当天检查。
+    await MedicalReport.updateOne({ _id: report._id, user: req.user._id }, { $set: { documentCategory: 'lab_report', date: '', checkDate: '', aiStatus: 'pending' } });
     if (!process.env.QWEN_API_KEY) return res.status(503).json({ success: false, message: '报告识别暂不可用，请手工填写' });
     const signedUrl = signStoredUrl(report.fileUrl, report.ossKey);
     const prompt = '只读取这张检验报告中清晰可见的信息，返回严格 JSON，不要解释：{"name":"原文项目名称","value":"原文检测结果","unit":"原文单位","date":"YYYY-MM-DD","institution":"报告上的检测机构"}。目标项目仅限粪便钙卫蛋白/粪钙卫蛋白/Fecal Calprotectin/FC/FCP；没有则 name、value、unit 留空。date 优先采样日期，缺失时可用报告日期；都没有则留空。机构必须是报告上可见的检测机构，缺失则留空。结果中的小于号、大于号要原样保留；绝不推断或补全。';
@@ -108,7 +111,7 @@ router.post('/fc/recognize', async (req, res) => {
     await MedicalReport.updateOne({ _id: report._id, user: req.user._id }, { $set: {
       aiStatus: 'pending',
       ...(institution ? { institution } : {}),
-      ...(date ? { checkDate: date } : {}),
+      ...(date ? { date, checkDate: date } : {}),
       ...(validValue ? { reportItems: [{ name, value: valueText, unit: parsed.unit, itemType: 'lab', status: 'unknown' }] } : {}),
     } });
     res.json({ success: true, data: { reportId: String(report._id), date, value: validValue ? valueText : '', institution, recognized: validValue } });
