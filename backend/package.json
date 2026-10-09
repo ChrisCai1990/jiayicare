@@ -9,6 +9,7 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "@alicloud/dypnsapi20170525": "^2.0.0",
     "@alicloud/dysmsapi20170525": "^4.5.1",
     "@alicloud/openapi-client": "^0.4.15",
     "@anthropic-ai/sdk": "^0.96.0",

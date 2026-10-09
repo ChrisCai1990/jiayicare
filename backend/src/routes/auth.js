@@ -10,6 +10,7 @@ const HealthFundTransaction = require('../models/HealthFundTransaction');
 const VerificationCode = require('../models/VerificationCode');
 const SystemConfig = require('../models/SystemConfig');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
+const aliyunNumberAuth = require('../utils/aliyunNumberAuth');
 const requireUser = require('../middleware/auth');
 const { seedUserData } = require('../config/seedData');
 const { ensureAssignedHealthPlanner } = require('../utils/healthPlannerAssignment');
@@ -305,6 +306,57 @@ router.post('/login', async (req, res) => {
     message: isNew ? '注册成功' : '登录成功',
     data: { token, user: { ...user.toObject(), healthFund }, isNew },
   });
+});
+
+router.get('/one-click/status', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, data: { enabled: aliyunNumberAuth.enabled() } });
+});
+
+// Android SDK token -> Aliyun GetMobile -> the same persistent account/session as SMS login.
+// GetMobile is billable on success, so the feature stays closed until separately configured.
+router.post('/one-click/login', async (req, res) => {
+  if (!aliyunNumberAuth.enabled()) return res.status(503).json({ success: false, message: '一键登录暂未开放，请使用短信验证码' });
+  const accessToken = req.body?.accessToken;
+  if (typeof accessToken !== 'string' || accessToken.length < 16 || accessToken.length > 8192 || /\s/.test(accessToken)) {
+    return res.status(400).json({ success: false, message: '授权凭证无效，请重新授权' });
+  }
+  let phone;
+  try {
+    phone = await aliyunNumberAuth.getAuthorizedMobile(accessToken);
+  } catch (error) {
+    // Do not expose carrier token, credentials or provider response to logs/clients.
+    console.warn('[one-click-login] carrier lookup failed:', error.code || error.name || 'unknown');
+    if (error.message === 'NUMBER_AUTH_DAILY_LIMIT') {
+      return res.status(429).json({ success: false, message: '今日一键登录额度已用完，请使用短信验证码' });
+    }
+    return res.status(400).json({ success: false, message: '一键登录未完成，请重试或使用短信验证码' });
+  }
+  try {
+    if (phone === DEMO_PHONE) return res.status(403).json({ success: false, message: '演示账号已停用' });
+    let user = await User.findOne({ phone });
+    if (user?.isDeleted) return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
+    const isNew = !user;
+    if (isNew) user = await User.create({ phone });
+    if (!user.referralCode) {
+      user.referralCode = crypto.randomBytes(6).toString('hex');
+      await user.save();
+    }
+    const inviteCode = req.body?.inviteCode;
+    if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
+    else await rememberPendingInvitation(user, inviteCode);
+    user = await User.findById(user._id);
+    await ensureAssignedHealthPlanner(user).catch(error => console.error('[health-planner-assignment] 一键登录自动分配失败', error.message));
+    user = await User.findById(user._id);
+    const sessionId = await beginLoginSession(req, user, 'phone_one_click');
+    user = await User.findById(user._id);
+    const token = jwt.sign({ id: user._id, sessionId, persistent: true }, process.env.JWT_SECRET, { expiresIn: '10y' });
+    const healthFund = await computeHealthFund(user);
+    return res.json({ success: true, message: isNew ? '注册成功' : '登录成功', data: { token, user: { ...user.toObject(), healthFund }, isNew } });
+  } catch (error) {
+    console.error('[one-click-login] account login failed:', error.name || 'unknown');
+    return res.status(500).json({ success: false, message: '登录暂时失败，请使用短信验证码' });
+  }
 });
 
 // 小程序前后台切换与心跳，用于计算实际活跃时长；单次最多计入120秒，避免异常退出后虚增。
