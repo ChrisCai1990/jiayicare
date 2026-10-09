@@ -2454,6 +2454,8 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       return res.status(409).json({ success: false, message: 'IBD 岗位任务请在专病流程中办理，不能通过普通随访编辑或取消' });
     const error = ibdWorkflow.validate(followUp, req.body, req.staff);
     if (error) return res.status(400).json({ success: false, message: error });
+    const handoffError = await ibdWorkflow.precheckAdvance(followUp, req.body);
+    if (handoffError) return res.status(409).json({ success: false, message: handoffError });
     if (ibdStage === 'advisor' && req.body.status === 'completed'
       && !(await User.exists({ _id: followUp.patientId, assignedHealthManager: { $ne: null } })))
       return res.status(409).json({ success: false, message: '客户尚未分配健管专员，不能转交预约' });
