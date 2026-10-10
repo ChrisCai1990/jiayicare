@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Input, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
@@ -23,6 +23,18 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [notRegistered, setNotRegistered] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [reviewEnabled, setReviewEnabled] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewUsername, setReviewUsername] = useState('');
+  const [reviewPassword, setReviewPassword] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    authAPI.reviewStatus().then((res) => {
+      if (active) setReviewEnabled(res?.data?.enabled === true);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const cancelLogin = () => {
     try { Taro.removeStorageSync('jy_post_login_url'); } catch {}
@@ -105,6 +117,24 @@ export default function LoginPage() {
       }
     } catch (err) {
       setError(err.message || '手机号快捷登录失败，请稍后重试或使用短信验证码登录');
+    } finally { setLoading(false); }
+  };
+
+  const handleReviewLogin = async () => {
+    if (loading || !reviewUsername.trim() || !reviewPassword) return;
+    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
+    setError('');
+    try {
+      setLoading(true);
+      const res = await authAPI.reviewLogin(reviewUsername.trim(), reviewPassword);
+      if (res.success) {
+        setReviewPassword('');
+        await login(res.data.user, res.data.token);
+        await waitForAuthCommit();
+        afterLoginSuccess(res.data.user);
+      }
+    } catch (err) {
+      setError(err.message || '审核账号登录失败，请检查账号和密码');
     } finally { setLoading(false); }
   };
 
@@ -238,6 +268,22 @@ export default function LoginPage() {
         <Button style={{ height: '48px', lineHeight: '48px', backgroundColor: '#fff', border: `1.5px solid ${colors.border}`, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, color: colors.primary }} openType="getPhoneNumber" onGetPhoneNumber={wechatLogin} disabled={loading || !agreed}>
           手机号快捷登录
         </Button>
+
+        {reviewEnabled && (
+          <View style={{ marginTop: `${spacing.md}px`, padding: `${spacing.md}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px` }}>
+            <View onClick={() => setReviewOpen(!reviewOpen)} style={{ padding: '4px 0' }}>
+              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>微信审核体验账号登录 {reviewOpen ? '⌃' : '›'}</Text>
+            </View>
+            {reviewOpen && (
+              <View>
+                <Text style={{ display: 'block', margin: '8px 0', fontSize: '12px', color: colors.textMuted }}>仅供微信审核人员使用；账号到期后自动失效。</Text>
+                <Input value={reviewUsername} onInput={(e) => setReviewUsername(e.detail.value)} placeholder="审核账号" maxlength={100} style={{ padding: '12px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, marginBottom: '8px' }} />
+                <Input value={reviewPassword} onInput={(e) => setReviewPassword(e.detail.value)} placeholder="审核密码" password maxlength={256} style={{ padding: '12px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, marginBottom: '8px' }} />
+                <Button onClick={handleReviewLogin} disabled={loading || !reviewUsername.trim() || !reviewPassword || !agreed} loading={loading} style={{ backgroundColor: colors.primary, color: '#fff', borderRadius: `${radius.sm}px` }}>登录体验</Button>
+              </View>
+            )}
+          </View>
+        )}
 
         <Text style={{ display: 'block', textAlign: 'center', marginTop: `${spacing.sm}px`, fontSize: '11px', color: colors.textMuted }}>
           可先浏览公开服务；购买或使用个人健康服务时再登录。

@@ -94,6 +94,10 @@ export const metabolicPilotAPI = {
 };
 // ── Auth ─────────────────────────────────────────────────────────
 export const authAPI = {
+  reviewStatus: () => request('/auth/review-experience/status'),
+  reviewLogin: (username, password) => request('/auth/review-experience/login', {
+    method: 'POST', body: JSON.stringify({ username, password }),
+  }),
   sendCode: (phone) =>
     request('/auth/send-code', { method: 'POST', body: JSON.stringify({ phone }) }),
 
