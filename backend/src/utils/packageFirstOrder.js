@@ -19,7 +19,7 @@ function coveredRight(entitlement, productId, specificationLabel) {
   return { entitlement, right, index, poolIndex, available };
 }
 
-async function packageFirstOrder({ user, product, service, totalUnits, serviceItems, note, desiredServiceDate,
+async function packageFirstOrder({ user, payerUser, product, service, totalUnits, serviceItems, note, desiredServiceDate,
   serviceRequirements, fulfillmentType, supervisorId }) {
   if (!product || product.memberBundle?.enabled) return { status: 'not_covered' };
   let rows = await applicableEntitlements(user._id);
@@ -37,7 +37,7 @@ async function packageFirstOrder({ user, product, service, totalUnits, serviceIt
   const { entitlement, right, index, poolIndex } = match;
   const now = new Date();
   const order = await Order.create({
-    user: user._id, tenantId: user.tenantId || null,
+    user: user._id, payerUser: payerUser || user._id, beneficiaryName: user.name || '', tenantId: user.tenantId || null,
     serviceId: String(product._id), serviceName: product.name,
     specificationLabel: service.specificationLabel || right.specificationLabel || '',
     servicePrice: 0, unitPrice: 0, totalUnits, usedUnits: 0,

@@ -221,19 +221,26 @@ const PACKAGE_CATALOG = [
 router.post('/inquiries', auth, async (req, res) => {
   const product = await Product.findOne({ _id: req.body.serviceId, status: 'on' });
   if (!product) return res.status(404).json({ success: false, message: '服务项目不存在或已下架' });
+  const serviceUser = await require('../utils/orderBeneficiary').resolveOrderBeneficiary(req.user, req.body.beneficiaryUserId);
+  if (!serviceUser) return res.status(403).json({ success: false, message: '服务对象不是已关联的家庭成员或监护子女' });
+  if (!serviceUser.onboardingCompleted) return res.status(403).json({ success: false, message: '服务对象需先完成基础建档' });
+  if (String(serviceUser._id) !== String(req.user._id) && !serviceUser.assignedHealthPlanner) {
+    return res.status(409).json({ success: false, message: '服务对象当前没有可用的服务负责人，请联系平台处理' });
+  }
   const inquiry = await ServiceInquiry.create({
-    user: req.user._id,
+    user: serviceUser._id,
+    requestedByUser: req.user._id,
     product: product._id,
     specificationLabel: String(req.body.specificationLabel || ''),
-    note: String(req.body.note || '').trim(),
+    note: [String(req.body.note || '').trim(), String(serviceUser._id) !== String(req.user._id) ? `由${req.user.name || '家人'}代提交，联系电话：${req.user.contactPhone || req.user.phone || '未登记'}` : ''].filter(Boolean).join('；'),
   });
-  const patient = await User.findById(req.user._id).select('assignedHealthPlanner');
-  if (patient?.assignedHealthPlanner) {
+  const patient = serviceUser;
+  if (patient.assignedHealthPlanner) {
     await FollowUp.create({
       staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
-      patientId: req.user._id, type: 'other', status: 'planned',
+      patientId: serviceUser._id, type: 'other', status: 'planned',
       theme: `服务咨询：${product.name}`,
-      content: [req.body.specificationLabel, req.body.note].filter(Boolean).join('；') || '用户希望咨询该服务',
+      content: [req.body.specificationLabel, inquiry.note].filter(Boolean).join('；') || '用户希望咨询该服务',
       sourceType: 'other',
     });
   }
@@ -245,7 +252,7 @@ router.post('/inquiries', auth, async (req, res) => {
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
   const appPayment = req.body.paymentScene === 'app';
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [] } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [], beneficiaryUserId } = req.body;
   if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
@@ -253,6 +260,14 @@ router.post('/order', auth, async (req, res) => {
   // 服务提交必须走完整实名建档，避免仅有残缺历史字段的账户绕过身份证/联系电话核验。
   if (!req.user.onboardingCompleted) {
     return res.status(403).json({ success: false, code: 'REAL_NAME_REQUIRED', message: '提交服务前请先完成实名建档（姓名、证件号和联系电话）' });
+  }
+  const serviceUser = await require('../utils/orderBeneficiary').resolveOrderBeneficiary(req.user, beneficiaryUserId);
+  if (!serviceUser) return res.status(403).json({ success: false, message: '服务对象不是已关联的家庭成员或监护子女' });
+  if (!serviceUser.onboardingCompleted) return res.status(403).json({ success: false, message: '服务对象需先完成基础建档' });
+  const familyPayment = String(serviceUser._id) !== String(req.user._id);
+  const familyRequester = familyPayment ? `由${req.user.name || '家人'}代提交，联系电话：${req.user.contactPhone || req.user.phone || '未登记'}` : '';
+  if (familyPayment && (Number(useHealthFund) > 0 || useEnterpriseSharedFund || couponId)) {
+    return res.status(400).json({ success: false, message: '为家人支付暂不支持使用付款人的基金或抵用券' });
   }
 
   // 先从 Product / Admin 服务包查，再查 Service，最后兼容旧版静态 ID
@@ -294,12 +309,12 @@ router.post('/order', auth, async (req, res) => {
   if (product?.memberBundle?.enabled) {
     const bundle = product.memberBundle;
     const allowedTiers = (bundle.allowedMembershipTiers || []).map(String);
-    const canBuy = await require('../utils/packageFeatureEntitlements').hasMemberProductAccess(req.user, allowedTiers);
+    const canBuy = await require('../utils/packageFeatureEntitlements').hasMemberProductAccess(serviceUser, allowedTiers);
     if (!canBuy) return res.status(403).json({ success: false, code: 'MEMBER_ONLY', message: '此服务包仅限有效365及以上会员购买' });
-    const activeMemberships = await require('../utils/packageEntitlements').applicableEntitlements(req.user._id);
+    const activeMemberships = await require('../utils/packageEntitlements').applicableEntitlements(serviceUser._id);
     const membershipStarts = activeMemberships.filter(row => row.rights?.includes365 === true || allowedTiers.includes(String(row.rights?.membershipTier || ''))).map(row => new Date(row.validFrom)).filter(date => !Number.isNaN(date.getTime()));
     const membershipStart = membershipStarts.length ? new Date(Math.max(...membershipStarts.map(date => date.getTime()))) : new Date(0);
-    const boughtCount = await Order.countDocuments({ user: req.user._id, serviceId: String(product._id), paymentStatus: 'paid', paidAt: { $gte: membershipStart } });
+    const boughtCount = await Order.countDocuments({ user: serviceUser._id, serviceId: String(product._id), paymentStatus: 'paid', paidAt: { $gte: membershipStart } });
     if (boughtCount >= Math.max(1, Number(bundle.purchaseLimitPerMembership) || 1)) return res.status(409).json({ success: false, message: '本会员有效期内该服务包已达可购买次数' });
     if (Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '会员专享服务包已享组合优惠，不支持叠加健康基金' });
     if (couponId) return res.status(400).json({ success: false, message: '会员专享服务包已享组合优惠，不支持叠加优惠券' });
@@ -329,12 +344,12 @@ router.post('/order', auth, async (req, res) => {
     const bundlePrice = Math.round(productEntitlements.reduce((sum, item) => sum + item.listPrice * item.discountRate, 0) * 100) / 100;
     service.price = bundlePrice; service.originalPrice = listTotal; service.specificationLabel = `${expected}项会员专享组合`;
     service.skuFulfillmentType = 'subscription_service';
-    memberBundleSnapshot = { version: 1, productId: product._id, name: product.name, clientBrand: req.user.clientBrand || 'jiayiguanjia', validityDays: Math.max(1, Number(bundle.validityDays) || 730), transferRemainingOnce: bundle.transferRemainingOnce === true, allowedMembershipTiers: allowedTiers, listTotal, bundlePrice, productEntitlements, capturedAt: new Date() };
+    memberBundleSnapshot = { version: 1, productId: product._id, name: product.name, clientBrand: serviceUser.clientBrand || 'jiayiguanjia', validityDays: Math.max(1, Number(bundle.validityDays) || 730), transferRemainingOnce: bundle.transferRemainingOnce === true, allowedMembershipTiers: allowedTiers, listTotal, bundlePrice, productEntitlements, capturedAt: new Date() };
   }
   if (!service && mongoose.isValidObjectId(serviceId)) {
     servicePackage = await ServicePackage.findOne({
       _id: serviceId,
-      clientBrand: req.user.clientBrand || 'jiayiguanjia',
+      clientBrand: serviceUser.clientBrand || 'jiayiguanjia',
       active: true,
       'activation.enabled': true,
     }).lean();
@@ -385,10 +400,11 @@ router.post('/order', auth, async (req, res) => {
   // Reserving at request time prevents a second paid checkout; actual redemption
   // still follows documented service completion or cancellation.
   if (product && !isPkg && !require('../utils/ibdServiceTerms').isIbdProduct(product)) {
-    const supervisorId = await resolveOrderWorkflowAssignee(req.user._id, service.name);
+    const supervisorId = await resolveOrderWorkflowAssignee(serviceUser._id, service.name);
+    if (!supervisorId) return res.status(409).json({ success: false, message: '服务对象当前没有可用的服务负责人，请联系平台处理后再下单' });
     const packageOrder = await require('../utils/packageFirstOrder').packageFirstOrder({
-      user: req.user, product, service, totalUnits, serviceItems: productServiceItems,
-      note: String(note || '').trim(), desiredServiceDate: confirmedServiceDate,
+      user: serviceUser, payerUser: req.user._id, product, service, totalUnits, serviceItems: productServiceItems,
+      note: [String(note || '').trim(), familyRequester].filter(Boolean).join('；'), desiredServiceDate: confirmedServiceDate,
       serviceRequirements: confirmedServiceRequirements, fulfillmentType: orderFulfillmentType,
       supervisorId,
     });
@@ -399,7 +415,7 @@ router.post('/order', auth, async (req, res) => {
     if (packageOrder.status === 'reserved') {
       const order = packageOrder.order;
       if (supervisorId) await FollowUp.create({ staffId: supervisorId, assignedTo: supervisorId,
-        patientId: req.user._id, type: 'other', status: 'planned', theme: `预约：${service.name}`,
+        patientId: serviceUser._id, type: 'other', status: 'planned', theme: `预约：${service.name}`,
         content: order.note || '客户已使用套餐权益提交服务预约，请联系确认安排',
         sourceType: 'order', sourceOrderId: order._id });
       const fulfillment = await Fulfillment.findOneAndUpdate({ order: order._id },
@@ -498,7 +514,7 @@ router.post('/order', auth, async (req, res) => {
   if (sharedFundAmount > 0) paymentParts.push(`企业共享基金抵扣¥${sharedFundAmount}`);
   if (couponDiscount > 0) paymentParts.push(`优惠券抵扣¥${couponDiscount}`);
   if (paymentMethod) paymentParts.push(`支付方式：${paymentMethod}`);
-  const orderNote = [note, paymentParts.join('；')].filter(Boolean).join('；');
+  const orderNote = [note, familyRequester, paymentParts.join('；')].filter(Boolean).join('；');
 
   // 普通下单只认本次有效分享来源；从推送购买由 user 路由明确绑定 pushRecordId。
   let referrerId = null;
@@ -516,7 +532,7 @@ router.post('/order', auth, async (req, res) => {
   }
 
   // 所有订单统一由客户所属健康规划师收单和总督办；住院等专业评估作为后续子任务分派给健康顾问。
-  const followUpStaffId = await resolveOrderWorkflowAssignee(req.user._id, service.name);
+  const followUpStaffId = await resolveOrderWorkflowAssignee(serviceUser._id, service.name);
   if (!followUpStaffId) {
     return res.status(409).json({ success: false, message: '当前没有可用的服务负责人，请联系平台处理后再下单' });
   }
@@ -537,7 +553,10 @@ router.post('/order', auth, async (req, res) => {
   }
   try { order = await Order.create({
     _id: sharedOrderId,
-    user:         req.user._id,
+    user:         serviceUser._id,
+    payerUser:    req.user._id,
+    beneficiaryName: serviceUser.name || '',
+    tenantId:     serviceUser.tenantId || null,
     serviceId:    service.id,
     serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
     servicePrice: service.price,
@@ -557,7 +576,7 @@ router.post('/order', auth, async (req, res) => {
     orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
     annualServiceSnapshot: (isPkg || memberBundleSnapshot) ? {
       packageId: servicePackage?._id || null,
-      clientBrand: req.user.clientBrand || 'jiayiguanjia',
+      clientBrand: serviceUser.clientBrand || 'jiayiguanjia',
       durationMonths: servicePackage ? Number(servicePackage.activation?.durationMonths || 12) : ({ pkg_1y: 12, pkg_6m: 6, pkg_3m: 3 })[service.id],
       entitlementSnapshot: packageEntitlementSnapshot,
       ...(memberBundleSnapshot ? { memberBundleSnapshot } : {}),
@@ -624,7 +643,7 @@ router.post('/order', auth, async (req, res) => {
     pendingTasks.push(FollowUp.create({
       staffId: followUpStaffId,
       assignedTo: followUpStaffId,
-      patientId: req.user._id,
+      patientId: serviceUser._id,
       type: 'other',
       status: 'planned',
       theme: medicationProxy ? `代配药：AI沟通后由健康规划师确认 · ${service.name}` : ibdOrder ? `IBD 年度管理：规划师接单 · ${service.name}` : isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,

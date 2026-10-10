@@ -30,7 +30,7 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
       const orders = [];
       for (const allocation of allocations) {
         const order = await Order.findById(allocation.order);
-        if (!order || String(order.user) !== String(payment.user) || cents(order.paymentExpectedAmount) !== cents(allocation.amount)) throw new Error('合并支付订单或金额不一致');
+        if (!order || String(order.payerUser || order.user) !== String(payment.user) || cents(order.paymentExpectedAmount) !== cents(allocation.amount)) throw new Error('合并支付订单或金额不一致');
         orders.push(order);
       }
       for (const [index, order] of orders.entries()) {
@@ -47,6 +47,7 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
 
 async function settlePaidOrder(payment, order, cashAmount) {
   if (!order) throw new Error('订单不存在');
+  if (String(order.payerUser || order.user) !== String(payment.user)) throw new Error('支付人与订单付款人不一致');
   // Late/repeated success notifications must never resurrect a refunded child.
   if (order.paymentStatus === 'refunded' || order.refundStatus === 'refunded') return order;
 

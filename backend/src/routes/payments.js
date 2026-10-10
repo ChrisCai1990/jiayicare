@@ -60,7 +60,7 @@ router.get('/capabilities', auth, (req, res) => {
 });
 
 router.get('/:orderId/status', auth, async (req, res) => {
-  const order = await Order.findOne({ _id: req.params.orderId, user: req.user._id });
+  const order = await Order.findOne({ _id: req.params.orderId, $or: [{ payerUser: req.user._id }, { user: req.user._id, payerUser: null }] });
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   const payment = await Payment.findOne(paymentOrderQuery(order._id)).sort({ createdAt: -1 });
   if (payment?.status === 'succeeded' && order.paymentStatus !== 'refunded') {
@@ -111,7 +111,7 @@ router.get('/:orderId/status', auth, async (req, res) => {
 router.post('/:orderId/retry', auth, async (req, res) => {
   const appPayment = req.body?.paymentScene === 'app';
   if (appPayment) { try { wechatPay.assertAppReady(); } catch (e) { return res.status(503).json({ success: false, message: e.message }); } }
-  let order = await Order.findOne({ _id: req.params.orderId, user: req.user._id });
+  let order = await Order.findOne({ _id: req.params.orderId, $or: [{ payerUser: req.user._id }, { user: req.user._id, payerUser: null }] });
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   if (order.checkoutGroupId) {
     try { return res.json({ success: true, data: await require('../utils/groupPaymentActions').retryGroupPayment(order, req.user, appPayment ? 'app' : 'jsapi') }); }

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const serviceInquirySchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  requestedByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
   specificationLabel: { type: String, default: '' },
   note: { type: String, default: '' },

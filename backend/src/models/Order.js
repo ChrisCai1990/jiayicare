@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
   user:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  payerUser:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true }, // 代付人；旧订单为空时付款人为 user
+  beneficiaryName: { type: String, default: '' }, // 下单时服务对象姓名快照
   tenantId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键，创建时从 user.tenantId 冗余存一份）
   serviceId:   { type: String, required: true },
   serviceName: { type: String, required: true },

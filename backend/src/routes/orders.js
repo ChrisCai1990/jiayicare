@@ -10,6 +10,9 @@ const { confirmRefund } = require('../utils/orderSettlement');
 const router = express.Router();
 const { pendingServiceConfirmationQuery, needsCustomerServiceConfirmation } = require('../utils/orderServiceConfirmation');
 
+const visibleOrderQuery = userId => ({ $or: [{ user: userId }, { payerUser: userId }] });
+const payerOrderQuery = userId => ({ $or: [{ payerUser: userId }, { user: userId, payerUser: null }] });
+
 async function reconcileRefund(order) {
   if (!['requested', 'processing'].includes(order.refundStatus)) return;
   const refund = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing'] } }).sort({ createdAt: -1 });
@@ -38,14 +41,14 @@ async function reconcileRefund(order) {
 // 获取当前用户的订单列表
 router.get('/', auth, async (req, res) => {
   try {
-    let orders = await Order.find({ user: req.user._id })
+    let orders = await Order.find(visibleOrderQuery(req.user._id))
       .populate('paymentId')
       .populate('fulfillmentId')
       .sort({ createdAt: -1 })
       .limit(50);
     await Promise.all(orders.filter(order => order.refundStatus === 'processing').map(reconcileRefund));
     if (orders.some(order => order.refundStatus === 'processing')) {
-      orders = await Order.find({ user: req.user._id })
+      orders = await Order.find(visibleOrderQuery(req.user._id))
         .populate('paymentId')
         .populate('fulfillmentId')
         .sort({ createdAt: -1 })
@@ -71,7 +74,7 @@ router.get('/pending-service-confirmation', auth, async (req, res) => {
 // 获取单个订单详情
 router.get('/:id', auth, async (req, res) => {
   try {
-    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+    const order = await Order.findOne({ _id: req.params.id, ...visibleOrderQuery(req.user._id) });
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
     res.json({ success: true, data: order });
   } catch (err) {
@@ -107,7 +110,7 @@ router.patch('/:id/service-details', auth, async (req, res) => {
 // 取消订单（仅限 pending 状态）
 router.patch('/:id/cancel', auth, async (req, res) => {
   try {
-    let order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+    let order = await Order.findOne({ _id: req.params.id, ...payerOrderQuery(req.user._id) });
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
     if (order.status !== 'pending') {
       return res.status(400).json({ success: false, message: '该订单状态不可取消' });
@@ -181,7 +184,7 @@ router.patch('/:id/cancel', auth, async (req, res) => {
 });
 
 router.post('/:id/refund-request', auth, async (req, res) => {
-  const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+  const order = await Order.findOne({ _id: req.params.id, ...payerOrderQuery(req.user._id) });
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   if (order.paymentStatus !== 'paid') return res.status(400).json({ success: false, message: '只有已支付订单可以申请退款' });
   if (order.status === 'completed') return res.status(409).json({ success: false, message: '服务已全部完成，请联系客服核对可退款金额' });
