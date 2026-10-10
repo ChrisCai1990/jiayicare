@@ -12739,13 +12739,16 @@ export default function PatientDetailPage() {
                           } catch (error) { toast(error.message || '本页日期保存失败') }
                         }
                         return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 0.7fr) minmax(220px, 1fr)', gap: 8, padding: '10px 12px', marginBottom: 12, background: '#F6F9F7', border: '1px solid #D8EDE3', borderRadius: 8 }}>
-                        <label style={{ fontSize: 12, color: '#4A6558' }}>当前页{isPrescription ? '处方' : '检查'}日期（第 {activePage} 页）
-                          <input ref={ocrCurrentPageDateInputRef} data-report-page={activePage} type="text" inputMode="numeric" maxLength={10} placeholder="YYYY-MM-DD" style={{ ...inp, marginTop: 4 }} value={currentPageDate} onChange={e => updateCurrentPageDate(normalizePageDate(e.target.value))} onBlur={e => persistCurrentPageDate(e.target.value)} />
-                        </label>
                         <label style={{ fontSize: 12, color: '#4A6558' }}>来源机构
                           <input style={{ ...inp, marginTop: 4 }} value={ocrReportMeta.institution} onChange={e => setOcrReportMeta(meta => ({ ...meta, institution: e.target.value }))} placeholder="原件未写可留空" />
                         </label>
-                        <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#6B7E75', lineHeight: 1.55 }}>修改只应用并保存到当前页；其他页日期保持原样。若整份报告同日检查，请在上方填写报告统一检查日期。</div>
+                        <details style={{ gridColumn: '1 / -1', fontSize: 12, color: '#4A6558' }}>
+                          <summary style={{ cursor: 'pointer' }}>原件各页日期不同？按页补充日期</summary>
+                          <label style={{ display: 'block', marginTop: 8 }}>第 {activePage} 页{isPrescription ? '处方' : '检查'}日期
+                            <input ref={ocrCurrentPageDateInputRef} data-report-page={activePage} type="text" inputMode="numeric" maxLength={10} placeholder="YYYY-MM-DD" style={{ ...inp, marginTop: 4 }} value={currentPageDate} onChange={e => updateCurrentPageDate(normalizePageDate(e.target.value))} onBlur={e => persistCurrentPageDate(e.target.value)} />
+                          </label>
+                          <div style={{ fontSize: 11, color: '#6B7E75', lineHeight: 1.55, marginTop: 5 }}>通常只填写上方的报告日期。本页日期仅在原件确有不同日期时使用，只保存到当前页。</div>
+                        </details>
                       </div>
                       })()}
                       <ReportImageEvidenceNotice evidence={activeImageEvidence} hasItems={indexed.length > 0} />
