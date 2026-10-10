@@ -10,6 +10,7 @@ const HealthFundTransaction = require('../models/HealthFundTransaction');
 const VerificationCode = require('../models/VerificationCode');
 const SystemConfig = require('../models/SystemConfig');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
+const { reviewConfig, canAttempt, recordAttempt, validCredentials } = require('../utils/reviewExperience');
 const aliyunNumberAuth = require('../utils/aliyunNumberAuth');
 const requireUser = require('../middleware/auth');
 const { seedUserData } = require('../config/seedData');
@@ -20,11 +21,33 @@ const router = express.Router();
 
 router.get('/review-experience/status', async (_req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  res.json({ success: true, data: { enabled: false } });
+  res.json({ success: true, data: { enabled: reviewConfig().enabled } });
 });
 
-router.post('/review-experience/login', async (_req, res) => {
-  return res.status(403).json({ success: false, message: '游客及审核体验登录已关闭，请使用本人手机号登录' });
+router.post('/review-experience/login', async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  const config = reviewConfig();
+  if (!config.enabled) return res.status(403).json({ success: false, message: '审核体验暂未开放' });
+  const limit = canAttempt(req.ip);
+  if (!limit.allowed) {
+    res.set('Retry-After', String(limit.retryAfterSeconds));
+    return res.status(429).json({ success: false, message: '尝试次数较多，请稍后再试' });
+  }
+  const { username, password } = req.body || {};
+  if (String(username || '').length > 100 || typeof password !== 'string' || password.length > 256 || !validCredentials(config, username, password)) {
+    recordAttempt(req.ip);
+    return res.status(401).json({ success: false, message: '审核账号或密码错误' });
+  }
+  try {
+    const user = await User.findOne({ _id: config.accountId, 'reviewExperience.enabled': true, isDeleted: false });
+    if (!user?.tenantId) return res.status(503).json({ success: false, message: '审核账号暂不可用' });
+    const sessionId = await beginLoginSession(req, user, 'review');
+    const token = jwt.sign({ id: user._id, sessionId, persistent: true }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    return res.json({ success: true, data: { token, user: user.toObject(), isNew: false } });
+  } catch (error) {
+    console.error('[review-login]', error.name || 'unknown');
+    return res.status(500).json({ success: false, message: '审核体验暂不可用' });
+  }
 });
 
 async function beginLoginSession(req, user, method) {
