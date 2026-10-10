@@ -74,7 +74,7 @@ export default function ReportsPage() {
   const handleEditSave = async () => {
     if (!editForm.title.trim()) { toast('标题不能为空'); return }
     const normalizedDate = editForm.date ? calendarDate(editForm.date) : ''
-    if (editForm.date && !normalizedDate) { toast('检查日期无效，请填写完整日期（如 2026-09-23）'); return }
+    if (editForm.date && !normalizedDate) { toast('报告日期无效，请填写完整日期（如 2026-09-23）'); return }
     setEditSaving(true)
     try {
       await staffAPI.updateReport(editModal._id, { ...editForm, date: normalizedDate })
@@ -172,7 +172,7 @@ export default function ReportsPage() {
                 ['会员', showDetail.user?.name],
                 ['类型', REPORT_TYPE[showDetail.type] || showDetail.type],
                 ['医院', showDetail.hospital || '-'],
-                ['报告日期', showDetail.date || '-'],
+                ['报告日期', showDetail.checkDate || showDetail.date || '-'],
                 ['审核状态', AUDIT_STATUS[showDetail.audit_status]],
                 ['审核人', showDetail.audited_by || '-'],
                 ['驳回原因', showDetail.reject_reason || '-'],

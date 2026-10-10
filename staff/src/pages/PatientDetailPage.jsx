@@ -11976,7 +11976,7 @@ export default function PatientDetailPage() {
                   onChange={e => setEditingReportForm(f => ({ ...f, hospital: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">检查日期</label>
+                <label className="form-label">报告日期</label>
                 <DateField className="form-input" type="date" value={editingReportForm.date || ''}
                   onChange={e => setEditingReportForm(f => ({ ...f, date: e.target.value }))} />
               </div>
@@ -12001,7 +12001,7 @@ export default function PatientDetailPage() {
               <button className="btn btn-secondary" disabled={editingReportSaving || editingReportLoading} onClick={async () => {
                 if (!editingReportForm.title?.trim()) { toast('请填写报告标题'); return }
                 const normalizedDate = editingReportForm.date ? calendarDate(editingReportForm.date) : ''
-                if (editingReportForm.date && !normalizedDate) { toast('检查日期无效，请填写完整日期（如 2026-09-23）'); return }
+                if (editingReportForm.date && !normalizedDate) { toast('报告日期无效，请填写完整日期（如 2026-09-23）'); return }
                 setEditingReportSaving(true)
                 try {
                   await staffAPI.updateReport(editingReport._id, { ...editingReportForm, date: normalizedDate })

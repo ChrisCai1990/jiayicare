@@ -4926,7 +4926,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // 不能默默写成空值，导致已填写的检查日期从资料列表消失。
     const invalidDate = date !== undefined && String(date || '').trim() && !isCalendarDate(date);
     if (invalidDate && date !== report.date && date !== report.checkDate) {
-      return res.status(400).json({ success: false, message: '检查日期无效，请填写完整日期（如 2026-09-23）' });
+      return res.status(400).json({ success: false, message: '报告日期无效，请填写完整日期（如 2026-09-23）' });
     }
     const safeDate = invalidDate ? undefined : date;
     if (editSource === 'report_date_correction') {
@@ -5680,13 +5680,13 @@ router.get('/upload/report-file/:jobId', staffAuth, (req, res) => {
   res.json({ success: true, data: { state: 'done', url: result.url, previewUrl: signStoredUrl(result.url, result.key), ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected, reportId: result.reportId } });
 });
 
-// 只提取"检查机构"+"检查日期"两个字段的精简prompt，供上传报告时自动回填表单用——
+// 只提取机构和一个报告级日期，供上传报告时自动回填表单用——
 // 不做完整体检项目提取，控制耗时和AI调用成本（2026-07-21需求：单份上传时医院/日期
 // 报告原文本来就印着，不该让专员每次手动重复填写）
-const QUICK_META_PROMPT = `请只从这张体检报告图片里提取"检查机构名称"和"检查日期"两项信息，不要提取任何其他内容。
+const QUICK_META_PROMPT = `请只从这张体检报告图片里提取"检查机构名称"和一个"报告日期"，不要提取其他内容。
 规则：
 - institution：机构全称必须与报告原文印刷文字逐字一致，不得翻译、音译、编造。找不到就留空字符串。只有报告原文确实印刷的是英文机构名（境外机构报告）时才保留英文，中文报告严禁输出英文或中英混杂机构名。
-- checkDate：格式 YYYY-MM-DD，取报告上印刷的检查/采样/报告日期，找不到就留空字符串。
+- checkDate：格式 YYYY-MM-DD。原件有报告日期时取报告日期；没有报告日期时才取检查日期，仍没有则取采样日期。三者都找不到就留空字符串。只输出一个日期，不拼接多个日期。
 仅输出JSON，不要任何额外文字：{"institution":"","checkDate":""}`;
 
 // POST /api/staff/upload/quick-meta — 上传报告后，自动识别机构名+日期回填表单（不做完整体检解析）
