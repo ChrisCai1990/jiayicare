@@ -10927,6 +10927,19 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 
     const scope = req.body.scope || 'all';
     const force = req.body.force === true;
+    const currentYear = new Date().getFullYear();
+    const requestedYear = Number(req.body.year || currentYear);
+    if (!Number.isInteger(requestedYear) || requestedYear < 1900 || requestedYear > currentYear) {
+      return res.status(400).json({ success: false, message: '请选择有效且不晚于当前年份的分析年度' });
+    }
+    if (requestedYear < currentYear) {
+      if (scope !== 'doctor') return res.status(400).json({ success: false, message: '历史年度仅支持依据当年及更早体检报告补生成5维分析，生活方式缺少当年快照' });
+      const { reportYear } = require('../utils/historicalAIHealthContext');
+      const datedReports = await MedicalReport.find({ user: req.params.id }).select('reportYear checkDate date').lean();
+      if (!datedReports.some(report => reportYear(report) === requestedYear)) {
+        return res.status(400).json({ success: false, message: `${requestedYear}年度没有带检查年度的体检报告，无法补生成分析` });
+      }
+    }
     // 生成权限按维度分流：5维分析(doctor)限健康顾问、生活方式(nutrition)限营养师、all限超管；
     // 健管专员等其他角色只能查看不能生成（后端兜底，防越权直调接口）
     const role = req.staff.role;
@@ -10952,7 +10965,8 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // 没做这层校验的漏洞）。
     if (scope === 'doctor' || scope === 'nutrition' || scope === 'all') {
       const { checkReportAuditGate } = require('../utils/reportAuditGate');
-      const gateMsg = await checkReportAuditGate(req.params.id);
+      const gateMsg = await checkReportAuditGate(req.params.id,
+        requestedYear < currentYear ? { throughYear: requestedYear } : undefined);
       if (gateMsg) return res.status(403).json({ success: false, needReportAudit: true, message: gateMsg });
     }
     // 生活方式评估（nutrition维度）额外要求：该客户的膳食调查问卷必须已完成营养师复核
@@ -10973,7 +10987,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // 它们不需要感知历史记录的存在，读到的永远是最新一条。
     const evaluatedAt = req.body.evaluatedAt ? new Date(req.body.evaluatedAt) : new Date();
     const period = req.body.period || null; // 可选季度标记，如 'Q1'/'Q2'/'Q3'/'Q4'，纯展示用途
-    const year = String(req.body.year || evaluatedAt.getFullYear());
+    const year = String(requestedYear);
     const existing = user.aiHealthSummary || {};
     const byYear = { ...(existing.byYear || {}) };
     // 旧数据迁移：有顶层 sections 但无 byYear，先归档到其原年份（默认2026），归档为该年度首条record
@@ -11094,6 +11108,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // 从而做到健康顾问/营养师任一方重新评估都不影响对方。
     const newRecord = {
       scope, sections: mergedSections, generatedAt: new Date(), evaluatedAt, period,
+      retrospective: requestedYear < currentYear,
       approvedAt: null, approvedBy: null,
       doctorApprovedAt: scope === 'nutrition' ? prevEntry.doctorApprovedAt : null,
       doctorApprovedBy: scope === 'nutrition' ? prevEntry.doctorApprovedBy : null,
@@ -11108,11 +11123,18 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     byYear[year] = { ...records[0], records };
 
     // 顶层镜像最新一条record，供下游功能（ai-annual-plan/用户端展示/AI聊天助手等）无感知读取
-    const latestDoctor = records.find(r => (r.scope === 'doctor' || r.scope === 'all' || !r.scope) && hasDoctorSections(r)) || {};
-    const latestNutrition = records.find(r => (r.scope === 'nutrition' || r.scope === 'all' || !r.scope) && hasNutritionSection(r)) || {};
+    const latestYear = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))[0];
+    const newestYearEntry = byYear[latestYear] || {};
+    const newestRecords = Array.isArray(newestYearEntry.records)
+      ? newestYearEntry.records : (newestYearEntry.sections ? [newestYearEntry] : []);
+    const latestDoctor = newestRecords.find(r => (r.scope === 'doctor' || r.scope === 'all' || !r.scope) && hasDoctorSections(r)) || {};
+    const latestNutrition = newestRecords.find(r => (r.scope === 'nutrition' || r.scope === 'all' || !r.scope) && hasNutritionSection(r)) || {};
     const latestRecord = {
       sections: { ...(latestDoctor.sections || {}), ...(latestNutrition.sections || {}) },
-      generatedAt: records[0]?.generatedAt || new Date(),
+      generatedAt: newestRecords[0]?.generatedAt || new Date(),
+      approvedAt: newestYearEntry.approvedAt || newestRecords[0]?.approvedAt || null,
+      approvedBy: newestYearEntry.approvedBy || newestRecords[0]?.approvedBy || null,
+      source: newestYearEntry.source || newestRecords[0]?.source || null,
       doctorApprovedAt: latestDoctor.doctorApprovedAt || latestDoctor.approvedAt || null,
       doctorApprovedBy: latestDoctor.doctorApprovedBy || latestDoctor.approvedBy || null,
       nutritionApprovedAt: latestNutrition.nutritionApprovedAt || latestNutrition.approvedAt || null,
@@ -11121,9 +11143,10 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const summary = {
       sections: latestRecord.sections, generatedAt: latestRecord.generatedAt,
       approvedAt: latestRecord.approvedAt || null, approvedBy: latestRecord.approvedBy || null,
+      ...(latestRecord.source ? { source: latestRecord.source } : {}),
       doctorApprovedAt: latestRecord.doctorApprovedAt || null, doctorApprovedBy: latestRecord.doctorApprovedBy || null,
       nutritionApprovedAt: latestRecord.nutritionApprovedAt || null, nutritionApprovedBy: latestRecord.nutritionApprovedBy || null,
-      byYear, latestYear: year,
+      byYear, latestYear,
     };
 
     const saved = await User.collection.updateOne(

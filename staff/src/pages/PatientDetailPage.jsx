@@ -8107,9 +8107,12 @@ export default function PatientDetailPage() {
         }
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
         const nowY = new Date().getFullYear()
-        // 年度候选只展示实际已生成的年份 + 当前年（用于首次生成入口），不预设未来/往年空占位
-        const yearOpts = [...new Set([...years, String(nowY)])].sort((a, b) => Number(b) - Number(a))
-        // 当前查看的年度：允许查看尚未生成的当前年度（此时显示空状态+生成按钮）
+        // 已有分析、实际体检报告和当前年均可选择；历史年份首次生成由后端按报告年度限定证据。
+        const reportYears = [...reports, ...screeningReports]
+          .map(report => Number(report.reportYear || String(report.checkDate || report.date || '').slice(0, 4)))
+          .filter(year => Number.isInteger(year) && year >= 1900 && year <= nowY)
+          .map(String)
+        const yearOpts = [...new Set([...years, ...reportYears, String(nowY)])].sort((a, b) => Number(b) - Number(a))
         const curYear = (aiYear && yearOpts.includes(aiYear)) ? aiYear : (years[0] || String(nowY))
         const rawYearEntry = byYear[curYear] || {}
         const records = (Array.isArray(rawYearEntry.records) ? rawYearEntry.records : (rawYearEntry.sections ? [rawYearEntry] : []))
@@ -8435,6 +8438,9 @@ export default function PatientDetailPage() {
                 })}
               </select>
             </div>
+            {Number(curYear) < nowY && <div style={{ fontSize: 12, color: '#8A6B36', marginBottom: 12 }}>
+              历史年度补生成仅依据截至{curYear}年末有明确检查年度的报告；当前档案、用药、生活方式和近期打卡不作为当年事实。生活方式评估无法据此回溯生成。
+            </div>}
             {/* 同一年度分成两条独立评估链，各自显示生成时间与历史版本。 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, marginBottom: 14 }}>
               {[
@@ -8456,13 +8462,13 @@ export default function PatientDetailPage() {
                             ? !!(r.doctorApprovedAt || r.approvedAt)
                             : !!(r.nutritionApprovedAt || r.approvedAt)
                           const time = r.generatedAt ? new Date(r.generatedAt).toLocaleString('zh-CN') : '历史记录'
-                          return <option key={r._recordIndex} value={r._recordIndex}>第{group.records.length - i}次 · {time}{approved ? ' · 已审核' : ' · 待审核'}</option>
+                          return <option key={r._recordIndex} value={r._recordIndex}>第{group.records.length - i}次 · {time}{r.retrospective ? ' · 历史补生成' : ''}{approved ? ' · 已审核' : ' · 待审核'}</option>
                         })}
                       </select>
                       <div style={{ marginTop: 6, fontSize: 11, color: '#8AA89C' }}>
                         生成时间：{group.current.generatedAt ? new Date(group.current.generatedAt).toLocaleString('zh-CN') : '—'}
                       </div>
-                      {(staff?.role === 'superadmin'
+                      {(Number(curYear) >= nowY || group.key === 'doctor') && (staff?.role === 'superadmin'
                         || (group.key === 'doctor' && staff?.role === 'familyDoctor')
                         || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
@@ -8486,11 +8492,13 @@ export default function PatientDetailPage() {
                   ) : (
                     <div>
                       <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>
-                        {group.key === 'nutrition' && !latestDoctorApproved
+                        {group.key === 'nutrition' && Number(curYear) < nowY
+                          ? '历史年度缺少可核对的生活方式快照，暂不支持补生成'
+                          : group.key === 'nutrition' && !latestDoctorApproved
                           ? '等待健康顾问完成并审核本年度5维分析'
                           : '本年度尚未生成'}
                       </div>
-                      {(staff?.role === 'superadmin'
+                      {(Number(curYear) >= nowY || group.key === 'doctor') && (staff?.role === 'superadmin'
                         || (group.key === 'doctor' && staff?.role === 'familyDoctor')
                         || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
                         <button className="btn btn-primary btn-sm"
