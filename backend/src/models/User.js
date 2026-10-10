@@ -41,7 +41,7 @@ const userSchema = new mongoose.Schema({
   reviewExperience: { enabled: { type: Boolean, default: false } }, // 专用、无真实资料的微信审核账号
   healthMonitoringConsentAt: { type: Date, default: null }, // 客户主动同意免费血压/体重监测提醒；未同意不自动发送
   lastLoginAt: { type: Date, default: null },
-  lastLoginMethod: { type: String, enum: ['phone_wechat', 'phone', 'wechat', ''], default: '' },
+  lastLoginMethod: { type: String, enum: ['phone_wechat', 'phone', 'wechat', 'review', ''], default: '' },
   loginCount: { type: Number, default: 0 },
   totalLoginSeconds: { type: Number, default: 0 },
   referralCode: { type: String, unique: true, sparse: true, default: () => crypto.randomBytes(6).toString('hex') },
