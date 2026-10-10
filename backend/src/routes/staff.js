@@ -4929,6 +4929,13 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: '检查日期无效，请填写完整日期（如 2026-09-23）' });
     }
     const safeDate = invalidDate ? undefined : date;
+    if (editSource === 'report_date_correction') {
+      const expectedDate = String(req.body.expectedDate || '');
+      const currentDate = String(report.checkDate || report.date || '');
+      if (!safeDate || expectedDate !== currentDate) {
+        return res.status(409).json({ success: false, message: '报告日期已变化，请重新打开报告后再补正' });
+      }
+    }
     if (reportItems !== undefined && editSource === 'ocr_review') {
       const requestedRevision = Number(expectedRevision);
       if (!Number.isInteger(requestedRevision) || requestedRevision !== Number(report.reviewRevision || 0)) {
@@ -4961,6 +4968,15 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (hospital !== undefined) { report.hospital = hospital; report.institution = hospital; }
     if (['pending', 'confirmed', 'unknown'].includes(req.body.institutionStatus)) report.institutionStatus = req.body.institutionStatus;
     if (safeDate !== undefined) {
+      const previousDate = String(report.checkDate || report.date || '');
+      if (safeDate !== previousDate && report.audit_status === 'audited') {
+        report.dataEditLog.push({
+          itemIndex: -1, itemName: '报告日期', field: 'checkDate', oldValue: previousDate,
+          newValue: safeDate, operatorId: req.staff._id,
+          operatorName: req.staff.name || req.staff.username || '', operatorRole: req.staff.role || '',
+          source: editSource || 'report_edit', at: new Date(),
+        });
+      }
       report.date = safeDate; report.checkDate = safeDate;
       // 2026-07-09修复"同一检查同时出现在2025和2026"：编辑改了检查日期时，reportYear 必须跟着日期重算，
       // 否则会出现 checkDate=2025-08-06 但 reportYear 仍停留在旧值2026 的错位，导致这份报告在两个年度里都出现。

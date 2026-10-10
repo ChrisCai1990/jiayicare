@@ -3077,6 +3077,9 @@ export default function PatientDetailPage() {
 
   const [reportScreeningData, setReportScreeningData] = useState([])
   const [reportSourceFocus, setReportSourceFocus] = useState(null)
+  const [reportDateEditing, setReportDateEditing] = useState(false)
+  const [reportDateDraft, setReportDateDraft] = useState('')
+  const [reportDateSaving, setReportDateSaving] = useState(false)
 
   const openClinicalReportReview = async (report) => {
     editingReportIdRef.current = report._id
@@ -3101,6 +3104,8 @@ export default function PatientDetailPage() {
   const openReportDetail = (r) => {
     // 立即显示弹窗（用列表里已有的数据）
     setShowReportDetail(r)
+    setReportDateEditing(false)
+    setReportDateDraft(r.checkDate || r.date || '')
     setReportScreeningData([])
     setReportDetailLoading(true)
 
@@ -3118,21 +3123,34 @@ export default function PatientDetailPage() {
     }
 
     // 背景异步：拉专项筛查匹配数据（不阻塞弹窗）
-    const reportTitle = r.title || ''
-    const reportDate  = r.checkDate || r.date || ''
     staffAPI.getScreeningReports(id)
       .then(res => {
         const all = res.data || []
-        const matched = all.filter(s => {
-          const l2 = s.screeningL2 || s.title || ''
-          const l2Match = l2 === reportTitle || l2.includes(reportTitle) || reportTitle.includes(l2)
-          if (!l2Match) return false
-          if (!reportDate || !s.checkDate) return true
-          return Math.abs(new Date(reportDate) - new Date(s.checkDate)) / 86400000 <= 30
-        })
+        // 仅显示当前报告的筛查结果。同一客户可以有多份同名报告，日期也可能缺失。
+        const matched = all.filter(s => String(s._id) === String(r._id))
         setReportScreeningData(matched)
       })
       .catch(() => {})
+  }
+
+  const saveReportDate = async () => {
+    const normalizedDate = calendarDate(reportDateDraft)
+    if (!normalizedDate) { toast('请填写原件上的完整报告日期'); return }
+    setReportDateSaving(true)
+    try {
+      const saved = await staffAPI.updateReport(showReportDetail._id, {
+        date: normalizedDate,
+        expectedDate: showReportDetail.checkDate || showReportDetail.date || '',
+        editSource: 'report_date_correction',
+      })
+      setShowReportDetail(saved.data)
+      setReportScreeningData(current => current.map(report => String(report._id) === String(saved.data?._id) ? { ...report, checkDate: normalizedDate, date: normalizedDate } : report))
+      setReportDateDraft(normalizedDate)
+      setReportDateEditing(false)
+      loadReports()
+      toast('报告日期已保存')
+    } catch (error) { toast(error.message || '报告日期保存失败') }
+    finally { setReportDateSaving(false) }
   }
 
   const openHealthCourseReview = async (report, { pendingOnly = false, diseaseName = '' } = {}) => {
@@ -12150,7 +12168,7 @@ export default function PatientDetailPage() {
                   ['报告类型', typeLabel],
                   ...(categoryLabel && categoryLabel !== typeLabel ? [['分类', categoryLabel]] : []),
                   ['医院 / 机构', r.hospital || '-'],
-                  ['报告日期', r.date || '-'],
+                  ['报告日期', r.checkDate || r.date || '-'],
                   ['审核状态', r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
                   ['审核人', r.audited_by || '-'],
                   ...(r.reject_reason ? [['驳回原因', r.reject_reason]] : []),
@@ -12159,7 +12177,16 @@ export default function PatientDetailPage() {
                 return rows.map(([k, v]) => (
                   <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
                     <span style={{ width: 90, flexShrink: 0, color: '#8AA89C', fontSize: 13 }}>{k}</span>
-                    <span style={{ flex: 1, fontSize: 13, color: '#1A2B24' }}>{v}</span>
+                    {k === '报告日期' ? <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 13, color: '#1A2B24' }}>
+                      {reportDateEditing ? <>
+                        <DateField className="form-input" type="date" value={reportDateDraft} onChange={e => setReportDateDraft(e.target.value)} style={{ width: 170 }} />
+                        <button type="button" className="btn btn-primary btn-sm" disabled={reportDateSaving || reportDetailLoading} onClick={saveReportDate}>{reportDateSaving ? '保存中…' : '保存日期'}</button>
+                        <button type="button" className="btn btn-secondary btn-sm" disabled={reportDateSaving} onClick={() => setReportDateEditing(false)}>取消</button>
+                      </> : <>
+                        {v}
+                        {['healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button type="button" className="btn btn-secondary btn-sm" disabled={reportDetailLoading} onClick={() => { setReportDateDraft(r.checkDate || r.date || ''); setReportDateEditing(true) }}>补正日期</button>}
+                      </>}
+                    </span> : <span style={{ flex: 1, fontSize: 13, color: '#1A2B24' }}>{v}</span>}
                   </div>
                 ))
               })()}
