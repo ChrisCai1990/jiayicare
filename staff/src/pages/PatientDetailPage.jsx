@@ -3333,12 +3333,17 @@ export default function PatientDetailPage() {
         nav(location.pathname + location.search, { replace: true, state: {} })
         return
       }
+      if (f.sourceType === 'order' && ibdStage(f)) {
+        if (['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
+        else setFollowUpDetail(f)
+        nav(location.pathname + location.search, { replace: true, state: {} })
+        return
+      }
       if (f.sourceType === 'order' && staff?.role === 'healthPlanner') {
         nav(`${location.pathname}?openChat=1`, { replace: true, state: { serviceBooking: f } })
         return
       }
-      if (f.sourceType === 'order' && ibdStage(f) && ['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
-      else if (f.sourceType === 'order') setFollowUpDetail(f)
+      if (f.sourceType === 'order') setFollowUpDetail(f)
       else if (['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
       else setFollowUpDetail(f)
       nav(location.pathname + location.search, { replace: true, state: {} })
