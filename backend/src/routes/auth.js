@@ -202,7 +202,9 @@ async function sendSmsAliyun(phone, code) {
 
   const result = await client.sendSms(request);
   if (result.body.code !== 'OK') {
-    throw new Error(`短信发送失败: ${result.body.message}`);
+    const error = new Error(`短信发送失败: ${result.body.message}`);
+    error.smsProviderCode = result.body.code;
+    throw error;
   }
 }
 
@@ -250,6 +252,16 @@ router.post('/send-code', async (req, res) => {
       await sendSmsAliyun(phone, code);
     } catch (err) {
       console.error('SMS error:', err.message);
+      const providerMessage = String(err.message || '');
+      const dailyLimit = /Permits:\s*10\b/i.test(providerMessage);
+      if (dailyLimit || err.smsProviderCode === 'isv.BUSINESS_LIMIT_CONTROL') {
+        return res.status(429).json({
+          success: false,
+          message: dailyLimit
+            ? '该手机号短信验证码已达24小时发送上限，请稍后再试'
+            : '验证码发送过于频繁，请稍后再试',
+        });
+      }
       return res.status(500).json({ success: false, message: '短信发送失败，请稍后重试' });
     }
     return res.json({ success: true, message: '验证码已发送至您的手机' });
