@@ -11377,7 +11377,7 @@ export default function PatientDetailPage() {
                 {loadingRights ? <div>正在核对赠送、套餐和付费服务…</div> : loadError ? <div role="alert" style={{ color: '#B45309' }}>{loadError}；请刷新后再发起。</div> : <>
                   {gifts.map(gift => <div key={gift._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#EFF8F4', borderRadius: 8 }}>
                     <span>赠送权益 · {gift.serviceName} · 可用 {Number(gift.serviceCount) - Number(gift.usedCount || 0)} 次 · 有效至 {datePart(gift.validTo) || '不限'}</span>
-                    <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl(`giftId=${gift._id}`))}>使用赠送权益发起</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl(`giftId=${gift._id}&giftServiceName=${encodeURIComponent(gift.serviceName || '')}`))}>使用赠送权益发起</button>
                   </div>)}
                   {packageRights.map((right, index) => <div key={`${right.packageName}:${right.name}:${index}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#F4F7F3', borderRadius: 8 }}>
                     <span>套餐权益 · {right.packageName} · {right.name}</span>
@@ -14608,21 +14608,29 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
 }
 
 // ── 赠送权益弹窗（供 MarketingPage 导出使用）───────────────────────
-const SERVICE_OPTIONS = ['就医协助服务', '居家监测套餐', '专家咨询', '陪诊服务', '上门采血', '营养咨询', '其他服务']
-
 export function GiftModal({ patientId, patientName, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState({
-    giftType: 'service', serviceName: '', serviceCount: 1, fundAmount: 0, fundType: 'enterprise',
+    giftType: 'service', productId: '', serviceCount: 1, fundAmount: 0, fundType: 'enterprise',
     validFrom: '', validTo: '', remark: '',
     couponType: 'amount', couponValue: '', couponTitle: '', couponMinSpend: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [giftProducts, setGiftProducts] = useState([])
+  const [productsLoading, setProductsLoading] = useState(true)
+  const [productsError, setProductsError] = useState('')
+  useEffect(() => {
+    let active = true
+    staffAPI.getGiftProducts(patientId).then(res => { if (active) setGiftProducts(res.data || []) })
+      .catch(err => { if (active) setProductsError(err.message || '商城服务加载失败') })
+      .finally(() => { if (active) setProductsLoading(false) })
+    return () => { active = false }
+  }, [patientId])
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const handleSubmit = async () => {
-    if (form.giftType === 'service' && !form.serviceName) { setError('请选择赠送服务'); return }
+    if (form.giftType === 'service' && !form.productId) { setError('请选择商城服务'); return }
     if (form.giftType === 'fund' && (!form.fundAmount || Number(form.fundAmount) <= 0)) { setError('请输入有效金额'); return }
     if (form.giftType === 'coupon') {
       if (!form.couponValue || Number(form.couponValue) <= 0) { setError('请输入有效面额/折扣'); return }
@@ -14667,11 +14675,14 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
           {form.giftType === 'service' ? (
             <>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">服务类型 *</label>
-                <select className="form-input" value={form.serviceName} onChange={set('serviceName')}>
-                  <option value="">-- 请选择 --</option>
-                  {SERVICE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                <label className="form-label">商城服务 *</label>
+                <select className="form-input" value={form.productId} onChange={set('productId')} disabled={productsLoading || !!productsError}>
+                  <option value="">{productsLoading ? '正在加载商城服务…' : '-- 请选择具体服务 --'}</option>
+                  {[...new Set(giftProducts.map(p => p.category))].map(category => <optgroup key={category} label={category || '其他服务'}>
+                    {giftProducts.filter(p => p.category === category).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
+                  </optgroup>)}
                 </select>
+                {productsError && <div role="alert" style={{ color: '#B45309', fontSize: 12 }}>{productsError}，请关闭后重试。</div>}
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">赠送次数</label>

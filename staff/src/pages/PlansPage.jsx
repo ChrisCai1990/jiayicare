@@ -48,6 +48,7 @@ export default function PlansPage() {
   const initialPatientName = searchParams.get('patientName') || ''
   const reservedOrderId = searchParams.get('reservedOrderId') || ''
   const giftId = searchParams.get('giftId') || ''
+  const giftServiceName = searchParams.get('giftServiceName') || ''
   const reservedProductName = searchParams.get('reservedProductName') || ''
   const requestedPlanType = searchParams.get('openPlan') || (searchParams.get('openMedicalAssist') === '1' ? 'medical_assist' : '')
 
@@ -269,7 +270,7 @@ export default function PlansPage() {
               </table>}
           </div>
           {showCheckupModal   && <AnnualCheckupPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowCheckupModal)} onSaved={() => { closePlanModal(setShowCheckupModal); loadPlans(); toast('体检方案已创建') }} />}
-          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} reservedOrderId={reservedOrderId} reservedProductName={reservedProductName} giftId={giftId} onClose={() => { closePlanModal(setShowMedicalModal); if (reservedOrderId || giftId) nav(`/patients/${initialPatientId}?tab=membership`) }} onSaved={result => { closePlanModal(setShowMedicalModal); loadPlans(); toast(result?.warning || (giftId ? '已使用赠送权益发起就医协助' : reservedOrderId ? '原服务订单已进入就医协助流程' : '就医协助方案已创建')); if (reservedOrderId || giftId) nav(result?.warning && result?.planId ? `/plans/${result.planId}/modules` : `/patients/${initialPatientId}?tab=followups`) }} />}
+          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} reservedOrderId={reservedOrderId} reservedProductName={reservedProductName} giftId={giftId} giftServiceName={giftServiceName} onClose={() => { closePlanModal(setShowMedicalModal); if (reservedOrderId || giftId) nav(`/patients/${initialPatientId}?tab=membership`) }} onSaved={result => { closePlanModal(setShowMedicalModal); loadPlans(); toast(result?.warning || (giftId ? '已使用赠送权益发起就医协助' : reservedOrderId ? '原服务订单已进入就医协助流程' : '就医协助方案已创建')); if (reservedOrderId || giftId) nav(result?.warning && result?.planId ? `/plans/${result.planId}/modules` : `/patients/${initialPatientId}?tab=followups`) }} />}
           {showNutritionModal && <NutritionAIDraftModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowNutritionModal)} onSaved={plan => { closePlanModal(setShowNutritionModal); loadPlans(); toast('AI营养草稿已生成，请核对后推送'); nav(`/plans/${plan._id}/modules`) }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
@@ -604,7 +605,7 @@ function templateToItems(tpl) {
 }
 
 // ── 就医协助方案：两步创建弹窗 ────────────────────────────────────────
-function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '', reservedOrderId = '', reservedProductName = '', giftId = '' }) {
+function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '', reservedOrderId = '', reservedProductName = '', giftId = '', giftServiceName = '' }) {
   const canViewMedicalResources = usePermission()('medical_resources', 'view')
   const [step, setStep] = useState(1)
   const [templates, setTemplates] = useState([])
@@ -881,11 +882,12 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
 
       const created = await staffAPI.createPlan({
         reservedOrderId,
+        giftId,
         patientId, type: 'medical_assist', title: form.name,
         description: isAgencyService ? '' : description, year: Number(form.serviceDate.slice(0, 4)), items,
         content: { ...form, resourceReferences: selectedResourceIds.map(resourceId => ({ resourceId })), supervisorId: assignedPlanner._id, ...(isAgencyService ? { staffId: '', staffName: '', transport: '', hotel: '' } : {}), ...(isAgencyExamBooking ? { tasks: form.agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
       })
-      if (reservedOrderId) {
+      if (reservedOrderId || giftId) {
         try { await staffAPI.pushPlan(created.data._id) }
         catch (pushError) { onSaved({ planId: created.data._id, warning: `方案已保存，但启动未完成：${pushError.message}。请在方案页完成后推送。` }); return }
       }
@@ -901,16 +903,19 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     ? templates.filter(tpl => [tpl.name, tpl.content?.hospital, tpl.content?.campus, tpl.content?.department, tpl.content?.expert]
       .some(value => String(value || '').toLocaleLowerCase().includes(normalizedTemplateQuery)))
     : templates
-  const supportedMedicalTemplate = tpl => /医疗代诊|专家约诊|代配药|代取药|陪同检查|陪同治疗|陪同就医|就医陪同/.test(tpl.name || '')
-  const matchingTemplates = giftId ? visibleTemplates.filter(supportedMedicalTemplate) : reservedProductName
+  const supportedMedicalTemplate = tpl => /医务代办|医疗代诊|专家约诊|代配药|代取药|代配营养素|陪同检查|陪同治疗|陪同就医|就医陪同/.test(tpl.name || '')
+  const targetServiceName = giftId ? giftServiceName : reservedProductName
+  const matchingTemplates = giftId && !giftServiceName ? visibleTemplates.filter(supportedMedicalTemplate) : targetServiceName
     ? visibleTemplates.filter(tpl => {
       const name = String(tpl.name || '')
-      if (reservedProductName === '就医协助服务') return supportedMedicalTemplate(tpl)
-      if (/代办/.test(reservedProductName)) return /代办/.test(name)
-      if (/陪同|陪诊/.test(reservedProductName)) return /陪同|陪诊/.test(name)
-      if (/代诊/.test(reservedProductName)) return /代诊/.test(name)
-      if (/约诊/.test(reservedProductName)) return /约诊/.test(name)
-      return name.includes(reservedProductName.replace(/服务$/, ''))
+      if (targetServiceName === '就医协助服务') return supportedMedicalTemplate(tpl)
+      if (/代办/.test(targetServiceName)) return /代办|代配药|代取药|代配营养素/.test(name)
+      if (/陪同检查|陪检/.test(targetServiceName)) return /陪同检查|陪检/.test(name)
+      if (/陪同治疗/.test(targetServiceName)) return /陪同治疗/.test(name)
+      if (/陪同|陪诊/.test(targetServiceName)) return /陪同就医|就医陪同|陪诊/.test(name)
+      if (/代诊/.test(targetServiceName)) return /代诊/.test(name)
+      if (/约诊/.test(targetServiceName)) return /约诊/.test(name)
+      return name.includes(targetServiceName.replace(/服务$/, ''))
     }) : visibleTemplates
   // 注意：作为函数调用而非 JSX 组件，避免每次 render 创建新组件导致输入框失焦
   const renderField = (label, fieldKey, rows, placeholder) => (

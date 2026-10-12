@@ -3511,14 +3511,17 @@ async function freezeMedicalResourceReferences(rawReferences) {
 router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanType(req => req.body.type), async (req, res) => {
   const { patientId, type, title, description, year, startDate, endDate, checkupDate, items, followupFrequency, summary, content } = req.body;
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
+  if (req.body.giftId && req.body.reservedOrderId) return res.status(400).json({ success: false, message: '赠送权益与已有订单不能同时使用' });
   let planContent = content || {};
   if (type === 'nutrition') planContent = { ...planContent, nutritionTaskVersion: 1 };
   let medicalAssistSupervisor = null;
+  let medicalAssistPatient = null;
   if (type === 'medical_assist') {
     try { planContent = { ...planContent, resourceReferences: await freezeMedicalResourceReferences(planContent.resourceReferences) }; }
     catch (err) { return res.status(400).json({ success: false, message: err.message }); }
-    const patient = await User.findById(patientId).select('assignedHealthPlanner').lean();
+    const patient = await User.findById(patientId).select('assignedHealthPlanner tenantId').lean();
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    medicalAssistPatient = patient;
     if (!patient.assignedHealthPlanner) return res.status(400).json({ success: false, message: '该客户尚未分配健康规划师，请先分配' });
     medicalAssistSupervisor = patient.assignedHealthPlanner;
     planContent = { ...planContent, supervisorId: medicalAssistSupervisor };
@@ -3533,6 +3536,30 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
     planContent = { ...planContent, staffId: '', staffName: '', transport: '', hotel: '' };
   }
   let sourceOrder = null;
+  let giftDraftOrder = null;
+  if (req.body.giftId) {
+    if (type !== 'medical_assist' || !isAgencyMedicalAssistPlan(planContent, title)
+      || !['familyDoctor', 'healthPlanner', 'superadmin'].includes(req.staff.role))
+      return res.status(400).json({ success: false, message: '此赠送权益须从对应就医协助流程发起' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(patientId)))
+      return res.status(403).json({ success: false, message: '无权为该会员建立服务方案' });
+    giftDraftOrder = await Order.create({ user: patientId, tenantId: medicalAssistPatient.tenantId || null,
+      serviceId: `gift-draft:${req.body.giftId}`, serviceName: '医务代办服务', servicePrice: 0,
+      unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'created', status: 'pending',
+      initiationSource: 'staff_direct', serviceWorkflowSnapshot: { key: 'medical_assist', source: 'staff_direct' } });
+    try {
+      const benefit = await require('../utils/medicalProxyWorkflow').reserveGiftMedicalBenefit(patientId, req.body.giftId, giftDraftOrder, '医务代办服务');
+      if (benefit.status !== 'reserved') {
+        await Order.deleteOne({ _id: giftDraftOrder._id });
+        return res.status(409).json({ success: false, message: '赠送权益未生效、已用尽或与医务代办服务不匹配，请刷新会员权益' });
+      }
+      sourceOrder = giftDraftOrder;
+    } catch (err) {
+      await Order.deleteOne({ _id: giftDraftOrder._id, paymentStatus: 'unpaid' });
+      throw err;
+    }
+  }
   if (req.body.reservedOrderId) {
     if (type !== 'medical_assist' || !['familyDoctor', 'healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅就医协助岗位可继续套餐履约单' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
@@ -3548,7 +3575,8 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
     if (!compatible) return res.status(400).json({ success: false, message: '所选方案模板与套餐服务产品不匹配' });
     if (await HealthPlan.exists({ patientId, sourceOrderId: sourceOrder._id, type: 'medical_assist' })) return res.status(409).json({ success: false, message: '该服务已有就医协助方案，请打开原方案继续' });
   }
-  const plan = await HealthPlan.create({
+  let plan;
+  try { plan = await HealthPlan.create({
     staffId: req.staff._id, patientId, type, title, sourceOrderId: sourceOrder?._id || null,
     description: type === 'medical_assist' && isAgencyMedicalAssistPlan(planContent, title) ? '' : (description || ''), year: year || new Date().getFullYear(),
     startDate: startDate ? new Date(startDate) : null,
@@ -3560,12 +3588,24 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
     content: planContent,
     ...(type === 'medical_assist' ? { initiatedByStaff: req.staff._id, supervisorId: medicalAssistSupervisor, currentAssignee: medicalAssistSupervisor } : {}),
     status: 'draft',
-  });
+  }); } catch (err) {
+    if (giftDraftOrder) {
+      await GiftRecord.updateOne({ _id: req.body.giftId, 'usageRecords.executionOrderId': giftDraftOrder._id },
+        { $inc: { usedCount: -1 }, $pull: { usageRecords: { executionOrderId: giftDraftOrder._id } } });
+      await Order.deleteOne({ _id: giftDraftOrder._id });
+    }
+    throw err;
+  }
   if (sourceOrder) {
-    const linked = await Order.updateOne({ _id: sourceOrder._id, status: 'pending', medicalAssistPlanId: null },
+    const linked = await Order.updateOne({ _id: sourceOrder._id, status: giftDraftOrder ? 'scheduled' : 'pending', medicalAssistPlanId: null },
       { $set: { medicalAssistPlanId: plan._id, currentStage: 'plan_draft' } });
     if (linked.modifiedCount !== 1) {
       await HealthPlan.deleteOne({ _id: plan._id, status: 'draft' });
+      if (giftDraftOrder) {
+        await GiftRecord.updateOne({ _id: req.body.giftId, 'usageRecords.executionOrderId': giftDraftOrder._id },
+          { $inc: { usedCount: -1 }, $pull: { usageRecords: { executionOrderId: giftDraftOrder._id } } });
+        await Order.deleteOne({ _id: giftDraftOrder._id });
+      }
       return res.status(409).json({ success: false, message: '套餐履约单已由其他操作接续，请刷新后查看' });
     }
   }
@@ -4352,10 +4392,11 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    // 套餐服务的方案正式推送即进入实际执行；同一预占单自动核销一次。
+    // 套餐及赠送服务的方案正式推送即进入实际执行。
     if (plan.sourceOrderId) {
       const started = await Order.findOneAndUpdate({ _id: plan.sourceOrderId, user: plan.patientId,
-        status: 'pending', serviceStartedAt: null, 'packageEntitlementUsage.entitlementId': { $exists: true } },
+        status: { $in: ['pending', 'scheduled'] }, serviceStartedAt: null,
+        $or: [{ 'packageEntitlementUsage.entitlementId': { $exists: true } }, { 'giftRecordUsage.giftId': { $exists: true } }] },
       { $set: { status: 'scheduled', tradeStatus: 'fulfilling', serviceStartedAt: new Date(),
         serviceStartedBy: req.staff._id, serviceStartEvidence: `已推送就医协助方案：${plan.title}` } }, { new: true });
       if (started) await require('../utils/packageServiceRedemption').safeReconcilePackageOrder(started);
@@ -6970,13 +7011,39 @@ router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
 // ════════════════════════════════════════════════════════
 
 // ── 赠送服务/健康基金 ───────────────────────────────────────
+// 赠送服务使用 Admin 已上架商品目录，保存商品身份和赠送时的名称快照。
+router.get('/gift-products', staffAuth, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.query.patientId)) return res.status(400).json({ success: false, message: '客户无效' });
+    const patient = await User.findById(req.query.patientId).select('tenantId').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+    const products = await Product.find({ status: 'on', tenantId: patient.tenantId || null })
+      .select('_id name category serviceWorkflow.key servicePrices')
+      .sort({ category: 1, sortOrder: 1, createdAt: -1 }).lean();
+    res.json({ success: true, data: products });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // POST /api/staff/patients/:id/gift
 router.post('/patients/:id/gift', staffAuth, async (req, res) => {
-  const { giftType, serviceName, serviceCount, fundAmount, fundType, validFrom, validTo, remark } = req.body;
+  const { giftType, productId, serviceCount, fundAmount, fundType, validFrom, validTo, remark } = req.body;
   if (!giftType) return res.status(400).json({ success: false, message: '赠送类型不能为空' });
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '客户无效' });
+  const patient = await User.findById(req.params.id).select('_id tenantId').lean();
+  if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+  let product = null;
+  if (giftType === 'service') {
+    if (!mongoose.isValidObjectId(productId)) return res.status(400).json({ success: false, message: '请选择已上架的商城服务' });
+    product = await Product.findOne({ _id: productId, status: 'on' }).select('_id name tenantId');
+    if (!product) return res.status(400).json({ success: false, message: '所选商城服务已下架或不存在，请重新选择' });
+    if (String(product.tenantId || '') !== String(patient.tenantId || ''))
+      return res.status(400).json({ success: false, message: '商城服务与客户所属机构不一致' });
+    if (!Number.isInteger(Number(serviceCount)) || Number(serviceCount) < 1 || Number(serviceCount) > 99)
+      return res.status(400).json({ success: false, message: '赠送次数须为 1 至 99 的整数' });
+  }
   const gift = await GiftRecord.create({
     staffId: req.staff._id, patientId: req.params.id,
-    giftType, serviceName: serviceName || '', serviceCount: serviceCount || 0,
+    giftType, productId: product?._id || null, serviceName: product?.name || '', serviceCount: product ? Number(serviceCount) : 0,
     fundAmount: fundAmount || 0, fundType: fundType || 'enterprise',
     validFrom: validFrom ? new Date(validFrom) : null,
     validTo: validTo ? new Date(validTo) : null,

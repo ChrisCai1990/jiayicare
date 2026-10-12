@@ -7,6 +7,7 @@ const giftRecordSchema = new Schema({
   giftType:     { type: String, enum: ['service', 'fund'], required: true },
   // 赠送服务
   serviceName:  { type: String, default: '' },
+  productId:    { type: Schema.Types.ObjectId, ref: 'Product', default: null },
   serviceCount: { type: Number, default: 0 },
   usedCount:    { type: Number, default: 0, min: 0 },
   usageRecords: [{ executionOrderId: { type: Schema.Types.ObjectId, ref: 'Order' }, usedAt: Date, serviceName: String }],

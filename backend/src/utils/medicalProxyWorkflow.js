@@ -12,6 +12,7 @@ const { createHash } = require('node:crypto');
 const { needsPlannerDispatch } = require('./proxyPlannerDispatch');
 const PackageEntitlement = require('../models/PackageEntitlement');
 const GiftRecord = require('../models/GiftRecord');
+const { giftCoversMedicalService } = require('./giftServiceMatch');
 const { applicableEntitlements } = require('./packageEntitlements');
 const { isNoReportMedicalProxyPilot } = require('../../../shared/noReportMedicalProxyPilot.cjs');
 
@@ -45,11 +46,16 @@ async function reserveGiftMedicalBenefit(patientId, giftId, order, serviceName) 
   if (!mongoose.isValidObjectId(giftId)) return { status: 'gift_unavailable' };
   const day = shanghaiDateStart();
   const gift = await GiftRecord.findOneAndUpdate({ _id: giftId, patientId, giftType: 'service', status: 'active',
-    serviceName: { $in: ['就医协助服务', serviceName] },
+    serviceName: { $in: ['就医协助服务', serviceName, ...({ '医疗代诊服务': ['医疗代诊'], '专家约诊服务': ['专家约诊'], '代配药服务': ['医务代办服务', '代办服务', '代取药服务'], '代配营养素服务': ['医务代办服务', '代办服务'], '陪同看诊服务': ['就医陪同服务', '陪同就医服务', '陪诊服务'], '陪同检查服务': ['陪检服务'], '陪同治疗服务': [] }[serviceName] || [])] },
     $and: [{ $or: [{ validFrom: null }, { validFrom: { $lte: day } }] }, { $or: [{ validTo: null }, { validTo: { $gte: day } }] }],
     $expr: { $lt: [{ $ifNull: ['$usedCount', 0] }, '$serviceCount'] },
   }, { $inc: { usedCount: 1 }, $push: { usageRecords: { executionOrderId: order._id, usedAt: new Date(), serviceName } } }, { new: true });
   if (!gift) return { status: 'gift_unavailable' };
+  if (!giftCoversMedicalService(gift.serviceName, serviceName)) {
+    await GiftRecord.updateOne({ _id: gift._id, 'usageRecords.executionOrderId': order._id },
+      { $inc: { usedCount: -1 }, $pull: { usageRecords: { executionOrderId: order._id } } });
+    return { status: 'gift_unavailable' };
+  }
   try {
     order.serviceId = `gift:${gift._id}`;
     order.paymentStatus = 'paid';
@@ -58,7 +64,7 @@ async function reserveGiftMedicalBenefit(patientId, giftId, order, serviceName) 
     order.paymentExpectedAmount = 0;
     order.paidAt = new Date();
     order.status = 'scheduled';
-    order.giftRecordUsage = { giftId: gift._id, usedAt: new Date(), serviceName };
+    order.giftRecordUsage = { giftId: gift._id, productId: gift.productId || null, usedAt: new Date(), serviceName };
     await order.save();
     return { status: 'reserved' };
   } catch (error) {
@@ -1430,4 +1436,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, validateDirectProxyMaterials, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, validateDirectProxyMaterials, reserveGiftMedicalBenefit, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
