@@ -1,11 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { validateInput, privateDirectory, TYPES } = require('../src/utils/enterpriseServiceRecord');
+const { validateInput, privateDirectory, normalizeFileName, TYPES } = require('../src/utils/enterpriseServiceRecord');
 
 const base = { year: '2026', period: 'annual', kind: 'annual_plan', title: '年度服务方案', summary: '' };
 const pdf = { originalname: '年度方案.pdf', mimetype: TYPES['.pdf'] };
 const pptx = { originalname: '年度方案.pptx', mimetype: TYPES['.pptx'] };
+
+test('修复上传文件名的 UTF-8 乱码，同时保留正常文件名', () => {
+  const chinese = '地芯科技_年度服务方案_2026.pptx';
+  const mojibake = Buffer.from(chinese, 'utf8').toString('latin1');
+  assert.equal(normalizeFileName(mojibake), chinese);
+  assert.equal(normalizeFileName(chinese), chinese);
+  assert.equal(normalizeFileName('résumé.pdf'), 'résumé.pdf');
+  assert.equal(normalizeFileName('C:\\uploads\\' + mojibake), chinese);
+});
 
 test('年度方案接受PDF和PPTX，季度复盘须归入具体季度', () => {
   assert.equal(validateInput(base, pdf), null);

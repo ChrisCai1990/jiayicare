@@ -5,6 +5,20 @@ const TYPES = {
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 };
 
+function normalizeFileName(value) {
+  const original = String(value || '');
+  let name = original;
+  // Multipart filename headers contain UTF-8 bytes, which Multer may decode as Latin-1.
+  // Decode only a lossless UTF-8 round trip so legitimate Western names stay intact.
+  if (/[\u0080-\u00ff]/.test(original) && !/[^\u0000-\u00ff]/.test(original)) {
+    const decoded = Buffer.from(original, 'latin1').toString('utf8');
+    if (!decoded.includes('\ufffd') && Buffer.from(decoded, 'utf8').toString('latin1') === original) {
+      name = decoded;
+    }
+  }
+  return name.split(/[\\/]/).pop();
+}
+
 function validateInput(body, file) {
   const year = Number(body?.year);
   const period = String(body?.period || '');
@@ -34,4 +48,4 @@ function privateDirectory() {
   return directory;
 }
 
-module.exports = { validateInput, privateDirectory, TYPES };
+module.exports = { validateInput, privateDirectory, normalizeFileName, TYPES };

@@ -8,7 +8,7 @@ const adminAuth = require('../middleware/adminAuth');
 const enterpriseHrAuth = require('../middleware/enterpriseHrAuth');
 const Enterprise = require('../models/Enterprise');
 const EnterpriseServiceRecord = require('../models/EnterpriseServiceRecord');
-const { validateInput, privateDirectory, TYPES } = require('../utils/enterpriseServiceRecord');
+const { validateInput, privateDirectory, normalizeFileName, TYPES } = require('../utils/enterpriseServiceRecord');
 
 const adminRouter = express.Router();
 const hrRouter = express.Router();
@@ -37,7 +37,7 @@ function uploadOne(req, res, next) {
 function publicRecord(record) {
   return {
     _id: record._id, year: record.year, period: record.period, kind: record.kind,
-    title: record.title, summary: record.summary, fileName: record.file?.name,
+    title: record.title, summary: record.summary, fileName: normalizeFileName(record.file?.name),
     fileSize: record.file?.size, publishedAt: record.publishedAt,
     createdAt: record.createdAt, updatedAt: record.updatedAt,
   };
@@ -49,7 +49,7 @@ async function sendFile(res, record) {
   catch { return res.status(404).json({ success: false, message: '文件不存在，请联系管理员' }); }
   res.set('Cache-Control', 'private, no-store');
   res.set('Content-Type', record.file.mimeType);
-  return res.download(filePath, record.file.name);
+  return res.download(filePath, normalizeFileName(record.file.name));
 }
 
 adminRouter.get('/enterprises/:id/service-records', adminAuth, serviceRecordAdmin, async (req, res) => {
@@ -65,7 +65,8 @@ adminRouter.post('/enterprises/:id/service-records', adminAuth, serviceRecordAdm
   if (!await Enterprise.exists({ _id: req.params.id })) return res.status(404).json({ success: false, message: '企业不存在' });
 
   const directory = privateDirectory();
-  const key = `${crypto.randomUUID()}${path.extname(req.file.originalname).toLowerCase()}`;
+  const fileName = normalizeFileName(req.file.originalname);
+  const key = `${crypto.randomUUID()}${path.extname(fileName).toLowerCase()}`;
   const filePath = path.join(directory, key);
   await fs.mkdir(directory, { recursive: true });
   await fs.writeFile(filePath, req.file.buffer, { flag: 'wx' });
@@ -74,7 +75,7 @@ adminRouter.post('/enterprises/:id/service-records', adminAuth, serviceRecordAdm
       enterpriseId: req.params.id,
       year: Number(req.body.year), period: req.body.period, kind: req.body.kind,
       title: req.body.title.trim(), summary: String(req.body.summary || '').trim(),
-      file: { name: req.file.originalname.split(/[\\/]/).pop(), key, mimeType: req.file.mimetype, size: req.file.size },
+      file: { name: fileName, key, mimeType: req.file.mimetype, size: req.file.size },
       publishedAt: req.body.publish === 'true' ? new Date() : null,
       createdBy: req.admin._id,
     });

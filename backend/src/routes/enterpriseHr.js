@@ -8,6 +8,7 @@ const EnterpriseServiceRecord = require('../models/EnterpriseServiceRecord');
 const EnterpriseInsurancePolicy = require('../models/EnterpriseInsurancePolicy');
 const InsuranceEnrollment = require('../models/InsuranceEnrollment');
 const enterpriseHrAuth = require('../middleware/enterpriseHrAuth');
+const { normalizeFileName } = require('../utils/enterpriseServiceRecord');
 
 // POST /api/enterprise-hr/login —— 复用 Admin 账号体系，仅 role=enterprise_hr 可登录此入口
 router.post('/login', async (req, res) => {
@@ -120,7 +121,7 @@ router.get('/overview', enterpriseHrAuth, async (req, res) => {
       cohortSummary,
       serviceRecords: serviceRecords.map(r => ({
         _id: r._id, year: r.year, period: r.period, kind: r.kind,
-        title: r.title, summary: r.summary, fileName: r.file?.name,
+        title: r.title, summary: r.summary, fileName: normalizeFileName(r.file?.name),
         fileSize: r.file?.size, publishedAt: r.publishedAt, createdAt: r.createdAt,
       })),
       sharedFund: require('../utils/enterpriseSharedFund').summary(account, enterprise),
