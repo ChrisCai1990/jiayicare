@@ -95,7 +95,7 @@ export default function LegalPage() {
         }}>
           <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>嘉医汇 · 杭州嘉医汇健康管理有限公司</Text>
           <Text style={{ fontSize: '12px', color: colors.textMuted }}>客服电话：19106761448</Text>
-          <Text style={{ fontSize: '12px', color: colors.textMuted }}>地址：杭州市萧山区盈丰街道江峰商务名座1幢1015室</Text>
+          <Text style={{ fontSize: '12px', color: colors.textMuted }}>地址：杭州市滨江区西兴街道智慧之门A塔602</Text>
         </View>
       </View>
     </View>

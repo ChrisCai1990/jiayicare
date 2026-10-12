@@ -145,7 +145,7 @@ export default function LegalScreen({ navigation, route }) {
         <View style={styles.footer}>
           <Text style={styles.footerText}>嘉医汇健康管家 · 杭州嘉医汇健康管理有限公司</Text>
           <Text style={styles.footerText}>客服电话：19106761448</Text>
-          <Text style={styles.footerText}>健康管理服务联系地址：杭州市萧山区盈丰街道江峰商务名座1幢1015室</Text>
+          <Text style={styles.footerText}>健康管理服务联系地址：杭州市滨江区西兴街道智慧之门A塔602</Text>
         </View>
         <View style={{ height: 40 }} />
       </ScrollView>

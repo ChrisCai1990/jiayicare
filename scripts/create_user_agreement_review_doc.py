@@ -142,7 +142,7 @@ def main():
     paragraph(doc, '本协议适用中华人民共和国法律。因本协议产生的争议，双方应先协商解决；协商不成的，可向有管辖权的人民法院提起诉讼。')
 
     heading(doc, '十一 联系方式')
-    paragraph(doc, '平台客服及隐私咨询电话：19106761448。健康管理服务联系地址：杭州市萧山区盈丰街道江峰商务名座1幢1015室。')
+    paragraph(doc, '平台客服及隐私咨询电话：19106761448。健康管理服务联系地址：杭州市滨江区西兴街道智慧之门A塔602。')
 
     footer = sec.footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
