@@ -2209,6 +2209,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
 
   const patient = await User.findById(patientId);
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+  const plannedAssignee = assignedTo || (['planned', 'in_progress', 'missed'].includes(status) ? patient.assignedHealthManager : null);
 
   const selectedScheme = followUpSchemeId ? await FollowUpPlan.findById(followUpSchemeId).select('name workflowStageKey status reviewStatus').lean() : null;
   if (followUpSchemeId && (!selectedScheme || selectedScheme.status !== 'active' || selectedScheme.reviewStatus === 'pending_review')) return res.status(400).json({ success: false, message: '所选随访模板不可用，请刷新后重选' });
@@ -2217,7 +2218,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   if (adHocMedicalReminder) {
     if (!['visit', 'review', 'medication'].includes(reminderKind)) return res.status(400).json({ success: false, message: '请选择就医、复查或配药提醒' });
     if (status !== 'planned' || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !String(content || '').trim()) return res.status(400).json({ success: false, message: '事项提醒需要填写提醒日期和具体原因' });
-    if (!patient.assignedHealthManager || String(assignedTo) !== String(patient.assignedHealthManager)) return res.status(400).json({ success: false, message: '事项提醒须交由该客户的健管专员跟进' });
+    if (!patient.assignedHealthManager || String(plannedAssignee) !== String(patient.assignedHealthManager)) return res.status(400).json({ success: false, message: '事项提醒须交由该客户的健管专员跟进' });
   }
   const safeFormData = formData && typeof formData === 'object' && !Array.isArray(formData) ? { ...formData } : {};
   delete safeFormData.adHocMedicalReminder;
@@ -2227,7 +2228,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   if (status === 'cancelled' && !cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
   }
-  if (['planned', 'in_progress', 'missed'].includes(status) && !assignedTo) {
+  if (['planned', 'in_progress', 'missed'].includes(status) && !plannedAssignee) {
     return res.status(400).json({ success: false, message: '随访计划必须选择执行人' });
   }
 
@@ -2235,7 +2236,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   // 逻辑上不可能一创建就已完成，强制置 planned，否则执行人（如就医专员嘉小夏）在所有按
   // status=planned 过滤的待办入口里都看不到，等于扭转白转（金娟反馈的真根因）。
   // 医护端"记录随访"表单默认传 status=completed（语义是"我刚做完记一笔"），只在派给自己/不指派时成立。
-  const assignedToOther = assignedTo && String(assignedTo) !== String(req.staff._id);
+  const assignedToOther = plannedAssignee && String(plannedAssignee) !== String(req.staff._id);
   const finalStatus = assignedToOther ? 'planned' : (status || 'completed');
 
   const followUp = await FollowUp.create({
@@ -2250,7 +2251,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
     theme: theme || '',
     cancelReason: cancelReason || '',
     // 已执行后补录的单条记录默认由当前操作人执行；未来计划则已在上方强制指定执行人。
-    assignedTo: assignedTo || req.staff._id,
+    assignedTo: plannedAssignee || req.staff._id,
     nextFollowUpDate: nextFollowUpDate ? new Date(nextFollowUpDate) : null,
     tags: tags || [],
     vitals: vitals || {},
@@ -3055,7 +3056,8 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     if (req.staff.role !== 'superadmin' && req.staff.role !== requiredRole) {
       return res.status(403).json({ success: false, message: '该随访计划不属于您的审核角色' });
     }
-    const reviewPatient = (followUpReview.postVisit(followUp) || require('../../../shared/annualNutrition.cjs').isTask(followUp)) ? await User.findById(followUp.patientId).select('assignedFamilyDoctor assignedHealthManager').lean() : null;
+    const routineAiFollowUp = followUp.sourceType === 'ai_review';
+    const reviewPatient = (followUpReview.postVisit(followUp) || routineAiFollowUp || require('../../../shared/annualNutrition.cjs').isTask(followUp)) ? await User.findById(followUp.patientId).select('assignedFamilyDoctor assignedHealthManager').lean() : null;
     if (!followUpReview.canReview(followUp, req.staff, reviewPatient)) {
       return res.status(403).json({ success: false, message: '仅该客户指定的健康顾问可审核此随访计划' });
     }
@@ -3123,6 +3125,12 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
         if (edits.followUpDate !== undefined) managerReview.followUpDate = edits.followUpDate;
         followUp.formData = { ...followUp.formData, managerReview };
       }
+    }
+    if (routineAiFollowUp) {
+      if (!reviewPatient?.assignedHealthManager) return res.status(409).json({ success: false, message: '请先为客户分配健管专员，再通过随访计划' });
+      if (edits?.assignedTo && String(edits.assignedTo) !== String(reviewPatient.assignedHealthManager)) return res.status(400).json({ success: false, message: '月度随访须由客户所属健管专员执行' });
+      followUp.reviewAssignedTo = followUp.reviewAssignedTo || reviewPatient.assignedFamilyDoctor || req.staff._id;
+      followUp.assignedTo = reviewPatient.assignedHealthManager;
     }
     if (followUpReview.postVisit(followUp) && !followUp.assignedTo) return res.status(400).json({ success: false, message: '请先选择实际执行随访的人员' });
     // 待约检的健康顾问审核是服务的最后一步。使用原子更新写入审核任务、订单和督办状态，
@@ -12758,7 +12766,7 @@ function verifyDraftToken(token, patientId, kind, staffId) {
 // POST /api/staff/patients/:id/ai-followup-suggestion
 router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues preferences');
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues preferences assignedHealthManager');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { chat } = require('../utils/ai');
@@ -12809,6 +12817,7 @@ ${recLines}
       generatedAt: new Date(),
       generatedBy: req.staff.name || '',
       generatedById: req.staff._id,
+      assignedTo: user.assignedHealthManager || '',
       draftToken: signDraftToken(req.staff._id, user._id, 'followup'),
     };
     res.json({ success: true, data: suggestion });
@@ -12857,7 +12866,7 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
 // 直接落库为 aiStatus:pending 的随访建议，走 followup_review 待办队列由健康顾问审核（区别于ai-followup-suggestion的单会员预览+本人采纳模式，这里是批量自动化场景）
 router.post('/patients/:id/ai-followup-monthly-review', staffAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues');
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues assignedFamilyDoctor assignedHealthManager');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { runMonthlyFollowUpReview } = require('../utils/followupReview');

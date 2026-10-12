@@ -2,8 +2,14 @@ const FollowUp = require('../models/FollowUp');
 const HealthRecord = require('../models/HealthRecord');
 const { chat } = require('./ai');
 
+const monthlyAssignees = (user) => ({
+  reviewAssignedTo: user.assignedFamilyDoctor || null,
+  assignedTo: user.assignedHealthManager || null,
+});
+
 // 月度AI回顾核心逻辑：结合会员近30天打卡数据判断是否需要新增随访，需要则落库为 aiStatus:pending
-// 供 staff.js 的单会员接口和定时任务共用。staffId 为该建议归属的随访人（人工触发用当前登录家医，定时任务用方案配置人）
+// 供 staff.js 的单会员接口和定时任务共用。staffId 是草稿创建人，
+// reviewAssignedTo 是审核顾问，assignedTo 才是实际随访执行人。
 async function runMonthlyFollowUpReview(user, staffId) {
   const since = new Date(Date.now() - 30 * 86400000);
   const records = await HealthRecord.find({ user: user._id, recordedAt: { $gte: since } })
@@ -39,6 +45,7 @@ ${recLines}
   return FollowUp.create({
     patientId: user._id,
     staffId,
+    ...monthlyAssignees(user),
     date: raw.suggestedDate ? new Date(raw.suggestedDate) : new Date(Date.now() + 7 * 86400000),
     theme: raw.theme || '月度回顾随访',
     status: 'planned',
@@ -51,4 +58,4 @@ ${recLines}
   });
 }
 
-module.exports = { runMonthlyFollowUpReview };
+module.exports = { runMonthlyFollowUpReview, monthlyAssignees };

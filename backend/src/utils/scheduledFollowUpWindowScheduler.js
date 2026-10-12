@@ -47,6 +47,7 @@ async function scanAndSyncScheduledWindow() {
   const FollowUp = require('../models/FollowUp');
   const User = require('../models/User');
   await require('./annualReminderAssignment').reconcileAnnualReminderAssignments({ FollowUp, User });
+  const correctedMonthlyAssignees = await require('./reconcileMonthlyFollowUpAssignees').reconcileMonthlyFollowUpAssignees();
   // 旧版本把健康规划师人工消息写进 manager 且部分消息没有 conversationId，导致汇总有未读数、点进线程却为空。
   const Admin = require('../models/Admin');
   const Message = require('../models/Message');
@@ -59,7 +60,7 @@ async function scanAndSyncScheduledWindow() {
       await Message.updateOne({ _id: message._id }, { $set: { type: 'planner', conversationId: `${message.user}_planner` } });
     }
   }
-  if (plans.length > 0 || deduped || cancelledOrderTasks || migratedCollectionTasks || medicalReminderMessages) console.log(`[scheduled-followup-window] 已为 ${plans.length} 份方案刷新占位窗口，共 ${total} 条；清理重复 ${deduped} 条，校正失效订单任务 ${cancelledOrderTasks} 条，迁移资料回收任务 ${migratedCollectionTasks} 条，就医提醒 ${medicalReminderMessages} 条`);
+  if (plans.length > 0 || deduped || cancelledOrderTasks || migratedCollectionTasks || medicalReminderMessages || correctedMonthlyAssignees) console.log(`[scheduled-followup-window] 已为 ${plans.length} 份方案刷新占位窗口，共 ${total} 条；清理重复 ${deduped} 条，校正失效订单任务 ${cancelledOrderTasks} 条，迁移资料回收任务 ${migratedCollectionTasks} 条，就医提醒 ${medicalReminderMessages} 条，月度随访执行人修正 ${correctedMonthlyAssignees} 条`);
 }
 
 // 启动定时扫描（每天一次），供 index.js 在服务启动时调用

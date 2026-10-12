@@ -49,7 +49,7 @@ async function reviewRequest(actor, changes = {}, owner = patient) {
  vm.runInNewContext(routeSource.slice(start, end), {
   router:{patch:(_path,_auth,fn)=>{handler=fn}},staffAuth:()=>{},followUpReview:policy,
   FollowUp:{findOne:async()=>item},User:{findById:()=>({select:()=>({lean:async()=>owner})})},
-  require:()=>({preparationRole:()=>null}),
+  require:path=>path.includes('annualNutrition')?{isTask:()=>false}:{preparationRole:()=>null},
  });
  const response={statusCode:200,status(code){this.statusCode=code;return this},json(body){this.body=body;return this}};
  await handler({staff:actor,params:{id:'task'},body:{action:'approve'}},response);
@@ -70,4 +70,12 @@ test('actual approval handler corrects legacy executor only when approved; missi
  assert.equal(legacy.response.statusCode,200);assert.equal(legacy.item.assignedTo._id,'manager');
  const missing=await reviewRequest(advisor,{assignedTo:null},{assignedFamilyDoctor:'advisor'});
  assert.equal(missing.response.statusCode,400);assert.equal(missing.saved,0);
+});
+test('monthly AI review keeps the doctor as reviewer and assigns execution to the manager', async()=>{
+ const monthly={sourceType:'ai_review',sourceScheduleKey:'',assignedTo:'advisor',reviewAssignedTo:'advisor'};
+ const {response,item,saved}=await reviewRequest(advisor,monthly);
+ assert.equal(response.statusCode,200);assert.equal(saved,1);
+ assert.equal(item.assignedTo._id,'manager');assert.equal(item.reviewAssignedTo,'advisor');
+ const withoutManager=await reviewRequest(advisor,monthly,{assignedFamilyDoctor:'advisor'});
+ assert.equal(withoutManager.response.statusCode,409);assert.equal(withoutManager.saved,0);
 });

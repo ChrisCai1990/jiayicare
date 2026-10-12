@@ -293,6 +293,7 @@ const TYPE_OPTIONS = [
 
 export default function FollowUpModal({ patientId, patientName, defaultTheme, onClose, onSaved }) {
   const [staffList, setStaffList] = useState([])
+  const [defaultManagerId, setDefaultManagerId] = useState('')
   const [followupForms, setFollowupForms] = useState([])
   const [formSearch, setFormSearch] = useState('')
   const [showFormList, setShowFormList] = useState(false)
@@ -342,15 +343,21 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   }, [])
 
   useEffect(() => {
-    if (!isAdHocMedicalReminder || !planPatientId) return
+    setDefaultManagerId('')
+    setPlanRows(rows => rows.map(row => ({ ...row, assignedTo: '' })))
+  }, [planPatientId])
+
+  useEffect(() => {
+    if (!planPatientId) return
     let active = true
     staffAPI.getPatient(planPatientId).then(res => {
       if (!active) return
       const manager = res.data?.user?.assignedHealthManager
       const managerId = String(manager?._id || manager || '')
-      if (managerId) setPlanRows(rows => rows.map(row => ({ ...row, assignedTo: managerId })))
-      else setError('该客户尚未分配健管专员，请先分配后创建就医提醒')
-    }).catch(err => { if (active) setError(err.message || '读取客户健管专员失败') })
+      setDefaultManagerId(managerId)
+      if (managerId) setPlanRows(rows => rows.map(row => ({ ...row, assignedTo: isAdHocMedicalReminder ? managerId : (row.assignedTo || managerId) })))
+      else if (isAdHocMedicalReminder) setError('该客户尚未分配健管专员，请先分配后创建就医提醒')
+    }).catch(err => { if (active && isAdHocMedicalReminder) setError(err.message || '读取客户健管专员失败') })
     return () => { active = false }
   }, [isAdHocMedicalReminder, planPatientId])
 
@@ -379,7 +386,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
       setReminderKind('visit')
       setVisitTypeForm(false)
       setVisitTypeRevisit(true)
-      setPlanRows([emptyRow()])
+      setPlanRows([{ ...emptyRow(), assignedTo: defaultManagerId }])
     }
     if (scheme.formId?._id) {
       setPlanFormId(scheme.formId._id)
@@ -477,7 +484,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
       r.id === id ? { ...r, date: val, daysAfter: val ? '' : r.daysAfter } : r
     ))
 
-  const addRow = () => setPlanRows(rows => [...rows, emptyRow()])
+  const addRow = () => setPlanRows(rows => [...rows, { ...emptyRow(), assignedTo: defaultManagerId }])
   const removeRow = (id) => {
     if (planRows.length <= 1) return
     setPlanRows(rows => rows.filter(r => r.id !== id))

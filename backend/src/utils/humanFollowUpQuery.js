@@ -2,6 +2,7 @@
 // human handoff was explicitly requested. Apply this BEFORE counting/paging.
 const humanFollowUpQuery = {
   sourceType: { $nin: ['order', 'health_plan'] },
+  aiStatus: { $ne: 'pending' },
   $or: [
     { tags: '人工跟进' },
     { $nor: [

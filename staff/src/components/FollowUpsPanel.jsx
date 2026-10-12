@@ -7,6 +7,7 @@ import Pagination from './Pagination'
 import { formatChineseDate } from '../utils/date'
 
 const PAGE_SIZE = 5
+const ASSIGNEE_ROLE = { healthManager: '健管专员', familyDoctor: '健康顾问', nutritionist: '营养师', healthPlanner: '健康规划师', medicalAssistant: '就医专员' }
 
 function formatDate(date) {
   if (!date) return ''
@@ -133,7 +134,7 @@ export default function FollowUpsPanel() {
                 </div>
                 {f.serviceTracking?.status === 'waiting' && <div>{f.serviceTracking.title} · {f.serviceTracking.message}</div>}
                 {f.assignedTo?.name && (
-                  <div style={{ fontSize: 11, color: '#8AA89C' }}>负责人：{f.assignedTo.name}</div>
+                  <div style={{ fontSize: 11, color: '#8AA89C' }}>随访执行人：{f.assignedTo.name}{ASSIGNEE_ROLE[f.assignedTo.role] ? `（${ASSIGNEE_ROLE[f.assignedTo.role]}）` : ''}</div>
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>

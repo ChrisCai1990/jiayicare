@@ -344,8 +344,9 @@ async function syncAnnualPlanFollowUps(plan) {
         keep.deliveryMode = row.deliveryMode;
         keep.deliveryType = row.deliveryType;
       }
-      // 已确认方案生成的未完成就医提醒也要跟随当前健管专员归属修正；已完成历史不改。
-      if (/^(medical_treatment|annual_checkup):/.test(row.sourceScheduleKey || '') && keep.status !== 'completed') {
+      // 年度方案的执行人由当前客户归属决定。待开始的旧排期原位同步，避免顾问
+      // 审核后仍被保留为普通随访执行人；进行中、已结束记录和独立服务任务不改。
+      if (['planned', 'missed'].includes(keep.status) && row.assignedTo) {
         keep.assignedTo = row.assignedTo;
       }
       await keep.save();

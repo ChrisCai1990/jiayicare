@@ -22,7 +22,7 @@ async function scanAndRunMonthlyReview() {
     if (seenPatients.has(patientKey)) continue;
     seenPatients.add(patientKey);
     try {
-      const user = await User.findById(plan.patientId).select('name gender age chronicDiseases');
+      const user = await User.findById(plan.patientId).select('name gender age chronicDiseases assignedFamilyDoctor assignedHealthManager');
       if (!user) continue;
       await runMonthlyFollowUpReview(user, plan.createdBy);
       count++;
