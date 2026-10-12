@@ -998,19 +998,45 @@ router.post('/change-phone', auth, async (req, res) => {
 router.post('/report/share', auth, async (req, res) => {
   try {
     const { period = 'week', snapshot } = req.body;
+    if (req.body?.consent !== true || req.body?.consentVersion !== 'report-share-20261012') {
+      return res.status(400).json({ success: false, message: '请先确认分享内容及链接访问范围' });
+    }
     if (!snapshot) {
       return res.status(400).json({ success: false, message: '缺少报告数据' });
     }
 
-    const token = crypto.randomBytes(8).toString('hex');          // 16 位随机 hex
+    // Keep only the fields rendered by the public summary page.
+    const sharedSummary = {
+      period: String(snapshot.period || '').slice(0, 40),
+      dateRange: String(snapshot.dateRange || '').slice(0, 80),
+      healthScore: Number(snapshot.healthScore) || 0,
+      recordCount: Number(snapshot.recordCount) || 0,
+      taskCompletion: {
+        completed: Number(snapshot.taskCompletion?.completed) || 0,
+        total: Number(snapshot.taskCompletion?.total) || 0,
+        rate: Number(snapshot.taskCompletion?.rate) || 0,
+      },
+      metrics: Array.isArray(snapshot.metrics) ? snapshot.metrics.slice(0, 30).map(item => ({
+        label: String(item.label || '').slice(0, 60), value: String(item.value || '').slice(0, 60),
+        unit: String(item.unit || '').slice(0, 20), status: String(item.status || '').slice(0, 20),
+        trend: String(item.trend || '').slice(0, 20), delta: String(item.delta || '').slice(0, 40),
+      })) : [],
+      highlights: Array.isArray(snapshot.highlights) ? snapshot.highlights.slice(0, 20).map(item => ({
+        type: String(item.type || '').slice(0, 20), text: String(item.text || '').slice(0, 200),
+      })) : [],
+    };
+
+    const token = crypto.randomBytes(16).toString('hex');         // 128 位随机分享令牌
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);  // 7 天有效
 
     await ShareToken.create({
       token,
       userId: req.user._id,
-      userName: req.user.name || req.user.phone,
+      userName: req.user.name || '',
       period,
-      reportData: snapshot,
+      reportData: sharedSummary,
+      consentVersion: 'report-share-20261012',
+      consentConfirmedAt: new Date(),
       expiresAt,
     });
 
@@ -1018,6 +1044,16 @@ router.post('/report/share', auth, async (req, res) => {
     res.json({ success: true, data: { token, shareUrl, expiresAt } });
   } catch (err) {
     res.status(500).json({ success: false, message: '创建分享链接失败', error: err.message });
+  }
+});
+
+router.delete('/report/share/:token', auth, async (req, res) => {
+  try {
+    const deleted = await ShareToken.findOneAndDelete({ token: req.params.token, userId: req.user._id });
+    if (!deleted) return res.status(404).json({ success: false, message: '链接已失效或不存在' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '取消分享失败' });
   }
 });
 

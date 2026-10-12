@@ -754,6 +754,10 @@ router.post('/', auth, async (req, res) => {
             fileUrls: suppliedFileUrls, ossKeys: suppliedOssKeys, uploadTokens } = req.body;
     let { fileUrl } = req.body;
     if (!title) return res.status(400).json({ success: false, message: '报告标题不能为空' });
+    const isAppUpload = ['jiayicare-app-h5', 'jiayicare-app'].includes(req.body?.clientSource);
+    if (isAppUpload && (req.body?.reportConsent !== true || req.body?.reportConsentVersion !== 'report-upload-20261012')) {
+      return res.status(400).json({ success: false, message: '请先确认本次报告上传与敏感健康信息处理说明' });
+    }
 
     // contents：多图上传时的 base64 数组（同一份报告的多页，如"结论页"+"数据页"）；content 仍保留
     // 兼容单图上传的旧调用方。两者互斥，contents 存在时优先。
@@ -803,6 +807,9 @@ router.post('/', auth, async (req, res) => {
 
     const report = await MedicalReport.create({
       user: req.user._id,
+      ...(isAppUpload ? { uploadConsent: {
+        version: 'report-upload-20261012', confirmedAt: new Date(), accountId: req.user._id, source: req.body.clientSource,
+      } } : {}),
       title,
       type:               type               || 'annual',
       hospital:           hospital           || '',
