@@ -18,6 +18,23 @@ export function clearToken() {
 }
 export function getToken() { return _token }
 
+async function downloadPrivateFile(path, fileName) {
+  const res = await fetch(`${BASE}${path}`, { headers: _token ? { Authorization: `Bearer ${_token}` } : {} })
+  if (res.status === 401) { handleUnauthorized(); throw new Error('登录已过期，请重新登录') }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.message || '下载失败')
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName || '服务记录'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 // 登录态失效（401）：清掉 token 并跳回登录页，避免每个页面卡在"Token 无效或已过期"红框
 function handleUnauthorized() {
   clearToken()
@@ -214,6 +231,18 @@ export const adminAPI = {
   updateEnterprise:       (id, data) => req(`/enterprises/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEnterprise:       (id)       => req(`/enterprises/${id}`, { method: 'DELETE' }),
   saveEnterpriseHrData:   (id, year, data) => req(`/enterprises/${id}/hr-data`, { method: 'PUT', body: JSON.stringify({ year, data }) }),
+  enterpriseServiceRecords: (id) => req(`/enterprises/${id}/service-records`),
+  uploadEnterpriseServiceRecord: async (id, formData) => {
+    const res = await fetch(`${BASE}/enterprises/${id}/service-records`, {
+      method: 'POST', headers: _token ? { Authorization: `Bearer ${_token}` } : {}, body: formData,
+    })
+    if (res.status === 401) { handleUnauthorized(); throw new Error('登录已过期，请重新登录') }
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.message || '上传失败')
+    return data
+  },
+  publishEnterpriseServiceRecord: (id, recordId, published) => req(`/enterprises/${id}/service-records/${recordId}`, { method: 'PATCH', body: JSON.stringify({ published }) }),
+  downloadEnterpriseServiceRecord: (id, recordId, fileName) => downloadPrivateFile(`/enterprises/${id}/service-records/${recordId}/file`, fileName),
   enterpriseSharedFunds: (id) => req(`/enterprises/${id}/shared-funds`),
   saveEnterpriseSharedFund: (id, year, data) => req(`/enterprises/${id}/shared-funds/${year}`, { method: 'PUT', body: JSON.stringify(data) }),
   creditEnterpriseSharedFund: (id, year, data) => req(`/enterprises/${id}/shared-funds/${year}/credits`, { method: 'POST', body: JSON.stringify(data) }),

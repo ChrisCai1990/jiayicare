@@ -30,6 +30,7 @@ const MemberType = require('../models/MemberType');
 const Partner = require('../models/Partner');
 const PartnerBenefit = require('../models/PartnerBenefit');
 const Enterprise = require('../models/Enterprise');
+const EnterpriseServiceRecord = require('../models/EnterpriseServiceRecord');
 const ServicePackage = require('../models/ServicePackage');
 const EnterpriseInsurancePolicy = require('../models/EnterpriseInsurancePolicy');
 const InsuranceEnrollment = require('../models/InsuranceEnrollment');
@@ -2439,6 +2440,9 @@ router.put('/enterprises/:id', adminAuth, async (req, res) => {
 
 // DELETE /api/admin/enterprises/:id
 router.delete('/enterprises/:id', adminAuth, async (req, res) => {
+  if (await EnterpriseServiceRecord.exists({ enterpriseId: req.params.id })) {
+    return res.status(409).json({ success: false, message: '该企业已有历年服务记录，请保留企业档案' });
+  }
   const account = await require('../models/EnterpriseSharedFund').exists({ enterpriseId: req.params.id, creditedCents: { $gt: 0 } });
   if (account) return res.status(409).json({ success: false, message: '该企业有共享基金账本，请先完成财务对账，不能直接删除' });
   const seatsUsed = await User.countDocuments({ enterpriseId: req.params.id });
@@ -2460,7 +2464,16 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
   if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
 
   const num = (v) => (v === '' || v === null || v === undefined ? 0 : Number(v) || 0);
+  const optionalAmount = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
   const str = (v) => (v || '').trim();
+  const insuranceAmounts = ['insurancePremiumTotal', 'insurancePaidClaimsTotal', 'insurancePendingClaimsTotal'];
+  if (insuranceAmounts.some(key => {
+    const value = optionalAmount(data?.[key]);
+    return value !== null && (!Number.isFinite(value) || value < 0);
+  })) return res.status(400).json({ success: false, message: '保费和赔付金额须为非负数字' });
+  if (data?.insuranceClaimsAsOf && !/^\d{4}-\d{2}-\d{2}$/.test(data.insuranceClaimsAsOf)) {
+    return res.status(400).json({ success: false, message: '赔付统计截止日格式无效' });
+  }
   // 附件列表清洗：[{ name, url }]，过滤掉没有url的脏数据
   const cleanAttachments = (arr) => Array.isArray(arr)
     ? arr.filter(a => (a?.url || '').trim()).map(a => ({ name: (a?.name || '').trim() || '附件', url: a.url.trim() }))
@@ -2485,6 +2498,10 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
     insuredFamilyCount: num(data?.insuredFamilyCount),
     insuredChildCount:  num(data?.insuredChildCount),
     insuredAmount: num(data?.insuredAmount),
+    insurancePremiumTotal: optionalAmount(data?.insurancePremiumTotal), // 企业实付总保费，含参保员工及家属
+    insurancePaidClaimsTotal: optionalAmount(data?.insurancePaidClaimsTotal), // 截止日已核算赔付
+    insurancePendingClaimsTotal: optionalAmount(data?.insurancePendingClaimsTotal), // 已报未核算/未决估算，不与已核算赔付混用
+    insuranceClaimsAsOf: str(data?.insuranceClaimsAsOf),
     insuredStartAt: str(data?.insuredStartAt),  // 高端险起止
     insuredEndAt:   str(data?.insuredEndAt),
     insuredAttachments: cleanAttachments(data?.insuredAttachments),   // 保险服务合约附件

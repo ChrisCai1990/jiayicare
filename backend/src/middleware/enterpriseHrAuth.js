@@ -14,6 +14,7 @@ module.exports = async (req, res, next) => {
     }
     const admin = await Admin.findById(decoded.id).select('-password');
     if (!admin) return res.status(401).json({ success: false, message: '账号不存在' });
+    if (admin.staffStatus === 'inactive') return res.status(403).json({ success: false, message: '账号已停用' });
     if (admin.role !== 'enterprise_hr' || !admin.enterpriseId) {
       return res.status(403).json({ success: false, message: '非企业HR账号或未绑定企业' });
     }

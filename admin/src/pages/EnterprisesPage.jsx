@@ -1,7 +1,8 @@
 import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useRef, useState } from 'react'
 import { adminAPI, API_ORIGIN } from '../api'
-import { useToast } from '../App'
+import { useAdmin, useToast } from '../App'
+import EnterpriseServiceRecordsModal from './EnterpriseServiceRecordsModal.jsx'
 
 // 上传接口返回相对路径(/api/uploads/xxx)，admin域名与后端API域名不同，需拼上API_ORIGIN才能正常打开
 function safeFileSrc(url) {
@@ -510,6 +511,7 @@ function SharedFundModal({ enterprise, onClose }) {
 
 export default function EnterprisesPage() {
   const toast = useToast()
+  const { admin } = useAdmin()
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
@@ -523,6 +525,7 @@ export default function EnterprisesPage() {
   const [hrDataEnt, setHrDataEnt] = useState(null)   // 正在录入HR看板数据的企业
   const [insuranceEnt, setInsuranceEnt] = useState(null)
   const [sharedFundEnt, setSharedFundEnt] = useState(null)
+  const [serviceRecordsEnt, setServiceRecordsEnt] = useState(null)
   const [servicePackages, setServicePackages] = useState([])
 
   const load = async (name) => {
@@ -625,6 +628,7 @@ export default function EnterprisesPage() {
                   </button>
                   <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(e); setShowEditModal(true) }}>编辑</button>
                   <button className="btn btn-sm btn-ghost" onClick={() => setHrDataEnt(e)}>📊 HR数据</button>
+                  {admin?.role === 'superadmin' && <button className="btn btn-sm btn-ghost" onClick={() => setServiceRecordsEnt(e)}>📁 服务记录</button>}
                   <button className="btn btn-sm btn-ghost" onClick={() => { if (!employeesByEnt[e._id]) loadDetail(e._id); setInsuranceEnt(e) }}>🛡️ 高端医疗险</button>
                   <button className="btn btn-sm btn-ghost" onClick={() => setSharedFundEnt(e)}>💚 共享基金</button>
                   <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => del(e)}>删除</button>
@@ -685,6 +689,7 @@ export default function EnterprisesPage() {
       )}
       {insuranceEnt && <InsurancePolicyModal enterprise={insuranceEnt} employees={employeesByEnt[insuranceEnt._id] || []} onClose={() => setInsuranceEnt(null)} toast={toast} />}
       {sharedFundEnt && <SharedFundModal enterprise={sharedFundEnt} onClose={() => setSharedFundEnt(null)} />}
+      {serviceRecordsEnt && <EnterpriseServiceRecordsModal enterprise={serviceRecordsEnt} onClose={() => setServiceRecordsEnt(null)} toast={toast} />}
     </div>
   )
 }
@@ -697,7 +702,7 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
   const savedYears = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
   const [year, setYear] = useState(String(yearNow))
   const blankFund = { transactions: [], used: '' }
-  const blank = { seatsTotal: '', examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', healthMgmtFee: '', healthMgmtCount: '', otherServices: [], healthFund: { ...blankFund }, examAttachments: [], insuredAttachments: [], healthMgmtAttachments: [] }
+  const blank = { seatsTotal: '', examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', insurancePremiumTotal: '', insurancePaidClaimsTotal: '', insurancePendingClaimsTotal: '', insuranceClaimsAsOf: '', healthMgmtFee: '', healthMgmtCount: '', otherServices: [], healthFund: { ...blankFund }, examAttachments: [], insuredAttachments: [], healthMgmtAttachments: [] }
   // 载入已有年度数据时，确保 healthFund 结构完整（旧数据可能没有这个字段）
   const withDefaults = (d) => ({ ...blank, ...d, healthFund: { ...blankFund, ...(d?.healthFund || {}) } })
   const [form, setForm] = useState(() => withDefaults(byYear[String(yearNow)]))
@@ -865,7 +870,15 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
             {numField('参保·高管', 'insuredExecCount', '人')}
             {numField('参保·配偶', 'insuredFamilyCount', '人')}
             {numField('参保·孩子', 'insuredChildCount', '人')}
-            {numField('保险金额', 'insuredAmount', '¥')}
+            {numField('保险金额（历史字段，不用于赔付率）', 'insuredAmount', '¥')}
+            <div style={{ gridColumn: 'span 2', fontSize: 12, color: '#65776F' }}>以下为企业支付的整张保单数据，包含参保员工与家属；尚未核对时请留空。</div>
+            {numField('企业实付总保费（含家属）', 'insurancePremiumTotal', '¥')}
+            {numField('已核算赔付', 'insurancePaidClaimsTotal', '¥')}
+            {numField('未核算／未决估算', 'insurancePendingClaimsTotal', '¥')}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">赔付统计截止日</label>
+              <DateField className="form-input" type="date" value={form.insuranceClaimsAsOf || ''} onChange={e => set('insuranceClaimsAsOf', e.target.value)} />
+            </div>
             {dateRange('insuredStartAt', 'insuredEndAt')}
             {attachmentList('insuredAttachments', '保险服务合约附件')}
           </div>

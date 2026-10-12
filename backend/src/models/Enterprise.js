@@ -45,6 +45,9 @@ const enterpriseSchema = new mongoose.Schema({
     //   insurerName:    String   保险公司
     //   insuredCount:   Number   参保人数（如给高管买高端医疗险）
     //   insuredAmount:  Number   保险金额
+    //   insurancePremiumTotal: Number|null 企业实付总保费（含员工及家属）；空值表示未录入
+    //   insurancePaidClaimsTotal: Number|null 已核算赔付；insurancePendingClaimsTotal: Number|null 未核算/未决估算
+    //   insuranceClaimsAsOf: String 赔付数据截止日期 YYYY-MM-DD
     //   insuredStartAt/insuredEndAt:  高端险起止
     //   healthMgmtCount: Number  健康管理服务人数
     //   healthMgmtFee:  Number   健康管理费

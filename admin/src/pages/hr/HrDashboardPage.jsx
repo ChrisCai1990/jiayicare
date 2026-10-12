@@ -3,6 +3,8 @@ import { hrAPI, API_ORIGIN } from '../../hrApi'
 import { useHr } from './HrApp'
 
 const STATUS_LABEL = { active: '合作中', expired: '已到期', suspended: '已暂停' }
+const SERVICE_RECORD_KIND = { annual_plan: '年度方案', quarterly_review: '季度复盘', annual_review: '年度复盘', other: '其他记录' }
+const SERVICE_RECORD_PERIOD = { annual: '全年', Q1: '第一季度', Q2: '第二季度', Q3: '第三季度', Q4: '第四季度' }
 
 // 附件相对路径(/api/uploads/xxx)需拼上后端域名才能打开，与admin端产品图片同一套修复逻辑
 function safeFileSrc(url) {
@@ -31,7 +33,7 @@ function YearSnapshot({ year, overview }) {
     <div className="card" style={{ padding: 20, marginBottom: 16 }}>
       <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 4 }}>{year} 年服务概览</div>
       <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>
-        员工账号为当前实时数据；体检、保险和健康管理人数来自该年度人工录入
+        员工账号为当前实时数据，关联家属 {overview?.dependentsCount ?? 0} 人另列；体检、保险和健康管理人数来自该年度人工录入
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <StatCard label="年度采购名额" value={hr.seatsTotal ?? '-'} sub="人" />
@@ -50,6 +52,60 @@ function YearSnapshot({ year, overview }) {
           <span>健康管理服务人数 <strong>{hr.healthMgmtCount ?? 0}</strong></span>
         </div>
       )}
+    </div>
+  )
+}
+
+function CohortAndInsuranceCost({ overview }) {
+  const cohort = overview?.cohortSummary || {}
+  const hr = overview?.hrData || {}
+  const premium = hr.insurancePremiumTotal
+  const paid = hr.insurancePaidClaimsTotal
+  const hasPremium = premium != null && Number(premium) > 0
+  const hasPaid = paid != null
+  const ratio = hasPremium && hasPaid && hr.insuranceClaimsAsOf
+    ? `${((Number(paid) / Number(premium)) * 100).toFixed(1)}%`
+    : '待补充数据'
+  const asOf = hr.insuranceClaimsAsOf || '未填写截止日'
+  const groups = [
+    ['参保员工', cohort.insuredEmployees],
+    ['未参保员工', cohort.uninsuredEmployees],
+  ]
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, marginBottom: 16 }}>
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>员工健康管理对照</div>
+        {cohort.status === 'ready' ? <>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {groups.map(([label, group]) => <div key={label} style={{ flex: 1, minWidth: 135, background: '#f8faf9', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontWeight: 700 }}>{label} · {group.count} 人</div>
+              <div style={{ fontSize: 12, color: '#65776F', marginTop: 6 }}>
+                {group.activated == null ? '小组人数不足10，暂不展示参与指标' : `当前已激活 ${group.activated}/${group.count} 人`}
+              </div>
+              {group.assessed != null && <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>当前有健康分评估 {group.assessed}/{group.count} 人</div>}
+            </div>)}
+          </div>
+          <div style={{ fontSize: 12, color: '#65776F', marginTop: 10 }}>参保家属 {cohort.insuredDependents} 人另列；两组数据为当前账号快照。随访闭环和同一批成员的健康变化尚待接入，不能据此认定健康管理已产生效果。</div>
+        </> : <div style={{ fontSize: 13, color: '#65776F' }}>
+          {cohort.status === 'count_mismatch'
+            ? `参保名单 ${cohort.enrolledCount} 人，与年度录入的 ${cohort.expectedCount} 人不一致；核对后展示分组。`
+            : cohort.status === 'incomplete_mapping'
+              ? '参保名单中有成员未关联到本企业，核对后展示分组。'
+              : '尚未维护可核对的参保名单，暂不推断员工是否参保。'}
+        </div>}
+      </div>
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>企业高端险成本与赔付</div>
+        <div style={{ fontSize: 12, color: '#65776F', marginBottom: 12 }}>整张保单口径，包含参保员工和家属 · 赔付截至 {asOf}</div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <StatCard label="企业实付总保费" value={premium == null ? '待录入' : `¥${Number(premium).toLocaleString()}`} />
+          <StatCard label="已核算赔付" value={paid == null ? '待录入' : `¥${Number(paid).toLocaleString()}`} color="#D97706" />
+          <StatCard label="已核算赔付／全年总保费" value={ratio} color="#0077B6" />
+        </div>
+        <div style={{ fontSize: 12, color: '#65776F', marginTop: 10 }}>
+          未核算／未决估算：{hr.insurancePendingClaimsTotal == null ? '尚未录入' : `¥${Number(hr.insurancePendingClaimsTotal).toLocaleString()}`}；已核算比例不代表最终赔付率。
+        </div>
+      </div>
     </div>
   )
 }
@@ -153,6 +209,7 @@ export default function HrDashboardPage() {
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [downloadError, setDownloadError] = useState('')
   const [selectedYear, setSelectedYear] = useState(null)  // null=默认当前年，切换后为具体年份
 
   // 首次加载：拉当前年 overview + 群体健康聚合
@@ -170,6 +227,12 @@ export default function HrDashboardPage() {
     hrAPI.overview(year)
       .then(ov => setOverview(ov.data))
       .catch(err => setError(err.message))
+  }
+
+  const downloadServiceRecord = async (record) => {
+    setDownloadError('')
+    try { await hrAPI.downloadServiceRecord(record._id, record.fileName) }
+    catch (err) { setDownloadError(err.message) }
   }
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('zh-CN') : '-'
@@ -214,8 +277,29 @@ export default function HrDashboardPage() {
       </div>
 
       <YearSnapshot year={overview?.year} overview={overview} />
+      <CohortAndInsuranceCost overview={overview} />
 
-      {!overview?.hrData && (
+      <ServiceSection icon="📁" title={`${overview?.year} 年 · 服务记录`}>
+        {(overview?.serviceRecords || []).length === 0 ? (
+          <div style={{ color: '#8AA89C', fontSize: 13 }}>该年度暂无已发布的服务记录</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {overview.serviceRecords.map(record => (
+              <div key={record._id} style={{ borderBottom: '1px solid #EEE9E0', paddingBottom: 10, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: '#1A2B24' }}>{SERVICE_RECORD_PERIOD[record.period]} · {SERVICE_RECORD_KIND[record.kind]} · {record.title}</div>
+                  {record.summary && <div style={{ fontSize: 13, color: '#4A6558', marginTop: 5 }}>{record.summary}</div>}
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 5 }}>{record.fileName} · 发布于 {fmtDate(record.publishedAt)}</div>
+                </div>
+                <button className="btn btn-sm btn-secondary" onClick={() => downloadServiceRecord(record)}>下载文件</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {downloadError && <div style={{ color: '#c00', fontSize: 13, marginTop: 8 }}>{downloadError}</div>}
+      </ServiceSection>
+
+      {!overview?.hrData && !(overview?.serviceRecords || []).length && (
         <div className="card" style={{ padding: 24, marginBottom: 16, textAlign: 'center', color: '#8AA89C', fontSize: 14 }}>
           {overview?.year} 年暂无服务数据记录
         </div>
@@ -249,7 +333,7 @@ export default function HrDashboardPage() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <StatCard label="保险公司" value={hr.insurerName || '-'} />
                 <StatCard label="参保人数（总体）" value={hr.insuredCount || 0} sub="人" />
-                <StatCard label="保险金额" value={`¥${(hr.insuredAmount || 0).toLocaleString()}`} color="#0077B6" />
+                <StatCard label="保险金额（历史字段）" value={`¥${(hr.insuredAmount || 0).toLocaleString()}`} color="#0077B6" />
               </div>
               {(hr.insuredExecCount || hr.insuredFamilyCount || hr.insuredChildCount) ? (
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
@@ -343,7 +427,7 @@ export default function HrDashboardPage() {
 
       <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', margin: '20px 0 8px' }}>员工健康概况</div>
       <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
-        截至 {summary?.generatedAt ? fmtDate(summary.generatedAt) : '当前'} 的现状统计，不随上方服务年度切换；未评估员工单独列示
+        截至 {summary?.generatedAt ? fmtDate(summary.generatedAt) : '当前'} 的员工现状统计，不含家属，也不随上方服务年度切换；未评估员工单独列示
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 320 }}>
