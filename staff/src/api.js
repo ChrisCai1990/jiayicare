@@ -144,6 +144,7 @@ export const staffAPI = {
   // Follow-ups
   getFollowUps:        (p = {}) => req('/staff/followups?' + qs(p)),
   getServiceTasks:     (p = {}) => req('/staff/service-tasks?' + qs(p)),
+  getMedicalAssistProgress: () => req('/staff/medical-assist-progress'),
   startLifestyleInterview: id => req(`/staff/patients/${id}/lifestyle-interview/start`, {method:'POST',body:'{}'}),
   getLifestyleInterview: id => req(`/staff/followups/${id}/lifestyle-interview`),
   saveLifestyleInterview: (id, data) => req(`/staff/followups/${id}/lifestyle-interview`, {method:'POST',body:JSON.stringify(data)}),

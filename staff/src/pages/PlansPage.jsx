@@ -613,7 +613,6 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [tplError, setTplError] = useState('')
   const [selectedTpl, setSelectedTpl] = useState(null)
   const [medicalAssistants, setMedicalAssistants] = useState([])
-  const [supervisors, setSupervisors] = useState([])
   const [workflowProducts, setWorkflowProducts] = useState([])
   const [workflowProductId, setWorkflowProductId] = useState('')
   const [resourceKnowledge, setResourceKnowledge] = useState([])
@@ -650,13 +649,13 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
 
   useEffect(() => {
     setAssignedPlanner(null)
-    if (!patientId || !isAgencyService) return
+    if (!patientId) return
     let active = true
     staffAPI.getPatient(patientId).then(res => {
       if (active) setAssignedPlanner(res.data?.user?.assignedHealthPlanner || null)
     }).catch(err => { if (active) setError(err.message || '读取客户健康规划师失败') })
     return () => { active = false }
-  }, [patientId, isAgencyService])
+  }, [patientId])
 
   useEffect(() => {
     if (!patientId || !isMedicationProxy) return
@@ -720,9 +719,6 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       .finally(() => setLoadingTpls(false))
     staffAPI.getStaffList({ roles: 'medicalAssistant,healthPlanner' })
       .then(res => setMedicalAssistants(res.data || []))
-      .catch(() => {})
-    staffAPI.getStaffList({ roles: 'healthManager,familyDoctor,superadmin' })
-      .then(res => setSupervisors(res.data || []))
       .catch(() => {})
     staffAPI.getWorkflowProducts('checkup')
       .then(res => {
@@ -821,13 +817,12 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     if (checkupOneStop && !description.trim()) { setError('请填写具体服务需求'); return }
     if (isAgencyExamBooking && (!form.agencyExams?.length || form.agencyExams.length > 12 || form.agencyExams.some(row => !row.item.trim()))) { setError('请逐项填写1至12个代约检查项目'); return }
     if (isAgencyService && !isAgencyExamBooking && !form.tasks.trim()) { setError('请填写本次代办事项'); return }
-    if (isAgencyService && !assignedPlanner?._id) { setError('该客户尚未分配健康规划师，请先在客户档案中分配'); return }
+    if (!assignedPlanner?._id) { setError('该客户尚未分配健康规划师，请先在客户档案中分配'); return }
     if (isMedicalEscort && (!form.hospital.trim() || !form.serviceDate || !form.serviceTime.trim() || !form.tasks.trim())) { setError('请完整填写服务日期时间、医院和具体服务事项'); return }
     if (isMedicalEscort && !isExamEscort && !isTreatmentEscort && (!form.escortDepartments?.length || form.escortDepartments.some(item => !item.department.trim()))) { setError('请填写每个就诊科室'); return }
     if (isExamEscort && (!form.escortExams?.length || form.escortExams.some(item => !item.item.trim()))) { setError('请填写每个检查项目'); return }
     if (isTreatmentEscort && (!form.escortTreatments?.length || form.escortTreatments.some(item => !item.item.trim() || !item.medicalOrder.trim()))) { setError('请填写每项治疗项目及已确认的医嘱或治疗依据'); return }
     if (!isAgencyService && !isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !outpatientService && !form.staffId) { setError('请选择就医专员'); return }
-    if (!isAgencyService && !isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !form.supervisorId) { setError('请选择督办人'); return }
     if (!isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
     setError(''); setSaving(true)
     try {
@@ -888,7 +883,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
         reservedOrderId,
         patientId, type: 'medical_assist', title: form.name,
         description: isAgencyService ? '' : description, year: Number(form.serviceDate.slice(0, 4)), items,
-        content: { ...form, resourceReferences: selectedResourceIds.map(resourceId => ({ resourceId })), ...(isAgencyService ? { staffId: '', staffName: '', supervisorId: assignedPlanner._id, transport: '', hotel: '' } : {}), ...(isAgencyExamBooking ? { tasks: form.agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
+        content: { ...form, resourceReferences: selectedResourceIds.map(resourceId => ({ resourceId })), supervisorId: assignedPlanner._id, ...(isAgencyService ? { staffId: '', staffName: '', transport: '', hotel: '' } : {}), ...(isAgencyExamBooking ? { tasks: form.agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
       })
       if (reservedOrderId) {
         try { await staffAPI.pushPlan(created.data._id) }
@@ -1007,7 +1002,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             <PatientSearchInput value={patientId} onChange={setPatientId} initialSelectedId={initialPatientId} initialSelectedName={initialPatientName} />
           </div>
 
-          {isAgencyService && <div style={{ padding: '10px 12px', background: '#EFF8F4', borderRadius: 8, fontSize: 13, color: '#1E6B50' }}>督办人：{assignedPlanner?.name || (patientId ? '该客户尚未分配健康规划师' : '选择会员后自动带出客户的健康规划师')}（固定，不需手动选择）</div>}
+          <div style={{ padding: '10px 12px', background: '#EFF8F4', borderRadius: 8, fontSize: 13, color: '#1E6B50' }}>总督办：{assignedPlanner?.name || (patientId ? '该客户尚未分配健康规划师' : '选择会员后自动带出客户的健康规划师')}（固定由健康规划师负责）</div>
 
           {isMedicationProxy && <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
             <div style={{ fontSize: 13, fontWeight: 650, color: '#1E6B50' }}>本次配备药物（可一次增加多种）</div>
@@ -1080,13 +1075,6 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
                 {medicalAssistants.filter(s => !isMedicalEscort || s.role === 'medicalAssistant').map(s => (
                   <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
                 ))}
-              </select>
-            </div>}
-            {!isAgencyService && !isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">督办人 *</label>
-              <select className="form-input" value={form.supervisorId || ''} onChange={e => set('supervisorId', e.target.value)}>
-                <option value="">请选择健管专员/家庭医生</option>
-                {supervisors.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}
               </select>
             </div>}
             {!isMedicalProxy && !isExpertAppointment && <div className="form-group" style={{ marginBottom: 0 }}>

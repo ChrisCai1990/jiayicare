@@ -16,6 +16,7 @@ import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
 import ServiceTasksPanel from '../components/ServiceTasksPanel'
 import ServiceSupervisionPanel from '../components/ServiceSupervisionPanel'
+import MedicalAssistProgressPanel from '../components/MedicalAssistProgressPanel'
 import MonthlyReviewWorkbench from '../components/MonthlyReviewWorkbench'
 import Pagination from '../components/Pagination'
 import { isCustomerOrder, plannerOrderRows } from '../utils/plannerOrderProgress.mjs'
@@ -180,6 +181,7 @@ export default function HomePage() {
       {/* 临时服务方案产生的岗位任务优先处理，固定显示在 AI 审核任务上方。 */}
       <MonthlyReviewWorkbench />
       <ClinicalStandardReviewPanel />
+      {staff?.role === 'familyDoctor' && <MedicalAssistProgressPanel />}
       <ServiceTasksPanel onTasksLoaded={setServiceTasks} />
 
       {/* AI 待审核任务面板 */}

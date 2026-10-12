@@ -639,6 +639,64 @@ async function syncOutpatientReportAuditCompletion(sourceHealthPlanId) {
   return true;
 }
 
+// 健康顾问查看名下客户的就医协助进程；进程只读，不作为分配给顾问的待办。
+router.get('/medical-assist-progress', staffAuth, async (req, res) => {
+  if (req.staff.role !== 'familyDoctor') return res.json({ success: true, data: [] });
+  const patients = await User.find({ assignedFamilyDoctor: req.staff._id, isDeleted: { $ne: true } })
+    .select('name assignedHealthPlanner').populate('assignedHealthPlanner', 'name').lean();
+  const patientIds = patients.map(patient => patient._id);
+  if (!patientIds.length) return res.json({ success: true, data: [] });
+  const patientById = new Map(patients.map(patient => [String(patient._id), patient]));
+  const [plans, orders] = await Promise.all([
+    HealthPlan.find({ patientId: { $in: patientIds }, type: 'medical_assist', status: { $in: ['draft', 'active'] } })
+      .sort({ createdAt: -1 }).limit(100).select('patientId staffId initiatedByStaff supervisorId sourceOrderId title status createdAt pushedAt').lean(),
+    Order.find({ user: { $in: patientIds }, status: { $in: ['pending', 'scheduled'] }, paymentStatus: 'paid', serviceId: { $ne: 'staff_post_checkup_supervision' },
+      serviceName: /就医|门诊|住院|代诊|约诊|约检|代办|陪诊|陪同|体检|检查预约|代配药|代取药/ })
+      .sort({ createdAt: -1 }).limit(100).select('user serviceName status initiationSource initiatedByStaff supervisorId currentStage createdAt').lean(),
+  ]);
+  const linkedOrderIds = new Set(plans.map(plan => String(plan.sourceOrderId || '')).filter(Boolean));
+  const visibleOrders = orders.filter(order => !linkedOrderIds.has(String(order._id)));
+  const followUps = await FollowUp.find({ taskRole: 'supervisor', status: { $in: ['planned', 'in_progress', 'missed'] },
+    $or: [
+      { sourceHealthPlanId: { $in: plans.map(plan => plan._id) } },
+      { sourceOrderId: { $in: visibleOrders.map(order => order._id) } },
+    ],
+  }).select('patientId sourceType sourceHealthPlanId sourceOrderId taskRole status workflowKey theme assignedTo isBlocked formData')
+    .populate('assignedTo', 'name').lean();
+  const taskByPlan = new Map();
+  const taskByOrder = new Map();
+  for (const task of followUps) {
+    if (task.sourceHealthPlanId && !taskByPlan.has(String(task.sourceHealthPlanId))) taskByPlan.set(String(task.sourceHealthPlanId), task);
+    if (task.sourceOrderId && !taskByOrder.has(String(task.sourceOrderId))) taskByOrder.set(String(task.sourceOrderId), task);
+  }
+  const progressByTask = await require('../utils/supervisionProgress').loadSupervisionProgress(followUps, FollowUp);
+  const toProgress = task => task ? progressByTask.get(String(task._id)) : null;
+  const planRows = plans.map(plan => {
+    const patient = patientById.get(String(plan.patientId));
+    const supervisorTask = taskByPlan.get(String(plan._id));
+    const progress = toProgress(supervisorTask);
+    return { id: `plan:${plan._id}`, patientId: plan.patientId, patientName: patient?.name || '', title: plan.title,
+      source: 'plan', startedBySelf: String(plan.initiatedByStaff || plan.staffId) === String(req.staff._id),
+      supervisorName: supervisorTask?.assignedTo?.name || patient?.assignedHealthPlanner?.name || '待分配健康规划师',
+      stage: plan.status === 'draft' ? '方案待完善与推送' : progress?.current?.[0]?.label || '健康规划师督办中',
+      assignee: plan.status === 'draft' ? '' : progress?.current?.[0]?.assignee || '',
+      waitingReason: plan.status === 'draft' ? '方案尚未推送，岗位任务尚未生成' : progress?.message || '等待岗位任务更新',
+      completed: progress?.completed || 0, total: progress?.total || 0, createdAt: plan.createdAt };
+  });
+  const orderRows = visibleOrders.map(order => {
+    const patient = patientById.get(String(order.user));
+    const supervisorTask = taskByOrder.get(String(order._id));
+    const progress = toProgress(supervisorTask);
+    return { id: `order:${order._id}`, patientId: order.user, patientName: patient?.name || '', title: order.serviceName,
+      source: 'order', startedBySelf: String(order.initiatedByStaff || '') === String(req.staff._id),
+      supervisorName: supervisorTask?.assignedTo?.name || patient?.assignedHealthPlanner?.name || '待分配健康规划师',
+      stage: progress?.current?.[0]?.label || '待健康规划师承接', assignee: progress?.current?.[0]?.assignee || '',
+      waitingReason: progress?.message || '服务已发起，等待岗位任务生成',
+      completed: progress?.completed || 0, total: progress?.total || 0, createdAt: order.createdAt };
+  });
+  res.json({ success: true, data: [...planRows, ...orderRows].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 100) });
+});
+
 router.get('/service-tasks', staffAuth, async (req, res) => {
   const { status = 'active', includeFuture = '', limit = 100 } = req.query;
   const staffId = String(req.staff._id);
@@ -3447,9 +3505,15 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   let planContent = content || {};
   if (type === 'nutrition') planContent = { ...planContent, nutritionTaskVersion: 1 };
+  let medicalAssistSupervisor = null;
   if (type === 'medical_assist') {
     try { planContent = { ...planContent, resourceReferences: await freezeMedicalResourceReferences(planContent.resourceReferences) }; }
     catch (err) { return res.status(400).json({ success: false, message: err.message }); }
+    const patient = await User.findById(patientId).select('assignedHealthPlanner').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (!patient.assignedHealthPlanner) return res.status(400).json({ success: false, message: '该客户尚未分配健康规划师，请先分配' });
+    medicalAssistSupervisor = patient.assignedHealthPlanner;
+    planContent = { ...planContent, supervisorId: medicalAssistSupervisor };
   }
   if (type === 'medical_assist' && isAgencyMedicalAssistPlan(planContent, title)) {
     if (/代约检/.test(`${planContent.templateName || ''} ${title || ''}`)) {
@@ -3458,10 +3522,7 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
       const agencyExams = rows.map(row => ({ item: row.item.trim(), department: (row.department || '').trim(), expert: (row.expert || '').trim(), notes: (row.notes || '').trim() }));
       planContent = { ...planContent, agencyExams, tasks: agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') };
     }
-    const patient = await User.findById(patientId).select('assignedHealthPlanner').lean();
-    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    if (!patient.assignedHealthPlanner) return res.status(400).json({ success: false, message: '该客户尚未分配健康规划师，请先分配' });
-    planContent = { ...planContent, staffId: '', staffName: '', supervisorId: patient.assignedHealthPlanner, transport: '', hotel: '' };
+    planContent = { ...planContent, staffId: '', staffName: '', transport: '', hotel: '' };
   }
   let sourceOrder = null;
   if (req.body.reservedOrderId) {
@@ -3489,6 +3550,7 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
     followupFrequency: followupFrequency || '',
     summary: summary || '',
     content: planContent,
+    ...(type === 'medical_assist' ? { initiatedByStaff: req.staff._id, supervisorId: medicalAssistSupervisor, currentAssignee: medicalAssistSupervisor } : {}),
     status: 'draft',
   });
   if (sourceOrder) {
@@ -3978,7 +4040,7 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
   const executorDate = calculatedExecutorDate < workflowStart ? new Date(workflowStart) : calculatedExecutorDate;
   const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
   const selectedAssistantId = c.staffId || plan.staffId;
-  const selectedSupervisorId = c.supervisorId || c.bookingPlannerId || null;
+  const selectedSupervisorId = patient?.assignedHealthPlanner || null;
   const agencyService = isAgencyMedicalAssistPlan(c, plan.title);
   const explicitCheckupAssignee = workflowPlan.executorRole === 'healthPlanner'
     ? c.bookingPlannerId
@@ -3987,7 +4049,7 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
       : null;
   const deferOutpatientAssistant = options.deferMedicalAssistantAssignment && workflowPlan.executorRole === 'medicalAssistant';
   const executorAssignee = deferOutpatientAssistant ? null : agencyService ? patient?.assignedHealthManager : (explicitCheckupAssignee || resolveAssignee(workflowPlan.executorRole, selectedAssistantId));
-  const supervisorAssignee = agencyService ? patient?.assignedHealthPlanner : (selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole || 'healthPlanner', plan.staffId));
+  const supervisorAssignee = selectedSupervisorId;
   const previousGate = options.dependsOnTaskId
     ? await FollowUp.findById(options.dependsOnTaskId).select('status').lean()
     : null;
@@ -4002,7 +4064,7 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
     return FollowUp.findOneAndUpdate(
       { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey },
       { $set: {
-        patientId: plan.patientId, staffId: plan.staffId, assignedTo: agencyService ? supervisorAssignee : (executorAssignee || supervisorAssignee),
+        patientId: plan.patientId, staffId: plan.staffId, assignedTo: supervisorAssignee,
         date: executorDate, remindAt: addDays(executorDate, -(workflowPlan.remindDaysBefore ?? 3)),
         coordinationGroupId: `medical-assist:${plan._id}`, workflowKey, taskRole: 'supervisor', followUpSchemeId: workflowPlan._id,
         theme: `总督办${workflowPlan.name} · ${plan.title || ''}`, content: '持续关注全部岗位节点；健康顾问完成结果评估和随访计划后进行最终验收。',
@@ -4027,7 +4089,7 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
-  if ((agencyService || workflowPlan.requiresCoordination !== false) && supervisorAssignee) {
+  if (supervisorAssignee) {
     const supervisorTask = await FollowUp.findOneAndUpdate(
       { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey },
       { $set: {
@@ -4073,6 +4135,13 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   }
   if (plan.type === 'medical_assist') {
     const c = plan.content || {};
+    const assignedPlanner = (await User.findById(plan.patientId).select('assignedHealthPlanner').lean())?.assignedHealthPlanner;
+    if (!assignedPlanner) return res.status(400).json({ success: false, message: '该客户尚未分配健康规划师，不能推送就医协助方案' });
+    c.supervisorId = assignedPlanner;
+    plan.supervisorId = assignedPlanner;
+    plan.currentAssignee = assignedPlanner;
+    plan.content = c;
+    plan.markModified('content');
     const agencyService = isAgencyMedicalAssistPlan(c, plan.title);
     const isCheckupService = c.serviceDomain === 'annual_checkup' || c.templateSnapshot?.serviceDomain === 'annual_checkup' || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`);
     const isOutpatientOneStop = /门诊一站式/.test(`${c.templateName || ''} ${plan.title || ''}`);
@@ -4139,8 +4208,6 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`);
     const isOutpatientOneStop = /门诊一站式/.test(`${c.templateName || ''} ${plan.title || ''}`);
     const isMultiStageService = isOutpatientOneStop || isCheckupService;
-    const selectedAssistantId = plan.content?.staffId || plan.staffId;
-    const selectedSupervisorId = plan.content?.supervisorId || plan.staffId;
     const workflowIds = (plan.content?.followUpPlans?.length
       ? plan.content.followUpPlans.map(item => item.id || item._id).filter(Boolean)
       : [plan.content?.followUpPlanId].filter(Boolean));
@@ -7848,6 +7915,9 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
 
     const product = await Product.findOne({ _id: productId, status: 'on' }).lean();
     if (!product) return res.status(409).json({ success: false, message: '对应商城产品已下架，暂不能发起服务，请先在商城恢复上架或另行安排' });
+    const isMedicalAssistProduct = product.category === '就医协助' || /就医|门诊|住院|代诊|约诊|约检|代办|陪诊|陪同|体检|代配药|代取药/.test(product.name || '');
+    const supervisorId = isMedicalAssistProduct ? await require('../utils/serviceOwnership').resolveServiceSupervisor(patient) : null;
+    if (isMedicalAssistProduct && !supervisorId) return res.status(409).json({ success: false, message: '该客户尚未分配健康规划师，不能发起就医协助服务' });
     const serviceItems = (product.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
     const totalUnits = serviceItems.length
       ? serviceItems.reduce((sum, item) => sum + Math.max(1, Number(item.units) || 1), 0)
@@ -7861,7 +7931,10 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
       orderNo: `ENT${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-6)}`.slice(0, 32),
       orderType: 'service', fulfillmentType: product.fulfillmentType || 'offline_service',
       status: 'pending', tradeStatus: 'paid', paymentStatus: 'paid', paidAmount: 0,
-      paymentExpectedAmount: 0, paidAt: now, initiationSource: 'staff_direct',
+        paymentExpectedAmount: 0, paidAt: now,
+        ...(isMedicalAssistProduct
+          ? require('../utils/serviceOwnership').orderOwnershipFields({ supervisorId, initiationSource: 'staff_direct', initiatedByStaff: req.staff._id, closureMode: product.serviceWorkflow?.closureMode })
+          : { initiationSource: 'staff_direct' }),
       serviceItemsSnapshot: serviceItems.map(item => ({ key: item.key, name: item.name, units: item.units, usedUnits: 0, performers: item.performers || [] })),
       performanceRuleSnapshot: product.performanceRule || null,
       servicePerformerRolesSnapshot: product.servicePerformerRoles || [],
@@ -16847,6 +16920,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile assignedHealthManager assignedFamilyDoctor assignedHealthPlanner assignedMedicalAssistant');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (!user.assignedHealthPlanner) return res.status(400).json({ success: false, message: '该客户尚未分配健康规划师，请先分配' });
 
     const { orderId, templateId, briefNote } = req.query;
     let order = null;
@@ -17097,7 +17171,7 @@ ${templateBlock}
         resourceReferences,
         visitDate: confirmedSchedule.serviceDate,
         serviceTime: confirmedSchedule.serviceTime,
-        supervisorId: user.assignedHealthPlanner || (req.staff.role === 'healthPlanner' ? req.staff._id : ''),
+        supervisorId: user.assignedHealthPlanner,
       },
       logistics: { hotel: raw.hotel || '', transport: raw.transport || '' },
       tasks: { records: taskRecords },
@@ -17149,13 +17223,16 @@ ${templateBlock}
         checkupIntake: order?.checkupIntake || null,
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         serviceDate: confirmedSchedule.serviceDate, serviceTime: confirmedSchedule.serviceTime,
-        supervisorId: user.assignedHealthPlanner || (req.staff.role === 'healthPlanner' ? req.staff._id : ''),
+        supervisorId: user.assignedHealthPlanner,
         hotel: raw.hotel || '', transport: raw.transport || '',
         tasks: tasksText, notes: raw.notes || '',
         moduleData,
       },
       status: 'draft',
       sourceOrderId: order ? order._id : null,
+      initiatedByStaff: req.staff._id,
+      supervisorId: user.assignedHealthPlanner,
+      currentAssignee: user.assignedHealthPlanner,
     });
 
     res.json({ success: true, data: plan });
