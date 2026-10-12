@@ -252,7 +252,7 @@ router.post('/inquiries', auth, async (req, res) => {
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
   const appPayment = req.body.paymentScene === 'app';
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [], beneficiaryUserId } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [], beneficiaryUserId, pushRecordId } = req.body;
   if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
@@ -269,11 +269,29 @@ router.post('/order', auth, async (req, res) => {
   if (familyPayment && (Number(useHealthFund) > 0 || useEnterpriseSharedFund || couponId)) {
     return res.status(400).json({ success: false, message: '为家人支付暂不支持使用付款人的基金或抵用券' });
   }
+  let pushedRecommendation = null;
+  let pushedItem = null;
+  if (pushRecordId) {
+    if (!mongoose.isValidObjectId(pushRecordId)) return res.status(400).json({ success: false, message: '医护推荐记录无效' });
+    pushedRecommendation = await require('../models/PushRecord').findOne({ _id: pushRecordId,
+      patientId: serviceUser._id, tenantId: serviceUser.tenantId || null, type: 'product' });
+    const recommended = pushedRecommendation?.products?.length ? pushedRecommendation.products
+      : pushedRecommendation?.productId ? [{ productId: pushedRecommendation.productId, price: pushedRecommendation.price }] : [];
+    pushedItem = recommended.find(item => String(item.productId) === String(serviceId));
+    if (!pushedItem) return res.status(403).json({ success: false, message: '该商品不属于这次医护推荐' });
+    const existing = await Order.findOne({ user: serviceUser._id, pushRecordId, serviceId: String(serviceId),
+      status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } });
+    if (existing) return res.status(409).json({ success: false,
+      message: existing.tradeStatus === 'awaiting_payment' ? '这次推荐已有待支付订单，请从家庭成员页代付原订单' : '这次医护推荐已购买，请从订单页查看' });
+  }
 
   // 先从 Product / Admin 服务包查，再查 Service，最后兼容旧版静态 ID
   let service = null;
   let servicePackage = null;
   const product = await Product.findById(serviceId).catch(() => null);
+  if (pushedRecommendation && (!product || product.status !== 'on')) {
+    return res.status(409).json({ success: false, message: '推荐商品已下架，请联系医护人员重新推送' });
+  }
   if (product) {
     const prices = product.servicePrices || [];
     const activeSkus = (product.skus || []).filter(item => item.active !== false);
@@ -368,6 +386,10 @@ router.post('/order', auth, async (req, res) => {
   if (!service) service = PACKAGE_CATALOG.find(p => p.id === serviceId);
   if (!service) {
     return res.status(404).json({ success: false, message: '服务项目不存在' });
+  }
+  if (pushedItem && pushedItem.price != null && Number.isFinite(Number(pushedItem.price))
+    && Math.round(Number(pushedItem.price) * 100) !== Math.round(Number(service.price) * 100)) {
+    return res.status(409).json({ success: false, message: '推荐商品价格已变化，请联系医护人员重新推送后付款' });
   }
 
   const serviceProvider = service.serviceProvider || 'platform';
@@ -516,11 +538,17 @@ router.post('/order', auth, async (req, res) => {
   if (paymentMethod) paymentParts.push(`支付方式：${paymentMethod}`);
   const orderNote = [note, familyRequester, paymentParts.join('；')].filter(Boolean).join('；');
 
-  // 普通下单只认本次有效分享来源；从推送购买由 user 路由明确绑定 pushRecordId。
+  // 家庭成员从医护推荐进入商城时保留原推送归属；价格仍由当前商品重新核算。
   let referrerId = null;
   let servicePerformers = [];
   let productShare = null;
-  if (shareToken && product) {
+  if (pushedRecommendation) {
+    referrerId = pushedRecommendation.staffId;
+    servicePerformers = (pushedRecommendation.servicePerformers || [])
+      .filter(item => item.role && item.staffId && (!item.productId || String(item.productId) === String(serviceId)))
+      .map(item => ({ role: item.role, staffId: item.staffId }));
+  }
+  if (shareToken && product && !pushedRecommendation) {
     productShare = await ProductShare.findOne({
       token: shareToken,
       productId: product._id,
@@ -584,7 +612,8 @@ router.post('/order', auth, async (req, res) => {
     } : null,
     inventoryReserved: inventory.reserved,
     referrerId,
-    referralSource: productShare ? 'share' : 'direct',
+    referralSource: pushedRecommendation ? 'push' : productShare ? 'share' : 'direct',
+    pushRecordId: pushedRecommendation?._id || null,
     servicePerformers,
     serviceItemsSnapshot: productServiceItems.map(item => ({
       key: item.key, name: item.name, units: item.units, usedUnits: 0,

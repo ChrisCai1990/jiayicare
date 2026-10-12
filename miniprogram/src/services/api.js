@@ -358,10 +358,10 @@ export const servicesAPI = {
   claimProductShare: (token) => request(`/services/product-shares/${token}/claim`, { method: 'POST' }),
   list: () => request('/services'),
   packages: () => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount, useEnterpriseSharedFund = false) =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount, useEnterpriseSharedFund }) }),
-  inquire: (serviceId, note, specificationLabel) =>
-    request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount, useEnterpriseSharedFund = false, beneficiaryUserId = '', pushRecordId = '') =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount, useEnterpriseSharedFund, beneficiaryUserId, pushRecordId }) }),
+  inquire: (serviceId, note, specificationLabel, beneficiaryUserId = '') =>
+    request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel, beneficiaryUserId }) }),
   coupons: () => request('/services/coupons'),
 };
 
@@ -378,6 +378,7 @@ export const partnerBenefitsAPI = {
 // ── Orders ────────────────────────────────────────────────────
 export const ordersAPI = {
   list: () => request('/orders'),
+  claimFamilyPayment: (id) => request(`/orders/${id}/family-pay`, { method: 'POST' }),
   cancel: (id) => request(`/orders/${id}/cancel`, { method: 'PATCH' }),
   requestRefund: (id, reason) => request(`/orders/${id}/refund-request`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };

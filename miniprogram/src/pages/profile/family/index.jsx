@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, Input, ScrollView, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { familyLinksAPI, guardianChildrenAPI } from '../../../services/api';
+import { familyLinksAPI, guardianChildrenAPI, ordersAPI, paymentsAPI, authAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { requestWechatPayment, waitForPayment } from '../../../utils/wechatPay';
 
 // 对齐 app/src/screens/profile/FamilyMembersScreen.js
 const RELATIONS = ['配偶', '父亲', '母亲', '子女', '兄弟', '姐妹', '祖父', '祖母', '其他'];
@@ -185,19 +186,40 @@ function AddChildModal({ onClose, onSaved, onQuestionnaire }) {
   </View>;
 }
 
-function FamilyServiceModal({ data, onClose }) {
+function FamilyServiceModal({ data, onClose, onPay, payingOrderId }) {
   const appointments = data?.appointments || [];
   const dateText = (value) => value ? new Date(value).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) : '待安排';
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
       <ScrollView scrollY style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px ${spacing.lg}px ${spacing.xl + 12}px`, width: '100%', maxHeight: '80vh', boxSizing: 'border-box' }}>
         <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{data.member.name}的服务安排</Text>
-        <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>仅展示服务进度与预约安排，不展示健康档案和医疗资料</Text>
+        <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>可查看服务安排和待支付项目；不展示健康档案和医疗资料</Text>
         <View style={{ backgroundColor: colors.primary10, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginTop: `${spacing.lg}px` }}>
           <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block' }}>进行中的服务</Text>
           <Text style={{ fontSize: '22px', fontWeight: 700, color: colors.primary, marginTop: '2px' }}>{data.service.activeCount} 项</Text>
           {!!data.service.latestServiceName && <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginTop: '4px' }}>{data.service.latestServiceName}{data.service.latestStatus ? ` · ${data.service.latestStatus}` : ''}</Text>}
         </View>
+        {!!data.pendingPayments?.length && <>
+          <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: `${spacing.lg}px` }}>可代付的订单</Text>
+          {data.pendingPayments.map(order => <View key={order.id} style={{ padding: '12px 0', borderBottom: `1px solid ${colors.borderLight}` }}>
+            <Text style={{ fontSize: '14px', color: colors.textPrimary, display: 'block' }}>{order.serviceName}</Text>
+            <Text style={{ fontSize: '12px', color: colors.textSecondary }}>待支付 ¥{Number(order.amount).toFixed(2)}</Text>
+            {order.payable ? <View onClick={() => onPay(order)} style={{ marginTop: '8px', backgroundColor: colors.primary, borderRadius: `${radius.sm}px`, padding: '9px 14px', alignSelf: 'flex-start' }}>
+              <Text style={{ color: '#fff', fontSize: '13px' }}>{payingOrderId === order.id ? '支付处理中…' : '为TA支付'}</Text>
+            </View> : <Text style={{ fontSize: '12px', color: colors.warning, display: 'block', marginTop: '6px' }}>暂不可直接代付：{order.unavailableReason}</Text>}
+          </View>)}
+        </>}
+        {!!data.recommendations?.length && <>
+          <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: `${spacing.lg}px` }}>医护推荐的服务</Text>
+          {data.recommendations.map(item => <View key={`${item.pushRecordId}-${item.productId}`} style={{ padding: '10px 0', borderBottom: `1px solid ${colors.borderLight}` }}>
+            <Text style={{ fontSize: '14px', color: colors.textPrimary, display: 'block' }}>{item.name}</Text>
+            {item.quotedPrice != null && <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block' }}>推荐价 ¥{Number(item.quotedPrice).toFixed(2)}；如价格有变化，需由医护重新推送</Text>}
+            <View onClick={() => { onClose(); Taro.navigateTo({ url: `/pages/services/mall/index?productId=${encodeURIComponent(item.productId)}&beneficiaryUserId=${encodeURIComponent(data.member._id)}&pushRecordId=${encodeURIComponent(item.pushRecordId)}` }); }}
+              style={{ marginTop: '8px', padding: '8px 12px', backgroundColor: colors.primary10, borderRadius: `${radius.sm}px`, alignSelf: 'flex-start' }}>
+              <Text style={{ color: colors.primary, fontSize: '13px' }}>为TA购买</Text>
+            </View>
+          </View>)}
+        </>}
         <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: `${spacing.lg}px`, marginBottom: `${spacing.sm}px` }}>服务时间安排（最近5项）</Text>
         {appointments.length ? appointments.map((item, index) => (
           <View key={`${item.serviceName}-${index}`} style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: index === appointments.length - 1 ? 'none' : `1px solid ${colors.borderLight}` }}>
@@ -230,7 +252,7 @@ function LinkCard({ link, onDelete, onView }) {
         <Text style={{ fontSize: '11px', color: colors.success }}>已注册用户</Text>
       </View>
       <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-        <Text onClick={onView} style={{ fontSize: '12px', color: colors.primary, padding: '6px' }}>查看服务</Text>
+        <Text onClick={onView} style={{ fontSize: '12px', color: colors.primary, padding: '6px' }}>查看服务与代付</Text>
         <Text onClick={onDelete} style={{ fontSize: '15px', color: colors.danger, padding: '6px' }}>🗑</Text>
       </View>
     </View>
@@ -246,6 +268,8 @@ export default function FamilyMembersPage() {
   const [showAdd, setShowAdd] = useState('');
   const [handlingInvite, setHandlingInvite] = useState(null);
   const [serviceOverview, setServiceOverview] = useState(null);
+  const [payingOrderId, setPayingOrderId] = useState('');
+  const payingRef = useRef(false);
   const [childArchive, setChildArchive] = useState(null);
 
   const load = useCallback(async () => {
@@ -298,6 +322,33 @@ export default function FamilyMembersPage() {
     } catch (e) {
       Taro.showToast({ title: e.message || '服务信息加载失败', icon: 'none' });
     }
+  };
+
+  const handleFamilyPay = async (order) => {
+    if (payingRef.current) return;
+    const answer = await Taro.showModal({ title: '确认代付', content: `为${serviceOverview?.member?.name || '家人'}支付「${order.serviceName}」¥${Number(order.amount).toFixed(2)}？`, confirmText: '继续支付' });
+    if (!answer.confirm) return;
+    payingRef.current = true; setPayingOrderId(order.id);
+    let claimed = false;
+    try {
+      const bound = await authAPI.bindWechat();
+      if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
+      await ordersAPI.claimFamilyPayment(order.id);
+      claimed = true;
+      const result = await paymentsAPI.retry(order.id);
+      if (result.data?.paymentParams) {
+        await requestWechatPayment(result.data.paymentParams);
+        await waitForPayment(order.id);
+      } else if (!result.data?.alreadyPaid) throw new Error('付款结果待确认，请前往“我的订单”继续支付');
+      Taro.showToast({ title: '支付成功', icon: 'success' });
+      setServiceOverview(null);
+    } catch (error) {
+      if (claimed) {
+        setServiceOverview(null);
+        await Taro.showModal({ title: '订单已转入我的订单', content: `${error.message || '付款暂未完成'}。可在“我的订单 → 待支付”继续支付。`, showCancel: false });
+        Taro.navigateTo({ url: '/pages/orders/index?tab=payment' });
+      } else Taro.showToast({ title: error.message || '代付失败，请稍后重试', icon: 'none' });
+    } finally { payingRef.current = false; setPayingOrderId(''); }
   };
 
   const openChildQuestionnaire = async (childId) => {
@@ -379,7 +430,7 @@ export default function FamilyMembersPage() {
       {showAdd === 'adult' && <AddLinkModal onClose={() => setShowAdd('')} onSaved={load} onInviteNew={() => { Taro.hideKeyboard().catch(() => {}); setShowAdd(''); Taro.navigateTo({ url: '/pages/profile/invite/index?from=family' }); }} />}
       {showAdd === 'child' && <AddChildModal onClose={() => setShowAdd('')} onSaved={load} onQuestionnaire={openChildQuestionnaire} />}
       {!!childArchive && <View style={{ position: 'fixed', inset: 0, zIndex: 110, backgroundColor: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end' }}><ScrollView scrollY style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '82vh', boxSizing: 'border-box' }}><Text style={{ fontSize: '18px', fontWeight: 700, display: 'block' }}>{childArchive.name}的健康档案</Text><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', margin: '6px 0 12px' }}>{childArchive.birthDate} · {childArchive.ageStage?.label || '年龄待核实'} · 监护人自报资料须经医护核实</Text>{childArchive.pendingReviewCount > 0 && <Text style={{ color: colors.warning, display: 'block', marginBottom: '10px' }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}{[['birthWeight','出生体重（克）'],['birthLength','出生身长（厘米）'],['reportedHeightCm','最近身高/身长（厘米）'],['reportedWeightKg','最近体重（千克）'],['reportedMeasuredAt','测量日期'],['feeding','喂养与饮食'],['sleep','睡眠'],['development','生长发育与行为'],['caregiverConcerns','监护人关注问题']].map(([key,label]) => <View key={key} style={{ borderBottom: `1px solid ${colors.borderLight}`, padding: '9px 0' }}><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{label}{childArchive.pendingPaths?.includes(`childProfile.${key}`) ? ' · 待核实' : ''}</Text><Text style={{ fontSize: '14px', display: 'block', marginTop: '3px' }}>{childArchive.childProfile?.[key] ?? '未记录'}</Text></View>)}<View onClick={() => setChildArchive(null)} style={{ textAlign: 'center', padding: '14px', backgroundColor: colors.primary, color: '#fff', borderRadius: '8px', margin: '16px 0' }}>关闭</View></ScrollView></View>}
-      {serviceOverview && <FamilyServiceModal data={serviceOverview} onClose={() => setServiceOverview(null)} />}
+      {serviceOverview && <FamilyServiceModal data={serviceOverview} onClose={() => setServiceOverview(null)} onPay={handleFamilyPay} payingOrderId={payingOrderId} />}
     </View>
   );
 }
