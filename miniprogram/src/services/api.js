@@ -265,8 +265,8 @@ export const remindersAPI = {
 
 // ── Medical Reports ───────────────────────────────────────────────
 export const reportsAPI = {
-  list: () => request('/reports'),
-  byCategory: () => request('/reports/by-category'),
+  list: (patientId = '') => request(`/reports${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
+  byCategory: (patientId = '') => request(`/reports/by-category${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
   get: (id) => request(`/reports/${id}`),
   create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
   delete: (id) => request(`/reports/${id}`, { method: 'DELETE' }),

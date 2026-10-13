@@ -9,6 +9,7 @@ import Icon from '../../../components/Icon';
 import { requestWechatPayment, waitForPayment } from '../../../utils/wechatPay';
 import { maxFundDeduction } from '../../../utils/healthFundCheckout';
 import { captureInviteCode } from '../../../utils/invitation';
+import { storedArchiveId } from '../../../hooks/useArchiveSubject';
 
 const PAY_METHODS = [
   { key: 'wechat_pay', label: '微信支付' },
@@ -238,7 +239,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', initialBeneficiar
 
   const handleSubmit = async () => {
     if (submittingRef.current) return;
-    if (pushRecordId && !selectedBeneficiary) { setErrMsg(beneficiariesLoaded ? '家庭关联已失效，请返回家庭成员页刷新' : '家庭成员信息加载中，请稍后重试'); return; }
+    if (beneficiaryUserId && !selectedBeneficiary) { setErrMsg(beneficiariesLoaded ? '当前档案关联已失效，请重新选择服务对象' : '家庭成员信息加载中，请稍后重试'); return; }
     if (requiresServiceDetails && !desiredServiceDate) { setErrMsg('请选择期望服务时间'); return; }
     if (requiresServiceDetails && !serviceRequirements.trim()) { setErrMsg('请填写具体服务需求'); return; }
     if (!serviceAgreed) { setErrMsg('请先阅读并同意《健康管理服务说明》'); return; }
@@ -740,7 +741,7 @@ export default function ServiceMallPage() {
 
       {selectedService && (
         <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''}
-          initialBeneficiaryUserId={selectedService.id === routeParams.productId ? routeParams.beneficiaryUserId || '' : ''}
+          initialBeneficiaryUserId={selectedService.id === routeParams.productId && routeParams.beneficiaryUserId ? routeParams.beneficiaryUserId : storedArchiveId(user?._id)}
           pushRecordId={selectedService.id === routeParams.productId ? routeParams.pushRecordId || '' : ''}
           onClose={() => setSelectedService(null)} />
       )}

@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { View, Text, ScrollView, Picker } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { recordsAPI, userAPI, ibdAPI } from '../../../services/api';
+import { recordsAPI, userAPI, ibdAPI, guardianChildrenAPI } from '../../../services/api';
+import useArchiveSubject from '../../../hooks/useArchiveSubject';
 import TrendChart from '../../../components/TrendChart';
 import BloodPressureChart from '../../../components/BloodPressureChart';
 import { bloodPressurePoints } from '../../../utils/bloodPressureTrend';
@@ -44,6 +45,9 @@ const formatRecordTime = value => {
 
 export default function RecordsIndexPage() {
   const { statusBarHeight } = useNavBar();
+  const archive = useArchiveSubject();
+  const [childArchive, setChildArchive] = useState(null);
+  const [childArchiveError, setChildArchiveError] = useState('');
   const { updateUser } = useAuth();
   const [records, setRecords] = useState([]);
   const [filter, setFilter] = useState('bloodPressure');
@@ -84,6 +88,17 @@ export default function RecordsIndexPage() {
     }).catch(() => {});
   });
 
+  useEffect(() => {
+    if (archive.loading || !archive.subject?.id) { setChildArchive(null); setChildArchiveError(''); return; }
+    let live = true;
+    setChildArchive(null); setChildArchiveError('');
+    guardianChildrenAPI.archive(archive.subject.id).then(result => {
+      if (!result?.success || !result.data) throw new Error(result?.message || '儿童档案加载失败');
+      if (live) setChildArchive(result.data);
+    }).catch(error => { if (live) setChildArchiveError(error.message || '儿童档案加载失败'); });
+    return () => { live = false; };
+  }, [archive.loading, archive.subject?.id]);
+
   async function loadTrends() {
     const generation=++trendGeneration.current;
     const types=['bloodPressure','bloodSugar','sleep','heartRate','weight'];
@@ -116,10 +131,39 @@ export default function RecordsIndexPage() {
     weight: { data: weightTrend, color: '#0369A1', label: '体重 (kg)' },
   };
 
+  if (archive.loading) return <View style={{ padding: `${statusBarHeight + 24}px ${spacing.lg}px` }}>正在核对档案…</View>;
+  if (archive.error) return <View style={{ padding: `${statusBarHeight + 24}px ${spacing.lg}px` }}><Text onClick={archive.refresh} style={{ color: colors.danger }}>{archive.error} · 点击重试</Text></View>;
+
+  const archivePicker = <View style={{ backgroundColor: '#fff', padding: `${spacing.md}px`, borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px`, border: `1px solid ${colors.border}` }}>
+    <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>当前健康档案</Text>
+    <Picker mode="selector" range={[`本人 · ${archive.user?.name || ''}`, ...archive.children.map(child => `${child.name} · 孩子`)]}
+      value={Math.max(0, archive.children.findIndex(child => String(child.id) === String(archive.subject?.id)) + 1)}
+      onChange={event => archive.select(Number(event.detail.value))}>
+      <Text style={{ color: colors.primary, fontSize: '16px', fontWeight: 700 }}>{archive.subject ? `${archive.subject.name} · 孩子 ▾` : `本人 · ${archive.user?.name || ''} ▾`}</Text>
+    </Picker>
+  </View>;
+
+  if (archive.subject) return <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.xl}px` }}>
+    <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>健康档案</Text>
+    {archivePicker}
+    <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: `${spacing.md}px` }}>当前查看的是{archive.subject.name}的档案。</Text>
+    <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
+      <View onClick={() => Taro.navigateTo({ url: '/pages/records/upload/index' })} style={{ flex: 1, padding: '15px', backgroundColor: colors.primary, color: '#fff', textAlign: 'center', borderRadius: `${radius.md}px` }}>上传报告</View>
+      <View onClick={() => Taro.navigateTo({ url: '/pages/records/medical-reports/index' })} style={{ flex: 1, padding: '15px', backgroundColor: '#fff', color: colors.primary, textAlign: 'center', borderRadius: `${radius.md}px` }}>查看报告</View>
+    </View>
+    {childArchiveError ? <Text style={{ color: colors.danger }}>{childArchiveError}</Text> : !childArchive ? <Text>儿童档案加载中…</Text> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
+      <Text style={{ fontSize: '16px', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{childArchive.name}的基础档案</Text>
+      <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>{childArchive.birthDate} · {childArchive.ageStage?.label || '年龄待核实'}</Text>
+      {childArchive.pendingReviewCount > 0 && <Text style={{ color: colors.warning, display: 'block' }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}
+      {Object.entries({ birthWeight: '出生体重（克）', birthLength: '出生身长（厘米）', reportedHeightCm: '最近身高/身长（厘米）', reportedWeightKg: '最近体重（千克）', reportedMeasuredAt: '测量日期', feeding: '喂养与饮食', sleep: '睡眠', development: '生长发育与行为', caregiverConcerns: '监护人关注问题' }).map(([key, label]) => <View key={key} style={{ padding: '8px 0', borderBottom: `1px solid ${colors.borderLight}` }}><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{label}</Text><Text style={{ fontSize: '14px' }}>{childArchive.childProfile?.[key] ?? '未记录'}</Text></View>)}
+    </View>}
+  </View>;
+
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ padding: `${statusBarHeight + 12}px ${spacing.lg}px 0` }}>
         <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>健康档案</Text>
+        {archivePicker}
 
         <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>档案工具</Text>
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>

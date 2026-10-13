@@ -228,6 +228,7 @@ const medicalReportSchema = new mongoose.Schema({
   }],
   // 医护端：上传人 & 关联方案项目
   uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  submittedByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // 代孩子上传时保留实际提交者
   // Orthogonal provenance metadata. It does not replace documentCategory/type
   // or screening classification, so the same report keeps one clinical taxonomy.
   sourceType: { type: String, enum: ['customer_upload', 'staff_upload', 'service_record', 'order', 'health_plan', ''], default: '' },
