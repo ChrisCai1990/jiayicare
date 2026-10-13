@@ -8489,6 +8489,7 @@ export default function PatientDetailPage() {
                       {(Number(curYear) >= nowY || group.key === 'doctor') && (staff?.role === 'superadmin'
                         || (group.key === 'doctor' && staff?.role === 'familyDoctor')
                         || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
+                        <>
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                           <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved)}
                             onClick={() => {
@@ -8503,16 +8504,20 @@ export default function PatientDetailPage() {
                           {group.key === 'doctor' && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading}
                             onClick={() => {
                               const approved = !!(doctorRecords[0]?.doctorApprovedAt || doctorRecords[0]?.approvedAt)
-                              if (approved && !window.confirm('将依据原始报告新增一条待审核评估；历史审核记录会保留。确定继续？')) return
+                              if (!window.confirm('将重新生成整套健康顾问5维分析，并新增一条待审核记录；原有审核记录保留。若只需纠正某条结论，请使用下方“编辑本板块”，避免重算其他已核对内容。确定继续整套重生成？')) return
                               handleGenerateAISummary(curYear, 'doctor', approved, true)
                             }}>
-                            按原始报告重新评估
+                            整套5维重新评估
                           </button>}
                           <button className="btn btn-sm" style={{ color: '#DC3545', borderColor: '#FCA5A5', background: '#FFF5F5' }}
                             onClick={() => handleDeleteAISummaryRecord(group.key, curYear, group.current._recordIndex, group.current.generatedAt)}>
                             删除本次评估
                           </button>
                         </div>
+                      {group.key === 'doctor' && <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6, color: '#8A6B36' }}>
+                        单项结论有误：请在下方编辑对应板块及受影响的“需优先关注的信息”，核对后再点击“审核5维度通过”；其余内容保持原样，无需重新生成。
+                      </div>}
+                        </>
                       )}
                     </>
                   ) : (

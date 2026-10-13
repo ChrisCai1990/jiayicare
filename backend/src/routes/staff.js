@@ -11596,7 +11596,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         const sourceReports = Number(y) < new Date().getFullYear() ? reportsThroughYear(allReports, Number(y)) : allReports;
         const unsupported = findUnsupportedTumorMarkerElevation(entry.sections, sourceReports);
         if (unsupported) return res.status(422).json({ success: false,
-          message: `${unsupported.marker}升高结论缺少检验数值与参考范围依据；请核对原报告，使用“按原始报告重新评估”后再审核` });
+          message: `${unsupported.marker}升高结论缺少检验数值与参考范围依据；请核对原报告，编辑相关板块及优先关注问题后再审核` });
       }
       if (sectionKey) {
         if (!isSuper && req.staff.role !== (sectionKey === LIFESTYLE_KEY ? 'nutritionist' : 'familyDoctor')) {
