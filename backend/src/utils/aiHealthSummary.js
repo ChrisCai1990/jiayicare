@@ -4,6 +4,7 @@ const { assessCancerCoverage, buildCoverageText } = require('./cancerScreeningCo
 const { buildEvidenceCatalog } = require('./aiFactGuard');
 const { priorityLinksToCard } = require('./healthPriorityLinks');
 const { reportsThroughYear, historicalUserSnapshot } = require('./historicalAIHealthContext');
+const { classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation } = require('./tumorMarkerFactGuard');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
@@ -153,7 +154,10 @@ async function generateHealthSummarySections(user, {
       return Number(report.reportYear || date.slice(0, 4)) === targetYear;
     })
     : allHistoricalReports;
-  const reuseTumor = !!(reusedTumorSection && (scope === 'doctor' || scope === 'all'));
+  // A previously generated tumor section may contain an unsupported marker claim.
+  // Rebuild it when current report evidence contradicts that old prose.
+  const reuseTumor = !!(reusedTumorSection && (scope === 'doctor' || scope === 'all')
+    && !findUnsupportedTumorMarkerElevation(reusedTumorSection, allHistoricalReports));
   if (reuseTumor) {
     allReports = allReports.filter(report => {
       const text = [report.screeningCategory, report.title, report.screeningL2].filter(Boolean).join(' ');
@@ -193,7 +197,10 @@ async function generateHealthSummarySections(user, {
     reportsByYear[year].forEach(r => {
       const evidenceId = `RPT-${String(allReports.findIndex(item => String(item._id) === String(r._id)) + 1).padStart(3, '0')}`;
       const conclusion = r.examConclusion ? r.examConclusion.slice(0, 150) : (r.note ? r.note.slice(0, 100) : '未记录结论');
-      const abnormal = (r.reportItems || []).filter(i => i.status === 'abnormal').map(i => i.name).join('、');
+      const abnormal = (r.reportItems || []).filter(i => {
+        const markerStatus = classifyTumorMarkerItem(i);
+        return markerStatus === 'elevated' || (markerStatus === null && i.status === 'abnormal');
+      }).map(i => i.name).join('、');
       const dateStr = (r.checkDate || r.date || '').slice(0, 10);
       reportSummaryLines.push(`  - [${evidenceId}] ${r.screeningL2 || r.title}（${dateStr}）：${conclusion}${abnormal ? '；异常项：' + abnormal : ''}`);
       (r.reportItems || []).filter(i => i.itemType === 'imaging' && (i.findings || i.diagnosis)).forEach(img => {
@@ -334,7 +341,7 @@ ${retrospective ? `【历史年度补生成，最高优先级】本次回溯分�
 ②chronic_disease.items只允许最多6张聚合卡，并固定按以下顺序输出：血压、血糖、血脂、尿酸、肾功能、骨质疏松。空腹血糖和糖化血红蛋白必须合并在同一张“血糖”卡内；总胆固醇、HDL-C、LDL-C、甘油三酯及报告中同组血脂指标必须合并在同一张“血脂”卡内；肌酐、尿素氮、eGFR、胱抑素C等合并在“肾功能”卡内；骨密度、T值/Z值、骨量减少或骨质疏松描述合并在“骨质疏松”卡内。严禁把子指标拆成独立卡片。肝功能、听力、视力、甲状腺功能及其他专科项目不得输出到慢病趋势卡。
 ③只按会员真实存在的资料建卡，不为凑数量创建空主题。每张卡先找最近一次，再比较最近5个自然年内同名指标或同类检查；0次不建卡，1次=baseline，至少2个可比点才可判断stable/improving/worsening/fluctuating。不同检测方法、单位或部位不得硬比较，写not_comparable。关键变化最多3条，不逐年堆砌全文。
 
-【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】除 PSA（前列腺癌相对特异）外，AFP/CEA/CA19-9/CA125/CA15-3/CA724/HE4/NSE 等常见肿瘤标志物特异性都不高：单项轻度升高绝不能直接判为"疑似癌症"或建议会员恐慌就医，必须结合影像/内镜结果、动态趋势（是否持续进行性升高）、既往史家族史综合判断。标志物正常也不代表无肿瘤风险。请在 tumor_risk 维度中明确说明标志物的这一局限性。
+【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】只能提及本会员报告中实际存在的标志物。声称某项“升高”必须有该项数值高于报告原印参考上限的证据；声称“持续升高”还必须有至少两次超上限记录，且最近一次仍超上限。不要把异常状态标签当作数值证据。标志物单项轻度升高不能直接判为“疑似癌症”；正常也不代表排除肿瘤风险。请在 tumor_risk 维度中说明这一局限性。
 
 【肿瘤覆盖与趋势输出铁律】
 ①必须按下方性别对应的10种常见肿瘤逐项输出，既不能遗漏，也不能把“常见肿瘤目录”等同于“每年必须做10项筛查”。
@@ -553,6 +560,7 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
 
   let sections = null;
   let parseFailed = false;
+  let validationError = null;
   try {
     const jsonMatch = text.trim().match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -590,6 +598,17 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   // “子宫内膜癌/经阴道超声缺失”。结构化规则证据优先于模型措辞，生成后强制纠正。
   if (!parseFailed && wantDoctor && !reuseTumor) reconcileGynecologicUltrasoundCoverage(sections, cancerCoverage);
 
+  // Reject unsupported marker elevations before saving any generated draft.
+  // This also checks a reused section and any priority text copied into the result.
+  if (!parseFailed && wantDoctor) {
+    const unsupported = findUnsupportedTumorMarkerElevation(sections, allHistoricalReports);
+    if (unsupported) {
+      console.warn(`[ai-health-summary] 拒绝无检验依据的肿瘤标志物升高结论，userId=${user._id}，marker=${unsupported.marker}`);
+      validationError = `${unsupported.marker}升高结论缺少可核对的检验数值和参考范围，已停止保存本次分析；请先核对原始报告及提取结果`;
+      parseFailed = true;
+    }
+  }
+
   // 数据溯源：AI文本结论核实起来要反复跳转查原始档案，很麻烦。这里不是让AI自己编造溯源标识
   // （AI可能编造或对错号，指错地方比没有链接更误导人），而是后端用规则去 allReports 的
   // reportItems 里按名称模糊匹配——匹配到就补充 sourceReportId/sourceItemIndex 供前端渲染成
@@ -609,12 +628,12 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   if (scope === 'doctor') {
     const doctorOnly = {};
     DOCTOR_KEYS.forEach(k => { doctorOnly[k] = sections[k]; });
-    return { sections: doctorOnly, failed: parseFailed };
+    return { sections: doctorOnly, failed: parseFailed, validationError };
   }
   if (scope === 'nutrition') {
-    return { sections: { [LIFESTYLE_KEY]: sections[LIFESTYLE_KEY] }, failed: parseFailed };
+    return { sections: { [LIFESTYLE_KEY]: sections[LIFESTYLE_KEY] }, failed: parseFailed, validationError };
   }
-  return { sections, failed: parseFailed };
+  return { sections, failed: parseFailed, validationError };
 }
 
 const CHRONIC_GROUP_PATTERNS = [

@@ -3849,23 +3849,23 @@ export default function PatientDetailPage() {
     } : prev)
   }
 
-  const handleGenerateAISummary = async (year, scope = 'all', force = false) => {
+  const handleGenerateAISummary = async (year, scope = 'all', force = false, recheckFromSources = false) => {
     const y = String(year || new Date().getFullYear())
     try {
       setAiSummaryLoading(true)
       setAiSummaryError('')
-      const res = await staffAPI.generateAIHealthSummary(id, y, scope, force)
+      const res = await staffAPI.generateAIHealthSummary(id, y, scope, force, recheckFromSources)
       applyAIHealthSummary(res.data)
       // 生成接口已返回最新完整AI汇总，直接更新当前会员状态即可立即展示。
       // 不再调用整页load()重复拉取会员、报告、问卷等大量无关数据。
       setAiYear(y)
-      toast(`${y}年度AI分析已生成`)
+      toast(recheckFromSources ? `${y}年度已依据原始报告新增评估，请核对并审核` : `${y}年度AI分析已生成`)
     } catch (err) {
       if (!err.needConfirm) setAiSummaryError(err.message || 'AI生成失败')
       if (err.needConfirm) {
         const label = scope === 'nutrition' ? '生活方式信息整理' : (scope === 'doctor' ? '5维健康信息整理' : 'AI健康信息整理')
         if (window.confirm(`${err.message}${err.approvedBy ? `（审核人：${err.approvedBy}）` : ''}\n是否确认重新生成${label}？`)) {
-          return await handleGenerateAISummary(year, scope, true)
+          return await handleGenerateAISummary(year, scope, true, recheckFromSources)
         }
       } else if (err.needReportAudit) {
         loadPendingDoctorAudit()
@@ -8500,6 +8500,14 @@ export default function PatientDetailPage() {
                             }}>
                             {aiSummaryLoading ? '生成中…' : `＋ 新增${group.key === 'doctor' ? '5维分析' : '生活方式分析'}`}
                           </button>
+                          {group.key === 'doctor' && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading}
+                            onClick={() => {
+                              const approved = !!(doctorRecords[0]?.doctorApprovedAt || doctorRecords[0]?.approvedAt)
+                              if (approved && !window.confirm('将依据原始报告新增一条待审核评估；历史审核记录会保留。确定继续？')) return
+                              handleGenerateAISummary(curYear, 'doctor', approved, true)
+                            }}>
+                            按原始报告重新评估
+                          </button>}
                           <button className="btn btn-sm" style={{ color: '#DC3545', borderColor: '#FCA5A5', background: '#FFF5F5' }}
                             onClick={() => handleDeleteAISummaryRecord(group.key, curYear, group.current._recordIndex, group.current.generatedAt)}>
                             删除本次评估

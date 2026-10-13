@@ -86,6 +86,72 @@ test('generation cannot overwrite a concurrent review; successful generation sup
   assert.match(success.body.data.byYear[2026].records[0]._reviewToken, /^[a-f0-9]{64}$/);
 });
 
+test('source re-evaluation ignores reused tumor text and creates a new pending record', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const code = source.slice(source.indexOf('const activeAIHealthSummaryJobs = new Set();'), source.indexOf('// 单项重新生成'));
+  let handler, options, saved;
+  const prior = { scope: 'doctor', generatedAt: '2026-10-01', doctorApprovedAt: null,
+    sections: { tumor_risk: { summary: 'CA72-4持续轻度升高', overview: {}, cancers: Array.from({ length: 10 }, (_, i) => ({ name: String(i) })) } } };
+  const existing = { byYear: { 2026: { ...prior, records: [prior] } } };
+  const user = { _id: 'member', aiHealthSummary: existing };
+  const query = { populate() { return this; }, then(resolve) { return Promise.resolve(user).then(resolve); } };
+  vm.runInNewContext(code, {
+    router: { post(_path, _auth, callback) { handler = callback; } }, staffAuth() {},
+    User: { findById: () => query, collection: { updateOne: async (_filter, update) => {
+      saved = update.$set.aiHealthSummary; return { matchedCount: 1 };
+    } } },
+    MedicalReport: { exists: async () => null },
+    DOCTOR_KEYS: ['tumor_risk'], LIFESTYLE_KEY: 'lifestyle_assessment',
+    withReviewTokens: value => value,
+    generateHealthSummarySections: async (_user, input) => { options = input; return {
+      sections: { tumor_risk: { summary: 'CA72-4在参考范围内' } }, failed: false,
+    }; },
+    require: name => {
+      if (name.endsWith('healthPriorityLinks')) return require('../src/utils/healthPriorityLinks');
+      if (name.endsWith('packageFeatureEntitlements')) return { getAiEntitlements: async () => ({ aiHealthAnalysis: true }) };
+      if (name.endsWith('serviceAccess')) return { resolveServiceAccess: async () => ({}) };
+      if (name.endsWith('reportAuditGate')) return { checkReportAuditGate: async () => null };
+      throw new Error(name);
+    },
+  });
+  const res = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  await handler({ params: { id: 'member' }, body: { year: '2026', scope: 'doctor', recheckFromSources: true }, staff: { role: 'familyDoctor' } }, res);
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(options.incrementalBase, null);
+  assert.equal(options.reusedTumorSection, null);
+  assert.equal(saved.byYear[2026].records.length, 2);
+  assert.equal(saved.byYear[2026].records[0].recheckFromSources, true);
+  assert.equal(saved.byYear[2026].records[0].doctorApprovedAt, null);
+  assert.equal(saved.byYear[2026].records[1].sections.tumor_risk.summary, 'CA72-4持续轻度升高');
+});
+
+test('review refuses an older draft whose CA72-4 elevation lacks numeric evidence', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const code = source.slice(source.indexOf("router.patch('/patients/:id/ai-health-summary'"), source.indexOf('// DELETE /api/staff/patients/:id/ai-health-summary/records/'));
+  let handler, writes = 0;
+  const record = { scope: 'doctor', sections: { tumor_risk: { summary: 'CA72-4持续轻度升高' } } };
+  const user = { aiHealthSummary: { latestYear: '2026', byYear: { 2026: { ...record, records: [record] } } } };
+  vm.runInNewContext(code, {
+    router: { patch(_path, _auth, callback) { handler = callback; } }, staffAuth() {},
+    User: { findById: () => ({ lean: async () => user }), collection: { updateOne: async () => { writes++; return { matchedCount: 1 }; } } },
+    MedicalReport: { find: () => ({ select: () => ({ lean: async () => [{ checkDate: '2026-06-01', reportItems: [
+      { name: 'CA72-4', value: '4.1', referenceRange: '<6.9', status: 'abnormal' },
+    ] }] }) }) },
+    resolveReviewRecord: () => 0, DOCTOR_KEYS: ['tumor_risk'], LIFESTYLE_KEY: 'lifestyle_assessment',
+    HEALTH_TREND_FIELDS: {},
+    require: name => {
+      if (name.endsWith('tumorMarkerFactGuard')) return require('../src/utils/tumorMarkerFactGuard');
+      if (name.endsWith('historicalAIHealthContext')) return require('../src/utils/historicalAIHealthContext');
+      throw new Error(name);
+    },
+  });
+  const res = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  await handler({ params: { id: 'member' }, body: { action: 'approve', scope: 'doctor', year: '2026' }, staff: { role: 'familyDoctor' } }, res);
+  assert.equal(res.statusCode, 422, JSON.stringify(res.body));
+  assert.match(res.body.message, /CA72-4/);
+  assert.equal(writes, 0);
+});
+
 test('single-card correction refreshes the overview and invalidates its approval atomically', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));

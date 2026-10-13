@@ -2104,8 +2104,8 @@ router.post('/ai-health-summary', auth, async (req, res) => {
       return res.status(429).json({ success: false, code: 'YEARLY_LIMIT_REACHED', message: '今年已生成过AI健康信息整理结果（每年限1次），如需更新请联系客服' });
     }
 
-    const { sections, failed } = await generateHealthSummarySections(user);
-    if (failed) return res.status(500).json({ success: false, message: 'AI生成失败，请重试' });
+    const { sections, failed, validationError } = await generateHealthSummarySections(user);
+    if (failed) return res.status(validationError ? 422 : 500).json({ success: false, message: validationError || 'AI生成失败，请重试' });
     const year = String(new Date().getFullYear());
     const existing = user.aiHealthSummary || {};
     const byYear = { ...(existing.byYear || {}) };

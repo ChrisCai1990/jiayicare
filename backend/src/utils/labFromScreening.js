@@ -152,6 +152,7 @@ function latestToLabValues(latest) {
 // 口径（金娟 2026-07-10）：除 PSA 对前列腺癌有相对特异性外，其余标志物特异性都不高——
 // 单项轻度升高不代表患癌，须结合影像/内镜/动态趋势判断。此说明会写进 AI prompt 硬约束。
 const TUMOR_MARKERS = ['AFP', 'CEA', 'CA19-9', 'CA199', 'CA125', 'CA153', 'CA15-3', 'CA724', 'CA72-4', 'CA242', 'CYFRA', 'NSE', 'SCC', 'HE4', 'PSA', 'fPSA', 'tPSA', 'ProGRP', '鳞状细胞癌', '糖类抗原', '糖链抗原', '癌胚抗原', '甲胎蛋白', '神经元特异', '细胞角蛋白', '附睾蛋白'];
+const { classifyTumorMarkerItem } = require('./tumorMarkerFactGuard');
 // 排除易误命中的非肿瘤标志物项（转铁蛋白/尿液系列等）
 const TUMOR_MARKER_EXCLUDE = ['转铁蛋白', '尿'];
 
@@ -171,7 +172,10 @@ function extractTumorMarkers(reports) {
       if (name.split('/').length >= 3) return;
       if (markerHitCount === 0) return;
       if (!byMarker[name]) byMarker[name] = [];
-      byMarker[name].push({ date: d, value: String(it.value).trim(), unit: it.unit || '', abnormal: it.status === 'abnormal', ref: it.referenceRange || '' });
+      const markerStatus = classifyTumorMarkerItem(it);
+      byMarker[name].push({ date: d, value: String(it.value).trim(), unit: it.unit || '',
+        abnormal: markerStatus === 'elevated' || (markerStatus === null && it.status === 'abnormal'),
+        ref: it.referenceRange || '' });
     });
   });
   return byMarker;

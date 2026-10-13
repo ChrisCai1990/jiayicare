@@ -597,7 +597,7 @@ export const staffAPI = {
   dismissArchiveDraft:       (id) => req(`/staff/patients/${id}/archive-draft/dismiss`, { method: 'POST' }),
 
   // 4.4 AI健康汇总 / 4.5 AI管理方案生成
-  generateAIHealthSummary: (id, year, scope, force) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year, scope, force }) }),
+  generateAIHealthSummary: (id, year, scope, force, recheckFromSources = false) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year, scope, force, recheckFromSources }) }),
   regenerateAIHealthSummaryItem: (id, data) => req(`/staff/patients/${id}/ai-health-summary/regenerate-item`, { method: 'POST', body: JSON.stringify(data) }),
   refreshAIHealthSummaryOverview: (id, data) => req(`/staff/patients/${id}/ai-health-summary/refresh-overview`, { method: 'POST', body: JSON.stringify(data) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),

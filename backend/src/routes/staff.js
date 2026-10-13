@@ -11091,6 +11091,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 
     const scope = req.body.scope || 'all';
     const force = req.body.force === true;
+    const recheckFromSources = req.body.recheckFromSources === true && (scope === 'doctor' || scope === 'all');
     const currentYear = new Date().getFullYear();
     const requestedYear = Number(req.body.year || currentYear);
     if (!Number.isInteger(requestedYear) || requestedYear < 1900 || requestedYear > currentYear) {
@@ -11244,17 +11245,17 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       });
       if (!hasTargetYearTumorReport) reusedTumorSection = incrementalBase.sections.tumor_risk;
     }
-    const { sections: genResult, failed } = await generateHealthSummarySections(user, {
+    const { sections: genResult, failed, validationError } = await generateHealthSummarySections(user, {
       scope,
       existingSections: prevEntry.sections || null,
       analysisYear: year,
-      incrementalBase,
-      reusedTumorSection,
+      incrementalBase: recheckFromSources ? null : incrementalBase,
+      reusedTumorSection: recheckFromSources ? null : reusedTumorSection,
     });
     // AI返回解析失败或本该生成的板块是空壳内容：不写入数据库，直接报错，避免前端显示"已生成"却看不到内容
     // （2026-07-07 赵菲盈反馈"生活方式评估提示已生成但实际没有"即此场景——此前空壳会被当成功写入）
     if (failed) {
-      return res.status(500).json({ success: false, message: 'AI生成失败或返回内容为空，请重试' });
+      return res.status(validationError ? 422 : 500).json({ success: false, message: validationError || 'AI生成失败或返回内容为空，请重试' });
     }
 
     // 合并：只替换本次 scope 涉及的板块，另一方板块沿用上一条记录的值（新记录不是空白重来，
@@ -11272,7 +11273,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // 从而做到健康顾问/营养师任一方重新评估都不影响对方。
     const newRecord = {
       scope, sections: mergedSections, generatedAt: new Date(), evaluatedAt, period,
-      retrospective: requestedYear < currentYear,
+      retrospective: requestedYear < currentYear, recheckFromSources,
       approvedAt: null, approvedBy: null,
       doctorApprovedAt: scope === 'nutrition' ? prevEntry.doctorApprovedAt : null,
       doctorApprovedBy: scope === 'nutrition' ? prevEntry.doctorApprovedBy : null,
@@ -11587,6 +11588,16 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     if (action === 'approve') {
       const now = new Date();
       const isSuper = req.staff.role === 'superadmin';
+      if (sc === 'doctor' || sc === 'all' || (sectionKey && sectionKey !== LIFESTYLE_KEY)) {
+        const { findUnsupportedTumorMarkerElevation } = require('../utils/tumorMarkerFactGuard');
+        const { reportsThroughYear } = require('../utils/historicalAIHealthContext');
+        const allReports = await MedicalReport.find({ user: req.params.id })
+          .select('checkDate date reportYear reportItems').lean();
+        const sourceReports = Number(y) < new Date().getFullYear() ? reportsThroughYear(allReports, Number(y)) : allReports;
+        const unsupported = findUnsupportedTumorMarkerElevation(entry.sections, sourceReports);
+        if (unsupported) return res.status(422).json({ success: false,
+          message: `${unsupported.marker}升高结论缺少检验数值与参考范围依据；请核对原报告，使用“按原始报告重新评估”后再审核` });
+      }
       if (sectionKey) {
         if (!isSuper && req.staff.role !== (sectionKey === LIFESTYLE_KEY ? 'nutritionist' : 'familyDoctor')) {
           return res.status(403).json({ success: false, message: '无该板块审核权限' });

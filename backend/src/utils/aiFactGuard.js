@@ -1,4 +1,5 @@
 const { chat } = require('./ai');
+const { classifyTumorMarkerItem } = require('./tumorMarkerFactGuard');
 
 const FACT_GUARD_SYSTEM_PROMPT = `你是医疗事实审计器，不是自由写作助手。你的唯一任务是核对候选分析与证据目录，并返回修正后的同结构JSON。
 最高优先级规则：
@@ -27,7 +28,11 @@ function buildEvidenceCatalog(user, reports = [], extraFacts = []) {
     if (report.note) details.push(`备注=${String(report.note).slice(0, 200)}`);
     (report.reportItems || []).forEach((item, itemIndex) => {
       const values = [item.value, item.unit, item.findings, item.diagnosis].filter(Boolean).join('；');
-      details.push(`${evidenceId}-I${itemIndex + 1} ${item.name || '未命名项目'}=${values || '未记录结果'}；状态=${item.status || '未标注'}`);
+      const markerStatus = classifyTumorMarkerItem(item);
+      const status = markerStatus === 'normal' ? '正常（按报告数值与参考范围核对）'
+        : markerStatus === 'elevated' ? '超出参考上限（按报告数值与参考范围核对）'
+          : markerStatus === 'unknown' ? '待核对（数值或参考范围不完整）' : (item.status || '未标注');
+      details.push(`${evidenceId}-I${itemIndex + 1} ${item.name || '未命名项目'}=${values || '未记录结果'}；状态=${status}`);
     });
     lines.push(`[${evidenceId}] ${title}；日期=${date}${details.length ? `；${details.join(' | ')}` : ''}`);
   });
