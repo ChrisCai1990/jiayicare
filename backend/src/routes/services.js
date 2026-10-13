@@ -56,12 +56,18 @@ router.get('/', async (req, res) => {
     category.totalProductCount = category.productCount + category.children.reduce((sum, child) => sum + child.productCount, 0);
   });
 
+  // Admin retains upcoming categories; public shoppers see stocked categories only.
+  const visibleCategoryTree=categoryTree.filter(category=>{
+    category.children=category.children.filter(child=>child.productCount>0);
+    return category.totalProductCount>0;
+  });
+
   // 商品只以管理后台上架数据为准，不使用演示目录兜底。
   if (products.length === 0) {
-    return res.json({ success: true, data: { categories: ['全部'], categoryTree, services: [] } });
+    return res.json({ success: true, data: { categories: ['全部'], categoryTree: visibleCategoryTree, services: [] } });
   }
 
-  const categories = ['全部', ...categoryTree.flatMap(category => [category.name, ...category.children.map(child => child.name)])];
+  const categories = ['全部', ...visibleCategoryTree.flatMap(category => [category.name, ...category.children.map(child => child.name)])];
   const productById = new Map(products.map(product => [String(product._id), product]));
   const services = products.map(p => {
     const firstPrice = p.servicePrices?.[0];
@@ -116,7 +122,7 @@ router.get('/', async (req, res) => {
     };
   });
 
-  res.json({ success: true, data: { categories, categoryTree, services } });
+  res.json({ success: true, data: { categories, categoryTree: visibleCategoryTree, services } });
 });
 
 // GET /api/services/coupons — 当前用户可用的优惠券
