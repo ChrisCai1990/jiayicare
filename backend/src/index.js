@@ -19,6 +19,7 @@ connectDB();
 // 报"PDF预览失败"——医护端审核弹窗看不到原图的真正根因。CORS必须在静态文件服务之前挂载。
 const ALLOWED_ORIGINS = [
   'https://jiaycare.com',
+  'https://app.joinwehealth.com',
   'https://admin.jiaycare.com',
   'https://staff.jiaycare.com',
   // 本地开发
