@@ -178,6 +178,10 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
+    if (String(task.workflowKey || '').startsWith('rehab:') || task.sourceOrderId?.serviceWorkflowSnapshot?.key === 'rehab') {
+      nav(`/patients/${task.patientId?._id || task.patientId}?tab=plans&serviceView=rehab`)
+      return
+    }
     if (task.taskRole === 'supervisor' && task.workflowKey === 'medical_proxy:supervise'
       && /专家约诊/.test(task.theme || '')) return
     if (task.feedbackReview) { setDispatchTask(task); return }

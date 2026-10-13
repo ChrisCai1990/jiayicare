@@ -337,7 +337,7 @@ router.post('/:id/submit', auth, async (req, res) => {
       user: subjectId,
       submittedBy: childId ? req.user._id : null,
       answers,
-      questionnaireSnapshot: questionnaire.archivePurpose === 'child_health' ? {
+      questionnaireSnapshot: questionnaire.archivePurpose === 'child_health' || questionnaire.standardTemplateKey === 'rehab_screening_v1' ? {
         title: questionnaire.title, ageStage: childStage, questions: effectiveQuestions.map(q => ({ id: q.id, text: q.text, archiveField: q.archiveField, type: q.type })),
         submittedByName: childId ? req.user.name || '监护人' : '',
       } : null,

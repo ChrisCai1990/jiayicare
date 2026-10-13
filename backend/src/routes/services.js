@@ -621,7 +621,7 @@ router.post('/order', auth, async (req, res) => {
     })),
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
     servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
-    serviceWorkflowSnapshot: product?.serviceWorkflow ? (product.serviceWorkflow.toObject ? product.serviceWorkflow.toObject() : product.serviceWorkflow) : null,
+    serviceWorkflowSnapshot: product?.serviceWorkflow ? { ...(product.serviceWorkflow.toObject ? product.serviceWorkflow.toObject() : product.serviceWorkflow), ...(product.serviceWorkflow.key === 'rehab' ? { skuValidityDays:service.skuValidityDays } : {}) } : null,
     specialtyTermsSnapshot: product?.specialtyTerms?.key ? (product.specialtyTerms.toObject ? product.specialtyTerms.toObject() : product.specialtyTerms) : null,
     serviceProviderSnapshot: serviceProvider === 'jiayihui_health'
       ? { code: 'jiayihui_health', companyName: '杭州嘉医汇健康管理有限公司', consentVersion: '2026-09-24', consentedAt: new Date() }

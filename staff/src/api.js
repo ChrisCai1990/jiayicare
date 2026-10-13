@@ -1,6 +1,10 @@
 // 本地医护端也使用正式 HTTPS 域名：直接访问服务器 IP 会被重定向到 HTTPS，
 // 随后因证书不匹配导致浏览器 fetch 失败。
 import { resolveApiBase } from './utils/isolatedApiBase.mjs'
+export const rehabAPI = {
+  get: id => req(`/staff/patients/${id}/rehab`),
+  send: (id, action, data) => req(`/staff/patients/${id}/rehab/${action}`, { method:'POST', body:JSON.stringify(data) }),
+}
 const BASE = resolveApiBase(import.meta.env)
 export const API_ORIGIN = BASE.replace(/\/api$/, '')
 

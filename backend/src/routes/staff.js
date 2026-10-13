@@ -2455,6 +2455,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   // 查询强制转换后误报“随访记录不存在”。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (String(followUp.workflowKey || '').startsWith('rehab:')) return res.status(409).json({success:false,message:'请在运动管理中安排预约或发布服务记录，完成后自动更新本任务'});
   const planReviewPatient = followUpReview.postVisit(followUp) && followUp.aiStatus === 'pending' ? await User.findById(followUp.patientId).select('assignedFamilyDoctor assignedHealthManager').lean() : null;
   if (planReviewPatient && ['in_progress', 'completed'].includes(req.body.status)) return res.status(409).json({ success: false, message: '请先由健康顾问审核随访计划，再执行随访' });
   const canUpdate = (planReviewPatient && followUpReview.canReview(followUp, req.staff, planReviewPatient)) || req.staff.role === 'superadmin'
@@ -3926,6 +3927,7 @@ async function planTypeAllowed(req, planType) {
 router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  if (plan.content?.rehabPlanVersion && plan.pushedAt) return res.status(409).json({success:false,message:'已发布运动方案需保留，请在运动管理中新建调整方案'});
   if (!canUsePlanOwnerRole(plan, req.staff)) {
     return res.status(403).json({ success: false, message: '该类型方案仅限对应负责角色修改' });
   }
@@ -4563,6 +4565,7 @@ ${discussionText}
 // 删除前必须填写原因，并把完整快照写入 PlanDeletionLog，确保可追溯。
 router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
+  if (plan?.content?.rehabPlanVersion && plan.pushedAt) return res.status(409).json({success:false,message:'已发布运动方案需保留，不能删除'});
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   if (plan.type === 'nutrition' && await require('../models/NutritionInterventionDraft').exists({ _id: plan._id, status: { $in: ['publishing', 'published'] } })) {
     return res.status(409).json({ success: false, message: '营养干预任务已发布，需保留方案和执行记录；请在新方案中调整' });
@@ -6190,6 +6193,7 @@ router.get('/service-records', staffAuth, checkPermission('service_records', 'vi
 
 // POST /api/staff/service-records
 router.post('/service-records', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
+  if (req.body.type === 'rehab') return res.status(409).json({ success: false, message: '请在客户运动评估与复健模块填写记录' });
   const { patientId, type, date, title, content, result, nextDate, diseaseName, medicalEscort, tcmRecord, specialistRecord, attachments } = req.body;
   if (!patientId || !type) return res.status(400).json({ success: false, message: '会员和类型不能为空' });
   if (['routine', 'doctor_followup'].includes(type)) {
@@ -6212,6 +6216,7 @@ router.post('/service-records', staffAuth, checkPermission('service_records', 'c
 router.put('/service-records/:id', staffAuth, checkPermission('service_records', 'edit'), async (req, res) => {
   const record = await ServiceRecord.findOne({ _id: req.params.id, staffId: req.staff._id });
   if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
+  if (record.structuredContent?.rehab) return res.status(409).json({ success: false, message: '运动记录请从专属入口修订草稿；已发布内容通过补充记录留痕' });
   if (Array.isArray(req.body.attachments)) {
     const nextKeys = new Set(req.body.attachments.map(item => item?.ossKey).filter(Boolean));
     const removedKeys = (record.attachments || []).map(item => item.ossKey).filter(key => key && !nextKeys.has(key));
@@ -6309,6 +6314,7 @@ router.delete('/service-records/:id/supplement/:suppId', staffAuth, checkPermiss
 
 // DELETE /api/staff/service-records/:id
 router.delete('/service-records/:id', staffAuth, checkPermission('service_records', 'delete'), async (req, res) => {
+  if (await ServiceRecord.exists({ _id:req.params.id, 'structuredContent.rehab.status':'published' })) return res.status(409).json({success:false,message:'已发布运动记录保留归档，请通过补充记录修订'});
   const record = await ServiceRecord.findOneAndDelete({ _id: req.params.id, staffId: req.staff._id });
   await Promise.all((record?.attachments || []).map(item => item.ossKey).filter(Boolean).map(key => deleteFile(key)));
   res.json({ success: true, message: '已删除' });
@@ -9165,6 +9171,7 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const actionableOrder = await Order.exists({ _id: req.params.id, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() });
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const currentOrder = await Order.findById(req.params.id);
+    if (currentOrder?.serviceWorkflowSnapshot?.key === 'rehab') return res.status(409).json({ success: false, message: '请在客户服务管理 → 运动管理安排服务，并由运动复健师发布记录后逐次核销' });
     if (action === 'actual_start' && !req.body.actualPackageService) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role))
         return res.status(403).json({ success: false, message: '付费服务由健康规划师确认实际启动' });
@@ -9612,6 +9619,7 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (order.serviceWorkflowSnapshot?.key === 'rehab') return res.status(409).json({ success: false, message: '请在客户运动服务档案中依据已发布记录逐次核销' });
     if (require('../utils/ibdServiceTerms').isIbdOrder(order))
       return res.status(409).json({ success: false, message: 'IBD 年度服务按管理期限结案；陪诊请使用专病陪诊登记，不在此核销整单' });
     if (['cancelled', 'completed'].includes(order.status)) {
@@ -17757,5 +17765,6 @@ router.get('/wecom-kf/handoffs', staffAuth, checkPermission('followups', 'view')
   }))});
 });
 
+require('./rehab')(router, { staffAuth, getVisiblePlanPatientIds, checkPermission });
 router.syncScreeningItems = syncScreeningItems;
 module.exports = router;

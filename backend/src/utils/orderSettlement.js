@@ -113,6 +113,10 @@ async function settlePaidOrder(payment, order, cashAmount) {
   if (order.serviceWorkflowSnapshot?.key === 'checkup' && order.serviceWorkflowSnapshot.questionnaireId) {
     await require('./paidCheckupQuestionnaire').ensurePaidCheckupQuestionnaire(order);
   }
+  if (order.serviceWorkflowSnapshot?.key === 'rehab' && order.serviceWorkflowSnapshot.questionnaireId) {
+    try { await require('../routes/rehab').pushScreening(order, order.supervisorId || await resolveHealthPlanner(order.user)); }
+    catch (error) { console.error('[rehab-screening] 待人工重发', String(order._id), error.message); }
+  }
 
   const medicalReminderWorkflow = require('./medicalReminderWorkflow');
   if (medicalReminderWorkflow.isMedicalReminderOrder(order)) {

@@ -1,4 +1,5 @@
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
+import RehabWorkspace from '../components/RehabWorkspace'
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
@@ -789,13 +790,13 @@ const SR_TYPE_LABEL = {
 const SR_CATEGORY = {
   group_service: '服务群沟通',
   nutrition:     '营养干预',
-  disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '专病管理', tcm: '专病管理',
+  disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '运动评估与复健', tcm: '专病管理',
   medical_visit: '医院就医', medical_escort: '医院就医',
   routine:       '日常随访',
   doctor_followup: '健康顾问跟进',
   stage_assessment: '阶段性健康评估', phase_assessment: '阶段性健康评估',
 }
-const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7' }
+const SR_CATEGORY_COLOR = { '运动评估与复健':'#16836B', '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7' }
 const combinedHealthChange = entry => [entry?.content, entry?.symptoms]
   .map(value => String(value || '').trim())
   .filter((value, index, values) => value && values.indexOf(value) === index)
@@ -1819,9 +1820,11 @@ const SERVICE_MANAGEMENT_CATEGORIES = [
   { key: 'checkup', label: '体检管理', icon: '🩺', color: '#0077B6', description: '历年体检、当次方案与执行进度' },
   { key: 'medical', label: '就医管理', icon: '🏥', color: '#7C3AED', description: '就医方案、预约协调与陪诊服务' },
   { key: 'nutrition', label: '营养管理', icon: '🥗', color: '#D97706', description: '营养评估、干预方案与阶段复盘' },
+  { key: 'rehab', label: '运动管理', icon: '🏃', color: '#16836B', description: '运动服务方案、预约与训练安排' },
 ]
 
 const getServiceManagementCategory = (plan) => {
+  if (plan?.type === 'rehab') return 'rehab'
   const text = `${plan?.title || ''} ${plan?.content?.templateName || ''}`
   if (plan?.type === 'annual_checkup' || /体检/.test(text)) return 'checkup'
   if (plan?.isAnnualPlan || plan?.type === 'health_management') return 'annual'
@@ -3355,6 +3358,11 @@ export default function PatientDetailPage() {
         if (['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
         else setFollowUpDetail(f)
         nav(location.pathname + location.search, { replace: true, state: {} })
+        return
+      }
+      if (String(f.workflowKey || '').startsWith('rehab:') || f.sourceOrderId?.serviceWorkflowSnapshot?.key === 'rehab') {
+        setTab('plans'); setServiceManagementView('rehab')
+        nav(`${location.pathname}?tab=plans&serviceView=rehab`, { replace: true, state: {} })
         return
       }
       if (f.sourceType === 'order' && staff?.role === 'healthPlanner') {
@@ -5747,6 +5755,7 @@ export default function PatientDetailPage() {
 
         {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，会员自填自动写入）── */}
         <PsychAssessmentPanel user={user} />
+        <div className="card"><RehabWorkspace patientId={id} staff={staff} view="assessment" onSaved={loadServiceRecords} /></div>
 
         {/* ── 10年ASCVD风险评估（医护录入体检参数→中国指南自动分层）── */}
         <AscvdRiskPanel user={user} patientId={id} onSaved={load} toast={toast} />
@@ -9693,6 +9702,7 @@ export default function PatientDetailPage() {
             </div>
           </div>
           <ServiceManagementCategories plans={plans} active={serviceManagementView} onChange={setServiceManagementView} />
+          {serviceManagementView === 'rehab' && <RehabWorkspace patientId={id} staff={staff} view="plans" onSaved={loadPlans} />}
           {serviceManagementView === 'annual' && monthlyReviewEnabled && (
             <div style={{ padding: '14px 20px', borderTop: '1px solid #EDF2EE', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <span style={{ color: '#65776F', fontSize: 13 }}>年度持续管理客户的每月团队服务复盘</span>
@@ -9708,7 +9718,7 @@ export default function PatientDetailPage() {
               ? nav(`/plans/${plan._id}/modules`, { state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` } })
               : nav(`/plans/${plan._id}`, { state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` } })}
           />}
-          {serviceManagementView !== 'checkup' && <>
+          {!['checkup', 'rehab'].includes(serviceManagementView) && <>
           <div style={{ padding: '14px 20px 8px', borderTop: '1px solid #EDF2EE', marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ fontWeight: 750, color: '#173B2E' }}>{selectedServiceCategory ? `${selectedServiceCategory.label}相关方案` : '全部服务方案'}</div>
             <span style={{ fontSize: 12, color: '#8AA89C' }}>{visibleServicePlans.length} 个方案</span>
@@ -10712,7 +10722,7 @@ export default function PatientDetailPage() {
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
         // 评估入口负责生成和审核；服务档案保留审核后的正式结果，两者通过来源 ID 互通。
-        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估']
+        const CATS = ['营养干预', '运动评估与复健', '专病管理', '医院就医', '阶段性健康评估']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
@@ -10751,6 +10761,7 @@ export default function PatientDetailPage() {
             </div>
             {(() => {
               const cat = serviceRecordCategory
+              if (cat === '运动评估与复健') return <div className="card"><RehabWorkspace patientId={id} staff={staff} view="archive" onSaved={loadServiceRecords} /></div>
               const isDiseaseMgmt = cat === '专病管理'
               // 专病管理内部按标题二级分组（同一专病的记录只要标题写法一致就会归到一起，组内保持原有按日期倒序）
               let diseaseGroups = null

@@ -22,6 +22,7 @@ const orderSchema = new mongoose.Schema({
     servicePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
     handoffId: { type: mongoose.Schema.Types.ObjectId, ref: 'CheckupPreparationHandoff', default: null },
     finalTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
+    rehabRecordId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceRecord', default: null },
   }],
   // 购买时快照，后续产品规则调整不影响历史订单。
   serviceItemsSnapshot: [{
@@ -65,6 +66,7 @@ const orderSchema = new mongoose.Schema({
   },
   initiationSource: { type: String, enum: ['', 'staff_direct'], default: '' },
   checkupIntake: { type: mongoose.Schema.Types.Mixed, default: null },
+  rehabBooking: { type: mongoose.Schema.Types.Mixed, default: null },
   serviceIcon: { type: String },
   note:        { type: String, default: '' },
   desiredServiceDate: { type: Date, default: null },
