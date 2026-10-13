@@ -14,7 +14,7 @@
 
 商品映射见 backend/src/data/mallCategoryPlan.js。迁移脚本 backend/scripts/reclassify-mall-products.js 默认预演，加 --apply 才写入；校验名称唯一、59件覆盖、原分类变化，并在服务器 backups 目录备份原分类。只改商品分类和分类树，价格、规格、有效期、订单和历史快照不改。
 
-两张运动商品封面使用原创生成图片，统一米白/鼠尾草绿/深绿风格。图中文字不放价格，避免与实时收费规格冲突。PNG源图及JPG交付版位于 assets/mall/，JPG约233KB/279KB；仅格式压缩，没有裁切内容。backend/scripts/publishRehabCovers.js 默认预演，加 --apply 后上传既有OSS并设置两个商品的主图；已有独立图片时停止覆盖，调整前备份原图片数组。
+两张运动商品封面使用原创生成图片，统一米白/鼠尾草绿/深绿风格。图中文字不放价格，避免与实时收费规格冲突。PNG源图及JPG交付版位于 assets/mall/，JPG约233KB/279KB；仅格式压缩，没有裁切内容。backend/scripts/publishRehabCovers.js 默认预演，加 --apply 后发布至既有同域名公开图片目录并设置两个商品的主图（避免私有OSS签名过期及新增小程序图片域名）；已有独立图片时停止覆盖，调整前备份原图片数组。
 
 代码发布：python scripts/deploy.py --push --backend --skip-data-migrations。
 生产操作：先分别运行两个脚本的默认预演，核对后添加 --apply。
