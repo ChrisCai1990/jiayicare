@@ -91,10 +91,10 @@ function buildHealthInsightContext(user) {
   const latestEntry = latestYear ? byYear[latestYear] : null;
   if (latestEntry?.sections) {
     const s = latestEntry.sections;
-    if (s.medical_priority?.items?.length) {
+    if ((latestEntry.doctorApprovedAt || latestEntry.approvedAt) && s.medical_priority?.items?.length) {
       lines.push(`【AI健康信息整理·${latestYear}年度·重点关注信息】` + s.medical_priority.items.map(i => `${i.name}（${i.urgency}）：${i.action || ''}`).join('；'));
     }
-    if (s.lifestyle_assessment?.summary) {
+    if ((latestEntry.nutritionApprovedAt || latestEntry.approvedAt) && s.lifestyle_assessment?.summary) {
       lines.push(`【生活方式评估】${s.lifestyle_assessment.summary}`);
     }
   }

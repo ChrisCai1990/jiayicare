@@ -23,6 +23,7 @@ const User = require('../models/User');
 const Enterprise = require('../models/Enterprise');
 const UserChangeLog = require('../models/UserChangeLog');
 const HealthRecord = require('../models/HealthRecord');
+const MedicalReport = require('../models/MedicalReport');
 const DailyTeamInsight = require('../models/DailyTeamInsight');
 const Task = require('../models/Task');
 const Reminder = require('../models/Reminder');
@@ -2059,6 +2060,23 @@ router.get('/ai-health-summary', auth, async (req, res) => {
       hasLifestyle,
       isSelfService,
     };
+    // An older approved statement can be copied into a new draft. Do not show
+    // that draft to the member while the source measurements contradict it.
+    const { findUnsupportedTumorMarkerElevation } = require('../utils/tumorMarkerFactGuard');
+    if (hasDoctor && hasSections && !isSelfService && findUnsupportedTumorMarkerElevation(data.sections, [])) {
+      const { reportsThroughYear } = require('../utils/historicalAIHealthContext');
+      const reports = await MedicalReport.find({ user: user._id })
+        .select('checkDate date reportYear reportItems').lean();
+      const year = Number(data.latestYear) || new Date().getFullYear();
+      const sourceReports = year < new Date().getFullYear() ? reportsThroughYear(reports, year) : reports;
+      if (findUnsupportedTumorMarkerElevation(data.sections, sourceReports)) {
+        return res.json({ success: true, hasDoctor, pendingReview: true,
+          reviewStatus: { ...reviewStatus, doctorApproved: false },
+          data: { ...data, sections: {}, byYear: undefined, doctorApprovedAt: null, approvedAt: null },
+          message: '当前健康信息整理中的肿瘤标志物结论需要重新核对原始报告，暂不展示，请等待健康顾问重新评估。',
+        });
+      }
+    }
     if (hasDoctor && hasSections && !isSelfService) {
       return res.json({
         success: true, data, hasDoctor, reviewStatus,
