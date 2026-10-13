@@ -159,7 +159,9 @@ test('single-card correction refreshes the overview and invalidates its approval
   const record = { scope: 'doctor', doctorApprovedAt: '2026-09-06', sections: {
     chronic_disease: { overview: { headline: '血糖由5.5%升至7.0%', attentionCount: 1 },
       items: [{ name: '血糖', status: 'abnormal', latest: 'HbA1c 7.0%' }, { name: '血压', status: 'normal', latest: '正常' }] },
-    medical_priority: { items: [{ name: '糖化血红蛋白升高', current: '7.0%' }, { name: '胃炎', current: '需复查' }] },
+    medical_priority: { items: [{ name: '糖化血红蛋白升高', current: '7.0%' },
+      { name: '血压随访', current: '原已审核建议', sourceSectionKey: 'chronic_disease', sourceItemName: '血压' },
+      { name: '胃炎', current: '需复查' }] },
   } };
   const original = { latestYear: '2026', sections: record.sections, byYear: { 2026: { ...record, records: [record] } } };
   const handlers = {};
@@ -169,8 +171,9 @@ test('single-card correction refreshes the overview and invalidates its approval
     User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
       collection: { updateOne: async (filter, update) => { saved = update.$set.aiHealthSummary; assert.equal(filter.aiHealthSummary, original); return { matchedCount: 1 }; } } },
     MedicalReport: { find: () => ({ sort: () => ({ select: () => ({ lean: async () => [] }) }) }) },
-    reviewToken, withReviewTokens, Date, JSON,
-    require: name => name.endsWith('healthPriorityLinks') ? require('../src/utils/healthPriorityLinks') : ({
+    reviewToken, withReviewTokens, Date, JSON, DOCTOR_KEYS: ['chronic_disease', 'medical_priority'],
+    require: name => name.endsWith('healthPriorityLinks') ? require('../src/utils/healthPriorityLinks')
+      : name.endsWith('tumorMarkerFactGuard') ? require('../src/utils/tumorMarkerFactGuard') : ({
       chat: async () => ++calls === 1
         ? JSON.stringify({ status: 'normal', latest: 'HbA1c 5.6%', trendStatus: 'stable' })
         : JSON.stringify({ headline: '血糖目前处于正常范围，继续监测。' }),
@@ -180,14 +183,62 @@ test('single-card correction refreshes the overview and invalidates its approval
   await handlers['/patients/:id/ai-health-summary/regenerate-item']({ params: { id: 'member' }, staff: { role: 'familyDoctor', name: '医生', _id: 'staff' },
     body: { year: '2026', sectionKey: 'chronic_disease', itemName: '血糖', instruction: '7%是误录，实际5.6%', expectedRecordToken: reviewToken(record) } }, res);
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.newRecord, true);
   assert.equal(calls, 2);
+  assert.equal(saved.byYear[2026].records.length, 2);
+  assert.equal(saved.byYear[2026].records[1].doctorApprovedAt, '2026-09-06');
+  assert.equal(saved.byYear[2026].records[1].sections.chronic_disease.items[0].latest, 'HbA1c 7.0%');
   assert.equal(saved.byYear[2026].records[0].sections.chronic_disease.items[0].latest, 'HbA1c 5.6%');
   assert.equal(saved.sections.chronic_disease.overview.headline, '血糖目前处于正常范围，继续监测。');
   assert.equal(saved.sections.chronic_disease.overview.attentionCount, 0);
-  assert.deepEqual(Array.from(saved.sections.medical_priority.items, item => item.name), ['胃炎']);
+  assert.deepEqual(Array.from(saved.sections.medical_priority.items, item => item.name), ['血压随访', '胃炎']);
+  assert.equal(saved.sections.medical_priority.items[0].current, '原已审核建议');
   assert.equal(saved.doctorApprovedAt, null);
   assert.equal(saved.byYear[2026].records[0].sectionReviews.chronic_disease.status, 'draft');
   assert.equal(original.sections.chronic_disease.items[0].latest, 'HbA1c 7.0%', 'failed CAS would leave old data intact');
+});
+
+test('CA72-4 card correction reads old and recent reference ranges without regenerating other reviewed sections', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));
+  const { reviewToken, withReviewTokens } = require('../src/utils/summaryReviewVersion');
+  const approved = { scope: 'doctor', generatedAt: '2026-10-01', doctorApprovedAt: '2026-10-02', doctorApprovedBy: '顾问', sections: {
+    tumor_risk: { summary: 'CA72-4持续升高', overview: { headline: 'CA72-4持续升高' },
+      cancers: [{ name: '胃癌', status: 'follow_up_due', latest: 'CA72-4持续升高', trend: '持续升高' }] },
+    cardiovascular_risk: { summary: '原已审核的心血管结论' }, medical_priority: { items: [] },
+  } };
+  const original = { latestYear: '2026', sections: approved.sections, byYear: { 2026: { ...approved, records: [approved] } } };
+  const reports = [
+    { checkDate: '2018-05-01', reportItems: [{ name: 'CA72-4', value: '11.3', referenceRange: '<6.9' }] },
+    { checkDate: '2026-09-23', reportItems: [{ name: 'CA72-4', value: '9.05', referenceRange: '<19.10' }] },
+  ];
+  const prompts = []; let saved, handler;
+  vm.runInNewContext(code, {
+    router: { post(route, _auth, callback) { if (route.endsWith('/regenerate-item')) handler = callback; } }, staffAuth() {},
+    User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
+      collection: { updateOne: async (_filter, update) => { saved = update.$set.aiHealthSummary; return { matchedCount: 1 }; } } },
+    MedicalReport: { find: () => ({ sort: () => ({ select: () => ({ lean: async () => reports }) }) }) },
+    reviewToken, withReviewTokens, Date, JSON,
+    DOCTOR_KEYS: ['tumor_risk', 'cardiovascular_risk', 'medical_priority'],
+    require: name => name.endsWith('healthPriorityLinks') ? require('../src/utils/healthPriorityLinks')
+      : name.endsWith('tumorMarkerFactGuard') ? require('../src/utils/tumorMarkerFactGuard')
+        : { chat: async messages => { prompts.push(messages[0].content); return prompts.length === 1
+          ? JSON.stringify({ name: '胃癌', status: 'covered', latest: '2026年CA72-4为9.05，参考<19.10', trend: '2018年高于当时参考范围；2026年在参考范围内', trendStatus: 'improving' })
+          : JSON.stringify({ headline: 'CA72-4最近检查在参考范围内' }); } },
+  });
+  const res = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  await handler({ params: { id: 'member' }, staff: { role: 'familyDoctor', name: '顾问', _id: 'staff' }, body: {
+    year: '2026', sectionKey: 'tumor_risk', itemName: '胃癌', instruction: 'CA72-4近年正常，核对持续升高的说法', expectedRecordToken: reviewToken(approved),
+  } }, res);
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.match(prompts[0], /11\.3/); assert.match(prompts[0], /<6\.9/);
+  assert.match(prompts[0], /9\.05/); assert.match(prompts[0], /<19\.10/);
+  assert.equal(saved.byYear[2026].records.length, 2);
+  assert.equal(saved.byYear[2026].records[1].sections.tumor_risk.summary, 'CA72-4持续升高');
+  assert.equal(saved.byYear[2026].records[0].sections.cardiovascular_risk.summary, '原已审核的心血管结论');
+  assert.equal(saved.byYear[2026].records[0].sectionReviews.cardiovascular_risk.status, 'approved');
+  assert.equal(saved.byYear[2026].records[0].sectionReviews.tumor_risk.status, 'draft');
+  assert.equal(saved.byYear[2026].records[0].sections.tumor_risk.summary, 'CA72-4最近检查在参考范围内');
 });
 
 test('overview refresh updates an already corrected record without regenerating cards', async () => {

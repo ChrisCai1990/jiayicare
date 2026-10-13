@@ -61,7 +61,10 @@ function findUnsupportedTumorMarkerElevation(sections, reports) {
       const elevated = points.filter(point => point.elevated);
       const sustained = /持续|连续|反复|多年/.test(clause);
       const latest = points.filter(point => point.date).sort((a, b) => b.date.localeCompare(a.date))[0];
-      if (!elevated.length || (sustained && (elevated.length < 2 || !latest?.elevated))) {
+      const explicitlyHistorical = /曾|既往|早年|历史|过去|20\d{2}年/.test(clause)
+        && !/目前|当前|近期|最近|现在|持续|连续|反复/.test(clause);
+      if (!elevated.length || (sustained && elevated.length < 2)
+        || (!explicitlyHistorical && !latest?.elevated)) {
         return { marker: marker.name, claim: clause.trim() };
       }
     }
@@ -69,4 +72,4 @@ function findUnsupportedTumorMarkerElevation(sections, reports) {
   return null;
 }
 
-module.exports = { classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation, upperReference };
+module.exports = { MARKERS, classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation, upperReference };

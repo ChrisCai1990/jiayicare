@@ -3887,8 +3887,9 @@ export default function PatientDetailPage() {
       const scope = sectionKey === 'tumor_risk' || sectionKey === 'cardiovascular_risk' || sectionKey === 'chronic_disease' ? 'doctor' : 'all'
       const res = await staffAPI.regenerateAIHealthSummaryItem(id, { year: aiYear, scope, recordIndex: aiRecordIndex.doctor, sectionKey, itemName, instruction: instruction.trim(), expectedRecordToken })
       applyAIHealthSummary(res.data)
+      if (res.newRecord) setAiRecordIndex(v => ({ ...v, doctor: 0 }))
       setLastRegeneratedItem(`${sectionKey}:${itemName}`)
-      toast(`${itemName}、整体意见及相关关注问题已同步，请重新审核`)
+      toast(`${itemName}已局部重评估${res.newRecord ? '，原已审核版本已保留' : ''}；请核对本卡、整体意见和相关关注问题后审核`)
     } catch (err) { toast(err.message || '单项重新生成失败') }
     finally { setAiSummaryLoading(false) }
   }
@@ -8515,7 +8516,7 @@ export default function PatientDetailPage() {
                           </button>
                         </div>
                       {group.key === 'doctor' && <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6, color: '#8A6B36' }}>
-                        单项结论有误：请在下方编辑对应板块及受影响的“需优先关注的信息”，核对后再点击“审核5维度通过”；其余内容保持原样，无需重新生成。
+                        单项结论有误：可展开对应卡片使用“单项重新生成”，或编辑对应板块与关联关注问题；仅核对变更内容后再点击“审核5维度通过”，无需重算其余板块。
                       </div>}
                         </>
                       )}

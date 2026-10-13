@@ -30,6 +30,12 @@ test('an isolated elevated claim requires a printed upper limit', () => {
   assert.equal(findUnsupportedTumorMarkerElevation(summary('CA72-4偏高'), [report('2026-06-01', '8.1', '')]).marker, 'CA72-4');
 });
 
+test('an old elevation cannot justify a current elevated claim after recent normal results', () => {
+  const reports = [report('2018-05-01', '11.3'), report('2026-09-23', '9.05', '<19.10')];
+  assert.equal(findUnsupportedTumorMarkerElevation(summary('CA72-4升高'), reports).marker, 'CA72-4');
+  assert.equal(findUnsupportedTumorMarkerElevation(summary('CA72-4曾于2018年升高'), reports), null);
+});
+
 test('combined OCR rows cannot substantiate one marker elevation', () => {
   const reports = [{ checkDate: '2026-06-01', reportItems: [{
     name: 'CA72-4/CA19-9', value: '8.1', referenceRange: '<6.9', status: 'abnormal',
