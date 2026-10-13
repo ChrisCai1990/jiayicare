@@ -8812,7 +8812,7 @@ export default function PatientDetailPage() {
                                   onClick={() => openAIAnalysisSource(item.sourceReportId)}>🔗 查看分析依据</button>
                               )}
                               <SpecialtyConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
-                                source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'medical_priority', itemName: item.name }} suggestedIssue={item.name}
+                                source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'chronic_disease', itemName: item.name }} suggestedIssue={item.name}
                                 sourceLabel={`${curYear}年度已审核健康信息整理 · ${item.name}`} />
                             </div>
                           </div>
