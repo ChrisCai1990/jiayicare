@@ -86,7 +86,10 @@ import { resolveScreeningCategory } from '../utils/screeningCategoryLabel.mjs'
 // 使用浏览器原生 PDF 阅读器，保留缩放、页码跳转、旋转、查找、打印及下载等常规功能。
 // 预览链接仍是绑定报告与短时令牌的私有 API，不改为公开直链。
 function PdfDocumentPreview({ src, activePage, title, zoom = 100 }) {
-  return <iframe src={`${src}#page=${activePage}&zoom=${zoom}`} title={title} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+  // Chromium's PDF viewer treats view=FitH as fit to width. A fixed 100% scale
+  // makes scanned pages much wider than the review pane at ordinary zoom levels.
+  const fragment = zoom === 100 ? 'view=FitH' : `zoom=${zoom}`
+  return <iframe src={`${src}#page=${activePage}&${fragment}`} title={title} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
 }
 
 function ClinicalReportSource({ report, loading, error }) {
@@ -12683,7 +12686,7 @@ export default function PatientDetailPage() {
           // 只能点右上角✕关闭（2026-07-13 反馈：之前只改了纯查看用的"体检报告详情弹窗"，这个才是真正
           // 审核AI识别结果、会长时间编辑的弹窗，之前漏改了）
           <div className="modal-overlay">
-            <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal ocr-review-modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               <ReportReviewQuality report={ocrReviewReport} items={ocrEditItems} onChange={patch => {
                 setOcrReviewReport(current => ({ ...current, ...patch }))
                 // The save handlers read ocrReportMeta. Keep the header edits in that
@@ -12707,14 +12710,14 @@ export default function PatientDetailPage() {
                 </div>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
-              <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+              <div className="ocr-review-layout" style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 {/* 左：原始报告预览 */}
                 {(() => {
-                  const paneStyle = { width: '40%', borderRight: '1px solid #E0D9CE', overflow: 'auto', flexShrink: 0, background: '#F6F9F7', padding: 8 }
+                  const paneStyle = { borderRight: '1px solid #E0D9CE', overflow: 'auto', background: '#F6F9F7', padding: 8 }
                   const previewToolbar = (url, isPdf) => (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 4px 7px', flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" type="button" aria-label="缩小原始报告" disabled={ocrPreviewZoom <= 50} onClick={() => setOcrPreviewZoom(z => Math.max(50, z - 25))}>−</button>
-                      <span style={{ minWidth: 38, textAlign: 'center', color: '#4A6558', fontSize: 11 }}>{ocrPreviewZoom}%</span>
+                      <span style={{ minWidth: 38, textAlign: 'center', color: '#4A6558', fontSize: 11 }}>{isPdf && ocrPreviewZoom === 100 ? '适合宽度' : `${ocrPreviewZoom}%`}</span>
                       <button className="btn btn-secondary btn-sm" type="button" aria-label="放大原始报告" disabled={ocrPreviewZoom >= 200} onClick={() => setOcrPreviewZoom(z => Math.min(200, z + 25))}>＋</button>
                       <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOcrPreviewZoom(100)}>适合宽度</button>
                       {isPdf && <button className="btn btn-secondary btn-sm" type="button" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>新窗口查看</button>}
@@ -12728,7 +12731,7 @@ export default function PatientDetailPage() {
                   if (multiUrls) {
                     const isPdf = ocrReviewReport.mimeType === 'application/pdf'
                     return (
-                      <div style={paneStyle}>
+                      <div className="ocr-review-source" style={paneStyle}>
                         <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>原始报告（共{multiUrls.length}张，对照核对）</div>
                         {multiUrls.map((u, idx) => {
                           if (idx + 1 !== activePage) return null
@@ -12751,12 +12754,12 @@ export default function PatientDetailPage() {
                     )
                   }
                   const rawSrc = ocrReviewReport.content || ocrReviewReport.previewUrl || ocrReviewReport.fileUrl || (ocrReviewReport.fileUrls && ocrReviewReport.fileUrls[0]) || ''
-                  if (!rawSrc) return <div style={{ ...paneStyle, color: '#B0C4BB', fontSize: 13, padding: 16 }}>无原始文件可预览</div>
+                  if (!rawSrc) return <div className="ocr-review-source" style={{ ...paneStyle, color: '#B0C4BB', fontSize: 13, padding: 16 }}>无原始文件可预览</div>
                   const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
                   const isPdf = ocrReviewReport.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')
                   const isImg = ocrReviewReport.mimeType?.startsWith('image/') || rawSrc.startsWith('data:image') || /\.(png|jpe?g|webp|gif)$/i.test(rawSrc)
                   return (
-                    <div style={paneStyle}>
+                    <div className="ocr-review-source" style={paneStyle}>
                       <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>原始报告（对照核对）</div>
                       {isImg ? (
                         <>
@@ -12774,7 +12777,7 @@ export default function PatientDetailPage() {
                     </div>
                   )
                 })()}
-              <div className="modal-body" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
+              <div className="modal-body ocr-review-fields" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
                 {activePageParse && activePageParse.status !== 'image_only' && (
                   <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
                     {pageParsing ? `第${activePage}页正在补提，请稍候，完成后本页会自动刷新。` : pageParseStale ? `第${activePage}页上次补提已中断，可以重新补提。` : activePageParse.message}
