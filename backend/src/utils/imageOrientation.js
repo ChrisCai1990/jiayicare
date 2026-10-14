@@ -93,4 +93,17 @@ async function rotateImageBuffer(buffer, degrees) {
   return toBuffer(await transformForExifOrientation(image, orientation), 'image/png');
 }
 
-module.exports = { normalizeImageOrientation, readJpegExifOrientation, rotateImageBuffer };
+// Only a landscape bitmap may be a portrait report saved sideways without EXIF.
+// Rotating an already upright portrait report burns OCR and evidence calls without
+// improving the text at the bottom of the page.
+async function reportRotationCandidates(buffer) {
+  try {
+    const image = await Jimp.read(buffer);
+    return image.bitmap.width > image.bitmap.height ? [90, 270] : [];
+  } catch {
+    // The main parser still owns unsupported or corrupt-image errors.
+    return [];
+  }
+}
+
+module.exports = { normalizeImageOrientation, readJpegExifOrientation, rotateImageBuffer, reportRotationCandidates };

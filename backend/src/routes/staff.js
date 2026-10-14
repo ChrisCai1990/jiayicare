@@ -108,8 +108,9 @@ const {
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
+const { mergeCoverageAuditItems, normalizeExplicitNormalStatus } = require('../utils/reportAuditMerge');
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
-const { rotateImageBuffer } = require('../utils/imageOrientation');
+const { rotateImageBuffer, reportRotationCandidates } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
 const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = require('../utils/reportSourceOrder');
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
@@ -14402,31 +14403,11 @@ function shouldSkipParsedReportPage(parsed) {
 }
 
 const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手。请重新检查这张图片，重点检查首轮容易遗漏的右半页、页面下半部、跨栏表格和小字号栏目。
-只输出首轮清单中遗漏的真实检查项目；首轮已经提取的项目不要重复输出。汇总、小结、目录、建议、科普、会员信息和只有标题没有结果的栏目一律不输出。
+输出首轮遗漏的真实检查项目，以及首轮已有项目中检查结果为空、只有横线或明显不完整的项目的完整原文；已有且完整的项目不要重复。汇总、小结、目录、建议、科普、会员信息和只有标题没有结果的栏目一律不输出。
 血液/尿液/粪便检验每个有结果的子项单独输出；内科、外科、全科、眼科、耳鼻喉、妇科、牙科或口腔科等体格检查也要按报告印刷明细逐项输出，禁止按科室合并；心电图、碳13/碳14呼气试验、头颅MRI不得漏；组合超声按器官拆开。
+眼科须逐行核对左右裸眼视力、矫正视力和眼部检查；带文字的结果不可只写横线。明确“未见异常”应标normal。
 严格返回JSON，不要解释：
 {"items":[{"name":"项目名","itemType":"lab | imaging | data","value":"","unit":"","referenceRange":"","status":"normal | abnormal | attention | unknown","orderName":"","sourceSection":"原栏目标题","sourceSectionOrder":1,"sourceRowOrder":1,"bodyPart":"","findings":"","diagnosis":"","conclusion":"","pathologyFindings":"","pathologyDiagnosis":""}]}`;
-
-function reportItemEvidenceKey(item) {
-  const clean = value => str(value).toLowerCase().replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
-  return `${item?.itemType || ''}|${clean(item?.name)}|${clean(item?.value)}|${clean(item?.unit)}`;
-}
-
-function mergeCoverageAuditItems(originalItems, auditItems) {
-  const result = [...(originalItems || [])];
-  const seen = new Set(result.map(reportItemEvidenceKey));
-  for (const item of (auditItems || [])) {
-    if (!str(item?.name)) continue;
-    const key = reportItemEvidenceKey(item);
-    if (seen.has(key)) continue;
-    const sameNamedWithoutValue = result.some(old => old.itemType === item.itemType
-      && reportItemEvidenceKey({ ...old, value: '', unit: '' }) === reportItemEvidenceKey({ ...item, value: '', unit: '' }));
-    if (sameNamedWithoutValue && !str(item.value)) continue;
-    seen.add(key);
-    result.push(item);
-  }
-  return result;
-}
 
 function reportPageEvidenceScore(items) {
   // 名称为空的模型占位项不计分；数值/所见/结论必须能回到原件核对。
@@ -16101,6 +16082,7 @@ async function runReportParseControlled(reportId) {
     let imageCheckDate = report.checkDate;
     let imageOkCount = 0;
     let lastRawText = '';
+    const imageFailures = [];
     for (let imageIndex = 0; imageIndex < bufs.length; imageIndex++) {
       const cachedImage = report.parseJob?.imagePages?.[imageIndex + 1];
       if (cachedImage) {
@@ -16125,10 +16107,10 @@ async function runReportParseControlled(reportId) {
           timeoutMs: 180000,
         });
         let parsedPage = safeParseJSON(lastRawText);
-        // 手机横拍且未写入 EXIF 方向时，首轮会出现“有原件但 0 项”。仅在这种空结果下
-        // 依次尝试 90/270/180 度，正常横版报告不会增加额外识别调用。
-        if (parsedPage?.imageEvidence?.status !== 'image_only' && report.type !== 'body_comp' && (!parsedPage || !Array.isArray(parsedPage.items) || parsedPage.items.length === 0)) {
-          for (const degrees of [90, 270, 180]) {
+        // 只有横向像素图可能是未记录 EXIF 方向的竖版报告；竖版空结果不再
+        // 反复旋转识别。原文校验已明确拒绝的候选也不靠旋转继续烧额度。
+        if (!['image_only', 'needs_review'].includes(parsedPage?.imageEvidence?.status) && report.type !== 'body_comp' && (!parsedPage || !Array.isArray(parsedPage.items) || parsedPage.items.length === 0)) {
+          for (const degrees of await reportRotationCandidates(originalBuffer)) {
             try {
               const rotated = await rotateImageBuffer(originalBuffer, degrees);
               const rotatedRaw = await parseImage(rotated.toString('base64'), firstPassPrompt, { sourcePage: imageIndex + 1, isUrl: false, model: firstPassModel, maxTokens: 4096 });
@@ -16157,7 +16139,11 @@ async function runReportParseControlled(reportId) {
         if (!isPrescriptionReport && !isBodyCompPage) {
           try {
             const firstNames = pageItems.map(it => str(it.name)).filter(Boolean);
-            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整张漏识别）'}`;
+            const incompleteNames = pageItems.filter(it =>
+              (it.itemType === 'imaging' && (!str(it.findings) || /^[\-—－–]+$/.test(str(it.findings))))
+              || (it.itemType !== 'imaging' && (!str(it.value) || /^[\-—－–]+$/.test(str(it.value))))
+            ).map(it => str(it.name)).filter(Boolean);
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整张漏识别）'}\n结果需复核的已有项目：${incompleteNames.length ? incompleteNames.join('、') : '无'}。这些项目如原图有完整检查结果，请用原项目名重新输出，检查结果栏文字放findings（数值检验放value）。`;
             const auditText = await parseImage(activeBuffer.toString('base64'), auditPrompt, { sourcePage: imageIndex + 1, isUrl: false, model: 'qwen-vl-max', maxTokens: 4096 });
             const auditPage = safeParseJSON(auditText);
             if (auditPage && Array.isArray(auditPage.items)) {
@@ -16245,6 +16231,7 @@ async function runReportParseControlled(reportId) {
         if (!imageCheckDate && parsedPage.checkDate) imageCheckDate = parsedPage.checkDate;
         await MedicalReport.findByIdAndUpdate(reportId, { $set: { [`parseJob.imagePages.${imageIndex + 1}`]: { items: imageItems.filter(item => Number(item.sourcePage) === imageIndex + 1), summary: parsedPage.summary || '', institution: imageInstitution, checkDate: imageCheckDate, evidence: imagePageEvidence[imageIndex + 1] } } });
       } catch (e) { rethrowAiControl(e);
+        imageFailures.push(`第${imageIndex + 1}张：${e.message}`);
         console.log(`[parse-ai] 图片${imageIndex + 1}解析异常 ${reportId}: ${e.message}`);
       }
     }
@@ -16262,7 +16249,7 @@ async function runReportParseControlled(reportId) {
     const cleanedImageItems = fillEmptyDiagnosisFromFindings(
       realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(imageExamNormalized))
     );
-    const classifiedImg = (await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))))).map(item => ({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
+    const classifiedImg = (await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))))).map(item => normalizeExplicitNormalStatus({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
     // 使用完成时的最新版本判断，不能用任务启动时的旧快照。AI迟到或空结果都不得覆盖人工审核内容。
     const latestReport = await MedicalReport.findById(reportId).select('reportItems reviewRevision').lean();
     const completion = resolveImageParseCompletion(parseStartRevision, latestReport?.reviewRevision, latestReport?.reportItems, classifiedImg);
@@ -16270,19 +16257,23 @@ async function runReportParseControlled(reportId) {
     const parsedImageItemDates = [...new Set(resolvedImageItems.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
     const resolvedImageCheckDate = parsedImageItemDates.length === 1 ? parsedImageItemDates[0] : parsedImageItemDates.length > 1 ? '' : normalizeReportDate(imageCheckDate);
     const keepExistingItems = !completion.shouldWriteItems && resolvedImageItems.length > 0;
+    const noReviewableItems = resolvedImageItems.length === 0;
+    const failureDetail = imageFailures[0]
+      || Object.entries(imagePageEvidence).map(([page, evidence]) => evidence?.message ? `第${page}页：${evidence.message}` : '').find(Boolean)
+      || (imageItems.length ? `识别产生${imageItems.length}项，但质量清理后没有可审核项目，请对照原图人工核对` : imageOkCount ? '模型返回了结果，但没有可核对的检查项目，请对照原图人工核对' : '未提取到可核对的检查结果，请对照原图人工录入');
     if (completion.reason === 'revision_changed') console.log(`[parse-ai] 图片识别期间报告版本已变化，保留人工最新${resolvedImageItems.length}项，未覆盖`);
     else if (completion.reason === 'empty_result' && resolvedImageItems.length) console.log(`[parse-ai] 图片识别后无有效项，保留既有${resolvedImageItems.length}项，未覆盖`);
     const imgSummary = imageOkCount
       ? [...new Set([...imageSummaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => str(s)).filter(Boolean))].join('\n')
-      : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;
+      : `⚠️ 自动识别失败：${failureDetail}${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;
     const preservedSummary = completion.reason === 'revision_changed'
       ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 识别期间报告被编辑，本次结果未覆盖人工最新内容。`
       : keepExistingItems ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 本次自动识别未提取到有效项目，已保留此前待审核结果。` : imgSummary;
     const imageUpdate = {
       imagePageEvidence,
-      aiSummary:   preservedSummary,
-      aiStatus:    'pending',
-      parseJob:    { status: 'completed', completedAt: new Date(), message: `识别完成：${bufs.length}张，提取${resolvedImageItems.length}项` },
+      aiSummary:   noReviewableItems ? `⚠️ 未提取到可审核项目：${failureDetail}` : preservedSummary,
+      aiStatus:    noReviewableItems ? 'failed' : 'pending',
+      parseJob:    { status: noReviewableItems ? 'failed' : 'completed', completedAt: new Date(), message: noReviewableItems ? `未提取到可审核项目：${failureDetail}` : `识别完成：${bufs.length}张，提取${resolvedImageItems.length}项` },
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate),
     };

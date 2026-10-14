@@ -10691,7 +10691,7 @@ export default function PatientDetailPage() {
                             <td>
                               <button type="button" onClick={() => openReportDetail(r)} className="report-table-list-title-btn">{r.title || '未命名报告'}</button>
                               {!manualOnly && r.parseJob?.status === 'paused' && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}；请联系管理员恢复。</div>}
-                              {r.parseJob?.status === 'completed' && r.parseJob.message?.includes('识别失败') && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}</div>}
+                              {((r.parseJob?.status === 'failed') || (r.parseJob?.status === 'completed' && r.parseJob.message?.includes('识别失败'))) && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}</div>}
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
                             <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
@@ -10719,7 +10719,7 @@ export default function PatientDetailPage() {
                                   {['audited', 'rejected'].includes(r.audit_status) ? '查看资料' : ['prescription_order', 'outpatient_record', 'inpatient_record'].includes(inferDocumentCategory(r)) ? '结构化审核' : '人工审核'}
                                 </button>
                               ) : needsAIParse && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
-                                <button className="btn btn-primary btn-sm report-action-primary"
+                                <button className={`btn btn-sm ${r.aiStatus === 'failed' && !r.reportItems?.length ? 'report-action-review' : 'btn-primary report-action-primary'}`}
                                   disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
                                   onClick={() => handleParseReportAI(r._id)}>
                                   {r.parseJob?.status === 'paused' ? '等待管理员恢复' : parsingReportId === r._id ? '提交中…' : r.aiStatus === 'failed' ? '重新识别' : 'AI解析'}
@@ -10733,10 +10733,10 @@ export default function PatientDetailPage() {
                                   识别中…
                                 </button>
                               )}
-                              {!isOutpatientRecord && (!manualOnly && (r.aiStatus === 'pending' || r.aiStatus === 'reviewed') || manualOnly && r.reportItems?.length > 0) && (
-                                <button className={`btn btn-sm ${r.aiStatus === 'reviewed' ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
+                              {!isOutpatientRecord && (!manualOnly && (r.aiStatus === 'pending' || r.aiStatus === 'reviewed' || r.aiStatus === 'failed' && !r.reportItems?.length) || manualOnly && r.reportItems?.length > 0) && (
+                                <button className={`btn btn-sm ${r.aiStatus === 'reviewed' || !r.reportItems?.length ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
                                   onClick={() => handleOpenOCRReview(r)}>
-                                  {manualOnly ? '核对已有数据' : r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
+                                  {manualOnly ? '核对已有数据' : r.aiStatus === 'reviewed' ? '编辑AI结果' : !r.reportItems?.length ? '对照原件人工录入' : `审核AI结果（${r.reportItems.length}项）`}
                                 </button>
                               )}
                               {['familyDoctor', 'superadmin'].includes(staff?.role) && r.audit_status === 'audited' && HEALTH_COURSE_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r)) && (

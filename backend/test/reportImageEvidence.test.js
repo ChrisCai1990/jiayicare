@@ -152,7 +152,7 @@ test('single-page route stops before coverage/classification and preserves exist
   assert.equal(report.reportItems[0], oldItem);
 });
 
-for (const mode of ['normal', 'budget-pause', 'checkpoint']) for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR ${mode} preserves evidence and progress`, async () => {
+for (const mode of ['normal', 'budget-pause', 'page-budget', 'checkpoint']) for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR ${mode} preserves evidence and progress`, async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -175,7 +175,7 @@ for (const mode of ['normal', 'budget-pause', 'checkpoint']) for (const pdf of [
     },
   };
   const modules = {
-    '../utils/ai': { parseImage: async (_, prompt) => { calls++; if (mode === 'budget-pause') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('预算不足'); return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
+    '../utils/ai': { parseImage: async (_, prompt) => { calls++; if (mode === 'budget-pause') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('预算不足'); if (mode === 'page-budget') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('第1页调用次数不足', 'AI_PAGE_BUDGET_PAUSED'); return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
     '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
     '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
     '../models/MedicalReport': db,
@@ -199,6 +199,7 @@ for (const mode of ['normal', 'budget-pause', 'checkpoint']) for (const pdf of [
     findUnderExtractedCBC: () => ({ pagesToRetry: [], missingGroups: [] }),
     str: value => String(value || ''), sanitizeInstitution: value => value || '',
     normalizeReportDate: value => value || '',
+    reportRotationCandidates: async () => [],
     console: { log: () => {}, error: (...args) => errors.push(args.join(' ')) },
   };
   // Post-processing is out of scope here; the integration contract is that no candidate reaches it.
@@ -222,8 +223,15 @@ for (const mode of ['normal', 'budget-pause', 'checkpoint']) for (const pdf of [
     assert.equal(final.reportItems, undefined);
     return;
   }
-  assert.equal(final.aiStatus, 'pending');
-  assert.equal(final.parseJob.status, 'completed');
+  if (mode === 'page-budget') {
+    assert.equal(final.aiStatus, 'failed');
+    assert.equal(final.parseJob.status, 'failed');
+    if (!pdf) assert.match(final.parseJob.message, /调用次数不足/);
+    assert.equal(calls, pdf ? 2 : 1);
+    return;
+  }
+  assert.equal(final.aiStatus, pdf ? 'pending' : 'failed');
+  assert.equal(final.parseJob.status, pdf ? 'completed' : 'failed');
   assert.equal(final.imagePageEvidence[1].status, 'image_only');
   assert.match(final.aiSummary, /影像资料页/);
   assert.equal(calls, mode === 'checkpoint' ? 0 : 2);
