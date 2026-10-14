@@ -274,7 +274,9 @@ test('single-card homocysteine regeneration enforces intervention at 10 despite 
   assert.equal(card.status, 'attention');
   assert.match(card.nextAction, /13\.1 μmol\/L.*需干预/);
   assert.equal(saved.byYear[2026].records[0].sections.cardiovascular_risk.overview.attentionCount, 1);
-  assert.equal(saved.byYear[2026].records[0].sections.cardiovascular_risk.summary, '同型半胱氨酸需关注');
+  assert.match(saved.byYear[2026].records[0].sections.cardiovascular_risk.summary, /需干预/);
+  assert.equal(saved.byYear[2026].records[0].sections.medical_priority.items[0].sourceItemName, '同型半胱氨酸');
+  assert.equal(calls, 0, 'a threshold correction should not depend on repeated AI calls');
 });
 
 test('CA72-4 card correction reads old and recent reference ranges without regenerating other reviewed sections', async () => {
