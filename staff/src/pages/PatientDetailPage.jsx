@@ -8163,8 +8163,9 @@ export default function PatientDetailPage() {
           .map(report => Number(report.reportYear || String(report.checkDate || report.date || '').slice(0, 4)))
           .filter(year => Number.isInteger(year) && year >= 1900 && year <= nowY)
           .map(String)
-        const yearOpts = [...new Set([...years, ...reportYears, String(nowY)])].sort((a, b) => Number(b) - Number(a))
-        const curYear = (aiYear && yearOpts.includes(aiYear)) ? aiYear : (years[0] || String(nowY))
+        const recentYears = Array.from({ length: 5 }, (_, index) => String(nowY - index))
+        const yearOpts = [...new Set([...years, ...reportYears, ...recentYears])].sort((a, b) => Number(b) - Number(a))
+        const curYear = (aiYear && yearOpts.includes(aiYear)) ? aiYear : String(nowY)
         const rawYearEntry = byYear[curYear] || {}
         const records = (Array.isArray(rawYearEntry.records) ? rawYearEntry.records : (rawYearEntry.sections ? [rawYearEntry] : []))
           .map((record, index) => ({ ...record, _recordIndex: index }))
@@ -8496,7 +8497,21 @@ export default function PatientDetailPage() {
                 </div>
               )
             })()}
-            <h3 style={{ margin: '4px 0 12px', fontSize: 17 }}>{curYear}年度健康信息整理</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '4px 0 12px' }}>
+              <h3 style={{ margin: 0, fontSize: 17 }}>{curYear}年度健康信息整理</h3>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#1E6B50', fontWeight: 600 }}>
+                选择年度
+                <select aria-label="健康信息整理年度" value={curYear} onChange={e => { setAiYear(e.target.value); setAiRecordIndex({ doctor: 0, nutrition: 0 }); setEditingAISummary(false) }}
+                  style={{ padding: '5px 10px', borderRadius: 8, fontSize: 13, border: '1px solid #1E6B50', background: '#E8F5EF', color: '#1E6B50', fontWeight: 700, cursor: 'pointer' }}>
+                  {yearOpts.map(y => {
+                    const yearEntry = byYear[y]
+                    const latest = Array.isArray(yearEntry?.records) ? yearEntry.records[0] : yearEntry
+                    const approved = !!(latest?.doctorApprovedAt || latest?.approvedAt)
+                    return <option key={y} value={y}>{y}年度{approved ? ' ✓' : (yearEntry ? ' ●' : '')}</option>
+                  })}
+                </select>
+              </label>
+            </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>家庭医生5维分析</button>
               <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>营养师生活方式分析</button>
@@ -8509,25 +8524,6 @@ export default function PatientDetailPage() {
               {aiSummaryLoading && <div role="status" style={{ marginTop: 10, color: '#1E6B50' }}>正在生成，资料较多时可能需要2–4分钟，请勿重复提交。</div>}
               {aiSummaryError && <div role="alert" style={{ marginTop: 10, color: '#B91C1C' }}>{aiSummaryError}</div>}
               <div style={{ marginTop: 12 }}>
-            {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>📅 年度</span>
-              <select value={curYear} onChange={e => { setAiYear(e.target.value); setEditingAISummary(false) }}
-                style={{ padding: '5px 10px', borderRadius: 8, fontSize: 13, border: '1px solid #1E6B50',
-                  background: '#E8F5EF', color: '#1E6B50', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
-                {yearOpts.map(y => {
-                  const generated = !!byYear[y]
-                  const yearEntry = byYear[y] || {}
-                  const latest = Array.isArray(yearEntry.records) ? (yearEntry.records[0] || {}) : yearEntry
-                  const approved = !!(latest.doctorApprovedAt || latest.approvedAt)
-                  return (
-                    <option key={y} value={y}>
-                      {y}年度{approved ? ' ✓' : (generated ? ' ●' : '')}
-                    </option>
-                  )
-                })}
-              </select>
-            </div>
             {Number(curYear) < nowY && <div style={{ fontSize: 12, color: '#8A6B36', marginBottom: 12 }}>
               历史年度补生成仅依据截至{curYear}年末有明确检查年度的报告；当前档案、用药、生活方式和近期打卡不作为当年事实。生活方式评估无法据此回溯生成。
             </div>}
