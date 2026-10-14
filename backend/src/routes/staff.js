@@ -11484,7 +11484,8 @@ function liverHepatitisResults(reports, year) {
     const value = [item.value, item.unit, item.findings, item.diagnosis, item.conclusion]
       .filter(Boolean).join('；').trim();
     if (!value) return [];
-    return [{ date, name: String(item.name || item.orderName || '肝炎筛查项目').trim(), value }];
+    return [{ date, name: String(item.name || item.orderName || '肝炎筛查项目').trim(), value,
+      pathogen: /丙肝|丙型肝炎|HCV/i.test(source) ? 'HCV' : 'HBV' }];
   })).sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -11678,9 +11679,14 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
       updatedItem = ruleItem;
     } else {
       const { chat } = require('../utils/ai');
+      const liverCard = itemName === '肝癌' && sectionKey === 'tumor_risk';
+      // sourceEvidence repeats many report rows already present in evidence below.
+      // Sending it twice makes this large single-card request prone to output truncation.
+      const previousCard = liverCard ? Object.fromEntries(Object.entries(list[itemIndex])
+        .filter(([key]) => !['sourceEvidence', 'evidenceIds', 'sourceReportIds'].includes(key))) : list[itemIndex];
       const liverRule = itemName === '肝癌' && sectionKey === 'tumor_risk'
-        ? `肝癌卡必须结合肝脏影像、AFP、弹性/纤维化检查及传染病筛查中的乙肝、丙肝结果。逐项区分乙肝表面抗原与表面抗体、丙肝抗体与HCV-RNA；按原报告日期和结果陈述，不把抗体阳性直接写成当前感染，不以单项结果推断肝癌。已提取的肝炎筛查结果：${JSON.stringify(hepatitisResults)}。如有结果，必须在keyChanges中明确列出；资料不足时写明并建议由医生结合原报告核对。` : '';
-      const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。只重新生成“${itemName}”这一张卡，禁止修改或输出其他卡片。\n用户修正问题：${String(instruction).trim()}\n原卡片：${JSON.stringify(list[itemIndex])}\n${marker ? '相关项目近5年及该标志物历年' : '近5年'}原始证据：${JSON.stringify(evidence)}\n${liverRule}\n请按每份报告的数值与参考范围核对，不得仅凭异常标记判断；逐年核对，不得遗漏证据中的年份，不得补造事实。凡提及异常指标均写明其检查日期；旧异常不得表述为当前异常。${hcyRule}保持原卡字段结构，只输出单个JSON对象。` }], { maxTokens: 1600, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+        ? `肝癌卡结合肝脏影像、AFP、弹性/纤维化检查和乙肝、丙肝结果。区分乙肝表面抗原与表面抗体、丙肝抗体与HCV-RNA；按日期及原结果陈述，不把抗体阳性直接写成当前感染，不以单项结果推断肝癌。肝炎筛查结果：${JSON.stringify(hepatitisResults)}。只输出简短卡片字段，不输出sourceEvidence或逐项清单：latest、trend、riskBasis、nextAction各不超过120字，keyChanges最多2条；肝炎项目的原始值会由系统补充。资料缺失要说明需核对原报告。` : '';
+      const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。只重新生成“${itemName}”这一张卡，禁止修改或输出其他卡片。\n用户修正问题：${String(instruction).trim()}\n原卡片：${JSON.stringify(previousCard)}\n${marker ? '相关项目近5年及该标志物历年' : '近5年'}原始证据：${JSON.stringify(evidence)}\n${liverRule}\n请按每份报告的数值与参考范围核对，不得仅凭异常标记判断；逐年核对，不得遗漏证据中的年份，不得补造事实。凡提及异常指标均写明其检查日期；旧异常不得表述为当前异常。${hcyRule}保持原卡字段结构，只输出单个JSON对象。` }], { maxTokens: liverCard ? 8192 : 1600, temperature: 0, jsonMode: true, timeoutMs: liverCard ? 90000 : 60000 });
       const match = raw.match(/\{[\s\S]*\}/);
       if (!match) return res.status(500).json({ success: false, message: '单项生成结果格式错误，请重试' });
       updatedItem = JSON.parse(match[0]);
@@ -11696,11 +11702,13 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     if (hepatitisResults.length) {
       // Keep the report's exact result visible even if the model omits it in its prose.
       const latestByName = new Map(hepatitisResults.map(result => [result.name, result]));
-      const facts = [...latestByName.values()].slice(-8)
+      const facts = [...latestByName.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-8)
         .map(result => `${result.date} ${result.name}：${result.value}`);
-      const factLine = `乙肝/丙肝筛查原报告：${facts.join('；')}`;
+      const hcvGap = hepatitisResults.some(result => result.pathogen === 'HCV')
+        ? '' : '；当前已录入项目中未检索到丙肝抗体或HCV-RNA，需核对原报告';
+      const factLine = `肝炎筛查原报告：${facts.join('；')}${hcvGap}`;
       const changes = Array.isArray(updatedItem.keyChanges) ? updatedItem.keyChanges : [];
-      updatedItem.keyChanges = [...changes.filter(change => !/乙肝\/丙肝筛查原报告：/.test(String(change))).slice(0, 2), factLine];
+      updatedItem.keyChanges = [...changes.filter(change => !/肝炎筛查原报告：/.test(String(change))).slice(0, 2), factLine];
     }
     if (echoItem) updatedItem.chamberSizeTrend = require('../utils/echoChamberTrend').buildEchoChamberTrend(reports, Number(y));
     if (hcyRule && !deterministicHcy) enforceHomocysteineIntervention([updatedItem], sourceReports);
