@@ -5,6 +5,7 @@ const { buildEvidenceCatalog } = require('./aiFactGuard');
 const { priorityLinksToCard } = require('./healthPriorityLinks');
 const { reportsThroughYear, historicalUserSnapshot } = require('./historicalAIHealthContext');
 const { classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation } = require('./tumorMarkerFactGuard');
+const { focusedReportHits, reconcileFocusedTopics } = require('./focusedTrendEvidence');
 const { HOMOCYSTEINE_INTERVENTION_THRESHOLD, enforceHomocysteineIntervention } = require('./homocysteineIntervention');
 const { buildEchoChamberTrend } = require('./echoChamberTrend');
 
@@ -90,23 +91,11 @@ const FOCUSED_TREND_RULES = {
 };
 
 function buildFocusedTrendEvidenceText(reports, referenceYear = new Date().getFullYear()) {
-  const cutoffYear = referenceYear - 4;
   return Object.entries(FOCUSED_TREND_RULES).map(([topic, pattern]) => {
-    const hits = [];
-    reports.forEach((report, reportIndex) => {
-      const date = String(report.checkDate || report.date || '').slice(0, 10);
-      const year = Number(report.reportYear || date.slice(0, 4));
-      if (Number.isFinite(year) && year < cutoffYear) return;
-      const matched = (report.reportItems || []).filter(item => pattern.test([
-        item.name, item.bodyPart, item.value, item.findings, item.diagnosis, item.conclusion,
-      ].filter(Boolean).join(' ')));
-      if (!matched.length) return;
-      const evidenceId = `RPT-${String(reportIndex + 1).padStart(3, '0')}`;
-      hits.push(`[${evidenceId}] ${date || year || '日期未知'} ${matched.slice(0, 12).map(item =>
-        `${item.name || '未命名'}=${[item.value, item.unit, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join('；') || '未记录结果'}`
-      ).join(' | ')}`);
-    });
-    return `【${topic}】${hits.length ? `\n${hits.join('\n')}` : '近5年无记录'}`;
+    const hits = focusedReportHits(reports, topic, pattern, referenceYear);
+    return `【${topic}】${hits.length ? `\n${hits.map(hit =>
+      `[${hit.evidenceId}] ${hit.date || hit.year} ${hit.name}=${hit.result || '报告结论待核对'}`
+    ).join('\n')}` : '近5年无记录'}`;
   }).join('\n');
 }
 
@@ -728,6 +717,7 @@ function normalizeTrendSections(sections, user, reports = [], referenceYear = ne
       cardio.overview.attentionCount = cardio.topics.filter(item => item.status === 'attention').length;
     }
     backfillCardioTopicEvidence(cardio.topics, reports, referenceYear);
+    cardio.topics.sort((a, b) => CARDIO_TOPIC_ORDER.indexOf(a.name) - CARDIO_TOPIC_ORDER.indexOf(b.name));
     const echo = cardio.topics.find(item => item.name === '心脏超声');
     if (echo) echo.chamberSizeTrend = buildEchoChamberTrend(reports, referenceYear);
   }
@@ -735,40 +725,7 @@ function normalizeTrendSections(sections, user, reports = [], referenceYear = ne
 }
 
 function backfillCardioTopicEvidence(topics, reports, referenceYear = new Date().getFullYear()) {
-  const cutoffYear = referenceYear - 4;
-  topics.forEach(topic => {
-    const rule = FOCUSED_TREND_RULES[topic.name];
-    if (!rule) return;
-    const hits = [];
-    reports.forEach((report, reportIndex) => {
-      const date = String(report.checkDate || report.date || '').slice(0, 10);
-      const year = Number(report.reportYear || date.slice(0, 4));
-      if (!Number.isFinite(year) || year < cutoffYear) return;
-      const matched = (report.reportItems || []).filter(item => rule.test([
-        item.name, item.bodyPart, item.value, item.findings, item.diagnosis, item.conclusion,
-      ].filter(Boolean).join(' ')));
-      if (!matched.length) return;
-      const item = matched[0];
-      const result = [item.diagnosis, item.conclusion, item.findings, item.value].filter(Boolean).join('；').slice(0, 80);
-      hits.push({
-        date, year, name: item.name || topic.name, result,
-        evidenceId: `RPT-${String(reportIndex + 1).padStart(3, '0')}`,
-      });
-    });
-    if (!hits.length) return;
-    hits.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const latest = hits[hits.length - 1];
-    const years = [...new Set(hits.map(hit => hit.year))];
-    topic.latest = `${latest.date || latest.year} ${latest.name}${latest.result ? `：${latest.result}` : ''}`;
-    const yearPrefix = `近5年检查记录：${years.join('、')}年`;
-    topic.trend = String(topic.trend || '').includes(years[0])
-      ? topic.trend
-      : `${yearPrefix}${topic.trend ? `；${topic.trend}` : ''}`.slice(0, 120);
-    const deterministicChanges = hits.map(hit => `${hit.year}年${hit.name}${hit.result ? `：${hit.result}` : ''}`.slice(0, 100));
-    topic.keyChanges = [...new Set([...deterministicChanges, ...(topic.keyChanges || [])])].slice(-3);
-    topic.evidenceIds = [...new Set([...(topic.evidenceIds || []), ...hits.map(hit => hit.evidenceId)])];
-    if (hits.length === 1) topic.trendStatus = 'baseline';
-  });
+  reconcileFocusedTopics(topics, reports, FOCUSED_TREND_RULES, CARDIO_TOPIC_ORDER, referenceYear);
 }
 
 function consolidateChronicDiseaseItems(sections) {
