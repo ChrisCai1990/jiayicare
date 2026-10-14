@@ -2,6 +2,7 @@ const { chat } = require('./ai');
 
 const RISK_LEVELS = ['low', 'medium', 'high', 'critical']; // 低 / 中 / 高 / 危急值
 const { buildEvidenceCatalog, auditMedicalJson } = require('./aiFactGuard');
+const { HOMOCYSTEINE_INTERVENTION_THRESHOLD } = require('./homocysteineIntervention');
 
 function snapshotRiskAssessment(record) {
   if (!record) return null;
@@ -27,7 +28,7 @@ function ruleEngineSignals(lv = {}) {
   if (tc >= 6.2) sig.cardiovascular.push(`总胆固醇偏高 ${tc} mmol/L`);
   if (tg >= 2.3) sig.cardiovascular.push(`甘油三酯偏高 ${tg} mmol/L`);
   if (hdl !== null && hdl < 1.0) sig.cardiovascular.push(`HDL-C 偏低 ${hdl} mmol/L`);
-  if (hcy >= 15) sig.cardiovascular.push(`同型半胱氨酸偏高 ${hcy} μmol/L`);
+  if (hcy >= HOMOCYSTEINE_INTERVENTION_THRESHOLD) sig.cardiovascular.push(`同型半胱氨酸 ${hcy} μmol/L，达到需干预阈值（≥${HOMOCYSTEINE_INTERVENTION_THRESHOLD} μmol/L），请由医生评估`);
   if (bmi >= 28) sig.cardiovascular.push(`肥胖 BMI ${bmi.toFixed(1)} kg/m²`);
   else if (bmi >= 24) sig.cardiovascular.push(`超重 BMI ${bmi.toFixed(1)} kg/m²`);
   if (waist !== null && waist >= (lv.gender === '女' ? 85 : 90)) sig.cardiovascular.push(`中心性肥胖 腰围 ${waist} cm`);

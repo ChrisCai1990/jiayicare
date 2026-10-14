@@ -5,6 +5,7 @@ const { buildEvidenceCatalog } = require('./aiFactGuard');
 const { priorityLinksToCard } = require('./healthPriorityLinks');
 const { reportsThroughYear, historicalUserSnapshot } = require('./historicalAIHealthContext');
 const { classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation } = require('./tumorMarkerFactGuard');
+const { HOMOCYSTEINE_INTERVENTION_THRESHOLD, enforceHomocysteineIntervention } = require('./homocysteineIntervention');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
@@ -338,6 +339,7 @@ ${retrospective ? `【历史年度补生成，最高优先级】本次回溯分�
 
 【心脑血管与慢病趋势卡规则——严格限定范围】
 ①cardiovascular_risk.topics只允许以下主题，且每种检查独立建卡、独立比较：心电图、心脏超声、冠脉CTA、运动评估/运动负荷试验、心脏磁共振；脑血管方向为颈动脉超声、头颅MRI、头颅MRA、同型半胱氨酸、脂蛋白磷脂酶A2（Lp-PLA2）。其他项目不得放入心脑血管趋势卡。
+同型半胱氨酸按本服务干预规则判断：最近一次有效检测值≥${HOMOCYSTEINE_INTERVENTION_THRESHOLD} μmol/L（含阈值）时，status必须为attention，nextAction必须明确“需干预”，提示携带原始报告由医生评估具体方式及复查；不得写“无需干预”“仅常规监测”。不要据此自行给出药物或营养补充剂方案。
 ②chronic_disease.items只允许最多6张聚合卡，并固定按以下顺序输出：血压、血糖、血脂、尿酸、肾功能、骨质疏松。空腹血糖和糖化血红蛋白必须合并在同一张“血糖”卡内；总胆固醇、HDL-C、LDL-C、甘油三酯及报告中同组血脂指标必须合并在同一张“血脂”卡内；肌酐、尿素氮、eGFR、胱抑素C等合并在“肾功能”卡内；骨密度、T值/Z值、骨量减少或骨质疏松描述合并在“骨质疏松”卡内。严禁把子指标拆成独立卡片。肝功能、听力、视力、甲状腺功能及其他专科项目不得输出到慢病趋势卡。
 ③只按会员真实存在的资料建卡，不为凑数量创建空主题。每张卡先找最近一次，再比较最近5个自然年内同名指标或同类检查；0次不建卡，1次=baseline，至少2个可比点才可判断stable/improving/worsening/fluctuating。不同检测方法、单位或部位不得硬比较，写not_comparable。关键变化最多3条，不逐年堆砌全文。
 
@@ -696,7 +698,8 @@ function normalizeTrendSections(sections, user, reports = [], referenceYear = ne
       .sort((a, b) => rank.get(a.name) - rank.get(b.name));
   }
   const cardio = sections && sections.cardiovascular_risk;
-  if (cardio && Array.isArray(cardio.topics)) {
+  if (cardio) {
+    if (!Array.isArray(cardio.topics)) cardio.topics = [];
     const normalized = new Map();
     cardio.topics.forEach(item => {
       const nameText = String(item.name || '');
@@ -704,6 +707,11 @@ function normalizeTrendSections(sections, user, reports = [], referenceYear = ne
       if (matched && !normalized.has(matched[0])) normalized.set(matched[0], { ...item, name: matched[0] });
     });
     cardio.topics = CARDIO_TOPIC_ORDER.map(name => normalized.get(name)).filter(Boolean);
+    if (enforceHomocysteineIntervention(cardio.topics, reports)) {
+      cardio.topics.sort((a, b) => CARDIO_TOPIC_ORDER.indexOf(a.name) - CARDIO_TOPIC_ORDER.indexOf(b.name));
+      cardio.overview = cardio.overview || {};
+      cardio.overview.attentionCount = cardio.topics.filter(item => item.status === 'attention').length;
+    }
     backfillCardioTopicEvidence(cardio.topics, reports, referenceYear);
   }
   consolidateChronicDiseaseItems(sections);
