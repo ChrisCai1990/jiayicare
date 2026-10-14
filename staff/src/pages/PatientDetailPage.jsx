@@ -1,4 +1,6 @@
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
+import LiverMarkerTrends from '../components/LiverMarkerTrends'
+import { liverMarkerTrends, liverKeyChanges } from '../utils/liverMarkerTrends.mjs'
 import RehabWorkspace from '../components/RehabWorkspace'
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
@@ -8273,6 +8275,7 @@ export default function PatientDetailPage() {
           return dates.length ? dates : [source.date || (source.year ? `${source.year}年` : '')]
         }).filter(Boolean))].sort()
         const renderSourceDates = item => {
+          if (liverMarkerTrends(item).length) return <LiverMarkerTrends card={item} />
           const dates = sourceDates(item)
           const values = (item.sourceEvidence || []).flatMap(source => (source.items || [])
             .filter(row => row.value).map(row => ({ ...row, date: row.date || source.date })))
@@ -8339,7 +8342,7 @@ export default function PatientDetailPage() {
                     {item.trend && <div><b style={{ color: '#64748B' }}>5年趋势：</b>{item.trend}</div>}
                     {renderSourceDates(item)}
                     {renderEchoChamberTrend(item)}
-                    {(item.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{item.keyChanges.join('；')}</div>}
+                    {liverKeyChanges(item).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{liverKeyChanges(item).join('；')}</div>}
                     {item.nextAction && <div style={{ color: isAttention ? '#B91C1C' : accent }}><b>下一步：</b>{item.nextAction}</div>}
                     {!item.trend && item.note && <div style={{ color: '#64748B' }}>{item.note}</div>}
                     {sectionKey && <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(item, sectionKey)}>🔗 按年份查看对应材料</button>}
@@ -8834,7 +8837,7 @@ export default function PatientDetailPage() {
                                   {cancer.latest && <div><b style={{ color: '#64748B' }}>最近检查：</b>{cancer.latest}</div>}
                                   {cancer.trend && <div><b style={{ color: '#64748B' }}>5年趋势：</b>{cancer.trend}</div>}
                                   {renderSourceDates(cancer)}
-                                  {(cancer.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{cancer.keyChanges.join('；')}</div>}
+                                  {liverKeyChanges(cancer).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{liverKeyChanges(cancer).join('；')}</div>}
                                   {cancer.nextAction && <div style={{ color: meta.color }}><b>下一步：</b>{cancer.nextAction}</div>}
                                   {cancer.riskBasis && cancer.status === 'unknown' && <div><b style={{ color: '#64748B' }}>待核对：</b>{cancer.riskBasis}</div>}
                                   <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(cancer, 'tumor_risk')}>🔗 按年份查看对应材料</button>
