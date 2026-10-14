@@ -11077,6 +11077,20 @@ router.delete('/patients/:id/body-composition-history/:index', staffAuth, async 
 // POST /api/staff/patients/:id/ai-health-summary
 // body: { year, scope: 'doctor'|'nutrition'|'all'（默认all，兼容旧前端）, force: boolean（对方已审核时二次确认后传true）}
 const { generateHealthSummarySections, DOCTOR_KEYS, LIFESTYLE_KEY } = require('../utils/aiHealthSummary');
+// Read-only measurements for old and approved analyses. This does not create an AI record.
+router.get('/patients/:id/ai-health-summary/echo-chamber-trend', staffAuth, async (req, res) => {
+  try {
+    const year = Number(req.query.year || new Date().getFullYear());
+    if (!Number.isInteger(year) || year < 1900 || year > new Date().getFullYear()) {
+      return res.status(400).json({ success: false, message: '请选择有效的分析年度' });
+    }
+    if (!await User.exists({ _id: req.params.id })) return res.status(404).json({ success: false, message: '会员不存在' });
+    const reports = await MedicalReport.find({ user: req.params.id })
+      .select('_id title screeningL2 checkDate date reportYear reportItems examConclusion note').lean();
+    const { buildEchoChamberTrend } = require('../utils/echoChamberTrend');
+    res.json({ success: true, year, trend: buildEchoChamberTrend(reports, year) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 // PM2 currently runs this service as a single fork. Keep one expensive generation per
 // member/scope in flight so a timed-out browser request or a second tab cannot append
 // a duplicate history record while the first request is still working.
@@ -11483,22 +11497,30 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     const { MARKERS, findUnsupportedTumorMarkerElevation } = require('../utils/tumorMarkerFactGuard');
     const marker = sectionKey === 'tumor_risk'
       ? MARKERS.find(candidate => candidate.pattern.test(String(instruction))) : null;
-    const cutoff = new Date().getFullYear() - 4;
-    const reports = await MedicalReport.find({ user: req.params.id }).sort({ checkDate: 1 }).select('title checkDate date reportYear reportItems').lean();
+    const echoItem = sectionKey === 'cardiovascular_risk' && itemName === '心脏超声';
+    const cutoff = Number(y) - 4;
+    const reports = await MedicalReport.find({ user: req.params.id }).sort({ checkDate: 1 })
+      .select('title screeningL2 checkDate date reportYear reportItems examConclusion note').lean();
     const evidence = [];
     reports.forEach((report, reportIndex) => {
       const date = String(report.checkDate || report.date || '').slice(0, 10);
       const reportYear = Number(report.reportYear || date.slice(0, 4));
-      if (reportYear < 1900 || (reportYear < cutoff && !marker)) return;
+      if (reportYear < 1900) return;
+      const echoReport = echoItem && /心脏超声|心脏彩超|超声心动图|心超/.test([report.title, report.screeningL2].filter(Boolean).join(' '));
+      const inWindow = item => {
+        const itemYear = Number(String(item.examDate || date || reportYear).slice(0, 4));
+        return itemYear >= cutoff && itemYear <= Number(y);
+      };
       const items = (report.reportItems || []).filter(item =>
-        (reportYear >= cutoff && pattern.test([item.name,item.bodyPart,item.value,item.findings,item.diagnosis,item.conclusion].filter(Boolean).join(' ')))
-        || marker?.pattern.test(String(item.name || '')));
-      if (items.length) evidence.push({ evidenceId: `RPT-${reportIndex + 1}`, date, items: items.map(i => ({ name:i.name, value:i.value, unit:i.unit, referenceRange:i.referenceRange, findings:i.findings, diagnosis:i.diagnosis, conclusion:i.conclusion })) });
+        (inWindow(item) && pattern.test([item.name,item.bodyPart,item.value,item.findings,item.diagnosis,item.conclusion].filter(Boolean).join(' ')))
+        || (inWindow(item) && echoReport && /左房|右房|左室|右室|左心房|右心房|左心室|右心室|LAD|RAD|LVEDD|LVIDd|RVD|LAV|LAVI/i.test(String(item.name || '')))
+        || (marker?.pattern.test(String(item.name || '')) && Number(String(item.examDate || date || reportYear).slice(0, 4)) <= Number(y)));
+      if (items.length) evidence.push({ evidenceId: `RPT-${reportIndex + 1}`, date, items: items.map(i => ({ date:i.examDate || date, name:i.name, value:i.value, unit:i.unit, referenceRange:i.referenceRange, findings:i.findings, diagnosis:i.diagnosis, conclusion:i.conclusion })) });
     });
     if (marker && !evidence.length) return res.status(422).json({ success: false,
       message: `未找到${marker.name}的原始检验项目，无法据此单项重新评估；请先核对原报告` });
     const { chat } = require('../utils/ai');
-    const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。只重新生成“${itemName}”这一张卡，禁止修改或输出其他卡片。\n用户修正问题：${String(instruction).trim()}\n原卡片：${JSON.stringify(list[itemIndex])}\n${marker ? '相关项目近5年及该标志物历年' : '近5年'}原始证据：${JSON.stringify(evidence)}\n请按每份报告的数值与参考范围核对，不得仅凭异常标记判断；逐年核对，不得遗漏证据中的年份，不得补造事实。保持原卡字段结构，只输出单个JSON对象。` }], { maxTokens: 1600, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。只重新生成“${itemName}”这一张卡，禁止修改或输出其他卡片。\n用户修正问题：${String(instruction).trim()}\n原卡片：${JSON.stringify(list[itemIndex])}\n${marker ? '相关项目近5年及该标志物历年' : '近5年'}原始证据：${JSON.stringify(evidence)}\n请按每份报告的数值与参考范围核对，不得仅凭异常标记判断；逐年核对，不得遗漏证据中的年份，不得补造事实。凡提及异常指标均写明其检查日期；旧异常不得表述为当前异常。保持原卡字段结构，只输出单个JSON对象。` }], { maxTokens: 1600, temperature: 0, jsonMode: true, timeoutMs: 60000 });
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return res.status(500).json({ success: false, message: '单项生成结果格式错误，请重试' });
     const updatedItem = JSON.parse(match[0]);
@@ -11506,6 +11528,7 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
       return res.status(500).json({ success: false, message: '单项生成结果格式错误，请重试' });
     }
     updatedItem.name = itemName;
+    if (echoItem) updatedItem.chamberSizeTrend = require('../utils/echoChamberTrend').buildEchoChamberTrend(reports, Number(y));
     const updatedList = list.map((item, index) => index === itemIndex ? updatedItem : item);
     // 总览是独立的 AI 字段。卡片纠错后必须依据整组最新卡片重新归纳。
     const overview = await buildHealthTrendOverview(sectionKey, updatedList, String(instruction).trim());

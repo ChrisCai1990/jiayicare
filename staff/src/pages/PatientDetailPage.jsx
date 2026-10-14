@@ -2444,8 +2444,23 @@ export default function PatientDetailPage() {
   const [editingAISection, setEditingAISection] = useState('')
   const [aiSummaryForm, setAiSummaryForm] = useState({})
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
+  const [echoChamberTrend, setEchoChamberTrend] = useState({ year: '', trend: [], loading: false, error: '' })
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
+  useEffect(() => {
+    if (!id || screeningWorkspaceView !== 'analysis' || aiAnalysisView !== 'doctor') return
+    const byYear = data?.user?.aiHealthSummary?.byYear || {}
+    const fallbackYear = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))[0] || String(new Date().getFullYear())
+    const year = String(aiYear || fallbackYear)
+    let active = true
+    setEchoChamberTrend({ year, trend: [], loading: true, error: '' })
+    staffAPI.getEchoChamberTrend(id, year).then(result => {
+      if (active) setEchoChamberTrend({ year, trend: result.trend || [], loading: false, error: '' })
+    }).catch(() => {
+      if (active) setEchoChamberTrend({ year, trend: [], loading: false, error: '心超测量值读取失败，请重试' })
+    })
+    return () => { active = false }
+  }, [id, aiYear, aiAnalysisView, screeningWorkspaceView, data?.user?.aiHealthSummary?.latestYear])
   const [aiTodoTargetMissing, setAiTodoTargetMissing] = useState(false)
   useEffect(() => {
     if (!data?.user) return
@@ -8207,6 +8222,43 @@ export default function PatientDetailPage() {
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
         const STATUS_COLOR = { abnormal: '#DC2626', mild_abnormal: '#D97706', normal: '#16A34A' }
         const TREND_LABEL = { no_data: '暂无趋势', baseline: '已建立基线', stable: '基本稳定', improving: '改善', worsening: '需关注变化', fluctuating: '存在波动', not_comparable: '暂不可比较' }
+        const sourceDates = item => [...new Set((item.sourceEvidence || []).flatMap(source => {
+          const dates = (source.items || []).map(row => row.date).filter(Boolean)
+          return dates.length ? dates : [source.date || (source.year ? `${source.year}年` : '')]
+        }).filter(Boolean))].sort()
+        const renderSourceDates = item => {
+          const dates = sourceDates(item)
+          const values = (item.sourceEvidence || []).flatMap(source => (source.items || [])
+            .filter(row => row.value).map(row => ({ ...row, date: row.date || source.date })))
+          return dates.length ? <div style={{ color: '#64748B' }}>
+            <div><b>依据检查时间：</b>{dates.join('、')}</div>
+            {values.length > 0 && <details style={{ marginTop: 3 }}>
+              <summary style={{ cursor: 'pointer' }}>按时间查看原报告指标值</summary>
+              {values.map((row, index) => <div key={`${row.date}-${row.name}-${index}`} style={{ paddingLeft: 8 }}>
+                {row.date || '日期未记录'} · {row.name}：{row.value}{row.unit ? ` ${row.unit}` : ''}{row.referenceRange ? `（参考 ${row.referenceRange}）` : ''}
+              </div>)}
+            </details>}
+          </div> : null
+        }
+        const renderEchoChamberTrend = item => item.name === '心脏超声' && (
+          <div style={{ border: '1px solid #D7E5DC', borderRadius: 8, padding: '8px 10px', background: '#F8FBF9' }}>
+            <b style={{ color: '#1E6B50' }}>心房、心室原报告测量值（{Number(curYear) - 4}—{curYear}年，只读）</b>
+            {echoChamberTrend.year !== curYear || echoChamberTrend.loading
+              ? <div style={{ marginTop: 5, color: '#64748B' }}>正在读取原报告……</div>
+              : echoChamberTrend.error
+                ? <div style={{ marginTop: 5, color: '#B91C1C' }}>{echoChamberTrend.error}</div>
+                : echoChamberTrend.trend.length
+                  ? echoChamberTrend.trend.map(metric => (
+              <div key={metric.key} style={{ marginTop: 5 }}>
+                <b>{metric.name}：</b>{metric.points.map(point => `${point.date} ${point.value} ${metric.unit}`).join(' → ')}
+                {metric.change !== null && metric.change !== undefined
+                  ? `；首末差值 ${metric.change > 0 ? '+' : ''}${metric.change} ${metric.unit}`
+                  : `；${metric.note || '资料不足，暂不判断变化'}`}
+              </div>
+            )) : <div style={{ marginTop: 5, color: '#64748B' }}>原报告中未识别到带日期、单位的心房或心室测量值，请查看原始报告。</div>}
+            <div style={{ marginTop: 5, color: '#64748B' }}>直接读取原报告，不修改已审核分析；仅比较同名测量值，数值差异需由健康顾问结合原报告判断。</div>
+          </div>
+        )
         const renderHealthTrendCards = (items, overview, accent = '#1D4ED8', sectionKey = '') => {
           const list = Array.isArray(items) ? items : []
           if (!list.length) return null
@@ -8239,6 +8291,8 @@ export default function PatientDetailPage() {
                   <div style={{ marginTop: 9, paddingTop: 8, borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, lineHeight: 1.6 }}>
                     {(item.latest || item.value) && <div><b style={{ color: '#64748B' }}>最近检查：</b>{item.latest || item.value}</div>}
                     {item.trend && <div><b style={{ color: '#64748B' }}>5年趋势：</b>{item.trend}</div>}
+                    {renderSourceDates(item)}
+                    {renderEchoChamberTrend(item)}
                     {(item.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{item.keyChanges.join('；')}</div>}
                     {item.nextAction && <div style={{ color: isAttention ? '#B91C1C' : accent }}><b>下一步：</b>{item.nextAction}</div>}
                     {!item.trend && item.note && <div style={{ color: '#64748B' }}>{item.note}</div>}
@@ -8469,6 +8523,9 @@ export default function PatientDetailPage() {
             {Number(curYear) < nowY && <div style={{ fontSize: 12, color: '#8A6B36', marginBottom: 12 }}>
               历史年度补生成仅依据截至{curYear}年末有明确检查年度的报告；当前档案、用药、生活方式和近期打卡不作为当年事实。生活方式评估无法据此回溯生成。
             </div>}
+            <div style={{ fontSize: 12, color: '#65776F', marginBottom: 12 }}>
+              五维趋势范围：{Number(curYear) - 4}—{curYear}年（最近5个自然年）；更早检查记录只作历史背景，并须注明发生年份。
+            </div>
             {/* 同一年度分成两条独立评估链，各自显示生成时间与历史版本。 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, marginBottom: 14 }}>
               {[
@@ -8735,6 +8792,7 @@ export default function PatientDetailPage() {
                                 <div style={{ marginTop: 9, paddingTop: 8, borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, lineHeight: 1.6 }}>
                                   {cancer.latest && <div><b style={{ color: '#64748B' }}>最近检查：</b>{cancer.latest}</div>}
                                   {cancer.trend && <div><b style={{ color: '#64748B' }}>5年趋势：</b>{cancer.trend}</div>}
+                                  {renderSourceDates(cancer)}
                                   {(cancer.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{cancer.keyChanges.join('；')}</div>}
                                   {cancer.nextAction && <div style={{ color: meta.color }}><b>下一步：</b>{cancer.nextAction}</div>}
                                   {cancer.riskBasis && cancer.status === 'unknown' && <div><b style={{ color: '#64748B' }}>待核对：</b>{cancer.riskBasis}</div>}
@@ -8903,6 +8961,12 @@ export default function PatientDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {sec.medical_priority.items.map((item, i) => {
                           const badge = URGENCY_BADGE[item.urgency] || URGENCY_BADGE.low
+                          const linkedSection = sec[item.sourceSectionKey]
+                          const linkedCard = [...(linkedSection?.cancers || []), ...(linkedSection?.topics || []), ...(linkedSection?.items || [])]
+                            .find(card => card.name === item.sourceItemName)
+                          const report = [...reports, ...screeningReports].find(row => String(row._id) === String(item.sourceReportId || ''))
+                          const priorityDates = linkedCard ? sourceDates(linkedCard)
+                            : report ? [String(report.checkDate || report.date || report.reportYear || '').slice(0, 10)].filter(Boolean) : []
                           return (
                             <div key={i} style={{ border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -8911,6 +8975,7 @@ export default function PatientDetailPage() {
                                 {item.department && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 'auto' }}>→ {item.department}</span>}
                               </div>
                               {item.current && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 4 }}>当前：{item.current}</div>}
+                              {priorityDates.length > 0 && <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>对应检查时间：{priorityDates.join('、')}</div>}
                               {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>信息说明：{item.meaning}</div>}
                               {item.action && <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 500 }}>建议：{item.action}</div>}
                               {item.sourceReportId && (
