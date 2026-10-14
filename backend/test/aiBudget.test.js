@@ -3,6 +3,20 @@ const assert = require('node:assert/strict');
 const { DEFAULT_POLICY, validatePolicy, periodKeys, estimateTokens, actualUsage, budgetScopes } = require('../src/utils/aiBudgetPolicy');
 const { createBudgetRunner, withAiContext } = require('../src/utils/aiBudget');
 
+test('provider error code is retained without copying a sensitive message', async () => {
+  let settled;
+  const db = {
+    policy: async () => DEFAULT_POLICY, circuit: async () => null, reserve: async () => true,
+    insert: async () => {}, outcome: async () => {}, adjust: async () => {},
+    finish: async (_, record) => { settled = record; },
+  };
+  const run = createBudgetRunner(db);
+  await assert.rejects(run({ provider: 'qwen', model: 'qwen3-vl-plus', messages: [{ content: 'synthetic' }], maxTokens: 32 },
+    async () => ({ error: { code: 'model_not_found', message: 'sensitive upstream text' } })), /AI 服务返回异常/);
+  assert.equal(settled.errorCode, 'model_not_found');
+  assert.ok(!JSON.stringify(settled).includes('sensitive'));
+});
+
 test('policy rejects disabled token limits, malformed prices and invalid warning thresholds', () => {
   assert.deepEqual(validatePolicy(DEFAULT_POLICY), DEFAULT_POLICY);
   for (const patch of [{ pageCalls: 0 }, { dailyTokens: '100' }, { prices: { 'bad.model': { input: 1, output: 1 } } }, { warningPercent: 100 }, { prices: { qwen: { input: 1, output: '' } } }]) {

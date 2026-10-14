@@ -76,12 +76,14 @@ function createBudgetRunner(db = store, now = () => new Date()) {
       if (usage) for (const scope of reserved) {
         await db.adjust(scope, usage.total - estimate.total, (costMicros(usage, rate) || 0) - (estimatedMicros || 0));
       }
+      const providerCode = String(result?.error?.code || '');
+      const safeProviderCode = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(providerCode) ? providerCode : '';
       await db.finish(id, { status: usage ? (failed ? 'failed' : 'success') : 'unknown',
         finishedAt: now(), durationMs: now() - started,
         inputTokens: usage?.input ?? null, outputTokens: usage?.output ?? null, actualTokens: usage?.total ?? null,
         costMicros: usage ? costMicros(usage, rate) : null,
         // Do not persist arbitrary provider error messages, which may echo clinical inputs.
-        errorCode: failed ? (error?.code === 'AI_TIMEOUT' ? 'TIMEOUT' : 'UPSTREAM_ERROR') : (usage ? '' : 'USAGE_MISSING'),
+        errorCode: failed ? (error?.code === 'AI_TIMEOUT' ? 'TIMEOUT' : (safeProviderCode || 'UPSTREAM_ERROR')) : (usage ? '' : 'USAGE_MISSING'),
       });
     } catch {
       const stopped = new AiControlError('AI 用量结算异常，已暂停后续调用，请管理员核对', 'AI_ACCOUNTING_UNAVAILABLE');
