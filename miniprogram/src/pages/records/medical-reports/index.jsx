@@ -132,9 +132,7 @@ function ReportCard({ report }) {
           </View>
         </View>
         <View style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {report.archiveOnly && <Text style={{ fontSize: '10px', color: colors.textMuted, backgroundColor: '#F1F5F9', borderRadius: `${radius.full}px`, padding: '2px 8px' }}>仅留存</Text>}
-          {report.advisorCorrection?.status === 'returned' && <Text style={{ fontSize: '10px', color: colors.warning, backgroundColor: '#FEF3E2', borderRadius: `${radius.full}px`, padding: '2px 8px' }}>结果待修正</Text>}
-          {!report.archiveOnly && report.aiStatus === 'pending' && <Text style={{ fontSize: '10px', color: colors.warning, backgroundColor: '#FEF3E2', borderRadius: `${radius.full}px`, padding: '2px 8px' }}>待审核</Text>}
+          {report.aiStatus === 'pending' && <Text style={{ fontSize: '10px', color: colors.warning, backgroundColor: '#FEF3E2', borderRadius: `${radius.full}px`, padding: '2px 8px' }}>待审核</Text>}
           {report.aiStatus === 'reviewed' && <Text style={{ fontSize: '14px', color: colors.success }}>✓</Text>}
           <Text style={{ fontSize: '12px', color: colors.textMuted }}>{expanded ? '▲' : '▼'}</Text>
         </View>
@@ -142,8 +140,6 @@ function ReportCard({ report }) {
 
       {expanded && (
         <View style={{ padding: `${spacing.sm}px ${spacing.md}px ${spacing.md}px`, borderTop: `1px solid ${colors.borderLight}` }}>
-          {report.archiveOnly && <Text style={{ fontSize: '11px', color: colors.textMuted, marginBottom: `${spacing.sm}px` }}>同次体检补充原件，仅供查阅；结果以已审核报告为准。</Text>}
-          {report.advisorCorrection?.status === 'returned' && <Text style={{ fontSize: '11px', color: colors.warning, marginBottom: `${spacing.sm}px` }}>健康顾问已退回核对，修正前请以报告原件为准。</Text>}
           {hasFile && (
             <View onClick={() => openOriginalFile(report)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', border: `1px solid ${colors.primary}`, borderRadius: `${radius.sm}px`, padding: '8px', marginBottom: `${spacing.sm}px` }}>
               <Icon name="📎" size={13} color={colors.primary} />
