@@ -6616,7 +6616,7 @@ export default function PatientDetailPage() {
                 const canManage = ['familyDoctor', 'superadmin'].includes(staff?.role)
                 const pendingSummaryReports = reports.filter(report => {
                   const reportYear = Number(report.reportYear || String(report.checkDate || report.date || '').slice(0, 4))
-                  return reportYear === Number(screeningSummaryYear) && report.audit_status !== 'audited'
+                  return !report.archiveOnly && reportYear === Number(screeningSummaryYear) && report.audit_status !== 'audited'
                 })
                 const summaryGateMessage = pendingSummaryReports.length
                   ? `${screeningSummaryYear}年度还有 ${pendingSummaryReports.length} 份体检报告未完成健管审核，请全部审核后再进行专项筛查小结`
@@ -13667,6 +13667,8 @@ export default function PatientDetailPage() {
         <UploadReportModal
           patientId={id}
           screeningTree={screeningTree}
+          reports={reports}
+          staffRole={staff?.role}
           onClose={() => setShowUploadReport(false)}
           onSaved={() => { setShowUploadReport(false); toast('原始资料已上传'); loadReports() }}
           onQueued={jobId => {
@@ -14525,8 +14527,8 @@ const DOCUMENT_CATEGORY_REPORT_TYPE = {
   prescription_order: 'other', questionnaire: 'other', other_customer_material: 'other',
 }
 
-function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
-  const [form, setForm] = useState({ documentCategory: 'physical_exam', title: '', hospital: '', date: '', note: '' })
+function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, onQueued }) {
+  const [form, setForm] = useState({ documentCategory: 'physical_exam', title: '', hospital: '', date: '', note: '', archiveOnly: false, archiveSourceReportId: '' })
   const [fileDatas, setFileDatas] = useState([])
   // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
   // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
@@ -14555,7 +14557,7 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
     // 语义不明确（可能是多页同一份报告，也可能是多份不同报告），不做自动识别，交回手动填写
     // Large PDFs may take minutes to store. Uploading once here and again on
     // submit starts two simultaneous copies when staff confirms immediately.
-    if (files.length === 1 && files[0].size < 8 * 1024 * 1024 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
+    if (!form.archiveOnly && files.length === 1 && files[0].size < 8 * 1024 * 1024 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
       setMetaDetecting(true)
       try {
         const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
@@ -14574,6 +14576,7 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
   const handleSubmit = async () => {
     if (!form.title) { setError('请填写资料名称'); return }
     if (!fileDatas.length) { setError('请选择资料文件（图片或PDF）'); return }
+    if (form.archiveOnly && !form.archiveSourceReportId) { setError('请选择同次体检中已审核的结果报告'); return }
     const normalizedDate = form.date ? calendarDate(form.date) : ''
     if (form.date && !normalizedDate) { setError('报告日期无效，请填写完整日期（如 2026-09-23）'); return }
     try {
@@ -14602,6 +14605,8 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
           hospital: form.hospital,
           date: normalizedDate,
           note: form.note,
+          archiveOnly: form.archiveOnly,
+          archiveSourceReportId: form.archiveSourceReportId,
           fileUrl: urls[0],
           fileUrls: urls,
           ossKey: ossKeys[0] || '',
@@ -14630,6 +14635,7 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
                 patientId, title: form.title, type: selectedReportType,
                 documentCategory: form.documentCategory, hospital: form.hospital,
                 date: normalizedDate, note: form.note,
+                archiveOnly: form.archiveOnly, archiveSourceReportId: form.archiveSourceReportId,
               } : undefined,
               serverCreatesReport ? () => setServerAccepted(true) : undefined
             )
@@ -14644,6 +14650,8 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
             hospital: form.hospital,
             date: normalizedDate,
             note: form.note,
+            archiveOnly: form.archiveOnly,
+            archiveSourceReportId: form.archiveSourceReportId,
             fileUrl: url,
             fileUrls: [url],
             ossKey: ossKey || '',
@@ -14673,6 +14681,22 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+          {['healthManager', 'superadmin'].includes(staffRole) && (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={form.archiveOnly} onChange={e => setForm(f => ({ ...f, archiveOnly: e.target.checked, archiveSourceReportId: e.target.checked ? f.archiveSourceReportId : '' }))} />
+                同次体检完整报告仅存档，不重复解析
+              </label>
+              {form.archiveOnly && <>
+                <select className="form-input" style={{ marginTop: 8 }} value={form.archiveSourceReportId} onChange={e => setForm(f => ({ ...f, archiveSourceReportId: e.target.value }))}>
+                  <option value="">选择已审核的单项结果报告 *</option>
+                  {reports.filter(r => r.audit_status === 'audited' && !r.archiveOnly).map(r => <option key={r._id} value={r._id}>{r.checkDate || r.date || '日期待核对'} · {r.title}</option>)}
+                </select>
+                <div style={{ fontSize: 12, color: '#65776F', marginTop: 6 }}>请先核对完整报告是否有尚未录入的新结果；有新结果时按普通报告解析。仅存档原件不参与筛查与小结。</div>
+              </>}
+            </div>
+          )}
 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">资料分类 *</label>
@@ -14719,7 +14743,7 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
                     </label>
                     <div style={{ fontSize: 11, color: '#8AA89C' }}>
                       {mergeFiles
-                        ? `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
+                        ? form.archiveOnly ? `共 ${fileDatas.length} 个文件将合并为一条仅存档资料` : `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
                         : `共 ${fileDatas.length} 个文件，每个文件将分别创建一条报告记录`}
                     </div>
                   </>

@@ -34,6 +34,13 @@ test('supplemental original can be retained with an audited source without chang
   assert.equal(report.archiveOnly, true);
   assert.equal(report.aiStatus, 'none');
   assert.equal(report.audit_status, 'unaudited');
+  const manualCategory = new MedicalReport({
+    user: '507f1f77bcf86cd799439011', title: 'supplemental original',
+    type: 'functional', archiveOnly: true, archiveSourceReportId: '507f1f77bcf86cd799439012',
+  });
+  await manualCategory.validate();
+  assert.equal(manualCategory.aiStatus, 'none');
+  assert.notEqual(manualCategory.parseJob?.status, 'skipped');
 });
 test('historical failed reports retain extracted items when moved to manual review', async () => {
   const r = new MedicalReport({ user: '507f1f77bcf86cd799439011', title: 'test', type: 'functional', aiStatus: 'failed', reportItems: [{ name: 'existing', value: '7' }] });
