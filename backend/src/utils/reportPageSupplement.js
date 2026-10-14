@@ -54,6 +54,32 @@ function isHumanReviewed(item) {
   return item?.manualReviewStatus === 'reviewed' || item?.manualReviewedAt || item?.manualReviewedBy;
 }
 
+// A pathology result can be returned as a lab value even when its existing review row is
+// an imaging/narrative item. Keep the existing row's identity so a page supplement enriches
+// it instead of creating a second cervical pathology row.
+function alignSupplementCandidate(existingItems, candidate) {
+  if (candidate?.itemType !== 'lab') return candidate;
+  const value = String(candidate.value || '').trim();
+  if (!value || !/[\u4e00-\u9fffA-Za-z]/.test(value)) return candidate;
+  const matches = (existingItems || []).filter(existing =>
+    existing.itemType === 'imaging'
+    && /病理|细胞|刮片/.test(`${existing.name || ''}${existing.sourceSection || ''}`)
+    && cleanPart(existing.name) === cleanPart(candidate.name)
+    && (!existing.sourcePage || !candidate.sourcePage || Number(existing.sourcePage) === Number(candidate.sourcePage))
+    && (!cleanPart(existing.sourceSection) || !cleanPart(candidate.sourceSection)
+      || cleanPart(existing.sourceSection) === cleanPart(candidate.sourceSection))
+  );
+  if (!matches.length) return candidate;
+  if (matches.length !== 1 || isHumanReviewed(matches[0])
+    || String(matches[0].findings || '').trim().replace(/^[\-—－–]+$/, '')) return null;
+  const existing = matches[0];
+  return { ...candidate, itemType: 'imaging', findings: candidate.findings || value,
+    value: '', unit: existing.unit || '', referenceRange: existing.referenceRange || '',
+    sourceSection: candidate.sourceSection || existing.sourceSection,
+    orderName: candidate.orderName || existing.orderName,
+    sourcePage: candidate.sourcePage || existing.sourcePage };
+}
+
 // 仅允许以“有证据的新候选”补全同一身份的未人工核对空壳项；人工已核对数据永不被 OCR 改写。
 function mergeSupplementItems(existingItems, candidates) {
   const result = [...(existingItems || [])];
@@ -165,6 +191,7 @@ function filterMissingReportItems(existingItems, candidates, options = {}) {
 }
 
 module.exports = {
+  alignSupplementCandidate,
   describeExistingReportItems,
   filterMissingReportItems,
   hasReportItemEvidence,

@@ -16325,7 +16325,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     recordPageEvidence(imagePageEvidence, page, evidence);
   } });
 
-  const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, reportItemIdentityKey } = require('../utils/reportPageSupplement');
+  const { alignSupplementCandidate, describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, reportItemIdentityKey } = require('../utils/reportPageSupplement');
   const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
   const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
   const existingItemText = describeExistingReportItems(oldPageAtStart);
@@ -16401,8 +16401,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // 模型即使违反差量指令返回整页，也只允许真正缺项进入；同身份且原来为空的未审核项
   // 可由有原文证据的候选补全，避免“第一次空、补提仍被去重挡住”。
   const { sameReportItem } = require('../utils/reportPageSupplement');
-  const missingCandidates = filterMissingReportItems(oldPageAtStart, parsedItems, { targetOrgans });
-  const enrichmentCandidates = parsedItems.filter(item => oldPageAtStart.some(existing => sameReportItem(existing, item)) && hasReportItemEvidence(item));
+  const alignedCandidates = parsedItems.map(item => alignSupplementCandidate(oldPageAtStart, item)).filter(Boolean);
+  const missingCandidates = filterMissingReportItems(oldPageAtStart, alignedCandidates, { targetOrgans });
+  const enrichmentCandidates = alignedCandidates.filter(item => oldPageAtStart.some(existing => sameReportItem(existing, item)) && hasReportItemEvidence(item));
   let newPage = tagReportPageItems([...missingCandidates, ...enrichmentCandidates], pageNum);
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);

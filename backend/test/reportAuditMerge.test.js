@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { mergeCoverageAuditItems, normalizeExplicitNormalStatus } = require('../src/utils/reportAuditMerge');
-const { mergeSupplementItems } = require('../src/utils/reportPageSupplement');
+const { alignSupplementCandidate, mergeSupplementItems, sameReportItem } = require('../src/utils/reportPageSupplement');
 
 test('coverage audit restores the pathology result and missing eye rows', () => {
   const first = [
@@ -53,4 +53,21 @@ test('single-page supplement replaces a dash without changing reviewed content',
   assert.equal(enriched.items[0].findings, candidate.findings);
   const reviewed = mergeSupplementItems([{ ...old, manualReviewStatus: 'reviewed' }], [candidate]);
   assert.equal(reviewed.items[0].findings, '-');
+});
+
+test('single-page supplement aligns a textual cervical pathology lab result with its existing review row', () => {
+  const old = { name: '宫颈刮片', sourceSection: '妇科病理培养', sourcePage: 2,
+    itemType: 'imaging', findings: '-', diagnosis: '未见明显异常' };
+  const candidate = { name: '宫颈刮片', sourceSection: '妇科病理培养', sourcePage: 2,
+    itemType: 'lab', value: '未见上皮内病变及恶性细胞（NILM）' };
+  const aligned = alignSupplementCandidate([old], candidate);
+  assert.equal(aligned.itemType, 'imaging');
+  assert.equal(aligned.findings, candidate.value);
+  assert.equal(sameReportItem(old, aligned), true);
+  const merged = mergeSupplementItems([old], [aligned]);
+  assert.equal(merged.added.length, 0);
+  assert.equal(merged.enriched.length, 1);
+  assert.equal(merged.items[0].findings, candidate.value);
+  assert.equal(alignSupplementCandidate([{ ...old, manualReviewStatus: 'reviewed' }], candidate), null);
+  assert.equal(alignSupplementCandidate([{ ...old, findings: '人工已录入' }], candidate), null);
 });
