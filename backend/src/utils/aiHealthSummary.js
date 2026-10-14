@@ -874,4 +874,4 @@ function attachSourceLinks(sections, allReports, referenceYear = new Date().getF
 }
 
 module.exports = { generateHealthSummarySections, reconcileGynecologicUltrasoundCoverage,
-  buildStructuredSourceEvidence, DOCTOR_KEYS, LIFESTYLE_KEY };
+  buildStructuredSourceEvidence, CANCER_EVIDENCE_RULES, DOCTOR_KEYS, LIFESTYLE_KEY };

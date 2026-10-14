@@ -11469,6 +11469,24 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 
 const HEALTH_TREND_FIELDS = { tumor_risk: 'cancers', cardiovascular_risk: 'topics', chronic_disease: 'items' };
 const { linkedPriorityIndexes, priorityLinksToCard } = require('../utils/healthPriorityLinks');
+const liverCardEvidencePattern = /肝脏|肝胆|脂肪肝|甲胎蛋白|\bAFP\b|肝纤维|纤维化|弹性超声|弹性成像|乙肝|乙型肝炎|丙肝|丙型肝炎|HBsAg|HBV[\s-]?DNA|\bHBV\b|HCV[\s-]?(?:RNA|抗体)|抗[\s-]?HCV|\bHCV\b/i;
+const hepatitisItemPattern = /乙肝|乙型肝炎|丙肝|丙型肝炎|HBsAg|HBV[\s-]?DNA|\bHBV\b|HCV[\s-]?(?:RNA|抗体)|抗[\s-]?HCV|\bHCV\b/i;
+
+function liverHepatitisResults(reports, year) {
+  const cutoff = Number(year) - 4;
+  return reports.flatMap(report => (report.reportItems || []).flatMap(item => {
+    const date = String(item.examDate || report.checkDate || report.date || '').slice(0, 10);
+    const itemYear = Number(date.slice(0, 4) || report.reportYear);
+    const source = [item.name, item.sourceSection, item.orderName, item.value,
+      item.findings, item.diagnosis, item.conclusion].filter(Boolean).join(' ');
+    if (!hepatitisItemPattern.test(source) || !Number.isInteger(itemYear)
+      || itemYear < cutoff || itemYear > Number(year)) return [];
+    const value = [item.value, item.unit, item.findings, item.diagnosis, item.conclusion]
+      .filter(Boolean).join('；').trim();
+    if (!value) return [];
+    return [{ date, name: String(item.name || item.orderName || '肝炎筛查项目').trim(), value }];
+  })).sort((a, b) => a.date.localeCompare(b.date));
+}
 
 async function syncMedicalPriorities(record, sectionKey, staff, itemName = null) {
   const cards = record.sections?.[sectionKey]?.[HEALTH_TREND_FIELDS[sectionKey]];
@@ -11610,14 +11628,18 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
       血压: /血压|收缩压|舒张压/i, 尿酸: /尿酸/i, 肾功能: /肾功能|肌酐|尿素|eGFR|胱抑素/i,
       骨质疏松: /骨密度|骨质疏松|骨量减少|T值|Z值/i,
     };
-    const pattern = aliases[itemName] || new RegExp(String(itemName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/癌$/, ''), 'i');
+    const pattern = itemName === '肝癌' && sectionKey === 'tumor_risk'
+      ? liverCardEvidencePattern
+      : (aliases[itemName] || new RegExp(String(itemName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/癌$/, ''), 'i'));
     const { MARKERS, findUnsupportedTumorMarkerElevation } = require('../utils/tumorMarkerFactGuard');
     const marker = sectionKey === 'tumor_risk'
       ? MARKERS.find(candidate => candidate.pattern.test(String(instruction))) : null;
     const echoItem = sectionKey === 'cardiovascular_risk' && itemName === '心脏超声';
     const cutoff = Number(y) - 4;
     const reports = await MedicalReport.find({ user: req.params.id }).sort({ checkDate: 1 })
-      .select('title screeningL2 checkDate date reportYear reportItems examConclusion note').lean();
+      .select('title screeningL1 screeningL2 checkDate date reportYear reportItems examDescription examConclusion note').lean();
+    const hepatitisResults = itemName === '肝癌' && sectionKey === 'tumor_risk'
+      ? liverHepatitisResults(reports, y) : [];
     const evidence = [];
     reports.forEach((report, reportIndex) => {
       const date = String(report.checkDate || report.date || '').slice(0, 10);
@@ -11629,10 +11651,18 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
         return itemYear >= cutoff && itemYear <= Number(y);
       };
       const items = (report.reportItems || []).filter(item =>
-        (inWindow(item) && pattern.test([item.name,item.bodyPart,item.value,item.findings,item.diagnosis,item.conclusion].filter(Boolean).join(' ')))
+        (inWindow(item) && pattern.test([item.name,item.sourceSection,item.orderName,item.bodyPart,
+          item.value,item.findings,item.diagnosis,item.conclusion].filter(Boolean).join(' ')))
         || (inWindow(item) && echoReport && /左房|右房|左室|右室|左心房|右心房|左心室|右心室|LAD|RAD|LVEDD|LVIDd|RVD|LAV|LAVI/i.test(String(item.name || '')))
         || (marker?.pattern.test(String(item.name || '')) && Number(String(item.examDate || date || reportYear).slice(0, 4)) <= Number(y)));
-      if (items.length) evidence.push({ evidenceId: `RPT-${reportIndex + 1}`, date, items: items.map(i => ({ date:i.examDate || date, name:i.name, value:i.value, unit:i.unit, referenceRange:i.referenceRange, findings:i.findings, diagnosis:i.diagnosis, conclusion:i.conclusion })) });
+      const reportText = [report.title, report.screeningL2, report.examDescription,
+        report.examConclusion, report.note].filter(Boolean).join(' ');
+      if (items.length || (itemName === '肝癌' && inWindow({}) && pattern.test(reportText))) {
+        evidence.push({ evidenceId: `RPT-${reportIndex + 1}`, date, reportConclusion: report.examConclusion || '',
+          items: items.map(i => ({ date:i.examDate || date, name:i.name, sourceSection:i.sourceSection,
+            value:i.value, unit:i.unit, referenceRange:i.referenceRange, findings:i.findings,
+            diagnosis:i.diagnosis, conclusion:i.conclusion })) });
+      }
     });
     if (marker && !evidence.length) return res.status(422).json({ success: false,
       message: `未找到${marker.name}的原始检验项目，无法据此单项重新评估；请先核对原报告` });
@@ -11648,7 +11678,9 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
       updatedItem = ruleItem;
     } else {
       const { chat } = require('../utils/ai');
-      const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。只重新生成“${itemName}”这一张卡，禁止修改或输出其他卡片。\n用户修正问题：${String(instruction).trim()}\n原卡片：${JSON.stringify(list[itemIndex])}\n${marker ? '相关项目近5年及该标志物历年' : '近5年'}原始证据：${JSON.stringify(evidence)}\n请按每份报告的数值与参考范围核对，不得仅凭异常标记判断；逐年核对，不得遗漏证据中的年份，不得补造事实。凡提及异常指标均写明其检查日期；旧异常不得表述为当前异常。${hcyRule}保持原卡字段结构，只输出单个JSON对象。` }], { maxTokens: 1600, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+      const liverRule = itemName === '肝癌' && sectionKey === 'tumor_risk'
+        ? `肝癌卡必须结合肝脏影像、AFP、弹性/纤维化检查及传染病筛查中的乙肝、丙肝结果。逐项区分乙肝表面抗原与表面抗体、丙肝抗体与HCV-RNA；按原报告日期和结果陈述，不把抗体阳性直接写成当前感染，不以单项结果推断肝癌。已提取的肝炎筛查结果：${JSON.stringify(hepatitisResults)}。如有结果，必须在keyChanges中明确列出；资料不足时写明并建议由医生结合原报告核对。` : '';
+      const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。只重新生成“${itemName}”这一张卡，禁止修改或输出其他卡片。\n用户修正问题：${String(instruction).trim()}\n原卡片：${JSON.stringify(list[itemIndex])}\n${marker ? '相关项目近5年及该标志物历年' : '近5年'}原始证据：${JSON.stringify(evidence)}\n${liverRule}\n请按每份报告的数值与参考范围核对，不得仅凭异常标记判断；逐年核对，不得遗漏证据中的年份，不得补造事实。凡提及异常指标均写明其检查日期；旧异常不得表述为当前异常。${hcyRule}保持原卡字段结构，只输出单个JSON对象。` }], { maxTokens: 1600, temperature: 0, jsonMode: true, timeoutMs: 60000 });
       const match = raw.match(/\{[\s\S]*\}/);
       if (!match) return res.status(500).json({ success: false, message: '单项生成结果格式错误，请重试' });
       updatedItem = JSON.parse(match[0]);
@@ -11657,6 +11689,19 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
       }
     }
     updatedItem.name = itemName;
+    if (itemName === '肝癌' && sectionKey === 'tumor_risk') {
+      const { buildStructuredSourceEvidence, CANCER_EVIDENCE_RULES } = require('../utils/aiHealthSummary');
+      updatedItem.sourceEvidence = buildStructuredSourceEvidence('肝癌', reports, CANCER_EVIDENCE_RULES.肝癌, Number(y));
+    }
+    if (hepatitisResults.length) {
+      // Keep the report's exact result visible even if the model omits it in its prose.
+      const latestByName = new Map(hepatitisResults.map(result => [result.name, result]));
+      const facts = [...latestByName.values()].slice(-8)
+        .map(result => `${result.date} ${result.name}：${result.value}`);
+      const factLine = `乙肝/丙肝筛查原报告：${facts.join('；')}`;
+      const changes = Array.isArray(updatedItem.keyChanges) ? updatedItem.keyChanges : [];
+      updatedItem.keyChanges = [...changes.filter(change => !/乙肝\/丙肝筛查原报告：/.test(String(change))).slice(0, 2), factLine];
+    }
     if (echoItem) updatedItem.chamberSizeTrend = require('../utils/echoChamberTrend').buildEchoChamberTrend(reports, Number(y));
     if (hcyRule && !deterministicHcy) enforceHomocysteineIntervention([updatedItem], sourceReports);
     const updatedList = list.map((item, index) => index === itemIndex ? updatedItem : item);

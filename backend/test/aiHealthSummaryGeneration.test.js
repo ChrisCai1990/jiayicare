@@ -327,6 +327,51 @@ test('CA72-4 card correction reads old and recent reference ranges without regen
   assert.equal(saved.byYear[2026].records[0].sections.tumor_risk.summary, 'CA72-4最近检查在参考范围内');
 });
 
+test('single liver cancer card regeneration includes infectious screening results and shows them in the card', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));
+  const { reviewToken, withReviewTokens } = require('../src/utils/summaryReviewVersion');
+  const card = { name: '肝癌', status: 'covered', latest: '2026-09-23肝脏超声：右肝结节',
+    keyChanges: ['2020年初见肝内结节'], nextAction: '按报告建议复查' };
+  const record = { scope: 'doctor', sections: { tumor_risk: { cancers: [card], overview: {} }, medical_priority: { items: [] } } };
+  const original = { latestYear: '2026', sections: record.sections, byYear: { 2026: { ...record, records: [record] } } };
+  const reports = [
+    { _id: 'liver', checkDate: '2026-09-23', title: '肝脏超声', reportItems: [{ name: '肝脏超声', findings: '右肝结节' }] },
+    { _id: 'infection', checkDate: '2026-08-12', title: '传染病筛查', reportItems: [
+      { name: '乙肝表面抗原 HBsAg', value: '阴性' }, { name: '丙肝抗体', value: '阳性' },
+      { name: '梅毒抗体', value: '阴性' },
+    ] },
+  ];
+  const prompts = []; let saved, handler;
+  vm.runInNewContext(code, {
+    router: { post(route, _auth, callback) { if (route.endsWith('/regenerate-item')) handler = callback; } }, staffAuth() {},
+    User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
+      collection: { updateOne: async (_filter, update) => { saved = update.$set.aiHealthSummary; return { matchedCount: 1 }; } } },
+    MedicalReport: { find: () => ({ sort: () => ({ select: () => ({ lean: async () => reports }) }) }) },
+    reviewToken, withReviewTokens, Date, JSON, DOCTOR_KEYS: ['tumor_risk', 'medical_priority'],
+    require: name => name.endsWith('healthPriorityLinks') ? require('../src/utils/healthPriorityLinks')
+      : name.endsWith('tumorMarkerFactGuard') ? require('../src/utils/tumorMarkerFactGuard')
+        : name.endsWith('aiHealthSummary') ? {
+          CANCER_EVIDENCE_RULES: { 肝癌: /乙肝|丙肝|肝脏/ },
+          buildStructuredSourceEvidence: () => [{ reportId: 'infection', date: '2026-08-12' }],
+        } : { chat: async messages => { prompts.push(messages[0].content); return prompts.length === 1
+          ? JSON.stringify({ ...card, keyChanges: ['2020年初见肝内结节'] })
+          : JSON.stringify({ headline: '肝脏影像与肝炎筛查结果待医生结合核对' }); } },
+  });
+  const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  await handler({ params: { id: 'member' }, staff: { role: 'familyDoctor', name: '医生', _id: 'staff' }, body: {
+    year: '2026', sectionKey: 'tumor_risk', itemName: '肝癌', instruction: '结合乙肝、丙肝筛查', expectedRecordToken: reviewToken(record),
+  } }, response);
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.match(prompts[0], /乙肝表面抗原 HBsAg/);
+  assert.match(prompts[0], /丙肝抗体/);
+  assert.doesNotMatch(prompts[0], /梅毒抗体/);
+  const updated = saved.byYear[2026].records[0].sections.tumor_risk.cancers[0];
+  assert.match(updated.keyChanges.join(' '), /2026-08-12 乙肝表面抗原 HBsAg：阴性/);
+  assert.match(updated.keyChanges.join(' '), /2026-08-12 丙肝抗体：阳性/);
+  assert.equal(updated.sourceEvidence[0].reportId, 'infection');
+});
+
 test('overview refresh updates an already corrected record without regenerating cards', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));
