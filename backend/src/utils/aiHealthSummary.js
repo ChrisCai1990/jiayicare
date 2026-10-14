@@ -27,7 +27,7 @@ function buildCancerCatalogText(user) {
 const CANCER_EVIDENCE_RULES = {
   肺癌: /胸部CT|肺部CT|肺CT|LDCT|肺结节|磨玻璃|肺纤维/i,
   结直肠癌: /肠镜|结肠镜|直肠镜|回肠末端|结肠|直肠|肠息肉|肠病理|粪便隐血|便潜血|FOBT/i,
-  肝癌: /肝脏|肝胆|脂肪肝|甲胎蛋白|\bAFP\b|肝纤维|纤维化|弹性超声|弹性成像|透明质酸|层粘连蛋白|Ⅲ型前胶原|III型前胶原|Ⅳ型胶原|IV型胶原/i,
+  肝癌: /肝脏|肝胆|脂肪肝|甲胎蛋白|\bAFP\b|肝纤维|纤维化|弹性超声|弹性成像|透明质酸|层粘连蛋白|Ⅲ型前胶原|III型前胶原|Ⅳ型胶原|IV型胶原|乙肝|乙型肝炎|丙肝|丙型肝炎|HBsAg|HBV[\s-]?DNA|\bHBV\b|HCV[\s-]?(?:RNA|抗体)|抗[\s-]?HCV|\bHCV\b/i,
   胃癌: /胃镜|胃窦|胃角|胃体|胃底|胃黏膜|胃病理|幽门螺杆|碳13|碳14|13C|14C/i,
   食管癌: /食管|胃镜|食管镜|反流性食管炎|Barrett/i,
   前列腺癌: /前列腺|\bPSA\b|前列腺特异抗原/i,
@@ -54,7 +54,8 @@ function buildCancerEvidenceText(user, reports, referenceYear = new Date().getFu
       if (Number.isFinite(year) && year < cutoffYear) return;
       const reportText = [report.title, report.screeningL2, report.examConclusion, report.note].filter(Boolean).join(' ');
       const matchedItems = (report.reportItems || []).filter(item => pattern.test([
-        item.name, item.bodyPart, item.findings, item.diagnosis, item.conclusion,
+        item.name, item.sourceSection, item.orderName, item.bodyPart, item.value,
+        item.findings, item.diagnosis, item.conclusion,
       ].filter(Boolean).join(' ')));
       if (!pattern.test(reportText) && !matchedItems.length) return;
       const evidenceId = `RPT-${String(reportIndex + 1).padStart(3, '0')}`;
@@ -355,7 +356,7 @@ ${retrospective ? `【历史年度补生成，最高优先级】本次回溯分�
 ⑥肿瘤标志物只能作为辅助趋势，正常不代表排除肿瘤，单项轻度升高不得判癌。
 ⑦必须逐项使用【常见肿瘤近5年分组证据】核对年份，分组证据中存在的年份不得遗漏。结直肠癌尤其要同时核对历年肠镜；组合名称“泌尿系超声/双肾输尿管膀胱”中明确包含膀胱时，必须计入膀胱影像记录。
 ⑧同一器官的不同检查类型分轨比较：内镜所见只与内镜所见比较，病理只与病理比较，影像只与影像比较，检验指标按同名指标比较。禁止用2023年病理分级与2026年胃镜下分级直接得出“进展/改善”；应分别写“内镜变化”和“病理变化”，缺少同轨时间点时写仅建立基线。
-⑨肝癌卡必须逐项核对：肝脏影像、AFP、肝脏弹性/纤维化超声，以及透明质酸、层粘连蛋白、Ⅲ型前胶原、Ⅳ型胶原等已存在的肝纤维化指标；有记录就呈现其同名指标趋势，不得只写AFP和脂肪肝。
+⑨肝癌卡必须跨分类逐项核对：肝脏影像、AFP、肝脏弹性/纤维化超声及已有的肝纤维化指标，还要查阅“传染病筛查”及其他报告中的乙肝血清学（尤其HBsAg）、HBV-DNA、丙肝抗体和HCV-RNA等实际存在的结果。按检查日期和原报告结果呈现同名指标趋势，不能因为乙肝/丙肝项目归在“其他/传染病筛查”就遗漏。区分乙肝表面抗原与表面抗体、丙肝抗体与HCV-RNA：单项乙肝表面抗体阳性不代表当前感染，丙肝抗体阳性也不能单独确认当前感染；HBsAg或病毒核酸等结果需按原报告准确陈述并由医生结合完整资料解释。感染指标不能单独判定肝癌或个人患癌概率，阴性结果也不能排除其他肝癌风险。缺少确认性资料时写“资料不足以判断”，提示携带原报告由医生结合病史和肝病情况评估。
 ⑩胰弹性蛋白酶/粪便胰弹性蛋白酶反映胰腺外分泌功能，不得作为胰腺癌筛查证据、异常或趋势。胰腺癌基础覆盖只认明确观察胰腺的腹部影像；CA19-9仅作辅助。
 ⑪已经有有效期内肠镜时，粪便隐血/FOBT不得列为“需关注、到期或优先补做”；已经完成胃肠镜也不得仅因粪便隐血阳性直接生成“优先排查消化道器质性病变”，只能忠实记录该结果并提示结合已完成内镜结论由医生判断。
 
@@ -816,7 +817,13 @@ function attachSourceLinks(sections, allReports, referenceYear = new Date().getF
     .filter(report => categories.includes(report.screeningCategory)
       || (report.reportItems || []).some(item => categories.includes(item.screeningCategory)))
     .map(report => String(report._id)))];
-  if (sections.tumor_risk) sections.tumor_risk.sourceReportIds = idsFor(['tumor']);
+  if (sections.tumor_risk) sections.tumor_risk.sourceReportIds = [...new Set([
+    ...idsFor(['tumor']),
+    ...allReports.filter(report => (report.reportItems || []).some(item =>
+      CANCER_EVIDENCE_RULES.肝癌.test([item.name, item.sourceSection, item.orderName, item.value,
+        item.findings, item.diagnosis, item.conclusion].filter(Boolean).join(' '))))
+      .map(report => String(report._id)),
+  ])];
   if (sections.cardiovascular_risk) sections.cardiovascular_risk.sourceReportIds = idsFor(['cardiovascular', 'brain_vessel']);
   if (sections.chronic_disease) sections.chronic_disease.sourceReportIds = idsFor(['chronic', 'functional', 'other_routine', 'health_promote', 'other']);
   const allIds = [...new Set(allReports.map(report => String(report._id)))];
