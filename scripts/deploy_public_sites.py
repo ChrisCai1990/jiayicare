@@ -51,10 +51,12 @@ def main():
         parts = Path(name).parts
         if parts[0] not in PUBLIC or len(parts) < 2 or parts[1] in {'content', 'scripts', '.preview'}:
             continue
-        if Path(name).suffix not in {'.html', '.css', '.js', '.json', '.xml', '.txt', '.png', '.jpg', '.svg'}:
+        if Path(name).suffix not in {'.html', '.css', '.js', '.json', '.xml', '.txt', '.png', '.jpg', '.svg', '.mp4'}:
             continue
         if not (ROOT / name).is_file():
             raise RuntimeError('Public deletions require a separate reviewed migration')
+        if Path(name).suffix == '.mp4' and (ROOT / name).stat().st_size > 20 * 1024 * 1024:
+            raise RuntimeError('Public video exceeds the 20 MiB release limit')
         files.append({'source': name, 'target': PUBLIC[parts[0]] + '/' + '/'.join(parts[1:]), 'sha256': hashlib.sha256((ROOT / name).read_bytes()).hexdigest()})
     client = connect()
     try:
