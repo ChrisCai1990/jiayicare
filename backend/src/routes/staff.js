@@ -11680,9 +11680,20 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         const allReports = await MedicalReport.find({ user: req.params.id })
           .select('checkDate date reportYear reportItems').lean();
         const sourceReports = Number(y) < new Date().getFullYear() ? reportsThroughYear(allReports, Number(y)) : allReports;
-        const unsupported = findUnsupportedTumorMarkerElevation(entry.sections, sourceReports);
-        if (unsupported) return res.status(422).json({ success: false,
-          message: `${unsupported.marker}升高结论缺少检验数值与参考范围依据；请核对原报告，编辑相关板块及优先关注问题后再审核` });
+        // Reviewing one section must not be blocked by a stale claim in another.
+        // The complete doctor review still checks every section together.
+        const reviewSections = sectionKey
+          ? { [sectionKey]: entry.sections?.[sectionKey] }
+          : entry.sections;
+        const unsupported = findUnsupportedTumorMarkerElevation(reviewSections, sourceReports);
+        if (unsupported) {
+          const blockedSectionKey = sectionKey || DOCTOR_KEYS.find(key =>
+            findUnsupportedTumorMarkerElevation({ [key]: entry.sections?.[key] }, sourceReports));
+          const sectionLabel = { medical_priority: '优先关注问题', tumor_risk: '肿瘤筛查', cardiovascular_risk: '心脑血管',
+            chronic_disease: '慢病', checkup_completeness: '体检资料覆盖' }[blockedSectionKey] || '当前分析';
+          return res.status(422).json({ success: false, blockedSectionKey,
+            message: `${sectionLabel}中“${unsupported.claim.slice(0, 60)}”缺少${unsupported.marker}检验数值与参考范围依据；请修正该板块后再审核` });
+        }
       }
       if (sectionKey) {
         if (!isSuper && req.staff.role !== (sectionKey === LIFESTYLE_KEY ? 'nutritionist' : 'familyDoctor')) {

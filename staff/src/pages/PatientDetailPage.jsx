@@ -3923,7 +3923,15 @@ export default function PatientDetailPage() {
       const res = await staffAPI.refreshAIHealthSummaryOverview(id, { year, recordIndex, sectionKey, expectedRecordToken })
       applyAIHealthSummary(res.data)
       toast('整体意见及相关关注问题已依据当前卡片同步，请核对并重新审核')
-    } catch (err) { toast(err.message || '整体意见刷新失败') }
+    } catch (err) {
+      if (err.status === 409) {
+        try {
+          const latest = await staffAPI.getPatient(id)
+          applyAIHealthSummary(latest.data.user.aiHealthSummary)
+          toast('分析记录已更新，页面已同步最新版本；请核对卡片后再次点击“同步整体意见”')
+        } catch { toast('分析记录已更新，请刷新页面后重新核对') }
+      } else toast(err.message || '整体意见刷新失败')
+    }
     finally { setAiSummaryLoading(false) }
   }
 

@@ -152,6 +152,45 @@ test('review refuses an older draft whose CA72-4 elevation lacks numeric evidenc
   assert.equal(writes, 0);
 });
 
+test('a stale tumor claim blocks tumor and whole review but not unrelated section review', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const code = source.slice(source.indexOf("router.patch('/patients/:id/ai-health-summary'"), source.indexOf('// DELETE /api/staff/patients/:id/ai-health-summary/records/'));
+  let handler, writes = 0;
+  const record = { scope: 'doctor', sections: {
+    tumor_risk: { overview: { headline: 'CA72-4持续轻度升高' } },
+    cardiovascular_risk: { topics: [{ name: '心脏超声', status: 'normal' }] },
+    checkup_completeness: { summary: '已核对体检覆盖' },
+  } };
+  const user = { _id: 'member', aiHealthSummary: { latestYear: '2026', byYear: { 2026: { ...record, records: [record] } } } };
+  vm.runInNewContext(code, {
+    router: { patch(_path, _auth, callback) { handler = callback; } }, staffAuth() {},
+    User: { findById: () => ({ lean: async () => user }), collection: { updateOne: async () => { writes++; return { matchedCount: 1 }; } } },
+    MedicalReport: { find: () => ({ select: () => ({ lean: async () => [{ checkDate: '2026-09-23', reportItems: [
+      { name: 'CA72-4', value: '9.05', referenceRange: '<19.10' },
+    ] }] }) }) },
+    resolveReviewRecord: () => 0, withReviewTokens: value => value,
+    DOCTOR_KEYS: ['tumor_risk', 'cardiovascular_risk', 'checkup_completeness'], LIFESTYLE_KEY: 'lifestyle_assessment',
+    HEALTH_TREND_FIELDS: {},
+    require: name => name.endsWith('tumorMarkerFactGuard') ? require('../src/utils/tumorMarkerFactGuard')
+      : require('../src/utils/historicalAIHealthContext'),
+  });
+  const response = () => ({ statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } });
+  for (const sectionKey of ['cardiovascular_risk', 'checkup_completeness']) {
+    const res = response();
+    await handler({ params: { id: 'member' }, body: { action: 'approve', scope: 'doctor', year: '2026', sectionKey }, staff: { role: 'familyDoctor', name: '顾问' } }, res);
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.record.sectionReviews[sectionKey].status, 'approved');
+  }
+  for (const sectionKey of ['tumor_risk', undefined]) {
+    const res = response();
+    await handler({ params: { id: 'member' }, body: { action: 'approve', scope: 'doctor', year: '2026', sectionKey }, staff: { role: 'familyDoctor' } }, res);
+    assert.equal(res.statusCode, 422, JSON.stringify(res.body));
+    assert.match(res.body.message, /CA72-4/);
+    assert.equal(res.body.blockedSectionKey, 'tumor_risk');
+  }
+  assert.equal(writes, 2);
+});
+
 test('single-card correction refreshes the overview and invalidates its approval atomically', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));

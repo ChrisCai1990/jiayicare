@@ -55,11 +55,14 @@ function invalidateCustomerDiscussion(topic) {
 }
 
 const CONCERN_SECTIONS = new Set(['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness']);
-function approvedDoctorRecord(user, year) {
+function latestDoctorRecord(user, year) {
   const root = user.aiHealthSummary || {};
   const entry = root.byYear?.[String(year)] || (!root.byYear && root.sections ? root : null);
   const records = Array.isArray(entry?.records) ? entry.records : entry?.sections ? [entry] : [];
-  const latest = records.find(row => row.scope === 'doctor' || row.scope === 'all' || !row.scope);
+  return records.find(row => row.scope === 'doctor' || row.scope === 'all' || !row.scope) || null;
+}
+function approvedDoctorRecord(user, year) {
+  const latest = latestDoctorRecord(user, year);
   return latest && (latest.doctorApprovedAt || latest.approvedAt) ? latest : null;
 }
 
@@ -97,10 +100,12 @@ async function concernSource(user, input) {
   if (input.kind === 'ai_health') {
     const year = Number(input.year);
     if (!Number.isInteger(year) || !CONCERN_SECTIONS.has(input.sectionKey)) throw Object.assign(new Error('健康趋势来源无效'), { status: 400 });
-    const record = approvedDoctorRecord(user, year);
-    if (!record) throw Object.assign(new Error('请先审核该年度健康信息整理，再纳入关注'), { status: 409 });
-    if (record.sectionReviews?.[input.sectionKey] && record.sectionReviews[input.sectionKey].status !== 'approved')
-      throw Object.assign(new Error('请先审核该板块，再纳入关注'), { status: 409 });
+    const record = latestDoctorRecord(user, year);
+    const sectionReview = record?.sectionReviews?.[input.sectionKey];
+    const wholeApproved = record?.doctorApprovedAt || record?.approvedAt;
+    const sectionApproved = sectionReview?.status === 'approved' && (sectionReview.approvedAt || wholeApproved);
+    if (!record || (!sectionApproved && (!wholeApproved || sectionReview)))
+      throw Object.assign(new Error('请先审核该板块，再纳入年度研判'), { status: 409 });
     const section = record.sections?.[input.sectionKey] || {};
     const rows = section.items || section.topics || section.cancers || [];
     const row = rows.find(item => item.name === input.itemName);
@@ -108,7 +113,7 @@ async function concernSource(user, input) {
     const title = String(row.name || '').trim();
     return { key: `ai_health:${year}:${input.sectionKey}:${title}`, kind: input.sectionKey === 'medical_priority' ? 'ai_risk_scan' : 'ai_health_trend', title,
       evidence: [row.latest || row.current, row.trend, ...(row.keyChanges || []), row.meaning || row.riskBasis].filter(Boolean).join('；').slice(0, 600),
-      source: { year, sectionKey: input.sectionKey, approvedAt: record.doctorApprovedAt || record.approvedAt,
+      source: { year, sectionKey: input.sectionKey, approvedAt: sectionApproved || wholeApproved,
         reportIds: [...new Set([row.sourceReportId, ...(section.sourceReportIds || [])].filter(Boolean).map(String))] } };
   }
   throw Object.assign(new Error('关注来源类型无效'), { status: 400 });
