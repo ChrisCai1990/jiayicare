@@ -84,6 +84,7 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temper
       max_tokens: maxTokens,
       temperature,
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+      ...(jsonMode && p === 'qwen' ? { enable_thinking: false } : {}),
     },
     timeoutMs
   ));

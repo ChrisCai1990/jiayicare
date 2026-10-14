@@ -1,4 +1,4 @@
-const { chat } = require('./ai');
+const { chat, selectProvider } = require('./ai');
 const { deriveLabFromReports, buildLatestLabText, buildTrendText, extractTumorMarkers, buildTumorMarkerText, extractGeneticFindings, extractExamFindings } = require('./labFromScreening');
 const { assessCancerCoverage, buildCoverageText } = require('./cancerScreeningCoverage');
 const { buildEvidenceCatalog } = require('./aiFactGuard');
@@ -558,7 +558,7 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   // 输出finding+risk+suggestion三段文字，实测JSON在1700字符左右就被截断报错，1200token撑不住完整输出
   // 肿瘤维度新增男女常见10种肿瘤逐项卡片后，doctor/all 输出明显增长；预留足够空间，
   // 避免JSON尾部截断。生活方式单独生成仍保持原额度。
-  const maxTokens = scope === 'all' ? 8192 : (scope === 'doctor' ? 8192 : 2000);
+  const maxTokens = wantDoctor ? (selectProvider() === 'qwen' ? 16384 : 8192) : 2000;
   // 健康信息整理包含最长5年资料和10种常见肿瘤卡片，属于长文本任务；仅此场景放宽
   // 单次AI请求上限，普通聊天等接口仍保持ai.js默认45秒。
   const text = await chat([{ role: 'user', content: prompt }], {
@@ -597,6 +597,7 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   // 还会使总请求超过网关等待时间。事实边界继续由首轮证据目录、确定性分类归并和人工审核保证。
 
   if (!parseFailed && reuseTumor) sections.tumor_risk = reusedTumorSection;
+  if (!parseFailed && wantDoctor && !reuseTumor && sections.tumor_risk) sections.tumor_risk.evidenceVersion = 2;
 
   // 模型偶尔仍会把血糖或血脂子指标拆成多张卡；展示前做确定性归并。
   if (!parseFailed && wantDoctor) normalizeTrendSections(sections, user, allHistoricalReports, targetYear);

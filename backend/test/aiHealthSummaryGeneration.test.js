@@ -123,6 +123,11 @@ test('source re-evaluation ignores reused tumor text and creates a new pending r
   assert.equal(saved.byYear[2026].records[0].recheckFromSources, true);
   assert.equal(saved.byYear[2026].records[0].doctorApprovedAt, null);
   assert.equal(saved.byYear[2026].records[1].sections.tumor_risk.summary, 'CA72-4持续轻度升高');
+  const automaticRefresh = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  await handler({ params: { id: 'member' }, body: { year: '2026', scope: 'doctor' }, staff: { role: 'familyDoctor' } }, automaticRefresh);
+  assert.equal(automaticRefresh.statusCode, 200, JSON.stringify(automaticRefresh.body));
+  assert.equal(options.reusedTumorSection, null, 'old tumor cards must not be silently reused after the evidence rules change');
+  assert.equal(saved.byYear[2026].records[0].recheckFromSources, false);
 });
 
 test('review refuses an older draft whose CA72-4 elevation lacks numeric evidence', async () => {

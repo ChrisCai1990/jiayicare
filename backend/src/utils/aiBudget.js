@@ -67,7 +67,9 @@ function createBudgetRunner(db = store, now = () => new Date()) {
       try { const parsed = JSON.parse(result.choices[0].message.content.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); malformed = !parsed || typeof parsed !== 'object'; }
       catch { malformed = true; }
     }
-    const failed = Boolean(error || result?.error || malformed || !result?.choices?.[0]?.message?.content || result?.choices?.[0]?.finish_reason === 'length');
+    const outputTruncated = result?.choices?.[0]?.finish_reason === 'length';
+    const emptyOutput = !result?.choices?.[0]?.message?.content;
+    const failed = Boolean(error || result?.error || malformed || emptyOutput || outputTruncated);
     try {
       // Truncation/invalid JSON are extraction failures, not service failures.
       await db.outcome(key, Boolean(error || result?.error), policy.failureThreshold);
@@ -83,7 +85,10 @@ function createBudgetRunner(db = store, now = () => new Date()) {
         inputTokens: usage?.input ?? null, outputTokens: usage?.output ?? null, actualTokens: usage?.total ?? null,
         costMicros: usage ? costMicros(usage, rate) : null,
         // Do not persist arbitrary provider error messages, which may echo clinical inputs.
-        errorCode: failed ? (error?.code === 'AI_TIMEOUT' ? 'TIMEOUT' : (safeProviderCode || 'UPSTREAM_ERROR')) : (usage ? '' : 'USAGE_MISSING'),
+        errorCode: failed ? (error?.code === 'AI_TIMEOUT' ? 'TIMEOUT'
+          : (safeProviderCode || (error || result?.error ? 'UPSTREAM_ERROR'
+            : (outputTruncated ? 'OUTPUT_LENGTH' : (emptyOutput ? 'EMPTY_OUTPUT' : 'UPSTREAM_ERROR')))))
+          : (usage ? '' : 'USAGE_MISSING'),
       });
     } catch {
       const stopped = new AiControlError('AI 用量结算异常，已暂停后续调用，请管理员核对', 'AI_ACCOUNTING_UNAVAILABLE');
@@ -92,7 +97,11 @@ function createBudgetRunner(db = store, now = () => new Date()) {
     }
     if (error) throw error;
     if (result?.error) throw new Error('AI 服务返回异常，请稍后重试');
-    if (failed) throw new Error('AI 返回空内容或输出被截断，请人工核对');
+    if (failed) {
+      const outputError = new Error('AI 返回空内容或输出被截断，请人工核对');
+      outputError.code = outputTruncated ? 'AI_OUTPUT_LENGTH' : 'AI_EMPTY_RESPONSE';
+      throw outputError;
+    }
     return result;
   };
 }
