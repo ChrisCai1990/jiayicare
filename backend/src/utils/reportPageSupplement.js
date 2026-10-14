@@ -17,11 +17,12 @@ function sameReportItem(a, b) {
 // “有项目名”并不等于识别成功：数值类必须有数值，检查类必须有可核对的原文。
 // 这条规则只用于 OCR 质量控制和补提，不会删除人工已经录入的项目。
 function hasReportItemEvidence(item) {
-  const value = String(item?.value ?? '').trim();
+  const substantive = value => Boolean(String(value ?? '').trim().replace(/^[\-—－–]+$/, ''));
+  const value = substantive(item?.value);
   const narrative = [item?.findings, item?.diagnosis, item?.conclusion]
-    .some(field => String(field || '').trim());
-  if (item?.itemType === 'lab' || item?.itemType === 'data') return Boolean(value || narrative);
-  return Boolean(narrative || value);
+    .some(substantive);
+  if (item?.itemType === 'lab' || item?.itemType === 'data') return value || narrative;
+  return narrative || value;
 }
 
 const PAGE_PARSE_STALE_MS = 15 * 60 * 1000;
@@ -79,7 +80,7 @@ function mergeSupplementItems(existingItems, candidates) {
       // Never replace nonempty values or append competing OCR prose automatically.
       const patch = {};
       for (const field of ['value', 'findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis']) {
-        if (!String(current[field] ?? '').trim() && String(candidate[field] ?? '').trim()) patch[field] = candidate[field];
+        if (!String(current[field] ?? '').trim().replace(/^[\-—－–]+$/, '') && String(candidate[field] ?? '').trim().replace(/^[\-—－–]+$/, '')) patch[field] = candidate[field];
       }
       if (Object.keys(patch).length) {
         result[index] = { ...current, ...patch };

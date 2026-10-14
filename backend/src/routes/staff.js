@@ -16059,7 +16059,7 @@ async function runReportParseControlled(reportId) {
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
       const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
-      const classified = (await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))))).map(item => ({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
+      const classified = (await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))))).map(item => normalizeExplicitNormalStatus({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
       const parsedItemDates = [...new Set(classified.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
       const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : normalizeReportDate(checkDate);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
@@ -16381,7 +16381,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，仅提取已有清单中没有的项目。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，仅提取遗漏项目或检查结果为空、只有横线的已有项目。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) { rethrowAiControl(error);
@@ -16395,7 +16395,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
     try {
       const existingNames = [existingItemText, ...regionItems.map(item => str(item.name)).filter(Boolean)].filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出清单之外的遗漏项目。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧；除遗漏项目，也输出结果为空或只有横线的已有项目的完整结果，保持原项目名和itemType。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
       const audit = safeParseJSON(auditRaw);
       if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
     } catch (auditError) { rethrowAiControl(auditError);
@@ -16433,7 +16433,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !deletedItems.some(deleted => sameReportItem(deleted, item))));
   const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched];
   const mergedPage = supplementMerge.items;
-  const classifiedPage = await classifyItemsAsync(mergedPage);
+  const classifiedPage = (await classifyItemsAsync(mergedPage)).map(normalizeExplicitNormalStatus);
   const preserved = (latest.reportItems || []).filter(item => !belongsToRequestedPage(item));
   const combined = stripReportSourceOrder(sortReportItemsBySource([...preserved, ...classifiedPage]));
   const completedAt = new Date();
