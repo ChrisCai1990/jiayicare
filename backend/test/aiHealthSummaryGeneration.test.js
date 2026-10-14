@@ -237,6 +237,46 @@ test('single-card correction refreshes the overview and invalidates its approval
   assert.equal(original.sections.chronic_disease.items[0].latest, 'HbA1c 7.0%', 'failed CAS would leave old data intact');
 });
 
+test('single-card homocysteine regeneration enforces intervention at 10 despite AI reassurance', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));
+  const { reviewToken, withReviewTokens } = require('../src/utils/summaryReviewVersion');
+  const record = { scope: 'doctor', sections: {
+    cardiovascular_risk: { topics: [{ name: '同型半胱氨酸', status: 'stable', nextAction: '无需干预，继续常规监测。' }] },
+    medical_priority: { items: [] },
+  } };
+  const original = { latestYear: '2026', sections: record.sections, byYear: { 2026: { ...record, records: [record] } } };
+  const reports = [{ checkDate: '2026-09-23', reportItems: [{ name: '同型半胱氨酸', value: '13.1', unit: 'μmol/L' }] }];
+  let handler, saved, calls = 0;
+  vm.runInNewContext(code, {
+    router: { post(route, _auth, callback) { if (route.endsWith('/regenerate-item')) handler = callback; } }, staffAuth() {},
+    User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
+      collection: { updateOne: async (_filter, update) => { saved = update.$set.aiHealthSummary; return { matchedCount: 1 }; } } },
+    MedicalReport: { find: () => ({ sort: () => ({ select: () => ({ lean: async () => reports }) }) }) },
+    reviewToken, withReviewTokens, Date, JSON, DOCTOR_KEYS: ['cardiovascular_risk', 'medical_priority'],
+    require: name => name.endsWith('homocysteineIntervention') ? require('../src/utils/homocysteineIntervention')
+      : name.endsWith('healthPriorityLinks') ? require('../src/utils/healthPriorityLinks')
+        : name.endsWith('tumorMarkerFactGuard') ? require('../src/utils/tumorMarkerFactGuard')
+          : { chat: async () => {
+            calls++;
+            if (calls === 1) return JSON.stringify({ status: 'stable', nextAction: '无需干预，继续常规监测。' });
+            if (calls === 2) return JSON.stringify({ headline: '同型半胱氨酸需关注' });
+            return JSON.stringify({ items: [{ sourceItemName: '同型半胱氨酸', name: '同型半胱氨酸需干预',
+              current: '2026-09-23 13.1 μmol/L', action: '请由医生评估', urgency: 'medium' }] });
+          } },
+  });
+  const res = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  await handler({ params: { id: 'member' }, staff: { role: 'familyDoctor', name: '医生', _id: 'staff' }, body: {
+    year: '2026', sectionKey: 'cardiovascular_risk', itemName: '同型半胱氨酸', instruction: '13.1需要干预', expectedRecordToken: reviewToken(record),
+  } }, res);
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  const card = saved.byYear[2026].records[0].sections.cardiovascular_risk.topics[0];
+  assert.equal(card.status, 'attention');
+  assert.match(card.nextAction, /13\.1 μmol\/L.*需干预/);
+  assert.equal(saved.byYear[2026].records[0].sections.cardiovascular_risk.overview.attentionCount, 1);
+  assert.equal(saved.byYear[2026].records[0].sections.cardiovascular_risk.summary, '同型半胱氨酸需关注');
+});
+
 test('CA72-4 card correction reads old and recent reference ranges without regenerating other reviewed sections', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('// ── 4.4 AI健康汇总分析：审核/更新'));

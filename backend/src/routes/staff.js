@@ -11521,7 +11521,9 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     if (marker && !evidence.length) return res.status(422).json({ success: false,
       message: `未找到${marker.name}的原始检验项目，无法据此单项重新评估；请先核对原报告` });
     const { chat } = require('../utils/ai');
-    const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。只重新生成“${itemName}”这一张卡，禁止修改或输出其他卡片。\n用户修正问题：${String(instruction).trim()}\n原卡片：${JSON.stringify(list[itemIndex])}\n${marker ? '相关项目近5年及该标志物历年' : '近5年'}原始证据：${JSON.stringify(evidence)}\n请按每份报告的数值与参考范围核对，不得仅凭异常标记判断；逐年核对，不得遗漏证据中的年份，不得补造事实。凡提及异常指标均写明其检查日期；旧异常不得表述为当前异常。保持原卡字段结构，只输出单个JSON对象。` }], { maxTokens: 1600, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    const hcyRule = sectionKey === 'cardiovascular_risk' && itemName === '同型半胱氨酸'
+      ? '同型半胱氨酸最近一次有效值≥10 μmol/L（含10）时，status必须为attention，nextAction必须明确需干预并提示由医生评估具体方式及复查，不得写无需干预或仅常规监测。' : '';
+    const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。只重新生成“${itemName}”这一张卡，禁止修改或输出其他卡片。\n用户修正问题：${String(instruction).trim()}\n原卡片：${JSON.stringify(list[itemIndex])}\n${marker ? '相关项目近5年及该标志物历年' : '近5年'}原始证据：${JSON.stringify(evidence)}\n请按每份报告的数值与参考范围核对，不得仅凭异常标记判断；逐年核对，不得遗漏证据中的年份，不得补造事实。凡提及异常指标均写明其检查日期；旧异常不得表述为当前异常。${hcyRule}保持原卡字段结构，只输出单个JSON对象。` }], { maxTokens: 1600, temperature: 0, jsonMode: true, timeoutMs: 60000 });
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return res.status(500).json({ success: false, message: '单项生成结果格式错误，请重试' });
     const updatedItem = JSON.parse(match[0]);
@@ -11530,6 +11532,12 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     }
     updatedItem.name = itemName;
     if (echoItem) updatedItem.chamberSizeTrend = require('../utils/echoChamberTrend').buildEchoChamberTrend(reports, Number(y));
+    if (hcyRule) {
+      const { enforceHomocysteineIntervention } = require('../utils/homocysteineIntervention');
+      const sourceReports = Number(y) < new Date().getFullYear()
+        ? require('../utils/historicalAIHealthContext').reportsThroughYear(reports, Number(y)) : reports;
+      enforceHomocysteineIntervention([updatedItem], sourceReports);
+    }
     const updatedList = list.map((item, index) => index === itemIndex ? updatedItem : item);
     // 总览是独立的 AI 字段。卡片纠错后必须依据整组最新卡片重新归纳。
     const overview = await buildHealthTrendOverview(sectionKey, updatedList, String(instruction).trim());
@@ -11557,6 +11565,7 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
       records.unshift(record);
     }
     record.sections[sectionKey][field] = updatedList;
+    if (hcyRule) record.sections[sectionKey].summary = overview.headline;
     if (sectionKey === 'tumor_risk' && marker?.pattern.test(String(record.sections[sectionKey].summary || ''))) {
       record.sections[sectionKey].summary = overview.headline;
     }

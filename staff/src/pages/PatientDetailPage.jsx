@@ -3902,13 +3902,13 @@ export default function PatientDetailPage() {
     finally { setAiSummaryLoading(false) }
   }
 
-  const handleRegenerateAISummaryItem = async (sectionKey, itemName, expectedRecordToken) => {
+  const handleRegenerateAISummaryItem = async (sectionKey, itemName, target) => {
     const instruction = window.prompt(`请输入“${itemName}”需要重新核对的问题：`, '')
     if (!instruction?.trim()) return
     try {
       setAiSummaryLoading(true)
       const scope = sectionKey === 'tumor_risk' || sectionKey === 'cardiovascular_risk' || sectionKey === 'chronic_disease' ? 'doctor' : 'all'
-      const res = await staffAPI.regenerateAIHealthSummaryItem(id, { year: aiYear, scope, recordIndex: aiRecordIndex.doctor, sectionKey, itemName, instruction: instruction.trim(), expectedRecordToken })
+      const res = await staffAPI.regenerateAIHealthSummaryItem(id, { year: target.year, scope, recordIndex: target.recordIndex, sectionKey, itemName, instruction: instruction.trim(), expectedRecordToken: target.expectedRecordToken })
       applyAIHealthSummary(res.data)
       if (res.newRecord) setAiRecordIndex(v => ({ ...v, doctor: 0 }))
       setLastRegeneratedItem(`${sectionKey}:${itemName}`)
@@ -8308,7 +8308,7 @@ export default function PatientDetailPage() {
                     {sectionKey && <SpecialtyConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
                       source={{ kind: 'ai_health', year: Number(curYear), sectionKey, itemName: item.name }} suggestedIssue={item.name}
                       sourceLabel={`${curYear}年度已审核健康趋势 · ${item.name}`} />}
-                    {sectionKey && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem(sectionKey, item.name, doctorRecord._reviewToken)}>✎ 录入问题并单项重新生成</button>}
+                    {sectionKey && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem(sectionKey, item.name, { year: curYear, recordIndex: doctorRecord._recordIndex, expectedRecordToken: doctorRecord._reviewToken })}>✎ 录入问题并单项重新生成</button>}
                   </div>
                 </details>
               })}
@@ -8808,7 +8808,7 @@ export default function PatientDetailPage() {
                                   <SpecialtyConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
                                     source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'tumor_risk', itemName: cancer.name }} suggestedIssue={cancer.name}
                                     sourceLabel={`${curYear}年度已审核健康趋势 · ${cancer.name}`} />
-                                  <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem('tumor_risk', cancer.name, doctorRecord._reviewToken)}>✎ 录入问题并单项重新生成</button>
+                                  <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem('tumor_risk', cancer.name, { year: curYear, recordIndex: doctorRecord._recordIndex, expectedRecordToken: doctorRecord._reviewToken })}>✎ 录入问题并单项重新生成</button>
                                 </div>
                               </details>
                             })}
