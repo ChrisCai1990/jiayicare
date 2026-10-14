@@ -13,6 +13,16 @@ const router = express.Router();
 
 function withSignedReportFiles(report) {
   const obj = report.toObject ? report.toObject() : { ...report };
+  if (obj.advisorCorrection?.status === 'returned') {
+    // 顾问指出结果错误后，客户仍可查看原件，但暂不展示有争议的结构化结论。
+    obj.reportItems = [];
+    obj.aiSummary = '';
+    obj.keyFindings = [];
+    obj.examDescription = '';
+    obj.examConclusion = '';
+    obj.examMainConclusions = {};
+  }
+  if (obj.advisorCorrection) obj.advisorCorrection = { status: obj.advisorCorrection.status };
   const urls = obj.fileUrls?.length ? obj.fileUrls : (obj.fileUrl ? [obj.fileUrl] : []);
   const keys = obj.ossKeys?.length ? obj.ossKeys : (obj.ossKey ? [obj.ossKey] : []);
   const signedUrls = urls.map((url, index) => signStoredUrl(url, keys[index] || ''));

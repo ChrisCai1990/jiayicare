@@ -5035,6 +5035,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision, clinicalReview, screeningReclassification } = req.body;
+    if (report.archiveOnly && (aiStatus !== undefined || reportItems !== undefined || screeningReclassification)) return res.status(409).json({ success: false, message: '仅留存原件不参与解析和审核' });
     if (screeningReclassification && (editSource !== 'ocr_review' || !Array.isArray(reportItems) || aiStatus !== undefined)) {
       return res.status(400).json({ success: false, message: '重新归类请求无效' });
     }
@@ -5236,6 +5237,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
         ? report.staffAuditSnapshot
         : { reportItems: report.reportItems, snapshotAt: new Date() };
+      if (report.advisorCorrection?.status === 'returned') report.advisorCorrection = { ...report.advisorCorrection, status: 'resubmitted', resubmittedAt: new Date(), resubmittedBy: req.staff._id, resubmittedByName: req.staff.name };
     }
     if (aiSummary !== undefined) report.aiSummary = aiSummary;
     // 补传/替换文件
@@ -5525,11 +5527,67 @@ router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'del
   }
 });
 
+// 后补完整原件只归档。原先已审的截图继续作为本次体检的结构化依据。
+router.patch('/medical-reports/:id/archive-only', staffAuth, checkPermission('reports', 'audit'), async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健管专员可确认留存原件' });
+    const { sourceReportId } = req.body || {};
+    if (!mongoose.isValidObjectId(sourceReportId) || sourceReportId === req.params.id) return res.status(400).json({ success: false, message: '请选择同次体检中已审核的结果报告' });
+    const [report, source] = await Promise.all([MedicalReport.findById(req.params.id), MedicalReport.findById(sourceReportId)]);
+    if (!report || !source) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (String(report.user) !== String(source.user) || source.audit_status !== 'audited' || source.archiveOnly) return res.status(409).json({ success: false, message: '关联报告须为同一客户已审核的结果报告' });
+    const owner = await User.findById(report.user).select('tenantId assignedHealthManager').lean();
+    if (!owner) return res.status(404).json({ success: false, message: '客户不存在' });
+    if (req.staff.role !== 'superadmin' && String(owner.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '不可操作其他机构的报告' });
+    if (req.staff.role !== 'superadmin' && String(owner.assignedHealthManager || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅客户所属健管专员可确认留存原件' });
+    if (report.archiveOnly) return res.status(409).json({ success: false, message: '该报告已标记仅留存，请刷新' });
+    if (report.audit_status !== 'unaudited' || report.aiStatus !== 'none' || report.reportItems?.length || report.parseJob?.status === 'processing' || report.pageParseStatus?.status === 'processing') return res.status(409).json({ success: false, message: '该报告已进入解析或审核，不能直接设为仅留存' });
+    if (!(report.fileUrl || report.fileUrls?.length || report.content)) return res.status(409).json({ success: false, message: '请先上传原件文件' });
+    const changed = await MedicalReport.updateOne({ _id: report._id, archiveOnly: { $ne: true }, audit_status: 'unaudited', aiStatus: 'none', 'parseJob.status': { $ne: 'processing' } }, { $set: { archiveOnly: true, archiveSourceReportId: source._id, archiveOnlyAt: new Date(), archiveOnlyBy: req.staff._id } });
+    if (!changed.modifiedCount) return res.status(409).json({ success: false, message: '报告状态已变化，请刷新' });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+router.patch('/medical-reports/:id/advisor-return', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可退回报告' });
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason || reason.length > 1000) return res.status(400).json({ success: false, message: '请填写退回原因（1至1000字）' });
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (report.archiveOnly || !['audited', 'unaudited'].includes(report.audit_status)) return res.status(409).json({ success: false, message: '仅已审核的结果报告可退回' });
+    const patient = await User.findById(report.user).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+    if (req.staff.role !== 'superadmin' && String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '不可操作其他机构的报告' });
+    if (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅客户所属健康顾问可退回' });
+    if (report.audit_status === 'unaudited') {
+      if (report.advisorCorrection?.status !== 'returned' || String(report.advisorCorrection.returnedBy || '') !== String(req.staff._id)) return res.status(409).json({ success: false, message: '报告已进入其他审核状态，请刷新' });
+      await UserScreeningItem.deleteMany({ user: report.user, reportId: report._id });
+      await removeBodyCompositionFromReturnedReport(report.user, report._id);
+      return res.json({ success: true, duplicate: true });
+    }
+    if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
+    const now = new Date();
+    const history = Array.isArray(report.advisorCorrection?.history) ? report.advisorCorrection.history : [];
+    const correction = { status: 'returned', reason, returnedAt: now, returnedBy: req.staff._id, returnedByName: req.staff.name, assignedTo: patient.assignedHealthManager || null, history: [...history, { reason, returnedAt: now, returnedBy: req.staff._id, returnedByName: req.staff.name }] };
+    const changed = await MedicalReport.updateOne({ _id: report._id, audit_status: 'audited', reviewRevision: report.reviewRevision, archiveOnly: { $ne: true } }, { $set: { audit_status: 'unaudited', aiStatus: 'pending', ...(report.status === 'analyzed' ? { status: 'pending' } : {}), advisorCorrection: correction, familyDoctorViewedAt: null, familyDoctorViewedBy: null }, $inc: { reviewRevision: 1 } });
+    if (!changed.modifiedCount) return res.status(409).json({ success: false, message: '报告已被修改，请刷新' });
+    // 专项筛查项目由原报告派生；补正期间撤出，重审时原同步器按报告ID恢复。
+    await UserScreeningItem.deleteMany({ user: report.user, reportId: report._id });
+    await removeBodyCompositionFromReturnedReport(report.user, report._id);
+    await require('../utils/healthRiskEvents').syncReportRisk(await MedicalReport.findById(report._id))
+      .catch(error => console.error('[health-risk] returned report sync failed', report._id, error));
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 // PATCH /api/staff/medical-reports/:id/audit — 审核报告
 router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports', 'audit'), async (req, res) => {
   const { action, rejectReason, abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } = req.body;
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+  if (report.archiveOnly) return res.status(409).json({ success: false, message: '仅留存的补充原件不参与解析和审核' });
   if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
     if (!isManualOnlyReportAudit(report) && report.aiStatus !== 'reviewed') {
@@ -5577,6 +5635,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
       ? report.staffAuditSnapshot
       : { reportItems: report.reportItems, snapshotAt: new Date() };
+    if (report.advisorCorrection?.status === 'returned') report.advisorCorrection = { ...report.advisorCorrection, status: 'resubmitted', resubmittedAt: new Date(), resubmittedBy: req.staff._id, resubmittedByName: req.staff.name };
   } else {
     report.audit_status = 'rejected';
     report.reject_reason = rejectReason || '';
@@ -5592,6 +5651,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   await require('../utils/healthRiskEvents').syncReportRisk(report)
     .catch(error => console.error('[health-risk] audited report sync failed', report._id, error));
   if (action === 'approve') {
+    if (report.advisorCorrection?.status === 'resubmitted' && report.reportItems?.length) await syncScreeningItems(report.user, report._id, report.reportItems, { reconcile: true });
     try {
       await require('../utils/reportDispatchQueue').dispatch(report, req.staff,
         { abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes });
@@ -5621,9 +5681,9 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
 router.get('/patients/:id/reports/pending-doctor-audit', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('archiveReviewStatus archiveReviewSnapshotAt');
-    const filter = { user: req.params.id, audit_status: 'audited' };
+    const filter = { user: req.params.id, archiveOnly: { $ne: true }, audit_status: 'audited' };
     if (user?.archiveReviewStatus === 'reviewed' && user.archiveReviewSnapshotAt) {
-      filter.createdAt = { $gt: user.archiveReviewSnapshotAt };
+      filter.$or = [{ createdAt: { $gt: user.archiveReviewSnapshotAt } }, { 'advisorCorrection.resubmittedAt': { $gt: user.archiveReviewSnapshotAt } }];
     }
     const reports = await MedicalReport.find(filter)
       .select('title screeningL1 screeningL2 checkDate hospital institution audited_by audited_at familyDoctorViewedAt').sort({ checkDate: -1 }).lean();
@@ -5642,11 +5702,12 @@ router.patch('/medical-reports/:id/family-doctor-view', staffAuth, async (req, r
     // 联动用户端"待解读/已解读"状态：此前 status 字段从未被任何动作驱动过，一直卡死在默认值
     // 'pending'（待解读）。这里健康顾问查看即联动置为已解读，但只在当前仍是初始"待解读"状态时
     // 才覆盖——如果已经是 normal/abnormal 这类真实临床结果状态，不应该被这次查看动作覆盖掉。
-    const report = await MedicalReport.findById(req.params.id).select('status');
+    const report = await MedicalReport.findById(req.params.id).select('status audit_status archiveOnly');
+    if (!report || report.audit_status !== 'audited' || report.archiveOnly) return res.status(409).json({ success: false, message: '报告尚未完成审核' });
     if (report && report.status === 'pending') {
       update.status = 'analyzed';
     }
-    await MedicalReport.updateOne({ _id: req.params.id }, { $set: update });
+    await MedicalReport.updateOne({ _id: req.params.id, audit_status: 'audited', archiveOnly: { $ne: true } }, { $set: update });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -13694,6 +13755,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (can('report_parse')) {
       const parseFilter = {
         aiStatus: { $in: ['none', 'failed'] },
+        archiveOnly: { $ne: true },
         audit_status: { $nin: ['audited', 'rejected'] },
         $nor: [manualOnlyReportFilter],
         $or: [
@@ -13721,6 +13783,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       // 同时校验业务审核状态，兼容历史上 audit_status 已完成但 aiStatus 仍残留 pending 的数据。
       // 待办的统一口径是“现在仍需处理”，任一完成入口闭环后都不能再次出现。
       const reportFilter = {
+        archiveOnly: { $ne: true },
         $or: [
           { aiStatus: 'pending' },
           { $and: [manualOnlyReportFilter, { aiStatus: { $in: ['none', 'failed'] } }, { $or: [{ fileUrl: /.+/ }, { 'fileUrls.0': { $exists: true } }, { content: /.+/ }] }] },
@@ -13736,7 +13799,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'report_' + r._id, type: 'report_review', label: isManualOnlyReport(r) ? (r.type === 'home_monitor' ? '居家监测待人工审核' : '功能医学待人工审核') : isOutpatientMaterial ? '门诊资料待审核' : '体检报告待审核', priority: 2,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: isManualOnlyReport(r) ? `${r.title} · 请人工核对原件并审核` : r.aiSummary ? r.aiSummary.slice(0, 60) : `${r.title} · AI解析完成`,
+          summary: r.advisorCorrection?.status === 'returned' ? `${r.title} · 顾问退回：${r.advisorCorrection.reason || '请重新核对'}` : isManualOnlyReport(r) ? `${r.title} · 请人工核对原件并审核` : r.aiSummary ? r.aiSummary.slice(0, 60) : `${r.title} · AI解析完成`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
         });
@@ -15345,6 +15408,21 @@ async function syncBodyCompositionFromReport(report) {
   );
 }
 
+async function removeBodyCompositionFromReturnedReport(userId, reportId) {
+  const _id = new mongoose.Types.ObjectId(String(userId));
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const user = await User.findById(_id).select('bodyCompHistory bodyComposition').lean();
+    if (!user) return;
+    const previous = user.bodyCompHistory || [];
+    const remaining = previous.filter(row => String(row?.sourceReportId || '') !== String(reportId));
+    if (remaining.length === previous.length) return;
+    const latest = remaining[remaining.length - 1] || {};
+    const changed = await User.collection.updateOne({ _id, bodyCompHistory: previous }, { $set: { bodyCompHistory: remaining, bodyComposition: latest } });
+    if (changed.modifiedCount) return;
+  }
+  throw new Error('身体成分历史正在变化，请刷新后重试撤回派生数据');
+}
+
 // 从检验单标题解析出"应有条数"，如"抗核抗体谱15项"→15，"肝功能八项"→8，中文数字/阿拉伯数字都支持
 const CN_NUM = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
 function parseExpectedCount(orderName) {
@@ -16468,6 +16546,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (report.archiveOnly) return res.status(409).json({ success: false, message: '仅留存的补充原件不参与解析' });
     const forcePrescriptionParse = req.body?.forcePrescriptionParse === true
       && report.documentCategory === 'prescription_order' && report.audit_status !== 'audited';
     const forceOutpatientParse = req.body?.forceOutpatientParse === true
@@ -16508,7 +16587,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     }
 
     // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
-    const claimed = await MedicalReport.findOneAndUpdate({ _id: report._id, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, 'pageParseStatus.status': { $ne: 'processing' } }, require('../utils/reportParseJobUpdate').reportParseJobUpdate({
+    const claimed = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, 'pageParseStatus.status': { $ne: 'processing' } }, require('../utils/reportParseJobUpdate').reportParseJobUpdate({
       status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: crypto.randomUUID(), actorId: String(req.staff?._id || ''), message: '正在识别',
     }, { aiStatus: 'processing' }));
     if (!claimed) return res.status(409).json({ success: false, message: '报告已在识别、补提或暂停状态，请刷新' });
@@ -16534,12 +16613,13 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
     const { isActivePageParse } = require('../utils/reportPageSupplement');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (report.archiveOnly) return res.status(409).json({ success: false, message: '仅留存的补充原件不参与解析' });
     if (report.documentCategory === 'outpatient_record') return res.status(400).json({ success: false, message: '门诊病历按整份病历栏目提取，请使用病历专用解析入口' });
     if (isManualOnlyReport(report)) return res.status(400).json({ success: false, message: manualOnlyReportMessage(report), skipAi: true });
     if (isActivePageParse(report.pageParseStatus, pageNum)) {
       return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });
     }
-    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(Date.now() - 20 * 60000) } }] }, { pageParseStatus: { pageNum, status: 'processing', startedAt: new Date(), message: `正在补提第${pageNum}页` } });
+    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(Date.now() - 20 * 60000) } }] }, { pageParseStatus: { pageNum, status: 'processing', startedAt: new Date(), message: `正在补提第${pageNum}页` } });
     if (!pageClaim) return res.status(409).json({ success: false, message: '报告正在识别、补提或已暂停，请勿重复提交' });
     runReportPageParse(report._id, pageNum).catch(async error => {
       console.error(`[parse-page] ${report._id} P${pageNum} 失败:`, error.message);

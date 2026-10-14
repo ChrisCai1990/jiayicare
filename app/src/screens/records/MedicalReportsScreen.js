@@ -142,7 +142,9 @@ function ReportCard({ report, onPreview, autoExpand, highlightItemIndex }) {
           </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {report.aiStatus === 'pending' && <View style={styles.aiPendingBadge}><Text style={styles.aiPendingText}>待审核</Text></View>}
+          {report.archiveOnly && <View style={styles.aiPendingBadge}><Text style={styles.aiPendingText}>仅留存</Text></View>}
+          {report.advisorCorrection?.status === 'returned' && <View style={styles.aiPendingBadge}><Text style={styles.aiPendingText}>结果待修正</Text></View>}
+          {!report.archiveOnly && report.aiStatus === 'pending' && <View style={styles.aiPendingBadge}><Text style={styles.aiPendingText}>待审核</Text></View>}
           {report.aiStatus === 'reviewed' && <Ionicons name="checkmark-circle" size={18} color={colors.success} />}
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
         </View>
@@ -150,6 +152,8 @@ function ReportCard({ report, onPreview, autoExpand, highlightItemIndex }) {
 
       {expanded && (
         <View style={styles.reportCardBody}>
+          {report.archiveOnly && <Text style={styles.reportMeta}>同次体检补充原件，仅供查阅；结果以已审核报告为准。</Text>}
+          {report.advisorCorrection?.status === 'returned' && <Text style={styles.reportMeta}>健康顾问已退回核对，修正前请以报告原件为准。</Text>}
           {hasFile && (
             <TouchableOpacity style={styles.viewOriginalBtn} onPress={() => openOriginalFile(report, onPreview)} activeOpacity={0.8}>
               <Ionicons name="document-attach-outline" size={16} color={colors.primary} />

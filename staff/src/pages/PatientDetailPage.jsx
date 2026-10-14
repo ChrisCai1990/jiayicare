@@ -2133,6 +2133,10 @@ export default function PatientDetailPage() {
   const [showReferralModal, setShowReferralModal] = useState(() => !!location.state?.editReferral)
   const [editingReferral, setEditingReferral] = useState(() => location.state?.editReferral || null)
   const [showReportDetail, setShowReportDetail] = useState(null)
+  const [archiveSourceReportId, setArchiveSourceReportId] = useState('')
+  const [advisorReturnReason, setAdvisorReturnReason] = useState('')
+  const [reportFlowSaving, setReportFlowSaving] = useState(false)
+  const [reportFlowError, setReportFlowError] = useState('')
   const [reportDetailLoading, setReportDetailLoading] = useState(false)
   const [showSRDetail, setShowSRDetail] = useState(null)
   const [reviewingDraft, setReviewingDraft] = useState(null)
@@ -3125,6 +3129,9 @@ export default function PatientDetailPage() {
   const openReportDetail = (r) => {
     // 立即显示弹窗（用列表里已有的数据）
     setShowReportDetail(r)
+    setArchiveSourceReportId('')
+    setAdvisorReturnReason('')
+    setReportFlowError('')
     setReportDateEditing(false)
     setReportDateDraft(r.checkDate || r.date || '')
     setReportScreeningData([])
@@ -3512,7 +3519,7 @@ export default function PatientDetailPage() {
       toast('基本信息已保存')
       setEditingBasicInfo(false)
       load()
-    } catch (err) { toast(err.message || '保存失败') }
+    } catch (err) { setReportFlowError(err.message || '保存失败') }
   }
 
   const handleSaveHealthNeeds = async () => {
@@ -4569,6 +4576,33 @@ export default function PatientDetailPage() {
     } finally {
       setAuditLoading(false)
     }
+  }
+
+  const archiveSupplementReport = async () => {
+    if (!archiveSourceReportId || !showReportDetail) return
+    try {
+      setReportFlowSaving(true)
+      await staffAPI.archiveReportOnly(showReportDetail._id, archiveSourceReportId)
+      toast('补充原件已留存，不进入解析和审核')
+      setShowReportDetail(null)
+      loadReports()
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setReportFlowSaving(false) }
+  }
+
+  const returnReportToManager = async () => {
+    const reason = advisorReturnReason.trim()
+    if (!reason || !showReportDetail) return
+    try {
+      setReportFlowSaving(true)
+      await staffAPI.returnReportToManager(showReportDetail._id, reason)
+      toast('已退回健管专员修改')
+      setShowReportDetail(null)
+      loadReports()
+      loadPendingDoctorAudit()
+      load()
+    } catch (err) { setReportFlowError(err.message || '退回失败') }
+    finally { setReportFlowSaving(false) }
   }
 
   if (loading) return <div className="page-loading">加载中...</div>
@@ -10517,6 +10551,7 @@ export default function PatientDetailPage() {
         }
         const reportYears = [...new Set(reports.map(getReportYear))].sort((a, b) => b.localeCompare(a, 'zh', { numeric: true }))
         const getReportTaskKey = (report) => {
+          if (report.archiveOnly) return 'archive'
           if (report.audit_status === 'audited' || report.aiStatus === 'reviewed') return 'audited'
           if (report.audit_status === 'rejected' || report.aiStatus === 'rejected') return 'rejected'
           // 历史临床资料曾被跳过解析；归类修正后应回到待解析队列。
@@ -10534,6 +10569,7 @@ export default function PatientDetailPage() {
           { key: 'failed', label: '识别失败' },
           { key: 'review', label: '待审核' },
           { key: 'audited', label: '已审核' },
+          { key: 'archive', label: '仅留存' },
         ]
         // 支持标题/机构关键词及年份筛选，结果统一进入一张总表。
         const kw = reportSearchKw.trim().toLowerCase()
@@ -10668,7 +10704,9 @@ export default function PatientDetailPage() {
                       <thead><tr><th>资料名称</th><th>资料分类</th><th>来源机构</th><th>资料日期</th><th>人工审核</th><th>处理状态</th><th>操作</th></tr></thead>
                       <tbody>
                       {paginatedReportRows.map(({ report: r, typeLabel }) => {
-                        const auditLabel = r.audit_status === 'audited' ? '已审核'
+                        const auditLabel = r.archiveOnly ? '仅留存·不解析'
+                          : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改'
+                          : r.audit_status === 'audited' ? '已审核'
                           : r.audit_status === 'rejected' ? '已驳回'
                           : isManualOnlyReport(r) ? '待人工审核'
                           : r.aiStatus === 'none' ? '待解析'
@@ -10676,14 +10714,14 @@ export default function PatientDetailPage() {
                           : r.parseJob?.status === 'paused' ? '识别已暂停'
                           : r.aiStatus === 'failed' ? '识别失败'
                           : '待审核'
-                        const auditColor = r.audit_status === 'audited' ? '#22A06B'
+                        const auditColor = r.archiveOnly ? '#64748B' : r.advisorCorrection?.status === 'returned' ? '#DC3545' : r.audit_status === 'audited' ? '#22A06B'
                           : (r.audit_status === 'rejected' || (!isManualOnlyReport(r) && r.aiStatus === 'failed')) ? '#DC3545' : '#D97706'
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const manualOnly = isManualOnlyReport(r)
                         const isClinicalDocument = CLINICAL_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r))
                         const isOutpatientRecord = inferDocumentCategory(r) === 'outpatient_record'
                         const canParseLegacyClinical = isClinicalDocument && r.parseJob?.status === 'skipped' && !r.reportItems?.length
-                        const needsAIParse = !manualOnly && (['none', 'failed'].includes(r.aiStatus) || canParseLegacyClinical)
+                        const needsAIParse = !r.archiveOnly && !manualOnly && (['none', 'failed'].includes(r.aiStatus) || canParseLegacyClinical)
                         return (
                           <React.Fragment key={r._id}>
                           <tr>
@@ -10699,7 +10737,7 @@ export default function PatientDetailPage() {
                             <td style={{ fontSize: 11 }}>{r.audited_at ? new Date(r.audited_at).toLocaleString() : '未完成'}<br />{r.audited_by || ''}<br />{Object.keys(r.reviewActivity || {}).length ? `有效时长 ${Math.round(Object.values(r.reviewActivity).reduce((sum, session) => sum + (session.durationMs || 0), 0) / 60000)} 分钟` : '时长未记录'}</td>
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              {isOutpatientRecord ? <>
+                              {r.archiveOnly ? <button className="btn btn-sm report-action-primary" onClick={() => openReportDetail(r)}>查看原件</button> : isOutpatientRecord ? <>
                                 {!['audited', 'rejected'].includes(r.audit_status) && (r.fileUrl || r.content || r.hasContent || r.fileUrls?.length) && r.aiStatus !== 'processing' && <button className="btn btn-sm report-action-review"
                                   disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
                                   onClick={() => handleParseReportAI(r._id, { forceOutpatientParse: true })}>
@@ -12266,8 +12304,10 @@ export default function PatientDetailPage() {
                   ...(categoryLabel && categoryLabel !== typeLabel ? [['分类', categoryLabel]] : []),
                   ['医院 / 机构', r.hospital || '-'],
                   ['报告日期', r.checkDate || r.date || '-'],
-                  ['审核状态', r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
+                  ['审核状态', r.archiveOnly ? '仅留存·不解析' : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改' : r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
                   ['审核人', r.audited_by || '-'],
+                  ...(r.archiveOnly ? [['关联已审报告', reports.find(item => item._id === String(r.archiveSourceReportId))?.title || '已关联']] : []),
+                  ...(r.advisorCorrection?.reason ? [['顾问退回原因', r.advisorCorrection.reason]] : []),
                   ...(r.reject_reason ? [['驳回原因', r.reject_reason]] : []),
                   ['上传人', r.uploadedBy?.name || '-'],
                 ]
@@ -12525,9 +12565,27 @@ export default function PatientDetailPage() {
             </div>
             </div>
             <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
+              {reportFlowError && <div role="alert" style={{ color: '#B42318', fontSize: 13 }}>{reportFlowError}</div>}
+              {['healthManager', 'superadmin'].includes(staff?.role) && !showReportDetail.archiveOnly && showReportDetail.audit_status === 'unaudited' && showReportDetail.aiStatus === 'none' && !showReportDetail.reportItems?.length && (showReportDetail.fileUrl || showReportDetail.fileUrls?.length || showReportDetail.content) && (
+                <div style={{ display: 'grid', gap: 7, padding: 10, background: '#F4F7FA', borderRadius: 8 }}>
+                  <b style={{ fontSize: 13 }}>同次体检补充原件：仅留存，不解析</b>
+                  <select className="form-input" value={archiveSourceReportId} onChange={e => setArchiveSourceReportId(e.target.value)}>
+                    <option value="">选择本次体检已审核的截图报告</option>
+                    {reports.filter(item => item._id !== showReportDetail._id && item.audit_status === 'audited' && !item.archiveOnly).map(item => <option key={item._id} value={item._id}>{item.checkDate || item.date || '日期待核对'} · {item.title}</option>)}
+                  </select>
+                  <button className="btn btn-secondary btn-sm" disabled={!archiveSourceReportId || reportFlowSaving} onClick={archiveSupplementReport}>确认仅留存原件</button>
+                </div>
+              )}
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && showReportDetail.audit_status === 'audited' && !showReportDetail.archiveOnly && (
+                <div style={{ display: 'grid', gap: 7, padding: 10, background: '#FFF7F5', borderRadius: 8 }}>
+                  <b style={{ fontSize: 13 }}>发现归类或正常/异常判断有误？退回健管专员修改</b>
+                  <textarea className="form-input" rows={2} maxLength={1000} placeholder="请写明报告项目、错误内容和需要核对之处" value={advisorReturnReason} onChange={e => setAdvisorReturnReason(e.target.value)} />
+                  <button className="btn btn-danger btn-sm" disabled={!advisorReturnReason.trim() || reportFlowSaving} onClick={returnReportToManager}>退回健管专员修改</button>
+                </div>
+              )}
               {/* 只有明确无需结构化解析的资料可直接人工审核。用药、处方、病历和检验检查
                   即使尚未开始解析也必须先进入 AI 解析/核对结果流程，避免空解析直接流转顾问。 */}
-              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
+              {!showReportDetail.archiveOnly && showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
                 && isManualOnlyReport(showReportDetail) && (
                 <>
                   {showRejectInput ? (
@@ -12564,7 +12622,7 @@ export default function PatientDetailPage() {
                   )}
                 </>
               )}
-              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
+              {!showReportDetail.archiveOnly && showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
                 && !isManualOnlyReport(showReportDetail) && (
                 <div style={{ fontSize: 12, color: '#8AA89C', textAlign: 'center', padding: '4px 0' }}>
                   {showReportDetail.aiStatus === 'none' ? '请先返回报告列表点击“AI解析”，再在“审核AI结果”中核对并确认' : '请在“审核AI结果”里确认解析数据，确认后自动完成审核'}

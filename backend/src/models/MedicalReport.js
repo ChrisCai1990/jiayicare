@@ -176,6 +176,13 @@ const medicalReportSchema = new mongoose.Schema({
   audited_by:   { type: String, default: '' },
   audited_at:   { type: Date,   default: null },
   reject_reason:{ type: String, default: '' },
+  // 同次体检后补的完整原件：保留文件，结构化结果仍以关联的已审核报告为准。
+  archiveOnly: { type: Boolean, default: false },
+  archiveSourceReportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
+  archiveOnlyAt: { type: Date, default: null },
+  archiveOnlyBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  // 顾问退回保留原审核快照，避免错误结果在补正期间继续参与分析。
+  advisorCorrection: { type: mongoose.Schema.Types.Mixed, default: null },
   // 处方/门诊/住院资料不复用体检的 reportItems。此处保存人工逐项核对的业务结构及审核结论。
   clinicalReview: { type: mongoose.Schema.Types.Mixed, default: null },
   classificationCorrection: { type: mongoose.Schema.Types.Mixed, default: null },

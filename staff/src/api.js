@@ -266,6 +266,8 @@ export const staffAPI = {
     xhr.send(JSON.stringify(data))
   }),
   auditReport:   (id, d)  => req(`/staff/medical-reports/${id}/audit`, { method: 'PATCH', body: JSON.stringify(d) }),
+  archiveReportOnly: (id, sourceReportId) => req(`/staff/medical-reports/${id}/archive-only`, { method: 'PATCH', body: JSON.stringify({ sourceReportId }) }),
+  returnReportToManager: (id, reason) => req(`/staff/medical-reports/${id}/advisor-return`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
   updateReportPageDate: (id, page, date) => req(`/staff/medical-reports/${id}/page-dates/${page}`, { method: 'PATCH', body: JSON.stringify({ date }) }),
   updateReportItem: (id, itemId, d) => req(`/staff/medical-reports/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
