@@ -11620,6 +11620,7 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     const list = sourceRecord?.sections?.[sectionKey]?.[field];
     const itemIndex = Array.isArray(list) ? list.findIndex(item => item.name === itemName) : -1;
     if (itemIndex < 0) return res.status(404).json({ success: false, message: '未找到需要重新生成的卡片' });
+    const previousSectionSummary = sourceRecord.sections[sectionKey].summary;
 
     const aliases = {
       头颅MRI: /头颅|颅脑|脑部|MRI|磁共振/i, 头颅MRA: /头颅|颅脑|MRA|脑血管/i,
@@ -11748,7 +11749,14 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     if (!deterministicHcy) await syncMedicalPriorities(record, sectionKey, req.staff, itemName);
     record.itemRegenerationLog = [...(record.itemRegenerationLog || []), { sectionKey, itemName, instruction: String(instruction).trim(), at: new Date(), by: req.staff._id }];
     applyHealthTrendOverview(summary, y, entry, records, approvedSource ? [record, ...candidates] : candidates, record, sectionKey, finalOverview, req.staff);
-    const unsupported = findUnsupportedTumorMarkerElevation(record.sections, reports);
+    // This route edits one card and its derived overview. Older, unrelated claims
+    // remain review-blocked, but must not prevent a correct card from being saved.
+    const changedClaims = { card: updatedItem, overview: finalOverview,
+      ...(record.sections[sectionKey].summary !== previousSectionSummary
+        ? { summary: record.sections[sectionKey].summary } : {}),
+      linkedPriorities: (record.sections.medical_priority?.items || [])
+        .filter(item => priorityLinksToCard(item, sectionKey, itemName)) };
+    const unsupported = findUnsupportedTumorMarkerElevation(changedClaims, reports);
     if (unsupported) return res.status(422).json({ success: false,
       message: `${unsupported.marker}升高结论仍缺少检验依据，请核对原报告后编辑相关板块；本次结果未保存` });
     if (approvedSource) {

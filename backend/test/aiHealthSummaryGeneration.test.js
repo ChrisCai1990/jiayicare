@@ -334,10 +334,14 @@ test('single liver cancer card regeneration includes infectious screening result
   const card = { name: '肝癌', status: 'covered', latest: '2026-09-23肝脏超声：右肝结节',
     keyChanges: ['2020年初见肝内结节'], nextAction: '按报告建议复查',
     sourceEvidence: [{ oversizedDuplicate: 'DO_NOT_REPEAT_SOURCE_EVIDENCE' }] };
-  const record = { scope: 'doctor', sections: { tumor_risk: { cancers: [card], overview: {} }, medical_priority: { items: [] } } };
+  const record = { scope: 'doctor', sections: { tumor_risk: {
+    cancers: [card], overview: { headline: 'CA72-4持续升高' },
+    summary: 'CA72-4持续升高', abnormal: ['CA72-4持续升高'],
+  }, medical_priority: { items: [] } } };
   const original = { latestYear: '2026', sections: record.sections, byYear: { 2026: { ...record, records: [record] } } };
   const reports = [
     { _id: 'liver', checkDate: '2026-09-23', title: '肝脏超声', reportItems: [{ name: '肝脏超声', findings: '右肝结节' }] },
+    { _id: 'marker', checkDate: '2026-09-23', reportItems: [{ name: 'CA72-4', value: '9.05', referenceRange: '<19.10' }] },
     { _id: 'infection', checkDate: '2026-08-12', title: '传染病筛查', reportItems: [
       { name: '乙肝表面抗原 HBsAg', value: '阴性' }, { name: '丙肝抗体', value: '阳性' },
       { name: '梅毒抗体', value: '阴性' },
@@ -373,6 +377,8 @@ test('single liver cancer card regeneration includes infectious screening result
   assert.match(updated.keyChanges.join(' '), /2026-08-12 乙肝表面抗原 HBsAg：阴性/);
   assert.match(updated.keyChanges.join(' '), /2026-08-12 丙肝抗体：阳性/);
   assert.equal(updated.sourceEvidence[0].reportId, 'infection');
+  assert.equal(saved.byYear[2026].records[0].sections.tumor_risk.summary, 'CA72-4持续升高',
+    'unrelated old claims remain for separate review instead of blocking the liver correction');
 });
 
 test('overview refresh updates an already corrected record without regenerating cards', async () => {
