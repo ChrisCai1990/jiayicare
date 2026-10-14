@@ -20,7 +20,7 @@ function focusedReportHits(reports, topic, rule, referenceYear) {
     if (!matched.length && (!EXAM_TOPICS.has(topic) || !rule.test(reportLabel))) return [];
     const item = matched[0];
     const result = (item
-      ? [item.diagnosis, item.conclusion, item.findings, item.value].filter(Boolean).join('；')
+      ? [item.diagnosis, item.conclusion, item.findings, item.value].find(Boolean)
       : '') || String(report.examConclusion || '').trim();
     return [{
       date, year, name: item?.name || topic, result: result.slice(0, 120),
