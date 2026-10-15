@@ -14,7 +14,17 @@ test('thresholds, incompatible units and same-day conflicts cannot imply numeric
   assert.match(liverMarkerTrends(card([point('2024', '>250'), point('2026', '>250')]))[0].trend, /结果一致/)
   assert.match(liverMarkerTrends(card([point('2024', '<20'), point('2026', '10')]))[0].trend, /不能计算/)
   assert.match(liverMarkerTrends(card([point('2024', '2', 'IU/L'), point('2026', '3')]))[0].trend, /单位或参考范围不同/)
-  assert.match(liverMarkerTrends(card([point('2026', '2'), point('2026', '3')]))[0].trend, /同日结果不一致/)
+  assert.match(liverMarkerTrends(card([point('2026', '2'), point('2026', '3')]))[0].trend, /日期归属待核对/)
+})
+test('all years stay visible and only matching full dates need review', () => {
+  const rows = [point('2022-06-23', '>250.00'), point('2023-08-23', '> 250.00 ↑'), point('2023-08-23', '> 250.00'), point('2024-07-11', '>250.00'), point('2025-09-23', '>250.00'), point('2026-09-23', '>250.00')]
+  const [group] = liverMarkerTrends(card(rows))
+  assert.equal(group.datedResults.length, 5)
+  assert.deepEqual(group.conflictDates, [])
+  assert.equal(group.datedResults[1].results.length, 1)
+  assert.equal(group.trend, '历次报告结果一致')
+  const [conflict] = liverMarkerTrends(card([...rows, point('2025-09-23', '414.00')]))
+  assert.deepEqual(conflict.conflictDates, ['2025-09-23'])
 })
 test('raw prose is hidden only when source-based trends are available', () => {
   const changes = ['MRI确认血管瘤', '肝炎筛查原报告：大量数值']

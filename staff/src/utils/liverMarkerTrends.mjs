@@ -11,6 +11,8 @@ const markers = [
   ['AFP', /\bAFP\b|甲胎蛋白/i],
 ]
 const normalize = value => String(value || '').replace(/\s/g, '').toLowerCase()
+// Keep original text for review; arrows and whitespace are presentation, not a different measurement.
+const resultKey = point => `${normalize(point.value).replace(/[↑↓]/g, '')}|${normalize(point.unit)}`
 export function liverMarkerTrends(card) {
   if (card?.name !== '肝癌') return []
   const groups = new Map()
@@ -29,18 +31,22 @@ export function liverMarkerTrends(card) {
     const first = points[0], last = points.at(-1)
     const sameScale = points.every(p => normalize(p.unit) === normalize(first.unit)
       && normalize(p.referenceRange) === normalize(first.referenceRange))
-    const conflict = points.some((p, i) => points.some((q, j) => i !== j && p.date === q.date
-      && (p.value !== q.value || normalize(p.unit) !== normalize(q.unit))))
+    const datedResults = [...new Set(points.map(p => p.date))].map(date => {
+      const rows = points.filter(p => p.date === date)
+      const results = rows.filter((p, i) => rows.findIndex(q => resultKey(q) === resultKey(p)) === i)
+      return { date, results, needsDateReview: results.length > 1 }
+    })
+    const conflictDates = datedResults.filter(row => row.needsDateReview).map(row => row.date)
     const exact = points.every(p => /^\d+(?:\.\d+)?$/.test(p.value))
     let trend = '结果类型不同，需核对'
     if (points.length === 1) trend = '仅一次记录'
-    else if (conflict) trend = '同日结果不一致，需核对'
+    else if (conflictDates.length) trend = '部分记录日期归属待核对'
     else if (!sameScale) trend = '单位或参考范围不同'
-    else if (points.every(p => p.value === first.value)) trend = '历次报告结果一致'
+    else if (points.every(p => resultKey(p) === resultKey(first))) trend = '历次报告结果一致'
     else if (exact && first.unit) trend = Number(last.value) > Number(first.value)
       ? '首末数值上升' : Number(last.value) < Number(first.value) ? '首末数值下降' : '首末相同，期间有变化'
     else if (points.some(p => /[<>＜＞≤≥]/.test(p.value))) trend = '含检测界限，不能计算增减'
-    return { name, points, first, last, trend }
+    return { name, points, first, last, trend, datedResults, conflictDates }
   })
 }
 export function liverKeyChanges(card) {
