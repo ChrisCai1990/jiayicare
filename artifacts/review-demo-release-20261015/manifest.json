@@ -1,0 +1,48 @@
+{
+  "backend": [
+    {
+      "path": "src/routes/reviewAccount.js",
+      "old": "53a67ad231c4c5b4e6c6ff95b4b64d5a89de491213a29cc08ea55d2bd66766f3",
+      "new": "b971925248fe38d455f60df7587f82e6b2d953bff30258a8bb655e0451860a98"
+    },
+    {
+      "path": "src/middleware/reviewBoundary.js",
+      "old": "75170689d1e3e96b5421a3356cd2422ddfbd47085ae4203b2f1dabe161cf4600",
+      "new": "a1be3885d0899ab5b28c0cd4657d905ec7af8d465d32f8e96839d47435472506"
+    },
+    {
+      "path": "src/models/LoginSession.js",
+      "old": "4756231595c870b3c33e5e0b13f7de368b1e5d0c8f2aa5b7a9a40b3ab3f4d998",
+      "new": "958ca3cee3d179be3e6e61c55d763f414e6e19cc6d4ce5c9b99bbf9104e109ee"
+    },
+    {
+      "path": "src/utils/reviewDemo.js",
+      "old": null,
+      "new": "9218dd37eec9dd83f82114e43c47373ec4ab9898143c196eabdaa8288a56605f"
+    },
+    {
+      "path": "src/routes/reviewDemo.js",
+      "old": null,
+      "new": "79ae7e0ef8549ccf7b7693aafab747ca861e37d38d1b25f289ae9cfd6e62a4a4"
+    }
+  ],
+  "indexes": [
+    {
+      "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/index.html",
+      "local": "normal-index.html",
+      "old": "ebbeb3bc84c1b378fa81f92b1e7a7b15cd0ee633a7125046d71aa26ddbbba02c",
+      "new": "cc3fc906aa2e66e61041ed299f3db7226ec15df5178deb865f83b547d7a77b8f"
+    },
+    {
+      "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/index.html",
+      "local": "review-index.html",
+      "old": "8fbceb2a980321a4d4ef5e903f2113823234f82b557687b73d1839c29e036031",
+      "new": "eb5f6deae7b2cd1fa1a0cd1361279689d3c1e703ebc2320e29c892e52c409dbc"
+    }
+  ],
+  "assets": {
+    "entry.js": "186e6ae4c14145459bb3a9fc3c8bf7ff68a547b4b6e6cd5f8cb1a82e9e5990ae",
+    "gateway.js": "22455bc411281480d7738429f8f77607299f24e1c140f6ee62520612750c63d0",
+    "index.html": "91bf9536247691ec7bf4efb40ed86a5bfbda49da032ff405cf4f8369c979c7b9"
+  }
+}
