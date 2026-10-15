@@ -8819,12 +8819,15 @@ export default function PatientDetailPage() {
                               <span>常见肿瘤目录 {cancers.length} 项</span>
                               <span style={{ color: '#15803D' }}>已覆盖 {Number(ov.coveredCount) || cancers.filter(c => c.status === 'covered').length} 项</span>
                               <span style={{ color: '#B91C1C' }}>需关注 {Number(ov.attentionCount) || cancers.filter(c => ['follow_up_due', 'overdue', 'due_soon'].includes(c.status)).length} 项</span>
-                              <span>待补资料 {Number(ov.unknownCount) || cancers.filter(c => c.status === 'unknown').length} 项</span>
+                              <span>待核对 {cancers.filter(c => c.status === 'unknown').length} 项</span>
                             </div>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
                             {cancers.map((cancer, index) => {
-                              const meta = statusMeta[cancer.status] || statusMeta.unknown
+                              const hasExamEvidence = (cancer.sourceEvidence || []).some(source => (source.items || []).length > 0)
+                              const meta = cancer.status === 'unknown' && hasExamEvidence
+                                ? { label: '已有检查·待核适用条件', color: '#64748B', bg: '#F1F5F9' }
+                                : (statusMeta[cancer.status] || statusMeta.unknown)
                               const needsAttention = ['follow_up_due', 'overdue', 'due_soon'].includes(cancer.status)
                               return <details key={`${cancer.name}-${index}`} open={lastRegeneratedItem === `tumor_risk:${cancer.name}`}
                                 style={{ border: `1px solid ${needsAttention ? meta.bg : '#E5E7EB'}`, borderRadius: 9, background: '#fff', padding: '9px 11px' }}>
@@ -8842,8 +8845,9 @@ export default function PatientDetailPage() {
                                   {cancer.riskBasis && cancer.status === 'unknown' && <div><b style={{ color: '#64748B' }}>待核对：</b>{cancer.riskBasis}</div>}
                                   <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(cancer, 'tumor_risk')}>🔗 按年份查看对应材料</button>
                                   <SpecialtyConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
-                                    source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'tumor_risk', itemName: cancer.name }} suggestedIssue={cancer.name}
-                                    sourceLabel={`${curYear}年度已审核健康趋势 · ${cancer.name}`} />
+                                    source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'tumor_risk', itemName: cancer.name }}
+                                    sourceText={[cancer.latest, cancer.trend, ...(cancer.keyChanges || [])].filter(Boolean).join('；')}
+                                    sourceLabel={`${curYear}年度肿瘤筛查 · ${cancer.name}`} />
                                   <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem('tumor_risk', cancer.name, { year: curYear, recordIndex: doctorRecord._recordIndex, expectedRecordToken: doctorRecord._reviewToken })}>✎ 录入问题并单项重新生成</button>
                                 </div>
                               </details>

@@ -104,13 +104,31 @@ async function concernSource(user, input) {
     const sectionReview = record?.sectionReviews?.[input.sectionKey];
     const wholeApproved = record?.doctorApprovedAt || record?.approvedAt;
     const sectionApproved = sectionReview?.status === 'approved' && (sectionReview.approvedAt || wholeApproved);
-    if (!record || (!sectionApproved && (!wholeApproved || sectionReview)))
-      throw Object.assign(new Error('请先审核该板块，再纳入年度研判'), { status: 409 });
+    if (!record) throw Object.assign(new Error('健康信息整理项目已变化，请刷新后重试'), { status: 409 });
     const section = record.sections?.[input.sectionKey] || {};
     const rows = section.items || section.topics || section.cancers || [];
     const row = rows.find(item => item.name === input.itemName);
     if (!row) throw Object.assign(new Error('健康信息整理项目已变化，请刷新后重试'), { status: 409 });
     const title = String(row.name || '').trim();
+    if (!sectionApproved && (!wholeApproved || sectionReview)) {
+      // An unreviewed AI card is only a locator. Use audited original reports as
+      // evidence so the concern can be discussed without approving the AI text.
+      const links = (row.sourceEvidence || []).filter(link => link.reportId && Array.isArray(link.items) && link.items.length);
+      const ids = [...new Set(links.map(link => String(link.reportId)).filter(id => mongoose.isValidObjectId(id)))];
+      const reports = ids.length ? await MedicalReport.find({ _id: { $in: ids }, user: user._id, audit_status: 'audited' }).lean() : [];
+      const byId = new Map(reports.map(report => [String(report._id), report]));
+      const evidence = links.flatMap(link => {
+        const report = byId.get(String(link.reportId));
+        if (!report) return [];
+        return link.items.map(item => report.reportItems?.[item.itemIndex])
+          .filter((item, index) => item && (!link.items[index].name || item.name === link.items[index].name))
+          .map(item => `${report.checkDate || report.reportYear || '日期待核对'} ${item.name || ''}：${item.conclusion || item.diagnosis || item.findings || [item.value, item.unit].filter(Boolean).join(' ')}`);
+      }).filter(Boolean);
+      if (!evidence.length) throw Object.assign(new Error('请先审核该板块，或关联已审核的原始报告后再纳入年度研判'), { status: 409 });
+      return { key: `ai_health:${year}:${input.sectionKey}:${title}`, kind: 'screening', title,
+        evidence: evidence.join('；').slice(0, 600),
+        source: { year, sectionKey: input.sectionKey, reportIds: reports.map(report => String(report._id)), evidenceType: 'audited_reports' } };
+    }
     return { key: `ai_health:${year}:${input.sectionKey}:${title}`, kind: input.sectionKey === 'medical_priority' ? 'ai_risk_scan' : 'ai_health_trend', title,
       evidence: [row.latest || row.current, row.trend, ...(row.keyChanges || []), row.meaning || row.riskBasis].filter(Boolean).join('；').slice(0, 600),
       source: { year, sectionKey: input.sectionKey, approvedAt: sectionApproved || wholeApproved,

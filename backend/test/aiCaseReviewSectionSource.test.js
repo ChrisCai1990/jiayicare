@@ -22,3 +22,29 @@ test('annual concern accepts the latest separately approved section without appr
   assert.equal(approved.source.approvedAt, '2026-10-14');
   await assert.rejects(context.concernSourceForTest(user, { kind: 'ai_health', year: 2026, sectionKey: 'tumor_risk', itemName: '胃癌' }), /请先审核该板块/);
 });
+
+test('unreviewed AI card can locate an audited report without treating AI text as reviewed evidence', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/aiCaseReviews.js'), 'utf8');
+  const start = source.indexOf('const CONCERN_SECTIONS =');
+  const end = source.indexOf('async function caseReviewPatientOr404', start);
+  const reportId = '507f1f77bcf86cd799439011';
+  let reportFilter;
+  const context = {
+    mongoose: { isValidObjectId: id => id === reportId },
+    MedicalReport: { find: filter => { reportFilter = filter; return { lean: async () => [{ _id: reportId, checkDate: '2026-09-23',
+      reportItems: [{ name: '肝脏超声', conclusion: '右肝偏高回声结节，边界清晰' }] }] }; } },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end)}\nglobalThis.concernSourceForTest = concernSource;`, context);
+  const record = { scope: 'doctor', sectionReviews: { tumor_risk: { status: 'draft' } },
+    sections: { tumor_risk: { cancers: [{ name: '肝癌', latest: '未经审核的AI文字',
+      sourceEvidence: [{ reportId, items: [{ itemIndex: 0 }] }] }] } } };
+  const user = { _id: 'patient', aiHealthSummary: { byYear: { 2026: { records: [record] } } } };
+  const result = await context.concernSourceForTest(user, { kind: 'ai_health', year: 2026, sectionKey: 'tumor_risk', itemName: '肝癌' });
+  assert.equal(result.kind, 'screening');
+  assert.equal(reportFilter.audit_status, 'audited');
+  assert.equal(reportFilter.user, 'patient');
+  assert.match(result.evidence, /右肝偏高回声结节/);
+  assert.doesNotMatch(result.evidence, /未经审核的AI文字/);
+  assert.equal(result.source.evidenceType, 'audited_reports');
+});
