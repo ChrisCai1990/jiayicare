@@ -32,7 +32,8 @@ function createReviewDemo({ connection, models, env = process.env, now = Date.no
       }
       const id = crypto.randomBytes(16).toString('hex');
       const expiresAt = new Date(timestamp + 86400000);
-      tenant = await Tenant.create({ code: `demo-${id}`, name: '合成演示机构', status: 'active', note: '独立演示资料，不承接真实服务' });
+      tenant = await Tenant.create({ code: `demo-${id}`, name: '合成演示机构', status: 'active',
+        websiteHosts: [`demo-${id}.invalid`], note: '独立演示资料，不承接真实服务' });
       user = await User.create({ tenantId: tenant._id, name: '演示体验用户', gender: '未知',
         onboardingCompleted: true, onboardingCompletedAt: new Date(timestamp),
         height: 170, weight: 65, servicePackage: '合成演示体验', serviceExpiry: expiresAt.toISOString().slice(0, 10),

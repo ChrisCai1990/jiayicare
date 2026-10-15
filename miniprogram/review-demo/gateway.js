@@ -6,6 +6,8 @@
   const error = document.getElementById('error');
   let busy = false;
   consent.addEventListener('change', () => { button.disabled = busy || !consent.checked; });
+  // A fast tap or browser form restoration may precede this external script.
+  button.disabled = !consent.checked;
   button.addEventListener('click', async () => {
     if (busy || !consent.checked) return;
     busy = true; button.disabled = true; button.textContent = '正在准备演示资料…'; error.textContent = '';

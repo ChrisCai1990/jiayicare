@@ -48,6 +48,8 @@ test('each visitor gets independent tenant, records and revocable bounded claims
   assert.equal(a.status, 200); assert.equal(b.status, 200);
   assert.notEqual(a.body.data.user._id, b.body.data.user._id);
   assert.notEqual(a.body.data.user.tenantId, b.body.data.user.tenantId);
+  assert.notEqual(s.saved.Tenant[0].websiteHosts[0], s.saved.Tenant[1].websiteHosts[0]);
+  assert.ok(s.saved.Tenant[0].websiteHosts[0].endsWith('.invalid'));
   assert.equal(s.saved.Record.length, 8); assert.equal(s.saved.Admin.length, 6);
   const claims = jwt.verify(a.body.data.token, env.JWT_SECRET, { issuer: 'jiayicare-review', audience: 'jiayicare-review' });
   assert.equal(claims.id, a.body.data.user._id); assert.equal(claims.exp - claims.iat, 86400);
