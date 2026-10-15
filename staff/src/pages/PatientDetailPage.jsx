@@ -14801,6 +14801,8 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
   const [error, setError] = useState('')
   const [giftProducts, setGiftProducts] = useState([])
   const [productSearch, setProductSearch] = useState('')
+  const [productListOpen, setProductListOpen] = useState(false)
+  const [activeProductIndex, setActiveProductIndex] = useState(-1)
   const [productsLoading, setProductsLoading] = useState(true)
   const [productsError, setProductsError] = useState('')
   useEffect(() => {
@@ -14811,11 +14813,29 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
     return () => { active = false }
   }, [patientId])
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
-  const searchKeyword = productSearch.trim().toLowerCase()
+  const selectedProduct = giftProducts.find(product => String(product._id) === String(form.productId))
+  const searchKeyword = (form.productId ? '' : productSearch).trim().toLowerCase()
   const matchingProducts = giftProducts.filter(product =>
     !searchKeyword || [product.name, product.category, product.description].filter(Boolean).join(' ').toLowerCase().includes(searchKeyword)
   )
-  const selectedProduct = giftProducts.find(product => String(product._id) === String(form.productId))
+  const chooseProduct = product => {
+    setForm(value => ({ ...value, productId: String(product._id) }))
+    setProductSearch(product.name)
+    setProductListOpen(false)
+  }
+  const handleProductKeyDown = event => {
+    if (event.key === 'Escape') { setProductListOpen(false); return }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      setProductListOpen(true)
+      setActiveProductIndex(index => event.key === 'ArrowDown'
+        ? Math.min(index + 1, matchingProducts.length - 1)
+        : index < 0 ? matchingProducts.length - 1 : Math.max(index - 1, 0))
+    } else if (event.key === 'Enter' && productListOpen && activeProductIndex >= 0 && matchingProducts.length) {
+      event.preventDefault()
+      chooseProduct(matchingProducts[activeProductIndex])
+    }
+  }
 
   const handleSubmit = async () => {
     if (form.giftType === 'service' && !form.productId) { setError('请选择商城服务'); return }
@@ -14864,16 +14884,19 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
             <>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">商城服务 *</label>
-                <input className="form-input" type="search" aria-label="搜索商城服务" placeholder="搜索服务名称、分类或说明" value={productSearch} onChange={e => setProductSearch(e.target.value)} disabled={productsLoading || !!productsError} style={{ marginBottom: 8 }} />
-                <select className="form-input" value={form.productId} onChange={e => { set('productId')(e); setProductSearch('') }} disabled={productsLoading || !!productsError}>
-                  <option value="">{productsLoading ? '正在加载商城服务…' : '-- 请选择具体服务 --'}</option>
-                  {selectedProduct && !matchingProducts.some(product => String(product._id) === String(selectedProduct._id)) &&
-                    <option value={selectedProduct._id}>当前已选：{selectedProduct.name}</option>}
-                  {[...new Set(matchingProducts.map(p => p.category))].map(category => <optgroup key={category} label={category || '其他服务'}>
-                    {matchingProducts.filter(p => p.category === category).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
-                  </optgroup>)}
-                  {!productsLoading && !matchingProducts.length && <option disabled>没有匹配的商城服务</option>}
-                </select>
+                <div style={{ position: 'relative' }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setProductListOpen(false) }}>
+                  <input className="form-input" type="search" role="combobox" aria-label="搜索商城服务" aria-autocomplete="list" aria-expanded={productListOpen} aria-controls={productListOpen ? 'gift-product-options' : undefined} aria-activedescendant={productListOpen && activeProductIndex >= 0 && matchingProducts.length ? `gift-product-${activeProductIndex}` : undefined}
+                    placeholder={productsLoading ? '正在加载商城服务…' : '请选择或搜索具体服务'} value={productSearch} disabled={productsLoading || !!productsError}
+                    onFocus={e => { setProductListOpen(true); setActiveProductIndex(-1); if (selectedProduct) e.target.select() }}
+                    onChange={e => { setProductSearch(e.target.value); setForm(value => ({ ...value, productId: '' })); setProductListOpen(true); setActiveProductIndex(0) }}
+                    onKeyDown={handleProductKeyDown} />
+                  {productListOpen && !productsLoading && !productsError && <div id="gift-product-options" role="listbox" style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', background: '#fff', border: '1px solid #DDE4DF', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)' }}>
+                    {matchingProducts.length ? matchingProducts.map((product, index) => <button key={product._id} id={`gift-product-${index}`} type="button" role="option" aria-selected={String(product._id) === String(form.productId)}
+                      onClick={() => chooseProduct(product)} style={{ display: 'block', width: '100%', padding: '9px 12px', textAlign: 'left', border: 0, background: index === activeProductIndex ? '#F0F8F3' : '#fff', color: '#20342B', cursor: 'pointer' }}>
+                      {product.name}<small style={{ marginLeft: 8, color: '#6B7280' }}>{product.category}</small>
+                    </button>) : <div style={{ padding: '10px 12px', color: '#6B7280' }}>没有匹配的商城服务</div>}
+                  </div>}
+                </div>
                 {productsError && <div role="alert" style={{ color: '#B45309', fontSize: 12 }}>{productsError}，请关闭后重试。</div>}
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
