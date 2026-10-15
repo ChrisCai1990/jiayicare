@@ -2,7 +2,19 @@
  * This script also ships through src/index.html on subsequent H5 builds. */
 (function () {
   'use strict';
+  const tabPages = new Set([
+    '/pages/home/index', '/pages/records/index/index',
+    '/pages/chat/index', '/pages/profile/index/index'
+  ]);
   function update() {
+    // A direct hash entry can mount a stationed tab without Taro's tab marker.
+    // WebKit then hides it after another stationed page is created. Restore
+    // only that marker; Taro still owns show/shade and the navigation lifecycle.
+    for (const page of document.querySelectorAll('.taro_router > .taro_page')) {
+      if (tabPages.has(page.id.split('?')[0]) && !page.classList.contains('taro_tabbar_page')) {
+        page.classList.add('taro_tabbar_page');
+      }
+    }
     const onLogin = location.hash.split('?')[0] === '#/pages/auth/login/index';
     if (!onLogin) return;
     if (location.pathname.startsWith('/mobile-preview/review/')) {
@@ -26,7 +38,9 @@
       node.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') enter(event); }, true);
     }
   }
-  new MutationObserver(update).observe(document.documentElement, { childList: true, subtree: true });
+  new MutationObserver(update).observe(document.documentElement, {
+    childList: true, subtree: true, attributes: true, attributeFilter: ['class']
+  });
   window.addEventListener('hashchange', update);
   update();
 }());
