@@ -14800,6 +14800,7 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [giftProducts, setGiftProducts] = useState([])
+  const [productSearch, setProductSearch] = useState('')
   const [productsLoading, setProductsLoading] = useState(true)
   const [productsError, setProductsError] = useState('')
   useEffect(() => {
@@ -14810,6 +14811,11 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
     return () => { active = false }
   }, [patientId])
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const searchKeyword = productSearch.trim().toLowerCase()
+  const matchingProducts = giftProducts.filter(product =>
+    !searchKeyword || [product.name, product.category, product.description].filter(Boolean).join(' ').toLowerCase().includes(searchKeyword)
+  )
+  const selectedProduct = giftProducts.find(product => String(product._id) === String(form.productId))
 
   const handleSubmit = async () => {
     if (form.giftType === 'service' && !form.productId) { setError('请选择商城服务'); return }
@@ -14858,11 +14864,15 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
             <>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">商城服务 *</label>
-                <select className="form-input" value={form.productId} onChange={set('productId')} disabled={productsLoading || !!productsError}>
+                <input className="form-input" type="search" aria-label="搜索商城服务" placeholder="搜索服务名称、分类或说明" value={productSearch} onChange={e => setProductSearch(e.target.value)} disabled={productsLoading || !!productsError} style={{ marginBottom: 8 }} />
+                <select className="form-input" value={form.productId} onChange={e => { set('productId')(e); setProductSearch('') }} disabled={productsLoading || !!productsError}>
                   <option value="">{productsLoading ? '正在加载商城服务…' : '-- 请选择具体服务 --'}</option>
-                  {[...new Set(giftProducts.map(p => p.category))].map(category => <optgroup key={category} label={category || '其他服务'}>
-                    {giftProducts.filter(p => p.category === category).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
+                  {selectedProduct && !matchingProducts.some(product => String(product._id) === String(selectedProduct._id)) &&
+                    <option value={selectedProduct._id}>当前已选：{selectedProduct.name}</option>}
+                  {[...new Set(matchingProducts.map(p => p.category))].map(category => <optgroup key={category} label={category || '其他服务'}>
+                    {matchingProducts.filter(p => p.category === category).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
                   </optgroup>)}
+                  {!productsLoading && !matchingProducts.length && <option disabled>没有匹配的商城服务</option>}
                 </select>
                 {productsError && <div role="alert" style={{ color: '#B45309', fontSize: 12 }}>{productsError}，请关闭后重试。</div>}
               </div>
