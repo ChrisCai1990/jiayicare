@@ -64,7 +64,6 @@ const orderSchema = new mongoose.Schema({
     consentVersion: { type: String, default: '' },
     consentedAt: { type: Date, default: null },
   },
-  initiationSource: { type: String, enum: ['', 'staff_direct'], default: '' },
   checkupIntake: { type: mongoose.Schema.Types.Mixed, default: null },
   rehabBooking: { type: mongoose.Schema.Types.Mixed, default: null },
   serviceIcon: { type: String },
@@ -118,7 +117,9 @@ const orderSchema = new mongoose.Schema({
 
   // 服务编排归属：发起来源、总督办与当前执行人相互独立。
   // supervisorId 在订单全生命周期保持为健康规划师；专业环节只更新 currentAssignee 或子任务 assignedTo。
-  initiationSource: { type: String, enum: ['customer', 'staff', 'staff_direct', 'admin', 'system'], default: 'customer', index: true },
+  // Earlier paid orders stored an empty source. Keep it valid when later
+  // fulfillment and commission updates save those historical documents.
+  initiationSource: { type: String, enum: ['', 'customer', 'staff', 'staff_direct', 'admin', 'system'], default: 'customer', index: true },
   initiatedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   supervisorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, index: true },
   currentStage: { type: String, default: 'intake' },
