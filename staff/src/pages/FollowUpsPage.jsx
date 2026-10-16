@@ -277,7 +277,24 @@ export default function FollowUpsPage() {
     const priorResults = f.dependsOnTaskId?.formData?.nutritionStageAssessment?.targetResults || []
     const targetResults = (f.formData?.nutritionIntervention?.nutritionTargets || []).map((_, index) =>
       f.formData?.nutritionStageAssessment?.targetResults?.[index] || priorResults[index] || { actual: '', outcome: '' })
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: f.formData?.nutritionIntervention ? { ...f.formData, nutritionStageAssessment: { result: '', reason: '', decision: '', ...f.formData.nutritionStageAssessment, targetResults } } : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    setExecForm({ type: f.type || 'phone', content: f.sourceType === 'insurance_service' ? (f.executedContent || '') : '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: f.formData?.nutritionIntervention ? { ...f.formData, nutritionStageAssessment: { result: '', reason: '', decision: '', ...f.formData.nutritionStageAssessment, targetResults } } : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f, f.formData) : emptyOutpatientAssessment(f.formData) })
+  }
+
+  const handleSaveInsuranceDraft = async () => {
+    if (execItem?.sourceType !== 'insurance_service' || execItem.taskRole !== 'executor') return
+    setExecSaving(true)
+    try {
+      await staffAPI.updateFollowUp(execItem._id, {
+        type: execForm.type,
+        content: execForm.content.trim(),
+        status: 'in_progress',
+        serviceChecklist: execForm.serviceChecklist,
+      })
+      toast('已临时保存，可稍后继续填写')
+      setExecItem(null)
+      load()
+    } catch (err) { toast(err.message || '临时保存失败') }
+    finally { setExecSaving(false) }
   }
 
   const handleExec = async () => {
@@ -689,6 +706,7 @@ export default function FollowUpsPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
+              {execItem.sourceType === 'insurance_service' && execItem.taskRole === 'executor' && !execItem.isBlocked && <button className="btn btn-secondary" onClick={handleSaveInsuranceDraft} disabled={execSaving}>临时保存</button>}
               {execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execForm.checkupMerged} style={execForm.checkupMerged ? { display: 'none' } : undefined}>
                 {execSaving ? '保存中...' : nutritionStageType ? (execForm.status === 'completed' ? '完成本阶段并流转' : '保存本阶段进展') : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}

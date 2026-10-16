@@ -2779,7 +2779,23 @@ export default function PatientDetailPage() {
           insuranceOutcome: f.formData?.insuranceOutcome || inferredInsuranceOutcome,
         }
       : (f.formData || {})
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: ibdStage(f) ? ibdFormDataFromTask(f) : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : isCheckupManagerReviewTask(f) ? checkupManagerReviewFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    setExecForm({ type: f.type || 'phone', content: f.sourceType === 'insurance_service' ? (f.executedContent || '') : '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: ibdStage(f) ? ibdFormDataFromTask(f) : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : isCheckupManagerReviewTask(f) ? checkupManagerReviewFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+  }
+  const handleSaveInsuranceDraft = async () => {
+    if (execItem?.sourceType !== 'insurance_service' || execItem.taskRole !== 'executor') return
+    setExecSaving(true)
+    try {
+      await staffAPI.updateFollowUp(execItem._id, {
+        type: execForm.type,
+        content: execForm.content.trim(),
+        status: 'in_progress',
+        serviceChecklist: execForm.serviceChecklist,
+      })
+      toast('已临时保存，可稍后继续填写')
+      setExecItem(null)
+      loadFollowUps()
+    } catch (err) { toast(err.message || '临时保存失败') }
+    finally { setExecSaving(false) }
   }
   const handleExec = async () => {
     if (canRecordProgress(execItem) && execForm.status === 'in_progress') {
@@ -11798,6 +11814,7 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
+              {execItem.sourceType === 'insurance_service' && execItem.taskRole === 'executor' && !execItem.isBlocked && <button className="btn btn-secondary" onClick={handleSaveInsuranceDraft} disabled={execSaving}>临时保存</button>}
               {!execItem.isBlocked && !medicationProxyStage(execItem) && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && medicalProxyStage(execItem) !== 'appointment_review' && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               {!execItem.isBlocked && medicalProxyStage(execItem) === 'post_visit_audit' && <button className="btn btn-secondary" onClick={handleSavePostVisitAuditDraft} disabled={execSaving}>保存并继续资料审核</button>}
               {medicationProxyStage(execItem) !== 'progress' && !execForm.checkupMerged && <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execItem.isBlocked}>
