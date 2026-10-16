@@ -14435,6 +14435,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         .select('name archiveDraft updatedAt').lean();
       draftUsers.forEach(u => {
         const d = u.archiveDraft || {};
+        if (String(d.questionnaireId) === DIETARY_SURVEY_QUESTIONNAIRE_ID) return;
         const cnt = Array.isArray(d.items) ? d.items.length : (d.fields ? Object.keys(d.fields).length : 0);
         const createdAt = d.generatedAt || u.updatedAt || now;
         todos.push({
@@ -17226,9 +17227,12 @@ router.post('/patients/:id/archive-draft', staffAuth, async (req, res) => {
       // 取最近一份有档案映射的答卷
       const responses = await QuestionnaireResponse.find({ user: req.params.id })
         .populate('questionnaire', 'title questions').sort({ submittedAt: -1 }).lean();
-      response = responses.find(r => r.questionnaire && (r.questionnaire.questions || []).some(q => q.archiveField));
+      response = responses.find(r => r.questionnaire && String(r.questionnaire._id) !== DIETARY_SURVEY_QUESTIONNAIRE_ID && (r.questionnaire.questions || []).some(q => q.archiveField));
     }
     if (!response) return res.status(404).json({ success: false, message: '未找到可导入的问卷答卷' });
+    if (String(response.questionnaire?._id || response.questionnaire) === DIETARY_SURVEY_QUESTIONNAIRE_ID) {
+      return res.status(403).json({ success: false, message: '膳食调查问卷由营养师复核，无需健管专员确认档案变化' });
+    }
     const questionnaire = response.questionnaire?.questions
       ? response.questionnaire
       : await DynamicQuestionnaire.findById(response.questionnaire).lean();
@@ -17253,6 +17257,9 @@ router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => 
 
     const userBefore = await User.collection.findOne({ _id: new mongoose.Types.ObjectId(req.params.id) });
     if (!userBefore) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (String(userBefore.archiveDraft?.questionnaireId) === DIETARY_SURVEY_QUESTIONNAIRE_ID) {
+      return res.status(403).json({ success: false, message: '膳食调查问卷由营养师复核，无需健管专员确认档案变化' });
+    }
     const reviewerIds = [...new Set([...Object.values(userBefore.archiveBaselineSources || {}).map(x => x.reviewedBy),
       ...(userBefore.archiveConfirmLog || []).map(x => x.confirmedBy)].filter(x => x && mongoose.isValidObjectId(x)).map(String))];
     const reviewers = await Admin.find({ _id: { $in: reviewerIds } }).select('_id role').lean();

@@ -4692,7 +4692,8 @@ export default function PatientDetailPage() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {location.state.sourceTodo.type === 'health_course_review' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button type="button" className="btn btn-primary btn-sm" disabled={healthCourseSaving} onClick={() => openHealthCourseReview({ _id: location.state.sourceTodo.id.replace(/^healthcourse_/, '') }, { pendingOnly: true })}>{healthCourseSaving ? '加载中…' : '去审核健康变化'}</button>}
             {location.state.sourceTodo.type === 'risk_review' && <button type="button" className="btn btn-primary btn-sm" disabled={riskApproving} onClick={handleCloseRiskTodo}>{riskApproving ? '处理中…' : '已核对，确认关闭任务'}</button>}
-            <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>{['risk_review', 'health_course_review'].includes(location.state.sourceTodo.type) ? '仅隐藏提示' : '关闭提示'}</button>
+            {location.state.sourceTodo.type === 'archive_review' && user.initialArchiveReview?.status === 'pending' && <button type="button" className="btn btn-primary btn-sm" onClick={() => { setTab('records'); setHealthBaseView('profile'); requestAnimationFrame(() => document.getElementById('initial-archive-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}>去逐项复核</button>}
+            <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>{['risk_review', 'health_course_review', 'archive_review'].includes(location.state.sourceTodo.type) ? '仅隐藏提示' : '关闭提示'}</button>
           </div>
         </div>
       )}
@@ -4787,7 +4788,7 @@ export default function PatientDetailPage() {
       {/* 问卷档案变化：差异待确认 / 历史记录 / 手动生成入口 */}
       {(() => {
         const draft = user.archiveDraft
-        const pending = draft && draft.status === 'pending' && (draft.items || []).length > 0
+        const pending = draft && draft.status === 'pending' && (draft.items || []).length > 0 && String(draft.questionnaireId) !== '6a49eab9fc1595013da70645'
         if (pending) {
           return (
             <div style={{ marginBottom: 12, padding: '10px 16px', background: '#FEF3C7', borderRadius: 8, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -4801,12 +4802,13 @@ export default function PatientDetailPage() {
             </div>
           )
         }
-        if (qResponses.length > 0) {
+        const archiveResponses = qResponses.filter(r => !r.isDietarySurvey)
+        if (archiveResponses.length > 0) {
           return (
             <details style={{ marginBottom: 10 }}><summary style={{ cursor: 'pointer', fontSize: 13, color: '#4A6558' }}>从已答问卷整理档案变化</summary><div style={{ marginBottom: 12, padding: '8px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, color: '#4A6558' }}>📝 从已答问卷识别档案变化：</span>
-              <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={qResponses[0].responseId}>
-                {qResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.proxyEntry ? '营养师代填 · ' : ''}{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
+              <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={archiveResponses[0].responseId}>
+                {archiveResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.proxyEntry ? '营养师代填 · ' : ''}{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
               </select>
               <button className="btn btn-secondary btn-sm" disabled={archiveBusy}
                 onClick={() => handleGenerateArchiveDraft(document.getElementById('qresp-select')?.value)}>
@@ -4818,8 +4820,8 @@ export default function PatientDetailPage() {
         return null
       })()}
 
-      {/* 膳食调查问卷：营养师复核（与健管专员审核写入档案是独立并行的两道确认，互不阻塞） */}
-      {qResponses.filter(r => r.isDietarySurvey && r.nutritionistReview?.status !== 'reviewed').map(r => (
+      {/* 膳食调查问卷只由营养师在营养流程复核。 */}
+      {['nutritionist', 'superadmin'].includes(staff?.role) && qResponses.filter(r => r.isDietarySurvey && r.nutritionistReview?.status !== 'reviewed').map(r => (
         <div key={r.responseId} style={{ marginBottom: 12, padding: '10px 16px', background: '#F0FDF4', borderRadius: 8, border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 18 }}>🥗</span>
           <div style={{ flex: 1, minWidth: 180 }}>
