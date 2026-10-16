@@ -84,7 +84,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
   const handleSearch = (q) => {
     setSearchQ(q)
     setSelected(null)
-    setForm(f => ({ ...f, name: q }))
+    setForm(f => ({ ...f, name: q, category: '' }))
     clearTimeout(searchTimer.current)
     if (!q.trim()) { setResults([]); setShowDropdown(false); return }
     searchTimer.current = setTimeout(async () => {
@@ -113,6 +113,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
 
   const handleAdd = async () => {
     if (!form.name) { toast('项目名称不能为空'); return }
+    if (plan.type === 'annual_checkup' && !form.category) { toast('请选择项目分类'); return }
     const dup = (plan.items || []).some(it => it.name.trim() === form.name.trim())
     if (dup && !window.confirm(`「${form.name}」已在方案中，确认仍要重复添加？`)) return
     setSaving(true)
@@ -174,7 +175,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
         {/* 分类 */}
         <div>
           <label className="form-label" style={{ fontSize: 11 }}>任务分类</label>
-          <select className="form-input" value={form.category} onChange={e => set('category', e.target.value)}>
+          <select className="form-input" value={form.category} disabled={!!selected} onChange={e => set('category', e.target.value)}>
             <option value="">请选择</option>
             {ITEM_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -288,7 +289,13 @@ export default function PlanDetailPage() {
     if (!editingItemForm.name) { toast('项目名称不能为空'); return }
     try {
       const items = (plan.items || []).map(it => it._id === editingItemId
-        ? { ...it, ...editingItemForm, scheduledDate: editingItemForm.scheduledDate || null }
+        ? {
+          ...it, ...editingItemForm,
+          itemType: plan.type === 'annual_checkup' && !it.itemId
+            ? ({ '检验检查': 'labTest', '影像检查': 'specialExam', '功能医学检测': 'functionalTest' }[editingItemForm.category] || '')
+            : it.itemType,
+          scheduledDate: editingItemForm.scheduledDate || null,
+        }
         : it)
       await staffAPI.updatePlan(id, { items })
       toast('已保存')
@@ -729,6 +736,17 @@ export default function PlanDetailPage() {
                 <input className="form-input" value={editingItemForm.name}
                   onChange={e => setEditingItemForm(f => ({ ...f, name: e.target.value }))} />
               </div>
+              {plan.type === 'annual_checkup' && <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">项目分类</label>
+                <select className="form-input" value={editingItemForm.category}
+                  disabled={!!plan.items?.find(item => item._id === editingItemId)?.itemId}
+                  onChange={e => setEditingItemForm(f => ({ ...f, category: e.target.value }))}>
+                  <option value="">请选择</option>
+                  {ITEM_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                </select>
+                {!!plan.items?.find(item => item._id === editingItemId)?.itemId &&
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 4 }}>已关联库的项目分类由库中类型决定</div>}
+              </div>}
               {plan.type !== 'annual_checkup' && <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">计划日期</label>
                 <DateField className="form-input" type="date" value={editingItemForm.scheduledDate}

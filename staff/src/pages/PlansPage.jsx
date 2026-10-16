@@ -1951,13 +1951,14 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
 }
 
 // 自由文本新增一行项目
-function AddFreeItem({ onAdd }) {
+function AddFreeItem({ onAdd, checkup = false }) {
   const [open, setOpen] = useState(false)
   const [val, setVal] = useState('')
+  const [category, setCategory] = useState('')
   const submit = () => {
     const name = val.trim()
-    if (!name) return
-    onAdd(name)
+    if (!name || (checkup && !category)) return
+    onAdd(name, category)
     setVal('')
     setOpen(false)
   }
@@ -1979,7 +1980,17 @@ function AddFreeItem({ onAdd }) {
         placeholder="输入项目内容后按 Enter 添加"
         style={{ flex: 1, fontSize: 12, padding: '4px 8px', border: '1px solid #E0D9CE', borderRadius: 6, outline: 'none' }}
       />
-      <button type="button" onClick={submit}
+      {checkup && <select value={category} onChange={e => setCategory(e.target.value)}
+        aria-label="项目分类" title="项目分类"
+        style={{ fontSize: 12, padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff' }}>
+        <option value="">选择分类</option>
+        <option value="检验检查">检验检查</option>
+        <option value="影像检查">影像检查</option>
+        <option value="功能医学检测">功能医学检测</option>
+        <option value="体格检查">体格检查</option>
+        <option value="其他">其他</option>
+      </select>}
+      <button type="button" onClick={submit} disabled={checkup && !category}
         style={{ fontSize: 12, padding: '4px 10px', background: '#1E6B50', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
         添加
       </button>
@@ -2282,7 +2293,11 @@ function NewPlanModal({ onClose, onSaved, type }) {
                   {!showSearch ? (
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                       {/* 所有类型都支持自由文本新增 */}
-                      <AddFreeItem onAdd={name => setItems(prev => [...prev, { name, category: type === 'annual_checkup' ? '检验检查' : '方案项目' }])} />
+                      <AddFreeItem checkup={type === 'annual_checkup'} onAdd={(name, category) => setItems(prev => [...prev, {
+                        name,
+                        category: type === 'annual_checkup' ? category : '方案项目',
+                        itemType: type === 'annual_checkup' ? ({ '检验检查': 'labTest', '影像检查': 'specialExam', '功能医学检测': 'functionalTest' }[category] || '') : '',
+                      }])} />
                       {/* 年度体检额外支持从检验/检查库搜索 */}
                       {type === 'annual_checkup' && (
                         <button type="button" onClick={() => setShowSearch(true)}
