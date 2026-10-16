@@ -3535,7 +3535,17 @@ router.post('/plans/:id/sync-checkup-template', staffAuth, checkPermission('plan
       return { ...(previous ? previous.toObject() : {}), name: ci.name, category: meta.category,
         itemId: ci.id || null, itemType: meta.itemType, itemGroup: 'base', status: 'pending' };
     });
-    plan.items = [...baseItems, ...customItems];
+    const previousAddonKeys = new Set((plan.content?.addons || []).map(itemKey));
+    const newAddonItems = addons.filter(addon => !previousAddonKeys.has(itemKey(addon))
+      && !baseItems.some(item => itemKey(item) === itemKey(addon) || item.name === addon.name)
+      && !customItems.some(item => itemKey(item) === itemKey(addon) || item.name === addon.name))
+      .map(addon => {
+        const meta = orderTypeMetaBackend(addon.type);
+        return { name: addon.name, category: meta.category, itemId: addon.id || null,
+          itemType: meta.itemType, itemGroup: 'addon', status: 'pending',
+          notes: addon.reason ? `检查意义：${addon.reason}` : '' };
+      });
+    plan.items = [...baseItems, ...customItems, ...newAddonItems];
     plan.content = { ...(plan.content || {}), packageName: content.packageName || template.name,
       packageDesc: content.packageDesc || '', checkItems, addons, templateId: template._id,
       templateUpdatedAt: template.updatedAt };
@@ -3576,6 +3586,30 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   if (req.body.giftId && req.body.reservedOrderId) return res.status(400).json({ success: false, message: '赠送权益与已有订单不能同时使用' });
   let planContent = content || {};
+  if (type === 'annual_checkup') {
+    const templateId = planContent.templateId;
+    if (!mongoose.Types.ObjectId.isValid(String(templateId || ''))) return res.status(400).json({ success: false, message: '请先选择体检中心的标准套餐模板' });
+    const [template, patient] = await Promise.all([
+      PlanTemplate.findOne({ _id: templateId, type: 'annual_checkup', status: 'active' }).lean(),
+      User.findById(patientId).select('clientBrand').lean(),
+    ]);
+    if (!template || !patient) return res.status(404).json({ success: false, message: '会员或套餐模板不存在，请刷新后重试' });
+    const brands = Array.isArray(template.clientBrands) ? template.clientBrands.filter(Boolean) : [];
+    if ((brands.length && !brands.includes(patient.clientBrand)) ||
+        (!brands.length && template.clientBrand && template.clientBrand !== patient.clientBrand)) {
+      return res.status(403).json({ success: false, message: '该套餐模板不适用于当前会员平台' });
+    }
+    const standardItems = Array.isArray(template.content?.checkItems) ? template.content.checkItems : [];
+    const requestedBase = Array.isArray(items) ? items.filter(item => item.itemGroup === 'base') : [];
+    const sameBase = requestedBase.length === standardItems.length && standardItems.every((ci, index) => {
+      const item = requestedBase[index];
+      const meta = orderTypeMetaBackend(ci.type);
+      return item.name === ci.name && String(item.itemId || '') === String(ci.id || '')
+        && item.category === meta.category && item.itemType === meta.itemType;
+    });
+    if (!sameBase) return res.status(409).json({ success: false, message: '标准套餐项目已变化或被修改，请重新选择最新模板' });
+    planContent = { ...planContent, checkItems: standardItems, templateUpdatedAt: template.updatedAt };
+  }
   if (type === 'nutrition') planContent = { ...planContent, nutritionTaskVersion: 1 };
   let medicalAssistSupervisor = null;
   let medicalAssistPatient = null;
@@ -3998,6 +4032,25 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   }
   if (!(await canManagePlan(req, plan))) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
+  }
+  if (plan.type === 'annual_checkup') {
+    if (req.body.items !== undefined) {
+      if (!Array.isArray(req.body.items)) return res.status(400).json({ success: false, message: '方案项目格式不正确' });
+      const originalBase = plan.items.filter(item => item.itemGroup === 'base');
+      const submittedBase = req.body.items.filter(item => item.itemGroup === 'base');
+      const unchanged = originalBase.length === submittedBase.length && originalBase.every((item, index) => {
+        const next = submittedBase[index];
+        return String(next._id || '') === String(item._id)
+          && next.name === item.name && next.category === item.category
+          && String(next.itemId || '') === String(item.itemId || '')
+          && next.itemType === item.itemType;
+      });
+      if (!unchanged) return res.status(409).json({ success: false, message: '基础套餐项目由体检中心确定，不能删减或修改；请仅调整加项' });
+    }
+    if (req.body.content && (
+      JSON.stringify(req.body.content.checkItems) !== JSON.stringify(plan.content?.checkItems)
+      || String(req.body.content.templateId || '') !== String(plan.content?.templateId || '')
+    )) return res.status(409).json({ success: false, message: '基础套餐内容只能通过同步最新模板更新' });
   }
   if (plan.type === 'nutrition' && req.body.content?.nutritionTargets !== undefined) {
     const rows = req.body.content.nutritionTargets;

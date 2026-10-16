@@ -1620,13 +1620,6 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // 检查项目搜索
-  const [showItemSearch, setShowItemSearch] = useState(false)
-  const [itemQ, setItemQ] = useState('')
-  const [itemResults, setItemResults] = useState([])
-  const [itemSearching, setItemSearching] = useState(false)
-  const itemTimer = useRef(null)
-
   // 加项库搜索
   const [showAddonSearch, setShowAddonSearch] = useState(false)
   const [addonQ, setAddonQ] = useState('')
@@ -1651,22 +1644,6 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
     setSelectedAddonKeys(new Set((c.addons || []).map(addonSelectionKey)))
     setStep(2)
     setError('')
-  }
-
-  // 检查项目搜索
-  const handleItemSearch = (q) => {
-    setItemQ(q)
-    clearTimeout(itemTimer.current)
-    if (!q.trim()) { setItemResults([]); return }
-    itemTimer.current = setTimeout(async () => {
-      setItemSearching(true)
-      try { const r = await staffAPI.searchPlanCatalogItems(q); setItemResults(r.data || []) }
-      catch {} finally { setItemSearching(false) }
-    }, 300)
-  }
-  const addCheckItem = (item) => {
-    setCheckItems(prev => [...prev, { type: normalizeOrderType(item.type), id: item._id, name: item.name }])
-    setItemQ(''); setItemResults([]); setShowItemSearch(false)
   }
 
   // 加项库搜索
@@ -1843,7 +1820,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
           {/* 包含检查项目 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>包含检查项目</span>
+              <span>标准套餐项目（由体检中心确定，不可删减）</span>
               <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>共 {checkItems.length} 项</span>
             </label>
             <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, background: '#faf8f5', overflow: 'hidden' }}>
@@ -1853,40 +1830,10 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
                 return (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderBottom: '1px solid #F0EDE7', fontSize: 13 }}>
                     <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>{tag.label}</span>
-                    <input
-                      value={ci.name}
-                      onChange={e => setCheckItems(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
-                      style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
-                    />
-                    <button type="button" onClick={() => setCheckItems(prev => prev.filter((_, i) => i !== idx))}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 16, padding: '0 2px' }}
-                      onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
-                      onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
-                    >×</button>
+                    <span style={{ flex: 1 }}>{ci.name}</span>
                   </div>
                 )
               })}
-              {/* 添加区 */}
-              <div style={{ padding: '8px 12px', background: '#fff', borderTop: checkItems.length > 0 ? '1px solid #F0EDE7' : 'none' }}>
-                {!showItemSearch ? (
-                  <button type="button" onClick={() => setShowItemSearch(true)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1E6B50', fontSize: 12, padding: 0, fontWeight: 500 }}>
-                    ＋ 从检验/检查库添加
-                  </button>
-                ) : (
-                  <div>
-                    <div style={{ position: 'relative' }}>
-                      <input className="form-input" autoFocus value={itemQ} onChange={e => handleItemSearch(e.target.value)}
-                        placeholder="搜索检验/检查项目名称..." style={{ fontSize: 12, paddingRight: 44 }} />
-                      <button type="button" onClick={() => { setShowItemSearch(false); setItemQ(''); setItemResults([]) }}
-                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 12 }}>
-                        取消
-                      </button>
-                    </div>
-                    <SearchDropdown results={itemResults} searching={itemSearching} q={itemQ} onSelect={addCheckItem} />
-                  </div>
-                )}
-              </div>
             </div>
           </div>
 
