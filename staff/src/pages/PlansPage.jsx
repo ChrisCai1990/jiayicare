@@ -1635,7 +1635,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const addonTimer = useRef(null)
 
   useEffect(() => {
-    staffAPI.getPlanTemplates('annual_checkup')
+    staffAPI.getPlanTemplates('annual_checkup', initialPatientId)
       .then(res => setTemplates(res.data || []))
       .catch(err => setTplError(err.message || '加载失败'))
       .finally(() => setLoadingTpls(false))
@@ -1713,7 +1713,8 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
       await staffAPI.createPlan({
         patientId, type: 'annual_checkup', title: packageName,
         description, year, items,
-        content: { packageName, packageDesc, checkItems, addons },
+        content: { packageName, packageDesc, checkItems, addons,
+          templateId: selectedTpl?._id || null, templateUpdatedAt: selectedTpl?.updatedAt || null },
       })
       onSaved()
     } catch (err) { setError(err.message) }

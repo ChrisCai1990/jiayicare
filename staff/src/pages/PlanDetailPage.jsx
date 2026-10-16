@@ -118,7 +118,7 @@ function PlanAddonPool({ plan, canEdit, onSaved }) {
 
   return <div style={{ padding: '14px 20px', borderBottom: '1px solid #E6EBE7', background: '#F6FAF7' }}>
     <div style={{ fontWeight: 700, fontSize: 14 }}>套餐加项包 · 已选 {selectedKeys.size} / {addons.length} 项</div>
-    <div style={{ fontSize: 12, color: '#68776F', margin: '4px 0 10px' }}>基础套餐项目保留在下方；在这里勾选或取消本次需要的加项。</div>
+    <div style={{ fontSize: 12, color: '#68776F', margin: '4px 0 10px' }}>上方是标准套餐项目；在这里勾选或取消本次需要的加项。</div>
     {addons.map(addon => {
       const existing = matchingAddonItem(plan.items, addon)
       const locked = !!existing && (existing.status === 'completed' || !!existing.reportId)
@@ -308,6 +308,9 @@ export default function PlanDetailPage() {
   const [planDrafting, setPlanDrafting] = useState(false)  // 场景七：AI润色方案描述
   const [editingItemId, setEditingItemId] = useState(null)
   const [editingItemForm, setEditingItemForm] = useState({})
+  const [checkupTemplates, setCheckupTemplates] = useState([])
+  const [syncTemplateId, setSyncTemplateId] = useState('')
+  const [syncingTemplate, setSyncingTemplate] = useState(false)
 
   const load = async () => {
     try { const r = await staffAPI.getPlan(id); setPlan(r.data) }
@@ -315,6 +318,31 @@ export default function PlanDetailPage() {
     finally { setLoading(false) }
   }
   useEffect(() => { load() }, [id])
+  useEffect(() => {
+    if (plan?.type !== 'annual_checkup') return
+    const patientId = plan.patientId?._id || plan.patientId
+    staffAPI.getPlanTemplates('annual_checkup', patientId)
+      .then(r => setCheckupTemplates(r.data || []))
+      .catch(err => toast(err.message || '套餐模板加载失败'))
+  }, [plan?._id, plan?.patientId?._id])
+  useEffect(() => {
+    if (plan?.type === 'annual_checkup') setSyncTemplateId(String(plan.content?.templateId || ''))
+  }, [plan?._id, plan?.content?.templateId])
+
+  const syncCheckupTemplate = async () => {
+    const template = checkupTemplates.find(t => String(t._id) === syncTemplateId)
+    if (!template) { toast('请选择最新套餐模板'); return }
+    const oldNames = (plan.items || []).filter(item => item.itemGroup === 'base').map(item => item.name)
+    const newNames = (template.content?.checkItems || []).map(item => item.name)
+    const added = newNames.filter(name => !oldNames.includes(name))
+    const removed = oldNames.filter(name => !newNames.includes(name))
+    const message = `同步「${template.content?.packageName || template.name}」最新模板？\n标准项目：${oldNames.length} → ${newNames.length} 项；新增 ${added.length} 项，移除 ${removed.length} 项。\n加项包：${(plan.content?.addons || []).length} → ${(template.content?.addons || []).length} 项。\n已单独添加的项目和已选加项会保留。`
+    if (!window.confirm(message)) return
+    setSyncingTemplate(true)
+    try { await staffAPI.syncCheckupTemplate(id, syncTemplateId); toast('已同步最新套餐模板'); await load() }
+    catch (err) { toast(err.message) }
+    finally { setSyncingTemplate(false) }
+  }
 
   const handlePush = async () => {
     const importantNames = plan?.type === 'annual_checkup' ? (plan.items || []).filter(isImportantCheckupItem).map(item => item.name) : []
@@ -726,7 +754,20 @@ export default function PlanDetailPage() {
           <AddItemPanel plan={plan} onAdded={() => { setShowAddItem(false); load() }} onCancel={() => setShowAddItem(false)} />
         )}
 
-        <PlanAddonPool plan={plan} canEdit={canEdit} onSaved={load} />
+        {plan.type === 'annual_checkup' && canEdit && plan.status === 'draft' && !plan.pushedAt && !plan.confirmedAt &&
+          !(plan.items || []).some(item => item.status !== 'pending' || item.reportId) && (
+          <div style={{ padding: '12px 20px', borderBottom: '1px solid #E6EBE7', background: '#F8FAF9', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Admin 最新套餐模板</span>
+            <select className="form-input" aria-label="选择要同步的体检套餐模板" value={syncTemplateId}
+              onChange={e => setSyncTemplateId(e.target.value)} style={{ maxWidth: 320 }}>
+              <option value="">请选择套餐模板</option>
+              {checkupTemplates.map(t => <option key={t._id} value={t._id}>{t.content?.packageName || t.name} · {t.content?.checkItems?.length || 0} 项</option>)}
+            </select>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={!syncTemplateId || syncingTemplate}
+              onClick={syncCheckupTemplate}>{syncingTemplate ? '同步中...' : '同步标准套餐和加项包'}</button>
+            <span style={{ fontSize: 12, color: '#68776F' }}>同步前可核对项目变化；定制项目保留。</span>
+          </div>
+        )}
 
         {!plan.items?.length ? (
           <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无项目，点击"添加项目"开始</div>
@@ -798,6 +839,7 @@ export default function PlanDetailPage() {
             ))}
           </>
         )}
+        <PlanAddonPool plan={plan} canEdit={canEdit} onSaved={load} />
       </div>
 
       {/* AI体检方案讨论区：健康顾问对加项/未加项有疑问可留言，AI结合本次方案内容回应
