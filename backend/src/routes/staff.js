@@ -5027,6 +5027,75 @@ async function validateArchiveOnlyUpload(staff, patientId, sourceReportId, date)
   return { source };
 }
 
+// Reorganize existing originals without sending private files through the browser.
+router.post('/medical-reports/organize', staffAuth, checkPermission('reports', 'create'), async (req, res) => {
+  const { patientId, files, title, type, documentCategory, hospital, date, note } = req.body || {};
+  if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健管专员可整理客户资料' });
+  if (!mongoose.isValidObjectId(patientId) || !String(title || '').trim() || !Array.isArray(files) || !files.length || files.length > 20)
+    return res.status(400).json({ success: false, message: '请选择客户、标题和1至20个原件' });
+  if (date && !isCalendarReportDate(date)) return res.status(400).json({ success: false, message: '报告日期无效' });
+  const patient = await User.findOne({ _id: patientId, tenantId: req.staff.tenantId, isDeleted: { $ne: true } })
+    .select('_id assignedHealthManager tenantId').lean();
+  if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+  if (req.staff.role !== 'superadmin' && String(patient.assignedHealthManager || '') !== String(req.staff._id))
+    return res.status(403).json({ success: false, message: '仅该客户所属健管专员可整理资料' });
+  const ids = [...new Set(files.map(file => String(file?.reportId || '')))];
+  if (ids.some(id => !mongoose.isValidObjectId(id))) return res.status(400).json({ success: false, message: '来源报告无效' });
+  const sources = await MedicalReport.find({ _id: { $in: ids }, user: patient._id });
+  if (sources.length !== ids.length) return res.status(400).json({ success: false, message: '来源报告不属于该客户' });
+  const sourceMap = new Map(sources.map(source => [String(source._id), source]));
+  const selected = [];
+  const seen = new Set();
+  for (const item of files) {
+    const source = sourceMap.get(String(item.reportId));
+    const index = Number(item.fileIndex);
+    const urls = source.fileUrls?.length ? source.fileUrls : (source.fileUrl ? [source.fileUrl] : (source.content ? [''] : []));
+    const token = `${source._id}:${index}`;
+    if (!Number.isInteger(index) || index < 0 || index >= urls.length || seen.has(token))
+      return res.status(400).json({ success: false, message: '来源文件序号无效或重复' });
+    seen.add(token);
+    const key = source.ossKeys?.[index] || (index === 0 ? source.ossKey : '') || require('../utils/oss').urlToKey(urls[index]);
+    if (!key && !(index === 0 && source.content)) return res.status(400).json({ success: false, message: '部分历史原件无法在服务器内整理，请先核对原件存储' });
+    selected.push({ source, index, key });
+  }
+  const allowedTypes = MedicalReport.schema.path('type').enumValues;
+  const allowedCategories = MedicalReport.schema.path('documentCategory').enumValues;
+  const selectedType = type || sources[0].type || 'other';
+  const selectedCategory = documentCategory || sources[0].documentCategory || 'physical_exam';
+  if (!allowedTypes.includes(selectedType) || !allowedCategories.includes(selectedCategory))
+    return res.status(400).json({ success: false, message: '报告分类无效' });
+  const { copyStoredFile, uploadBase64, deleteFile } = require('../utils/oss');
+  const copied = [];
+  try {
+    for (const item of selected) {
+      const stored = item.key
+        ? await copyStoredFile(item.key)
+        : await uploadBase64(item.source.content, item.source.mimeType || /^data:([^;]+);base64,/.exec(item.source.content)?.[1] || 'application/octet-stream', 'reports');
+      copied.push(stored);
+    }
+    const report = await MedicalReport.create({
+      user: patient._id, tenantId: patient.tenantId,
+      title: String(title).trim().slice(0, 200), type: selectedType, documentCategory: selectedCategory,
+      hospital: String(hospital || '').trim().slice(0, 200), date: date || '', checkDate: date || '',
+      reportYear: date ? Number(date.slice(0, 4)) : new Date().getFullYear(),
+      note: String(note || '').trim().slice(0, 1000),
+      fileUrl: copied[0].url, fileUrls: copied.map(file => file.url),
+      ossKey: copied[0].key, ossKeys: copied.map(file => file.key),
+      mimeType: selected.length === 1 ? selected[0].source.mimeType : '',
+      fileSize: selected.length === 1 ? selected[0].source.fileSize : '',
+      uploadedBy: req.staff._id, uploadedByRole: req.staff.role, sourceType: 'staff_upload',
+      audit_status: 'unaudited', aiStatus: 'pending',
+      organizedFrom: selected.map(item => ({ reportId: item.source._id, fileIndex: item.index })),
+      organizedAt: new Date(), organizedBy: req.staff._id,
+    });
+    return res.json({ success: true, data: withSignedReportFiles(report) });
+  } catch (error) {
+    await Promise.all(copied.map(file => deleteFile(file.key)));
+    console.error('整理报告失败:', error);
+    return res.status(500).json({ success: false, message: '整理失败，请稍后重试' });
+  }
+});
+
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
