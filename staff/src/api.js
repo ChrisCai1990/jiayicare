@@ -191,6 +191,7 @@ export const staffAPI = {
   // Health Plans
   getPlans:       (p = {}) => req('/staff/plans?' + qs(p)),
   getPlan:        (id)     => req(`/staff/plans/${id}`),
+  searchPlanCatalogItems: (q) => req(`/staff/plan-catalog-items?${qs({ q })}`),
   createPlan:     (data)   => req('/staff/plans', { method: 'POST', body: JSON.stringify(data) }),
   updatePlan:     (id, d)  => req(`/staff/plans/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   regenerateMedicalAssistPurposes: (id) => req(`/staff/plans/${id}/regenerate-medical-assist-purposes`, { method: 'POST' }),

@@ -7052,6 +7052,28 @@ router.patch('/requisitions/:id/cancel', staffAuth, async (req, res) => {
   }
 });
 
+// 体检方案只读查询项目库。开单接口已停用，方案编辑仍需按库类型关联项目。
+router.get('/plan-catalog-items', staffAuth, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().slice(0, 80);
+    if (!q) return res.json({ success: true, data: [] });
+    const name = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    const [labOrders, specialExams, functionalTests, packages] = await Promise.all([
+      LabTestOrder.find({ name, status: 'active' }).select('name mnemonic').limit(30).lean(),
+      SpecialExam.find({ name, status: 'active', deleted: { $ne: true } }).select('name mnemonic').limit(30).lean(),
+      FunctionalMedicineTest.find({ name, status: 'active', deleted: { $ne: true } }).select('name').limit(30).lean(),
+      LabTestPackage.find({ name, status: 'active' }).select('name mnemonic').limit(30).lean(),
+    ]);
+    const result = [
+      ...packages.map(item => ({ _id: item._id, name: item.name, type: 'labTestPackage' })),
+      ...labOrders.map(item => ({ _id: item._id, name: item.name, type: 'labTestOrder' })),
+      ...specialExams.map(item => ({ _id: item._id, name: item.name, type: 'specialExam' })),
+      ...functionalTests.map(item => ({ _id: item._id, name: item.name, type: 'functionalTest' })),
+    ];
+    res.json({ success: true, data: result });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // GET /api/staff/requisition-items — 获取可开单的项目列表（检验医嘱 + 检查医嘱 + 功能医学检测 + 套餐）
 // 2026-07-02：补充功能医学检测这一类，此前体检方案设计/开单只能选检验医嘱和检查医嘱，
 // 跟 admin 后台"功能医学检测"页面配置好的项目完全不通，这里补齐第三类，跟前两类同构处理。

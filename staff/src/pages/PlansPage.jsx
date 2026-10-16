@@ -466,7 +466,11 @@ const ORDER_TYPE_META = {
   exam: { category: '影像检查', itemType: 'specialExam' },
   func: { category: '功能医学检测', itemType: 'functionalTest' },
 }
-function orderTypeMeta(t) { return ORDER_TYPE_META[t] || ORDER_TYPE_META.exam }
+function normalizeOrderType(t) {
+  return ({ labTestOrder: 'lab', labTestPackage: 'lab', specialExam: 'exam', functionalTest: 'func' })[t] || t
+}
+function orderTypeMeta(t) { return ORDER_TYPE_META[normalizeOrderType(t)] || ORDER_TYPE_META.exam }
+const addonSelectionKey = addon => `${addon.id || addon._id || ''}|${addon.type || ''}|${addon.name || ''}`
 
 // getRequisitionItems 接口返回的 item.type 取值(labTestOrder/specialExam/functionalTest/labTestPackage)
 // 跟上面 admin 模板用的 lab/exam/func 键名不是同一套，单独映射
@@ -1610,6 +1614,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [packageDesc, setPackageDesc] = useState('')
   const [checkItems, setCheckItems] = useState([])   // { type, id, name }
   const [addons, setAddons] = useState([])            // { type, id, name, reason }
+  const [selectedAddonKeys, setSelectedAddonKeys] = useState(new Set())
   const [year, setYear] = useState(new Date().getFullYear())
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
@@ -1643,6 +1648,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
     setPackageDesc(c.packageDesc || '')
     setCheckItems((c.checkItems || []).map(ci => ({ ...ci })))
     setAddons((c.addons || []).map(a => ({ ...a })))
+    setSelectedAddonKeys(new Set((c.addons || []).map(addonSelectionKey)))
     setStep(2)
     setError('')
   }
@@ -1654,12 +1660,12 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
     if (!q.trim()) { setItemResults([]); return }
     itemTimer.current = setTimeout(async () => {
       setItemSearching(true)
-      try { const r = await staffAPI.getRequisitionItems(q); setItemResults(r.data || []) }
+      try { const r = await staffAPI.searchPlanCatalogItems(q); setItemResults(r.data || []) }
       catch {} finally { setItemSearching(false) }
     }, 300)
   }
   const addCheckItem = (item) => {
-    setCheckItems(prev => [...prev, { type: item.type, id: item._id, name: item.name }])
+    setCheckItems(prev => [...prev, { type: normalizeOrderType(item.type), id: item._id, name: item.name }])
     setItemQ(''); setItemResults([]); setShowItemSearch(false)
   }
 
@@ -1670,12 +1676,14 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
     if (!q.trim()) { setAddonResults([]); return }
     addonTimer.current = setTimeout(async () => {
       setAddonSearching(true)
-      try { const r = await staffAPI.getRequisitionItems(q); setAddonResults(r.data || []) }
+      try { const r = await staffAPI.searchPlanCatalogItems(q); setAddonResults(r.data || []) }
       catch {} finally { setAddonSearching(false) }
     }, 300)
   }
   const addAddon = (item) => {
-    setAddons(prev => [...prev, { type: item.type, id: item._id, name: item.name, reason: '' }])
+    const addon = { type: normalizeOrderType(item.type), id: item._id, name: item.name, reason: '' }
+    setAddons(prev => [...prev, addon])
+    setSelectedAddonKeys(prev => new Set([...prev, addonSelectionKey(addon)]))
     setAddonQ(''); setAddonResults([]); setShowAddonSearch(false)
   }
 
@@ -1684,12 +1692,24 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
     if (!packageName.trim()) { setError('请填写套餐名称'); return }
     setError(''); setSaving(true)
     try {
-      const items = checkItems.map(ci => ({
+      const baseItems = checkItems.map(ci => ({
         name: ci.name,
         category: orderTypeMeta(ci.type).category,
         itemId: ci.id || null,
         itemType: orderTypeMeta(ci.type).itemType,
+        itemGroup: 'base',
       }))
+      const baseNames = new Set(baseItems.map(item => item.name))
+      const addonItems = addons.filter(addon => selectedAddonKeys.has(addonSelectionKey(addon)) && !baseNames.has(addon.name))
+        .map(addon => ({
+          name: addon.name,
+          category: orderTypeMeta(addon.type).category,
+          itemId: addon.id || null,
+          itemType: orderTypeMeta(addon.type).itemType,
+          itemGroup: 'addon',
+          notes: addon.reason ? `检查意义：${addon.reason}` : '',
+        }))
+      const items = [...baseItems, ...addonItems]
       await staffAPI.createPlan({
         patientId, type: 'annual_checkup', title: packageName,
         description, year, items,
@@ -1701,9 +1721,11 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
   }
 
   // 通用标签样式
-  const typeTag = (t) => t === 'lab'
+  const typeTag = (t) => normalizeOrderType(t) === 'lab'
     ? { label: '检验', color: '#0077B6', bg: '#E8F4FD' }
-    : { label: '检查', color: '#1E6B50', bg: '#E8F5EF' }
+    : normalizeOrderType(t) === 'func'
+      ? { label: '功能医学', color: '#8B5CF6', bg: '#F3EEFF' }
+      : { label: '检查', color: '#1E6B50', bg: '#E8F5EF' }
 
   // 内联搜索下拉
   const SearchDropdown = ({ results, searching, q, onSelect }) => (
@@ -1867,11 +1889,11 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
             </div>
           </div>
 
-          {/* 可选加项库 */}
+          {/* 本次从套餐加项包中选择 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>可选加项库</span>
-              <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>共 {addons.length} 项</span>
+              <span>本次从套餐加项包中选择</span>
+              <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>已选 {addons.filter(a => selectedAddonKeys.has(addonSelectionKey(a))).length} / {addons.length} 项</span>
             </label>
             <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, background: '#faf8f5', overflow: 'hidden' }}>
               {addons.length === 0 && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>暂无加项</div>}
@@ -1880,17 +1902,16 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
                 return (
                   <div key={idx} style={{ padding: '8px 12px', borderBottom: '1px solid #F0EDE7' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                      <input type="checkbox" checked={selectedAddonKeys.has(addonSelectionKey(a))}
+                        aria-label={`选择加项${a.name}`}
+                        onChange={e => setSelectedAddonKeys(prev => {
+                          const next = new Set(prev)
+                          if (e.target.checked) next.add(addonSelectionKey(a))
+                          else next.delete(addonSelectionKey(a))
+                          return next
+                        })} />
                       <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>{tag.label}</span>
-                      <input
-                        value={a.name}
-                        onChange={e => setAddons(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
-                        style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
-                      />
-                      <button type="button" onClick={() => setAddons(prev => prev.filter((_, i) => i !== idx))}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 16, padding: '0 2px' }}
-                        onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
-                        onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
-                      >×</button>
+                      <span style={{ flex: 1 }}>{a.name}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, paddingLeft: 42 }}>
                       <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>推荐原因：</span>
@@ -1977,7 +1998,10 @@ function AddFreeItem({ onAdd, checkup = false }) {
       <input
         autoFocus
         value={val}
-        onChange={e => setVal(e.target.value)}
+        onChange={e => {
+          setVal(e.target.value)
+          if (checkup && !category && /(?:超声|彩超|B超)\s*$/i.test(e.target.value.trim())) setCategory('影像检查')
+        }}
         onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false) }}
         placeholder="输入项目内容后按 Enter 添加"
         style={{ flex: 1, fontSize: 12, padding: '4px 8px', border: '1px solid #E0D9CE', borderRadius: 6, outline: 'none' }}
@@ -2105,7 +2129,7 @@ function NewPlanModal({ onClose, onSaved, type }) {
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
       try {
-        const r = await staffAPI.getRequisitionItems(q)
+        const r = await staffAPI.searchPlanCatalogItems(q)
         setSearchResults(r.data || [])
       } catch {}
       finally { setSearching(false) }

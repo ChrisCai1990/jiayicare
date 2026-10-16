@@ -60,6 +60,88 @@ const REQUISITION_TYPE_META = {
   labTestPackage:  { label: '套餐', category: '检验检查', itemType: 'labTest' },
 }
 function requisitionTypeMeta(t) { return REQUISITION_TYPE_META[t] || REQUISITION_TYPE_META.specialExam }
+const ADDON_TYPE_META = {
+  lab: { category: '检验检查', itemType: 'labTest' },
+  exam: { category: '影像检查', itemType: 'specialExam' },
+  func: { category: '功能医学检测', itemType: 'functionalTest' },
+  labTestOrder: { category: '检验检查', itemType: 'labTest' },
+  labTestPackage: { category: '检验检查', itemType: 'labTest' },
+  specialExam: { category: '影像检查', itemType: 'specialExam' },
+  functionalTest: { category: '功能医学检测', itemType: 'functionalTest' },
+}
+const addonKey = item => `${item.id || item._id || ''}|${item.type || ''}|${item.name || ''}`
+const matchingAddonItem = (items, addon) => (items || []).find(item =>
+  item.itemGroup !== 'base' && (
+    ((addon.id || addon._id) && String(item.itemId || '') === String(addon.id || addon._id)) ||
+    String(item.name || '').trim() === String(addon.name || '').trim()
+  ))
+
+function PlanAddonPool({ plan, canEdit, onSaved }) {
+  const toast = useToast()
+  const addons = plan.content?.addons || []
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set(addons
+    .filter(addon => matchingAddonItem(plan.items, addon)).map(addonKey)))
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    setSelectedKeys(new Set(addons.filter(addon => matchingAddonItem(plan.items, addon)).map(addonKey)))
+  }, [plan])
+  if (plan.type !== 'annual_checkup' || !addons.length) return null
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      let items = [...(plan.items || [])]
+      for (const addon of addons) {
+        if (items.some(item => item.itemGroup === 'base' && item.name === addon.name)) continue
+        const existing = matchingAddonItem(items, addon)
+        const chosen = selectedKeys.has(addonKey(addon))
+        if (!chosen && existing && existing.status !== 'completed' && !existing.reportId) {
+          items = items.filter(item => item._id !== existing._id)
+        } else if (chosen) {
+          const meta = ADDON_TYPE_META[addon.type] || ADDON_TYPE_META.exam
+          const details = {
+            name: addon.name, category: meta.category, itemType: meta.itemType,
+            itemId: addon.id || addon._id || null, itemGroup: 'addon',
+          }
+          if (existing) items = items.map(item => item._id === existing._id
+            ? { ...item, ...details, notes: item.notes || (addon.reason ? `检查意义：${addon.reason}` : '') }
+            : item)
+          else items.push({ ...details, notes: addon.reason ? `检查意义：${addon.reason}` : '' })
+        }
+      }
+      await staffAPI.updatePlan(plan._id, { items })
+      toast('加项选择已保存')
+      onSaved()
+    } catch (err) { toast(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return <div style={{ padding: '14px 20px', borderBottom: '1px solid #E6EBE7', background: '#F6FAF7' }}>
+    <div style={{ fontWeight: 700, fontSize: 14 }}>套餐加项包 · 已选 {selectedKeys.size} / {addons.length} 项</div>
+    <div style={{ fontSize: 12, color: '#68776F', margin: '4px 0 10px' }}>基础套餐项目保留在下方；在这里勾选或取消本次需要的加项。</div>
+    {addons.map(addon => {
+      const existing = matchingAddonItem(plan.items, addon)
+      const locked = !!existing && (existing.status === 'completed' || !!existing.reportId)
+      const includedInBase = (plan.items || []).some(item => item.itemGroup === 'base' && item.name === addon.name)
+      const meta = ADDON_TYPE_META[addon.type] || ADDON_TYPE_META.exam
+      return <label key={addonKey(addon)} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 0', fontSize: 13 }}>
+        <input type="checkbox" checked={includedInBase || selectedKeys.has(addonKey(addon))} disabled={!canEdit || locked || includedInBase || saving}
+          onChange={e => setSelectedKeys(prev => {
+            const next = new Set(prev)
+            if (e.target.checked) next.add(addonKey(addon))
+            else next.delete(addonKey(addon))
+            return next
+          })} />
+        <span><strong>{addon.name}</strong> · {meta.category}
+          {addon.reason && <span style={{ color: '#68776F' }}> · {addon.reason}</span>}
+          {includedInBase && <span style={{ color: '#68776F' }}> · 已包含在基础套餐</span>}
+          {locked && <span style={{ color: '#9A6A20' }}> · 已完成或关联报告，不能移除</span>}
+        </span>
+      </label>
+    })}
+    {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={saving}>保存加项选择</button>}
+  </div>
+}
 
 function AddItemPanel({ plan, onAdded, onCancel }) {
   const toast = useToast()
@@ -84,13 +166,13 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
   const handleSearch = (q) => {
     setSearchQ(q)
     setSelected(null)
-    setForm(f => ({ ...f, name: q, category: '' }))
+    setForm(f => ({ ...f, name: q, category: /(?:超声|彩超|B超)\s*$/i.test(q.trim()) ? '影像检查' : '' }))
     clearTimeout(searchTimer.current)
     if (!q.trim()) { setResults([]); setShowDropdown(false); return }
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
       try {
-        const r = await staffAPI.getRequisitionItems(q)
+        const r = await staffAPI.searchPlanCatalogItems(q)
         setResults(r.data || [])
         setShowDropdown(true)
       } catch { }
@@ -123,8 +205,9 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
         category:      form.category,
         scheduledDate: form.scheduledDate || null,
         notes:         form.notes,
-        itemId:        selected?.id || null,
-        itemType:      selected ? requisitionTypeMeta(selected.type).itemType : '',
+        itemId:        selected?._id || selected?.id || null,
+        itemType:      selected ? requisitionTypeMeta(selected.type).itemType :
+          ({ '检验检查': 'labTest', '影像检查': 'specialExam', '功能医学检测': 'functionalTest' }[form.category] || ''),
       }
       await staffAPI.updatePlan(plan._id, { items: [...(plan.items || []), newItem] })
       toast('已添加')
@@ -642,6 +725,8 @@ export default function PlanDetailPage() {
         {canEdit && showAddItem && (
           <AddItemPanel plan={plan} onAdded={() => { setShowAddItem(false); load() }} onCancel={() => setShowAddItem(false)} />
         )}
+
+        <PlanAddonPool plan={plan} canEdit={canEdit} onSaved={load} />
 
         {!plan.items?.length ? (
           <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无项目，点击"添加项目"开始</div>
