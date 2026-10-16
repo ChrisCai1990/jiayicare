@@ -3837,6 +3837,14 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
       }).select('_id orderNo').lean() : null;
       if (duplicate) throw Object.assign(new Error(`同一药品和服务日期已有未完成的代配药服务${duplicate.orderNo ? `（${duplicate.orderNo}）` : ''}，请勿重复创建`), { status: 409 });
     }
+    if (appointmentOnly) {
+      const targets = req.body.appointmentTargets === undefined
+        ? [{ hospital: req.body.hospital, campus: req.body.campus, department: req.body.department, expert: req.body.expert }]
+        : req.body.appointmentTargets;
+      if (!Array.isArray(targets) || targets.length < 1 || targets.length > 12 || targets.some(row => !row || typeof row !== 'object' || typeof row.hospital !== 'string' || !row.hospital.trim() || typeof row.department !== 'string' || !row.department.trim() || ['hospital', 'campus', 'department', 'expert'].some(key => row[key] !== undefined && (typeof row[key] !== 'string' || row[key].length > 100)))) return res.status(400).json({ success: false, message: '请逐项填写1至12个预约目标的医院和科室，专家可留空' });
+      req.body.appointmentTargets = targets.map(row => ({ hospital: row.hospital.trim(), campus: (row.campus || '').trim(), department: row.department.trim(), expert: (row.expert || '').trim() }));
+      Object.assign(req.body, req.body.appointmentTargets[0]); // 单项目历史字段继续记录第一项。
+    }
     const required = medicalEscort ? ['escortCategory', 'escortDate', 'escortTime', 'hospital', 'escortGoal'] : medicationProxy ? ['preferredDateStart', 'medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
     if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicalEscort ? '请完整填写服务日期时间、医院和具体服务事项' : medicationProxy ? '请选择服务日期；药物名称、品牌、规格和数量应从关联代配药任务自动获取' : appointmentOnly ? '请完整填写医院、科室和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
     if (medicalEscort) {
@@ -6351,7 +6359,7 @@ router.post('/followups/:id/expert-appointment/reschedule', staffAuth, checkPerm
     if (!req.body.baseUpdatedAt || String(req.body.baseUpdatedAt) !== new Date(order?.updatedAt || 0).toISOString()) return res.status(409).json({success:false,message:'预约记录已更新，请重新打开后修改'});
     const oldBooking = order?.medicalProxyPlan?.booking;
     if (!oldBooking?.appointmentDate || !oldBooking?.appointmentTime) return res.status(409).json({ success: false, message: '本单没有已确认的预约记录' });
-    const oldSlots = Array.isArray(oldBooking.appointmentSlots) && oldBooking.appointmentSlots.length ? oldBooking.appointmentSlots : [{ department: oldBooking.department || '', expert: oldBooking.appointmentExpert || '', campus: oldBooking.campus || '', appointmentDate: oldBooking.appointmentDate, appointmentTime: oldBooking.appointmentTime }];
+    const oldSlots = Array.isArray(oldBooking.appointmentSlots) && oldBooking.appointmentSlots.length ? oldBooking.appointmentSlots : [{ hospital: oldBooking.hospital || order.medicalProxyPlan.hospital || '', department: oldBooking.department || '', expert: oldBooking.appointmentExpert || '', campus: oldBooking.campus || '', appointmentDate: oldBooking.appointmentDate, appointmentTime: oldBooking.appointmentTime }];
     const slotIndex = Number(req.body.slotIndex ?? 0);
     if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= oldSlots.length) return res.status(400).json({ success: false, message: '请选择有效的预约项目' });
     const oldSlot = oldSlots[slotIndex];
@@ -6368,15 +6376,15 @@ router.post('/followups/:id/expert-appointment/reschedule', staffAuth, checkPerm
     if (calendarDay.getUTCFullYear() !== year || calendarDay.getUTCMonth() + 1 !== month || calendarDay.getUTCDate() !== day || hour > 23 || minute > 59 || (correction ? scheduledAt > new Date() : scheduledAt <= new Date())) return res.status(400).json({ success: false, message: correction ? '历史补正时间不能晚于现在' : '请选择有效且尚未到来的新预约时间' });
     const hospital = String(req.body.hospital || '').trim(), campus = String(req.body.campus || '').trim(), department = String(req.body.department || '').trim(), expert = String(req.body.expert || '').trim();
     if (!hospital || !department || !expert || [hospital,campus,department,expert].some(v=>v.length>200)) return res.status(400).json({success:false,message:'请填写医院、科室和医生'});
-    if (oldSlot.appointmentDate === appointmentDate && oldSlot.appointmentTime === appointmentTime && hospital === (oldBooking.hospital || order.medicalProxyPlan.hospital || '') && campus === (oldSlot.campus || oldBooking.campus || '') && department === oldSlot.department && expert === oldSlot.expert) return res.status(400).json({ success: false, message: '新预约时间与当前时间相同，无需补记改期' });
+    if (oldSlot.appointmentDate === appointmentDate && oldSlot.appointmentTime === appointmentTime && hospital === (oldSlot.hospital || oldBooking.hospital || order.medicalProxyPlan.hospital || '') && campus === (oldSlot.campus || oldBooking.campus || '') && department === oldSlot.department && expert === oldSlot.expert) return res.status(400).json({ success: false, message: '新预约时间与当前时间相同，无需补记改期' });
     const revision = Number(order.medicalProxyPlan?.bookingRevision || 0) + 1;
     const changedAt = new Date();
-    const change = { slotIndex, kind: correction ? 'correction' : 'reschedule', from: { ...oldSlot, hospital: oldBooking.hospital || order.medicalProxyPlan.hospital || '' }, to: { appointmentDate, appointmentTime, hospital, campus, department, expert }, previousBooking: oldBooking, reason, changedAt, changedBy: req.staff._id, changedByName: req.staff.name, customerConfirmed: true, hospitalConfirmed: true };
-    const updatedSlots = oldSlots.map((row, index) => index === slotIndex ? { ...row, appointmentDate, appointmentTime, campus, department, expert } : row);
+    const change = { slotIndex, kind: correction ? 'correction' : 'reschedule', from: { ...oldSlot, hospital: oldSlot.hospital || oldBooking.hospital || order.medicalProxyPlan.hospital || '' }, to: { appointmentDate, appointmentTime, hospital, campus, department, expert }, previousBooking: oldBooking, reason, changedAt, changedBy: req.staff._id, changedByName: req.staff.name, customerConfirmed: true, hospitalConfirmed: true };
+    const updatedSlots = oldSlots.map((row, index) => index === slotIndex ? { ...row, appointmentDate, appointmentTime, hospital, campus, department, expert } : row);
     const latestAt = new Date(Math.max(...updatedSlots.map(row => new Date(`${row.appointmentDate}T${row.appointmentTime}:00+08:00`).getTime())));
     const updated = await Order.findOneAndUpdate(
       { _id: order._id, status: order.status, updatedAt: order.updatedAt, 'medicalProxyPlan.bookingRevision': order.medicalProxyPlan?.bookingRevision === undefined ? { $exists: false } : order.medicalProxyPlan.bookingRevision },
-      { $set: { scheduledAt: latestAt, ...(!correction ? {desiredServiceDate: latestAt, desiredServiceDateEnd: latestAt} : {}), 'medicalProxyPlan.booking.hospital': hospital, 'medicalProxyPlan.booking.appointmentSlots': updatedSlots, 'medicalProxyPlan.booking.appointmentDate': updatedSlots[0].appointmentDate, 'medicalProxyPlan.booking.appointmentTime': updatedSlots[0].appointmentTime, 'medicalProxyPlan.bookingRevision': revision }, $push: { 'medicalProxyPlan.bookingChanges': change } },
+      { $set: { scheduledAt: latestAt, ...(!correction ? {desiredServiceDate: latestAt, desiredServiceDateEnd: latestAt} : {}), 'medicalProxyPlan.booking.hospital': updatedSlots[0].hospital || oldBooking.hospital || order.medicalProxyPlan.hospital || hospital, 'medicalProxyPlan.booking.appointmentSlots': updatedSlots, 'medicalProxyPlan.booking.appointmentDate': updatedSlots[0].appointmentDate, 'medicalProxyPlan.booking.appointmentTime': updatedSlots[0].appointmentTime, 'medicalProxyPlan.bookingRevision': revision }, $push: { 'medicalProxyPlan.bookingChanges': change } },
       { new: true },
     );
     if (!updated) return res.status(409).json({ success: false, message: '预约记录已被其他人修改，请刷新后重试' });

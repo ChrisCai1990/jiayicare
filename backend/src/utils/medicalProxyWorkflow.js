@@ -198,7 +198,7 @@ const dateInput = value => {
 const appointmentAt = (date, time = '09:00') => new Date(`${date}T${time || '09:00'}:00+08:00`);
 const bookingSlots = booking => Array.isArray(booking?.appointmentSlots) && booking.appointmentSlots.length
   ? booking.appointmentSlots
-  : [{ department: booking?.department || '', expert: booking?.appointmentExpert || '', campus: booking?.campus || '', appointmentDate: booking?.appointmentDate || '', appointmentTime: booking?.appointmentTime || '' }];
+  : [{ hospital: booking?.hospital || booking?.planSnapshot?.hospital || '', department: booking?.department || '', expert: booking?.appointmentExpert || '', campus: booking?.campus || '', appointmentDate: booking?.appointmentDate || '', appointmentTime: booking?.appointmentTime || '' }];
 const preparationDueDate = (serviceDate, now = new Date()) => {
   const due = new Date(serviceDate);
   due.setDate(due.getDate() - 3);
@@ -418,10 +418,10 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
     plan.adHocConsultation && `现场预约时间：${plan.escortDate || ''} ${plan.escortTime || ''}`,
     plan.adHocConsultation && `费用告知：${plan.costNotice || ''}`,
     booking.preferredDateStart && `客户期望日期：${booking.preferredDateStart} 至 ${booking.preferredDateEnd || booking.preferredDateStart}`,
-    ...bookingSlots(booking).filter(row => row.appointmentDate).map((row, index) => `预约${index + 1}：${row.appointmentDate} ${row.appointmentTime || ''}；${row.department || ''}；${row.campus || ''}；${row.expert || ''}`),
+    ...bookingSlots(booking).filter(row => row.appointmentDate).map((row, index) => `预约${index + 1}：${row.appointmentDate} ${row.appointmentTime || ''}；${row.hospital || plan.hospital || ''}；${row.campus || ''}；${row.department || ''}；${row.expert || ''}`),
     booking.dateDifferenceNote && `日期差异确认：${booking.dateDifferenceNote}`,
   ].filter(Boolean).join('\n');
-  const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: plan.adHocConsultation ? '临时加诊服务' : medicationProxy ? '代配药服务' : medicalEscort ? '就医陪同服务' : '医疗代诊服务', content,
+  const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: plan.adHocConsultation ? '临时加诊服务' : medicationProxy ? '代配药服务' : medicalEscort ? '就医陪同服务' : /专家约诊/.test(order.serviceName || '') ? '专家约诊服务' : '医疗代诊服务', content,
     medicalEscort: { serviceType: medicalEscort ? 'accompany' : 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: /专家约诊/.test(order.serviceName || '') ? (booking.appointmentExpert || '') : (booking.appointmentExpert || plan.expert || '') } };
   if (completed) {
     update.result = supplyResolutionSummary(task.formData) || nonempty(task.formData?.resolutionResult || task.formData?.fulfillmentProof || task.formData?.executionResult);
@@ -787,7 +787,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
     plan.expectedDeliveryDate && `期望送达：${plan.expectedDeliveryDate}${plan.deliveryTime ? ` ${plan.deliveryTime}` : ''}`,
     plan.notes && `备注：${String(plan.notes).trim()}`,
   ] : [
-    plan.hospital, plan.campus, plan.department, plan.expert && `期望专家/线索：${plan.expert}`,
+    ...(appointmentOnly && plan.appointmentTargets?.length ? plan.appointmentTargets.map((target, index) => `预约目标${index + 1}：${target.hospital}${target.campus ? ` · ${target.campus}` : ''} · ${target.department}${target.expert ? ` · 期望专家/线索：${target.expert}` : ''}`) : [plan.hospital, plan.campus, plan.department, plan.expert && `期望专家/线索：${plan.expert}`]),
     `门诊类型：${({ general: '普通门诊', expert: '专家门诊', special: '特需门诊', international: '国际门诊' })[plan.clinicType] || '待核实'}`,
     `费用与保险：${({ self_pay: '自费', medical_insurance: '医保', commercial_insurance: '商保', high_end: '使用高端医疗险' })[plan.insuranceUse] || '待核实'}`,
     ['high_end', 'commercial_insurance'].includes(plan.insuranceUse) && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
@@ -830,7 +830,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
     scheduledAt: escortScheduledAt,
     serviceRequirements: medicalEscort ? [plan.adHocConsultation ? '客户现场提出临时加诊并已确认' : escortLabels[plan.escortCategory], `服务日期：${plan.escortDate || ''}`, `整体时间：${plan.escortTime || ''}`, plan.hospital, plan.campus, ...escortArrangementLines(plan), plan.escortGoal, plan.adHocConsultation && `门诊费用告知：${plan.costNotice}`, plan.transport, plan.hotel, plan.notes].filter(Boolean).join('；') : (appointmentOnly || supplyProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
-    medicalProxyPlan: (supplyProxy || medicalEscort) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
+    medicalProxyPlan: (supplyProxy || medicalEscort || appointmentOnly) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
   };
   let order;
   if (executionOrder) {
@@ -893,6 +893,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
         campus: plan.campus || '',
         department: plan.department || '',
         expert: plan.expert || '',
+        appointmentTargets: plan.appointmentTargets || [],
         preferredDateStart: plan.preferredDateStart || '',
         preferredDateEnd: plan.preferredDateEnd || plan.preferredDateStart || '',
       },
@@ -942,6 +943,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
       plannedContent: supplyProxy ? `系统已根据${supplementProxy ? '营养素' : '用药'}档案自动发起服务，请核对采购渠道、数量和配送时间；确认后转健康规划师安排执行人员。` : '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
       formData: {
         planSnapshot: { ...plan, serviceContent: appointmentRequirement, initiationSource: STAFF_DIRECT_SOURCE },
+        ...(appointmentOnly ? { appointmentSlots: (plan.appointmentTargets?.length ? plan.appointmentTargets : [plan]).map(target => ({ hospital: target.hospital, campus: target.campus, department: target.department, expert: target.expert, appointmentDate: '', appointmentTime: '' })) } : {}),
         preferredDateStart: plan.preferredDateStart, preferredDateEnd: plan.preferredDateEnd || plan.preferredDateStart, medicationProxy, supplementProxy,
         medicationName: plan.medicationName || '', medicationBrand: plan.medicationBrand || '', medicationSpecification: plan.medicationSpecification || '', medicationQuantity: plan.medicationQuantity || '', medicationItems: plan.medicationItems || [], paymentMethod: plan.paymentMethod || '',
         supplementName: plan.supplementName || '', supplementBrand: plan.supplementBrand || '', supplementSpecification: plan.supplementSpecification || '', supplementQuantity: plan.supplementQuantity || '',
@@ -1041,6 +1043,8 @@ async function validateMedicalProxyStage(task, body, staff) {
   }
   if (stage === 'booking') {
     const slots = bookingSlots(data);
+    const requestedTargets = data.planSnapshot?.appointmentTargets || [];
+    if (requestedTargets.length && (slots.length < requestedTargets.length || slots.some(row => !nonempty(row.hospital)))) return '请逐项保留本次预约目标，并填写实际预约医院';
     if (['preferredDateStart', 'preferredDateEnd'].some(key => !nonempty(data[key])) || slots.some(row => !nonempty(row.appointmentDate) || !nonempty(row.appointmentTime))) {
       return '请完整填写客户期望日期区间和每项实际预约日期时间';
     }

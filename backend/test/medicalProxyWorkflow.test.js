@@ -40,11 +40,22 @@ test('advisor initiated expert appointment creates expert appointment tasks', as
     HealthPlan.create = async row => ({ _id: 'expert-plan', ...row });
     const result = await startStaffMedicalProxyWorkflow({
       patient: { _id: 'patient', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' }, advisorId: 'advisor',
-      plan: { appointmentOnly: true, preferredDateStart: '2026-10-02', preferredDateEnd: '2026-10-05' },
+      plan: { appointmentOnly: true, preferredDateStart: '2026-10-02', preferredDateEnd: '2026-10-05',
+        hospital: '浙一医院', department: '疼痛科', expert: '医生甲',
+        appointmentTargets: [
+          { hospital: '浙一医院', campus: '庆春院区', department: '疼痛科', expert: '医生甲' },
+          { hospital: '浙二医院', campus: '解放路院区', department: '神经内科', expert: '医生乙' },
+        ] },
     });
     assert.equal(result.order.serviceName, '专家约诊服务');
     assert.match(result.booking.theme, /^专家约诊：/);
     assert.match(result.supervisor.theme, /^专家约诊：/);
+    assert.equal(result.booking.formData.appointmentSlots.length, 2);
+    assert.deepEqual(result.booking.formData.appointmentSlots.map(row => [row.hospital, row.department, row.expert]), [
+      ['浙一医院', '疼痛科', '医生甲'], ['浙二医院', '神经内科', '医生乙'],
+    ]);
+    assert.match(result.order.serviceRequirements, /预约目标2：浙二医院/);
+    assert.equal(result.order.medicalProxyPlan.appointmentTargets.length, 2);
   } finally {
     Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate; HealthPlan.create = previous.planCreate;
   }
@@ -729,5 +740,17 @@ test('expert appointment validates every appointment in a single order', async (
     assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /期望区间/);
     formData.dateDifferenceNote = '客户确认第二项改到19日';
     assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), '');
+  } finally { Order.findById = originalOrderFind; }
+});
+
+test('expert appointment cannot finish booking after dropping one requested target', async () => {
+  const originalOrderFind = Order.findById;
+  try {
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '专家约诊服务' }) }) });
+    const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
+    const formData = { preferredDateStart: '2026-10-02', preferredDateEnd: '2026-10-05',
+      planSnapshot: { appointmentTargets: [{ hospital: '浙一医院' }, { hospital: '浙二医院' }] },
+      appointmentSlots: [{ hospital: '浙一医院', department: '疼痛科', appointmentDate: '2026-10-03', appointmentTime: '10:00' }] };
+    assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /保留本次预约目标/);
   } finally { Order.findById = originalOrderFind; }
 });

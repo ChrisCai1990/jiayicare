@@ -628,7 +628,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [form, setForm] = useState({
     name: '', templateName: '', assistanceType: '', hospital: '', campus: '', department: '', expert: '', clinicType: '', insuranceUse: '', insurerName: '', settlementMethod: 'pending',
     staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', escortDepartments: [{ department: '', expert: '', time: '' }], escortExams: [{ item: '', department: '', expert: '', time: '', precautions: '' }], escortTreatments: [{ item: '', department: '', time: '', medicalOrder: '', precautions: '', course: '' }], transport: '', tasks: '', hotel: '', notes: '',
-    preferredDateStart: '', preferredDateEnd: '', sourceMedicationId: '', medicationOptions: [], medicationItems: [{ sourceMedicationId: '', medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '' }], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '', agencyExams: [{ item: '', department: '', expert: '', notes: '' }],
+    preferredDateStart: '', preferredDateEnd: '', appointmentTargets: [{ hospital: '', campus: '', department: '', expert: '' }], sourceMedicationId: '', medicationOptions: [], medicationItems: [{ sourceMedicationId: '', medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '' }], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '', agencyExams: [{ item: '', department: '', expert: '', notes: '' }],
   })
   const set = (k, v) => {
     setForm(prev => ({ ...prev, [k]: v }))
@@ -752,6 +752,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       campus:    c.campus    || '',
       department:c.department|| '',
       expert:    c.expert    || '',
+      appointmentTargets: Array.isArray(c.appointmentTargets) && c.appointmentTargets.length ? c.appointmentTargets.map(item => ({ hospital: item.hospital || '', campus: item.campus || '', department: item.department || '', expert: item.expert || '' })) : [{ hospital: c.hospital || '', campus: c.campus || '', department: c.department || '', expert: c.expert || '' }],
       escortDepartments: Array.isArray(c.escortDepartments) && c.escortDepartments.length ? c.escortDepartments.map(item => ({ department: item.department || '', expert: item.expert || '', time: item.time || '' })) : [{ department: c.department || '', expert: c.expert || '', time: '' }],
       escortExams: Array.isArray(c.escortExams) && c.escortExams.length ? c.escortExams.map(item => ({ item: item.item || '', department: item.department || '', expert: item.expert || '', time: item.time || '', precautions: item.precautions || '' })) : [{ item: c.examItem || '', department: c.department || '', expert: c.expert || '', time: '', precautions: c.examPrecautions || '' }],
       escortTreatments: Array.isArray(c.escortTreatments) && c.escortTreatments.length ? c.escortTreatments.map(item => ({ item: item.item || '', department: item.department || '', time: item.time || '', medicalOrder: item.medicalOrder || '', precautions: item.precautions || '', course: item.course || '' })) : [{ item: c.treatmentItem || '', department: c.department || '', time: '', medicalOrder: c.medicalOrder || '', precautions: c.treatmentPrecautions || '', course: c.treatmentCourse || '' }],
@@ -814,7 +815,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     if (isMedicationProxy && form.institutionType === 'hospital' && !form.hospital.trim()) { setError('请填写配药医院'); return }
     if (isMedicationProxy && form.institutionType === 'online' && (!form.platformName.trim() || !form.purchasePath.trim())) { setError('请填写线上平台和购买路径'); return }
     if (isMedicationProxy && form.institutionType === 'pharmacy' && !form.pharmacyName.trim()) { setError('请填写线下药房'); return }
-    if (isExpertAppointment && (!form.hospital.trim() || !form.department.trim() || !form.preferredDateStart || !form.preferredDateEnd || form.preferredDateEnd < form.preferredDateStart)) { setError('请完整填写医院、科室和有效的期望日期区间'); return }
+    if (isExpertAppointment && (!form.appointmentTargets?.length || form.appointmentTargets.length > 12 || form.appointmentTargets.some(row => !row.hospital.trim() || !row.department.trim()) || !form.preferredDateStart || !form.preferredDateEnd || form.preferredDateEnd < form.preferredDateStart)) { setError('请逐项填写1至12个预约目标的医院、科室和有效的期望日期区间'); return }
     if (isExpertAppointment && (!form.clinicType || !form.insuranceUse)) { setError('请选择门诊类型和费用与保险方式'); return }
     if (isMedicalProxy && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.proxyGoal?.trim() || !form.communicationContent?.trim())) { setError('请完整填写医院、科室、专家、代诊目标和交流内容'); return }
     if (isMedicalProxy && !patientReportsLoaded) { setError('客户资料尚未加载完成，请稍后重试'); return }
@@ -835,7 +836,9 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       if (isMedicalProxy || isExpertAppointment || isMedicationProxy) {
         const medicationItems = isMedicationProxy ? form.medicationItems.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value || '').trim()]))) : []
         const firstMedication = medicationItems[0] || {}
-        await staffAPI.startStaffMedicalProxy(patientId, { reservedOrderId, giftId, hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, noMaterialsConfirmed: isMedicalProxy && !selectedReportIds.length && noMaterialsConfirmed, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, ...firstMedication, medicationItems, institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
+        const appointmentTargets = isExpertAppointment ? form.appointmentTargets.map(row => ({ hospital: row.hospital.trim(), campus: row.campus.trim(), department: row.department.trim(), expert: row.expert.trim() })) : []
+        const firstTarget = appointmentTargets[0]
+        await staffAPI.startStaffMedicalProxy(patientId, { reservedOrderId, giftId, hospital: firstTarget?.hospital || form.hospital.trim(), campus: firstTarget?.campus || form.campus.trim(), department: firstTarget?.department || form.department.trim(), expert: firstTarget?.expert || form.expert.trim(), appointmentTargets, clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, noMaterialsConfirmed: isMedicalProxy && !selectedReportIds.length && noMaterialsConfirmed, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, ...firstMedication, medicationItems, institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
         onSaved()
         return
       }
@@ -1068,10 +1071,10 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
 
           {/* 两栏布局 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {!isMedicationProxy && renderField('医院',     'hospital',   0, '医院名称')}
-            {!isMedicationProxy && renderField('院区',     'campus',     0, '院区名称（可选）')}
-            {!isMedicationProxy && !isMedicalEscort && renderField('科室',     'department', 0, '科室名称')}
-            {!isMedicationProxy && !isMedicalEscort && renderField(isExpertAppointment ? '期望专家或线索（选填）' : '专家', 'expert', 0, isExpertAppointment ? '不清楚姓名可留空，由健管预约时核实' : '专家姓名（可选）')}
+            {!isMedicationProxy && !isExpertAppointment && renderField('医院',     'hospital',   0, '医院名称')}
+            {!isMedicationProxy && !isExpertAppointment && renderField('院区',     'campus',     0, '院区名称（可选）')}
+            {!isMedicationProxy && !isMedicalEscort && !isExpertAppointment && renderField('科室',     'department', 0, '科室名称')}
+            {!isMedicationProxy && !isMedicalEscort && !isExpertAppointment && renderField('专家', 'expert', 0, '专家姓名（可选）')}
             {!isAgencyService && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">就医专员</label>
               <select
@@ -1155,6 +1158,16 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             </div>
             <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康顾问提交后，将自动生成健康规划师全程督办任务，并直接流转给健管专员预约专家。</div>
           </>}
+          {isExpertAppointment && <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
+            <strong>本次预约目标</strong>
+            {form.appointmentTargets.map((row, index) => <div key={index} style={{ padding: 10, background: '#fff', border: '1px solid #DCE8E1', borderRadius: 8, display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><strong>专家预约 {index + 1}</strong>{form.appointmentTargets.length > 1 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => set('appointmentTargets', form.appointmentTargets.filter((_, i) => i !== index))}>删除此项</button>}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                {[[ 'hospital', '医院 *', '医院名称' ], [ 'campus', '院区', '院区名称（可选）' ], [ 'department', '科室 *', '科室名称' ], [ 'expert', '期望专家或线索（选填）', '不清楚姓名可留空，由健管预约时核实' ]].map(([key, label, placeholder]) => <div key={key} className="form-group" style={{ marginBottom: 0 }}><label className="form-label">{label}</label><input className="form-input" value={row[key] || ''} placeholder={placeholder} onChange={e => set('appointmentTargets', form.appointmentTargets.map((item, i) => i === index ? { ...item, [key]: e.target.value } : item))} /></div>)}
+              </div>
+            </div>)}
+            <button type="button" className="btn btn-secondary" style={{ justifySelf: 'start' }} onClick={() => set('appointmentTargets', [...form.appointmentTargets, { hospital: '', campus: '', department: '', expert: '' }])} disabled={form.appointmentTargets.length >= 12}>＋ 增加专家预约</button>
+          </div>}
           {isExpertAppointment && <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">门诊类型 *</label><select className="form-input" value={form.clinicType} onChange={e => set('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="expert">专家门诊</option><option value="special">特需门诊</option><option value="international">国际门诊</option></select></div>
