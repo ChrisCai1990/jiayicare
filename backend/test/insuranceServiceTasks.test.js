@@ -22,7 +22,7 @@ test('creating an insurance case assigns work to both configured roles', () => {
   assert.match(createCase, /ensureInsuranceServiceTask\(serviceCase, 'supervisor', patient\.assignedHealthPlanner\)/);
 });
 
-test('completed insurance task prevents recreation and retires only untouched duplicates', async () => {
+test('completed insurance task prevents recreation and retires superseded older work and untouched duplicates', async () => {
   const cancelled = [];
   let created = false;
   const model = {
@@ -30,7 +30,7 @@ test('completed insurance task prevents recreation and retires only untouched du
     find: () => ({ select: () => ({ lean: async () => [
       { _id: 'duplicate', createdAt: '2026-10-16T05:23:47Z', serviceChecklist: [{ purpose: '登记费用' }] },
       { _id: 'worked-on', createdAt: '2026-10-16T05:24:00Z', executedContent: '补充材料' },
-      { _id: 'older', createdAt: '2026-10-16T05:00:00Z' },
+      { _id: 'older', createdAt: '2026-09-09T11:00:00Z', updatedAt: '2026-09-09T11:30:00Z', executedContent: '已联系客户，待补资料' },
     ] }) }),
     updateMany: async (filter, update) => { cancelled.push({ filter, update }); },
     findOneAndUpdate: async () => { created = true; },
@@ -38,8 +38,19 @@ test('completed insurance task prevents recreation and retires only untouched du
   const result = await ensureInsuranceServiceTask(model, { _id: 'case' }, 'executor', 'manager', {});
   assert.equal(result._id, 'done');
   assert.equal(created, false);
-  assert.deepEqual(cancelled[0].filter._id.$in, ['duplicate']);
+  assert.deepEqual(cancelled[0].filter._id.$in, ['duplicate', 'older']);
   assert.equal(cancelled[0].update.$set.status, 'cancelled');
+});
+
+test('completed executor reconciliation also includes legacy insurance follow-ups', async () => {
+  let activeFilter;
+  const model = {
+    findOne: () => ({ select: () => ({ lean: async () => ({ _id: 'done', sourceId: 'case', taskRole: 'executor', completedAt: '2026-10-16T05:20:24Z' }) }) }),
+    find: filter => { activeFilter = filter; return { select: () => ({ lean: async () => [] }) }; },
+  };
+  await ensureInsuranceServiceTask(model, { _id: 'case' }, 'executor', 'manager', {});
+  assert.ok(activeFilter.$or.some(item => item.sourceType === 'insurance_case'));
+  assert.ok(activeFilter.$or.some(item => item.sourceType === 'scheduled' && item.tags === '保险服务'));
 });
 
 test('patient detail read reconciles completed insurance tasks before listing them', async () => {
