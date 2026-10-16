@@ -169,7 +169,29 @@ test('one escort order preserves multiple same-day departments in its handoff', 
     assert.deepEqual(result.order.medicalProxyPlan.escortDepartments, rows);
     assert.match(result.order.serviceRequirements, /就诊安排1：眼科 · 专家眼科专家 · 09:00/);
     assert.match(result.order.serviceRequirements, /就诊安排2：耳鼻喉科 · 11:30/);
-    assert.deepEqual(result.execute.formData.planSnapshot.escortDepartments, rows);
+    assert.equal(result.booking.assignedTo, 'manager');
+    assert.equal(result.booking.formData.medicalAssistantId, 'assistant');
+    assert.deepEqual(result.booking.formData.planSnapshot.escortDepartments, rows);
+  } finally {
+    Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
+  }
+});
+
+test('escort without an assistant first asks the planner to assign one before booking', async () => {
+  const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create };
+  const tasks = [];
+  try {
+    Order.create = async row => ({ _id: 'unassigned-escort', ...row });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    FollowUp.create = async row => { tasks.push(row); return { _id: `task-${tasks.length}`, ...row }; };
+    const result = await startStaffMedicalProxyWorkflow({
+      patient: { _id: 'patient', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' }, advisorId: 'advisor',
+      plan: { medicalEscort: true, escortCategory: 'consultation', escortDate: '2026-10-20', escortTime: '09:00',
+        hospital: '测试医院', department: '眼科', escortGoal: '陪同看诊', sourceFollowUpId: 'existing-follow-up' },
+    });
+    assert.deepEqual(tasks.map(task => task.workflowKey), ['medical_proxy:supervise', 'medical_proxy:planner']);
+    assert.equal(result.planner.assignedTo, 'planner');
+    assert.equal(result.supervisor.formData.currentStage, 'planner');
   } finally {
     Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
   }
@@ -191,7 +213,8 @@ test('exam escort hands off each examination and its preparation notes, not a co
     assert.deepEqual(result.order.medicalProxyPlan.escortExams, exams);
     assert.match(result.order.serviceRequirements, /检查安排1：甲状腺超声 · 超声科 · 专家检查专家 · 09:30；注意事项：携带检查申请单/);
     assert.match(result.order.serviceRequirements, /检查安排2：心电图 · 功能检查科 · 10:30；注意事项：待检查机构核实/);
-    assert.deepEqual(result.execute.formData.planSnapshot.escortExams, exams);
+    assert.equal(result.booking.assignedTo, 'manager');
+    assert.deepEqual(result.booking.formData.planSnapshot.escortExams, exams);
   } finally {
     Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
   }
@@ -212,7 +235,8 @@ test('treatment escort hands off the confirmed order, session and preparation no
     assert.equal(result.order.serviceName, '陪同治疗服务');
     assert.deepEqual(result.order.medicalProxyPlan.escortTreatments, treatments);
     assert.match(result.order.serviceRequirements, /治疗安排1：门诊输液 · 日间治疗中心 · 14:00 · 第2次，共6次；医嘱\/依据：已核对医生开具的治疗单；注意事项：按治疗机构要求携带治疗单/);
-    assert.deepEqual(result.execute.formData.planSnapshot.escortTreatments, treatments);
+    assert.equal(result.booking.assignedTo, 'manager');
+    assert.deepEqual(result.booking.formData.planSnapshot.escortTreatments, treatments);
   } finally {
     Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
   }
@@ -537,7 +561,7 @@ test('service-plan medication uses supply-entry fields and blocks duplicate acti
   assert.match(plansPage, /expectedDeliveryDate: isMedicationProxy \? form\.serviceDate/);
 });
 
-test('medical escort skips booking and sends manager review only after execution', () => {
+test('medical escort books before execution and sends manager review only after execution', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const panel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');
   const stageForm = fs.readFileSync(path.join(__dirname, '../../staff/src/components/MedicalProxyStageForm.jsx'), 'utf8');
@@ -546,10 +570,11 @@ test('medical escort skips booking and sends manager review only after execution
   const directStart = workflow.split('async function startStaffMedicalProxyWorkflow')[1].split('async function validateMedicalProxyStage')[0];
   assert.match(directStart, /theme: `\$\{plan\.adHocConsultation \? '临时加诊' : '就医陪同'\}：健康规划师全程督办/);
   assert.match(directStart, /supervisorId: patient\.assignedHealthPlanner/);
-  assert.match(directStart, /if \(directlyAssigned\)/);
+  assert.match(directStart, /if \(directlyAssigned && plan\.adHocConsultation\)/);
+  assert.match(directStart, /workflowKey: `\$\{PREFIX\}booking`/);
   assert.match(directStart, /workflowKey: `\$\{PREFIX\}execute`/);
   assert.match(directStart, /assignedTo: plan\.medicalAssistantId/);
-  assert.match(workflow, /medicalEscort === true && stage === 'planner' \? 'execute'/);
+  assert.match(workflow, /medicalEscort === true && stage === 'planner' \? \(order\.medicalProxyPlan\?\.adHocConsultation \? 'execute' : 'booking'\)/);
   assert.match(workflow, /stage === 'execute' && task\.formData\?\.medicalEscort === true[\s\S]*post_visit_audit/);
   assert.match(workflow, /const reportIds = await archiveMedicalProxyRecords/);
   assert.match(workflow, /status: 'planned', isBlocked: false[\s\S]*executionSnapshot/);
@@ -564,7 +589,7 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(panel, /const medicalEscortProgress/);
   assert.match(panel, /medicationProxyProgress\(task\) \|\| medicalEscortProgress\(task\)/);
   assert.match(panel, /progress\?\.steps/);
-  assert.match(panel, /\['人员分配', '陪同执行', '资料审核', '完成'\]/);
+  assert.match(panel, /\['人员分配', '预约', '陪同执行', '资料审核', '完成'\]/);
   assert.match(stageForm, /健康顾问提交的陪同服务信息/);
   assert.match(stageForm, /陪同执行结果、现场情况和后续事项/);
   assert.match(stageForm, /上传门诊病历/);
@@ -576,7 +601,7 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(patientPage, /完成陪同并提交资料审核/);
   assert.match(patientPage, /const isOrderServiceWorkflowTask/);
   assert.match(patientPage, /medicalWorkflowKey\(task\.workflowKey\)/);
-  assert.match(patientPage, /type: 'order_service'/);
+  assert.match(patientPage, /row\.type === 'order_service'/);
   assert.match(patientPage, />综合服务</);
   assert.match(patientPage, /supplyReminderOrderMap/);
   assert.match(patientPage, /medicalProxyOrderId/);

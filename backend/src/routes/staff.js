@@ -709,6 +709,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   await require('../utils/medicalProxyWorkflow').repairCompletedMedicalEscortAuditTasks(req.staff._id);
   if (req.staff.role === 'healthPlanner')
     await require('../utils/medicalProxyWorkflow').repairCompletedPlanningAdvisorHandoffs(req.staff._id);
+  await require('../utils/legacyEscortBooking').reconcileForStaff(req.staff);
   await require('../utils/medicalProxyWorkflow').ensureStaffExpertAppointmentTasksForStaff(req.staff);
   if(req.staff.role==='healthManager') {
     const flows=await require('../models/CareFlow').find({tenantId:req.staff.tenantId||null,'state.people.healthManager.id':String(req.staff._id),'state.stage':{$in:['upload','audit']}}).lean();

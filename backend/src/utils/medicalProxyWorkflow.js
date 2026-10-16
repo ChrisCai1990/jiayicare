@@ -911,10 +911,10 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
       patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner, type: 'other', status: 'in_progress', date, remindAt: new Date(),
       sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
       theme: `${plan.adHocConsultation ? '临时加诊' : '就医陪同'}：健康规划师全程督办 · ${serviceName}`,
-      plannedContent: plan.adHocConsultation ? '就医专员已按客户现场需求安排临时加诊；督办执行记录、健管资料审核和健康顾问随访审核，服务独立闭环。' : '健康顾问发起后，由健康规划师持续督办人员分配、陪同执行、资料审核和随访计划确认，直至服务结束。',
-      formData: { currentStage: directlyAssigned ? 'execute' : 'planner', medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE, assignmentMode: directlyAssigned ? 'automatic' : 'planner', medicalAssistantId: plan.medicalAssistantId || '' },
+      plannedContent: plan.adHocConsultation ? '就医专员已按客户现场需求安排临时加诊；督办执行记录、健管资料审核和健康顾问随访审核，服务独立闭环。' : '健康顾问发起后，由健康规划师持续督办人员分配、健管预约、陪同执行和资料审核，直至服务结束。',
+      formData: { currentStage: directlyAssigned ? (plan.adHocConsultation ? 'execute' : 'booking') : 'planner', medicalEscort: true, adHocConsultation: plan.adHocConsultation === true, initiationSource: STAFF_DIRECT_SOURCE, assignmentMode: directlyAssigned ? 'automatic' : 'planner', medicalAssistantId: plan.medicalAssistantId || '' },
     });
-    if (directlyAssigned) {
+    if (directlyAssigned && plan.adHocConsultation) {
       const execute = await FollowUp.create({
         patientId: patient._id, staffId: advisorId, assignedTo: plan.medicalAssistantId, type: 'other', status: 'planned', date: plan.adHocConsultation ? date : order.scheduledAt, remindAt: plan.adHocConsultation ? date : order.scheduledAt,
         sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}execute`, taskRole: 'executor',
@@ -924,6 +924,18 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
       });
       await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'execute', currentAssignee: plan.medicalAssistantId, closureMode: 'automatic', supervisionStatus: 'in_progress' } });
       return { order, supervisor, execute };
+    }
+    if (directlyAssigned) {
+      const booking = await FollowUp.create({
+        patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager, type: 'other', status: 'planned', date, remindAt: new Date(),
+        sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking`, taskRole: 'executor',
+        theme: `就医陪同：健管专员完成陪同预约 · ${serviceName}`,
+        plannedContent: '核实陪同服务的医院、项目和实际预约时间；完成后直接转给已指定的就医专员。',
+        formData: { planSnapshot: { ...plan, initiationSource: STAFF_DIRECT_SOURCE }, medicalEscort: true, medicalAssistantId: plan.medicalAssistantId,
+          preferredDateStart: plan.escortDate, preferredDateEnd: plan.escortDate },
+      });
+      await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'booking', currentAssignee: patient.assignedHealthManager, closureMode: 'automatic', supervisionStatus: 'in_progress' } });
+      return { order, supervisor, booking };
     }
     const planner = await FollowUp.create({
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthPlanner, type: 'other', status: 'planned', date, remindAt: new Date(),
@@ -1368,7 +1380,7 @@ async function advanceMedicalProxyWorkflow(task) {
   const plannerDispatch = needsPlannerDispatch(task.formData, order.serviceName);
   const next = plannerDispatch && stage === 'booking' ? 'planner'
     : plannerDispatch && stage === 'planner' ? 'execute'
-    : task.formData?.medicalEscort === true && stage === 'planner' ? 'execute'
+    : task.formData?.medicalEscort === true && stage === 'planner' ? (order.medicalProxyPlan?.adHocConsultation ? 'execute' : 'booking')
     : supplyProxy && stage === 'booking' ? 'planner'
     : supplyProxy && stage === 'planner' ? 'execute'
       : stage === 'advisor' && task.formData?.initiationSource === STAFF_DIRECT_SOURCE ? 'booking' : STAGES[index + 1];
