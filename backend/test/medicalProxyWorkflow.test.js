@@ -368,10 +368,12 @@ test('advisor must confirm five proxy visit fields and planner must assign activ
   const originalCount = MedicalReport.countDocuments;
   const originalFind = User.findById;
   const originalAdminFind = Admin.findOne;
+  const originalOrderFind = Order.findById;
   try {
     MedicalReport.countDocuments = async () => 1;
     User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1', assignedHealthManager: 'manager-1' }) }) });
     Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: 'assistant-1' }) }) });
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ status: 'scheduled', currentStage: 'booking', serviceName: '医疗代诊服务' }) }) });
     const advisor = { sourceType: 'order', workflowKey: 'medical_proxy:advisor', patientId: 'patient-1', assignedTo: 'doctor-1' };
     const data = { auditSnapshot: { collectionSnapshot: { reportIds: ['report-1'], annualMember: true } }, hospital: '医院', department: '科室', expert: '专家', proxyGoal: '取得专业意见' };
     assert.match(await validateMedicalProxyStage(advisor, { status: 'completed', formData: data }, { _id: 'doctor-1', role: 'familyDoctor' }), /交流内容/);
@@ -383,7 +385,7 @@ test('advisor must confirm five proxy visit fields and planner must assign activ
     const planner = { sourceType: 'order', workflowKey: 'medical_proxy:planner', assignedTo: 'planner-1' };
     assert.match(await validateMedicalProxyStage(planner, { status: 'completed', formData: {} }, { _id: 'planner-1', role: 'healthPlanner' }), /就医专员/);
     assert.equal(await validateMedicalProxyStage(planner, { status: 'completed', formData: { medicalAssistantId: 'assistant-1' } }, { _id: 'planner-1', role: 'healthPlanner' }), '');
-    const booking = { sourceType: 'order', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
+    const booking = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
     const bookingData = { medicalAssistantId: 'assistant-1', preferredDateStart: '2026-09-16', preferredDateEnd: '2026-09-18', appointmentDate: '2026-09-19', appointmentTime: '09:30' };
     assert.match(await validateMedicalProxyStage(booking, { status: 'completed', formData: bookingData }, { _id: 'manager-1', role: 'healthManager' }), /期望区间/);
     bookingData.dateDifferenceNote = '客户已确认改为专家出诊日';
@@ -392,6 +394,7 @@ test('advisor must confirm five proxy visit fields and planner must assign activ
     MedicalReport.countDocuments = originalCount;
     User.findById = originalFind;
     Admin.findOne = originalAdminFind;
+    Order.findById = originalOrderFind;
   }
 });
 
