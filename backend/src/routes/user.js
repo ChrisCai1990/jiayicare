@@ -228,9 +228,9 @@ router.get('/me', auth, async (req, res) => {
           description: platformFundPolicy.description || '',
         },
       };
-      healthFund.rule.description = fundEligible
-        ? '自有基金优先，两类基金合计受商品抵扣上限限制（最高20%）；适用范围及实际金额以服务端核价为准。'
-        : '当前会员权益不支持基金抵扣，可按原价购买；已有基金余额保留。';
+      healthFund.rule.description = personalAvailable > 0 || fundEligible
+        ? '自有基金可在余额内全额抵扣；企业赠送基金仅限符合会员及商品规则的服务使用。实际金额以服务端核价为准。'
+        : '当前没有可用的自有健康基金；企业赠送基金需符合会员及商品规则。';
 
     // 查询已分配的责任人员信息（实时 populate）
     // 健康规划师是服务协调岗位；已分配的就医专员属于客户可沟通的健康服务团队。

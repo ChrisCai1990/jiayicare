@@ -30,6 +30,12 @@ async function ensureEffectiveServiceLedger(user, now = new Date()) {
   const existing = await PackageEntitlement.findOne({ ownerUserId: user._id, packageId: pkg._id,
     status: 'active', validFrom: { $lte: now }, validUntil: { $gte: now } }).lean();
   if (existing) return existing;
+  // A linked family member may carry the same plan label in their profile. The
+  // family's entitlement is owned once; viewing another member must not mint a
+  // second opening balance or another history-review task.
+  const shared = (await applicableEntitlements(user._id, now)).find(row =>
+    row.familySharing && String(row.packageId) === String(pkg._id));
+  if (shared) return shared;
   const sourceOrderId = new mongoose.Types.ObjectId(crypto.createHash('sha256')
     .update(`effective_service:${user._id}:${pkg._id}:${user.serviceStartDate}`).digest('hex').slice(0, 24));
   const snapshot = await buildPackageEntitlementSnapshot(pkg);

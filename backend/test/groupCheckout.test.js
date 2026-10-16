@@ -91,12 +91,12 @@ test('coupon and fund are allocated per item; cash sums to the single gateway ch
   assert.equal(h.orders.reduce((s, o) => s + cents(o.couponDiscount), 0), 10000);
 });
 
-test('disabled product rejects both fund sources; eligible product still uses personal balance first', async () => {
+test('disabled product rejects corporate funds but accepts its share of personal funds', async () => {
   const h = harness({ personal: 1, corporate: 100, products: { b: { healthFundDeduction: { mode: 'disabled' } } } });
   const q = await h.quoteGroup(h.user, h.items, h.products, { useHealthFund: 68 });
   assert.equal(q.allocations[1].corporate, 0);
-  assert.equal(q.allocations[1].personal, 0);
-  assert.equal(q.allocations[0].personal, 1);
+  assert.equal(q.allocations[1].personal, 0.04);
+  assert.equal(q.allocations[0].personal, 0.96);
   assert.equal(q.allocations[0].corporate, 67);
   assert.equal(q.summary.fundUsed, 68);
 });
@@ -123,11 +123,11 @@ test('gateway timeout preserves both orders and reservations for status/retry, n
   assert.equal(h.payments[0].status, 'processing'); assert.ok(!h.events.some(e => e[0] === 'release'));
 });
 
-test('large personal balance cannot bypass the per-product twenty percent cap', async () => {
+test('large personal balance can cover the entire product price', async () => {
   const h = harness({ personal: 7118.44 }); await h.run({ useHealthFund: 7118.44 });
-  assert.equal(h.payments[0].amount, 5694.76);
-  assert.deepEqual(h.orders.map(o => o.healthFundAmount), [1360, 63.68]);
-  assert.equal(h.events.filter(e => e[0] === 'gateway').length, 1);
+  assert.equal(h.payments[0].amount, 0);
+  assert.deepEqual(h.orders.map(o => o.healthFundAmount), [6800, 318.44]);
+  assert.equal(h.events.filter(e => e[0] === 'gateway').length, 0);
 });
 
 test('zero-cash coupon checkout uses settlement without WeChat and preserves recovery on failure', async () => {
@@ -138,12 +138,15 @@ test('zero-cash coupon checkout uses settlement without WeChat and preserves rec
   assert.ok(!failed.events.some(e => e[0] === 'release')); assert.ok(failed.orders.every(o => o.tradeStatus !== 'closed'));
 });
 
-test('ineligible membership or eligibility failure cannot reserve stock or create payment when using funds', async () => {
-  for (const config of [{ fundEligible: false }, { eligibilityError: true }]) {
-    const h = harness({ personal: 100, ...config });
-    await assert.rejects(h.run({ useHealthFund: 10 }), config.eligibilityError ? /eligibility unavailable/ : /健康基金仅限/);
+test('own fund works without membership while failed eligibility or corporate-only access blocks checkout', async () => {
+  for (const config of [{ fundEligible: false, personal: 0, corporate: 100 }, { eligibilityError: true, personal: 100 }]) {
+    const h = harness(config);
+    await assert.rejects(h.run({ useHealthFund: 10 }), config.eligibilityError ? /eligibility unavailable/ : /自有健康基金/);
     assert.equal(h.orders.length, 0); assert.equal(h.payments.length, 0); assert.equal(h.events.length, 0);
   }
+  const own = harness({ fundEligible: false, personal: 100 });
+  await own.run({ useHealthFund: 10 });
+  assert.equal(own.orders.reduce((sum, order) => sum + order.healthFundAmount, 0), 10);
   const cash = harness({ fundEligible: false });
   await cash.run(); assert.equal(cash.payments[0].amount, 7118.44);
 });

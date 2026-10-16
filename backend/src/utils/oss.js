@@ -137,6 +137,18 @@ async function getObjectStream(key, headers = {}) {
   return getClient().getStream(key, { headers });
 }
 
+// Copy inside the private bucket. A new key gives the organized report its own
+// lifecycle, so deleting either report cannot remove the other's original.
+async function copyStoredFile(key) {
+  if (!/^reports\/[A-Za-z0-9._/-]+$/.test(key || '') || key.includes('..')) throw new Error('原件路径无效');
+  const ext = path.extname(key).toLowerCase();
+  if (!['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif', '.bmp'].includes(ext)) throw new Error('原件格式不支持整理');
+  const newKey = `reports/${uuidv4()}${ext}`;
+  await getClient().copy(newKey, key);
+  const endpoint = process.env.OSS_ENDPOINT || 'https://oss-cn-beijing.aliyuncs.com';
+  return { key: newKey, url: `https://${process.env.OSS_BUCKET}.${endpoint.replace('https://', '')}/${newKey}` };
+}
+
 // 从 OSS URL 提取 key
 function urlToKey(url) {
   const bucket = process.env.OSS_BUCKET;
@@ -148,4 +160,4 @@ function urlToKey(url) {
   } catch { return null; }
 }
 
-module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, getClient, urlToKey, convertHeicBase64IfNeeded };
+module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, copyStoredFile, getClient, urlToKey, convertHeicBase64IfNeeded };

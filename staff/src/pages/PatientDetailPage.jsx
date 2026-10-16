@@ -29,6 +29,7 @@ import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
 import { orderConversationMessages } from '../utils/orderConversation'
+import { expertAppointmentBenefits } from '../utils/expertAppointmentBenefits.mjs'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
@@ -2124,6 +2125,10 @@ export default function PatientDetailPage() {
     try {
       const target = entitlement || packageEntitlements.find(item => item.historyVerified === false)
         || (await staffAPI.preparePackageHistoryReview(id)).data
+      if (target?.ownerUserId && String(target.ownerUserId) !== String(id)) {
+        nav(`/patients/${target.ownerUserId}?tab=consumption`)
+        return
+      }
       setHistoryReviewEntitlement(target)
       setTab('consumption')
       await loadMembership()
@@ -2775,9 +2780,39 @@ export default function PatientDetailPage() {
           insuranceOutcome: f.formData?.insuranceOutcome || inferredInsuranceOutcome,
         }
       : (f.formData || {})
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: ibdStage(f) ? ibdFormDataFromTask(f) : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : isCheckupManagerReviewTask(f) ? checkupManagerReviewFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    setExecForm({ type: f.type || 'phone', content: f.sourceType === 'insurance_service' ? (f.executedContent || '') : '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: ibdStage(f) ? ibdFormDataFromTask(f) : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : isCheckupManagerReviewTask(f) ? checkupManagerReviewFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+  }
+  const handleSaveInsuranceDraft = async () => {
+    if (execItem?.sourceType !== 'insurance_service' || execItem.taskRole !== 'executor') return
+    setExecSaving(true)
+    try {
+      await staffAPI.updateFollowUp(execItem._id, {
+        type: execForm.type,
+        content: execForm.content.trim(),
+        status: 'in_progress',
+        serviceChecklist: execForm.serviceChecklist,
+      })
+      toast('已临时保存，可稍后继续填写')
+      setExecItem(null)
+      loadFollowUps()
+    } catch (err) { toast(err.message || '临时保存失败') }
+    finally { setExecSaving(false) }
   }
   const handleExec = async () => {
+    if (medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) && execForm.formData?.bookingOutcome === 'customer_not_needed') {
+      const note = execForm.formData.customerDeclineNote?.trim()
+      if (!note) { toast('请记录客户暂不需要代配药的沟通情况'); return }
+      setExecSaving(true)
+      try {
+        await staffAPI.deferMedicationProxy(execItem._id, note)
+        toast('已结束本次代配药需求，客户需要时可重新发起')
+        setExecItem(null)
+        loadFollowUps()
+        loadServiceRecords()
+      } catch (err) { toast(err.message || '结束失败') }
+      finally { setExecSaving(false) }
+      return
+    }
     if (canRecordProgress(execItem) && execForm.status === 'in_progress') {
       if (!execForm.content.trim()) { toast('请填写本次沟通情况'); return }
       setExecSaving(true)
@@ -2861,7 +2896,7 @@ export default function PatientDetailPage() {
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
-        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (isMedicalEscortTask(execItem) ? ({ planner: '健康规划师已安排陪同就医专员', execute: '就医专员已完成陪同并提交资料审核', post_visit_audit: '健管专员已完成陪同资料审核归档' }[proxyStage] || '陪同就医服务环节已完成') : execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : proxyStage === 'booking' && isMedicalProxyMedicationTask(execItem) ? '代配药门诊预约已完成，转健康规划师安排执行人员' : proxyStage === 'booking' && isExpertAppointmentTask(execItem) ? '专家约诊已完成' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行', post_visit_audit: '就诊资料审核', post_visit_review: '就诊资料查看' }[proxyStage] || '服务环节'}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
+        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (isMedicalEscortTask(execItem) ? ({ planner: '健康规划师已安排陪同就医专员，转健管专员预约', booking: '健管专员已完成陪同预约，转就医专员执行', execute: '就医专员已完成陪同并提交资料审核', post_visit_audit: '健管专员已完成陪同资料审核归档' }[proxyStage] || '陪同就医服务环节已完成') : execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : proxyStage === 'booking' && isMedicalProxyMedicationTask(execItem) ? '代配药门诊预约已完成，转健康规划师安排执行人员' : proxyStage === 'booking' && isExpertAppointmentTask(execItem) ? '专家约诊已完成' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行', post_visit_audit: '就诊资料审核', post_visit_review: '就诊资料查看' }[proxyStage] || '服务环节'}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
         status: ibdStage(execItem) ? execForm.status : isReportCollection
           ? (reportClosure?.collectionStatus === 'complete' ? 'completed' : 'in_progress')
           : execItem.taskRole === 'supervisor'
@@ -2880,8 +2915,10 @@ export default function PatientDetailPage() {
         await loadReports()
         toast('资料已保存，已进入报告管理；请逐份完成AI解析与审核')
       } else {
-        toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
+        const planningClosed = proxyStage === 'supervise' && execForm.formData?.medicalPlanning === true
+        toast(planningClosed ? '客户意向已确认，本次就医规划已结案' : isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
         loadFollowUps()
+        if (planningClosed) staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
       }
     } catch (err) { toast(err.message || '保存失败') }
     finally { setExecSaving(false) }
@@ -4672,7 +4709,8 @@ export default function PatientDetailPage() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {location.state.sourceTodo.type === 'health_course_review' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button type="button" className="btn btn-primary btn-sm" disabled={healthCourseSaving} onClick={() => openHealthCourseReview({ _id: location.state.sourceTodo.id.replace(/^healthcourse_/, '') }, { pendingOnly: true })}>{healthCourseSaving ? '加载中…' : '去审核健康变化'}</button>}
             {location.state.sourceTodo.type === 'risk_review' && <button type="button" className="btn btn-primary btn-sm" disabled={riskApproving} onClick={handleCloseRiskTodo}>{riskApproving ? '处理中…' : '已核对，确认关闭任务'}</button>}
-            <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>{['risk_review', 'health_course_review'].includes(location.state.sourceTodo.type) ? '仅隐藏提示' : '关闭提示'}</button>
+            {location.state.sourceTodo.type === 'archive_review' && user.initialArchiveReview?.status === 'pending' && <button type="button" className="btn btn-primary btn-sm" onClick={() => { setTab('records'); setHealthBaseView('profile'); requestAnimationFrame(() => document.getElementById('initial-archive-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}>去逐项复核</button>}
+            <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>{['risk_review', 'health_course_review', 'archive_review'].includes(location.state.sourceTodo.type) ? '仅隐藏提示' : '关闭提示'}</button>
           </div>
         </div>
       )}
@@ -4767,7 +4805,7 @@ export default function PatientDetailPage() {
       {/* 问卷档案变化：差异待确认 / 历史记录 / 手动生成入口 */}
       {(() => {
         const draft = user.archiveDraft
-        const pending = draft && draft.status === 'pending' && (draft.items || []).length > 0
+        const pending = draft && draft.status === 'pending' && (draft.items || []).length > 0 && String(draft.questionnaireId) !== '6a49eab9fc1595013da70645'
         if (pending) {
           return (
             <div style={{ marginBottom: 12, padding: '10px 16px', background: '#FEF3C7', borderRadius: 8, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -4781,12 +4819,13 @@ export default function PatientDetailPage() {
             </div>
           )
         }
-        if (qResponses.length > 0) {
+        const archiveResponses = qResponses.filter(r => !r.isDietarySurvey)
+        if (archiveResponses.length > 0) {
           return (
             <details style={{ marginBottom: 10 }}><summary style={{ cursor: 'pointer', fontSize: 13, color: '#4A6558' }}>从已答问卷整理档案变化</summary><div style={{ marginBottom: 12, padding: '8px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, color: '#4A6558' }}>📝 从已答问卷识别档案变化：</span>
-              <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={qResponses[0].responseId}>
-                {qResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.proxyEntry ? '营养师代填 · ' : ''}{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
+              <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={archiveResponses[0].responseId}>
+                {archiveResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.proxyEntry ? '营养师代填 · ' : ''}{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
               </select>
               <button className="btn btn-secondary btn-sm" disabled={archiveBusy}
                 onClick={() => handleGenerateArchiveDraft(document.getElementById('qresp-select')?.value)}>
@@ -4798,8 +4837,8 @@ export default function PatientDetailPage() {
         return null
       })()}
 
-      {/* 膳食调查问卷：营养师复核（与健管专员审核写入档案是独立并行的两道确认，互不阻塞） */}
-      {qResponses.filter(r => r.isDietarySurvey && r.nutritionistReview?.status !== 'reviewed').map(r => (
+      {/* 膳食调查问卷只由营养师在营养流程复核。 */}
+      {['nutritionist', 'superadmin'].includes(staff?.role) && qResponses.filter(r => r.isDietarySurvey && r.nutritionistReview?.status !== 'reviewed').map(r => (
         <div key={r.responseId} style={{ marginBottom: 12, padding: '10px 16px', background: '#F0FDF4', borderRadius: 8, border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 18 }}>🥗</span>
           <div style={{ flex: 1, minWidth: 180 }}>
@@ -11148,6 +11187,7 @@ export default function PatientDetailPage() {
         const includedServices = packageEntitlements.length ? packageEntitlements.flatMap(entitlement => {
           const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
           return (entitlement.rights?.productEntitlements || []).map((right, index) => {
+            if (entitlement.rights?.aiEntitlements?.expertAppointment && /专家约诊/.test(right.productName || '')) return null
             const pool = pools.get(right.poolKey)
             const usage = (entitlement.usageRecords || []).filter(record => String(record.productId) === String(right.productId))
             return { key: `${entitlement._id}:${right.productId}:${index}`, name: right.productName, packageName: entitlement.packageName,
@@ -11156,9 +11196,11 @@ export default function PatientDetailPage() {
               reservedCount: usage.filter(record => record.status === 'reserved').length,
               redeemedCount: usage.filter(record => record.status === 'redeemed').length,
               rightIndex: index,
-              shared: !!pool, historyKnown: entitlement.historyVerified !== false,
+              shared: !!pool, poolName: pool?.name || '', familySharing: entitlement.familySharing,
+              ownerUserId: entitlement.ownerUserId, ownerName: entitlement.ownerName,
+              historyKnown: entitlement.historyVerified !== false,
               automatic: /营养评估/.test(right.productName || '') && right.productSnapshot?.serviceWorkflow?.key === 'nutrition_intervention', validUntil: entitlement.validUntil }
-          })
+          }).filter(Boolean)
         }) : (membershipSummary?.plans || []).filter(plan => plan.source === 'configuration').flatMap(plan => [
           ...(plan.groups?.shared || []).flatMap(pool => (pool.services || []).map((name, index) => ({
             key: `${plan.id}:shared:${pool.name}:${index}`, name, packageName: plan.name, count: pool.total,
@@ -11172,6 +11214,7 @@ export default function PatientDetailPage() {
         const isMedicalService = item => /medical_assist|medical_proxy/.test(item.workflowKey || item.serviceWorkflowSnapshot?.key || '')
           || /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号/.test(item.name || item.serviceName || '')
         const visibleIncludedServices = medicalServiceOnly ? includedServices.filter(isMedicalService) : includedServices
+        const unlimitedExpertBenefit = expertAppointmentBenefits(packageEntitlements, membershipSummary?.plans).length > 0
         const visibleOrders = medicalServiceOnly ? patientOrders.filter(isMedicalService) : patientOrders
         const availableMedicalBenefit = includedServices.some(item => isMedicalService(item) && item.historyKnown && Number(item.remaining) > 0)
         const pendingOrderFor = item => patientOrders.find(order => order.status === 'pending'
@@ -11216,9 +11259,9 @@ export default function PatientDetailPage() {
             </div>
 
             <div className="card" id="patient-service-redemption">
-              <div className="card-header"><div className="card-title">服务核销</div><button className="btn btn-secondary btn-sm" onClick={() => { loadMembership(); staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {}) }}>刷新记录</button></div>
+              <div className="card-header"><div className="card-title">服务使用与核销</div><button className="btn btn-secondary btn-sm" onClick={() => { loadMembership(); staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {}) }}>刷新记录</button></div>
               <div className="card-body" style={{ display: 'grid', gap: 10 }}>
-                <div style={{ color: '#4A6558', fontSize: 13 }}>单独购买的订单与套餐包含的 ¥0 服务列在同一张服务清单。套餐次数按实际服务预占，完成后核销；营养访谈与营养阶段评估归档后自动核销。</div>
+                <div style={{ color: '#4A6558', fontSize: 13 }}>单独购买的订单与套餐包含的 ¥0 服务列在同一张服务清单。计次套餐按实际服务预占和核销；年度会员专家约诊不限次，只记录服务过程。</div>
                 {membershipSummary?.redemptionAlerts > 0 && <div role="alert" style={{ color: '#B45309' }}>有 {membershipSummary.redemptionAlerts} 项自动核销异常，需核对服务包来源或剩余次数。</div>}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button className="btn btn-primary btn-sm" onClick={() => document.getElementById('patient-service-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>查看服务清单（套餐 {includedServices.length} 项 · 已安排订单 {patientOrders.filter(order => order.status === 'scheduled' && (order.usedUnits || 0) < (order.totalUnits || 1)).length} 条）</button>
@@ -11240,8 +11283,8 @@ export default function PatientDetailPage() {
             {/* 套餐包含服务与单独购买订单共用一张执行清单。权益尚未发起时只是清单行，不伪造订单。 */}
             <div className="card" id="patient-service-orders">
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div className="card-title">服务清单与逐次核销</div>
-                <span style={{ fontSize: 12, color: '#8AA89C' }}>套餐包含 {visibleIncludedServices.length} 项 · 可核销订单 {visibleOrders.filter(o => o.status === 'scheduled' && (o.usedUnits || 0) < (o.totalUnits || 1)).length} 条</span>
+                <div className="card-title">服务清单与使用记录</div>
+                <span style={{ fontSize: 12, color: '#8AA89C' }}>套餐包含 {visibleIncludedServices.length} 项 · 可核销订单 {visibleOrders.filter(o => o.status === 'scheduled' && !o.membershipFeatureUsage && (o.usedUnits || 0) < (o.totalUnits || 1)).length} 条</span>
               </div>
               <div style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <button className={`btn btn-sm ${medicalServiceOnly ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setMedicalServiceOnly(true)}>就医协助</button>
@@ -11249,17 +11292,24 @@ export default function PatientDetailPage() {
                 {medicalServiceOnly && <span style={{ fontSize: 12, color: '#4A6558' }}>先选择可用套餐权益，预占 1 次；实际启动并填写服务依据后自动核销。历史已付款订单保留原支付记录。</span>}
                 {medicalServiceOnly && !availableMedicalBenefit && ['healthPlanner', 'superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" onClick={() => nav(`/products?medicalServices=1&patientId=${id}`, { state: { initialPatient: { _id: id, name: data?.user?.name || '' } } })}>套餐不足 · 选择付费就医服务</button>}
               </div>
-              {!visibleOrders.length && !visibleIncludedServices.length ? (
+              {!visibleOrders.length && !visibleIncludedServices.length && !unlimitedExpertBenefit ? (
                 <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无{medicalServiceOnly ? '就医协助' : ''}套餐权益或已购买订单</div>
               ) : (
                 <table className="table">
                   <thead><tr><th>服务</th><th>来源</th><th>本次金额</th><th>次数</th><th>时间</th><th>归属</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
+                    {unlimitedExpertBenefit && <tr>
+                      <td style={{ fontWeight: 600 }}>专家约诊服务</td>
+                      <td>年度会员权益<div style={{ fontSize: 12, color: '#718579' }}>按有效服务权益判断</div></td>
+                      <td>¥0</td><td>服务期内不限次<br />无需次数核销</td><td>按会员计划有效期</td><td>按服务分配</td>
+                      <td style={{ color: '#1E6B50' }}>可发起</td>
+                      <td><button className="btn btn-primary btn-sm" onClick={() => nav(`/plans?type=medical_assist&openPlan=medical_assist&annualExpert=1&patientId=${id}&patientName=${encodeURIComponent(user.name || '')}`)}>发起专家约诊</button></td>
+                    </tr>}
                     {visibleIncludedServices.map(item => <tr key={`included:${item.key}`}>
                       <td style={{ fontWeight: 600 }}>{item.name}</td>
-                      <td><span style={{ color: '#1E6B50', fontWeight: 600 }}>套餐包含</span><div style={{ fontSize: 12, color: '#718579' }}>{item.packageName}{item.shared ? ' · 共用次数' : ''}</div></td>
+                      <td><span style={{ color: '#1E6B50', fontWeight: 600 }}>套餐包含</span><div style={{ fontSize: 12, color: '#718579' }}>{item.packageName}{item.shared ? ` · ${item.poolName || '共享池'}共用次数` : ''}{item.familySharing ? ` · 家庭共用（持有人：${item.ownerName || '待核对'}）` : ''}</div></td>
                       <td style={{ color: '#1E6B50', fontWeight: 700 }}>¥0</td>
-                      <td style={{ fontSize: 12 }}>{item.historyKnown ? <>{item.shared ? '共享池' : '本项'}可用 {item.remaining || 0} / {item.count || 0} 次<br />本项已预占 {item.reservedCount || 0} · 已核销 {item.redeemedCount || 0}</> : `${item.shared ? '共用' : ''}计划 ${item.count || 0} 次 · 历史余额待核对`}</td>
+                      <td style={{ fontSize: 12 }}>{item.historyKnown ? <>{item.shared ? '同池合计' : '本项'}可用 {item.remaining || 0} / {item.count || 0} 次<br />本项已预占 {item.reservedCount || 0} · 已核销 {item.redeemedCount || 0}</> : `${item.shared ? '同池合计' : ''}计划 ${item.count || 0} 次 · 历史余额待核对`}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>有效至 {String(item.validUntil || '').slice(0, 10)}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>按服务分配</td>
                       <td style={{ fontSize: 12, color: item.historyKnown ? '#1E6B50' : '#B45309' }}>{!item.historyKnown ? '待核对' : item.automatic ? '随评估自动核销' : pendingOrderFor(item) ? '待继续办理' : Number(item.remaining) > 0 ? '待发起' : '共享次数已用完'}</td>
@@ -11272,6 +11322,9 @@ export default function PatientDetailPage() {
                       </td>
                     </tr>)}
                     {[...visibleOrders].sort((a, b) => Number(b.status === 'scheduled') - Number(a.status === 'scheduled')).map(order => {
+                      const planningSupervisor = /就医规划/.test(order.serviceName || '') && followUps.find(task =>
+                        task.workflowKey === 'medical_proxy:supervise' && String(task.sourceOrderId?._id || task.sourceOrderId) === String(order._id)
+                        && ['planned', 'in_progress'].includes(task.status))
                       // 谁推送谁获推广费(referrerId=推送时自动关联)，谁服务谁获服务费(fulfillerId)——
                       // 只有该订单的推荐人本人或超管能指定服务人，不是随便谁都能改
                       const canAssignFulfiller = staff?.role === 'superadmin' || String(order.referrerId?._id) === String(staff?._id)
@@ -11281,12 +11334,12 @@ export default function PatientDetailPage() {
                           <div>{order.serviceName || order.serviceId}</div>
                           {order.specificationLabel && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{order.specificationLabel}</div>}
                         </td>
-                        <td style={{ fontSize: 12 }}>{order.giftRecordUsage ? <strong style={{ color: '#1E6B50' }}>赠送服务 · ¥0</strong> : order.packageEntitlementUsage ? <><strong style={{ color: '#1E6B50' }}>套餐 ¥0 履约单</strong><div style={{ color: '#718579' }}>已预占套餐次数</div></> : order.orderType === 'package' ? '购买服务包' : '单独下单'}</td>
+                        <td style={{ fontSize: 12 }}>{order.membershipFeatureUsage?.featureKey === 'expertAppointment' ? <><strong style={{ color: '#1E6B50' }}>年度会员不限次</strong><div style={{ color: '#718579' }}>记录服务，不核销次数</div></> : order.giftRecordUsage ? <strong style={{ color: '#1E6B50' }}>赠送服务 · ¥0</strong> : order.packageEntitlementUsage ? <><strong style={{ color: '#1E6B50' }}>套餐 ¥0 履约单</strong><div style={{ color: '#718579' }}>已预占套餐次数</div></> : order.orderType === 'package' ? '购买服务包' : '单独下单'}</td>
                         <td style={{ color: '#D97706', fontWeight: 600 }}>
                           {order.servicePrice != null ? `¥${order.servicePrice}` : '-'}
                         </td>
                         <td style={{ fontSize: 13 }}>
-                          {order.specialtyService?.key === 'ibd' ? <>
+                          {order.membershipFeatureUsage?.featureKey === 'expertAppointment' ? <div style={{ color: '#1E6B50' }}>不限次 · 本次服务按任务进度记录</div> : order.specialtyService?.key === 'ibd' ? <>
                             <div style={{ fontWeight: 600, color: '#1E6B50' }}>IBD 年度管理 · 陪诊 {order.specialtyService.usedEscorts || 0}/{order.specialtyService.includedEscorts || 2} 次</div>
                             <div style={{ fontSize: 12, color: '#8AA89C' }}>服务期：{order.specialtyService.startsAt ? new Date(order.specialtyService.startsAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '待确认'} 至 {order.specialtyService.endsAt ? new Date(new Date(order.specialtyService.endsAt).getTime() - 1).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '待确认'}</div>
                             {(order.specialtyService.escortRecords || []).map((record, i) => <div key={record.visitKey || i} style={{ fontSize: 12, color: '#4A6558', marginTop: 2 }}>第 {i + 1} 次：{new Date(record.visitDate).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })} · {record.hospital}</div>)}
@@ -11316,8 +11369,12 @@ export default function PatientDetailPage() {
                           {CHECKUP_STAGE_LABEL[order.currentStage] && <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>{CHECKUP_STAGE_LABEL[order.currentStage]}</div>}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
+                          {planningSupervisor && ['healthPlanner', 'superadmin'].includes(staff?.role) &&
+                            (hasPlanningAdvice(planningAdviceFromTask(planningSupervisor))
+                              ? <button className="btn btn-primary btn-sm" onClick={() => openExec({ ...planningSupervisor, formData: { ...planningSupervisor.formData, medicalPlanning: true, advisorSnapshot: planningAdviceFromTask(planningSupervisor) } })}>核对客户意向并结案</button>
+                              : <span style={{ fontSize: 12, color: '#8A6B30' }}>待健康顾问建议同步后确认结案</span>)}
                           {order.status === 'pending' && order.packageEntitlementUsage && isMedicalService(order) && <button className="btn btn-primary btn-sm" onClick={() => continueMedicalOrder(order)}>继续就医协助</button>}
-                          {order.status === 'pending' && !(order.packageEntitlementUsage && isMedicalService(order)) && (
+                          {order.status === 'pending' && !planningSupervisor && !(order.packageEntitlementUsage && isMedicalService(order)) && (
                             <button className="btn btn-primary btn-sm" onClick={async () => {
                               try {
                                 await staffAPI.startOrder(order._id, { action: 'schedule' })
@@ -11396,7 +11453,7 @@ export default function PatientDetailPage() {
                               finally { setRedeemingOrderId(null) }
                             }}>完成服务</button>
                           )}
-                          {order.specialtyService?.key !== 'ibd' && order.status === 'scheduled' && (Number(order.totalUnits || 1) > 1 || (!order.packageEntitlementUsage && !(order.orderType === 'service' && order.paymentStatus === 'paid' && Number(order.paidAmount || 0) > 0))) && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
+                          {order.specialtyService?.key !== 'ibd' && !order.membershipFeatureUsage && order.status === 'scheduled' && (Number(order.totalUnits || 1) > 1 || (!order.packageEntitlementUsage && !(order.orderType === 'service' && order.paymentStatus === 'paid' && Number(order.paidAmount || 0) > 0))) && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
                             <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
                               style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
                               const note = window.prompt(`确认核销第 ${(order.usedUnits || 0) + 1}/${order.totalUnits || 1} 次服务。\n可填写本次服务备注（可留空）：`, '')
@@ -11410,7 +11467,7 @@ export default function PatientDetailPage() {
                               finally { setRedeemingOrderId(null) }
                             }}>{redeemingOrderId === order._id ? '处理中…' : order.packageEntitlementUsage ? '完成1次服务' : '核销1次'}</button>
                           )}
-                          {order.status === 'scheduled' && (!order.packageEntitlementUsage || order.serviceStartedAt) && (order.serviceItemsSnapshot || []).filter(item => (item.usedUnits || 0) < item.units).map(item => (
+                          {order.status === 'scheduled' && !order.membershipFeatureUsage && (!order.packageEntitlementUsage || order.serviceStartedAt) && (order.serviceItemsSnapshot || []).filter(item => (item.usedUnits || 0) < item.units).map(item => (
                             <button key={item.key} className="btn btn-sm" disabled={redeemingOrderId === order._id}
                               style={{background:'#22A06B',color:'#fff',border:'none',margin:'2px'}} onClick={async()=>{
                                 const note=window.prompt(`确认核销“${item.name}”第 ${(item.usedUnits||0)+1}/${item.units} 次。\n可填写备注（可留空）：`,'')
@@ -11505,16 +11562,19 @@ export default function PatientDetailPage() {
                 || (entitlement.validUntil && datePart(entitlement.validUntil) < today)) return []
               const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
               return (entitlement.rights?.productEntitlements || []).filter(right => medicalName(right.productName)
+                && !(entitlement.rights?.aiEntitlements?.expertAppointment && /专家约诊/.test(right.productName || ''))
                 && Number((pools.get(right.poolKey) || right).remainingCount || 0) > 0).map(right => ({ name: right.productName, packageName: entitlement.packageName }))
             })
-            const paidOrders = patientOrders.filter(order => order.orderType === 'service' && order.paymentStatus === 'paid'
-              && Number(order.paidAmount || 0) > 0 && ['pending', 'scheduled'].includes(order.status)
+            const annualExpertPlans = expertAppointmentBenefits(packageEntitlements, membershipSummary?.plans).slice(0, 1)
+            const paidOrders = patientOrders.filter(order => order.paymentStatus === 'paid'
+              && (Number(order.paidAmount || 0) > 0 || Number(order.healthFundAmount || 0) > 0)
+              && ['pending', 'scheduled'].includes(order.status)
               && !order.serviceStartedAt && medicalName(order.serviceName))
             const loadingRights = giftRecordsLoading || patientOrdersLoading || (!membershipSummary && !membershipError)
             const loadError = giftRecordsError || patientOrdersError || membershipError
             const launchUrl = extra => `/plans?type=medical_assist&openPlan=medical_assist&patientId=${id}&patientName=${encodeURIComponent(user.name || '')}&${extra}`
             return <div className="card" style={{ gridColumn: '1 / -1', marginBottom: 16 }}>
-              <div className="card-header"><div className="card-title">发起就医协助 · 先核对会员权益</div></div>
+              <div className="card-header"><div className="card-title">发起就医协助 · 选择服务来源</div></div>
               <div className="card-body" style={{ display: 'grid', gap: 10 }}>
                 {loadingRights ? <div>正在核对赠送、套餐和付费服务…</div> : loadError ? <div role="alert" style={{ color: '#B45309' }}>{loadError}；请刷新后再发起。</div> : <>
                   {gifts.map(gift => <div key={gift._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#EFF8F4', borderRadius: 8 }}>
@@ -11525,10 +11585,14 @@ export default function PatientDetailPage() {
                     <span>套餐权益 · {right.packageName} · {right.name}</span>
                     <button className="btn btn-secondary btn-sm" onClick={() => { setMedicalServiceOnly(true); setTab('consumption') }}>查看可用次数并发起</button>
                   </div>)}
-                  {!gifts.length && !packageRights.length && <>
+                  {annualExpertPlans.map(plan => <div key={`annual-expert:${plan.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#EFF8F4', borderRadius: 8 }}>
+                    <span>年度会员权益 · {plan.name}{plan.familySharing ? `（家庭共用：${plan.ownerName || '家庭成员'}）` : ''} · 专家约诊服务期内不限次，无需次数核销</span>
+                    <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl('annualExpert=1'))}>发起专家约诊</button>
+                  </div>)}
+                  {!gifts.length && !packageRights.length && !annualExpertPlans.length && <>
                     <div>当前没有可用于就医协助的会员权益，正在使用已付费服务。</div>
                     {paidOrders.map(order => <div key={order._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#F6F8F5', borderRadius: 8 }}>
-                      <span>已付费 · {order.serviceName} · 实付 ¥{Number(order.paidAmount).toFixed(2)}</span>
+                      <span>已付费 · {order.serviceName} · 实付 ¥{Number(order.paidAmount || 0).toFixed(2)}{Number(order.healthFundAmount || 0) > 0 ? ` · 健康基金抵扣 ¥${Number(order.healthFundAmount).toFixed(2)}` : ''}</span>
                       <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl(`reservedOrderId=${order._id}&reservedProductName=${encodeURIComponent(order.serviceName)}`))}>沿用此订单发起</button>
                     </div>)}
                     {!paidOrders.length && <div role="alert" style={{ color: '#B45309' }}>没有可用会员权益，也没有已付费的就医协助服务。请先确认赠送有效期或完成服务购买，再发起。</div>}
@@ -11700,7 +11764,7 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: (isCheckupAppointmentBookingTask(execItem) || medicalProxyStage(execItem) || medicationProxyStage(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientStaffAssignmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{ibdStage(execItem) ? ibdTaskTitle(ibdStage(execItem)) : checkupConclusionStage(execItem) ? (checkupConclusionStage(execItem) === 'final_acceptance' ? '体检最终验收' : '体检结果评估与后续安排') : isCheckupAppointmentBookingTask(execItem) ? '待约检 · 三号预约' : medicationProxyStage(execItem) ? ({ intake: '代配药 · 核对用药信息', advisor: '代配药 · 顾问评估', review: '代配药 · 规划师确认', booking: '代配药 · 医院预约', planner: '代配药 · 健康规划师分配执行人员', execute: '代配药 · 采购与配送' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '陪同就医 · 健康规划师安排人员', execute: '陪同就医 · 执行记录', post_visit_audit: '陪同就医 · 健管专员审核资料', supervise: '陪同就医 · 督办进度' }[medicalProxyStage(execItem)] || '陪同就医服务任务') : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'booking' ? '代配药 · 健管专员确认预约' : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'planner' ? '代配药 · 健康规划师安排执行人员' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: isExpertAppointmentTask(execItem) ? '专家约诊 · 健管专员确认预约' : '医疗代诊 · 健管专员预约门诊', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问确认约诊建议', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
+              <h3 className="modal-title">{ibdStage(execItem) ? ibdTaskTitle(ibdStage(execItem)) : checkupConclusionStage(execItem) ? (checkupConclusionStage(execItem) === 'final_acceptance' ? '体检最终验收' : '体检结果评估与后续安排') : isCheckupAppointmentBookingTask(execItem) ? '待约检 · 三号预约' : medicationProxyStage(execItem) ? ({ intake: '代配药 · 核对用药信息', advisor: '代配药 · 顾问评估', review: '代配药 · 规划师确认', booking: '代配药 · 医院预约', planner: '代配药 · 健康规划师分配执行人员', execute: '代配药 · 采购与配送' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '陪同就医 · 健康规划师安排人员', booking: '陪同就医 · 健管专员预约', execute: '陪同就医 · 执行记录', post_visit_audit: '陪同就医 · 健管专员审核资料', supervise: '陪同就医 · 督办进度' }[medicalProxyStage(execItem)] || '陪同就医服务任务') : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'booking' ? '代配药 · 健管专员确认预约' : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'planner' ? '代配药 · 健康规划师安排执行人员' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: isExpertAppointmentTask(execItem) ? '专家约诊 · 健管专员确认预约' : '医疗代诊 · 健管专员预约门诊', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问确认约诊建议', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
@@ -11775,10 +11839,11 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
+              {execItem.sourceType === 'insurance_service' && execItem.taskRole === 'executor' && !execItem.isBlocked && <button className="btn btn-secondary" onClick={handleSaveInsuranceDraft} disabled={execSaving}>临时保存</button>}
               {!execItem.isBlocked && !medicationProxyStage(execItem) && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && medicalProxyStage(execItem) !== 'appointment_review' && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               {!execItem.isBlocked && medicalProxyStage(execItem) === 'post_visit_audit' && <button className="btn btn-secondary" onClick={handleSavePostVisitAuditDraft} disabled={execSaving}>保存并继续资料审核</button>}
               {medicationProxyStage(execItem) !== 'progress' && !execForm.checkupMerged && <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execItem.isBlocked}>
-                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : ibdStage(execItem) ? ibdSubmitLabel(ibdStage(execItem), execForm.status) : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isCheckupManagerReviewTask(execItem) ? '确认资料审核并转健康顾问' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认预约并流转', planner: '确认执行人员并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '确认人员并转就医专员', execute: '完成陪同并提交资料审核', post_visit_audit: '确认资料审核并结束服务' }[medicalProxyStage(execItem)] || '保存') : medicalProxyStage(execItem) === 'planner' && isMedicalProxyMedicationTask(execItem) ? '确认执行人员并转就医专员' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) ? '确认预约并转健康规划师分配' : medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '资料审核完成并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}
+                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) && execForm.formData?.bookingOutcome === 'customer_not_needed' ? '记录客户暂不需要并结束本次计划' : ibdStage(execItem) ? ibdSubmitLabel(ibdStage(execItem), execForm.status) : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isCheckupManagerReviewTask(execItem) ? '确认资料审核并转健康顾问' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认预约并流转', planner: '确认执行人员并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '确认人员并转健管预约', booking: '确认预约并转就医专员', execute: '完成陪同并提交资料审核', post_visit_audit: '确认资料审核并结束服务' }[medicalProxyStage(execItem)] || '保存') : medicalProxyStage(execItem) === 'planner' && isMedicalProxyMedicationTask(execItem) ? '确认执行人员并转就医专员' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) ? '确认预约并转健康规划师分配' : medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '资料审核完成并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}
               </button>}
             </div>
           </div>

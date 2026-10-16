@@ -323,6 +323,8 @@ const userSchema = new mongoose.Schema({
 
   // 健康基金余额（由医护端 $inc 累加，Mongoose 必须显式定义才能读取）
   healthFundBalance: { type: Number, default: 0 },
+  // 医护端直接扣款的订单标记与余额在同一用户文档原子更新；服务中断重试不重复扣余额。
+  healthFundDirectDebitOrderIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Order' }],
 
   // 积分余额（打卡+消费累积，由 $inc 累加，Mongoose 必须显式定义才能读取）
   pointsBalance: { type: Number, default: 0 },

@@ -40,13 +40,20 @@ const medicationProxyProgress = task => {
 const medicalEscortProgress = task => {
   if (task?.workflowKey !== 'medical_proxy:supervise' || task?.formData?.medicalEscort !== true) return null
   const stage = task.formData?.currentStage || 'planner'
-  const stages = {
-    planner: { step: 1, label: '健康规划师分配就医专员', next: '分配后进入陪同执行' },
-    execute: { step: 2, label: '就医专员执行陪同服务', next: '完成陪同并上传报告、病历等资料' },
-    post_visit_audit: { step: 3, label: '健管专员审核归档资料', next: '审核归档后由健康规划师确认结案' },
-    completed: { step: 4, label: '就医陪同服务已完成', next: '服务已闭环' },
+  const assigned = task.formData?.assignmentMode === 'automatic'
+  if (task.formData?.adHocConsultation === true) {
+    const steps = ['人员分配', '现场加诊', '资料审核', '完成']
+    const index = { planner: 1, execute: 2, post_visit_audit: 3, completed: 4 }[stage] || 1
+    return { step: index, total: 4, steps, label: steps[index - 1], next: index === 2 ? '完成现场加诊后提交资料审核' : '按当前环节办理' }
   }
-  return { ...(stages[stage] || stages.planner), total: 4, steps: ['人员分配', '陪同执行', '资料审核', '完成'], automaticAssignment: task.formData?.assignmentMode === 'automatic' }
+  const stages = {
+    planner: { step: 1, label: '健康规划师分配就医专员', next: '分配后转健管专员预约' },
+    booking: { step: 2, label: '健管专员预约陪同服务', next: '预约后直接转给已指定的就医专员' },
+    execute: { step: 3, label: '就医专员执行陪同服务', next: '完成陪同并上传报告、病历等资料' },
+    post_visit_audit: { step: 4, label: '健管专员审核归档资料', next: '审核归档后由健康规划师确认结案' },
+    completed: { step: 5, label: '就医陪同服务已完成', next: '服务已闭环' },
+  }
+  return { ...(stages[stage] || stages.planner), total: 5, steps: ['人员分配', '预约', '陪同执行', '资料审核', '完成'], automaticAssignment: assigned }
 }
 
 export default function ServiceTasksPanel({ onTasksLoaded }) {

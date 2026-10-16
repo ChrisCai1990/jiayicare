@@ -34,7 +34,7 @@ async function loadAssignmentAttention(staff, models = {}) {
     const todo = issues.get(key); todo.reasons.add(reason); todo.count++;
   }
   for (const p of patients) {
-    if (p.archiveDraft) add(p._id, 'healthManager', '档案草稿待审核');
+    if (p.archiveDraft && String(p.archiveDraft.questionnaireId) !== '6a49eab9fc1595013da70645') add(p._id, 'healthManager', '档案草稿待审核');
     for (const todo of summaryTodos(p, () => true)) add(p._id, todo.type === 'summary_review' ? 'familyDoctor' : 'nutritionist', 'AI健康整理待审核');
   }
   const sources = [

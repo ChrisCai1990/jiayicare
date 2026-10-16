@@ -48,13 +48,14 @@ function corporateProductEligible(policy, productId, category, productRule) {
 
 function allocateHealthFund({ orderAmount, personalAvailable, corporateAvailable, corporateEligible = true, productRule }) {
   const amount = Math.max(0, Number(orderAmount) || 0);
-  const productLimit = productDeductionLimit(productRule, amount);
-  const personalUsed = Math.min(productLimit, Math.max(0, Number(personalAvailable) || 0));
-  const remainingAfterPersonal = Math.max(0, productLimit - personalUsed);
+  // The customer's own balance can pay the entire price. Product and enterprise
+  // limits apply only to gifted corporate funds.
+  const personalUsed = Math.min(amount, Math.max(0, Number(personalAvailable) || 0));
+  const remainingAfterPersonal = Math.max(0, amount - personalUsed);
   const corporateUsed = Math.min(
     remainingAfterPersonal,
     Math.max(0, Number(corporateAvailable) || 0),
-    corporateEligible ? remainingAfterPersonal : 0,
+    corporateEligible ? productDeductionLimit(productRule, amount) : 0,
   );
   return { personalUsed, corporateUsed, allowed: Math.round((personalUsed + corporateUsed) * 100) / 100 };
 }
@@ -114,9 +115,9 @@ async function getPersonalFundAvailable(user) {
 async function validateHealthFundDeduction({ user, requested, orderAmount, category, categories, productId, productIds, productLimit, maximize = false }) {
   const amount = Number(requested) || 0;
   if (amount <= 0) return { allowed: 0, enterprise: null };
-  if (!(await require('./packageFeatureEntitlements').hasHealthFundAccess(user))) {
-    throw new Error('健康基金仅限有效的365、年度、疗程或企业会员使用；基础会员可按原价购买服务');
-  }
+  const memberEligible = await require('./packageFeatureEntitlements').hasHealthFundAccess(user);
+  const personalAvailable = await getPersonalFundAvailable(user);
+  if (!memberEligible && personalAvailable <= 0) throw new Error('当前没有可用于本服务的自有健康基金');
   const policy = await getHealthFundPolicy();
   if (orderAmount < (Number(policy.minOrderAmount) || 0)) throw new Error(`订单满¥${policy.minOrderAmount}方可使用健康基金`);
   let productRule = null;
@@ -127,7 +128,6 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
     finalProductLimit = productDeductionLimit(productRule, orderAmount);
   }
   const corporateEligible = corporateProductEligible(policy, productId, category, productRule);
-  const personalAvailable = await getPersonalFundAvailable(user);
   // 平台发放的首登企业健康基金并不要求用户先绑定某个企业档案。
   const corporateAvailable = await getCorporateFundAvailable(user);
   let enterprise = null;
@@ -142,13 +142,12 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
     }
   }
   // 正式小程序的基金开关会提交一个客户端报价。服务端只把正数视为
-  // “启用基金”，始终按实时余额和商品上限重算。余额来源只影响流水归属，
-  // 不改变商品可抵扣上限；这样旧版客户端报价不会覆盖服务端规则。
+  // “启用基金”，始终按实时余额重算；商品上限仅约束企业赠送来源。
   const allocation = allocateHealthFund({
     orderAmount,
     personalAvailable,
     corporateAvailable,
-    corporateEligible: corporateEligible && enterpriseEnabled,
+    corporateEligible: memberEligible && corporateEligible && enterpriseEnabled,
     productRule: productRule || (productLimit !== undefined && Number.isFinite(finalProductLimit)
       ? { mode: 'fixedAmount', value: finalProductLimit }
       : { mode: 'inherit', value: 0 }),
@@ -164,22 +163,29 @@ async function deductHealthFund({ user, enterprise, order, amount, breakdown }) 
   amount = Math.round((Number(amount) || 0) * 100) / 100;
   if (!amount) return null;
   const existing = await HealthFundTransaction.find({ orderId: order._id, type: 'deduction', status: 'active' });
-  if (existing.length) return existing;
-  const updated = await user.constructor.findOneAndUpdate(
-    // 历史余额可能是 16.59999999999996 这类浮点值；按“分”比较并在扣减后
-    // 归一到两位，避免明明显示 ¥16.60 却被判余额不足，阻断支付确认。
-    { _id: user._id, healthFundBalance: { $gte: amount - 0.005 } },
-    [{ $set: { healthFundBalance: { $round: [{ $subtract: [{ $ifNull: ['$healthFundBalance', 0] }, amount] }, 2] } } }],
-    { new: true },
-  );
-  if (!updated) throw new Error('健康基金余额发生变化，请刷新后重试');
+  const directStaffDebit = order.initiationSource === 'staff_direct' && /^HF/.test(order.orderNo || '');
   const split = breakdown || { personal: 0, corporate: amount };
   const personalAmount = Math.round((Number(split.personal) || 0) * 100) / 100;
   const corporateAmount = Math.round((Number(split.corporate) || 0) * 100) / 100;
+  if (existing.length && (!directStaffDebit || (personalAmount === 0 || existing.some(row => row.source === 'promotion'))
+    && (corporateAmount === 0 || existing.some(row => row.source === 'enterprise')))) return existing;
+  const updated = await user.constructor.findOneAndUpdate(
+    // 历史余额可能是 16.59999999999996 这类浮点值；按“分”比较并在扣减后
+    // 归一到两位，避免明明显示 ¥16.60 却被判余额不足，阻断支付确认。
+    { _id: user._id, healthFundBalance: { $gte: amount - 0.005 },
+      ...(directStaffDebit ? { healthFundDirectDebitOrderIds: { $ne: order._id } } : {}) },
+    [{ $set: { healthFundBalance: { $round: [{ $subtract: [{ $ifNull: ['$healthFundBalance', 0] }, amount] }, 2] },
+      ...(directStaffDebit ? { healthFundDirectDebitOrderIds: { $concatArrays: [{ $ifNull: ['$healthFundDirectDebitOrderIds', []] }, [order._id]] } } : {}) } }],
+    { new: true },
+  );
+  const recovered = !updated && directStaffDebit ? await user.constructor.findById(user._id) : null;
+  if (!updated && !recovered?.healthFundDirectDebitOrderIds?.some(id => String(id) === String(order._id)))
+    throw new Error('健康基金余额发生变化，请刷新后重试');
+  const balanceAfter = (updated || recovered).healthFundBalance;
   const rows = [];
-  if (personalAmount > 0) rows.push({ userId:user._id, orderId:order._id, type:'deduction', source:'promotion', amount:-personalAmount, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}自有基金抵扣` });
-  if (corporateAmount > 0) rows.push({ userId:user._id, enterpriseId:enterprise?._id || null, orderId:order._id, type:'deduction', source:'enterprise', amount:-corporateAmount, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}企业基金抵扣` });
-  return HealthFundTransaction.insertMany(rows);
+  if (personalAmount > 0 && !existing.some(row => row.source === 'promotion')) rows.push({ userId:user._id, orderId:order._id, type:'deduction', source:'promotion', amount:-personalAmount, balanceAfter, remark:`订单${order.serviceName}自有基金抵扣` });
+  if (corporateAmount > 0 && !existing.some(row => row.source === 'enterprise')) rows.push({ userId:user._id, enterpriseId:enterprise?._id || null, orderId:order._id, type:'deduction', source:'enterprise', amount:-corporateAmount, balanceAfter, remark:`订单${order.serviceName}企业基金抵扣` });
+  return rows.length ? HealthFundTransaction.insertMany(rows) : existing;
 }
 
 async function reverseHealthFund({ order, remark = '订单退款返还' }) {

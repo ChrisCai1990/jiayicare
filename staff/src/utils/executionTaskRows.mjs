@@ -52,6 +52,7 @@ export function buildExecutionRows(tasks, isServiceTask, serviceGroupKey) {
 export function executionServiceCurrentTask(row) {
   if (row.items.some(item => ['insurance_case', 'insurance_service'].includes(item.sourceType) || /高端医疗险/.test(item.theme || ''))) {
     return latest(row.items.filter(item => item.taskRole === 'executor' && ACTIVE.includes(item.status)))
+      || latest(row.items.filter(item => item.taskRole === 'executor' && item.status === 'completed'))
       || latest(row.items.filter(item => ['in_progress', 'missed'].includes(item.status)))
       || latest(row.items.filter(item => item.status === 'planned')) || latest(row.items)
   }
@@ -67,6 +68,10 @@ export function executionRowStatus(row) {
   if (row.type === 'group') return row.status
   if (row.type === 'single') return row.item.status
   if (row.items.some(item => ['insurance_case', 'insurance_service'].includes(item.sourceType) || /高端医疗险/.test(item.theme || ''))) {
+    // The service execution row reflects the executor's task. Planner supervision
+    // remains visible in the timeline and in the planner's own workbench.
+    const executor = executionServiceCurrentTask(row)
+    if (executor?.taskRole === 'executor') return executor.status
     if (row.items.some(item => ['in_progress', 'missed'].includes(item.status))) return 'in_progress'
     if (row.items.some(item => item.status === 'planned')) return 'planned'
     if (row.items.some(item => item.status === 'completed')) return 'completed'

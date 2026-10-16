@@ -181,6 +181,10 @@ const medicalReportSchema = new mongoose.Schema({
   archiveSourceReportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
   archiveOnlyAt: { type: Date, default: null },
   archiveOnlyBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  // Copies created by a staff member from existing customer uploads.
+  organizedFrom: [{ reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport' }, fileIndex: Number }],
+  organizedAt: { type: Date, default: null },
+  organizedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   // 顾问退回保留原审核快照，避免错误结果在补正期间继续参与分析。
   advisorCorrection: { type: mongoose.Schema.Types.Mixed, default: null },
   // 处方/门诊/住院资料不复用体检的 reportItems。此处保存人工逐项核对的业务结构及审核结论。

@@ -404,7 +404,8 @@ router.post('/:id/submit', auth, async (req, res) => {
       let initialImportAttempt = false;
       try {
         const hasMapping = (questionnaire.questions || []).some(q => q.archiveField);
-        if (hasMapping) {
+        // 膳食调查由营养师在营养流程复核，不生成健管专员的档案确认草稿。
+        if (hasMapping && String(questionnaire._id) !== '6a49eab9fc1595013da70645') {
           const { buildArchiveDraft } = require('../utils/archiveImport');
           const fullUser = await User.findById(req.user._id).lean();
           const draft = buildArchiveDraft(fullUser, questionnaire, response);

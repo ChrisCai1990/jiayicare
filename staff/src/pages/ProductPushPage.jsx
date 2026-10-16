@@ -84,7 +84,7 @@ export default function ProductPushPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">产品推送</h1>
-          <p className="page-subtitle">{requestedMedicalServices ? '选择就医服务产品并推送给会员；有可用套餐时结算优先使用套餐权益' : '选择多个产品组合推送给会员，会员可自由选择购买'}</p>
+          <p className="page-subtitle">{requestedMedicalServices ? '选择就医服务产品；单人单项可由医护端直接扣健康基金，套餐权益仍优先使用' : '选择产品推送给会员；单人单项可由医护端直接扣健康基金'}</p>
         </div>
       </div>
 
@@ -296,6 +296,12 @@ export default function ProductPushPage() {
             toast(`产品组合已推送给 ${n} 位会员`)
             await reload()
           }}
+          onDirectPaid={result => {
+            setShowPatientModal(false)
+            setSelected([])
+            setSelectedPrices({})
+            toast(`健康基金已扣款，服务订单 ${result.orderNo} 已创建`)
+          }}
         />
       )}
     </div>
@@ -308,7 +314,7 @@ const PERFORMER_ROLE_LABEL = {
   specialist: '专科医师', tcmDoctor: '中医师',
 }
 
-function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrices, initialPatientId = '', onClose, onSaved }) {
+function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrices, initialPatientId = '', onClose, onSaved, onDirectPaid }) {
   const [selectedPatients, setSelectedPatients] = useState(() => patients.some(patient => String(patient._id || patient.id) === initialPatientId) ? [initialPatientId] : [])
   const [search, setSearch] = useState('')
   const [pushing, setPushing] = useState(false)
@@ -316,6 +322,14 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
   const [staffList, setStaffList] = useState([])
   // 岗位服务人选择：{ [productId]: { [role]: staffId } }
   const [performers, setPerformers] = useState({})
+  const [directLabel, setDirectLabel] = useState(() => {
+    const product = selectedItems[0]
+    return (product?.servicePrices || []).find(row => Number(row.price) === Number(selectedPrices?.[product.id]))?.label || product?.servicePrices?.[0]?.label || ''
+  })
+  const [fundQuote, setFundQuote] = useState(null)
+  const [fundError, setFundError] = useState('')
+  const [fundLoading, setFundLoading] = useState(false)
+  const [fundRequestId] = useState(() => crypto.randomUUID())
   const toggle = id => setSelectedPatients(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
 
   // 有产品配了服务岗位才需要加载员工列表供选人
@@ -339,6 +353,34 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
 
   const patientSearch = usePatientSearch(search)
   const filtered = patientSearch.patients
+
+  const directPatientId = selectedPatients.length === 1 && selectedItems.length === 1 ? selectedPatients[0] : ''
+  const directProduct = selectedItems.length === 1 ? selectedItems[0] : null
+  useEffect(() => {
+    setFundQuote(null)
+    setFundError('')
+    if (!directPatientId || !directProduct) return
+    let active = true
+    setFundLoading(true)
+    staffAPI.quoteStaffFundOrder(directPatientId, { productId: directProduct.id, specificationLabel: directLabel })
+      .then(result => { if (active) setFundQuote(result.data) })
+      .catch(error => { if (active) setFundError(error.message || '读取健康基金报价失败') })
+      .finally(() => { if (active) setFundLoading(false) })
+    return () => { active = false }
+  }, [directPatientId, directProduct?.id, directLabel])
+
+  const handleDirectFund = async () => {
+    if (!fundQuote || fundQuote.shortage > 0 || !directPatientId || !directProduct) return
+    setFundLoading(true); setFundError('')
+    try {
+      const result = await staffAPI.createStaffFundOrder(directPatientId, {
+        productId: directProduct.id, specificationLabel: directLabel, requestId: fundRequestId,
+        expectedPrice: fundQuote.price, expectedPersonal: fundQuote.personal, expectedCorporate: fundQuote.corporate,
+      })
+      onDirectPaid(result.data)
+    } catch (error) { setFundError(error.message || '扣款状态待核对，请勿重新发起服务') }
+    finally { setFundLoading(false) }
+  }
 
 
   const handlePush = async () => {
@@ -461,6 +503,22 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
             ))}
           </div>
         </div>
+        {directPatientId && directProduct && <div style={{ padding: '12px 20px', borderTop: '1px solid #E0D9CE', background: '#F3FAF6', display: 'grid', gap: 8 }}>
+          <strong style={{ fontSize: 13 }}>医护端直接使用客户健康基金</strong>
+          {!!directProduct.servicePrices?.length && <label style={{ fontSize: 12 }}>收费规格
+            <select className="form-input" style={{ marginTop: 4 }} value={directLabel} onChange={event => setDirectLabel(event.target.value)}>
+              {directProduct.servicePrices.filter(row => row.label).map(row => <option key={row.label} value={row.label}>{row.label} ¥{Number(row.price).toFixed(2)}</option>)}
+            </select>
+          </label>}
+          {fundLoading && !fundQuote && <span style={{ fontSize: 12 }}>正在核算基金余额…</span>}
+          {fundQuote && <div style={{ fontSize: 12, lineHeight: 1.7 }}>
+            服务价格 ¥{Number(fundQuote.price).toFixed(2)}；自有基金抵扣 ¥{Number(fundQuote.personal).toFixed(2)}；企业赠送基金抵扣 ¥{Number(fundQuote.corporate).toFixed(2)}
+            {fundQuote.shortage > 0 && <div style={{ color: '#B45309' }}>基金不足，剩余 ¥{Number(fundQuote.shortage).toFixed(2)} 请通过推送由客户支付。</div>}
+          </div>}
+          {fundError && <div role="alert" style={{ color: '#B42318', fontSize: 12 }}>{fundError}</div>}
+          <button className="btn btn-secondary btn-sm" type="button" disabled={fundLoading || !fundQuote || fundQuote.shortage > 0}
+            onClick={handleDirectFund}>确认直接扣款并创建服务订单</button>
+        </div>}
         {pushError && <div role="alert" className="login-err" style={{ margin: 12 }}>{pushError}</div>}
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>

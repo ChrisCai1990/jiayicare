@@ -20,7 +20,8 @@ test('handoff omits settlement for self-pay and medical insurance', () => {
 test('advisor can leave expert unknown and manager can record the confirmed clinician', () => {
   const plans = fs.readFileSync(path.join(__dirname, '../src/pages/PlansPage.jsx'), 'utf8')
   const booking = fs.readFileSync(path.join(__dirname, '../src/components/MedicalProxyStageForm.jsx'), 'utf8')
-  assert.match(plans, /isExpertAppointment \? '期望专家或线索（选填）'/)
-  assert.match(plans, /isExpertAppointment && \(!form\.hospital\.trim\(\) \|\| !form\.department\.trim\(\) \|\| !form\.preferredDateStart/)
-  assert.match(booking, /input\('appointmentExpert', '实际预约专家\/医生（院方未确认可留空）'\)/)
+  assert.match(plans, /'期望专家或线索（选填）'/)
+  assert.match(plans, /form\.appointmentTargets\.some\(row => !row\.hospital\.trim\(\) \|\| !row\.department\.trim\(\)\)/)
+  assert.match(plans, /增加专家预约/)
+  assert.match(booking, /\['expert', '专家\/医生'\]/)
 })

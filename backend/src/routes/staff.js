@@ -589,29 +589,26 @@ function insuranceTaskDefinition(serviceCase, taskRole) {
 async function ensureInsuranceServiceTask(serviceCase, taskRole, assignee) {
   if (!assignee) return null;
   const definition = insuranceTaskDefinition(serviceCase, taskRole);
-  return FollowUp.findOneAndUpdate(
-    { sourceType: 'insurance_service', sourceId: serviceCase._id, taskRole, status: { $in: ['planned', 'in_progress', 'missed'] } },
-    {
-      $set: { staffId: assignee, assignedTo: assignee },
-      $setOnInsert: { ...definition, status: 'planned' },
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+  return require('../utils/insuranceServiceTasks').ensureInsuranceServiceTask(
+    FollowUp, serviceCase, taskRole, assignee, definition,
   );
 }
 
 async function ensureOpenInsuranceTasksForStaff(staff) {
-  const taskRole = staff.role === 'healthPlanner' ? 'supervisor' : staff.role === 'healthManager' ? 'executor' : '';
-  if (!taskRole) return;
-  const assignmentField = taskRole === 'supervisor' ? 'assignedHealthPlanner' : 'assignedHealthManager';
-  const patients = await User.find({ [assignmentField]: staff._id, isDeleted: { $ne: true } })
-    .select('_id assignedHealthManager assignedHealthPlanner')
+  if (staff.role === 'healthPlanner') {
+    await require('../utils/insuranceServiceTasks').retireInsuranceSupervisionTasks(FollowUp, { assignedTo: staff._id });
+    return;
+  }
+  if (staff.role !== 'healthManager') return;
+  const patients = await User.find({ assignedHealthManager: staff._id, isDeleted: { $ne: true } })
+    .select('_id assignedHealthManager')
     .lean();
   if (!patients.length) return;
   const patientById = new Map(patients.map(patient => [String(patient._id), patient]));
   const cases = await InsuranceServiceCase.find({ patientId: { $in: patients.map(patient => patient._id) }, status: { $in: OPEN_INSURANCE_CASE_STATUSES } }).lean();
   await Promise.all(cases.map(serviceCase => {
     const patient = patientById.get(String(serviceCase.patientId));
-    return ensureInsuranceServiceTask(serviceCase, taskRole, patient?.[assignmentField]);
+    return ensureInsuranceServiceTask(serviceCase, 'executor', patient?.assignedHealthManager);
   }));
 }
 
@@ -710,6 +707,9 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   // 修复旧版本中“上游已完成、健管审核仍等待上一环节”的陪同任务，并补齐
   // 就医专员本次提交内容。修复严格限定为当前负责人的已完成上游任务。
   await require('../utils/medicalProxyWorkflow').repairCompletedMedicalEscortAuditTasks(req.staff._id);
+  if (req.staff.role === 'healthPlanner')
+    await require('../utils/medicalProxyWorkflow').repairCompletedPlanningAdvisorHandoffs(req.staff._id);
+  await require('../utils/legacyEscortBooking').reconcileForStaff(req.staff);
   await require('../utils/medicalProxyWorkflow').ensureStaffExpertAppointmentTasksForStaff(req.staff);
   try { await require('../utils/medicalAssistClosure').reconcilePendingClosuresForPlanner(req.staff); }
   catch (error) { console.error('[medical-assist-closure] reconciliation failed', error.message); }
@@ -791,7 +791,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     }
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment|medical_assist):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
-      || (task.sourceType === 'insurance_service' && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
       || (task.sourceType === 'annual_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'professional_assessment' && ['executor', 'supervisor'].includes(task.taskRole))
       // 报告随访草稿审核属于 AI 审核队列，而不是已进入服务执行的流程任务；
@@ -1311,7 +1311,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
 });
 
 router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
-  const patient = await User.findById(req.params.id).select('name enterpriseId assignedHealthManager assignedHealthPlanner');
+  const patient = await User.findById(req.params.id).select('name enterpriseId assignedHealthManager');
   if (!patient || !patient.enterpriseId) return res.status(400).json({ success: false, message: '该会员未关联企业' });
   const enrollment = await InsuranceEnrollment.findOne({ userId: patient._id, enterpriseId: patient.enterpriseId, status: 'active' }).sort({ endAt: -1 });
   if (!enrollment) return res.status(400).json({ success: false, message: '该会员尚未配置有效的高端医疗险' });
@@ -1329,13 +1329,8 @@ router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
     steps: stepTitles.map(title => ({ title })), assignedTo: assignee,
     createdBy: req.staff._id, updatedBy: req.staff._id,
   });
-  await Promise.all([
-    ensureInsuranceServiceTask(serviceCase, 'executor', assignee),
-    ensureInsuranceServiceTask(serviceCase, 'supervisor', patient.assignedHealthPlanner),
-  ]);
-  res.json({ success: true, data: serviceCase, message: patient.assignedHealthPlanner
-    ? '保险服务案件已建立，并进入健管专员和健康规划师工作台'
-    : '保险服务案件已建立，并进入健管专员工作台' });
+  await ensureInsuranceServiceTask(serviceCase, 'executor', assignee);
+  res.json({ success: true, data: serviceCase, message: '保险服务案件已建立，并进入执行人工作台' });
 });
 
 router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, res) => {
@@ -1356,7 +1351,8 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
   serviceCase.updatedBy = req.staff._id;
   await serviceCase.save();
   if (serviceCase.status === 'closed') {
-    await FollowUp.updateMany({ sourceType: { $in: ['scheduled', 'insurance_service'] }, sourceId: serviceCase._id, status: { $in: ['planned', 'in_progress'] } }, { status: 'completed', completedAt: new Date(), completedBy: 'staff' });
+    await require('../utils/insuranceServiceTasks').retireInsuranceSupervisionTasks(FollowUp, { sourceId: serviceCase._id });
+    await FollowUp.updateMany({ sourceType: { $in: ['scheduled', 'insurance_service'] }, sourceId: serviceCase._id, taskRole: { $ne: 'supervisor' }, status: { $in: ['planned', 'in_progress'] } }, { status: 'completed', completedAt: new Date(), completedBy: 'staff' });
   }
   res.json({ success: true, data: serviceCase });
 });
@@ -2052,6 +2048,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   // 避免已取消服务仍显示“待执行”。全局启动扫描也会修复未被打开的会员。
   await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(req.params.id);
   await require('../utils/followUpServiceLink').safeReconcileServiceLinks({ patientId: req.params.id });
+  await require('../utils/insuranceServiceTasks').reconcilePatientInsuranceTasks(FollowUp, InsuranceServiceCase, req.params.id);
 
   const filter = { patientId: req.params.id, ...(followUpId ? { _id: followUpId } : { $nor: [routineMedicationNoiseFilter] }) };
   const [followUps, total] = await Promise.all([
@@ -2471,6 +2468,34 @@ router.post('/medical-assist-closures/:id/confirm', staffAuth, checkPermission('
   }
 });
 
+router.post('/followups/:id/medication-defer', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  try {
+    const task = await FollowUp.findById(req.params.id);
+    if (!task || task.sourceType !== 'order' || task.workflowKey !== 'medical_proxy:booking') return res.status(404).json({ success: false, message: '代配药预约任务不存在' });
+    if (req.staff.role !== 'superadmin' && String(task.assignedTo || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅当前健管专员可结束本次代配药需求' });
+    const note = String(req.body.note || '').trim();
+    if (!note) return res.status(400).json({ success: false, message: '请记录客户暂不需要代配药的沟通情况' });
+    const order = await Order.findById(task.sourceOrderId).select('serviceName status currentStage paidAmount tradeStatus paymentStatus healthFundAmount packageEntitlementUsage medicalProxyPlan');
+    if (!order || !/代配药|代取药/.test(order.serviceName || '')) return res.status(409).json({ success: false, message: '该任务不是代配药预约' });
+    if (Number(order.paidAmount || 0) > 0 || Number(order.healthFundAmount || 0) > 0 || order.packageEntitlementUsage?.entitlementId || order.paymentStatus === 'paid' || ['paid', 'refund_pending', 'partially_refunded'].includes(order.tradeStatus)) return res.status(409).json({ success: false, message: '该订单涉及付款或套餐权益，请先由订单负责人处理费用或权益后再结束服务' });
+    const alreadyDeferred = order.currentStage === 'deferred' && order.medicalProxyPlan?.deferred?.reason === 'customer_not_needed';
+    if (!alreadyDeferred && (task.isBlocked || order.status !== 'pending' || order.currentStage !== 'booking' || order.medicalProxyPlan?.bookedAt || !['planned', 'in_progress', 'missed'].includes(task.status))) return res.status(409).json({ success: false, message: '预约状态已变化，请刷新后核对' });
+    const now = new Date();
+    const reason = `客户暂不需要代配药：${note}`;
+    if (!alreadyDeferred) {
+      const result = await Order.updateOne({ _id: order._id, status: 'pending', currentStage: 'booking', tradeStatus: order.tradeStatus, paidAmount: order.paidAmount }, { $set: {
+        status: 'cancelled', tradeStatus: 'closed', currentStage: 'deferred', currentAssignee: null, supervisionStatus: 'cancelled',
+        'medicalProxyPlan.deferred': { reason: 'customer_not_needed', note, at: now, by: req.staff._id },
+      } });
+      if (!result.modifiedCount) return res.status(409).json({ success: false, message: '预约状态已变化，请刷新后核对' });
+    }
+    await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, workflowKey: /^medical_proxy:/, status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: { status: 'cancelled', cancelReason: reason, content: reason } });
+    await FollowUp.updateOne({ _id: task._id }, { $set: { 'formData.bookingOutcome': 'customer_not_needed', 'formData.customerDeclineNote': note } });
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise' }, { $set: { 'formData.currentStage': 'deferred' } });
+    return res.json({ success: true, message: '已结束本次代配药需求，客户需要时可重新发起' });
+  } catch (error) { return res.status(500).json({ success: false, message: error.message || '结束代配药需求失败' }); }
+});
+
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   // 历史任务的 staffId/assignedTo 可能以字符串保存，而当前账号 _id 是 ObjectId。
   // 先按任务 ID 读取，再统一转成字符串校验；否则负责人明明正确也会被 Mongoose
@@ -2514,6 +2539,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
 
   const medicalProxyWorkflow = require('../utils/medicalProxyWorkflow');
   const proxyStage = medicalProxyWorkflow.stageOf(followUp);
+  if (proxyStage === 'booking' && /代配药|代取药/.test(followUp.sourceOrderId?.serviceName || followUp.theme || '') && req.body.status === 'cancelled') return res.status(409).json({ success: false, message: '请使用“暂不需要，结束本次计划”处理客户意向' });
   if (proxyStage) {
     const error = await medicalProxyWorkflow.validateMedicalProxyStage(followUp, req.body, req.staff);
     if (error) return res.status(400).json({ success: false, message: error });
@@ -2791,6 +2817,10 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     followUp.completedBy = null;
   }
   await followUp.save();
+  if (followUp.sourceType === 'insurance_service' && followUp.taskRole === 'executor' && followUp.status === 'completed') {
+    await require('../utils/insuranceServiceTasks').closeInsuranceCaseFromExecution(InsuranceServiceCase, followUp, req.staff.name || '', req.staff._id);
+    await require('../utils/insuranceServiceTasks').retireInsuranceSupervisionTasks(FollowUp, { sourceId: followUp.sourceId });
+  }
   if (followUp.status === 'completed' && followUp.repeatWeekly) {
     await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(followUp);
   }
@@ -2800,6 +2830,17 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (proxyStage && followUp.status === 'completed' && previousStatus !== 'completed') {
     await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
   }
+  // A previous request may have saved the advisor task before its handoff failed.
+  // Repeating the same submission must be able to finish that handoff.
+  if (proxyStage === 'advisor' && followUp.formData?.medicalPlanning === true
+    && followUp.status === 'completed' && previousStatus === 'completed') {
+    const handedOff = await FollowUp.exists({ sourceType: 'order', sourceOrderId: followUp.sourceOrderId,
+      workflowKey: 'medical_proxy:supervise', 'formData.advisorSnapshot.problemAnalysis': { $exists: true } });
+    if (!handedOff) await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
+  }
+  if (proxyStage === 'supervise' && followUp.formData?.medicalPlanning === true
+    && followUp.status === 'completed' && previousStatus === 'completed')
+    await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
   if (checkupAppointmentStage && followUp.status === 'completed' && previousStatus !== 'completed') {
     await checkupAppointmentWorkflow.advance(followUp);
   }
@@ -3484,6 +3525,60 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
   res.json({ success: true, data: { ...responsePlan, canManage, canDelete } });
 });
 
+// 将尚未推送的体检草稿同步到 Admin 当前模板。保留单独定制的加项和手工项目。
+router.post('/plans/:id/sync-checkup-template', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
+  try {
+    const plan = await HealthPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    if (plan.type !== 'annual_checkup') return res.status(400).json({ success: false, message: '仅年度体检方案可同步套餐模板' });
+    if (!canUsePlanOwnerRole(plan, req.staff) || !(await planTypeAllowed(req, plan.type)) || !(await canManagePlan(req, plan))) {
+      return res.status(403).json({ success: false, message: '无权修改该方案' });
+    }
+    if (plan.status !== 'draft' || plan.pushedAt || plan.confirmedAt || plan.items.some(item => item.status !== 'pending' || item.reportId)) {
+      return res.status(409).json({ success: false, message: '方案已推送、执行或关联报告，不能覆盖套餐项目；请建立新草稿' });
+    }
+    const templateId = req.body.templateId || plan.content?.templateId;
+    if (!mongoose.Types.ObjectId.isValid(String(templateId || ''))) return res.status(400).json({ success: false, message: '请选择当前套餐模板' });
+    const patient = await User.findById(plan.patientId).select('clientBrand').lean();
+    const template = await PlanTemplate.findOne({ _id: templateId, type: 'annual_checkup', status: 'active' }).lean();
+    if (!template) return res.status(404).json({ success: false, message: '套餐模板已停用或不存在' });
+    const brands = Array.isArray(template.clientBrands) ? template.clientBrands.filter(Boolean) : [];
+    if ((brands.length && !brands.includes(patient?.clientBrand)) ||
+        (!brands.length && template.clientBrand && template.clientBrand !== patient?.clientBrand)) {
+      return res.status(403).json({ success: false, message: '该套餐模板不适用于当前会员平台' });
+    }
+    const content = template.content || {};
+    const checkItems = Array.isArray(content.checkItems) ? content.checkItems : [];
+    const addons = Array.isArray(content.addons) ? content.addons : [];
+    const oldBase = plan.items.filter(item => item.itemGroup === 'base');
+    const customItems = plan.items.filter(item => item.itemGroup !== 'base').map(item => item.toObject());
+    const itemKey = item => String(item.itemId || item.id || '') || String(item.name || '').trim();
+    const baseItems = checkItems.map(ci => {
+      const previous = oldBase.find(item => itemKey(item) === itemKey(ci) || item.name === ci.name);
+      const meta = orderTypeMetaBackend(ci.type);
+      return { ...(previous ? previous.toObject() : {}), name: ci.name, category: meta.category,
+        itemId: ci.id || null, itemType: meta.itemType, itemGroup: 'base', status: 'pending' };
+    });
+    const previousAddonKeys = new Set((plan.content?.addons || []).map(itemKey));
+    const newAddonItems = addons.filter(addon => !previousAddonKeys.has(itemKey(addon))
+      && !baseItems.some(item => itemKey(item) === itemKey(addon) || item.name === addon.name)
+      && !customItems.some(item => itemKey(item) === itemKey(addon) || item.name === addon.name))
+      .map(addon => {
+        const meta = orderTypeMetaBackend(addon.type);
+        return { name: addon.name, category: meta.category, itemId: addon.id || null,
+          itemType: meta.itemType, itemGroup: 'addon', status: 'pending',
+          notes: addon.reason ? `检查意义：${addon.reason}` : '' };
+      });
+    plan.items = [...baseItems, ...customItems, ...newAddonItems];
+    plan.content = { ...(plan.content || {}), packageName: content.packageName || template.name,
+      packageDesc: content.packageDesc || '', checkItems, addons, templateId: template._id,
+      templateUpdatedAt: template.updatedAt };
+    plan.markModified('content');
+    await plan.save();
+    res.json({ success: true, data: plan });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 const isAgencyMedicalAssistPlan = (content, title) => content?.assistanceType === 'agency'
   || (/医务代办服务-/.test(`${content?.templateName || ''} ${title || ''}`) && !/代配药|代取药/.test(`${content?.templateName || ''} ${title || ''}`));
 
@@ -3515,6 +3610,30 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   if (req.body.giftId && req.body.reservedOrderId) return res.status(400).json({ success: false, message: '赠送权益与已有订单不能同时使用' });
   let planContent = content || {};
+  if (type === 'annual_checkup') {
+    const templateId = planContent.templateId;
+    if (!mongoose.Types.ObjectId.isValid(String(templateId || ''))) return res.status(400).json({ success: false, message: '请先选择体检中心的标准套餐模板' });
+    const [template, patient] = await Promise.all([
+      PlanTemplate.findOne({ _id: templateId, type: 'annual_checkup', status: 'active' }).lean(),
+      User.findById(patientId).select('clientBrand').lean(),
+    ]);
+    if (!template || !patient) return res.status(404).json({ success: false, message: '会员或套餐模板不存在，请刷新后重试' });
+    const brands = Array.isArray(template.clientBrands) ? template.clientBrands.filter(Boolean) : [];
+    if ((brands.length && !brands.includes(patient.clientBrand)) ||
+        (!brands.length && template.clientBrand && template.clientBrand !== patient.clientBrand)) {
+      return res.status(403).json({ success: false, message: '该套餐模板不适用于当前会员平台' });
+    }
+    const standardItems = Array.isArray(template.content?.checkItems) ? template.content.checkItems : [];
+    const requestedBase = Array.isArray(items) ? items.filter(item => item.itemGroup === 'base') : [];
+    const sameBase = requestedBase.length === standardItems.length && standardItems.every((ci, index) => {
+      const item = requestedBase[index];
+      const meta = orderTypeMetaBackend(ci.type);
+      return item.name === ci.name && String(item.itemId || '') === String(ci.id || '')
+        && item.category === meta.category && item.itemType === meta.itemType;
+    });
+    if (!sameBase) return res.status(409).json({ success: false, message: '标准套餐项目已变化或被修改，请重新选择最新模板' });
+    planContent = { ...planContent, checkItems: standardItems, templateUpdatedAt: template.updatedAt };
+  }
   if (type === 'nutrition') planContent = { ...planContent, nutritionTaskVersion: 1 };
   let medicalAssistSupervisor = null;
   let medicalAssistPatient = null;
@@ -3681,9 +3800,10 @@ router.get('/patients/:id/medication-proxy/defaults', staffAuth, async (req, res
 });
 
 router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => {
+  const directExpertAppointment = require('../utils/medicalProxyLaunchPolicy').directExpertAppointment(req.staff, req.body);
   if (!['familyDoctor', 'healthManager', 'healthPlanner', 'superadmin'].includes(req.staff.role)
     || (req.staff.role === 'healthPlanner' && !req.body.reservedOrderId && !req.body.giftId)) return res.status(403).json({ success: false, message: '请从会员权益或已付费订单发起就医协助' });
-  if (req.staff.role !== 'healthManager' && !req.body.reservedOrderId && !req.body.giftId)
+  if (req.staff.role !== 'healthManager' && !directExpertAppointment && !req.body.reservedOrderId && !req.body.giftId)
     return res.status(409).json({ success: false, message: '请先到会员权益核对赠送或套餐权益；没有权益时需关联已付费服务订单' });
   try {
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
@@ -3741,6 +3861,14 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
       }).select('_id orderNo').lean() : null;
       if (duplicate) throw Object.assign(new Error(`同一药品和服务日期已有未完成的代配药服务${duplicate.orderNo ? `（${duplicate.orderNo}）` : ''}，请勿重复创建`), { status: 409 });
     }
+    if (appointmentOnly) {
+      const targets = req.body.appointmentTargets === undefined
+        ? [{ hospital: req.body.hospital, campus: req.body.campus, department: req.body.department, expert: req.body.expert }]
+        : req.body.appointmentTargets;
+      if (!Array.isArray(targets) || targets.length < 1 || targets.length > 12 || targets.some(row => !row || typeof row !== 'object' || typeof row.hospital !== 'string' || !row.hospital.trim() || typeof row.department !== 'string' || !row.department.trim() || ['hospital', 'campus', 'department', 'expert'].some(key => row[key] !== undefined && (typeof row[key] !== 'string' || row[key].length > 100)))) return res.status(400).json({ success: false, message: '请逐项填写1至12个预约目标的医院和科室，专家可留空' });
+      req.body.appointmentTargets = targets.map(row => ({ hospital: row.hospital.trim(), campus: (row.campus || '').trim(), department: row.department.trim(), expert: (row.expert || '').trim() }));
+      Object.assign(req.body, req.body.appointmentTargets[0]); // 单项目历史字段继续记录第一项。
+    }
     const required = medicalEscort ? ['escortCategory', 'escortDate', 'escortTime', 'hospital', 'escortGoal'] : medicationProxy ? ['preferredDateStart', 'medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
     if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicalEscort ? '请完整填写服务日期时间、医院和具体服务事项' : medicationProxy ? '请选择服务日期；药物名称、品牌、规格和数量应从关联代配药任务自动获取' : appointmentOnly ? '请完整填写医院、科室和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
     if (medicalEscort) {
@@ -3779,7 +3907,8 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
       executionOrder = await Order.findOne({ _id: req.body.reservedOrderId, user: patient._id,
         status: { $in: ['pending', 'scheduled'] }, serviceStartedAt: null,
         $or: [{ 'packageEntitlementUsage.entitlementId': { $exists: true } },
-          { orderType: 'service', paymentStatus: 'paid', paidAmount: { $gt: 0 } }] });
+          { paymentStatus: 'paid', paidAmount: { $gt: 0 } },
+          { paymentStatus: 'paid', healthFundAmount: { $gt: 0 } }] });
       if (!executionOrder) return res.status(409).json({ success: false, message: '可用服务订单不存在或已办理，请刷新会员权益' });
       const compatible = medicalEscort ? /陪同|陪诊|就医协助服务/.test(executionOrder.serviceName || '')
         : /代办|代诊|约诊|挂号|复诊|就医协助服务/.test(executionOrder.serviceName || '');
@@ -3791,6 +3920,9 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     // 服务由健管专员触发时，仍关联客户的健康顾问作为专业责任岗位；未分配健康顾问时由发起健管专员留痕。
     const advisorId = ['healthManager', 'healthPlanner'].includes(req.staff.role) ? (patient.assignedFamilyDoctor || req.staff._id) : req.staff._id;
     const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId, executionOrder, plan: { ...req.body, initiatedByStaff: req.staff._id } });
+    if (executionOrder) await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: executionOrder._id,
+      workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] }, theme: /^订单服务：/ },
+    { $set: { status: 'cancelled', cancelReason: '已转入就医协助岗位流程' } });
     if (executionOrder) {
       const started = await Order.findOneAndUpdate({ _id: executionOrder._id, status: 'scheduled', serviceStartedAt: null },
         { $set: { serviceStartedAt: new Date(), serviceStartedBy: req.staff._id,
@@ -3940,6 +4072,25 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   }
   if (plan.type === 'medical_assist' && req.body.status === 'completed') {
     return res.status(409).json({ success: false, message: '就医协助服务须在执行结束后由健康规划师通过确认结案入口关闭' });
+  }
+  if (plan.type === 'annual_checkup') {
+    if (req.body.items !== undefined) {
+      if (!Array.isArray(req.body.items)) return res.status(400).json({ success: false, message: '方案项目格式不正确' });
+      const originalBase = plan.items.filter(item => item.itemGroup === 'base');
+      const submittedBase = req.body.items.filter(item => item.itemGroup === 'base');
+      const unchanged = originalBase.length === submittedBase.length && originalBase.every((item, index) => {
+        const next = submittedBase[index];
+        return String(next._id || '') === String(item._id)
+          && next.name === item.name && next.category === item.category
+          && String(next.itemId || '') === String(item.itemId || '')
+          && next.itemType === item.itemType;
+      });
+      if (!unchanged) return res.status(409).json({ success: false, message: '基础套餐项目由体检中心确定，不能删减或修改；请仅调整加项' });
+    }
+    if (req.body.content && (
+      JSON.stringify(req.body.content.checkItems) !== JSON.stringify(plan.content?.checkItems)
+      || String(req.body.content.templateId || '') !== String(plan.content?.templateId || '')
+    )) return res.status(409).json({ success: false, message: '基础套餐内容只能通过同步最新模板更新' });
   }
   if (plan.type === 'nutrition' && req.body.content?.nutritionTargets !== undefined) {
     const rows = req.body.content.nutritionTargets;
@@ -4862,6 +5013,75 @@ async function validateArchiveOnlyUpload(staff, patientId, sourceReportId, date)
   if (date && /^\d{4}$/.test(sourceYear) && sourceYear !== String(date).slice(0, 4)) return { status: 400, message: '存档原件与关联报告的体检年份不一致' };
   return { source };
 }
+
+// Reorganize existing originals without sending private files through the browser.
+router.post('/medical-reports/organize', staffAuth, checkPermission('reports', 'create'), async (req, res) => {
+  const { patientId, files, title, type, documentCategory, hospital, date, note } = req.body || {};
+  if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健管专员可整理客户资料' });
+  if (!mongoose.isValidObjectId(patientId) || !String(title || '').trim() || !Array.isArray(files) || !files.length || files.length > 20)
+    return res.status(400).json({ success: false, message: '请选择客户、标题和1至20个原件' });
+  if (date && !isCalendarReportDate(date)) return res.status(400).json({ success: false, message: '报告日期无效' });
+  const patient = await User.findOne({ _id: patientId, tenantId: req.staff.tenantId, isDeleted: { $ne: true } })
+    .select('_id assignedHealthManager tenantId').lean();
+  if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+  if (req.staff.role !== 'superadmin' && String(patient.assignedHealthManager || '') !== String(req.staff._id))
+    return res.status(403).json({ success: false, message: '仅该客户所属健管专员可整理资料' });
+  const ids = [...new Set(files.map(file => String(file?.reportId || '')))];
+  if (ids.some(id => !mongoose.isValidObjectId(id))) return res.status(400).json({ success: false, message: '来源报告无效' });
+  const sources = await MedicalReport.find({ _id: { $in: ids }, user: patient._id });
+  if (sources.length !== ids.length) return res.status(400).json({ success: false, message: '来源报告不属于该客户' });
+  const sourceMap = new Map(sources.map(source => [String(source._id), source]));
+  const selected = [];
+  const seen = new Set();
+  for (const item of files) {
+    const source = sourceMap.get(String(item.reportId));
+    const index = Number(item.fileIndex);
+    const urls = source.fileUrls?.length ? source.fileUrls : (source.fileUrl ? [source.fileUrl] : (source.content ? [''] : []));
+    const token = `${source._id}:${index}`;
+    if (!Number.isInteger(index) || index < 0 || index >= urls.length || seen.has(token))
+      return res.status(400).json({ success: false, message: '来源文件序号无效或重复' });
+    seen.add(token);
+    const key = source.ossKeys?.[index] || (index === 0 ? source.ossKey : '') || require('../utils/oss').urlToKey(urls[index]);
+    if (!key && !(index === 0 && source.content)) return res.status(400).json({ success: false, message: '部分历史原件无法在服务器内整理，请先核对原件存储' });
+    selected.push({ source, index, key });
+  }
+  const allowedTypes = MedicalReport.schema.path('type').enumValues;
+  const allowedCategories = MedicalReport.schema.path('documentCategory').enumValues;
+  const selectedType = type || sources[0].type || 'other';
+  const selectedCategory = documentCategory || sources[0].documentCategory || 'physical_exam';
+  if (!allowedTypes.includes(selectedType) || !allowedCategories.includes(selectedCategory))
+    return res.status(400).json({ success: false, message: '报告分类无效' });
+  const { copyStoredFile, uploadBase64, deleteFile } = require('../utils/oss');
+  const copied = [];
+  try {
+    for (const item of selected) {
+      const stored = item.key
+        ? await copyStoredFile(item.key)
+        : await uploadBase64(item.source.content, item.source.mimeType || /^data:([^;]+);base64,/.exec(item.source.content)?.[1] || 'application/octet-stream', 'reports');
+      copied.push(stored);
+    }
+    const report = await MedicalReport.create({
+      user: patient._id, tenantId: patient.tenantId,
+      title: String(title).trim().slice(0, 200), type: selectedType, documentCategory: selectedCategory,
+      hospital: String(hospital || '').trim().slice(0, 200), date: date || '', checkDate: date || '',
+      reportYear: date ? Number(date.slice(0, 4)) : new Date().getFullYear(),
+      note: String(note || '').trim().slice(0, 1000),
+      fileUrl: copied[0].url, fileUrls: copied.map(file => file.url),
+      ossKey: copied[0].key, ossKeys: copied.map(file => file.key),
+      mimeType: selected.length === 1 ? selected[0].source.mimeType : '',
+      fileSize: selected.length === 1 ? selected[0].source.fileSize : '',
+      uploadedBy: req.staff._id, uploadedByRole: req.staff.role, sourceType: 'staff_upload',
+      audit_status: 'unaudited', aiStatus: 'pending',
+      organizedFrom: selected.map(item => ({ reportId: item.source._id, fileIndex: item.index })),
+      organizedAt: new Date(), organizedBy: req.staff._id,
+    });
+    return res.json({ success: true, data: withSignedReportFiles(report) });
+  } catch (error) {
+    await Promise.all(copied.map(file => deleteFile(file.key)));
+    console.error('整理报告失败:', error);
+    return res.status(500).json({ success: false, message: '整理失败，请稍后重试' });
+  }
+});
 
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
@@ -5970,7 +6190,7 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
       patientBrand = patient.clientBrand;
       patientProfile = patient.toObject ? patient.toObject() : patient;
     }
-    let templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
+    let templates = await PlanTemplate.find(filter).sort({ name: 1, updatedAt: -1 }).lean();
     // 普通体检模板仍只供体检方案入口使用；体检一站式必须保留在就医协助入口，
     // 后续创建时由 Admin 产品 serviceWorkflow 接管，不能因为 serviceDomain=annual_checkup 被误删。
     if (type === 'medical_assist') {
@@ -6003,9 +6223,8 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
     templates.forEach(tpl => {
       const key = `${tpl.type || ''}\u0000${String(tpl.name || '').trim()}`;
       const current = uniqueTemplates.get(key);
-      const score = item => (Array.isArray(item.clientBrands) ? item.clientBrands.length : 0) * 1000
-        + Object.keys(item.content || {}).length;
-      if (!current || score(tpl) > score(current)) uniqueTemplates.set(key, tpl);
+      // 同名历史副本以最近保存的模板为准，不能因为旧副本字段更多而盖掉 Admin 新内容。
+      if (!current || new Date(tpl.updatedAt || 0) > new Date(current.updatedAt || 0)) uniqueTemplates.set(key, tpl);
     });
     templates = [...uniqueTemplates.values()];
     res.json({ success: true, data: templates });
@@ -6236,7 +6455,7 @@ router.post('/followups/:id/expert-appointment/reschedule', staffAuth, checkPerm
     if (!req.body.baseUpdatedAt || String(req.body.baseUpdatedAt) !== new Date(order?.updatedAt || 0).toISOString()) return res.status(409).json({success:false,message:'预约记录已更新，请重新打开后修改'});
     const oldBooking = order?.medicalProxyPlan?.booking;
     if (!oldBooking?.appointmentDate || !oldBooking?.appointmentTime) return res.status(409).json({ success: false, message: '本单没有已确认的预约记录' });
-    const oldSlots = Array.isArray(oldBooking.appointmentSlots) && oldBooking.appointmentSlots.length ? oldBooking.appointmentSlots : [{ department: oldBooking.department || '', expert: oldBooking.appointmentExpert || '', campus: oldBooking.campus || '', appointmentDate: oldBooking.appointmentDate, appointmentTime: oldBooking.appointmentTime }];
+    const oldSlots = Array.isArray(oldBooking.appointmentSlots) && oldBooking.appointmentSlots.length ? oldBooking.appointmentSlots : [{ hospital: oldBooking.hospital || order.medicalProxyPlan.hospital || '', department: oldBooking.department || '', expert: oldBooking.appointmentExpert || '', campus: oldBooking.campus || '', appointmentDate: oldBooking.appointmentDate, appointmentTime: oldBooking.appointmentTime }];
     const slotIndex = Number(req.body.slotIndex ?? 0);
     if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= oldSlots.length) return res.status(400).json({ success: false, message: '请选择有效的预约项目' });
     const oldSlot = oldSlots[slotIndex];
@@ -6253,15 +6472,15 @@ router.post('/followups/:id/expert-appointment/reschedule', staffAuth, checkPerm
     if (calendarDay.getUTCFullYear() !== year || calendarDay.getUTCMonth() + 1 !== month || calendarDay.getUTCDate() !== day || hour > 23 || minute > 59 || (correction ? scheduledAt > new Date() : scheduledAt <= new Date())) return res.status(400).json({ success: false, message: correction ? '历史补正时间不能晚于现在' : '请选择有效且尚未到来的新预约时间' });
     const hospital = String(req.body.hospital || '').trim(), campus = String(req.body.campus || '').trim(), department = String(req.body.department || '').trim(), expert = String(req.body.expert || '').trim();
     if (!hospital || !department || !expert || [hospital,campus,department,expert].some(v=>v.length>200)) return res.status(400).json({success:false,message:'请填写医院、科室和医生'});
-    if (oldSlot.appointmentDate === appointmentDate && oldSlot.appointmentTime === appointmentTime && hospital === (oldBooking.hospital || order.medicalProxyPlan.hospital || '') && campus === (oldSlot.campus || oldBooking.campus || '') && department === oldSlot.department && expert === oldSlot.expert) return res.status(400).json({ success: false, message: '新预约时间与当前时间相同，无需补记改期' });
+    if (oldSlot.appointmentDate === appointmentDate && oldSlot.appointmentTime === appointmentTime && hospital === (oldSlot.hospital || oldBooking.hospital || order.medicalProxyPlan.hospital || '') && campus === (oldSlot.campus || oldBooking.campus || '') && department === oldSlot.department && expert === oldSlot.expert) return res.status(400).json({ success: false, message: '新预约时间与当前时间相同，无需补记改期' });
     const revision = Number(order.medicalProxyPlan?.bookingRevision || 0) + 1;
     const changedAt = new Date();
-    const change = { slotIndex, kind: correction ? 'correction' : 'reschedule', from: { ...oldSlot, hospital: oldBooking.hospital || order.medicalProxyPlan.hospital || '' }, to: { appointmentDate, appointmentTime, hospital, campus, department, expert }, previousBooking: oldBooking, reason, changedAt, changedBy: req.staff._id, changedByName: req.staff.name, customerConfirmed: true, hospitalConfirmed: true };
-    const updatedSlots = oldSlots.map((row, index) => index === slotIndex ? { ...row, appointmentDate, appointmentTime, campus, department, expert } : row);
+    const change = { slotIndex, kind: correction ? 'correction' : 'reschedule', from: { ...oldSlot, hospital: oldSlot.hospital || oldBooking.hospital || order.medicalProxyPlan.hospital || '' }, to: { appointmentDate, appointmentTime, hospital, campus, department, expert }, previousBooking: oldBooking, reason, changedAt, changedBy: req.staff._id, changedByName: req.staff.name, customerConfirmed: true, hospitalConfirmed: true };
+    const updatedSlots = oldSlots.map((row, index) => index === slotIndex ? { ...row, appointmentDate, appointmentTime, hospital, campus, department, expert } : row);
     const latestAt = new Date(Math.max(...updatedSlots.map(row => new Date(`${row.appointmentDate}T${row.appointmentTime}:00+08:00`).getTime())));
     const updated = await Order.findOneAndUpdate(
       { _id: order._id, status: order.status, updatedAt: order.updatedAt, 'medicalProxyPlan.bookingRevision': order.medicalProxyPlan?.bookingRevision === undefined ? { $exists: false } : order.medicalProxyPlan.bookingRevision },
-      { $set: { scheduledAt: latestAt, ...(!correction ? {desiredServiceDate: latestAt, desiredServiceDateEnd: latestAt} : {}), 'medicalProxyPlan.booking.hospital': hospital, 'medicalProxyPlan.booking.appointmentSlots': updatedSlots, 'medicalProxyPlan.booking.appointmentDate': updatedSlots[0].appointmentDate, 'medicalProxyPlan.booking.appointmentTime': updatedSlots[0].appointmentTime, 'medicalProxyPlan.bookingRevision': revision }, $push: { 'medicalProxyPlan.bookingChanges': change } },
+      { $set: { scheduledAt: latestAt, ...(!correction ? {desiredServiceDate: latestAt, desiredServiceDateEnd: latestAt} : {}), 'medicalProxyPlan.booking.hospital': updatedSlots[0].hospital || oldBooking.hospital || order.medicalProxyPlan.hospital || hospital, 'medicalProxyPlan.booking.appointmentSlots': updatedSlots, 'medicalProxyPlan.booking.appointmentDate': updatedSlots[0].appointmentDate, 'medicalProxyPlan.booking.appointmentTime': updatedSlots[0].appointmentTime, 'medicalProxyPlan.bookingRevision': revision }, $push: { 'medicalProxyPlan.bookingChanges': change } },
       { new: true },
     );
     if (!updated) return res.status(409).json({ success: false, message: '预约记录已被其他人修改，请刷新后重试' });
@@ -6703,6 +6922,134 @@ router.get('/products', staffAuth, checkPermission('products', 'view'), async (r
   res.json({ success: true, data: { products: list } });
 });
 
+// 医护端单项服务基金结算：报价和扣款均以当前上架商品、当前余额和服务端规则为准。
+async function staffFundOrderQuote(req) {
+  if (!await allPushPatientsBelongToStaff([req.params.id], req.staff)) throw Object.assign(new Error('只能为本机构客户发起服务'), { status: 403 });
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) throw Object.assign(new Error('只能为自己负责的客户发起服务'), { status: 403 });
+  if (!mongoose.isValidObjectId(req.body.productId)) throw Object.assign(new Error('请选择服务产品'), { status: 400 });
+  const [patient, product] = await Promise.all([
+    User.findById(req.params.id), Product.findOne({ _id: req.body.productId, status: 'on' }),
+  ]);
+  if (!patient || !product) throw Object.assign(new Error('客户或上架服务不存在'), { status: 404 });
+  if (product.memberBundle?.enabled || !['offline_service', 'remote_service'].includes(product.fulfillmentType))
+    throw Object.assign(new Error('该产品需按专属服务包或实物流程办理'), { status: 400 });
+  const prices = (product.servicePrices || []).filter(row => row.label && Number.isFinite(Number(row.price)));
+  const label = String(req.body.specificationLabel || '').trim();
+  const selected = prices.length ? prices.find(row => row.label === label) : null;
+  if ((prices.length && !selected) || (!prices.length && label)) throw Object.assign(new Error('请选择当前有效的服务收费规格'), { status: 400 });
+  const price = Math.round(Number(selected ? selected.price : product.originalPrice) * 100) / 100;
+  if (!Number.isFinite(price) || price <= 0) throw Object.assign(new Error('该服务没有可扣款的有效价格'), { status: 400 });
+  const entitlements = await require('../utils/packageEntitlements').applicableEntitlements(patient._id);
+  if (/专家约诊/.test(product.name) && entitlements.some(row => row.rights?.aiEntitlements?.expertAppointment === true))
+    throw Object.assign(new Error('该客户已有不限次专家约诊服务，请从会员档案直接发起'), { status: 409 });
+  if (entitlements.some(row => (row.rights?.productEntitlements || []).some(right =>
+    String(right.productId) === String(product._id) && (!right.specificationLabel || right.specificationLabel === label)
+    && (row.historyVerified === false || Number(right.poolKey
+      ? (row.rights?.sharedEntitlementPools || []).find(pool => pool.key === right.poolKey)?.remainingCount
+      : right.remainingCount) > 0))))
+    throw Object.assign(new Error('该客户已有可用或待核对的套餐服务权益，请先从会员档案办理'), { status: 409 });
+  const fund = await require('../utils/healthFundPayment').validateHealthFundDeduction({
+    user: patient, requested: price, orderAmount: price, category: product.category,
+    productId: product._id, maximize: true,
+  });
+  return { patient, product, price, label, fund, shortage: Math.round((price - fund.allowed) * 100) / 100 };
+}
+
+router.post('/patients/:id/fund-orders/quote', staffAuth, checkPermission('products', 'send'), async (req, res) => {
+  try {
+    const quote = await staffFundOrderQuote(req);
+    res.json({ success: true, data: { productName: quote.product.name, specificationLabel: quote.label,
+      price: quote.price, personal: quote.fund.breakdown.personal, corporate: quote.fund.breakdown.corporate,
+      fundAmount: quote.fund.allowed, shortage: quote.shortage } });
+  } catch (error) { res.status(error.status || 409).json({ success: false, message: error.message }); }
+});
+
+router.post('/patients/:id/fund-orders', staffAuth, checkPermission('products', 'send'), async (req, res) => {
+  try {
+    const requestId = String(req.body.requestId || '');
+    if (!/^[a-f\d-]{36}$/i.test(requestId)) return res.status(400).json({ success: false, message: '请重新打开扣款确认窗口' });
+    if (!await allPushPatientsBelongToStaff([req.params.id], req.staff)) return res.status(403).json({ success: false, message: '只能为本机构客户发起服务' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '只能为自己负责的客户发起服务' });
+    const orderId = crypto.createHash('sha256').update(`staff-fund:${req.staff._id}:${req.params.id}:${requestId}`).digest('hex').slice(0, 24);
+    const outTradeNo = `HF${orderId}`;
+    let order = await Order.findById(orderId);
+    if (order && (String(order.user) !== String(req.params.id) || order.serviceId !== String(req.body.productId)
+      || order.specificationLabel !== String(req.body.specificationLabel || '').trim()))
+      return res.status(409).json({ success: false, message: '本次扣款请求与原服务不一致' });
+    if (order?.paymentStatus === 'paid' && order.healthFundSettledAt)
+      return res.json({ success: true, data: { orderId: order._id, orderNo: order.orderNo,
+        fundAmount: order.healthFundAmount, breakdown: order.healthFundBreakdown, paymentStatus: order.paymentStatus } });
+    const quote = order ? null : await staffFundOrderQuote(req);
+    if (quote && quote.shortage > 0) return res.status(409).json({ success: false,
+      message: `基金可抵扣¥${quote.fund.allowed.toFixed(2)}，尚需支付¥${quote.shortage.toFixed(2)}；请先走客户支付流程` });
+    if (quote && (Math.round(Number(req.body.expectedPrice) * 100) !== Math.round(quote.price * 100)
+      || Math.round(Number(req.body.expectedPersonal) * 100) !== Math.round(quote.fund.breakdown.personal * 100)
+      || Math.round(Number(req.body.expectedCorporate) * 100) !== Math.round(quote.fund.breakdown.corporate * 100)))
+      return res.status(409).json({ success: false, message: '服务价格或基金余额已变化，请刷新报价后确认扣款' });
+    if (!order) {
+      const inventory = await require('../utils/orderInventory').reserveProduct(quote.product);
+      if (!inventory.available) return res.status(409).json({ success: false, message: '该服务已售罄，请刷新后重试' });
+      try {
+        const sku = (quote.product.skus || []).find(item => item.active !== false && item.label === quote.label);
+        const serviceItems = sku ? [] : (quote.product.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
+        const totalUnits = Math.max(1, Number(sku?.totalUnits) || serviceItems.reduce((sum, item) => sum + Number(item.units || 1), 0) || 1);
+        order = await Order.create({ _id: orderId, user: quote.patient._id, payerUser: quote.patient._id,
+          tenantId: quote.patient.tenantId || null, serviceId: String(quote.product._id), serviceName: quote.product.name,
+          servicePrice: quote.price, unitPrice: Math.round(quote.price / totalUnits * 100) / 100,
+          totalUnits, specificationLabel: quote.label, skuCode: sku?.code || '',
+          orderNo: outTradeNo, orderType: 'product', status: 'pending', tradeStatus: 'awaiting_payment',
+          paymentStatus: 'pending', paymentMethod: 'healthFund', paymentExpectedAmount: 0,
+          healthFundAmount: quote.price, healthFundBreakdown: quote.fund.breakdown,
+          healthFundEnterpriseId: quote.fund.enterprise?._id || null,
+          fulfillmentType: quote.product.fulfillmentType, inventoryReserved: inventory.reserved,
+          initiationSource: 'staff_direct', initiatedByStaff: req.staff._id,
+          supervisorId: quote.patient.assignedHealthPlanner || null,
+          serviceItemsSnapshot: serviceItems.map(item => ({ key: item.key, name: item.name,
+            units: item.units, usedUnits: 0, performers: item.performers || [] })),
+          performanceRuleSnapshot: quote.product.performanceRule?.toObject?.() || quote.product.performanceRule || null,
+          servicePerformerRolesSnapshot: quote.product.servicePerformerRoles || [],
+          serviceWorkflowSnapshot: quote.product.serviceWorkflow?.toObject?.() || quote.product.serviceWorkflow || null,
+          serviceProviderSnapshot: { code: quote.product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
+          note: `医护端直接从健康基金扣款；操作人：${req.staff.name || req.staff._id}`,
+        });
+      } catch (error) {
+        if (inventory.reserved) await Product.updateOne({ _id: quote.product._id }, { $inc: { stock: 1 } });
+        if (error.code !== 11000) throw error;
+        order = await Order.findById(orderId);
+      }
+    }
+    const Payment = require('../models/Payment');
+    if (!await Payment.exists({ outTradeNo })) {
+      try { await Payment.create({ order: order._id, user: order.user, channel: 'health_fund',
+        amount: 0, outTradeNo }); }
+      catch (error) { if (error.code !== 11000) throw error; }
+    }
+    const lockToken = crypto.randomBytes(12).toString('hex');
+    const locked = await Order.findOneAndUpdate({ _id: order._id,
+      $or: [{ checkoutActionLockUntil: null }, { checkoutActionLockUntil: { $lt: new Date() } }] },
+    { $set: { checkoutActionLockUntil: new Date(Date.now() + 300000), checkoutActionLockToken: lockToken } }, { new: true });
+    if (!locked) return res.status(409).json({ success: false, message: '这笔服务正在扣款，请稍后查询原订单' });
+    let settled;
+    try {
+      if (!locked.healthFundSettledAt) await require('../utils/healthFundPayment').deductHealthFund({
+        user: await User.findById(locked.user),
+        enterprise: locked.healthFundEnterpriseId ? { _id: locked.healthFundEnterpriseId } : null,
+        order: locked, amount: locked.healthFundAmount, breakdown: locked.healthFundBreakdown,
+      });
+      settled = await require('../utils/orderSettlement').confirmPayment({ outTradeNo,
+        transactionId: `staff-fund:${requestId}`, paidAt: new Date(),
+        snapshot: { initiatedByStaff: String(req.staff._id), source: 'staff_direct' } });
+    } finally {
+      await Order.updateOne({ _id: order._id, checkoutActionLockToken: lockToken },
+        { $set: { checkoutActionLockUntil: null, checkoutActionLockToken: '' } });
+    }
+    res.json({ success: true, data: { orderId: settled._id, orderNo: settled.orderNo,
+      fundAmount: settled.healthFundAmount, breakdown: settled.healthFundBreakdown, paymentStatus: settled.paymentStatus } });
+  } catch (error) { res.status(error.status || 409).json({ success: false, message: error.message }); }
+});
+
 // GET /api/staff/product-categories — 商城产品分类（与管理后台同源，读 ProductCategory 集合）
 router.get('/product-categories', staffAuth, checkPermission('products', 'view'), async (req, res) => {
   const ProductCategory = require('../models/ProductCategory');
@@ -7036,6 +7383,28 @@ router.patch('/requisitions/:id/cancel', staffAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// 体检方案只读查询项目库。开单接口已停用，方案编辑仍需按库类型关联项目。
+router.get('/plan-catalog-items', staffAuth, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().slice(0, 80);
+    if (!q) return res.json({ success: true, data: [] });
+    const name = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    const [labOrders, specialExams, functionalTests, packages] = await Promise.all([
+      LabTestOrder.find({ name, status: 'active' }).select('name mnemonic').limit(30).lean(),
+      SpecialExam.find({ name, status: 'active', deleted: { $ne: true } }).select('name mnemonic').limit(30).lean(),
+      FunctionalMedicineTest.find({ name, status: 'active', deleted: { $ne: true } }).select('name').limit(30).lean(),
+      LabTestPackage.find({ name, status: 'active' }).select('name mnemonic').limit(30).lean(),
+    ]);
+    const result = [
+      ...packages.map(item => ({ _id: item._id, name: item.name, type: 'labTestPackage' })),
+      ...labOrders.map(item => ({ _id: item._id, name: item.name, type: 'labTestOrder' })),
+      ...specialExams.map(item => ({ _id: item._id, name: item.name, type: 'specialExam' })),
+      ...functionalTests.map(item => ({ _id: item._id, name: item.name, type: 'functionalTest' })),
+    ];
+    res.json({ success: true, data: result });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // GET /api/staff/requisition-items — 获取可开单的项目列表（检验医嘱 + 检查医嘱 + 功能医学检测 + 套餐）
@@ -8003,14 +8372,17 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
     // service has been completed. This keeps the superadmin action discoverable.
     if (customer) await require('../utils/packageServiceRedemption').ensureEffectiveServiceLedger(customer);
     const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
+    const owners = await User.find({ _id: { $in: [...new Set(rows.map(row => String(row.ownerUserId)))] } })
+      .select('_id name').lean();
+    const ownerNames = new Map(owners.map(owner => [String(owner._id), owner.name || '未知成员']));
     const summary = customer ? await require('../utils/membershipBenefits').membershipBenefits(customer, rows) : { plans:[],message:'客户不存在' };
     summary.canReviewHistory = req.staff.role === 'superadmin';
     summary.historyReviewRequired = rows.some(row => row.historyVerified === false)
       || summary.plans.some(plan => plan.source === 'configuration');
     summary.redemptionAlerts = await require('../models/PackageEntitlementRedemption').countDocuments({ patientId: req.params.id, status: 'needs_review' });
     res.json({ success: true, summary, data: rows.map(row => ({
-      _id: row._id, ownerUserId: row.ownerUserId, sourceOrderId: row.sourceOrderId,
-      packageName: row.packageName, clientBrand: row.clientBrand, validFrom: row.validFrom,
+      _id: row._id, ownerUserId: row.ownerUserId, ownerName: ownerNames.get(String(row.ownerUserId)) || '未知成员', sourceOrderId: row.sourceOrderId,
+      packageName: row.packageName, clientBrand: row.clientBrand, status: row.status, validFrom: row.validFrom,
       validUntil: row.validUntil, familySharing: row.familySharing, historyVerified: row.historyVerified !== false,
       rights: row.rights || {}, usageRecords: row.usageRecords || [],
     })) });
@@ -9731,6 +10103,8 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (order.membershipFeatureUsage?.featureKey === 'expertAppointment')
+      return res.status(409).json({ success: false, message: '年度会员专家约诊不限次，请在约诊任务中记录服务过程，无需次数核销' });
     if (order.serviceWorkflowSnapshot?.key === 'rehab') return res.status(409).json({ success: false, message: '请在客户运动服务档案中依据已发布记录逐次核销' });
     if (require('../utils/ibdServiceTerms').isIbdOrder(order))
       return res.status(409).json({ success: false, message: 'IBD 年度服务按管理期限结案；陪诊请使用专病陪诊登记，不在此核销整单' });
@@ -13795,6 +14169,25 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const DAY = 24 * 60 * 60 * 1000;
     const todos = [];
 
+    // 旧生效服务包的核对责任属于权益持有人，只向医护超管投影一条待办。
+    // 直接读取台账，避免家庭成员共用同一份权益时重复派任务或重复扣次。
+    if (isSuper) {
+      const pendingPackageHistory = await require('../models/PackageEntitlement').find({
+        sourceType: 'effective_service', status: 'active', historyVerified: false,
+        validUntil: { $gte: now },
+      }).select('_id ownerUserId packageName createdAt').populate('ownerUserId', 'name isDeleted').lean();
+      pendingPackageHistory.filter(row => row.ownerUserId && row.ownerUserId.isDeleted !== true).forEach(row => {
+        todos.push({
+          id: `package_history_${row._id}`, type: 'package_history_review',
+          label: '服务包历史次数待核对', priority: 2,
+          patientId: String(row.ownerUserId._id), patientName: row.ownerUserId.name || '未知',
+          summary: `${row.packageName || '服务包'} · 家庭共用次数按权益持有人核对一次`,
+          createdAt: row.createdAt || now, overdue: now - new Date(row.createdAt || now) > DAY,
+          link: `/patients/${row.ownerUserId._id}?tab=consumption`,
+        });
+      });
+    }
+
     // GEO 不绑定会员，先按指定负责人校验，再按当前审核环节筛选，不能广播给同岗位人员。
     if (canAccessContentReview(req.staff)) {
       await ensureContentReviews(ContentReview);
@@ -14150,6 +14543,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         .select('name archiveDraft updatedAt').lean();
       draftUsers.forEach(u => {
         const d = u.archiveDraft || {};
+        if (String(d.questionnaireId) === DIETARY_SURVEY_QUESTIONNAIRE_ID) return;
         const cnt = Array.isArray(d.items) ? d.items.length : (d.fields ? Object.keys(d.fields).length : 0);
         const createdAt = d.generatedAt || u.updatedAt || now;
         todos.push({
@@ -16941,9 +17335,12 @@ router.post('/patients/:id/archive-draft', staffAuth, async (req, res) => {
       // 取最近一份有档案映射的答卷
       const responses = await QuestionnaireResponse.find({ user: req.params.id })
         .populate('questionnaire', 'title questions').sort({ submittedAt: -1 }).lean();
-      response = responses.find(r => r.questionnaire && (r.questionnaire.questions || []).some(q => q.archiveField));
+      response = responses.find(r => r.questionnaire && String(r.questionnaire._id) !== DIETARY_SURVEY_QUESTIONNAIRE_ID && (r.questionnaire.questions || []).some(q => q.archiveField));
     }
     if (!response) return res.status(404).json({ success: false, message: '未找到可导入的问卷答卷' });
+    if (String(response.questionnaire?._id || response.questionnaire) === DIETARY_SURVEY_QUESTIONNAIRE_ID) {
+      return res.status(403).json({ success: false, message: '膳食调查问卷由营养师复核，无需健管专员确认档案变化' });
+    }
     const questionnaire = response.questionnaire?.questions
       ? response.questionnaire
       : await DynamicQuestionnaire.findById(response.questionnaire).lean();
@@ -16968,6 +17365,9 @@ router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => 
 
     const userBefore = await User.collection.findOne({ _id: new mongoose.Types.ObjectId(req.params.id) });
     if (!userBefore) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (String(userBefore.archiveDraft?.questionnaireId) === DIETARY_SURVEY_QUESTIONNAIRE_ID) {
+      return res.status(403).json({ success: false, message: '膳食调查问卷由营养师复核，无需健管专员确认档案变化' });
+    }
     const reviewerIds = [...new Set([...Object.values(userBefore.archiveBaselineSources || {}).map(x => x.reviewedBy),
       ...(userBefore.archiveConfirmLog || []).map(x => x.confirmedBy)].filter(x => x && mongoose.isValidObjectId(x)).map(String))];
     const reviewers = await Admin.find({ _id: { $in: reviewerIds } }).select('_id role').lean();
@@ -17713,6 +18113,10 @@ const ORDER_TYPE_META_BACKEND = {
   lab:  { category: '检验检查', itemType: 'labTest' },
   exam: { category: '影像检查', itemType: 'specialExam' },
   func: { category: '功能医学检测', itemType: 'functionalTest' },
+  labTestOrder: { category: '检验检查', itemType: 'labTest' },
+  labTestPackage: { category: '检验检查', itemType: 'labTest' },
+  specialExam: { category: '影像检查', itemType: 'specialExam' },
+  functionalTest: { category: '功能医学检测', itemType: 'functionalTest' },
 };
 function orderTypeMetaBackend(t) { return ORDER_TYPE_META_BACKEND[t] || ORDER_TYPE_META_BACKEND.exam; }
 

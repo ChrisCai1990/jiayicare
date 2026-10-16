@@ -25,7 +25,7 @@ const medicationList = (booking, planSnapshot) => booking?.medicationItems?.leng
 
 const bookingSlots = data => Array.isArray(data?.appointmentSlots) && data.appointmentSlots.length
   ? data.appointmentSlots
-  : [{ department: data?.department || '', expert: data?.appointmentExpert || '', campus: data?.campus || '', appointmentDate: data?.appointmentDate || '', appointmentTime: data?.appointmentTime || '' }]
+  : [{ hospital: data?.hospital || data?.planSnapshot?.hospital || '', department: data?.department || data?.planSnapshot?.department || '', expert: data?.appointmentExpert || data?.planSnapshot?.expert || '', campus: data?.campus || data?.planSnapshot?.campus || '', appointmentDate: data?.appointmentDate || '', appointmentTime: data?.appointmentTime || '' }]
 
 const parseAppointmentRequirement = text => {
   const parts = String(text || '').split(/[；\n]/).map(item => item.trim()).filter(Boolean)
@@ -50,6 +50,7 @@ const formatAppointmentRequirement = data => [
 ].filter(Boolean).join('；')
 
 export function validateMedicalProxyStage(stage, value) {
+  if (stage === 'booking' && value.bookingOutcome === 'customer_not_needed') return value.customerDeclineNote?.trim() ? '' : '请记录客户暂不需要代配药的沟通情况'
   if (stage === 'collect' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.communicationDate?.trim() || !value.communicationTimeStart?.trim() || !value.communicationTimeEnd?.trim() || !value.reportIds?.length)) return '请填写诉求、预期沟通时段和资料清单，选定至少一份本次服务资料'
   if (stage === 'collect' && value.communicationTimeEnd <= value.communicationTimeStart) return '预期沟通结束时间必须晚于开始时间'
   if (stage === 'intake' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.reportIds?.length)) return '请填写诉求和资料清单，选定至少一份已审核资料'
@@ -62,6 +63,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
   if (stage === 'booking' && (!value.preferredDateStart?.trim() || !value.preferredDateEnd?.trim() || bookingSlots(value).some(row => !row.appointmentDate?.trim() || !row.appointmentTime?.trim()))) return '请完整填写客户期望日期区间和每项实际预约日期时间'
   if (stage === 'booking' && bookingSlots(value).length > 1 && bookingSlots(value).some(row => !row.department?.trim())) return '多项预约请逐项填写科室或检查项目'
+  if (stage === 'booking' && value.planSnapshot?.appointmentTargets?.length && (bookingSlots(value).length < value.planSnapshot.appointmentTargets.length || bookingSlots(value).some(row => !row.hospital?.trim()))) return '请逐项保留本次预约目标，并填写实际预约医院'
   if (stage === 'booking' && bookingSlots(value).some(row => row.appointmentDate < value.preferredDateStart || row.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '有预约日期不在客户期望区间内，请说明差异及客户确认情况'
   const supplementProxy = value.supplementProxy === true || /代配营养素/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)
   if (stage === 'booking' && (value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && (value.medicationItems?.length ? value.medicationItems.some(row => ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !row?.[key]?.trim())) : ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !value[key]?.trim()))) return '请逐项确认药品名、商品名/品牌、规格和配备数量'
@@ -307,7 +309,26 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </label>
   </div>
   }
+  if (stage === 'booking' && isMedicationProxy && value.bookingOutcome === 'customer_not_needed') return <div style={{ display: 'grid', gap: 12 }}>
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>客户确认结果 *
+      <select className="form-control" value={value.bookingOutcome} onChange={e => set('bookingOutcome', e.target.value)}>
+        <option value="confirm_booking">需要代配药，继续确认预约</option>
+        <option value="customer_not_needed">暂不需要，结束本次计划</option>
+      </select>
+    </label>
+    <div style={{ background: '#F5F8F6', padding: 10, fontSize: 13 }}>本次不预约、不派配药人员。客户以后有需要时，由工作人员重新发起代配药。</div>
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>沟通记录 *
+      <textarea className="form-control" rows={3} value={value.customerDeclineNote || ''} placeholder="例如：客户表示目前暂不需要代配药，需要时会联系工作人员" onChange={e => set('customerDeclineNote', e.target.value)} />
+    </label>
+  </div>
   if (stage === 'booking') return <div style={{ display: 'grid', gap: 12 }}>
+    {isMedicationProxy && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>客户确认结果 *
+      <select className="form-control" value={value.bookingOutcome || 'confirm_booking'} onChange={e => set('bookingOutcome', e.target.value)}>
+        <option value="confirm_booking">需要代配药，继续确认预约</option>
+        <option value="customer_not_needed">暂不需要，结束本次计划</option>
+      </select>
+    </label>}
+    {isMedicalEscort && <div style={{ fontSize: 13, color: '#1E6B50' }}>健管专员请核实实际预约医院、项目及日期时间；完成后直接交给已指定的就医专员。</div>}
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
@@ -339,10 +360,10 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {input('preferredDateEnd', '客户期望日期（结束）', 1, 'date')}
     </div>
     {bookingSlots(value).map((row, index) => <div key={index} style={{ border: '1px solid #DCE8E2', borderRadius: 8, padding: 10, display: 'grid', gap: 8 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>预约 {index + 1}</strong>{index > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange({ ...value, appointmentSlots: bookingSlots(value).filter((_, i) => i !== index) })}>移除</button>}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>{[['department', '科室/检查项目'], ['expert', '专家/医生'], ['campus', '院区'], ['appointmentDate', '预约日期'], ['appointmentTime', '预约时间']].map(([key, title]) => <label key={key} style={{ display: 'grid', gap: 4, fontSize: 12 }}>{title}<DateField className="form-control" type={key === 'appointmentDate' ? 'date' : key === 'appointmentTime' ? 'time' : 'text'} value={row[key] || ''} onChange={e => { const slots = bookingSlots(value).map((item, i) => i === index ? { ...item, [key]: e.target.value } : item); onChange({ ...value, appointmentSlots: slots, ...(index === 0 ? { appointmentDate: slots[0].appointmentDate, appointmentTime: slots[0].appointmentTime, appointmentExpert: slots[0].expert, campus: slots[0].campus } : {}) }) }} /></label>)}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>预约 {index + 1}</strong>{index >= (value.planSnapshot?.appointmentTargets?.length || 1) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange({ ...value, appointmentSlots: bookingSlots(value).filter((_, i) => i !== index) })}>移除</button>}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>{[['hospital', '医院'], ['department', '科室/检查项目'], ['expert', '专家/医生'], ['campus', '院区'], ['appointmentDate', '预约日期'], ['appointmentTime', '预约时间']].map(([key, title]) => <label key={key} style={{ display: 'grid', gap: 4, fontSize: 12 }}>{title}<DateField className="form-control" type={key === 'appointmentDate' ? 'date' : key === 'appointmentTime' ? 'time' : 'text'} value={row[key] || ''} onChange={e => { const slots = bookingSlots(value).map((item, i) => i === index ? { ...item, [key]: e.target.value } : item); onChange({ ...value, appointmentSlots: slots, ...(index === 0 ? { appointmentDate: slots[0].appointmentDate, appointmentTime: slots[0].appointmentTime, appointmentExpert: slots[0].expert, campus: slots[0].campus } : {}) }) }} /></label>)}</div>
     </div>)}
-    <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange({ ...value, appointmentSlots: [...bookingSlots(value), { department: '', expert: '', campus: value.campus || '', appointmentDate: '', appointmentTime: '' }] })}>＋ 新增预约</button>
+    <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange({ ...value, appointmentSlots: [...bookingSlots(value), { hospital: value.planSnapshot?.hospital || '', department: '', expert: '', campus: value.campus || '', appointmentDate: '', appointmentTime: '' }] })}>＋ 新增预约</button>
     {bookingSlots(value).some(row => row.appointmentDate && value.preferredDateStart && value.preferredDateEnd && (row.appointmentDate < value.preferredDateStart || row.appointmentDate > value.preferredDateEnd)) && input('dateDifferenceNote', '超出期望区间说明及客户确认情况', 3)}
     {isHighEndInsurance && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>
       商保实际结算核实结果 *
