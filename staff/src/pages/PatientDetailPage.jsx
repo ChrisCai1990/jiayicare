@@ -2901,8 +2901,10 @@ export default function PatientDetailPage() {
         await loadReports()
         toast('资料已保存，已进入报告管理；请逐份完成AI解析与审核')
       } else {
-        toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
+        const planningClosed = proxyStage === 'supervise' && execForm.formData?.medicalPlanning === true
+        toast(planningClosed ? '客户意向已确认，本次就医规划已结案' : isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
         loadFollowUps()
+        if (planningClosed) staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
       }
     } catch (err) { toast(err.message || '保存失败') }
     finally { setExecSaving(false) }
@@ -11306,6 +11308,9 @@ export default function PatientDetailPage() {
                       </td>
                     </tr>)}
                     {[...visibleOrders].sort((a, b) => Number(b.status === 'scheduled') - Number(a.status === 'scheduled')).map(order => {
+                      const planningSupervisor = /就医规划/.test(order.serviceName || '') && followUps.find(task =>
+                        task.workflowKey === 'medical_proxy:supervise' && String(task.sourceOrderId?._id || task.sourceOrderId) === String(order._id)
+                        && ['planned', 'in_progress'].includes(task.status))
                       // 谁推送谁获推广费(referrerId=推送时自动关联)，谁服务谁获服务费(fulfillerId)——
                       // 只有该订单的推荐人本人或超管能指定服务人，不是随便谁都能改
                       const canAssignFulfiller = staff?.role === 'superadmin' || String(order.referrerId?._id) === String(staff?._id)
@@ -11350,8 +11355,12 @@ export default function PatientDetailPage() {
                           {CHECKUP_STAGE_LABEL[order.currentStage] && <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>{CHECKUP_STAGE_LABEL[order.currentStage]}</div>}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
+                          {planningSupervisor && ['healthPlanner', 'superadmin'].includes(staff?.role) &&
+                            (hasPlanningAdvice(planningAdviceFromTask(planningSupervisor))
+                              ? <button className="btn btn-primary btn-sm" onClick={() => openExec({ ...planningSupervisor, formData: { ...planningSupervisor.formData, medicalPlanning: true, advisorSnapshot: planningAdviceFromTask(planningSupervisor) } })}>核对客户意向并结案</button>
+                              : <span style={{ fontSize: 12, color: '#8A6B30' }}>待健康顾问建议同步后确认结案</span>)}
                           {order.status === 'pending' && order.packageEntitlementUsage && isMedicalService(order) && <button className="btn btn-primary btn-sm" onClick={() => continueMedicalOrder(order)}>继续就医协助</button>}
-                          {order.status === 'pending' && !(order.packageEntitlementUsage && isMedicalService(order)) && (
+                          {order.status === 'pending' && !planningSupervisor && !(order.packageEntitlementUsage && isMedicalService(order)) && (
                             <button className="btn btn-primary btn-sm" onClick={async () => {
                               try {
                                 await staffAPI.startOrder(order._id, { action: 'schedule' })

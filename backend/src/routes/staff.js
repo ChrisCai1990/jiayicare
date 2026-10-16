@@ -710,6 +710,8 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   // 修复旧版本中“上游已完成、健管审核仍等待上一环节”的陪同任务，并补齐
   // 就医专员本次提交内容。修复严格限定为当前负责人的已完成上游任务。
   await require('../utils/medicalProxyWorkflow').repairCompletedMedicalEscortAuditTasks(req.staff._id);
+  if (req.staff.role === 'healthPlanner')
+    await require('../utils/medicalProxyWorkflow').repairCompletedPlanningAdvisorHandoffs(req.staff._id);
   await require('../utils/medicalProxyWorkflow').ensureStaffExpertAppointmentTasksForStaff(req.staff);
   if(req.staff.role==='healthManager') {
     const flows=await require('../models/CareFlow').find({tenantId:req.staff.tenantId||null,'state.people.healthManager.id':String(req.staff._id),'state.stage':{$in:['upload','audit']}}).lean();
@@ -2788,6 +2790,17 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (proxyStage && followUp.status === 'completed' && previousStatus !== 'completed') {
     await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
   }
+  // A previous request may have saved the advisor task before its handoff failed.
+  // Repeating the same submission must be able to finish that handoff.
+  if (proxyStage === 'advisor' && followUp.formData?.medicalPlanning === true
+    && followUp.status === 'completed' && previousStatus === 'completed') {
+    const handedOff = await FollowUp.exists({ sourceType: 'order', sourceOrderId: followUp.sourceOrderId,
+      workflowKey: 'medical_proxy:supervise', 'formData.advisorSnapshot.problemAnalysis': { $exists: true } });
+    if (!handedOff) await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
+  }
+  if (proxyStage === 'supervise' && followUp.formData?.medicalPlanning === true
+    && followUp.status === 'completed' && previousStatus === 'completed')
+    await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
   if (checkupAppointmentStage && followUp.status === 'completed' && previousStatus !== 'completed') {
     await checkupAppointmentWorkflow.advance(followUp);
   }

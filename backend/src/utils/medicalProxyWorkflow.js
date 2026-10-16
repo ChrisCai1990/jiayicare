@@ -1132,7 +1132,19 @@ async function validateMedicalProxyStage(task, body, staff) {
 async function advanceMedicalProxyWorkflow(task) {
   const stage = stageOf(task);
   if (!stage || task.status !== 'completed') return;
-  if (stage === 'supervise') return;
+  if (stage === 'supervise') {
+    if (task.formData?.medicalPlanning !== true) return;
+    const order = await Order.findById(task.sourceOrderId);
+    if (!order || !/就医规划/.test(order.serviceName || '') || order.status === 'completed') return;
+    const completedAt = task.completedAt || new Date();
+    await Order.updateOne({ _id: order._id, status: { $ne: 'completed' } }, { $set: {
+      status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt,
+      currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed',
+    } });
+    const completed = await Order.findById(order._id);
+    if (completed?.status === 'completed') await settleCompletedMedicalOrder(completed, task.assignedTo);
+    return;
+  }
   const index = STAGES.indexOf(stage);
   const order = await Order.findById(task.sourceOrderId);
   if (!order) return;
@@ -1160,16 +1172,20 @@ async function advanceMedicalProxyWorkflow(task) {
     return;
   }
   if (stage === 'advisor') {
-    order.medicalProxyPlan = { ...task.formData, confirmedBy: task.assignedTo, confirmedAt: new Date(), intakeTaskId: task.dependsOnTaskId };
-    order.markModified('medicalProxyPlan');
-    await order.save();
     if (task.formData?.medicalPlanning === true) {
+      await Order.updateOne({ _id: order._id }, { $set: {
+        medicalProxyPlan: { ...task.formData, confirmedBy: task.assignedTo, confirmedAt: new Date(), intakeTaskId: task.dependsOnTaskId },
+        currentStage: 'planner_followup', currentAssignee: patient?.assignedHealthPlanner, supervisionStatus: 'in_progress',
+      } });
       await FollowUp.updateOne(
         { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
         { $set: { theme: `就医规划：健康规划师客户沟通与结案 · ${order.serviceName}`, content: '健康顾问已完成就医规划建议，请与客户沟通是否需要其他就医协助服务。', 'formData.currentStage': 'planner_followup', 'formData.medicalPlanning': true, 'formData.advisorSnapshot': task.formData, remindAt: new Date() } },
       );
       return;
     }
+    order.medicalProxyPlan = { ...task.formData, confirmedBy: task.assignedTo, confirmedAt: new Date(), intakeTaskId: task.dependsOnTaskId };
+    order.markModified('medicalProxyPlan');
+    await order.save();
   }
   if (stage === 'booking') {
     const slots = bookingSlots(task.formData);
@@ -1410,6 +1426,25 @@ async function advanceMedicalProxyWorkflow(task) {
   } });
 }
 
+async function repairCompletedPlanningAdvisorHandoffs(plannerId) {
+  const supervisors = await FollowUp.find({ sourceType: 'order', workflowKey: `${PREFIX}supervise`,
+    assignedTo: plannerId, status: { $in: ['planned', 'in_progress'] },
+    'formData.medicalPlanning': true, 'formData.advisorSnapshot': { $exists: false } })
+    .select('sourceOrderId').limit(20).lean();
+  for (const supervisor of supervisors) {
+    try {
+      const [order, advisor] = await Promise.all([
+        Order.findById(supervisor.sourceOrderId).select('status').lean(),
+        FollowUp.findOne({ sourceType: 'order', sourceOrderId: supervisor.sourceOrderId,
+          workflowKey: `${PREFIX}advisor`, status: 'completed', 'formData.medicalPlanning': true }),
+      ]);
+      if (order && order.status !== 'completed' && advisor) await advanceMedicalProxyWorkflow(advisor);
+    } catch (error) {
+      console.error('[medical-planning] advisor handoff repair deferred', supervisor.sourceOrderId, error);
+    }
+  }
+}
+
 // Reconcile only active staff-initiated expert appointments. Older versions created
 // an order and booking task without the planner's read-only supervision card.
 async function ensureStaffExpertAppointmentTasksForStaff(staff) {
@@ -1463,4 +1498,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, validateDirectProxyMaterials, reserveGiftMedicalBenefit, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, validateDirectProxyMaterials, reserveGiftMedicalBenefit, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, repairCompletedPlanningAdvisorHandoffs, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

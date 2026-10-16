@@ -9,7 +9,50 @@ const MedicalReport = require('../src/models/MedicalReport');
 const ServiceRecord = require('../src/models/ServiceRecord');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
-const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, upsertMedicalProxyServiceRecord, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow, startMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
+const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, upsertMedicalProxyServiceRecord, supplyResolutionSummary, validateMedicalProxyStage, advanceMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow, startMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
+
+test('planning advisor handoff updates order and supervisor without validating historical order fields', async () => {
+  const original = { orderFind: Order.findById, orderUpdate: Order.updateOne, userFind: User.findById, taskUpdate: FollowUp.updateOne };
+  const updates = [];
+  try {
+    Order.findById = async () => ({ _id: 'order-1', serviceName: '就医规划服务', status: 'scheduled' });
+    Order.updateOne = async (filter, update) => { updates.push({ filter, update }); return { modifiedCount: 1 }; };
+    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1' }) }) });
+    FollowUp.updateOne = async (filter, update) => { updates.push({ filter, update }); return { modifiedCount: 1 }; };
+    await advanceMedicalProxyWorkflow({ status: 'completed', sourceType: 'order', workflowKey: 'medical_proxy:advisor',
+      sourceOrderId: 'order-1', patientId: 'patient-1', assignedTo: 'advisor-1', formData: {
+        medicalPlanning: true, problemAnalysis: '需要就医评估', expertRecommendation1: '专家甲', expertRecommendation2: '专家乙',
+      } });
+    assert.equal(updates[0].update.$set.currentStage, 'planner_followup');
+    assert.equal(updates[0].update.$set.currentAssignee, 'planner-1');
+    assert.equal(updates[1].update.$set['formData.advisorSnapshot'].problemAnalysis, '需要就医评估');
+  } finally {
+    Order.findById = original.orderFind; Order.updateOne = original.orderUpdate;
+    User.findById = original.userFind; FollowUp.updateOne = original.taskUpdate;
+  }
+});
+
+test('planner confirmation closes a planning order exactly once', async () => {
+  const packageRedemption = require('../src/utils/packageServiceRedemption');
+  const original = { orderFind: Order.findById, orderUpdate: Order.updateOne, reconcile: packageRedemption.safeReconcilePackageOrder };
+  const order = { _id: 'order-1', serviceName: '就医规划服务', status: 'scheduled', paymentStatus: 'unpaid', paidAmount: 0 };
+  let reconciled = 0;
+  try {
+    Order.findById = async () => order;
+    Order.updateOne = async (_, update) => { Object.assign(order, update.$set); return { modifiedCount: 1 }; };
+    packageRedemption.safeReconcilePackageOrder = async () => { reconciled++; };
+    const task = { status: 'completed', sourceType: 'order', workflowKey: 'medical_proxy:supervise',
+      sourceOrderId: 'order-1', assignedTo: 'planner-1', completedAt: new Date(), formData: { medicalPlanning: true } };
+    await advanceMedicalProxyWorkflow(task);
+    await advanceMedicalProxyWorkflow(task);
+    assert.equal(order.status, 'completed');
+    assert.equal(order.currentStage, 'completed');
+    assert.equal(reconciled, 1);
+  } finally {
+    Order.findById = original.orderFind; Order.updateOne = original.orderUpdate;
+    packageRedemption.safeReconcilePackageOrder = original.reconcile;
+  }
+});
 
 test('starting a second paid medical order does not cancel the first order executor', async () => {
   const previous = { exists: FollowUp.exists, find: FollowUp.find, upsert: FollowUp.findOneAndUpdate, updateMany: FollowUp.updateMany, userFind: User.findById };
