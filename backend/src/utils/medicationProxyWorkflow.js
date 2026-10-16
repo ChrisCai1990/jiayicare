@@ -39,7 +39,7 @@ async function start(order, plannerId, formData = {}) {
   await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, _id: { $ne: task._id }, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'cancelled', cancelReason: '已进入代配药分阶段流程' } });
   await Order.updateOne({ _id: order._id }, { $set: {
     supervisorId: plannerId, currentStage: 'intake', currentAssignee: plannerId,
-    closureMode: 'automatic', supervisionStatus: 'in_progress',
+    closureMode: 'planner_review', supervisionStatus: 'in_progress',
   } });
   return task;
 }
@@ -131,17 +131,9 @@ async function advance(task) {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
     }
-    await Order.updateOne(
-      { _id: order._id, status: { $nin: ['completed', 'cancelled'] } },
-      { $set: { status: 'completed', completedAt: new Date(), serviceStartedAt: order.serviceStartedAt || task.completedAt || new Date() }, $max: { usedUnits: Math.max(1, Number(order.totalUnits) || 1) } },
-    );
-    await Order.updateOne({ _id: order._id }, { $set: {
-      currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed',
-    } });
-    await FollowUp.updateMany(
-      { sourceType: 'order', sourceOrderId: order._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
-      { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff' } },
-    );
+    await Order.updateOne({ _id: order._id }, { $set: { serviceStartedAt: order.serviceStartedAt || task.completedAt || new Date() } });
+    await require('./medicalAssistClosure').requestOrderClosure(order,
+      '代配药执行及配送安排已完成，待健康规划师核对结案。');
     return;
   }
   let next;

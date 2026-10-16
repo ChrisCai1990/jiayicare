@@ -13,6 +13,12 @@ function scope(task) {
   return null;
 }
 function summarize(task, siblings) {
+  if (task.workflowKey === 'medical_assist:closure') {
+    const rows = siblings.filter(row => id(row.sourceOrderId || row.sourceHealthPlanId) === id(task.sourceOrderId || task.sourceHealthPlanId)
+      && row.taskRole === 'executor' && row.status !== 'cancelled');
+    return { total: rows.length, completed: rows.filter(row => row.status === 'completed').length,
+      current: [], message: '执行环节已结束，待健康规划师确认结案' };
+  }
   if (task.annualDispatch) {
     const d = task.annualDispatch;
     return { total: 1, completed: d.status === 'completed' ? 1 : 0, current: d.status === 'completed' ? [] : [{ id: d.executionId, label: d.status === 'pending_review' ? '代办结果待规划师验收' : '已派单，等待就医专员办理', assignee: d.status === 'pending_review' ? task.assignedTo?.name || '健康规划师' : d.assigneeName, blocked: false }], message: d.status === 'completed' ? '代办已验收，原管理随访继续跟进' : '按本次派单跟进办理进度' };
@@ -43,6 +49,8 @@ async function loadSupervisionProgress(tasks, FollowUp) {
   const cases = careIds.length ? await require('../models/CareFlow').find({_id:{$in:careIds}}).lean() : [];
   const config = require('../../../shared/careFlow.cjs');
   return new Map(supervisors.map(task => {
+    if (task.workflowKey === 'medical_assist:closure' && task.careFlowId)
+      return [id(task._id), { total: 0, completed: 0, current: [], message: '执行及顾问审核已完成，待健康规划师确认结案' }];
     const flow=cases.find(c=>id(c._id)===id(task.careFlowId));
     if(!flow)return [id(task._id),summarize(task,rows)];
     const s=flow.state,person=s.people[config.roles[s.stage]];

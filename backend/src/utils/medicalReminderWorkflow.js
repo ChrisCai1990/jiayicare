@@ -134,10 +134,8 @@ async function advanceStaffStage(task, staffId) {
         theme: '查看就医资料并确认随访计划', plannedContent: '查看已审核的报告单和病历，确认后续随访计划；无需继续随访时记录结论。', content: '', sourceType: 'order', sourceOrderId: order._id,
         workflowKey: `${PREFIX}plan_review`, taskRole: 'executor', dependsOnTaskId: task._id, isBlocked: false, formData: { phase: 'plan_review' } } }, { upsert: true, new: true, setDefaultsOnInsert: true });
   } else if (stage === 'plan_review') {
-    order.status = 'completed'; order.tradeStatus = 'completed'; order.fulfillmentStatus = 'completed'; order.completedAt = new Date(); order.usedUnits = Math.max(order.usedUnits || 0, 1);
-    order.currentStage = 'completed'; order.currentAssignee = null; order.supervisionStatus = 'completed'; await order.save();
-    await Message.findOneAndUpdate({ dedupeKey: `medical-reminder-completed:${order._id}` }, { $setOnInsert: { user: task.patientId, type: 'planner', sender: 'AI健康规划师', title: '复查督办服务已完成',
-      content: '报告单和病历已审核，健康顾问已确认后续随访计划，本次复查督办服务已结束。', conversationId: `${task.patientId}_planner`, isAI: true, unread: true, dedupeKey: `medical-reminder-completed:${order._id}` } }, { upsert: true });
+    await require('./medicalAssistClosure').requestOrderClosure(order,
+      '报告单和病历已审核，健康顾问已确认后续随访计划，待健康规划师核对结案。');
   }
 }
 

@@ -740,7 +740,7 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
   );
   await Order.updateOne({ _id: order._id }, { $set: {
     supervisorId: plannerId, currentStage: 'collect', currentAssignee: plannerId,
-    closureMode: 'automatic', supervisionStatus: 'in_progress',
+    closureMode: 'planner_review', supervisionStatus: 'in_progress',
   } });
   return task;
 }
@@ -898,7 +898,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
         plannedContent: plan.adHocConsultation ? '客户现场确认临时专家门诊；请记录实际就诊结果并上传病历、处方或报告，随后交健管审核。' : '就医专员已确定，请按服务时间完成陪同并上传报告、病历等资料。',
         formData: { planSnapshot: { ...plan, initiationSource: STAFF_DIRECT_SOURCE }, medicalEscort: true, medicalAssistantId: plan.medicalAssistantId, assignmentMode: 'automatic' },
       });
-      await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'execute', currentAssignee: plan.medicalAssistantId, closureMode: 'automatic', supervisionStatus: 'in_progress' } });
+      await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'execute', currentAssignee: plan.medicalAssistantId, closureMode: 'planner_review', supervisionStatus: 'in_progress' } });
       return { order, supervisor, execute };
     }
     const planner = await FollowUp.create({
@@ -908,7 +908,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
       plannedContent: '核对健康顾问发起的陪同信息，补齐后分配就医专员。',
       formData: { ...plan, medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE },
     });
-    await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'planner', currentAssignee: patient.assignedHealthPlanner, closureMode: 'advisor_confirmation', supervisionStatus: 'in_progress' } });
+    await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'planner', currentAssignee: patient.assignedHealthPlanner, closureMode: 'planner_review', supervisionStatus: 'in_progress' } });
     return { order, supervisor, planner };
   }
   if (appointmentOnly || supplyProxy) {
@@ -935,7 +935,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
       });
       await Order.updateOne({ _id: order._id }, { $set: {
         supervisorId: patient.assignedHealthPlanner, currentStage: 'booking', currentAssignee: patient.assignedHealthManager,
-        closureMode: 'automatic', supervisionStatus: 'in_progress',
+        closureMode: 'planner_review', supervisionStatus: 'in_progress',
       } });
     }
     return { order, booking, supervisor };
@@ -966,7 +966,7 @@ async function validateMedicalProxyStage(task, body, staff) {
   if (stage === 'post_visit_audit' && body.status !== 'completed') return '';
   if (stage === 'supervise') {
     const supervisorOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName').lean() : null;
-    if (!/就医规划/.test(supervisorOrder?.serviceName || '')) return '健康规划师督办任务将在代诊执行完成后自动结束';
+    if (!/就医规划/.test(supervisorOrder?.serviceName || '')) return '代诊执行完成后由健康规划师核对并确认结案';
     if (body.status !== 'completed') return '';
     if (staff.role !== 'superadmin' && String(task.assignedTo || '') !== String(staff._id)) return '仅健康规划师可结束本次就医规划';
     const advisor = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: task.sourceOrderId, workflowKey: `${PREFIX}advisor`, status: 'completed' }).select('_id').lean();
@@ -1105,7 +1105,13 @@ async function validateMedicalProxyStage(task, body, staff) {
 async function advanceMedicalProxyWorkflow(task) {
   const stage = stageOf(task);
   if (!stage || task.status !== 'completed') return;
-  if (stage === 'supervise') return;
+  if (stage === 'supervise') {
+    const planningOrder = await Order.findById(task.sourceOrderId);
+    if (planningOrder && /就医规划/.test(planningOrder.serviceName || ''))
+      await require('./medicalAssistClosure').requestOrderClosure(planningOrder,
+        '健康规划师已与客户确认就医规划及后续服务意向，待核对并确认结案。');
+    return;
+  }
   const index = STAGES.indexOf(stage);
   const order = await Order.findById(task.sourceOrderId);
   if (!order) return;
@@ -1213,11 +1219,7 @@ async function advanceMedicalProxyWorkflow(task) {
         await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'followup_review', currentAssignee: reviewer, supervisionStatus: 'in_progress' } });
         return;
       }
-      order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
-      await order.save();
-      await settleCompletedMedicalOrder(order, task.assignedTo);
-      await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', 'formData.currentStage': 'completed', content: '陪同资料已由健管专员审核归档，就医陪同服务结束。' } });
-      await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed' } });
+      await require('./medicalAssistClosure').requestOrderClosure(order, '陪同资料已由健管专员审核归档，待健康规划师核对结案。');
       return;
     }
     await createPostVisitFollowUpPlan(task, order, patient, [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))]);
@@ -1227,10 +1229,7 @@ async function advanceMedicalProxyWorkflow(task) {
   if (stage === 'post_visit_review') {
     const ids = [...new Set((task.formData?.auditSnapshot?.reportIds || []).map(String).filter(Boolean))];
     await MedicalReport.updateMany({ _id: { $in: ids }, user: task.patientId, audit_status: 'audited' }, { $set: { familyDoctorViewedAt: new Date() } });
-    order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
-    await order.save();
-    await settleCompletedMedicalOrder(order, task.assignedTo);
-    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', 'formData.currentStage': 'completed', content: order.medicalProxyPlan?.adHocConsultation ? '临时加诊资料已由健管专员审核、健康顾问查看，服务结束。' : '就诊后资料已由健管专员审核并由健康顾问查看，专家约诊服务结束。' } });
+    await require('./medicalAssistClosure').requestOrderClosure(order, '就诊资料已审核，健康顾问已查看，待健康规划师核对结案。');
     return;
   }
   if (stage === 'intake') {
@@ -1290,7 +1289,7 @@ async function advanceMedicalProxyWorkflow(task) {
     const auditTask = await FollowUp.findOneAndUpdate(
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit` },
       {
-        $setOnInsert: { patientId: task.patientId, staffId: task.staffId, type: 'other', sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit`, taskRole: 'executor', theme: `就医陪同：健管专员审核归档 · ${order.serviceName}`, plannedContent: '审核就医专员上传的陪同记录、报告和病历，确认资料归档后结束服务。' },
+        $setOnInsert: { patientId: task.patientId, staffId: task.staffId, type: 'other', sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit`, taskRole: 'executor', theme: `就医陪同：健管专员审核归档 · ${order.serviceName}`, plannedContent: '审核就医专员上传的陪同记录、报告和病历，确认资料归档后交健康规划师结案。' },
         $set: { assignedTo: patient?.assignedHealthManager, status: 'planned', isBlocked: false, date: new Date(), remindAt: new Date(), dependsOnTaskId: task._id, completedAt: null, completedBy: null, cancelReason: '', 'formData.medicalEscort': true, 'formData.reportIds': reportIds, 'formData.auditSummary': '', 'formData.noMaterialsConfirmed': false, 'formData.executionSnapshot': executionSnapshot },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -1304,20 +1303,8 @@ async function advanceMedicalProxyWorkflow(task) {
     await archiveMedicalProxyRecords(task, order, patient?.tenantId);
     await createMedicalProxyFollowUpDrafts(task, order, patient?.assignedFamilyDoctor);
     if (supplyProxy) await completeLinkedSupplyReminder(task, order);
-    if (order.initiationSource === STAFF_DIRECT_SOURCE) {
-      order.status = 'completed';
-      order.tradeStatus = 'completed';
-      order.completedAt = new Date();
-      await order.save();
-      await settleCompletedMedicalOrder(order, task.assignedTo);
-    }
-    await FollowUp.updateOne(
-      { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
-      { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: supplyProxy ? `执行人员已完成${supplementProxy ? '营养素购买' : '配药'}确认与配送安排，健康规划师全程督办闭环。` : '就医专员已完成代诊，健康规划师全程督办闭环。', 'formData.currentStage': 'completed' } },
-    );
-    await Order.updateOne({ _id: order._id }, { $set: {
-      currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed',
-    } });
+    await require('./medicalAssistClosure').requestOrderClosure(order,
+      supplyProxy ? `执行人员已完成${supplementProxy ? '营养素购买' : '配药'}及配送安排，待健康规划师核对结案。` : '就医专员已完成代诊，待健康规划师核对结案。');
     return;
   }
   const plannerDispatch = needsPlannerDispatch(task.formData, order.serviceName);
@@ -1436,4 +1423,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, validateDirectProxyMaterials, reserveGiftMedicalBenefit, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, archiveMedicalProxyRecords, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, validateDirectProxyMaterials, reserveGiftMedicalBenefit, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, settleCompletedMedicalOrder, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

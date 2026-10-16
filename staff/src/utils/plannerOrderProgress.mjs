@@ -33,7 +33,7 @@ export function plannerOrderRows(pendingOrders = [], serviceTasks = []) {
     const row = rows.get(id) || { id, pending: null, supervisor: null, task: null, action: null }
     const readOnlyProgress = task.workflowKey === 'medication_proxy:progress'
     row.task ||= task
-    if (task.taskRole === 'supervisor' || readOnlyProgress) row.supervisor = task
+    if (task.workflowKey === 'medical_assist:closure' || ((task.taskRole === 'supervisor' || readOnlyProgress) && row.supervisor?.workflowKey !== 'medical_assist:closure')) row.supervisor = task
     if (task.taskRole === 'executor' && !readOnlyProgress && !task.isBlocked && !row.action) row.action = task
     rows.set(id, row)
   }

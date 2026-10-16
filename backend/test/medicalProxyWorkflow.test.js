@@ -164,13 +164,13 @@ test('treatment escort hands off the confirmed order, session and preparation no
   }
 });
 
-test('on-site consultation keeps its parent escort open and closes only after advisor follow-up review', () => {
+test('on-site consultation keeps its parent escort open and sends closure to planner after advisor review', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   assert.match(workflow, /medicalEscort && !plan\.adHocConsultation && !plan\.sourceFollowUpId/);
   assert.match(workflow, /!order\.medicalProxyPlan\?\.adHocConsultation\) await completeLinkedMedicalReminder/);
   assert.match(workflow, /currentStage: 'followup_review', currentAssignee: reviewer/);
-  assert.match(routes, /generatedFromMedicalEscort && followUp\.sourceOrderId[\s\S]*?adHocConsultation[\s\S]*?currentStage: 'completed'/);
+  assert.match(routes, /generatedFromMedicalEscort && followUp\.sourceOrderId[\s\S]*?adHocConsultation[\s\S]*?requestOrderClosure\(order/);
 });
 
 test('existing staff expert order gains one booking and one planner supervision task on either workbench', async () => {
@@ -301,7 +301,7 @@ test('advisor must confirm five proxy visit fields and planner must assign activ
     assert.match(await validateMedicalProxyStage(advisor, { status: 'completed', formData: data }, { _id: 'doctor-1', role: 'familyDoctor' }), /年度会员/);
     data.selectedReportIds = ['report-1'];
     assert.equal(await validateMedicalProxyStage(advisor, { status: 'completed', formData: data }, { _id: 'doctor-1', role: 'familyDoctor' }), '');
-    assert.match(await validateMedicalProxyStage({ sourceType: 'order', workflowKey: 'medical_proxy:supervise' }, { status: 'completed' }, { role: 'healthPlanner' }), /自动结束/);
+    assert.match(await validateMedicalProxyStage({ sourceType: 'order', workflowKey: 'medical_proxy:supervise' }, { status: 'completed' }, { role: 'healthPlanner' }), /确认结案/);
     const planner = { sourceType: 'order', workflowKey: 'medical_proxy:planner', assignedTo: 'planner-1' };
     assert.match(await validateMedicalProxyStage(planner, { status: 'completed', formData: {} }, { _id: 'planner-1', role: 'healthPlanner' }), /就医专员/);
     assert.equal(await validateMedicalProxyStage(planner, { status: 'completed', formData: { medicalAssistantId: 'assistant-1' } }, { _id: 'planner-1', role: 'healthPlanner' }), '');
@@ -522,7 +522,7 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(patientPage, /完成陪同并提交资料审核/);
   assert.match(patientPage, /const isOrderServiceWorkflowTask/);
   assert.match(patientPage, /medicalWorkflowKey\(task\.workflowKey\)/);
-  assert.match(patientPage, /type: 'order_service'/);
+  assert.match(patientPage, /row\.type === 'order_service'/);
   assert.match(patientPage, />综合服务</);
   assert.match(patientPage, /supplyReminderOrderMap/);
   assert.match(patientPage, /medicalProxyOrderId/);
@@ -706,12 +706,12 @@ test('expert appointment stays open until post-visit reports are audited and rev
   }
 });
 
-test('expert appointment closes only after post-visit follow-up review and supports advisor initiation', () => {
+test('expert appointment requests planner closure after post-visit follow-up review and supports advisor initiation', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateExpertAppointmentWorkflowV12.js'), 'utf8');
   assert.match(workflow, /appointmentOnly[\s\S]*assignedHealthManager/);
   assert.match(workflow, /appointmentOnly \? '专家约诊服务'/);
-  assert.match(workflow, /order\.status = 'completed';[\s\S]*order\.tradeStatus = 'completed'/);
+  assert.match(workflow, /stage === 'post_visit_review'[\s\S]*requestOrderClosure\(order/);
   assert.match(migration, /assistanceType: 'expert_appointment'/);
 });
 

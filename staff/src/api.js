@@ -148,6 +148,7 @@ export const staffAPI = {
   // Follow-ups
   getFollowUps:        (p = {}) => req('/staff/followups?' + qs(p)),
   getServiceTasks:     (p = {}) => req('/staff/service-tasks?' + qs(p)),
+    confirmMedicalAssistClosure: (id, conclusion) => req(`/staff/medical-assist-closures/${id}/confirm`, { method: 'POST', body: JSON.stringify({ conclusion }) }),
   getMedicalAssistProgress: () => req('/staff/medical-assist-progress'),
   startLifestyleInterview: id => req(`/staff/patients/${id}/lifestyle-interview/start`, {method:'POST',body:'{}'}),
   getLifestyleInterview: id => req(`/staff/followups/${id}/lifestyle-interview`),

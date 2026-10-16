@@ -15,6 +15,7 @@ import ClinicalStandardReviewPanel from '../components/ClinicalStandardReviewPan
 import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
 import ServiceTasksPanel from '../components/ServiceTasksPanel'
+import MedicalAssistClosureAction from '../components/MedicalAssistClosureAction'
 import ServiceSupervisionPanel from '../components/ServiceSupervisionPanel'
 import MedicalAssistProgressPanel from '../components/MedicalAssistProgressPanel'
 import MonthlyReviewWorkbench from '../components/MonthlyReviewWorkbench'
@@ -143,7 +144,7 @@ export default function HomePage() {
             {visibleOrderRows.map(({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
               const task = supervisor || serviceTask
               const order = task?.sourceOrderId || f?.sourceOrderId
-              const openTarget = action || (supervisor && !/专家约诊/.test(supervisor.theme || '') ? supervisor : null) || (!task ? f : null)
+              const openTarget = task?.workflowKey === 'medical_assist:closure' ? null : action || (supervisor && !/专家约诊/.test(supervisor.theme || '') ? supervisor : null) || (!task ? f : null)
               return <div key={id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < visibleOrderRows.length - 1 ? '1px solid #f0ede8' : 'none', cursor: openTarget ? 'pointer' : 'default' }} onClick={() => { if (openTarget) nav(`/patients/${openTarget.patientId?._id}?tab=followups`, { state: { openFollowUp: openTarget } }) }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{(task || f)?.patientId?.name || '未知'}</span>
@@ -156,9 +157,13 @@ export default function HomePage() {
                         : task.supervisionProgress?.message || `当前环节：${serviceTaskTitle(task) || '待核对'} · 处理人：${task.assignedTo?.name || '待分配'}`)
                         : orderShipping.shippingProgress(order) || '待健康规划师确认客户需求并转交下一环节'}
                     </div>
+                    <MedicalAssistClosureAction task={task} onConfirmed={() => {
+                      setServiceTasks(current => current.filter(item => String(item.sourceOrderId?._id || item.sourceOrderId) !== id))
+                      ordersResource.refresh()
+                    }} />
                   </div>
                 </div>
-                <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{action ? '待我办理' : task ? '流程进行中' : `下单 ${new Date(order?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}</span>
+                <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{task?.workflowKey === 'medical_assist:closure' ? '待确认结案' : action ? '待我办理' : task ? '流程进行中' : `下单 ${new Date(order?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}</span>
               </div>
             })}
             {orderRows.length > ORDERS_PER_PAGE && <nav aria-label="用户下单服务进程分页" style={{ paddingBottom: 8 }}>

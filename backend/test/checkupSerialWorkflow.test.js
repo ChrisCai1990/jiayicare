@@ -44,13 +44,14 @@ test('report collection is scheduled seven business days after checkup', () => {
   assert.match(flow, /!\[0, 6\]\.includes\(date\.getDay\(\)\)/)
 })
 
-test('report audit unlocks doctor review and only final supervisor acceptance closes the order', () => {
+test('report audit unlocks doctor review and final acceptance queues planner closure', () => {
   assert.match(staffRoute, /onCheckupReportAudited\(report\)/)
   assert.match(flow, /stage === 'report_collection'/)
   assert.match(flow, /stage === 'result_review'.*tasks\.final_acceptance/s)
   assert.match(flow, /stage === 'final_acceptance'.*closeCheckupService/s)
-  assert.match(flow, /totalUnits: \{ \$lte: 1 \}/)
-  assert.match(flow, /tradeStatus: 'completed'/)
+  assert.match(flow, /requestPlanClosure\(servicePlan/)
+  const closure = fs.readFileSync(path.join(__dirname, '../src/utils/medicalAssistClosure.js'), 'utf8')
+  assert.match(closure, /status: 'completed', tradeStatus: 'completed'/)
 })
 
 test('report collection cannot complete without a real patient report', () => {

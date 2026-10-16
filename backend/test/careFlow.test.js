@@ -72,9 +72,10 @@ test('pure reminder visits use upload/audit/advisor path without dispatch; idemp
  assert.equal(s.flows.get('flow').state.stage,'review');
  const final=await complete(s,{content:'顾问核对后的计划',date:'2099-01-01',note:'核对通过'});
  await s.api.sync(final);
- assert.equal(s.tasks.get('flow').status,'completed');assert.equal(s.tasks.get('flow').plannedContent,'原年度计划');
+ assert.equal(s.tasks.get('flow').status,'in_progress');assert.equal(s.tasks.get('flow').plannedContent,'原年度计划');
+ assert.equal(s.tasks.get(hash('care-closure:flow')).assignedTo,'healthPlanner');
  assert.equal([...s.tasks.values()].filter(t=>t.sourceScheduleKey==='care-followup:flow').length,1);
- assert.ok([...s.tasks.values()].every(t=>!['healthPlanner','medicalAssistant'].includes(t.assignedTo)||t.status==='completed'));
+ assert.ok([...s.tasks.values()].every(t=>!['healthPlanner','medicalAssistant'].includes(t.assignedTo)||t.status==='completed'||t.workflowKey==='medical_assist:closure'));
 });
 test('专员结束后健管承接报告，客户上传资料可关联，跨客户资料和未审核资料不能过关',async()=>{
  const s=setup('execute');await complete(s,{text:'检查安排已交接'});
@@ -146,7 +147,8 @@ test('完整执行、审核、生成、顾问审核链路；重复同步只生�
   await generate(s.api,'flow',actor('draft'),false,async()=>JSON.stringify({content:'跟进专家要求',date:'2099-01-01'}));
   assert.equal(s.flows.get('flow').state.stage,'review');
   const result=await complete(s,{content:'顾问审核后的随访',date:'2099-01-01',note:'审核通过'});
-  assert.equal(result.state.finalized,true);assert.equal(s.tasks.get('flow').status,'completed');
+  assert.equal(result.state.finalized,undefined);assert.equal(s.tasks.get('flow').status,'planned');
+  assert.equal(s.tasks.get(hash('care-closure:flow')).status,'planned');
   await s.api.sync(result);await s.api.sync(result);
   assert.equal([...s.tasks.values()].filter(t=>t.sourceScheduleKey==='care-followup:flow').length,1);
   assert.equal(s.tasks.get(hash('care-followup:flow')).content,'顾问审核后的随访');assert.deepEqual(s.tasks.get('parent'),original);
@@ -208,5 +210,5 @@ test('健管核实无资料需要客户反馈和依据，不可丢弃已有报�
  flow.state.data.upload.reportIds=['report'];await assert.rejects(run({noDocuments:true,reportIds:[],note:'已核实'}),/已有资料/);flow.state.data.upload.reportIds=[];
  await run({noDocuments:true,reportIds:[],note:'已向客户核实，仅咨询无资料'});assert.equal(x.flows.get('flow').state.stage,'audit');assert.equal(x.flows.get('flow').state.data.upload.noDocuments,true);
  await x.api.action('flow',actor('audit'),{action:'complete',revision:x.flows.get('flow').revision,confirmed:true,value:{note:'核实记录确认，后续顾问跟进'}});assert.equal(x.flows.get('flow').state.stage,'followup');
- await x.api.action('flow',actor('followup'),{action:'complete',revision:x.flows.get('flow').revision,confirmed:true,value:{followupNeeded:false,note:'本次无资料且无后续随访事项'}});assert.equal(x.flows.get('flow').state.stage,'closed');assert.equal(x.tasks.get('flow').status,'completed');
+ await x.api.action('flow',actor('followup'),{action:'complete',revision:x.flows.get('flow').revision,confirmed:true,value:{followupNeeded:false,note:'本次无资料且无后续随访事项'}});assert.equal(x.flows.get('flow').state.stage,'closed');assert.equal(x.tasks.get('flow').status,'planned');assert.equal(x.tasks.get(hash('care-closure:flow')).status,'planned');
 });
