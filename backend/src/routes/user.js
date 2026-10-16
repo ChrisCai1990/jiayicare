@@ -1337,6 +1337,9 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     }
     const done = req.body.done !== false; // 默认 true，传 false 则取消
     const needFollowUp = req.body.needFollowUp === true;
+    if (!done && followup.repeatWeekly && await FollowUp.exists({ _id: require('../utils/rollingWeeklyFollowUp').weeklySuccessorId(followup._id) })) {
+      return res.status(409).json({ success: false, message: '下一次每周随访已生成，如需调整请联系健管专员' });
+    }
 
     const changes = {
       completedByUser: done,
@@ -1372,6 +1375,9 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     // 使用原子更新，仅修改完成状态字段。部分历史随访由旧版本写入过已废弃的枚举值，
     // document.save() 会重新校验整条旧记录，导致用户点击“完成”时报 validation failed。
     const updated = await FollowUp.findByIdAndUpdate(followup._id, { $set: changes }, { new: true });
+    if (updated.status === 'completed' && updated.repeatWeekly) {
+      await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(updated);
+    }
     if (done && !needFollowUp && followup.workflowKey === 'medical_reminder:followup') {
       await require('../utils/medicalReminderWorkflow').markVisitCompleted(updated);
     }

@@ -304,7 +304,13 @@ router.post('/', auth, async (req, res) => {
       });
       if (matched.length > 0) {
         const ids = matched.map(f => f._id);
-        await FollowUp.updateMany({ _id: { $in: ids } }, { $set: { status: 'completed', completedAt: new Date() } });
+        const completedAt = new Date();
+        await FollowUp.updateMany({ _id: { $in: ids } }, { $set: { status: 'completed', completedAt } });
+        for (const fu of matched.filter(f => f.repeatWeekly)) {
+          await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp({
+            ...fu.toObject(), status: 'completed', completedAt,
+          });
+        }
 
         // 若有 repeatDaily=true 的随访，为明天自动创建 planned 记录
         const tomorrowStr = new Date(Date.now() + CST_OFFSET + 86400000).toISOString().split('T')[0];

@@ -2205,7 +2205,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
 
 // ── POST /api/staff/followups ─────────────────────────────────────
 router.post('/followups', staffAuth, checkPermission('followups', 'create'), async (req, res) => {
-  const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals, checkInItems, repeatDaily, followUpSchemeId, formData, participants, interviewMinutes } = req.body;
+  const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals, checkInItems, repeatDaily, repeatWeekly, followUpSchemeId, formData, participants, interviewMinutes } = req.body;
   if (!patientId) return res.status(400).json({ success: false, message: '会员ID不能为空' });
 
   const patient = await User.findById(patientId);
@@ -2225,6 +2225,9 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   delete safeFormData.adHocMedicalReminder;
   delete safeFormData.reminderKind;
   if (adHocMedicalReminder) { safeFormData.adHocMedicalReminder = true; safeFormData.reminderKind = reminderKind; safeFormData.category = reminderKind === 'medication' ? 'medication' : reminderKind === 'review' ? 'review' : 'medical_visit'; }
+  if (repeatWeekly && (status !== 'planned' || repeatDaily || String(safeFormData['监测频率'] || '').trim() !== '每周1次')) {
+    return res.status(400).json({ success: false, message: '每周滚动随访仅适用于监测频率为每周1次的单独计划' });
+  }
 
   if (status === 'cancelled' && !cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
@@ -2258,6 +2261,13 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
     vitals: vitals || {},
     checkInItems: checkInItems || [],
     repeatDaily: !!repeatDaily,
+    repeatWeekly: !!repeatWeekly,
+    weeklyTemplate: repeatWeekly ? {
+      type: type || 'phone', theme: theme || '', content: content || '',
+      followUpSchemeId: followUpSchemeId || null,
+      formData: Object.keys(safeFormData).length ? safeFormData : null,
+      checkInItems: checkInItems || [],
+    } : null,
     followUpSchemeId: followUpSchemeId || null,
     formData: Object.keys(safeFormData).length ? safeFormData : null,
     participants: participants || '',
@@ -2551,6 +2561,10 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
 
   const previousStatus = followUp.status;
+  if (followUp.repeatWeekly && previousStatus === 'completed' && req.body.status && req.body.status !== 'completed'
+    && await FollowUp.exists({ _id: require('../utils/rollingWeeklyFollowUp').weeklySuccessorId(followUp._id) })) {
+    return res.status(409).json({ success: false, message: '下一次每周随访已生成，请直接调整下一条计划' });
+  }
   const previousContent = followUp.content;
   const isCheckupReportCollection = followUp.sourceType === 'health_plan'
     && followUp.taskRole === 'executor'
@@ -2765,6 +2779,9 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     followUp.completedBy = null;
   }
   await followUp.save();
+  if (followUp.status === 'completed' && followUp.repeatWeekly) {
+    await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(followUp);
+  }
   if (followUp.status === 'completed' && previousStatus !== 'completed' && followUp.sourceType === 'supply_reminder') {
     await require('../utils/rollingSupplyReminder').generateNextSupplyReminder(followUp);
   }
