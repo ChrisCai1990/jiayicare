@@ -29,6 +29,7 @@ import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
 import { orderConversationMessages } from '../utils/orderConversation'
+import { expertAppointmentBenefits } from '../utils/expertAppointmentBenefits.mjs'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
@@ -11195,8 +11196,7 @@ export default function PatientDetailPage() {
         const isMedicalService = item => /medical_assist|medical_proxy/.test(item.workflowKey || item.serviceWorkflowSnapshot?.key || '')
           || /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号/.test(item.name || item.serviceName || '')
         const visibleIncludedServices = medicalServiceOnly ? includedServices.filter(isMedicalService) : includedServices
-        const unlimitedExpertBenefit = (membershipSummary?.plans || []).some(plan =>
-          plan.groups?.serviceStages?.some(stage => stage.services?.some(service => /专家约诊/.test(service.name || ''))))
+        const unlimitedExpertBenefit = expertAppointmentBenefits(packageEntitlements, membershipSummary?.plans).length > 0
         const visibleOrders = medicalServiceOnly ? patientOrders.filter(isMedicalService) : patientOrders
         const availableMedicalBenefit = includedServices.some(item => isMedicalService(item) && item.historyKnown && Number(item.remaining) > 0)
         const pendingOrderFor = item => patientOrders.find(order => order.status === 'pending'
@@ -11282,7 +11282,7 @@ export default function PatientDetailPage() {
                   <tbody>
                     {unlimitedExpertBenefit && <tr>
                       <td style={{ fontWeight: 600 }}>专家约诊服务</td>
-                      <td>年度会员权益<div style={{ fontSize: 12, color: '#718579' }}>按有效会员计划判断</div></td>
+                      <td>年度会员权益<div style={{ fontSize: 12, color: '#718579' }}>按有效服务权益判断</div></td>
                       <td>¥0</td><td>服务期内不限次<br />无需次数核销</td><td>按会员计划有效期</td><td>按服务分配</td>
                       <td style={{ color: '#1E6B50' }}>可发起</td>
                       <td><button className="btn btn-primary btn-sm" onClick={() => nav(`/plans?type=medical_assist&openPlan=medical_assist&annualExpert=1&patientId=${id}&patientName=${encodeURIComponent(user.name || '')}`)}>发起专家约诊</button></td>
@@ -11540,16 +11540,16 @@ export default function PatientDetailPage() {
                 && !(entitlement.rights?.aiEntitlements?.expertAppointment && /专家约诊/.test(right.productName || ''))
                 && Number((pools.get(right.poolKey) || right).remainingCount || 0) > 0).map(right => ({ name: right.productName, packageName: entitlement.packageName }))
             })
-            const annualExpertPlans = (membershipSummary?.plans || []).filter(plan =>
-              plan.groups?.serviceStages?.some(stage => stage.services?.some(service => /专家约诊/.test(service.name || '')))).slice(0, 1)
-            const paidOrders = patientOrders.filter(order => order.orderType === 'service' && order.paymentStatus === 'paid'
-              && Number(order.paidAmount || 0) > 0 && ['pending', 'scheduled'].includes(order.status)
+            const annualExpertPlans = expertAppointmentBenefits(packageEntitlements, membershipSummary?.plans).slice(0, 1)
+            const paidOrders = patientOrders.filter(order => order.paymentStatus === 'paid'
+              && (Number(order.paidAmount || 0) > 0 || Number(order.healthFundAmount || 0) > 0)
+              && ['pending', 'scheduled'].includes(order.status)
               && !order.serviceStartedAt && medicalName(order.serviceName))
             const loadingRights = giftRecordsLoading || patientOrdersLoading || (!membershipSummary && !membershipError)
             const loadError = giftRecordsError || patientOrdersError || membershipError
             const launchUrl = extra => `/plans?type=medical_assist&openPlan=medical_assist&patientId=${id}&patientName=${encodeURIComponent(user.name || '')}&${extra}`
             return <div className="card" style={{ gridColumn: '1 / -1', marginBottom: 16 }}>
-              <div className="card-header"><div className="card-title">发起就医协助 · 先核对会员权益</div></div>
+              <div className="card-header"><div className="card-title">发起就医协助 · 选择服务来源</div></div>
               <div className="card-body" style={{ display: 'grid', gap: 10 }}>
                 {loadingRights ? <div>正在核对赠送、套餐和付费服务…</div> : loadError ? <div role="alert" style={{ color: '#B45309' }}>{loadError}；请刷新后再发起。</div> : <>
                   {gifts.map(gift => <div key={gift._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#EFF8F4', borderRadius: 8 }}>
@@ -11561,13 +11561,13 @@ export default function PatientDetailPage() {
                     <button className="btn btn-secondary btn-sm" onClick={() => { setMedicalServiceOnly(true); setTab('consumption') }}>查看可用次数并发起</button>
                   </div>)}
                   {annualExpertPlans.map(plan => <div key={`annual-expert:${plan.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#EFF8F4', borderRadius: 8 }}>
-                    <span>年度会员权益 · {plan.name} · 专家约诊服务期内不限次，无需次数核销</span>
+                    <span>年度会员权益 · {plan.name}{plan.familySharing ? `（家庭共用：${plan.ownerName || '家庭成员'}）` : ''} · 专家约诊服务期内不限次，无需次数核销</span>
                     <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl('annualExpert=1'))}>发起专家约诊</button>
                   </div>)}
                   {!gifts.length && !packageRights.length && !annualExpertPlans.length && <>
                     <div>当前没有可用于就医协助的会员权益，正在使用已付费服务。</div>
                     {paidOrders.map(order => <div key={order._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#F6F8F5', borderRadius: 8 }}>
-                      <span>已付费 · {order.serviceName} · 实付 ¥{Number(order.paidAmount).toFixed(2)}</span>
+                      <span>已付费 · {order.serviceName} · 实付 ¥{Number(order.paidAmount || 0).toFixed(2)}{Number(order.healthFundAmount || 0) > 0 ? ` · 健康基金抵扣 ¥${Number(order.healthFundAmount).toFixed(2)}` : ''}</span>
                       <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl(`reservedOrderId=${order._id}&reservedProductName=${encodeURIComponent(order.serviceName)}`))}>沿用此订单发起</button>
                     </div>)}
                     {!paidOrders.length && <div role="alert" style={{ color: '#B45309' }}>没有可用会员权益，也没有已付费的就医协助服务。请先确认赠送有效期或完成服务购买，再发起。</div>}
