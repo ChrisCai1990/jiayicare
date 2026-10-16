@@ -8000,14 +8000,17 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
     // service has been completed. This keeps the superadmin action discoverable.
     if (customer) await require('../utils/packageServiceRedemption').ensureEffectiveServiceLedger(customer);
     const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
+    const owners = await User.find({ _id: { $in: [...new Set(rows.map(row => String(row.ownerUserId)))] } })
+      .select('_id name').lean();
+    const ownerNames = new Map(owners.map(owner => [String(owner._id), owner.name || '未知成员']));
     const summary = customer ? await require('../utils/membershipBenefits').membershipBenefits(customer, rows) : { plans:[],message:'客户不存在' };
     summary.canReviewHistory = req.staff.role === 'superadmin';
     summary.historyReviewRequired = rows.some(row => row.historyVerified === false)
       || summary.plans.some(plan => plan.source === 'configuration');
     summary.redemptionAlerts = await require('../models/PackageEntitlementRedemption').countDocuments({ patientId: req.params.id, status: 'needs_review' });
     res.json({ success: true, summary, data: rows.map(row => ({
-      _id: row._id, ownerUserId: row.ownerUserId, sourceOrderId: row.sourceOrderId,
-      packageName: row.packageName, clientBrand: row.clientBrand, validFrom: row.validFrom,
+      _id: row._id, ownerUserId: row.ownerUserId, ownerName: ownerNames.get(String(row.ownerUserId)) || '未知成员', sourceOrderId: row.sourceOrderId,
+      packageName: row.packageName, clientBrand: row.clientBrand, status: row.status, validFrom: row.validFrom,
       validUntil: row.validUntil, familySharing: row.familySharing, historyVerified: row.historyVerified !== false,
       rights: row.rights || {}, usageRecords: row.usageRecords || [],
     })) });
@@ -9724,6 +9727,8 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (order.membershipFeatureUsage?.featureKey === 'expertAppointment')
+      return res.status(409).json({ success: false, message: '年度会员专家约诊不限次，请在约诊任务中记录服务过程，无需次数核销' });
     if (order.serviceWorkflowSnapshot?.key === 'rehab') return res.status(409).json({ success: false, message: '请在客户运动服务档案中依据已发布记录逐次核销' });
     if (require('../utils/ibdServiceTerms').isIbdOrder(order))
       return res.status(409).json({ success: false, message: 'IBD 年度服务按管理期限结案；陪诊请使用专病陪诊登记，不在此核销整单' });
@@ -13787,6 +13792,25 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const now = new Date();
     const DAY = 24 * 60 * 60 * 1000;
     const todos = [];
+
+    // 旧生效服务包的核对责任属于权益持有人，只向医护超管投影一条待办。
+    // 直接读取台账，避免家庭成员共用同一份权益时重复派任务或重复扣次。
+    if (isSuper) {
+      const pendingPackageHistory = await require('../models/PackageEntitlement').find({
+        sourceType: 'effective_service', status: 'active', historyVerified: false,
+        validUntil: { $gte: now },
+      }).select('_id ownerUserId packageName createdAt').populate('ownerUserId', 'name isDeleted').lean();
+      pendingPackageHistory.filter(row => row.ownerUserId && row.ownerUserId.isDeleted !== true).forEach(row => {
+        todos.push({
+          id: `package_history_${row._id}`, type: 'package_history_review',
+          label: '服务包历史次数待核对', priority: 2,
+          patientId: String(row.ownerUserId._id), patientName: row.ownerUserId.name || '未知',
+          summary: `${row.packageName || '服务包'} · 家庭共用次数按权益持有人核对一次`,
+          createdAt: row.createdAt || now, overdue: now - new Date(row.createdAt || now) > DAY,
+          link: `/patients/${row.ownerUserId._id}?tab=consumption`,
+        });
+      });
+    }
 
     // GEO 不绑定会员，先按指定负责人校验，再按当前审核环节筛选，不能广播给同岗位人员。
     if (canAccessContentReview(req.staff)) {

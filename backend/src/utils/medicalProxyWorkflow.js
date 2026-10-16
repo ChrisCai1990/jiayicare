@@ -91,7 +91,8 @@ async function reserveStaffMedicalBenefit(patientId, order, serviceName) {
   if (!mongoose.isValidObjectId(patientId)) return { status: 'not_covered' };
   const coveredName = /医疗代诊/.test(serviceName) ? '医疗代诊服务'
     : /^陪同.*服务$/.test(serviceName) ? '就医陪同服务' : '';
-  if (!coveredName) return { status: 'not_covered' };
+  const annualExpert = /专家约诊/.test(serviceName);
+  if (!coveredName && !annualExpert) return { status: 'not_covered' };
   let rows = await applicableEntitlements(patientId);
   if (!rows.length) {
     const user = await User.findById(patientId).select('_id tenantId clientBrand servicePackage serviceStartDate serviceExpiry membershipTier enterpriseId familyLinks').lean();
@@ -100,11 +101,31 @@ async function reserveStaffMedicalBenefit(patientId, order, serviceName) {
       rows = await applicableEntitlements(patientId);
     }
   }
+  if (annualExpert) {
+    const entitlement = rows.find(row => row.rights?.aiEntitlements?.expertAppointment === true);
+    if (!entitlement) return { status: 'expert_not_included' };
+    // This is an unlimited annual service. Keep an order and task history, but
+    // never reserve a product right or decrement a family shared pool.
+    const now = new Date();
+    order.paymentStatus = 'paid';
+    order.tradeStatus = 'paid';
+    order.paidAmount = 0;
+    order.paymentExpectedAmount = 0;
+    order.paidAt = now;
+    order.status = 'scheduled';
+    order.membershipFeatureUsage = { entitlementId: entitlement._id,
+      ownerUserId: entitlement.ownerUserId, usedByUserId: patientId,
+      featureKey: 'expertAppointment', recordedAt: now };
+    await order.save();
+    return { status: 'included_unlimited' };
+  }
   const matches = rows.flatMap(entitlement => (entitlement.rights?.productEntitlements || [])
     .map((right, index) => ({ entitlement, right, index }))
     .filter(({ right }) => right.productName === coveredName));
-  if (!matches.length) return await Product.exists({ name: coveredName, status: 'on' })
-    ? { status: 'paid_required' } : { status: 'not_covered' };
+  if (!matches.length) {
+    return await Product.exists({ name: coveredName, status: 'on' })
+      ? { status: 'paid_required' } : { status: 'not_covered' };
+  }
   if (new Set(matches.map(({ right }) => `${right.productId}:${right.specificationLabel || ''}`)).size > 1)
     return { status: 'ambiguous' };
   if (matches.some(({ entitlement }) => entitlement.historyVerified === false))
@@ -832,12 +853,13 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, execut
     if (!executionOrder) await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
     throw error;
   }
-  if (['gift_unavailable', 'history_pending', 'exhausted', 'ambiguous', 'paid_required'].includes(benefit.status)) {
+  if (['gift_unavailable', 'history_pending', 'exhausted', 'ambiguous', 'paid_required', 'expert_not_included'].includes(benefit.status)) {
     if (!executionOrder) await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
     throw Object.assign(new Error(benefit.status === 'gift_unavailable' ? '赠送权益未生效、已用尽或与本次服务不匹配，请刷新会员权益'
       : benefit.status === 'history_pending'
       ? '服务包历史次数待核对，请先由医护端超管核对'
       : benefit.status === 'ambiguous' ? '同名服务有多个收费规格，请在会员权益中选择具体服务'
+      : benefit.status === 'expert_not_included' ? '当前会员计划未包含专家约诊不限次服务，请核对会员权益或沿用已付款订单'
         : '套餐无可用次数，请先购买对应付费服务'), { status: 409 });
   }
   // 专家约诊是订单驱动的轻量流程，过去只生成了健管任务，导致健康顾问在

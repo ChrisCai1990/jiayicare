@@ -76,6 +76,8 @@ const orderSchema = new mongoose.Schema({
   annualServiceSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   // 服务包权益使用后生成的零元履约订单反查来源；实际剩余次数在 PackageEntitlement 中原子扣减。
   packageEntitlementUsage: { type: mongoose.Schema.Types.Mixed, default: null },
+  // 年度会员不限次服务仅记录本次资格来源，不预占或核销次数。
+  membershipFeatureUsage: { type: mongoose.Schema.Types.Mixed, default: null },
   giftRecordUsage: { type: mongoose.Schema.Types.Mixed, default: null },
   inventoryReserved: { type: Boolean, default: false },
   inventoryReleased: { type: Boolean, default: false },

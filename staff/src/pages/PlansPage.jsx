@@ -48,6 +48,7 @@ export default function PlansPage() {
   const initialPatientName = searchParams.get('patientName') || ''
   const reservedOrderId = searchParams.get('reservedOrderId') || ''
   const giftId = searchParams.get('giftId') || ''
+  const annualExpert = searchParams.get('annualExpert') === '1'
   const giftServiceName = searchParams.get('giftServiceName') || ''
   const reservedProductName = searchParams.get('reservedProductName') || ''
   const requestedPlanType = searchParams.get('openPlan') || (searchParams.get('openMedicalAssist') === '1' ? 'medical_assist' : '')
@@ -103,7 +104,7 @@ export default function PlansPage() {
     if (requestedPlanType === 'annual_mgmt') setShowAhModal(true)
     if (requestedPlanType === 'nutrition') setShowNutritionModal(true)
     if (requestedPlanType === 'medical_assist') {
-      if (reservedOrderId || giftId || (staff?.role === 'superadmin' && searchParams.get('legacyPlan') === '1')) setShowMedicalModal(true)
+      if (reservedOrderId || giftId || annualExpert || (staff?.role === 'superadmin' && searchParams.get('legacyPlan') === '1')) setShowMedicalModal(true)
       else if (initialPatientId) nav(`/patients/${initialPatientId}?tab=membership&medicalLaunch=1`)
       else if (['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role)) setShowMedicalServicePicker(true)
     }
@@ -168,7 +169,7 @@ export default function PlansPage() {
       </div>
       {typeFilter === 'medical_assist' && (
         <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: '#F0F8F4', color: '#426457', fontSize: 13 }}>
-          选择会员后核对就医服务产品、套餐剩余权益及已付款订单；套餐优先，确认实际启动后自动核销。下方保留历史方案。
+          选择会员后核对就医服务权益及已付款订单；年度会员专家约诊在有效期内不限次，记录服务过程，不核销次数。其他计次套餐按实际服务核销。下方保留历史方案。
         </div>
       )}
       {showMedicalServicePicker && <SelectPatientForAhModal title="发起就医协助服务 — 选择会员" actionLabel="核对会员权益" initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowMedicalServicePicker)} onSelected={patientId => { closePlanModal(setShowMedicalServicePicker); nav(`/patients/${patientId}?tab=membership&medicalLaunch=1`) }} />}
@@ -270,7 +271,7 @@ export default function PlansPage() {
               </table>}
           </div>
           {showCheckupModal   && <AnnualCheckupPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowCheckupModal)} onSaved={() => { closePlanModal(setShowCheckupModal); loadPlans(); toast('体检方案已创建') }} />}
-          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} reservedOrderId={reservedOrderId} reservedProductName={reservedProductName} giftId={giftId} giftServiceName={giftServiceName} onClose={() => { closePlanModal(setShowMedicalModal); if (reservedOrderId || giftId) nav(`/patients/${initialPatientId}?tab=membership`) }} onSaved={result => { closePlanModal(setShowMedicalModal); loadPlans(); toast(result?.warning || (giftId ? '已使用赠送权益发起就医协助' : reservedOrderId ? '原服务订单已进入就医协助流程' : '就医协助方案已创建')); if (reservedOrderId || giftId) nav(result?.warning && result?.planId ? `/plans/${result.planId}/modules` : `/patients/${initialPatientId}?tab=followups`) }} />}
+          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} reservedOrderId={reservedOrderId} reservedProductName={reservedProductName} giftId={giftId} giftServiceName={giftServiceName} annualExpert={annualExpert} onClose={() => { closePlanModal(setShowMedicalModal); if (reservedOrderId || giftId || annualExpert) nav(`/patients/${initialPatientId}?tab=membership`) }} onSaved={result => { closePlanModal(setShowMedicalModal); loadPlans(); toast(result?.warning || (annualExpert ? '已按年度会员不限次权益发起专家约诊' : giftId ? '已使用赠送权益发起就医协助' : reservedOrderId ? '原服务订单已进入就医协助流程' : '就医协助方案已创建')); if (reservedOrderId || giftId || annualExpert) nav(result?.warning && result?.planId ? `/plans/${result.planId}/modules` : `/patients/${initialPatientId}?tab=followups`) }} />}
           {showNutritionModal && <NutritionAIDraftModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowNutritionModal)} onSaved={plan => { closePlanModal(setShowNutritionModal); loadPlans(); toast('AI营养草稿已生成，请核对后推送'); nav(`/plans/${plan._id}/modules`) }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
@@ -605,7 +606,7 @@ function templateToItems(tpl) {
 }
 
 // ── 就医协助方案：两步创建弹窗 ────────────────────────────────────────
-function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '', reservedOrderId = '', reservedProductName = '', giftId = '', giftServiceName = '' }) {
+function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '', reservedOrderId = '', reservedProductName = '', giftId = '', giftServiceName = '', annualExpert = false }) {
   const canViewMedicalResources = usePermission()('medical_resources', 'view')
   const [step, setStep] = useState(1)
   const [templates, setTemplates] = useState([])
@@ -904,7 +905,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       .some(value => String(value || '').toLocaleLowerCase().includes(normalizedTemplateQuery)))
     : templates
   const supportedMedicalTemplate = tpl => /医务代办|医疗代诊|专家约诊|代配药|代取药|代配营养素|陪同检查|陪同治疗|陪同就医|就医陪同/.test(tpl.name || '')
-  const targetServiceName = giftId ? giftServiceName : reservedProductName
+  const targetServiceName = annualExpert ? '专家约诊服务' : giftId ? giftServiceName : reservedProductName
   const matchingTemplates = giftId && !giftServiceName ? visibleTemplates.filter(supportedMedicalTemplate) : targetServiceName
     ? visibleTemplates.filter(tpl => {
       const name = String(tpl.name || '')
@@ -954,6 +955,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>没有匹配的方案模板</div>
           )}
           {reservedOrderId && <div style={{ marginBottom: 12, color: '#1E6B50', fontSize: 13 }}>本次服务：{reservedProductName} · 已关联现有服务订单；提交后沿用原订单。</div>}
+          {annualExpert && <div style={{ marginBottom: 12, color: '#1E6B50', fontSize: 13 }}>年度会员专家约诊服务期内不限次；提交后记录本次服务过程，不核销次数。</div>}
           {giftId && <div style={{ marginBottom: 12, color: '#1E6B50', fontSize: 13 }}>本次使用会员赠送权益；提交服务后记入该赠送记录，不生成付费订单。</div>}
           {matchingTemplates.map(tpl => {
             const c = tpl.content || {}

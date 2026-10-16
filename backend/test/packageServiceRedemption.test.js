@@ -2,13 +2,30 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const User = require('../src/models/User');
 const Entitlement = require('../src/models/PackageEntitlement');
+const ServicePackage = require('../src/models/ServicePackage');
 const Redemption = require('../src/models/PackageEntitlementRedemption');
-const { recordCompletedService, settleReservedPackageOrder, isFinalizedNutritionAssessment } = require('../src/utils/packageServiceRedemption');
+const { recordCompletedService, settleReservedPackageOrder, isFinalizedNutritionAssessment, ensureEffectiveServiceLedger } = require('../src/utils/packageServiceRedemption');
 
 const patientId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const sourceId = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const productId = 'cccccccccccccccccccccccc';
 const entitlementId = 'dddddddddddddddddddddddd';
+
+test('a family member reuses the owner shared entitlement instead of creating a second opening balance', async t => {
+  const packageId = 'eeeeeeeeeeeeeeeeeeeeeeee';
+  const ownerId = 'ffffffffffffffffffffffff';
+  const shared = { _id: entitlementId, ownerUserId: ownerId, packageId, familySharing: true };
+  t.mock.method(ServicePackage, 'findOne', () => ({ lean: async () => ({ _id: packageId }) }));
+  t.mock.method(Entitlement, 'findOne', () => ({ lean: async () => null }));
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({
+    _id: patientId, familyLinks: [{ linkedUser: ownerId }],
+  }) }) }));
+  t.mock.method(Entitlement, 'find', () => ({ sort: () => ({ lean: async () => [shared] }) }));
+  t.mock.method(Entitlement, 'findOneAndUpdate', async () => { throw new Error('must not create duplicate entitlement'); });
+  const result = await ensureEffectiveServiceLedger({ _id: patientId, clientBrand: 'jiayiguanjia',
+    servicePackage: '家庭会员', serviceStartDate: '2026-01-01', serviceExpiry: '2026-12-31' }, new Date('2026-10-16'));
+  assert.equal(result, shared);
+});
 
 test('服务完成仅按真实商品从共用池原子扣一次，并记录幂等来源', async t => {
   let debit = null, completed = false;
