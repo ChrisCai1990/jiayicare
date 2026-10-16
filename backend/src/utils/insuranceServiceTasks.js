@@ -7,6 +7,35 @@ const hasExecution = task => Boolean(
     || item.supervisionStatus || item.supervisionNote)
 );
 
+async function retireInsuranceSupervisionTasks(FollowUp, scope = {}) {
+  return FollowUp.updateMany(
+    { ...scope, sourceType: 'insurance_service', taskRole: 'supervisor', status: { $in: ACTIVE_STATUSES } },
+    { $set: { status: 'cancelled', cancelReason: '高端险事务由执行记录直接闭环，不再需要二次督办', completedAt: null, completedBy: null } },
+  );
+}
+
+async function closeInsuranceCaseFromExecution(InsuranceServiceCase, task, actorName = '', actorId = null) {
+  if (task.sourceType !== 'insurance_service' || task.taskRole !== 'executor' || task.status !== 'completed') return false;
+  const checklist = Array.isArray(task.serviceChecklist) ? task.serviceChecklist : [];
+  const serviceCase = await InsuranceServiceCase.findById(task.sourceId);
+  if (!serviceCase || String(serviceCase.patientId) !== String(task.patientId)
+    || !serviceCase.steps.length || serviceCase.steps.length !== checklist.length
+    || serviceCase.steps.some((step, index) => step.title !== checklist[index]?.purpose
+      || checklist[index]?.executionStatus !== 'completed' || !String(checklist[index]?.executionResult || '').trim())) return false;
+  if (serviceCase.status === 'closed' && serviceCase.steps.every(step => step.status === 'completed')) return true;
+  serviceCase.steps.forEach((step, index) => {
+    if (step.status === 'completed') return;
+    step.status = 'completed';
+    step.note = step.note || checklist[index].executionResult.trim();
+    step.completedAt = task.completedAt || new Date();
+    step.completedByName = actorName || step.completedByName;
+  });
+  serviceCase.status = 'closed';
+  if (actorId) serviceCase.updatedBy = actorId;
+  await serviceCase.save();
+  return true;
+}
+
 async function retireSupersededTasks(FollowUp, completed) {
   const sourceTypes = [{ sourceType: 'insurance_service', taskRole: completed.taskRole }];
   if (completed.taskRole === 'executor') sourceTypes.push(
@@ -26,13 +55,18 @@ async function retireSupersededTasks(FollowUp, completed) {
   );
 }
 
-async function reconcilePatientInsuranceTasks(FollowUp, patientId) {
-  const completedTasks = await FollowUp.find({ patientId, sourceType: 'insurance_service', sourceId: { $exists: true, $ne: null }, taskRole: { $in: ['executor', 'supervisor'] }, status: 'completed' })
-    .select('_id sourceId taskRole completedAt').lean();
-  await Promise.all(completedTasks.map(task => retireSupersededTasks(FollowUp, task)));
+async function reconcilePatientInsuranceTasks(FollowUp, InsuranceServiceCase, patientId) {
+  await retireInsuranceSupervisionTasks(FollowUp, { patientId });
+  const completedTasks = await FollowUp.find({ patientId, sourceType: 'insurance_service', sourceId: { $exists: true, $ne: null }, taskRole: 'executor', status: 'completed' })
+    .select('_id patientId sourceType sourceId taskRole status serviceChecklist completedAt').lean();
+  await Promise.all(completedTasks.map(async task => {
+    await retireSupersededTasks(FollowUp, task);
+    await closeInsuranceCaseFromExecution(InsuranceServiceCase, task);
+  }));
 }
 
 async function ensureInsuranceServiceTask(FollowUp, serviceCase, taskRole, assignee, definition) {
+  if (taskRole === 'supervisor') return null;
   if (!assignee) return null;
   const identity = { sourceType: 'insurance_service', sourceId: serviceCase._id, taskRole };
   const completed = await FollowUp.findOne({ ...identity, status: 'completed' }).select('_id sourceId taskRole completedAt').lean();
@@ -49,4 +83,4 @@ async function ensureInsuranceServiceTask(FollowUp, serviceCase, taskRole, assig
   );
 }
 
-module.exports = { ensureInsuranceServiceTask, reconcilePatientInsuranceTasks };
+module.exports = { ensureInsuranceServiceTask, reconcilePatientInsuranceTasks, retireInsuranceSupervisionTasks, closeInsuranceCaseFromExecution };

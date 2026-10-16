@@ -595,18 +595,20 @@ async function ensureInsuranceServiceTask(serviceCase, taskRole, assignee) {
 }
 
 async function ensureOpenInsuranceTasksForStaff(staff) {
-  const taskRole = staff.role === 'healthPlanner' ? 'supervisor' : staff.role === 'healthManager' ? 'executor' : '';
-  if (!taskRole) return;
-  const assignmentField = taskRole === 'supervisor' ? 'assignedHealthPlanner' : 'assignedHealthManager';
-  const patients = await User.find({ [assignmentField]: staff._id, isDeleted: { $ne: true } })
-    .select('_id assignedHealthManager assignedHealthPlanner')
+  if (staff.role === 'healthPlanner') {
+    await require('../utils/insuranceServiceTasks').retireInsuranceSupervisionTasks(FollowUp, { assignedTo: staff._id });
+    return;
+  }
+  if (staff.role !== 'healthManager') return;
+  const patients = await User.find({ assignedHealthManager: staff._id, isDeleted: { $ne: true } })
+    .select('_id assignedHealthManager')
     .lean();
   if (!patients.length) return;
   const patientById = new Map(patients.map(patient => [String(patient._id), patient]));
   const cases = await InsuranceServiceCase.find({ patientId: { $in: patients.map(patient => patient._id) }, status: { $in: OPEN_INSURANCE_CASE_STATUSES } }).lean();
   await Promise.all(cases.map(serviceCase => {
     const patient = patientById.get(String(serviceCase.patientId));
-    return ensureInsuranceServiceTask(serviceCase, taskRole, patient?.[assignmentField]);
+    return ensureInsuranceServiceTask(serviceCase, 'executor', patient?.assignedHealthManager);
   }));
 }
 
@@ -786,7 +788,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     }
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
-      || (task.sourceType === 'insurance_service' && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
       || (task.sourceType === 'annual_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'professional_assessment' && ['executor', 'supervisor'].includes(task.taskRole))
       // 报告随访草稿审核属于 AI 审核队列，而不是已进入服务执行的流程任务；
@@ -1306,7 +1308,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
 });
 
 router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
-  const patient = await User.findById(req.params.id).select('name enterpriseId assignedHealthManager assignedHealthPlanner');
+  const patient = await User.findById(req.params.id).select('name enterpriseId assignedHealthManager');
   if (!patient || !patient.enterpriseId) return res.status(400).json({ success: false, message: '该会员未关联企业' });
   const enrollment = await InsuranceEnrollment.findOne({ userId: patient._id, enterpriseId: patient.enterpriseId, status: 'active' }).sort({ endAt: -1 });
   if (!enrollment) return res.status(400).json({ success: false, message: '该会员尚未配置有效的高端医疗险' });
@@ -1324,13 +1326,8 @@ router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
     steps: stepTitles.map(title => ({ title })), assignedTo: assignee,
     createdBy: req.staff._id, updatedBy: req.staff._id,
   });
-  await Promise.all([
-    ensureInsuranceServiceTask(serviceCase, 'executor', assignee),
-    ensureInsuranceServiceTask(serviceCase, 'supervisor', patient.assignedHealthPlanner),
-  ]);
-  res.json({ success: true, data: serviceCase, message: patient.assignedHealthPlanner
-    ? '保险服务案件已建立，并进入健管专员和健康规划师工作台'
-    : '保险服务案件已建立，并进入健管专员工作台' });
+  await ensureInsuranceServiceTask(serviceCase, 'executor', assignee);
+  res.json({ success: true, data: serviceCase, message: '保险服务案件已建立，并进入执行人工作台' });
 });
 
 router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, res) => {
@@ -1351,7 +1348,8 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
   serviceCase.updatedBy = req.staff._id;
   await serviceCase.save();
   if (serviceCase.status === 'closed') {
-    await FollowUp.updateMany({ sourceType: { $in: ['scheduled', 'insurance_service'] }, sourceId: serviceCase._id, status: { $in: ['planned', 'in_progress'] } }, { status: 'completed', completedAt: new Date(), completedBy: 'staff' });
+    await require('../utils/insuranceServiceTasks').retireInsuranceSupervisionTasks(FollowUp, { sourceId: serviceCase._id });
+    await FollowUp.updateMany({ sourceType: { $in: ['scheduled', 'insurance_service'] }, sourceId: serviceCase._id, taskRole: { $ne: 'supervisor' }, status: { $in: ['planned', 'in_progress'] } }, { status: 'completed', completedAt: new Date(), completedBy: 'staff' });
   }
   res.json({ success: true, data: serviceCase });
 });
@@ -2047,7 +2045,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   // 避免已取消服务仍显示“待执行”。全局启动扫描也会修复未被打开的会员。
   await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(req.params.id);
   await require('../utils/followUpServiceLink').safeReconcileServiceLinks({ patientId: req.params.id });
-  await require('../utils/insuranceServiceTasks').reconcilePatientInsuranceTasks(FollowUp, req.params.id);
+  await require('../utils/insuranceServiceTasks').reconcilePatientInsuranceTasks(FollowUp, InsuranceServiceCase, req.params.id);
 
   const filter = { patientId: req.params.id, ...(followUpId ? { _id: followUpId } : { $nor: [routineMedicationNoiseFilter] }) };
   const [followUps, total] = await Promise.all([
@@ -2777,6 +2775,10 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     followUp.completedBy = null;
   }
   await followUp.save();
+  if (followUp.sourceType === 'insurance_service' && followUp.taskRole === 'executor' && followUp.status === 'completed') {
+    await require('../utils/insuranceServiceTasks').closeInsuranceCaseFromExecution(InsuranceServiceCase, followUp, req.staff.name || '', req.staff._id);
+    await require('../utils/insuranceServiceTasks').retireInsuranceSupervisionTasks(FollowUp, { sourceId: followUp.sourceId });
+  }
   if (followUp.status === 'completed' && followUp.repeatWeekly) {
     await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(followUp);
   }

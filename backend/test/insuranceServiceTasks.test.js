@@ -2,24 +2,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { ensureInsuranceServiceTask, reconcilePatientInsuranceTasks } = require('../src/utils/insuranceServiceTasks');
+const { ensureInsuranceServiceTask, reconcilePatientInsuranceTasks, closeInsuranceCaseFromExecution } = require('../src/utils/insuranceServiceTasks');
 
 const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
 const serviceTasks = route.slice(route.indexOf("router.get('/service-tasks'"), route.indexOf('// ── GET /api/staff/patients'));
 const createCase = route.slice(route.indexOf("router.post('/patients/:id/insurance-cases'"), route.indexOf("router.patch('/insurance-cases/:caseId"));
 
-test('open insurance cases self-heal into the current manager or planner workbench', () => {
+test('open insurance cases self-heal into the manager workbench and retire planner supervision', () => {
   assert.match(route, /async function ensureOpenInsuranceTasksForStaff/);
-  assert.match(route, /staff\.role === 'healthPlanner' \? 'supervisor'/);
-  assert.match(route, /staff\.role === 'healthManager' \? 'executor'/);
+  assert.match(route, /staff\.role === 'healthPlanner'[\s\S]*?retireInsuranceSupervisionTasks/);
+  assert.match(route, /staff\.role !== 'healthManager'/);
+  assert.doesNotMatch(route, /ensureInsuranceServiceTask\(serviceCase, 'supervisor'/);
   assert.match(serviceTasks, /await ensureOpenInsuranceTasksForStaff\(req\.staff\)/);
-  assert.match(serviceTasks, /\['executor', 'supervisor'\]\.includes\(task\.taskRole\)/);
+  assert.match(serviceTasks, /task\.sourceType === 'insurance_service' && task\.taskRole === 'executor'/);
 });
 
-test('creating an insurance case assigns work to both configured roles', () => {
-  assert.match(createCase, /assignedHealthManager assignedHealthPlanner/);
+test('creating an insurance case assigns only execution work', () => {
   assert.match(createCase, /ensureInsuranceServiceTask\(serviceCase, 'executor', assignee\)/);
-  assert.match(createCase, /ensureInsuranceServiceTask\(serviceCase, 'supervisor', patient\.assignedHealthPlanner\)/);
+  assert.doesNotMatch(createCase, /ensureInsuranceServiceTask\(serviceCase, 'supervisor'/);
 });
 
 test('completed insurance task prevents recreation and retires superseded older work and untouched duplicates', async () => {
@@ -55,18 +55,46 @@ test('completed executor reconciliation also includes legacy insurance follow-up
 
 test('patient detail read reconciles completed insurance tasks before listing them', async () => {
   const queries = [];
+  let cancelledSupervisor = false;
   const model = {
     find: filter => {
       queries.push(filter);
       return { select: () => ({ lean: async () => filter.status === 'completed'
-        ? [{ _id: 'done', sourceId: 'case', taskRole: 'executor', completedAt: '2026-10-16T05:20:24Z' }]
+        ? [{ _id: 'done', patientId: 'patient', sourceType: 'insurance_service', sourceId: 'case', taskRole: 'executor', status: 'completed', completedAt: '2026-10-16T05:20:24Z', serviceChecklist: [{ purpose: '登记费用', executionStatus: 'completed', executionResult: '已登记' }] }]
         : [{ _id: 'duplicate', createdAt: '2026-10-16T05:23:47Z' }] }) };
     },
-    updateMany: async filter => { assert.deepEqual(filter._id.$in, ['duplicate']); },
+    updateMany: async filter => {
+      if (filter.taskRole === 'supervisor') cancelledSupervisor = true;
+      else assert.deepEqual(filter._id.$in, ['duplicate']);
+    },
   };
-  await reconcilePatientInsuranceTasks(model, 'patient');
+  let saved = false;
+  const cases = { findById: async () => ({ patientId: 'patient', steps: [{ title: '登记费用', status: 'pending' }], status: 'verifying', save: async function () { saved = this.status === 'closed'; } }) };
+  await reconcilePatientInsuranceTasks(model, cases, 'patient');
+  assert.equal(cancelledSupervisor, true);
   assert.equal(queries[0].patientId, 'patient');
   assert.equal(queries[1].sourceId, 'case');
+  assert.equal(saved, true);
+});
+
+test('completed executor checklist closes the insurance case without another review', async () => {
+  const serviceCase = { patientId: 'patient', status: 'verifying', steps: [
+    { title: '登记费用', status: 'pending', note: '' },
+    { title: '提交理赔', status: 'pending', note: '' },
+  ], save: async () => {} };
+  const task = { patientId: 'patient', sourceType: 'insurance_service', sourceId: 'case', taskRole: 'executor', status: 'completed',
+    completedAt: new Date('2026-10-16T05:20:24Z'), serviceChecklist: [
+      { purpose: '登记费用', executionStatus: 'completed', executionResult: '1108元' },
+      { purpose: '提交理赔', executionStatus: 'completed', executionResult: '受理号123' },
+    ] };
+  assert.equal(await closeInsuranceCaseFromExecution({ findById: async () => serviceCase }, task, '执行人', 'staff'), true);
+  assert.equal(serviceCase.status, 'closed');
+  assert.deepEqual(serviceCase.steps.map(step => step.note), ['1108元', '受理号123']);
+  assert.equal(serviceCase.updatedBy, 'staff');
+  task.serviceChecklist[1].executionStatus = 'partial';
+  serviceCase.status = 'verifying';
+  assert.equal(await closeInsuranceCaseFromExecution({ findById: async () => serviceCase }, task), false);
+  assert.equal(serviceCase.status, 'verifying');
 });
 
 test('open insurance case without a completed task still has one active task', async () => {
