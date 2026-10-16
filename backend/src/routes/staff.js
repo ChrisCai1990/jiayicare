@@ -3501,6 +3501,60 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
   res.json({ success: true, data: { ...responsePlan, canManage, canDelete } });
 });
 
+// 将尚未推送的体检草稿同步到 Admin 当前模板。保留单独定制的加项和手工项目。
+router.post('/plans/:id/sync-checkup-template', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
+  try {
+    const plan = await HealthPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    if (plan.type !== 'annual_checkup') return res.status(400).json({ success: false, message: '仅年度体检方案可同步套餐模板' });
+    if (!canUsePlanOwnerRole(plan, req.staff) || !(await planTypeAllowed(req, plan.type)) || !(await canManagePlan(req, plan))) {
+      return res.status(403).json({ success: false, message: '无权修改该方案' });
+    }
+    if (plan.status !== 'draft' || plan.pushedAt || plan.confirmedAt || plan.items.some(item => item.status !== 'pending' || item.reportId)) {
+      return res.status(409).json({ success: false, message: '方案已推送、执行或关联报告，不能覆盖套餐项目；请建立新草稿' });
+    }
+    const templateId = req.body.templateId || plan.content?.templateId;
+    if (!mongoose.Types.ObjectId.isValid(String(templateId || ''))) return res.status(400).json({ success: false, message: '请选择当前套餐模板' });
+    const patient = await User.findById(plan.patientId).select('clientBrand').lean();
+    const template = await PlanTemplate.findOne({ _id: templateId, type: 'annual_checkup', status: 'active' }).lean();
+    if (!template) return res.status(404).json({ success: false, message: '套餐模板已停用或不存在' });
+    const brands = Array.isArray(template.clientBrands) ? template.clientBrands.filter(Boolean) : [];
+    if ((brands.length && !brands.includes(patient?.clientBrand)) ||
+        (!brands.length && template.clientBrand && template.clientBrand !== patient?.clientBrand)) {
+      return res.status(403).json({ success: false, message: '该套餐模板不适用于当前会员平台' });
+    }
+    const content = template.content || {};
+    const checkItems = Array.isArray(content.checkItems) ? content.checkItems : [];
+    const addons = Array.isArray(content.addons) ? content.addons : [];
+    const oldBase = plan.items.filter(item => item.itemGroup === 'base');
+    const customItems = plan.items.filter(item => item.itemGroup !== 'base').map(item => item.toObject());
+    const itemKey = item => String(item.itemId || item.id || '') || String(item.name || '').trim();
+    const baseItems = checkItems.map(ci => {
+      const previous = oldBase.find(item => itemKey(item) === itemKey(ci) || item.name === ci.name);
+      const meta = orderTypeMetaBackend(ci.type);
+      return { ...(previous ? previous.toObject() : {}), name: ci.name, category: meta.category,
+        itemId: ci.id || null, itemType: meta.itemType, itemGroup: 'base', status: 'pending' };
+    });
+    const previousAddonKeys = new Set((plan.content?.addons || []).map(itemKey));
+    const newAddonItems = addons.filter(addon => !previousAddonKeys.has(itemKey(addon))
+      && !baseItems.some(item => itemKey(item) === itemKey(addon) || item.name === addon.name)
+      && !customItems.some(item => itemKey(item) === itemKey(addon) || item.name === addon.name))
+      .map(addon => {
+        const meta = orderTypeMetaBackend(addon.type);
+        return { name: addon.name, category: meta.category, itemId: addon.id || null,
+          itemType: meta.itemType, itemGroup: 'addon', status: 'pending',
+          notes: addon.reason ? `检查意义：${addon.reason}` : '' };
+      });
+    plan.items = [...baseItems, ...customItems, ...newAddonItems];
+    plan.content = { ...(plan.content || {}), packageName: content.packageName || template.name,
+      packageDesc: content.packageDesc || '', checkItems, addons, templateId: template._id,
+      templateUpdatedAt: template.updatedAt };
+    plan.markModified('content');
+    await plan.save();
+    res.json({ success: true, data: plan });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 const isAgencyMedicalAssistPlan = (content, title) => content?.assistanceType === 'agency'
   || (/医务代办服务-/.test(`${content?.templateName || ''} ${title || ''}`) && !/代配药|代取药/.test(`${content?.templateName || ''} ${title || ''}`));
 
@@ -3532,6 +3586,30 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   if (req.body.giftId && req.body.reservedOrderId) return res.status(400).json({ success: false, message: '赠送权益与已有订单不能同时使用' });
   let planContent = content || {};
+  if (type === 'annual_checkup') {
+    const templateId = planContent.templateId;
+    if (!mongoose.Types.ObjectId.isValid(String(templateId || ''))) return res.status(400).json({ success: false, message: '请先选择体检中心的标准套餐模板' });
+    const [template, patient] = await Promise.all([
+      PlanTemplate.findOne({ _id: templateId, type: 'annual_checkup', status: 'active' }).lean(),
+      User.findById(patientId).select('clientBrand').lean(),
+    ]);
+    if (!template || !patient) return res.status(404).json({ success: false, message: '会员或套餐模板不存在，请刷新后重试' });
+    const brands = Array.isArray(template.clientBrands) ? template.clientBrands.filter(Boolean) : [];
+    if ((brands.length && !brands.includes(patient.clientBrand)) ||
+        (!brands.length && template.clientBrand && template.clientBrand !== patient.clientBrand)) {
+      return res.status(403).json({ success: false, message: '该套餐模板不适用于当前会员平台' });
+    }
+    const standardItems = Array.isArray(template.content?.checkItems) ? template.content.checkItems : [];
+    const requestedBase = Array.isArray(items) ? items.filter(item => item.itemGroup === 'base') : [];
+    const sameBase = requestedBase.length === standardItems.length && standardItems.every((ci, index) => {
+      const item = requestedBase[index];
+      const meta = orderTypeMetaBackend(ci.type);
+      return item.name === ci.name && String(item.itemId || '') === String(ci.id || '')
+        && item.category === meta.category && item.itemType === meta.itemType;
+    });
+    if (!sameBase) return res.status(409).json({ success: false, message: '标准套餐项目已变化或被修改，请重新选择最新模板' });
+    planContent = { ...planContent, checkItems: standardItems, templateUpdatedAt: template.updatedAt };
+  }
   if (type === 'nutrition') planContent = { ...planContent, nutritionTaskVersion: 1 };
   let medicalAssistSupervisor = null;
   let medicalAssistPatient = null;
@@ -3959,6 +4037,25 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   }
   if (!(await canManagePlan(req, plan))) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
+  }
+  if (plan.type === 'annual_checkup') {
+    if (req.body.items !== undefined) {
+      if (!Array.isArray(req.body.items)) return res.status(400).json({ success: false, message: '方案项目格式不正确' });
+      const originalBase = plan.items.filter(item => item.itemGroup === 'base');
+      const submittedBase = req.body.items.filter(item => item.itemGroup === 'base');
+      const unchanged = originalBase.length === submittedBase.length && originalBase.every((item, index) => {
+        const next = submittedBase[index];
+        return String(next._id || '') === String(item._id)
+          && next.name === item.name && next.category === item.category
+          && String(next.itemId || '') === String(item.itemId || '')
+          && next.itemType === item.itemType;
+      });
+      if (!unchanged) return res.status(409).json({ success: false, message: '基础套餐项目由体检中心确定，不能删减或修改；请仅调整加项' });
+    }
+    if (req.body.content && (
+      JSON.stringify(req.body.content.checkItems) !== JSON.stringify(plan.content?.checkItems)
+      || String(req.body.content.templateId || '') !== String(plan.content?.templateId || '')
+    )) return res.status(409).json({ success: false, message: '基础套餐内容只能通过同步最新模板更新' });
   }
   if (plan.type === 'nutrition' && req.body.content?.nutritionTargets !== undefined) {
     const rows = req.body.content.nutritionTargets;
@@ -5989,7 +6086,7 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
       patientBrand = patient.clientBrand;
       patientProfile = patient.toObject ? patient.toObject() : patient;
     }
-    let templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
+    let templates = await PlanTemplate.find(filter).sort({ name: 1, updatedAt: -1 }).lean();
     // 普通体检模板仍只供体检方案入口使用；体检一站式必须保留在就医协助入口，
     // 后续创建时由 Admin 产品 serviceWorkflow 接管，不能因为 serviceDomain=annual_checkup 被误删。
     if (type === 'medical_assist') {
@@ -6022,9 +6119,8 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
     templates.forEach(tpl => {
       const key = `${tpl.type || ''}\u0000${String(tpl.name || '').trim()}`;
       const current = uniqueTemplates.get(key);
-      const score = item => (Array.isArray(item.clientBrands) ? item.clientBrands.length : 0) * 1000
-        + Object.keys(item.content || {}).length;
-      if (!current || score(tpl) > score(current)) uniqueTemplates.set(key, tpl);
+      // 同名历史副本以最近保存的模板为准，不能因为旧副本字段更多而盖掉 Admin 新内容。
+      if (!current || new Date(tpl.updatedAt || 0) > new Date(current.updatedAt || 0)) uniqueTemplates.set(key, tpl);
     });
     templates = [...uniqueTemplates.values()];
     res.json({ success: true, data: templates });
@@ -7183,6 +7279,28 @@ router.patch('/requisitions/:id/cancel', staffAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// 体检方案只读查询项目库。开单接口已停用，方案编辑仍需按库类型关联项目。
+router.get('/plan-catalog-items', staffAuth, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().slice(0, 80);
+    if (!q) return res.json({ success: true, data: [] });
+    const name = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    const [labOrders, specialExams, functionalTests, packages] = await Promise.all([
+      LabTestOrder.find({ name, status: 'active' }).select('name mnemonic').limit(30).lean(),
+      SpecialExam.find({ name, status: 'active', deleted: { $ne: true } }).select('name mnemonic').limit(30).lean(),
+      FunctionalMedicineTest.find({ name, status: 'active', deleted: { $ne: true } }).select('name').limit(30).lean(),
+      LabTestPackage.find({ name, status: 'active' }).select('name mnemonic').limit(30).lean(),
+    ]);
+    const result = [
+      ...packages.map(item => ({ _id: item._id, name: item.name, type: 'labTestPackage' })),
+      ...labOrders.map(item => ({ _id: item._id, name: item.name, type: 'labTestOrder' })),
+      ...specialExams.map(item => ({ _id: item._id, name: item.name, type: 'specialExam' })),
+      ...functionalTests.map(item => ({ _id: item._id, name: item.name, type: 'functionalTest' })),
+    ];
+    res.json({ success: true, data: result });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // GET /api/staff/requisition-items — 获取可开单的项目列表（检验医嘱 + 检查医嘱 + 功能医学检测 + 套餐）
@@ -17880,6 +17998,10 @@ const ORDER_TYPE_META_BACKEND = {
   lab:  { category: '检验检查', itemType: 'labTest' },
   exam: { category: '影像检查', itemType: 'specialExam' },
   func: { category: '功能医学检测', itemType: 'functionalTest' },
+  labTestOrder: { category: '检验检查', itemType: 'labTest' },
+  labTestPackage: { category: '检验检查', itemType: 'labTest' },
+  specialExam: { category: '影像检查', itemType: 'specialExam' },
+  functionalTest: { category: '功能医学检测', itemType: 'functionalTest' },
 };
 function orderTypeMetaBackend(t) { return ORDER_TYPE_META_BACKEND[t] || ORDER_TYPE_META_BACKEND.exam; }
 

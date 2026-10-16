@@ -191,8 +191,10 @@ export const staffAPI = {
   // Health Plans
   getPlans:       (p = {}) => req('/staff/plans?' + qs(p)),
   getPlan:        (id)     => req(`/staff/plans/${id}`),
+  searchPlanCatalogItems: (q) => req(`/staff/plan-catalog-items?${qs({ q })}`),
   createPlan:     (data)   => req('/staff/plans', { method: 'POST', body: JSON.stringify(data) }),
   updatePlan:     (id, d)  => req(`/staff/plans/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  syncCheckupTemplate: (id, templateId) => req(`/staff/plans/${id}/sync-checkup-template`, { method: 'POST', body: JSON.stringify({ templateId }) }),
   regenerateMedicalAssistPurposes: (id) => req(`/staff/plans/${id}/regenerate-medical-assist-purposes`, { method: 'POST' }),
   deletePlan:     (id, reason) => req(`/staff/plans/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   pushPlan:       (id)     => req(`/staff/plans/${id}/push`, { method: 'PATCH' }),
