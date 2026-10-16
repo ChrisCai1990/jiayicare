@@ -800,9 +800,13 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'))
       || (require('../utils/healthManagementRollout').enabledForPatient(task.patientId?._id || task.patientId) && require('../../../shared/annualServiceItem.cjs').needsBooking(task));
     if (!isServiceTask) return false;
-    if (status !== 'completed' && task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
+    // A retryable planner closure must remain visible if an earlier attempt
+    // completed the order but failed before completing the closure task.
+    if (status !== 'completed' && task.sourceType === 'order' && task.workflowKey !== 'medical_assist:closure'
+      && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
     // 方案已闭环时，历史遗留的活动督办卡也不应再次出现在健康规划师工作台。
-    if (status !== 'completed' && task.sourceType === 'health_plan' && task.sourceHealthPlanId?.status === 'completed') return false;
+    if (status !== 'completed' && task.sourceType === 'health_plan' && task.workflowKey !== 'medical_assist:closure'
+      && task.sourceHealthPlanId?.status === 'completed') return false;
     const isOutpatientPlan = /门诊一站式/.test(`${task.sourceHealthPlanId?.title || ''} ${task.sourceHealthPlanId?.content?.templateName || ''}`);
     if (status !== 'completed' && isOutpatientPlan && task.taskRole === 'supervisor' && task.dependsOnTaskId?.status === 'completed') return false;
     if (status === 'active' && !['planned', 'in_progress', 'missed'].includes(task.status)) return false;

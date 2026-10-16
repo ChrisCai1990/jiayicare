@@ -25,7 +25,7 @@ async function requestOrderClosure(orderOrId, note = '') {
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: KEY },
     { $setOnInsert: { tenantId: order.tenantId || patient?.tenantId || null,
       patientId: order.user, staffId: plannerId, sourceType: 'order', sourceOrderId: order._id,
-      workflowKey: KEY, taskRole: 'supervisor', type: 'other', theme: `就医协助：健康规划师确认结案 · ${order.serviceName}` },
+      workflowKey: KEY, taskRole: 'supervisor', type: 'other', formData: {}, theme: `就医协助：健康规划师确认结案 · ${order.serviceName}` },
     $set: { assignedTo: plannerId, status: 'planned', isBlocked: false, date: now, remindAt: now,
       content: note || '执行环节已完成。请核对服务结果和交付资料后确认结案。', completedAt: null, completedBy: null } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -66,7 +66,7 @@ async function requestPlanClosure(planOrId, note = '') {
     { sourceType: 'health_plan', sourceHealthPlanId: plan._id, workflowKey: KEY },
     { $setOnInsert: { tenantId: plan.tenantId || patient?.tenantId || null,
       patientId: plan.patientId, staffId: plannerId, sourceType: 'health_plan', sourceHealthPlanId: plan._id,
-      workflowKey: KEY, coordinationGroupId: `medical-assist:${plan._id}`, taskRole: 'supervisor', type: 'other', theme: `就医协助：健康规划师确认结案 · ${plan.title}` },
+      workflowKey: KEY, coordinationGroupId: `medical-assist:${plan._id}`, taskRole: 'supervisor', type: 'other', formData: {}, theme: `就医协助：健康规划师确认结案 · ${plan.title}` },
     $set: { assignedTo: plannerId, status: 'planned', isBlocked: false, date: now, remindAt: now,
       content: note || '执行环节已完成。请核对服务结果和交付资料后确认结案。', completedAt: null, completedBy: null } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -84,6 +84,17 @@ async function reconcilePendingClosuresForPlanner(staff) {
   const staffId = id(staff._id);
   if (Date.now() - (reconciliationAt.get(staffId) || 0) < 60000) return 0;
   reconciliationAt.set(staffId, Date.now());
+  // A previous failed confirmation may have completed the order before the
+  // legacy order cleanup cancelled this still-unconfirmed planner action.
+  const interrupted = await FollowUp.find({ assignedTo: staff._id, workflowKey: KEY, status: 'cancelled',
+    cancelReason: '关联订单已取消、退款或结束', sourceType: 'order' })
+    .select('_id sourceOrderId').limit(50).lean();
+  for (const task of interrupted) {
+    const order = await Order.findById(task.sourceOrderId).select('status tradeStatus supervisionStatus').lean();
+    if (order?.status !== 'completed' || order.tradeStatus !== 'completed' || order.supervisionStatus !== 'completed') continue;
+    await FollowUp.updateOne({ _id: task._id, status: 'cancelled',
+      cancelReason: '关联订单已取消、退款或结束' }, { $set: { status: 'planned', cancelReason: '', date: new Date(), remindAt: new Date() } });
+  }
   const candidates = await FollowUp.find({ assignedTo: staff._id, taskRole: 'supervisor',
     status: { $in: active }, workflowKey: { $ne: KEY }, sourceType: 'order' })
     .select('_id sourceType sourceOrderId sourceHealthPlanId workflowKey formData').limit(100).lean();
@@ -183,7 +194,7 @@ async function confirmClosure(taskId, staff, conclusion) {
   }
   const updated = await FollowUp.updateOne({ _id: task._id, status: { $in: active } }, { $set: {
     status: 'completed', completedAt: now, completedBy: 'staff', executedContent: note,
-    'formData.closureConfirmedBy': staff._id, 'formData.closureConfirmedAt': now,
+    formData: { ...(task.formData || {}), closureConfirmedBy: staff._id, closureConfirmedAt: now },
   } });
   if (!updated.modifiedCount) throw Object.assign(new Error('结案已由其他人处理，请刷新'), { status: 409 });
   await FollowUp.updateMany({ ...scope, workflowKey: { $ne: KEY }, taskRole: 'supervisor', status: { $in: active } }, { $set: { status: 'completed', completedAt: now, completedBy: 'staff' } });

@@ -73,7 +73,7 @@ function runtime(injected = {}) {
             patientId: flow.patientId, staffId: planner.id, assignedTo: planner.id,
             sourceType: 'annual_service', sourceId: flow._id, sourceAnnualPlanId: flow.annualPlanId,
             careFlowId: flow._id, coordinationGroupId: `care:${flow._id}`, workflowKey: 'medical_assist:closure',
-            taskRole: 'supervisor', type: 'other', theme: `就医协助：健康规划师确认结案 · ${s.title}`,
+            taskRole: 'supervisor', type: 'other', formData: {}, theme: `就医协助：健康规划师确认结案 · ${s.title}`,
             status: 'planned', date: new Date(), remindAt: new Date(),
             content: '执行及顾问审核已完成，请核对服务结果后确认结案。' } }, { upsert: true, new: true }).lean();
       }

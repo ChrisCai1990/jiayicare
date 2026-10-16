@@ -44,6 +44,8 @@ async function reconcileInactiveOrderWorkItems(patientId = null) {
     sourceType: 'order',
     sourceOrderId: { $ne: null },
     status: { $in: ['planned', 'in_progress', 'missed'] },
+    // A closure confirmation can be retried after the order itself was saved.
+    workflowKey: { $ne: 'medical_assist:closure' },
     // 订单完成后生成的随访计划是新的临床跟进任务，不是未完成的订单履约工作项。
     // 不能因原订单已结束就将它取消。
     sourceScheduleKey: { $not: /^(medical_escort_followup|expert_appointment_followup):/ },

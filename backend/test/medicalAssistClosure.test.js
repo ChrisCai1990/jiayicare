@@ -22,6 +22,7 @@ test('all order endings queue one planner closure action without completing the 
     await closure.requestOrderClosure({ _id: 'order', user: 'patient', tenantId: 'tenant', serviceName: '专家约诊', status: 'scheduled' });
     assert.equal(calls[0].query.workflowKey, closure.KEY);
     assert.equal(calls[0].update.$setOnInsert.tenantId, 'tenant');
+    assert.deepEqual(calls[0].update.$setOnInsert.formData, {});
     assert.equal(calls[0].update.$set.assignedTo, 'planner');
     assert.equal(calls[1].update.$set.supervisionStatus, 'pending_closure');
     assert.equal(calls[1].update.$set.currentStage, 'pending_closure');
@@ -33,7 +34,7 @@ test('all order endings queue one planner closure action without completing the 
 test('planner confirmation rejects unfinished execution and records actual reviewer', async () => {
   const previous = { task: FollowUp.findOne, exists: FollowUp.exists, update: FollowUp.updateOne, updateMany: FollowUp.updateMany,
     plans: HealthPlan.find, plansUpdate: HealthPlan.updateMany, order: Order.findOneAndUpdate, orderUpdate: Order.updateOne, settle: medicalProxyWorkflow.settleCompletedMedicalOrder };
-  const task = { _id: 'closure', sourceType: 'order', sourceOrderId: 'order', workflowKey: closure.KEY, assignedTo: 'planner', status: 'planned' };
+  const task = { _id: 'closure', sourceType: 'order', sourceOrderId: 'order', workflowKey: closure.KEY, assignedTo: 'planner', status: 'planned', formData: null };
   const writes = [];
   try {
     FollowUp.findOne = async () => task;
@@ -49,11 +50,40 @@ test('planner confirmation rejects unfinished execution and records actual revie
     FollowUp.updateMany = async () => ({ modifiedCount: 0 });
     await closure.confirmClosure('closure', { _id: 'planner', role: 'healthPlanner' }, '资料齐全，已告知客户');
     assert.equal(writes[0].supervisionStatus, 'completed');
-    assert.equal(writes[1]['formData.closureConfirmedBy'], 'planner');
+    assert.equal(writes[1].formData.closureConfirmedBy, 'planner');
+    assert.ok(writes[1].formData.closureConfirmedAt instanceof Date);
     assert.equal(writes[1].executedContent, '资料齐全，已告知客户');
   } finally {
     FollowUp.findOne = previous.task; FollowUp.exists = previous.exists; FollowUp.updateOne = previous.update;
     FollowUp.updateMany = previous.updateMany; HealthPlan.find = previous.plans; HealthPlan.updateMany = previous.plansUpdate; Order.findOneAndUpdate = previous.order; Order.updateOne = previous.orderUpdate;
+    medicalProxyWorkflow.settleCompletedMedicalOrder = previous.settle;
+  }
+});
+
+test('a completed order can resume an interrupted planner closure', async () => {
+  const previous = { task: FollowUp.findOne, exists: FollowUp.exists, update: FollowUp.updateOne, updateMany: FollowUp.updateMany,
+    plans: HealthPlan.find, plansUpdate: HealthPlan.updateMany, order: Order.findOneAndUpdate, orderFind: Order.findOne,
+    orderUpdate: Order.updateOne, settle: medicalProxyWorkflow.settleCompletedMedicalOrder };
+  const writes = [];
+  try {
+    FollowUp.findOne = async () => ({ _id: 'closure', sourceType: 'order', sourceOrderId: 'order', workflowKey: closure.KEY,
+      assignedTo: 'planner', status: 'planned', formData: null });
+    FollowUp.exists = async () => false;
+    HealthPlan.find = () => ({ select: () => ({ lean: async () => [] }) });
+    HealthPlan.updateMany = async () => ({ modifiedCount: 0 });
+    Order.findOneAndUpdate = async () => null;
+    Order.findOne = async () => ({ _id: 'order', status: 'completed', supervisionStatus: 'completed', totalUnits: 1 });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    medicalProxyWorkflow.settleCompletedMedicalOrder = async () => {};
+    FollowUp.updateOne = async (query, update) => { writes.push(update.$set); return { modifiedCount: 1 }; };
+    FollowUp.updateMany = async () => ({ modifiedCount: 0 });
+    await closure.confirmClosure('closure', { _id: 'planner', role: 'healthPlanner' }, '已完成就医');
+    assert.equal(writes[0].status, 'completed');
+    assert.equal(writes[0].formData.closureConfirmedBy, 'planner');
+  } finally {
+    FollowUp.findOne = previous.task; FollowUp.exists = previous.exists; FollowUp.updateOne = previous.update;
+    FollowUp.updateMany = previous.updateMany; HealthPlan.find = previous.plans; HealthPlan.updateMany = previous.plansUpdate;
+    Order.findOneAndUpdate = previous.order; Order.findOne = previous.orderFind; Order.updateOne = previous.orderUpdate;
     medicalProxyWorkflow.settleCompletedMedicalOrder = previous.settle;
   }
 });
@@ -91,7 +121,7 @@ test('annual medical-assist flow finalizes only when its planner confirms', asyn
     FollowUp.updateMany = async () => ({ modifiedCount: 0 });
     await closure.confirmClosure('closure', { _id: 'planner', role: 'healthPlanner' }, '已核对服务结果');
     assert.equal(writes[0]['state.finalized'], true);
-    assert.equal(writes.at(-1)['formData.closureConfirmedBy'], 'planner');
+    assert.equal(writes.at(-1).formData.closureConfirmedBy, 'planner');
   } finally {
     FollowUp.findOne = previous.task; FollowUp.exists = previous.exists; FollowUp.updateOne = previous.update;
     FollowUp.updateMany = previous.updateMany; CareFlow.findOneAndUpdate = previous.flow;
@@ -122,5 +152,25 @@ test('planner workbench recovers an open read-only order after every executor en
     FollowUp.find = previous.tasks; FollowUp.exists = previous.exists; FollowUp.findOneAndUpdate = previous.upsert;
     FollowUp.updateMany = previous.taskUpdate; Order.findById = previous.orders; Order.updateOne = previous.orderUpdate;
     HealthPlan.find = previous.plans; CareFlow.find = previous.flows; User.findById = previous.user;
+  }
+});
+
+test('planner workbench restores a closure cancelled after an interrupted confirmation', async () => {
+  const previous = { tasks: FollowUp.find, update: FollowUp.updateOne, plans: HealthPlan.find,
+    flows: CareFlow.find, order: Order.findById };
+  const writes = [];
+  try {
+    FollowUp.find = query => ({ select: () => ({ limit: () => ({ lean: async () => query.status === 'cancelled'
+      ? [{ _id: 'closure', sourceOrderId: 'order' }] : [] }), lean: async () => [] }) });
+    FollowUp.updateOne = async (query, update) => { writes.push({ query, update }); return { modifiedCount: 1 }; };
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ status: 'completed', tradeStatus: 'completed', supervisionStatus: 'completed' }) }) });
+    HealthPlan.find = () => ({ select: () => ({ limit: () => ({ lean: async () => [] }) }) });
+    CareFlow.find = () => ({ limit: () => ({ lean: async () => [] }) });
+    await closure.reconcilePendingClosuresForPlanner({ _id: 'planner-interrupted-closure-test', role: 'healthPlanner' });
+    assert.equal(writes[0].query._id, 'closure');
+    assert.equal(writes[0].update.$set.status, 'planned');
+  } finally {
+    FollowUp.find = previous.tasks; FollowUp.updateOne = previous.update;
+    HealthPlan.find = previous.plans; CareFlow.find = previous.flows; Order.findById = previous.order;
   }
 });
