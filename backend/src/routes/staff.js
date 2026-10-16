@@ -2456,6 +2456,34 @@ router.post('/patients/:id/lifestyle-interview/start', staffAuth, require('../ut
 router.get('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
 router.post('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
 
+router.post('/followups/:id/medication-defer', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  try {
+    const task = await FollowUp.findById(req.params.id);
+    if (!task || task.sourceType !== 'order' || task.workflowKey !== 'medical_proxy:booking') return res.status(404).json({ success: false, message: '代配药预约任务不存在' });
+    if (req.staff.role !== 'superadmin' && String(task.assignedTo || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅当前健管专员可结束本次代配药需求' });
+    const note = String(req.body.note || '').trim();
+    if (!note) return res.status(400).json({ success: false, message: '请记录客户暂不需要代配药的沟通情况' });
+    const order = await Order.findById(task.sourceOrderId).select('serviceName status currentStage paidAmount tradeStatus paymentStatus healthFundAmount packageEntitlementUsage medicalProxyPlan');
+    if (!order || !/代配药|代取药/.test(order.serviceName || '')) return res.status(409).json({ success: false, message: '该任务不是代配药预约' });
+    if (Number(order.paidAmount || 0) > 0 || Number(order.healthFundAmount || 0) > 0 || order.packageEntitlementUsage?.entitlementId || order.paymentStatus === 'paid' || ['paid', 'refund_pending', 'partially_refunded'].includes(order.tradeStatus)) return res.status(409).json({ success: false, message: '该订单涉及付款或套餐权益，请先由订单负责人处理费用或权益后再结束服务' });
+    const alreadyDeferred = order.currentStage === 'deferred' && order.medicalProxyPlan?.deferred?.reason === 'customer_not_needed';
+    if (!alreadyDeferred && (task.isBlocked || order.status !== 'pending' || order.currentStage !== 'booking' || order.medicalProxyPlan?.bookedAt || !['planned', 'in_progress', 'missed'].includes(task.status))) return res.status(409).json({ success: false, message: '预约状态已变化，请刷新后核对' });
+    const now = new Date();
+    const reason = `客户暂不需要代配药：${note}`;
+    if (!alreadyDeferred) {
+      const result = await Order.updateOne({ _id: order._id, status: 'pending', currentStage: 'booking', tradeStatus: order.tradeStatus, paidAmount: order.paidAmount }, { $set: {
+        status: 'cancelled', tradeStatus: 'closed', currentStage: 'deferred', currentAssignee: null, supervisionStatus: 'cancelled',
+        'medicalProxyPlan.deferred': { reason: 'customer_not_needed', note, at: now, by: req.staff._id },
+      } });
+      if (!result.modifiedCount) return res.status(409).json({ success: false, message: '预约状态已变化，请刷新后核对' });
+    }
+    await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, workflowKey: /^medical_proxy:/, status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: { status: 'cancelled', cancelReason: reason, content: reason } });
+    await FollowUp.updateOne({ _id: task._id }, { $set: { 'formData.bookingOutcome': 'customer_not_needed', 'formData.customerDeclineNote': note } });
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise' }, { $set: { 'formData.currentStage': 'deferred' } });
+    return res.json({ success: true, message: '已结束本次代配药需求，客户需要时可重新发起' });
+  } catch (error) { return res.status(500).json({ success: false, message: error.message || '结束代配药需求失败' }); }
+});
+
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   // 历史任务的 staffId/assignedTo 可能以字符串保存，而当前账号 _id 是 ObjectId。
   // 先按任务 ID 读取，再统一转成字符串校验；否则负责人明明正确也会被 Mongoose
@@ -2498,6 +2526,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
 
   const medicalProxyWorkflow = require('../utils/medicalProxyWorkflow');
   const proxyStage = medicalProxyWorkflow.stageOf(followUp);
+  if (proxyStage === 'booking' && /代配药|代取药/.test(followUp.sourceOrderId?.serviceName || followUp.theme || '') && req.body.status === 'cancelled') return res.status(409).json({ success: false, message: '请使用“暂不需要，结束本次计划”处理客户意向' });
   if (proxyStage) {
     const error = await medicalProxyWorkflow.validateMedicalProxyStage(followUp, req.body, req.staff);
     if (error) return res.status(400).json({ success: false, message: error });

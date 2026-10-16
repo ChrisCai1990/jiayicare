@@ -50,6 +50,7 @@ const formatAppointmentRequirement = data => [
 ].filter(Boolean).join('；')
 
 export function validateMedicalProxyStage(stage, value) {
+  if (stage === 'booking' && value.bookingOutcome === 'customer_not_needed') return value.customerDeclineNote?.trim() ? '' : '请记录客户暂不需要代配药的沟通情况'
   if (stage === 'collect' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.communicationDate?.trim() || !value.communicationTimeStart?.trim() || !value.communicationTimeEnd?.trim() || !value.reportIds?.length)) return '请填写诉求、预期沟通时段和资料清单，选定至少一份本次服务资料'
   if (stage === 'collect' && value.communicationTimeEnd <= value.communicationTimeStart) return '预期沟通结束时间必须晚于开始时间'
   if (stage === 'intake' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.reportIds?.length)) return '请填写诉求和资料清单，选定至少一份已审核资料'
@@ -308,7 +309,25 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </label>
   </div>
   }
+  if (stage === 'booking' && isMedicationProxy && value.bookingOutcome === 'customer_not_needed') return <div style={{ display: 'grid', gap: 12 }}>
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>客户确认结果 *
+      <select className="form-control" value={value.bookingOutcome} onChange={e => set('bookingOutcome', e.target.value)}>
+        <option value="confirm_booking">需要代配药，继续确认预约</option>
+        <option value="customer_not_needed">暂不需要，结束本次计划</option>
+      </select>
+    </label>
+    <div style={{ background: '#F5F8F6', padding: 10, fontSize: 13 }}>本次不预约、不派配药人员。客户以后有需要时，由工作人员重新发起代配药。</div>
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>沟通记录 *
+      <textarea className="form-control" rows={3} value={value.customerDeclineNote || ''} placeholder="例如：客户表示目前暂不需要代配药，需要时会联系工作人员" onChange={e => set('customerDeclineNote', e.target.value)} />
+    </label>
+  </div>
   if (stage === 'booking') return <div style={{ display: 'grid', gap: 12 }}>
+    {isMedicationProxy && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>客户确认结果 *
+      <select className="form-control" value={value.bookingOutcome || 'confirm_booking'} onChange={e => set('bookingOutcome', e.target.value)}>
+        <option value="confirm_booking">需要代配药，继续确认预约</option>
+        <option value="customer_not_needed">暂不需要，结束本次计划</option>
+      </select>
+    </label>}
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>

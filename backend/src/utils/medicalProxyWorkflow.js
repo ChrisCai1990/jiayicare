@@ -1042,6 +1042,8 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!assistant) return '请选择当前有效的就医专员';
   }
   if (stage === 'booking') {
+    const activeOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('status currentStage').lean() : null;
+    if (!activeOrder || ['cancelled', 'completed'].includes(activeOrder.status) || ['deferred', 'completed'].includes(activeOrder.currentStage)) return '本次预约已结束或状态已变化，请刷新任务';
     const slots = bookingSlots(data);
     const requestedTargets = data.planSnapshot?.appointmentTargets || [];
     if (requestedTargets.length && (slots.length < requestedTargets.length || slots.some(row => !nonempty(row.hospital)))) return '请逐项保留本次预约目标，并填写实际预约医院';
