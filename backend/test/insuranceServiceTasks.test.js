@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { ensureInsuranceServiceTask, reconcilePatientInsuranceTasks } = require('../src/utils/insuranceServiceTasks');
 
 const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
 const serviceTasks = route.slice(route.indexOf("router.get('/service-tasks'"), route.indexOf('// ── GET /api/staff/patients'));
@@ -21,7 +22,52 @@ test('creating an insurance case assigns work to both configured roles', () => {
   assert.match(createCase, /ensureInsuranceServiceTask\(serviceCase, 'supervisor', patient\.assignedHealthPlanner\)/);
 });
 
-test('insurance task repair is idempotent for each case and role', () => {
-  assert.match(route, /sourceId: serviceCase\._id, taskRole, status: \{ \$in: \['planned', 'in_progress', 'missed'\] \}/);
-  assert.match(route, /new: true, upsert: true, setDefaultsOnInsert: true/);
+test('completed insurance task prevents recreation and retires only untouched duplicates', async () => {
+  const cancelled = [];
+  let created = false;
+  const model = {
+    findOne: () => ({ select: () => ({ lean: async () => ({ _id: 'done', sourceId: 'case', taskRole: 'executor', completedAt: '2026-10-16T05:20:24Z' }) }) }),
+    find: () => ({ select: () => ({ lean: async () => [
+      { _id: 'duplicate', createdAt: '2026-10-16T05:23:47Z', serviceChecklist: [{ purpose: '登记费用' }] },
+      { _id: 'worked-on', createdAt: '2026-10-16T05:24:00Z', executedContent: '补充材料' },
+      { _id: 'older', createdAt: '2026-10-16T05:00:00Z' },
+    ] }) }),
+    updateMany: async (filter, update) => { cancelled.push({ filter, update }); },
+    findOneAndUpdate: async () => { created = true; },
+  };
+  const result = await ensureInsuranceServiceTask(model, { _id: 'case' }, 'executor', 'manager', {});
+  assert.equal(result._id, 'done');
+  assert.equal(created, false);
+  assert.deepEqual(cancelled[0].filter._id.$in, ['duplicate']);
+  assert.equal(cancelled[0].update.$set.status, 'cancelled');
+});
+
+test('patient detail read reconciles completed insurance tasks before listing them', async () => {
+  const queries = [];
+  const model = {
+    find: filter => {
+      queries.push(filter);
+      return { select: () => ({ lean: async () => filter.status === 'completed'
+        ? [{ _id: 'done', sourceId: 'case', taskRole: 'executor', completedAt: '2026-10-16T05:20:24Z' }]
+        : [{ _id: 'duplicate', createdAt: '2026-10-16T05:23:47Z' }] }) };
+    },
+    updateMany: async filter => { assert.deepEqual(filter._id.$in, ['duplicate']); },
+  };
+  await reconcilePatientInsuranceTasks(model, 'patient');
+  assert.equal(queries[0].patientId, 'patient');
+  assert.equal(queries[1].sourceId, 'case');
+});
+
+test('open insurance case without a completed task still has one active task', async () => {
+  const model = {
+    findOne: () => ({ select: () => ({ lean: async () => null }) }),
+    findOneAndUpdate: async (filter, update, options) => {
+      assert.deepEqual(filter.status.$in, ['planned', 'in_progress', 'missed']);
+      assert.equal(update.$set.assignedTo, 'manager');
+      assert.equal(options.upsert, true);
+      return { _id: 'active' };
+    },
+  };
+  const result = await ensureInsuranceServiceTask(model, { _id: 'case' }, 'executor', 'manager', { theme: '保险事务' });
+  assert.equal(result._id, 'active');
 });

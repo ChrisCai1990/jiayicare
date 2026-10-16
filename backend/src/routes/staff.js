@@ -589,13 +589,8 @@ function insuranceTaskDefinition(serviceCase, taskRole) {
 async function ensureInsuranceServiceTask(serviceCase, taskRole, assignee) {
   if (!assignee) return null;
   const definition = insuranceTaskDefinition(serviceCase, taskRole);
-  return FollowUp.findOneAndUpdate(
-    { sourceType: 'insurance_service', sourceId: serviceCase._id, taskRole, status: { $in: ['planned', 'in_progress', 'missed'] } },
-    {
-      $set: { staffId: assignee, assignedTo: assignee },
-      $setOnInsert: { ...definition, status: 'planned' },
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+  return require('../utils/insuranceServiceTasks').ensureInsuranceServiceTask(
+    FollowUp, serviceCase, taskRole, assignee, definition,
   );
 }
 
@@ -2052,6 +2047,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   // 避免已取消服务仍显示“待执行”。全局启动扫描也会修复未被打开的会员。
   await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(req.params.id);
   await require('../utils/followUpServiceLink').safeReconcileServiceLinks({ patientId: req.params.id });
+  await require('../utils/insuranceServiceTasks').reconcilePatientInsuranceTasks(FollowUp, req.params.id);
 
   const filter = { patientId: req.params.id, ...(followUpId ? { _id: followUpId } : { $nor: [routineMedicationNoiseFilter] }) };
   const [followUps, total] = await Promise.all([
