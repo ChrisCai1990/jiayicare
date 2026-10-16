@@ -3698,9 +3698,10 @@ router.get('/patients/:id/medication-proxy/defaults', staffAuth, async (req, res
 });
 
 router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => {
+  const directExpertAppointment = require('../utils/medicalProxyLaunchPolicy').directExpertAppointment(req.staff, req.body);
   if (!['familyDoctor', 'healthManager', 'healthPlanner', 'superadmin'].includes(req.staff.role)
     || (req.staff.role === 'healthPlanner' && !req.body.reservedOrderId && !req.body.giftId)) return res.status(403).json({ success: false, message: '请从会员权益或已付费订单发起就医协助' });
-  if (req.staff.role !== 'healthManager' && !req.body.reservedOrderId && !req.body.giftId)
+  if (req.staff.role !== 'healthManager' && !directExpertAppointment && !req.body.reservedOrderId && !req.body.giftId)
     return res.status(409).json({ success: false, message: '请先到会员权益核对赠送或套餐权益；没有权益时需关联已付费服务订单' });
   try {
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
@@ -3796,7 +3797,8 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
       executionOrder = await Order.findOne({ _id: req.body.reservedOrderId, user: patient._id,
         status: { $in: ['pending', 'scheduled'] }, serviceStartedAt: null,
         $or: [{ 'packageEntitlementUsage.entitlementId': { $exists: true } },
-          { orderType: 'service', paymentStatus: 'paid', paidAmount: { $gt: 0 } }] });
+          { paymentStatus: 'paid', paidAmount: { $gt: 0 } },
+          { paymentStatus: 'paid', healthFundAmount: { $gt: 0 } }] });
       if (!executionOrder) return res.status(409).json({ success: false, message: '可用服务订单不存在或已办理，请刷新会员权益' });
       const compatible = medicalEscort ? /陪同|陪诊|就医协助服务/.test(executionOrder.serviceName || '')
         : /代办|代诊|约诊|挂号|复诊|就医协助服务/.test(executionOrder.serviceName || '');
@@ -3808,6 +3810,9 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     // 服务由健管专员触发时，仍关联客户的健康顾问作为专业责任岗位；未分配健康顾问时由发起健管专员留痕。
     const advisorId = ['healthManager', 'healthPlanner'].includes(req.staff.role) ? (patient.assignedFamilyDoctor || req.staff._id) : req.staff._id;
     const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId, executionOrder, plan: { ...req.body, initiatedByStaff: req.staff._id } });
+    if (executionOrder) await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: executionOrder._id,
+      workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] }, theme: /^订单服务：/ },
+    { $set: { status: 'cancelled', cancelReason: '已转入就医协助岗位流程' } });
     if (executionOrder) {
       const started = await Order.findOneAndUpdate({ _id: executionOrder._id, status: 'scheduled', serviceStartedAt: null },
         { $set: { serviceStartedAt: new Date(), serviceStartedBy: req.staff._id,
@@ -6715,6 +6720,134 @@ router.get('/products', staffAuth, checkPermission('products', 'view'), async (r
     servicePerformerRoles: p.servicePerformerRoles || [],
   }));
   res.json({ success: true, data: { products: list } });
+});
+
+// 医护端单项服务基金结算：报价和扣款均以当前上架商品、当前余额和服务端规则为准。
+async function staffFundOrderQuote(req) {
+  if (!await allPushPatientsBelongToStaff([req.params.id], req.staff)) throw Object.assign(new Error('只能为本机构客户发起服务'), { status: 403 });
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) throw Object.assign(new Error('只能为自己负责的客户发起服务'), { status: 403 });
+  if (!mongoose.isValidObjectId(req.body.productId)) throw Object.assign(new Error('请选择服务产品'), { status: 400 });
+  const [patient, product] = await Promise.all([
+    User.findById(req.params.id), Product.findOne({ _id: req.body.productId, status: 'on' }),
+  ]);
+  if (!patient || !product) throw Object.assign(new Error('客户或上架服务不存在'), { status: 404 });
+  if (product.memberBundle?.enabled || !['offline_service', 'remote_service'].includes(product.fulfillmentType))
+    throw Object.assign(new Error('该产品需按专属服务包或实物流程办理'), { status: 400 });
+  const prices = (product.servicePrices || []).filter(row => row.label && Number.isFinite(Number(row.price)));
+  const label = String(req.body.specificationLabel || '').trim();
+  const selected = prices.length ? prices.find(row => row.label === label) : null;
+  if ((prices.length && !selected) || (!prices.length && label)) throw Object.assign(new Error('请选择当前有效的服务收费规格'), { status: 400 });
+  const price = Math.round(Number(selected ? selected.price : product.originalPrice) * 100) / 100;
+  if (!Number.isFinite(price) || price <= 0) throw Object.assign(new Error('该服务没有可扣款的有效价格'), { status: 400 });
+  const entitlements = await require('../utils/packageEntitlements').applicableEntitlements(patient._id);
+  if (/专家约诊/.test(product.name) && entitlements.some(row => row.rights?.aiEntitlements?.expertAppointment === true))
+    throw Object.assign(new Error('该客户已有不限次专家约诊服务，请从会员档案直接发起'), { status: 409 });
+  if (entitlements.some(row => (row.rights?.productEntitlements || []).some(right =>
+    String(right.productId) === String(product._id) && (!right.specificationLabel || right.specificationLabel === label)
+    && (row.historyVerified === false || Number(right.poolKey
+      ? (row.rights?.sharedEntitlementPools || []).find(pool => pool.key === right.poolKey)?.remainingCount
+      : right.remainingCount) > 0))))
+    throw Object.assign(new Error('该客户已有可用或待核对的套餐服务权益，请先从会员档案办理'), { status: 409 });
+  const fund = await require('../utils/healthFundPayment').validateHealthFundDeduction({
+    user: patient, requested: price, orderAmount: price, category: product.category,
+    productId: product._id, maximize: true,
+  });
+  return { patient, product, price, label, fund, shortage: Math.round((price - fund.allowed) * 100) / 100 };
+}
+
+router.post('/patients/:id/fund-orders/quote', staffAuth, checkPermission('products', 'send'), async (req, res) => {
+  try {
+    const quote = await staffFundOrderQuote(req);
+    res.json({ success: true, data: { productName: quote.product.name, specificationLabel: quote.label,
+      price: quote.price, personal: quote.fund.breakdown.personal, corporate: quote.fund.breakdown.corporate,
+      fundAmount: quote.fund.allowed, shortage: quote.shortage } });
+  } catch (error) { res.status(error.status || 409).json({ success: false, message: error.message }); }
+});
+
+router.post('/patients/:id/fund-orders', staffAuth, checkPermission('products', 'send'), async (req, res) => {
+  try {
+    const requestId = String(req.body.requestId || '');
+    if (!/^[a-f\d-]{36}$/i.test(requestId)) return res.status(400).json({ success: false, message: '请重新打开扣款确认窗口' });
+    if (!await allPushPatientsBelongToStaff([req.params.id], req.staff)) return res.status(403).json({ success: false, message: '只能为本机构客户发起服务' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '只能为自己负责的客户发起服务' });
+    const orderId = crypto.createHash('sha256').update(`staff-fund:${req.staff._id}:${req.params.id}:${requestId}`).digest('hex').slice(0, 24);
+    const outTradeNo = `HF${orderId}`;
+    let order = await Order.findById(orderId);
+    if (order && (String(order.user) !== String(req.params.id) || order.serviceId !== String(req.body.productId)
+      || order.specificationLabel !== String(req.body.specificationLabel || '').trim()))
+      return res.status(409).json({ success: false, message: '本次扣款请求与原服务不一致' });
+    if (order?.paymentStatus === 'paid' && order.healthFundSettledAt)
+      return res.json({ success: true, data: { orderId: order._id, orderNo: order.orderNo,
+        fundAmount: order.healthFundAmount, breakdown: order.healthFundBreakdown, paymentStatus: order.paymentStatus } });
+    const quote = order ? null : await staffFundOrderQuote(req);
+    if (quote && quote.shortage > 0) return res.status(409).json({ success: false,
+      message: `基金可抵扣¥${quote.fund.allowed.toFixed(2)}，尚需支付¥${quote.shortage.toFixed(2)}；请先走客户支付流程` });
+    if (quote && (Math.round(Number(req.body.expectedPrice) * 100) !== Math.round(quote.price * 100)
+      || Math.round(Number(req.body.expectedPersonal) * 100) !== Math.round(quote.fund.breakdown.personal * 100)
+      || Math.round(Number(req.body.expectedCorporate) * 100) !== Math.round(quote.fund.breakdown.corporate * 100)))
+      return res.status(409).json({ success: false, message: '服务价格或基金余额已变化，请刷新报价后确认扣款' });
+    if (!order) {
+      const inventory = await require('../utils/orderInventory').reserveProduct(quote.product);
+      if (!inventory.available) return res.status(409).json({ success: false, message: '该服务已售罄，请刷新后重试' });
+      try {
+        const sku = (quote.product.skus || []).find(item => item.active !== false && item.label === quote.label);
+        const serviceItems = sku ? [] : (quote.product.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
+        const totalUnits = Math.max(1, Number(sku?.totalUnits) || serviceItems.reduce((sum, item) => sum + Number(item.units || 1), 0) || 1);
+        order = await Order.create({ _id: orderId, user: quote.patient._id, payerUser: quote.patient._id,
+          tenantId: quote.patient.tenantId || null, serviceId: String(quote.product._id), serviceName: quote.product.name,
+          servicePrice: quote.price, unitPrice: Math.round(quote.price / totalUnits * 100) / 100,
+          totalUnits, specificationLabel: quote.label, skuCode: sku?.code || '',
+          orderNo: outTradeNo, orderType: 'product', status: 'pending', tradeStatus: 'awaiting_payment',
+          paymentStatus: 'pending', paymentMethod: 'healthFund', paymentExpectedAmount: 0,
+          healthFundAmount: quote.price, healthFundBreakdown: quote.fund.breakdown,
+          healthFundEnterpriseId: quote.fund.enterprise?._id || null,
+          fulfillmentType: quote.product.fulfillmentType, inventoryReserved: inventory.reserved,
+          initiationSource: 'staff_direct', initiatedByStaff: req.staff._id,
+          supervisorId: quote.patient.assignedHealthPlanner || null,
+          serviceItemsSnapshot: serviceItems.map(item => ({ key: item.key, name: item.name,
+            units: item.units, usedUnits: 0, performers: item.performers || [] })),
+          performanceRuleSnapshot: quote.product.performanceRule?.toObject?.() || quote.product.performanceRule || null,
+          servicePerformerRolesSnapshot: quote.product.servicePerformerRoles || [],
+          serviceWorkflowSnapshot: quote.product.serviceWorkflow?.toObject?.() || quote.product.serviceWorkflow || null,
+          serviceProviderSnapshot: { code: quote.product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
+          note: `医护端直接从健康基金扣款；操作人：${req.staff.name || req.staff._id}`,
+        });
+      } catch (error) {
+        if (inventory.reserved) await Product.updateOne({ _id: quote.product._id }, { $inc: { stock: 1 } });
+        if (error.code !== 11000) throw error;
+        order = await Order.findById(orderId);
+      }
+    }
+    const Payment = require('../models/Payment');
+    if (!await Payment.exists({ outTradeNo })) {
+      try { await Payment.create({ order: order._id, user: order.user, channel: 'health_fund',
+        amount: 0, outTradeNo }); }
+      catch (error) { if (error.code !== 11000) throw error; }
+    }
+    const lockToken = crypto.randomBytes(12).toString('hex');
+    const locked = await Order.findOneAndUpdate({ _id: order._id,
+      $or: [{ checkoutActionLockUntil: null }, { checkoutActionLockUntil: { $lt: new Date() } }] },
+    { $set: { checkoutActionLockUntil: new Date(Date.now() + 300000), checkoutActionLockToken: lockToken } }, { new: true });
+    if (!locked) return res.status(409).json({ success: false, message: '这笔服务正在扣款，请稍后查询原订单' });
+    let settled;
+    try {
+      if (!locked.healthFundSettledAt) await require('../utils/healthFundPayment').deductHealthFund({
+        user: await User.findById(locked.user),
+        enterprise: locked.healthFundEnterpriseId ? { _id: locked.healthFundEnterpriseId } : null,
+        order: locked, amount: locked.healthFundAmount, breakdown: locked.healthFundBreakdown,
+      });
+      settled = await require('../utils/orderSettlement').confirmPayment({ outTradeNo,
+        transactionId: `staff-fund:${requestId}`, paidAt: new Date(),
+        snapshot: { initiatedByStaff: String(req.staff._id), source: 'staff_direct' } });
+    } finally {
+      await Order.updateOne({ _id: order._id, checkoutActionLockToken: lockToken },
+        { $set: { checkoutActionLockUntil: null, checkoutActionLockToken: '' } });
+    }
+    res.json({ success: true, data: { orderId: settled._id, orderNo: settled.orderNo,
+      fundAmount: settled.healthFundAmount, breakdown: settled.healthFundBreakdown, paymentStatus: settled.paymentStatus } });
+  } catch (error) { res.status(error.status || 409).json({ success: false, message: error.message }); }
 });
 
 // GET /api/staff/product-categories — 商城产品分类（与管理后台同源，读 ProductCategory 集合）

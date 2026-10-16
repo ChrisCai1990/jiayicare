@@ -59,7 +59,10 @@ function project(row, userId, legacy = false) {
 }
 async function membershipBenefits(user, existingRows) {
   const rows = existingRows || await applicableEntitlements(user._id);
-  if (rows.length) return { plans:rows.map(row=>project(row,user._id)), message:'' };
+  // Family members may use a shared quota, but the membership plan card must
+  // describe only the plan owned by the customer whose profile is open.
+  const ownRows = rows.filter(row => String(row.ownerUserId) === String(user._id));
+  if (ownRows.length) return { plans:ownRows.map(row=>project(row,user._id)), message:'' };
   const pkg = await legacyPackage(user);
   if (!pkg) return { plans:[], message:user?.servicePackage && legacyAccess(user).active
     ? `档案中的「${user.servicePackage}」尚未关联到已生效的服务包配置或权益台账，请联系服务团队核对套餐来源。`

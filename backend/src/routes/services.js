@@ -101,7 +101,7 @@ router.get('/', async (req, res) => {
       healthFundDeduction: !p.healthFundDeduction?.mode || ['inherit', 'unlimited'].includes(p.healthFundDeduction.mode)
         ? { mode:'percentage', value:20 }
         : p.healthFundDeduction.mode === 'percentage'
-          ? { mode:'percentage', value:Math.min(20, Math.max(0, Number(p.healthFundDeduction.value) || 0)) }
+          ? { mode:'percentage', value:Math.min(100, Math.max(0, Number(p.healthFundDeduction.value) || 0)) }
           : p.healthFundDeduction,
       memberBundle: p.memberBundle?.enabled ? {
         enabled: true,

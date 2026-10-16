@@ -32,27 +32,26 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund, useE
   let sharedAccount = null;
   let shared = prices.map(() => 0);
   if (Number(useHealthFund) > 0) {
-    if (!(await require('./packageFeatureEntitlements').hasHealthFundAccess(user))) {
-      throw checkoutError('健康基金仅限有效的365、年度、疗程或企业会员使用；基础会员可按原价购买服务', 400);
-    }
+    const memberEligible = await require('./packageFeatureEntitlements').hasHealthFundAccess(user);
     const afterTotal = total - couponTotal;
     if (afterTotal < cents(policy.minOrderAmount || 0)) throw checkoutError(`订单满 ¥${policy.minOrderAmount} 方可使用健康基金`);
     const requested = Math.min(cents(useHealthFund), afterTotal);
     const personalAvailable = cents(await fund.getPersonalFundAvailable(user));
+    if (!memberEligible && !personalAvailable) throw checkoutError('当前没有可用于本服务的自有健康基金', 400);
     const corporateAvailable = cents(await fund.getCorporateFundAvailable(user));
     if (user.enterpriseId && corporateAvailable) enterprise = await require('../models/Enterprise').findById(user.enterpriseId);
     const enterpriseRule = enterprise?.healthFundPaymentRule;
-    const capacities = products.map((product, index) => {
+    const corporateCapacities = products.map((product, index) => {
       const enterpriseEligible = !user.enterpriseId || (enterprise?.status === 'active' && (!enterpriseRule?.enabled || (
         afterTotal >= cents(enterpriseRule.minOrderAmount || 0) && (!enterpriseRule.eligibleCategories?.length || enterpriseRule.eligibleCategories.includes(product.category))
       )));
-      if (!enterpriseEligible || !fund.corporateProductEligible(policy, product._id, product.category, product.healthFundDeduction)) return 0;
+      if (!memberEligible || !enterpriseEligible || !fund.corporateProductEligible(policy, product._id, product.category, product.healthFundDeduction)) return 0;
       return Math.min(afterCoupon[index], Math.floor(fund.productDeductionLimit(product.healthFundDeduction, afterCoupon[index] / 100) * 100 + 1e-7));
     });
-    // 所有健康基金来源共用商品上限；先使用哪类余额只影响流水归属，
-    // 不会把“自有”余额绕过商品的 0–20% 设置。
-    personal = splitCents(Math.min(requested, personalAvailable, capacities.reduce((s, v) => s + v, 0)), capacities);
-    const remainingCapacities = capacities.map((value, index) => Math.max(0, value - personal[index]));
+    // Own funds can cover each item's full unpaid price. Gifted corporate funds
+    // retain the product cap and cannot exceed the price left after own funds.
+    personal = splitCents(Math.min(requested, personalAvailable, afterTotal), afterCoupon);
+    const remainingCapacities = corporateCapacities.map((value, index) => Math.min(value, Math.max(0, afterCoupon[index] - personal[index])));
     corporate = splitCents(Math.min(requested - personal.reduce((s, v) => s + v, 0), corporateAvailable, remainingCapacities.reduce((s, v) => s + v, 0)), remainingCapacities);
   }
   if (useEnterpriseSharedFund) {
