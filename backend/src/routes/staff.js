@@ -22,7 +22,7 @@ const { advanceCheckupTask, isCheckupService, onCheckupReportAudited, stageForSc
 const { ensureStaffInitiatedCheckupService } = require('../utils/checkupServiceInstance');
 const { generateCompactMedicalAssistPurposes } = require('../utils/medicalAssistPurposeDraft');
 const { isReportInterpretation } = require('../utils/checkupWorkflow');
-const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
+const { reverseFamilyRelation } = require('../utils/familyLinks');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
 const tenantMatchStage = () => {
   const tenantId = getCurrentTenantId();
@@ -11067,12 +11067,35 @@ router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (re
 // GET /api/staff/patients/:id/family-links
 router.get('/patients/:id/family-links', staffAuth, async (req, res) => {
   try {
-    // 兼容旧数据：打开家庭信息时自动把既有的星形关系补齐成同一家庭互相关联。
-    await synchronizeFamilyGroup([req.params.id]);
     const user = await User.findById(req.params.id)
-      .populate('familyLinks.linkedUser', 'name phone gender birthDate isDeleted');
+      .populate('familyLinks.linkedUser', 'name phone gender birthDate isDeleted')
+      .populate('familyInvites.fromUser', 'name phone gender birthDate isDeleted');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
-    res.json({ success: true, data: (user.familyLinks || []).filter(l => l.linkedUser && !l.linkedUser.isDeleted) });
+    const links = (user.familyLinks || []).filter(l => l.linkedUser && !l.linkedUser.isDeleted).map(l => ({
+      _id: l._id, linkedUser: l.linkedUser, relation: l.relation, authorizationStatus: 'authorized',
+    }));
+    const known = new Set(links.map(l => String(l.linkedUser._id)));
+    const outgoing = await User.find({ 'familyInvites.fromUser': user._id, isDeleted: { $ne: true } })
+      .select('name phone gender birthDate familyInvites');
+    for (const other of outgoing) {
+      if (known.has(String(other._id))) continue;
+      const invite = other.familyInvites.find(i => String(i.fromUser) === String(user._id) && i.source === 'staff');
+      if (!invite) continue;
+      const ownInvite = user.familyInvites.find(i => i.source === 'staff' && String(i.fromUser?._id || i.fromUser) === String(other._id));
+      const status = invite.status === 'rejected' || ownInvite?.status === 'rejected' ? 'rejected' : 'pending';
+      links.push({ _id: invite._id, linkedUser: { _id: other._id, name: other.name, phone: other.phone,
+        gender: other.gender, birthDate: other.birthDate }, relation: invite.relation,
+        authorizationStatus: status, staffConfirmed: true });
+      known.add(String(other._id));
+    }
+    for (const invite of user.familyInvites || []) {
+      const other = invite.fromUser;
+      if (invite.source !== 'staff' || !other || other.isDeleted || known.has(String(other._id))) continue;
+      links.push({ _id: invite._id, linkedUser: other, relation: reverseFamilyRelation(invite.relation),
+        authorizationStatus: invite.status, staffConfirmed: true });
+      known.add(String(other._id));
+    }
+    res.json({ success: true, data: links });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -11086,31 +11109,45 @@ router.post('/patients/:id/family-links', staffAuth, async (req, res) => {
       User.findById(linkedUserId),
     ]);
     if (!userA || !userB) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (userA.isDeleted || userB.isDeleted ||
+        String(userA.tenantId || '') !== String(userB.tenantId || '')) {
+      return res.status(403).json({ success: false, message: '只能确认同一机构的有效客户关系' });
+    }
+    if (userA.patientCategory === 'child' || userB.patientCategory === 'child') {
+      return res.status(400).json({ success: false, message: '未成年人请使用监护人关联入口' });
+    }
     if (String(userA._id) === String(userB._id)) {
       return res.status(400).json({ success: false, message: '不能关联自己' });
     }
-    // A → B
-    if (!userA.familyLinks.find(l => String(l.linkedUser) === String(linkedUserId))) {
-      await User.updateOne(
-        { _id: userA._id, 'familyLinks.linkedUser': { $ne: userB._id } },
-        { $push: { familyLinks: { linkedUser: userB._id, relation: relation || '' } } },
-      );
+    if (userA.familyLinks.some(l => String(l.linkedUser) === String(userB._id))) {
+      return res.json({ success: true, message: '双方已授权关联' });
     }
-    // B → A（双向关联，使用反向称谓）
-    if (!userB.familyLinks.find(l => String(l.linkedUser) === String(req.params.id))) {
-      await User.updateOne(
-        { _id: userB._id, 'familyLinks.linkedUser': { $ne: userA._id } },
-        { $push: { familyLinks: { linkedUser: userA._id, relation: reverseFamilyRelation(relation) } } },
-      );
+    const existingA = userA.familyInvites.find(i => String(i.fromUser) === String(userB._id) && i.source === 'staff');
+    const existingB = userB.familyInvites.find(i => String(i.fromUser) === String(userA._id) && i.source === 'staff');
+    if (existingA?.status === 'rejected' || existingB?.status === 'rejected' || (existingA && existingB)) {
+      return res.status(409).json({ success: false, message: '医护已确认该关系，请查看双方授权状态' });
     }
-    const syncResult = await synchronizeFamilyGroup([userA._id, userB._id]);
-    res.json({
-      success: true,
-      message: syncResult.addedLinks > 0
-        ? `已添加关联，并自动同步同一家庭的${syncResult.memberCount}位成员`
-        : '已添加家庭成员关联',
-      data: syncResult,
-    });
+    const relationAB = String(relation || '').trim();
+    if (!relationAB) return res.status(400).json({ success: false, message: '请填写关系' });
+    const requests = [
+      { recipient: userA, other: userB, existing: existingA, relation: reverseFamilyRelation(relationAB) },
+      { recipient: userB, other: userA, existing: existingB, relation: relationAB },
+    ];
+    for (const item of requests) {
+      if (item.existing) continue;
+      const inviteId = new mongoose.Types.ObjectId();
+      const written = await User.updateOne({ _id: item.recipient._id,
+        familyInvites: { $not: { $elemMatch: { fromUser: item.other._id, source: 'staff' } } } },
+      { $push: { familyInvites: { _id: inviteId, fromUser: item.other._id,
+        fromName: item.other.name || item.other.phone, relation: item.relation, source: 'staff', status: 'pending' } } });
+      if (!written.modifiedCount) continue;
+      await Message.create({ user: item.recipient._id, type: 'system', sender: '系统通知',
+        title: '家庭关系授权确认', unread: true,
+        content: '医护人员已核实您的家庭关系。双方授权后可互相查看健康档案和报告、代传报告、代付订单并使用可共享权益；请确认是否同意。',
+        action: { type: 'family_invite', inviteId: String(inviteId), route: 'FamilyMembers' },
+      }).catch(error => console.error('[family-link] 授权通知发送失败', error));
+    }
+    res.json({ success: true, message: '医护端关系已确认，等待双方用户授权' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -11120,14 +11157,24 @@ router.delete('/patients/:id/family-links/:linkId', staffAuth, async (req, res) 
     const userA = await User.findById(req.params.id);
     if (!userA) return res.status(404).json({ success: false, message: '会员不存在' });
     const link = userA.familyLinks.id(req.params.linkId);
-    if (!link) return res.status(404).json({ success: false, message: '关联不存在' });
-    const linkedUserId = link.linkedUser;
-    await User.updateOne({ _id: userA._id }, { $pull: { familyLinks: { _id: link._id } } });
+    const invite = userA.familyInvites.id(req.params.linkId);
+    let linkedUserId = link?.linkedUser || invite?.fromUser;
+    if (!linkedUserId) {
+      const owner = await User.findOne({ familyInvites: { $elemMatch: {
+        _id: req.params.linkId, fromUser: userA._id, source: 'staff',
+      } } });
+      linkedUserId = owner?._id;
+    }
+    if (!linkedUserId) return res.status(404).json({ success: false, message: '关联不存在' });
+    await User.updateOne({ _id: userA._id }, { $pull: {
+      familyLinks: { linkedUser: linkedUserId }, familyInvites: { fromUser: linkedUserId, source: 'staff' },
+    } });
     // 反向移除
     const userB = await User.findById(linkedUserId);
     if (userB) {
-      const reverse = userB.familyLinks.find(l => String(l.linkedUser) === String(req.params.id));
-      if (reverse) await User.updateOne({ _id: userB._id }, { $pull: { familyLinks: { _id: reverse._id } } });
+      await User.updateOne({ _id: userB._id }, { $pull: {
+        familyLinks: { linkedUser: userA._id }, familyInvites: { fromUser: userA._id, source: 'staff' },
+      } });
     }
     res.json({ success: true, message: '已移除' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }

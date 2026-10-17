@@ -6,6 +6,8 @@ import { familyLinksAPI, guardianChildrenAPI, ordersAPI, paymentsAPI, authAPI } 
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { requestWechatPayment, waitForPayment } from '../../../utils/wechatPay';
+import { useAuth } from '../../../context/AuthContext';
+import { archiveStorageKey } from '../../../hooks/useArchiveSubject';
 
 // 对齐 app/src/screens/profile/FamilyMembersScreen.js
 const RELATIONS = ['配偶', '父亲', '母亲', '子女', '兄弟', '姐妹', '祖父', '祖母', '其他'];
@@ -193,7 +195,7 @@ function FamilyServiceModal({ data, onClose, onPay, payingOrderId }) {
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
       <ScrollView scrollY style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px ${spacing.lg}px ${spacing.xl + 12}px`, width: '100%', maxHeight: '80vh', boxSizing: 'border-box' }}>
         <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{data.member.name}的服务安排</Text>
-        <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>可查看服务安排和待支付项目；不展示健康档案和医疗资料</Text>
+        <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>此处查看服务安排和待支付项目；健康资料请从家庭成员卡片进入档案</Text>
         <View style={{ backgroundColor: colors.primary10, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginTop: `${spacing.lg}px` }}>
           <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block' }}>进行中的服务</Text>
           <Text style={{ fontSize: '22px', fontWeight: 700, color: colors.primary, marginTop: '2px' }}>{data.service.activeCount} 项</Text>
@@ -233,7 +235,7 @@ function FamilyServiceModal({ data, onClose, onPay, payingOrderId }) {
   );
 }
 
-function LinkCard({ link, onDelete, onView }) {
+function LinkCard({ link, onDelete, onView, onArchive, onUpload }) {
   const u = link.user;
   const icon = REL_ICON[link.relation] || '👤';
   return (
@@ -252,7 +254,9 @@ function LinkCard({ link, onDelete, onView }) {
         <Text style={{ fontSize: '11px', color: colors.success }}>已注册用户</Text>
       </View>
       <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-        <Text onClick={onView} style={{ fontSize: '12px', color: colors.primary, padding: '6px' }}>查看服务与代付</Text>
+        <Text onClick={onArchive} style={{ fontSize: '12px', color: colors.primary, padding: '6px' }}>查看档案</Text>
+        <Text onClick={onUpload} style={{ fontSize: '12px', color: colors.primary, padding: '6px' }}>上传报告</Text>
+        <Text onClick={onView} style={{ fontSize: '12px', color: colors.primary, padding: '6px' }}>服务与代付</Text>
         <Text onClick={onDelete} style={{ fontSize: '15px', color: colors.danger, padding: '6px' }}>🗑</Text>
       </View>
     </View>
@@ -261,6 +265,7 @@ function LinkCard({ link, onDelete, onView }) {
 
 export default function FamilyMembersPage() {
   const { statusBarHeight } = useNavBar();
+  const { user } = useAuth();
   const [links, setLinks] = useState([]);
   const [children, setChildren] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
@@ -271,6 +276,9 @@ export default function FamilyMembersPage() {
   const [payingOrderId, setPayingOrderId] = useState('');
   const payingRef = useRef(false);
   const [childArchive, setChildArchive] = useState(null);
+  const duplicateProfiles = links.filter(link => children.some(child =>
+    String(child.id) !== String(link.user?._id) && child.name === link.user?.name &&
+    String(child.birthDate || '').slice(0, 10) === String(link.user?.birthDate || '').slice(0, 10)));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -362,6 +370,12 @@ export default function FamilyMembersPage() {
     try { const result = await guardianChildrenAPI.archive(childId); setChildArchive(result.data); }
     catch (e) { Taro.showToast({ title: e.message || '档案加载失败', icon: 'none' }); }
   };
+  const openMemberArchive = (memberId, upload = false) => {
+    if (!user?._id || !memberId) return;
+    Taro.setStorageSync(archiveStorageKey(user._id), String(memberId));
+    if (upload) Taro.navigateTo({ url: '/pages/records/upload/index' });
+    else Taro.switchTab({ url: '/pages/records/index/index' });
+  };
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -377,10 +391,11 @@ export default function FamilyMembersPage() {
         <Text style={{ fontSize: '13px', color: colors.textMuted, lineHeight: '20px', display: 'block', marginBottom: `${spacing.lg}px` }}>
           可为未成年孩子建立独立健康档案；添加成年家人需由本人接受邀请。健康问卷可以稍后填写。
         </Text>
+        {duplicateProfiles.length > 0 && <Text style={{ color: colors.warning, fontSize: '12px', display: 'block', marginBottom: `${spacing.md}px` }}>发现同名同生日的两份档案。请联系医护核对，上传报告前确认所属档案。</Text>}
 
         {pendingInvites.length > 0 && (
           <View style={{ marginBottom: `${spacing.lg}px` }}>
-            <Text style={{ fontSize: '12px', color: colors.warning, fontWeight: 700, display: 'block', marginBottom: `${spacing.sm}px` }}>待确认邀请（{pendingInvites.length}）</Text>
+            <Text style={{ fontSize: '12px', color: colors.warning, fontWeight: 700, display: 'block', marginBottom: `${spacing.sm}px` }}>家庭关系授权（{pendingInvites.length}）</Text>
             {pendingInvites.map((inv) => (
               <View key={inv._id} style={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px`, borderLeft: `3px solid ${colors.warning}`, boxShadow: shadow.xs }}>
                 <View style={{ width: '44px', height: '44px', borderRadius: `${radius.md}px`, backgroundColor: colors.warning10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -388,17 +403,19 @@ export default function FamilyMembersPage() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{inv.fromName}</Text>
-                  {!!inv.relation && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>邀请关系：{inv.relation}</Text>}
-                  <Text style={{ fontSize: '11px', color: colors.warning }}>待您确认</Text>
+                  {!!inv.displayRelation && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>对方与您的关系：{inv.displayRelation}</Text>}
+                  <Text style={{ fontSize: '11px', color: colors.warning }}>
+                    {inv.status === 'accepted' ? '您已授权，等待对方授权' : '接受后可互看档案和报告、代传报告、代付及使用可共享权益'}
+                  </Text>
                 </View>
-                <View style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {inv.status === 'pending' && <View style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <View onClick={() => handleAcceptInvite(inv._id)} style={{ backgroundColor: colors.success, borderRadius: `${radius.xs}px`, padding: '6px 12px', textAlign: 'center' }}>
                     <Text style={{ color: '#fff', fontWeight: 700, fontSize: '12px' }}>{handlingInvite === inv._id ? '...' : '接受'}</Text>
                   </View>
                   <View onClick={() => handleRejectInvite(inv._id)} style={{ border: `1px solid ${colors.danger}`, borderRadius: `${radius.xs}px`, padding: '6px 12px', textAlign: 'center' }}>
                     <Text style={{ color: colors.danger, fontWeight: 600, fontSize: '12px' }}>拒绝</Text>
                   </View>
-                </View>
+                </View>}
               </View>
             ))}
           </View>
@@ -417,10 +434,10 @@ export default function FamilyMembersPage() {
           </View>
         ) : children.length > 0 || links.length > 0 ? (
           <>
-            {!!children.length && <><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700, display: 'block', marginBottom: `${spacing.sm}px` }}>我的孩子（{children.length}）</Text>{children.map(child => <View key={child.id} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}><Text style={{ fontSize: '15px', fontWeight: 700, display: 'block' }}>{child.name} · {child.relation}</Text><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>{child.birthDate} · {child.ageStage?.label || '年龄待核实'}</Text><View style={{ display: 'flex', gap: '12px', marginTop: '10px' }}><View onClick={() => openChildArchive(child.id)} style={{ padding: '9px 12px', borderRadius: '8px', backgroundColor: colors.primary10 }}><Text style={{ color: colors.primary, fontSize: '13px' }}>查看孩子档案</Text></View><View onClick={() => openChildQuestionnaire(child.id)} style={{ padding: '9px 12px', borderRadius: '8px', backgroundColor: colors.primary10 }}><Text style={{ color: colors.primary, fontSize: '13px' }}>填写问卷</Text></View></View></View>)}</>}
+            {!!children.length && <><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700, display: 'block', marginBottom: `${spacing.sm}px` }}>我的孩子（{children.length}）</Text>{children.map(child => <View key={child.id} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}><Text style={{ fontSize: '15px', fontWeight: 700, display: 'block' }}>{child.name} · {child.relation}</Text><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>{child.birthDate} · {child.ageStage?.label || '年龄待核实'}</Text><View style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '10px' }}><View onClick={() => openMemberArchive(child.id)} style={{ padding: '9px 12px', borderRadius: '8px', backgroundColor: colors.primary10 }}><Text style={{ color: colors.primary, fontSize: '13px' }}>查看档案</Text></View><View onClick={() => openMemberArchive(child.id, true)} style={{ padding: '9px 12px', borderRadius: '8px', backgroundColor: colors.primary10 }}><Text style={{ color: colors.primary, fontSize: '13px' }}>上传报告</Text></View><View onClick={() => handleViewService({ user: { _id: child.id } })} style={{ padding: '9px 12px', borderRadius: '8px', backgroundColor: colors.primary10 }}><Text style={{ color: colors.primary, fontSize: '13px' }}>服务与代付</Text></View><View onClick={() => openChildQuestionnaire(child.id)} style={{ padding: '9px 12px', borderRadius: '8px', backgroundColor: colors.primary10 }}><Text style={{ color: colors.primary, fontSize: '13px' }}>填写问卷</Text></View></View></View>)}</>}
             {!!links.length && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>已关联家人（{links.length}）</Text>}
             {links.map((link) => (
-              <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} onView={() => handleViewService(link)} />
+              <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} onView={() => handleViewService(link)} onArchive={() => openMemberArchive(link.user._id)} onUpload={() => openMemberArchive(link.user._id, true)} />
             ))}
           </>
         ) : null}

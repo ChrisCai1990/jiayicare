@@ -1,13 +1,21 @@
-// Family service/payment links do not authorize access to adult health data.
-// Only the account owner or an active direct guardian of a minor may manage a report.
-async function reportOwner(user, patientId, checkGuardian = require('./guardianChildAccess').guardianChild) {
+// A mutually authorized adult family link or direct minor guardianship permits report access.
+async function reportOwner(user, patientId, checkGuardian = require('./guardianChildAccess').guardianChild,
+  checkFamily = require('./authorizedFamilyMember').authorizedFamilyMember) {
   if (!patientId || String(patientId) === String(user._id)) return user._id;
   const access = await checkGuardian(user, String(patientId));
-  return access?.child?._id || null;
+  if (access?.child?._id) return access.child._id;
+  const member = await checkFamily(user, String(patientId));
+  return member?._id || null;
 }
 
-async function canAccessReport(user, report, checkGuardian) {
-  return !!report?.user && !!(await reportOwner(user, report.user, checkGuardian));
+async function canAccessReport(user, report, checkGuardian, checkFamily) {
+  return !!report?.user && !!(await reportOwner(user, report.user, checkGuardian, checkFamily));
 }
 
-module.exports = { reportOwner, canAccessReport };
+async function canManageReport(user, report, checkGuardian = require('./guardianChildAccess').guardianChild) {
+  if (!report?.user) return false;
+  if (String(report.user) === String(user._id)) return true;
+  return !!(await checkGuardian(user, String(report.user)));
+}
+
+module.exports = { reportOwner, canAccessReport, canManageReport };

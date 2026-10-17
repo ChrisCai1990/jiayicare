@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
-const { reportOwner, canAccessReport } = require('../utils/reportArchiveAccess');
+const { reportOwner, canAccessReport, canManageReport } = require('../utils/reportArchiveAccess');
 const { uploadBase64, deleteFile, urlToKey, signStoredUrl, getObjectStream } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
 const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
@@ -209,7 +209,7 @@ router.get('/by-category', auth, async (req, res) => {
 router.post('/:id/parse-ai', auth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
-    if (report && !(await canAccessReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份档案的监护权限' });
+    if (report && !(await canManageReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份报告的管理权限' });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
 
     const hasOssUrl = !!report.fileUrl;
@@ -729,7 +729,7 @@ router.get('/:id/file/:index', auth, async (req, res) => {
     if (!Number.isInteger(index) || index < 0) return res.status(400).json({ success: false, message: '文件序号无效' });
     const report = await MedicalReport.findById(req.params.id)
       .select('user fileUrl fileUrls ossKey ossKeys mimeType title');
-    if (report && !(await canAccessReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份档案的监护权限' });
+    if (report && !(await canAccessReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份档案的访问权限' });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const urls = report.fileUrls?.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
     const keys = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
@@ -756,7 +756,7 @@ router.get('/:id/file/:index', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
-    if (report && !(await canAccessReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份档案的监护权限' });
+    if (report && !(await canAccessReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份档案的访问权限' });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     res.json({ success: true, data: withSignedReportFiles(report) });
   } catch (err) {
@@ -865,7 +865,7 @@ router.post('/', auth, async (req, res) => {
 router.delete('/:id', auth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
-    if (report && !(await canAccessReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份档案的监护权限' });
+    if (report && !(await canManageReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份报告的管理权限' });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.audit_status === 'audited') {
       return res.status(403).json({ success: false, message: '已审核报告不可删除，如需处理请联系健康管理师' });

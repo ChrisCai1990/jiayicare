@@ -179,6 +179,7 @@ function ReportCard({ report, onPreview, autoExpand, highlightItemIndex }) {
 }
 
 export default function MedicalReportsScreen({ navigation, route }) {
+  const patientId = route?.params?.patientId || '';
   // 溯源跳转：AI健康分析结论若能核对到具体报告项，会带 highlightReportId(+highlightItemIndex)
   // 跳转过来，进页面后自动定位到对应年份、展开那份报告、高亮那一行检查项，不用手动来回翻找。
   const highlightReportId = route?.params?.highlightReportId;
@@ -192,7 +193,7 @@ export default function MedicalReportsScreen({ navigation, route }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await reportsAPI.byCategory();
+      const res = await reportsAPI.byCategory(patientId);
       setYears(res.data || []);
       if (highlightReportId) {
         const hitYear = (res.data || []).find(y => y.categories.some(cat => cat.reports.some(r => r._id === highlightReportId)));
@@ -201,7 +202,7 @@ export default function MedicalReportsScreen({ navigation, route }) {
       if (res.data?.length > 0) setSelYear(res.data[0].year);
     } catch {}
     finally { setLoading(false); }
-  }, [highlightReportId]);
+  }, [highlightReportId, patientId]);
 
   useEffect(() => { load(); }, [load]);
 

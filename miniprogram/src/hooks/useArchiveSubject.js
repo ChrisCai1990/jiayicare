@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { guardianChildrenAPI } from '../services/api';
+import { guardianChildrenAPI, familyLinksAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 export const archiveStorageKey = userId => `jy_active_archive_${userId}`;
@@ -14,6 +14,7 @@ export function storedArchiveId(userId) {
 export default function useArchiveSubject() {
   const { user } = useAuth();
   const [children, setChildren] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [subject, setSubject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,16 +23,24 @@ export default function useArchiveSubject() {
     if (!user?._id) { setLoading(true); return; }
     setLoading(true);
     try {
-      const result = await guardianChildrenAPI.list();
-      if (!result?.success || !Array.isArray(result.data)) throw new Error(result?.message || '档案列表加载失败');
-      const allowed = result.data;
-      const selected = allowed.find(child => String(child.id) === storedArchiveId(user._id)) || null;
-      setChildren(allowed);
+      const [childResult, familyResult] = await Promise.all([guardianChildrenAPI.list(), familyLinksAPI.list()]);
+      if (!childResult?.success || !Array.isArray(childResult.data) || !familyResult?.success || !Array.isArray(familyResult.data)) {
+        throw new Error('档案列表加载失败');
+      }
+      const childSubjects = childResult.data.map(child => ({ ...child, kind: 'child' }));
+      const childIds = new Set(childSubjects.map(child => String(child.id)));
+      const adultSubjects = familyResult.data.filter(link => link.user?._id && !childIds.has(String(link.user._id)))
+        .map(link => ({ id: link.user._id, name: link.user.name, kind: 'adult', relation: link.relation }));
+      const allowed = [...childSubjects, ...adultSubjects];
+      const selected = allowed.find(member => String(member.id) === storedArchiveId(user._id)) || null;
+      setChildren(childSubjects);
+      setSubjects(allowed);
       setSubject(selected);
       if (!selected) Taro.removeStorageSync(archiveStorageKey(user._id));
       setError('');
     } catch (err) {
       setChildren([]);
+      setSubjects([]);
       setSubject(null);
       setError(err.message || '档案列表加载失败，请重试');
     } finally { setLoading(false); }
@@ -40,11 +49,11 @@ export default function useArchiveSubject() {
   useDidShow(() => { refresh(); });
 
   const select = index => {
-    const child = index > 0 ? children[index - 1] : null;
-    if (child) Taro.setStorageSync(archiveStorageKey(user._id), String(child.id));
+    const member = index > 0 ? subjects[index - 1] : null;
+    if (member) Taro.setStorageSync(archiveStorageKey(user._id), String(member.id));
     else Taro.removeStorageSync(archiveStorageKey(user._id));
-    setSubject(child);
+    setSubject(member);
   };
 
-  return { user, children, subject, loading, error, refresh, select };
+  return { user, children, subjects, subject, loading, error, refresh, select };
 }

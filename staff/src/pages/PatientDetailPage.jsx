@@ -15491,7 +15491,7 @@ function FamilyTab({ patientId, user, onRefresh }) {
     setSaving(true)
     try {
       await staffAPI.addFamilyLink(patientId, { linkedUserId: addTarget._id, relation: addRelation })
-      toast('已添加家庭成员')
+      toast('医护端关系已确认，等待双方用户授权')
       setShowAdd(false); setAddSearch(''); setAddResults([]); setAddTarget(null); setAddRelation('')
       load()
     } catch (err) { toast(err.message || '添加失败') }
@@ -15499,7 +15499,7 @@ function FamilyTab({ patientId, user, onRefresh }) {
   }
 
   const handleRemove = async (linkId) => {
-    if (!window.confirm('确定移除此家庭成员关联？')) return
+    if (!window.confirm('确定移除此家庭成员关系？')) return
     try {
       await staffAPI.removeFamilyLink(patientId, linkId)
       toast('已移除')
@@ -15581,6 +15581,9 @@ function FamilyTab({ patientId, user, onRefresh }) {
                 >
                   <span style={{ fontWeight: 600, fontSize: 14 }}>{linked?.name || '-'}</span>
                   <span style={{ color: '#8AA89C', fontSize: 12, marginLeft: 8 }}>{m.relation}</span>
+                  {m.authorizationStatus !== 'authorized' && <span style={{ color: '#A66A00', fontSize: 12, marginLeft: 8 }}>
+                    {m.authorizationStatus === 'rejected' ? '用户未授权' : '待用户授权'}
+                  </span>}
                   <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>
                     {linked?.gender || ''}{linked?.gender ? ' · ' : ''}{linked?.birthDate ? calcAge(linked.birthDate) : ''}{linked?.phone ? ' · ' + linked.phone : ''}
                   </div>

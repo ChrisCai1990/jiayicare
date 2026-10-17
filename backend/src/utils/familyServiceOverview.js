@@ -27,9 +27,15 @@ async function loadOverview(actor, memberId, models) {
   const scope = {tenantId: actor.tenantId || null, isDeleted: {$ne: true}};
   const owner = await User.findOne({_id: actor._id, ...scope}).select('familyLinks').lean();
   const link = owner?.familyLinks?.find(x => String(x.linkedUser) === String(memberId));
-  if (!link || String(actor._id) === String(memberId)) throw denied();
-  const member = await User.findOne({_id: memberId, ...scope}).select('name familyLinks').lean();
-  if (!member?.familyLinks?.some(x => String(x.linkedUser) === String(actor._id))) throw denied();
+  if (String(actor._id) === String(memberId)) throw denied();
+  const member = await User.findOne({_id: memberId, ...scope}).select('name familyLinks patientCategory birthDate').lean();
+  let relation = link?.relation || '家庭成员';
+  if (member?.patientCategory === 'child') {
+    const guardianLink = await (models?.ChildGuardianLink || require('../models/ChildGuardianLink'))
+      .findOne({ guardian: actor._id, child: memberId, status: 'active' }).lean();
+    if (!guardianLink || !require('./childAgeStage').childAgeStage(member.birthDate)) throw denied();
+    relation = guardianLink.relation || '孩子';
+  } else if (!link || !member?.familyLinks?.some(x => String(x.linkedUser) === String(actor._id))) throw denied();
   const filter = activeFilter(member._id, actor.tenantId);
   const [activeCount, latest, appointments, unpaidOrders, pushedProducts] = await Promise.all([
     Order.countDocuments(filter),
@@ -64,7 +70,7 @@ async function loadOverview(actor, memberId, models) {
         name: item.name || '推荐服务', quotedPrice: item.price}));
   }).slice(0, 20);
   return {
-    member: {_id: member._id, name: member.name || '家庭成员', relation: link.relation || '家庭成员'},
+    member: {_id: member._id, name: member.name || '家庭成员', relation},
     service: {activeCount, latestStatus: latest ? statusLabel(latest) : '', latestServiceName: latest?.serviceName || ''},
     appointments: appointments.map(row => ({serviceName: row.serviceName || '服务安排', status: statusLabel(row),
       scheduledAt: row.scheduledAt || null, desiredServiceDate: row.desiredServiceDate || null,
