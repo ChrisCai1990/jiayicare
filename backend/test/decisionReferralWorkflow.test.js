@@ -179,10 +179,16 @@ test('advisor must attach an existing report and a linked specialist before book
     const leadOnly = response();
     await advance({ ...req, body: { ...req.body, consultationType: 'multidisciplinary',
       coordinatorStaffId: String(coordinatorId), specialties: [
-        { medicalExpertId: String(expertId), expectedAt: '2026-10-18T10:00', method: 'remote' },
+        { medicalExpertId: String(expertId), focusQuestion: '请核对异常指标' },
       ] } }, leadOnly);
     assert.equal(leadOnly.statusCode, 200);
     assert.equal(savedReferrals[0].consultationMembers.length, 1);
+    order.decisionReferral = { stage: 'advisor' };
+    const missingFocus = response();
+    await advance({ ...req, body: { ...req.body, consultationType: 'multidisciplinary',
+      coordinatorStaffId: String(coordinatorId), specialties: [{ medicalExpertId: String(expertId) }] } }, missingFocus);
+    assert.equal(missingFocus.statusCode, 400);
+    assert.match(missingFocus.body.message, /本专科重点问题/);
   } finally {
     FollowUp.findById = original.taskFind; FollowUp.findOneAndUpdate = original.taskUpsert;
     FollowUp.updateOne = original.taskUpdate; Order.findById = original.orderFind;

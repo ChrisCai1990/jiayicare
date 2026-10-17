@@ -281,9 +281,10 @@ router.post('/tasks/:id/advance', staffAuth, async (req, res) => {
         || requests.length < 1
         || requests.length > (consultationType === 'single' ? 1 : 5))
         fail('请选择单学科或多学科会诊；顾问最多可预先指定 5 位专家', 400);
-      const allFocusQuestions = consultationType === 'multidisciplinary' && requests.every(row => clean(row.focusQuestion, 2000));
-      if ((!allFocusQuestions && (!reason || !questionList)) || !reportIds.length)
-        fail('请填写各专家重点问题，或填写转介原因和待解答问题，并选择本次报告', 400);
+      if (consultationType === 'multidisciplinary' && requests.some(row => !clean(row.focusQuestion, 2000)))
+        fail('请填写每位专家的本专科重点问题', 400);
+      if ((consultationType === 'single' && (!reason || !questionList)) || !reportIds.length)
+        fail('请填写转介内容并选择本次报告', 400);
       if (new Set(requests.map(row => id(row.medicalExpertId))).size !== requests.length)
         fail('同一位专家不能重复安排，请选择不同专科专家', 400);
       if (reportIds.some(value => !mongoose.isValidObjectId(value))) fail('报告选择无效', 400);
@@ -324,7 +325,7 @@ router.post('/tasks/:id/advance', staffAuth, async (req, res) => {
         if (!plan.hospital || !plan.department || (consultationType === 'single' && !plan.campus)) fail(`第 ${index + 1} 位专家资源缺少医院或科室`);
         plans.push(plan);
       }
-      if (allFocusQuestions) {
+      if (consultationType === 'multidisciplinary') {
         reason = '多学科会诊报告解析';
         questionList = plans.map(row => `${row.department} · ${row.expert}：${row.focusQuestion}`).join('\n').slice(0, 5000);
       }
