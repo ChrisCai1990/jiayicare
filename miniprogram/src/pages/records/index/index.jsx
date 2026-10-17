@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, ScrollView, Picker } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { recordsAPI, userAPI, ibdAPI, guardianChildrenAPI } from '../../../services/api';
+import { recordsAPI, userAPI, ibdAPI, guardianChildrenAPI, familyLinksAPI } from '../../../services/api';
 import useArchiveSubject from '../../../hooks/useArchiveSubject';
 import TrendChart from '../../../components/TrendChart';
 import BloodPressureChart from '../../../components/BloodPressureChart';
@@ -28,6 +28,12 @@ const BODY_METRICS = [
 ];
 const bodyNumber = value => Number(String(value ?? '').match(/-?\d+(?:\.\d+)?/)?.[0]);
 const bodyDate = row => String(row?.measuredAt || row?.checkDate || row?.recordedAt || '').slice(0, 10);
+const archiveValue = value => {
+  if (value === undefined || value === null || value === '') return '未记录';
+  if (Array.isArray(value)) return value.map(archiveValue).filter(item => item !== '未记录').join('、') || '未记录';
+  if (typeof value === 'object') return Object.values(value).map(archiveValue).filter(item => item !== '未记录').join('、') || '未记录';
+  return String(value);
+};
 
 const STATUS_COLOR = { normal: colors.success, warning: colors.warning, low: colors.info };
 
@@ -92,12 +98,15 @@ export default function RecordsIndexPage() {
     if (archive.loading || !archive.subject?.id) { setChildArchive(null); setChildArchiveError(''); return; }
     let live = true;
     setChildArchive(null); setChildArchiveError('');
-    guardianChildrenAPI.archive(archive.subject.id).then(result => {
+    const request = archive.subject.kind === 'child'
+      ? guardianChildrenAPI.archive(archive.subject.id)
+      : familyLinksAPI.archive(archive.subject.id);
+    request.then(result => {
       if (!result?.success || !result.data) throw new Error(result?.message || '儿童档案加载失败');
       if (live) setChildArchive(result.data);
     }).catch(error => { if (live) setChildArchiveError(error.message || '儿童档案加载失败'); });
     return () => { live = false; };
-  }, [archive.loading, archive.subject?.id]);
+  }, [archive.loading, archive.subject?.id, archive.subject?.kind]);
 
   async function loadTrends() {
     const generation=++trendGeneration.current;
@@ -136,10 +145,10 @@ export default function RecordsIndexPage() {
 
   const archivePicker = <View style={{ backgroundColor: '#fff', padding: `${spacing.md}px`, borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px`, border: `1px solid ${colors.border}` }}>
     <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>当前健康档案</Text>
-    <Picker mode="selector" range={[`本人 · ${archive.user?.name || ''}`, ...archive.children.map(child => `${child.name} · 孩子`)]}
-      value={Math.max(0, archive.children.findIndex(child => String(child.id) === String(archive.subject?.id)) + 1)}
+    <Picker mode="selector" range={[`本人 · ${archive.user?.name || ''}`, ...archive.subjects.map(member => `${member.name} · ${member.kind === 'child' ? '孩子' : '家人'}`)]}
+      value={Math.max(0, archive.subjects.findIndex(member => String(member.id) === String(archive.subject?.id)) + 1)}
       onChange={event => archive.select(Number(event.detail.value))}>
-      <Text style={{ color: colors.primary, fontSize: '16px', fontWeight: 700 }}>{archive.subject ? `${archive.subject.name} · 孩子 ▾` : `本人 · ${archive.user?.name || ''} ▾`}</Text>
+      <Text style={{ color: colors.primary, fontSize: '16px', fontWeight: 700 }}>{archive.subject ? `${archive.subject.name} · ${archive.subject.kind === 'child' ? '孩子' : '家人'} ▾` : `本人 · ${archive.user?.name || ''} ▾`}</Text>
     </Picker>
   </View>;
 
@@ -151,11 +160,14 @@ export default function RecordsIndexPage() {
       <View onClick={() => Taro.navigateTo({ url: '/pages/records/upload/index' })} style={{ flex: 1, padding: '15px', backgroundColor: colors.primary, color: '#fff', textAlign: 'center', borderRadius: `${radius.md}px` }}>上传报告</View>
       <View onClick={() => Taro.navigateTo({ url: '/pages/records/medical-reports/index' })} style={{ flex: 1, padding: '15px', backgroundColor: '#fff', color: colors.primary, textAlign: 'center', borderRadius: `${radius.md}px` }}>查看报告</View>
     </View>
-    {childArchiveError ? <Text style={{ color: colors.danger }}>{childArchiveError}</Text> : !childArchive ? <Text>儿童档案加载中…</Text> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
+    {childArchiveError ? <Text style={{ color: colors.danger }}>{childArchiveError}</Text> : !childArchive ? <Text>家庭成员档案加载中…</Text> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
       <Text style={{ fontSize: '16px', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{childArchive.name}的基础档案</Text>
-      <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>{childArchive.birthDate} · {childArchive.ageStage?.label || '年龄待核实'}</Text>
-      {childArchive.pendingReviewCount > 0 && <Text style={{ color: colors.warning, display: 'block' }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}
-      {Object.entries({ birthWeight: '出生体重（克）', birthLength: '出生身长（厘米）', reportedHeightCm: '最近身高/身长（厘米）', reportedWeightKg: '最近体重（千克）', reportedMeasuredAt: '测量日期', feeding: '喂养与饮食', sleep: '睡眠', development: '生长发育与行为', caregiverConcerns: '监护人关注问题' }).map(([key, label]) => <View key={key} style={{ padding: '8px 0', borderBottom: `1px solid ${colors.borderLight}` }}><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{label}</Text><Text style={{ fontSize: '14px' }}>{childArchive.childProfile?.[key] ?? '未记录'}</Text></View>)}
+      <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>{childArchive.birthDate} · {childArchive.ageStage?.label || (archive.subject.kind === 'adult' ? '家庭成员' : '年龄待核实')}</Text>
+      {archive.subject.kind === 'child' && childArchive.pendingReviewCount > 0 && <Text style={{ color: colors.warning, display: 'block' }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}
+      {Object.entries(archive.subject.kind === 'child'
+        ? { birthWeight: '出生体重（克）', birthLength: '出生身长（厘米）', reportedHeightCm: '最近身高/身长（厘米）', reportedWeightKg: '最近体重（千克）', reportedMeasuredAt: '测量日期', feeding: '喂养与饮食', sleep: '睡眠', development: '生长发育与行为', caregiverConcerns: '监护人关注问题' }
+        : { height: '身高', weight: '体重', bloodTypeABO: 'ABO血型', bloodTypeRH: 'Rh血型', chronicDiseases: '慢性病', drugAllergy: '药物过敏史', foodAllergy: '食物过敏史', allergies: '过敏史', pastHistory: '既往史', medicalHistory: '疾病史', medications: '当前用药', medicHistory: '用药史', surgeries: '手术记录', surgeryHistory: '手术史', familyHistory: '家族史', infectiousHistory: '传染病史' })
+        .map(([key, label]) => <View key={key} style={{ padding: '8px 0', borderBottom: `1px solid ${colors.borderLight}` }}><Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{label}</Text><Text style={{ fontSize: '14px' }}>{archiveValue(archive.subject.kind === 'child' ? childArchive.childProfile?.[key] : childArchive[key] || childArchive.healthProfile?.[key])}</Text></View>)}
     </View>}
   </View>;
 

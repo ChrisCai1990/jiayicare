@@ -131,9 +131,23 @@ async function cancelEnterprisePackageEntitlements(enterpriseId, userId) {
 }
 
 async function applicableEntitlements(patientId, now = new Date()) {
-  const patient = await User.findById(patientId).select('familyLinks').lean();
+  const patient = await User.findById(patientId).select('familyLinks tenantId patientCategory').lean();
   if (!patient) return [];
-  const familyIds = (patient.familyLinks || []).map(item => item.linkedUser).filter(Boolean);
+  const candidateIds = (patient.familyLinks || []).map(item => item.linkedUser).filter(Boolean);
+  const reciprocalAdults = candidateIds.length ? await User.find({ _id: { $in: candidateIds },
+    tenantId: patient.tenantId || null, isDeleted: { $ne: true }, 'familyLinks.linkedUser': patient._id,
+  }).select('_id').lean() : [];
+  let familyIds = reciprocalAdults.map(member => member._id);
+  if (patient.patientCategory === 'child') {
+    const guardians = await require('../models/ChildGuardianLink').find({ child: patient._id, status: 'active' })
+      .select('guardian').lean();
+    const guardianIds = guardians.map(link => link.guardian);
+    if (guardianIds.length) {
+      const validGuardians = await User.find({ _id: { $in: guardianIds }, tenantId: patient.tenantId || null,
+        patientCategory: { $ne: 'child' }, isDeleted: { $ne: true } }).select('_id').lean();
+      familyIds = [...familyIds, ...validGuardians.map(guardian => guardian._id)];
+    }
+  }
   const rows = await PackageEntitlement.find({
     status: 'active', validFrom: { $lte: now }, validUntil: { $gte: now },
     ownerUserId: { $in: [patient._id, ...familyIds] },

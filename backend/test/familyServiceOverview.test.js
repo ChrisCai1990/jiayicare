@@ -28,6 +28,23 @@ test('linked family overview exposes payable order and product recommendation wi
   assert.equal(result.recommendations[0].name,'虚构推荐');
   assert.ok(!JSON.stringify(result).includes('PRIVATE_'));
 });
+test('direct guardian can view child service overview; an unrelated adult cannot', async () => {
+  const {loadOverview} = require('../src/utils/familyServiceOverview');
+  const actorId='507f1f77bcf86cd799439011', childId='507f1f77bcf86cd799439012';
+  const query = value => ({select(){return this;},sort(){return this;},limit(){return this;},lean(){return Promise.resolve(value);}});
+  let active = true;
+  const models = {
+    User: {findOne: filter => query(String(filter._id) === actorId
+      ? {familyLinks:[]} : {_id:childId,name:'虚构孩子',patientCategory:'child',birthDate:'2020-06-25',familyLinks:[]})},
+    ChildGuardianLink: {findOne: () => query(active ? {relation:'母亲'} : null)},
+    Order: {countDocuments:async()=>0,findOne:()=>query(null),find:()=>query([])},
+    PushRecord: {find:()=>query([])},
+  };
+  const result = await loadOverview({_id:actorId,tenantId:null},childId,models);
+  assert.equal(result.member.relation,'母亲');
+  active = false;
+  await assert.rejects(loadOverview({_id:actorId,tenantId:null},childId,models), {status:403});
+});
 test('family overview real HTTP and Mongo authorization and projection', {skip:process.env.METABOLIC_TEST_MONGO!=='1'}, async t => {
   const m = require('mongoose'), express = require('express'), jwt = require('jsonwebtoken');
   process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');

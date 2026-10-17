@@ -175,7 +175,7 @@ function AddChildModal({ onClose, onSaved, onQuestionnaire }) {
   </ScrollView></View></Modal>;
 }
 
-function LinkCard({ link, onDelete }) {
+function LinkCard({ link, onDelete, onArchive, onReports, onUpload }) {
   const u = link.user;
   const icon = { '配偶': 'heart', '父亲': 'man', '母亲': 'woman', '子女': 'happy', '兄弟': 'people', '姐妹': 'people' }[link.relation] || 'person';
   return (
@@ -192,6 +192,11 @@ function LinkCard({ link, onDelete }) {
         <Text style={styles.memberPhone}>{u.phone}</Text>
         {u.age ? <Text style={styles.memberMeta}>{u.age} 岁</Text> : null}
         <Text style={styles.memberLinked}>已注册用户</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingTop: 8 }}>
+          <TouchableOpacity onPress={onArchive}><Text style={{ color: colors.primary }}>查看档案</Text></TouchableOpacity>
+          <TouchableOpacity onPress={onReports}><Text style={{ color: colors.primary }}>查看报告</Text></TouchableOpacity>
+          <TouchableOpacity onPress={onUpload}><Text style={{ color: colors.primary }}>上传报告</Text></TouchableOpacity>
+        </View>
       </View>
       <TouchableOpacity onPress={onDelete} style={styles.deleteBtn}>
         <Ionicons name="trash-outline" size={18} color={colors.danger} />
@@ -208,6 +213,7 @@ export default function FamilyMembersScreen({ navigation }) {
   const [showAdd, setShowAdd]       = useState('');
   const [handlingInvite, setHandlingInvite] = useState(null);
   const [childArchive, setChildArchive] = useState(null);
+  const [familyArchive, setFamilyArchive] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -275,6 +281,10 @@ export default function FamilyMembersScreen({ navigation }) {
     try { const result = await guardianChildrenAPI.archive(childId); setChildArchive(result.data); }
     catch (e) { Alert.alert('加载失败', e.message || '无法获取孩子档案'); }
   };
+  const openFamilyArchive = async (memberId) => {
+    try { const result = await familyLinksAPI.archive(memberId); setFamilyArchive(result.data); }
+    catch (error) { Alert.alert('档案暂不可用', error.message || '请稍后重试'); }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -295,7 +305,7 @@ export default function FamilyMembersScreen({ navigation }) {
         {pendingInvites.length > 0 && (
           <View style={{ marginBottom: spacing.lg }}>
             <Text style={[styles.sectionLabel, { color: colors.warning, fontWeight: '700' }]}>
-              待确认邀请（{pendingInvites.length}）
+              家庭关系授权（{pendingInvites.length}）
             </Text>
             {pendingInvites.map(inv => (
               <View key={inv._id} style={[styles.memberCard, { borderLeftWidth: 3, borderLeftColor: colors.warning }]}>
@@ -304,10 +314,12 @@ export default function FamilyMembersScreen({ navigation }) {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.memberName}>{inv.fromName}</Text>
-                  {inv.relation ? <Text style={styles.memberMeta}>邀请关系：{inv.relation}</Text> : null}
-                  <Text style={[styles.memberLinked, { color: colors.warning }]}>待您确认</Text>
+                  {inv.displayRelation ? <Text style={styles.memberMeta}>对方与您的关系：{inv.displayRelation}</Text> : null}
+                  <Text style={[styles.memberLinked, { color: colors.warning }]}>
+                    {inv.status === 'accepted' ? '您已授权，等待对方授权' : '接受后可互看档案和报告、代传报告、代付及使用可共享权益'}
+                  </Text>
                 </View>
-                <View style={{ gap: spacing.xs }}>
+                {inv.status === 'pending' && <View style={{ gap: spacing.xs }}>
                   <TouchableOpacity
                     style={{ backgroundColor: colors.success, borderRadius: radius.xs, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center' }}
                     onPress={() => handleAcceptInvite(inv._id)}
@@ -325,7 +337,7 @@ export default function FamilyMembersScreen({ navigation }) {
                   >
                     <Text style={{ color: colors.danger, fontWeight: '600', fontSize: 12 }}>拒绝</Text>
                   </TouchableOpacity>
-                </View>
+                </View>}
               </View>
             ))}
           </View>
@@ -344,10 +356,10 @@ export default function FamilyMembersScreen({ navigation }) {
           </View>
         ) : children.length > 0 || links.length > 0 ? (
           <>
-            {!!children.length && <><Text style={styles.sectionLabel}>我的孩子（{children.length}）</Text>{children.map(child => <View key={child.id} style={styles.memberCard}><View style={styles.memberIcon}><Ionicons name="happy-outline" size={24} color={colors.primary} /></View><View style={{ flex: 1 }}><Text style={styles.memberName}>{child.name} · {child.relation}</Text><Text style={styles.memberMeta}>{child.birthDate} · {child.ageStage?.label || '年龄待核实'}</Text><View style={{ flexDirection: 'row', gap: 16, paddingTop: 8 }}><TouchableOpacity onPress={() => openChildArchive(child.id)}><Text style={{ color: colors.primary, fontWeight: '600' }}>查看孩子档案</Text></TouchableOpacity><TouchableOpacity onPress={() => openChildQuestionnaire(child.id)}><Text style={{ color: colors.primary, fontWeight: '600' }}>填写问卷</Text></TouchableOpacity></View></View></View>)}</>}
+            {!!children.length && <><Text style={styles.sectionLabel}>我的孩子（{children.length}）</Text>{children.map(child => <View key={child.id} style={styles.memberCard}><View style={styles.memberIcon}><Ionicons name="happy-outline" size={24} color={colors.primary} /></View><View style={{ flex: 1 }}><Text style={styles.memberName}>{child.name} · {child.relation}</Text><Text style={styles.memberMeta}>{child.birthDate} · {child.ageStage?.label || '年龄待核实'}</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, paddingTop: 8 }}><TouchableOpacity onPress={() => openChildArchive(child.id)}><Text style={{ color: colors.primary, fontWeight: '600' }}>查看档案</Text></TouchableOpacity><TouchableOpacity onPress={() => navigation.navigate('MedicalReports', {patientId: child.id, patientName: child.name})}><Text style={{ color: colors.primary, fontWeight: '600' }}>查看报告</Text></TouchableOpacity><TouchableOpacity onPress={() => navigation.navigate('ReportUpload', {patientId: child.id, patientName: child.name})}><Text style={{ color: colors.primary, fontWeight: '600' }}>上传报告</Text></TouchableOpacity><TouchableOpacity onPress={() => openChildQuestionnaire(child.id)}><Text style={{ color: colors.primary, fontWeight: '600' }}>填写问卷</Text></TouchableOpacity></View></View></View>)}</>}
             {!!links.length && <Text style={styles.sectionLabel}>已关联家人（{links.length}）</Text>}
             {links.map(link => (
-              <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} />
+              <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} onArchive={() => openFamilyArchive(link.user._id)} onReports={() => navigation.navigate('MedicalReports', {patientId: link.user._id, patientName: link.user.name})} onUpload={() => navigation.navigate('ReportUpload', {patientId: link.user._id, patientName: link.user.name})} />
             ))}
           </>
         ) : null}
@@ -356,6 +368,7 @@ export default function FamilyMembersScreen({ navigation }) {
       <Modal visible={showAdd === 'choice'} transparent animationType="slide" onRequestClose={() => setShowAdd('')}><View style={styles.overlay}><View style={styles.sheet}><Text style={styles.sheetTitle}>添加家庭成员</Text><TouchableOpacity onPress={() => setShowAdd('child')} style={[styles.selectedBox, { marginBottom: 12 }]}><Text>为未成年孩子建档</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowAdd('adult')} style={[styles.selectedBox, { marginBottom: 12 }]}><Text>邀请成年家人（需本人确认）</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowAdd('')} style={styles.cancelBtn}><Text style={styles.cancelBtnText}>取消</Text></TouchableOpacity></View></View></Modal>
       {showAdd === 'adult' && <AddLinkModal onClose={() => setShowAdd('')} onSaved={load} />}
       {showAdd === 'child' && <AddChildModal onClose={() => setShowAdd('')} onSaved={load} onQuestionnaire={openChildQuestionnaire} />}
+      <Modal visible={!!familyArchive} transparent animationType="slide" onRequestClose={() => setFamilyArchive(null)}><View style={styles.overlay}><ScrollView style={[styles.sheet, { maxHeight: '82%' }]}><Text style={styles.sheetTitle}>{familyArchive?.name}的健康档案</Text><Text style={styles.sheetDesc}>{familyArchive?.birthDate} · 仅查看</Text>{[['bloodTypeABO','ABO血型'],['bloodTypeRH','Rh血型'],['chronicDiseases','慢性病'],['drugAllergy','药物过敏史'],['foodAllergy','食物过敏史'],['pastHistory','既往史'],['medicalHistory','疾病史'],['medications','当前用药'],['surgeryHistory','手术史'],['familyHistory','家族史']].map(([key,label]) => { const value = familyArchive?.[key] || familyArchive?.healthProfile?.[key]; const display = Array.isArray(value) ? value.join('、') : value && typeof value === 'object' ? Object.values(value).join('、') : String(value || '未记录'); return <View key={key} style={{ paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.border }}><Text style={styles.memberMeta}>{label}</Text><Text style={styles.memberName}>{display}</Text></View>; })}<TouchableOpacity onPress={() => setFamilyArchive(null)} style={[styles.saveBtn, { marginTop: 16 }]}><Text style={styles.saveBtnText}>关闭</Text></TouchableOpacity></ScrollView></View></Modal>
       <Modal visible={!!childArchive} transparent animationType="slide" onRequestClose={() => setChildArchive(null)}><View style={styles.overlay}><ScrollView style={[styles.sheet, { maxHeight: '82%' }]}><Text style={styles.sheetTitle}>{childArchive?.name}的健康档案</Text><Text style={styles.sheetDesc}>{childArchive?.birthDate} · {childArchive?.ageStage?.label || '年龄待核实'} · 监护人自报资料须经医护核实</Text>{childArchive?.pendingReviewCount > 0 && <Text style={{ color: colors.warning, marginBottom: 10 }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}{[['birthWeight','出生体重（克）'],['birthLength','出生身长（厘米）'],['reportedHeightCm','最近身高/身长（厘米）'],['reportedWeightKg','最近体重（千克）'],['reportedMeasuredAt','测量日期'],['feeding','喂养与饮食'],['sleep','睡眠'],['development','生长发育与行为'],['caregiverConcerns','监护人关注问题']].map(([key,label]) => <View key={key} style={{ paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.border }}><Text style={styles.memberMeta}>{label}{childArchive?.pendingPaths?.includes(`childProfile.${key}`) ? ' · 待核实' : ''}</Text><Text style={styles.memberName}>{childArchive?.childProfile?.[key] ?? '未记录'}</Text></View>)}<TouchableOpacity onPress={() => setChildArchive(null)} style={[styles.saveBtn, { marginTop: 16 }]}><Text style={styles.saveBtnText}>关闭</Text></TouchableOpacity></ScrollView></View></Modal>
     </SafeAreaView>
   );

@@ -194,8 +194,8 @@ export const remindersAPI = {
 
 // ── Medical Reports ───────────────────────────────────────────────
 export const reportsAPI = {
-  list:        ()     => request('/reports'),
-  byCategory:  ()     => request('/reports/by-category'),
+  list:        (patientId = '') => request(`/reports${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
+  byCategory:  (patientId = '') => request(`/reports/by-category${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
   get:         (id)   => request(`/reports/${id}`),
   uploadBase64: (content, mimeType) => request('/reports/upload-base64', { method: 'POST', body: JSON.stringify({ content, mimeType }), timeout: 60000 }),
   cleanupUploads: (uploadTokens) => request('/reports/upload-cleanup', { method: 'POST', body: JSON.stringify({ uploadTokens }) }),
@@ -318,6 +318,7 @@ export const familyAPI = {
 // 系统内家庭成员关联（需求6/18）
 export const familyLinksAPI = {
   list:           ()                       => request('/user/family-links'),
+  archive:        (memberId)             => request(`/user/family-links/${memberId}/archive`),
   search:         (q)                      => request(`/user/family-links/search?q=${encodeURIComponent(q)}`),
   add:            (linkedUserId, relation) => request('/user/family-links', { method: 'POST', body: JSON.stringify({ linkedUserId, relation }) }),
   remove:         (linkId)                 => request(`/user/family-links/${linkId}`, { method: 'DELETE' }),

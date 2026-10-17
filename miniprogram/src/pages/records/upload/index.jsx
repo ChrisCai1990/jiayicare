@@ -119,10 +119,10 @@ export default function ReportUploadPage() {
       <View style={{ padding: `${spacing.lg}px` }}>
       <View style={{ backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
         <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>报告所属档案</Text>
-        <Picker mode="selector" disabled={uploading || archive.loading || !!archive.error} range={[`本人 · ${archive.user?.name || ''}`, ...archive.children.map(child => `${child.name} · 孩子`)]}
-          value={Math.max(0, archive.children.findIndex(child => String(child.id) === String(archive.subject?.id)) + 1)}
+        <Picker mode="selector" disabled={uploading || archive.loading || !!archive.error} range={[`本人 · ${archive.user?.name || ''}`, ...archive.subjects.map(member => `${member.name} · ${member.kind === 'child' ? '孩子' : '家人'}`)]}
+          value={Math.max(0, archive.subjects.findIndex(member => String(member.id) === String(archive.subject?.id)) + 1)}
           onChange={event => archive.select(Number(event.detail.value))}>
-          <View style={{ color: colors.primary, fontSize: '16px', fontWeight: 700, padding: '6px 0' }}>{archive.loading ? '正在核对档案…' : archive.subject ? `${archive.subject.name} · 孩子 ▾` : `本人 · ${archive.user?.name || ''} ▾`}</View>
+          <View style={{ color: colors.primary, fontSize: '16px', fontWeight: 700, padding: '6px 0' }}>{archive.loading ? '正在核对档案…' : archive.subject ? `${archive.subject.name} · ${archive.subject.kind === 'child' ? '孩子' : '家人'} ▾` : `本人 · ${archive.user?.name || ''} ▾`}</View>
         </Picker>
         {!!archive.error && <Text onClick={archive.refresh} style={{ fontSize: '12px', color: colors.danger }}>{archive.error} · 点击重试</Text>}
       </View>

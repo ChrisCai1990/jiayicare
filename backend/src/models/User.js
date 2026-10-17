@@ -359,6 +359,7 @@ const userSchema = new mongoose.Schema({
     fromUser:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     fromName:  { type: String, default: '' },
     relation:  { type: String, default: '' },
+    source:    { type: String, enum: ['user', 'staff'], default: 'user' },
     createdAt: { type: Date, default: Date.now },
     status:    { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
   }],
