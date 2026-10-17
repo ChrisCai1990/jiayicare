@@ -8,11 +8,14 @@ const HealthPlan = require('../src/models/HealthPlan');
 const CareFlow = require('../src/models/CareFlow');
 const Insurance = require('../src/models/InsuranceServiceCase');
 const Link = require('../src/models/FollowUpServiceLink');
+const Request = require('../src/models/ServiceSupervisionRequest');
 const { loadServices } = require('../src/utils/advisorSupervision');
+const supervisionRouter = require('../src/routes/advisorSupervision');
 
 test('advisor sees the transferred decision service as an actionable stage with planner intake', async () => {
   const models = [User, Admin, FollowUp, Order, HealthPlan, CareFlow, Insurance, Link];
   const originals = models.map(model => model.find);
+  const originalRequestFind = Request.find;
   const query = rows => ({ select() { return this; }, lean: async () => rows });
   const now = new Date();
   try {
@@ -35,6 +38,22 @@ test('advisor sees the transferred decision service as an actionable stage with 
     assert.equal(rows[0].current[0].taskId, 'advisor-task');
     assert.equal(rows[0].actionTaskId, 'advisor-task');
     assert.equal(rows[0].attention, true);
+    assert.equal(rows[0].progress.label, '顾问确定方案并转介');
+    assert.equal(rows[0].progress.step, 2);
+    assert.equal(rows[0].current[0].person.name, '健康顾问');
     assert.match(rows[0].latest.content, /肺结节、巧克力囊肿/);
-  } finally { models.forEach((model, index) => { model.find = originals[index]; }); }
+    const plannerRows = await loadServices({ _id: 'planner', role: 'healthPlanner', tenantId: 'tenant' },
+      { patientIds: ['patient'], includeOwn: true });
+    assert.equal(plannerRows[0].current[0].person.name, '健康顾问');
+    assert.equal(plannerRows[0].progress.step, 2);
+    assert.equal(plannerRows[0].actionTaskId, '');
+    Request.find = () => ({ sort() { return this; }, lean: async () => [] });
+    const handler = supervisionRouter.stack.find(layer => layer.route?.path === '/' && layer.route.methods.get).route.stack[0].handle;
+    const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+    await handler({ staff: { _id: 'planner', role: 'healthPlanner', tenantId: 'tenant' } }, response);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.data.services.length, 1);
+    assert.equal(response.body.data.services[0].progress.label, '顾问确定方案并转介');
+    assert.equal(response.body.data.services[0].current[0].person.name, '健康顾问');
+  } finally { models.forEach((model, index) => { model.find = originals[index]; }); Request.find = originalRequestFind; }
 });

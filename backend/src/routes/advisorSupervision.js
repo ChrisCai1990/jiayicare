@@ -2,6 +2,7 @@ const router = require('express').Router();
 const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
 const FollowUp = require('../models/FollowUp');
+const Order = require('../models/Order');
 const Request = require('../models/ServiceSupervisionRequest');
 const { loadServices, id } = require('../utils/advisorSupervision');
 const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
@@ -27,7 +28,18 @@ async function inbox(actor) {
   });
 }
 router.get('/', wrap(async (req, res) => {
-  const services = req.staff.role === 'familyDoctor' ? await loadServices(req.staff) : [];
+  let services;
+  if (req.staff.role === 'familyDoctor') services = await loadServices(req.staff);
+  else {
+    const monitored = await Order.find({ serviceName: '企业家健康决策计划',
+      status: { $in: ['pending', 'scheduled'] },
+      $or: [{ supervisorId: req.staff._id }, { currentAssignee: req.staff._id }] })
+      .select('_id user').lean();
+    const keys = new Set(monitored.map(order => `order:${id(order)}`));
+    services = monitored.length ? (await loadServices(req.staff,
+      { patientIds: [...new Set(monitored.map(order => id(order.user)))], includeOwn: true }))
+      .filter(service => keys.has(service.key)) : [];
+  }
   const keys = services.map(s => s.key);
   const history = keys.length ? await Request.find({ ...scope(req.staff), serviceKey: { $in: keys } }).sort({ createdAt: -1 }).lean() : [];
   res.json({ success: true, data: { services: services.map(s => ({ ...s, history: history.filter(r => r.serviceKey === s.key),
@@ -44,7 +56,9 @@ router.get('/tasks/:id', wrap(async (req, res) => {
   const service = services.find(s => s.current.some(c => c.taskId === id(task)));
   const isAdvisor = req.staff.role === 'familyDoctor' && id(patient.assignedFamilyDoctor) === id(req.staff);
   const isRecipient = service && (await inbox(req.staff)).some(r => r.serviceKey === service.key);
-  if (!service || (!isAdvisor && !isRecipient)) fail('服务已变化或不在可督办范围', 403);
+  const isCoordinator = service?.coordinator?.id === id(req.staff);
+  const isExecutor = service?.current?.some(c => c.taskId === id(task) && c.person?.id === id(req.staff));
+  if (!service || (!isAdvisor && !isRecipient && !isCoordinator && !isExecutor)) fail('服务已变化或不在可督办范围', 403);
   res.json({ success: true, data: { ...task, assigneeName: service.current.find(c => c.taskId === id(task))?.person?.name || '待核对' } });
 }));
 router.post('/requests', wrap(async (req, res) => {

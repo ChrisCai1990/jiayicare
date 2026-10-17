@@ -14,6 +14,8 @@ const id = value => String(value?._id || value || '');
 const active = row => ['planned', 'in_progress', 'missed'].includes(row.status);
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const stageLabels = { intake: '确认需求与安排', advisor: '顾问确认解析方案与转介', booking: '预约安排', specialist: '专科解析报告并回复转介', planner_final: '规划师最终验收', planner: '规划师协调派单', execute: '服务执行', medical: '就医办理', manager_review: '健管核实资料', advisor_review: '顾问审核', resolution: '处理服务结果', pending_closure: '规划师核对结案', awaiting_shipment: '待健管专员发货', shipped: '已发货', registered: '登记服务', verifying: '核对保障', materials: '收集材料', submitted: '已提交申请', reviewing: '审核中', supplement: '补充材料', paid: '核对赔付结果', partially_paid: '核对部分赔付', denied: '核对拒赔结果' };
+const decisionStages = ['intake', 'advisor', 'booking', 'specialist', 'advisor_review', 'planner_final'];
+const decisionLabels = { intake: '规划师确认客户需求', advisor: '顾问确定方案并转介', booking: '健管预约及客户沟通', specialist: '专科解析并回复', advisor_review: '顾问审核归档', planner_final: '规划师最终验收' };
 const stamp = row => [id(row._id), row.updatedAt || row.createdAt || null, row.status, row.revision];
 const samePatient = (row, patientId) => id(row?.patientId || row?.user) === id(patientId);
 const target = (patientId, taskId, type) => `/patients/${patientId}?tab=${taskId ? 'followups' : type === 'plan' ? 'plans' : type === 'insurance' ? 'info' : type === 'order' ? 'consumption' : 'followups'}${taskId ? `&supervisionTaskId=${taskId}` : ''}`;
@@ -100,8 +102,10 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const decisionOrder = g.type === 'order' && s.serviceName === '企业家健康决策计划';
     const execution = remaining.filter(t => t.taskRole !== 'supervisor' && t.workflowKey !== 'medication_proxy:progress'
       && !(decisionOrder && s.currentStage !== 'intake' && !t.workflowKey));
-    const ready = execution.filter(t => !t.isBlocked);
-    let current = (ready.length ? ready : execution).map(t => {
+    const stageTasks = decisionOrder ? execution.filter(t => t.workflowKey === `decision_referral:${s.currentStage}`) : [];
+    const activeExecution = stageTasks.length ? stageTasks : execution;
+    const ready = activeExecution.filter(t => !t.isBlocked);
+    let current = (ready.length ? ready : activeExecution).map(t => {
       const role = t.aiStatus === 'pending' ? t.reviewRole || 'familyDoctor' : null;
       // Match the original follow-up queue: explicit assignee wins; legacy
       // records without assignedTo belong to staffId, not the customer's team.
@@ -126,9 +130,11 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
       current = [{ taskId: '', label: isShipping ? shipping.shippingProgress(s) : stageLabels[s.currentStage || s.status] || '当前环节待核对',
         person: person(owner), blocked: false, dueAt: s.dueAt || s.scheduledAt || s.endDate || null }];
     }
-    const ownDecisionTask = decisionOrder && ['advisor', 'advisor_review'].includes(s.currentStage)
-      ? execution.find(t => t.workflowKey === `decision_referral:${s.currentStage}`
-        && id(t.assignedTo || t.staffId) === id(actor) && !t.isBlocked) : null;
+    if (decisionOrder && s.currentStage !== 'intake' && !stageTasks.length)
+      current = [{ taskId: '', label: decisionLabels[s.currentStage] || '当前环节待核对',
+        person: person(s.currentAssignee), blocked: false, dueAt: s.scheduledAt || null }];
+    const ownDecisionTask = decisionOrder
+      ? stageTasks.find(t => id(t.assignedTo || t.staffId) === id(actor) && !t.isBlocked) : null;
     if (!includeOwn && !ownDecisionTask && current.every(c => c.person?.id === id(actor))) continue;
     if (!includeOwn && !ownDecisionTask) current = current.filter(c => c.person?.id !== id(actor));
     const explicitCoordinator = s.state?.people?.healthPlanner?.id || s.supervisorId;
@@ -136,7 +142,7 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const coordinatorId = explicitCoordinator || (supervisors.length === 1 ? supervisors[0] : null);
     const coordinator = person(coordinatorId, 'healthPlanner');
     const reasons = [];
-    if (ownDecisionTask) reasons.push('待本人办理专科转介服务');
+    if (ownDecisionTask) reasons.push('待本人办理当前服务任务');
     if (current.some(c => !c.person)) reasons.push('当前处理人待核对');
     if (coordinatorId && !coordinator) reasons.push('原协调人待核对');
     if (current.some(c => c.blocked)) reasons.push('等待前置环节');
@@ -149,6 +155,8 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const intakeRecord = decisionOrder ? g.tasks.find(t => !t.workflowKey && t.executedContent)?.executedContent : '';
     const title = s.serviceName || s.title || s.state?.title || (g.type === 'flow' ? g.tasks.find(t => id(t) === id(s.parentId))?.theme : s.theme) || '服务进度';
     const row = { key: g.key, patientId: g.patientId, patientName: p.name, title, current, coordinator,
+      progress: decisionOrder ? { stage: s.currentStage || 'intake', label: decisionLabels[s.currentStage] || '当前环节待核对',
+        step: decisionStages.indexOf(s.currentStage) + 1, total: decisionStages.length } : null,
       reasons, attention: !!reasons.length, latest: latest || (intakeRecord
         ? { at: s.updatedAt, content: `规划师记录客户需求：${intakeRecord}` }
         : s.updatedAt ? { at: s.updatedAt, content: `当前环节：${current.map(c => c.label).join('、')}` } : null), updatedAt: s.updatedAt || null,
