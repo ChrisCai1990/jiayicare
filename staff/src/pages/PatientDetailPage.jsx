@@ -87,13 +87,27 @@ import { insertReportItemBelow } from '../utils/reportItemOrder'
 import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
 import { resolveScreeningCategory } from '../utils/screeningCategoryLabel.mjs'
 
-// 使用浏览器原生 PDF 阅读器，保留缩放、页码跳转、旋转、查找、打印及下载等常规功能。
-// 预览链接仍是绑定报告与短时令牌的私有 API，不改为公开直链。
-function PdfDocumentPreview({ src, activePage, title, zoom = 100 }) {
-  // Chromium's PDF viewer treats view=FitH as fit to width. A fixed 100% scale
-  // makes scanned pages much wider than the review pane at ordinary zoom levels.
-  const fragment = zoom === 100 ? 'view=FitH' : `zoom=${zoom}`
-  return <iframe src={`${src}#page=${activePage}&${fragment}`} title={title} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+// 审核使用服务端生成的原件页图，避免浏览器 PDF 阅读器被下载设置或 OSS 响应策略阻断。
+// 令牌仍绑定报告与文件，页图接口沿用同一短时令牌。
+function reportPdfPagePreviewUrl(src, page) {
+  if (!/\/medical-reports\/[^/]+\/preview\/\d+\?/.test(src || '')) return ''
+  const url = new URL(src, window.location.href)
+  url.pathname = url.pathname.replace(/\/preview\/(\d+)$/, '/preview-page/$1')
+  url.searchParams.set('page', String(page))
+  return url.toString()
+}
+
+function PdfDocumentPreview({ src, activePage, title, zoom = 100, onRefresh }) {
+  const [failed, setFailed] = useState(false)
+  const pageSrc = reportPdfPagePreviewUrl(src, activePage)
+  useEffect(() => setFailed(false), [pageSrc])
+  if (!pageSrc) return <iframe src={`${src}#page=${activePage}&view=FitH`} title={title} style={{ width: '100%', height: '74vh', border: 'none', background: '#fff' }} />
+  return <div style={{ minHeight: 180, textAlign: 'center', background: '#fff' }}>
+    {failed ? <div role="alert" style={{ padding: 20, color: '#B42318' }}>
+      当前页原件加载失败。请刷新预览链接；若仍失败，需检查原文件或服务端页图转换。
+      <div><button className="btn btn-secondary btn-sm" type="button" onClick={onRefresh} style={{ marginTop: 10 }}>刷新预览链接</button></div>
+    </div> : <img src={pageSrc} alt={`${title}第${activePage}页`} onError={() => setFailed(true)} style={{ display: 'block', width: `${zoom}%`, maxWidth: 'none', height: 'auto' }} />}
+  </div>
 }
 
 function ClinicalReportSource({ report, loading, error }) {
@@ -4109,6 +4123,21 @@ export default function PatientDetailPage() {
     const pages = items.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0)
     const focused = focusedIndex >= 0 ? items[focusedIndex] : null
     setOcrReviewPage(Number(focused?.sourcePage) || (pages.length ? Math.min(...pages) : 1))
+  }
+
+  const refreshOcrPreview = async () => {
+    if (!ocrReviewReport?._id) return
+    try {
+      const { data } = await staffAPI.getReport(ocrReviewReport._id)
+      if (!data) throw new Error('无法取得新的预览链接')
+      setOcrReviewReport(current => current?._id === data._id ? {
+        ...current,
+        previewUrl: data.previewUrl,
+        previewUrls: data.previewUrls,
+        fileUrl: data.fileUrl,
+        fileUrls: data.fileUrls,
+      } : current)
+    } catch (error) { toast(error.message || '刷新原件预览失败') }
   }
 
   const reviewActivityFlush = useReportReviewActivity(ocrReviewReport?._id)
@@ -12860,7 +12889,7 @@ export default function PatientDetailPage() {
                       <span style={{ minWidth: 38, textAlign: 'center', color: '#4A6558', fontSize: 11 }}>{isPdf && ocrPreviewZoom === 100 ? '适合宽度' : `${ocrPreviewZoom}%`}</span>
                       <button className="btn btn-secondary btn-sm" type="button" aria-label="放大原始报告" disabled={ocrPreviewZoom >= 200} onClick={() => setOcrPreviewZoom(z => Math.min(200, z + 25))}>＋</button>
                       <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOcrPreviewZoom(100)}>适合宽度</button>
-                      {isPdf && <button className="btn btn-secondary btn-sm" type="button" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>新窗口查看</button>}
+                      {isPdf && <button className="btn btn-secondary btn-sm" type="button" onClick={() => window.open(reportPdfPagePreviewUrl(url, activePage) || url, '_blank', 'noopener,noreferrer')}>新窗口查看本页</button>}
                     </div>
                   )
                   // 一份报告可能关联多张照片(fileUrls，如"结论页"+"数据页")。content 场景没有多图概念，
@@ -12880,7 +12909,7 @@ export default function PatientDetailPage() {
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
                               {previewToolbar(s, true)}
-                              <PdfDocumentPreview src={s} activePage={activePage} onPageChange={setOcrReviewPage} title={`报告${idx + 1}`} zoom={ocrPreviewZoom} />
+                              <PdfDocumentPreview src={s} activePage={activePage} title={`报告${idx + 1}`} zoom={ocrPreviewZoom} onRefresh={refreshOcrPreview} />
                             </div>
                           ) : (
                             <div key={idx} style={{ marginBottom: 8 }}>
@@ -12909,7 +12938,7 @@ export default function PatientDetailPage() {
                       ) : isPdf ? (
                         <>
                           {previewToolbar(src, true)}
-                          <PdfDocumentPreview src={src} activePage={activePage} onPageChange={setOcrReviewPage} title="报告PDF" zoom={ocrPreviewZoom} />
+                          <PdfDocumentPreview src={src} activePage={activePage} title="报告PDF" zoom={ocrPreviewZoom} onRefresh={refreshOcrPreview} />
                         </>
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
