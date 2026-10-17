@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import DateField from '../../../shared/DateField.jsx'
 import { staffAPI } from '../api'
+import { filterReferralReports, referralDateTime } from '../utils/decisionReferralForm.mjs'
 
 export const isDecisionReferralTask = task => String(task?.workflowKey || '').startsWith('decision_referral:')
   || (task?.sourceType === 'order' && (task?.sourceOrderId?.serviceName === '企业家健康决策计划'
@@ -17,6 +18,7 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
   const [data, setData] = useState(null)
   const [resources, setResources] = useState({ institutions: [], departments: [], experts: [] })
   const [reports, setReports] = useState([])
+  const [reportQuery, setReportQuery] = useState('')
   const [form, setForm] = useState({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -41,12 +43,23 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
   const selected = resources.experts.find(item => String(item._id) === String(form.medicalExpertId))
   const institution = resources.institutions.find(item => String(item._id) === String(selected?.institutionId))
   const department = resources.departments.find(item => String(item._id) === String(selected?.departmentId))
+  const availableReports = filterReferralReports(reports, '')
+  const visibleReports = filterReferralReports(reports, reportQuery)
   const submit = async event => {
     event.preventDefault()
     if (!active || busy) return
     setBusy(true); setError('')
     try {
-      await staffAPI.advanceDecisionReferral(task._id, form)
+      const payload = { ...form }
+      if (stage === 'advisor') {
+        payload.expectedAt = referralDateTime(form.expectedDate, form.expectedTime)
+        if (!payload.expectedAt) throw new Error('请填写有效的预计解析日期和时间')
+      }
+      if (stage === 'booking') {
+        payload.actualAt = referralDateTime(form.actualDate, form.actualTime)
+        if (!payload.actualAt) throw new Error('请填写有效的实际预约日期和时间')
+      }
+      await staffAPI.advanceDecisionReferral(task._id, payload)
       onDone?.()
     } catch (e) { setError(e.message) }
     finally { setBusy(false) }
@@ -91,24 +104,28 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
           })}
         </select></label>
         {selected && <small>已选择：{institution?.name || '-'} · {department?.name || '-'} · {selected.name}</small>}
-        <label>预计报告解析时间 *<DateField className="form-input" type="datetime-local" required value={form.expectedAt || ''} onChange={update('expectedAt')} /></label>
+        <label>预计报告解析日期 *<DateField className="form-input" type="date" required value={form.expectedDate || ''} onChange={update('expectedDate')} /></label>
+        <label>预计报告解析时间 *<input className="form-input" type="time" required value={form.expectedTime || ''} onChange={update('expectedTime')} /></label>
         <label>解析方式 *<select className="form-input" required value={form.method || ''} onChange={update('method')}><option value="">请选择</option><option value="remote">远程</option><option value="outpatient">医院门诊</option><option value="other">其他方式</option></select></label>
         <label>转介原因 *<textarea className="form-input" required rows={2} maxLength={1000} value={form.reason || ''} onChange={update('reason')} /></label>
         <label>希望专科解答的问题 *<textarea className="form-input" required rows={3} maxLength={5000} value={form.questionList || ''} onChange={update('questionList')} /></label>
         <fieldset style={{ border: '1px solid #DCE9E2', borderRadius: 8 }}>
           <legend>授权专科查看的本次报告 *</legend>
-          {reports.filter(report => report.fileUrl || report.fileUrls?.length).length ? reports.filter(report => report.fileUrl || report.fileUrls?.length).map(report => <label key={report._id} style={{ display: 'block', margin: '6px 0' }}>
+          {availableReports.length > 0 && <><input className="form-input" type="search" aria-label="搜索本次报告" placeholder="搜索报告名称或检查日期" value={reportQuery} onChange={event => setReportQuery(event.target.value)} />
+            <small style={{ display: 'block', margin: '6px 0' }}>匹配 {visibleReports.length} 份 · 已选 {(form.reportIds || []).length} 份</small></>}
+          {visibleReports.length ? visibleReports.map(report => <label key={report._id} style={{ display: 'block', margin: '6px 0' }}>
             <input type="checkbox" checked={(form.reportIds || []).includes(String(report._id))}
               onChange={event => setForm(value => ({ ...value, reportIds: event.target.checked
                 ? [...(value.reportIds || []), String(report._id)]
                 : (value.reportIds || []).filter(id => id !== String(report._id)) }))} />
-            {' '}{report.title || '未命名报告'}{report.checkDate ? ` · ${String(report.checkDate).slice(0, 10)}` : ''}
-          </label>) : <span>暂无可选报告，请先在客户档案上传并审核本次报告。</span>}
+            {' '}{report.title || '未命名报告'}{report.checkDate || report.date ? ` · ${String(report.checkDate || report.date).slice(0, 10)}` : ''}
+          </label>) : <span>{availableReports.length ? '没有匹配的报告，请调整搜索词。' : '暂无可选报告，请先在客户档案上传并审核本次报告。'}</span>}
         </fieldset>
         <label>补充说明<textarea className="form-input" rows={2} maxLength={5000} value={form.content || ''} onChange={update('content')} /></label>
       </>}
       {stage === 'booking' && <>
-        <label>实际预约时间 *<DateField className="form-input" type="datetime-local" required value={form.actualAt || ''} onChange={update('actualAt')} /></label>
+        <label>实际预约日期 *<DateField className="form-input" type="date" required value={form.actualDate || ''} onChange={update('actualDate')} /></label>
+        <label>实际预约时间 *<input className="form-input" type="time" required value={form.actualTime || ''} onChange={update('actualTime')} /></label>
         <label>预约结果及接入／门诊安排 *<textarea className="form-input" required rows={3} maxLength={2000} value={form.appointmentNote || ''} onChange={update('appointmentNote')} /></label>
         <label>客户沟通记录 *<textarea className="form-input" required rows={3} maxLength={2000} value={form.contactNote || ''} onChange={update('contactNote')} /></label>
       </>}
