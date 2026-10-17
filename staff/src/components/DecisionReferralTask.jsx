@@ -17,6 +17,7 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
   const nav = useNavigate()
   const [data, setData] = useState(null)
   const [resources, setResources] = useState({ institutions: [], departments: [], experts: [] })
+  const [coordinators, setCoordinators] = useState([])
   const [reports, setReports] = useState([])
   const [reportQuery, setReportQuery] = useState('')
   const [form, setForm] = useState({})
@@ -27,6 +28,7 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
     staffAPI.getDecisionReferralTask(task._id).then(result => { if (live) setData(result.data) }).catch(e => { if (live) setError(e.message) })
     if ((task.workflowKey || '') === 'decision_referral:advisor') {
       staffAPI.getMedicalResources().then(result => { if (live) setResources(result.data || { institutions: [], departments: [], experts: [] }) }).catch(e => { if (live) setError(e.message) })
+      staffAPI.getDecisionReferralCoordinators().then(result => { if (live) setCoordinators(result.data || []) }).catch(e => { if (live) setError(e.message) })
       const patientId = task.patientId?._id || task.patientId
       staffAPI.getPatientReports(patientId).then(result => { if (live) setReports(result.data || []) }).catch(e => { if (live) setError(e.message) })
     }
@@ -42,6 +44,8 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
   const consultationType = form.consultationType || 'single'
   const requestedSpecialties = form.specialties || [{}]
   const plannedSpecialties = plan.specialties?.length ? plan.specialties : plan.confirmedAt ? [plan] : []
+  const bookingSpecialties = plan.consultationType === 'multidisciplinary' && (workflow.referralIds?.length || (workflow.referralId ? 1 : 0)) === 1
+    ? plannedSpecialties.slice(0, 1) : plannedSpecialties
   const stage = data?.taskStage
   const active = data?.stage === stage && ['planned', 'in_progress', 'missed'].includes(data?.taskStatus)
   const updateSpecialty = (index, key) => event => setForm(value => ({ ...value,
@@ -59,7 +63,7 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
       const payload = { ...form }
       if (stage === 'advisor') {
         const rows = consultationType === 'single' ? requestedSpecialties.slice(0, 1) : requestedSpecialties
-        if (consultationType === 'multidisciplinary' && rows.length < 2) throw new Error('多学科会诊至少安排两位专家')
+        if (consultationType === 'multidisciplinary' && !form.coordinatorStaffId) throw new Error('请选择牵头科室的院方接收账号')
         if (!form.reason?.trim() || !form.questionList?.trim()) throw new Error('请填写转介原因和希望专科解答的问题')
         if (!(form.reportIds || []).length) throw new Error('请至少选择一份授权专科查看的报告')
         payload.consultationType = consultationType
@@ -72,7 +76,7 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
       }
       if (stage === 'booking') {
         if (!form.contactNote?.trim()) throw new Error('请填写客户沟通记录')
-        payload.bookings = plannedSpecialties.map((_, index) => {
+        payload.bookings = bookingSpecialties.map((_, index) => {
           const row = form.bookings?.[index] || {}
           const actualAt = referralDateTime(row.actualDate, row.actualTime)
           if (!actualAt || !row.appointmentNote?.trim()) throw new Error(`请填写第 ${index + 1} 位专家的实际预约日期、时间和结果`)
@@ -90,6 +94,7 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
     {intake?.detail && <div style={{ lineHeight: 1.7, whiteSpace: 'pre-wrap' }}><b>健康规划师记录的客户需求</b><br />{intake.detail}</div>}
     {plan.confirmedAt && <div style={{ lineHeight: 1.7 }}>
       <b>健康顾问确认的{plan.consultationType === 'multidisciplinary' ? '多学科' : '单学科'}会诊安排</b><br />
+      {plan.consultationType === 'multidisciplinary' && <>牵头：{plannedSpecialties[0]?.hospital} · {plannedSpecialties[0]?.campus} · {plannedSpecialties[0]?.department}；院方接收：{plan.coordinatorName || '待核对'}<br /></>}
       {plannedSpecialties.map((row, index) => <div key={index}>{index + 1}. {row.hospital}{row.campus && ` · ${row.campus}`} · {row.department} · {row.expert}<br />
         预计解析：{date(row.expectedAt)} · {methods[row.method] || row.method}{row.focusQuestion && <> · 重点问题：{row.focusQuestion}</>}</div>)}
       转介原因：{plan.reason}<br />待解答问题：{plan.questionList}
@@ -101,7 +106,12 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
     </div>}
     {referrals.map((row, index) => row && <div key={row._id || index} style={{ lineHeight: 1.7 }}>
       <b>专科转介 {index + 1} · {row.medicalExpertSnapshot?.name || plannedSpecialties[index]?.expert || ''} · {({ pending: '待接单', accepted: '解析中', completed: '已回复', rejected: '已退回' })[row.status] || row.status}</b>
+      {row.consultationType === 'multidisciplinary' && <div>
+        牵头：{row.medicalExpertSnapshot?.institutionName} · {row.medicalExpertSnapshot?.departmentName}；院方接收：{row.coordinatorSnapshot?.name || '待确认'}<br />
+        实际会诊专家：{(row.consultationMembers || []).map(member => `${member.hospital}·${member.department}·${member.expert}`).join('、') || '待院方整理'}
+      </div>}
       {row.respondedAt && <><br />回复时间：{date(row.respondedAt)}<br />
+        {row.responseSubmittedBy?.name && <>信息录入人：{row.responseSubmittedBy.name}<br /></>}
         {row.responseAnalysis && <>问题分析：{row.responseAnalysis}<br /></>}
         {row.responseOpinion && <>专业意见：{row.responseOpinion}<br /></>}
         {row.response && <>回复：{row.response}</>}
@@ -114,25 +124,32 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
     {active && stage !== 'specialist' && <form noValidate onSubmit={submit} style={{ display: 'grid', gap: 10 }}>
       {stage === 'intake' && <label>客户需求与转交要点 *<textarea className="form-input" required rows={3} maxLength={1000} value={form.intakeNote || ''} onChange={update('intakeNote')} /></label>}
       {stage === 'advisor' && <>
-        <label>会诊类型 *<select className="form-input" value={consultationType} onChange={event => setForm(value => ({ ...value, consultationType: event.target.value,
-          specialties: event.target.value === 'multidisciplinary' && (value.specialties || [{}]).length < 2
-            ? [...(value.specialties || [{}]), {}] : value.specialties || [{}] }))}>
+        <label>会诊类型 *<select className="form-input" value={consultationType} onChange={event => setForm(value => ({ ...value,
+          consultationType: event.target.value, specialties: value.specialties || [{}] }))}>
           <option value="single">单学科会诊</option><option value="multidisciplinary">多学科会诊</option>
         </select></label>
+        {consultationType === 'multidisciplinary' && <>
+          <small>先确定牵头医院、科室和专家即可发起一份转介。其他专家可由顾问预填，也可由牵头科室的助理／秘书接单后补全并统一回复。</small>
+          <label>牵头科室的院方接收账号（助理／秘书／专科医生） *<select className="form-input" value={form.coordinatorStaffId || ''} onChange={update('coordinatorStaffId')}>
+            <option value="">请选择实际接收并填写转介回复的账号</option>
+            {coordinators.map(account => <option key={account._id} value={account._id}>{account.name} · {({ institutionStaff: '院方人员', medicalAssistant: '医助', specialist: '专科医生' })[account.role] || account.role}{account.department ? ` · ${account.department}` : ''}</option>)}
+          </select></label>
+          {!coordinators.length && <small>暂无可用的院方接收账号，请先为牵头科室配置账号。</small>}
+        </>}
         {(consultationType === 'single' ? requestedSpecialties.slice(0, 1) : requestedSpecialties).map((row, index) => {
           const expert = resources.experts.find(item => String(item._id) === String(row.medicalExpertId))
           const institution = resources.institutions.find(item => String(item._id) === String(expert?.institutionId))
           const department = resources.departments.find(item => String(item._id) === String(expert?.departmentId))
           return <fieldset key={index} style={{ border: '1px solid #DCE9E2', borderRadius: 8, display: 'grid', gap: 8 }}>
-            <legend>专科专家 {index + 1}</legend>
+            <legend>{consultationType === 'multidisciplinary' && index === 0 ? '牵头医院／科室及专家' : `会诊专家 ${index + 1}`}</legend>
             <label>医院 · 院区 · 科室 · 专家姓名 *<select className="form-input" value={row.medicalExpertId || ''} onChange={event => setForm(value => ({ ...value,
               specialties: (value.specialties || [{}]).map((entry, rowIndex) => rowIndex === index
                 ? { ...entry, medicalExpertId: event.target.value, campus: '' } : entry) }))}>
-              <option value="">选择已关联医护账号的专科专家</option>
-              {resources.experts.filter(item => item.linkedStaffId).map(item => {
+              <option value="">选择专科专家</option>
+              {resources.experts.filter(item => consultationType === 'multidisciplinary' || item.linkedStaffId).map(item => {
                 const hospital = resources.institutions.find(entry => String(entry._id) === String(item.institutionId))
                 const dept = resources.departments.find(entry => String(entry._id) === String(item.departmentId))
-                return <option key={item._id} value={item._id}>{hospital?.name || '医院待核对'} · {item.campus || dept?.campus || '院区待核对'} · {dept?.name || '科室待核对'} · {item.name}</option>
+                return <option key={item._id} value={item._id}>{hospital?.name || '医院待核对'}{hospital?.level ? `（${hospital.level}）` : ''} · {item.campus || dept?.campus || '院区待核对'} · {dept?.name || '科室待核对'} · {item.name}</option>
               })}
             </select></label>
             {expert && <small>已选择：{institution?.name || '-'} · {expert.campus || department?.campus || '院区待完善'} · {department?.name || '-'} · {expert.name}</small>}
@@ -141,11 +158,11 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
             <label>预计报告解析时间 *<input className="form-input" type="time" value={row.expectedTime || ''} onChange={updateSpecialty(index, 'expectedTime')} /></label>
             <label>解析方式 *<select className="form-input" value={row.method || ''} onChange={updateSpecialty(index, 'method')}><option value="">请选择</option><option value="remote">远程</option><option value="outpatient">医院门诊</option><option value="other">其他方式</option></select></label>
             {consultationType === 'multidisciplinary' && <><label>本专科重点问题<textarea className="form-input" rows={2} maxLength={2000} value={row.focusQuestion || ''} onChange={updateSpecialty(index, 'focusQuestion')} /></label>
-              {requestedSpecialties.length > 2 && <button type="button" className="btn btn-secondary" onClick={() => setForm(value => ({ ...value, specialties: value.specialties.filter((_, rowIndex) => rowIndex !== index) }))}>移除这位专家</button>}</>}
+              {index > 0 && <button type="button" className="btn btn-secondary" onClick={() => setForm(value => ({ ...value, specialties: value.specialties.filter((_, rowIndex) => rowIndex !== index) }))}>移除这位专家</button>}</>}
           </fieldset>
         })}
         {consultationType === 'multidisciplinary' && requestedSpecialties.length < 5 && <button type="button" className="btn btn-secondary" onClick={() => setForm(value => ({ ...value, specialties: [...(value.specialties || [{}]), {}] }))}>添加一位专科专家</button>}
-        {!resources.experts.some(item => item.linkedStaffId) && <small>暂无已关联医护账号的专家，请先完善专家资源。</small>}
+        {!resources.experts.some(item => consultationType === 'multidisciplinary' || item.linkedStaffId) && <small>暂无可用专家，请先完善专家资源。</small>}
         <label>转介原因 *<textarea className="form-input" required rows={2} maxLength={1000} value={form.reason || ''} onChange={update('reason')} /></label>
         <label>希望专科解答的问题 *<textarea className="form-input" required rows={3} maxLength={5000} value={form.questionList || ''} onChange={update('questionList')} /></label>
         <fieldset style={{ border: '1px solid #DCE9E2', borderRadius: 8 }}>
@@ -163,7 +180,8 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
         <label>补充说明<textarea className="form-input" rows={2} maxLength={5000} value={form.content || ''} onChange={update('content')} /></label>
       </>}
       {stage === 'booking' && <>
-        {plannedSpecialties.map((row, index) => <fieldset key={index} style={{ border: '1px solid #DCE9E2', borderRadius: 8, display: 'grid', gap: 8 }}>
+        {plan.consultationType === 'multidisciplinary' && bookingSpecialties.length === 1 && <small>先确认牵头科室接入；其他会诊专家由院方接收账号在原转介中组织并填写。</small>}
+        {bookingSpecialties.map((row, index) => <fieldset key={index} style={{ border: '1px solid #DCE9E2', borderRadius: 8, display: 'grid', gap: 8 }}>
           <legend>{row.hospital} · {row.campus} · {row.department} · {row.expert}</legend>
           <small>顾问预计：{date(row.expectedAt)} · {methods[row.method] || row.method}</small>
           <label>实际预约日期 *<DateField className="form-input" type="date" value={form.bookings?.[index]?.actualDate || ''} onChange={updateBooking(index, 'actualDate')} /></label>
@@ -199,8 +217,10 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
       })[stage] || '提交'}</button>
     </form>}
     {data?.stage === 'specialist' && <div>
-      等待专科医生在各自原转介中提交报告解析回复（已回复 {referrals.filter(row => row?.status === 'completed').length}/{referrals.length}）；全部回复后转健康顾问审核。
-      {staff?.role === 'specialist' && <button type="button" className="btn btn-primary btn-sm" style={{ display: 'block', marginTop: 8 }}
+      {workflow.plan?.consultationType === 'multidisciplinary' && referrals.length === 1
+        ? `等待牵头科室接收账号${workflow.plan.coordinatorName ? `（${workflow.plan.coordinatorName}）` : ''}在同一份转介中提交会诊汇总回复；回复后转健康顾问审核。`
+        : `等待专科在原转介中提交报告解析回复（已回复 ${referrals.filter(row => row?.status === 'completed').length}/${referrals.length}）；全部回复后转健康顾问审核。`}
+      {(staff?.role === 'specialist' || (plan.coordinatorStaffId && String(staff?._id) === String(plan.coordinatorStaffId))) && <button type="button" className="btn btn-primary btn-sm" style={{ display: 'block', marginTop: 8 }}
         onClick={() => nav('/notifications', { state: { tab: 'referrals' } })}>打开收到的转介并回复</button>}
     </div>}
     {error && <p role="alert" style={{ color: '#B42318', margin: 0 }}>{error}</p>}

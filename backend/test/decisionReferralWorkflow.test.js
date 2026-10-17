@@ -15,6 +15,7 @@ const workflow = require('../src/routes/decisionReferral');
 const id = () => new mongoose.Types.ObjectId();
 const advance = workflow.router.stack.find(layer => layer.route?.path === '/tasks/:id/advance').route.stack.at(-1).handle;
 const reportAccess = workflow.router.stack.find(layer => layer.route?.path === '/referrals/:id/reports/:reportId').route.stack.at(-1).handle;
+const saveMembers = workflow.router.stack.find(layer => layer.route?.path === '/referrals/:id/members').route.stack.at(-1).handle;
 const response = () => ({ statusCode: 200, body: null,
   status(code) { this.statusCode = code; return this; },
   json(body) { this.body = body; return this; } });
@@ -121,7 +122,7 @@ test('advisor must attach an existing report and a linked specialist before book
     User.findById = () => ({ select: () => ({ lean: async () => patient }) });
     MedicalReport.find = () => ({ select: () => ({ lean: async () => reports }) });
     MedicalExpert.findOne = () => ({ populate() { return this; }, lean: async () => expert });
-    Admin.findOne = () => ({ select: () => ({ lean: async () => ({ tenantId: tenant }) }) });
+    Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: specialist, name: '院方联系人', role: 'specialist', tenantId: tenant }) }) });
     Referral.findOneAndUpdate = async (_filter, update) => {
       savedReferral = update.$setOnInsert;
       return { ...savedReferral, medicalExpertId: expertId };
@@ -140,12 +141,14 @@ test('advisor must attach an existing report and a linked specialist before book
     assert.equal(String(createdTasks.find(row => row.workflowKey === 'decision_referral:specialist').assignedTo), String(specialist));
     assert.equal(createdTasks.find(row => row.workflowKey === 'decision_referral:specialist').isBlocked, true);
 
-    const secondExpertId = id(), secondSpecialist = id();
+    const secondExpertId = id(), coordinatorId = id();
     const savedReferrals = [];
     MedicalExpert.findOne = filter => ({ populate() { return this; }, lean: async () =>
       String(filter._id) === String(secondExpertId)
-        ? { ...expert, _id: secondExpertId, name: '第二专家', linkedStaffId: secondSpecialist,
+        ? { ...expert, _id: secondExpertId, name: '第二专家', linkedStaffId: null,
           departmentId: { name: '神经内科', campus: '东院区' } } : expert });
+    Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: coordinatorId,
+      name: '会诊秘书', role: 'institutionStaff', tenantId: tenant }) }) });
     Referral.findOneAndUpdate = async (_filter, update) => {
       savedReferrals.push(update.$setOnInsert);
       return { ...update.$setOnInsert, medicalExpertId: update.$setOnInsert.medicalExpertId };
@@ -153,17 +156,29 @@ test('advisor must attach an existing report and a linked specialist before book
     order.decisionReferral = { stage: 'advisor' };
     createdTasks.length = 0;
     const multi = response();
-    await advance({ ...req, body: { ...req.body, consultationType: 'multidisciplinary', specialties: [
+    await advance({ ...req, body: { ...req.body, consultationType: 'multidisciplinary',
+      coordinatorStaffId: String(coordinatorId), specialties: [
       { medicalExpertId: String(expertId), expectedAt: '2026-10-18T10:00', method: 'remote' },
       { medicalExpertId: String(secondExpertId), expectedAt: '2026-10-19T14:00', method: 'outpatient' },
     ] } }, multi);
     assert.equal(multi.statusCode, 200);
-    assert.equal(multi.body.data.decisionReferral.referralIds.length, 2);
-    assert.equal(savedReferrals.length, 2);
-    assert.equal(String(savedReferrals[1].toStaffId), String(secondSpecialist));
+    assert.equal(multi.body.data.decisionReferral.referralIds.length, 1);
+    assert.equal(savedReferrals.length, 1);
+    assert.equal(savedReferrals[0].consultationMembers.length, 2);
+    assert.equal(String(savedReferrals[0].toStaffId), String(coordinatorId));
     assert.equal(multi.body.data.decisionReferral.plan.specialties[1].campus, '东院区');
     assert.deepEqual(createdTasks.filter(row => row.workflowKey.startsWith('decision_referral:specialist'))
-      .map(row => row.workflowKey), ['decision_referral:specialist', 'decision_referral:specialist:1']);
+      .map(row => row.workflowKey), ['decision_referral:specialist']);
+
+    order.decisionReferral = { stage: 'advisor' };
+    savedReferrals.length = 0;
+    const leadOnly = response();
+    await advance({ ...req, body: { ...req.body, consultationType: 'multidisciplinary',
+      coordinatorStaffId: String(coordinatorId), specialties: [
+        { medicalExpertId: String(expertId), expectedAt: '2026-10-18T10:00', method: 'remote' },
+      ] } }, leadOnly);
+    assert.equal(leadOnly.statusCode, 200);
+    assert.equal(savedReferrals[0].consultationMembers.length, 1);
   } finally {
     FollowUp.findById = original.taskFind; FollowUp.findOneAndUpdate = original.taskUpsert;
     FollowUp.updateOne = original.taskUpdate; Order.findById = original.orderFind;
@@ -234,6 +249,75 @@ test('multidisciplinary consultation waits for every specialist reply', async ()
     Referral.findById = original.referralFind; User.findById = original.userFind;
     FollowUp.findOneAndUpdate = original.taskUpsert; FollowUp.updateOne = original.taskUpdate;
   }
+});
+
+test('one multidisciplinary referral books the lead department before hospital organizes other experts', async () => {
+  const original = { taskFind: FollowUp.findById, taskUpdate: FollowUp.updateOne,
+    orderFind: Order.findById, orderUpdate: Order.findOneAndUpdate,
+    userFind: User.findById, referralFind: Referral.findById, referralUpdate: Referral.updateOne };
+  const manager = id(), coordinator = id(), tenant = id(), patientId = id(), orderId = id();
+  const taskKey = id(), referralId = id(), firstExpert = id(), secondExpert = id();
+  const order = { _id: orderId, user: patientId, serviceName: '企业家健康决策计划', status: 'scheduled',
+    tradeStatus: 'paid', paymentStatus: 'paid', refundStatus: 'none',
+    decisionReferral: { stage: 'booking', referralId, referralIds: [referralId], plan: {
+      consultationType: 'multidisciplinary', coordinatorStaffId: coordinator,
+      specialties: [{ medicalExpertId: firstExpert }, { medicalExpertId: secondExpert }],
+    } } };
+  const task = { _id: taskKey, sourceType: 'order', sourceOrderId: orderId, patientId,
+    assignedTo: manager, staffId: manager, workflowKey: 'decision_referral:booking', status: 'planned' };
+  const taskUpdates = [];
+  let bookingSnapshot;
+  try {
+    FollowUp.findById = async () => task;
+    FollowUp.updateOne = async (filter, update) => { taskUpdates.push({ filter, update }); return { modifiedCount: 1 }; };
+    Order.findById = async () => order;
+    Order.findOneAndUpdate = async (_filter, update) => ({ ...order, ...update.$set });
+    User.findById = () => ({ select: () => ({ lean: async () => ({ _id: patientId,
+      tenantId: tenant, assignedHealthManager: manager }) }) });
+    Referral.findById = () => ({ lean: async () => ({ status: 'pending' }),
+      select: () => ({ lean: async () => ({ status: 'pending' }) }) });
+    Referral.updateOne = async (_filter, update) => { bookingSnapshot = update.$set.bookingSnapshot; return { modifiedCount: 1 }; };
+    const res = response();
+    await advance({ params: { id: String(taskKey) }, staff: { _id: manager, role: 'healthManager', tenantId: tenant },
+      body: { contactNote: '已与客户确认行程', bookings: [
+        { actualAt: '2026-10-20T09:00', appointmentNote: '主院区已预约' },
+      ] } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.decisionReferral.booking.slots.length, 1);
+    assert.equal(String(res.body.data.decisionReferral.booking.slots[0].referralId), String(referralId));
+    assert.equal(bookingSnapshot.slots.length, 1);
+    assert.equal(taskUpdates.filter(row => row.update.$set.isBlocked === false).length, 1);
+  } finally {
+    FollowUp.findById = original.taskFind; FollowUp.updateOne = original.taskUpdate;
+    Order.findById = original.orderFind; Order.findOneAndUpdate = original.orderUpdate;
+    User.findById = original.userFind; Referral.findById = original.referralFind;
+    Referral.updateOne = original.referralUpdate;
+  }
+});
+
+test('hospital coordinator adds consultation members to the same referral', async () => {
+  const original = { referralFind: Referral.findById, orderFind: Order.findById };
+  const coordinator = id(), orderId = id(), referralId = id();
+  const referral = { _id: referralId, sourceOrderId: orderId, toStaffId: coordinator,
+    consultationType: 'multidisciplinary', status: 'accepted',
+    consultationMembers: [{ hospital: '牵头医院', campus: '本部', department: '神经内科', expert: '牵头专家' }],
+    async save() { return this; } };
+  const order = { _id: orderId, serviceName: '企业家健康决策计划', status: 'scheduled',
+    tradeStatus: 'paid', paymentStatus: 'paid', refundStatus: 'none',
+    decisionReferral: { stage: 'specialist', referralId, booking: { confirmedAt: new Date() } } };
+  try {
+    Referral.findById = async () => referral;
+    Order.findById = () => ({ select: async () => order });
+    const res = response();
+    await saveMembers({ params: { id: String(referralId) }, staff: { _id: coordinator }, body: { members: [{
+      hospital: '会诊医院', campus: '东院区', department: '心内科', expert: '会诊专家',
+      actualAt: '2026-10-20T14:00', method: 'outpatient',
+    }] } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(referral.consultationMembers.length, 2);
+    assert.equal(referral.consultationMembers[0].expert, '牵头专家');
+    assert.equal(referral.consultationMembers[1].expert, '会诊专家');
+  } finally { Referral.findById = original.referralFind; Order.findById = original.orderFind; }
 });
 
 test('planner cannot close an archived service after specialist feedback changes', async () => {

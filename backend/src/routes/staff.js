@@ -7806,10 +7806,14 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
     referral.content = cleanMedicalText(req.body.content, 5000);
     referral.questionList = cleanMedicalText(req.body.questionList, 5000);
     referral.urgency = req.body.urgency === 'urgent' ? 'urgent' : 'normal';
-    referral.toStaffId = referralType === 'external_medical' ? (expert.linkedStaffId || null) : req.body.toStaffId;
+    referral.toStaffId = referralType === 'external_medical'
+      ? (referral.sourceOrderId && referral.consultationType === 'multidisciplinary'
+        ? referral.coordinatorSnapshot?.staffId || referral.toStaffId : expert.linkedStaffId || null)
+      : req.body.toStaffId;
     referral.referralType = referralType;
     referral.medicalExpertId = expert?._id || null;
-    referral.medicalExpertSnapshot = expert ? { name:expert.name, title:expert.title, institutionName:expert.institutionId?.name || '', institutionLevel:expert.institutionId?.level || '', departmentName:expert.departmentId?.name || '', campus:expert.campus || expert.departmentId?.campus || '', expertise:expert.expertise || [], diseaseTags:expert.diseaseTags || [], capturedAt:new Date() } : null;
+    if (!(referral.sourceOrderId && referral.consultationType === 'multidisciplinary'))
+      referral.medicalExpertSnapshot = expert ? { name:expert.name, title:expert.title, institutionName:expert.institutionId?.name || '', institutionLevel:expert.institutionId?.level || '', departmentName:expert.departmentId?.name || '', campus:expert.campus || expert.departmentId?.campus || '', expertise:expert.expertise || [], diseaseTags:expert.diseaseTags || [], capturedAt:new Date() } : null;
     referral.linkedDiseaseRecordId = linkedDisease?._id || null;
     referral.linkedDiseaseName = linkedDisease?.name || cleanMedicalText(req.body.linkedDiseaseName,100);
     referral.linkedDiseaseSnapshot = linkedDisease ? { name:linkedDisease.name, summary:linkedDisease.summary || {}, recentCourseEntries:[...(linkedDisease.courseEntries || [])].sort((a,b)=>new Date(b.occurredAt || b.recordedAt || 0)-new Date(a.occurredAt || a.recordedAt || 0)).slice(0,10).map(entry => ({ occurredAt:entry.occurredAt || entry.recordedAt || null, content:entry.content || entry.symptoms || '', examination:entry.examination || '', diagnosis:entry.diagnosis || '', medicationChange:entry.medicationChange || '', treatmentResponse:entry.treatmentResponse || '', nextPlan:entry.nextPlan || '', sourceType:entry.sourceType || '', sourceInstitution:entry.sourceInstitution || '', verificationStatus:entry.verificationStatus || '' })), capturedAt:new Date() } : null;
@@ -7888,7 +7892,9 @@ router.post('/referrals/:id/extract-medical-record', staffAuth, async (req, res)
     const parsed = parseAiJson(raw);
     const expert = referral.medicalExpertSnapshot;
     res.json({ success:true, data:{
-      reportId:report._id, sourceInstitution:expert.institutionName || '', sourceDepartment:expert.departmentName || '', sourceDoctor:expert.name || '',
+      reportId:report._id, sourceInstitution:expert.institutionName || '', sourceDepartment:expert.departmentName || '',
+      sourceDoctor:referral.consultationType === 'multidisciplinary'
+        ? `${expert.departmentName || '牵头科室'}多学科会诊` : expert.name || '',
       sourceDate:cleanMedicalText(parsed.sourceDate || report.date || report.checkDate,10), verificationStatus:'pending_verification',
       responseAnalysis:cleanMedicalText(parsed.responseAnalysis,5000), responseOpinion:cleanMedicalText(parsed.responseOpinion,5000),
       diagnosis:cleanMedicalText(parsed.diagnosis,5000), examinationAdvice:cleanMedicalText(parsed.examinationAdvice,5000), treatmentAdvice:cleanMedicalText(parsed.treatmentAdvice,5000), medicationAdvice:cleanMedicalText(parsed.medicationAdvice,5000), riskWarning:cleanMedicalText(parsed.riskWarning,5000), nextPlan:cleanMedicalText(parsed.nextPlan,5000),
@@ -7916,6 +7922,9 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
     try { await require('./decisionReferral').validateFeedbackWindow(referral); }
     catch (error) { return res.status(error.statusCode || 409).json({ success: false, message: error.message }); }
   }
+  if (status === 'completed' && referral.consultationType === 'multidisciplinary'
+    && (referral.consultationMembers?.length || 0) < 2)
+    return res.status(400).json({ success: false, message: '请先在原转介补全至少两位实际会诊专家，再提交汇总回复' });
   // 接受只代表接单，不在此阶段写入正式意见；提交正式反馈即进入“已反馈”。
   if (status === 'completed') {
     const hadSubmittedFeedback = !!(referral.response || referral.responseAnalysis || referral.responseOpinion);
@@ -7935,13 +7944,17 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
     if (response !== undefined && response.trim()) referral.response = response.trim();
     if (responseAnalysis !== undefined) referral.responseAnalysis = responseAnalysis.trim();
     if (responseOpinion !== undefined) referral.responseOpinion = responseOpinion.trim();
+    referral.responseSubmittedBy = { staffId: req.staff._id, name: req.staff.name || req.staff.username || '',
+      role: req.staff.role, submittedAt: new Date() };
     if (consultation && typeof consultation === 'object') {
       const normalizedConsultation = { ...consultation };
       if (referral.referralType === 'external_medical' && referral.medicalExpertSnapshot) {
         normalizedConsultation.feedbackType = 'external_medical_record';
         normalizedConsultation.sourceInstitution = referral.medicalExpertSnapshot.institutionName || '';
         normalizedConsultation.sourceDepartment = referral.medicalExpertSnapshot.departmentName || '';
-        normalizedConsultation.sourceDoctor = referral.medicalExpertSnapshot.name || '';
+        normalizedConsultation.sourceDoctor = referral.consultationType === 'multidisciplinary'
+          ? `${referral.medicalExpertSnapshot.departmentName || '牵头科室'}多学科会诊`
+          : referral.medicalExpertSnapshot.name || '';
       }
       referral.consultation = normalizedConsultation;
     }

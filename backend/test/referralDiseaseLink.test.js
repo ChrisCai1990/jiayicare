@@ -37,10 +37,12 @@ test('前端区分完整档案权限并展示专病关联与结构化协作反�
 test('转介通知进入首页消息总数且附件明确药物状态与后续健康变化', () => {
   const route = read('backend/src/routes/staff.js');
   const home = read('staff/src/pages/HomePage.jsx');
+  const notificationTotal = read('staff/src/utils/staffWorkspace.js');
   const notifications = read('staff/src/pages/NotificationsPage.jsx');
   const patient = read('staff/src/pages/PatientDetailPage.jsx');
-  assert.match(home, /pendingReferralCount/);
-  assert.match(home, /unreadRepliedCount/);
+  assert.match(home, /useNotificationSummary/);
+  assert.match(notificationTotal, /pendingReferralCount/);
+  assert.match(notificationTotal, /unreadRepliedCount/);
   assert.match(home, /nav\('\/notifications'\)/);
   assert.match(route, /recentCourseEntries/);
   assert.match(route, /\.slice\(0, 10\)/);
