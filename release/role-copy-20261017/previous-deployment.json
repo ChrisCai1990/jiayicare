@@ -1,1 +1,153 @@
-{"published": true, "commit": "f04ba7058ed5d0c2e5faca85de90e676212bcae1", "backup": "/var/backups/jiayicare-role-copy-1792211034", "files": [{"oldPath": "/var/www/jiayicare-static/corporate/privacy-policy.html", "path": "/var/www/jiayicare-static/corporate/privacy-policy.html", "oldSha": "f347fc3f4f3cb4ed31c6300b51c9b1ffcb9da34666cf7357c0da9f33d9ba5cf4", "sha": "594f816bf5732674dc0febc2a943080087d08c8a29c411ece5c54bc1a6a410dd", "name": "corporate-privacy.html", "kind": "page", "stage": "0.html"}, {"oldPath": "/var/www/jiayicare-static/knowledge/privacy-policy.html", "path": "/var/www/jiayicare-static/knowledge/privacy-policy.html", "oldSha": "77a9fe3fc5f2519e48bb662ca58be6d1c4749364a9920f60d1b258b023ba0f9a", "sha": "eda9338b241268abea47c42391d50452e05578103bd83767a3fa91dac87d5281", "name": "app-privacy.html", "kind": "page", "stage": "1.html"}, {"oldPath": "/var/www/jiayicare-static/corporate/app.html", "path": "/var/www/jiayicare-static/corporate/app.html", "oldSha": "8beb1e1d31d10cb820e05f9b8c56daf575fbddc965fc95b4a0d1b43f74371dea", "sha": "6a70cbb089925aecebfdec8b02770986692c66089bbd2ec06319f1c38111456a", "name": "app.html", "kind": "page", "stage": "2.html"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/support/index.html", "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/support/index.html", "oldSha": "322ca5db7aedc5858ae877900435bafc2b2f776d43d34a6649b7a8f3a738034e", "sha": "1f1c7401ae614468e8219ad6c9fd165d40cc962e846f7d4a29ea52b51233bc71", "name": "support.html", "kind": "page", "stage": "3.html"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview/js/531.d5a82bd0.js", "path": "/var/www/jiayicare-static/mobile-preview/js/531.733673e4.js", "oldSha": "a1d5e3a159e7ebfa0c5d3595ca2f52c662100692125b76a34db265385f6efb8b", "sha": "733673e478c1dbdb88d50ccc2ee163e6076380ed91510be9dfbfa76e087d7130", "name": "android/531.733673e4.js", "kind": "asset", "stage": "4.js"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview/js/app.d3fadf8c.js", "path": "/var/www/jiayicare-static/mobile-preview/js/app.b9aee80c.js", "oldSha": "ac798db6ad0b06737fda3ca6fcdc21a3f20f4e1f857852411bec7f9ca0fc3834", "sha": "b9aee80c0016042375df0a04bb6581030e4f95a50c74ec9265cd6c2596c3b69b", "name": "android/app.b9aee80c.js", "kind": "asset", "stage": "5.js"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview/index.html", "path": "/var/www/jiayicare-static/mobile-preview/index.html", "oldSha": "2df765d9afd946b040cf74f59210503a22048af644eadfeb4db660c524bed5b4", "sha": "5e893946693240b4440bd81e151038d4de339360e1c04eae72305e1bc0140d71", "name": "android/index.html", "kind": "entry", "stage": "6.html"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview/review/js/531.ff0763da.js", "path": "/var/www/jiayicare-static/mobile-preview/review/js/531.cf0fbd22.js", "oldSha": "ce782bb780e54d1fe21f31ee2a4873ddeb6dbe2c64e4e048ba791f915df0d63a", "sha": "cf0fbd226bfa2fcba31e3f6519aff42fa5436c1e621e6c046c37821997b2a9c5", "name": "android-review/531.cf0fbd22.js", "kind": "asset", "stage": "7.js"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview/review/js/app.c2b7fd50.js", "path": "/var/www/jiayicare-static/mobile-preview/review/js/app.402100cf.js", "oldSha": "d71b5252a889cbc8b9470d5bac5c56cb94ad9eb9a1c3b8405bf82f0cc9135c29", "sha": "402100cf3f8491b5c0182c8401cf14cef37fbc08016decceb48642f55ee78bd6", "name": "android-review/app.402100cf.js", "kind": "asset", "stage": "8.js"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview/review/index.html", "path": "/var/www/jiayicare-static/mobile-preview/review/index.html", "oldSha": "d391c55cdac6f03b7c424bef598cef1ec3909e4c7561e96ab0eea96aa09cff0c", "sha": "bcb7c74c75b5bea89d6bbbd77235b0b5cb54d90d231044471fad83d6d050d434", "name": "android-review/index.html", "kind": "entry", "stage": "9.html"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/js/531.75320875.js", "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/js/531.c12c9b65.js", "oldSha": "52b25eec5856a5611e2fd380c3366ce13d015beab2f61692c1c28be2509eb072", "sha": "c12c9b65ff4891a7020d208a4c7500860c87b3fd5a4317e820482821e1529a33", "name": "ios/531.c12c9b65.js", "kind": "asset", "stage": "10.js"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/js/app.50fa1b82.js", "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/js/app.a388eda9.js", "oldSha": "50fa1b823db2dfd96640270e132aeec41ef46ecbc0853c17a72a6d224356dda2", "sha": "a388eda920c6d2d242da94b2edca4ce6533592d2c72324f0451649c37a95e4da", "name": "ios/app.a388eda9.js", "kind": "asset", "stage": "11.js"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/index.html", "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/index.html", "oldSha": "483490558f8920cdb41b25c91e0dda5e8afa16d77bb97d7ff83475d87a89a92b", "sha": "97fb459ccce1f20b99549afbfef9f5a87fe082f7c59137425ca9667d01f0c3bb", "name": "ios/index.html", "kind": "entry", "stage": "12.html"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/js/531.75320875.js", "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/js/531.c12c9b65.js", "oldSha": "52b25eec5856a5611e2fd380c3366ce13d015beab2f61692c1c28be2509eb072", "sha": "c12c9b65ff4891a7020d208a4c7500860c87b3fd5a4317e820482821e1529a33", "name": "ios-review/531.c12c9b65.js", "kind": "asset", "stage": "13.js"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/js/app.bd5a576f.js", "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/js/app.a710ef70.js", "oldSha": "bd5a576f92e8758ca5bb7bee437b79b4c457b16705dde7e7e5256ffe21c226bc", "sha": "a710ef70d6a99ea7134521337f655b610ca12f36f625f1d6badc045acb16adde", "name": "ios-review/app.a710ef70.js", "kind": "asset", "stage": "14.js"}, {"oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/index.html", "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/index.html", "oldSha": "8fcbcf062dfc25e8a024243ff0251f07e91211017e2848e899f791febdf9bafb", "sha": "71c6c9901112cffeca5767ea2347d1980d81b754f00c1fa27fa8a8704c264562", "name": "ios-review/index.html", "kind": "entry", "stage": "15.html"}], "healthPassed": true, "backendChanged": false}
+{
+  "published": true,
+  "commit": "bc32f602c957e98cd6cf8d74722504d8c36b1ef2",
+  "backup": "/var/backups/jiayicare-role-copy-1792211248",
+  "files": [
+    {
+      "oldPath": "/var/www/jiayicare-static/corporate/privacy-policy.html",
+      "path": "/var/www/jiayicare-static/corporate/privacy-policy.html",
+      "oldSha": "594f816bf5732674dc0febc2a943080087d08c8a29c411ece5c54bc1a6a410dd",
+      "sha": "594f816bf5732674dc0febc2a943080087d08c8a29c411ece5c54bc1a6a410dd",
+      "name": "corporate-privacy.html",
+      "kind": "page",
+      "stage": "0.html"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/knowledge/privacy-policy.html",
+      "path": "/var/www/jiayicare-static/knowledge/privacy-policy.html",
+      "oldSha": "eda9338b241268abea47c42391d50452e05578103bd83767a3fa91dac87d5281",
+      "sha": "eda9338b241268abea47c42391d50452e05578103bd83767a3fa91dac87d5281",
+      "name": "app-privacy.html",
+      "kind": "page",
+      "stage": "1.html"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/corporate/app.html",
+      "path": "/var/www/jiayicare-static/corporate/app.html",
+      "oldSha": "6a70cbb089925aecebfdec8b02770986692c66089bbd2ec06319f1c38111456a",
+      "sha": "6a70cbb089925aecebfdec8b02770986692c66089bbd2ec06319f1c38111456a",
+      "name": "app.html",
+      "kind": "page",
+      "stage": "2.html"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/support/index.html",
+      "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/support/index.html",
+      "oldSha": "1f1c7401ae614468e8219ad6c9fd165d40cc962e846f7d4a29ea52b51233bc71",
+      "sha": "1f1c7401ae614468e8219ad6c9fd165d40cc962e846f7d4a29ea52b51233bc71",
+      "name": "support.html",
+      "kind": "page",
+      "stage": "3.html"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview/js/531.733673e4.js",
+      "path": "/var/www/jiayicare-static/mobile-preview/js/531.578c4d0e.js",
+      "oldSha": "733673e478c1dbdb88d50ccc2ee163e6076380ed91510be9dfbfa76e087d7130",
+      "sha": "578c4d0ec34aaf8c29308efd8dd42deec32d07a3260f13c4977ef676775129a5",
+      "name": "android/531.578c4d0e.js",
+      "kind": "asset",
+      "stage": "4.js"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview/js/app.b9aee80c.js",
+      "path": "/var/www/jiayicare-static/mobile-preview/js/app.a365d751.js",
+      "oldSha": "b9aee80c0016042375df0a04bb6581030e4f95a50c74ec9265cd6c2596c3b69b",
+      "sha": "a365d751338236eb4e70125a182b963fee56fe8e8a35252ada6aee279810430f",
+      "name": "android/app.a365d751.js",
+      "kind": "asset",
+      "stage": "5.js"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview/index.html",
+      "path": "/var/www/jiayicare-static/mobile-preview/index.html",
+      "oldSha": "5e893946693240b4440bd81e151038d4de339360e1c04eae72305e1bc0140d71",
+      "sha": "61f2eeb86e8e5acf1b52dacfcb90746617e34dd66e0608f7a89e8c42dde96760",
+      "name": "android/index.html",
+      "kind": "entry",
+      "stage": "6.html"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview/review/js/531.cf0fbd22.js",
+      "path": "/var/www/jiayicare-static/mobile-preview/review/js/531.4040fded.js",
+      "oldSha": "cf0fbd226bfa2fcba31e3f6519aff42fa5436c1e621e6c046c37821997b2a9c5",
+      "sha": "4040fdedadb4be0b7b734cb4e5d39639980a9cbd6db4d7bc77bff89f75f061c3",
+      "name": "android-review/531.4040fded.js",
+      "kind": "asset",
+      "stage": "7.js"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview/review/js/app.402100cf.js",
+      "path": "/var/www/jiayicare-static/mobile-preview/review/js/app.ca69ef95.js",
+      "oldSha": "402100cf3f8491b5c0182c8401cf14cef37fbc08016decceb48642f55ee78bd6",
+      "sha": "ca69ef956a5019035a6c860099e07da5b24c01ac08ec1f627de419c2343f1e2f",
+      "name": "android-review/app.ca69ef95.js",
+      "kind": "asset",
+      "stage": "8.js"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview/review/index.html",
+      "path": "/var/www/jiayicare-static/mobile-preview/review/index.html",
+      "oldSha": "bcb7c74c75b5bea89d6bbbd77235b0b5cb54d90d231044471fad83d6d050d434",
+      "sha": "cbd526e193a1fc1bff124ac406badea7fe11f2226b7de2a841f37f9775fc3709",
+      "name": "android-review/index.html",
+      "kind": "entry",
+      "stage": "9.html"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/js/531.c12c9b65.js",
+      "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/js/531.eaecf8b1.js",
+      "oldSha": "c12c9b65ff4891a7020d208a4c7500860c87b3fd5a4317e820482821e1529a33",
+      "sha": "eaecf8b1b5a80f69d7b6091337526ad02d0f971d63e21410f4f3896e7fedcd3a",
+      "name": "ios/531.eaecf8b1.js",
+      "kind": "asset",
+      "stage": "10.js"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/js/app.a388eda9.js",
+      "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/js/app.0a134fe5.js",
+      "oldSha": "a388eda920c6d2d242da94b2edca4ce6533592d2c72324f0451649c37a95e4da",
+      "sha": "0a134fe5696dd3e5af9552becf9958723f4975174404cdde783c5602b174972d",
+      "name": "ios/app.0a134fe5.js",
+      "kind": "asset",
+      "stage": "11.js"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/index.html",
+      "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/index.html",
+      "oldSha": "97fb459ccce1f20b99549afbfef9f5a87fe082f7c59137425ca9667d01f0c3bb",
+      "sha": "ddb23104fcc37bfb051a8d434cfe6bafe976eede319160c94cb95d0b930c1a11",
+      "name": "ios/index.html",
+      "kind": "entry",
+      "stage": "12.html"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/js/531.c12c9b65.js",
+      "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/js/531.eaecf8b1.js",
+      "oldSha": "c12c9b65ff4891a7020d208a4c7500860c87b3fd5a4317e820482821e1529a33",
+      "sha": "eaecf8b1b5a80f69d7b6091337526ad02d0f971d63e21410f4f3896e7fedcd3a",
+      "name": "ios-review/531.eaecf8b1.js",
+      "kind": "asset",
+      "stage": "13.js"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/js/app.a710ef70.js",
+      "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/js/app.042e6c42.js",
+      "oldSha": "a710ef70d6a99ea7134521337f655b610ca12f36f625f1d6badc045acb16adde",
+      "sha": "042e6c423dd100b37265b5f60e15cf2e9d3a2e44e872bb2efc5b2e5aabe12aa3",
+      "name": "ios-review/app.042e6c42.js",
+      "kind": "asset",
+      "stage": "14.js"
+    },
+    {
+      "oldPath": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/index.html",
+      "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/index.html",
+      "oldSha": "71c6c9901112cffeca5767ea2347d1980d81b754f00c1fa27fa8a8704c264562",
+      "sha": "92f89c5b1d68a73cac85ee423d87fa01310c089280d11de70a691165cd082bf8",
+      "name": "ios-review/index.html",
+      "kind": "entry",
+      "stage": "15.html"
+    }
+  ],
+  "healthPassed": true,
+  "backendChanged": false
+}

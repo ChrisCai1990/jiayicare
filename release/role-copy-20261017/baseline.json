@@ -78,5 +78,10 @@
     "path": "/var/www/jiayicare-static/mobile-preview-joinwehealth/review/js/531.75320875.js",
     "name": "ios-review/531.75320875.js",
     "sha": "52b25eec5856a5611e2fd380c3366ce13d015beab2f61692c1c28be2509eb072"
+  },
+  {
+    "name": "user-agreement.html",
+    "path": "/var/www/jiayicare-static/corporate/user-agreement.html",
+    "sha": "b644e9a8ef949e64a96632b879d82b305e407a4ee1a8713bf9c801cc37b84fa5"
   }
 ]

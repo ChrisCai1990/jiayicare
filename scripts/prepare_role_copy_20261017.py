@@ -10,6 +10,10 @@ ROLE='杭州嘉医汇健康管理有限公司决定客户个人信息的处理�
 OLD_CONTACT='平台运营方：杭州嘉静佑辰科技有限公司；健康管理服务提供方：杭州嘉医汇健康管理有限公司。'
 CONTACT='应用运营及健康管理服务提供方、个人信息处理者：杭州嘉医汇健康管理有限公司；受托技术服务方：杭州嘉静佑辰科技有限公司。'
 REPLACEMENTS=[(OLD_INTRO,INTRO),(OLD_ROLE,ROLE),(OLD_CONTACT,CONTACT),('5. 平台、服务方与第三方服务','5. 个人信息处理者、受托技术服务方与第三方服务')]
+TERMS_REPLACEMENTS=[
+ ('由杭州嘉静佑辰科技有限公司运营平台，杭州嘉医汇健康管理有限公司提供健康管理服务。','由杭州嘉医汇健康管理有限公司运营并提供健康管理服务，杭州嘉静佑辰科技有限公司按嘉医汇要求提供系统研发、维护与技术支持。'),
+ ('由杭州嘉静佑辰科技有限公司运营，杭州嘉医汇健康管理有限公司提供健康管理服务。','由杭州嘉医汇健康管理有限公司运营并提供健康管理服务，杭州嘉静佑辰科技有限公司按嘉医汇要求提供系统研发、维护与技术支持。'),
+]
 sha=lambda b:hashlib.sha256(b).hexdigest()
 def privacy(t):
  for old,new in REPLACEMENTS:
@@ -19,6 +23,8 @@ def privacy(t):
  t=re.sub(r'(更新日期：|生效日期：)2026年10月\d+日',r'\g<1>2026年10月17日',t)
  t=t.replace('"heading":"运营主体"','"heading":"运营主体（2026年10月17日更新）"')
  t=t.replace('2026年10月6日','2026年10月17日')
+ for old,new in TERMS_REPLACEMENTS:t=t.replace(old,new)
+ t=t.replace('2026年9月23日','2026年10月17日')
  return t
 items=json.loads((BASE.parent/'baseline.json').read_text(encoding='utf-8'))
 lookup={x['name']:x for x in items};files=[]
@@ -27,7 +33,10 @@ prior=json.loads(priorfile.read_text(encoding='utf-8'))['files'] if priorfile.ex
 def add(oldname,newname,data,kind):
  old=lookup[oldname];p=OUT/newname;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)
  remote=old['path'] if kind in ['page','entry'] else str(pathlib.PurePosixPath(old['path']).with_name(pathlib.PurePosixPath(newname).name))
- previous=next((x for x in prior if x['oldPath']==old['path']),None)
+ def same_slot(x):
+  if kind in ['page','entry']:return x['path']==remote
+  return x['kind']=='asset' and pathlib.PurePosixPath(x['path']).parent==pathlib.PurePosixPath(remote).parent and pathlib.PurePosixPath(x['path']).name.split('.')[0]==pathlib.PurePosixPath(remote).name.split('.')[0]
+ previous=next((x for x in prior if same_slot(x)),None)
  files.append(dict(oldPath=previous['path'] if previous else old['path'],path=remote,oldSha=previous['sha'] if previous else old['sha'],sha=sha(data),name=newname,kind=kind))
 for name in ['corporate-privacy.html','app-privacy.html']:
  add(name,name,privacy((BASE/name).read_text(encoding='utf-8')).encode(),'page')
@@ -41,6 +50,12 @@ t=(BASE/'support.html').read_text(encoding='utf-8')
 assert '杭州嘉医汇健康管理有限公司' in t
 t=t.replace('杭州嘉医汇健康管理有限公司','杭州嘉医汇健康管理有限公司；受托技术服务方：杭州嘉静佑辰科技有限公司（按嘉医汇要求提供系统研发、维护与技术支持）',1)
 add('support.html','support.html',t.encode(),'page')
+t=(BASE/'user-agreement.html').read_text(encoding='utf-8')
+assert any(old in t for old,new in TERMS_REPLACEMENTS)
+for old,new in TERMS_REPLACEMENTS:t=t.replace(old,new)
+t=t.replace(OLD_CONTACT,CONTACT)
+t=re.sub(r'(更新日期：|生效日期：)2026年\d+月\d+日',r'\g<1>2026年10月17日',t)
+add('user-agreement.html','user-agreement.html',t.encode(),'page')
 for scope in ['android','android-review','ios','ios-review']:
  chunk=next((BASE/scope).glob('531.*.js'));data=privacy(chunk.read_text(encoding='utf-8')).encode()
  newchunk='531.'+sha(data)[:8]+'.js';add(scope+'/'+chunk.name,scope+'/'+newchunk,data,'asset')

@@ -9,7 +9,7 @@ const CONTENT = {
     sections: [
       {
         heading: '1. 接受条款',
-        body: '欢迎使用嘉医汇健康管家（以下简称“本应用”）。本应用由杭州嘉医汇健康管理有限公司运营并提供健康管理服务。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。',
+        body: '欢迎使用嘉医汇健康管家（以下简称“本应用”）。本应用由杭州嘉医汇健康管理有限公司运营并提供健康管理服务，杭州嘉静佑辰科技有限公司按嘉医汇要求提供系统研发、维护与技术支持。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。',
       },
       {
         heading: '2. 服务内容',
@@ -131,7 +131,7 @@ export default function LegalScreen({ navigation, route }) {
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.docTitle}>{doc.title}</Text>
-          <Text style={styles.updateDate}>更新日期：2026年9月23日</Text>
+          <Text style={styles.updateDate}>更新日期：2026年10月17日</Text>
         </View>
 
         <View style={styles.body}>
@@ -144,7 +144,8 @@ export default function LegalScreen({ navigation, route }) {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>嘉医汇健康管家 · 杭州嘉医汇健康管理有限公司</Text>
+          <Text style={styles.footerText}>运营及健康管理服务：杭州嘉医汇健康管理有限公司</Text>
+          <Text style={styles.footerText}>受托技术服务：杭州嘉静佑辰科技有限公司</Text>
           <Text style={styles.footerText}>客服电话：19106761448</Text>
           <Text style={styles.footerText}>健康管理服务联系地址：杭州市滨江区西兴街道智慧之门A塔602</Text>
         </View>
