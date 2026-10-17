@@ -710,7 +710,10 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   await require('../utils/medicalProxyWorkflow').repairCompletedMedicalEscortAuditTasks(req.staff._id);
   if (req.staff.role === 'healthPlanner')
     await require('../utils/medicalProxyWorkflow').repairCompletedPlanningAdvisorHandoffs(req.staff._id);
+  await require('../utils/legacyEscortBooking').reconcileForStaff(req.staff);
   await require('../utils/medicalProxyWorkflow').ensureStaffExpertAppointmentTasksForStaff(req.staff);
+  try { await require('../utils/medicalAssistClosure').reconcilePendingClosuresForPlanner(req.staff); }
+  catch (error) { console.error('[medical-assist-closure] reconciliation failed', error.message); }
   if(req.staff.role==='healthManager') {
     const flows=await require('../models/CareFlow').find({tenantId:req.staff.tenantId||null,'state.people.healthManager.id':String(req.staff._id),'state.stage':{$in:['upload','audit']}}).lean();
     for(const flow of flows) if(require('../utils/healthManagementRollout').enabledForPatient(flow.patientId)
@@ -774,7 +777,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     await FollowUp.updateOne({ _id: task._id }, { $set: { isBlocked: false, activationEvent: '', date: task.date, remindAt: task.remindAt, nextFollowUpDate: task.nextFollowUpDate } });
   }
   const now = new Date();
-  const proxyOrderIds = queriedTasks.filter(task => task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || ''))).map(task => task.sourceOrderId?._id || task.sourceOrderId).filter(Boolean);
+  const proxyOrderIds = queriedTasks.filter(task => task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment|medical_assist):/.test(String(task.workflowKey || ''))).map(task => task.sourceOrderId?._id || task.sourceOrderId).filter(Boolean);
   const activeProxyOrderIds = new Set((proxyOrderIds.length
     ? await Order.find({ _id: { $in: proxyOrderIds }, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() }).distinct('_id')
     : []).map(String));
@@ -788,7 +791,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       if (status !== 'completed' && (c.state.stage === 'closed' || task.formData?.careFlowSequence !== c.state.sequence)) return false;
     }
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
-      || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment|medical_assist):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
       || (task.sourceType === 'annual_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'professional_assessment' && ['executor', 'supervisor'].includes(task.taskRole))
@@ -798,9 +801,13 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'))
       || (require('../utils/healthManagementRollout').enabledForPatient(task.patientId?._id || task.patientId) && require('../../../shared/annualServiceItem.cjs').needsBooking(task));
     if (!isServiceTask) return false;
-    if (status !== 'completed' && task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
+    // A retryable planner closure must remain visible if an earlier attempt
+    // completed the order but failed before completing the closure task.
+    if (status !== 'completed' && task.sourceType === 'order' && task.workflowKey !== 'medical_assist:closure'
+      && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
     // 方案已闭环时，历史遗留的活动督办卡也不应再次出现在健康规划师工作台。
-    if (status !== 'completed' && task.sourceType === 'health_plan' && task.sourceHealthPlanId?.status === 'completed') return false;
+    if (status !== 'completed' && task.sourceType === 'health_plan' && task.workflowKey !== 'medical_assist:closure'
+      && task.sourceHealthPlanId?.status === 'completed') return false;
     const isOutpatientPlan = /门诊一站式/.test(`${task.sourceHealthPlanId?.title || ''} ${task.sourceHealthPlanId?.content?.templateName || ''}`);
     if (status !== 'completed' && isOutpatientPlan && task.taskRole === 'supervisor' && task.dependsOnTaskId?.status === 'completed') return false;
     if (status === 'active' && !['planned', 'in_progress', 'missed'].includes(task.status)) return false;
@@ -2457,6 +2464,15 @@ router.post('/patients/:id/lifestyle-interview/start', staffAuth, require('../ut
 router.get('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
 router.post('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
 
+router.post('/medical-assist-closures/:id/confirm', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  try {
+    const data = await require('../utils/medicalAssistClosure').confirmClosure(req.params.id, req.staff, req.body?.conclusion);
+    return res.json({ success: true, data, message: '健康规划师已确认结案' });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+});
+
 router.post('/followups/:id/medication-defer', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   try {
     const task = await FollowUp.findById(req.params.id);
@@ -2495,6 +2511,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     && (require('./decisionReferral').stageOf(followUp)
       || await Order.exists({ _id: followUp.sourceOrderId, serviceName: '企业家健康决策计划' })))
     return res.status(409).json({ success: false, message: '请在企业家健康决策计划的岗位流程中办理，不能通过普通随访编辑' });
+  if (followUp.workflowKey === 'medical_assist:closure') return res.status(409).json({ success: false, message: '请通过健康规划师确认结案入口处理' });
   if (String(followUp.workflowKey || '').startsWith('rehab:')) return res.status(409).json({success:false,message:'请在运动管理中安排预约或发布服务记录，完成后自动更新本任务'});
   const planReviewPatient = followUpReview.postVisit(followUp) && followUp.aiStatus === 'pending' ? await User.findById(followUp.patientId).select('assignedFamilyDoctor assignedHealthManager').lean() : null;
   if (planReviewPatient && ['in_progress', 'completed'].includes(req.body.status)) return res.status(409).json({ success: false, message: '请先由健康顾问审核随访计划，再执行随访' });
@@ -2896,7 +2913,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     );
     await FollowUp.updateMany(
       { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey, status: { $in: ['planned', 'in_progress'] } },
-      { $set: { status: 'planned', isBlocked: true, activationEvent: 'outpatient_followup_created', dependsOnTaskId: advisorTask._id, content: '陪诊已完成；等待健管专员审核资料、健康顾问查看并生成随访计划后自动结束服务。' } }
+      { $set: { status: 'planned', isBlocked: true, activationEvent: 'outpatient_followup_created', dependsOnTaskId: advisorTask._id, content: '陪诊已完成；等待健管专员审核资料、健康顾问查看并生成随访计划，随后交健康规划师确认结案。' } }
     );
   }
   if (isOutpatientPostVisitReview && followUp.status === 'completed') {
@@ -2920,17 +2937,8 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', status: { $in: ['planned', 'in_progress'] } },
       { $set: { status: 'completed', isBlocked: false, completedAt: new Date(), completedBy: 'staff', formData: result } }
     );
-    const completedPlan = await HealthPlan.findOneAndUpdate(
-      { _id: followUp.sourceHealthPlanId },
-      { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } },
-      { new: true }
-    );
-    if (completedPlan?.sourceOrderId) {
-      await Order.updateOne(
-        { _id: completedPlan.sourceOrderId, totalUnits: { $lte: 1 }, 'specialtyTermsSnapshot.key': { $ne: 'ibd' }, status: { $nin: ['completed', 'cancelled'] } },
-        { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt: new Date(), usedUnits: 1 } }
-      );
-    }
+    await require('../utils/medicalAssistClosure').requestPlanClosure(followUp.sourceHealthPlanId,
+      '门诊一站式后续随访安排已完成，待健康规划师核对结案。');
   }
   if (outpatientStaffAssignment) {
     const commonFilter = { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'executor', status: { $in: ['planned', 'in_progress'] } };
@@ -3022,20 +3030,9 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       status: { $nin: ['completed', 'cancelled'] },
     });
     if (remaining === 0) {
-      const completedPlan = await HealthPlan.findOneAndUpdate(
-        { _id: followUp.sourceHealthPlanId, type: 'medical_assist' },
-        { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } },
-        { new: true }
-      );
-      const completedScheme = followUp.followUpSchemeId
-        ? await FollowUpPlan.findById(followUp.followUpSchemeId).select('closesService').lean()
-        : null;
-      if (completedPlan?.sourceOrderId && completedScheme?.closesService) {
-        await Order.updateOne(
-          { _id: completedPlan.sourceOrderId, totalUnits: { $lte: 1 }, 'specialtyTermsSnapshot.key': { $ne: 'ibd' }, status: { $nin: ['completed', 'cancelled'] } },
-          { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt: new Date(), usedUnits: 1 } }
-        );
-      }
+      const closingPlan = await HealthPlan.findById(followUp.sourceHealthPlanId).select('type status').lean();
+      if (closingPlan?.type === 'medical_assist' && closingPlan.status === 'active')
+        await require('../utils/medicalAssistClosure').requestPlanClosure(followUp.sourceHealthPlanId);
     }
   }
 
@@ -3205,15 +3202,9 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
         { _id: followUp._id, aiStatus: 'pending' },
         { $set: { aiStatus: 'approved', status: 'completed', completedAt, completedBy: 'staff', content: followUp.content, date: followUp.date, formData: followUp.formData } },
       );
-      await Order.updateOne(
-        { _id: followUp.sourceOrderId },
-        { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt, currentStage: 'checkup_completed', currentAssignee: null, supervisionStatus: 'completed' }, $max: { usedUnits: 1 } },
-      );
-      await FollowUp.updateMany(
-        { sourceType: 'order', sourceOrderId: followUp.sourceOrderId, workflowKey: { $in: ['checkup_appointment:manager_review', 'checkup_appointment:supervise'] }, status: { $in: ['planned', 'in_progress'] } },
-        { $set: { status: 'completed', completedAt, completedBy: 'staff', content: '健康顾问已审核后续随访计划，待约检服务结束。', 'formData.currentStage': 'completed' } },
-      );
-      return res.json({ success: true, message: '已通过审核' });
+      await require('../utils/medicalAssistClosure').requestOrderClosure(followUp.sourceOrderId,
+        '健康顾问已审核后续随访计划，待健康规划师核对结案。');
+      return res.json({ success: true, message: '已通过审核，待健康规划师确认结案' });
     }
     followUp.aiStatus = 'approved';
     await followUp.save();
@@ -3223,10 +3214,9 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
         const completedAt = new Date();
         const reportIds = [...new Set((followUp.formData?.reportIds || []).map(String).filter(Boolean))];
         if (reportIds.length) await MedicalReport.updateMany({ _id: { $in: reportIds }, user: followUp.patientId, audit_status: 'audited' }, { $set: { familyDoctorViewedAt: completedAt } });
-        await Order.updateOne({ _id: order._id }, { $set: { status: 'completed', tradeStatus: 'completed', completedAt, currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed' } });
-        await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise', status: { $in: ['planned', 'in_progress'] } },
-          { $set: { status: 'completed', completedAt, completedBy: 'staff', 'formData.currentStage': 'completed', content: '健康顾问已审核临时加诊随访计划，服务结束。' } });
-        return res.json({ success: true, message: '已审核临时加诊随访计划，服务结束', data: followUp });
+        await require('../utils/medicalAssistClosure').requestOrderClosure(order,
+          '健康顾问已审核临时加诊随访计划，待健康规划师核对结案。');
+        return res.json({ success: true, message: '已审核临时加诊随访计划，待健康规划师确认结案', data: followUp });
       }
     }
     if (followUp.sourceType === 'order' && followUp.formData?.generatedFromPostCheckupSupervision && followUp.sourceOrderId) {
@@ -3245,9 +3235,8 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
         );
         followUp.status = 'completed'; followUp.completedAt = completedAt; followUp.completedBy = 'staff';
         await followUp.save();
-        order.status = 'completed'; order.tradeStatus = 'completed'; order.fulfillmentStatus = 'completed'; order.completedAt = completedAt; order.usedUnits = Math.max(order.usedUnits || 0, 1);
-        order.currentStage = 'completed'; order.currentAssignee = null; order.supervisionStatus = 'completed';
-        await order.save();
+        await require('../utils/medicalAssistClosure').requestOrderClosure(order,
+          '健康顾问已审核复查督办后续随访计划，待健康规划师核对结案。');
         await Message.findOneAndUpdate(
           { dedupeKey: `medical-reminder-approved:${order._id}` },
           { $setOnInsert: { user: followUp.patientId, type: 'planner', sender: 'AI健康规划师', title: '复查督办随访计划', conversationId: `${followUp.patientId}_planner`, isAI: true, unread: true,
@@ -3262,9 +3251,8 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
       if (order) {
         const reportIds = [...new Set((followUp.formData?.reportIds || []).map(String).filter(Boolean))];
         if (reportIds.length) await MedicalReport.updateMany({ _id: { $in: reportIds }, user: followUp.patientId, audit_status: 'audited' }, { $set: { familyDoctorViewedAt: new Date() } });
-        order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
-        await order.save();
-        await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise', status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健管专员已审核就诊资料，AI随访计划已由健康顾问审核，专家约诊服务结束。', 'formData.currentStage': 'completed' } });
+        await require('../utils/medicalAssistClosure').requestOrderClosure(order,
+          '健管专员已审核就诊资料，健康顾问已审核随访计划，待健康规划师核对结案。');
       }
     }
     res.json({ success: true, message: '已通过审核', data: followUp });
@@ -4014,7 +4002,7 @@ router.post('/patients/:id/post-checkup-supervision/start', staffAuth, async (re
     const order = await Order.create({
       user: patient._id, tenantId: patient.tenantId || null, serviceId: 'staff_post_checkup_supervision', serviceName: '健康体检服务', specificationLabel: '复查督办服务',
       servicePrice: 0, unitPrice: 0, totalUnits: 1, status: 'pending', tradeStatus: 'paid', paymentStatus: 'unpaid', initiationSource: 'staff_direct',
-      initiatedByStaff: req.staff._id, supervisorId: req.staff._id, currentAssignee: req.staff._id, currentStage: 'advisor_review', closureMode: 'automatic', supervisionStatus: 'in_progress',
+      initiatedByStaff: req.staff._id, supervisorId: req.staff._id, currentAssignee: req.staff._id, currentStage: 'advisor_review', closureMode: 'planner_review', supervisionStatus: 'in_progress',
       serviceRequirements: note, note: note ? `医护端健康顾问发起复查督办：${note}` : '医护端健康顾问发起复查督办服务',
     });
     const task = await require('../utils/medicalReminderWorkflow').ensureAdvisorIntakeTask(order);
@@ -4093,6 +4081,9 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   }
   if (!(await canManagePlan(req, plan))) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
+  }
+  if (plan.type === 'medical_assist' && req.body.status === 'completed') {
+    return res.status(409).json({ success: false, message: '就医协助服务须在执行结束后由健康规划师通过确认结案入口关闭' });
   }
   if (plan.type === 'annual_checkup') {
     if (req.body.items !== undefined) {
@@ -9688,6 +9679,10 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const currentOrder = await Order.findById(req.params.id);
     if (require('./decisionReferral').isDecisionOrder(currentOrder) && action === 'complete')
       return res.status(409).json({ success: false, message: '请由健康规划师完成最终验收后结单' });
+    if (action === 'complete' && (require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(currentOrder)
+      || /就医协助|陪同就医|陪诊|待约检|代配药|代取药|复查督办/.test(currentOrder?.serviceName || '')
+      || await HealthPlan.exists({ sourceOrderId: currentOrder?._id, type: 'medical_assist' })))
+      return res.status(409).json({ success: false, message: '就医协助服务须在执行结束后由健康规划师通过确认结案入口关闭' });
     if (currentOrder?.serviceWorkflowSnapshot?.key === 'rehab') return res.status(409).json({ success: false, message: '请在客户服务管理 → 运动管理安排服务，并由运动复健师发布记录后逐次核销' });
     if (action === 'actual_start' && !req.body.actualPackageService) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role))

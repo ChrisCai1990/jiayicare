@@ -328,6 +328,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         <option value="customer_not_needed">暂不需要，结束本次计划</option>
       </select>
     </label>}
+    {isMedicalEscort && <div style={{ fontSize: 13, color: '#1E6B50' }}>健管专员请核实实际预约医院、项目及日期时间；完成后直接交给已指定的就医专员。</div>}
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>

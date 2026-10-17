@@ -2886,7 +2886,9 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
   if ((/医疗代诊/.test(workflowProduct.name) && key !== 'medical_proxy') || (key === 'medical_proxy' && !/医疗代诊/.test(workflowProduct.name))) {
     return res.status(400).json({ success: false, message: '医疗代诊商品必须使用专属医疗代诊流程' });
   }
-  const closureMode = ['automatic', 'planner_review'].includes(req.body?.closureMode) ? req.body.closureMode : 'planner_review';
+  const closureMode = ['medical_assist', 'medical_proxy', 'checkup'].includes(key)
+    ? 'planner_review'
+    : (['automatic', 'planner_review'].includes(req.body?.closureMode) ? req.body.closureMode : 'planner_review');
   const questionnaireId = key === 'checkup' ? (req.body?.questionnaireId || null) : null;
   if (questionnaireId && !mongoose.Types.ObjectId.isValid(questionnaireId)) return res.status(400).json({ success: false, message: '问卷参数无效' });
   if (questionnaireId && !await DynamicQuestionnaire.exists({ _id: questionnaireId, status: 'active', deletedAt: null })) {

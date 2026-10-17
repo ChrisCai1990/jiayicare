@@ -1,7 +1,8 @@
 const same = (a, b) => Boolean(a && b && String(a) === String(b))
 
 function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPlan, User, Order,
-  requiresOutcomeReview = require('./followUpContinuity').requiresOutcomeReview, closeReviewedOriginal }) {
+  requiresOutcomeReview = require('./followUpContinuity').requiresOutcomeReview, closeReviewedOriginal,
+  requestClosure = (service, note) => require('./medicalAssistClosure').requestPlanClosure(service, note) }) {
   async function reconcile(link) {
     if (!require('./healthManagementRollout').enabledForPatient(link?.patientId)) return false
     if (link?.status !== 'active' || link.completion?.status === 'completed') return false
@@ -58,14 +59,14 @@ function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPl
     // Final task completion is the durable intent. Resume only missing writes; never replay task execution.
     const now = new Date()
     if (service.status === 'active') {
-      const result = await HealthPlan.updateOne({ _id: service._id, patientId: link.patientId, updatedAt: service.updatedAt,
-        status: 'active', sourceOrderId: service.sourceOrderId || null,
-        supervisionStatus: service.supervisionStatus || null }, { $set: {
-        status: 'completed', 'content.workflowCompletedAt': now,
-        'content.workflowCompletedBy': finals[0].assignedTo || finals[0].staffId,
-        'content.checkupClosureEvidence': { handoffId: link._id, finalTaskId: finals[0]._id, reviewTaskId: reviews[0]._id },
-      } })
-      if (result.modifiedCount !== 1) return attention('服务状态已变化，关闭未执行，请刷新核对')
+      if (service.supervisionStatus !== 'pending_closure') {
+        await requestClosure(service,
+          '年度体检服务的顾问评估和最终验收已完成，待健康规划师核对结案。')
+        await HealthPlan.updateOne({ _id: service._id }, { $set: {
+          'content.checkupClosureEvidence': { handoffId: link._id, finalTaskId: finals[0]._id, reviewTaskId: reviews[0]._id },
+        } })
+      }
+      return false
     } else if (!service.content.workflowCompletedAt) return attention('服务完成凭据不完整，请核对原服务')
     if (closeOrder) {
       const result = await Order.updateOne({ _id: order._id, user: link.patientId, updatedAt: order.updatedAt,

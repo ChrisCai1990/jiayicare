@@ -2,7 +2,25 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { activeOrderWorkItemQuery, restoreOrderAfterRefundFailure } = require('../src/utils/orderWorkItem');
+const { activeOrderWorkItemQuery, restoreOrderAfterRefundFailure, reconcileInactiveOrderWorkItems } = require('../src/utils/orderWorkItem');
+
+test('an interrupted planner closure remains retryable after its order completed', async () => {
+  const Order = require('../src/models/Order');
+  const FollowUp = require('../src/models/FollowUp');
+  const previous = { orderFind: Order.find, taskFind: FollowUp.find, taskUpdate: FollowUp.updateMany };
+  const updates = [];
+  try {
+    Order.find = () => ({ distinct: async () => [], select: () => ({ lean: async () => [] }) });
+    FollowUp.find = () => ({ distinct: async () => ['order'] });
+    FollowUp.updateMany = async (filter) => { updates.push(filter); return { modifiedCount: 0 }; };
+    await reconcileInactiveOrderWorkItems();
+    assert.equal(updates[1].workflowKey.$ne, 'medical_assist:closure');
+    const staffRoute = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+    assert.match(staffRoute, /task\.workflowKey !== 'medical_assist:closure'[\s\S]*!activeProxyOrderIds\.has/);
+  } finally {
+    Order.find = previous.orderFind; FollowUp.find = previous.taskFind; FollowUp.updateMany = previous.taskUpdate;
+  }
+});
 
 test('工作台订单查询从底层排除退款和终态订单', () => {
   const query = activeOrderWorkItemQuery();

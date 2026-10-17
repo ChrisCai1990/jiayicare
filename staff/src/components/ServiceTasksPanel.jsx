@@ -8,6 +8,7 @@ import AnnualDispatchCard from './AnnualDispatchCard'
 import annualDispatch from '../../../shared/annualDispatch.cjs'
 import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 import { isCustomerOrder, serviceTaskGroupKey } from '../utils/plannerOrderProgress.mjs'
+import MedicalAssistClosureAction from './MedicalAssistClosureAction'
 
 const TASKS_PER_PAGE = 5
 
@@ -18,7 +19,7 @@ const checkupProgress = task => {
     booking: { step: 2, label: '健管专员预约中', next: '完成预约后转交就医专员' },
     medical: { step: 3, label: '就医专员办理开单与检查预约', next: '检查后提醒客户上传报告和病历' },
     manager_review: { step: 4, label: '健管专员审核报告与病历', next: '生成后续随访计划并转健康顾问审核' },
-    advisor_review: { step: 5, label: '健康顾问审核后续随访计划', next: '审核通过后服务自动结束' },
+    advisor_review: { step: 5, label: '健康顾问审核后续随访计划', next: '审核通过后由健康规划师确认结案' },
   }
   return stages[stage] || stages.booking
 }
@@ -29,8 +30,8 @@ const medicationProxyProgress = task => {
   const stages = {
     booking: { step: 1, label: '健管专员预约配药门诊', next: '预约完成后由健康规划师安排就医专员' },
     planner: { step: 2, label: '健康规划师安排配药执行人员', next: '确认后直接转给就医专员' },
-    execute: { step: 3, label: '就医专员配药并上传交付资料', next: '资料齐全后完成服务' },
-    resolution: { step: 4, label: '健管专员制定并落实异常解决方案', next: '确认替代渠道或退费结果后结束服务' },
+    execute: { step: 3, label: '就医专员配药并上传交付资料', next: '资料齐全后由健康规划师确认结案' },
+    resolution: { step: 4, label: '健管专员制定并落实异常解决方案', next: '落实替代渠道或退费结果后由健康规划师确认结案' },
     completed: { step: 4, label: '代配药服务已完成', next: '服务已闭环' },
   }
   return { ...(stages[stage] || stages.booking), total: 5, steps: ['预约', '人员分配', '配药执行', '异常解决', '完成'] }
@@ -39,13 +40,20 @@ const medicationProxyProgress = task => {
 const medicalEscortProgress = task => {
   if (task?.workflowKey !== 'medical_proxy:supervise' || task?.formData?.medicalEscort !== true) return null
   const stage = task.formData?.currentStage || 'planner'
-  const stages = {
-    planner: { step: 1, label: '健康规划师分配就医专员', next: '分配后进入陪同执行' },
-    execute: { step: 2, label: '就医专员执行陪同服务', next: '完成陪同并上传报告、病历等资料' },
-    post_visit_audit: { step: 3, label: '健管专员审核归档资料', next: '审核归档后结束服务' },
-    completed: { step: 4, label: '就医陪同服务已完成', next: '服务已闭环' },
+  const assigned = task.formData?.assignmentMode === 'automatic'
+  if (task.formData?.adHocConsultation === true) {
+    const steps = ['人员分配', '现场加诊', '资料审核', '完成']
+    const index = { planner: 1, execute: 2, post_visit_audit: 3, completed: 4 }[stage] || 1
+    return { step: index, total: 4, steps, label: steps[index - 1], next: index === 2 ? '完成现场加诊后提交资料审核' : '按当前环节办理' }
   }
-  return { ...(stages[stage] || stages.planner), total: 4, steps: ['人员分配', '陪同执行', '资料审核', '完成'], automaticAssignment: task.formData?.assignmentMode === 'automatic' }
+  const stages = {
+    planner: { step: 1, label: '健康规划师分配就医专员', next: '分配后转健管专员预约' },
+    booking: { step: 2, label: '健管专员预约陪同服务', next: '预约后直接转给已指定的就医专员' },
+    execute: { step: 3, label: '就医专员执行陪同服务', next: '完成陪同并上传报告、病历等资料' },
+    post_visit_audit: { step: 4, label: '健管专员审核归档资料', next: '审核归档后由健康规划师确认结案' },
+    completed: { step: 5, label: '就医陪同服务已完成', next: '服务已闭环' },
+  }
+  return { ...(stages[stage] || stages.planner), total: 5, steps: ['人员分配', '预约', '陪同执行', '资料审核', '完成'], automaticAssignment: assigned }
 }
 
 export default function ServiceTasksPanel({ onTasksLoaded }) {
@@ -65,6 +73,13 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const [historyItems, setHistoryItems] = useState([])
   const [historySelected, setHistorySelected] = useState('')
   const [historyLoading, setHistoryLoading] = useState(false)
+  const refreshTasks = async () => {
+    const response = await staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
+    const tasks = (response.data || []).filter(task => task.taskRole === 'supervisor' || task.serviceTracking?.status !== 'waiting')
+    setLoadError('')
+    setItems(tasks)
+    onTasksLoaded?.(tasks)
+  }
 
   const showHistory = async () => {
     if (historyOpen) { setHistoryOpen(false); return }
@@ -126,7 +141,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     // The API returns this staff member's tasks. A read-only supervisor card must
     // not hide their actionable assignment for the same service.
     const proxyAction = service.tasks.find(task => (orderService ? task.taskRole === 'executor' && task.workflowKey !== 'medication_proxy:progress' : String(task.workflowKey || '').startsWith('medical_proxy:') && task.workflowKey !== 'medical_proxy:supervise') && !task.isBlocked && ['planned', 'in_progress', 'missed'].includes(task.status))
-    return { ...service, task: service.tasks.find(task => task.feedbackReview) || proxyAction || supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
+    return { ...service, task: service.tasks.find(task => task.workflowKey === 'medical_assist:closure') || service.tasks.find(task => task.feedbackReview) || proxyAction || supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
   })
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -143,6 +158,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   }
   const isActionableNow = service => {
     const task = service.task
+    if (task.workflowKey === 'medical_assist:closure') return true
     if(task.feedbackReview)return task.taskRole==='executor'&&!task.isBlocked;
     // 规划师的督办卡平时只是进度视图；一旦逾期，就需要进入当前待办，
     // 以便及时催办和处理异常，而不是只能从“全部计划”里翻找。
@@ -178,6 +194,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
+    if (task.workflowKey === 'medical_assist:closure') return
     if (String(task.workflowKey || '').startsWith('rehab:') || task.sourceOrderId?.serviceWorkflowSnapshot?.key === 'rehab') {
       nav(`/patients/${task.patientId?._id || task.patientId}?tab=plans&serviceView=rehab`)
       return
@@ -286,6 +303,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
                 {serviceTaskTitle(task)}
+                {task.workflowKey === 'medical_assist:closure' && <span style={{ marginLeft: 8, fontSize: 11, color: '#8A6A20', background: '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>待确认结案</span>}
                 {task.feedbackReview&&<span style={{marginLeft:8,fontSize:11,color:'#1E6B50',background:'#EAF5F0',padding:'2px 6px',borderRadius:8}}>客户已反馈 · 待你核实</span>}
                 {isReadOnlyExpertSupervision && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>只读督办</span>}
                 {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/{progress.total || 5}</span>}
@@ -303,6 +321,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
                 {(task.supervisionProgress?.current || []).map(row => <div key={row.id}>当前环节：<b>{row.label}</b> · 处理人：{row.assignee}{row.blocked ? ' · 等待解锁' : ''}</div>)}
                 <div>{task.supervisionProgress?.message || '进度待核对，未推断服务已完成'}</div>
               </div>}
+              <MedicalAssistClosureAction task={task} onConfirmed={refreshTasks} />
               {task.feedbackReview&&<div style={{marginTop:8,padding:10,borderRadius:8,background:'#EAF5F0',color:'#274838',fontSize:12}}><div style={{fontWeight:600,marginBottom:6}}>客户提交：{formatChineseDateTime(task.feedbackReview.submittedAt)||'时间未记录'}</div><div>{task.feedbackReview.label}</div>{task.feedbackReview.note&&<div style={{whiteSpace:'pre-wrap',marginTop:4}}>补充：{task.feedbackReview.note}</div>}<button type="button" className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={e=>{e.stopPropagation();openTask(task)}}>查看反馈并核实</button></div>}
               {progress && <div style={{ fontSize: 12, color: '#52685D', marginTop: 3 }}>当前阶段：<b>{progress.label}</b>　下一步：{progress.next}</div>}
               {progress?.steps && <div style={{ marginTop: 7, maxWidth: 680 }}>
