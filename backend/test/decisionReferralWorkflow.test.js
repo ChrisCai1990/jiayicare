@@ -156,17 +156,21 @@ test('advisor must attach an existing report and a linked specialist before book
     order.decisionReferral = { stage: 'advisor' };
     createdTasks.length = 0;
     const multi = response();
-    await advance({ ...req, body: { ...req.body, consultationType: 'multidisciplinary',
+    await advance({ ...req, body: { ...req.body, reason: '', questionList: '', consultationType: 'multidisciplinary',
       coordinatorStaffId: String(coordinatorId), specialties: [
-      { medicalExpertId: String(expertId), expectedAt: '2026-10-18T10:00', method: 'remote' },
-      { medicalExpertId: String(secondExpertId), expectedAt: '2026-10-19T14:00', method: 'outpatient' },
+      { medicalExpertId: String(expertId), focusQuestion: '核对肺结节变化' },
+      { medicalExpertId: String(secondExpertId), focusQuestion: '评估头痛原因' },
     ] } }, multi);
     assert.equal(multi.statusCode, 200);
     assert.equal(multi.body.data.decisionReferral.referralIds.length, 1);
     assert.equal(savedReferrals.length, 1);
     assert.equal(savedReferrals[0].consultationMembers.length, 2);
+    assert.equal(savedReferrals[0].reason, '多学科会诊报告解析');
+    assert.match(savedReferrals[0].questionList, /核对肺结节变化/);
+    assert.match(savedReferrals[0].questionList, /评估头痛原因/);
     assert.equal(String(savedReferrals[0].toStaffId), String(coordinatorId));
-    assert.equal(multi.body.data.decisionReferral.plan.specialties[1].campus, '东院区');
+    assert.equal(multi.body.data.decisionReferral.plan.specialties[1].campus, '');
+    assert.equal(multi.body.data.decisionReferral.plan.specialties[1].expectedAt, null);
     assert.deepEqual(createdTasks.filter(row => row.workflowKey.startsWith('decision_referral:specialist'))
       .map(row => row.workflowKey), ['decision_referral:specialist']);
 
@@ -279,11 +283,12 @@ test('one multidisciplinary referral books the lead department before hospital o
     Referral.updateOne = async (_filter, update) => { bookingSnapshot = update.$set.bookingSnapshot; return { modifiedCount: 1 }; };
     const res = response();
     await advance({ params: { id: String(taskKey) }, staff: { _id: manager, role: 'healthManager', tenantId: tenant },
-      body: { contactNote: '已与客户确认行程', bookings: [
-        { actualAt: '2026-10-20T09:00', appointmentNote: '主院区已预约' },
+      body: { contactNote: '已告知客户由牵头科室协调会诊时间', bookings: [
+        { appointmentNote: '牵头科室已接入，待统一确认院区和时间' },
       ] } }, res);
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.data.decisionReferral.booking.slots.length, 1);
+    assert.equal(res.body.data.decisionReferral.booking.slots[0].actualAt, null);
     assert.equal(String(res.body.data.decisionReferral.booking.slots[0].referralId), String(referralId));
     assert.equal(bookingSnapshot.slots.length, 1);
     assert.equal(taskUpdates.filter(row => row.update.$set.isBlocked === false).length, 1);
@@ -309,14 +314,16 @@ test('hospital coordinator adds consultation members to the same referral', asyn
     Referral.findById = async () => referral;
     Order.findById = () => ({ select: async () => order });
     const res = response();
-    await saveMembers({ params: { id: String(referralId) }, staff: { _id: coordinator }, body: { members: [{
-      hospital: '会诊医院', campus: '东院区', department: '心内科', expert: '会诊专家',
-      actualAt: '2026-10-20T14:00', method: 'outpatient',
+    await saveMembers({ params: { id: String(referralId) }, staff: { _id: coordinator }, body: {
+      consultationAt: '2026-10-20T14:00', method: 'outpatient', leadCampus: '本部', members: [{
+      hospital: '会诊医院', department: '心内科', expert: '会诊专家',
     }] } }, res);
     assert.equal(res.statusCode, 200);
     assert.equal(referral.consultationMembers.length, 2);
     assert.equal(referral.consultationMembers[0].expert, '牵头专家');
     assert.equal(referral.consultationMembers[1].expert, '会诊专家');
+    assert.equal(referral.consultationMembers[0].actualAt.getTime(), referral.consultationMembers[1].actualAt.getTime());
+    assert.equal(referral.consultationSchedule.leadCampus, '本部');
   } finally { Referral.findById = original.referralFind; Order.findById = original.orderFind; }
 });
 

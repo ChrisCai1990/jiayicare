@@ -27,7 +27,8 @@ const referralSchema = new Schema({
   medicalExpertId: { type: Schema.Types.ObjectId, ref: 'MedicalExpert', default: null },
   medicalExpertSnapshot: { type: Schema.Types.Mixed, default: null }, // 冻结医院/科室/职称/擅长，保证历史可追溯
   consultationType: { type: String, enum: ['single', 'multidisciplinary'], default: 'single' },
-  consultationMembers: { type: [Schema.Types.Mixed], default: [] }, // 多学科会诊成员及各自医院/院区/科室/预计时间；仍是一份转介
+  consultationMembers: { type: [Schema.Types.Mixed], default: [] }, // 多学科会诊成员；仍是一份转介
+  consultationSchedule: { type: Schema.Types.Mixed, default: null }, // 牵头科室统一协调的院区、会诊时间及方式
   coordinatorSnapshot: { type: Schema.Types.Mixed, default: null }, // 牵头科室指定的院方接收账号
   bookingSnapshot: { type: Schema.Types.Mixed, default: null }, // 健管确认后的多专家预约安排
   responseSubmittedBy: { type: Schema.Types.Mixed, default: null }, // 录入回复的助理/秘书，与医疗意见来源区分

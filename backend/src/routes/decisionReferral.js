@@ -136,7 +136,7 @@ router.get('/tasks/:id', staffAuth, async (req, res) => {
         ? [order.decisionReferral.plan.coordinatorStaffId] : specialties(order.decisionReferral).map(row => row.specialistStaffId))];
     if (req.staff.role !== 'superadmin' && !team.some(value => id(value) === id(req.staff))) fail('无权查看此服务', 403);
     const referrals = await Promise.all(referralIds(order.decisionReferral).map(referralId => Referral.findById(referralId)
-      .select('status response responseAnalysis responseOpinion respondedAt feedbackVersion medicalExpertSnapshot consultationType consultationMembers coordinatorSnapshot bookingSnapshot responseSubmittedBy courseDraftStatus feedbackRevisionRequest').lean()));
+      .select('status response responseAnalysis responseOpinion respondedAt feedbackVersion medicalExpertSnapshot consultationType consultationMembers consultationSchedule coordinatorSnapshot bookingSnapshot responseSubmittedBy courseDraftStatus feedbackRevisionRequest').lean()));
     const referral = referrals[0] || null;
     res.json({ success: true, data: { orderId: order._id, stage: current(order), workflow: order.decisionReferral || null,
       referral, referrals, taskStatus: task.status, taskStage: stageOf(task) || (task.workflowKey ? '' : 'intake') } });
@@ -180,23 +180,25 @@ router.patch('/referrals/:id/members', staffAuth, async (req, res) => {
     const proposed = req.body?.members;
     if (!Array.isArray(proposed) || proposed.length < 1 || proposed.length > 7)
       fail('请至少补充一位会诊专家，最多可补充七位', 400);
+    const consultationAt = serviceDate(req.body?.consultationAt);
+    const method = clean(req.body?.method, 30);
+    const leadCampus = clean(req.body?.leadCampus, 120);
+    if (!Number.isFinite(consultationAt.getTime()) || !['remote', 'outpatient', 'other'].includes(method)
+      || (method === 'outpatient' && !leadCampus)) fail('请填写统一会诊日期、时间、方式及门诊院区', 400);
     const members = proposed.map((row, index) => {
       const hospital = clean(row.hospital, 150), campus = clean(row.campus, 120);
       const department = clean(row.department, 120), expert = clean(row.expert, 100);
-      const expectedAt = row.expectedAt ? serviceDate(row.expectedAt) : null;
-      const actualAt = row.actualAt ? serviceDate(row.actualAt) : null;
-      const method = clean(row.method, 30);
-      if (!hospital || !campus || !department || !expert || (!expectedAt && !actualAt)
-        || (expectedAt && !Number.isFinite(expectedAt.getTime()))
-        || (actualAt && !Number.isFinite(actualAt.getTime()))
-        || !['remote', 'outpatient', 'other'].includes(method))
-        fail(`第 ${index + 2} 位专家需填写医院、院区、科室、姓名、时间及方式`, 400);
-      return { hospital, campus, department, expert, expectedAt, actualAt, method,
+      if (!hospital || !department || !expert) fail(`第 ${index + 2} 位专家需填写医院、科室和姓名`, 400);
+      return { hospital, campus, department, expert, expectedAt: consultationAt, actualAt: consultationAt, method,
         focusQuestion: clean(row.focusQuestion, 2000) };
     });
     const lead = referral.consultationMembers?.[0];
     if (!lead) fail('牵头科室信息缺失，请联系健康顾问核对');
-    referral.consultationMembers = [lead, ...members];
+    referral.consultationMembers = [{ ...lead, campus: leadCampus, expectedAt: consultationAt,
+      actualAt: consultationAt, method }, ...members];
+    referral.consultationSchedule = { at: consultationAt, method, leadCampus,
+      coordinatedBy: req.staff._id, coordinatedAt: new Date() };
+    referral.medicalExpertSnapshot = { ...referral.medicalExpertSnapshot, campus: leadCampus };
     await referral.save();
     res.json({ success: true, data: referral, message: '会诊专家已保存到原转介' });
   } catch (error) {
@@ -270,8 +272,8 @@ router.post('/tasks/:id/advance', staffAuth, async (req, res) => {
       if (!detail) fail('请记录客户需求及转交顾问的要点', 400);
       await ensureTask(order, patient, 'advisor', patient.assignedFamilyDoctor);
     } else if (stage === 'advisor') {
-      const reason = clean(body.reason, 1000);
-      const questionList = clean(body.questionList, 5000);
+      let reason = clean(body.reason, 1000);
+      let questionList = clean(body.questionList, 5000);
       const reportIds = Array.isArray(body.reportIds) ? [...new Set(body.reportIds.map(id))].slice(0, 10) : [];
       const consultationType = body.consultationType || 'single';
       const requests = Array.isArray(body.specialties) ? body.specialties : [{ medicalExpertId: body.medicalExpertId, expectedAt: body.expectedAt, method: body.method }];
@@ -279,7 +281,9 @@ router.post('/tasks/:id/advance', staffAuth, async (req, res) => {
         || requests.length < 1
         || requests.length > (consultationType === 'single' ? 1 : 5))
         fail('请选择单学科或多学科会诊；顾问最多可预先指定 5 位专家', 400);
-      if (!reason || !questionList || !reportIds.length) fail('请填写转介原因、待解答问题并选择本次报告', 400);
+      const allFocusQuestions = consultationType === 'multidisciplinary' && requests.every(row => clean(row.focusQuestion, 2000));
+      if ((!allFocusQuestions && (!reason || !questionList)) || !reportIds.length)
+        fail('请填写各专家重点问题，或填写转介原因和待解答问题，并选择本次报告', 400);
       if (new Set(requests.map(row => id(row.medicalExpertId))).size !== requests.length)
         fail('同一位专家不能重复安排，请选择不同专科专家', 400);
       if (reportIds.some(value => !mongoose.isValidObjectId(value))) fail('报告选择无效', 400);
@@ -299,10 +303,10 @@ router.post('/tasks/:id/advance', staffAuth, async (req, res) => {
         if (!coordinator) fail('院方接收账号不可用或不属于本机构', 400);
       }
       for (const [index, request] of requests.entries()) {
-        const expectedAt = serviceDate(request.expectedAt);
-        const method = clean(request.method, 30);
-        if (!mongoose.isValidObjectId(request.medicalExpertId) || !Number.isFinite(expectedAt.getTime())
-          || !['remote', 'outpatient', 'other'].includes(method))
+        const expectedAt = consultationType === 'single' ? serviceDate(request.expectedAt) : null;
+        const method = consultationType === 'single' ? clean(request.method, 30) : '';
+        if (!mongoose.isValidObjectId(request.medicalExpertId) || (consultationType === 'single'
+          && (!Number.isFinite(expectedAt.getTime()) || !['remote', 'outpatient', 'other'].includes(method))))
           fail(`第 ${index + 1} 位专家缺少有效的专家、预计解析时间或方式`, 400);
         const expert = await MedicalExpert.findOne({ _id: request.medicalExpertId, status: 'active' })
           .populate('institutionId', 'name level').populate('departmentId', 'name campus').lean();
@@ -313,12 +317,16 @@ router.post('/tasks/:id/advance', staffAuth, async (req, res) => {
           if (!specialist || id(specialist.tenantId) !== id(patient.tenantId)) fail('所选专家未关联本机构有效的专科医生账号');
         }
         const plan = { hospital: expert.institutionId?.name || '', hospitalLevel: expert.institutionId?.level || '',
-          campus: clean(request.campus, 120) || expert.campus || expert.departmentId?.campus || '',
+          campus: consultationType === 'single' ? clean(request.campus, 120) || expert.campus || expert.departmentId?.campus || '' : '',
           department: expert.departmentId?.name || '', expert: expert.name, medicalExpertId: expert._id,
           specialistStaffId: expert.linkedStaffId, expectedAt, method,
           focusQuestion: clean(request.focusQuestion, 2000) };
-        if (!plan.hospital || !plan.department || !plan.campus) fail(`第 ${index + 1} 位专家资源缺少医院、院区或科室`);
+        if (!plan.hospital || !plan.department || (consultationType === 'single' && !plan.campus)) fail(`第 ${index + 1} 位专家资源缺少医院或科室`);
         plans.push(plan);
+      }
+      if (allFocusQuestions) {
+        reason = '多学科会诊报告解析';
+        questionList = plans.map(row => `${row.department} · ${row.expert}：${row.focusQuestion}`).join('\n').slice(0, 5000);
       }
       await ensureTask(order, patient, 'booking', patient.assignedHealthManager);
       const lead = plans[0];
@@ -338,13 +346,13 @@ router.post('/tasks/:id/advance', staffAuth, async (req, res) => {
           coordinatorSnapshot: coordinator ? { staffId: coordinator._id, name: coordinator.name,
             role: coordinator.role, title: coordinator.title || '', department: coordinator.department || '' } : null,
           referralPurpose: consultationType === 'multidisciplinary' ? '多学科会诊及体检报告解读' : '体检报告解读',
-          reason, questionList: plan.focusQuestion || questionList, content: clean(body.content, 5000),
+          reason, questionList: consultationType === 'multidisciplinary' ? questionList : plan.focusQuestion || questionList, content: clean(body.content, 5000),
           sourceReports: reports.map(report => ({ reportId: report._id, title: report.title,
             checkDate: report.checkDate || report.date || null })),
           status: 'pending', requiresConclusion: true,
         } }, { upsert: true, new: true });
         if (id(referral.medicalExpertId) !== id(plan.medicalExpertId) || id(referral.toStaffId) !== id(recipientId)
-          || referral.reason !== reason || referral.questionList !== (plan.focusQuestion || questionList)
+          || referral.reason !== reason || referral.questionList !== (consultationType === 'multidisciplinary' ? questionList : plan.focusQuestion || questionList)
           || (consultationType === 'multidisciplinary' && JSON.stringify((referral.consultationMembers || []).map(row => id(row.medicalExpertId)))
             !== JSON.stringify(plans.map(row => id(row.medicalExpertId))))) fail('本订单已有不同内容的转介，请刷新核对');
         await ensureTask(order, patient, 'specialist', recipientId, index,
@@ -368,9 +376,9 @@ router.post('/tasks/:id/advance', staffAuth, async (req, res) => {
         fail(consolidatedConsultation(state) ? '请填写牵头科室的接入预约及客户沟通记录' : '请填写每位专家的预约安排及客户沟通记录', 400);
       const slots = [];
       for (const [index, request] of requests.entries()) {
-        const actualAt = serviceDate(request.actualAt);
+        const actualAt = consolidatedConsultation(state) ? null : serviceDate(request.actualAt);
         const appointmentNote = clean(request.appointmentNote, 2000);
-        if (!Number.isFinite(actualAt.getTime()) || !appointmentNote) fail(`请填写第 ${index + 1} 位专家的实际预约时间和结果`, 400);
+        if ((actualAt && !Number.isFinite(actualAt.getTime())) || !appointmentNote) fail(`请填写第 ${index + 1} 位专家的预约结果${consolidatedConsultation(state) ? '' : '和时间'}`, 400);
         const referral = await Referral.findById(slotReferralIds[index]).select('status').lean();
         if (!referral || referral.status === 'rejected') fail(`第 ${index + 1} 份专科转介已退回，请健康顾问先处理`);
         slots.push({ referralId: slotReferralIds[index], medicalExpertId: specialties(state)[index]?.medicalExpertId,

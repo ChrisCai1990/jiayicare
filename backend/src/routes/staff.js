@@ -7925,6 +7925,10 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   if (status === 'completed' && referral.consultationType === 'multidisciplinary'
     && (referral.consultationMembers?.length || 0) < 2)
     return res.status(400).json({ success: false, message: '请先在原转介补全至少两位实际会诊专家，再提交汇总回复' });
+  if (status === 'completed' && referral.sourceOrderId && referral.consultationType === 'multidisciplinary'
+    && !referral.consultationSchedule?.at && !referral.consultationMembers?.[0]?.actualAt
+    && !referral.bookingSnapshot?.slots?.[0]?.actualAt)
+    return res.status(400).json({ success: false, message: '请先由牵头科室确认统一会诊时间和方式，再提交汇总回复' });
   // 接受只代表接单，不在此阶段写入正式意见；提交正式反馈即进入“已反馈”。
   if (status === 'completed') {
     const hadSubmittedFeedback = !!(referral.response || referral.responseAnalysis || referral.responseOpinion);

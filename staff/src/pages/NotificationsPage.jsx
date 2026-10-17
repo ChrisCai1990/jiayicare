@@ -270,13 +270,14 @@ export default function NotificationsPage() {
                   {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
                   {r.consultationType === 'multidisciplinary' && <div style={{ fontSize: 12, color: '#315C4D', background: '#F0F8F4', padding: 9, borderRadius: 6, marginBottom: 6 }}>
                     <b>一份多学科会诊转介 · {r.consultationMembers.length} 位专家</b><br />
-                    牵头：{r.consultationMembers[0].hospital} · {r.consultationMembers[0].campus} · {r.consultationMembers[0].department}<br />
-                    {r.consultationMembers.map((member, index) => <div key={index}>{index + 1}. {member.hospital} · {member.campus} · {member.department} · {member.expert}</div>)}
+                    牵头：{r.consultationMembers[0].hospital} · {r.consultationMembers[0].department}<br />
+                    {r.consultationSchedule?.at && <div>统一会诊：{new Date(r.consultationSchedule.at).toLocaleString('zh-CN')} · {r.consultationSchedule.leadCampus || '院区待确认'}</div>}
+                    {r.consultationMembers.map((member, index) => <div key={index}>{index + 1}. {member.hospital} · {member.department} · {member.expert}{member.focusQuestion && `；重点：${member.focusQuestion}`}</div>)}
                     院方整理／回复：{r.coordinatorSnapshot?.name || r.toStaffId?.name || '待确认'}
                   </div>}
                   {r.bookingSnapshot?.slots?.length > 0 && <div style={{ fontSize: 12, color: '#315C4D', marginBottom: 6 }}>
-                    <b>健管已确认的会诊时间</b>
-                    {r.bookingSnapshot.slots.map((slot, index) => <div key={index}>{slot.department} · {slot.expert}：{new Date(slot.actualAt).toLocaleString('zh-CN')} · {slot.appointmentNote}</div>)}
+                    <b>健管确认的牵头科室接入安排</b>
+                    {r.bookingSnapshot.slots.map((slot, index) => <div key={index}>{slot.department} · {slot.expert}：{slot.actualAt ? new Date(slot.actualAt).toLocaleString('zh-CN') : '牵头科室接入，待协调统一时间'} · {slot.appointmentNote}</div>)}
                   </div>}
                   <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
                   {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>需解决问题：{r.questionList}</div>}
@@ -450,8 +451,9 @@ export default function NotificationsPage() {
                   {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
                   {r.consultationType === 'multidisciplinary' && <div style={{ fontSize: 12, color: '#315C4D', background: '#F0F8F4', padding: 9, borderRadius: 6, marginBottom: 6 }}>
                     <b>一份多学科会诊转介 · {r.consultationMembers.length} 位专家</b><br />
-                    牵头：{r.consultationMembers[0].hospital} · {r.consultationMembers[0].campus} · {r.consultationMembers[0].department}<br />
-                    {r.consultationMembers.map((member, index) => <div key={index}>{index + 1}. {member.hospital} · {member.campus} · {member.department} · {member.expert}</div>)}
+                    牵头：{r.consultationMembers[0].hospital} · {r.consultationMembers[0].department}<br />
+                    {r.consultationSchedule?.at && <div>统一会诊：{new Date(r.consultationSchedule.at).toLocaleString('zh-CN')} · {r.consultationSchedule.leadCampus || '院区待确认'}</div>}
+                    {r.consultationMembers.map((member, index) => <div key={index}>{index + 1}. {member.hospital} · {member.department} · {member.expert}{member.focusQuestion && `；重点：${member.focusQuestion}`}</div>)}
                   </div>}
                   {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   <div style={{ fontSize: 12, color: '#aaa' }}>
@@ -599,11 +601,12 @@ export default function NotificationsPage() {
 // ── 转介回复弹窗 ──
 function ConsultationMembersModal({ referral, onClose, onSaved }) {
   const toast = useToast()
-  const initial = (referral.consultationMembers || []).slice(1).map(member => {
-    const value = member.actualAt || member.expectedAt
-    const local = value ? new Date(value).toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai', hour12: false }) : ''
-    return { ...member, meetingDate: local.slice(0, 10), meetingTime: local.slice(11, 16) }
-  })
+  const initial = (referral.consultationMembers || []).slice(1)
+  const scheduled = referral.consultationSchedule?.at || referral.consultationMembers?.[0]?.actualAt || referral.consultationMembers?.[0]?.expectedAt
+  const local = scheduled ? new Date(scheduled).toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai', hour12: false }) : ''
+  const [schedule, setSchedule] = useState({ meetingDate: local.slice(0, 10), meetingTime: local.slice(11, 16),
+    method: referral.consultationSchedule?.method || referral.consultationMembers?.[0]?.method || '',
+    leadCampus: referral.consultationSchedule?.leadCampus || referral.consultationMembers?.[0]?.campus || '' })
   const [members, setMembers] = useState(initial.length ? initial : [{}])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -613,16 +616,18 @@ function ConsultationMembersModal({ referral, onClose, onSaved }) {
     event.preventDefault()
     setSaving(true); setError('')
     try {
+      const consultationAt = referralDateTime(schedule.meetingDate, schedule.meetingTime)
+      if (!consultationAt || !schedule.method || (schedule.method === 'outpatient' && !schedule.leadCampus.trim()))
+        throw new Error('请填写统一会诊日期、时间、方式及门诊院区')
       const payload = members.map((member, index) => {
-        const actualAt = referralDateTime(member.meetingDate, member.meetingTime)
-        if (!member.hospital?.trim() || !member.campus?.trim() || !member.department?.trim()
-          || !member.expert?.trim() || !actualAt || !member.method)
-          throw new Error(`请补全第 ${index + 2} 位专家的医院、院区、科室、姓名、会诊时间和方式`)
-        return { hospital: member.hospital, campus: member.campus, department: member.department,
-          expert: member.expert, actualAt, method: member.method, focusQuestion: member.focusQuestion || '' }
+        if (!member.hospital?.trim() || !member.department?.trim() || !member.expert?.trim())
+          throw new Error(`请补全第 ${index + 2} 位专家的医院、科室和姓名`)
+        return { hospital: member.hospital, campus: member.campus || '', department: member.department,
+          expert: member.expert, focusQuestion: member.focusQuestion || '' }
       })
-      await staffAPI.saveDecisionReferralMembers(referral._id, payload)
-      toast('会诊专家已保存到原转介')
+      await staffAPI.saveDecisionReferralMembers(referral._id, { consultationAt, method: schedule.method,
+        leadCampus: schedule.leadCampus, members: payload })
+      toast('统一会诊时间及专家已保存到原转介')
       onSaved()
     } catch (err) { setError(err.message || '保存失败') }
     finally { setSaving(false) }
@@ -634,15 +639,18 @@ function ConsultationMembersModal({ referral, onClose, onSaved }) {
         <div className="modal-body" style={{ display: 'grid', gap: 12, maxHeight: '65vh', overflowY: 'auto' }}>
           <div style={{ background: '#F0F8F4', padding: 10, borderRadius: 8 }}>
             <b>牵头方（健康顾问已确认）</b><br />
-            {referral.consultationMembers?.[0]?.hospital} · {referral.consultationMembers?.[0]?.campus} · {referral.consultationMembers?.[0]?.department} · {referral.consultationMembers?.[0]?.expert}
+            {referral.consultationMembers?.[0]?.hospital} · {referral.consultationMembers?.[0]?.department} · {referral.consultationMembers?.[0]?.expert}
           </div>
+          <small>由牵头科室统一协调院区、会诊日期、时间和方式；所有专家使用同一次会诊安排。</small>
+          <label>牵头院区{schedule.method === 'outpatient' ? ' *' : ''}<input className="form-input" value={schedule.leadCampus} onChange={event => setSchedule(value => ({ ...value, leadCampus: event.target.value }))} /></label>
+          <label>统一会诊日期 *<DateField className="form-input" type="date" value={schedule.meetingDate} onChange={event => setSchedule(value => ({ ...value, meetingDate: event.target.value }))} /></label>
+          <label>统一会诊时间 *<input className="form-input" type="time" value={schedule.meetingTime} onChange={event => setSchedule(value => ({ ...value, meetingTime: event.target.value }))} /></label>
+          <label>统一会诊方式 *<select className="form-input" value={schedule.method} onChange={event => setSchedule(value => ({ ...value, method: event.target.value }))}><option value="">请选择</option><option value="remote">远程</option><option value="outpatient">医院门诊</option><option value="other">其他方式</option></select></label>
           {members.map((member, index) => <fieldset key={index} style={{ border: '1px solid #DCE8E3', borderRadius: 8, display: 'grid', gap: 8 }}>
             <legend>会诊专家 {index + 2}</legend>
-            {[['hospital', '医院'], ['campus', '院区'], ['department', '科室'], ['expert', '专家姓名']].map(([key, label]) =>
+            {[['hospital', '医院'], ['department', '科室'], ['expert', '专家姓名']].map(([key, label]) =>
               <label key={key}>{label} *<input className="form-input" value={member[key] || ''} onChange={update(index, key)} /></label>)}
-            <label>会诊日期 *<DateField className="form-input" type="date" value={member.meetingDate || ''} onChange={update(index, 'meetingDate')} /></label>
-            <label>会诊时间 *<input className="form-input" type="time" value={member.meetingTime || ''} onChange={update(index, 'meetingTime')} /></label>
-            <label>会诊方式 *<select className="form-input" value={member.method || ''} onChange={update(index, 'method')}><option value="">请选择</option><option value="remote">远程</option><option value="outpatient">医院门诊</option><option value="other">其他方式</option></select></label>
+            <label>本专家院区（如与牵头院区不同）<input className="form-input" value={member.campus || ''} onChange={update(index, 'campus')} /></label>
             <label>本专科重点问题<textarea className="form-input" rows={2} value={member.focusQuestion || ''} onChange={update(index, 'focusQuestion')} /></label>
             {members.length > 1 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMembers(rows => rows.filter((_, rowIndex) => rowIndex !== index))}>移除</button>}
           </fieldset>)}
@@ -777,11 +785,12 @@ function RespondModal({ referral, onClose, onRespond }) {
             {referral.content && <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{referral.content}</div>}
             {referral.consultationType === 'multidisciplinary' && <div style={{ fontSize: 12, color: '#315C4D', marginTop: 8 }}>
               <b>牵头科室：{referral.consultationMembers[0].hospital} · {referral.consultationMembers[0].department}</b>
-              {referral.consultationMembers.map((member, index) => <div key={index}>{index + 1}. {member.hospital} · {member.campus} · {member.department} · {member.expert}{member.focusQuestion ? `；重点：${member.focusQuestion}` : ''}</div>)}
+              {referral.consultationSchedule?.at && <div>统一会诊：{new Date(referral.consultationSchedule.at).toLocaleString('zh-CN')} · {referral.consultationSchedule.leadCampus || '院区待确认'}</div>}
+              {referral.consultationMembers.map((member, index) => <div key={index}>{index + 1}. {member.hospital} · {member.department} · {member.expert}{member.focusQuestion ? `；重点：${member.focusQuestion}` : ''}</div>)}
               请汇总院方会诊结果后在这同一份转介中回复。
             </div>}
             {referral.bookingSnapshot?.slots?.length > 0 && <div style={{ fontSize: 12, color: '#315C4D', marginTop: 8 }}>
-              <b>健管确认的安排</b>{referral.bookingSnapshot.slots.map((slot, index) => <div key={index}>{slot.department} · {slot.expert}：{new Date(slot.actualAt).toLocaleString('zh-CN')} · {slot.appointmentNote}</div>)}
+              <b>健管确认的安排</b>{referral.bookingSnapshot.slots.map((slot, index) => <div key={index}>{slot.department} · {slot.expert}：{slot.actualAt ? new Date(slot.actualAt).toLocaleString('zh-CN') : '牵头科室接入，待协调统一时间'} · {slot.appointmentNote}</div>)}
             </div>}
             {referral.attachedHealthInfo && <AttachedHealthInfoView info={referral.attachedHealthInfo} />}
             {referral.linkedDiseaseSnapshot && <AttachedHealthInfoView info={{ diseaseSummary: referral.linkedDiseaseSnapshot.summary, diseaseCourse: referral.linkedDiseaseSnapshot.recentCourseEntries }} />}
