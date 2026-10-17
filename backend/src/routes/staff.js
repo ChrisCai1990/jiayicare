@@ -126,6 +126,7 @@ async function allPushPatientsBelongToStaff(patientIds, staff) {
   return count === ids.length;
 }
 router.use('/service-supervision', require('./advisorSupervision'));
+router.use('/decision-referral', require('./decisionReferral').router);
 router.use('/nutrition-interventions', require('./nutritionInterventions'));
 router.use('/patients', require('./reviewPlanAmendments')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./annualExecutionReview')({ getVisiblePlanPatientIds }));
@@ -2490,6 +2491,10 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   // 查询强制转换后误报“随访记录不存在”。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (followUp.sourceType === 'order' && followUp.sourceOrderId
+    && (require('./decisionReferral').stageOf(followUp)
+      || await Order.exists({ _id: followUp.sourceOrderId, serviceName: '企业家健康决策计划' })))
+    return res.status(409).json({ success: false, message: '请在企业家健康决策计划的岗位流程中办理，不能通过普通随访编辑' });
   if (String(followUp.workflowKey || '').startsWith('rehab:')) return res.status(409).json({success:false,message:'请在运动管理中安排预约或发布服务记录，完成后自动更新本任务'});
   const planReviewPatient = followUpReview.postVisit(followUp) && followUp.aiStatus === 'pending' ? await User.findById(followUp.patientId).select('assignedFamilyDoctor assignedHealthManager').lean() : null;
   if (planReviewPatient && ['in_progress', 'completed'].includes(req.body.status)) return res.status(409).json({ success: false, message: '请先由健康顾问审核随访计划，再执行随访' });
@@ -3278,6 +3283,9 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
   // 还错误提示“随访记录不存在”。删除权限改为与客户详情相同的服务团队范围。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (followUp.sourceType === 'order' && followUp.sourceOrderId
+    && await Order.exists({ _id: followUp.sourceOrderId, serviceName: '企业家健康决策计划' }))
+    return res.status(409).json({ success: false, message: '该服务的岗位任务属于转介闭环，不能删除' });
   if (!require('../../../shared/annualBookingPlan.cjs').canEditPlan(followUp, req.staff.role)) return res.status(403).json({ success: false, message: '顾问年度随访计划不能由执行人员删除' });
   if (require('../utils/annualCheckupEvidence').preparationRole(followUp)) return res.status(409).json({ success: false, message: '体检准备记录用于流程追溯，不能删除' });
   if (!['superadmin', 'platformSuper'].includes(req.staff.role)) {
@@ -7777,10 +7785,16 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     const diseaseRecords = normalizedDiseaseRecords(patient.toObject());
     const linkedDisease = diseaseRecords.find(item => req.body.linkedDiseaseRecordId && String(item._id) === String(req.body.linkedDiseaseRecordId)) || diseaseRecords.find(item => item.name === req.body.linkedDiseaseName);
-    const referralType = req.body.referralType === 'external_medical' ? 'external_medical' : 'internal_collaboration';
+    const referralType = ['external_medical', 'internal_collaboration'].includes(req.body.referralType)
+      ? req.body.referralType : referral.referralType;
+    if (referral.sourceOrderId && referralType !== 'external_medical')
+      return res.status(409).json({ success:false, message:'本订单专科转介不能改为内部协作' });
     let expert = null;
     if (referralType === 'external_medical') {
-      expert = await MedicalExpert.findOne({ _id:req.body.medicalExpertId, status:'active' }).populate('institutionId', 'name level region').populate('departmentId', 'name campus').lean();
+      const medicalExpertId = req.body.medicalExpertId || referral.medicalExpertId;
+      if (referral.sourceOrderId && String(medicalExpertId) !== String(referral.medicalExpertId))
+        return res.status(409).json({ success:false, message:'本订单已确认医院、科室和专家；更换专家须由健康顾问重新确认服务安排' });
+      expert = await MedicalExpert.findOne({ _id:medicalExpertId, status:'active' }).populate('institutionId', 'name level region').populate('departmentId', 'name campus').lean();
       if (!expert) return res.status(400).json({ success:false, message:'请选择有效的外部专家' });
     } else if (!req.body.toStaffId) return res.status(400).json({ success:false, message:'请选择接收人' });
     referral.revisionHistory.push({
@@ -7899,6 +7913,10 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   if (!status || !allowedTransitions[referral.status]?.includes(status)) {
     return res.status(409).json({ success: false, message: `当前状态“${referral.status}”不能变更为“${status || '未指定'}”` });
   }
+  if (status === 'completed' && referral.sourceOrderId) {
+    try { await require('./decisionReferral').validateFeedbackWindow(referral); }
+    catch (error) { return res.status(error.statusCode || 409).json({ success: false, message: error.message }); }
+  }
   // 接受只代表接单，不在此阶段写入正式意见；提交正式反馈即进入“已反馈”。
   if (status === 'completed') {
     const hadSubmittedFeedback = !!(referral.response || referral.responseAnalysis || referral.responseOpinion);
@@ -7947,10 +7965,14 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   }
   referral.respondedAt = new Date();
   referral.fromStaffUnread = true; // 通知发起方有新回复
+  if (status === 'completed' && referral.feedbackRevisionRequest?.pending)
+    referral.feedbackRevisionRequest = { ...referral.feedbackRevisionRequest, pending: false, resolvedAt: new Date(), resolvedBy: req.staff._id };
   if (status === 'completed' && (!wasCompleted || require('../utils/referralAssessmentWorkflow').referralAssessmentSource(referral).digest !== originalFeedbackDigest)) referral.feedbackVersion = (referral.feedbackVersion || 0) + 1;
   await referral.save();
   let professionalAssessment = null;
-  if (status === 'completed') professionalAssessment = await require('../utils/referralAssessmentWorkflow').completeReferralAndCreateAdvisorReview(referral, req.staff);
+  if (status === 'completed' && referral.sourceOrderId) {
+    await require('./decisionReferral').onReferralFeedback(referral);
+  } else if (status === 'completed') professionalAssessment = await require('../utils/referralAssessmentWorkflow').completeReferralAndCreateAdvisorReview(referral, req.staff);
   res.json({ success: true, data: referral, professionalAssessment });
 });
 
@@ -9664,6 +9686,8 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const actionableOrder = await Order.exists({ _id: req.params.id, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() });
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const currentOrder = await Order.findById(req.params.id);
+    if (require('./decisionReferral').isDecisionOrder(currentOrder) && action === 'complete')
+      return res.status(409).json({ success: false, message: '请由健康规划师完成最终验收后结单' });
     if (currentOrder?.serviceWorkflowSnapshot?.key === 'rehab') return res.status(409).json({ success: false, message: '请在客户服务管理 → 运动管理安排服务，并由运动复健师发布记录后逐次核销' });
     if (action === 'actual_start' && !req.body.actualPackageService) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role))
@@ -10112,6 +10136,8 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (require('./decisionReferral').isDecisionOrder(order))
+      return res.status(409).json({ success: false, message: '本服务须完成专科转介、顾问归档及规划师验收后结单' });
     if (order.membershipFeatureUsage?.featureKey === 'expertAppointment')
       return res.status(409).json({ success: false, message: '年度会员专家约诊不限次，请在约诊任务中记录服务过程，无需次数核销' });
     if (order.serviceWorkflowSnapshot?.key === 'rehab') return res.status(409).json({ success: false, message: '请在客户运动服务档案中依据已发布记录逐次核销' });

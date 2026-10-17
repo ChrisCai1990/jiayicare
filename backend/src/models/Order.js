@@ -110,6 +110,7 @@ const orderSchema = new mongoose.Schema({
     missingFields: { type: [String], default: [] }, riskFlags: { type: [String], default: [] }, summary: { type: String, default: '' },
   },
   medicalProxyPlan: { type: mongoose.Schema.Types.Mixed, default: null },
+  decisionReferral: { type: mongoose.Schema.Types.Mixed, default: null }, // 企业家健康决策计划：专科转介与订单闭环
   medicalAssistPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
   medicalReminderIntake: { type: mongoose.Schema.Types.Mixed, default: null },
   // 商城营养素为实物履约，不走就医方案；保留履约订单号与收货确认审计。

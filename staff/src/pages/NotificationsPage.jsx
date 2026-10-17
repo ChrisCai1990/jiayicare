@@ -249,7 +249,7 @@ export default function NotificationsPage() {
         <div className="card">
           {allReceivedReferrals.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无收到的转介 ✓</div>
-          ) : <ReferralGroupedList referrals={allReceivedReferrals} priorityStatuses={['pending', 'accepted']}>
+          ) : <ReferralGroupedList referrals={allReceivedReferrals} priorityStatuses={['pending', 'accepted']} priorityPredicate={item => item.feedbackRevisionRequest?.pending}>
             {(r, i, group) => (
             <div key={r._id} style={{ padding: '16px', borderBottom: i < group.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -268,9 +268,28 @@ export default function NotificationsPage() {
                   {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
                   <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
                   {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>需解决问题：{r.questionList}</div>}
+                  {r.feedbackRevisionRequest?.pending && <div style={{ fontSize:12, color:'#9A5B13', background:'#FFF9ED', padding:'7px 10px', borderRadius:6, marginBottom:6 }}>健康顾问请补充反馈：{r.feedbackRevisionRequest.note}</div>}
                   {!r.canViewPatient && <div style={{ fontSize:12, color:'#8A5A00', background:'#FFF8E8', padding:'6px 9px', borderRadius:6, marginBottom:6 }}>有限授权视图：仅展示发起方在本次转介中提供的信息。</div>}
                   {r.linkedDiseaseSnapshot && <AttachedHealthInfoView info={{ diseaseSummary: r.linkedDiseaseSnapshot.summary, diseaseCourse: r.linkedDiseaseSnapshot.recentCourseEntries }} />}
                   {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
+                  {!!r.sourceReports?.length && <div style={{ margin: '8px 0', padding: 10, background: '#F5F9FC', borderRadius: 8 }}>
+                    <b>本次转介报告</b>
+                    {r.sourceReports.map(report => <div key={report.reportId} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span>{report.title || '报告'}{report.checkDate ? ` · ${String(report.checkDate).slice(0, 10)}` : ''}</span>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={async () => {
+                        const preview = window.open('', '_blank')
+                        try {
+                          const result = await staffAPI.getDecisionReferralReport(r._id, report.reportId)
+                          const value = result.data || {}
+                          const url = value.url
+                          if (!url) throw new Error('报告未关联可查看的原件')
+                          const resolved = url.startsWith('/') ? `${API_ORIGIN}${url}` : url
+                          if (preview) { preview.opener = null; preview.location.href = resolved }
+                          else window.location.href = resolved
+                        } catch (e) { preview?.close(); toast(e.message || '报告打开失败') }
+                      }}>查看原报告</button>
+                    </div>)}
+                  </div>}
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     来自：{r.fromStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
                   </div>

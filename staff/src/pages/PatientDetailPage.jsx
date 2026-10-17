@@ -62,6 +62,7 @@ import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckup
 import CheckupReportCollectionForm, { isCheckupReportCollectionTask } from '../components/CheckupReportCollectionForm'
 import CheckupAppointmentBookingForm, { checkupAppointmentBookingFromTask, isCheckupAppointmentBookingTask } from '../components/CheckupAppointmentBookingForm'
 import IbdWorkflowStageForm, { ibdStage, ibdFormDataFromTask, ibdSubmitLabel, ibdTaskTitle, validateIbdStage } from '../components/IbdWorkflowStageForm'
+import DecisionReferralTask, { isDecisionReferralTask } from '../components/DecisionReferralTask'
 import CheckupMedicalExecutionForm, { checkupMedicalExecutionFromTask, isCheckupMedicalExecutionTask, validateCheckupMedicalExecution } from '../components/CheckupMedicalExecutionForm'
 import CheckupManagerReviewForm, { checkupManagerReviewFromTask, isCheckupManagerReviewTask, validateCheckupManagerReview } from '../components/CheckupManagerReviewForm'
 import CheckupAdvisorReviewModal, { isCheckupAdvisorReviewTask } from '../components/CheckupAdvisorReviewModal'
@@ -3421,6 +3422,11 @@ export default function PatientDetailPage() {
       if (f.sourceType === 'order' && ibdStage(f)) {
         if (['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
         else setFollowUpDetail(f)
+        nav(location.pathname + location.search, { replace: true, state: {} })
+        return
+      }
+      if (isDecisionReferralTask(f)) {
+        setFollowUpDetail(f)
         nav(location.pathname + location.search, { replace: true, state: {} })
         return
       }
@@ -11856,10 +11862,11 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={() => setFollowUpDetail(null)}>
           <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">{ibdStage(followUpDetail) ? 'IBD 专病管理 · 任务记录' : annualDispatch.dedicated(followUpDetail) ? (annualDispatch.isExecution(followUpDetail) ? '就医协助 · 办理记录' : '就医协助 · 派单安排') : annualServiceItem.isAssistance(followUpDetail) ? '就医协助 · 预约安排' : '随访详情'}</h3>
+              <h3 className="modal-title">{isDecisionReferralTask(followUpDetail) ? '企业家健康决策计划 · 转介流程' : ibdStage(followUpDetail) ? 'IBD 专病管理 · 任务记录' : annualDispatch.dedicated(followUpDetail) ? (annualDispatch.isExecution(followUpDetail) ? '就医协助 · 办理记录' : '就医协助 · 派单安排') : annualServiceItem.isAssistance(followUpDetail) ? '就医协助 · 预约安排' : '随访详情'}</h3>
               <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {isDecisionReferralTask(followUpDetail) ? <DecisionReferralTask task={followUpDetail} staff={staff} onDone={() => { setFollowUpDetail(null); loadFollowUps(); load(); toast('本环节已完成') }} /> : <>
               {annualNutrition.isTask(followUpDetail) && <AnnualNutritionAssessmentForm key={`${followUpDetail._id}:${followUpDetail.updatedAt}`} task={followUpDetail} staff={staff} onSaved={updated=>{setFollowUpDetail(updated);loadFollowUps();load();toast(updated.status==='completed'?'已写入生活方式档案并完成评估':'访谈草稿已保存')}}/>}
               <FollowUpServiceLinkCard key={followUpDetail._id} task={followUpDetail} staff={staff} onLinked={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {!annualDispatch.dedicated(followUpDetail) && <OnsiteBookingCard key={`onsite-${followUpDetail._id}`} task={followUpDetail} staff={staff} />}
@@ -12024,8 +12031,10 @@ export default function PatientDetailPage() {
                 </div>
               )}
               </>}
+              </>}
             </div>
             <div className="modal-footer">
+              {!isDecisionReferralTask(followUpDetail) && <>
               {medicalProxyStage(followUpDetail) === 'supervise' && /就医规划/.test(followUpDetail.sourceOrderId?.serviceName || followUpDetail.theme || '') && ['planned', 'in_progress'].includes(followUpDetail.status) && hasPlanningAdvice(planningAdviceFromTask(followUpDetail)) && <button className="btn btn-primary" onClick={() => { const task = { ...followUpDetail, formData: { ...followUpDetail.formData, medicalPlanning: true, advisorSnapshot: planningAdviceFromTask(followUpDetail) } }; setFollowUpDetail(null); openExec(task) }}>记录客户沟通与后续服务意向</button>}
               {followUpDetail.aiStatus === 'pending' && !followUpReview.canReview(followUpDetail, staff, user) && <div style={{ fontSize: 13, color: '#4A6558' }}>待指定审核人员确认；当前账号无审核权限。</div>}
               {followUpReview.canReview(followUpDetail, staff, user) && <>
@@ -12065,6 +12074,7 @@ export default function PatientDetailPage() {
                 assignedTo: (() => { const executor = followUpReview.executor(followUpDetail, user); return executor?._id || executor || '' })(),
                 nextFollowUpDate: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toISOString().slice(0, 10) : '',
               })}>编辑</button>}
+              </>}
               <button className="btn btn-secondary" onClick={() => setFollowUpDetail(null)}>关闭</button>
             </div>
           </div>

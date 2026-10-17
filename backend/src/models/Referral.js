@@ -5,6 +5,8 @@ const referralSchema = new Schema({
   fromStaffId: { type: Schema.Types.ObjectId, ref: 'Admin', required: true },
   toStaffId:   { type: Schema.Types.ObjectId, ref: 'Admin', default: null }, // 外部专家不登录系统时可为空
   patientId:   { type: Schema.Types.ObjectId, ref: 'User',  required: true },
+  sourceOrderId: { type: Schema.Types.ObjectId, ref: 'Order', default: null, index: true },
+  sourceReports: { type: [Schema.Types.Mixed], default: [] }, // 顾问明确授权给接收专科的本次报告快照
   reason:      { type: String, required: true },  // 转介原因（简述）
   content:     { type: String, default: '' },     // 详细说明
   urgency:     { type: String, enum: ['normal', 'urgent'], default: 'normal' },
@@ -46,6 +48,7 @@ const referralSchema = new Schema({
   linkedCourseEntryId: { type: Schema.Types.ObjectId, default: null },
   revisionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   responseRevisionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  feedbackRevisionRequest: { type: Schema.Types.Mixed, default: null }, // 发起顾问要求专科补充的当前请求
   feedbackVersion: { type: Number, default: 0 },
 }, { timestamps: true, optimisticConcurrency: true });
 
