@@ -18,13 +18,17 @@ def privacy(t):
  t=t.replace('不因本次主体说明而扩大信息使用范围。','本次更新澄清双方职责，不扩大信息使用范围。')
  t=re.sub(r'(更新日期：|生效日期：)2026年10月\d+日',r'\g<1>2026年10月17日',t)
  t=t.replace('"heading":"运营主体"','"heading":"运营主体（2026年10月17日更新）"')
+ t=t.replace('2026年10月6日','2026年10月17日')
  return t
 items=json.loads((BASE.parent/'baseline.json').read_text(encoding='utf-8'))
 lookup={x['name']:x for x in items};files=[]
+priorfile=BASE.parent/'previous-deployment.json'
+prior=json.loads(priorfile.read_text(encoding='utf-8'))['files'] if priorfile.exists() else []
 def add(oldname,newname,data,kind):
  old=lookup[oldname];p=OUT/newname;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)
  remote=old['path'] if kind in ['page','entry'] else str(pathlib.PurePosixPath(old['path']).with_name(pathlib.PurePosixPath(newname).name))
- files.append(dict(oldPath=old['path'],path=remote,oldSha=old['sha'],sha=sha(data),name=newname,kind=kind))
+ previous=next((x for x in prior if x['oldPath']==old['path']),None)
+ files.append(dict(oldPath=previous['path'] if previous else old['path'],path=remote,oldSha=previous['sha'] if previous else old['sha'],sha=sha(data),name=newname,kind=kind))
 for name in ['corporate-privacy.html','app-privacy.html']:
  add(name,name,privacy((BASE/name).read_text(encoding='utf-8')).encode(),'page')
 t=(BASE/'app.html').read_text(encoding='utf-8')
