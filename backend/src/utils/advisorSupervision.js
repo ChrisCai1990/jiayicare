@@ -97,7 +97,9 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const remaining = g.tasks.filter(active);
     if (g.type === 'followup' && !remaining.length) continue;
     // Supervisor records describe coordination, not an additional executor.
-    const execution = remaining.filter(t => t.taskRole !== 'supervisor' && t.workflowKey !== 'medication_proxy:progress');
+    const decisionOrder = g.type === 'order' && s.serviceName === '企业家健康决策计划';
+    const execution = remaining.filter(t => t.taskRole !== 'supervisor' && t.workflowKey !== 'medication_proxy:progress'
+      && !(decisionOrder && s.currentStage !== 'intake' && !t.workflowKey));
     const ready = execution.filter(t => !t.isBlocked);
     let current = (ready.length ? ready : execution).map(t => {
       const role = t.aiStatus === 'pending' ? t.reviewRole || 'familyDoctor' : null;
@@ -124,13 +126,17 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
       current = [{ taskId: '', label: isShipping ? shipping.shippingProgress(s) : stageLabels[s.currentStage || s.status] || '当前环节待核对',
         person: person(owner), blocked: false, dueAt: s.dueAt || s.scheduledAt || s.endDate || null }];
     }
-    if (!includeOwn && current.every(c => c.person?.id === id(actor))) continue;
-    if (!includeOwn) current = current.filter(c => c.person?.id !== id(actor));
+    const ownDecisionTask = decisionOrder && ['advisor', 'advisor_review'].includes(s.currentStage)
+      ? execution.find(t => t.workflowKey === `decision_referral:${s.currentStage}`
+        && id(t.assignedTo || t.staffId) === id(actor) && !t.isBlocked) : null;
+    if (!includeOwn && !ownDecisionTask && current.every(c => c.person?.id === id(actor))) continue;
+    if (!includeOwn && !ownDecisionTask) current = current.filter(c => c.person?.id !== id(actor));
     const explicitCoordinator = s.state?.people?.healthPlanner?.id || s.supervisorId;
     const supervisors = [...new Set(remaining.filter(t => t.taskRole === 'supervisor').map(t => id(t.assignedTo)).filter(Boolean))];
     const coordinatorId = explicitCoordinator || (supervisors.length === 1 ? supervisors[0] : null);
     const coordinator = person(coordinatorId, 'healthPlanner');
     const reasons = [];
+    if (ownDecisionTask) reasons.push('待本人办理专科转介服务');
     if (current.some(c => !c.person)) reasons.push('当前处理人待核对');
     if (coordinatorId && !coordinator) reasons.push('原协调人待核对');
     if (current.some(c => c.blocked)) reasons.push('等待前置环节');
@@ -140,10 +146,15 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const latest = g.tasks.flatMap(t => (t.progressRecords || []).map(r => ({ at: r.recordedAt, content: r.content })))
       .concat(g.tasks.filter(t => t.completedAt && t.executedContent).map(t => ({ at: t.completedAt, content: t.executedContent })))
       .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0))[0];
+    const intakeRecord = decisionOrder ? g.tasks.find(t => !t.workflowKey && t.executedContent)?.executedContent : '';
     const title = s.serviceName || s.title || s.state?.title || (g.type === 'flow' ? g.tasks.find(t => id(t) === id(s.parentId))?.theme : s.theme) || '服务进度';
     const row = { key: g.key, patientId: g.patientId, patientName: p.name, title, current, coordinator,
-      reasons, attention: !!reasons.length, latest: latest || (s.updatedAt ? { at: s.updatedAt, content: `当前环节：${current.map(c => c.label).join('、')}` } : null), updatedAt: s.updatedAt || null,
-      taskId: current.find(c => c.taskId)?.taskId || '', href: target(g.patientId, '', g.type),
+      reasons, attention: !!reasons.length, latest: latest || (intakeRecord
+        ? { at: s.updatedAt, content: `规划师记录客户需求：${intakeRecord}` }
+        : s.updatedAt ? { at: s.updatedAt, content: `当前环节：${current.map(c => c.label).join('、')}` } : null), updatedAt: s.updatedAt || null,
+      taskId: current.find(c => c.taskId)?.taskId || '', actionTaskId: ownDecisionTask ? id(ownDecisionTask) : '',
+      actionStage: ownDecisionTask ? s.currentStage : '',
+      href: target(g.patientId, '', g.type),
       version: hash([stamp(s), g.tasks.map(stamp).sort((a,b) => a[0].localeCompare(b[0])), current, coordinator, id(p.assignedFamilyDoctor)]),
     };
     result.push(row);

@@ -20,7 +20,7 @@ import ServiceSupervisionPanel from '../components/ServiceSupervisionPanel'
 import MedicalAssistProgressPanel from '../components/MedicalAssistProgressPanel'
 import MonthlyReviewWorkbench from '../components/MonthlyReviewWorkbench'
 import Pagination from '../components/Pagination'
-import { isCustomerOrder, plannerOrderRows } from '../utils/plannerOrderProgress.mjs'
+import { decisionReferralProgress, isCustomerOrder, plannerOrderRows } from '../utils/plannerOrderProgress.mjs'
 import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 import { planningAdviceFromTask, hasPlanningAdvice } from '../utils/medicalPlanningAdvice'
 
@@ -158,10 +158,10 @@ export default function HomePage() {
                     <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.serviceName || (f && serviceTaskTitle(f)) || (task && serviceTaskTitle(task))}{order && <span style={{ color: '#D97706', marginLeft: 8 }}>支付 ¥{(Number(order.paidAmount || 0) + Number(order.healthFundAmount || 0)).toFixed(2)}</span>}</div>
                     {(order?.scheduledAt || order?.note || f?.content) && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.scheduledAt && `预约时间：${new Date(order.scheduledAt).toLocaleString('zh-CN')} · `}备注：{order?.note || f?.content || '未填写，请联系客户确认时间'}</div>}
                     <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 5 }}>
-                      {planningReady ? '顾问建议已提交，待健康规划师确认客户意向并结案' : task ? (supervisor?.supervisionProgress?.current?.length
+                      {planningReady ? '顾问建议已提交，待健康规划师确认客户意向并结案' : decisionReferralProgress(order) || (task ? (supervisor?.supervisionProgress?.current?.length
                         ? supervisor.supervisionProgress.current.map(step => <div key={step.id}>当前环节：{step.label} · 处理人：{step.assignee}{step.blocked ? ' · 等待前置环节' : ''}</div>)
                         : task.supervisionProgress?.message || `当前环节：${serviceTaskTitle(task) || '待核对'} · 处理人：${task.assignedTo?.name || '待分配'}`)
-                        : orderShipping.shippingProgress(order) || '待健康规划师确认客户需求并转交下一环节'}
+                        : orderShipping.shippingProgress(order) || '待健康规划师确认客户需求并转交下一环节')}
                     </div>
                     <MedicalAssistClosureAction task={task} onConfirmed={() => {
                       setServiceTasks(current => current.filter(item => String(item.sourceOrderId?._id || item.sourceOrderId) !== id))

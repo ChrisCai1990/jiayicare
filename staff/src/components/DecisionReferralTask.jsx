@@ -34,6 +34,7 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
   const workflow = data?.workflow || {}
   const plan = workflow.plan || {}
   const booking = workflow.booking || {}
+  const intake = (workflow.history || []).find(item => item.stage === 'intake')
   const referral = data?.referral
   const stage = data?.taskStage
   const active = data?.stage === stage && ['planned', 'in_progress', 'missed'].includes(data?.taskStatus)
@@ -53,6 +54,7 @@ export default function DecisionReferralTask({ task, staff, onDone }) {
   return <section style={{ border: '1px solid #B9DDD0', borderRadius: 10, background: '#F6FBF8', padding: 16, display: 'grid', gap: 12 }}>
     <b>企业家健康决策计划 · {label[data?.stage] || '读取进度中'}</b>
     {!data && !error && <span>正在读取订单转介进度…</span>}
+    {intake?.detail && <div style={{ lineHeight: 1.7, whiteSpace: 'pre-wrap' }}><b>健康规划师记录的客户需求</b><br />{intake.detail}</div>}
     {plan.confirmedAt && <div style={{ lineHeight: 1.7 }}>
       <b>健康顾问确认的安排</b><br />
       {plan.hospital}{plan.campus && ` · ${plan.campus}`} · {plan.department} · {plan.expert}<br />

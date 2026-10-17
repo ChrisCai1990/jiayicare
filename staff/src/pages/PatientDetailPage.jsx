@@ -2738,7 +2738,7 @@ export default function PatientDetailPage() {
         if (cancelled) return
         const target = res.data?.followUps?.[0]
         if (ibdStage(target) && ['planned', 'in_progress', 'missed'].includes(target.status)) openExec(target)
-        else if (annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
+        else if (isDecisionReferralTask(target) || annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
         else if (isCheckupAdvisorReviewTask(target)) setCheckupAdvisorReview(target)
         else if (target?.aiStatus === 'pending') setFollowUpDetail(target)
         else toast('该随访审核任务已处理或不存在')

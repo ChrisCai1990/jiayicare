@@ -734,7 +734,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'staffId', select: 'name role title' },
     { path: 'assignedTo', select: 'name role' },
     { path: 'sourceHealthPlanId', select: 'title description content type status' },
-    { path: 'sourceOrderId', select: 'serviceName orderNo createdAt status initiationSource paymentStatus paidAmount healthFundAmount scheduledAt note serviceWorkflowSnapshot' },
+    { path: 'sourceOrderId', select: 'serviceName orderNo createdAt status initiationSource paymentStatus paidAmount healthFundAmount scheduledAt note currentStage serviceWorkflowSnapshot' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard workflowStageKey' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
@@ -742,6 +742,10 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   // Normalize only this response, so the actual planner assignment remains the actionable task.
   for (const task of queriedTasks) {
     if (task.workflowKey === 'medication_proxy:progress') task.taskRole = 'supervisor';
+    if (task.sourceType === 'order' && !task.workflowKey
+      && require('./decisionReferral').isDecisionOrder(task.sourceOrderId)
+      && task.sourceOrderId.currentStage && task.sourceOrderId.currentStage !== 'intake')
+      task.taskRole = 'supervisor';
   }
   // 无论健管专员是从“审核报告”还是“确认 AI 结果”完成审核，工作台读取时都按
   // 两份必需资料的最终状态自愈，避免已完成的审核任务继续残留。
@@ -777,7 +781,10 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     await FollowUp.updateOne({ _id: task._id }, { $set: { isBlocked: false, activationEvent: '', date: task.date, remindAt: task.remindAt, nextFollowUpDate: task.nextFollowUpDate } });
   }
   const now = new Date();
-  const proxyOrderIds = queriedTasks.filter(task => task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment|medical_assist):/.test(String(task.workflowKey || ''))).map(task => task.sourceOrderId?._id || task.sourceOrderId).filter(Boolean);
+  const proxyOrderIds = queriedTasks.filter(task => task.sourceType === 'order'
+    && (/^(medical_proxy|medication_proxy|checkup_appointment|medical_assist|decision_referral):/.test(String(task.workflowKey || ''))
+      || require('./decisionReferral').isDecisionOrder(task.sourceOrderId)))
+    .map(task => task.sourceOrderId?._id || task.sourceOrderId).filter(Boolean);
   const activeProxyOrderIds = new Set((proxyOrderIds.length
     ? await Order.find({ _id: { $in: proxyOrderIds }, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() }).distinct('_id')
     : []).map(String));
@@ -791,7 +798,8 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       if (status !== 'completed' && (c.state.stage === 'closed' || task.formData?.careFlowSequence !== c.state.sequence)) return false;
     }
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
-      || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment|medical_assist):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'order' && (/^(medical_proxy|medication_proxy|checkup_appointment|medical_assist|decision_referral):/.test(String(task.workflowKey || ''))
+        || require('./decisionReferral').isDecisionOrder(task.sourceOrderId)) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
       || (task.sourceType === 'annual_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'professional_assessment' && ['executor', 'supervisor'].includes(task.taskRole))
@@ -2066,7 +2074,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('sourceHealthPlanId', 'title description content type status')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo initiationSource serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt'),
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo initiationSource currentStage serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt'),
     FollowUp.countDocuments(filter),
   ]);
   const annualVisitHandoffs = await require('../utils/annualManagedVisitHandoff').handoffsForTasks(followUps);
@@ -2184,7 +2192,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt');
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo currentStage serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt');
 
   // 获取本页会员最近一次打卡（健康记录）时间
   const patientIds = [...new Set(followUps.map(f => f.patientId?._id).filter(Boolean))];

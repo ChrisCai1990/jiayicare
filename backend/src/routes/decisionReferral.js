@@ -316,7 +316,7 @@ router.post('/tasks/:id/advance', staffAuth, async (req, res) => {
     if (!saved) fail('订单状态已变化，请刷新');
     await FollowUp.updateOne({ _id: task._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
       { $set: stage === 'intake'
-        ? { status: 'in_progress', executedContent: detail }
+        ? { status: 'in_progress', taskRole: 'supervisor', executedContent: detail }
         : { status: 'completed', completedAt: now, completedBy: 'staff', executedContent: detail } });
     if (stage === 'booking') await ensureAdvisorReview(saved);
     if (stage === 'booking') await FollowUp.updateOne({ _id: taskId(order._id, 'specialist'),

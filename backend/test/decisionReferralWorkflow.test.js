@@ -84,6 +84,7 @@ test('planner handoff creates one advisor task and keeps decision service open',
     assert.equal(created[0].workflowKey, 'decision_referral:advisor');
     assert.equal(completed.length, 1);
   assert.equal(completed[0].update.$set.status, 'in_progress');
+  assert.equal(completed[0].update.$set.taskRole, 'supervisor');
   } finally {
     FollowUp.findById = original.taskFind; FollowUp.findOneAndUpdate = original.taskUpsert;
     FollowUp.updateOne = original.taskUpdate; Order.findById = original.orderFind;

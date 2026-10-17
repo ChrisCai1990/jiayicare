@@ -68,9 +68,11 @@ export default function ServiceSupervisionPanel() {
         {s.current.map((c, i) => <div key={c.taskId || i} style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
           <span>{c.label} · {c.person?.name || '处理人待核对'}{c.blocked ? ' · 等待前置环节' : ''} · 计划时间：{date(c.dueAt)}</span>
         </div>)}
-        <p>下一步：{s.current.some(c => c.blocked) ? '等待原任务的前置事项完成。' : s.current.some(c => !c.person) ? '原任务负责人待核对，不自动转交其他人员。' : '由当前处理人在原服务中办理并记录结果。'}</p>
+        <p>下一步：{s.actionTaskId ? '请在本服务任务中确认方案、发起转介或审核专科回复。' : s.current.some(c => c.blocked) ? '等待原任务的前置事项完成。' : s.current.some(c => !c.person) ? '原任务负责人待核对，不自动转交其他人员。' : '由当前处理人在原服务中办理并记录结果。'}</p>
         <div style={{ color: '#667085', whiteSpace: 'pre-wrap' }}>最新进展：{s.latest ? `${date(s.latest.at)} · ${s.latest.content}` : '暂无处理记录，请查看原服务进度。'}</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>{s.coordinator && <span>原服务协调规划师：{s.coordinator.name}</span>}<button className="btn btn-secondary btn-sm" onClick={() => openSource(s)}>查看原服务</button></div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>{s.coordinator && <span>原服务协调规划师：{s.coordinator.name}</span>}
+          {s.actionTaskId && <button className="btn btn-primary btn-sm" onClick={() => nav(`/patients/${s.patientId}?tab=followups&followUpId=${s.actionTaskId}`)}>{s.actionStage === 'advisor_review' ? '审核专科回复并归档' : '确认方案并发起转介'}</button>}
+          <button className="btn btn-secondary btn-sm" onClick={() => openSource(s)}>查看原服务</button></div>
         {!!s.history.length && history(s)}
       </article>)}
       {rows.length > 5 && <Pagination compact page={currentPage} totalPages={Math.ceil(rows.length / 5)} onChange={setPage} />}
