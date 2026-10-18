@@ -2,13 +2,11 @@ const FollowUp = require('../models/FollowUp');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Message = require('../models/Message');
+const { orderServiceType } = require('./orderServiceType');
 
 const PREFIX = 'checkup_appointment:';
 const isCheckupAppointmentOrder = order => {
-  const text = typeof order === 'object'
-    ? [order?.serviceName, order?.specificationLabel, order?.serviceRequirements, order?.note, order?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' ')
-    : String(order || '');
-  return /checkup_appointment|待约检|代约检|常规约检|特殊约检/.test(text);
+  return orderServiceType(typeof order === 'string' ? { serviceName: order } : order) === 'checkup_appointment';
 };
 const stageOf = task => String(task?.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';

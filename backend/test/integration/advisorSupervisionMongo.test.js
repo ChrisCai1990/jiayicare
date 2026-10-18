@@ -74,7 +74,7 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
       serviceWorkflowSnapshot: { key: 'medical_assist' } });
     await task({ sourceType: 'order', sourceOrderId: orderId, theme: '订单服务：就医陪同服务' });
     const rows = await loadServices(advisor); assert.equal(rows.length, 1);
-    assert.equal(rows[0].progress.step, 1); assert.equal(rows[0].progress.total, 4);
+    assert.equal(rows[0].progress.step, 1); assert.equal(rows[0].progress.total, 5);
   });
   await t.test('medical proxy intake shows the order path before stage tasks exist', async () => {
     await reset(); const orderId = oid();
@@ -85,6 +85,16 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     const rows = await loadServices(advisor); assert.equal(rows.length, 1);
     assert.equal(rows[0].progress.step, 1); assert.equal(rows[0].progress.total, 5);
   });
+  await t.test('a completed single-service plan cannot leave a stale advisor order card', async () => {
+    await reset(); const orderId = oid(), planId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: '医务代办服务', totalUnits: 1,
+      status: 'scheduled', paymentStatus: 'paid', tradeStatus: 'fulfilling', currentStage: 'intake' });
+    await Plan.collection.insertOne({ _id: planId, patientId: p, sourceOrderId: orderId,
+      type: 'medical_assist', status: 'draft' });
+    assert.equal((await loadServices(advisor))[0].progress.step, 2);
+    await Plan.collection.updateOne({ _id: planId }, { $set: { status: 'completed' } });
+    assert.equal((await loadServices(advisor)).length, 0);
+  });
   await t.test('escort order uses the escort stages regardless of its service name', async () => {
     await reset(); const orderId = oid();
     await Order.collection.insertOne({ _id: orderId, user: p, serviceName: '陪同看诊服务', status: 'scheduled',
@@ -93,7 +103,7 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     await task({ sourceType: 'order', sourceOrderId: orderId, workflowKey: 'medical_proxy:booking',
       theme: '就医陪同：健管专员完成陪同预约 · 陪同看诊服务' });
     const rows = await loadServices(advisor); assert.equal(rows.length, 1);
-    assert.equal(rows[0].progress.step, 2); assert.equal(rows[0].progress.total, 5);
+    assert.equal(rows[0].progress.step, 3); assert.equal(rows[0].progress.total, 5);
   });
   await t.test('plans without service tasks are omitted; active insurance is covered', async () => {
     await reset(); await Plan.collection.insertMany([{ _id: oid(), patientId: p, title: '已生效营养方案', status: 'active', currentAssignee: manager._id }, { _id: oid(), patientId: p, title: '草稿', status: 'draft' }]);

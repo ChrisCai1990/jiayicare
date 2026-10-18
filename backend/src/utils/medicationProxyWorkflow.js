@@ -4,12 +4,12 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
 const { calculateMedicationSupply, numberOf } = require('./medicationSupplyCalculation');
+const { orderServiceType } = require('./orderServiceType');
 
 const PREFIX = 'medication_proxy:';
 const isMedicationProxyOrder = order => {
   if (!order) return false;
-  if (typeof order === 'string') return /代配药|代取药/.test(order);
-  return /代配药|代取药/.test([order.serviceName, order.specificationLabel, order.note, order.serviceRequirements].filter(Boolean).join(' '));
+  return orderServiceType(typeof order === 'string' ? { serviceName: order } : order) === 'medication_proxy';
 };
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
   ? task.workflowKey.slice(PREFIX.length) : '';

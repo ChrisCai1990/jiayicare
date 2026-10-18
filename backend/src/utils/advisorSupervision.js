@@ -32,8 +32,8 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
   const ids = patients.map(p => p._id);
   const [tasks, orders, plans, flows, cases, links, people] = await Promise.all([
     FollowUp.find({ patientId: { $in: ids } }).select('patientId status theme date remindAt assignedTo taskRole isBlocked workflowKey sourceType sourceId sourceOrderId sourceHealthPlanId sourceAnnualPlanId sourceScheduleKey coordinationGroupId careFlowId annualDispatchKey annualDispatch serviceTracking deliveryMode aiStatus reviewRole reviewAssignedTo staffId formData.serviceRequest formData.generatedFromExpertAppointment formData.generatedFromMedicalEscort formData.linkedFollowUpActionKey progressRecords executedContent updatedAt createdAt completedAt').lean(),
-    Order.find({ user: { $in: ids } }).select('user serviceName status paymentStatus tradeStatus refundStatus servicePrice initiationSource currentStage currentAssignee supervisorId supervisionStatus scheduledAt updatedAt createdAt fulfillmentStatus fulfillmentType serviceWorkflowSnapshot medicalProxyPlan.medicalEscort medicalProxyPlan.adHocConsultation specialtyTermsSnapshot.key specialtyTermsSnapshot.includedEscorts specialtyService.key specialtyService.startsAt specialtyService.endsAt specialtyService.usedEscorts specialtyService.includedEscorts note').lean(),
-    HealthPlan.find({ patientId: { $in: ids } }).select('patientId title status type sourceOrderId currentStage currentAssignee supervisorId supervisionStatus endDate updatedAt createdAt').lean(),
+    Order.find({ user: { $in: ids } }).select('user serviceName specificationLabel totalUnits status paymentStatus tradeStatus refundStatus servicePrice initiationSource currentStage currentAssignee supervisorId supervisionStatus scheduledAt updatedAt createdAt fulfillmentStatus fulfillmentType serviceWorkflowSnapshot medicalProxyPlan.medicalEscort medicalProxyPlan.adHocConsultation medicalProxyPlan.supplementProxy specialtyTermsSnapshot.key specialtyTermsSnapshot.includedEscorts specialtyService.key specialtyService.startsAt specialtyService.endsAt specialtyService.usedEscorts specialtyService.includedEscorts note').lean(),
+    HealthPlan.find({ patientId: { $in: ids } }).select('patientId title status type sourceOrderId currentStage currentAssignee supervisorId supervisionStatus pushedAt endDate updatedAt createdAt').lean(),
     CareFlow.find({ patientId: { $in: ids }, tenantId }).select('patientId parentId state revision updatedAt createdAt').lean(),
     Insurance.find({ patientId: { $in: ids } }).select('patientId title status assignedTo dueAt steps updatedAt createdAt').lean(),
     Link.find({ patientId: { $in: ids } }).select('patientId requestTaskId followUpId targetType targetId status updatedAt').lean(),
@@ -43,6 +43,13 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
   const person = (value, role) => { const p = personMap.get(id(value)); return p && (!role || p.role === role) ? { id: id(p), name: p.name, role: p.role } : null; };
   const patientMap = new Map(patients.map(p => [id(p), p]));
   const orderMap = new Map(orders.map(o => [id(o), o]));
+  for (const plan of plans) {
+    if (plan.type !== 'medical_assist' || !plan.sourceOrderId) continue;
+    const order = orderMap.get(id(plan.sourceOrderId));
+    if (!order) continue;
+    if (order.linkedServicePlan && order.linkedServicePlan.status !== 'completed' && plan.status === 'completed') continue;
+    order.linkedServicePlan = { status: plan.status, pushedAt: plan.pushedAt || null };
+  }
   const planMap = new Map(plans.map(p => [id(p), p]));
   const caseMap = new Map(cases.map(c => [id(c), c]));
   const flowMap = new Map(flows.map(f => [id(f), f]));
@@ -58,7 +65,9 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     && (o.paymentStatus === 'paid' || (o.initiationSource === 'staff_direct' && o.paymentStatus === 'unpaid' && o.servicePrice === 0))
     && ['paid', 'fulfilling', 'partially_refunded'].includes(o.tradeStatus)
     && ['', 'none', 'failed', 'partially_refunded', null, undefined].includes(o.refundStatus)
-    && !['completed', 'cancelled'].includes(o.supervisionStatus);
+    && !['completed', 'cancelled'].includes(o.supervisionStatus)
+    && !(o.linkedServicePlan?.status === 'completed' && o.specialtyTermsSnapshot?.key !== 'ibd'
+      && Number(o.totalUnits || 1) <= 1);
   const planActive = p => p.status === 'active' && !['completed', 'cancelled'].includes(p.supervisionStatus);
   const sourceGroup = (type, value, patientId) => {
     const source = (type === 'order' ? orderMap : type === 'plan' ? planMap : caseMap).get(id(value));
@@ -167,7 +176,7 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
       taskId: current.find(c => c.taskId)?.taskId || '', actionTaskId: ownDecisionTask ? id(ownDecisionTask) : '',
       actionStage: ownDecisionTask ? s.currentStage : '',
       href: target(g.patientId, '', g.type),
-      version: hash([stamp(s), g.tasks.map(stamp).sort((a,b) => a[0].localeCompare(b[0])), current, coordinator, id(p.assignedFamilyDoctor)]),
+      version: hash([stamp(s), s.linkedServicePlan, g.tasks.map(stamp).sort((a,b) => a[0].localeCompare(b[0])), current, coordinator, id(p.assignedFamilyDoctor)]),
     };
     result.push(row);
   }

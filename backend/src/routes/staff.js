@@ -741,7 +741,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'staffId', select: 'name role title' },
     { path: 'assignedTo', select: 'name role' },
     { path: 'sourceHealthPlanId', select: 'title description content type status' },
-    { path: 'sourceOrderId', select: 'serviceName orderNo createdAt status initiationSource paymentStatus paidAmount healthFundAmount scheduledAt note currentStage serviceWorkflowSnapshot' },
+    { path: 'sourceOrderId', select: 'serviceName specificationLabel orderNo createdAt status initiationSource paymentStatus paidAmount healthFundAmount scheduledAt note currentStage serviceWorkflowSnapshot' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard workflowStageKey' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
@@ -9896,17 +9896,18 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
       await currentOrder.save();
       return res.json({ success: true, data: currentOrder, message: '营养素履约订单号已登记，等待客户确认收货' });
     }
-    const { isMedicalProxyOrder, startMedicalProxyWorkflow } = require('../utils/medicalProxyWorkflow');
+    const { startMedicalProxyWorkflow } = require('../utils/medicalProxyWorkflow');
     const medicationProxyWorkflow = require('../utils/medicationProxyWorkflow');
     const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
     const checkupAppointmentWorkflow = require('../utils/checkupAppointmentWorkflow');
-    if (medicalReminderWorkflow.isMedicalReminderOrder(currentOrder)) {
+    const serviceType = require('../utils/orderServiceType').orderServiceType(currentOrder);
+    if (serviceType === 'medical_reminder') {
       if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '复查督办由健康顾问确认信息' });
       const task = await medicalReminderWorkflow.start(currentOrder, req.staff._id, req.body.medicalReminderIntake || {});
       const order = await Order.findByIdAndUpdate(req.params.id, { status: 'scheduled', scheduledAt: new Date(`${req.body.medicalReminderIntake.visitDate}T09:00:00+08:00`), handledBy: req.staff._id }, { new: true }).populate('user', 'name phone');
       return res.json({ success: true, data: order, task, message: 'AI随访计划已转健康顾问审核' });
     }
-    if (medicationProxyWorkflow.isMedicationProxyOrder(currentOrder)) {
+    if (serviceType === 'medication_proxy') {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '代配药由健康规划师先核对用药信息' });
       const medicationData = req.body.medicationData || {};
       const validationError = await medicationProxyWorkflow.validate({ sourceType: 'order', workflowKey: 'medication_proxy:intake', patientId: currentOrder.user, assignedTo: req.staff._id }, { status: 'completed', formData: medicationData }, req.staff);
@@ -9920,7 +9921,7 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
       const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true }).populate('user', 'name phone');
       return res.json({ success: true, data: order, task, message: '代配药已进入健康规划师核对环节' });
     }
-    if (isMedicalProxyOrder(currentOrder)) {
+    if (['medical_proxy', 'expert_appointment', 'medical_planning'].includes(serviceType)) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '医疗代诊由健康规划师确认服务需求' });
       const appointmentOnly = /专家约诊/.test(currentOrder.serviceName || '');
       if (!String(req.body.serviceContent || '').trim() || (!appointmentOnly && !String(req.body.customerNeed || '').trim())) return res.status(400).json({ success: false, message: appointmentOnly ? '请确认医院、科室和专家约诊需求' : '请完整确认服务内容和本次代诊诉求' });
@@ -9936,12 +9937,13 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
       const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true }).populate('user', 'name phone');
       return res.json({ success: true, data: order, task, message: /专家约诊/.test(currentOrder.serviceName || '') ? '服务信息已确认，已转给健管专员预约' : /就医规划/.test(currentOrder.serviceName || '') ? '沟通信息已确认，已转到健康顾问工作台' : '服务信息已确认，健康规划师开始指导客户上传并选定本次资料' });
     }
-    if (checkupAppointmentWorkflow.isCheckupAppointmentOrder(currentOrder)) {
+    if (serviceType === 'checkup_appointment') {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '待约检由健康规划师先确认检查需求' });
       const task = await checkupAppointmentWorkflow.start(currentOrder, req.staff._id, req.body.checkupAppointmentIntake || {});
       const order = await Order.findByIdAndUpdate(req.params.id, { status: 'scheduled', handledBy: req.staff._id }, { new: true }).populate('user', 'name phone');
       return res.json({ success: true, data: order, task, message: '待约检信息已确认，已转健管专员预约两个号' });
     }
+    if (serviceType === 'supplement_proxy') return res.status(409).json({ success: false, message: '代配营养素服务已按原服务任务流转，请在服务任务中继续办理' });
     if (require('../utils/ibdServiceTerms').isIbdOrder(currentOrder)) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: 'IBD 接单信息由健康规划师确认' });
       const task = await require('../utils/ibdWorkflow').start(currentOrder, req.staff._id, {
@@ -17866,16 +17868,17 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     const { orderId, templateId, briefNote } = req.query;
     let order = null;
     if (orderId) {
-      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount serviceWorkflowSnapshot checkupIntake status tradeStatus refundStatus paymentStatus').lean();
+      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName specificationLabel note desiredServiceDate serviceRequirements paidAmount serviceWorkflowSnapshot checkupIntake status tradeStatus refundStatus paymentStatus').lean();
       if (!order) return res.status(404).json({ success: false, message: '关联订单不存在' });
-      if (require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(order)) {
-        return res.status(409).json({ success: false, message: '医疗代诊请先在对话中完整确认服务内容和诉求，由健康规划师指导上传并选定资料，再交健管专员审核、健康顾问确认方案' });
-      }
-      if (require('../utils/medicationProxyWorkflow').isMedicationProxyOrder(order)) {
+      const serviceType = require('../utils/orderServiceType').orderServiceType(order);
+      if (serviceType === 'medication_proxy') {
         return res.status(409).json({ success: false, message: '代配药订单直接显示动态服务流程，无需生成AI就医协助方案' });
       }
-      if (require('../utils/checkupAppointmentWorkflow').isCheckupAppointmentOrder(order)) {
+      if (serviceType === 'checkup_appointment') {
         return res.status(409).json({ success: false, message: '待约检服务按订单流转，不生成就医协助方案' });
+      }
+      if (['medical_proxy', 'expert_appointment', 'medical_planning', 'supplement_proxy'].includes(serviceType)) {
+        return res.status(409).json({ success: false, message: '该订单已有专用服务流程，请在原服务任务中继续办理' });
       }
       const existingPlan = await HealthPlan.findOne({ patientId: user._id, sourceOrderId: order._id, type: 'medical_assist' })
         .sort({ createdAt: 1 });

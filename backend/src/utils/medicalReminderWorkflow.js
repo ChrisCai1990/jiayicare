@@ -2,13 +2,11 @@ const FollowUp = require('../models/FollowUp');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Message = require('../models/Message');
+const { orderServiceType } = require('./orderServiceType');
 
 const PREFIX = 'medical_reminder:';
 const isMedicalReminderOrder = orderOrName => {
-  const text = typeof orderOrName === 'object'
-    ? [orderOrName?.serviceName, orderOrName?.specificationLabel, orderOrName?.note, orderOrName?.serviceRequirements, orderOrName?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' ')
-    : String(orderOrName || '');
-  return /复查督办|就医提醒/.test(text);
+  return orderServiceType(typeof orderOrName === 'string' ? { serviceName: orderOrName } : orderOrName) === 'medical_reminder';
 };
 const stageOf = task => String(task?.workflowKey || '').startsWith(PREFIX) ? String(task.workflowKey).slice(PREFIX.length) : '';
 const clean = value => String(value || '').trim().slice(0, 1000);

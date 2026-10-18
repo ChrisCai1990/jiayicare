@@ -10,6 +10,7 @@ import { resolveReportReviewDate } from '../../../shared/reportReviewDate.mjs'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
 import ChildHealthArchive from '../components/ChildHealthArchive'
 import followUpReview from '../../../shared/followUpReview.cjs'
+import orderServiceType from '../../../shared/orderServiceType.cjs'
 import followUpDetailView from '../utils/followUpDetail.cjs'
 import MedicationReminderModal from '../components/MedicationReminderModal'
 import { summaryTarget } from '../utils/workbenchTargets'
@@ -14114,17 +14115,18 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [switchingMode, setSwitchingMode] = useState(false)
   const [currentBooking, setCurrentBooking] = useState(serviceBooking || (initialOrder ? { sourceOrderId: initialOrder } : null))
   const order = currentBooking?.sourceOrderId
-  const isMedicalEscortOrder = order?.medicalProxyPlan?.medicalEscort === true || /陪同|陪诊/.test(order?.serviceName || '')
-  const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊|就医规划/.test(order?.serviceName || '')
-  const isCheckupAppointment = /checkup_appointment|待约检|代约检|常规约检|特殊约检/.test([order?.serviceName, order?.specificationLabel, order?.serviceRequirements, order?.note, order?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' '))
-  const isMedicationProxy = /代配药|代取药/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
+  const serviceType = orderServiceType.orderServiceType(order || {})
+  const isMedicalEscortOrder = serviceType === 'medical_escort'
+  const isMedicalProxy = ['medical_proxy', 'expert_appointment', 'medical_planning'].includes(serviceType)
+  const isCheckupAppointment = serviceType === 'checkup_appointment'
+  const isMedicationProxy = serviceType === 'medication_proxy'
   const isSupplementOrder = order?.serviceWorkflowSnapshot?.key === 'supplement_supply'
     || /营养素|营养补充|维生素|叶酸|益生菌|鱼油|蛋白粉|辅酶Q10|矿物质/.test([order?.serviceName, order?.specificationLabel].filter(Boolean).join(' '))
-  const isMedicalReminderOrder = /复查督办|就医提醒/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
+  const isMedicalReminderOrder = serviceType === 'medical_reminder'
   const isMedicalReminder = isMedicalReminderOrder
-  const isExpertAppointment = /专家约诊/.test(order?.serviceName || '')
-  const isMedicalPlanning = /就医规划/.test(order?.serviceName || '')
-  const isIbdManagement = order?.specialtyTermsSnapshot?.key === 'ibd' || order?.specialtyService?.key === 'ibd' || /IBD.*专病管理/i.test(order?.serviceName || '')
+  const isExpertAppointment = serviceType === 'expert_appointment'
+  const isMedicalPlanning = serviceType === 'medical_planning'
+  const isIbdManagement = serviceType === 'ibd'
   const orderId = order?._id || order
   const initialRequirement = String(initialBookingForm?.serviceContent || order?.serviceRequirements || order?.note || '')
   const customerTaskParts = initialRequirement
