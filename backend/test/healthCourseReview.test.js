@@ -10,7 +10,7 @@ async function run({scope=['p'],date='2026-09-10',match=1,action='approve',sourc
 test('AI timeline approval uses confirmed visit date and preserves source and reviewer with CAS',async()=>{const {res,write,patient}=await run();assert.equal(res.code,200);const e=write.u.$set.diseaseRecords[0].courseEntries[0];assert.equal(e.occurredAt.toISOString(),'2026-09-09T16:00:00.000Z');assert.equal(e.sourceReportId,'r');assert.equal(e.reviewedById,'s');assert.equal(write.q.diseaseRecords,patient.diseaseRecords)});
 test('missing dates, foreign patients, changed evidence and concurrent updates cannot archive',async()=>{for(const [options,code] of [[{date:''},400],[{scope:[]},403],[{sourceChanged:true},409],[{match:0},409]]){const result=await run(options);assert.equal(result.res.code,code);assert.equal(result.saved,false)}});
 
-test('reviewed legacy outpatient record can create its first dossier and archive exactly once', async () => {
+test('advisor cannot create the first dossier from a legacy outpatient draft', async () => {
   let handler, writes = 0;
   const report = { _id:'report', user:'patient', documentCategory:'outpatient_record', audit_status:'audited', hospital:'来源医院',
     healthCourseDraft:{ status:'pending_review', generatedAt:'2026-10-17T08:41:25.256Z', outpatientRecord:{
@@ -43,15 +43,8 @@ test('reviewed legacy outpatient record can create its first dossier and archive
     action:'approve',diseaseName:'医生核对后的专病名称',createDiseaseRecord:true,occurredAt:'2026-09-23',
   }};
   const first=response(); await handler(request,first);
-  assert.equal(first.code,200,JSON.stringify(first.body));
-  assert.equal(writes,1);
-  assert.equal(patient.diseaseRecords.length,1);
-  assert.equal(patient.diseaseRecords[0].summary.chiefComplaint,'已核对的主诉');
-  assert.equal(patient.diseaseRecords[0].summary.initialDiagnosis,'已核对的诊断');
-  assert.equal(patient.diseaseRecords[0].summary.verificationStatus,'source_verified');
-  assert.equal(patient.diseaseRecords[0].courseEntries[0].sourceReportId,'report');
-  assert.equal(report.courseTargetDiseaseId,patient.diseaseRecords[0]._id);
-  const retry=response(); await handler(request,retry);
-  assert.equal(retry.body.unchanged,true);
-  assert.equal(writes,1);
+  assert.equal(first.code,403,JSON.stringify(first.body));
+  assert.match(first.body.message,/健管专员/);
+  assert.equal(writes,0);
+  assert.equal(patient.diseaseRecords.length,0);
 });

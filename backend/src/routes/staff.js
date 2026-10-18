@@ -5325,6 +5325,25 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (req.body.editSource === 'outpatient_legacy_target_confirmation') {
+      const roleError = clinicalManagerAuditError(report, req.staff);
+      if (roleError) return res.status(403).json({ success:false, message:roleError });
+      if (report.documentCategory !== 'outpatient_record' || report.audit_status !== 'audited'
+        || report.courseTargetDiseaseId || report.healthCourseDraft?.status !== 'pending_review')
+        return res.status(409).json({ success:false, message:'仅已审核且尚未指定专病的待审门诊病历可补齐归属，请刷新资料' });
+      const targetId = req.body.courseTargetDiseaseId;
+      if (!mongoose.isValidObjectId(targetId)) return res.status(400).json({ success:false, message:'请选择已有专病首页' });
+      const targetError = await outpatientCourseTargetError({ documentCategory:'outpatient_record', user:report.user, courseTargetDiseaseId:targetId });
+      if (targetError) return res.status(409).json({ success:false, message:targetError });
+      const updated = await MedicalReport.updateOne({ _id:report._id, audit_status:'audited', courseTargetDiseaseId:null,
+        'healthCourseDraft.status':'pending_review' }, { $set:{ courseTargetDiseaseId:targetId }, $push:{ dataEditLog:{
+          itemIndex:-1, itemName:'门诊病历归属专病', field:'courseTargetDiseaseId', oldValue:'', newValue:String(targetId),
+          operatorId:req.staff._id, operatorName:req.staff.name || req.staff.username || '', operatorRole:req.staff.role,
+          source:'outpatient_legacy_target_confirmation', at:new Date(),
+        } } });
+      if (!updated.modifiedCount) return res.status(409).json({ success:false, message:'病历状态已变化，请刷新后重试' });
+      return res.json({ success:true, data:{ courseTargetDiseaseId:targetId } });
+    }
     if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision, clinicalReview, courseTargetDiseaseId, screeningReclassification } = req.body;
     if (report.archiveOnly && (aiStatus !== undefined || reportItems !== undefined || screeningReclassification)) return res.status(409).json({ success: false, message: '仅留存原件不参与解析和审核' });
@@ -5633,6 +5652,8 @@ router.post('/medical-reports/:id/health-course-draft', staffAuth, async (req, r
     if (report.healthCourseDraft?.status === 'approved') return res.status(409).json({ success:false, message:'该病历已归档，请在诊疗时间轴修订原记录' });
     if (!HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) return res.status(400).json({ success:false, message:'仅门诊病历、住院病历和检验检查资料支持提取健康变化；用药信息请在用药模块审核' });
     if (report.audit_status !== 'audited') return res.status(409).json({ success:false, message:'请先完成医疗资料审核，再生成入档草稿' });
+    if (report.documentCategory === 'outpatient_record' && !report.courseTargetDiseaseId)
+      return res.status(409).json({ success:false, message:'请先由健管专员确认门诊病历归入的专病首页' });
     const { hasOutpatientRecordContent } = require('../utils/outpatientRecordExtraction');
     const needsAttachmentExtraction = report.documentCategory === 'outpatient_record'
       && !hasOutpatientRecordContent(report.clinicalReview) && !hasOutpatientRecordContent(report.healthCourseDraft?.outpatientRecord);
@@ -5694,22 +5715,19 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     if (!patient) return res.status(404).json({ success:false, message:'会员不存在' });
     const records = normalizedDiseaseRecords(patient);
     const diseaseName = cleanMedicalText(req.body.diseaseName,100);
-    const createDiseaseRecord = req.body.createDiseaseRecord === true;
-    if (createDiseaseRecord && (report.documentCategory !== 'outpatient_record' || report.courseTargetDiseaseId))
-      return res.status(400).json({ success:false, message:'只有未指定专病的门诊病历可在审核时建立专病首页' });
-    if (createDiseaseRecord && !diseaseName) return res.status(400).json({ success:false, message:'请填写新专病名称' });
-    let record = report.documentCategory === 'outpatient_record' && report.courseTargetDiseaseId
+    if (req.body.createDiseaseRecord) return res.status(403).json({ success:false, message:'专病首页须由健管专员核对原件后建立并指定，再由健康顾问审核写入' });
+    if (report.documentCategory === 'outpatient_record' && !report.courseTargetDiseaseId)
+      return res.status(409).json({ success:false, message:'健管专员尚未确认归入的专病首页，请先由健管专员补齐归属' });
+    const record = report.documentCategory === 'outpatient_record' && report.courseTargetDiseaseId
       ? records.find(item => String(item._id) === String(report.courseTargetDiseaseId))
       : records.find(item => item.name === diseaseName);
-    if (createDiseaseRecord && record) return res.status(409).json({ success:false, message:'同名专病首页已存在，请选择已有专病归档' });
-    if (!createDiseaseRecord && !record) return res.status(409).json({ success:false, message:'所选专病首页不存在或已删除，请返回专病管理核对后重试' });
-    if (!createDiseaseRecord && report.documentCategory === 'outpatient_record' && diseaseName !== record.name) return res.status(409).json({ success:false, message:`此病历由健管专员指定归入「${record.name}」，请刷新草稿后重试` });
-    if (!createDiseaseRecord && !hasMedicalSummary(record.summary)) return res.status(409).json({ success:false, message:'专病首页尚无首次概况，请先在专病管理填写并保存' });
-    if (record && (record.courseEntries || []).some(item => String(item.sourceReportId || '') === String(report._id))) return res.status(409).json({ success:false, message:'该医疗资料已经写入健康变化时间轴' });
+    if (!record) return res.status(409).json({ success:false, message:'所选专病首页不存在或已删除，请返回专病管理核对后重试' });
+    if (report.documentCategory === 'outpatient_record' && diseaseName !== record.name) return res.status(409).json({ success:false, message:`此病历由健管专员指定归入「${record.name}」，请刷新草稿后重试` });
+    if (!hasMedicalSummary(record.summary)) return res.status(409).json({ success:false, message:'专病首页尚无首次概况，请先在专病管理填写并保存' });
+    if ((record.courseEntries || []).some(item => String(item.sourceReportId || '') === String(report._id))) return res.status(409).json({ success:false, message:'该医疗资料已经写入健康变化时间轴' });
     const draft = report.healthCourseDraft;
     const outpatientRecord = draft.outpatientRecord
       ? require('../utils/clinicalDocumentReview').normalizeClinicalReview('outpatient_record', req.body.outpatientRecord || draft.outpatientRecord) : null;
-    if (createDiseaseRecord && !outpatientRecord) return res.status(400).json({ success:false, message:'请先核对门诊病历栏目，才能建立专病首页' });
     const content = outpatientRecord
       ? [outpatientRecord.chiefComplaint, outpatientRecord.presentIllness].filter(Boolean).join('\n')
       : mergedHealthChange({ content:req.body.content ?? draft.content, symptoms:'' });
@@ -5719,13 +5737,6 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     if (outpatientRecord) outpatientRecord.visitDate = req.body.occurredAt;
     const now = new Date();
     const reviewerName = req.staff.name || req.staff.username || '';
-    if (createDiseaseRecord) {
-      const { initialSummaryFromOutpatient } = require('../utils/outpatientDiseaseDossier');
-      const summary = initialSummaryFromOutpatient(outpatientRecord, report, req.staff, now);
-      if (!hasMedicalSummary(summary)) return res.status(400).json({ success:false, message:'新建专病首页需要已核对的主诉、现病史、检查、诊断或用药信息' });
-      record = { _id:new mongoose.Types.ObjectId(), name:diseaseName, summary, summaryHistory:[], courseEntries:[] };
-      records.push(record);
-    }
     const entry = {
       _id:new mongoose.Types.ObjectId(), occurredAt:new Date(req.body.occurredAt + 'T00:00:00+08:00'),
       content:content || outpatientRecord?.diagnoses.join('、') || '门诊病历已归档，查看原文栏目', symptoms:'',
@@ -5743,7 +5754,6 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     const saved = await User.collection.updateOne({ _id:patient._id, diseaseRecords:patient.diseaseRecords }, { $set:{ diseaseRecords:records } });
     if (!saved.matchedCount) return res.status(409).json({ success:false, message:'专病档案已更新，请刷新核对，避免重复归档' });
     report.healthCourseDraft = { ...draft, status:'approved', diseaseName, approvedEntryId:entry._id, reviewedAt:now, reviewedBy:req.staff._id, reviewedByName:reviewerName, finalContent:entry };
-    if (report.documentCategory === 'outpatient_record' && !report.courseTargetDiseaseId) report.courseTargetDiseaseId = record._id;
     await report.save();
     res.json({ success:true, data:{ draft:report.healthCourseDraft, entry } });
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }
@@ -14595,6 +14605,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         audit_status: 'audited',
         documentCategory: { $in: [...HEALTH_COURSE_DOCUMENTS] },
         'healthCourseDraft.status': 'pending_review',
+        $or: [{ documentCategory:{ $ne:'outpatient_record' } }, { courseTargetDiseaseId:{ $ne:null } }],
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const healthCourseReports = await MedicalReport.find(healthCourseFilter)
@@ -14603,9 +14614,9 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         if (findReportArchive(normalizedDiseaseRecords(report.user || {}),report._id)) return;
         const createdAt = report.healthCourseDraft?.generatedAt || report.updatedAt || report.createdAt || now;
         todos.push({
-          id: 'healthcourse_' + report._id, type: 'health_course_review', label: '健康变化待审核', priority: 2,
+          id: 'healthcourse_' + report._id, type: 'health_course_review', label: report.documentCategory === 'outpatient_record' ? '门诊病历待健康顾问审核' : '健康变化待审核', priority: 2,
           patientName: report.user?.name || '未知', patientId: String(report.user?._id || ''),
-          summary: `${report.title || '医疗资料'} · 请确认是否需要写入健康变化时间轴`,
+          summary: report.documentCategory === 'outpatient_record' ? `${report.title || '门诊病历'} · 健管专员已确认专病归属，请核对原件后决定是否写入诊疗时间轴` : `${report.title || '医疗资料'} · 请确认是否需要写入健康变化时间轴`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${report.user?._id}?tab=reports&reportId=${report._id}`,
         });
