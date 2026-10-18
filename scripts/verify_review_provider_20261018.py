@@ -48,7 +48,7 @@ const runtime=require('./src/utils/reviewRuntime');
    const answer=require('./src/utils/sourcedAssistantReply').formatReply(raw);
    facts.providerSucceeded=true;facts.formattedReply=answer;
    facts.hasVerifiedSource=answer.references.some(r=>r.id==='who-bmi');
-  }catch(e){facts.providerSucceeded=false;facts.errorCode=/^[A-Z0-9_]{1,60}$/.test(e.code||'')?e.code:'REVIEW_PROVIDER_UNAVAILABLE';}
+  }catch(e){facts.providerSucceeded=false;facts.errorCode=/^[A-Z0-9_]{1,60}$/.test(e.code||'')?e.code:'REVIEW_PROVIDER_UNAVAILABLE';facts.providerReason=e.providerReason||'UNKNOWN';}
   facts.budgetAfterFen=(await total.findOne({_id:'external-services'})).reservedFen;
   assert.equal(facts.budgetAfterFen,facts.budgetBeforeFen+10);assert.ok(facts.budgetAfterFen<=1000);
   await Consent.updateOne({user:subject},{$set:{granted:false}});

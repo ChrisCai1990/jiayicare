@@ -33,7 +33,7 @@ function createReviewExternalServices({ connection, env = process.env, adapters 
         }),
       ]);
     } catch (error) {
-      throw Object.assign(new Error('审核服务暂不可用，请稍后重试'), { code: /^REVIEW_(HTTP_[1-5]\d\d|RESPONSE_EMPTY|RESPONSE_INVALID|TRANSPORT_FAILED)$/.test(error.code || '') ? error.code : 'REVIEW_PROVIDER_UNAVAILABLE' });
+      throw Object.assign(new Error('审核服务暂不可用，请稍后重试'), { code: /^REVIEW_(HTTP_[1-5]\d\d|RESPONSE_EMPTY|RESPONSE_INVALID|TRANSPORT_FAILED)$/.test(error.code || '') ? error.code : 'REVIEW_PROVIDER_UNAVAILABLE', providerReason: /^[A-Za-z][A-Za-z0-9_.-]{0,60}$/.test(error.providerReason || '') ? error.providerReason : 'UNKNOWN' });
     } finally { clearTimeout(timer); }
   }
   return {

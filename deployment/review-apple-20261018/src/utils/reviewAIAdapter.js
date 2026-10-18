@@ -39,7 +39,19 @@ function createReviewAIAdapter({ apiKey, estimateMaximumCostFen, fetchImpl = glo
           headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody(payload)),
         });
-        if (!response.ok) throw Object.assign(new Error('provider response'), { code: `REVIEW_HTTP_${response.status}` });
+        if (!response.ok) {
+          let providerReason = 'UNKNOWN';
+          if (response.body) {
+            const reader = response.body.getReader(); let bytes = 0; const chunks = [];
+            try {
+              for (;;) { const next = await reader.read(); if (next.done) break; bytes += next.value.byteLength; if (bytes > 4096) break; chunks.push(Buffer.from(next.value)); }
+              const detail = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+              const value = detail.error?.code || detail.code;
+              if (/^[A-Za-z][A-Za-z0-9_.-]{0,60}$/.test(value || '')) providerReason = value;
+            } catch {} finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+          }
+          throw Object.assign(new Error('provider response'), { code: `REVIEW_HTTP_${response.status}`, providerReason });
+        }
         if (!response.body) throw Object.assign(new Error('empty response'), { code: 'REVIEW_RESPONSE_EMPTY' });
         // Bound even chunked or dishonest Content-Length responses.
         const reader = response.body.getReader();
@@ -61,7 +73,7 @@ function createReviewAIAdapter({ apiKey, estimateMaximumCostFen, fetchImpl = glo
         return content.trim();
       } catch (error) {
         // Never expose supplier bodies, credentials or submitted content.
-        throw Object.assign(new Error('审核AI服务暂不可用'), { code: /^REVIEW_(HTTP_[1-5]\d\d|RESPONSE_EMPTY|RESPONSE_INVALID)$/.test(error.code || '') ? error.code : 'REVIEW_TRANSPORT_FAILED' });
+        throw Object.assign(new Error('审核AI服务暂不可用'), { code: /^REVIEW_(HTTP_[1-5]\d\d|RESPONSE_EMPTY|RESPONSE_INVALID)$/.test(error.code || '') ? error.code : 'REVIEW_TRANSPORT_FAILED', providerReason: error.providerReason || 'UNKNOWN' });
       }
     },
   };
