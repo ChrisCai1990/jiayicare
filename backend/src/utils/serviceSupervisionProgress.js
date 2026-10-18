@@ -25,6 +25,12 @@ const ibd = [
   ['ibd_awaiting_first_visit', '年度管理与陪诊'],
   ['ibd_annual_review', '年度回顾与结案'],
 ];
+const medicalAssist = [
+  ['intake', '规划师核对需求并接单'],
+  ['plan_draft', '制定并推送就医协助方案'],
+  ['service_execution', '服务执行与督办'],
+  ['pending_closure', '规划师验收结案'],
+];
 
 function ordered(stages, stage) {
   const index = stages.findIndex(([key]) => key === stage);
@@ -82,6 +88,13 @@ function serviceProgress(type, source, tasks, current, now = new Date()) {
     if (tasks.some(t => String(t.workflowKey || '').startsWith('medication_proxy:'))) {
       const progress = ordered(medication, stage);
       if (progress) return progress;
+    }
+    if (source.serviceWorkflowSnapshot?.key === 'medical_assist') {
+      const hasExecution = tasks.some(t => t.sourceHealthPlanId && ['executor', 'supervisor'].includes(t.taskRole) && t.status !== 'cancelled');
+      const serviceStage = stage === 'pending_closure' ? 'pending_closure'
+        : hasExecution || ['booking', 'execute', 'post_visit_audit'].includes(stage) ? 'service_execution'
+          : stage === 'plan_draft' ? 'plan_draft' : 'intake';
+      return { ...ordered(medicalAssist, serviceStage), note: '具体执行事项以正式就医协助方案为准。' };
     }
   }
   if (type === 'insurance' && source.steps?.length) {

@@ -30,6 +30,23 @@ test('IBD annual service shows its complete path instead of the generated task l
   assert.equal(review.label, '年度回顾与结案');
 });
 
+test('medical assistance order shows its order-to-closure path before a plan is generated', () => {
+  const source = { serviceName: '就医陪同服务', serviceWorkflowSnapshot: { key: 'medical_assist' }, currentStage: 'intake' };
+  const intake = serviceProgress('order', source, [{ theme: '订单服务：就医陪同服务', status: 'planned' }], current);
+  assert.equal(intake.step, 1);
+  assert.equal(intake.total, 4);
+  assert.equal(intake.observed, undefined);
+  assert.deepEqual(intake.steps.map(step => step.label), [
+    '规划师核对需求并接单', '制定并推送就医协助方案', '服务执行与督办', '规划师验收结案',
+  ]);
+  const executing = serviceProgress('order', { ...source, currentStage: 'plan_draft' }, [
+    { sourceHealthPlanId: 'plan', taskRole: 'executor', status: 'planned' },
+  ], current);
+  assert.equal(executing.step, 3);
+  const closing = serviceProgress('order', { ...source, currentStage: 'pending_closure' }, [], current);
+  assert.equal(closing.step, 4);
+});
+
 test('care flow uses its actual path, including the shorter reminder route', () => {
   const progress = serviceProgress('flow', { state: { mode: 'reminder', stage: 'audit' } }, [], current);
   assert.equal(progress.step, 3);

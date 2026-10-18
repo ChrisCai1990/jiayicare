@@ -14,6 +14,11 @@ test('a standalone annual reminder is not a service progress', () => {
   assert.equal(belongsInServiceProgress({ type: 'followup', tasks: [reminder, { sourceType: 'annual_service' }] }), true);
 });
 
+test('an AI monthly review task is not an order service', () => {
+  assert.equal(belongsInServiceProgress({ type: 'followup', tasks: [{ sourceType: 'ai_review' }] }), false);
+  assert.equal(belongsInServiceProgress({ type: 'followup', tasks: [{ sourceType: 'order' }] }), true);
+});
+
 test('actual service flows and managed annual tasks remain visible', () => {
   assert.equal(belongsInServiceProgress({ type: 'order', tasks: [] }), true);
   assert.equal(belongsInServiceProgress({ type: 'flow', tasks: [] }), true);

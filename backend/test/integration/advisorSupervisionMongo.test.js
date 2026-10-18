@@ -65,6 +65,17 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     rows = await loadServices(advisor); assert.equal(rows.length, 1);
     assert.equal(rows[0].progress.step, 6); assert.equal(rows[0].current[0].person.id, String(advisor._id));
   });
+  await t.test('AI review is not an order service; medical assistance intake shows the full path', async () => {
+    await reset(); await task({ sourceType: 'ai_review', theme: '多病共管与营养-肾功能协同评估' });
+    assert.equal((await loadServices(advisor)).length, 0);
+    const orderId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: '就医陪同服务', status: 'pending',
+      paymentStatus: 'paid', tradeStatus: 'paid', currentStage: 'intake',
+      serviceWorkflowSnapshot: { key: 'medical_assist' } });
+    await task({ sourceType: 'order', sourceOrderId: orderId, theme: '订单服务：就医陪同服务' });
+    const rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 1); assert.equal(rows[0].progress.total, 4);
+  });
   await t.test('plans without service tasks are omitted; active insurance is covered', async () => {
     await reset(); await Plan.collection.insertMany([{ _id: oid(), patientId: p, title: '已生效营养方案', status: 'active', currentAssignee: manager._id }, { _id: oid(), patientId: p, title: '草稿', status: 'draft' }]);
     await Insurance.collection.insertOne({ _id: oid(), patientId: p, title: '保险', status: 'reviewing', assignedTo: manager._id });
