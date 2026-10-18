@@ -80,7 +80,7 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
       group = ensure(`flow:${id(flow)}`, t.patientId, flow, 'flow');
     } else if (t.careFlowId) continue; // orphaned/cross-member reference is not a new service
     else if (link && samePatient(link, t.patientId) && link.status !== 'attention') group = sourceGroup(link.targetType === 'order' ? 'order' : 'plan', link.targetId, t.patientId);
-    else if (review.postVisit(t)) group = ensure(`followup:${id(t)}`, t.patientId, t, 'followup'); // independent clinical follow-up survives order closure
+    else if (review.postVisit(t)) group = sourceGroup('order', t.sourceOrderId, t.patientId); // review is part of an active order; closed orders retain it in follow-up work only
     else if (t.sourceOrderId) group = sourceGroup('order', t.sourceOrderId, t.patientId);
     else if (t.sourceHealthPlanId) group = sourceGroup('plan', t.sourceHealthPlanId, t.patientId);
     else if (t.sourceType === 'insurance_service' && t.sourceId) group = sourceGroup('insurance', t.sourceId, t.patientId);

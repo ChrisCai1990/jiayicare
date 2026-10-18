@@ -30,13 +30,12 @@ test('IBD annual service shows its complete path instead of the generated task l
   assert.equal(review.label, '年度回顾与结案');
 });
 
-test('medical assistance order does not invent stages from a template before intake', () => {
+test('medical assistance order shows its service path from intake', () => {
   const source = { serviceName: '就医陪同服务', serviceWorkflowSnapshot: { key: 'medical_assist' }, currentStage: 'intake' };
   const intake = serviceProgress('order', source, [{ theme: '订单服务：就医陪同服务', status: 'planned' }], current);
-  assert.equal(intake.observed, true);
-  assert.equal(intake.generatedTotal, 1);
-  assert.equal(intake.total, null);
-  assert.match(intake.note, /正式服务流程尚未生成/);
+  assert.equal(intake.step, 1);
+  assert.equal(intake.total, 4);
+  assert.equal(intake.observed, undefined);
   const executing = serviceProgress('order', { ...source, currentStage: 'plan_draft' }, [
     { sourceHealthPlanId: 'plan', taskRole: 'executor', status: 'planned' },
   ], current);
@@ -45,11 +44,11 @@ test('medical assistance order does not invent stages from a template before int
   assert.equal(closing.step, 4);
 });
 
-test('medical proxy order uses its path after the workflow starts', () => {
+test('medical proxy order shows its service path from intake', () => {
   const source = { serviceName: '医疗代诊服务', serviceWorkflowSnapshot: { key: 'medical_proxy' }, currentStage: 'intake' };
   const intake = serviceProgress('order', source, [{ theme: '订单服务：医疗代诊服务', status: 'planned' }], current);
-  assert.equal(intake.observed, true);
-  assert.equal(intake.generatedTotal, 1);
+  assert.equal(intake.step, 1);
+  assert.equal(intake.total, 5);
   const started = serviceProgress('order', source, [{ workflowKey: 'medical_proxy:intake', taskRole: 'supervisor', status: 'planned' }], current);
   assert.equal(started.step, 1);
   assert.equal(started.total, 5);
@@ -60,6 +59,28 @@ test('medical proxy order uses its path after the workflow starts', () => {
   assert.equal(serviceProgress('order', { ...source, currentStage: 'booking' }, [], current).step, 3);
   assert.equal(serviceProgress('order', { ...source, currentStage: 'execute' }, [], current).step, 4);
   assert.equal(serviceProgress('order', { ...source, currentStage: 'pending_closure' }, [], current).step, 5);
+});
+
+test('legacy medical assistant orders and medication orders show the full service path', () => {
+  const agency = serviceProgress('order', { serviceName: '医务代办服务', currentStage: 'intake' },
+    [{ _id: 'intake', status: 'planned', theme: '订单服务：医务代办服务' }], current);
+  assert.equal(agency.step, 1);
+  assert.equal(agency.total, 4);
+  const medication = serviceProgress('order', { serviceName: '代配药服务', currentStage: 'booking' },
+    [{ workflowKey: 'medical_proxy:booking', status: 'planned' }], current);
+  assert.equal(medication.step, 4);
+  assert.equal(medication.total, 6);
+});
+
+test('expert appointment progress uses the active post-visit review when the legacy order stage is stale', () => {
+  const progress = serviceProgress('order', { serviceName: '专家约诊服务', currentStage: 'intake' }, [
+    { workflowKey: 'medical_proxy:booking', status: 'completed' },
+    { workflowKey: 'medical_proxy:post_visit_audit', status: 'completed' },
+    { sourceScheduleKey: 'expert_appointment_followup:order', status: 'planned' },
+  ], current);
+  assert.equal(progress.step, 4);
+  assert.equal(progress.total, 5);
+  assert.equal(progress.label, '顾问审核约诊后随访');
 });
 
 test('escort progress is selected by the order workflow flag across service names', () => {

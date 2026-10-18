@@ -49,7 +49,7 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     let rows = await loadServices(advisor); assert.equal(rows.length, 1); assert.equal(rows[0].current.length, 1);
     await Order.collection.updateOne({ _id: o }, { $set: { status: 'cancelled' } }); assert.equal((await loadServices(advisor)).length, 0);
     await task({ sourceType: 'order', sourceOrderId: o, sourceScheduleKey: 'medical_escort_followup:independent' });
-    assert.equal((await loadServices(advisor)).length, 1);
+    assert.equal((await loadServices(advisor)).length, 0);
   });
   await t.test('IBD uses its order stage path and remains visible during annual management', async () => {
     await reset(); const orderId = oid();

@@ -38,6 +38,13 @@ const medicalProxy = [
   ['execution', '代诊执行与资料归档'],
   ['pending_closure', '规划师验收结案'],
 ];
+const expertAppointment = [
+  ['intake', '规划师核对约诊需求'],
+  ['booking', '健管确认专家预约'],
+  ['post_visit_audit', '健管审核就诊资料'],
+  ['followup_review', '顾问审核约诊后随访'],
+  ['pending_closure', '规划师验收结案'],
+];
 const medicalEscort = [
   ['intake', '确认陪同需求与人员安排'],
   ['booking', '健管确认陪同预约'],
@@ -82,12 +89,6 @@ function serviceProgress(type, source, tasks, current, now = new Date()) {
   }
   if (type === 'order') {
     const stage = source.currentStage || 'intake';
-    // A purchased workflow template is not evidence that its execution flow
-    // has started. Older orders only have a generic planner intake follow-up.
-    const legacyIntake = stage === 'intake' && tasks.length > 0
-      && tasks.every(task => !task.workflowKey && !['executor', 'supervisor'].includes(task.taskRole));
-    if (legacyIntake && ['medical_assist', 'medical_proxy'].includes(source.serviceWorkflowSnapshot?.key))
-      return { ...taskProgress(tasks, current), note: '订单仍待规划师核对；正式服务流程尚未生成。' };
     if (source.specialtyTermsSnapshot?.key === 'ibd' || source.specialtyService?.key === 'ibd') {
       const period = source.specialtyService || {};
       const reviewDue = stage === 'ibd_awaiting_first_visit' && period.endsAt && new Date(period.endsAt) <= now;
@@ -106,7 +107,7 @@ function serviceProgress(type, source, tasks, current, now = new Date()) {
       const progress = ordered(checkup, stage);
       if (progress) return progress;
     }
-    if (tasks.some(t => String(t.workflowKey || '').startsWith('medication_proxy:'))) {
+    if (/代配药|代取药/.test(source.serviceName || '') || tasks.some(t => String(t.workflowKey || '').startsWith('medication_proxy:'))) {
       const progress = ordered(medication, stage);
       if (progress) return progress;
     }
@@ -116,6 +117,17 @@ function serviceProgress(type, source, tasks, current, now = new Date()) {
       const progress = ordered(source.medicalProxyPlan.adHocConsultation ? adHocEscort : medicalEscort, escortStage);
       if (progress) return { ...progress, note: '陪同执行和资料审核以原服务记录为准。' };
     }
+    if (/专家约诊/.test(source.serviceName || '')) {
+      const pendingReview = tasks.some(t => /^(expert_appointment_followup):/.test(t.sourceScheduleKey || '')
+        && ['planned', 'in_progress', 'missed'].includes(t.status));
+      const audited = tasks.some(t => t.workflowKey === 'medical_proxy:post_visit_audit' && t.status === 'completed');
+      const booked = tasks.some(t => t.workflowKey === 'medical_proxy:booking' && t.status === 'completed');
+      const currentStage = pendingReview || (stage === 'intake' && audited) ? 'followup_review'
+        : stage === 'intake' && booked ? 'post_visit_audit'
+          : stage === 'appointment_review' ? 'booking' : stage;
+      const progress = ordered(expertAppointment, currentStage);
+      if (progress) return progress;
+    }
     if (source.serviceWorkflowSnapshot?.key === 'medical_proxy' && /医疗代诊/.test(source.serviceName || '')) {
       const serviceStage = ['collect', 'audit', 'advisor'].includes(stage) ? 'plan_review'
         : ['planner', 'booking'].includes(stage) ? 'arrangement'
@@ -124,7 +136,7 @@ function serviceProgress(type, source, tasks, current, now = new Date()) {
       const progress = ordered(medicalProxy, serviceStage);
       if (progress) return { ...progress, note: '各阶段的资料审核、预约和执行记录以原服务任务为准。' };
     }
-    if (source.serviceWorkflowSnapshot?.key === 'medical_assist') {
+    if (source.serviceWorkflowSnapshot?.key === 'medical_assist' || /医务代办/.test(source.serviceName || '')) {
       const hasExecution = tasks.some(t => t.sourceHealthPlanId && ['executor', 'supervisor'].includes(t.taskRole) && t.status !== 'cancelled');
       const serviceStage = stage === 'pending_closure' ? 'pending_closure'
         : hasExecution || ['booking', 'execute', 'post_visit_audit'].includes(stage) ? 'service_execution'
