@@ -20,7 +20,10 @@ export default function useArchiveSubject() {
   const [error, setError] = useState('');
 
   const refresh = useCallback(async () => {
-    if (!user?._id) { setLoading(true); return; }
+    if (!user?._id) {
+      setChildren([]); setSubjects([]); setSubject(null); setError(''); setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [childResult, familyResult] = await Promise.all([guardianChildrenAPI.list(), familyLinksAPI.list()]);

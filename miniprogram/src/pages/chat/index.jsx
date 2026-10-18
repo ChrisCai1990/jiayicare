@@ -3,10 +3,17 @@ import { View, Text } from '@tarojs/components';
 import { colors, spacing } from '../../theme';
 import useNavBar from '../../hooks/useNavBar';
 import MessagesPage from '../messages/index';
+import useArchiveSubject from '../../hooks/useArchiveSubject';
+import FamilySubjectView from '../../components/FamilySubjectView';
 
 // 健康管家只承载统一团队会话。健康规划师与其他角色共用同一聊天底座。
 export default function ChatPage() {
   const { statusBarHeight } = useNavBar();
+  const archive = useArchiveSubject();
+
+  if (archive.loading || archive.error || archive.subject) {
+    return <FamilySubjectView archive={archive} section="manager" statusBarHeight={statusBarHeight} />;
+  }
 
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: colors.background }}>

@@ -9,6 +9,8 @@ import Icon from '../../components/Icon';
 import useNavBar from '../../hooks/useNavBar';
 import { openManagerConversation } from '../../utils/managerConversation';
 import { homeTaskCards } from '../../utils/homeTaskCards';
+import useArchiveSubject, { storedArchiveId } from '../../hooks/useArchiveSubject';
+import FamilySubjectView from '../../components/FamilySubjectView';
 
 // 对齐 app/src/screens/home/HomeScreen.js（2026-07-18 首页瘦身+打卡页重构后）：
 // 打卡网格已抽离到独立页 pages/checkin/index，首页只保留入口按钮；健康管家团队卡片已移至"我的"页。
@@ -179,6 +181,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
 export default function HomePage() {
   const { user: authUser, token, loading: authLoading, isDemo } = useAuth();
   const { statusBarHeight } = useNavBar();
+  const archive = useArchiveSubject();
   const runtimeInfo = (() => {
     try {
       const info = Taro.getAccountInfoSync?.();
@@ -202,6 +205,7 @@ export default function HomePage() {
   // Each source publishes independently; a slow mall request must not hold up tasks.
   const loadCore = useCallback(async () => {
     if (authLoading) return;
+    if (storedArchiveId(authUser?._id)) return;
     const requestId = ++loadRequestRef.current;
     const current = () => requestId === loadRequestRef.current && sessionRef.current === token;
     setLoading(true);
@@ -227,12 +231,16 @@ export default function HomePage() {
     );
     await Promise.all(jobs);
     if (current()) setLoading(false);
-  }, [token, authLoading]);
+  }, [token, authLoading, authUser?._id]);
 
   useEffect(() => { setDashData(null); setTasks([]); setFollowups([]); setPilotData(null); setTaskDetail(null); }, [token]);
   useEffect(() => () => { loadRequestRef.current += 1; }, []);
 
   useEffect(() => { loadCore(); }, [loadCore]);
+
+  useEffect(() => {
+    if (!archive.loading && !archive.subject && token) loadCore();
+  }, [archive.loading, archive.subject?.id, token]);
 
   useDidShow(() => { loadCore(); });
   usePullDownRefresh(() => { loadCore().then(() => { Taro.stopPullDownRefresh(); }); });
@@ -240,9 +248,10 @@ export default function HomePage() {
   // systemAPI.push() 同理挪到首屏之后延迟触发，fire-and-forget，不参与启动阶段的并发请求
   useEffect(() => {
     if (!token) return undefined;
+    if (storedArchiveId(authUser?._id)) return undefined;
     const timer = setTimeout(() => { systemAPI.push().catch(() => {}); }, 1500);
     return () => clearTimeout(timer);
-  }, [token]);
+  }, [token, authUser?._id, archive.subject?.id]);
 
   const user = { ...(authUser || {}), ...(dashData?.user || {}) };
   const manager = (Array.isArray(authUser?.careTeam) ? authUser.careTeam : []).find(m => m.kind === 'healthManager');
@@ -323,6 +332,10 @@ export default function HomePage() {
       Taro.showToast({ title: e.message || '操作失败', icon: 'none' });
     }
   };
+
+  if (archive.loading || archive.error || archive.subject) {
+    return <FamilySubjectView archive={archive} section="home" statusBarHeight={statusBarHeight} />;
+  }
 
   return (
     <ScrollView scrollY style={{ minHeight: '100vh', backgroundColor: colors.background }}>
