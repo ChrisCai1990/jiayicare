@@ -230,7 +230,21 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     clearInterval(listPollRef.current); listPollRef.current = null;
     if (!paymentActivityRef.current) { setShowNotif(false); setDetailMsg(null); }
   });
-  useEffect(() => () => { clearInterval(listPollRef.current); listRequestRef.current += 1; }, []);
+  // Switching from a family member to self mounts this component while the
+  // tab is already visible. Taro does not replay useDidShow for that mount.
+  // Start the inbox on mount as well, so it cannot remain at "加载中…".
+  useEffect(() => {
+    loadMessages();
+    clearInterval(listPollRef.current);
+    listPollRef.current = setInterval(() => {
+      if (!listLoadingRef.current) loadMessages();
+    }, 5000);
+    return () => {
+      clearInterval(listPollRef.current); listPollRef.current = null;
+      listRequestRef.current += 1;
+      listLoadingRef.current = false;
+    };
+  }, [loadMessages]);
   useEffect(() => { if (refreshKey) loadMessages(); }, [refreshKey, loadMessages]);
 
   // 系统消息有时也会携带 conversationId。它仍然属于用户通知，不能因为
