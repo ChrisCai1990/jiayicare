@@ -7,13 +7,13 @@ function harness(config = {}) {
   const events = [];
   let locked = false;
   const save = async function () { return this; };
-  const orders = ['a', 'b'].map((id, index) => ({ _id: id, checkoutGroupId: 'a', user: 'u', status: 'pending', paymentStatus: 'pending', tradeStatus: 'awaiting_payment', paymentExpectedAmount: index ? 318.44 : 6800, save }));
+  const orders = ['a', 'b'].map((id, index) => ({ _id: id, checkoutGroupId: 'a', user: config.family ? 'member' : 'u', payerUser: config.family ? 'u' : null, status: 'pending', paymentStatus: 'pending', tradeStatus: 'awaiting_payment', paymentExpectedAmount: index ? 318.44 : 6800, save }));
   const payments = [{ _id: 'original', outTradeNo: 'old', order: 'a', amount: 7118.44, user: 'u', status: config.paid ? 'succeeded' : 'processing', allocations: [{ order: 'a', amount: 6800 }, { order: 'b', amount: 318.44 }], save }];
   const mocks = {
     crypto: require('node:crypto'), './checkoutAmounts': require('../src/utils/checkoutAmounts'),
     '../models/Order': {
       findOneAndUpdate: async () => { if (locked) return null; locked = true; return orders[0]; },
-      updateOne: async () => { locked = false; }, find: async () => orders,
+      updateOne: async () => { locked = false; }, find: async query => { events.push(['findOrders', query]); return orders; },
       findById: async id => orders.find(o => o._id === id),
       updateMany: async (q, update) => orders.forEach(o => Object.assign(o, update.$set)),
     },
@@ -28,6 +28,7 @@ function harness(config = {}) {
     },
     './orderSettlement': { confirmPayment: async () => { events.push(['settle']); orders.forEach(o => { o.paymentStatus = 'paid'; }); } },
     './orderInventory': { releaseOrderInventory: async o => events.push(['release', o._id]) },
+    './enterpriseSharedFund': { release: async () => {} },
   };
   mocks['./wechatPay'].assertAppReady = () => {};
   mocks['./wechatPay'].createAppPayment = async args => { events.push(['appGateway', args]); return { prepayId: 'native', client: { appId: 'wx1111111111111111', prepayId: 'native' } }; };
@@ -41,6 +42,15 @@ test('retry from the second child closes old payment and charges the entire grou
   assert.equal(result.checkoutAmount, 7118.44); assert.equal(result.orderIds.length, 2);
   assert.equal(h.events.find(e => e[0] === 'gateway')[1].amount, 7118.44);
   assert.equal(h.payments[0].status, 'closed'); assert.ok(h.orders.every(o => o.paymentId === 'new'));
+});
+
+test('family group retry keeps beneficiary ownership while charging the linked payer', async () => {
+  const h = harness({ family: true });
+  await h.retryGroupPayment(h.orders[1], h.user);
+  const query = h.events.find(event => event[0] === 'findOrders')[1];
+  assert.equal(query.user, 'member');
+  assert.equal(query.payerUser, 'u');
+  assert.equal(h.payments.at(-1).user, 'u');
 });
 
 test('concurrent retry only permits one replacement payment', async () => {

@@ -9,6 +9,12 @@ function harness() {
     findOne: async query => messages.find(item => item.conversationId === query.conversationId
       && (item.action?.orderId === query.$or[0]['action.orderId']
         || item.dedupeKey === query.$or[1].dedupeKey)) || null,
+    findOneAndUpdate: async (query, update) => {
+      const existing = messages.find(item => item.dedupeKey === query.dedupeKey);
+      if (existing) return existing;
+      messages.push(update.$setOnInsert);
+      return update.$setOnInsert;
+    },
     create: async item => { messages.push(item); return item; },
   };
   const mocks = {
@@ -42,4 +48,16 @@ test('identical confirmation copy from separate paid orders is not treated as on
   await h.ensureOrderPlannerPrompt({ ...base, _id: 'second' });
   assert.equal(h.messages.length, 2);
   assert.equal(h.messages[0].content, h.messages[1].content);
+});
+
+test('paid family order sends one planner message to the beneficiary and one to the payer', async () => {
+  const h = harness();
+  const order = { _id: 'family-order', user: 'member', payerUser: 'payer', beneficiaryName: '小明',
+    serviceName: '健康服务', paymentStatus: 'paid', tradeStatus: 'paid' };
+  await h.ensureOrderPlannerPrompt(order);
+  await h.ensureOrderPlannerPrompt(order);
+  assert.equal(h.messages.length, 2);
+  assert.deepEqual(h.messages.map(item => item.user), ['payer', 'member']);
+  assert.equal(h.messages[0].action.beneficiaryUserId, 'member');
+  assert.match(h.messages[0].content, /小明.*已收到.*订单/);
 });

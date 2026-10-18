@@ -54,6 +54,7 @@ function harness(config = {}) {
     './healthFundPayment': { deductHealthFund: async ({ order }) => { if (failFundOnce) { failFundOnce = false; throw new Error('fund temporary'); } events.push(['fund', order._id]); }, reverseHealthFund: async ({ order }) => events.push(['reverseFund', order._id]) },
     './medicalReminderWorkflow': { isMedicalReminderOrder: () => false },
     './orderPlannerConversation': { isMedicationProxyOrder: () => false, ensureOrderPlannerPrompt: async o => prompts.add(o._id) },
+    './ibdServiceTerms': { ensurePeriod: () => {}, isIbdOrder: () => false },
     './orderSupplementArchive': { ensureOrderSupplementDraft: async () => {} },
     './commissionSettlement': { settleReferralCommission: async () => {} },
     './commissionLifecycle': { cancelOrderCommissions: async () => {} },

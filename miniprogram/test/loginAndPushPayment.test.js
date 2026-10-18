@@ -9,7 +9,7 @@ const read = file => fs.readFileSync(path.join(__dirname, '../src', file), 'utf8
 test('login cancel is available without consent or phone and returns to public home', async () => {
   const actions = [];
   const React = { createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
-    useState: init => [typeof init === 'function' ? init() : init, () => {}] };
+    useState: init => [typeof init === 'function' ? init() : init, () => {}], useEffect() {} };
   const Taro = { useLoad() {}, useShareAppMessage() {}, removeStorageSync: key => actions.push(['remove', key]),
     switchTab: options => { actions.push(['home', options.url]); return Promise.resolve(); } };
   const mocks = {
@@ -37,10 +37,10 @@ function checkout(result, overrides = {}) {
   const start = source.indexOf('  const handlePay = async', source.indexOf('function ProductPushDetail'));
   const end = source.indexOf('\n  if (paid)', start);
   const events = [];
-  const ctx = { checkedIds: ['product-1'], msg: { _id: 'push-1' }, fundApplied: 0, couponId: null, payMethod: 'wechat',
+  const ctx = { checkedIds: ['product-1'], msg: { _id: 'push-1' }, familyPayment: false, fundApplied: 0, useSharedFund: false, couponId: null, payMethod: 'wechat',
     payingRef: { current: false }, paymentActivityRef: { current: false }, pendingOrderId: '', finalPrice: 6800, setCheckoutQuote: value => events.push(['quote', value]), setPendingOrderId: () => {},
     setPaying: value => events.push(['paying', value]), setPayError: value => events.push(['error', value]), setPaid: value => events.push(['paid', value]),
-    pushRecordsAPI: { pay: async (id, params) => { events.push(['create', params.paymentCapability]); return result; } },
+    pushRecordsAPI: { pay: async (id, params) => { events.push(['create', params.paymentCapability, params.beneficiaryUserId]); return result; } },
     requestWechatPayment: async () => { events.push(['cashier']); }, waitForPayment: async () => { events.push(['confirmed']); }, ...overrides };
   vm.runInNewContext(`${source.slice(start, end)}\nthis.pay = handlePay;`, ctx);
   return { events, run: () => ctx.pay() };
@@ -50,7 +50,15 @@ test('pushed product opens cashier and waits for server confirmation before succ
   const h = checkout({ success: true, data: { orderId: 'order-1', paymentParams: { package: 'prepay_id=1', paySign: 'signed' } } });
   await h.run();
   assert.deepEqual(h.events.filter(row => ['create', 'cashier', 'confirmed', 'paid'].includes(row[0])),
-    [['create', 'wechat_jsapi_v1'], ['cashier'], ['confirmed'], ['paid', true]]);
+    [['create', 'wechat_jsapi_v1', ''], ['cashier'], ['confirmed'], ['paid', true]]);
+});
+
+test('family push uses the same cashier while keeping the beneficiary on the order request', async () => {
+  const h = checkout({ success: true, data: { orderId: 'family-order', paymentParams: { package: 'prepay_id=2' } } },
+    { msg: { _id: 'family-push', beneficiaryUserId: 'family-member' }, familyPayment: true });
+  await h.run();
+  assert.deepEqual(h.events.filter(row => ['create', 'cashier', 'confirmed', 'paid'].includes(row[0])),
+    [['create', 'wechat_jsapi_v1', 'family-member'], ['cashier'], ['confirmed'], ['paid', true]]);
 });
 
 test('cancelled payment and delayed server confirmation never display paid', async () => {

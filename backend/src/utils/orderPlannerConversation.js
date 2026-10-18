@@ -64,6 +64,7 @@ async function ensureOrderPlannerPrompt(order) {
   if (!order?._id || !order.user) return null;
   const content = buildOrderPlannerPrompt(order);
   if (!content) return null;
+  await ensureFamilyPayerPrompt(order);
   const conversationId = `${order.user}_planner`;
   const existing = await Message.findOne({
     conversationId,
@@ -86,6 +87,28 @@ async function ensureOrderPlannerPrompt(order) {
   }
 }
 
+// A family payer receives the same payment-confirmed planner message in their
+// own conversation; the beneficiary keeps the original message and order.
+async function ensureFamilyPayerPrompt(order) {
+  if (!order?._id || !order.payerUser || String(order.payerUser) === String(order.user)) return null;
+  const content = buildOrderPlannerPrompt(order);
+  if (!content) return null;
+  const beneficiaryUserId = String(order.user);
+  const payerUserId = String(order.payerUser);
+  const dedupeKey = `order-planner-family-payer:${order._id}`;
+  try {
+    return await Message.findOneAndUpdate({ dedupeKey }, { $setOnInsert: {
+      user: order.payerUser, type: 'planner', sender: 'AI健康规划师', title: '家庭成员订单服务确认',
+      content: `家庭成员${order.beneficiaryName ? `“${order.beneficiaryName}”` : ''}的服务：${content}`,
+      conversationId: `${payerUserId}_planner`, isAI: true, aiGenerated: false, unread: true,
+      dedupeKey, action: { type: 'order_planner_confirmation', orderId: String(order._id), beneficiaryUserId },
+    } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    return Message.findOne({ dedupeKey });
+  }
+}
+
 async function latestOpenOrderConversationAction(userId, conversationId) {
   // 客户回复应跟随最近一次实际发生的订单沟通。只找系统确认提示会在多订单
   // 并行时把客户对规划师方案的回复错误标到另一笔订单，随后被“仅看本单”隐藏。
@@ -99,7 +122,7 @@ async function latestOpenOrderConversationAction(userId, conversationId) {
   if (!orderId) return undefined;
   const orderExists = await Order.exists({
     _id: orderId,
-    user: userId,
+    $or: [{ user: userId }, { payerUser: userId }],
     status: { $in: ['pending', 'scheduled'] },
     tradeStatus: { $in: ['paid', 'fulfilling', 'partially_refunded'] },
   });
@@ -115,4 +138,4 @@ function normalizeIntakeResult(input = {}, previous = {}) {
   return result;
 }
 
-module.exports = { customerOrderNote, extractExplicitServiceTime, isPaidActiveOrder, isMedicationProxyOrder, isNutritionDeliveryOrder, buildOrderPlannerPrompt, ensureOrderPlannerPrompt, latestOpenOrderConversationAction, normalizeIntakeResult };
+module.exports = { customerOrderNote, extractExplicitServiceTime, isPaidActiveOrder, isMedicationProxyOrder, isNutritionDeliveryOrder, buildOrderPlannerPrompt, ensureOrderPlannerPrompt, ensureFamilyPayerPrompt, latestOpenOrderConversationAction, normalizeIntakeResult };

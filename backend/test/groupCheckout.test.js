@@ -11,6 +11,7 @@ function harness(config = {}) {
   const items = [{ productId: 'a', name: '营养改变生活', price: 6800 }, { productId: 'b', name: '维生素D', price: 318.44 }];
   const products = items.map(item => ({ _id: item.productId, status: 'on', paymentChannel: 'wechat_pay', fulfillmentType: 'delivery_and_service', category: '营养', ...(config.products?.[item.productId] || {}) }));
   const user = { _id: 'u', wechatMpOpenid: 'openid' };
+  const serviceUser = config.serviceUser || user;
   const record = { _id: 'push', staffId: 'doctor', servicePerformers: [{ productId: 'a', role: 'nutritionist', staffId: 'n1' }, { productId: 'b', role: 'nutritionist', staffId: 'n2' }] };
   const save = async function () { return this; };
   const mocks = {
@@ -34,7 +35,7 @@ function harness(config = {}) {
       return config.fundEligible !== false;
     } },
     './orderInventory': { reserveProduct: async p => { events.push(['reserve', p._id]); return { reserved: config.soldOut !== p._id, available: config.soldOut !== p._id }; }, releaseOrderInventory: async o => events.push(['release', o.serviceId]) },
-    './serviceOwnership': { resolveOrderWorkflowAssignee: async () => 'planner', orderOwnershipFields: () => ({ supervisorId: 'planner' }) },
+    './serviceOwnership': { resolveOrderWorkflowAssignee: async id => { if (config.onAssignee) config.onAssignee(id); return 'planner'; }, orderOwnershipFields: () => ({ supervisorId: 'planner' }) },
     './wechatPay': { createJsapiPayment: async args => { events.push(['gateway', args]); if (config.gatewayError) throw new Error('timeout'); return { prepayId: 'prepay', client: { package: 'prepay_id=prepay', paySign: 'sig' } }; } },
     './orderSettlement': { confirmPayment: async () => { events.push(['settlement']); if (config.settlementError) throw new Error('temporary failure'); } },
   };
@@ -43,8 +44,18 @@ function harness(config = {}) {
   const ctx = { process: { env: { WECHAT_APP_APPID: 'wx1111111111111111' } }, module: { exports: {} }, require: name => { if (!(name in mocks)) throw new Error(name); return mocks[name]; } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/utils/pushGroupCheckout'), 'utf8'), ctx);
   return { ...ctx.module.exports, events, orders, payments, items, products, user, record,
-    run: options => ctx.module.exports.createPushGroupCheckout({ record, user, items, options: { paymentMethod: 'wechat', ...(options || {}) } }) };
+    run: options => ctx.module.exports.createPushGroupCheckout({ record, user, serviceUser, items, options: { paymentMethod: 'wechat', ...(options || {}) } }) };
 }
+
+test('family group purchase charges the payer and assigns both orders to the beneficiary planner', async () => {
+  const assignees = [];
+  const h = harness({ serviceUser: { _id: 'family-member', name: '小明', tenantId: 'tenant' }, onAssignee: id => assignees.push(id) });
+  const result = await h.run({ expectedAmount: 7118.44 });
+  assert.equal(result.success, true);
+  assert.deepEqual(assignees, ['family-member', 'family-member']);
+  assert.ok(h.orders.every(order => order.user === 'family-member' && order.payerUser === 'u' && order.beneficiaryName === '小明' && order.supervisorId === 'planner'));
+  assert.equal(h.payments[0].user, 'u');
+});
 
 test('largest-remainder cents allocation conserves money, including one-cent and large values', () => {
   for (const capacities of [[680000, 31844], [1, 1, 1], [0, 11, 0], [900000000, 100000001]]) {

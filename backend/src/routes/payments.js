@@ -102,7 +102,8 @@ router.get('/:orderId/status', auth, async (req, res) => {
   const latestPayment = await Payment.findOne(paymentOrderQuery(order._id)).sort({ createdAt: -1 });
   let checkoutPaid = fresh.paymentStatus === 'paid';
   if (latestPayment?.allocations?.length) {
-    const group = await Order.find({ _id: { $in: paymentAllocations(latestPayment).map(row => row.order) }, user: req.user._id });
+    const group = await Order.find({ _id: { $in: paymentAllocations(latestPayment).map(row => row.order) },
+      user: order.user, payerUser: order.payerUser || null });
     checkoutPaid = group.length === latestPayment.allocations.length && group.every(item => ['paid', 'refunded'].includes(item.paymentStatus));
   }
   res.json({ success: true, data: { order: fresh, payment: latestPayment, checkoutPaid } });

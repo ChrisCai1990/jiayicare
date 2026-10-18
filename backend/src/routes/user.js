@@ -1455,9 +1455,17 @@ router.post('/push-records/:id/shared-fund-quote', auth, async (req, res) => {
 // useHealthFund: 抵扣的健康基金金额（作用于勾选产品合计）；couponId: 使用的优惠券；paymentMethod: 支付方式
 router.post('/push-records/:id/pay', auth, async (req, res) => {
   try {
-    const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id });
+    const beneficiaryUserId = String(req.body.beneficiaryUserId || '');
+    const serviceUser = beneficiaryUserId && beneficiaryUserId !== String(req.user._id)
+      ? await require('../utils/orderBeneficiary').resolveOrderBeneficiary(req.user, beneficiaryUserId)
+      : req.user;
+    if (!serviceUser) return res.status(403).json({ success: false, message: '无权为该家庭成员购买服务' });
+    const familyPayment = String(serviceUser._id) !== String(req.user._id);
+    const record = await PushRecord.findOne({ _id: req.params.id, patientId: serviceUser._id, type: 'product' });
     if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
     const { selectedProductIds, useHealthFund, useEnterpriseSharedFund, couponId, paymentMethod, paymentCapability } = req.body;
+    if (familyPayment && (Number(useHealthFund) > 0 || useEnterpriseSharedFund || couponId))
+      return res.status(400).json({ success: false, message: '家庭代付暂不使用本人优惠券或基金，请使用微信支付' });
     if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
     if (!Array.isArray(selectedProductIds) || !selectedProductIds.length) return res.status(400).json({ success: false, message: '请选择要购买的产品' });
     // Released clients before 1.0.166 never call requestPayment and would show
@@ -1483,7 +1491,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     if (selectedIdSet.size !== toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中或存在重复，请重新选择' });
     if (toPay.length > 1) {
       try {
-        const result = await require('../utils/pushGroupCheckout').createPushGroupCheckout({ record, user: req.user, items: toPay, options: req.body });
+        const result = await require('../utils/pushGroupCheckout').createPushGroupCheckout({ record, user: req.user, serviceUser, items: toPay, options: req.body });
         return res.json(result);
       } catch (error) { return res.status(error.status || 500).json({ success: false, message: error.message || '合并下单失败' }); }
     }
@@ -1566,7 +1574,10 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       paid = Math.max(0, paid);
       allocated += paid;
       return {
-        user: req.user._id,
+        user: serviceUser._id,
+        payerUser: req.user._id,
+        beneficiaryName: serviceUser.name || '',
+        tenantId: serviceUser.tenantId || null,
         serviceId: p.productId,
         serviceName: p.name,
         servicePrice: p.price,
@@ -1590,7 +1601,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     // 先完成负责人预检，避免订单创建成功后才发现无人承接而静默掉单。
     const orderAssignees = [];
     for (const orderDoc of orderDocs) {
-      const assignee = await resolveOrderWorkflowAssignee(req.user._id, orderDoc.serviceName);
+      const assignee = await resolveOrderWorkflowAssignee(serviceUser._id, orderDoc.serviceName);
       if (!assignee) return res.status(409).json({ success: false, message: '当前没有可用的服务负责人，请联系平台处理后再购买' });
       orderAssignees.push(assignee);
     }
@@ -1608,7 +1619,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     // opening WeChat Pay. Close those placeholders when the member retries so
     // the genuine payment flow cannot leave duplicate orders/tasks behind.
     const legacyOrders = await Order.find({
-      user: req.user._id,
+      user: serviceUser._id,
       pushRecordId: record._id,
       serviceId: toPay[0].productId,
       paymentStatus: 'unpaid',
@@ -1705,7 +1716,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         followUps.push(FollowUp.create({
           staffId:   followUpStaffId,
           assignedTo: followUpStaffId,
-          patientId: req.user._id,
+          patientId: serviceUser._id,
           type:      'other',
           status:    'planned',
           theme:     `预约：${order.serviceName}`,
@@ -1720,6 +1731,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
 
     orders[0].paidAt = new Date();
     await orders[0].save();
+    await require('../utils/orderPlannerConversation').ensureOrderPlannerPrompt(orders[0]);
     res.json({
       success: true,
       data: { orderId: orders[0]._id, paymentStatus: 'paid' },

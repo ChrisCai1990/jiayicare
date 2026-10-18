@@ -464,7 +464,6 @@ function NotifModal({ messages, tab, setTab, onClose, onPress, loadError, onRetr
 
 function MessageDetailModal({ msg, onClose, paymentActivityRef }) {
   if (msg.type === 'product') {
-    if (msg.beneficiaryUserId) return <FamilyProductPushDetail msg={msg} onClose={onClose} />;
     return <ProductPushDetail msg={msg} onClose={onClose} paymentActivityRef={paymentActivityRef} />;
   }
   const conf = NOTIF_TYPE_CONFIG[msg.type] || { icon: '💬', color: colors.primary };
@@ -507,32 +506,8 @@ function MessageDetailModal({ msg, onClose, paymentActivityRef }) {
 
 const RENEWAL_PAYMENT_METHODS = [{ key: 'wechat', label: '微信支付' }];
 
-function FamilyProductPushDetail({ msg, onClose }) {
-  const products = msg.products?.length ? msg.products
-    : msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price }] : [];
-  const buy = productId => {
-    onClose();
-    Taro.navigateTo({ url: `/pages/services/mall/index?productId=${encodeURIComponent(productId)}&beneficiaryUserId=${encodeURIComponent(msg.beneficiaryUserId)}&pushRecordId=${encodeURIComponent(msg._id)}` });
-  };
-  return (
-    <View style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
-      <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', boxSizing: 'border-box' }}>
-        <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>为家庭成员推荐的服务</Text>
-        <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '6px' }}>选择产品并提交购买后，订单会归入该家庭成员的服务档案。</Text>
-        {products.map(product => <View key={product.productId} style={{ padding: '12px 0', borderBottom: `1px solid ${colors.borderLight}` }}>
-          <Text style={{ fontSize: '14px', color: colors.textPrimary, display: 'block' }}>{product.name || msg.productName}</Text>
-          {product.price != null && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>推荐价 ¥{Number(product.price).toFixed(2)}</Text>}
-          <View onClick={() => buy(product.productId)} style={{ padding: '9px 14px', backgroundColor: colors.primary, borderRadius: `${radius.sm}px`, alignSelf: 'flex-start', marginTop: '8px' }}>
-            <Text style={{ color: '#fff', fontSize: '13px' }}>为TA购买</Text>
-          </View>
-        </View>)}
-        <View onClick={onClose} style={{ padding: '14px', textAlign: 'center' }}><Text style={{ color: colors.primary }}>关闭</Text></View>
-      </View>
-    </View>
-  );
-}
-
 function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false } }) {
+  const familyPayment = !!msg.beneficiaryUserId;
   const { user, updateUser } = useAuth();
   const productList = (msg.products && msg.products.length > 0)
     ? msg.products
@@ -557,6 +532,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
   const [couponId, setCouponId] = useState(null);
 
   useEffect(() => {
+    if (familyPayment) return;
     Promise.all([servicesAPI.coupons(), userAPI.getMe()]).then(([couponRes, userRes]) => {
       if (couponRes.success) setCoupons(couponRes.data || []);
       if (userRes.success) { setCheckoutUser(userRes.data); updateUser(userRes.data); }
@@ -577,6 +553,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((total - couponDiscount) * 100) / 100);
   useEffect(() => {
+    if (familyPayment) { setSharedQuote(0); return; }
     if (!checkedIds.length) { setSharedQuote(0); return; }
     let live = true;
     setSharedQuote(0);
@@ -586,8 +563,8 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
   const fundMaximum = checkedItems.length === 1
     ? (checkedItems[0].fundProduct ? maxSingleFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems[0].fundProduct) : 0)
     : maxGroupFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems);
-  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
-  const sharedApplied = useSharedFund ? sharedQuote : 0;
+  const fundApplied = !familyPayment && useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
+  const sharedApplied = !familyPayment && useSharedFund ? sharedQuote : 0;
   const finalPrice = checkoutQuote?.finalPrice ?? Math.max(0, Math.round((priceAfterCoupon - fundApplied - sharedApplied) * 100) / 100);
 
   const handlePay = async () => {
@@ -597,7 +574,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     paymentActivityRef.current = true;
     setPaying(true); setPayError('');
     try {
-      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, useEnterpriseSharedFund: useSharedFund, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
+      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, beneficiaryUserId: msg.beneficiaryUserId || '', useHealthFund: fundApplied, useEnterpriseSharedFund: !familyPayment && useSharedFund, couponId: familyPayment ? null : couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
       if (result.code === 'CHECKOUT_QUOTE_CHANGED') { setCheckoutQuote(result.summary); throw new Error(result.message); }
       if (!result.success) throw new Error(result.message || '下单失败，请稍后重试');
       if (result.summary) setCheckoutQuote(result.summary);
@@ -641,7 +618,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
       <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
-          <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>为您推荐以下产品</Text>
+          <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{familyPayment ? '为家庭成员推荐以下产品' : '为您推荐以下产品'}</Text>
           {productList.length > 1 && <Text onClick={() => {
             if (payingRef.current) return;
             setCheckoutQuote(null);
@@ -676,7 +653,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
           })}
         </ScrollView>
 
-        {(
+        {!familyPayment && (
           <View style={{ marginBottom: `${spacing.sm}px` }}>
             <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>抵用券</Text>
             {coupons.length === 0 && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>当前账户暂无可用抵用券</Text>}
@@ -695,7 +672,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
           </View>
         )}
 
-        {fundBalance > 0 && fundMaximum > 0 && (
+        {!familyPayment && fundBalance > 0 && fundMaximum > 0 && (
           <View style={{ marginBottom: `${spacing.sm}px` }}>
             <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary }}>健康基金抵扣（余额¥{fundBalance.toFixed(2)}）</Text>
@@ -714,7 +691,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
           </View>
         )}
 
-        {sharedQuote > 0 && <View onClick={() => { if (payingRef.current) return; setCheckoutQuote(null); const next = !useSharedFund; setUseSharedFund(next); if (next) setUseFund(false); }} style={{ padding: '10px 12px', marginBottom: `${spacing.sm}px`, border: `1px solid ${useSharedFund ? colors.primary : colors.border}`, borderRadius: `${radius.md}px` }}>
+        {!familyPayment && sharedQuote > 0 && <View onClick={() => { if (payingRef.current) return; setCheckoutQuote(null); const next = !useSharedFund; setUseSharedFund(next); if (next) setUseFund(false); }} style={{ padding: '10px 12px', marginBottom: `${spacing.sm}px`, border: `1px solid ${useSharedFund ? colors.primary : colors.border}`, borderRadius: `${radius.md}px` }}>
           <Text style={{ fontSize: '12px', color: colors.textPrimary }}>企业共享基金可抵 ¥{sharedQuote.toFixed(2)} · {useSharedFund ? '已启用' : '点击使用'}（最高 50%）</Text>
         </View>}
 
