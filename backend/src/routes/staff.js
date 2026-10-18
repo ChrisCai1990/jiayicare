@@ -113,6 +113,7 @@ const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = r
 const { rotateImageBuffer, reportRotationCandidates } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
 const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = require('../utils/reportSourceOrder');
+const { findUnderExtractedPages } = require('../utils/reportPanelCount');
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
@@ -16049,22 +16050,8 @@ async function removeBodyCompositionFromReturnedReport(userId, reportId) {
   throw new Error('身体成分历史正在变化，请刷新后重试撤回派生数据');
 }
 
-// 从检验单标题解析出"应有条数"，如"抗核抗体谱15项"→15，"肝功能八项"→8，中文数字/阿拉伯数字都支持
-const CN_NUM = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
-function parseExpectedCount(orderName) {
-  const s = String(orderName || '');
-  const m = s.match(/([0-9]+|[一二两三四五六七八九十]+)\s*项/);
-  if (!m) return null;
-  const raw = m[1];
-  if (/^[0-9]+$/.test(raw)) return parseInt(raw, 10);
-  if (raw.length === 1) return CN_NUM[raw] || null;
-  if (raw.length === 2 && raw[0] === '十') return 10 + (CN_NUM[raw[1]] || 0);
-  if (raw.length === 2 && raw[1] === '十') return (CN_NUM[raw[0]] || 0) * 10;
-  return null;
-}
-
 // 血常规是全国最标准化的检验套餐之一，项目基本固定，但检验单标题常写成"血细胞分析"这类不带"N项"
-// 数字后缀的名字，findUnderExtractedPages 靠标题解析条数的机制覆盖不到，只能用一份预期项目清单兜底。
+// 数字后缀的名字，按标题解析条数的机制覆盖不到，只能用一份预期项目清单兜底。
 // 每组用"其中一个变体名出现即算命中"，兼容不同机构的缩写/全称差异。
 const CBC_EXPECTED_GROUPS = [
   ['白细胞计数', 'WBC'],
@@ -16095,27 +16082,6 @@ function findUnderExtractedCBC(items) {
       .map(it => it._page).filter(Boolean)
   );
   return { pagesToRetry: [...pages], missingGroups: missingGroups.map(g => g[0]) };
-}
-
-// 检查按检验单分组后，是否有组的实际条数少于标题声明的条数（如"抗核抗体谱15项"只提取到1条）；
-// 有则返回需要重新识别的页码集合（同一页可能命中多个不足的检验单，去重）
-function findUnderExtractedPages(items) {
-  const byOrder = new Map();
-  (items || []).forEach(it => {
-    const on = str(it.orderName);
-    if (!on) return;
-    if (!byOrder.has(on)) byOrder.set(on, []);
-    byOrder.get(on).push(it);
-  });
-  const pagesToRetry = new Set();
-  const underOrders = [];
-  for (const [orderName, group] of byOrder) {
-    const expected = parseExpectedCount(orderName);
-    if (!expected || group.length >= expected) continue;
-    underOrders.push({ orderName, expected, actual: group.length });
-    group.forEach(it => { if (it._page) pagesToRetry.add(it._page); });
-  }
-  return { pagesToRetry: [...pagesToRetry], underOrders };
 }
 
 function scheduleReportParse(reportId, { resumed = false } = {}) {
@@ -16231,7 +16197,7 @@ async function runReportParseControlled(reportId) {
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
-  const { hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
+  const { filterMissingReportItems, hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
@@ -16557,30 +16523,18 @@ async function runReportParseControlled(reportId) {
         console.log(`[parse-ai] 数量核对不通过 ${reportId}：${underOrders.map(o => `${o.orderName}(应${o.expected}实${o.actual})`).join('、')}，重试页${pagesToRetry.join(',')}`);
         for (const pageNum of pagesToRetry) {
           try {
-            const img = await renderSinglePage(pdfBuf, pageNum, DPI);
+            const img = await renderSinglePage(pdfBuf, pageNum, 200);
             if (!img) continue;
-            const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到条数明显少于标题声明数量的检验单：${underOrders.filter(o => allItems.some(it => it._page === pageNum && it.orderName === o.orderName)).map(o => `"${o.orderName}"（标题写${o.expected}项，之前只提取到${o.actual}项）`).join('、')}。请重新逐行核对该检验单在图片中的每一行，确保每一个子项都单独输出一条，不得合并、省略或遗漏任何一行，即使多行结果完全相同（如都是阴性）也要逐条列出。`;
-            const text = await parseImage(img, retryPrompt, { sourcePage: pageNum, isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+            const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页检验栏目条数少于原件标题：${underOrders.filter(o => o.pages.includes(pageNum)).map(o => `"${o.orderName}"（标题写${o.expected}项，已找到${o.actual}项）`).join('、')}。请重新逐行核对原图，正常项和带↑↓等异常标记的项目都要按同一行的名称、结果、单位、参考范围分别输出；看不清的内容不要猜。`;
+            const text = await parseImage(img, retryPrompt, { sourcePage: pageNum, isUrl: false, model: VL_MODEL, maxTokens: 8192, timeoutMs: 120000 });
             const p = safeParseJSON(text);
             if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
-            const retryItems = tagReportPageItems(p.items, pageNum);
-            // 按检验单标题替换：只替换这一页里、这次重试确实提取到更多条数的那些检验单，其余保留原结果，避免"重试反而更差"
-            const retryByOrder = new Map();
-            retryItems.forEach(it => {
-              const on = str(it.orderName);
-              if (!on) return;
-              if (!retryByOrder.has(on)) retryByOrder.set(on, []);
-              retryByOrder.get(on).push(it);
-            });
-            let improvedOrders = [];
-            for (const [on, newGroup] of retryByOrder) {
-              const oldCount = allItems.filter(it => it._page === pageNum && str(it.orderName) === on).length;
-              if (newGroup.length > oldCount) improvedOrders.push(on);
-            }
-            if (improvedOrders.length) {
-              allItems = allItems.filter(it => !(it._page === pageNum && improvedOrders.includes(str(it.orderName))));
-              improvedOrders.forEach(on => { allItems = allItems.concat(retryByOrder.get(on)); });
-              console.log(`[parse-ai] 页${pageNum}重试生效：${improvedOrders.join('、')} 条数已补全`);
+            const retryItems = tagReportPageItems(p.items, pageNum).filter(it => ['lab', 'data'].includes(it.itemType) && str(it.value));
+            const oldPage = allItems.filter(it => it._page === pageNum);
+            const mergedPage = mergeCoverageAuditItems(oldPage, filterMissingReportItems(oldPage, retryItems));
+            if (mergedPage.length > oldPage.length) {
+              allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
+              console.log(`[parse-ai] 页${pageNum}数量复核补回${mergedPage.length - oldPage.length}项`);
             } else {
               console.log(`[parse-ai] 页${pageNum}重试未改善，保留原结果`);
             }
