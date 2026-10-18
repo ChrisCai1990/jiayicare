@@ -12349,6 +12349,36 @@ router.post('/patients/:id/ai-health-summary/refresh-overview', staffAuth, async
 });
 
 // ── 4.4 AI健康汇总分析：审核/更新 ────────────────────────────────
+// Preview the exact evidence conflicts that would block approval of this record.
+router.get('/patients/:id/ai-health-summary/review-conflicts', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin', 'platformSuper'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '无5维分析审核权限' });
+    }
+    const year = String(req.query.year || '');
+    const token = String(req.query.token || '');
+    if (!/^\d{4}$/.test(year) || !/^[a-f0-9]{64}$/.test(token)) {
+      return res.status(400).json({ success: false, message: '分析年度或记录版本无效' });
+    }
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) {
+      return res.status(403).json({ success: false, message: '无权查看该会员' });
+    }
+    const user = await User.findById(req.params.id).select('aiHealthSummary').lean();
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    const summary = user.aiHealthSummary || {};
+    const yearEntry = summary.byYear?.[year] || (!Object.keys(summary.byYear || {}).length && summary.sections ? summary : {});
+    const records = Array.isArray(yearEntry.records) ? yearEntry.records : (yearEntry.sections ? [yearEntry] : []);
+    const index = resolveReviewRecord(records, token);
+    if (index < 0) return res.status(409).json({ success: false, message: '该分析记录已变化，请刷新后重新核对' });
+    const { reportsThroughYear } = require('../utils/historicalAIHealthContext');
+    const { findTumorMarkerConflicts } = require('../utils/tumorMarkerFactGuard');
+    const allReports = await MedicalReport.find({ user: req.params.id })
+      .select('checkDate date reportYear reportItems').lean();
+    const sourceReports = Number(year) < new Date().getFullYear() ? reportsThroughYear(allReports, Number(year)) : allReports;
+    res.json({ success: true, conflicts: findTumorMarkerConflicts(records[index].sections || {}, sourceReports) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 // PATCH /api/staff/patients/:id/ai-health-summary
 router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
@@ -12402,7 +12432,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       const now = new Date();
       const isSuper = req.staff.role === 'superadmin';
       if (sc === 'doctor' || sc === 'all' || (sectionKey && sectionKey !== LIFESTYLE_KEY)) {
-        const { findUnsupportedTumorMarkerElevation } = require('../utils/tumorMarkerFactGuard');
+        const { findTumorMarkerConflicts } = require('../utils/tumorMarkerFactGuard');
         const { reportsThroughYear } = require('../utils/historicalAIHealthContext');
         const allReports = await MedicalReport.find({ user: req.params.id })
           .select('checkDate date reportYear reportItems').lean();
@@ -12412,14 +12442,15 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         const reviewSections = sectionKey
           ? { [sectionKey]: entry.sections?.[sectionKey] }
           : entry.sections;
-        const unsupported = findUnsupportedTumorMarkerElevation(reviewSections, sourceReports);
+        const conflicts = findTumorMarkerConflicts(reviewSections, sourceReports);
+        const unsupported = conflicts[0];
         if (unsupported) {
           const blockedSectionKey = sectionKey || DOCTOR_KEYS.find(key =>
-            findUnsupportedTumorMarkerElevation({ [key]: entry.sections?.[key] }, sourceReports));
+            findTumorMarkerConflicts({ [key]: entry.sections?.[key] }, sourceReports).length);
           const sectionLabel = { medical_priority: '优先关注问题', tumor_risk: '肿瘤筛查', cardiovascular_risk: '心脑血管',
             chronic_disease: '慢病', checkup_completeness: '体检资料覆盖' }[blockedSectionKey] || '当前分析';
-          return res.status(422).json({ success: false, blockedSectionKey,
-            message: `${sectionLabel}中“${unsupported.claim.slice(0, 60)}”缺少${unsupported.marker}检验数值与参考范围依据；请修正该板块后再审核` });
+          return res.status(422).json({ success: false, blockedSectionKey, conflicts,
+            message: `${sectionLabel}中“${unsupported.claim.slice(0, 60)}”缺少可支持该结论的${unsupported.marker}检验数值与参考范围依据；请修正该板块后再审核` });
         }
       }
       if (sectionKey) {

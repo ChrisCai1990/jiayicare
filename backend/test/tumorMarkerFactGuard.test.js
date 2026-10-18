@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation, upperReference } = require('../src/utils/tumorMarkerFactGuard');
+const { classifyTumorMarkerItem, findTumorMarkerConflicts, findUnsupportedTumorMarkerElevation, upperReference } = require('../src/utils/tumorMarkerFactGuard');
 const { extractTumorMarkers, buildTumorMarkerText } = require('../src/utils/labFromScreening');
 const { buildEvidenceCatalog } = require('../src/utils/aiFactGuard');
 
@@ -34,6 +34,21 @@ test('an old elevation cannot justify a current elevated claim after recent norm
   const reports = [report('2018-05-01', '11.3'), report('2026-09-23', '9.05', '<19.10')];
   assert.equal(findUnsupportedTumorMarkerElevation(summary('CA72-4升高'), reports).marker, 'CA72-4');
   assert.equal(findUnsupportedTumorMarkerElevation(summary('CA72-4曾于2018年升高'), reports), null);
+});
+
+test('review preview names the AI claim and shows printed values and ranges', () => {
+  const reports = [report('2018-04-01', '11.3', '0-6.9'), report('2021-07-01', '23.470', '0-6.90'),
+    report('2024-07-01', '4.80', '<19.10'), report('2025-07-13', '9.28', '<19.10'),
+    report('2026-09-23', '9.05', '<19.10')];
+  const conflicts = findTumorMarkerConflicts({ tumor_risk: {
+    abnormal: ['CA72-4近年持续高于参考上限'], summary: 'CA72-4近期偏高',
+  } }, reports);
+  assert.equal(conflicts.length, 2);
+  assert.equal(conflicts[0].path, 'tumor_risk.abnormal[0]');
+  assert.equal(conflicts[0].reason, 'latest_not_elevated');
+  assert.deepEqual(conflicts[0].evidence.slice(0, 2).map(point => [point.value, point.referenceRange, point.classification]),
+    [['9.05', '<19.10', 'normal'], ['9.28', '<19.10', 'normal']]);
+  assert.equal(conflicts[0].evidence.at(-1).classification, 'elevated');
 });
 
 test('combined OCR rows cannot substantiate one marker elevation', () => {

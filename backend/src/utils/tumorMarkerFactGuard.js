@@ -37,24 +37,29 @@ function markerPoints(reports, marker) {
       && MARKERS.filter(candidate => candidate.pattern.test(String(item.name || ''))).length === 1).map(item => {
     return {
       date: String(report.checkDate || report.date || '').slice(0, 10),
+      value: String(item.value ?? '').trim(),
+      referenceRange: String(item.referenceRange ?? '').trim(),
+      classification: classifyTumorMarkerItem(item),
       elevated: classifyTumorMarkerItem(item) === 'elevated',
     };
   }));
 }
 
-function collectText(value, output = []) {
-  if (typeof value === 'string') output.push(value);
-  else if (Array.isArray(value)) value.forEach(item => collectText(item, output));
+function collectText(value, output = [], path = '') {
+  if (typeof value === 'string') output.push({ text: value, path });
+  else if (Array.isArray(value)) value.forEach((item, index) => collectText(item, output, `${path}[${index}]`));
   else if (value && typeof value === 'object') Object.entries(value).forEach(([key, item]) => {
-    if (!['sourceEvidence', 'sourceReportIds'].includes(key)) collectText(item, output);
+    if (!['sourceEvidence', 'sourceReportIds'].includes(key)) collectText(item, output, path ? `${path}.${key}` : key);
   });
   return output;
 }
 
-function findUnsupportedTumorMarkerElevation(sections, reports) {
-  const clauses = collectText(sections).flatMap(text => text.split(/[，。；;\n]/));
+function findTumorMarkerConflicts(sections, reports) {
+  const clauses = collectText(sections).flatMap(({ text, path }) =>
+    text.split(/[，。；;\n]/).map(claim => ({ claim: claim.trim(), path })));
+  const conflicts = [];
   for (const marker of MARKERS) {
-    for (const clause of clauses) {
+    for (const { claim: clause, path } of clauses) {
       if (!marker.pattern.test(clause) || !/(?:升高|增高|偏高|高于参考|超出参考)/.test(clause)) continue;
       if (/(?:未|无|不)(?:见|存在|伴有|明显)?(?:升高|增高|偏高)/.test(clause)) continue;
       const points = markerPoints(reports, marker);
@@ -63,13 +68,18 @@ function findUnsupportedTumorMarkerElevation(sections, reports) {
       const latest = points.filter(point => point.date).sort((a, b) => b.date.localeCompare(a.date))[0];
       const explicitlyHistorical = /曾|既往|早年|历史|过去|20\d{2}年/.test(clause)
         && !/目前|当前|近期|最近|现在|持续|连续|反复/.test(clause);
-      if (!elevated.length || (sustained && elevated.length < 2)
-        || (!explicitlyHistorical && !latest?.elevated)) {
-        return { marker: marker.name, claim: clause.trim() };
-      }
+      const reason = !elevated.length ? 'no_elevated_evidence'
+        : sustained && elevated.length < 2 ? 'insufficient_repeated_evidence'
+          : !explicitlyHistorical && !latest?.elevated ? 'latest_not_elevated' : null;
+      if (reason) conflicts.push({ marker: marker.name, claim: clause, path, reason,
+        evidence: points.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8) });
     }
   }
-  return null;
+  return conflicts;
 }
 
-module.exports = { MARKERS, classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation, upperReference };
+function findUnsupportedTumorMarkerElevation(sections, reports) {
+  return findTumorMarkerConflicts(sections, reports)[0] || null;
+}
+
+module.exports = { MARKERS, classifyTumorMarkerItem, findTumorMarkerConflicts, findUnsupportedTumorMarkerElevation, upperReference };

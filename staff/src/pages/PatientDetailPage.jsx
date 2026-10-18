@@ -2476,6 +2476,28 @@ export default function PatientDetailPage() {
   const [echoChamberTrend, setEchoChamberTrend] = useState({ year: '', trend: [], loading: false, error: '' })
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
+  const [aiReviewConflicts, setAiReviewConflicts] = useState({ token: '', loading: false, error: '', conflicts: [] })
+  useEffect(() => {
+    if (!id || screeningWorkspaceView !== 'analysis' || aiAnalysisView !== 'doctor') return
+    const byYear = data?.user?.aiHealthSummary?.byYear || {}
+    const year = String(aiYear || new Date().getFullYear())
+    const entry = byYear[year] || {}
+    const records = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : [])
+    const doctorRecords = records.map((record, index) => ({ record, index })).filter(({ record }) =>
+      record.scope === 'doctor' || record.scope === 'all' || (!record.scope &&
+        ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'].some(key => record.sections?.[key])))
+    const selected = doctorRecords.find(({ index }) => index === aiRecordIndex.doctor) || doctorRecords[0]
+    const token = selected?.record?._reviewToken || ''
+    if (!token) { setAiReviewConflicts({ token: '', loading: false, error: '', conflicts: [] }); return }
+    let active = true
+    setAiReviewConflicts({ token, loading: true, error: '', conflicts: [] })
+    staffAPI.getAIHealthSummaryConflicts(id, year, token).then(result => {
+      if (active) setAiReviewConflicts({ token, loading: false, error: '', conflicts: result.conflicts || [] })
+    }).catch(() => {
+      if (active) setAiReviewConflicts({ token, loading: false, error: '证据核对失败，请刷新后重试', conflicts: [] })
+    })
+    return () => { active = false }
+  }, [id, aiYear, aiRecordIndex.doctor, aiAnalysisView, screeningWorkspaceView, data?.user?.aiHealthSummary])
   useEffect(() => {
     if (!id || screeningWorkspaceView !== 'analysis' || aiAnalysisView !== 'doctor') return
     const byYear = data?.user?.aiHealthSummary?.byYear || {}
@@ -8732,6 +8754,29 @@ export default function PatientDetailPage() {
             </div>
               </div>
             </details>
+            {aiAnalysisView === 'doctor' && hasDoctorData && (() => {
+              const current = aiReviewConflicts.token === doctorRecord._reviewToken
+              const conflicts = current ? aiReviewConflicts.conflicts : []
+              const pending = !current || aiReviewConflicts.loading
+              const sectionNames = { medical_priority: '优先关注问题', tumor_risk: '肿瘤筛查', cardiovascular_risk: '心脑血管', chronic_disease: '慢病', checkup_completeness: '体检资料覆盖' }
+              return <div role="status" style={{ marginBottom: 16, padding: 14, borderRadius: 8, background: conflicts.length ? '#FFF4ED' : '#F5F8F6', border: `1px solid ${conflicts.length ? '#E6A071' : '#DBE6DF'}` }}>
+                <strong>审核前证据核对</strong>
+                {pending ? <div>正在核对原始检测值与 AI 结论…</div>
+                  : aiReviewConflicts.error ? <div style={{ color: '#A43C29' }}>{aiReviewConflicts.error}</div>
+                    : conflicts.length ? <>
+                      <div style={{ color: '#A43C29', marginTop: 6 }}>发现 {conflicts.length} 处结论与可核对的检验依据不一致，请修正后再审核。</div>
+                      {conflicts.map((item, index) => <div key={`${item.path}-${index}`} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #EDD5C7' }}>
+                        <div><strong>{sectionNames[item.path?.split('.')[0]] || '5维分析'}：</strong>“{item.claim}”</div>
+                        <div>{item.reason === 'latest_not_elevated' ? '最近一次有日期的检测值未能证明高于其报告参考上限。'
+                          : item.reason === 'insufficient_repeated_evidence' ? '“持续/反复升高”缺少至少两次超出各自参考上限的检测值。'
+                            : '现有检测值中找不到超出报告参考上限的依据。'}</div>
+                        {item.evidence?.length ? <div style={{ marginTop: 4, fontSize: 13 }}>
+                          原始检测：{item.evidence.map(row => `${row.date || '日期不详'} ${item.marker} ${row.value || '无数值'}（参考 ${row.referenceRange || '未提供'}；${row.classification === 'elevated' ? '高于上限' : row.classification === 'normal' ? '未高于上限' : '无法判定'}）`).join('；')}
+                        </div> : <div style={{ marginTop: 4, fontSize: 13 }}>未找到可核对的原始检测值。</div>}
+                      </div>)}
+                    </> : <div style={{ marginTop: 4 }}>当前未发现肿瘤标志物升高结论与检验数值的矛盾；仍需人工核对其他内容。</div>}
+              </div>
+            })()}
             {/* 操作栏 */}
             {(() => {
               // 按角色拆分审核（健康顾问审5维 / 营养师审生活方式评估；超管两者皆可）
@@ -8766,7 +8811,7 @@ export default function PatientDetailPage() {
               )}
               {/* 角色化审核按钮（仅查看模式） */}
               {!editingAISummary && aiAnalysisView === 'doctor' && canDoc && (
-                <button className="btn btn-primary btn-sm" onClick={() => handleApproveSummaryScope('doctor', curYear, doctorRecord._recordIndex)}>
+                <button className="btn btn-primary btn-sm" disabled={aiReviewConflicts.token !== doctorRecord._reviewToken || aiReviewConflicts.loading || !!aiReviewConflicts.error || aiReviewConflicts.conflicts.length > 0} onClick={() => handleApproveSummaryScope('doctor', curYear, doctorRecord._recordIndex)}>
                   审核5维度通过
                 </button>
               )}
@@ -8856,11 +8901,16 @@ export default function PatientDetailPage() {
                   {docEditing && (!editingAISection || editingAISection === 'tumor_risk') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {sec.tumor_risk?.overview && <textarea className="form-control" rows={3} value={sec.tumor_risk.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('tumor_risk', e.target.value)} style={{ fontSize: 14, lineHeight: 1.7, minHeight: 90, resize: 'vertical', width: '100%' }} />}
-                      {Array.isArray(sec.tumor_risk?.cancers) && sec.tumor_risk.cancers.length > 0
-                        ? renderStructuredEditor('tumor_risk', 'cancers', sec.tumor_risk.cancers, [
+                      {Array.isArray(sec.tumor_risk?.cancers) && sec.tumor_risk.cancers.length > 0 &&
+                        renderStructuredEditor('tumor_risk', 'cancers', sec.tumor_risk.cancers, [
                           ['covered','已覆盖'], ['due_soon','即将到期'], ['overdue','已到期'], ['follow_up_due','异常复查'], ['not_routinely_recommended','无需常规年筛'], ['unknown','资料不足'],
-                        ])
-                        : [['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']].map(([f,lbl]) => (
+                        ])}
+                      {Array.isArray(sec.tumor_risk?.cancers) && sec.tumor_risk.cancers.length > 0 &&
+                        ['completed','abnormal','missing'].some(field => (sec.tumor_risk?.[field] || []).length > 0) &&
+                        <div style={{ fontSize: 12, color: '#8A5A00' }}>以下汇总条目仍参与审核，请与上方卡片一起核对。</div>}
+                      {[['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']]
+                        .filter(([field]) => !sec.tumor_risk?.cancers?.length || (sec.tumor_risk?.[field] || []).length > 0)
+                        .map(([f,lbl]) => (
                           <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.tumor_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('tumor_risk', f, e.target.value)} /></div>
                         ))}
                       <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>总评</div>
