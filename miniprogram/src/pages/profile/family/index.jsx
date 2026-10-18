@@ -317,7 +317,13 @@ export default function FamilyMembersPage() {
       title: '解除关联', content: `确定解除与「${link.user.name}」的家庭成员关系？`,
       success: async (res) => {
         if (!res.confirm) return;
-        try { await familyLinksAPI.remove(link._id); load(); }
+        try {
+          await familyLinksAPI.remove(link._id);
+          if (user?._id && String(Taro.getStorageSync(archiveStorageKey(user._id)) || '') === String(link.user._id)) {
+            Taro.removeStorageSync(archiveStorageKey(user._id));
+          }
+          load();
+        }
         catch (e) { Taro.showToast({ title: e.message || '操作失败', icon: 'none' }); }
       },
     });

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text } from '@tarojs/components';
+import { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing } from '../../theme';
 import useNavBar from '../../hooks/useNavBar';
 import MessagesPage from '../messages/index';
@@ -10,6 +11,9 @@ import FamilySubjectView from '../../components/FamilySubjectView';
 export default function ChatPage() {
   const { statusBarHeight } = useNavBar();
   const archive = useArchiveSubject();
+  const [visible, setVisible] = useState(true);
+  useDidShow(() => setVisible(true));
+  useDidHide(() => setVisible(false));
 
   if (archive.loading || archive.error || archive.subject) {
     return <FamilySubjectView archive={archive} section="manager" statusBarHeight={statusBarHeight} />;
@@ -20,7 +24,7 @@ export default function ChatPage() {
       <View style={{ padding: `${statusBarHeight + 10}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`, flexShrink: 0 }}>
         <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary }}>健康管家</Text>
       </View>
-      <MessagesPage embedded />
+      <MessagesPage embedded active={visible} />
     </View>
   );
 }

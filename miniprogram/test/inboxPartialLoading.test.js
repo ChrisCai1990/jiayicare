@@ -79,3 +79,32 @@ test('background polling does not supersede requests slower than five seconds', 
   finish(success([{ _id: 'slow' }])); await request;
   assert.equal(h.state.messages[0]._id, 'slow'); assert.equal(h.ctx.listLoadingRef.current, false);
 });
+test('embedded inbox starts after family unlink even when tab onShow has already fired', () => {
+  const start = source.indexOf('  useEffect(() => {', source.indexOf('The tab page owns visibility'));
+  const end = source.indexOf('  useEffect(() => { if (refreshKey)', start);
+  assert.ok(start >= 0 && end > start);
+  const state = { loads: 0, visible: null };
+  const requestRef = { current: 0 };
+  const pollRef = { current: null };
+  const loadingRef = { current: false };
+  const mount = active => {
+    let effect;
+    vm.runInNewContext(source.slice(start, end), {
+      embedded: true, active, useEffect: callback => { effect = callback; },
+      setPageVisible: value => { state.visible = value; },
+      loadMessages: () => { state.loads += 1; },
+      listPollRef: pollRef, listLoadingRef: loadingRef, listRequestRef: requestRef,
+      clearInterval: () => {}, setInterval: () => 1,
+    });
+    return effect();
+  };
+  const cleanup = mount(true);
+  assert.equal(state.loads, 1);
+  assert.equal(state.visible, true);
+  cleanup();
+  assert.equal(requestRef.current, 1);
+  assert.equal(mount(false), undefined);
+  assert.equal(state.visible, false);
+  mount(true);
+  assert.equal(state.loads, 2);
+});

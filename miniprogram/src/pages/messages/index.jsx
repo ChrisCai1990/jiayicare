@@ -114,7 +114,7 @@ function fmtMsgTime(t) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export default function MessagesPage({ embedded = false, refreshKey = 0, assistantConfig = {} }) {
+export default function MessagesPage({ embedded = false, active = true, refreshKey = 0, assistantConfig = {} }) {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   // Older production users can have careTeam saved as null/object. Keep render
@@ -213,6 +213,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   }, [user?._id]);
 
   useDidShow(() => {
+    if (embedded) return;
     setPageVisible(true);
     openRequestedConversation();
     loadMessages();
@@ -224,16 +225,22 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     }, 5000);
   });
   useDidHide(() => {
+    if (embedded) return;
     setPageVisible(false);
     listRequestRef.current += 1;
     listLoadingRef.current = false;
     clearInterval(listPollRef.current); listPollRef.current = null;
     if (!paymentActivityRef.current) { setShowNotif(false); setDetailMsg(null); }
   });
-  // Switching from a family member to self mounts this component while the
-  // tab is already visible. Taro does not replay useDidShow for that mount.
-  // Start the inbox on mount as well, so it cannot remain at "加载中…".
+  // The tab page owns visibility in embedded mode. A child component can mount
+  // after the tab's onShow (for example after a family link is removed), and
+  // nested page lifecycle callbacks may otherwise cancel its only request.
   useEffect(() => {
+    if (embedded && !active) {
+      setPageVisible(false);
+      return undefined;
+    }
+    setPageVisible(true);
     loadMessages();
     clearInterval(listPollRef.current);
     listPollRef.current = setInterval(() => {
@@ -244,7 +251,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
       listRequestRef.current += 1;
       listLoadingRef.current = false;
     };
-  }, [loadMessages]);
+  }, [loadMessages, embedded, active]);
   useEffect(() => { if (refreshKey) loadMessages(); }, [refreshKey, loadMessages]);
 
   // 系统消息有时也会携带 conversationId。它仍然属于用户通知，不能因为
