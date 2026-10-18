@@ -10,11 +10,11 @@ const Link = require('../models/FollowUpServiceLink');
 const review = require('../../../shared/followUpReview.cjs');
 const care = require('../../../shared/careFlow.cjs');
 const shipping = require('../../../shared/orderShipping.cjs');
+const { serviceProgress } = require('./serviceSupervisionProgress');
 const id = value => String(value?._id || value || '');
 const active = row => ['planned', 'in_progress', 'missed'].includes(row.status);
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const stageLabels = { intake: '确认需求与安排', advisor: '顾问确认解析方案与转介', booking: '预约安排', specialist: '专科解析报告并回复转介', planner_final: '规划师最终验收', planner: '规划师协调派单', execute: '服务执行', medical: '就医办理', manager_review: '健管核实资料', advisor_review: '顾问审核', resolution: '处理服务结果', pending_closure: '规划师核对结案', awaiting_shipment: '待健管专员发货', shipped: '已发货', registered: '登记服务', verifying: '核对保障', materials: '收集材料', submitted: '已提交申请', reviewing: '审核中', supplement: '补充材料', paid: '核对赔付结果', partially_paid: '核对部分赔付', denied: '核对拒赔结果' };
-const decisionStages = ['intake', 'advisor', 'booking', 'specialist', 'advisor_review', 'planner_final'];
 const decisionLabels = { intake: '规划师确认客户需求', advisor: '顾问确定方案并转介', booking: '健管预约及客户沟通', specialist: '专科解析并回复', advisor_review: '顾问审核归档', planner_final: '规划师最终验收' };
 const stamp = row => [id(row._id), row.updatedAt || row.createdAt || null, row.status, row.revision];
 const samePatient = (row, patientId) => id(row?.patientId || row?.user) === id(patientId);
@@ -155,8 +155,7 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const intakeRecord = decisionOrder ? g.tasks.find(t => !t.workflowKey && t.executedContent)?.executedContent : '';
     const title = s.serviceName || s.title || s.state?.title || (g.type === 'flow' ? g.tasks.find(t => id(t) === id(s.parentId))?.theme : s.theme) || '服务进度';
     const row = { key: g.key, patientId: g.patientId, patientName: p.name, title, current, coordinator,
-      progress: decisionOrder ? { stage: s.currentStage || 'intake', label: decisionLabels[s.currentStage] || '当前环节待核对',
-        step: decisionStages.indexOf(s.currentStage) + 1, total: decisionStages.length } : null,
+      progress: serviceProgress(g.type, s, g.tasks, current),
       reasons, attention: !!reasons.length, latest: latest || (intakeRecord
         ? { at: s.updatedAt, content: `规划师记录客户需求：${intakeRecord}` }
         : s.updatedAt ? { at: s.updatedAt, content: `当前环节：${current.map(c => c.label).join('、')}` } : null), updatedAt: s.updatedAt || null,

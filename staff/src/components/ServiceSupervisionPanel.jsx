@@ -6,7 +6,6 @@ import useWorkbenchResource from '../hooks/useWorkbenchResource'
 import Pagination from './Pagination'
 
 const date = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '未设定'
-const decisionStageNames = ['规划师确认需求', '顾问方案与转介', '健管预约沟通', '专科解析回复', '顾问审核归档', '规划师最终验收']
 const decisionActions = { intake: '确认客户需求并转交顾问', advisor: '确认方案并发起转介', booking: '完成预约和客户沟通', specialist: '整理专家并回复转介', advisor_review: '审核专科回复并归档', planner_final: '确认服务并完成验收' }
 export default function ServiceSupervisionPanel() {
   const { staff } = useStaff()
@@ -67,8 +66,9 @@ export default function ServiceSupervisionPanel() {
       {rows.slice((currentPage - 1) * 5, currentPage * 5).map(s => <article key={s.key} style={{ padding: '14px 0', borderBottom: '1px solid #E3ECE7', fontSize: 13 }}>
         <div style={{ fontSize: 15 }}><b>{s.patientName} · {s.title}</b></div>
         {s.progress && <div style={{ marginTop: 8, padding: '8px 10px', background: '#F0F8F4', borderRadius: 8 }}>
-          <b>当前进度：{s.progress.label}</b> · 第 {s.progress.step || '—'}/{s.progress.total} 步 · 负责人：{s.current.map(c => c.person?.name || '待核对').filter((name, index, names) => names.indexOf(name) === index).join('、') || '待核对'}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>{decisionStageNames.map((name, index) => <span key={name} style={{ padding: '2px 6px', borderRadius: 5, background: index + 1 === s.progress.step ? '#1E6B50' : index + 1 < s.progress.step ? '#D9EEE3' : '#E9EFEC', color: index + 1 === s.progress.step ? '#fff' : '#426457' }}>{index + 1}. {name}</span>)}</div>
+          <b>当前进度：{s.progress.label}</b>{s.progress.step && s.progress.total ? ` · 第 ${s.progress.step}/${s.progress.total} 步` : ''} · 负责人：{s.current.map(c => c.person?.name || '待核对').filter((name, index, names) => names.indexOf(name) === index).join('、') || '待核对'}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>{s.progress.steps?.map((stage, index) => <span key={stage.key} title={stage.label} style={{ padding: '2px 6px', borderRadius: 5, background: stage.state === 'current' ? '#1E6B50' : stage.state === 'past' ? '#D9EEE3' : '#E9EFEC', color: stage.state === 'current' ? '#fff' : '#426457' }}>{s.progress.observed ? '' : `${index + 1}. `}{stage.label}{stage.state === 'blocked' ? '（待前置）' : ''}</span>)}</div>
+          {(s.progress.observed || s.progress.note) && <div style={{ marginTop: 6, color: '#667085', fontSize: 12 }}>{s.progress.note || '以上为已生成的服务任务，后续环节以原服务流转为准。'}</div>}
         </div>}
         {s.attention && <div style={{ color: '#B45309', marginTop: 6 }}>{s.reasons.join(' · ') || '已请求规划师协调'}</div>}
         {s.current.map((c, i) => <div key={c.taskId || i} style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
