@@ -1,0 +1,34 @@
+--- a/miniprogram/src/pages/messages/index.jsx
++++ b/miniprogram/src/pages/messages/index.jsx
+@@ -880,7 +880,7 @@
+     setSendError('');
+     setInput('');
+     try {
+-      const allowAI = meta.aiEnabled && !humanActive ? await ensureAiDataConsent('assistant', { cancelText: '仅人工发送' }) : false;
++      const allowAI = meta.aiEnabled && !humanActive ? await ensureAiDataConsent('assistant', { cancelText: '不用AI' }) : false;
+       let extra = { suppressAI: !allowAI };
+       if (foodImages.length) {
+         extra = { ...extra, images: foodImages.map(({ data, mimeType }) => ({ data, mimeType })) };
+@@ -1084,7 +1084,7 @@
+               <Icon name={meta.icon} size={28} color={meta.color} />
+             </View>
+             <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>{meta.label}</Text>
+-            <Text style={{ fontSize: '14px', color: colors.textSecondary }}>{isReviewEnvironment ? '可发送合成测试消息；当前没有AI或人工回复。' : `发送消息，您的${meta.label}会在工作时间内回复您`}</Text>
++            <Text style={{ fontSize: '14px', color: colors.textSecondary }}>{isReviewEnvironment ? '可发送合成测试消息；使用AI前会单独征求授权，此处无真人值守。' : `发送消息，您的${meta.label}会在工作时间内回复您`}</Text>
+           </View>
+         )) : (
+           msgs.map((m, i) => {
+--- a/miniprogram/src/utils/aiDataConsent.js
++++ b/miniprogram/src/utils/aiDataConsent.js
+@@ -42,8 +42,8 @@
+   const allowed = /^https:\/\/(www\.who\.int|help\.aliyun\.com|terms\.alicdn\.com)\//;
+   if (!allowed.test(String(url))) return;
+   if (process.env.TARO_ENV === 'h5' && typeof window !== 'undefined') {
+-    // Native WebView delegates external top-level navigations to the system browser.
+-    if (window.ReactNativeWebView?.postMessage) window.location.assign(url);
+-    else window.open(url, '_blank', 'noopener,noreferrer');
++    // Top-level navigation also works after asynchronous action-sheet choices;
++    // popup windows may be blocked. Native WebView delegates to the system browser.
++    window.location.assign(url);
+   } else Taro.setClipboardData({ data: url }).then(() => Taro.showModal({ title: '来源链接已复制', content: '请在浏览器粘贴打开，查看完整来源。', showCancel: false }));
+ }
