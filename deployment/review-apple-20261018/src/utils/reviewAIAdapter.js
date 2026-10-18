@@ -39,7 +39,8 @@ function createReviewAIAdapter({ apiKey, estimateMaximumCostFen, fetchImpl = glo
           headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody(payload)),
         });
-        if (!response.ok || !response.body) throw new Error('provider response');
+        if (!response.ok) throw Object.assign(new Error('provider response'), { code: `REVIEW_HTTP_${response.status}` });
+        if (!response.body) throw Object.assign(new Error('empty response'), { code: 'REVIEW_RESPONSE_EMPTY' });
         // Bound even chunked or dishonest Content-Length responses.
         const reader = response.body.getReader();
         const chunks = []; let size = 0;
@@ -56,11 +57,11 @@ function createReviewAIAdapter({ apiKey, estimateMaximumCostFen, fetchImpl = glo
         const choice = data.choices?.[0];
         const content = choice?.message?.content;
         if (signal.aborted || choice?.finish_reason !== 'stop'
-          || typeof content !== 'string' || !content.trim() || content.length > 4000) throw new Error('invalid reply');
+          || typeof content !== 'string' || !content.trim() || content.length > 4000) throw Object.assign(new Error('invalid reply'), { code: 'REVIEW_RESPONSE_INVALID' });
         return content.trim();
-      } catch {
+      } catch (error) {
         // Never expose supplier bodies, credentials or submitted content.
-        throw new Error('审核AI服务暂不可用');
+        throw Object.assign(new Error('审核AI服务暂不可用'), { code: /^REVIEW_(HTTP_[1-5]\d\d|RESPONSE_EMPTY|RESPONSE_INVALID)$/.test(error.code || '') ? error.code : 'REVIEW_TRANSPORT_FAILED' });
       }
     },
   };

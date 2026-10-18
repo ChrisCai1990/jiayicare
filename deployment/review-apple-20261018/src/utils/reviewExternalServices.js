@@ -32,8 +32,8 @@ function createReviewExternalServices({ connection, env = process.env, adapters 
           timer = setTimeout(() => { controller.abort(); reject(new Error('审核服务超时，请稍后重试')); }, 20000);
         }),
       ]);
-    } catch {
-      throw new Error('审核服务暂不可用，请稍后重试');
+    } catch (error) {
+      throw Object.assign(new Error('审核服务暂不可用，请稍后重试'), { code: /^REVIEW_(HTTP_[1-5]\d\d|RESPONSE_EMPTY|RESPONSE_INVALID|TRANSPORT_FAILED)$/.test(error.code || '') ? error.code : 'REVIEW_PROVIDER_UNAVAILABLE' });
     } finally { clearTimeout(timer); }
   }
   return {

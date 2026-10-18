@@ -1,7 +1,7 @@
 """Deploy tracked review-only sources with exact baseline hashes and rollback.
 Never publishes production sources, changes domains, or submits store review.
 """
-import hashlib, json, pathlib, time
+import hashlib, json, pathlib, time, sys
 from ssh_config import connect
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'deployment/review-apple-20261018/src'
@@ -62,6 +62,8 @@ except Exception:
 
 def main():
     baseline=json.loads((AUDIT/'live-review/manifest.json').read_text())
+    if '--upgrade' in sys.argv:
+        baseline=json.loads((AUDIT/'review-backend-deployed.json').read_text())['files']
     items=[{'name':p.relative_to(SOURCE).as_posix(),'content':p.read_text(encoding='utf-8'),'old':baseline.get(p.relative_to(SOURCE).as_posix())} for p in sorted(SOURCE.rglob('*.js'))]
     with connect() as client:
         with client.open_sftp() as s:
