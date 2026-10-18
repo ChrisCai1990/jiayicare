@@ -1,0 +1,66 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+const start = source.indexOf("router.get('/medical-assist-progress'");
+const end = source.indexOf("router.get('/service-tasks'", start);
+assert.ok(start >= 0 && end > start);
+
+const query = rows => {
+  const result = Promise.resolve(rows);
+  for (const method of ['select', 'populate', 'sort', 'limit']) result[method] = () => result;
+  result.lean = () => result;
+  return result;
+};
+
+async function progressFor({ plans = [], orders = [], tasks = [] }) {
+  let handler;
+  const context = {
+    router: { get: (_route, _auth, fn) => { handler = fn; } },
+    staffAuth: () => {},
+    User: { find: () => query([{ _id: 'patient', name: '测试客户', assignedHealthPlanner: { name: '规划师' } }]) },
+    HealthPlan: { find: () => query(plans) },
+    Order: { find: () => query(orders) },
+    FollowUp: { find: () => query(tasks) },
+    require: name => {
+      assert.equal(name, '../utils/supervisionProgress');
+      return { loadSupervisionProgress: async () => new Map() };
+    },
+  };
+  vm.runInNewContext(source.slice(start, end), context);
+  let response;
+  await handler({ staff: { role: 'familyDoctor', _id: 'advisor' } }, { json: value => { response = value; } });
+  return response.data;
+}
+
+test('old open service records without active tasks do not remain in advisor progress', async () => {
+  const rows = await progressFor({
+    plans: [{ _id: 'old-plan', patientId: 'patient', title: '旧就医陪同方案', status: 'active' }],
+    orders: [{ _id: 'old-order', user: 'patient', serviceName: '医疗代办服务' }],
+  });
+  assert.equal(rows.length, 0);
+});
+
+test('actual executor work remains visible even when no planner supervisor task exists', async () => {
+  const rows = await progressFor({
+    orders: [{ _id: 'active-order', user: 'patient', serviceName: '医疗代办服务' }],
+    tasks: [{ _id: 'execution', sourceOrderId: 'active-order', taskRole: 'executor', theme: '健管专员核对资料', assignedTo: { name: '健管专员' } }],
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].stage, '健管专员核对资料');
+  assert.equal(rows[0].assignee, '健管专员');
+});
+
+test('a linked order task keeps its active plan visible without a duplicate order card', async () => {
+  const rows = await progressFor({
+    plans: [{ _id: 'plan', patientId: 'patient', sourceOrderId: 'order', title: '就医方案', status: 'active' }],
+    orders: [{ _id: 'order', user: 'patient', serviceName: '医疗代办服务' }],
+    tasks: [{ _id: 'execution', sourceOrderId: 'order', taskRole: 'executor', theme: '预约门诊' }],
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, 'plan:plan');
+  assert.equal(rows[0].stage, '预约门诊');
+});

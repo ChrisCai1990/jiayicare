@@ -656,42 +656,48 @@ router.get('/medical-assist-progress', staffAuth, async (req, res) => {
   ]);
   const linkedOrderIds = new Set(plans.map(plan => String(plan.sourceOrderId || '')).filter(Boolean));
   const visibleOrders = orders.filter(order => !linkedOrderIds.has(String(order._id)));
-  const followUps = await FollowUp.find({ taskRole: 'supervisor', status: { $in: ['planned', 'in_progress', 'missed'] },
+  const followUps = await FollowUp.find({ taskRole: { $in: ['supervisor', 'executor'] }, status: { $in: ['planned', 'in_progress', 'missed'] },
     $or: [
       { sourceHealthPlanId: { $in: plans.map(plan => plan._id) } },
-      { sourceOrderId: { $in: visibleOrders.map(order => order._id) } },
+      { sourceOrderId: { $in: [...visibleOrders.map(order => order._id), ...plans.map(plan => plan.sourceOrderId).filter(Boolean)] } },
     ],
   }).select('patientId sourceType sourceHealthPlanId sourceOrderId taskRole status workflowKey theme assignedTo isBlocked formData')
     .populate('assignedTo', 'name').lean();
   const taskByPlan = new Map();
   const taskByOrder = new Map();
   for (const task of followUps) {
-    if (task.sourceHealthPlanId && !taskByPlan.has(String(task.sourceHealthPlanId))) taskByPlan.set(String(task.sourceHealthPlanId), task);
-    if (task.sourceOrderId && !taskByOrder.has(String(task.sourceOrderId))) taskByOrder.set(String(task.sourceOrderId), task);
+    const preferSupervisor = (map, key) => {
+      const current = map.get(key);
+      if (!current || (task.taskRole === 'supervisor' && current.taskRole !== 'supervisor')) map.set(key, task);
+    };
+    if (task.sourceHealthPlanId) preferSupervisor(taskByPlan, String(task.sourceHealthPlanId));
+    if (task.sourceOrderId) preferSupervisor(taskByOrder, String(task.sourceOrderId));
   }
   const progressByTask = await require('../utils/supervisionProgress').loadSupervisionProgress(followUps, FollowUp);
-  const toProgress = task => task ? progressByTask.get(String(task._id)) : null;
-  const planRows = plans.map(plan => {
+  const toProgress = task => task?.taskRole === 'supervisor' ? progressByTask.get(String(task._id)) : null;
+  const currentStage = (task, progress) => progress?.current?.[0]?.label || task?.theme || '待处理环节';
+  const currentAssignee = (task, progress) => progress?.current?.[0]?.assignee || task?.assignedTo?.name || '';
+  const planRows = plans.filter(plan => plan.status === 'draft' || taskByPlan.has(String(plan._id)) || (plan.sourceOrderId && taskByOrder.has(String(plan.sourceOrderId)))).map(plan => {
     const patient = patientById.get(String(plan.patientId));
-    const supervisorTask = taskByPlan.get(String(plan._id));
-    const progress = toProgress(supervisorTask);
+    const task = taskByPlan.get(String(plan._id)) || taskByOrder.get(String(plan.sourceOrderId));
+    const progress = toProgress(task);
     return { id: `plan:${plan._id}`, patientId: plan.patientId, patientName: patient?.name || '', title: plan.title,
       source: 'plan', startedBySelf: String(plan.initiatedByStaff || plan.staffId) === String(req.staff._id),
-      supervisorName: supervisorTask?.assignedTo?.name || patient?.assignedHealthPlanner?.name || '待分配健康规划师',
-      stage: plan.status === 'draft' ? '方案待完善与推送' : progress?.current?.[0]?.label || '健康规划师督办中',
-      assignee: plan.status === 'draft' ? '' : progress?.current?.[0]?.assignee || '',
-      waitingReason: plan.status === 'draft' ? '方案尚未推送，岗位任务尚未生成' : progress?.message || '等待岗位任务更新',
+      supervisorName: task?.taskRole === 'supervisor' ? task.assignedTo?.name || patient?.assignedHealthPlanner?.name || '待分配健康规划师' : patient?.assignedHealthPlanner?.name || '待分配健康规划师',
+      stage: plan.status === 'draft' ? '方案待完善与推送' : currentStage(task, progress),
+      assignee: plan.status === 'draft' ? '' : currentAssignee(task, progress),
+      waitingReason: plan.status === 'draft' ? '方案尚未推送，岗位任务尚未生成' : progress?.message || '关联岗位任务待处理',
       completed: progress?.completed || 0, total: progress?.total || 0, createdAt: plan.createdAt };
   });
-  const orderRows = visibleOrders.map(order => {
+  const orderRows = visibleOrders.filter(order => taskByOrder.has(String(order._id))).map(order => {
     const patient = patientById.get(String(order.user));
-    const supervisorTask = taskByOrder.get(String(order._id));
-    const progress = toProgress(supervisorTask);
+    const task = taskByOrder.get(String(order._id));
+    const progress = toProgress(task);
     return { id: `order:${order._id}`, patientId: order.user, patientName: patient?.name || '', title: order.serviceName,
       source: 'order', startedBySelf: String(order.initiatedByStaff || '') === String(req.staff._id),
-      supervisorName: supervisorTask?.assignedTo?.name || patient?.assignedHealthPlanner?.name || '待分配健康规划师',
-      stage: progress?.current?.[0]?.label || '待健康规划师承接', assignee: progress?.current?.[0]?.assignee || '',
-      waitingReason: progress?.message || '服务已发起，等待岗位任务生成',
+      supervisorName: task.taskRole === 'supervisor' ? task.assignedTo?.name || patient?.assignedHealthPlanner?.name || '待分配健康规划师' : patient?.assignedHealthPlanner?.name || '待分配健康规划师',
+      stage: currentStage(task, progress), assignee: currentAssignee(task, progress),
+      waitingReason: progress?.message || '关联岗位任务待处理',
       completed: progress?.completed || 0, total: progress?.total || 0, createdAt: order.createdAt };
   });
   res.json({ success: true, data: [...planRows, ...orderRows].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 100) });
