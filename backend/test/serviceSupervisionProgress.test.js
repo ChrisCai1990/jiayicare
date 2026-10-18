@@ -14,6 +14,22 @@ test('decision and checkup orders use their own ordered stages', () => {
   assert.equal(checkup.total, 4);
 });
 
+test('IBD annual service shows its complete path instead of the generated task list', () => {
+  const source = { specialtyTermsSnapshot: { key: 'ibd', includedEscorts: 2 },
+    specialtyService: { key: 'ibd', usedEscorts: 0, endsAt: '2027-10-14' }, currentStage: 'ibd_escort_meeting' };
+  const progress = serviceProgress('order', source, [
+    { workflowKey: 'ibd:advisor', status: 'completed' }, { workflowKey: 'ibd:escort', status: 'planned' },
+  ], current, new Date('2026-10-18'));
+  assert.equal(progress.step, 5);
+  assert.equal(progress.total, 7);
+  assert.equal(progress.observed, undefined);
+  assert.deepEqual(progress.steps.map(step => step.state), ['past', 'past', 'past', 'past', 'current', 'future', 'future']);
+  assert.match(progress.note, /0\/2/);
+  const review = serviceProgress('order', { ...source, currentStage: 'ibd_awaiting_first_visit' }, [], current, new Date('2027-10-15'));
+  assert.equal(review.step, 7);
+  assert.equal(review.label, '年度回顾与结案');
+});
+
 test('care flow uses its actual path, including the shorter reminder route', () => {
   const progress = serviceProgress('flow', { state: { mode: 'reminder', stage: 'audit' } }, [], current);
   assert.equal(progress.step, 3);

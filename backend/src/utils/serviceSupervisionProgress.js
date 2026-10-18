@@ -16,6 +16,15 @@ const medication = [
   ['review', '规划师确认'], ['booking', '健管预约'],
   ['planner', '规划师分配人员'], ['execute', '就医专员配药配送'],
 ];
+const ibd = [
+  ['intake', '规划师接单并核对需求'],
+  ['ibd_advisor', '顾问确定首诊方案'],
+  ['ibd_booking', '健管确认首诊预约'],
+  ['ibd_planner_assignment', '规划师指定陪诊人员'],
+  ['ibd_escort_meeting', '陪诊人员确认碰面安排'],
+  ['ibd_awaiting_first_visit', '年度管理与陪诊'],
+  ['ibd_annual_review', '年度回顾与结案'],
+];
 
 function ordered(stages, stage) {
   const index = stages.findIndex(([key]) => key === stage);
@@ -44,7 +53,7 @@ function taskProgress(tasks, current) {
     steps, observed: true, generatedTotal, generatedCompleted };
 }
 
-function serviceProgress(type, source, tasks, current) {
+function serviceProgress(type, source, tasks, current, now = new Date()) {
   if (type === 'flow') {
     const path = care.pathFor(source.state || {});
     const progress = ordered(path.map(key => [key, care.labels[key] || key]), source.state?.stage);
@@ -52,6 +61,16 @@ function serviceProgress(type, source, tasks, current) {
   }
   if (type === 'order') {
     const stage = source.currentStage || 'intake';
+    if (source.specialtyTermsSnapshot?.key === 'ibd' || source.specialtyService?.key === 'ibd') {
+      const period = source.specialtyService || {};
+      const reviewDue = stage === 'ibd_awaiting_first_visit' && period.endsAt && new Date(period.endsAt) <= now;
+      const progress = ordered(ibd, reviewDue ? 'ibd_annual_review' : stage);
+      if (progress) {
+        const used = Number(period.usedEscorts || 0);
+        const included = Number(period.includedEscorts || source.specialtyTermsSnapshot?.includedEscorts || 0);
+        return { ...progress, note: included ? `年度服务已登记陪诊 ${used}/${included} 次；复诊与后续随访按专科方案推进。` : '复诊与后续随访按专科方案推进。' };
+      }
+    }
     if (source.serviceName === '企业家健康决策计划') {
       const progress = ordered(decision, stage);
       if (progress) return progress;

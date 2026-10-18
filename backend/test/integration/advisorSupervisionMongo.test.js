@@ -51,6 +51,20 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     await task({ sourceType: 'order', sourceOrderId: o, sourceScheduleKey: 'medical_escort_followup:independent' });
     assert.equal((await loadServices(advisor)).length, 1);
   });
+  await t.test('IBD uses its order stage path and remains visible during annual management', async () => {
+    await reset(); const orderId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: 'IBD 年度专病管理服务', status: 'scheduled',
+      paymentStatus: 'paid', tradeStatus: 'fulfilling', currentStage: 'ibd_escort_meeting', currentAssignee: manager._id,
+      specialtyTermsSnapshot: { key: 'ibd', includedEscorts: 2 },
+      specialtyService: { key: 'ibd', includedEscorts: 2, usedEscorts: 0, endsAt: new Date('2099-10-14') } });
+    const escort = await task({ sourceOrderId: orderId, sourceType: 'order', workflowKey: 'ibd:escort' });
+    let rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 5); assert.equal(rows[0].progress.total, 7);
+    await Task.collection.updateOne({ _id: escort._id }, { $set: { status: 'completed' } });
+    await Order.collection.updateOne({ _id: orderId }, { $set: { currentStage: 'ibd_awaiting_first_visit', currentAssignee: null } });
+    rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 6); assert.equal(rows[0].current[0].person.id, String(advisor._id));
+  });
   await t.test('plans without service tasks are omitted; active insurance is covered', async () => {
     await reset(); await Plan.collection.insertMany([{ _id: oid(), patientId: p, title: '已生效营养方案', status: 'active', currentAssignee: manager._id }, { _id: oid(), patientId: p, title: '草稿', status: 'draft' }]);
     await Insurance.collection.insertOne({ _id: oid(), patientId: p, title: '保险', status: 'reviewing', assignedTo: manager._id });

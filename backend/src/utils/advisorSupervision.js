@@ -32,7 +32,7 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
   const ids = patients.map(p => p._id);
   const [tasks, orders, plans, flows, cases, links, people] = await Promise.all([
     FollowUp.find({ patientId: { $in: ids } }).select('patientId status theme date remindAt assignedTo taskRole isBlocked workflowKey sourceType sourceId sourceOrderId sourceHealthPlanId sourceAnnualPlanId sourceScheduleKey coordinationGroupId careFlowId annualDispatchKey annualDispatch serviceTracking deliveryMode aiStatus reviewRole reviewAssignedTo staffId formData.serviceRequest formData.generatedFromExpertAppointment formData.generatedFromMedicalEscort formData.linkedFollowUpActionKey progressRecords executedContent updatedAt createdAt completedAt').lean(),
-    Order.find({ user: { $in: ids } }).select('user serviceName status paymentStatus tradeStatus refundStatus servicePrice initiationSource currentStage currentAssignee supervisorId supervisionStatus scheduledAt updatedAt createdAt fulfillmentStatus fulfillmentType serviceWorkflowSnapshot note').lean(),
+    Order.find({ user: { $in: ids } }).select('user serviceName status paymentStatus tradeStatus refundStatus servicePrice initiationSource currentStage currentAssignee supervisorId supervisionStatus scheduledAt updatedAt createdAt fulfillmentStatus fulfillmentType serviceWorkflowSnapshot specialtyTermsSnapshot.key specialtyTermsSnapshot.includedEscorts specialtyService.key specialtyService.startsAt specialtyService.endsAt specialtyService.usedEscorts specialtyService.includedEscorts note').lean(),
     HealthPlan.find({ patientId: { $in: ids } }).select('patientId title status type sourceOrderId currentStage currentAssignee supervisorId supervisionStatus endDate updatedAt createdAt').lean(),
     CareFlow.find({ patientId: { $in: ids }, tenantId }).select('patientId parentId state revision updatedAt createdAt').lean(),
     Insurance.find({ patientId: { $in: ids } }).select('patientId title status assignedTo dueAt steps updatedAt createdAt').lean(),
@@ -100,6 +100,9 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const p = patientMap.get(g.patientId), s = g.source;
     const remaining = g.tasks.filter(active);
     if (g.type === 'followup' && !remaining.length) continue;
+    const ibdAnnual = g.type === 'order' && (s.specialtyTermsSnapshot?.key === 'ibd' || s.specialtyService?.key === 'ibd')
+      && s.currentStage === 'ibd_awaiting_first_visit';
+    const ibdReview = ibdAnnual && s.specialtyService?.endsAt && new Date(s.specialtyService.endsAt) <= now;
     // Supervisor records describe coordination, not an additional executor.
     const decisionOrder = g.type === 'order' && s.serviceName === '企业家健康决策计划';
     const execution = remaining.filter(t => t.taskRole !== 'supervisor' && t.workflowKey !== 'medication_proxy:progress'
@@ -128,17 +131,17 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
       current = [{ taskId: id(step || s.parentId), label: stage === 'closed' ? '审核已通过，待同步随访' : care.labels[stage] || '待核对流程', person: person(s.state.people?.[role]?.id, role), blocked: false, dueAt: step?.date || null }];
     } else if (!current.length) {
       const isShipping = g.type === 'order' && shipping.hasShippingHandoff(s);
-      const owner = isShipping ? p.assignedHealthManager : s.currentAssignee || s.assignedTo;
-      current = [{ taskId: '', label: isShipping ? shipping.shippingProgress(s) : stageLabels[s.currentStage || s.status] || '当前环节待核对',
-        person: person(owner), blocked: false, dueAt: s.dueAt || s.scheduledAt || s.endDate || null }];
+      const owner = isShipping ? p.assignedHealthManager : ibdAnnual ? p.assignedFamilyDoctor : s.currentAssignee || s.assignedTo;
+      current = [{ taskId: '', label: isShipping ? shipping.shippingProgress(s) : ibdReview ? '年度回顾与结案' : ibdAnnual ? '年度管理与陪诊' : stageLabels[s.currentStage || s.status] || '当前环节待核对',
+        person: person(owner), blocked: false, dueAt: ibdAnnual ? s.specialtyService?.endsAt || null : s.dueAt || s.scheduledAt || s.endDate || null }];
     }
     if (decisionOrder && s.currentStage !== 'intake' && !stageTasks.length)
       current = [{ taskId: '', label: decisionLabels[s.currentStage] || '当前环节待核对',
         person: person(s.currentAssignee), blocked: false, dueAt: s.scheduledAt || null }];
     const ownDecisionTask = decisionOrder
       ? stageTasks.find(t => id(t.assignedTo || t.staffId) === id(actor) && !t.isBlocked) : null;
-    if (!includeOwn && !ownDecisionTask && current.every(c => c.person?.id === id(actor))) continue;
-    if (!includeOwn && !ownDecisionTask) current = current.filter(c => c.person?.id !== id(actor));
+    if (!includeOwn && !ownDecisionTask && !ibdAnnual && current.every(c => c.person?.id === id(actor))) continue;
+    if (!includeOwn && !ownDecisionTask && !ibdAnnual) current = current.filter(c => c.person?.id !== id(actor));
     const explicitCoordinator = s.state?.people?.healthPlanner?.id || s.supervisorId;
     const supervisors = [...new Set(remaining.filter(t => t.taskRole === 'supervisor').map(t => id(t.assignedTo)).filter(Boolean))];
     const coordinatorId = explicitCoordinator || (supervisors.length === 1 ? supervisors[0] : null);
@@ -157,7 +160,7 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const intakeRecord = decisionOrder ? g.tasks.find(t => !t.workflowKey && t.executedContent)?.executedContent : '';
     const title = s.serviceName || s.title || s.state?.title || (g.type === 'flow' ? g.tasks.find(t => id(t) === id(s.parentId))?.theme : s.theme) || '服务进度';
     const row = { key: g.key, patientId: g.patientId, patientName: p.name, title, current, coordinator,
-      progress: serviceProgress(g.type, s, g.tasks, current),
+      progress: serviceProgress(g.type, s, g.tasks, current, now),
       reasons, attention: !!reasons.length, latest: latest || (intakeRecord
         ? { at: s.updatedAt, content: `规划师记录客户需求：${intakeRecord}` }
         : s.updatedAt ? { at: s.updatedAt, content: `当前环节：${current.map(c => c.label).join('、')}` } : null), updatedAt: s.updatedAt || null,
