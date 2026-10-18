@@ -82,6 +82,12 @@ function serviceProgress(type, source, tasks, current, now = new Date()) {
   }
   if (type === 'order') {
     const stage = source.currentStage || 'intake';
+    // A purchased workflow template is not evidence that its execution flow
+    // has started. Older orders only have a generic planner intake follow-up.
+    const legacyIntake = stage === 'intake' && tasks.length > 0
+      && tasks.every(task => !task.workflowKey && !['executor', 'supervisor'].includes(task.taskRole));
+    if (legacyIntake && ['medical_assist', 'medical_proxy'].includes(source.serviceWorkflowSnapshot?.key))
+      return { ...taskProgress(tasks, current), note: '订单仍待规划师核对；正式服务流程尚未生成。' };
     if (source.specialtyTermsSnapshot?.key === 'ibd' || source.specialtyService?.key === 'ibd') {
       const period = source.specialtyService || {};
       const reviewDue = stage === 'ibd_awaiting_first_visit' && period.endsAt && new Date(period.endsAt) <= now;

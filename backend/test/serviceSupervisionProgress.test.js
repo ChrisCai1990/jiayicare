@@ -30,15 +30,13 @@ test('IBD annual service shows its complete path instead of the generated task l
   assert.equal(review.label, '年度回顾与结案');
 });
 
-test('medical assistance order shows its order-to-closure path before a plan is generated', () => {
+test('medical assistance order does not invent stages from a template before intake', () => {
   const source = { serviceName: '就医陪同服务', serviceWorkflowSnapshot: { key: 'medical_assist' }, currentStage: 'intake' };
   const intake = serviceProgress('order', source, [{ theme: '订单服务：就医陪同服务', status: 'planned' }], current);
-  assert.equal(intake.step, 1);
-  assert.equal(intake.total, 4);
-  assert.equal(intake.observed, undefined);
-  assert.deepEqual(intake.steps.map(step => step.label), [
-    '规划师核对需求并接单', '制定并推送就医协助方案', '服务执行与督办', '规划师验收结案',
-  ]);
+  assert.equal(intake.observed, true);
+  assert.equal(intake.generatedTotal, 1);
+  assert.equal(intake.total, null);
+  assert.match(intake.note, /正式服务流程尚未生成/);
   const executing = serviceProgress('order', { ...source, currentStage: 'plan_draft' }, [
     { sourceHealthPlanId: 'plan', taskRole: 'executor', status: 'planned' },
   ], current);
@@ -47,13 +45,15 @@ test('medical assistance order shows its order-to-closure path before a plan is 
   assert.equal(closing.step, 4);
 });
 
-test('medical proxy order shows its path before workflow tasks are generated', () => {
+test('medical proxy order uses its path after the workflow starts', () => {
   const source = { serviceName: '医疗代诊服务', serviceWorkflowSnapshot: { key: 'medical_proxy' }, currentStage: 'intake' };
   const intake = serviceProgress('order', source, [{ theme: '订单服务：医疗代诊服务', status: 'planned' }], current);
-  assert.equal(intake.step, 1);
-  assert.equal(intake.total, 5);
-  assert.equal(intake.observed, undefined);
-  assert.deepEqual(intake.steps.map(step => step.label), [
+  assert.equal(intake.observed, true);
+  assert.equal(intake.generatedTotal, 1);
+  const started = serviceProgress('order', source, [{ workflowKey: 'medical_proxy:intake', taskRole: 'supervisor', status: 'planned' }], current);
+  assert.equal(started.step, 1);
+  assert.equal(started.total, 5);
+  assert.deepEqual(started.steps.map(step => step.label), [
     '规划师核对代诊需求', '确认代诊方案与资料', '预约并安排代诊人员', '代诊执行与资料归档', '规划师验收结案',
   ]);
   assert.equal(serviceProgress('order', { ...source, currentStage: 'audit' }, [], current).step, 2);
