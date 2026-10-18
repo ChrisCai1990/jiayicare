@@ -76,6 +76,15 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     const rows = await loadServices(advisor); assert.equal(rows.length, 1);
     assert.equal(rows[0].progress.step, 1); assert.equal(rows[0].progress.total, 4);
   });
+  await t.test('medical proxy intake shows the order path before stage tasks exist', async () => {
+    await reset(); const orderId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: '医疗代诊服务', status: 'pending',
+      paymentStatus: 'paid', tradeStatus: 'paid', currentStage: 'intake',
+      serviceWorkflowSnapshot: { key: 'medical_proxy' } });
+    await task({ sourceType: 'order', sourceOrderId: orderId, theme: '订单服务：医疗代诊服务' });
+    const rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 1); assert.equal(rows[0].progress.total, 5);
+  });
   await t.test('plans without service tasks are omitted; active insurance is covered', async () => {
     await reset(); await Plan.collection.insertMany([{ _id: oid(), patientId: p, title: '已生效营养方案', status: 'active', currentAssignee: manager._id }, { _id: oid(), patientId: p, title: '草稿', status: 'draft' }]);
     await Insurance.collection.insertOne({ _id: oid(), patientId: p, title: '保险', status: 'reviewing', assignedTo: manager._id });

@@ -31,6 +31,13 @@ const medicalAssist = [
   ['service_execution', '服务执行与督办'],
   ['pending_closure', '规划师验收结案'],
 ];
+const medicalProxy = [
+  ['intake', '规划师核对代诊需求'],
+  ['plan_review', '确认代诊方案与资料'],
+  ['arrangement', '预约并安排代诊人员'],
+  ['execution', '代诊执行与资料归档'],
+  ['pending_closure', '规划师验收结案'],
+];
 
 function ordered(stages, stage) {
   const index = stages.findIndex(([key]) => key === stage);
@@ -88,6 +95,14 @@ function serviceProgress(type, source, tasks, current, now = new Date()) {
     if (tasks.some(t => String(t.workflowKey || '').startsWith('medication_proxy:'))) {
       const progress = ordered(medication, stage);
       if (progress) return progress;
+    }
+    if (source.serviceWorkflowSnapshot?.key === 'medical_proxy' && /医疗代诊/.test(source.serviceName || '')) {
+      const serviceStage = ['collect', 'audit', 'advisor'].includes(stage) ? 'plan_review'
+        : ['planner', 'booking'].includes(stage) ? 'arrangement'
+          : ['execute', 'post_visit_audit', 'post_visit_review', 'followup_review'].includes(stage) ? 'execution'
+            : stage === 'pending_closure' ? 'pending_closure' : stage === 'intake' ? 'intake' : null;
+      const progress = ordered(medicalProxy, serviceStage);
+      if (progress) return { ...progress, note: '各阶段的资料审核、预约和执行记录以原服务任务为准。' };
     }
     if (source.serviceWorkflowSnapshot?.key === 'medical_assist') {
       const hasExecution = tasks.some(t => t.sourceHealthPlanId && ['executor', 'supervisor'].includes(t.taskRole) && t.status !== 'cancelled');
