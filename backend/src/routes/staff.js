@@ -5694,16 +5694,22 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     if (!patient) return res.status(404).json({ success:false, message:'会员不存在' });
     const records = normalizedDiseaseRecords(patient);
     const diseaseName = cleanMedicalText(req.body.diseaseName,100);
-    const record = report.documentCategory === 'outpatient_record' && report.courseTargetDiseaseId
+    const createDiseaseRecord = req.body.createDiseaseRecord === true;
+    if (createDiseaseRecord && (report.documentCategory !== 'outpatient_record' || report.courseTargetDiseaseId))
+      return res.status(400).json({ success:false, message:'只有未指定专病的门诊病历可在审核时建立专病首页' });
+    if (createDiseaseRecord && !diseaseName) return res.status(400).json({ success:false, message:'请填写新专病名称' });
+    let record = report.documentCategory === 'outpatient_record' && report.courseTargetDiseaseId
       ? records.find(item => String(item._id) === String(report.courseTargetDiseaseId))
       : records.find(item => item.name === diseaseName);
-    if (!record) return res.status(409).json({ success:false, message:'所选专病首页不存在或已删除，请返回专病管理核对后重试' });
-    if (report.documentCategory === 'outpatient_record' && diseaseName !== record.name) return res.status(409).json({ success:false, message:`此病历由健管专员指定归入「${record.name}」，请刷新草稿后重试` });
-    if (!hasMedicalSummary(record.summary)) return res.status(409).json({ success:false, message:'专病首页尚无首次概况，请先在专病管理填写并保存' });
-    if ((record.courseEntries || []).some(item => String(item.sourceReportId || '') === String(report._id))) return res.status(409).json({ success:false, message:'该医疗资料已经写入健康变化时间轴' });
+    if (createDiseaseRecord && record) return res.status(409).json({ success:false, message:'同名专病首页已存在，请选择已有专病归档' });
+    if (!createDiseaseRecord && !record) return res.status(409).json({ success:false, message:'所选专病首页不存在或已删除，请返回专病管理核对后重试' });
+    if (!createDiseaseRecord && report.documentCategory === 'outpatient_record' && diseaseName !== record.name) return res.status(409).json({ success:false, message:`此病历由健管专员指定归入「${record.name}」，请刷新草稿后重试` });
+    if (!createDiseaseRecord && !hasMedicalSummary(record.summary)) return res.status(409).json({ success:false, message:'专病首页尚无首次概况，请先在专病管理填写并保存' });
+    if (record && (record.courseEntries || []).some(item => String(item.sourceReportId || '') === String(report._id))) return res.status(409).json({ success:false, message:'该医疗资料已经写入健康变化时间轴' });
     const draft = report.healthCourseDraft;
     const outpatientRecord = draft.outpatientRecord
       ? require('../utils/clinicalDocumentReview').normalizeClinicalReview('outpatient_record', req.body.outpatientRecord || draft.outpatientRecord) : null;
+    if (createDiseaseRecord && !outpatientRecord) return res.status(400).json({ success:false, message:'请先核对门诊病历栏目，才能建立专病首页' });
     const content = outpatientRecord
       ? [outpatientRecord.chiefComplaint, outpatientRecord.presentIllness].filter(Boolean).join('\n')
       : mergedHealthChange({ content:req.body.content ?? draft.content, symptoms:'' });
@@ -5713,6 +5719,13 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     if (outpatientRecord) outpatientRecord.visitDate = req.body.occurredAt;
     const now = new Date();
     const reviewerName = req.staff.name || req.staff.username || '';
+    if (createDiseaseRecord) {
+      const { initialSummaryFromOutpatient } = require('../utils/outpatientDiseaseDossier');
+      const summary = initialSummaryFromOutpatient(outpatientRecord, report, req.staff, now);
+      if (!hasMedicalSummary(summary)) return res.status(400).json({ success:false, message:'新建专病首页需要已核对的主诉、现病史、检查、诊断或用药信息' });
+      record = { _id:new mongoose.Types.ObjectId(), name:diseaseName, summary, summaryHistory:[], courseEntries:[] };
+      records.push(record);
+    }
     const entry = {
       _id:new mongoose.Types.ObjectId(), occurredAt:new Date(req.body.occurredAt + 'T00:00:00+08:00'),
       content:content || outpatientRecord?.diagnoses.join('、') || '门诊病历已归档，查看原文栏目', symptoms:'',
@@ -5730,6 +5743,7 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     const saved = await User.collection.updateOne({ _id:patient._id, diseaseRecords:patient.diseaseRecords }, { $set:{ diseaseRecords:records } });
     if (!saved.matchedCount) return res.status(409).json({ success:false, message:'专病档案已更新，请刷新核对，避免重复归档' });
     report.healthCourseDraft = { ...draft, status:'approved', diseaseName, approvedEntryId:entry._id, reviewedAt:now, reviewedBy:req.staff._id, reviewedByName:reviewerName, finalContent:entry };
+    if (report.documentCategory === 'outpatient_record' && !report.courseTargetDiseaseId) report.courseTargetDiseaseId = record._id;
     await report.save();
     res.json({ success:true, data:{ draft:report.healthCourseDraft, entry } });
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }
