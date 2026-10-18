@@ -38,6 +38,14 @@ const medicalProxy = [
   ['execution', '代诊执行与资料归档'],
   ['pending_closure', '规划师验收结案'],
 ];
+const medicalEscort = [
+  ['intake', '确认陪同需求与人员安排'],
+  ['booking', '健管确认陪同预约'],
+  ['execute', '就医专员执行陪同'],
+  ['post_visit_audit', '健管审核就诊资料'],
+  ['pending_closure', '规划师验收结案'],
+];
+const adHocEscort = medicalEscort.filter(([key]) => key !== 'booking');
 
 function ordered(stages, stage) {
   const index = stages.findIndex(([key]) => key === stage);
@@ -95,6 +103,12 @@ function serviceProgress(type, source, tasks, current, now = new Date()) {
     if (tasks.some(t => String(t.workflowKey || '').startsWith('medication_proxy:'))) {
       const progress = ordered(medication, stage);
       if (progress) return progress;
+    }
+    if (source.medicalProxyPlan?.medicalEscort === true) {
+      const escortStage = ['advisor', 'planner'].includes(stage) ? 'intake'
+        : ['post_visit_review', 'followup_review'].includes(stage) ? 'post_visit_audit' : stage;
+      const progress = ordered(source.medicalProxyPlan.adHocConsultation ? adHocEscort : medicalEscort, escortStage);
+      if (progress) return { ...progress, note: '陪同执行和资料审核以原服务记录为准。' };
     }
     if (source.serviceWorkflowSnapshot?.key === 'medical_proxy' && /医疗代诊/.test(source.serviceName || '')) {
       const serviceStage = ['collect', 'audit', 'advisor'].includes(stage) ? 'plan_review'

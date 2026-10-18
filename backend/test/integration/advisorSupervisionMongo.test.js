@@ -85,6 +85,16 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     const rows = await loadServices(advisor); assert.equal(rows.length, 1);
     assert.equal(rows[0].progress.step, 1); assert.equal(rows[0].progress.total, 5);
   });
+  await t.test('escort order uses the escort stages regardless of its service name', async () => {
+    await reset(); const orderId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: '陪同看诊服务', status: 'scheduled',
+      paymentStatus: 'paid', tradeStatus: 'paid', currentStage: 'booking',
+      serviceWorkflowSnapshot: { key: 'medical_proxy' }, medicalProxyPlan: { medicalEscort: true } });
+    await task({ sourceType: 'order', sourceOrderId: orderId, workflowKey: 'medical_proxy:booking',
+      theme: '就医陪同：健管专员完成陪同预约 · 陪同看诊服务' });
+    const rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 2); assert.equal(rows[0].progress.total, 5);
+  });
   await t.test('plans without service tasks are omitted; active insurance is covered', async () => {
     await reset(); await Plan.collection.insertMany([{ _id: oid(), patientId: p, title: '已生效营养方案', status: 'active', currentAssignee: manager._id }, { _id: oid(), patientId: p, title: '草稿', status: 'draft' }]);
     await Insurance.collection.insertOne({ _id: oid(), patientId: p, title: '保险', status: 'reviewing', assignedTo: manager._id });

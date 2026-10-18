@@ -62,6 +62,26 @@ test('medical proxy order shows its path before workflow tasks are generated', (
   assert.equal(serviceProgress('order', { ...source, currentStage: 'pending_closure' }, [], current).step, 5);
 });
 
+test('escort progress is selected by the order workflow flag across service names', () => {
+  for (const serviceName of ['陪同看诊服务', '就医陪同服务']) {
+    const source = { serviceName, serviceWorkflowSnapshot: { key: 'medical_proxy' },
+      medicalProxyPlan: { medicalEscort: true }, currentStage: 'booking' };
+    const progress = serviceProgress('order', source, [
+      { workflowKey: 'medical_proxy:booking', status: 'planned' },
+    ], current);
+    assert.equal(progress.step, 2);
+    assert.equal(progress.total, 5);
+    assert.equal(progress.observed, undefined);
+    assert.deepEqual(progress.steps.map(step => step.label), [
+      '确认陪同需求与人员安排', '健管确认陪同预约', '就医专员执行陪同', '健管审核就诊资料', '规划师验收结案',
+    ]);
+  }
+  const direct = serviceProgress('order', { medicalProxyPlan: { medicalEscort: true, adHocConsultation: true },
+    currentStage: 'execute' }, [], current);
+  assert.equal(direct.step, 2);
+  assert.equal(direct.total, 4);
+});
+
 test('care flow uses its actual path, including the shorter reminder route', () => {
   const progress = serviceProgress('flow', { state: { mode: 'reminder', stage: 'audit' } }, [], current);
   assert.equal(progress.step, 3);
