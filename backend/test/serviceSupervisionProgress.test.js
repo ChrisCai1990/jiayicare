@@ -41,9 +41,21 @@ test('insurance shows case steps and the first unfinished step', () => {
 test('services without a fixed path show actual tasks without inventing a total', () => {
   const progress = serviceProgress('followup', {}, [
     { _id: 'done', status: 'completed', theme: '需求确认', createdAt: '2026-10-01' },
-    { _id: 'open', status: 'planned', theme: '顾问审核', createdAt: '2026-10-02' },
+    { _id: 'open', status: 'missed', theme: '顾问审核', createdAt: '2026-10-02' },
   ], current);
   assert.equal(progress.observed, true);
   assert.equal(progress.total, null);
+  assert.equal(progress.generatedCompleted, 1);
+  assert.equal(progress.generatedTotal, 2);
   assert.deepEqual(progress.steps.map(step => step.state), ['past', 'current']);
+  assert.deepEqual(progress.steps.map(step => step.statusLabel), ['已完成', '已逾期']);
+});
+
+test('blocked task is labeled as waiting for its prerequisite', () => {
+  const progress = serviceProgress('followup', {}, [
+    { _id: 'blocked', status: 'planned', isBlocked: true, theme: '安排预约' },
+  ], current);
+  assert.equal(progress.steps[0].statusLabel, '待前置环节');
+  assert.equal(progress.generatedCompleted, 0);
+  assert.equal(progress.generatedTotal, 1);
 });

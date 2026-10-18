@@ -35,10 +35,13 @@ function taskProgress(tasks, current) {
   });
   const steps = [...unique.values()].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
     .map(t => ({ key: String(t._id), label: t.theme || '服务任务',
-      state: t.status === 'completed' ? 'past' : t.isBlocked ? 'blocked' : 'current' }));
-  if (!steps.length) steps.push({ key: 'current', label: current.map(c => c.label).join('、') || '当前环节待核对', state: 'current' });
+      state: t.status === 'completed' ? 'past' : t.isBlocked ? 'blocked' : 'current',
+      statusLabel: t.status === 'completed' ? '已完成' : t.isBlocked ? '待前置环节' : t.status === 'missed' ? '已逾期' : t.status === 'in_progress' ? '办理中' : '待办理' }));
+  const generatedTotal = steps.length;
+  const generatedCompleted = steps.filter(step => step.state === 'past').length;
+  if (!steps.length) steps.push({ key: 'current', label: current.map(c => c.label).join('、') || '当前环节待核对', state: 'current', statusLabel: '待核对' });
   return { label: current.map(c => c.label).join('、') || '当前环节待核对', step: null, total: null,
-    steps, observed: true };
+    steps, observed: true, generatedTotal, generatedCompleted };
 }
 
 function serviceProgress(type, source, tasks, current) {

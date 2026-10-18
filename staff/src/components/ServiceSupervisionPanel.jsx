@@ -67,7 +67,13 @@ export default function ServiceSupervisionPanel() {
         <div style={{ fontSize: 15 }}><b>{s.patientName} · {s.title}</b></div>
         {s.progress && <div style={{ marginTop: 8, padding: '8px 10px', background: '#F0F8F4', borderRadius: 8 }}>
           <b>当前进度：{s.progress.label}</b>{s.progress.step && s.progress.total ? ` · 第 ${s.progress.step}/${s.progress.total} 步` : ''} · 负责人：{s.current.map(c => c.person?.name || '待核对').filter((name, index, names) => names.indexOf(name) === index).join('、') || '待核对'}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>{s.progress.steps?.map((stage, index) => <span key={stage.key} title={stage.label} style={{ padding: '2px 6px', borderRadius: 5, background: stage.state === 'current' ? '#1E6B50' : stage.state === 'past' ? '#D9EEE3' : '#E9EFEC', color: stage.state === 'current' ? '#fff' : '#426457' }}>{s.progress.observed ? '' : `${index + 1}. `}{stage.label}{stage.state === 'blocked' ? '（待前置）' : ''}</span>)}</div>
+          {s.progress.observed ? <div style={{ marginTop: 8 }}>
+            <b style={{ fontSize: 12 }}>已生成任务进度{s.progress.generatedTotal ? ` · 已完成 ${s.progress.generatedCompleted}/${s.progress.generatedTotal}` : ' · 任务待核对'}</b>
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 5, fontSize: 12 }}>
+              <thead><tr><th scope="col" style={{ textAlign: 'left', padding: '5px 7px', borderBottom: '1px solid #D6E5DC' }}>任务环节</th><th scope="col" style={{ textAlign: 'left', padding: '5px 7px', borderBottom: '1px solid #D6E5DC', width: 90 }}>状态</th></tr></thead>
+              <tbody>{s.progress.steps?.map(stage => <tr key={stage.key}><td style={{ padding: '6px 7px', borderBottom: '1px solid #E1ECE5' }}>{stage.label}</td><td style={{ padding: '6px 7px', borderBottom: '1px solid #E1ECE5', color: stage.statusLabel === '已逾期' ? '#B45309' : stage.state === 'past' ? '#1E6B50' : '#425B4D', fontWeight: stage.state === 'current' || stage.statusLabel === '已逾期' ? 700 : 400 }}>{stage.statusLabel || '待核对'}</td></tr>)}</tbody>
+            </table>
+          </div> : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>{s.progress.steps?.map((stage, index) => <span key={stage.key} title={stage.label} style={{ padding: '2px 6px', borderRadius: 5, background: stage.state === 'current' ? '#1E6B50' : stage.state === 'past' ? '#D9EEE3' : '#E9EFEC', color: stage.state === 'current' ? '#fff' : '#426457' }}>{index + 1}. {stage.label}{stage.state === 'blocked' ? '（待前置）' : ''}</span>)}</div>}
           {(s.progress.observed || s.progress.note) && <div style={{ marginTop: 6, color: '#667085', fontSize: 12 }}>{s.progress.note || '以上为已生成的服务任务，后续环节以原服务流转为准。'}</div>}
         </div>}
         {s.attention && <div style={{ color: '#B45309', marginTop: 6 }}>{s.reasons.join(' · ') || '已请求规划师协调'}</div>}
