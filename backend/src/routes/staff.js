@@ -16992,7 +16992,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     recordPageEvidence(imagePageEvidence, page, evidence);
   } });
 
-  const { alignSupplementCandidate, describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, reportItemIdentityKey } = require('../utils/reportPageSupplement');
+  const { alignSupplementCandidate, describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, supplementMatches } = require('../utils/reportPageSupplement');
   const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
   const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
   const existingItemText = describeExistingReportItems(oldPageAtStart);
@@ -17067,10 +17067,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   }
   // 模型即使违反差量指令返回整页，也只允许真正缺项进入；同身份且原来为空的未审核项
   // 可由有原文证据的候选补全，避免“第一次空、补提仍被去重挡住”。
-  const { sameReportItem } = require('../utils/reportPageSupplement');
   const alignedCandidates = parsedItems.map(item => alignSupplementCandidate(oldPageAtStart, item)).filter(Boolean);
   const missingCandidates = filterMissingReportItems(oldPageAtStart, alignedCandidates, { targetOrgans });
-  const enrichmentCandidates = alignedCandidates.filter(item => oldPageAtStart.some(existing => sameReportItem(existing, item)) && hasReportItemEvidence(item));
+  const enrichmentCandidates = alignedCandidates.filter(item => supplementMatches(oldPageAtStart, item).length && hasReportItemEvidence(item));
   let newPage = tagReportPageItems([...missingCandidates, ...enrichmentCandidates], pageNum);
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
@@ -17081,9 +17080,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage);
   const latestMissing = filterMissingReportItems(oldPage, newPage, { targetOrgans });
-  const latestEnrichment = newPage.filter(item => oldPage.some(existing => sameReportItem(existing, item)) && hasReportItemEvidence(item));
+  const latestEnrichment = newPage.filter(item => supplementMatches(oldPage, item).length && hasReportItemEvidence(item));
   const deletedItems = (latest.deletedReportItems || []).filter(belongsToRequestedPage);
-  const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !deletedItems.some(deleted => sameReportItem(deleted, item))));
+  const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !supplementMatches(deletedItems, item).length));
   const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched];
   const mergedPage = supplementMerge.items;
   const classifiedPage = (await classifyItemsAsync(mergedPage)).map(normalizeExplicitNormalStatus);

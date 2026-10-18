@@ -14,6 +14,18 @@ function sameReportItem(a, b) {
   return !(aContext && bContext && aContext !== bContext);
 }
 
+// A page supplement often receives the same lab row with a different unit or
+// section spelling. Match the exact identity first; then treat a same-name
+// measured row on this page as existing instead of adding a competing result.
+function supplementMatches(existingItems, candidate) {
+  const list = existingItems || [];
+  const exact = list.filter(item => sameReportItem(item, candidate));
+  if (exact.length) return exact;
+  if (!['lab', 'data'].includes(candidate?.itemType) || !cleanPart(candidate.name)) return [];
+  return list.filter(item => ['lab', 'data'].includes(item?.itemType)
+    && cleanPart(item.name) === cleanPart(candidate.name));
+}
+
 // “有项目名”并不等于识别成功：数值类必须有数值，检查类必须有可核对的原文。
 // 这条规则只用于 OCR 质量控制和补提，不会删除人工已经录入的项目。
 function hasReportItemEvidence(item) {
@@ -89,15 +101,18 @@ function mergeSupplementItems(existingItems, candidates) {
   for (const candidate of (candidates || [])) {
     if (!cleanPart(candidate?.name) || !hasReportItemEvidence(candidate)) continue;
     const key = reportItemIdentityKey(candidate);
-    const compatible = result.map((item, index) => sameReportItem(item, candidate) ? index : -1).filter(index => index >= 0);
+    const compatibleItems = supplementMatches(result, candidate);
+    const compatible = compatibleItems.map(item => result.indexOf(item));
     const index = indexByKey.get(key) ?? (compatible.length === 1 ? compatible[0] : undefined);
     if (index == null) {
+      if (compatible.length) continue; // multiple same-name rows need human disambiguation
       result.push(candidate);
       indexByKey.set(key, result.length - 1);
       added.push(candidate);
       continue;
     }
     const current = result[index];
+    if (cleanPart(current.unit) && cleanPart(candidate.unit) && cleanPart(current.unit) !== cleanPart(candidate.unit)) continue;
     if (!isHumanReviewed(current) && !hasReportItemEvidence(current)) {
       result[index] = { ...current, ...candidate, itemId: current.itemId || candidate.itemId };
       enriched.push(result[index]);
@@ -165,6 +180,7 @@ function describeExistingReportItems(items) {
 function filterMissingReportItems(existingItems, candidates, options = {}) {
   const existingKeys = new Set((existingItems || []).map(reportItemIdentityKey));
   const acceptedKeys = new Set();
+  const acceptedItems = [];
   const targetKeys = new Set((options.targetOrgans || []).map(target => typeof target === 'string' ? target : target.key));
   const existingCoveredOrgans = new Set();
   for (const item of (existingItems || [])) {
@@ -184,8 +200,10 @@ function filterMissingReportItems(existingItems, candidates, options = {}) {
       if (targeted.every(organ => existingCoveredOrgans.has(organ.key))) return false;
     }
     const key = reportItemIdentityKey(item);
-    if (existingKeys.has(key) || (existingItems || []).some(existing => sameReportItem(existing, item)) || acceptedKeys.has(key)) return false;
+    if (existingKeys.has(key) || supplementMatches(existingItems, item).length
+      || acceptedKeys.has(key) || supplementMatches(acceptedItems, item).length) return false;
     acceptedKeys.add(key);
+    acceptedItems.push(item);
     return true;
   });
 }
@@ -201,5 +219,6 @@ module.exports = {
   PAGE_PARSE_STALE_MS,
   reportItemIdentityKey,
   sameReportItem,
+  supplementMatches,
   resolveImageParseCompletion,
 };
