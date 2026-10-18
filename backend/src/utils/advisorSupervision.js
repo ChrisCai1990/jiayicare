@@ -11,6 +11,7 @@ const review = require('../../../shared/followUpReview.cjs');
 const care = require('../../../shared/careFlow.cjs');
 const shipping = require('../../../shared/orderShipping.cjs');
 const { serviceProgress } = require('./serviceSupervisionProgress');
+const { belongsInServiceProgress } = require('./serviceSupervisionEligibility');
 const id = value => String(value?._id || value || '');
 const active = row => ['planned', 'in_progress', 'missed'].includes(row.status);
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -30,7 +31,7 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
   if (!patients.length) return [];
   const ids = patients.map(p => p._id);
   const [tasks, orders, plans, flows, cases, links, people] = await Promise.all([
-    FollowUp.find({ patientId: { $in: ids } }).select('patientId status theme date remindAt assignedTo taskRole isBlocked workflowKey sourceType sourceId sourceOrderId sourceHealthPlanId sourceAnnualPlanId sourceScheduleKey coordinationGroupId careFlowId annualDispatchKey annualDispatch serviceTracking aiStatus reviewRole reviewAssignedTo staffId formData.serviceRequest formData.generatedFromExpertAppointment formData.generatedFromMedicalEscort formData.linkedFollowUpActionKey progressRecords executedContent updatedAt createdAt completedAt').lean(),
+    FollowUp.find({ patientId: { $in: ids } }).select('patientId status theme date remindAt assignedTo taskRole isBlocked workflowKey sourceType sourceId sourceOrderId sourceHealthPlanId sourceAnnualPlanId sourceScheduleKey coordinationGroupId careFlowId annualDispatchKey annualDispatch serviceTracking deliveryMode aiStatus reviewRole reviewAssignedTo staffId formData.serviceRequest formData.generatedFromExpertAppointment formData.generatedFromMedicalEscort formData.linkedFollowUpActionKey progressRecords executedContent updatedAt createdAt completedAt').lean(),
     Order.find({ user: { $in: ids } }).select('user serviceName status paymentStatus tradeStatus refundStatus servicePrice initiationSource currentStage currentAssignee supervisorId supervisionStatus scheduledAt updatedAt createdAt fulfillmentStatus fulfillmentType serviceWorkflowSnapshot note').lean(),
     HealthPlan.find({ patientId: { $in: ids } }).select('patientId title status type sourceOrderId currentStage currentAssignee supervisorId supervisionStatus endDate updatedAt createdAt').lean(),
     CareFlow.find({ patientId: { $in: ids }, tenantId }).select('patientId parentId state revision updatedAt createdAt').lean(),
@@ -95,6 +96,7 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
   }
   const result = [];
   for (const g of groups.values()) {
+    if (!belongsInServiceProgress(g)) continue;
     const p = patientMap.get(g.patientId), s = g.source;
     const remaining = g.tasks.filter(active);
     if (g.type === 'followup' && !remaining.length) continue;

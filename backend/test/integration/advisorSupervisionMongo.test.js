@@ -51,10 +51,10 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     await task({ sourceType: 'order', sourceOrderId: o, sourceScheduleKey: 'medical_escort_followup:independent' });
     assert.equal((await loadServices(advisor)).length, 1);
   });
-  await t.test('standalone plans, insurance and services without tasks are covered', async () => {
+  await t.test('plans without service tasks are omitted; active insurance is covered', async () => {
     await reset(); await Plan.collection.insertMany([{ _id: oid(), patientId: p, title: '已生效营养方案', status: 'active', currentAssignee: manager._id }, { _id: oid(), patientId: p, title: '草稿', status: 'draft' }]);
     await Insurance.collection.insertOne({ _id: oid(), patientId: p, title: '保险', status: 'reviewing', assignedTo: manager._id });
-    const rows = await loadServices(advisor); assert.equal(rows.length, 2); assert.ok(rows.every(r => r.current[0].person.id === String(manager._id)));
+    const rows = await loadServices(advisor); assert.equal(rows.length, 1); assert.equal(rows[0].title, '保险');
   });
   await t.test('CareFlow uses actual stage owner and disappears on finalized only', async () => {
     await reset(); const f = oid(), parent = await task({ _id: f, taskRole: 'supervisor', assignedTo: planner._id, careFlowId: f });
@@ -69,8 +69,8 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     await task({ sourceAnnualPlanId: annual, sourceType: 'scheduled', sourceScheduleKey: 'vaccine:2026-10-01:疫苗' });
     await task({ sourceAnnualPlanId: annual, sourceType: 'annual_service', workflowKey: 'service_request', sourceScheduleKey: 'service-request:vaccine:0:2026-10-01', taskRole: 'supervisor', formData: { serviceRequest: { moduleKey: 'vaccine', itemSnapshot: { name: '疫苗' } } }, annualDispatch: { executionId: String(execution) } });
     await task({ _id: execution, sourceAnnualPlanId: annual, sourceScheduleKey: 'dispatch-execute:other', coordinationGroupId: 'annual-assistance:other' });
-    await task({ sourceAnnualPlanId: annual, sourceScheduleKey: 'vaccine:2026-10-02:第二项' });
-    assert.equal((await loadServices(advisor)).length, 2);
+    await task({ sourceAnnualPlanId: annual, sourceType: 'scheduled', deliveryMode: 'reminder', sourceScheduleKey: 'vaccine:2026-10-02:第二项' });
+    assert.equal((await loadServices(advisor)).length, 1);
   });
   await t.test('remind/coordinate reach correct people, concurrency dedupes and never writes source', async () => {
     await reset(); await task({ coordinationGroupId: 'explicit-service' });
