@@ -33,7 +33,7 @@ export default function HealthFundConfigPage(){
   <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={form.pointsExchangeEnabled!==false} onChange={e=>set('pointsExchangeEnabled',e.target.checked)}/>每满指定积分自动兑换为1元健康基金</label>
   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
     <div className="form-group"><label className="form-label">每1元健康基金所需积分</label><input className="form-input" type="number" min="1" value={form.pointsPerYuan} onChange={e=>set('pointsPerYuan',e.target.value)}/></div>
-    <div className="form-group"><label className="form-label">每次有效健康数据打卡奖励</label><input className="form-input" type="number" min="0" value={form.healthCheckinPoints} onChange={e=>set('healthCheckinPoints',e.target.value)}/><small style={{color:'#718096'}}>同类数据每天限奖励一次</small></div>
+    <div className="form-group"><label className="form-label">每次有效健康数据记录奖励</label><input className="form-input" type="number" min="0" value={form.healthCheckinPoints} onChange={e=>set('healthCheckinPoints',e.target.value)}/><small style={{color:'#718096'}}>同类数据每天限奖励一次</small></div>
   </div>
   <p style={{color:'#718096'}}>积分兑换所得计入健康基金；仅具备有效会员权限时，可按商品设置的1%-100%比例抵扣。现行消费奖励为现金实付每1元获1积分。</p>
   <h3 style={{marginTop:28}}>抵用券规则</h3>

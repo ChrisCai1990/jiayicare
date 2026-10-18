@@ -110,7 +110,7 @@ function DetailModal({ item, onClose }) {
           {item.routinePeriod && <Row label="周期类型" value={ROUTINE_PERIOD[item.routinePeriod] || item.routinePeriod} />}
           <Row label="执行人" value={item.assignedTo?.name || '未指定'} />
           <Row label="状态" value={STATUS_MAP[item.status] || item.status} />
-          {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
+          {item.checkInItems?.length > 0 && <Row label="健康数据项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
           <Row label="计划内容" value={item.content || item.plannedContent} />
           {getMedicalAssistRequirements(item) !== (item.content || item.plannedContent) && <Row label="本次服务要求" value={getMedicalAssistRequirements(item)} />}
           {item.status === 'completed' && (
@@ -521,7 +521,7 @@ export default function FollowUpsPage() {
             const checkin = f.patientLastRecord ? (() => {
               const days = Math.floor((Date.now() - new Date(f.patientLastRecord)) / 86400000)
               const color = days === 0 ? '#22A06B' : days <= 3 ? '#D97706' : '#8AA89C'
-              const label = days === 0 ? '今日已打卡' : `${days}天前打卡`
+              const label = days === 0 ? '今日已记录' : `${days}天前记录`
               return { color, label }
             })() : null
             return (

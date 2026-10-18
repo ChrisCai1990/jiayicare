@@ -403,7 +403,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       </div>
       <FieldRow label="状态说明" fieldKey="planDesc" placeholder="方案适用场景或说明" half content={content} set={set} />
       <FieldRow label="策略侧重点 *" fieldKey="strategyFocus" rows={3} placeholder="说明本策略优先解决的方向，例如：体重与代谢重塑、睡眠和运动能力、慢病稳定与风险预警" content={content} set={set} />
-      <FieldRow label="AI优先研判依据" fieldKey="strategyEvidence" rows={3} placeholder="说明AI优先关注的已确认资料，例如：阶段性评估、体成分趋势、血压血糖、睡眠打卡、慢病复查结果" content={content} set={set} />
+      <FieldRow label="AI优先研判依据" fieldKey="strategyEvidence" rows={3} placeholder="说明AI优先关注的已确认资料，例如：阶段性评估、体成分趋势、血压血糖、睡眠记录、慢病复查结果" content={content} set={set} />
       <div className="form-group">
         <label className="form-label">管理周期</label>
         <select className="form-input" value={content.managementCycle || '12个月'} onChange={e => set('managementCycle', e.target.value)}>

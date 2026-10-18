@@ -553,7 +553,7 @@ export const staffAPI = {
   // 专项筛查三层目录（从管理端套餐动态读取）
   getScreeningTree:         ()         => req('/staff/screening-tree'),
 
-  // 会员专项筛查 & 日常打卡（医护端查看）
+  // 会员专项筛查 & 日常记录（医护端查看）
   getPatientScreening:      (id)       => req(`/staff/patients/${id}/screening`),
   dedupPatientScreening:    (id)       => req(`/staff/patients/${id}/screening/dedup`, { method: 'POST', body: JSON.stringify({}) }),
   deleteAIScreeningItem:    (id, data) => req(`/staff/patients/${id}/screening/ai-item`, { method: 'DELETE', body: JSON.stringify(data) }),
@@ -580,7 +580,7 @@ export const staffAPI = {
   reviewContentReview: (id, data) => req(`/staff/content-reviews/${id}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
   reviewServiceProposal: (id, data) => req(`/staff/service-proposals/${id}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
 
-  // 日常健康打卡总览
+  // 日常健康数据记录总览
   getCheckinOverview: (p = {}) => req('/staff/checkin-overview?' + qs(p)),
 
   // 体检方案回传进度总览（哪些客户还有体检项目未完成）

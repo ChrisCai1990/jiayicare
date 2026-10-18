@@ -71,7 +71,7 @@ export default function DailyCheckinPage() {
       await staffAPI.createPatientHealthRecord(statusModal.patientId, {
         type: 'symptom',
         value: statusText.trim(),
-        note: '健管专员审核打卡时记录',
+        note: '健管专员审核记录时记录',
         recordedAt: dateFilter || new Date().toISOString(),
       })
       setStatusModal(null)
@@ -112,11 +112,11 @@ export default function DailyCheckinPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">日常健康打卡</h1>
+          <h1 className="page-title">日常健康数据记录</h1>
           <p className="page-subtitle">
             {dateFilter
-              ? `${dateFilter} 共 ${total} 位客户有打卡记录`
-              : `今日（${todayStr}）共 ${total} 位客户有打卡记录`}
+              ? `${dateFilter} 共 ${total} 位客户有健康数据记录`
+              : `今日（${todayStr}）共 ${total} 位客户有健康数据记录`}
           </p>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={load}>刷新</button>
@@ -150,7 +150,7 @@ export default function DailyCheckinPage() {
       ) : records.length === 0 ? (
         <div className="card">
           <div style={{ padding: 60, textAlign: 'center', color: '#aaa' }}>
-            {dateFilter ? `${dateFilter} 暂无打卡记录` : '今日暂无客户打卡'}
+            {dateFilter ? `${dateFilter} 暂无健康数据记录` : '今日暂无客户记录'}
           </div>
         </div>
       ) : (
@@ -167,7 +167,7 @@ export default function DailyCheckinPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ fontWeight: 700, fontSize: 15, color: '#1A2B24' }}>{r.patientName}</span>
                     <span style={{ fontSize: 13, color: '#8AA89C' }}>{r.patientPhone}</span>
-                    <span style={{ fontSize: 12, color: '#aaa' }}>最近打卡 {fmtTime(r.latestRecordAt)}</span>
+                    <span style={{ fontSize: 12, color: '#aaa' }}>最近记录 {fmtTime(r.latestRecordAt)}</span>
                   </div>
                   <button className="btn btn-secondary btn-sm"
                     onClick={e => { e.stopPropagation(); nav(`/patients/${r.patientId}?tab=monitoring`) }}>
@@ -179,7 +179,7 @@ export default function DailyCheckinPage() {
                   </button>
                 </div>
 
-                {/* 已打卡 */}
+                {/* 已记录 */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {r.doneItems.filter(item => item.type !== 'symptom').map((item, idx) => (
                     <span key={`${item.type}-${item.recordedAt || idx}`} style={{
@@ -195,7 +195,7 @@ export default function DailyCheckinPage() {
                   ))}
                 </div>
 
-                {/* 今日健康状态：客户自报或医护审核发现的问题，独立于普通打卡项展示 */}
+                {/* 今日健康状态：客户自报或医护审核发现的问题，独立于普通记录项展示 */}
                 <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #F0EDE8' }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#1A2B24', marginBottom: 6 }}>今日健康状态</div>
                   {r.doneItems.filter(item => item.type === 'symptom').length === 0 ? (
@@ -204,7 +204,7 @@ export default function DailyCheckinPage() {
                     <div key={item.recordedAt || idx} style={{ padding: '7px 10px', background: '#FFF5F5', borderRadius: 8, marginBottom: 5 }}>
                       <div style={{ fontSize: 13, color: '#991B1B' }}>{item.value}{item.note ? `；${item.note}` : ''}</div>
                       <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>
-                        {item.recordedBy?.source === 'staff' ? (item.recordedBy.staffName || '医护人员') : '客户打卡'}
+                        {item.recordedBy?.source === 'staff' ? (item.recordedBy.staffName || '医护人员') : '客户记录'}
                         {' · '}{new Date(item.recordedAt).toLocaleString('zh-CN')}
                         {' · '}{item.symptomWorkflow?.status === 'pending_doctor' ? '待健康顾问处理' : '已处理'}
                       </div>

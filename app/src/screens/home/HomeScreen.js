@@ -12,7 +12,7 @@ import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI, metabolicP
 import AnimatedNumber from '../../components/AnimatedNumber';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期，国内时区凌晨0-8点时
-// 会比本地日期整整慢一天，导致"今天/昨天/前天"打卡归属日算错（2026-07-13 排查昨日打卡问题时发现）
+// 会比本地日期整整慢一天，导致"今天/昨天/前天"记录归属日算错（2026-07-13 排查昨日记录问题时发现）
 function toLocalDateStr(d) {
   const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
@@ -70,9 +70,9 @@ const REM_CAT_META = {
   substance:         { icon: 'warning-outline',       color: '#9D174D', bg: '#FCE7F3' },
 };
 
-// 打卡项目定义/生理指标字段/独立打卡页逻辑已抽离到 CheckinScreen.js（2026-07-18 打卡页重构）
+// 健康数据项目定义/生理指标字段/独立记录页逻辑已抽离到 CheckinScreen.js（2026-07-18 记录页重构）
 
-// 主题关键词 → 打卡类型（兜底匹配，不依赖 checkInItems 字段）
+// 主题关键词 → 记录类型（兜底匹配，不依赖 checkInItems 字段）
 function deriveCheckInFromTheme(theme) {
   const t = theme || '';
   const types = [];
@@ -141,13 +141,13 @@ function ReminderItem({ reminder, isLast }) {
   );
 }
 
-// ── 成长卡片（增长杠杆②：连续打卡激励 + 趋势正反馈）──────────────────
+// ── 成长卡片（增长杠杆②：连续记录激励 + 趋势正反馈）──────────────────
 // 数据来自 dashboard 的 growth 字段。目的是给客户「连续记录」和「看到自己在变好」的正反馈，
-// 提升打卡留存。无数据（从未打卡）时不渲染，不打扰新用户。
+// 提升记录留存。无数据（从未记录）时不渲染，不打扰新用户。
 function GrowthCard({ growth, onCheckin }) {
   if (!growth) return null;
   const { streak = 0, totalCheckinDays = 0, monthCalendar = [], trendHighlight = null } = growth;
-  // 从未打卡则不显示（新用户先引导打卡，不空谈成长）
+  // 从未记录则不显示（新用户先引导记录，不空谈成长）
   if (streak === 0 && totalCheckinDays === 0) return null;
 
   const today = new Date().getDate();
@@ -161,7 +161,7 @@ function GrowthCard({ growth, onCheckin }) {
         <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
           <Text style={{ fontSize: 20, marginRight: 6 }}>🔥</Text>
           <Text style={{ fontSize: 34, fontWeight: '800', color: '#1E6B50', lineHeight: 38 }}>{streak}</Text>
-          <Text style={{ fontSize: 15, color: '#4A6558', fontWeight: '600', marginLeft: 4 }}>天连续打卡</Text>
+          <Text style={{ fontSize: 15, color: '#4A6558', fontWeight: '600', marginLeft: 4 }}>天连续记录</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={{ fontSize: 12, color: '#8AA89C' }}>近30天累计</Text>
@@ -182,10 +182,10 @@ function GrowthCard({ growth, onCheckin }) {
         </View>
       )}
 
-      {/* 本月打卡日历（圆点） */}
+      {/* 本月记录日历（圆点） */}
       {monthCalendar.length > 0 && (
         <View style={{ marginTop: 14 }}>
-          <Text style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>本月打卡</Text>
+          <Text style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>本月记录</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
             {monthCalendar.map(d => (
               <View key={d.day} style={{
@@ -200,11 +200,11 @@ function GrowthCard({ growth, onCheckin }) {
         </View>
       )}
 
-      {/* 打卡入口已移除：打卡统一在下方「今日健康打卡」网格里进行，此处只做连续天数/日历的激励展示。
-          （2026-07-10 金娟：原「坚持第N天·去打卡」按钮绑的是空函数 onCheckin={()=>{}}，点击无反应且与下方网格重复） */}
+      {/* 记录入口已移除：记录统一在下方「今日健康数据记录」网格里进行，此处只做连续天数/日历的激励展示。
+          （2026-07-10 金娟：原「坚持第N天·记录健康数据」按钮绑的是空函数 onCheckin={()=>{}}，点击无反应且与下方网格重复） */}
       {streak > 0 && (
         <Text style={{ marginTop: 12, textAlign: 'center', fontSize: 13, color: '#4A6558' }}>
-          今天是坚持第 {streak + 1} 天，在下方完成今日打卡 👇
+          今天是坚持第 {streak + 1} 天，在下方完成今日记录 👇
         </Text>
       )}
     </View>
@@ -223,7 +223,7 @@ export default function HomeScreen({ navigation }) {
   const [followupPlans, setFollowupPlans]   = useState([]);
   const [allTasks, setAllTasks]             = useState([]);
   const [popularServices, setPopularServices] = useState([]);
-  // 打卡相关状态/弹窗已抽离到 CheckinScreen.js（2026-07-18 打卡页重构）
+  // 记录相关状态/弹窗已抽离到 CheckinScreen.js（2026-07-18 记录页重构）
   const todayStr = toLocalDateStr(new Date());
   // 任务详情弹窗
   const [taskDetailModal, setTaskDetailModal] = useState(null);
@@ -555,7 +555,7 @@ export default function HomeScreen({ navigation }) {
                     )}
                     {t.checkInItems?.length > 0 && (
                       <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-                        <Text style={{ fontSize: 13, color: colors.textMuted, width: 64 }}>打卡项目</Text>
+                        <Text style={{ fontSize: 13, color: colors.textMuted, width: 64 }}>健康数据项目</Text>
                         <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                           {t.checkInItems.map((k, i) => (
                             <View key={i} style={{ backgroundColor: '#E8F5EF', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 99 }}>
@@ -670,7 +670,7 @@ const styles = StyleSheet.create({
   heroTrendLabel: { fontSize: 9, color: 'rgba(255,255,255,0.45)' },
   heroTrendActionText: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: spacing.sm, lineHeight: 17 },
 
-  // 完成今日打卡入口按钮（2026-07-18 打卡页重构：原网格/弹窗已抽离到 CheckinScreen）
+  // 完成今日记录入口按钮（2026-07-18 记录页重构：原网格/弹窗已抽离到 CheckinScreen）
   checkinEntryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     backgroundColor: colors.primary, borderRadius: radius.lg,

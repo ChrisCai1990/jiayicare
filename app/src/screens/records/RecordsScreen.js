@@ -277,7 +277,7 @@ function TrendChart({ data, data2, typeCfg, period }) {
 
 // ── 历史记录条目 ──────────────────────────────────────────────────
 // 展示两个时间：归属时间(recordedAt，用户标注这次记录对应的时间点，补录时可能是过去)
-// 与提交时间(createdAt，实际打卡这个操作发生的时刻)，避免误以为两者是同一个时间（2026-07-18 反馈）
+// 与提交时间(createdAt，实际记录这个操作发生的时刻)，避免误以为两者是同一个时间（2026-07-18 反馈）
 function RecordRow({ record, typeCfg, isLast, onPress }) {
   const stMap = typeCfg.key === 'sleep' ? SLEEP_STATUS_CFG : STATUS_CFG;
   const st  = stMap[record.status] || stMap.normal;
@@ -285,7 +285,7 @@ function RecordRow({ record, typeCfg, isLast, onPress }) {
   const dt  = record.recordedAt
     ? new Date(record.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '-';
-  // 归属时间与提交时间相差超过5分钟才额外展示"提交于"，避免即时打卡（两者几乎相同）时显示两遍冗余时间
+  // 归属时间与提交时间相差超过5分钟才额外展示"提交于"，避免即时记录（两者几乎相同）时显示两遍冗余时间
   const createdDt = record.createdAt ? new Date(record.createdAt) : null;
   const recordedDt = record.recordedAt ? new Date(record.recordedAt) : null;
   const showSubmittedAt = createdDt && recordedDt && Math.abs(createdDt - recordedDt) > 5 * 60 * 1000;
@@ -315,7 +315,7 @@ function RecordRow({ record, typeCfg, isLast, onPress }) {
   );
 }
 
-// ── 按归属日期(recordedAt本地日期)分组，同一天的多次打卡归为一组展示 ──
+// ── 按归属日期(recordedAt本地日期)分组，同一天的多次记录归为一组展示 ──
 function groupRecordsByLocalDate(records) {
   const groups = [];
   const indexByDate = {};
@@ -380,7 +380,7 @@ export default function RecordsScreen({ navigation }) {
   // 历史记录
   const [historyData, setHistoryData] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [editRecord, setEditRecord] = useState(null); // 正在编辑的打卡记录
+  const [editRecord, setEditRecord] = useState(null); // 正在编辑的健康数据记录
   const [editValues, setEditValues] = useState({});
   const [editNote, setEditNote] = useState('');
   const [editSaving, setEditSaving] = useState(false);
@@ -964,12 +964,12 @@ export default function RecordsScreen({ navigation }) {
           </View>
         </View>
 
-        {/* ── 日常生活打卡：文字类数据按最近记录展示，不绘制无意义曲线 ── */}
+        {/* ── 日常生活记录：文字类数据按最近记录展示，不绘制无意义曲线 ── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
               <Ionicons name="calendar-outline" size={17} color={colors.primary} />
-              <Text style={styles.sectionTitle}>日常生活打卡</Text>
+              <Text style={styles.sectionTitle}>日常生活记录</Text>
             </View>
             <Text style={styles.sectionHint}>近30天</Text>
           </View>
@@ -1034,8 +1034,8 @@ export default function RecordsScreen({ navigation }) {
                   <Text style={[styles.healthStatusTitle, isToday && { color: '#B91C1C' }]}>
                     {isToday ? '今天已记录不适' : '今天暂未记录不适'}
                   </Text>
-                  <Text style={styles.healthStatusText}>{isToday ? (latest.value || latest.note || '已提交不适情况') : '如有不适，请在今日健康打卡中及时记录。'}</Text>
-                  {isToday && <Text style={styles.healthStatusMeta}>提交时间：{String(latest.recordedAt).replace('T', ' ').slice(0, 16)} · 来源：{latest.recordedBy?.source === 'staff' ? (latest.recordedBy.staffName || '医护团队录入') : latest.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'}</Text>}
+                  <Text style={styles.healthStatusText}>{isToday ? (latest.value || latest.note || '已提交不适情况') : '如有不适，请在今日健康数据记录中及时记录。'}</Text>
+                  {isToday && <Text style={styles.healthStatusMeta}>提交时间：{String(latest.recordedAt).replace('T', ' ').slice(0, 16)} · 来源：{latest.recordedBy?.source === 'staff' ? (latest.recordedBy.staffName || '医护团队录入') : latest.recordedBy?.source === 'system' ? '系统记录' : '客户记录'}</Text>}
                 </View>
               </View>
             );
@@ -1047,7 +1047,7 @@ export default function RecordsScreen({ navigation }) {
 
       {/* 个人资料/生活方式编辑已移至 ProfileArchiveScreen.js（2026-07-18 健康档案页瘦身） */}
 
-      {/* ── 编辑打卡记录 Modal ───────────────────────────────────── */}
+      {/* ── 编辑健康数据记录 Modal ───────────────────────────────────── */}
       <Modal visible={!!editRecord} animationType="slide" transparent onRequestClose={() => setEditRecord(null)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.editOverlay}>

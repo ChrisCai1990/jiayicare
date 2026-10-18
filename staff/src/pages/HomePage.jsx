@@ -253,15 +253,15 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 今日健康打卡 */}
+      {/* 今日健康数据记录 */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div className="card-title">今日健康打卡</div>
+          <div className="card-title">今日健康数据记录</div>
           <button className="btn btn-secondary btn-sm" onClick={() => nav('/daily-checkin')}>查看全部</button>
         </div>
         <div className="card-body" style={{ padding: checkinRecords.length === 0 ? '20px 20px' : '8px 20px' }}>
           {checkinRecords.length === 0 ? (
-            <div style={{ color: '#aaa', textAlign: 'center', fontSize: 14 }}>今日暂无客户打卡</div>
+            <div style={{ color: '#aaa', textAlign: 'center', fontSize: 14 }}>今日暂无客户记录</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {checkinRecords.slice(0, 5).map((r, i) => (

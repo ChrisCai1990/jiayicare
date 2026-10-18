@@ -189,6 +189,8 @@ const medicalReportSchema = new mongoose.Schema({
   advisorCorrection: { type: mongoose.Schema.Types.Mixed, default: null },
   // 处方/门诊/住院资料不复用体检的 reportItems。此处保存人工逐项核对的业务结构及审核结论。
   clinicalReview: { type: mongoose.Schema.Types.Mixed, default: null },
+  // 健管专员审核门诊病历时选定的已有专病首页；顾问只能向该首页的时间轴归档。
+  courseTargetDiseaseId: { type: mongoose.Schema.Types.ObjectId, default: null },
   classificationCorrection: { type: mongoose.Schema.Types.Mixed, default: null },
 
   // 健康顾问单份查看留痕（2026-07-28新增）：健康顾问在"待查看新增报告"清单里点开某份报告，

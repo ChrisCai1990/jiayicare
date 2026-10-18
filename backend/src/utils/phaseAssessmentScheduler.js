@@ -58,15 +58,18 @@ function completedCalendarPeriod(frequency, now = new Date(), anchor = null) {
 }
 
 async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null, assessmentAnchor = plan.confirmedAt, frequencyOverride = '', contextWindow = null }) {
+  if (user.membershipTier !== 'annual' || !user.assignedFamilyDoctor) throw new Error('阶段性评估与复盘仅适用于已分配健康顾问的年度会员');
   const frequency = ['biweekly', 'monthly', 'quarterly', 'yearly'].includes(frequencyOverride)
     ? frequencyOverride : ['monthly', 'quarterly', 'yearly'].includes(template.content?.frequency)
     ? template.content.frequency : 'quarterly';
   const routing = routingFor(frequency === 'yearly' ? 'comprehensive' : assessmentDomain || template.content?.assessmentDomain || 'comprehensive', assessmentMode);
   if (!user[ROLE_FIELDS[routing.primaryReviewRole]]) throw new Error(`请先分配该客户的${ROLE_LABELS[routing.primaryReviewRole]}`);
   const basePeriod = periodOverride || periodFor(frequency, new Date(), assessmentAnchor);
-  const period = basePeriod && { ...basePeriod, key: `${basePeriod.key}:${routing.assessmentDomain}` };
+  const period = basePeriod && { ...basePeriod, key: assessmentMode === 'routine' ? basePeriod.key : `${basePeriod.key}:${routing.assessmentDomain}` };
   if (!period) return null;
-  const existingFilter = { annualPlanId: plan._id, periodKey: { $in: [period.key, basePeriod.key] } };
+  const existingFilter = assessmentMode === 'routine'
+    ? { annualPlanId: plan._id, periodKey: { $regex: `^${String(basePeriod.key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?::|$)` } }
+    : { annualPlanId: plan._id, periodKey: { $in: [period.key, basePeriod.key] } };
   const existing = await PhaseAssessment.exists(existingFilter);
   if (existing) return null;
   const generationId = crypto.createHash('sha256').update([plan._id, period.key].join(':')).digest('hex');
@@ -105,9 +108,14 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
 第一部分只写${windowDays}天窗口内的监测变化和覆盖情况；第二部分只分析阶段变化与饮食、运动、睡眠、饮酒、情绪、依从性的时间关联，证据不足写“可能相关/待验证”，不得写成因果；第三部分写可能风险及数据缺口，体检只作基线背景；第四部分写下一周期可执行计划，注明事项、频次、责任角色和复评时间。每栏最多6条，每条先写简短判断标签，再用冒号补充依据。`;
   const content = await chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 3500, temperature: 0.05, timeoutMs: 90000 });
   if (!await PhaseAssessmentGeneration.exists({ _id: generationId, token, status: 'generating' })) return null;
+  const teamRoles = assessmentMode === 'routine'
+    ? ['healthManager', 'nutritionist', routing.primaryReviewRole, 'familyDoctor'].filter((role, index, roles) =>
+      roles.indexOf(role) === index && user[ROLE_FIELDS[role]])
+    : [];
   const item = await PhaseAssessment.create({
     patientId: user._id, annualPlanId: plan._id, templateId: template._id,
     assessmentMode, sourceNutritionPlanId, interventionWeek, ...routing,
+    ...(assessmentMode === 'routine' ? { status: 'team_review', teamRoles: teamRoles.length ? teamRoles : [routing.primaryReviewRole], teamReviews: {} } : {}),
     periodKey: period.key, periodLabel: period.label, content,
     evidenceSources: context.sources || [], templateSnapshot: { name: template.name, frequency, windowDays, focus, instructions, minimumData, outputSections, triggerRule: template.content?.triggerRule || '' },
   });
@@ -140,7 +148,7 @@ async function scanAndCreatePhaseAssessments() {
     if (seenPatients.has(String(plan.patientId))) continue;
     let user, gate, frequency, pilotFrequency = false;
     try {
-      user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand tenantId servicePackage membershipTier enterpriseId aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
+      user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand tenantId servicePackage membershipTier enterpriseId aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedHealthManager assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
       if (!user || user.isDeleted) continue;
       gate = await require('./annualPeriodicGate').annualPeriodicGate(plan, user);
       const rights = await require('./packageFeatureEntitlements').getAiEntitlements(user, gate.access);
@@ -184,7 +192,7 @@ function startPhaseAssessmentScheduler() {
 }
 
 function eligibleForAutomaticAssessment(user, now = new Date(), access = null) {
-  if (!user || user.isDeleted) return false;
+  if (!user || user.isDeleted || user.membershipTier !== 'annual' || !user.assignedFamilyDoctor) return false;
   const { legacyAccess, dayOf } = require('./serviceAccess');
   const effective = access || legacyAccess(user, now);
   // 自动AI评估比普通访问更严格：必须有可核验的结束日期。

@@ -327,7 +327,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [planRows, setPlanRows] = useState([emptyRow()])
   const [planType, setPlanType] = useState('phone')
   const [planPatientId, setPlanPatientId] = useState(patientId || '')
-  // 打卡任务
+  // 记录任务
   const [checkInItems, setCheckInItems] = useState([])
   const [repeatDaily, setRepeatDaily]   = useState(false)
   // 随访方案模板选择
@@ -718,9 +718,9 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               </div>
             )}
 
-            {/* 打卡任务设置 */}
+            {/* 记录任务设置 */}
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">打卡任务（可选）</label>
+              <label className="form-label">记录任务（可选）</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
                 {[
                   { key: 'diet',          label: '饮食' },
@@ -760,7 +760,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               {checkInItems.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 11, color: '#1E6B50' }}>
-                    已选 {checkInItems.length} 项，将出现在会员首页今日打卡
+                    已选 {checkInItems.length} 项，将出现在会员首页今日记录
                   </div>
                   {!repeatWeekly && <RepeatDailyToggle value={repeatDaily} onChange={setRepeatDaily} />}
                 </div>

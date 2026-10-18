@@ -13,7 +13,7 @@ function summaryTodos(user, can, now = new Date()) {
       const hasContent = key => record.sections[key] && Object.keys(record.sections[key]).length > 0;
       for (const [scope, type, approved, hasData, label] of [
         ['doctor', 'summary_review', record.doctorApprovedAt, DOCTOR_KEYS.some(hasContent), 'AI健康信息整理待核对（5维度）'],
-        ['nutrition', 'lifestyle_review', record.nutritionApprovedAt, hasContent('lifestyle_assessment'), '生活方式评估待审核'],
+        ['nutrition', 'lifestyle_review', record.nutritionApprovedAt, hasContent('lifestyle_assessment'), 'AI生活方式草稿待营养师审核'],
       ]) {
         if (!can(type) || approved || !hasData || (record.scope && !['all', scope].includes(record.scope))) continue;
         const generatedAt = record.generatedAt ? new Date(record.generatedAt).toISOString() : '';

@@ -17,9 +17,9 @@ const CATEGORIES = [
   { key: 'monitoring',        label: '日常监测',   icon: 'pulse-outline',         color: '#3B82F6', scheduleType: 'recurring' },
   { key: 'screening_annual',  label: '年度筛查',   icon: 'search-circle-outline', color: '#8B5CF6', scheduleType: 'once'      },
   { key: 'vaccination',       label: '疫苗接种',   icon: 'shield-checkmark-outline', color: '#F59E0B', scheduleType: 'once'  },
-  { key: 'diet_checkin',      label: '饮食打卡',   icon: 'restaurant-outline',    color: '#F97316', scheduleType: 'recurring' },
-  { key: 'exercise_checkin',  label: '运动打卡',   icon: 'barbell-outline',       color: '#06B6D4', scheduleType: 'recurring' },
-  { key: 'weight_checkin',    label: '体重打卡',   icon: 'scale-outline',         color: '#6366F1', scheduleType: 'recurring' },
+  { key: 'diet_checkin',      label: '饮食记录',   icon: 'restaurant-outline',    color: '#F97316', scheduleType: 'recurring' },
+  { key: 'exercise_checkin',  label: '运动记录',   icon: 'barbell-outline',       color: '#06B6D4', scheduleType: 'recurring' },
+  { key: 'weight_checkin',    label: '体重记录',   icon: 'scale-outline',         color: '#6366F1', scheduleType: 'recurring' },
   { key: 'sleep',             label: '入睡提醒',   icon: 'moon-outline',          color: '#7C3AED', scheduleType: 'recurring' },
   { key: 'substance',         label: '烟酒提醒',   icon: 'warning-outline',       color: '#DC2626', scheduleType: 'recurring' },
 ];

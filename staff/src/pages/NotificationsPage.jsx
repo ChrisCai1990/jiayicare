@@ -1303,7 +1303,7 @@ const HEALTH_SECTION_LABELS = {
   longTermMeds:    '长期用药',
   longTermSups:    '长期营养补剂',
   dietSummary:     '膳食调查概述',
-  latestVitals:    '近期打卡数据',
+  latestVitals:    '近期健康数据记录',
   allergies:       '过敏史',
   medications:     '当前用药',
   surgeries:       '手术史',

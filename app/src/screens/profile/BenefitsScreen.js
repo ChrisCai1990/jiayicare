@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../services/api';
 import MembershipBenefits from '../../components/MembershipBenefits';
 
-const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
+const POINTS_SOURCE_LABEL = { checkin: '记录', consumption: '消费', redeem: '兑换', adjust: '调整' };
 
 const FUND_TYPE_LABEL  = { enterprise: '企业赠送', promotion: '活动奖励', other: '其他赠送' };
 const GIFT_TYPE_LABEL  = { fund: '健康基金', service: '服务权益' };
@@ -365,7 +365,7 @@ export default function BenefitsScreen({ navigation, route }) {
               {pointsExpanded && (
                 <View style={{ marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
                   {pointsLogs.length === 0 ? (
-                    <Text style={{ fontSize: 12, color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.md }}>暂无积分记录，打卡或消费即可获得积分</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.md }}>暂无积分记录，记录或消费即可获得积分</Text>
                   ) : (
                     pointsLogs.slice(0, 20).map(log => (
                       <View key={log._id} style={styles.pointsLogRow}>

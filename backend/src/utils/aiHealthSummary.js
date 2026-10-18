@@ -121,8 +121,8 @@ async function generateHealthSummarySections(user, {
   const [activeMeds, activeSupplements, recentCheckins] = await Promise.all([
     retrospective ? [] : Medication.find({ user: user._id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
     retrospective ? [] : Supplement.find({ user: user._id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
-    // 近30天打卡记录（体重/血压/血糖/睡眠/运动/情绪等），2026-07-11新增：此前AI健康分析完全没读打卡数据，
-    // 只看体检报告和手动录入的档案字段，导致日常打卡趋势(如体重变化/运动频率/睡眠时长)无法体现在分析里
+    // 近30天健康数据记录（体重/血压/血糖/睡眠/运动/情绪等），2026-07-11新增：此前AI健康分析完全没读健康数据记录，
+    // 只看体检报告和手动录入的档案字段，导致日常健康数据趋势(如体重变化/运动频率/睡眠时长)无法体现在分析里
     retrospective ? [] : HealthRecord.find({ user: user._id, recordedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } })
       .sort({ recordedAt: -1 }).select('type value extra unit recordedAt').lean(),
   ]);
@@ -230,7 +230,7 @@ async function generateHealthSummarySections(user, {
     `${metric.name}：${metric.points.map(point => `${point.date} ${point.value}${metric.unit}`).join(' → ')}`
   ).join('\n') || '近5个自然年没有可核对的心房、心室测量数值';
 
-  // 近30天打卡记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
+  // 近30天健康数据记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
   const CHECKIN_LABEL = { weight: '体重(kg)', bloodPressure: '血压(mmHg)', bloodSugar: '血糖(mmol/L)', heartRate: '心率(次/分)', sleep: '睡眠(小时)', mood: '情绪(1-10分)', exercise: '运动', diet: '饮食', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒', symptom: '症状自评' };
   const NUMERIC_CHECKIN_TYPES = new Set(['weight', 'bloodSugar', 'heartRate', 'sleep', 'mood']);
   const checkinByType = {};
@@ -250,7 +250,7 @@ async function generateHealthSummarySections(user, {
     }
     // 文本类（运动/饮食/饮水/排便/吸烟/饮酒）：列最近3条原文，体现近期习惯
     return `${label}：近30天共${recs.length}次记录，最近几条 - ${recs.slice(0, 3).map(r => r.value).join('；')}`;
-  }).filter(Boolean).join('\n') || (retrospective ? '无可核对的目标年度打卡快照，不作判断' : '近30天暂无打卡记录');
+  }).filter(Boolean).join('\n') || (retrospective ? '无可核对的目标年度健康数据记录快照，不作判断' : '近30天暂无健康数据记录');
 
   const ls  = user.lifestyle || {};
   const lsd = user.lifestyle_data || {};
@@ -324,7 +324,7 @@ async function generateHealthSummarySections(user, {
   ]);
 
   const prompt = `${roleIntro}
-${retrospective ? `【历史年度补生成，最高优先级】本次回溯分析截至${targetYear}年12月31日。只能将检查年度不晚于${targetYear}年的原始报告作为该年度事实；未提供历史快照的档案、用药、生活方式和打卡一律写“当年资料不可核对”，不得推断为空或借用现在的状态。生成时间是现在，不能声称本分析在${targetYear}年当时已经完成。\n` : ''}
+${retrospective ? `【历史年度补生成，最高优先级】本次回溯分析截至${targetYear}年12月31日。只能将检查年度不晚于${targetYear}年的原始报告作为该年度事实；未提供历史快照的档案、用药、生活方式和记录健康数据一律写“当年资料不可核对”，不得推断为空或借用现在的状态。生成时间是现在，不能声称本分析在${targetYear}年当时已经完成。\n` : ''}
 【服务边界——最高优先级】本输出仅用于整理用户已提供的健康资料和呈现变化趋势，不提供诊断、疾病概率判断、病因推断、治疗方案、检查开单、处方，以及药物或营养补充剂的新增、停用、替换、剂量和用法建议。异常信息只能忠实引用原报告、参考范围或用户记录，并提示用户携带原始资料咨询正规医疗机构。当前用药和营养补充信息只可作为原始记录展示，不得推断其与指标异常存在因果关系，也不得据此建议调整。department字段固定输出空字符串。问题分析必须身心结合，但不得将心理量表与躯体疾病建立未经原始资料明确记载的因果关系。
 
 【医疗事实铁律——优先级高于其他要求】
@@ -336,7 +336,7 @@ ${retrospective ? `【历史年度补生成，最高优先级】本次回溯分�
 
 【心理量表铁律——必须严格遵守】①SCL90各因子分必须严格按系统标注的正常/异常判定来解读：因子分＜2一律属正常范围，即使某因子（如精神病性1.2）在数值上略高于其他因子，只要＜2就是正常，绝不能描述为"升高/偏高/异常"。②心理量表（SCL90/SAS/SDS/嗜睡）的因子和结论只能写进"情绪/心理"相关分析，严禁把精神病性、偏执等心理因子塞进 cardiovascular_risk（心脑血管）、tumor_risk（肿瘤）等躯体维度——这些心理因子与躯体疾病风险无直接因果关系。③只有当系统明确标注某因子为异常时，才可在情绪维度提示。
 
-分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【近30天打卡记录】【当前用药与营养素补充】综合评估。【近30天打卡记录】反映的是体检之后更实时的自测数据（如体重是否持续下降、血压近期是否稳定、运动频率、睡眠时长），如果与体检报告结论有出入（如体检时血压正常但近期打卡持续偏高），应在相应维度中明确指出这一变化趋势。专项筛查报告中的检查所见（影像/内镜）请重点比对历年同类检查变化。每个分析维度都应体现「几年数据的趋势变化 → 当前结论 → 下一步」而非仅描述当前值。
+分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【近30天健康数据记录】【当前用药与营养素补充】综合评估。【近30天健康数据记录】反映的是体检之后更实时的自测数据（如体重是否持续下降、血压近期是否稳定、运动频率、睡眠时长），如果与体检报告结论有出入（如体检时血压正常但近期记录健康数据持续偏高），应在相应维度中明确指出这一变化趋势。专项筛查报告中的检查所见（影像/内镜）请重点比对历年同类检查变化。每个分析维度都应体现「几年数据的趋势变化 → 当前结论 → 下一步」而非仅描述当前值。
 
 【心脑血管与慢病趋势卡规则——严格限定范围】
 ①cardiovascular_risk.topics只允许以下主题，且每种检查独立建卡、独立比较：心电图、心脏超声、冠脉CTA、运动评估/运动负荷试验、心脏磁共振；脑血管方向为颈动脉超声、头颅MRI、头颅MRA、同型半胱氨酸、脂蛋白磷脂酶A2（Lp-PLA2）。其他项目不得放入心脑血管趋势卡。
@@ -376,7 +376,7 @@ ${psychSummary}
 【生活方式与膳食调查】
 ${lifestyleSummary}
 
-【近30天打卡记录（体重/血压/血糖/心率/睡眠/情绪等日常自测数据，体现短期真实趋势，可与体检报告互相印证或提示体检后的变化）】
+【近30天健康数据记录（体重/血压/血糖/心率/睡眠/情绪等日常自测数据，体现短期真实趋势，可与体检报告互相印证或提示体检后的变化）】
 ${checkinSummary}
 
 【当前用药】

@@ -33,9 +33,9 @@ const CAT_META = {
   monitoring:        { label: '日常监测', icon: 'pulse-outline',         color: '#7C3AED', bg: '#F2EEFF' },
   screening_annual:  { label: '年度筛查', icon: 'search-outline',        color: '#D97706', bg: '#FEF3E2' },
   vaccination:       { label: '疫苗接种', icon: 'shield-outline',        color: '#059669', bg: '#D1FAE5' },
-  diet_checkin:      { label: '饮食打卡', icon: 'nutrition-outline',     color: '#B45309', bg: '#FEF3C7' },
-  exercise_checkin:  { label: '运动打卡', icon: 'fitness-outline',       color: '#0369A1', bg: '#E0F2FE' },
-  weight_checkin:    { label: '体重打卡', icon: 'scale-outline',         color: '#1E6B50', bg: '#D1FAE5' },
+  diet_checkin:      { label: '饮食记录', icon: 'nutrition-outline',     color: '#B45309', bg: '#FEF3C7' },
+  exercise_checkin:  { label: '运动记录', icon: 'fitness-outline',       color: '#0369A1', bg: '#E0F2FE' },
+  weight_checkin:    { label: '体重记录', icon: 'scale-outline',         color: '#1E6B50', bg: '#D1FAE5' },
   sleep:             { label: '入睡提醒', icon: 'moon-outline',          color: '#4F46E5', bg: '#EEF2FF' },
   substance:         { label: '烟酒提醒', icon: 'warning-outline',       color: '#9D174D', bg: '#FCE7F3' },
 };

@@ -1283,10 +1283,10 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .limit(3)
     .populate('staffId', 'name role');
 
-  // 最近健康记录（血压/血糖/体重/运动/饮食等全部打卡类型）——按类型分别取最近几条再合并，
-  // 不能直接对全部类型 sort+limit(30)：血压/血糖这类高频打卡会迅速占满30条名额，把运动/饮食
-  // 这类低频或补录历史日期的记录挤出窗口，导致医护端"看不到运动打卡"（2026-07-13 反馈：
-  // 今天打卡能看到，昨天补录的却看不到，正是被高频类型挤没了，不是没保存成功）
+  // 最近健康记录（血压/血糖/体重/运动/饮食等全部健康数据记录类型）——按类型分别取最近几条再合并，
+  // 不能直接对全部类型 sort+limit(30)：血压/血糖这类高频记录健康数据会迅速占满30条名额，把运动/饮食
+  // 这类低频或补录历史日期的记录挤出窗口，导致医护端"看不到运动记录"（2026-07-13 反馈：
+  // 今天记录健康数据能看到，昨天补录的却看不到，正是被高频类型挤没了，不是没保存成功）
   const recentTypes = await HealthRecord.distinct('type', { user: user._id });
   const recentRecordsByType = await Promise.all(
     recentTypes.map(t => HealthRecord.find({ user: user._id, type: t })
@@ -1383,6 +1383,21 @@ const mergedHealthChange = body => {
 // 用药资料由“用药信息审核”独立闭环；不要再生成健康变化二次审核，避免同一处方要求健康顾问重复确认。
 // 病历和检查资料中的非用药健康变化，仍由健康顾问决定是否写入长期健康时间轴。
 const HEALTH_COURSE_DOCUMENTS = new Set(['outpatient_record', 'inpatient_record', 'exam_report', 'lab_report']);
+const CLINICAL_MANAGER_DOCUMENTS = new Set(['outpatient_record', 'prescription_order']);
+function clinicalManagerAuditError(report, staff) {
+  if (!CLINICAL_MANAGER_DOCUMENTS.has(report.documentCategory)) return '';
+  return ['healthManager', 'superadmin'].includes(staff.role) ? '' : '门诊病历、处方与医嘱请先由健管专员核对原件并审核；健康顾问在此后处理专业审核任务';
+}
+async function outpatientCourseTargetError(report) {
+  if (report.documentCategory !== 'outpatient_record') return '';
+  if (!report.courseTargetDiseaseId) return '请先到服务档案 → 专病管理建立专病首页，并在门诊病历审核页选择归入的专病';
+  const patient = await User.findById(report.user).select('diseaseRecords').lean();
+  const target = (patient?.diseaseRecords || []).find(record => String(record._id) === String(report.courseTargetDiseaseId));
+  if (!target) return '所选专病首页不存在或已删除，请刷新客户档案后重新选择';
+  if (!target.name || !target.summary || !MEDICAL_SUMMARY_FIELDS.some(field => String(target.summary[field] || '').trim()))
+    return '所选专病首页缺少首次概况，请先在专病管理中填写并保存';
+  return '';
+}
 const parseAiJson = raw => {
   const text = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
   return JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
@@ -1395,6 +1410,7 @@ async function generateHealthCourseDraft(report) {
   const archived = findReportArchive(patient.diseaseRecords, report._id);
   if (archived) return { alreadyArchived:true, archive:archived };
   const diseaseNames = (patient.diseaseRecords || []).map(item => item.name).filter(Boolean);
+  const selectedDisease = (patient.diseaseRecords || []).find(item => String(item._id) === String(report.courseTargetDiseaseId || ''));
   const evidence = courseEvidence(report);
   const { hasOutpatientRecordContent } = require('../utils/outpatientRecordExtraction');
   let outpatient = report.documentCategory === 'outpatient_record' && hasOutpatientRecordContent(report.clinicalReview)
@@ -1412,7 +1428,7 @@ async function generateHealthCourseDraft(report) {
   let parsed;
   if (outpatient) {
     parsed = {
-      recommendedDiseaseName: outpatient.diagnoses.find(name => diseaseNames.includes(name)) || '',
+      recommendedDiseaseName: selectedDisease?.name || outpatient.diagnoses.find(name => diseaseNames.includes(name)) || '',
       content: [outpatient.chiefComplaint, outpatient.presentIllness].filter(Boolean).join('\n'),
       examination: [outpatient.vitalSigns, outpatient.examination, outpatient.testsAndOrders].filter(Boolean).join('\n'),
       diagnosis: outpatient.diagnoses.join('\n'), medicationChange: outpatient.medicationInstruction,
@@ -1429,7 +1445,7 @@ async function generateHealthCourseDraft(report) {
   const now = new Date();
   const draft = {
     status:'pending_review', sourceReportId:report._id, generatedAt:now, sourceVersion:recordVersion(evidence),
-    recommendedDiseaseName:cleanMedicalText(parsed.recommendedDiseaseName,100),
+    recommendedDiseaseName:cleanMedicalText(selectedDisease?.name || parsed.recommendedDiseaseName,100),
     content:cleanMedicalText(parsed.content,20000), examination:cleanMedicalText(parsed.examination,5000), diagnosis:cleanMedicalText(parsed.diagnosis,5000),
     medicationChange:cleanMedicalText(parsed.medicationChange,5000), treatmentResponse:cleanMedicalText(parsed.treatmentResponse,5000), nextPlan:cleanMedicalText(parsed.nextPlan,5000),
     ...(outpatient ? { outpatientRecord:outpatient, outpatientReviewIssues } : {}),
@@ -2195,7 +2211,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo currentStage serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt');
 
-  // 获取本页会员最近一次打卡（健康记录）时间
+  // 获取本页会员最近一次记录健康数据（健康记录）时间
   const patientIds = [...new Set(followUps.map(f => f.patientId?._id).filter(Boolean))];
   const lastRecords = await HealthRecord.aggregate([
     { $match: { userId: { $in: patientIds }, ...tenantMatchStage() } },
@@ -5304,7 +5320,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
-    const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision, clinicalReview, screeningReclassification } = req.body;
+    const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision, clinicalReview, courseTargetDiseaseId, screeningReclassification } = req.body;
     if (report.archiveOnly && (aiStatus !== undefined || reportItems !== undefined || screeningReclassification)) return res.status(409).json({ success: false, message: '仅留存原件不参与解析和审核' });
     if (screeningReclassification && (editSource !== 'ocr_review' || !Array.isArray(reportItems) || aiStatus !== undefined)) {
       return res.status(400).json({ success: false, message: '重新归类请求无效' });
@@ -5378,7 +5394,19 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       }
     }
     if (note !== undefined) report.note = note;
+    if (courseTargetDiseaseId !== undefined) {
+      if (report.documentCategory !== 'outpatient_record') return res.status(400).json({ success: false, message: '仅门诊病历需要选择专病首页' });
+      if (report.audit_status === 'audited') return res.status(409).json({ success: false, message: '门诊病历已审核，不能更改原归档专病' });
+      const roleError = clinicalManagerAuditError(report, req.staff);
+      if (roleError) return res.status(403).json({ success: false, message: roleError });
+      if (!mongoose.isValidObjectId(courseTargetDiseaseId)) return res.status(400).json({ success: false, message: '请选择已有的专病首页' });
+      report.courseTargetDiseaseId = courseTargetDiseaseId;
+      const targetError = await outpatientCourseTargetError(report);
+      if (targetError) return res.status(409).json({ success: false, message: targetError });
+    }
     if (clinicalReview !== undefined) {
+      const roleError = clinicalManagerAuditError(report, req.staff);
+      if (roleError) return res.status(403).json({ success: false, message: roleError });
       report.clinicalReview = require('../utils/clinicalDocumentReview').normalizeClinicalReview(documentCategory || report.documentCategory, clinicalReview);
       report.reviewRevision = Number(report.reviewRevision || 0) + 1;
     }
@@ -5498,6 +5526,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       }
     }
     if (autoAuditPending) {
+      const roleError = clinicalManagerAuditError(report, req.staff);
+      if (roleError) return res.status(403).json({ success: false, message: roleError });
+      const targetError = await outpatientCourseTargetError(report);
+      if (targetError) return res.status(409).json({ success: false, message: targetError });
       const metadataError = reviewMetadataError(report);
       if (metadataError) return res.status(400).json({ success: false, message: metadataError });
       applyAuditedInstitution(report);
@@ -5656,8 +5688,12 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     if (!patient) return res.status(404).json({ success:false, message:'会员不存在' });
     const records = normalizedDiseaseRecords(patient);
     const diseaseName = cleanMedicalText(req.body.diseaseName,100);
-    const record = records.find(item => item.name === diseaseName);
-    if (!record) return res.status(400).json({ success:false, message:'请选择已有专病档案' });
+    const record = report.documentCategory === 'outpatient_record' && report.courseTargetDiseaseId
+      ? records.find(item => String(item._id) === String(report.courseTargetDiseaseId))
+      : records.find(item => item.name === diseaseName);
+    if (!record) return res.status(409).json({ success:false, message:'所选专病首页不存在或已删除，请返回专病管理核对后重试' });
+    if (report.documentCategory === 'outpatient_record' && diseaseName !== record.name) return res.status(409).json({ success:false, message:`此病历由健管专员指定归入「${record.name}」，请刷新草稿后重试` });
+    if (!hasMedicalSummary(record.summary)) return res.status(409).json({ success:false, message:'专病首页尚无首次概况，请先在专病管理填写并保存' });
     if ((record.courseEntries || []).some(item => String(item.sourceReportId || '') === String(report._id))) return res.status(409).json({ success:false, message:'该医疗资料已经写入健康变化时间轴' });
     const draft = report.healthCourseDraft;
     const outpatientRecord = draft.outpatientRecord
@@ -5860,9 +5896,13 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   const { action, rejectReason, abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } = req.body;
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+  const clinicalRoleError = clinicalManagerAuditError(report, req.staff);
+  if (clinicalRoleError) return res.status(403).json({ success: false, message: clinicalRoleError });
   if (report.archiveOnly) return res.status(409).json({ success: false, message: '仅留存的补充原件不参与解析和审核' });
   if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
+    const targetError = await outpatientCourseTargetError(report);
+    if (targetError) return res.status(409).json({ success: false, message: targetError });
     if (!isManualOnlyReportAudit(report) && report.aiStatus !== 'reviewed') {
       return res.status(409).json({ success: false, message: '该资料需先进行AI解析并核对解析结果，不能直接审核通过' });
     }
@@ -5924,6 +5964,9 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   await require('../utils/healthRiskEvents').syncReportRisk(report)
     .catch(error => console.error('[health-risk] audited report sync failed', report._id, error));
   if (action === 'approve') {
+    if (HEALTH_COURSE_DOCUMENTS.has(report.documentCategory) && report.documentCategory === 'outpatient_record') {
+      setImmediate(() => MedicalReport.findById(report._id).then(latest => generateHealthCourseDraft(latest)).catch(error => console.error('[health-course-draft] automatic generation failed', report._id, error.message)));
+    }
     if (report.advisorCorrection?.status === 'resubmitted' && report.reportItems?.length) await syncScreeningItems(report.user, report._id, report.reportItems, { reconcile: true });
     try {
       await require('../utils/reportDispatchQueue').dispatch(report, req.staff,
@@ -10732,7 +10775,7 @@ router.post('/patients/:id/screening/dedup', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 会员日常打卡记录（医护端查看）────────────────────────────────
+// ── 会员日常健康数据记录（医护端查看）────────────────────────────────
 router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
   try {
     const { limit = 30, type, startDate, endDate } = req.query;
@@ -11014,7 +11057,7 @@ router.patch('/health-records/:id/resolve-symptom', staffAuth, async (req, res) 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 医护端修正会员打卡数据（数据有疑问，确认后修正；留痕修改人+修改时间+原值）────
+// ── 医护端修正会员健康数据记录（数据有疑问，确认后修正；留痕修改人+修改时间+原值）────
 // PUT /api/staff/patients/:patientId/health-records/:recordId
 // 删除测试或误提交数据：保留审计信息，沿用会员详情的可见范围。
 router.delete('/patients/:patientId/health-records/:recordId', staffAuth, async (req, res) => {
@@ -11198,15 +11241,15 @@ router.delete('/patients/:id/family-links/:linkId', staffAuth, async (req, res) 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 日常健康打卡总览（新增需求）────────────────────────────────────
+// ── 日常健康记录健康数据总览（新增需求）────────────────────────────────────
 // GET /api/staff/checkin-overview?date=&patientName=
-// 返回当天（默认今天）每位客户的打卡汇总：已打卡项、未打卡项、最近打卡时间
+// 返回当天（默认今天）每位客户的记录健康数据汇总：已记录健康数据项、未记录健康数据项、最近记录健康数据时间
 router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'view'), async (req, res) => {
   try {
     const { date, patientName, healthRecordId } = req.query;
     const staff = req.staff;
 
-    // 全部打卡类型（与用户端一致）
+    // 全部健康数据记录类型（与用户端一致）
     const ALL_CHECKIN_TYPES = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
     const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水', bowel:'排便', smoking:'吸烟', alcohol:'饮酒', symptom:'今日健康状态' };
 
@@ -11232,7 +11275,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const patientMap = {};
     patients.forEach(p => { patientMap[String(p._id)] = p; });
 
-    // 从待办进入时按记录精确定位，并使用该记录的实际打卡日期。
+    // 从待办进入时按记录精确定位，并使用该记录的实际健康数据记录日期。
     let focusedRecord = null;
     if (healthRecordId && mongoose.isValidObjectId(healthRecordId)) {
       focusedRecord = await HealthRecord.findOne({
@@ -11246,14 +11289,14 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const start = new Date(targetDate); start.setHours(0, 0, 0, 0);
     const end   = new Date(targetDate); end.setHours(23, 59, 59, 999);
 
-    // 拉取当天所有打卡记录
+    // 拉取当天所有健康数据记录
     const records = await HealthRecord.find({
       user: focusedRecord ? focusedRecord.user : { $in: patientIds },
       recordedAt: { $gte: start, $lte: end },
     }).select('user type value unit recordedAt createdAt imageUrl imageUrls extra note recordedBy symptomWorkflow status').sort({ recordedAt: -1 }).lean();
     records.forEach((record, index) => { records[index] = withSignedHealthRecord(record); });
 
-    // 按会员分组：同一类型当天可能打卡多次（如血压测3次），全部保留，不只取最新一条
+    // 按会员分组：同一类型当天可能记录健康数据多次（如血压测3次），全部保留，不只取最新一条
     const byPatient = {};
     records.forEach(r => {
       const uid = String(r.user);
@@ -11263,7 +11306,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
       byPatient[uid].types[r.type].push(r);
     });
 
-    // 只返回有打卡记录的会员，按最近打卡时间倒序
+    // 只返回有健康数据记录的会员，按最近记录健康数据时间倒序
     const result = Object.entries(byPatient)
       .map(([uid, data]) => {
         const patient = patientMap[uid] || {};
@@ -13137,7 +13180,7 @@ router.post('/patients/:id/ai-draft', staffAuth, async (req, res) => {
         .sort({ recordedAt: -1 }).limit(40).lean();
       const recLines = records.length
         ? records.map(r => `${String(r.recordedAt).slice(0, 10)} ${r.label}：${r.value}${r.unit || ''}${r.status && r.status !== 'normal' ? `（${r.status === 'danger' ? '异常' : '偏高/偏低'}）` : ''}`).join('\n')
-        : '近14天无打卡数据';
+        : '近14天无健康数据记录';
       prompt = `你是健康管理随访人员，请根据以下信息撰写一段专业、简洁、有温度的随访记录草稿（150-250字，自然语言连贯成段，不要分点编号，不要使用Markdown）。
 
 【会员】${baseInfo}
@@ -13145,7 +13188,7 @@ router.post('/patients/:id/ai-draft', staffAuth, async (req, res) => {
 【随访方式】${context.type || '电话'}
 【随访重点】${context.focus || '了解近期健康状况、用药与生活方式依从性'}
 
-【近14天打卡数据】
+【近14天健康数据记录】
 ${recLines}
 
 请直接输出随访记录正文，体现：本次随访沟通的核心内容、会员反馈、发现的问题、给出的建议。`;
@@ -13623,13 +13666,13 @@ router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) 
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { chat } = require('../utils/ai');
-    // 近30天打卡数据
+    // 近30天健康数据记录
     const since = new Date(Date.now() - 30 * 86400000);
     const records = await HealthRecord.find({ user: user._id, recordedAt: { $gte: since } })
       .sort({ recordedAt: -1 }).limit(60).lean();
     const recLines = records.length
       ? records.slice(0, 40).map(r => `${String(r.recordedAt).slice(0, 10)} ${r.label}：${r.value}${r.unit || ''}${r.status && r.status !== 'normal' ? '（异常）' : ''}`).join('\n')
-      : '近30天无打卡数据';
+      : '近30天无健康数据记录';
     // 最近一次随访
     const lastFu = await FollowUp.findOne({ patientId: user._id }).sort({ date: -1 }).lean();
     const lastFuText = lastFu ? `${String(lastFu.date).slice(0, 10)}（${lastFu.theme || '常规'}）` : '无记录';
@@ -13642,7 +13685,7 @@ router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) 
 【个性化喜好/禁忌】${user.preferences || '无'}（若提及不希望在某些时段/节日被打扰、忌讳某些话题，suggestedDate和outline都要相应避开或调整，如会员不喜欢过年期间到医院，无特殊异常指标时不要在春节期间安排常规随访，可改为仅送上节日祝福）
 【上次随访】${lastFuText}
 【已排期下次随访】${nextPlannedText}
-【近30天打卡数据】
+【近30天健康数据记录】
 ${recLines}
 
 【今天日期】${new Date().toISOString().slice(0, 10)}（suggestedDate 必须晚于今天）
@@ -13715,7 +13758,7 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// POST /api/staff/patients/:id/ai-followup-monthly-review — 月度AI回顾：结合近30天打卡数据判断随访时机，
+// POST /api/staff/patients/:id/ai-followup-monthly-review — 月度AI回顾：结合近30天健康数据记录判断随访时机，
 // 直接落库为 aiStatus:pending 的随访建议，走 followup_review 待办队列由健康顾问审核（区别于ai-followup-suggestion的单会员预览+本人采纳模式，这里是批量自动化场景）
 router.post('/patients/:id/ai-followup-monthly-review', staffAuth, async (req, res) => {
   try {
@@ -13745,17 +13788,17 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
          : user.name);
 
     const { chat } = require('../utils/ai');
-    // 近14天打卡，按自然日去重计算连续打卡天数
+    // 近14天记录健康数据，按自然日去重计算连续记录健康数据天数
     const since = new Date(Date.now() - 14 * 86400000);
     const records = await HealthRecord.find({ user: user._id, recordedAt: { $gte: since } })
       .sort({ recordedAt: -1 }).select('recordedAt label').lean();
     const dayset = new Set(records.map(r => String(r.recordedAt).slice(0, 10)));
-    // 计算从今天往前的连续打卡天数
+    // 计算从今天往前的连续记录健康数据天数
     let streak = 0;
     for (let i = 0; i < 14; i++) {
       const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
       if (dayset.has(d)) streak++;
-      else if (i > 0) break; // 今天未打卡不中断（允许当天还没打），昨天起断则停
+      else if (i > 0) break; // 今天未记录健康数据不中断（允许当天还没打），昨天起断则停
       else continue;
     }
     const daysSinceLast = records.length
@@ -13773,7 +13816,7 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
 【会员】${user.name}，性别：${user.gender || '未知'}，慢病标签：${user.chronicDiseases?.join('、') || '无'}
 【个性化喜好/禁忌】${user.preferences || '无'}（措辞和内容需照顾这些偏好，如有节日/时段忌讳，当天只送祝福不谈健康提醒）
 【称呼】必须称呼对方为"${coachTitle}"，不要自己改称呼，绝对不要叫错性别（如男性叫"姐"）。
-【打卡情况】连续打卡 ${streak} 天，距上次打卡 ${daysSinceLast >= 999 ? '很久' : daysSinceLast + ' 天'}
+【健康数据记录情况】连续记录健康数据 ${streak} 天，距上次记录健康数据 ${daysSinceLast >= 999 ? '很久' : daysSinceLast + ' 天'}
 【消息类型】${tone}（依从性${adherence === 'high' ? '良好' : adherence === 'medium' ? '一般' : '偏低'}）
 
 请直接输出消息正文。`;
@@ -14189,7 +14232,7 @@ const TODO_REVIEW_ROLE = {
   service_proposal_review: 'healthPlanner',
 };
 
-// GEO 知识稿审核：专业审核后由健康规划师一次确认并直接发布官网。
+// GEO 知识稿审核：最后一位专业审核人通过后直接发布官网。
 router.get('/content-reviews', staffAuth, async (req, res) => {
   try {
     const role = req.staff.role;
@@ -14201,7 +14244,7 @@ router.get('/content-reviews', staffAuth, async (req, res) => {
       ? {}
       : history
         ? { $or: [{ 'nutritionReview.reviewedBy': req.staff._id }, { 'doctorReview.reviewedBy': req.staff._id }, { 'auditLog.by': req.staff._id }] }
-        : { currentRole: role, status: role === 'healthPlanner' ? 'ready_to_publish' : { $in: ['pending', 'changes_requested'] } };
+        : { currentRole: role, status: { $in: ['pending', 'changes_requested'] } };
     const data = await ContentReview.find(filter).sort({ updatedAt: -1 }).lean();
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -14213,39 +14256,17 @@ router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
     if (!canAccessContentReview(req.staff)) return res.status(403).json({ success: false, message: '当前账号不是 GEO 内容审核负责人' });
     const record = await ContentReview.findById(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: '审核稿不存在' });
-    if (role === 'healthPlanner' && req.body?.action === 'publish') {
-      if (record.currentRole !== 'healthPlanner' || record.status !== 'ready_to_publish') throw new Error('该稿件尚未完成专业审核');
-      const checklist = req.body?.checklist || {};
-      const requiredChecks = ['professionalReviewCompleted', 'contentAndBoundaryChecked', 'contactAndLinksChecked', 'privacyChecked', 'scopeChecked'];
-      if (!requiredChecks.every(key => checklist[key] === true)) throw new Error('请完成发布前核对清单');
-      const now = new Date();
-      record.publishChecklist = { ...Object.fromEntries(requiredChecks.map(key => [key, true])), checkedBy: req.staff._id, checkedByName: req.staff.name || '', checkedAt: new Date() };
-      const alreadyPublished = await ContentReview.find({ status: 'published' })
-        .select('slug publishChecklist auditLog')
-        .lean();
-      publishGeoArticle({ slug: record.slug, publishedBy: req.staff.name || '健康规划师', publishedAt: now, alreadyPublished });
-      record.currentRole = '';
-      record.status = 'published';
-      record.auditLog.push({ action: 'publish', role, by: req.staff._id, byName: req.staff.name || '', at: now });
-      await record.save();
-      return res.json({ success: true, data: record, publicationReady: false, message: '已发布到官网知识中心。' });
-    }
-    if (role === 'healthPlanner' && req.body?.action === 'return') {
-      if (record.currentRole !== 'healthPlanner' || record.status !== 'ready_to_publish') throw new Error('该稿件当前不在发布确认环节');
-      const note = String(req.body?.note || '').trim();
-      if (!note) throw new Error('退回时请说明修改意见');
-      const previousRole = record.reviewChain.slice().reverse().find(Boolean);
-      if (!previousRole) throw new Error('未找到可退回的专业审核环节');
-      record.currentRole = previousRole;
-      record.status = 'changes_requested';
-      record.auditLog.push({ action: 'return', role, note, by: req.staff._id, byName: req.staff.name || '', at: new Date() });
-      await record.save();
-      return res.json({ success: true, data: record, message: `已退回给${previousRole === 'nutritionist' ? '营养师' : '健康顾问'}修改。` });
-    }
     const actingRole = role === 'superadmin' ? record.currentRole : role;
     advanceReview(record, actingRole, req.body?.action, req.body?.note, req.staff);
+    if (record.status === 'approved') {
+      const now = new Date();
+      const alreadyPublished = await ContentReview.find({ status: 'published' }).select('slug publishChecklist auditLog').lean();
+      publishGeoArticle({ slug: record.slug, publishedBy: req.staff.name || '专业审核人', publishedAt: now, alreadyPublished });
+      record.status = 'published';
+      record.auditLog.push({ action: 'publish', role: actingRole, by: req.staff._id, byName: req.staff.name || '', at: now });
+    }
     await record.save();
-    res.json({ success: true, data: record, publicationReady: record.status === 'approved', message: record.status === 'approved' ? '审核已完成，文章已标记为待发布，尚未公开。' : '审核结果已保存。' });
+    res.json({ success: true, data: record, publicationReady: false, message: record.status === 'published' ? '专业审核通过，已发布到官网知识中心。' : '审核结果已保存。' });
   } catch (err) {
     console.error('[content-review] operation failed', { recordId: req.params.id, role: req.staff?.role, action: req.body?.action, message: err.message });
     res.status(400).json({ success: false, message: err.message });
@@ -14295,13 +14316,13 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (canAccessContentReview(req.staff)) {
       await ensureContentReviews(ContentReview);
       const reviewFilter = isSuper
-        ? { status: { $in: ['pending', 'changes_requested', 'ready_to_publish'] }, currentRole: { $in: ['nutritionist', 'familyDoctor', 'healthPlanner'] } }
-        : { status: role === 'healthPlanner' ? 'ready_to_publish' : { $in: ['pending', 'changes_requested'] }, currentRole: role };
+        ? { status: { $in: ['pending', 'changes_requested'] }, currentRole: { $in: ['nutritionist', 'familyDoctor'] } }
+        : { status: { $in: ['pending', 'changes_requested'] }, currentRole: role };
       const contentReviews = await ContentReview.find(reviewFilter).sort({ updatedAt: -1 }).lean();
       contentReviews.forEach(item => todos.push({
         id: `geo_content_${item._id}`,
         type: 'geo_content_review',
-        label: item.currentRole === 'healthPlanner' ? 'GEO 健康教育稿待发布确认' : item.currentRole === 'familyDoctor' ? 'GEO 健康教育稿待医师审核' : 'GEO 健康教育稿待营养审核',
+        label: item.currentRole === 'familyDoctor' ? 'GEO 健康教育稿待健康顾问审核' : 'GEO 健康教育稿待营养审核',
         priority: 3,
         patientName: '官网 GEO 内容',
         patientId: '',
@@ -14825,11 +14846,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 阶段性评估按领域进入对应岗位；综合/升级评估归健康顾问，旧营养记录保留原路径。
     if (isSuper || PHASE_ROLE_FIELDS[role]) {
       const assessmentFilter = { ...reviewQueueFilter(isSuper ? 'superadmin' : role), ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
-      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
-      assessments.filter(item => item.patientId && isAssignedPhaseReviewer(item.patientId, req.staff, phaseReviewer(item))).forEach(item => todos.push({
-        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'archive_pending' ? '阶段性评估已审核·待归档重试' : item.status === 'rejected' ? '阶段性评估待AI重生成' : `阶段性评估待${PHASE_ROLE_LABELS[phaseReviewer(item)]}审核`, priority: item.status === 'doctor_review' ? 3 : 2,
+      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name membershipTier ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
+      assessments.filter(item => {
+        if (!item.patientId || item.patientId.membershipTier !== 'annual' || !item.patientId.assignedFamilyDoctor) return false;
+        if (item.status === 'team_review') {
+          const targetRole = isSuper ? phaseReviewer(item) : role;
+          return !!targetRole && (item.teamRoles || []).includes(targetRole) && item.teamReviews?.[targetRole]?.status !== 'approved'
+            && isAssignedPhaseReviewer(item.patientId, req.staff, targetRole);
+        }
+        return isAssignedPhaseReviewer(item.patientId, req.staff, phaseReviewer(item));
+      }).forEach(item => todos.push({
+        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'team_review' ? `阶段性评估与复盘 · 待${PHASE_ROLE_LABELS[isSuper ? phaseReviewer(item) : role]}核对` : item.status === 'archive_pending' ? '阶段性评估已审核·待归档重试' : item.status === 'rejected' ? '阶段性评估待AI重生成' : `阶段性评估待${PHASE_ROLE_LABELS[phaseReviewer(item)]}审核`, priority: item.status === 'doctor_review' ? 3 : 2,
         patientName: item.patientId?.name || '未知', patientId: String(item.patientId?._id || ''),
-        summary: `${item.periodLabel} · ${item.templateSnapshot?.name || '阶段性评估'}，待${PHASE_ROLE_LABELS[phaseReviewer(item)]}${item.status === 'archive_pending' ? '重试归档（无需重新审核）' : item.status === 'rejected' ? '发起AI重生成' : '审核'}`,
+        summary: `${item.periodLabel} · ${item.status === 'team_review' ? '请核对本岗位服务情况与问题；没有问题填写“没有问题”' : (item.templateSnapshot?.name || '阶段性评估')}`,
         createdAt: item.createdAt, overdue: (now - new Date(item.createdAt)) > DAY,
         link: `/patients/${item.patientId?._id}?tab=aiReview&phaseAssessmentId=${item._id}`,
       }));
@@ -14859,7 +14888,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 健康顾问：统一风险事件（打卡及已审核报告）──
+    // ── 健康顾问：统一风险事件（记录健康数据及已审核报告）──
     const eventRecordIds = new Set();
     if (can('risk_review')) {
       const HealthRiskEvent = require('../models/HealthRiskEvent');
@@ -14893,7 +14922,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'bp_alert_' + r._id, type: 'bp_alert_review', label: '血压监测异常·待处理', priority: 1,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: `AI监测发现收缩压 ${sys} mmHg（危险级），会员已自主打卡，请医生核实处理`,
+          summary: `AI监测发现收缩压 ${sys} mmHg（危险级），会员已自主记录健康数据，请医生核实处理`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=records`,
         });

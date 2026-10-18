@@ -65,7 +65,7 @@ function prepareContext(context = {}) {
     medicationScope: original.medications === undefined ? 'not_selected' : 'included',
     supplementScope: original.supplements === undefined ? 'not_selected' : 'included',
     compressedSections: [],
-    note: '来源清单表示已纳入资料；压缩部分明确标记。未选入、空白、被省略均不等于确认无。独立用药/营养素记录优先于档案空字段和旧AI回复；审核及停用状态以各条记录为准。附件图片、打卡及配药工作流不作为用药正文发送。报告项目提取临床字段，不包含分类操作元数据及空白默认值。',
+    note: '来源清单表示已纳入资料；压缩部分明确标记。未选入、空白、被省略均不等于确认无。独立用药/营养素记录优先于档案空字段和旧AI回复；审核及停用状态以各条记录为准。附件图片、记录健康数据及配药工作流不作为用药正文发送。报告项目提取临床字段，不包含分类操作元数据及空白默认值。',
   };
   const sections = Object.entries(original).filter(([key]) => !['capturedAt', 'patientId', 'basic', 'medications', 'supplements', 'sources', 'delivery'].includes(key));
   // Reserve metadata space and guarantee a useful minimum for each other section.

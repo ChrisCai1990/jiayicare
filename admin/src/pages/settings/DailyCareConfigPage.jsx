@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
-// AI 每日健康关怀 —— 定时任务每天给活跃客户推一条 AI 专属关怀/提醒消息，带「去打卡」入口。
+// AI 每日健康关怀 —— 定时任务每天给活跃客户推一条 AI 专属关怀/提醒消息，带「记录健康数据」入口。
 // 本页只做总开关：关闭后调度器每次跑会读到 enabled=false 直接跳过，不再发送。
 export default function DailyCareConfigPage() {
   const toast = useToast()
@@ -36,7 +36,7 @@ export default function DailyCareConfigPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">AI 每日健康关怀</h1>
-          <p className="page-subtitle">系统每天主动给活跃客户推一条 AI 生成的专属关怀消息，带「去打卡」入口，提升客户打开率与打卡留存</p>
+          <p className="page-subtitle">系统每天主动给活跃客户推一条 AI 生成的专属关怀消息，带「记录健康数据」入口，帮助客户持续了解自身变化</p>
         </div>
       </div>
 
@@ -77,8 +77,8 @@ export default function DailyCareConfigPage() {
                 当前版本已暂停每日关怀，改由年度管理方案按规则生成血压、体重系统提醒；提醒不会进入聊天消息，也不会累积未读。
               </div>}
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#4A6558', lineHeight: 2 }}>
-                <li>推送对象：近 30 天有过打卡，或近 30 天新建档的活跃客户（不打扰僵尸账号）</li>
-                <li>推送内容：结合客户打卡天数、慢病标签，由 AI 生成温暖话术；AI 不可用时用暖心模板兜底</li>
+                <li>推送对象：近 30 天记录过健康数据，或近 30 天新建档的活跃客户</li>
+                <li>推送内容：结合客户健康数据记录天数、慢病标签，由 AI 生成关怀话术；AI 不可用时用预设模板兜底</li>
                 <li>推送频率：每位客户每天最多一条，已发过当天不重复</li>
                 <li>客户称呼：优先用档案里标注的称呼，未标注则按性别得体兜底</li>
               </ul>

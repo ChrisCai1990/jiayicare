@@ -18,7 +18,7 @@ export function executionCategoryOf(task) {
   if (/营养|饮食|膳食|体重管理/.test(content)) return 'nutrition'
   if (/体检|复查|检验|检查|筛查|疫苗/.test(content)) return 'checkup'
   if (/专家约诊|约诊|就医|会诊|医院|挂号|陪诊|代诊|科室|医生/.test(content)) return 'medical'
-  if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(content)) return 'monitoring'
+  if (/血压|血糖|体重|睡眠|运动|饮水|监测|记录/.test(content)) return 'monitoring'
   if (/专病|慢病|疾病管理/.test(content)) return 'disease'
   return 'communication'
 }

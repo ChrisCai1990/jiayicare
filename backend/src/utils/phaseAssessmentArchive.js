@@ -10,14 +10,18 @@ async function completePhaseAssessmentArchive(item, user, actor, models = {}) {
   if (item.status !== 'archive_pending' || !item.finalizedBy || !item.finalizedAt) throw new Error('缺少已确认的评估快照，不能归档');
   try {
     const version = templateAssessmentFromContent(item.content, item);
+    const teamNotes = (item.teamRoles || []).map(role => {
+      const review = item.teamReviews?.[role];
+      return review?.status === 'approved' ? `${{ healthManager: '健管专员', nutritionist: '营养师', familyDoctor: '健康顾问', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师' }[role] || role}（${review.reviewedByName || '已核对'}）：${review.note}` : '';
+    }).filter(Boolean);
     const reviewer = { _id: item.finalizedBy, name: item.finalizedByName, role: item.finalizedByRole };
     const recordFilter = { sourcePhaseAssessmentId: item._id };
     let record;
     try {
       record = await Records.findOneAndUpdate(recordFilter, { $setOnInsert: {
         ...recordFilter, staffId: item.finalizedBy, patientId: user._id, type: 'stage_assessment', date: item.finalizedAt,
-        title: `${item.periodLabel}${item.templateSnapshot?.name || '阶段性健康评估'}`,
-        content: version.sections.flatMap(section => [section.title, ...section.items.map(value => `• ${value}`)]).join('\n'),
+        title: `${item.periodLabel}${(item.teamRoles || []).length ? '阶段性评估与复盘' : (item.templateSnapshot?.name || '阶段性健康评估')}`,
+        content: [...version.sections.flatMap(section => [section.title, ...section.items.map(value => `• ${value}`)]), ...(teamNotes.length ? ['团队复盘与问题', ...teamNotes] : [])].join('\n'),
         result: item.reviewNote || '', structuredContent: version, aiStatus: 'approved', aiGeneratedAt: item.createdAt,
         writeback: reviewedWriteback({ staff: reviewer, sourceType: 'ai_draft', at: item.finalizedAt }),
       } }, { new: true, upsert: true, setDefaultsOnInsert: true });

@@ -147,6 +147,9 @@ async function caseReviewPatientOr404(req, res) {
 async function patientOr404(req, res) {
   const user = await caseReviewPatientOr404(req, res);
   if (!user) return null;
+  if (user.membershipTier !== 'annual' || !user.assignedFamilyDoctor) {
+    res.status(403).json({ success: false, message: '阶段性评估与复盘仅适用于已分配健康顾问的年度会员' }); return null;
+  }
   const assignedFields = [...Object.values(ROLE_FIELDS), 'assignedHealthManager', 'assignedHealthPlanner', 'assignedSpecialist', 'assignedMedicalAssistant', 'assignedPsychologist'];
   if (req.staff.role !== 'superadmin' && !assignedFields.some(field => user[field] && String(user[field]) === String(req.staff._id))) {
     res.status(403).json({ success: false, message: '无权访问该客户的阶段评估' }); return null;
@@ -275,6 +278,45 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     const user = await patientOr404(req, res); if (!user) return;
     const item = await PhaseAssessment.findOne({ _id: req.params.assessmentId, patientId: user._id });
     if (!item) return res.status(404).json({ success: false, message: '阶段性评估不存在' });
+    if (item.status === 'team_review') {
+      if (req.body.revision !== item.__v) return res.status(409).json({ success: false, message: '其他岗位已更新复盘，请刷新后继续' });
+      const role = req.staff.role;
+      const canInvite = role === 'superadmin' || (role === 'familyDoctor' && isAssignedReviewer(user, req.staff, 'familyDoctor'));
+      if (req.body.action === 'include_role') {
+        if (!canInvite) return res.status(403).json({ success: false, message: '请由该客户的团队协调岗位邀请其他服务成员参与复盘' });
+        const addedRole = String(req.body.role || '');
+        if (!['psychologist', 'rehabSpecialist', 'tcmDoctor'].includes(addedRole) || !user[ROLE_FIELDS[addedRole]]) return res.status(400).json({ success: false, message: '该岗位尚未加入本客户服务团队，请先完成服务人员分配' });
+        if (item.teamReviews?.familyDoctor?.status === 'approved') return res.status(409).json({ success: false, message: '健康顾问已完成总复盘，不能再增加参与岗位' });
+        item.teamRoles = [...new Set([...(item.teamRoles || []), addedRole])];
+        item.auditLog.push({ action: 'include_role', fromStatus: item.status, toStatus: item.status, note: ROLE_LABELS[addedRole], staffId: req.staff._id, staffName: req.staff.name || '', staffRole: role });
+        await item.save();
+        return res.json({ success: true, data: item });
+      }
+      if (req.body.action !== 'approve') return res.status(400).json({ success: false, message: '请提交本岗位复盘核对' });
+      if (!(item.teamRoles || []).includes(role) && role !== 'superadmin') return res.status(403).json({ success: false, message: '您不在本次评估复盘团队中' });
+      const reviewerRole = role === 'superadmin' ? String(req.body.role || (item.teamRoles || []).find(value => item.teamReviews?.[value]?.status !== 'approved') || '') : role;
+      if (!(item.teamRoles || []).includes(reviewerRole) || !isAssignedReviewer(user, req.staff, reviewerRole)) return res.status(403).json({ success: false, message: '当前岗位未参与该客户的本次评估复盘' });
+      if (item.teamReviews?.[reviewerRole]?.status === 'approved') return res.status(409).json({ success: false, message: '本岗位已核对，请刷新查看最新进度' });
+      if (reviewerRole === 'familyDoctor' && (item.teamRoles || []).some(value => value !== 'familyDoctor' && item.teamReviews?.[value]?.status !== 'approved')) return res.status(409).json({ success: false, message: '请先等待健管专员、营养师及受邀团队成员完成各自核对' });
+      const note = String(req.body.reviewNote || '').trim();
+      if (!note) return res.status(400).json({ success: false, message: '请填写本岗位的情况与问题；没有问题请填写“没有问题”' });
+      const now = new Date();
+      item.teamReviews = { ...(item.teamReviews || {}), [reviewerRole]: { status: 'approved', note: note.slice(0, 5000), reviewedBy: req.staff._id, reviewedByName: req.staff.name || '', reviewedAt: now } };
+      item.markModified('teamReviews');
+      const complete = (item.teamRoles || []).every(value => item.teamReviews[value]?.status === 'approved');
+      if (complete) {
+        item.status = 'archive_pending'; item.finalizedAt = now; item.finalizedBy = req.staff._id;
+        item.finalReviewRole = reviewerRole; item.finalizedByName = req.staff.name || ''; item.finalizedByRole = req.staff.role;
+        item.reviewedAt = now; item.reviewedBy = req.staff._id; item.reviewNote = note;
+      }
+      item.auditLog.push({ action: 'team_review', fromStatus: 'team_review', toStatus: item.status, note, staffId: req.staff._id, staffName: req.staff.name || '', staffRole: reviewerRole, at: now });
+      await item.save();
+      if (complete) {
+        const result = await completePhaseAssessmentArchive(item, user, req.staff);
+        return res.status(result.data?.status === 'finalized' ? 200 : 202).json({ success: true, ...result });
+      }
+      return res.json({ success: true, data: item });
+    }
     const current = item.status === 'pending' ? 'nutrition_review' : item.status;
     const expectedRole = currentReviewer(item);
     const actorRole = req.staff.role === 'superadmin' ? expectedRole : req.staff.role;

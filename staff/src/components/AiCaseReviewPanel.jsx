@@ -5,7 +5,7 @@ import AnnualConcernsPanel from './AnnualConcernsPanel'
 import { parseAnnualReviewMessage } from '../utils/annualReviewMessage.mjs'
 import { isActiveAnnualConcern, isEvidenceConcern } from '../utils/annualConcernLabels'
 
-const PHASE_ROLES = { familyDoctor: '健康顾问', nutritionist: '营养师', rehabSpecialist: '运动复健师', tcmDoctor: '药食同源专业人员' }
+const PHASE_ROLES = { familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师' }
 const PHASE_DOMAINS = { comprehensive: '综合健康', nutrition: '营养', exercise: '运动', tcm: '药食同源' }
 const SCOPES = [
   ['basic', '基本资料'], ['healthProfile', '健康档案'], ['reports', '体检报告'], ['healthRecords', '健康监测'],
@@ -95,6 +95,7 @@ function AssessmentLine({ line, color }) {
 
 function StageWorkflow({ assessment }) {
   if (!assessment) return <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>尚未生成评估</div>
+  if (assessment.status === 'team_review') return <div style={{ marginTop: 10, fontSize: 12, color: '#4A6558' }}>AI评估草稿 → {assessment.teamRoles.map(role => `${PHASE_ROLES[role]}${assessment.teamReviews?.[role]?.status === 'approved' ? '✓' : '待核对'}`).join(' → ')} → 写入服务档案</div>
   const primary = assessment.primaryReviewRole || 'nutritionist'
   const status = assessment.status === 'pending' ? 'nutrition_review' : assessment.status
   const clinicalRequired = assessment.clinicalReview?.required === true
@@ -407,13 +408,23 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       toast(message)
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
+  const submitTeamReview = async (assessment, action, role = '') => {
+    const reviewNote = action === 'include_role' ? '' : window.prompt(`${PHASE_ROLES[staff?.role] || '本岗位'}核对：请写本阶段工作情况及问题；没有问题请填写“没有问题”`, '')
+    if (action !== 'include_role' && !reviewNote?.trim()) return
+    setBusy(true)
+    try {
+      const res = await staffAPI.reviewPhaseAssessment(patientId, assessment._id, { action, revision: assessment.__v, reviewNote, role })
+      setAssessments(list => list.map(item => item._id === assessment._id ? res.data : item))
+      toast(action === 'include_role' ? '已邀请团队成员参与本次复盘' : res.data.status === 'finalized' ? '各岗位核对已完成，评估与复盘已写入服务档案' : '本岗位核对已保存')
+    } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+  }
 
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
   const visibleAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode)
   const currentAssessment = visibleAssessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
   return <div style={{ display: 'grid', gridTemplateColumns: mode === 'assessment' ? '1fr' : '230px minmax(0, 1fr)', gap: 14, minHeight: mode === 'assessment' ? 0 : 760 }}>
     {mode !== 'specialty' && <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
-      <div className="card-header" style={{ alignItems: 'flex-start' }}><div style={{ flex: 1 }}><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>{closedLoop ? '基于已确认方案；常规采用自然季度，强化营养按干预开始日期计算' : '基于已确认方案；沿用原月度评估及营养师初审'}</div><div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className={`btn btn-sm ${assessmentMode === 'routine' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('routine')}>常规管理</button><button className={`btn btn-sm ${assessmentMode === 'intensive_nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('intensive_nutrition')}>强化营养干预 · 12周</button></div><div style={{ marginTop: 9, padding: '8px 10px', background: assessmentMode === 'routine' ? '#EFF6FF' : '#EEF8F3', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>{assessmentMode === 'routine' ? (closedLoop ? '来源：已确认年度管理方案；常规正式评估按季度，按领域交对应岗位审核。' : '来源：已确认年度管理方案；按原月度模板生成，营养师初审，需要时健康顾问复审。') : '来源：已确认强化营养干预方案及开始日期；第1—4周每周评估，第5—12周每2周评估，第12周形成总结。'}</div><StageWorkflow assessment={currentAssessment} /></div>{[...Object.keys(PHASE_ROLES), 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => generateAssessment()}>生成当前节点草稿</button>}</div>
+      <div className="card-header" style={{ alignItems: 'flex-start' }}><div style={{ flex: 1 }}><div className="card-title">阶段性评估与复盘</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>{closedLoop ? '基于已确认方案；常规采用自然季度，强化营养按干预开始日期计算' : '基于已确认方案；沿用原月度评估及营养师初审'}</div><div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className={`btn btn-sm ${assessmentMode === 'routine' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('routine')}>常规管理</button><button className={`btn btn-sm ${assessmentMode === 'intensive_nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('intensive_nutrition')}>强化营养干预 · 12周</button></div><div style={{ marginTop: 9, padding: '8px 10px', background: assessmentMode === 'routine' ? '#EFF6FF' : '#EEF8F3', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>{assessmentMode === 'routine' ? '来源：已确认年度管理方案；同一周期一条评估与复盘，各服务岗位分别核对。' : '来源：已确认强化营养干预方案及开始日期；第1—4周每周评估，第5—12周每2周评估，第12周形成总结。'}</div><StageWorkflow assessment={currentAssessment} /></div>{['familyDoctor', 'nutritionist', 'rehabSpecialist', 'tcmDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => generateAssessment()}>生成当前节点草稿</button>}</div>
       <div className="card-body" style={{ display: 'grid', gap: 12 }}>
         {closedLoop && assessmentMode === 'routine' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => generateAssessment('yearly')}>生成年度总评草稿（进入第11个月）</button>}
         {closedLoop && assessmentMode === 'routine' && <label>评估领域 <select className="form-input" value={assessmentDomain} onChange={event => setAssessmentDomain(event.target.value)}>{Object.entries(PHASE_DOMAINS).filter(([key]) => ['familyDoctor', 'superadmin'].includes(staff?.role) || key === ({ nutritionist: 'nutrition', rehabSpecialist: 'exercise', tcmDoctor: 'tcm' })[staff?.role]).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>}
@@ -421,7 +432,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         {visibleAssessments.map(item => {
           const status = item.status === 'pending' ? 'nutrition_review' : item.status
           const primary = item.primaryReviewRole || 'nutritionist'
-          const statusLabel = { nutrition_review: '待营养师初审', professional_review: `待${PHASE_ROLES[primary]}审核`, doctor_review: '待健康顾问审核', archive_pending: '已审核·待归档重试', finalized: '已写入服务档案', approved: '历史已审核', rejected: `已退回${PHASE_ROLES[primary]}` }[status] || status
+          const statusLabel = { team_review: '团队逐岗核对中', nutrition_review: '待营养师初审', professional_review: `待${PHASE_ROLES[primary]}审核`, doctor_review: '待健康顾问审核', archive_pending: '已审核·待归档重试', finalized: '已写入服务档案', approved: '历史已审核', rejected: `已退回${PHASE_ROLES[primary]}` }[status] || status
           const canNutritionReview = [primary, 'superadmin'].includes(staff?.role) && ['nutrition_review', 'professional_review'].includes(status)
           const canRegenerate = [primary, 'superadmin'].includes(staff?.role) && status === 'rejected'
           const canRetryArchive = [item.finalReviewRole, 'superadmin'].includes(staff?.role) && status === 'archive_pending'
@@ -432,10 +443,17 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           const activeSectionIndex = activeAssessmentSections[item._id]
           const activeSection = Number.isInteger(activeSectionIndex) ? stageSections[activeSectionIndex] : null
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}{item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}{item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
             {['finalized', 'approved'].includes(status) && onNavigate && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 9 }} onClick={() => onNavigate('serviceRecords')}>查看服务档案中的评估记录</button>}
             {status === 'archive_pending' && <div style={{ marginTop: 9, color: '#92400E', fontSize: 13 }}>审核结果已保存，无需重复审核。{canRetryArchive && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'retry_archive')}>重试归档</button>}</div>}
+            {!!item.teamRoles?.length && <div style={{ marginTop: 12, padding: 12, background: '#F4F8F5', borderRadius: 9 }}>
+              <strong>各岗位复盘核对</strong><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>健管专员核对日常随访与问题；营养师核对饮食、运动、睡眠及烟酒干预；健康顾问核对医疗问题和整体进度。没有问题请填写“没有问题”。</div>
+              {(item.teamRoles || []).map(role => <div key={role} style={{ borderTop: '1px solid #DCE8E1', paddingTop: 8, marginTop: 8, fontSize: 13 }}><b>{PHASE_ROLES[role]}</b> · {item.teamReviews?.[role]?.status === 'approved' ? `${item.teamReviews[role].reviewedByName || '已核对'}：${item.teamReviews[role].note}` : '待核对'}
+                {status === 'team_review' && item.teamReviews?.[role]?.status !== 'approved' && (staff?.role === role || staff?.role === 'superadmin') && <button className="btn btn-primary btn-sm" disabled={busy || (role === 'familyDoctor' && item.teamRoles.some(value => value !== 'familyDoctor' && item.teamReviews?.[value]?.status !== 'approved'))} style={{ marginLeft: 8 }} onClick={() => submitTeamReview(item, 'approve', role)}>填写并确认本岗位</button>}
+              </div>)}
+              {status === 'team_review' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>{[['psychologist', '邀请心理咨询师'], ['rehabSpecialist', '邀请运动复健师'], ['tcmDoctor', '邀请中医师']].filter(([role]) => !item.teamRoles.includes(role)).map(([role, label]) => <button key={role} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => submitTeamReview(item, 'include_role', role)}>{label}</button>)}</div>}
+            </div>}
             <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(120px,1fr))', gap: 9 }}>
               {stageSections.map((section, index) => <button key={section.label} type="button" onClick={() => setActiveAssessmentSections(values => ({ ...values, [item._id]: expanded ? index : values[item._id] === index ? null : index }))} style={{ border: `1px solid ${activeSectionIndex === index ? section.color : '#DCE8E1'}`, borderRadius: 10, padding: '12px 8px', background: activeSectionIndex === index ? section.background : '#fff', cursor: 'pointer', textAlign: 'center' }}>
                 <div style={{ fontSize: 25, lineHeight: 1 }}>{section.icon}</div>
