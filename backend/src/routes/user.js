@@ -1405,12 +1405,21 @@ router.post('/followup-tasks/:id/form', auth, async (req, res) => {
   }
 });
 
-// GET /api/user/push-records — 医护端推送给我的记录（科普/方案/问卷通知等）
+// GET /api/user/push-records — 本人的医护推送；memberId 仅允许读取已关联家人的产品推荐。
 router.get('/push-records', auth, async (req, res) => {
   try {
+    const memberId = String(req.query.memberId || '');
+    let patientId = req.user._id;
+    if (memberId && memberId !== String(req.user._id)) {
+      const member = await require('../utils/orderBeneficiary').resolveOrderBeneficiary(req.user, memberId);
+      if (!member) return res.status(403).json({ success: false, message: '无权查看该家庭成员的服务推荐' });
+      patientId = member._id;
+    }
+    const filter = memberId && memberId !== String(req.user._id)
+      ? { patientId, type: 'product' } : { patientId };
     const [recent, unread] = await Promise.all([
-      PushRecord.find({ patientId: req.user._id }).sort({ createdAt: -1 }).limit(50).populate('staffId', 'name role title'),
-      PushRecord.find({ patientId: req.user._id, $or: [{ readAt: null }, { type: 'questionnaire' }] })
+      PushRecord.find(filter).sort({ createdAt: -1 }).limit(50).populate('staffId', 'name role title'),
+      PushRecord.find({ ...filter, $or: [{ readAt: null }, { type: 'questionnaire' }] })
         .sort({ createdAt: -1 }).populate('staffId', 'name role title'),
     ]);
     const records = require('../utils/messageInbox').mergeInboxRecords(recent, unread).map(row => row.toObject ? row.toObject() : { ...row });

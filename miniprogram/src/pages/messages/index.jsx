@@ -5,6 +5,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, ttsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
+import { storedArchiveId } from '../../hooks/useArchiveSubject';
 import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
@@ -77,16 +78,18 @@ const PUSH_TYPE_LABEL = {
   supplement: '营养推荐', product: '产品推送', notice: '通知',
 };
 
-function normalizePushRecord(pr) {
+function normalizePushRecord(pr, beneficiaryUserId = '') {
   return {
     _id: pr._id,
     isPushRecord: true,
     type: pr.type,
     sender: pr.staffId?.name || '健康管理团队',
     title: PUSH_TYPE_LABEL[pr.type] || '推送通知',
-    content: pr.title + (pr.content ? `\n${pr.content}` : ''),
+    content: `${beneficiaryUserId ? '家庭成员服务推荐 · ' : ''}${pr.title || ''}${pr.content ? `\n${pr.content}` : ''}`,
     coverUrl: pr.coverUrl || '',
-    unread: !pr.readAt,
+    // Reading a family recommendation must not change the recipient's unread state.
+    unread: !beneficiaryUserId && !pr.readAt,
+    beneficiaryUserId,
     createdAt: pr.createdAt,
     price: pr.price || null,
     productName: pr.title || '',
@@ -163,18 +166,21 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     const requestId = ++listRequestRef.current;
     listLoadingRef.current = true;
     try {
+      const beneficiaryUserId = storedArchiveId(user?._id);
+      setMessages(previous => previous.filter(message => !message.isPushRecord
+        || (message.beneficiaryUserId || '') === beneficiaryUserId));
       const publish = (promise, push) => promise.then(result => {
         if (requestId === listRequestRef.current && result?.success && Array.isArray(result.data)) {
           setMessages(previous => [
             ...previous.filter(message => !!message.isPushRecord !== push),
-            ...(push ? result.data.map(normalizePushRecord) : result.data),
+            ...(push ? result.data.map(record => normalizePushRecord(record, beneficiaryUserId)) : result.data),
           ].sort((a,b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
           setLoading(false);
         }
         return result;
       });
       const [msgRes, pushRes, pendingRes] = await Promise.allSettled([
-        publish(messagesAPI.list(), false), publish(pushRecordsAPI.list(), true), questionnaireAPI.pending(),
+        publish(messagesAPI.list(), false), publish(pushRecordsAPI.list(beneficiaryUserId), true), questionnaireAPI.pending(),
       ]);
       if (requestId !== listRequestRef.current) return;
       // Each source replaces only its own snapshot. A failed questionnaire
@@ -185,7 +191,8 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
       setLoadError(failed.length ? `${failed.join('、')}暂未完整加载，点击重试` : '');
       setMessages(previous => {
         const msgData = ok(msgRes) ? msgRes.value.data : previous.filter(m => !m.isPushRecord);
-        const pushData = ok(pushRes) ? pushRes.value.data.map(normalizePushRecord) : previous.filter(m => m.isPushRecord);
+        const pushData = ok(pushRes) ? pushRes.value.data.map(record => normalizePushRecord(record, beneficiaryUserId))
+          : previous.filter(m => m.isPushRecord && (m.beneficiaryUserId || '') === beneficiaryUserId);
         return [...msgData, ...pushData].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       });
       if (ok(pendingRes)) {
@@ -203,7 +210,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
         setLoading(false);
       }
     }
-  }, []);
+  }, [user?._id]);
 
   useDidShow(() => {
     setPageVisible(true);
@@ -237,6 +244,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   ));
   const careMessages = notifMessages.filter((m) => m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`));
   const systemMessages = notifMessages.filter((m) => m.type !== 'questionnaire' && !careMessages.includes(m));
+  const familyProductCount = systemMessages.filter((m) => m.type === 'product' && m.beneficiaryUserId).length;
 
   const roleConvs = ROLE_DEFS.map((r) => {
     const msgs = messages.filter((m) => !NOTIF_TYPES.has(m.type) && (m.conversationId
@@ -369,6 +377,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
               <View key={item.label} onClick={() => openNotifications(item.tab)} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, height: '92px', overflow: 'hidden', padding: '11px 5px 9px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
                 <View style={{ width: '34px', height: '34px', borderRadius: '11px', margin: '0 auto 7px', backgroundColor: `${item.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={item.icon} size={16} color={item.color} /></View>
                 <Text style={{ fontSize: '12px', fontWeight: 650, color: colors.textPrimary }}>{item.label}</Text>
+                {item.tab === '系统通知' && familyProductCount > 0 && <Text style={{ display: 'block', fontSize: '10px', color: colors.primary }}>家人推荐 {familyProductCount}</Text>}
                 {item.count > 0 && <View style={{ position: 'absolute', top: '7px', right: '12px', minWidth: '17px', height: '17px', borderRadius: '9px', padding: '0 3px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontSize: '9px', fontWeight: 700 }}>{item.count > 99 ? '99+' : item.count}</Text></View>}
               </View>
             ))}
@@ -455,6 +464,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress, loadError, onRetr
 
 function MessageDetailModal({ msg, onClose, paymentActivityRef }) {
   if (msg.type === 'product') {
+    if (msg.beneficiaryUserId) return <FamilyProductPushDetail msg={msg} onClose={onClose} />;
     return <ProductPushDetail msg={msg} onClose={onClose} paymentActivityRef={paymentActivityRef} />;
   }
   const conf = NOTIF_TYPE_CONFIG[msg.type] || { icon: '💬', color: colors.primary };
@@ -496,6 +506,31 @@ function MessageDetailModal({ msg, onClose, paymentActivityRef }) {
 }
 
 const RENEWAL_PAYMENT_METHODS = [{ key: 'wechat', label: '微信支付' }];
+
+function FamilyProductPushDetail({ msg, onClose }) {
+  const products = msg.products?.length ? msg.products
+    : msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price }] : [];
+  const buy = productId => {
+    onClose();
+    Taro.navigateTo({ url: `/pages/services/mall/index?productId=${encodeURIComponent(productId)}&beneficiaryUserId=${encodeURIComponent(msg.beneficiaryUserId)}&pushRecordId=${encodeURIComponent(msg._id)}` });
+  };
+  return (
+    <View style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
+      <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', boxSizing: 'border-box' }}>
+        <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>为家庭成员推荐的服务</Text>
+        <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '6px' }}>选择产品并提交购买后，订单会归入该家庭成员的服务档案。</Text>
+        {products.map(product => <View key={product.productId} style={{ padding: '12px 0', borderBottom: `1px solid ${colors.borderLight}` }}>
+          <Text style={{ fontSize: '14px', color: colors.textPrimary, display: 'block' }}>{product.name || msg.productName}</Text>
+          {product.price != null && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>推荐价 ¥{Number(product.price).toFixed(2)}</Text>}
+          <View onClick={() => buy(product.productId)} style={{ padding: '9px 14px', backgroundColor: colors.primary, borderRadius: `${radius.sm}px`, alignSelf: 'flex-start', marginTop: '8px' }}>
+            <Text style={{ color: '#fff', fontSize: '13px' }}>为TA购买</Text>
+          </View>
+        </View>)}
+        <View onClick={onClose} style={{ padding: '14px', textAlign: 'center' }}><Text style={{ color: colors.primary }}>关闭</Text></View>
+      </View>
+    </View>
+  );
+}
 
 function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false } }) {
   const { user, updateUser } = useAuth();

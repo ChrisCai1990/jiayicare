@@ -249,7 +249,7 @@ export const messagesAPI = {
 // ── Push Records (医护端推送) ─────────────────────────────────────
 export const pushRecordsAPI = {
   sharedFundQuote: (id, selectedProductIds, couponId) => request(`/user/push-records/${id}/shared-fund-quote`, { method: 'POST', body: JSON.stringify({ selectedProductIds, couponId }) }),
-  list: () => request('/user/push-records'),
+  list: (memberId = '') => request(`/user/push-records${memberId ? `?memberId=${encodeURIComponent(memberId)}` : ''}`),
   markRead: (id) => request(`/user/push-records/${id}/read`, { method: 'PATCH' }),
   pay: (id, data) => request(`/user/push-records/${id}/pay`, { method: 'POST', body: JSON.stringify(data) }),
 };
