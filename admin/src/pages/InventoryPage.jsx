@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../api'
+import SearchableProductSelect from '../../../shared/SearchableProductSelect'
 
 const labels = { opening:'期初', receipt:'入库', issue:'领用', use:'实际使用', return:'退回', loss:'报损', count:'盘点', manual_sale:'医护录入消费' }
 const money = value => `¥${Number(value || 0).toFixed(2)}`
@@ -52,9 +53,9 @@ export default function InventoryPage() {
       </tbody></table></div>
     </section>
     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:18 }}>
-      <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(() => adminAPI.enableInventoryProduct(enable.productId, enable)) }}>
+      <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); if (enable.productId) submit(async () => { await adminAPI.enableInventoryProduct(enable.productId, enable); setEnable(current => ({ ...current, productId:'' })) }) }}>
         <h2>启用商品台账</h2><p>先盘实物，并在「商城产品」核对当前库存。启用后当前库存成为期初数。</p>
-        <select className="form-input" required value={enable.productId} onChange={e => setEnable({ ...enable, productId:e.target.value })}><option value="">选择商城商品</option>{unavailable.map(p => <option key={p._id} value={p._id}>{p.name}（当前 {p.stock}）</option>)}</select>
+        <SearchableProductSelect products={unavailable} value={enable.productId} onChange={productId => setEnable({ ...enable, productId })} placeholder="选择商城商品" optionLabel={p => `${p.name}（当前 ${p.stock}）`} />
         <select className="form-input" value={enable.kind} onChange={e => setEnable({ ...enable, kind:e.target.value })}><option value="consumable">耗材/商品</option><option value="reusable">可重复使用设备</option></select>
         <input className="form-input" placeholder="单位，如盒、片、台" value={enable.unit} onChange={e => setEnable({ ...enable, unit:e.target.value })} />
         <label>最低库存<input className="form-input" type="number" min="0" value={enable.minStock} onChange={e => setEnable({ ...enable, minStock:e.target.value })} /></label>
@@ -64,7 +65,7 @@ export default function InventoryPage() {
       </form>
       <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(() => adminAPI.updateInventorySettings(settings.productId, settings)) }}>
         <h2>成本与预警设置</h2><p>对外售价请到「商城产品」维护；这里的参考成本用于估算库存价值。每笔流水保存当时的成本快照。</p>
-        <select className="form-input" required value={settings.productId} onChange={e => { const p = data.products.find(x => x._id === e.target.value); setSettings({ productId:e.target.value, minStock:p?.inventoryTracking?.minStock ?? 0, defaultCost:p?.inventoryTracking?.defaultCost ?? 0, location:p?.inventoryTracking?.location ?? '' }) }}><option value="">选择物资</option>{data.products.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select>
+        <SearchableProductSelect products={data.products} value={settings.productId} onChange={productId => { const p = data.products.find(x => x._id === productId); setSettings({ productId, minStock:p?.inventoryTracking?.minStock ?? 0, defaultCost:p?.inventoryTracking?.defaultCost ?? 0, location:p?.inventoryTracking?.location ?? '' }) }} />
         <label>最低库存<input className="form-input" type="number" min="0" value={settings.minStock} onChange={e => setSettings({ ...settings, minStock:e.target.value })} /></label>
         <label>参考成本价<input className="form-input" type="number" min="0" step="0.01" value={settings.defaultCost} onChange={e => setSettings({ ...settings, defaultCost:e.target.value })} /></label>
         <input className="form-input" placeholder="存放地点" value={settings.location} onChange={e => setSettings({ ...settings, location:e.target.value })} />
@@ -72,7 +73,7 @@ export default function InventoryPage() {
       </form>
       <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(() => adminAPI.inventoryEntry(entry)) }}>
         <h2>登记出入库</h2>
-        <select className="form-input" required value={entry.productId} onChange={e => setEntry({ ...entry, productId:e.target.value, unitPrice:data.products.find(p => p._id === e.target.value)?.originalPrice ?? '' })}><option value="">选择物资</option>{data.products.map(p => <option key={p._id} value={p._id}>{p.name} · 现有 {p.stock}</option>)}</select>
+        <SearchableProductSelect products={data.products} value={entry.productId} onChange={productId => setEntry({ ...entry, productId, unitPrice:data.products.find(p => p._id === productId)?.originalPrice ?? '' })} optionLabel={p => `${p.name} · 现有 ${p.stock}`} />
         <select className="form-input" value={entry.type} onChange={e => setEntry({ ...entry, type:e.target.value })}>{['receipt','issue','use','return','loss','manual_sale'].map(type => <option key={type} value={type}>{labels[type]}</option>)}</select>
         <label>数量<input className="form-input" type="number" min="1" required value={entry.units} onChange={e => setEntry({ ...entry, units:e.target.value })} /></label>
         <input className="form-input" placeholder="批次号" value={entry.batchNo} onChange={e => setEntry({ ...entry, batchNo:e.target.value })} />
@@ -87,7 +88,7 @@ export default function InventoryPage() {
       </form>
       <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(() => adminAPI.inventoryCount(count)) }}>
         <h2>实物盘点</h2><p>盘点差异会保留为一条独立流水。</p>
-        <select className="form-input" required value={count.productId} onChange={e => setCount({ ...count, productId:e.target.value })}><option value="">选择物资</option>{data.products.map(p => <option key={p._id} value={p._id}>{p.name} · 账面 {p.stock}</option>)}</select>
+        <SearchableProductSelect products={data.products} value={count.productId} onChange={productId => setCount({ ...count, productId })} optionLabel={p => `${p.name} · 账面 ${p.stock}`} />
         <label>实盘数量<input className="form-input" type="number" min="0" required value={count.counted} onChange={e => setCount({ ...count, counted:e.target.value })} /></label>
         <textarea className="form-input" required placeholder="差异原因或盘点依据" value={count.note} onChange={e => setCount({ ...count, note:e.target.value })} />
         <button className="btn btn-primary" disabled={busy || !count.productId}>确认盘点</button>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
+import SearchableProductSelect from '../../../shared/SearchableProductSelect'
 
 const labels = { receipt:'入库', issue:'领用', use:'实际使用', return:'归还/退回', loss:'报损', manual_sale:'录入客户消费' }
 export default function InventoryPage() {
@@ -34,7 +35,7 @@ export default function InventoryPage() {
     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(340px, 1fr))', gap:18 }}>
       <form className="card" style={{ padding:20 }} onSubmit={save}>
         <h2>登记流水</h2>
-        <label className="form-label">物资</label><select className="form-input" required value={form.productId} onChange={e => { const p = data.products.find(x => x._id === e.target.value); setForm({ ...form, productId:e.target.value, unitPrice:p?.originalPrice ?? '', fromIssued:form.type === 'use' && p?.inventoryTracking?.kind === 'reusable', orderId:'' }) }}><option value="">选择物资</option>{data.products.map(p => <option key={p._id} value={p._id}>{p.name} · 可用 {p.stock} {p.inventoryTracking?.unit}</option>)}</select>
+        <label className="form-label">物资</label><SearchableProductSelect products={data.products} value={form.productId} onChange={productId => { const p = data.products.find(x => x._id === productId); setForm({ ...form, productId, unitPrice:p?.originalPrice ?? '', fromIssued:form.type === 'use' && p?.inventoryTracking?.kind === 'reusable', orderId:'' }) }} optionLabel={p => `${p.name} · 可用 ${p.stock} ${p.inventoryTracking?.unit || ''}`} />
         <label className="form-label">动作</label><select className="form-input" value={form.type} onChange={e => setForm({ ...form, type:e.target.value, fromIssued:e.target.value === 'use' && product?.inventoryTracking?.kind === 'reusable', orderId:'' })}>{['issue','use','return','manual_sale'].map(type => <option key={type} value={type}>{labels[type]}</option>)}</select>
         <label className="form-label">数量</label><input className="form-input" type="number" min="1" required value={form.units} onChange={e => setForm({ ...form, units:e.target.value })} />
         {['use','manual_sale'].includes(form.type) && <><label className="form-label">使用/购买客户</label>{patientId && <p>已从客户详情带入客户</p>}<div style={{ display:'flex', gap:6 }}><input className="form-input" placeholder="输入客户姓名或手机号" value={search} onChange={e => setSearch(e.target.value)} /><button className="btn btn-secondary" type="button" onClick={() => staffAPI.inventoryUsers(search).then(r => setUsers(r.data)).catch(e => setError(e.message))}>查找</button></div><select className="form-input" required value={form.userId} onChange={e => setForm({ ...form, userId:e.target.value })}><option value="">选择客户</option>{patientId && !users.some(u => u._id === patientId) && <option value={patientId}>当前客户</option>}{users.map(u => <option key={u._id} value={u._id}>{u.name} · {u.phone || u.patientNo || ''}</option>)}</select></>}
