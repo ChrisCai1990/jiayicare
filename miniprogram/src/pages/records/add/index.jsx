@@ -23,6 +23,9 @@ const RECORD_TYPES = [
   { id: 'weight', label: '体重', icon: '⚖️', category: 'vitals', unit: 'kg', fields: [
     { key: 'value', label: '体重', unit: 'kg', placeholder: '如：70.5' },
   ] },
+  { id: 'waist', label: '腰围', icon: '📏', category: 'vitals', unit: 'cm', fields: [
+    { key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5' },
+  ] },
   { id: 'sleep', label: '睡眠', icon: '🌙', category: 'lifestyle', unit: '小时', fields: [] },
   { id: 'mood', label: '情绪', icon: '😊', category: 'lifestyle', unit: '分', fields: [] },
   { id: 'smoking', label: '吸烟', icon: '🚬', category: 'lifestyle', unit: '支', fields: [
@@ -94,6 +97,7 @@ export default function AddRecordPage() {
     } else {
       const v = values.value;
       if (!v) { setError('请填写数值'); return; }
+      if (activeType.id === 'waist' && (!Number.isFinite(Number(v)) || Number(v) <= 0)) { setError('请输入大于0的腰围数值（cm）'); return; }
       const num = parseFloat(v);
       let status = 'normal';
       if (activeType.id === 'bloodSugar') status = num > 7 ? 'warning' : num < 3.9 ? 'low' : 'normal';

@@ -23,6 +23,9 @@ const RECORD_TYPES = [
   { id: 'weight', label: '体重', icon: 'barbell', color: colors.warning, fields: [
     { key: 'value', label: '体重', unit: 'kg', placeholder: '如：70.5', normal: '视BMI而定' },
   ]},
+  { id: 'waist', label: '腰围', icon: 'resize-outline', color: '#0F766E', fields: [
+    { key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5', normal: '' },
+  ]},
   { id: 'sleep', label: '睡眠', icon: 'moon', color: '#7B68EE', fields: [] },
   { id: 'mood', label: '情绪', icon: 'happy', color: colors.accent, fields: [] },
 ];
@@ -218,6 +221,10 @@ export default function AddRecordScreen({ navigation, route }) {
   const statusConfig = { normal: { color: colors.success, label: '正常' }, high: { color: colors.danger, label: '偏高' }, low: { color: colors.info, label: '偏低' } };
 
   const handleSubmit = async () => {
+    if (activeType.id === 'waist' && (!Number.isFinite(Number(values.value)) || Number(values.value) <= 0)) {
+      showToast('warn', '请输入大于0的腰围数值（cm）');
+      return;
+    }
     const hasValue = activeType.id === 'sleep'
       ? (values.sleepTime && values.wakeTime)
       : activeType.id === 'mood'

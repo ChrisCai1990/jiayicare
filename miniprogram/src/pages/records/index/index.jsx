@@ -16,9 +16,10 @@ const TYPE_META = {
   bloodSugar: { label: '血糖', icon: '🩸', unit: 'mmol/L' },
   heartRate: { label: '心率', icon: '❤️', unit: '次/分' },
   weight: { label: '体重', icon: '⚖️', unit: 'kg' },
+  waist: { label: '腰围', icon: '📏', unit: 'cm' },
   sleep: { label: '睡眠', icon: '🌙', unit: '小时' },
 };
-const CORE_TYPES = ['bloodPressure', 'bloodSugar', 'sleep', 'heartRate', 'weight'];
+const CORE_TYPES = ['bloodPressure', 'bloodSugar', 'sleep', 'heartRate', 'weight', 'waist'];
 const DAILY_TYPES = ['diet', 'exercise', 'bowel', 'water', 'smoking', 'alcohol', 'mood'];
 const BODY_METRICS = [
   { key: 'weight', referenceKey: 'weightReference', label: '体成分体重', unit: 'kg', color: '#2563EB' },
@@ -64,6 +65,7 @@ export default function RecordsIndexPage() {
   const [sleepTrend, setSleepTrend] = useState([]);
   const [heartTrend, setHeartTrend] = useState([]);
   const [weightTrend, setWeightTrend] = useState([]);
+  const [waistTrend, setWaistTrend] = useState([]);
   const [trendTab, setTrendTab] = useState('bloodPressure');
   const [bodyTrendTab, setBodyTrendTab] = useState('weight');
   const [bodyComposition, setBodyComposition] = useState({});
@@ -110,10 +112,10 @@ export default function RecordsIndexPage() {
 
   async function loadTrends() {
     const generation=++trendGeneration.current;
-    const types=['bloodPressure','bloodSugar','sleep','heartRate','weight'];
+    const types=CORE_TYPES;
     const results=await Promise.allSettled(types.map(type=>recordsAPI.trend(type)));
     if(generation!==trendGeneration.current)return;
-    const setters=[setBpTrend,setBsTrend,setSleepTrend,setHeartTrend,setWeightTrend];
+    const setters=[setBpTrend,setBsTrend,setSleepTrend,setHeartTrend,setWeightTrend,setWaistTrend];
     setTrendError(results.some(result=>result.status==='rejected'||result.value?.success===false)?'部分趋势更新失败，点击重试':'');
     results.forEach((result,index)=>{
       if(result.status!=='fulfilled'||result.value?.success===false||!Array.isArray(result.value?.data))return;
@@ -138,6 +140,7 @@ export default function RecordsIndexPage() {
     sleep: { data: sleepTrend, color: '#7C3AED', label: '睡眠 (小时)' },
     heartRate: { data: heartTrend, color: '#DC2626', label: '心率 (次/分)' },
     weight: { data: weightTrend, color: '#0369A1', label: '体重 (kg)' },
+    waist: { data: waistTrend, color: '#0F766E', label: '腰围 (cm)' },
   };
 
   if (archive.loading) return <View style={{ padding: `${statusBarHeight + 24}px ${spacing.lg}px` }}>正在核对档案…</View>;
@@ -201,9 +204,9 @@ export default function RecordsIndexPage() {
 
         {!!trendError&&<Text onClick={loadTrends} style={{display:'block',color:colors.danger,fontSize:'13px',marginBottom:'8px'}}>{trendError}</Text>}
         {/* 趋势图 Tab：血压/血糖/睡眠 */}
-        {(bpTrend.length > 0 || bsTrend.length > 0 || sleepTrend.length > 0 || heartTrend.length > 0 || weightTrend.length > 0) && (
+        {(bpTrend.length > 0 || bsTrend.length > 0 || sleepTrend.length > 0 || heartTrend.length > 0 || weightTrend.length > 0 || waistTrend.length > 0) && (
           <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
-            <View style={{ display: 'flex', gap: '8px', marginBottom: `${spacing.sm}px` }}>
+            <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: `${spacing.sm}px` }}>
               {CORE_TYPES.map((k) => ({ k, l: TYPE_META[k].label })).map((t) => (
                 <View key={t.k} onClick={() => { setTrendTab(t.k); setFilter(t.k); }} style={{
                   padding: '5px 12px', borderRadius: `${radius.full}px`,

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Textarea, ScrollView, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { servicesAPI, authAPI, userAPI, paymentsAPI, mediaUrl } from '../../../services/api';
+import { servicesAPI, authAPI, userAPI, paymentsAPI, familyLinksAPI, guardianChildrenAPI, mediaUrl } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
@@ -324,10 +324,10 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', initialBeneficiar
 
   return (
     <View style={{position:'fixed',top:0,left:0,right:0,bottom:0,backgroundColor:'#fff',zIndex:100}}>
-    <View style={{paddingTop:`${statusBarHeight}px`,height:`${totalHeight}px`,boxSizing:'border-box',backgroundColor:'#fff'}}>
-      <View onClick={onClose} style={{height:`${navBarHeight}px`,display:'flex',alignItems:'center',paddingLeft:'20px',width:'120px'}}><Text style={{fontSize:'17px',color:colors.primary}}>‹ 返回商城</Text></View>
+    <View style={{position:'relative',zIndex:2,paddingTop:`${statusBarHeight}px`,height:`${totalHeight}px`,boxSizing:'border-box',backgroundColor:'#fff'}}>
+      <View onClick={(event) => { event.stopPropagation(); onClose(); }} style={{position:'relative',zIndex:3,height:`${navBarHeight}px`,display:'flex',alignItems:'center',paddingLeft:'20px',width:'120px'}}><Text style={{fontSize:'17px',color:colors.primary}}>‹ 返回商城</Text></View>
     </View>
-    <ScrollView scrollY enhanced showScrollbar style={{ position: 'absolute', top: `${totalHeight}px`, left: 0, right: 0, bottom: 0, width: '100%', height: `calc(100vh - ${totalHeight}px)`, backgroundColor: '#fff' }}>
+    <ScrollView scrollY enhanced showScrollbar style={{ position: 'absolute', zIndex: 1, top: `${totalHeight}px`, left: 0, right: 0, bottom: 0, width: '100%', height: `calc(100vh - ${totalHeight}px)`, backgroundColor: '#fff' }}>
       <View style={{ padding: `${spacing.lg}px`, paddingBottom: '40px', width: '100%', minHeight: '100vh', boxSizing: 'border-box' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View>

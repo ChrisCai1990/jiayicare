@@ -19,6 +19,7 @@ function toLocalDateStr(d) {
 
 // ── 健康数据项目定义（从 HomeScreen 抽离，2026-07-18 记录页重构）───────
 const CHECKIN_DEFS = {
+  waist: { key: 'waist', label: '腰围', icon: 'resize-outline', color: '#0F766E', measureType: 'waist', category: 'vitals', recordLabel: '腰围记录' },
   diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食记录', allowMultiple: true },
   exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',       color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动记录', allowMultiple: true },
   sleep:         { key: 'sleep',         label: '睡眠', icon: 'moon-outline',          color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠记录' },
@@ -34,11 +35,12 @@ const CHECKIN_DEFS = {
   symptom:       { key: 'symptom',       label: '不适', icon: 'medkit-outline',        color: '#DC2626', measureType: 'symptom',       category: 'vitals',    recordLabel: '症状自评', optional: true },
 };
 
-// 12项固定记录 + 症状自评（症状自评始终可选，不受慢病标签影响）
-const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','mood'];
+// 13项固定记录 + 症状自评（症状自评始终可选，不受慢病标签影响）
+const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','waist','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','mood'];
 
 // 生理指标记录项的字段定义，与 AddRecordScreen 字段口径保持一致
 const MEASURE_FIELDS = {
+  waist: [{ key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5', normal: '' }],
   bloodPressure: [
     { key: 'sys', label: '收缩压', unit: 'mmHg', placeholder: '如：130', normal: '90-139' },
     { key: 'dia', label: '舒张压', unit: 'mmHg', placeholder: '如：80', normal: '60-89' },
@@ -171,6 +173,10 @@ export default function CheckinScreen({ navigation }) {
     if (measureSaving) return;
     const item = measureModal;
     const measureType = item.measureType;
+    if (measureType === 'waist' && (!Number.isFinite(Number(measureValues.value)) || Number(measureValues.value) <= 0)) {
+      Alert.alert('请核对数值', '请输入大于0的腰围数值（cm）');
+      return;
+    }
     const fields = MEASURE_FIELDS[measureType] || [];
     const isToday = checkinDate === todayStr;
 

@@ -69,6 +69,14 @@ const CHART_TYPES = [
     mockData: [],
   },
   {
+    key: 'waist', label: '腰围', unit: 'cm',
+    color: '#0F766E', icon: 'resize-outline',
+    refLines: [], minY: 40, maxY: 120,
+    getVal: (r) => parseFloat(r.value ?? 0),
+    getDisplay: (r) => String(r.value ?? '-'),
+    mockData: [],
+  },
+  {
     key: 'sleep', label: '睡眠', unit: '小时',
     color: '#7B68EE', icon: 'moon-outline',
     refLines: [{ val: 9, color: '#22A06B', label: '建议上限 9小时' }, { val: 7, color: '#D97706', label: '建议下限 7小时' }],
