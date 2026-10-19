@@ -39,6 +39,13 @@ export default function InventoryPage() {
   const unavailable = catalog.filter(p => !tracked.has(p._id))
   const enableProduct = unavailable.find(p => p._id === enable.productId)
   const countProduct = data.products.find(p => p._id === count.productId)
+  const startCount = productId => {
+    setCount({ productId, counted:'', note:'' })
+    requestAnimationFrame(() => {
+      document.getElementById('inventory-count-form')?.scrollIntoView({ behavior:'smooth', block:'center' })
+      document.getElementById('inventory-counted')?.focus({ preventScroll:true })
+    })
+  }
   const actualValue = data.products.filter(p => !p.needsOpeningCount).reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.inventoryTracking?.defaultCost || 0), 0)
   const unverifiedCount = data.products.filter(p => p.needsOpeningCount).length
   const manualSales = consumption.manual.filter(x => x.type === 'manual_sale').reduce((sum, x) => sum + x.units * x.unitPrice, 0)
@@ -51,8 +58,8 @@ export default function InventoryPage() {
     <section className="card" style={{ padding:20, marginBottom:18 }}>
       <h2>库存概览</h2>
       <p>跟踪商品 {data.products.length} 项 · 已核实商品按参考成本估算库存 {money(actualValue)} · 待实盘核实 {unverifiedCount} 项 · 近 500 条记录中的商城订单 {money(mallSales)} / 医护录入消费 {money(manualSales)}</p>
-      <div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>商品</th><th>类别</th><th>可用</th><th>预警</th><th>售价</th><th>参考成本</th><th>存放地点</th></tr></thead><tbody>
-        {data.products.map(p => <tr key={p._id}><td>{p.name}</td><td>{p.inventoryTracking?.kind === 'reusable' ? '可重复使用设备' : '耗材/商品'}</td><td>{p.needsOpeningCount ? `待核实（旧账面 ${p.stock}）` : `${p.stock} ${p.inventoryTracking?.unit || ''}`}</td><td>{p.needsOpeningCount ? '待实盘核实' : Number(p.stock) <= Number(p.inventoryTracking?.minStock || 0) ? '低库存' : '-'}</td><td>{money(p.originalPrice)}</td><td>{money(p.inventoryTracking?.defaultCost)}</td><td>{p.inventoryTracking?.location || '-'}</td></tr>)}
+      <div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>商品</th><th>类别</th><th>可用</th><th>预警</th><th>售价</th><th>参考成本</th><th>存放地点</th><th>操作</th></tr></thead><tbody>
+        {data.products.map(p => <tr key={p._id}><td>{p.name}</td><td>{p.inventoryTracking?.kind === 'reusable' ? '可重复使用设备' : '耗材/商品'}</td><td>{p.needsOpeningCount ? `待核实（旧账面 ${p.stock}）` : `${p.stock} ${p.inventoryTracking?.unit || ''}`}</td><td>{p.needsOpeningCount ? '待实盘核实' : Number(p.stock) <= Number(p.inventoryTracking?.minStock || 0) ? '低库存' : '-'}</td><td>{money(p.originalPrice)}</td><td>{money(p.inventoryTracking?.defaultCost)}</td><td>{p.inventoryTracking?.location || '-'}</td><td><button className="btn btn-secondary" type="button" onClick={() => startCount(p._id)}>校正库存</button></td></tr>)}
       </tbody></table></div>
     </section>
     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:18 }}>
@@ -92,17 +99,17 @@ export default function InventoryPage() {
         <input className="form-input" placeholder="备注/凭据" value={entry.note} onChange={e => setEntry({ ...entry, note:e.target.value })} />
         <button className="btn btn-primary" disabled={busy || !entry.productId}>保存流水</button>
       </form>
-      <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); if (count.productId) submit(async () => { await adminAPI.inventoryCount(count); setCount(current => ({ ...current, counted:'', note:'' })) }) }}>
+    </div>
+      <form id="inventory-count-form" className="card" style={{ padding:20, marginTop:18 }} onSubmit={e => { e.preventDefault(); if (count.productId) submit(async () => { await adminAPI.inventoryCount(count); setCount(current => ({ ...current, counted:'', note:'' })) }) }}>
         <h2>实物盘点与库存校正</h2><p>已启用商品若沿用了虚拟商城库存，请在这里填写当前实盘数量和原因。系统会更新结存并保留校正流水，不会把差额当作销售或消耗。</p>
         <SearchableProductSelect products={data.products} value={count.productId} onChange={productId => setCount({ ...count, productId })} optionLabel={p => `${p.name} · 账面 ${p.stock}`} />
         {countProduct && <p>当前账面结存：{countProduct.stock} {countProduct.inventoryTracking?.unit || '件'}{countProduct.needsOpeningCount ? '；原商城库存尚未实盘核实' : ''}</p>}
-        <label>当前实盘数量<input className="form-input" type="number" min="0" step="1" required placeholder="填写实际清点数量" value={count.counted} onChange={e => setCount({ ...count, counted:e.target.value })} /></label>
+        <label>当前实盘数量<input id="inventory-counted" className="form-input" type="number" min="0" step="1" required placeholder="填写实际清点数量" value={count.counted} onChange={e => setCount({ ...count, counted:e.target.value })} /></label>
         <textarea className="form-input" required placeholder="差异原因或盘点依据；如原商城库存为虚拟数字" value={count.note} onChange={e => setCount({ ...count, note:e.target.value })} />
         <button className="btn btn-primary" disabled={busy || !count.productId || count.counted === '' || !count.note.trim()}>按实盘数量校正</button>
       </form>
-    </div>
-    <section className="card" style={{ padding:20, marginTop:18 }}><h2>最近流水</h2><p>旧版启用时从商城带入的期初未经实盘核实，仅保留为历史记录；请以上方实盘校正后的当前结存为准。</p><div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>时间</th><th>物资</th><th>类型</th><th>数量</th><th>结存</th><th>批次/设备</th><th>使用客户</th><th>经办人</th><th>备注/依据</th></tr></thead><tbody>
-      {data.recent.map(x => <tr key={x._id}><td>{date(x.createdAt)}</td><td>{data.products.find(p => p._id === x.productId)?.name || '-'}</td><td>{x.type === 'opening' && x.note?.startsWith('启用台账时的期初库存') ? '旧商城库存（未核实）' : labels[x.type]}</td><td>{x.units}（库存 {x.quantity >= 0 ? '+' : ''}{x.quantity}）</td><td>{x.balanceAfter}</td><td>{x.batchNo || x.serialNo || '-'}</td><td>{x.userId?.name || '-'}</td><td>{x.actorId?.name || '-'}</td><td>{x.note || '-'}</td></tr>)}
+    <section className="card" style={{ padding:20, marginTop:18 }}><h2>最近流水</h2><p>历史记录不能直接改写。点击对应商品的“校正当前库存”，按实盘数量生成一条新的校正记录。</p><div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>时间</th><th>物资</th><th>类型</th><th>数量</th><th>结存</th><th>批次/设备</th><th>使用客户</th><th>经办人</th><th>备注/依据</th><th>操作</th></tr></thead><tbody>
+      {data.recent.map(x => <tr key={x._id}><td>{date(x.createdAt)}</td><td>{data.products.find(p => p._id === x.productId)?.name || '-'}</td><td>{x.type === 'opening' && x.note?.startsWith('启用台账时的期初库存') ? '旧商城库存（未核实）' : labels[x.type]}</td><td>{x.units}（库存 {x.quantity >= 0 ? '+' : ''}{x.quantity}）</td><td>{x.balanceAfter}</td><td>{x.batchNo || x.serialNo || '-'}</td><td>{x.userId?.name || '-'}</td><td>{x.actorId?.name || '-'}</td><td>{x.note || '-'}</td><td><button className="btn btn-secondary" type="button" onClick={() => startCount(x.productId)}>校正当前库存</button></td></tr>)}
     </tbody></table></div></section>
     <section className="card" style={{ padding:20, marginTop:18 }}><h2>客户消费来源</h2><p>商城订单自动读取已支付订单；医护录入消费来自物资流水。实际使用与销售分列，避免重复计算收入。</p><div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>时间</th><th>来源</th><th>客户</th><th>产品</th><th>金额</th><th>凭据</th></tr></thead><tbody>
       {consumption.orders.map(x => <tr key={`o${x._id}`}><td>{date(x.createdAt)}</td><td>商城</td><td>{x.user?.name || '-'}</td><td>{x.serviceName}</td><td>{money(x.paidAmount || x.servicePrice)}</td><td>{x.orderNo}</td></tr>)}
