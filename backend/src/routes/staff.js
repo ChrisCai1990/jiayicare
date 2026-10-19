@@ -14319,7 +14319,7 @@ router.get('/content-reviews', staffAuth, async (req, res) => {
       ? {}
       : history
         ? { $or: [{ 'nutritionReview.reviewedBy': req.staff._id }, { 'doctorReview.reviewedBy': req.staff._id }, { 'auditLog.by': req.staff._id }] }
-        : { currentRole: role, status: { $in: ['pending', 'changes_requested'] } };
+        : { currentRole: role, status: 'pending' };
     const data = await ContentReview.find(filter).sort({ updatedAt: -1 }).lean();
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -14335,8 +14335,8 @@ router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
     advanceReview(record, actingRole, req.body?.action, req.body?.note, req.staff);
     if (record.status === 'approved') {
       const now = new Date();
-      const alreadyPublished = await ContentReview.find({ status: 'published' }).select('slug publishChecklist auditLog').lean();
-      publishGeoArticle({ slug: record.slug, publishedBy: req.staff.name || '专业审核人', publishedAt: now, alreadyPublished });
+      const alreadyPublished = await ContentReview.find({ status: 'published' }).select('slug title summary sourceContent sourceUpdatedAt revisions publishChecklist auditLog').lean();
+      publishGeoArticle({ slug: record.slug, reviewedRecord: record, publishedBy: req.staff.name || '专业审核人', publishedAt: now, alreadyPublished });
       record.status = 'published';
       record.auditLog.push({ action: 'publish', role: actingRole, by: req.staff._id, byName: req.staff.name || '', at: now });
     }
@@ -14393,8 +14393,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (canAccessContentReview(req.staff)) {
       await ensureContentReviews(ContentReview);
       const reviewFilter = isSuper
-        ? { status: { $in: ['pending', 'changes_requested'] }, currentRole: { $in: ['nutritionist', 'familyDoctor'] } }
-        : { status: { $in: ['pending', 'changes_requested'] }, currentRole: role };
+        ? { status: 'pending', currentRole: { $in: ['nutritionist', 'familyDoctor'] } }
+        : { status: 'pending', currentRole: role };
       const contentReviews = await ContentReview.find(reviewFilter).sort({ updatedAt: -1 }).lean();
       contentReviews.forEach(item => todos.push({
         id: `geo_content_${item._id}`,

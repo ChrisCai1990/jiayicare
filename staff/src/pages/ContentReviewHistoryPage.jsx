@@ -19,6 +19,7 @@ export default function ContentReviewHistoryPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}><b>{item.title}</b><span style={{ color: '#1E6B50', fontSize: 13 }}>{statusLabel(item.status)}</span></div>
       {reviewText(item.nutritionReview) && <p style={{ margin: '10px 0 0', fontSize: 13, color: '#52615A' }}>营养审核：{reviewText(item.nutritionReview)}</p>}
       {reviewText(item.doctorReview) && <p style={{ margin: '6px 0 0', fontSize: 13, color: '#52615A' }}>健康顾问审核：{reviewText(item.doctorReview)}</p>}
+      <button className="btn btn-outline" style={{ marginTop: 12 }} onClick={() => nav(`/content-reviews/${item._id}`)}>查看正文与修订记录</button>
     </div>)}
   </div>
 }

@@ -72,6 +72,7 @@ async function ensureContentReviews(ContentReview) {
 function reviewField(role) { return role === 'nutritionist' ? 'nutritionReview' : 'doctorReview'; }
 
 function advanceReview(record, role, action, note, staff) {
+  if (record.status !== 'pending') throw new Error('稿件不在待审核状态，请刷新后重试');
   if (!canAccessContentReview(staff) || (staff.role !== 'superadmin' && staff.role !== role)) throw new Error('当前账号无此审核权限');
   if (!['nutritionist', 'familyDoctor'].includes(role) || record.currentRole !== role) throw new Error('当前账号无此审核权限');
   if (!['approve', 'return'].includes(action)) throw new Error('审核操作无效');
@@ -82,6 +83,7 @@ function advanceReview(record, role, action, note, staff) {
   record.auditLog.push({ action, role, note: String(note || '').trim(), by: staff._id, byName: staff.name || '', at: now });
   if (action === 'return') {
     record.status = 'changes_requested';
+    record.currentRole = '';
     return record;
   }
   const currentIndex = record.reviewChain.indexOf(role);

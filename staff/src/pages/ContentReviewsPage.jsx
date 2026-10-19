@@ -23,7 +23,11 @@ export default function ContentReviewsPage() {
     setLoading(true)
     try {
       const r = await staffAPI.getContentReviews()
-      const found = (r.data || []).find(x => x._id === id)
+      let found = (r.data || []).find(x => x._id === id)
+      if (!found) {
+        const history = await staffAPI.getContentReviews({ history: '1' })
+        found = (history.data || []).find(x => x._id === id)
+      }
       setItem(found || null)
     } catch (e) { toast(e.message || '加载审核稿失败', 'error') }
     finally { setLoading(false) }
@@ -31,8 +35,10 @@ export default function ContentReviewsPage() {
   useEffect(() => { load() }, [id])
 
   const submit = async action => {
+    if (item?.status !== 'pending') return
     const note = action === 'return' ? window.prompt('请填写退回修改意见（仅填写内容审核意见）：') : window.prompt('审核备注（可留空）：', '')
     if (action === 'return' && !note?.trim()) return
+    if (note === null) return
     setSubmitting(true)
     try {
       const r = await staffAPI.reviewContentReview(id, { action, note: note || '' })
@@ -51,7 +57,7 @@ export default function ContentReviewsPage() {
   return <div className="page-container" style={{ maxWidth: 920 }}>
     <button onClick={() => nav('/home')} style={{ border: 'none', background: 'none', color: '#1E6B50', cursor: 'pointer', padding: 0 }}>← 返回工作台</button>
     <div className="card" style={{ marginTop: 16, padding: 24 }}>
-      <div style={{ fontSize: 13, color: '#7C3AED', fontWeight: 600 }}>官网 GEO 内容审核 · 当前环节：{roleName(item.currentRole)}</div>
+      <div style={{ fontSize: 13, color: '#7C3AED', fontWeight: 600 }}>官网 GEO 内容审核 · {item.status === 'changes_requested' ? '已退回，等待编辑修订；修订后重新送审' : item.status === 'pending' ? `当前环节：${roleName(item.currentRole)}` : '历史记录（只读）'}</div>
       <h2 style={{ margin: '8px 0' }}>{item.title}</h2>
       <p style={{ color: '#66756E' }}>{item.summary}</p>
       <div style={{ display: 'flex', gap: 18, margin: '16px 0', fontSize: 13, color: '#52615A' }}>
@@ -60,10 +66,17 @@ export default function ContentReviewsPage() {
         <span>来源更新：{item.sourceUpdatedAt || '-'}</span>
       </div>
       <div style={{ background: '#F8FAF9', border: '1px solid #E3E9E6', borderRadius: 10, padding: 18, whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#22352C' }}>{item.sourceContent}</div>
-      <p style={{ fontSize: 12, color: '#8A968F', marginTop: 14 }}>{finalReviewer ? '核对正文及公开范围后，审核通过将直接发布到官网知识中心。' : '审核通过后转给下一位专业审核人。'}</p>
+      {!!item.revisions?.length && <section style={{ marginTop: 18 }}><h3>本次修订与历史版本</h3>{[...item.revisions].reverse().map((revision, index) => <details key={index} open={index === 0} style={{ marginTop: 12 }}>
+        <summary>{new Date(revision.at).toLocaleString()} · {revision.changeSummary}</summary>
+        <p>退回意见：{revision.returnNote}</p>
+        <p style={{ whiteSpace: 'pre-wrap' }}>修改前：{revision.before?.sourceContent}</p>
+        <p style={{ whiteSpace: 'pre-wrap' }}>修改后：{revision.after?.sourceContent}</p>
+      </details>)}</section>}
+      <details style={{ marginTop: 18 }}><summary>审核流转记录</summary>{(item.auditLog || []).map((entry, index) => <p key={index}>{new Date(entry.at).toLocaleString()} · {entry.byName || ''} · {({ return: '退回修改', resubmit: '修订后重新送审', approve: '审核通过', publish: '发布' })[entry.action] || entry.action}：{entry.note || '无备注'}</p>)}</details>
+      {item.status === 'pending' && <><p style={{ fontSize: 12, color: '#8A968F', marginTop: 14 }}>{finalReviewer ? '核对正文及公开范围后，审核通过将直接发布到官网知识中心。' : '审核通过后转给下一位专业审核人。'}</p>
       <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
         <button disabled={submitting} onClick={() => submit('approve')} className="btn btn-primary">{finalReviewer ? '审核通过并发布官网' : '审核通过'}</button><button disabled={submitting} onClick={() => submit('return')} className="btn btn-outline">退回修改</button>
-      </div>
+      </div></>}
     </div>
   </div>
 }
