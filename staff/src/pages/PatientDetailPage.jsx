@@ -14319,7 +14319,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   }, [msgs])
 
   const send = async () => {
-    if ((!input.trim() && !images.length) || sending) return
+    if ((!input.trim() && !images.length && !checkinImages.length) || sending) return
     setSendError('')
     setSending(true)
     try {
