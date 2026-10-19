@@ -21,6 +21,22 @@ test('coverage audit restores the pathology result and missing eye rows', () => 
   assert.equal(first[0].findings, '-');
 });
 
+test('coverage audit extends a partially extracted numbered imaging result without duplicating the exam', () => {
+  const first = [{ name: '近红外脑功能成像检查', sourcePage: 6, sourceSection: '视图区', itemType: 'imaging',
+    findings: '1. 脑血流变化趋势正常。', diagnosis: '' }];
+  const audit = [{ ...first[0], sourceSection: '检查结果', findings: '1. 脑血流变化趋势正常。\n2. 检测期间注意力集中。\n3. 报告另有原文说明。' }];
+  const merged = mergeCoverageAuditItems(first, audit);
+  assert.equal(merged.length, 1);
+  assert.match(merged[0].findings, /3\. 报告另有原文说明/);
+  assert.equal(first[0].findings, '1. 脑血流变化趋势正常。');
+  const reviewed = mergeCoverageAuditItems([{ ...first[0], manualReviewStatus: 'reviewed' }], audit);
+  assert.equal(reviewed[0].findings, first[0].findings);
+  const unrelated = mergeCoverageAuditItems(first, [{ ...audit[0], sourcePage: 7 }]);
+  assert.equal(unrelated[0].findings, first[0].findings);
+  const competing = mergeCoverageAuditItems(first, [{ ...audit[0], findings: '1. 不同的观察。\n2. 另一段。' }]);
+  assert.equal(competing[0].findings, first[0].findings);
+});
+
 test('explicit normal wording changes unknown only without conflicting evidence', () => {
   assert.equal(normalizeExplicitNormalStatus({ status: 'unknown', diagnosis: '未见异常' }).status, 'normal');
   assert.equal(normalizeExplicitNormalStatus({ status: 'unknown', findings: '巩膜黄染', diagnosis: '未见异常' }).status, 'unknown');
@@ -53,6 +69,16 @@ test('single-page supplement replaces a dash without changing reviewed content',
   assert.equal(enriched.items[0].findings, candidate.findings);
   const reviewed = mergeSupplementItems([{ ...old, manualReviewStatus: 'reviewed' }], [candidate]);
   assert.equal(reviewed.items[0].findings, '-');
+});
+
+test('single-page supplement extends numbered findings only when the original text is retained', () => {
+  const old = { name: '近红外脑功能成像检查', sourcePage: 6, sourceSection: '视图区', itemType: 'imaging', findings: '1. 脑血流变化趋势正常。' };
+  const candidate = { ...old, sourceSection: '检查结果', findings: '1. 脑血流变化趋势正常。\n2. 检测期间注意力集中。\n3. 报告另有说明。' };
+  const merged = mergeSupplementItems([old], [candidate]);
+  assert.equal(merged.enriched.length, 1);
+  assert.equal(merged.items[0].findings, candidate.findings);
+  assert.equal(mergeSupplementItems([{ ...old, manualReviewStatus: 'reviewed' }], [candidate]).items[0].findings, old.findings);
+  assert.equal(mergeSupplementItems([old], [{ ...candidate, findings: '1. 不同的观察。\n2. 另一段。' }]).items[0].findings, old.findings);
 });
 
 test('single-page supplement aligns a textual cervical pathology lab result with its existing review row', () => {
