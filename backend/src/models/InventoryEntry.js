@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const schema = new mongoose.Schema({
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
+  sourceReceiptId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryEntry', default: null },
   materialId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryMaterial', default: null },
   serviceProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },

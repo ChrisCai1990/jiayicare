@@ -33,6 +33,8 @@ async function list(req, res) {
   const linked = await Product.find({ tenantId: tenant(req), _id: { $in: products.flatMap(p => p.linkedProductIds) } }).select('name originalPrice').lean();
   products.forEach(p => { p.linkedProducts = linked.filter(x => p.linkedProductIds.some(id => String(id) === String(x._id))); });
   const ids = products.map(p => p._id);
+  const receipts = ids.length ? await InventoryEntry.find({ tenantId: tenant(req), productId: { $in: ids }, type: 'receipt' }).select('productId batchNo expiresAt createdAt').sort({ expiresAt: 1, createdAt: -1 }).lean() : [];
+  products.forEach(product => { product.receiptBatches = receipts.filter(row => String(row.productId) === String(product._id)); });
   const legacyOpenings = ids.length ? await InventoryEntry.find({ tenantId: tenant(req), productId: { $in: ids }, type: 'opening', note: '启用台账时的期初库存；请与实物核对' }).select('productId createdAt').lean() : [];
   const legacyByProduct = new Map(legacyOpenings.map(row => [String(row.productId), row.createdAt]));
   const counts = legacyOpenings.length ? await InventoryEntry.find({ tenantId: tenant(req), productId: { $in: legacyOpenings.map(row => row.productId) }, type: 'count' }).select('productId createdAt').lean() : [];
@@ -97,7 +99,7 @@ adminRouter.patch('/products/:id/settings', async (req, res) => {
 });
 
 async function addEntry(req, res) {
-  const { productId, type, units, batchNo = '', serialNo = '', expiresAt, location = '', userId, assigneeId, fromIssued = false, orderId, unitCost, unitPrice, serviceProductId, requestId, note = '' } = req.body || {};
+  const { productId, type, units, sourceReceiptId, batchNo = '', serialNo = '', expiresAt, location = '', userId, assigneeId, fromIssued = false, orderId, unitCost, unitPrice, serviceProductId, requestId, note = '' } = req.body || {};
   if (!validId(productId)) return bad(res, '请选择物资');
   if (!['receipt', 'issue', 'use', 'return', 'loss', 'manual_sale'].includes(type)) return bad(res, '流水类型无效');
   if (req.staff && !['issue', 'use', 'return', 'manual_sale'].includes(type)) return bad(res, '该操作需在管理后台办理', 403);
@@ -121,6 +123,16 @@ async function addEntry(req, res) {
   if (product.inventoryTracking.kind === 'reusable' && type !== 'manual_sale' && (amount !== 1 || !String(serialNo).trim())) return bad(res, '可重复使用设备须逐台登记序列号');
   if (product.inventoryTracking.kind === 'reusable' && type === 'use' && !fromIssued && !orderId) return bad(res, '设备使用请关联领用人或已购买订单');
   if (expiresAt && Number.isNaN(new Date(expiresAt).getTime())) return bad(res, '有效期无效');
+  let resolvedBatch = String(batchNo).trim();
+  let resolvedExpiry = expiresAt || null;
+  if (sourceReceiptId) {
+    if (!validId(sourceReceiptId) || !['issue', 'use', 'return', 'loss'].includes(type)) return bad(res, '请选择有效的入库批次');
+    const receipt = await InventoryEntry.findOne({ _id: sourceReceiptId, tenantId: tenant(req), productId, type: 'receipt' });
+    if (!receipt) return bad(res, '入库批次不存在或不属于该物资', 404);
+    resolvedBatch = receipt.batchNo || '';
+    resolvedExpiry = receipt.expiresAt || null;
+  }
+  if (['issue', 'use'].includes(type) && resolvedExpiry && new Date(resolvedExpiry).toISOString().slice(0,10) < new Date().toLocaleDateString('en-CA', { timeZone:'Asia/Shanghai' })) return bad(res, '该批次已过有效期，不能领用或发放');
   let service = null;
   if (serviceProductId) {
     if (!validId(serviceProductId) || !product.linkedProductIds.some(id => String(id) === String(serviceProductId))) return bad(res, '请选择该物资关联的服务');
@@ -155,7 +167,7 @@ async function addEntry(req, res) {
   );
   if (!updated) return bad(res, '可用库存不足或物资状态已变化', 409);
   try {
-    const entry = await InventoryEntry.create({ tenantId: tenant(req), productId, materialId: productId, serviceProductId: service?._id || null, requestId, type, quantity: delta, units: amount, fromIssued: !!fromIssued, sourceOrderId: orderId || null, balanceAfter: Number(updated.stock), batchNo: String(batchNo).trim().slice(0, 80), serialNo: String(serialNo).trim().slice(0, 80), expiresAt: expiresAt || null, location: String(location || product.inventoryTracking.location || '').trim().slice(0, 80), userId: userId || null, assigneeId: assigneeId || null, unitCost: unitCost === undefined || unitCost === '' ? Number(product.inventoryTracking.defaultCost || 0) : Number(unitCost), unitPrice: type === 'manual_sale' ? Number(unitPrice) : 0, note: String(note).trim().slice(0, 500), actorId: actor(req)._id });
+    const entry = await InventoryEntry.create({ tenantId: tenant(req), productId, materialId: productId, serviceProductId: service?._id || null, requestId, type, quantity: delta, units: amount, fromIssued: !!fromIssued, sourceOrderId: orderId || null, balanceAfter: Number(updated.stock), sourceReceiptId: sourceReceiptId || null, batchNo: resolvedBatch.slice(0, 80), serialNo: String(serialNo).trim().slice(0, 80), expiresAt: resolvedExpiry, location: String(location || product.inventoryTracking.location || '').trim().slice(0, 80), userId: userId || null, assigneeId: assigneeId || null, unitCost: unitCost === undefined || unitCost === '' ? Number(product.inventoryTracking.defaultCost || 0) : Number(unitCost), unitPrice: type === 'manual_sale' ? Number(unitPrice) : 0, note: String(note).trim().slice(0, 500), actorId: actor(req)._id });
     return res.json({ success: true, data: entry });
   } catch (error) {
     await Material.updateOne({ _id: productId, tenantId: tenant(req) }, { $inc: { stock: -delta } });

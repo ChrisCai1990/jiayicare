@@ -1,3 +1,4 @@
+import InventoryBatchPicker from '../../../shared/InventoryBatchPicker'
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../api'
 import InventoryLedger from '../components/InventoryLedger'
@@ -87,14 +88,15 @@ export default function InventoryPage() {
       </form>
       <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(async () => { await adminAPI.inventoryEntry(entry); setEntry(current => ({ ...current, requestId:crypto.randomUUID() })) }) }}>
         <h2>登记出入库</h2>
-        <SearchableProductSelect products={data.products} value={entry.productId} onChange={productId => setEntry({ ...entry, productId, serviceProductId:'', orderId:'', unitPrice:'' })} optionLabel={p => `${p.name} · 现有 ${p.stock}`} />
-        <select className="form-input" value={entry.type} onChange={e => setEntry({ ...entry, type:e.target.value })}>{['receipt','issue','use','return','loss','manual_sale'].map(type => <option key={type} value={type}>{labels[type]}</option>)}</select>
+        <SearchableProductSelect products={data.products} value={entry.productId} onChange={productId => setEntry({ ...entry, productId, batchNo:'', expiresAt:'', sourceReceiptId:'', serviceProductId:'', orderId:'', unitPrice:'' })} optionLabel={p => `${p.name} · 现有 ${p.stock}`} />
+        <select className="form-input" value={entry.type} onChange={e => setEntry({ ...entry, type:e.target.value, batchNo:'', expiresAt:'', sourceReceiptId:'' })}>{['receipt','issue','use','return','loss','manual_sale'].map(type => <option key={type} value={type}>{labels[type]}</option>)}</select>
         {['issue','use','manual_sale'].includes(entry.type) && <><label>用于服务{entry.type === 'manual_sale' ? '（必选）' : '（可选）'}</label><SearchableProductSelect products={selected?.linkedProducts || []} value={entry.serviceProductId} placeholder="选择关联服务" onChange={serviceProductId => setEntry({ ...entry, serviceProductId, orderId:'', unitPrice:selected?.linkedProducts.find(p => p._id === serviceProductId)?.originalPrice ?? '' })} /></>}
         {entry.type === 'manual_sale' && <p>此处只登记服务消费金额；实物发放请登记“实际使用”或“领用”。</p>}
         <label>数量<input className="form-input" type="number" min="1" required value={entry.units} onChange={e => setEntry({ ...entry, units:e.target.value })} /></label>
-        <input className="form-input" placeholder="批次号" value={entry.batchNo} onChange={e => setEntry({ ...entry, batchNo:e.target.value })} />
+        {['issue','use','return','loss'].includes(entry.type) && <InventoryBatchPicker batches={selected?.receiptBatches || []} value={entry} onChange={patch => setEntry(f => ({ ...f, ...patch }))} />}
+        {entry.type === 'receipt' && <input className="form-input" placeholder="批次号" value={entry.batchNo} onChange={e => setEntry({ ...entry, batchNo:e.target.value })} />}
         {selected?.inventoryTracking?.kind === 'reusable' && <input className="form-input" placeholder="设备序列号" value={entry.serialNo} onChange={e => setEntry({ ...entry, serialNo:e.target.value })} />}
-        <label>有效期<input className="form-input" type="date" value={entry.expiresAt} onChange={e => setEntry({ ...entry, expiresAt:e.target.value })} /></label>
+        {entry.type === 'receipt' && <label>有效期<input className="form-input" type="date" value={entry.expiresAt} onChange={e => setEntry({ ...entry, expiresAt:e.target.value })} /></label>}
         {entry.type === 'receipt' && <label>本批实际成本单价（留空用参考成本）<input className="form-input" type="number" min="0" step="0.01" value={entry.unitCost} onChange={e => setEntry({ ...entry, unitCost:e.target.value })} /></label>}
         {['use','manual_sale'].includes(entry.type) && <><div style={{ display:'flex', gap:6 }}><input className="form-input" placeholder="客户姓名或手机号" value={search} onChange={e => setSearch(e.target.value)} /><button className="btn btn-secondary" type="button" onClick={() => adminAPI.inventoryUsers(search).then(r => setUsers(r.data)).catch(e => setError(e.message))}>查找</button></div><select className="form-input" required value={entry.userId} onChange={e => setEntry({ ...entry, userId:e.target.value })}><option value="">选择客户</option>{users.map(u => <option key={u._id} value={u._id}>{u.name} · {u.phone || u.patientNo || ''}</option>)}</select></>}
         {entry.type === 'use' && entry.userId && <label>消费来源订单（可选）<select className="form-input" value={entry.orderId} onChange={e => setEntry({ ...entry, orderId:e.target.value })}><option value="">未关联订单</option>{consumption.orders.filter(o => o.user?._id === entry.userId && selected?.linkedProductIds?.includes(o.serviceId) && (!entry.serviceProductId || o.serviceId === entry.serviceProductId)).map(o => <option key={o._id} value={o._id}>{o.orderNo} · {o.serviceName}</option>)}</select></label>}

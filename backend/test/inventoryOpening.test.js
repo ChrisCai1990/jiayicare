@@ -20,7 +20,7 @@ function setup() {
     '../models/Product':{ countDocuments:async filter=>filter._id.$in.filter(id=>products.some(p=>p._id===id)).length, findOne:async filter=>{ assert.equal(filter.tenantId,'tenant'); return products.find(p=>p._id===filter._id) } },
     '../models/InventoryMaterial':Material,
     '../utils/inventoryMaterials':{ ensureLegacyMaterials:async()=>{} },
-    '../models/InventoryEntry':{ create:async row=>{ entries.push(row); return row }, findOne:async filter=>entries.find(row=>row.requestId===filter.requestId), find:()=>chain([{ type:'issue',units:2 }]) },
+    '../models/InventoryEntry':{ create:async row=>{ entries.push(row); return row }, findOne:async filter=>filter._id ? entries.find(row=>row._id===filter._id && row.productId===filter.productId && row.tenantId===filter.tenantId && row.type===filter.type) : entries.find(row=>row.requestId===filter.requestId), find:()=>chain([{ type:'issue',units:2 }]) },
     '../models/Order':{ findOne:async filter=>{ assert.equal(filter.tenantId,'tenant'); return { serviceId:'diabetes' } } },
     '../models/User':{ exists:async()=>true }, '../models/Admin':{ exists:async()=>true },
     '../middleware/adminAuth':()=>{}, '../middleware/staffAuth':()=>{}, '../middleware/checkPermission':()=>()=>{},
@@ -72,3 +72,16 @@ test('legacy migration retains one balance and never overwrites later physical c
   await module.exports.ensureLegacyMaterial({...old,stock:1000});
   assert.equal(store.size,1);assert.equal(store.get('old').stock,7);assert.equal(store.get('old').name,'实物传感器');assert.equal(store.get('old').linkedProductIds[0],'old');
 });
+
+ test('delivery copies authoritative receipt expiry and rejects wrong or expired batches before stock change', async () => {
+  const {call,entries,material}=setup();
+  entries.push({_id:'receipt1',tenantId:'tenant',productId:'material',type:'receipt',batchNo:'LOT-A',expiresAt:'2099-04-27'});
+  const saved=await call('/entries',{sourceReceiptId:'receipt1',batchNo:'tampered',expiresAt:'2098-01-01'});
+  assert.equal(saved.code,200);
+  assert.equal(saved.body.data.batchNo,'LOT-A'); assert.equal(saved.body.data.expiresAt,'2099-04-27');
+  assert.equal(saved.body.data.sourceReceiptId,'receipt1');
+  assert.equal((await call('/entries',{sourceReceiptId:'foreign'})).code,404);
+  entries[0].expiresAt='2020-01-01';
+  assert.equal((await call('/entries',{sourceReceiptId:'receipt1'})).code,400);
+  assert.equal(material.stock,7);
+ });
