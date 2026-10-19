@@ -11602,8 +11602,8 @@ router.patch('/user-messages/:userId/read', staffAuth, async (req, res) => {
 // POST /api/staff/user-messages/:userId/reply
 router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
   try {
-    const { content = '', images = [], audio = null, orderId = '' } = req.body;
-    if (!content?.trim() && !images.length && !audio?.data) {
+    const { content = '', images = [], audio = null, orderId = '', checkinRecordId = '' } = req.body;
+    if (!content?.trim() && !images.length && !audio?.data && !checkinRecordId) {
       return res.status(400).json({ success: false, message: '回复内容不能为空' });
     }
     const patient = await User.findById(req.params.userId).select('name');
@@ -11635,7 +11635,26 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     );
 
     const imageUrls = [];
-    for (const item of images.slice(0, 9)) {
+    if (checkinRecordId) {
+      const record = await HealthRecord.findOne({ _id: checkinRecordId, user: req.params.userId, deletedAt: null })
+        .select('imageUrl imageUrls extra')
+        .lean();
+      if (!record) return res.status(404).json({ success: false, message: '打卡记录不存在或已删除，请刷新页面后重试' });
+      const sourceImages = [...new Set([
+        ...(Array.isArray(record.imageUrls) ? record.imageUrls : []),
+        record.imageUrl,
+        record.extra?.imageUrl,
+      ].filter(Boolean))].slice(0, 9);
+      if (!sourceImages.length) return res.status(400).json({ success: false, message: '这条打卡没有可发送的图片' });
+      for (const source of sourceImages) {
+        if (/^data:image\/(jpeg|jpg|png|webp|gif|heic|heif);base64,/i.test(source)) {
+          imageUrls.push((await require('../utils/oss').uploadBase64(source, source.match(/^data:([^;]+)/i)?.[1] || 'image/jpeg', 'messages')).url);
+        } else if (/^https?:\/\//i.test(source) || source.startsWith('/api/uploads/')) {
+          imageUrls.push(source);
+        }
+      }
+    }
+    for (const item of images.slice(0, Math.max(0, 9 - imageUrls.length))) {
       if (item?.data) imageUrls.push((await require('../utils/oss').uploadBase64(item.data, item.mimeType || 'image/jpeg', 'messages')).url);
     }
     let audioUrl = '';

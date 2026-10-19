@@ -2181,6 +2181,7 @@ export default function PatientDetailPage() {
     try { setPendingReportJobId(localStorage.getItem(`jy_staff_report_upload_${id}`) || '') } catch { setPendingReportJobId('') }
   }, [id])
   const [showMessageModal, setShowMessageModal] = useState(() => new URLSearchParams(location.search).get('openChat') === '1')
+  const [chatCheckinRecord, setChatCheckinRecord] = useState(null)
   useEffect(() => {
     if (new URLSearchParams(location.search).get('openChat') === '1' && location.state?.serviceBooking) setShowMessageModal(true)
   }, [location.search, location.state?.serviceBooking])
@@ -8256,7 +8257,7 @@ export default function PatientDetailPage() {
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              <button className="btn btn-primary btn-sm" onClick={() => setShowMessageModal(true)}>进入对话</button>
+                              <button className="btn btn-primary btn-sm" onClick={() => { setChatCheckinRecord({ _id: r._id, imageUrls }); setShowMessageModal(true) }}>进入对话</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>编辑</button>
                               {canDeleteHealthRecord && <button className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => { setDeletingRecord(r); setDeleteRecordReason(''); setDeleteRecordError('') }}>删除</button>}
                             </div>
@@ -13777,6 +13778,8 @@ export default function PatientDetailPage() {
           initialBookingForm={appointmentReviewContext?.formData}
           initialOrder={planningChatContext?.order}
           initialDraft={planningChatContext?.draft}
+          initialCheckinRecord={chatCheckinRecord}
+          onCheckinImageSent={() => setChatCheckinRecord(null)}
           planningTask={planningChatContext?.task}
           onFinishPlanning={async (task, summary) => {
             await staffAPI.updateFollowUp(task._id, { status: 'completed', content: '客户确认暂无其他就医协助需求，本次就医规划服务结束。', formData: { ...(task.formData || {}), medicalPlanning: true, customerCommunicationSummary: summary, planningOutcome: 'no_additional_service' } })
@@ -13835,7 +13838,7 @@ export default function PatientDetailPage() {
             toast(result.message || '服务信息已确认，订单已进入执行流程')
             loadFollowUps()
           }}
-          onClose={() => { setShowMessageModal(false); setPlanningChatContext(null); setAppointmentReviewContext(null) }}
+          onClose={() => { setShowMessageModal(false); setChatCheckinRecord(null); setPlanningChatContext(null); setAppointmentReviewContext(null) }}
         />
       )}
 
@@ -14100,7 +14103,7 @@ function formatRecordValue(r) {
 }
 
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
-function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, initialBookingForm, planningTask, onFinishPlanning, onPlanningProductPushed, onConfirmBooking, onClose }) {
+function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, initialCheckinRecord, onCheckinImageSent, initialBookingForm, planningTask, onFinishPlanning, onPlanningProductPushed, onConfirmBooking, onClose }) {
   const { staff } = useStaff()
   const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : staff?.role === 'healthPlanner' ? 'planner' : staff?.role === 'medicalAssistant' ? 'medicalAssistant' : 'manager'
   const toast = useToast()
@@ -14108,6 +14111,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState(initialDraft || '')
   const [images, setImages] = useState([])
+  const [checkinImages, setCheckinImages] = useState(() => initialCheckinRecord?.imageUrls || [])
+  const [checkinRecordId, setCheckinRecordId] = useState(initialCheckinRecord?._id || '')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [planningActionBusy, setPlanningActionBusy] = useState(false)
@@ -14320,11 +14325,15 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
     try {
       const res = await staffAPI.replyChatMessage(patientId, input.trim(), {
         images: images.map(({ data, mimeType }) => ({ data, mimeType })),
+        checkinRecordId,
         orderId,
       })
       setHumanActive(true)
       setInput('')
       setImages([])
+      setCheckinImages([])
+      setCheckinRecordId('')
+      onCheckinImageSent?.()
       isNearBottomRef.current = true // 自己发消息后，无论之前翻到哪，都应该跟到底部
       if (res.data) setMsgs(prev => [...prev, res.data])
       scrollToConversationBottom('smooth')
@@ -14691,8 +14700,14 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
         {/* 输入栏 */}
         <div style={{ borderTop: '1px solid #E0D9CE', padding: '10px 14px', flexShrink: 0, backgroundColor: '#fff' }}>
           {sendError && <div role="alert" style={{ marginBottom: 8, padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{sendError}</div>}
-          {images.length > 0 && (
+          {(checkinImages.length > 0 || images.length > 0) && (
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
+              {checkinImages.map((url, index) => (
+                <div key={`checkin-${index}`} style={{ position: 'relative', flexShrink: 0 }}>
+                  <img src={url} alt="本次打卡图片" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 8, border: '1px solid #E0D9CE' }} />
+                  <span style={{ position: 'absolute', left: 2, bottom: 2, padding: '1px 4px', borderRadius: 4, background: '#1E6B50', color: '#fff', fontSize: 9 }}>打卡原图</span>
+                </div>
+              ))}
               {images.map((image, index) => (
                 <div key={index} style={{ position: 'relative', flexShrink: 0 }}>
                   <img src={image.data} alt="待发送图片" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 8, border: '1px solid #E0D9CE' }} />
@@ -14718,8 +14733,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
           <button
             type="button"
             onClick={send}
-            disabled={sending || (!input.trim() && !images.length)}
-            style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || (!input.trim() && !images.length)) ? 0.5 : 1 }}
+            disabled={sending || (!input.trim() && !images.length && !checkinImages.length)}
+            style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || (!input.trim() && !images.length && !checkinImages.length)) ? 0.5 : 1 }}
           >
             {sending ? '…' : '发送'}
           </button>
