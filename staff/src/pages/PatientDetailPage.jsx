@@ -3849,7 +3849,10 @@ export default function PatientDetailPage() {
         const flags = buildLifestyleSummary(d)
         lifestyleForm.lifestyle_data = { ...d, autoSummaryFlags: flags }
       }
-      await staffAPI.updatePatient(id, lifestyleForm)
+      await staffAPI.updatePatient(id, {
+        lifestyle: lifestyleForm.lifestyle || {},
+        lifestyle_data: lifestyleForm.lifestyle_data || {},
+      })
       await staffAPI.recalculateScore(id)
       toast('生活方式已保存，评分已更新')
       setEditingLifestyle(false)
@@ -5955,12 +5958,11 @@ export default function PatientDetailPage() {
                 <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天健康数据记录形成变化分析，营养师可在工作台审核</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
-                      {['nutritionist','superadmin'].includes(staff.role)&&<button className="btn btn-primary btn-sm" onClick={async()=>{try{const res=await staffAPI.startLifestyleInterview(id);setFollowUpDetail(res.data);loadFollowUps()}catch(e){toast(e.message)}}}>开始生活方式访谈</button>}
                       {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>setFollowUpDetail(f)}>生活方式访谈 · {f.status==='completed'?'查看记录':'代填 / 核实问卷'}</button>)}
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
                       <button className="btn btn-secondary btn-sm" disabled={lifestyleAiGenerating} onClick={handleGenerateLifestyleDraft}>{lifestyleAiGenerating ? 'AI整理中…' : 'AI整理健康数据变化'}</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setLifestyleDetailsOpen(v => !v)}>{lifestyleDetailsOpen ? '收起详细档案' : '展开详细档案'}</button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleDetailsOpen(true); setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>
+                      {(['nutritionist','superadmin'].includes(staff.role) || staff.customRoleName === '营养师' || staff.roleLabel === '营养师') && <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleDetailsOpen(true); setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>}
                     </div>
                   : <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={handleSaveLifestyle}>保存</button>

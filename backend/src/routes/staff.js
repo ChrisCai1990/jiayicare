@@ -108,6 +108,7 @@ const {
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
+const { isNutritionistStaff } = require('../utils/staffRoleCapabilities');
 const { mergeCoverageAuditItems, normalizeExplicitNormalStatus } = require('../utils/reportAuditMerge');
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
 const { rotateImageBuffer, reportRotationCandidates } = require('../utils/imageOrientation');
@@ -1687,7 +1688,19 @@ router.post('/patients/:id/medical-record/course-entries', staffAuth, checkPermi
 });
 
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
-router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+const checkPatientEditOrLifestyleSurvey = async (req, res, next) => {
+  const keys = Object.keys(req.body || {});
+  const lifestyleSurveyOnly = keys.length > 0 && keys.every(key => ['lifestyle', 'lifestyle_data'].includes(key));
+  try {
+    if (lifestyleSurveyOnly && await isNutritionistStaff(req.staff)) return next();
+  } catch (err) {
+    console.error('[lifestyle-survey-permission] role lookup failed:', err.message);
+    return res.status(500).json({ success: false, message: '无法核实营养师权限，请稍后重试' });
+  }
+  return checkPermission('patients', 'edit')(req, res, next);
+};
+
+router.put('/patients/:id', staffAuth, checkPatientEditOrLifestyleSurvey, async (req, res) => {
   const visibleIds = req.staff.role === 'superadmin' ? [] : await getVisibleStaffIds(req.staff);
   const editFilter = {
     _id: new mongoose.Types.ObjectId(req.params.id),
@@ -2491,7 +2504,6 @@ router.post('/followups/:id/outcome-review', staffAuth, async (req, res) => {
 });
 
 router.get('/annual-plans/:id/lifestyle-interview-preview', staffAuth, require('../utils/lifestyleInterview').preview);
-router.post('/patients/:id/lifestyle-interview/start', staffAuth, require('../utils/lifestyleInterview').start);
 router.get('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
 router.post('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
 
@@ -14341,16 +14353,18 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const { summaryTodos, visibleTodo } = require('../utils/humanWorkbench');
     const role = req.staff.role;
     const isSuper = role === 'superadmin';
+    const isNutritionist = await isNutritionistStaff(req.staff);
+    const reviewRole = isNutritionist ? 'nutritionist' : role;
     // 当前角色能审核哪些场景类型；超管看全部
     const allowedTypes = isSuper
       ? Object.keys(TODO_REVIEW_ROLE)
-      : Object.keys(TODO_REVIEW_ROLE).filter(t => TODO_REVIEW_ROLE[t] === role);
+      : Object.keys(TODO_REVIEW_ROLE).filter(t => TODO_REVIEW_ROLE[t] === reviewRole);
     const can = (type) => allowedTypes.includes(type);
     // followup_review 例外：随访待审核按来源方案类型分流给不同角色（年度管理方案/体检方案→健康顾问，营养方案→营养师），
     // 不是固定单一角色，TODO_REVIEW_ROLE 的单值映射覆盖不了，这里放宽通过条件，具体过滤见下方按 reviewRole 分流
-    const canFollowupReview = isSuper || role === 'familyDoctor' || role === 'nutritionist';
+    const canFollowupReview = isSuper || role === 'familyDoctor' || isNutritionist;
     // service_draft_review 同理：AI聊天记录生成的随访草稿按 ServiceRecord.type 分流给三个角色，也不是固定单一角色
-    const canServiceDraftReview = isSuper || role === 'familyDoctor' || role === 'nutritionist' || role === 'healthManager' || role === 'medicalAssistant';
+    const canServiceDraftReview = isSuper || role === 'familyDoctor' || isNutritionist || role === 'healthManager' || role === 'medicalAssistant';
 
     const now = new Date();
     const DAY = 24 * 60 * 60 * 1000;
@@ -17538,7 +17552,7 @@ router.post('/patients/:id/archive-draft/dismiss', staffAuth, async (req, res) =
 // POST /api/staff/patients/:id/questionnaire-responses/:rid/nutritionist-review — 营养师复核膳食调查问卷
 router.post('/patients/:id/questionnaire-responses/:rid/nutritionist-review', staffAuth, async (req, res) => {
   try {
-    if (!['nutritionist', 'superadmin'].includes(req.staff.role)) {
+    if (req.staff.role !== 'superadmin' && !await isNutritionistStaff(req.staff)) {
       return res.status(403).json({ success: false, message: '仅营养师可复核膳食调查问卷' });
     }
     const response = await QuestionnaireResponse.findOne({ _id: req.params.rid, user: req.params.id });

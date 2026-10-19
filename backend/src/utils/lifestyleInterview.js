@@ -2,6 +2,7 @@ const crypto=require('crypto');
 const {FIELD_MAP}=require('../config/archiveFields');
 const {normalizeValue,getByPath,answerToText}=require('./archiveImport');
 const {effectiveLifestyle}=require('./effectiveLifestyle');
+const {isNutritionistStaff}=require('./staffRoleCapabilities');
 const QUESTIONNAIRE_ID='6a49eab9fc1595013da70645';
 const fail=(message,statusCode=409)=>Object.assign(new Error(message),{statusCode});
 const fingerprint=user=>crypto.createHash('sha256').update(JSON.stringify({lifestyle:effectiveLifestyle(user),history:user.lifestyleHistory,archive:user.archiveVersionHistory})).digest('hex');
@@ -30,7 +31,7 @@ async function context(task,actor,User,write=false) {
  const user=await User.findById(task.patientId).lean();
  if(!user)throw fail('会员不存在',404);
  const id=String(actor._id),assigned=String(task.assignedTo?._id||task.assignedTo);
- const nutrition=actor.role==='nutritionist'&&id===assigned&&id===String(user.assignedNutritionist);
+ const nutrition=await isNutritionistStaff(actor)&&id===assigned&&id===String(user.assignedNutritionist);
  const advisor=actor.role==='familyDoctor'&&id===String(user.assignedFamilyDoctor);
  if(actor.role!=='superadmin'&&!(write?nutrition:nutrition||advisor))throw fail('仅所属营养师可填写，所属健康顾问可查看',403);
  return user;
@@ -103,27 +104,6 @@ async function handle(req,res) {
  }catch(e){res.status(e.statusCode||500).json({success:false,message:e.message});}
 }
 module.exports={handle,prepare,fingerprint};
-async function start(req,res) {
- const User=require('../models/User'),FollowUp=require('../models/FollowUp'),mongoose=require('mongoose');
- try {
-  const user=await User.findById(req.params.id).lean();
-  if(!user)throw fail('会员不存在',404);
-  if(req.staff.role!=='superadmin'&&(req.staff.role!=='nutritionist'||String(user.assignedNutritionist)!==String(req.staff._id)))throw fail('仅所属营养师可开始访谈',403);
-  if(!user.assignedNutritionist)throw fail('请先分配营养师',400);
-  const active=await FollowUp.findOne({patientId:user._id,status:{$in:['planned','in_progress','missed']},$or:[{sourceType:'scheduled',workflowKey:'annual_nutrition_assessment',sourceAnnualPlanId:{$ne:null}},{sourceType:'professional_assessment',workflowKey:'annual_nutrition_assessment',sourceAnnualPlanId:{$ne:null}},{sourceType:'professional_assessment',workflowKey:'lifestyle_interview'}]}).sort({createdAt:-1}).lean();
-  if(active)return res.json({success:true,data:active});
-  let taskId=user.lifestyleInterviewTaskId;
-  const previous=taskId?await FollowUp.findById(taskId).lean():null;
-  if(!taskId||previous&&['completed','cancelled'].includes(previous.status)) {
-   taskId=new mongoose.Types.ObjectId();
-   const claimed=await User.updateOne({_id:user._id,lifestyleInterviewTaskId:user.lifestyleInterviewTaskId||null},{$set:{lifestyleInterviewTaskId:taskId}});
-   if(!claimed.matchedCount)throw fail('另一处正在开始访谈，请重试');
-  }
-  const task=await FollowUp.findOneAndUpdate({_id:taskId},{$setOnInsert:{staffId:req.staff._id,patientId:user._id,assignedTo:user.assignedNutritionist,date:new Date(),type:'phone',status:'in_progress',sourceType:'professional_assessment',workflowKey:'lifestyle_interview',theme:'生活方式访谈与核实',content:'营养师使用膳食调查问卷逐项核实生活方式，记录访谈意见并更新档案。',aiStatus:'approved',reviewRole:null,reviewAssignedTo:null}},{upsert:true,new:true});
-  res.json({success:true,data:task});
- }catch(e){res.status(e.statusCode||500).json({success:false,message:e.message});}
-}
-module.exports.start=start;
 
 // Read-only preview from a saved annual item; never creates an execution task.
 module.exports.preview=async(req,res)=>{
