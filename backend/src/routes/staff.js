@@ -16288,7 +16288,7 @@ async function resumeReportParseJobs() {
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
 async function runReportParse(reportId) {
   const owner = await require('../models/MedicalReport').findById(reportId);
-  return withAiContext({ actorId: String(owner?.parseJob?.resumedBy || owner?.parseJob?.actorId || ''), tenantId: String(owner?.tenantId || ''), business: 'ocr', reportId: String(reportId), stopState: {}, stage: 'recognize', deadline: Date.now() + 45 * 60000 }, () => runReportParseControlled(reportId));
+  return require('../utils/aiDataConsent').withReportStaffService(owner, () => withAiContext({ actorId: String(owner?.parseJob?.resumedBy || owner?.parseJob?.actorId || ''), tenantId: String(owner?.tenantId || ''), business: 'ocr', reportId: String(reportId), stopState: {}, stage: 'recognize', deadline: Date.now() + 45 * 60000 }, () => runReportParseControlled(reportId)));
 }
 
 async function extractOutpatientRecordAttachment(report, rawParseImage) {

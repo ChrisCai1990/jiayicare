@@ -40,8 +40,9 @@ module.exports = async (req, res, next) => {
       return res.status(403).json({ success: false, message: '请先修改初始密码' });
     }
     req.staff = admin;
-    tenantContext(req, res, next);
+    require('../utils/aiDataConsent').withStaffService(admin, () => tenantContext(req, res, next));
   } catch (err) {
     res.status(401).json({ success: false, message: 'Token 无效或已过期' });
   }
 };
+module.exports.STAFF_ROLES = STAFF_ROLES;

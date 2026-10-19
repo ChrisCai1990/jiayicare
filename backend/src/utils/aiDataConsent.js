@@ -1,5 +1,6 @@
 const { AsyncLocalStorage } = require('async_hooks');
 const scope = new AsyncLocalStorage();
+const staffServiceScope = new AsyncLocalStorage();
 const VERSION = '2026-10-18.1';
 const PURPOSES = {
   assistant: { title: 'AI 会话协助', data: '本次文字、最近的会话文字（含已授权转写的语音文字）、您主动输入的健康信息；不自动附带健康档案、体检报告、联系方式、地址或订单备注。', use: '理解本次交流并生成辅助回复。' },
@@ -19,6 +20,22 @@ function disclosure(purpose) {
 }
 function withPersonalData(subjectId, purpose, fn) { return scope.run({ subjectId: String(subjectId?._id || subjectId || ''), purpose }, fn); }
 function currentPersonalData() { return scope.getStore() || {}; }
+// Established only after staff authentication; never from request headers/body or customer consent.
+function withStaffService(staff, fn) {
+  if (!staff?._id || !staff?.tenantId) throw new Error('医护服务缺少工作人员或机构身份');
+  return staffServiceScope.run({ actorId: String(staff._id), tenantId: String(staff.tenantId) }, fn);
+}
+async function withReportStaffService(report, fn, dependencies = {}) {
+  const unscoped = () => staffServiceScope.run(undefined, fn);
+  const actorId = report?.parseJob?.actorId;
+  if (!actorId) return unscoped();
+  const staff = await (dependencies.readStaff || (id => require('../models/Admin').findById(id).select('_id role tenantId staffStatus').lean()))(actorId);
+  if (!staff || staff.staffStatus === 'inactive' || String(staff.tenantId || '') !== String(report.tenantId || '')
+      || !require('../middleware/staffAuth').STAFF_ROLES.includes(staff.role)) return unscoped();
+  const tenant = await (dependencies.readTenant || (id => require('../models/Tenant').findById(id).select('status code serviceScope').lean()))(staff.tenantId);
+  if (tenant?.status !== 'active' || !require('./tenantChannel').hasTenantChannel(tenant, 'staff')) return unscoped();
+  return withStaffService(staff, fn);
+}
 function consentError() { const e = new Error('尚未取得该资料主体对本项第三方处理的有效授权，请使用人工服务或在授权设置中确认'); e.code = 'AI_DATA_CONSENT_REQUIRED'; e.status = 403; return e; }
 function matches(record, purpose, provider) { return Boolean(record && record.granted === true && record.version === VERSION && record.purpose === purpose && record.provider === provider); }
 async function assertPermission(subjectId, purpose, provider, lookup) {
@@ -28,14 +45,20 @@ async function assertPermission(subjectId, purpose, provider, lookup) {
   const row = await read({ user: subjectId, purpose, provider });
   if (!matches(row, purpose, provider)) throw consentError();
 }
-async function assertContextPermission(provider, budgetContext = {}) {
+async function assertContextPermission(provider, budgetContext = {}, dependencies = {}) {
   let { subjectId, purpose } = currentPersonalData();
   if (budgetContext.reportId) {
-    const report = await require('../models/MedicalReport').findById(budgetContext.reportId).select('user').lean();
+    const report = await (dependencies.readReport || (id => require('../models/MedicalReport').findById(id).select('user').lean()))(budgetContext.reportId);
     subjectId = report?.user ? String(report.user) : ''; purpose = 'health';
   }
-  // Unscoped background jobs fail closed; staff identity is never patient consent.
-  await assertPermission(subjectId, provider === 'aliyun-nls' ? 'speech' : purpose, provider);
+  const staffService = staffServiceScope.getStore();
+  if (staffService && subjectId && purpose === 'health' && provider === 'qwen') {
+    const patient = await (dependencies.readPatient || (query => require('../models/User').findOne(query).select('_id tenantId').lean()))({ _id: subjectId, tenantId: staffService.tenantId });
+    if (!patient || String(patient.tenantId || '') !== staffService.tenantId) throw consentError();
+    return; // Staff service authorization is separate from the customer App's optional AI switch.
+  }
+  // Customer App requests and unscoped jobs retain the original consent checks.
+  await assertPermission(subjectId, provider === 'aliyun-nls' ? 'speech' : purpose, provider, dependencies.readConsent);
 }
 async function requireHealthConsent(req, res, next) {
   try {
@@ -46,4 +69,4 @@ async function requireHealthConsent(req, res, next) {
     return next(error);
   }
 }
-module.exports = { VERSION, PURPOSES, disclosure, matches, withPersonalData, currentPersonalData, assertPermission, assertContextPermission, consentError, requireHealthConsent };
+module.exports = { VERSION, PURPOSES, disclosure, matches, withPersonalData, currentPersonalData, assertPermission, assertContextPermission, consentError, requireHealthConsent, withStaffService, withReportStaffService };
