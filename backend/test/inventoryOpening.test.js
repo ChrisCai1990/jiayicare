@@ -2,85 +2,73 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-
 const source = fs.readFileSync(require.resolve('../src/routes/inventory'), 'utf8');
-const start = source.indexOf("adminRouter.post('/products/:id/enable'");
-const end = source.indexOf("adminRouter.patch('/products/:id/settings'", start);
-
-async function enable(body, { oldStock = 1000, failEntry = false } = {}) {
-  let changed;
-  let opening;
-  let rollback;
-  const product = { _id:'product', stock:oldStock, stockLimited:false, inventoryTracking:{ enabled:false } };
-  let handler;
-  const Product = {
-    findOne: async () => product,
-    findOneAndUpdate: async (filter, update) => {
-      assert.equal(filter.stock, oldStock);
-      changed = update.$set;
-      return { ...product, ...changed };
-    },
-    updateOne: async (filter, update) => { rollback = { filter, update }; },
+function setup() {
+  const handlers = {}; const entries = [];
+  const material = { _id:'material', tenantId:'tenant', name:'血糖传感器', stock:8, linkedProductIds:['monitor','diabetes'], inventoryTracking:{ enabled:true, kind:'consumable', unit:'件' } };
+  const products = [{ _id:'monitor', originalPrice:200 }, { _id:'diabetes', originalPrice:2000 }];
+  const chain = rows => ({ select(){return this}, sort(){return this}, limit(){return this}, populate(){return this}, lean:async()=>rows });
+  const Material = {
+    findOne:async filter => { assert.equal(filter.tenantId,'tenant'); return filter._id === 'material' ? material : null; },
+    findOneAndUpdate:async (filter, update) => { assert.equal(filter.tenantId,'tenant'); if (filter.stock?.$gte > material.stock) return null; material.stock += update.$inc.stock; return material; },
+    updateOne:async (_filter, update) => { material.stock += update.$inc.stock; },
+    create:async row => ({ ...row, _id:'new-material' }), deleteOne:async()=>{},
   };
-  const InventoryEntry = { create: async row => { opening = row; if (failEntry) throw Error('ledger unavailable'); } };
-  vm.runInNewContext(source.slice(start, end), {
-    adminRouter: { post: (_path, callback) => { handler = callback; } },
-    validId: () => true,
-    tenant: () => 'tenant',
-    actor: () => ({ _id:'admin' }),
-    bad: (res, message, status = 400) => res.status(status).json({ message }),
-    Product, InventoryEntry,
-  });
-  const res = { code:200, status(code) { this.code = code; return this; }, json(payload) { this.body = payload; return this; } };
-  const req = { params:{ id:'product' }, body, admin:{ _id:'admin', tenantId:'tenant' } };
-  let error;
-  try { await handler(req, res); } catch (caught) { error = caught; }
-  return { res, changed, opening, rollback, error };
-}
-
-test('opening stock requires an actual count and counting evidence', async () => {
-  for (const body of [{}, { openingQuantity:'', openingNote:'清点' }, { openingQuantity:null, openingNote:'清点' }, { openingQuantity:0, openingNote:'' }]) {
-    const result = await enable(body);
-    assert.equal(result.res.code, 400);
-    assert.equal(result.changed, undefined);
+  const mocks = {
+    express:{ Router:()=>({ use(){}, get(){}, post(path, ...fn){ handlers[path] ||= fn.at(-1) }, patch(path,...fn){ handlers[path] ||= fn.at(-1) } }) },
+    mongoose:{ isValidObjectId:value=>typeof value === 'string' && value.length > 0 },
+    '../models/Product':{ countDocuments:async filter=>filter._id.$in.filter(id=>products.some(p=>p._id===id)).length, findOne:async filter=>{ assert.equal(filter.tenantId,'tenant'); return products.find(p=>p._id===filter._id) } },
+    '../models/InventoryMaterial':Material,
+    '../utils/inventoryMaterials':{ ensureLegacyMaterials:async()=>{} },
+    '../models/InventoryEntry':{ create:async row=>{ entries.push(row); return row }, findOne:async filter=>entries.find(row=>row.requestId===filter.requestId), find:()=>chain([{ type:'issue',units:2 }]) },
+    '../models/Order':{ findOne:async filter=>{ assert.equal(filter.tenantId,'tenant'); return { serviceId:'diabetes' } } },
+    '../models/User':{ exists:async()=>true }, '../models/Admin':{ exists:async()=>true },
+    '../middleware/adminAuth':()=>{}, '../middleware/staffAuth':()=>{}, '../middleware/checkPermission':()=>()=>{},
+  };
+  vm.runInNewContext(source,{ module:{exports:{}}, require:name=>{ if (!(name in mocks)) throw Error(name); return mocks[name] } });
+  let sequence=0;
+  async function call(path, body, staff=false) {
+    const res={ code:200,status(code){this.code=code;return this},json(body){this.body=body;return this} };
+    await handlers[path]({ body:{ productId:'material',type:'use',units:1,userId:'user',requestId:`request-number-${++sequence}`, ...body }, params:{}, ...(staff?{staff:{_id:'actor',tenantId:'tenant'}}:{admin:{_id:'actor',tenantId:'tenant'}}) },res);
+    return res;
   }
+  return {call,material,entries};
+}
+test('new independent material uses explicit physical quantity, without changing mall stock',async()=>{
+  const {call,entries}=setup();
+  const res=await call('/materials',{name:'传感器',linkedProductIds:['monitor','diabetes'],openingQuantity:7,openingNote:'实盘'});
+  assert.equal(res.code,200); assert.equal(res.body.data.stock,7); assert.equal(entries[0].materialId,'new-material');
+  for(const openingQuantity of [undefined,null,'',-1,1.5]) assert.equal((await call('/materials',{name:'传感器',openingQuantity,openingNote:'实盘'})).code,400);
+  assert.equal((await call('/materials',{name:'传感器',linkedProductIds:['foreign'],openingQuantity:0,openingNote:'实盘'})).code,400);
+});
+test('two services consume the same physical stock; a paid order does not bypass delivery deduction',async()=>{
+  const {call,material,entries}=setup();
+  assert.equal((await call('/entries',{serviceProductId:'monitor',units:2})).code,200);
+  assert.equal((await call('/entries',{serviceProductId:'diabetes',orderId:'order'})).code,200);
+  assert.equal(material.stock,5); assert.equal(entries[1].quantity,-1); assert.equal(entries[1].sourceOrderId,'order'); assert.equal(entries[1].orderId,undefined);
+});
+test('using issued supplies and recording service revenue do not deduct physical stock twice',async()=>{
+  const {call,material,entries}=setup();
+  assert.equal((await call('/entries',{fromIssued:true,assigneeId:'staff',serviceProductId:'diabetes',orderId:'order'})).code,200);
+  assert.equal((await call('/entries',{type:'manual_sale',serviceProductId:'diabetes',unitPrice:2000,note:'已收款'},true)).code,200);
+  assert.equal(material.stock,8); assert.equal(entries[0].quantity,0); assert.equal(entries[1].quantity,0);
+});
+test('unlinked services, insufficient stock and repeated requests are rejected',async()=>{
+  const {call,material}=setup();
+  assert.equal((await call('/entries',{serviceProductId:'foreign'})).code,400);
+  assert.equal((await call('/entries',{units:9})).code,409);
+  assert.equal((await call('/entries',{requestId:'same-request-123456'})).code,200);
+  assert.equal((await call('/entries',{requestId:'same-request-123456'})).code,200);
+  assert.equal(material.stock,7);
 });
 
-test('an arbitrary mall stock is replaced by the physical opening count', async () => {
-  const { res, changed, opening } = await enable({ openingQuantity:7, openingNote:'库房逐件清点' });
-  assert.equal(res.code, 200);
-  assert.equal(changed.stock, 7);
-  assert.equal(changed.stockLimited, true);
-  assert.equal(opening.quantity, 7);
-  assert.equal(opening.balanceAfter, 7);
-  assert.match(opening.note, /原商城展示库存 1000 未核实/);
-});
-
-test('a failed opening ledger write attempts to restore the former mall stock', async () => {
-  const { error, rollback } = await enable({ openingQuantity:7, openingNote:'清点' }, { failEntry:true });
-  assert.match(error.message, /ledger unavailable/);
-  assert.equal(rollback.update.$set.stock, 1000);
-  assert.equal(rollback.update.$set.inventoryTracking.enabled, false);
-});
-
-test('legacy opening remains unverified until a later physical count', async () => {
-  const listStart = source.indexOf('async function list(req, res)');
-  const listEnd = source.indexOf("adminRouter.get('/', list)", listStart);
-  const products = [{ _id:'uncounted', stock:1008 }, { _id:'counted', stock:129 }];
-  const openings = [
-    { productId:'uncounted', createdAt:new Date('2026-10-19T10:00:00Z') },
-    { productId:'counted', createdAt:new Date('2026-10-19T10:00:00Z') },
-  ];
-  const counts = [{ productId:'counted', createdAt:new Date('2026-10-19T10:01:00Z') }];
-  const chain = rows => ({ select: () => ({ lean: async () => rows }), sort: () => ({ lean: async () => rows, limit: () => ({ populate: () => ({ populate: () => ({ lean: async () => rows }) }) }) }) });
-  const context = {
-    Product: { find: () => ({ select: () => ({ sort: () => ({ lean: async () => products }) }) }) },
-    InventoryEntry: { find: filter => chain(filter.type === 'opening' ? openings : filter.type === 'count' ? counts : []) },
-    productFilter: () => ({}), tenant: () => 'tenant',
-  };
-  const list = vm.runInNewContext(`${source.slice(listStart, listEnd)}; list`, context);
-  const res = { json(payload) { this.body = payload; } };
-  await list({}, res);
-  assert.equal(res.body.data.products[0].needsOpeningCount, true);
-  assert.equal(res.body.data.products[1].needsOpeningCount, false);
+test('legacy migration retains one balance and never overwrites later physical changes',async()=>{
+  const utility=fs.readFileSync(require.resolve('../src/utils/inventoryMaterials'),'utf8');
+  const store=new Map(); const module={exports:{}};
+  vm.runInNewContext(utility,{module,require:name=>name.includes('InventoryMaterial')?{updateOne:async(filter,update)=>{if(!store.has(filter._id))store.set(filter._id,structuredClone(update.$setOnInsert))}}:{}});
+  const old={_id:'old',tenantId:'tenant',name:'原服务',stock:8,inventoryTracking:{enabled:true,kind:'consumable'}};
+  await module.exports.ensureLegacyMaterial(old);
+  store.get('old').stock=7;store.get('old').name='实物传感器';
+  await module.exports.ensureLegacyMaterial({...old,stock:1000});
+  assert.equal(store.size,1);assert.equal(store.get('old').stock,7);assert.equal(store.get('old').name,'实物传感器');assert.equal(store.get('old').linkedProductIds[0],'old');
 });

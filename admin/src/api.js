@@ -73,6 +73,7 @@ export const metabolicPilotAPI = {
 }
 export const adminAPI = {
   inventory: () => req('/inventory'),
+  createInventoryMaterial: data => req('/inventory/materials', { method: 'POST', body: JSON.stringify(data) }),
   inventoryPeople: () => req('/inventory/people'),
   inventoryUsers: q => req(`/inventory/users?q=${encodeURIComponent(q)}`),
   inventoryConsumption: () => req('/inventory/consumption'),

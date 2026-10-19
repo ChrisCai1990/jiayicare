@@ -4,6 +4,7 @@ const Order = require('../models/Order');
 async function reserveProduct(product) {
   if (!product) return { reserved: false, available: true };
   if (product.status !== 'on') return { reserved: false, available: false };
+  if (await require('./inventoryMaterials').usesPhysicalMaterials(product)) return { reserved: false, available: true };
   // Existing products with stock=0 mean unlimited; positive legacy stock is limited.
   if (!product.stockLimited && Number(product.stock) === 0) return { reserved: false, available: true };
   const updated = await Product.updateOne(
@@ -20,6 +21,8 @@ async function releaseOrderInventory(order) {
     { $set: { inventoryReleased: true } },
   );
   if (!claimed) return false;
+  const legacyProduct = await Product.findById(order.serviceId);
+  await require('./inventoryMaterials').ensureLegacyMaterial(legacyProduct);
   await Product.updateOne({ _id: order.serviceId }, { $inc: { stock: 1 } });
   return true;
 }

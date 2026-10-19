@@ -2076,8 +2076,10 @@ router.get('/products', adminAuth, async (req, res) => {
   if (name) filter.name = new RegExp(name, 'i');
   if (category) filter.category = category;
   if (status) filter.status = status;
-  const products = await Product.find(filter).sort({ sortOrder: 1, createdAt: -1 });
-  res.json({ success: true, data: products });
+  const products = await Product.find(filter).sort({ sortOrder: 1, createdAt: -1 }).lean();
+  const materials = await require('../models/InventoryMaterial').find({ tenantId: req.admin.tenantId, linkedProductIds: { $in: products.map(p => p._id) } }).select('linkedProductIds').lean();
+  const linkedIds = new Set(materials.flatMap(m => m.linkedProductIds.map(String)));
+  res.json({ success: true, data: products.map(p => ({ ...p, usesSharedInventory: linkedIds.has(String(p._id)) })) });
 });
 
 // 从客户可见详情生成待人工审核的推荐规则，不落库、不自动启用。
@@ -2133,7 +2135,8 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   }
   const existingProduct = await Product.findById(req.params.id);
   if (!existingProduct) return res.status(404).json({ success: false, message: '产品不存在' });
-  if (existingProduct.inventoryTracking?.enabled && stock !== undefined && Number(stock) !== Number(existingProduct.stock)) return res.status(409).json({ success: false, message: '已启用物资台账，请通过入库或盘点调整库存' });
+  const sharedInventory = existingProduct.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: existingProduct._id });
+  if (sharedInventory && stock !== undefined && Number(stock) !== Number(existingProduct.stock)) return res.status(409).json({ success: false, message: '已启用物资台账，请通过入库或盘点调整库存' });
   const priceError = productPublicationError({ name: name ?? existingProduct.name, category: category ?? existingProduct.category,
     originalPrice: originalPrice === undefined ? existingProduct.originalPrice : originalPrice,
     servicePrices: servicePrices ?? existingProduct.servicePrices, memberPrices: memberPrices ?? existingProduct.memberPrices,
@@ -2144,7 +2147,7 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   if (originalPrice === '') updateData.originalPrice = null;
   if (specialtyTerms !== undefined) updateData.specialtyTerms = specialtyTerms;
   if (stock !== undefined) updateData.stockLimited = stockLimited === true || Number(stock) > 0;
-  if (existingProduct.inventoryTracking?.enabled) { delete updateData.stock; delete updateData.stockLimited; }
+  if (sharedInventory) { delete updateData.stock; delete updateData.stockLimited; }
   // 兼容尚未升级的管理端：请求未携带 aiProfile 时保留原配置，避免普通产品编辑意外关闭 AI 推荐。
   if (aiProfile !== undefined) updateData.aiProfile = require('../utils/productAiProfile').normalizeAiProfile(aiProfile);
   const product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
@@ -2199,7 +2202,7 @@ router.patch('/products/batch-toggle', adminAuth, async (req, res) => {
 // DELETE /api/admin/products/:id
 router.delete('/products/:id', adminAuth, async (req, res) => {
   const tracked = await Product.findById(req.params.id).select('inventoryTracking');
-  if (tracked?.inventoryTracking?.enabled) return res.status(409).json({ success: false, message: '已启用物资台账的商品不能删除，请下架' });
+  if (tracked?.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: req.params.id })) return res.status(409).json({ success: false, message: '已启用物资台账的商品不能删除，请下架' });
   const product = await Product.findByIdAndDelete(req.params.id);
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, message: '产品已删除' });

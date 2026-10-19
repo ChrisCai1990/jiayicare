@@ -393,7 +393,7 @@ function ImageUploadList({ images, onChange }) {
 function ProductModal({ product, categories, onClose, onSaved }) {
   const toast = useToast()
   const isEdit = !!product?._id
-  const inventoryTracked = product?.inventoryTracking?.enabled === true
+  const inventoryTracked = product?.inventoryTracking?.enabled === true || product?.usesSharedInventory === true
   const [form, setForm] = useState(() => {
     if (!isEdit) return product ? { ...product } : { ...EMPTY_FORM, category: categories[0] || '' }
     return {
@@ -634,9 +634,9 @@ function ProductModal({ product, categories, onClose, onSaved }) {
               </div>
               <div className="form-group">
                 <label className="form-label">库存数量</label>
-                <input className="form-input" type="number" min="0" value={form.stock} disabled={inventoryTracked}
+                <input className="form-input" type="number" min="0" value={inventoryTracked ? '' : form.stock} placeholder={inventoryTracked ? '请到物资台账查看实际库存' : ''} disabled={inventoryTracked}
                   onChange={e => { set('stock', e.target.value); if (Number(e.target.value) > 0) set('stockLimited', true); }} />
-                {inventoryTracked ? <p>此商品已启用物资台账。库存请到 <a href="/inventory">物资与设备</a> 按实盘数量校正，入库与消耗也在该页登记。</p> : <label><input type="checkbox" checked={!!form.stockLimited} onChange={e => set('stockLimited', e.target.checked)} /> 有限库存（0 表示售罄；不勾选表示不限库存）</label>}
+                {inventoryTracked ? <p>此服务已关联独立实物库存。请到 <a href="/inventory">物资与设备</a> 按实盘数量校正，入库与消耗也在该页登记。</p> : <label><input type="checkbox" checked={!!form.stockLimited} onChange={e => set('stockLimited', e.target.checked)} /> 有限库存（0 表示售罄；不勾选表示不限库存）</label>}
               </div>
               <div className="form-group">
                 <label className="form-label">状态</label>
@@ -1098,7 +1098,7 @@ export default function ProductsPage() {
                   <td style={{ color: '#888', textDecoration: p.originalPrice == null ? 'none' : 'line-through' }}>{p.originalPrice == null ? '待定价' : `¥${p.originalPrice}`}</td>
                   <td>{pricePreview(p)}</td>
                   <td style={{ color: p.stock === 0 && !p.stockLimited ? '#aaa' : '#333' }}>
-                    {p.stock === 0 && !p.stockLimited ? '不限' : p.stock}
+                    {p.usesSharedInventory || p.inventoryTracking?.enabled ? '见物资台账' : p.stock === 0 && !p.stockLimited ? '不限' : p.stock}
                   </td>
                   <td>
                     <span className={`badge ${p.status === 'on' ? 'badge-green' : 'badge-gray'}`}>
