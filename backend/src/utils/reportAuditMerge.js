@@ -2,6 +2,10 @@ const text = value => String(value || '').trim();
 const key = value => text(value).toLowerCase().replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
 const missing = value => !text(value) || /^[\-—－–]+$/.test(text(value));
 const evidenceFields = ['value', 'findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis'];
+const narrative = value => text(value).normalize('NFKC').replace(/[\s，,。；;：:、()（）\[\]【】]/g, '');
+const extendsNarrative = (original, candidate) => !missing(original) && !missing(candidate)
+  && narrative(candidate).length > narrative(original).length
+  && narrative(candidate).includes(narrative(original));
 
 function normalizeExplicitNormalStatus(item) {
   if (item.status !== 'unknown' && text(item.status)) return item;
@@ -30,7 +34,8 @@ function mergeCoverageAuditItems(originalItems, auditItems) {
     if (!key(candidate?.name) || !evidenceFields.some(field => !missing(candidate[field]))) continue;
     const matches = result.filter(old => key(old.name) === key(candidate.name)
       && Number(old.sourcePage || 1) === Number(candidate.sourcePage || 1)
-      && (!key(old.sourceSection) || !key(candidate.sourceSection) || key(old.sourceSection) === key(candidate.sourceSection)));
+      && (!key(old.sourceSection) || !key(candidate.sourceSection) || key(old.sourceSection) === key(candidate.sourceSection))
+      && (!text(old.examDate) || !text(candidate.examDate) || text(old.examDate) === text(candidate.examDate)));
     const incomplete = matches.find(old => evidenceFields.every(field => missing(old[field]))
       || (old.itemType === 'imaging' && missing(old.findings) && !missing(candidate.findings))
       || (old.itemType === 'imaging' && missing(old.findings) && !missing(candidate.value)));
@@ -41,6 +46,21 @@ function mergeCoverageAuditItems(originalItems, auditItems) {
         else incomplete[field] = candidate[field];
       }
       if ((!text(incomplete.status) || incomplete.status === 'unknown') && candidate.status && candidate.status !== 'unknown') incomplete.status = candidate.status;
+      continue;
+    }
+    const narrativeCandidates = result.filter(old => key(old.name) === key(candidate.name)
+      && Number(old.sourcePage || 1) === Number(candidate.sourcePage || 1)
+      && (!text(old.examDate) || !text(candidate.examDate) || text(old.examDate) === text(candidate.examDate))
+      && old.itemType === 'imaging' && old.manualReviewStatus !== 'reviewed'
+      && extendsNarrative(old.findings, candidate.findings));
+    // The reviewer may label the same result block differently; full-text containment
+    // and a unique same-page exam are stronger evidence than a model-supplied section name.
+    const narrativeMatch = narrativeCandidates.length === 1 ? narrativeCandidates[0] : null;
+    if (narrativeMatch) {
+      narrativeMatch.findings = candidate.findings;
+      for (const field of ['diagnosis', 'conclusion']) {
+        if (missing(narrativeMatch[field]) && !missing(candidate[field])) narrativeMatch[field] = candidate[field];
+      }
       continue;
     }
     if (matches.some(old => evidenceFields.every(field => key(old[field]) === key(candidate[field])))) continue;
@@ -54,4 +74,4 @@ function coverageAuditHasChanges(originalItems, mergedItems) {
   return JSON.stringify(originalItems || []) !== JSON.stringify(mergedItems || []);
 }
 
-module.exports = { mergeCoverageAuditItems, normalizeExplicitNormalStatus, coverageAuditHasChanges };
+module.exports = { mergeCoverageAuditItems, normalizeExplicitNormalStatus, coverageAuditHasChanges, extendsNarrative };

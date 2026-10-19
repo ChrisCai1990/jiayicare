@@ -1,6 +1,7 @@
 function cleanPart(value) {
   return String(value || '').normalize('NFKC').toLowerCase().replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
 }
+const { extendsNarrative } = require('./reportAuditMerge');
 
 function reportItemIdentityKey(item) {
   return [item?.itemType || '', cleanPart(item?.name), cleanPart(item?.orderName || item?.sourceSection), cleanPart(item?.bodyPart), cleanPart(item?.specimen), cleanPart(item?.modality), cleanPart(item?.examDate), cleanPart(item?.unit)].join('|');
@@ -21,9 +22,21 @@ function supplementMatches(existingItems, candidate) {
   const list = existingItems || [];
   const exact = list.filter(item => sameReportItem(item, candidate));
   if (exact.length) return exact;
+  if (candidate?.itemType === 'imaging' && cleanPart(candidate.name)) {
+    const narrativeMatches = list.filter(item => item?.itemType === 'imaging'
+      && cleanPart(item.name) === cleanPart(candidate.name)
+      && (!item.sourcePage || !candidate.sourcePage || Number(item.sourcePage) === Number(candidate.sourcePage))
+      && (!cleanPart(item.examDate) || !cleanPart(candidate.examDate) || cleanPart(item.examDate) === cleanPart(candidate.examDate))
+      && extendsNarrative(item.findings, candidate.findings));
+    if (narrativeMatches.length) return narrativeMatches;
+  }
   if (!['lab', 'data'].includes(candidate?.itemType) || !cleanPart(candidate.name)) return [];
   return list.filter(item => ['lab', 'data'].includes(item?.itemType)
-    && cleanPart(item.name) === cleanPart(candidate.name));
+    && cleanPart(item.name) === cleanPart(candidate.name)
+    && (!cleanPart(item.specimen) || !cleanPart(candidate.specimen) || cleanPart(item.specimen) === cleanPart(candidate.specimen))
+    && (!cleanPart(item.examDate) || !cleanPart(candidate.examDate) || cleanPart(item.examDate) === cleanPart(candidate.examDate))
+    && (!cleanPart(item.unit) || !cleanPart(candidate.unit)
+      || /[%％]/.test(String(item.unit)) === /[%％]/.test(String(candidate.unit))));
 }
 
 // “有项目名”并不等于识别成功：数值类必须有数值，检查类必须有可核对的原文。
@@ -117,12 +130,14 @@ function mergeSupplementItems(existingItems, candidates) {
       result[index] = { ...current, ...candidate, itemId: current.itemId || candidate.itemId };
       enriched.push(result[index]);
     } else if (!isHumanReviewed(current)) {
-      // A missing conclusion is still a gap even when findings already exist.
-      // Never replace nonempty values or append competing OCR prose automatically.
+      // A missing conclusion or a verifiably longer transcription is still a gap.
+      // A changed or competing nonempty OCR statement never replaces existing text.
       const patch = {};
       for (const field of ['value', 'findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis']) {
         if (!String(current[field] ?? '').trim().replace(/^[\-—－–]+$/, '') && String(candidate[field] ?? '').trim().replace(/^[\-—－–]+$/, '')) patch[field] = candidate[field];
       }
+      if (current.itemType === 'imaging' && candidate.itemType === 'imaging'
+        && extendsNarrative(current.findings, candidate.findings)) patch.findings = candidate.findings;
       if (Object.keys(patch).length) {
         result[index] = { ...current, ...patch };
         enriched.push(result[index]);
