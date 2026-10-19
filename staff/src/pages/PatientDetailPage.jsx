@@ -11415,7 +11415,7 @@ export default function PatientDetailPage() {
                       <td style={{ fontWeight: 600 }}>{item.name}</td>
                       <td><span style={{ color: '#1E6B50', fontWeight: 600 }}>套餐包含</span><div style={{ fontSize: 12, color: '#718579' }}>{item.packageName}{item.shared ? ` · ${item.poolName || '共享池'}共用次数` : ''}{item.familySharing ? ` · 家庭共用（持有人：${item.ownerName || '待核对'}）` : ''}</div></td>
                       <td style={{ color: '#1E6B50', fontWeight: 700 }}>¥0</td>
-                      <td style={{ fontSize: 12 }}>{item.historyKnown ? <>{item.shared ? '同池合计' : '本项'}可用 {item.remaining || 0} / {item.count || 0} 次<br />本项已预占 {item.reservedCount || 0} · 已核销 {item.redeemedCount || 0}</> : `${item.shared ? '同池合计' : ''}计划 ${item.count || 0} 次 · 历史余额待核对`}</td>
+                      <td style={{ fontSize: 12 }}>{item.historyKnown ? <><strong>{item.shared ? '共享池' : '本项'}剩余 {item.remaining ?? 0} 次</strong> / 总计 {item.count ?? 0} 次<br />该服务已预占 {item.reservedCount || 0} 次 · 已核销 {item.redeemedCount || 0} 次</> : `${item.shared ? '共享池' : '本项'}总计 ${item.count || 0} 次 · 历史已用次数待核对`}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>有效至 {String(item.validUntil || '').slice(0, 10)}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>按服务分配</td>
                       <td style={{ fontSize: 12, color: item.historyKnown ? '#1E6B50' : '#B45309' }}>{!item.historyKnown ? '待核对' : item.automatic ? '随评估自动核销' : pendingOrderFor(item) ? '待继续办理' : Number(item.remaining) > 0 ? '待发起' : '共享次数已用完'}</td>
