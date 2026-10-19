@@ -51,6 +51,7 @@ import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../com
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
+import ReviewSourceImage from '../components/ReviewSourceImage'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
@@ -2557,6 +2558,7 @@ export default function PatientDetailPage() {
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
   // 审核时原件常是手机拍照页，或被嵌在窄栏中的 PDF；不能只依赖浏览器 PDF 工具栏。
   const [ocrPreviewZoom, setOcrPreviewZoom] = useState(100)
+  const [ocrPreviewRotations, setOcrPreviewRotations] = useState({})
   const [ocrFocusItemIndex, setOcrFocusItemIndex] = useState(null)
   const [ocrSaving, setOcrSaving] = useState(false)
   const [ocrDraftSavedAt, setOcrDraftSavedAt] = useState(null)
@@ -4093,6 +4095,7 @@ export default function PatientDetailPage() {
     setOcrDraftSavedAt(null)
     setOcrSaving(false)
     setOcrPreviewZoom(100)
+    setOcrPreviewRotations({})
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
     if (!latestReport.content && !latestReport.fileUrl && !(latestReport.fileUrls && latestReport.fileUrls.length)) {
@@ -12991,6 +12994,10 @@ export default function PatientDetailPage() {
                       <span style={{ minWidth: 38, textAlign: 'center', color: '#4A6558', fontSize: 11 }}>{isPdf && ocrPreviewZoom === 100 ? '适合宽度' : `${ocrPreviewZoom}%`}</span>
                       <button className="btn btn-secondary btn-sm" type="button" aria-label="放大原始报告" disabled={ocrPreviewZoom >= 200} onClick={() => setOcrPreviewZoom(z => Math.min(200, z + 25))}>＋</button>
                       <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOcrPreviewZoom(100)}>适合宽度</button>
+                      {!isPdf && <>
+                        <button className="btn btn-secondary btn-sm" type="button" aria-label="向左旋转原始报告" onClick={() => setOcrPreviewRotations(current => ({ ...current, [activePage]: ((current[activePage] || 0) + 270) % 360 }))}>↶ 左转</button>
+                        <button className="btn btn-secondary btn-sm" type="button" aria-label="向右旋转原始报告" onClick={() => setOcrPreviewRotations(current => ({ ...current, [activePage]: ((current[activePage] || 0) + 90) % 360 }))}>↷ 右转</button>
+                      </>}
                       {isPdf && <button className="btn btn-secondary btn-sm" type="button" onClick={() => window.open(reportPdfPagePreviewUrl(url, activePage) || url, '_blank', 'noopener,noreferrer')}>新窗口查看本页</button>}
                     </div>
                   )
@@ -13017,7 +13024,7 @@ export default function PatientDetailPage() {
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
                               {previewToolbar(s, false)}
-                              <img src={s} alt={`报告${idx + 1}`} style={{ width: `${ocrPreviewZoom}%`, maxWidth: 'none', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(s)} />
+                              <ReviewSourceImage src={s} alt={`报告${idx + 1}`} zoom={ocrPreviewZoom} rotation={ocrPreviewRotations[activePage] || 0} onClick={() => { setPreviewRotation(ocrPreviewRotations[activePage] || 0); setPreviewImageUrl(s) }} />
                             </div>
                           )
                         })}
@@ -13035,7 +13042,7 @@ export default function PatientDetailPage() {
                       {isImg ? (
                         <>
                           {previewToolbar(src, false)}
-                          <img src={src} alt="报告" style={{ width: `${ocrPreviewZoom}%`, maxWidth: 'none', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
+                          <ReviewSourceImage src={src} alt="报告" zoom={ocrPreviewZoom} rotation={ocrPreviewRotations[activePage] || 0} onClick={() => { setPreviewRotation(ocrPreviewRotations[activePage] || 0); setPreviewImageUrl(src) }} />
                         </>
                       ) : isPdf ? (
                         <>
