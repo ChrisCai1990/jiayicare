@@ -1,21 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
-// 对齐 app/src/screens/records/AiHealthScreen.js
-// 简化点：不接语音播报tts.speak（小程序场景暂不接入TTS）
-const TABS = ['健康信息整理', '健康关注提示'];
 
 const URGENCY_META = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } };
 const STATUS_META = { abnormal: { label: '异常', color: '#DC2626' }, mild_abnormal: { label: '轻度异常', color: '#D97706' }, normal: { label: '正常', color: '#16A34A' } };
-const RISK_LEVEL_META = {
-  low: { label: '一般关注', bg: '#F0FDF4', color: '#16A34A' }, medium: { label: '持续关注', bg: '#FEF9EC', color: '#D97706' },
-  high: { label: '重点关注', bg: '#FEF2F2', color: '#DC2626' }, critical: { label: '建议尽快咨询医疗机构', bg: '#FEE2E2', color: '#B91C1C' },
-};
 
 function SectionCard({ icon, title, children }) {
   return (
@@ -125,65 +118,27 @@ function HealthSummaryView({ sections }) {
   );
 }
 
-function RiskAssessmentView({ data }) {
-  const dims = Array.isArray(data.dimensions) ? data.dimensions : [];
-  const overall = RISK_LEVEL_META[data.overallLevel] || RISK_LEVEL_META.low;
-  return (
-    <View>
-      <View style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.sm }}>
-        <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>整体风险等级</Text>
-        <Text style={{ fontSize: '11px', fontWeight: 700, color: overall.color, backgroundColor: overall.bg, padding: '2px 8px', borderRadius: `${radius.sm}px` }}>{overall.label}</Text>
-        {!!data.overallSummary && <Text style={{ fontSize: '13px', color: colors.textSecondary, flexBasis: '100%', marginTop: '4px' }}>{data.overallSummary}</Text>}
-      </View>
-      {dims.map((d, i) => {
-        const lv = RISK_LEVEL_META[d.level] || RISK_LEVEL_META.low;
-        return (
-          <View key={d.key || i} style={{ backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, borderLeft: `4px solid ${lv.color}`, boxShadow: shadow.sm }}>
-            <View style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, flex: 1 }}>{d.label}</Text>
-              <Text style={{ fontSize: '11px', fontWeight: 700, color: lv.color, backgroundColor: lv.bg, padding: '2px 8px', borderRadius: `${radius.sm}px` }}>{lv.label}</Text>
-              {typeof d.score === 'number' && <Text style={{ fontSize: '12px', color: colors.textMuted }}>{d.score}分</Text>}
-            </View>
-            {(d.factors || []).map((f, j) => (
-              <Text key={j} style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '3px' }}>· {f}</Text>
-            ))}
-            {!!d.advice && <Text style={{ fontSize: '12px', color: colors.primary, backgroundColor: '#E8F5EF', borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: '6px' }}>建议：{d.advice}</Text>}
-          </View>
-        );
-      })}
-      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block', margin: `${spacing.sm}px 0 ${spacing.xl}px` }}>本页面由 AI 整理既有健康资料并展示趋势和关注事项，仅供信息参考，不构成医疗诊断、治疗、处方或用药建议。</Text>
-    </View>
-  );
-}
-
 export default function AiHealthPage() {
   const { statusBarHeight } = useNavBar();
-  const [tab, setTab] = useState(TABS[0]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [hasDoctor, setHasDoctor] = useState(false);
   const [summaryData, setSummaryData] = useState(null);
-  const [riskData, setRiskData] = useState(null);
-  const [summaryPending, setSummaryPending] = useState(false);
-  const [riskPending, setRiskPending] = useState(false);
   const [reviewStatus, setReviewStatus] = useState({ doctorApproved: false, nutritionApproved: false, hasLifestyle: false, isSelfService: false });
   const [message, setMessage] = useState('');
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [sRes, rRes] = await Promise.allSettled([userAPI.getAiHealthSummary(), userAPI.getAiRiskAssessment()]);
-      if (sRes.status === 'fulfilled' && sRes.value?.success) {
-        setHasDoctor(!!sRes.value.hasDoctor);
-        setSummaryData(sRes.value.data || null);
-        setSummaryPending(!!sRes.value.pendingReview);
-        if (sRes.value.reviewStatus) setReviewStatus(sRes.value.reviewStatus);
-        if (sRes.value.message) setMessage(sRes.value.message);
+      const result = await userAPI.getAiHealthSummary();
+      if (result?.success) {
+        setHasDoctor(!!result.hasDoctor);
+        setSummaryData(result.data || null);
+        if (result.reviewStatus) setReviewStatus(result.reviewStatus);
+        if (result.message) setMessage(result.message);
       }
-      if (rRes.status === 'fulfilled' && rRes.value?.success) {
-        setRiskData(rRes.value.data || null);
-        setRiskPending(!!rRes.value.pendingReview);
-      }
+    } catch (err) {
+      setMessage(err.message || '健康信息整理加载失败，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -194,13 +149,8 @@ export default function AiHealthPage() {
   const handleGenerate = async () => {
     setGenerating(true); setMessage('');
     try {
-      if (tab === TABS[0]) {
-        const res = await userAPI.postAiHealthSummary();
-        if (res.success) { setSummaryData(res.data); setSummaryPending(!!res.pendingReview); }
-      } else {
-        const res = await userAPI.postAiRiskAssessment();
-        if (res.success) { setRiskData(res.data); setRiskPending(!!res.pendingReview); }
-      }
+      const res = await userAPI.postAiHealthSummary();
+      if (res.success) setSummaryData(res.data);
     } catch (err) {
       setMessage(err.message || '生成失败，请稍后重试');
     } finally {
@@ -209,12 +159,7 @@ export default function AiHealthPage() {
   };
 
   const summaryHasData = !!(summaryData?.sections?.medical_priority || summaryData?.sections?.tumor_risk || summaryData?.sections?.chronic_disease);
-  const riskHasData = Array.isArray(riskData?.dimensions) && riskData.dimensions.length > 0;
-  const curHasData = tab === TABS[0] ? summaryHasData : riskHasData;
-  const curPending = tab === TABS[0] ? summaryPending : riskPending;
   const summaryLocked = hasDoctor && !reviewStatus.isSelfService && (reviewStatus.doctorApproved || reviewStatus.nutritionApproved);
-  const riskLocked = hasDoctor && riskHasData && !riskPending;
-  const curLocked = tab === TABS[0] ? summaryLocked : riskLocked;
 
   const handleConsult = () => {
     Taro.switchTab({ url: '/pages/chat/index' });
@@ -230,20 +175,12 @@ export default function AiHealthPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>AI健康信息整理与趋势分析</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>AI健康信息整理</Text>
         <View style={{ width: '28px' }} />
       </View>
 
-       <View style={{ display: 'flex', margin: `${spacing.md}px ${spacing.lg}px`, backgroundColor: colors.border + '50', borderRadius: `${radius.md}px`, padding: '4px' }}>
-        {TABS.map((t) => (
-          <View key={t} onClick={() => setTab(t)} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: `${radius.sm}px`, backgroundColor: tab === t ? '#fff' : 'transparent', boxShadow: tab === t ? shadow.sm : 'none' }}>
-            <Text style={{ fontSize: '14px', color: tab === t ? colors.primary : colors.textSecondary, fontWeight: tab === t ? 700 : 500 }}>{t}</Text>
-          </View>
-        ))}
-       </View>
-
-       <View style={{ margin: `0 ${spacing.lg}px ${spacing.md}px`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
-         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面健康信息整理与趋势分析由人工智能（AI）生成</Text>
+       <View style={{ margin: `${spacing.md}px ${spacing.lg}px`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
+         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面健康信息整理内容由人工智能（AI）生成</Text>
          <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>内容仅供健康管理参考，审核状态请以页面说明为准</Text>
        </View>
 
@@ -257,7 +194,7 @@ export default function AiHealthPage() {
             </View>
           )}
 
-          {tab === TABS[0] && hasDoctor && curHasData && !reviewStatus.isSelfService && (
+          {hasDoctor && summaryHasData && !reviewStatus.isSelfService && (
             <View style={{ marginBottom: `${spacing.sm}px` }}>
               <View style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '6px' }}>
                 <Text style={{ fontSize: '13px', color: colors.info, flex: 1 }}>健康信息分析（5维度）：{reviewStatus.doctorApproved ? '已由专业人员复核' : '草稿待专业人员复核，结果可能调整'}</Text>
@@ -270,35 +207,29 @@ export default function AiHealthPage() {
             </View>
           )}
 
-          {tab === TABS[1] && hasDoctor && curHasData && (
-            <View style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
-              <Text style={{ fontSize: '13px', color: colors.info, flex: 1 }}>{curPending ? '草稿已生成，待您的健康顾问团队审核，审核结果可能有调整' : '已由您的健康顾问团队审核确认'}</Text>
-            </View>
-          )}
-
-          {curLocked ? (
+          {summaryLocked ? (
             <View style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
               <Icon name="🔒" size={13} color={colors.textMuted} />
               <Text style={{ fontSize: '13px', color: colors.textMuted, flex: 1 }}>结果已审核确认，如需更新请联系您的健康管理师</Text>
             </View>
           ) : (
             <View onClick={generating ? undefined : handleGenerate} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', backgroundColor: colors.primary, borderRadius: `${radius.full}px`, padding: '12px', marginBottom: `${spacing.md}px`, opacity: generating ? 0.6 : 1 }}>
-              {!generating && !curHasData && <Icon name="✨" size={14} color="#fff" />}
-              <Text style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{generating ? 'AI生成中...' : (curHasData ? '重新生成' : `生成${tab}`)}</Text>
+              {!generating && !summaryHasData && <Icon name="✨" size={14} color="#fff" />}
+              <Text style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{generating ? 'AI生成中...' : (summaryHasData ? '重新生成' : '生成健康信息整理')}</Text>
             </View>
           )}
 
-          {!curHasData && (
+          {!summaryHasData && (
             <View style={{ textAlign: 'center', padding: `${spacing.xl}px 0` }}>
               <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.md}px` }}>
                 <Icon name="📊" size={40} />
               </View>
-              <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }}>暂无{tab}</Text>
+              <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }}>暂无健康信息整理</Text>
               <Text style={{ fontSize: '13px', color: colors.textMuted, lineHeight: '20px' }}>点击上方按钮，AI将结合您的体检数据与健康档案自动生成{hasDoctor ? '，生成后由健康顾问团队审核' : ''}</Text>
             </View>
           )}
 
-          {curHasData && (
+          {summaryHasData && (
             <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.md}px` }}>
               <View onClick={handleConsult} style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: colors.primary, borderRadius: `${radius.full}px`, padding: '10px 24px' }}>
                 <Icon name="💬" size={13} color="#fff" />
@@ -307,8 +238,7 @@ export default function AiHealthPage() {
             </View>
           )}
 
-          {curHasData && tab === TABS[0] && <HealthSummaryView sections={summaryData.sections} />}
-          {curHasData && tab === TABS[1] && <RiskAssessmentView data={riskData} />}
+          {summaryHasData && <HealthSummaryView sections={summaryData.sections} />}
         </View>
       )}
     </View>
