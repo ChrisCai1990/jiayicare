@@ -11,10 +11,12 @@ const { incomingImagePayloads, withSafeHealthRecordImages, withoutLegacyImageExt
 const router = express.Router();
 const { validateConfirmation } = require('../utils/bloodPressurePhoto');
 const { validateConfirmation: validateBloodSugarConfirmation } = require('../utils/bloodSugarPhoto');
+const { validateConfirmation: validateWaistConfirmation } = require('../utils/waistPhoto');
 const { validateConfirmation: validateWeightConfirmation } = require('../utils/weightPhoto');
 router.use(require('./bloodPressurePhoto'));
 router.use(require('./bloodSugarPhoto'));
 router.use(require('./weightPhoto'));
+router.use(require('./waistPhoto'));
 
 function withSignedHealthImages(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
@@ -232,7 +234,7 @@ router.post('/', auth, async (req, res) => {
         ? validateBloodSugarConfirmation(req.body, req.user._id)
         : req.body.type === 'weight'
           ? validateWeightConfirmation(req.body, req.user._id)
-          : validateConfirmation(req.body, req.user._id);
+          : req.body.type === 'waist' ? validateWaistConfirmation(req.body, req.user._id) : validateConfirmation(req.body, req.user._id);
     }
     catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     if (photoRecognition) {

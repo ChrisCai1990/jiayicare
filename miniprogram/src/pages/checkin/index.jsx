@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
 import BloodPressurePhoto from '../../components/BloodPressurePhoto';
 import BloodSugarPhoto from '../../components/BloodSugarPhoto';
+import WaistPhoto from '../../components/WaistPhoto';
 import WeightPhoto from '../../components/WeightPhoto';
 import MetabolicPilotCard from '../../components/MetabolicPilotCard';
 import useNavBar from '../../hooks/useNavBar';
@@ -185,6 +186,7 @@ export default function CheckinPage() {
   const [checkinImages, setCheckinImages] = useState([]);
 
   const [measureModal, setMeasureModal] = useState(null);
+  const [measureError, setMeasureError] = useState('');
   const [measureValues, setMeasureValues] = useState({});
   const [measureOption, setMeasureOption] = useState('');
   const [measureNote, setMeasureNote] = useState('');
@@ -236,6 +238,7 @@ export default function CheckinPage() {
 
   const openCheckinModal = (item) => {
     if (item.measureType) {
+      setMeasureError('');
       setMeasureValues({});
       setMeasureOption('');
       setMeasureNote('');
@@ -258,9 +261,10 @@ export default function CheckinPage() {
     const item = measureModal;
     const measureType = item.measureType;
     if (measureType === 'waist' && (!Number.isFinite(Number(measureValues.value)) || Number(measureValues.value) <= 0)) {
-      Taro.showToast({ title: '请输入大于0的腰围数值（cm）', icon: 'none' });
+      setMeasureError('请手动填写有效的腰围数值（cm，大于0）。上传照片不能代替数值。');
       return;
     }
+    setMeasureError('');
     const fields = MEASURE_FIELDS[measureType] || [];
     const isToday = checkinDate === todayStr;
 
@@ -730,6 +734,7 @@ export default function CheckinPage() {
 
             {measureModal.measureType === 'bloodPressure' && <BloodPressurePhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {measureModal.measureType === 'bloodSugar' && <BloodSugarPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
+            {measureModal.measureType === 'waist' && <WaistPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {measureModal.measureType === 'weight' && <WeightPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {renderDatePicker(measureModal.color)}
             {MEASURE_OPTIONS[measureModal.measureType] && (
@@ -786,7 +791,9 @@ export default function CheckinPage() {
               ))
             )}
 
-            {!['bloodPressure', 'bloodSugar', 'weight'].includes(measureModal.measureType)
+            {!!measureError && <Text style={{ display: 'block', color: '#b42318', marginBottom: '12px' }}>{measureError}</Text>}
+            {measureModal.measureType === 'waist' && <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '13px', marginBottom: '8px' }}>可拍照识别腰围，也可在上方手动填写厘米数值。</Text>}
+            {!['bloodPressure', 'bloodSugar', 'weight', 'waist'].includes(measureModal.measureType)
               && renderImagePicker(measureImages, setMeasureImages, measureModal.color)}
 
             <View style={{ marginBottom: '12px' }}>

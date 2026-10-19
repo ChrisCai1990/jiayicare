@@ -34,3 +34,17 @@ test('weight photo draft requires confirmed kg value and time', () => {
   assert.equal(weight.validateConfirmation(body, 'user-1').originalValues.value, 65.3);
   assert.throws(() => weight.validateConfirmation({ ...body, unit: '斤' }, 'user-1'), /单位/);
 });
+
+const waist = require('../src/utils/waistPhoto');
+test('waist accepts only explicit cm readings and binds confirmation to user and image', () => {
+ process.env.JWT_SECRET='local-test-secret';
+ assert.deepEqual(waist.parseResult('{"value":82.5,"unit":"cm"}'),{value:82.5,unit:'cm'});
+ for(const raw of ['{}','{"value":82.5}','{"value":82.5,"unit":"inch"}','{"value":-1,"unit":"cm"}','{"value":null,"unit":"cm"}'])assert.equal(waist.parseResult(raw).value,null);
+ const token=waist.issueDraft('user-1',imageHash(image),{value:82.5,unit:'cm'});
+ const body={type:'waist',value:'82.5',unit:'cm',imageUrl:image,recordedAt:'2026-01-01T08:00:00+08:00',photoRecognition:{token,confirmed:true}};
+ assert.equal(waist.validateConfirmation(body,'user-1').originalValues.value,82.5);
+ assert.throws(()=>waist.validateConfirmation(body,'user-2'),/不匹配/);
+ assert.throws(()=>waist.validateConfirmation({...body,photoRecognition:{token,confirmed:false}},'user-1'),/确认/);
+ assert.throws(()=>waist.validateConfirmation({...body,unit:'kg'},'user-1'),/单位/);
+ assert.throws(()=>waist.validateConfirmation({...body,imageUrl:image.replace('AAAAEAAAAB','AAAAAgAAB')},'user-1'));
+});

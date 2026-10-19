@@ -175,6 +175,7 @@ export const userAPI = {
 export const recordsAPI = {
   recognizeBloodPressure: (image) => request('/records/recognize-blood-pressure', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   recognizeBloodSugar: (image) => request('/records/recognize-blood-sugar', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
+  recognizeWaist: (image) => request('/records/recognize-waist', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   recognizeWeight: (image) => request('/records/recognize-weight', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   list: (params = {}) => {
     const q = Object.keys(params).filter(k => params[k] != null && params[k] !== '')

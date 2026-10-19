@@ -7,7 +7,7 @@ const babel = require('@babel/core');
 const jsx = require('@babel/plugin-transform-react-jsx');
 const commonjs = require('@babel/plugin-transform-modules-commonjs');
 
-function mount(file, { api = {}, exports = '', props = {}, name = 'default' } = {}) {
+function mount(file, { api = {}, exports = '', props = {}, name = 'default', taroOverrides = {}, imagePicker = {} } = {}) {
   let cursor = 0, first = true;
   const state = [], effects = [], shows = [];
   const React = {
@@ -19,6 +19,7 @@ function mount(file, { api = {}, exports = '', props = {}, name = 'default' } = 
   };
   React.useRef = value => React.useState({ current: value })[0];
   const taro = { useRouter: () => ({params:{type:'waist'}}), useDidShow: fn => { if (first) shows.push(fn); }, showToast() {}, navigateBack() {}, getCurrentInstance: () => ({router:{params:{}}}) };
+  Object.assign(taro, taroOverrides);
   const modules = {
     react: React,
     '@tarojs/components': new Proxy({}, { get: (_, key) => key === '__esModule' ? false : key }),
@@ -29,6 +30,7 @@ function mount(file, { api = {}, exports = '', props = {}, name = 'default' } = 
   const output = {exports:{}};
   vm.runInNewContext(code, {exports:output.exports,module:output,require(id) {
     if(modules[id]) return modules[id];
+    if(id.endsWith('/utils/imagePicker')) return imagePicker;
     if(id.endsWith('/theme')) return {colors:{},spacing:{},radius:{},shadow:{}};
     if(id.endsWith('/services/api')) return api;
     if(id.endsWith('/hooks/useNavBar')) return () => ({statusBarHeight:24,navBarHeight:44,totalHeight:68});
@@ -93,4 +95,44 @@ test('waist appears after glucose in optional records and does not affect daily 
   assert.equal(labels[labels.indexOf('血糖')+1],'腰围');
   const counter=tree=>nodes(tree).filter(n=>n.type==='Text').map(content).find(t=>/^\d+\/\d+$/.test(t));
   assert.ok(counter(before));assert.equal(counter(before),counter(after));
+});
+
+
+test('weight photo consent is remembered, can be revoked, and failed recognition is explicit', async () => {
+  const stored=new Map(); let modals=0, recognized=0;
+  const page=mount('components/WeightPhoto.jsx',{
+    taroOverrides:{getStorageSync:k=>stored.get(k),setStorageSync:(k,v)=>stored.set(k,v),removeStorageSync:k=>stored.delete(k),showModal:async()=>{modals++;return {confirm:true};},getFileSystemManager:()=>({readFileSync:()=> 'abc'})},
+    imagePicker:{chooseImageWithPrivacy:async()=>({tempFilePaths:['/scale.jpg']}),isImagePickerCancelled:()=>false},
+    api:{recordsAPI:{recognizeWeight:async()=>{recognized++;return {data:{value:null,token:'test'}};}}}
+  });
+  const choose=async()=>{await nodes(page.render()).find(n=>n.type==='Button').props.onClick();};
+  await choose(); await choose();
+  assert.equal(modals,1); assert.equal(recognized,2);
+  assert.match(content(page.render()),/未识别出体重/);
+  await nodes(page.render()).find(n=>content(n)==='识别说明与授权管理').props.onClick();
+  await choose(); assert.equal(modals,3);
+});
+
+test('waist form rejects empty or invalid numbers with visible inline feedback', async () => {
+  let saved=0;
+  const page=mount('pages/checkin/index.jsx',{api:{recordsAPI:{todayStatus:async()=>({success:true,doneTypes:{}}),checkinCalendar:async()=>({success:true,data:{}}),create:async()=>{saved++;return {};}}}});
+  let tree=page.render();
+  page.shows.forEach(fn=>fn()); await settle(); tree=page.render();
+  nodes(tree).find(n=>n.props.onClick&&content(n).includes('腰围')&&content(n).length<30).props.onClick();
+  tree=page.render();
+  await nodes(tree).find(n=>n.props.onClick&&content(n)==='保存记录').props.onClick();
+  tree=page.render();
+  assert.match(content(tree),/请手动填写有效的腰围数值/);
+  assert.equal(saved,0);
+});
+
+test('waist photo failure is explicit and valid reading saves cm after confirmation', async () => {
+ const saved=[]; let reading=null;
+ const page=mount('components/WaistPhoto.jsx',{taroOverrides:{getStorageSync:()=>true,getFileSystemManager:()=>({readFileSync:()=> 'abc'})},imagePicker:{chooseImageWithPrivacy:async()=>({tempFilePaths:['/waist.jpg']}),isImagePickerCancelled:()=>false},api:{recordsAPI:{recognizeWaist:async()=>({data:{value:reading,unit:'cm',token:'draft'}}),create:async x=>{saved.push(x);return {};}}}});
+ const choose=async()=>await nodes(page.render()).find(n=>n.type==='Button').props.onClick();
+ await choose(); assert.match(content(page.render()),/未识别出腰围/); assert.equal(saved.length,0);
+ reading=82.5; await choose(); let tree=page.render();
+ nodes(tree).find(n=>n.props.onClick&&content(n).includes('我已核对原图')).props.onClick();
+ tree=page.render(); await nodes(tree).find(n=>n.type==='Button'&&content(n)==='确认并提交图片记录').props.onClick();
+ assert.equal(saved.length,1);assert.equal(saved[0].type,'waist');assert.equal(saved[0].unit,'cm');assert.equal(saved[0].value,'82.5');
 });
