@@ -37,6 +37,7 @@ import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
+import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
 import FollowUpModal from '../components/FollowUpModal'
 import HealthRiskEventsPanel from '../components/HealthRiskEventsPanel'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
@@ -11349,6 +11350,7 @@ export default function PatientDetailPage() {
         }
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <PatientInventoryConsumption patientId={id} />
             {/* 账户概览 */}
             <div className="card">
               <div className="card-header"><div className="card-title">账户概览</div></div>

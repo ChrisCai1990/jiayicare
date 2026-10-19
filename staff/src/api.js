@@ -91,6 +91,11 @@ export const serviceGroupAPI = {
 }
 
 export const staffAPI = {
+  inventory: () => req('/staff/inventory'),
+  inventoryPeople: () => req('/staff/inventory/people'),
+  inventoryUsers: q => req(`/staff/inventory/users?q=${encodeURIComponent(q)}`),
+  inventoryEntry: data => req('/staff/inventory/entries', { method: 'POST', body: JSON.stringify(data) }),
+  patientInventoryConsumption: id => req(`/staff/inventory/patients/${id}/consumption`),
   clinicalStandardUpdates: () => req('/staff/clinical-standards'),
   reviewClinicalStandardUpdate: (id, data) => req(`/staff/clinical-standards/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
   previewAnnualLifestyle: (id,index) => req(`/staff/annual-plans/${id}/lifestyle-interview-preview?index=${index}`),

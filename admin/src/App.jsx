@@ -16,6 +16,7 @@ import ServicesPage from './pages/ServicesPage'
 import QuestionnairePage from './pages/QuestionnairePage'
 import ChangeLogsPage from './pages/ChangeLogsPage'
 import ProductsPage from './pages/ProductsPage'
+import InventoryPage from './pages/InventoryPage'
 import PartnersPage from './pages/PartnersPage'
 import EnterprisesPage from './pages/EnterprisesPage'
 import TenantsPage from './pages/TenantsPage'
@@ -156,6 +157,7 @@ export default function App() {
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />
               <Route path="products"   element={<ProductsPage />} />
+              <Route path="inventory" element={<InventoryPage />} />
               <Route path="partners"   element={<PartnersPage />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
               <Route path="tenants" element={<TenantsPage />} />

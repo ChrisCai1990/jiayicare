@@ -34,6 +34,14 @@ const productSchema = new mongoose.Schema({
   description:   { type: String, default: '' },
   stock:         { type: Number, default: 0 },
   stockLimited:   { type: Boolean, default: false }, // 区分售罄的 0 和不限库存的 0
+  inventoryTracking: {
+    enabled: { type: Boolean, default: false },
+    kind: { type: String, enum: ['consumable', 'reusable'], default: 'consumable' },
+    unit: { type: String, default: '件' },
+    minStock: { type: Number, default: 0, min: 0 },
+    defaultCost: { type: Number, default: 0, min: 0 },
+    location: { type: String, default: '' },
+  },
   sales:         { type: Number, default: 0 },
   status:        { type: String, enum: ['on', 'off'], default: 'off' },
   fulfillmentType: {

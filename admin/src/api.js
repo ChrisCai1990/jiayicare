@@ -72,6 +72,14 @@ export const metabolicPilotAPI = {
   access: (id,action) => reqRoot(`/metabolic-pilot/admin/${id}`, {method:'PATCH',body:JSON.stringify({action})}),
 }
 export const adminAPI = {
+  inventory: () => req('/inventory'),
+  inventoryPeople: () => req('/inventory/people'),
+  inventoryUsers: q => req(`/inventory/users?q=${encodeURIComponent(q)}`),
+  inventoryConsumption: () => req('/inventory/consumption'),
+  enableInventoryProduct: (id, data) => req(`/inventory/products/${id}/enable`, { method: 'POST', body: JSON.stringify(data) }),
+  updateInventorySettings: (id, data) => req(`/inventory/products/${id}/settings`, { method: 'PATCH', body: JSON.stringify(data) }),
+  inventoryEntry: data => req('/inventory/entries', { method: 'POST', body: JSON.stringify(data) }),
+  inventoryCount: data => req('/inventory/counts', { method: 'POST', body: JSON.stringify(data) }),
   specialtyLibrary: () => req('/specialty-library'),
   specialtyReviewers: () => req('/specialty-library/reviewers'),
   createSpecialtyLibrary: data => req('/specialty-library', { method: 'POST', body: JSON.stringify(data) }),
