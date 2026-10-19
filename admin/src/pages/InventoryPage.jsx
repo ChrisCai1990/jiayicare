@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../api'
+import InventoryLedger from '../components/InventoryLedger'
 import SearchableProductSelect from '../../../shared/SearchableProductSelect'
 
 const labels = { opening:'期初', receipt:'入库', issue:'领用', use:'实际使用', return:'退回', loss:'报损', count:'盘点', manual_sale:'医护录入消费' }
@@ -108,9 +109,7 @@ export default function InventoryPage() {
         <textarea className="form-input" required placeholder="差异原因或盘点依据；如原商城库存为虚拟数字" value={count.note} onChange={e => setCount({ ...count, note:e.target.value })} />
         <button className="btn btn-primary" disabled={busy || !count.productId || count.counted === '' || !count.note.trim()}>按实盘数量校正</button>
       </form>
-    <section className="card" style={{ padding:20, marginTop:18 }}><h2>最近流水</h2><p>历史记录不能直接改写。点击对应商品的“校正当前库存”，按实盘数量生成一条新的校正记录。</p><div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>时间</th><th>物资</th><th>类型</th><th>数量</th><th>结存</th><th>批次/设备</th><th>使用客户</th><th>经办人</th><th>备注/依据</th><th>操作</th></tr></thead><tbody>
-      {data.recent.map(x => <tr key={x._id}><td>{date(x.createdAt)}</td><td>{data.products.find(p => p._id === x.productId)?.name || '-'}</td><td>{x.type === 'opening' && x.note?.startsWith('启用台账时的期初库存') ? '旧商城库存（未核实）' : labels[x.type]}</td><td>{x.units}（库存 {x.quantity >= 0 ? '+' : ''}{x.quantity}）</td><td>{x.balanceAfter}</td><td>{x.batchNo || x.serialNo || '-'}</td><td>{x.userId?.name || '-'}</td><td>{x.actorId?.name || '-'}</td><td>{x.note || '-'}</td><td><button className="btn btn-secondary" type="button" onClick={() => startCount(x.productId)}>校正当前库存</button></td></tr>)}
-    </tbody></table></div></section>
+    <InventoryLedger products={data.products} records={data.recent} onCorrect={startCount} />
     <section className="card" style={{ padding:20, marginTop:18 }}><h2>客户消费来源</h2><p>商城订单自动读取已支付订单；医护录入消费来自物资流水。实际使用与销售分列，避免重复计算收入。</p><div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>时间</th><th>来源</th><th>客户</th><th>产品</th><th>金额</th><th>凭据</th></tr></thead><tbody>
       {consumption.orders.map(x => <tr key={`o${x._id}`}><td>{date(x.createdAt)}</td><td>商城</td><td>{x.user?.name || '-'}</td><td>{x.serviceName}</td><td>{money(x.paidAmount || x.servicePrice)}</td><td>{x.orderNo}</td></tr>)}
       {consumption.manual.map(x => <tr key={`m${x._id}`}><td>{date(x.createdAt)}</td><td>{x.type === 'manual_sale' ? '医护录入消费' : '实际使用（不计收入）'}</td><td>{x.userId?.name || '-'}</td><td>{x.productId?.name || '-'}</td><td>{x.type === 'manual_sale' ? money(x.units * x.unitPrice) : '-'}</td><td>{x.note || '-'}</td></tr>)}
