@@ -109,7 +109,7 @@ const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
 const { isNutritionistStaff } = require('../utils/staffRoleCapabilities');
-const { mergeCoverageAuditItems, normalizeExplicitNormalStatus } = require('../utils/reportAuditMerge');
+const { mergeCoverageAuditItems, normalizeExplicitNormalStatus, coverageAuditHasChanges } = require('../utils/reportAuditMerge');
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
 const { rotateImageBuffer, reportRotationCandidates } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
@@ -16535,8 +16535,11 @@ async function runReportParseControlled(reportId) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) continue;
-            const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
-            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
+            const firstRows = allItems.filter(it => it._page === pageNum);
+            const firstNames = firstRows.map(it => str(it.name)).filter(Boolean);
+            const incompleteNames = firstRows.filter(it => ['lab', 'data'].includes(it.itemType) && !str(it.value))
+              .map(it => str(it.name)).filter(Boolean);
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}\n结果为空、需要重读同一行的项目：${incompleteNames.length ? incompleteNames.join('、') : '无'}。这些项目若有原文结果，请以相同项目名输出结果值；看不清则不要猜。`;
             const text = await parseImage(img, auditPrompt, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) continue;
@@ -16546,9 +16549,10 @@ async function runReportParseControlled(reportId) {
               && shaoyifuTemplate.needsCoverageAudit(pageNum, oldPage)
               && !shaoyifuTemplate.needsCoverageAudit(pageNum, auditedPage);
             const mergedPage = useAuditedPage ? auditedPage : mergeCoverageAuditItems(oldPage, auditedPage);
-            if (mergedPage.length > oldPage.length) {
+            // 复核也可能只补齐已有行的空结果，条数不变仍必须采用更新。
+            if (coverageAuditHasChanges(oldPage, mergedPage)) {
               allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
-              console.log(`[parse-ai] 页${pageNum}覆盖复核补回${mergedPage.length - oldPage.length}项（首轮${oldPage.length}项）`);
+              console.log(`[parse-ai] 页${pageNum}覆盖复核更新${mergedPage.length - oldPage.length}项（首轮${oldPage.length}项，含已有行补全）`);
             } else if (useAuditedPage) {
               allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
               console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);

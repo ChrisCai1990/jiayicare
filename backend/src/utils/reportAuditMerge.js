@@ -50,4 +50,8 @@ function mergeCoverageAuditItems(originalItems, auditItems) {
   return result.map(normalizeExplicitNormalStatus);
 }
 
-module.exports = { mergeCoverageAuditItems, normalizeExplicitNormalStatus };
+function coverageAuditHasChanges(originalItems, mergedItems) {
+  return JSON.stringify(originalItems || []) !== JSON.stringify(mergedItems || []);
+}
+
+module.exports = { mergeCoverageAuditItems, normalizeExplicitNormalStatus, coverageAuditHasChanges };
