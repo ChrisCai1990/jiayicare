@@ -24,8 +24,8 @@
 .inventory-ledger-actions button { border: 0; background: transparent; color: #2563eb; padding: 6px 0; font: inherit; font-size: 13px; cursor: pointer; }
 .inventory-ledger-actions button:hover { text-decoration: underline; }
 .inventory-ledger-detail { background: #f8fafc; }
-.inventory-ledger-detail dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 24px; margin: 0; }
-.inventory-ledger-detail dt { color: #64748b; font-size: 12px; margin-bottom: 4px; }
-.inventory-ledger-detail dd { margin: 0; overflow-wrap: anywhere; }
-.inventory-ledger-note { grid-column: 1 / -1; }
+.inventory-ledger-history { font-size: 13px; background: white; }
+.inventory-ledger-history th, .inventory-ledger-history td { padding: 10px 12px; }
+.inventory-ledger-history summary { cursor: pointer; color: #2563eb; }
+.inventory-ledger-record-detail { min-width: 180px; max-width: 280px; margin-top: 8px; line-height: 1.6; overflow-wrap: anywhere; }
 .inventory-ledger-empty { text-align: center; color: #64748b; }
