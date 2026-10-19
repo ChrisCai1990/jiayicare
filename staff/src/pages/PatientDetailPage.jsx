@@ -11296,13 +11296,16 @@ export default function PatientDetailPage() {
             if (entitlement.rights?.aiEntitlements?.expertAppointment && /专家约诊/.test(right.productName || '')) return null
             const pool = pools.get(right.poolKey)
             const usage = (entitlement.usageRecords || []).filter(record => String(record.productId) === String(right.productId))
+            const poolIndex = (entitlement.rights?.sharedEntitlementPools || []).findIndex(item => item.key === right.poolKey)
+            const historyUsed = entitlement.sourceType === 'effective_service' && entitlement.historyUsage
+              ? (pool ? entitlement.historyUsage.poolUsed?.[poolIndex] : entitlement.historyUsage.productUsed?.[index]) : null
             return { key: `${entitlement._id}:${right.productId}:${index}`, name: right.productName, packageName: entitlement.packageName,
               entitlement, productId: right.productId, entitlementKey: right.entitlementKey || '', workflowKey: right.productSnapshot?.serviceWorkflow?.key || '',
               count: pool ? pool.count : right.count, remaining: pool ? pool.remainingCount : right.remainingCount,
               reservedCount: usage.filter(record => record.status === 'reserved').length,
               redeemedCount: usage.filter(record => record.status === 'redeemed').length,
               rightIndex: index,
-              shared: !!pool, poolName: pool?.name || '', familySharing: entitlement.familySharing,
+              shared: !!pool, poolName: pool?.name || '', historyUsed, familySharing: entitlement.familySharing,
               ownerUserId: entitlement.ownerUserId, ownerName: entitlement.ownerName,
               historyKnown: entitlement.historyVerified !== false,
               automatic: /营养评估/.test(right.productName || '') && right.productSnapshot?.serviceWorkflow?.key === 'nutrition_intervention', validUntil: entitlement.validUntil }
@@ -11375,8 +11378,9 @@ export default function PatientDetailPage() {
                   {staff?.role === 'superadmin' && !packageEntitlements.some(item => item.historyVerified === false) && membershipSummary?.plans?.some(plan => plan.source === 'configuration') && <button className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview()}>核对历史服务次数</button>}
                 </div>
                 {staff?.role === 'superadmin' && packageEntitlements.filter(item => item.historyVerified === false).map(item => <button key={item._id} className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview(item)} style={{ justifySelf: 'start' }}>核对「{item.packageName}」历史次数</button>)}
+                {staff?.role === 'superadmin' && packageEntitlements.filter(item => item.sourceType === 'effective_service' && item.historyVerified !== false).map(item => <button key={`revise:${item._id}`} className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview(item)} style={{ justifySelf: 'start' }}>修订「{item.packageName}」历史已用次数</button>)}
                 {historyReviewEntitlement && <PackageHistoryReview key={historyReviewEntitlement._id} entitlement={historyReviewEntitlement} saving={historyReviewSaving} onCancel={() => setHistoryReviewEntitlement(null)} onSave={async data => {
-                  if (!window.confirm('请确认旧服务已用次数与核对依据准确；保存后系统将据此计算可用余额。')) return
+                  if (!window.confirm(`请确认旧服务已用次数与核对依据准确；${historyReviewEntitlement.historyVerified ? '修订将保留原记录，' : ''}系统将合并当前预占及核销记录重新计算可用余额。`)) return
                   setHistoryReviewSaving(true)
                   try { const result = await staffAPI.reconcilePackageHistory(id, historyReviewEntitlement._id, data); toast(result.message || '历史次数已核对'); setHistoryReviewEntitlement(null); await loadMembership() }
                   catch (error) { toast(error.message || '历史次数核对失败'); setHistoryReviewEntitlement(null); await loadMembership() }
@@ -11415,7 +11419,7 @@ export default function PatientDetailPage() {
                       <td style={{ fontWeight: 600 }}>{item.name}</td>
                       <td><span style={{ color: '#1E6B50', fontWeight: 600 }}>套餐包含</span><div style={{ fontSize: 12, color: '#718579' }}>{item.packageName}{item.shared ? ` · ${item.poolName || '共享池'}共用次数` : ''}{item.familySharing ? ` · 家庭共用（持有人：${item.ownerName || '待核对'}）` : ''}</div></td>
                       <td style={{ color: '#1E6B50', fontWeight: 700 }}>¥0</td>
-                      <td style={{ fontSize: 12 }}>{item.historyKnown ? <><strong>{item.shared ? '共享池' : '本项'}剩余 {item.remaining ?? 0} 次</strong> / 总计 {item.count ?? 0} 次<br />该服务已预占 {item.reservedCount || 0} 次 · 已核销 {item.redeemedCount || 0} 次</> : `${item.shared ? '共享池' : '本项'}总计 ${item.count || 0} 次 · 历史已用次数待核对`}</td>
+                      <td style={{ fontSize: 12 }}>{item.historyKnown ? <><strong>{item.shared ? '共享池' : '本项'}剩余 {item.remaining ?? 0} 次</strong> / 总计 {item.count ?? 0} 次<br />{item.historyUsed != null ? `${item.shared ? '共享池' : '本项'}历史已用 ${item.historyUsed} 次 · ` : ''}该服务新预占 {item.reservedCount || 0} 次 · 新核销 {item.redeemedCount || 0} 次</> : `${item.shared ? '共享池' : '本项'}总计 ${item.count || 0} 次 · 历史已用次数待核对`}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>有效至 {String(item.validUntil || '').slice(0, 10)}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>按服务分配</td>
                       <td style={{ fontSize: 12, color: item.historyKnown ? '#1E6B50' : '#B45309' }}>{!item.historyKnown ? '待核对' : item.automatic ? '随评估自动核销' : pendingOrderFor(item) ? '待继续办理' : Number(item.remaining) > 0 ? '待发起' : '共享次数已用完'}</td>

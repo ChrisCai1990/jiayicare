@@ -5,8 +5,9 @@ function historicalUsed(value, label) {
 
 // Historical counts exclude usage already captured by the new ledger. Both
 // components consume the same purchased quota; a shared pool is counted once.
-function reconcileHistoricalCounts(entitlement, { poolUsed, productUsed }) {
-  if (entitlement.sourceType !== 'effective_service' || entitlement.historyVerified !== false) {
+function reconcileHistoricalCounts(entitlement, { poolUsed, productUsed }, { allowRevision = false } = {}) {
+  if (entitlement.sourceType !== 'effective_service' || (entitlement.historyVerified !== false
+    && !(allowRevision && entitlement.historyVerified === true && entitlement.historyReconciliation?.length))) {
     throw Object.assign(new Error('该权益无需或已经完成历史次数核对'), { statusCode: 409 });
   }
   const rights = JSON.parse(JSON.stringify(entitlement.rights || {}));

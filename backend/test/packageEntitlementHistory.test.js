@@ -28,3 +28,13 @@ test('历史核对拒绝共享池重复填写、超额和重复确认', () => {
   assert.throws(() => reconcileHistoricalCounts(entitlement(), { poolUsed: [4], productUsed: [0, 5] }), /超过总次数/);
   assert.throws(() => reconcileHistoricalCounts({ ...entitlement(), historyVerified: true }, { poolUsed: [2], productUsed: [0, 5] }), /已经完成/);
 });
+
+test('超管修订历史已用次数时保留新台账扣减并校验总额', () => {
+  const source = { ...entitlement(), historyVerified: true,
+    historyReconciliation: [{ poolUsed: [3], productUsed: [0, 5] }] };
+  const rights = reconcileHistoricalCounts(source, { poolUsed: [1], productUsed: [0, 5] }, { allowRevision: true });
+  assert.equal(rights.sharedEntitlementPools[0].remainingCount, 2);
+  assert.equal(source.rights.sharedEntitlementPools[0].remainingCount, 3);
+  assert.throws(() => reconcileHistoricalCounts(source, { poolUsed: [4], productUsed: [0, 5] }, { allowRevision: true }), /超过总次数/);
+  assert.throws(() => reconcileHistoricalCounts({ ...source, historyReconciliation: [] }, { poolUsed: [1], productUsed: [0, 5] }, { allowRevision: true }), /已经完成/);
+});

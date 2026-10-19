@@ -8554,10 +8554,14 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
       || summary.plans.some(plan => plan.source === 'configuration');
     summary.redemptionAlerts = await require('../models/PackageEntitlementRedemption').countDocuments({ patientId: req.params.id, status: 'needs_review' });
     res.json({ success: true, summary, data: rows.map(row => ({
-      _id: row._id, ownerUserId: row.ownerUserId, ownerName: ownerNames.get(String(row.ownerUserId)) || '未知成员', sourceOrderId: row.sourceOrderId,
+      _id: row._id, ownerUserId: row.ownerUserId, ownerName: ownerNames.get(String(row.ownerUserId)) || '未知成员', sourceOrderId: row.sourceOrderId, sourceType: row.sourceType,
       packageName: row.packageName, clientBrand: row.clientBrand, status: row.status, validFrom: row.validFrom,
       validUntil: row.validUntil, familySharing: row.familySharing, historyVerified: row.historyVerified !== false,
       rights: row.rights || {}, usageRecords: row.usageRecords || [],
+      historyUsage: row.historyReconciliation?.length ? {
+        poolUsed: row.historyReconciliation.at(-1).poolUsed || [],
+        productUsed: row.historyReconciliation.at(-1).productUsed || [],
+      } : null,
     })) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -8570,8 +8574,8 @@ router.post('/patients/:id/package-entitlements/prepare-history-review', staffAu
     const patient = await User.findById(req.params.id).lean();
     if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
     const entitlement = await require('../utils/packageServiceRedemption').ensureEffectiveServiceLedger(patient);
-    if (!entitlement || entitlement.sourceType !== 'effective_service' || entitlement.historyVerified !== false) {
-      return res.status(409).json({ success: false, message: '没有待核对的有效历史服务包，请刷新权益' });
+    if (!entitlement || entitlement.sourceType !== 'effective_service') {
+      return res.status(409).json({ success: false, message: '没有可核对的有效历史服务包，请刷新权益' });
     }
     res.json({ success: true, data: entitlement });
   } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
@@ -8585,15 +8589,16 @@ router.post('/patients/:id/package-entitlements/:entitlementId/reconcile-history
     const entitlement = await require('../models/PackageEntitlement').findOne({ _id: req.params.entitlementId, ownerUserId: req.params.id }).lean();
     if (!entitlement) return res.status(404).json({ success: false, message: '权益台账不存在' });
     const { reconcileHistoricalCounts } = require('../utils/packageEntitlementHistory');
-    const rights = reconcileHistoricalCounts(entitlement, req.body);
+    const revising = entitlement.historyVerified === true;
+    const rights = reconcileHistoricalCounts(entitlement, req.body, { allowRevision: revising });
     const result = await require('../models/PackageEntitlement').updateOne({ _id: entitlement._id, ownerUserId: req.params.id,
-      sourceType: 'effective_service', historyVerified: false, updatedAt: entitlement.updatedAt }, {
+      sourceType: 'effective_service', historyVerified: entitlement.historyVerified, updatedAt: entitlement.updatedAt }, {
       $set: { rights, historyVerified: true },
       $push: { historyReconciliation: { at: new Date(), by: req.staff._id, note,
         poolUsed: req.body.poolUsed, productUsed: req.body.productUsed } },
     });
     if (!result.modifiedCount) return res.status(409).json({ success: false, message: '台账已变化，请刷新后重新核对' });
-    res.json({ success: true, message: '历史次数已核对，新增服务记录已合并计算',
+    res.json({ success: true, message: revising ? '历史次数已修订，原核对记录已保留；新增服务记录已合并计算' : '历史次数已核对，新增服务记录已合并计算',
       data: await require('../models/PackageEntitlement').findById(entitlement._id).lean() });
   } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
