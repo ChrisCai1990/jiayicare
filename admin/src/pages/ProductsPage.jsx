@@ -393,6 +393,7 @@ function ImageUploadList({ images, onChange }) {
 function ProductModal({ product, categories, onClose, onSaved }) {
   const toast = useToast()
   const isEdit = !!product?._id
+  const inventoryTracked = product?.inventoryTracking?.enabled === true
   const [form, setForm] = useState(() => {
     if (!isEdit) return product ? { ...product } : { ...EMPTY_FORM, category: categories[0] || '' }
     return {
@@ -510,8 +511,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         sortOrder: parseInt(form.sortOrder) || 999,
         features: form.features.split(',').map(s => s.trim()).filter(Boolean),
         description: form.description,
-        stock: parseInt(form.stock) || 0,
-        stockLimited: !!form.stockLimited,
+        ...(!inventoryTracked ? { stock: parseInt(form.stock) || 0, stockLimited: !!form.stockLimited } : {}),
         status: form.status,
         images: form.images,
         servicePrices: cleanedPrices,
@@ -634,9 +634,9 @@ function ProductModal({ product, categories, onClose, onSaved }) {
               </div>
               <div className="form-group">
                 <label className="form-label">库存数量</label>
-                <input className="form-input" type="number" min="0" value={form.stock}
+                <input className="form-input" type="number" min="0" value={form.stock} disabled={inventoryTracked}
                   onChange={e => { set('stock', e.target.value); if (Number(e.target.value) > 0) set('stockLimited', true); }} />
-                <label><input type="checkbox" checked={!!form.stockLimited} onChange={e => set('stockLimited', e.target.checked)} /> 有限库存（0 表示售罄；不勾选表示不限库存）</label>
+                {inventoryTracked ? <p>此商品已启用物资台账。库存请到 <a href="/inventory">物资与设备</a> 按实盘数量校正，入库与消耗也在该页登记。</p> : <label><input type="checkbox" checked={!!form.stockLimited} onChange={e => set('stockLimited', e.target.checked)} /> 有限库存（0 表示售罄；不勾选表示不限库存）</label>}
               </div>
               <div className="form-group">
                 <label className="form-label">状态</label>

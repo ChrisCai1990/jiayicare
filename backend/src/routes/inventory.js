@@ -23,6 +23,11 @@ function productFilter(req) { return { tenantId: tenant(req), 'inventoryTracking
 async function list(req, res) {
   const products = await Product.find(productFilter(req)).select('name category originalPrice stock stockLimited inventoryTracking status').sort({ name: 1 }).lean();
   const ids = products.map(p => p._id);
+  const legacyOpenings = ids.length ? await InventoryEntry.find({ tenantId: tenant(req), productId: { $in: ids }, type: 'opening', note: '启用台账时的期初库存；请与实物核对' }).select('productId createdAt').lean() : [];
+  const legacyByProduct = new Map(legacyOpenings.map(row => [String(row.productId), row.createdAt]));
+  const counts = legacyOpenings.length ? await InventoryEntry.find({ tenantId: tenant(req), productId: { $in: legacyOpenings.map(row => row.productId) }, type: 'count' }).select('productId createdAt').lean() : [];
+  const countedProducts = new Set(counts.filter(row => row.createdAt >= legacyByProduct.get(String(row.productId))).map(row => String(row.productId)));
+  products.forEach(product => { product.needsOpeningCount = legacyByProduct.has(String(product._id)) && !countedProducts.has(String(product._id)); });
   const recent = ids.length ? await InventoryEntry.find({ tenantId: tenant(req), productId: { $in: ids } })
     .sort({ createdAt: -1 }).limit(100).populate('userId', 'name patientNo').populate('actorId', 'name').lean() : [];
   res.json({ success: true, data: { products, recent } });
@@ -52,14 +57,26 @@ adminRouter.post('/products/:id/enable', async (req, res) => {
   const product = await Product.findOne({ _id: req.params.id, tenantId: tenant(req) });
   if (!product) return bad(res, '商品不存在', 404);
   if (product.inventoryTracking?.enabled) return bad(res, '该商品已启用物资台账');
-  const { kind = 'consumable', unit = '件', minStock = 0, defaultCost = 0, location = '' } = req.body || {};
+  const { kind = 'consumable', unit = '件', minStock = 0, defaultCost = 0, location = '', openingQuantity, openingNote = '' } = req.body || {};
   if (!['consumable', 'reusable'].includes(kind) || !Number.isInteger(Number(minStock)) || Number(minStock) < 0 || !Number.isFinite(Number(defaultCost)) || Number(defaultCost) < 0) return bad(res, '物资参数无效');
-  product.inventoryTracking = { enabled: true, kind, unit: String(unit).trim().slice(0, 20) || '件', minStock: Number(minStock), defaultCost: Number(defaultCost), location: String(location).trim().slice(0, 80) };
-  // Enabling tracking makes the current mall stock a counted opening balance.
-  product.stockLimited = true;
-  await product.save();
-  await InventoryEntry.create({ tenantId: tenant(req), productId: product._id, type: 'opening', quantity: Number(product.stock), units: Number(product.stock), balanceAfter: Number(product.stock), unitCost: Number(defaultCost), location: product.inventoryTracking.location, actorId: actor(req)._id, note: '启用台账时的期初库存；请与实物核对' });
-  res.json({ success: true, data: product });
+  if (openingQuantity === undefined || openingQuantity === null || String(openingQuantity).trim() === '' || !Number.isInteger(Number(openingQuantity)) || Number(openingQuantity) < 0 || !String(openingNote).trim()) return bad(res, '请填写实盘期初数量和清点依据');
+  const oldStock = Number(product.stock);
+  const oldTracking = product.inventoryTracking?.toObject?.() || product.inventoryTracking;
+  const oldStockLimited = product.stockLimited;
+  const tracking = { enabled: true, kind, unit: String(unit).trim().slice(0, 20) || '件', minStock: Number(minStock), defaultCost: Number(defaultCost), location: String(location).trim().slice(0, 80) };
+  const opening = Number(openingQuantity);
+  const updated = await Product.findOneAndUpdate(
+    { _id: product._id, tenantId: tenant(req), 'inventoryTracking.enabled': { $ne: true }, stock: oldStock },
+    { $set: { inventoryTracking: tracking, stock: opening, stockLimited: true } }, { new: true },
+  );
+  if (!updated) return bad(res, '商品库存已变化，请刷新后重新核实期初', 409);
+  try {
+    await InventoryEntry.create({ tenantId: tenant(req), productId: product._id, type: 'opening', quantity: opening, units: opening, balanceAfter: opening, unitCost: Number(defaultCost), location: tracking.location, actorId: actor(req)._id, note: `实盘期初；原商城展示库存 ${oldStock} 未核实、不计入台账。依据：${String(openingNote).trim()}`.slice(0, 500) });
+  } catch (error) {
+    await Product.updateOne({ _id: product._id, tenantId: tenant(req), stock: opening, 'inventoryTracking.enabled': true }, { $set: { stock: oldStock, stockLimited: oldStockLimited, inventoryTracking: oldTracking } });
+    throw error;
+  }
+  res.json({ success: true, data: updated });
 });
 
 adminRouter.patch('/products/:id/settings', async (req, res) => {
