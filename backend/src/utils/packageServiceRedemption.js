@@ -52,6 +52,27 @@ async function ensureEffectiveServiceLedger(user, now = new Date()) {
   }
 }
 
+// Build missing legacy ledgers before the superadmin workbench reads its review
+// queue. Previously this happened only when someone opened an individual member.
+async function ensurePendingEffectiveServiceLedgers(now = new Date()) {
+  const today = new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const users = await User.find({
+    isDeleted: { $ne: true }, servicePackage: { $nin: ['', null] },
+    serviceStartDate: { $lte: today }, serviceExpiry: { $gte: today },
+  }).select('_id tenantId clientBrand enterpriseId membershipTier familyLinks servicePackage serviceStartDate serviceExpiry').lean();
+  for (let i = 0; i < users.length; i += 8) {
+    const batch = users.slice(i, i + 8);
+    // Paid snapshots take precedence over a legacy opening balance, just as
+    // they do when the member's entitlement page is opened directly.
+    const paidOrders = await require('../models/Order').find({
+      user: { $in: batch.map(user => user._id) }, paymentStatus: 'paid', orderType: 'package',
+      'annualServiceSnapshot.entitlementSnapshot.packageId': { $ne: null },
+    });
+    await Promise.all(paidOrders.map(order => require('./packageEntitlements').ensurePackageEntitlement(order)));
+    await Promise.all(batch.map(user => ensureEffectiveServiceLedger(user, now)));
+  }
+}
+
 function matchingRight(entitlement, productId, workflowKey) {
   const matches = (entitlement.rights?.productEntitlements || []).map((right, index) => ({ right, index }))
     .filter(({ right }) => productId
@@ -230,4 +251,4 @@ function startPackageServiceRedemptionScheduler() {
   setInterval(() => scanCompletedServiceRedemptions().catch(error => console.error('[package-service-redemption] scan failed', error.message)), 24 * 60 * 60 * 1000).unref?.();
 }
 
-module.exports = { keyFor, matchingRight, ensureEffectiveServiceLedger, recordCompletedService, recordLinkedOrderCompletion, settleReservedPackageOrder, isFinalizedNutritionAssessment, safeRecordFinalizedNutritionAssessment, safeReconcilePackageOrder, scanCompletedServiceRedemptions, startPackageServiceRedemptionScheduler };
+module.exports = { keyFor, matchingRight, ensureEffectiveServiceLedger, ensurePendingEffectiveServiceLedgers, recordCompletedService, recordLinkedOrderCompletion, settleReservedPackageOrder, isFinalizedNutritionAssessment, safeRecordFinalizedNutritionAssessment, safeReconcilePackageOrder, scanCompletedServiceRedemptions, startPackageServiceRedemptionScheduler };

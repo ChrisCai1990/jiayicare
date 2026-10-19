@@ -14428,6 +14428,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 旧生效服务包的核对责任属于权益持有人，只向医护超管投影一条待办。
     // 直接读取台账，避免家庭成员共用同一份权益时重复派任务或重复扣次。
     if (isSuper) {
+      await require('../utils/packageServiceRedemption').ensurePendingEffectiveServiceLedgers(now);
       const pendingPackageHistory = await require('../models/PackageEntitlement').find({
         sourceType: 'effective_service', status: 'active', historyVerified: false,
         validUntil: { $gte: now },

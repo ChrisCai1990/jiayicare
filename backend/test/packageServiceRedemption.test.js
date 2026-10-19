@@ -3,13 +3,65 @@ const assert = require('node:assert/strict');
 const User = require('../src/models/User');
 const Entitlement = require('../src/models/PackageEntitlement');
 const ServicePackage = require('../src/models/ServicePackage');
+const Order = require('../src/models/Order');
 const Redemption = require('../src/models/PackageEntitlementRedemption');
-const { recordCompletedService, settleReservedPackageOrder, isFinalizedNutritionAssessment, ensureEffectiveServiceLedger } = require('../src/utils/packageServiceRedemption');
+const { recordCompletedService, settleReservedPackageOrder, isFinalizedNutritionAssessment, ensureEffectiveServiceLedger, ensurePendingEffectiveServiceLedgers } = require('../src/utils/packageServiceRedemption');
 
 const patientId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const sourceId = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const productId = 'cccccccccccccccccccccccc';
 const entitlementId = 'dddddddddddddddddddddddd';
+
+test('superadmin queue prepares an active legacy benefit without a prior member-page visit', async t => {
+  const now = new Date('2026-10-19T02:00:00Z');
+  const user = { _id: patientId, servicePackage: '旧服务包', serviceStartDate: '2026-01-01', serviceExpiry: '2026-12-31' };
+  let filter, created = 0, ledger = null;
+  t.mock.method(User, 'find', query => {
+    filter = query;
+    return { select: () => ({ lean: async () => [user] }) };
+  });
+  t.mock.method(Order, 'find', async () => []);
+  t.mock.method(ServicePackage, 'findOne', () => ({ lean: async () => ({ _id: entitlementId, name: '旧服务包', configuration: {} }) }));
+  t.mock.method(Entitlement, 'findOne', () => ({ lean: async () => ledger }));
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ _id: patientId, familyLinks: [] }) }) }));
+  t.mock.method(Entitlement, 'find', () => ({ sort: () => ({ lean: async () => [] }) }));
+  t.mock.method(Entitlement, 'findOneAndUpdate', (_query, update) => {
+    created++;
+    ledger = { _id: entitlementId, ...update.$setOnInsert };
+    return { lean: async () => ledger };
+  });
+  await ensurePendingEffectiveServiceLedgers(now);
+  await ensurePendingEffectiveServiceLedgers(now);
+  assert.equal(filter.serviceStartDate.$lte, '2026-10-19');
+  assert.equal(filter.serviceExpiry.$gte, '2026-10-19');
+  assert.deepEqual(filter.isDeleted, { $ne: true });
+  assert.equal(created, 1);
+  assert.equal(ledger.historyVerified, false);
+  assert.equal(ledger.ownerUserId, patientId);
+});
+
+test('superadmin queue creates a paid snapshot first and does not invent a legacy review', async t => {
+  const now = new Date('2026-10-19T02:00:00Z');
+  const user = { _id: patientId, servicePackage: '已购服务包', serviceStartDate: '2026-01-01', serviceExpiry: '2026-12-31' };
+  const pkg = { _id: entitlementId, name: '已购服务包', configuration: {} };
+  let ledger = null, legacyCreates = 0;
+  t.mock.method(User, 'find', () => ({ select: () => ({ lean: async () => [user] }) }));
+  t.mock.method(Order, 'find', async () => [{
+    _id: sourceId, user: patientId, orderType: 'package', paymentStatus: 'paid',
+    paidAt: new Date('2026-01-01'), annualServiceSnapshot: { durationMonths: 12,
+      entitlementSnapshot: { packageId: entitlementId, packageName: pkg.name } },
+  }]);
+  t.mock.method(Entitlement, 'findOneAndUpdate', (_query, update) => {
+    if (update.$setOnInsert.sourceType === 'effective_service') legacyCreates++;
+    ledger = { ...update.$setOnInsert };
+    return { lean: async () => ledger };
+  });
+  t.mock.method(ServicePackage, 'findOne', () => ({ lean: async () => pkg }));
+  t.mock.method(Entitlement, 'findOne', () => ({ lean: async () => ledger }));
+  await ensurePendingEffectiveServiceLedgers(now);
+  assert.equal(legacyCreates, 0);
+  assert.equal(ledger.historyVerified, undefined);
+});
 
 test('a family member reuses the owner shared entitlement instead of creating a second opening balance', async t => {
   const packageId = 'eeeeeeeeeeeeeeeeeeeeeeee';
@@ -20,6 +72,7 @@ test('a family member reuses the owner shared entitlement instead of creating a 
   t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({
     _id: patientId, familyLinks: [{ linkedUser: ownerId }],
   }) }) }));
+  t.mock.method(User, 'find', () => ({ select: () => ({ lean: async () => [{ _id: ownerId }] }) }));
   t.mock.method(Entitlement, 'find', () => ({ sort: () => ({ lean: async () => [shared] }) }));
   t.mock.method(Entitlement, 'findOneAndUpdate', async () => { throw new Error('must not create duplicate entitlement'); });
   const result = await ensureEffectiveServiceLedger({ _id: patientId, clientBrand: 'jiayiguanjia',
