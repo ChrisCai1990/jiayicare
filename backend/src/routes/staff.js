@@ -109,7 +109,7 @@ const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
 const { isNutritionistStaff } = require('../utils/staffRoleCapabilities');
-const { mergeCoverageAuditItems, normalizeExplicitNormalStatus } = require('../utils/reportAuditMerge');
+const { mergeCoverageAuditItems, normalizeExplicitNormalStatus, coverageAuditHasChanges } = require('../utils/reportAuditMerge');
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
 const { rotateImageBuffer, reportRotationCandidates } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
@@ -11602,8 +11602,8 @@ router.patch('/user-messages/:userId/read', staffAuth, async (req, res) => {
 // POST /api/staff/user-messages/:userId/reply
 router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
   try {
-    const { content = '', images = [], audio = null, orderId = '' } = req.body;
-    if (!content?.trim() && !images.length && !audio?.data) {
+    const { content = '', images = [], audio = null, orderId = '', checkinRecordId = '' } = req.body;
+    if (!content?.trim() && !images.length && !audio?.data && !checkinRecordId) {
       return res.status(400).json({ success: false, message: '回复内容不能为空' });
     }
     const patient = await User.findById(req.params.userId).select('name');
@@ -11635,7 +11635,26 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     );
 
     const imageUrls = [];
-    for (const item of images.slice(0, 9)) {
+    if (checkinRecordId) {
+      const record = await HealthRecord.findOne({ _id: checkinRecordId, user: req.params.userId, deletedAt: null })
+        .select('imageUrl imageUrls extra')
+        .lean();
+      if (!record) return res.status(404).json({ success: false, message: '打卡记录不存在或已删除，请刷新页面后重试' });
+      const sourceImages = [...new Set([
+        ...(Array.isArray(record.imageUrls) ? record.imageUrls : []),
+        record.imageUrl,
+        record.extra?.imageUrl,
+      ].filter(Boolean))].slice(0, 9);
+      if (!sourceImages.length) return res.status(400).json({ success: false, message: '这条打卡没有可发送的图片' });
+      for (const source of sourceImages) {
+        if (/^data:image\/(jpeg|jpg|png|webp|gif|heic|heif);base64,/i.test(source)) {
+          imageUrls.push((await require('../utils/oss').uploadBase64(source, source.match(/^data:([^;]+)/i)?.[1] || 'image/jpeg', 'messages')).url);
+        } else if (/^https?:\/\//i.test(source) || source.startsWith('/api/uploads/')) {
+          imageUrls.push(source);
+        }
+      }
+    }
+    for (const item of images.slice(0, Math.max(0, 9 - imageUrls.length))) {
       if (item?.data) imageUrls.push((await require('../utils/oss').uploadBase64(item.data, item.mimeType || 'image/jpeg', 'messages')).url);
     }
     let audioUrl = '';
@@ -16535,8 +16554,11 @@ async function runReportParseControlled(reportId) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) continue;
-            const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
-            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
+            const firstRows = allItems.filter(it => it._page === pageNum);
+            const firstNames = firstRows.map(it => str(it.name)).filter(Boolean);
+            const incompleteNames = firstRows.filter(it => ['lab', 'data'].includes(it.itemType) && !str(it.value))
+              .map(it => str(it.name)).filter(Boolean);
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}\n结果为空、需要重读同一行的项目：${incompleteNames.length ? incompleteNames.join('、') : '无'}。这些项目若有原文结果，请以相同项目名输出结果值；看不清则不要猜。`;
             const text = await parseImage(img, auditPrompt, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) continue;
@@ -16546,9 +16568,10 @@ async function runReportParseControlled(reportId) {
               && shaoyifuTemplate.needsCoverageAudit(pageNum, oldPage)
               && !shaoyifuTemplate.needsCoverageAudit(pageNum, auditedPage);
             const mergedPage = useAuditedPage ? auditedPage : mergeCoverageAuditItems(oldPage, auditedPage);
-            if (mergedPage.length > oldPage.length) {
+            // 复核也可能只补齐已有行的空结果，条数不变仍必须采用更新。
+            if (coverageAuditHasChanges(oldPage, mergedPage)) {
               allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
-              console.log(`[parse-ai] 页${pageNum}覆盖复核补回${mergedPage.length - oldPage.length}项（首轮${oldPage.length}项）`);
+              console.log(`[parse-ai] 页${pageNum}覆盖复核更新${mergedPage.length - oldPage.length}项（首轮${oldPage.length}项，含已有行补全）`);
             } else if (useAuditedPage) {
               allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
               console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);
