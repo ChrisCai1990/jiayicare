@@ -14,12 +14,12 @@ import { useAuth } from '../../../context/AuthContext';
 const TYPE_META = {
   bloodPressure: { label: '血压', icon: '💗', unit: 'mmHg' },
   bloodSugar: { label: '血糖', icon: '🩸', unit: 'mmol/L' },
+  waist: { label: '腰围', icon: '📏', unit: 'cm' },
   heartRate: { label: '心率', icon: '❤️', unit: '次/分' },
   weight: { label: '体重', icon: '⚖️', unit: 'kg' },
-  waist: { label: '腰围', icon: '📏', unit: 'cm' },
   sleep: { label: '睡眠', icon: '🌙', unit: '小时' },
 };
-const CORE_TYPES = ['bloodPressure', 'bloodSugar', 'sleep', 'heartRate', 'weight', 'waist'];
+const CORE_TYPES = ['bloodPressure', 'bloodSugar', 'waist', 'sleep', 'heartRate', 'weight'];
 const DAILY_TYPES = ['diet', 'exercise', 'bowel', 'water', 'smoking', 'alcohol', 'mood'];
 const BODY_METRICS = [
   { key: 'weight', referenceKey: 'weightReference', label: '体成分体重', unit: 'kg', color: '#2563EB' },
@@ -115,7 +115,7 @@ export default function RecordsIndexPage() {
     const types=CORE_TYPES;
     const results=await Promise.allSettled(types.map(type=>recordsAPI.trend(type)));
     if(generation!==trendGeneration.current)return;
-    const setters=[setBpTrend,setBsTrend,setSleepTrend,setHeartTrend,setWeightTrend,setWaistTrend];
+    const setters=[setBpTrend,setBsTrend,setWaistTrend,setSleepTrend,setHeartTrend,setWeightTrend];
     setTrendError(results.some(result=>result.status==='rejected'||result.value?.success===false)?'部分趋势更新失败，点击重试':'');
     results.forEach((result,index)=>{
       if(result.status!=='fulfilled'||result.value?.success===false||!Array.isArray(result.value?.data))return;

@@ -22,7 +22,7 @@ function toLocalDateStr(d) {
 }
 
 const CHECKIN_DEFS = {
-  waist: { key: 'waist', label: '腰围', icon: '📏', color: '#0F766E', measureType: 'waist', category: 'vitals', recordLabel: '腰围记录' },
+  waist: { key: 'waist', label: '腰围', icon: '📏', color: '#0F766E', measureType: 'waist', category: 'vitals', recordLabel: '腰围记录', optional: true },
   diet:          { key: 'diet',          label: '饮食', icon: '🍽️', color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食记录', allowMultiple: true },
   exercise:      { key: 'exercise',      label: '运动', icon: '🏃', color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动记录', allowMultiple: true },
   sleep:         { key: 'sleep',         label: '睡眠', icon: '🌙', color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠记录' },
@@ -38,7 +38,7 @@ const CHECKIN_DEFS = {
   symptom:       { key: 'symptom',       label: '不适', icon: '🩹', color: '#DC2626', measureType: 'symptom',       category: 'vitals',    recordLabel: '症状自评', optional: true },
 };
 
-const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','waist','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','mood'];
+const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','waist','mood'];
 
 const MEASURE_FIELDS = {
   waist: [{ key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5', normal: '' }],
@@ -532,7 +532,7 @@ export default function CheckinPage() {
     if ((batchValues.sys || batchValues.dia) && (!(sys > 0) || !(dia > 0))) return Taro.showToast({ title: '血压需同时填写高压和低压', icon: 'none' });
     if (sys > 0 && dia > 0) rows.push({ category: 'vitals', type: 'bloodPressure', label: '血压记录', unit: 'mmHg', value: `${sys}/${dia}`, extra: { sys, dia }, recordedAt: at, _inputKeys: ['sys', 'dia'] });
     if (batchValues.waist && (!Number.isFinite(Number(batchValues.waist)) || Number(batchValues.waist) <= 0)) return Taro.showToast({ title: '请核对腰围数值（cm）', icon: 'none' });
-    [['waist', '腰围', 'cm'], ['heartRate', '心率', '次/分'], ['bloodSugar', '血糖', 'mmol/L'], ['mood', '情绪', '分']].forEach(([key, label, unit]) => {
+    [['heartRate', '心率', '次/分'], ['bloodSugar', '血糖', 'mmol/L'], ['waist', '腰围', 'cm'], ['mood', '情绪', '分']].forEach(([key, label, unit]) => {
       const value = String(batchValues[key] || '').trim();
       if (value) rows.push({ category: key === 'mood' ? 'lifestyle' : 'vitals', type: key, label: `${label}记录`, unit, value, recordedAt: at, _inputKeys: [key] });
     });
@@ -899,7 +899,7 @@ export default function CheckinPage() {
             <View style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><Input type="digit" style={{ ...BATCH_INPUT_STYLE, flex: 1 }} value={batchValues.weight || ''} placeholder="体重" onInput={(e) => updateBatch('weight', e.detail.value)} /><View style={{ display: 'flex', gap: '6px' }}>{['kg', '斤'].map((unit) => <Chip key={unit} label={unit} active={batchValues.weightUnit === unit} color={colors.primary} onClick={() => updateBatch('weightUnit', unit)} />)}</View></View>
             {batchValues.weight && batchValues.weightUnit === '斤' && <Text style={{ color: colors.primary, fontSize: '12px', display: 'block', marginBottom: '8px' }}>自动换算：{Math.round((Number(batchValues.weight) / 2) * 100) / 100} kg</Text>}
             <View style={{ display: 'flex', gap: '8px' }}><Input type="number" style={{ ...BATCH_INPUT_STYLE, flex: 1 }} value={batchValues.sys || ''} placeholder="高压" onInput={(e) => updateBatch('sys', e.detail.value)} /><Input type="number" style={{ ...BATCH_INPUT_STYLE, flex: 1 }} value={batchValues.dia || ''} placeholder="低压" onInput={(e) => updateBatch('dia', e.detail.value)} /></View>
-            {[['waist', '腰围（cm）'], ['heartRate', '心率（次/分）'], ['bloodSugar', '血糖（mmol/L）'], ['mood', '情绪评分（1-10）']].map(([key, placeholder]) => <Input key={key} type="digit" style={{ ...BATCH_INPUT_STYLE, marginBottom: '8px' }} value={batchValues[key] || ''} placeholder={placeholder} onInput={(e) => updateBatch(key, e.detail.value)} />)}
+            {[['heartRate', '心率（次/分）'], ['bloodSugar', '血糖（mmol/L）'], ['waist', '腰围（cm）'], ['mood', '情绪评分（1-10）']].map(([key, placeholder]) => <Input key={key} type="digit" style={{ ...BATCH_INPUT_STYLE, marginBottom: '8px' }} value={batchValues[key] || ''} placeholder={placeholder} onInput={(e) => updateBatch(key, e.detail.value)} />)}
             <View style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>{[['sleepTime', '入睡时间'], ['wakeTime', '醒来时间']].map(([key, label]) => <Picker key={key} mode="time" value={batchValues[key] || ''} onChange={(e) => updateBatch(key, e.detail.value)}><View style={{ ...BATCH_INPUT_STYLE, flex: 1, display: 'flex', alignItems: 'center' }}><Text style={{ color: batchValues[key] ? colors.textPrimary : colors.textMuted }}>{batchValues[key] || label}</Text></View></Picker>)}</View>
             <View style={{ display: 'flex', gap: '10px', marginTop: '18px' }}><View onClick={() => setBatchModal(false)} style={{ flex: 1, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: colors.border }}><Text style={{ color: colors.textSecondary, fontWeight: 600 }}>关闭</Text></View><View onClick={batchSaving ? undefined : saveBatch} style={{ flex: 2, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: batchSaving ? 0.6 : 1 }}><Text style={{ color: '#fff', fontWeight: 700 }}>{batchSaving ? '保存中...' : '保存当天已填项目'}</Text></View></View>
           </View>

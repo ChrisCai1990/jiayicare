@@ -41,7 +41,7 @@ function mount(file, { api = {}, exports = '', props = {}, name = 'default' } = 
   return {effects,shows,render(){cursor=0; const tree=output.exports[name](props);first=false;return tree;}};
 }
 function nodes(tree) { return tree && typeof tree === 'object' ? [tree,...(tree.children||[]).flatMap(nodes)] : []; }
-function content(tree) { return typeof tree === 'string' ? tree : (tree?.children||[]).map(content).join(''); }
+function content(tree) { return typeof tree === 'string' || typeof tree === 'number' ? String(tree) : (tree?.children||[]).map(content).join(''); }
 const settle = () => new Promise(resolve=>setImmediate(resolve));
 
 test('decimal waist saves as cm and invalid waist does not submit', async () => {
@@ -78,4 +78,19 @@ test('purchase member requests initialize and return closes above scrolling cont
   assert.ok(back.props.style.zIndex>scroll.props.style.zIndex);
   back.props.onClick({stopPropagation:()=>stopped++});
   assert.equal(closed,1); assert.equal(stopped,1);
+});
+
+
+test('waist appears after glucose in optional records and does not affect daily completion', async () => {
+  async function checkin(doneTypes) {
+    const page=mount('pages/checkin/index.jsx',{api:{recordsAPI:{todayStatus:async()=>({success:true,doneTypes}),checkinCalendar:async()=>({success:true,data:{}})}}});
+    page.render();page.shows.forEach(fn=>fn());await settle();return page.render();
+  }
+  const before=await checkin({}),after=await checkin({waist:{}});
+  const optional=nodes(before).find(n=>n.children?.some(c=>c?.type==='Text'&&content(c)==='按需记录'));
+  assert.ok(optional);
+  const labels=nodes(optional).filter(n=>n.props.onClick).map(content);
+  assert.equal(labels[labels.indexOf('血糖')+1],'腰围');
+  const counter=tree=>nodes(tree).filter(n=>n.type==='Text').map(content).find(t=>/^\d+\/\d+$/.test(t));
+  assert.ok(counter(before));assert.equal(counter(before),counter(after));
 });

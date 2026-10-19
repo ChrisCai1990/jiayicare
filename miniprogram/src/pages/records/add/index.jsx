@@ -17,14 +17,14 @@ const RECORD_TYPES = [
   { id: 'bloodSugar', label: '血糖', icon: '🩸', category: 'vitals', unit: 'mmol/L', fields: [
     { key: 'value', label: '血糖值', unit: 'mmol/L', placeholder: '如：6.1' },
   ] },
+  { id: 'waist', label: '腰围', icon: '📏', category: 'vitals', unit: 'cm', fields: [
+    { key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5' },
+  ] },
   { id: 'heartRate', label: '心率', icon: '❤️', category: 'vitals', unit: '次/分', fields: [
     { key: 'value', label: '心率', unit: '次/分', placeholder: '如：72' },
   ] },
   { id: 'weight', label: '体重', icon: '⚖️', category: 'vitals', unit: 'kg', fields: [
     { key: 'value', label: '体重', unit: 'kg', placeholder: '如：70.5' },
-  ] },
-  { id: 'waist', label: '腰围', icon: '📏', category: 'vitals', unit: 'cm', fields: [
-    { key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5' },
   ] },
   { id: 'sleep', label: '睡眠', icon: '🌙', category: 'lifestyle', unit: '小时', fields: [] },
   { id: 'mood', label: '情绪', icon: '😊', category: 'lifestyle', unit: '分', fields: [] },
