@@ -124,6 +124,7 @@ app.use('/api/integrations/wecom-kf', require('./routes/wecomKfCallback'));
 app.use('/api/integrations/insurance', require('./routes/insuranceIntegrations'));
 app.use('/api/screening',     require('./routes/screening'));
 app.use('/api/tts',           require('./routes/tts'));
+app.use('/api/ai-data-consent', require('./routes/aiDataConsent'));
 
 // 404
 app.use((req, res) => {

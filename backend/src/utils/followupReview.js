@@ -37,7 +37,7 @@ ${recLines}
   "outline": ["随访提纲要点1", "要点2", "要点3"]
 }`;
 
-  const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1000 });
+  const text = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 1000 }));
   let raw = {};
   try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
   if (!raw.needed) return null;

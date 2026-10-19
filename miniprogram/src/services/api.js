@@ -232,6 +232,7 @@ export const tasksAPI = {
 
 // ── Messages ──────────────────────────────────────────────────────
 export const messagesAPI = {
+  transcribe: (id, consentVersion) => request(`/messages/${id}/transcribe`, { method: 'POST', body: JSON.stringify({ consentVersion }), timeout: 60000 }),
   list: () => request('/messages'),
   unreadCount: () => request('/messages/unread-count'),
   markRead: (id) => request(`/messages/${id}/read`, { method: 'PATCH' }),
@@ -468,4 +469,9 @@ export const userPhoneAPI = {
 export const ttsAPI = {
   synthesize: (text, sceneType) =>
     request('/tts/synthesize', { method: 'POST', body: JSON.stringify({ text, sceneType }), timeout: 30000 }),
+};
+
+export const aiDataConsentAPI = {
+  list: () => request("/ai-data-consent"),
+  update: (purpose, data) => request(`/ai-data-consent/${purpose}`, {method: "PUT", body: JSON.stringify(data)}),
 };

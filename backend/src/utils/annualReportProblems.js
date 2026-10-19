@@ -113,7 +113,7 @@ function validateReview(input, stored, confirm) {
 async function generate(row, context, actor) {
   const guard = { _id: row._id, __v: row.__v, generationToken: row.generationToken, status: 'generating' };
   try {
-    const result = await require('./aiBudget').withAiContext({ actorId: String(actor._id), tenantId: String(actor.tenantId || ''), business: 'other', stage: 'annual_problem_synthesis', stopState: {} }, () => synthesize(context, { onProgress: message => Model().findOneAndUpdate(guard, { $set: { message } }) }));
+    const result = await require('./aiBudget').withAiContext({ actorId: String(actor._id), tenantId: String(actor.tenantId || ''), business: 'other', stage: 'annual_problem_synthesis', stopState: {} }, () => require('./aiDataConsent').withPersonalData(row.patientId, 'health', () => synthesize(context, { onProgress: message => Model().findOneAndUpdate(guard, { $set: { message } }) })));
     if ((await loadContext(row.patientId, row.year)).sourceFingerprint !== context.sourceFingerprint) fail('来源资料已变化，请重新生成');
     await Model().findOneAndUpdate(guard, { $set: { ...result, sourceFingerprint: context.sourceFingerprint,
       sourceReportIds: context.reports.map(report => report._id), summaryReference: context.summary, priorAdvice: context.priorAdvice,

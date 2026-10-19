@@ -9,6 +9,7 @@ import Icon from '../../../components/Icon';
 import { getOrderBadgeCounts } from '../../../utils/orderStatus';
 import useArchiveSubject from '../../../hooks/useArchiveSubject';
 import FamilySubjectView from '../../../components/FamilySubjectView';
+import { manageAiDataConsent } from '../../../utils/aiDataConsent';
 
 const PACKAGE_LABELS = {
   pkg_1y: '年度会员', pkg_6m: '半年会员', pkg_3m: '季度会员',
@@ -247,6 +248,7 @@ export default function ProfilePage() {
           <MenuItem icon="users" iconColor="#D97706" label="邀请好友" value="分享专属邀请链接" onClick={() => nav('/pages/profile/invite/index')} />
           <MenuItem icon="🔔" iconColor="#7C3AED" label="通知设置" onClick={() => nav('/pages/profile/notifications/index')} />
           <MenuItem icon="🔒" iconColor="#22A06B" label="账号安全" onClick={() => nav('/pages/profile/security/index')} />
+          <MenuItem icon="🔒" iconColor="#22A06B" label="AI与语音授权" value="本人授权、查看或撤回" onClick={manageAiDataConsent} />
           <MenuItem icon="❓" iconColor="#D97706" label="帮助与反馈" onClick={() => nav('/pages/profile/feedback/index')} isLast />
         </View>
       </View>

@@ -5,6 +5,8 @@ import { colors, spacing, radius, shadow } from '../../../theme';
 import { userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { ensureAiDataConsent } from '../../../utils/aiDataConsent';
+import SourceReports from '../../../components/SourceReports';
 
 
 const URGENCY_META = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } };
@@ -53,6 +55,7 @@ function HealthSummaryView({ sections }) {
         <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>未覆盖项目</Text>
         <ListLines items={tumor.missing} color={colors.textMuted} />
         {!!tumor.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{tumor.summary}</Text>}
+        <SourceReports reportIds={tumor.sourceReportIds || []} />
       </SectionCard>
 
       <SectionCard icon="❤️" title="心脑血管相关信息整理">
@@ -61,6 +64,7 @@ function HealthSummaryView({ sections }) {
         <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>持续关注信息</Text>
         <ListLines items={cardio.medium} color={colors.warning} />
         {!!cardio.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{cardio.summary}</Text>}
+        <SourceReports reportIds={cardio.sourceReportIds || []} />
       </SectionCard>
 
       <SectionCard icon="📊" title="慢病及其他健康信息整理">
@@ -75,6 +79,7 @@ function HealthSummaryView({ sections }) {
             </View>
           );
         })}
+        <SourceReports reportIds={chronic.sourceReportIds || []} />
       </SectionCard>
 
       <SectionCard icon="📋" title="体检资料覆盖情况">
@@ -83,6 +88,7 @@ function HealthSummaryView({ sections }) {
         <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>缺失项目</Text>
         <ListLines items={checkup.missing} color={colors.warning} />
         {!!checkup.suggestion && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{checkup.suggestion}</Text>}
+        <SourceReports reportIds={checkup.sourceReportIds || []} />
       </SectionCard>
 
       <SectionCard icon="🏥" title="需优先关注的信息">
@@ -103,6 +109,7 @@ function HealthSummaryView({ sections }) {
         })}
       </SectionCard>
 
+      <SourceReports reportIds={medPriority.sourceReportIds || []} />
       <SectionCard icon="🌿" title="生活方式评估">
         {(lifestyle.items || []).map((it, i) => (
           <View key={i} style={{ marginBottom: `${spacing.sm}px`, paddingBottom: `${spacing.sm}px`, borderBottom: `1px solid ${colors.border}` }}>
@@ -149,6 +156,7 @@ export default function AiHealthPage() {
   const handleGenerate = async () => {
     setGenerating(true); setMessage('');
     try {
+      if (!await ensureAiDataConsent('health')) return;
       const res = await userAPI.postAiHealthSummary();
       if (res.success) setSummaryData(res.data);
     } catch (err) {

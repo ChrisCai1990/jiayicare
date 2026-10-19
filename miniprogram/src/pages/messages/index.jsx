@@ -1,3 +1,5 @@
+import { ensureAiDataConsent, manageAiDataConsent } from '../../utils/aiDataConsent';
+import MedicalReferences from '../../components/MedicalReferences';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Input, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
@@ -757,6 +759,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [transcribingId, setTranscribingId] = useState('');
   const [humanActive, setHumanActive] = useState(false);
   const [threadError, setThreadError] = useState('');
   const [sendError, setSendError] = useState('');
@@ -867,9 +870,10 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     setSendError('');
     setInput('');
     try {
-      let extra = {};
+      const allowAI = meta.aiEnabled && !humanActive ? await ensureAiDataConsent('assistant', { cancelText: '不用AI' }) : false;
+      let extra = { suppressAI: !allowAI };
       if (foodImages.length) {
-        extra = { images: foodImages.map(({ data, mimeType }) => ({ data, mimeType })) };
+        extra = { ...extra, images: foodImages.map(({ data, mimeType }) => ({ data, mimeType })) };
       }
       const res = await messagesAPI.send(role, text || '图片记录', extra);
       if (!res?.success) throw new Error(res?.message || '消息未发送成功');
@@ -910,6 +914,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     try {
       const base64 = Taro.getFileSystemManager().readFileSync(tempFilePath, 'base64');
       const res = await messagesAPI.send(role, '', {
+        suppressAI: true,
         audio: { data: `data:audio/mpeg;base64,${base64}`, mimeType: 'audio/mpeg', duration: Math.max(1, Math.ceil(duration / 1000)) },
       });
       if (!res?.success) throw new Error(res?.message || '语音发送失败');
@@ -1015,6 +1020,19 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     player.play();
   };
 
+  const transcribeVoice = async (message) => {
+    if (transcribingId || message.type !== 'user') return;
+    setTranscribingId(message._id);
+    try {
+      if (!await ensureAiDataConsent('speech')) return;
+      const decision = await Taro.showModal({ title: '转写这条录音', content: '仅将这条录音交给已说明的阿里云语音服务转成文字；结果仅供查看，不自动用于 AI 回复。', confirmText: '转文字' });
+      if (!decision.confirm) return;
+      const result = await messagesAPI.transcribe(message._id, 'voice-text-20261005');
+      if (result.data?.audioTranscript) { pollRef.current?.invalidate(); setMsgs(rows => rows.map(row => row._id === message._id ? { ...row, ...result.data } : row)); }
+    } catch (error) { Taro.showToast({ title: error.message || '转文字未完成', icon: 'none' }); }
+    finally { setTranscribingId(''); }
+  };
+
   const speakText = async (message) => {
     const messageId = `tts-${message._id}`;
     if (playingMessageId === messageId) { stopPlayback(); return; }
@@ -1024,6 +1042,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     stopPlayback();
     setVoiceLoadingId(messageId);
     try {
+      if (!await ensureAiDataConsent('speech')) { setVoiceLoadingId(''); return; }
       const res = await ttsAPI.synthesize(text, 'message');
       if (!res?.url) throw new Error('未生成语音');
       playUrl(messageId, res.url);
@@ -1058,11 +1077,12 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
         <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ {closeLabel}</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{member?.name ? `${member.name} · ${meta.label}` : meta.label}</Text>
-          <Text style={{ fontSize: '11px', color: !meta.aiEnabled || humanActive ? '#D97706' : colors.success }}>● {!meta.aiEnabled ? '人工服务' : humanActive ? '人工服务中' : 'AI在线'}</Text>
+          <Text style={{ fontSize: '11px', color: !meta.aiEnabled || humanActive ? '#D97706' : colors.success }}>● {!meta.aiEnabled ? '人工服务' : humanActive ? '人工服务中' : '人工沟通 · AI需授权'}</Text>
         </View>
         <View style={{ width: '20px' }} />
       </View>
 
+      <Text onClick={manageAiDataConsent} style={{ padding: '9px 16px', color: colors.primary, fontSize: '13px', backgroundColor: '#fff' }}>AI与语音授权 · 查看或撤回</Text>
       {!!threadError && <Text onClick={loadThread} style={{padding:'10px 16px',fontSize:'13px',color:colors.danger}}>{threadError} · 点击重试</Text>}
       {!!sendError && <Text style={{padding:'10px 16px',fontSize:'13px',color:colors.danger}}>{sendError}</Text>}
       <ScrollView scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
@@ -1112,6 +1132,8 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
                       </View>
                     )}
                     {(!m.audioUrl || !/^\[语音消息\]$/.test(m.content || '')) && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>}
+                    {isMine && m.audioUrl && !m.audioTranscript && <Text onClick={() => transcribeVoice(m)} style={{ display: 'block', fontSize: '13px', color: '#fff', textDecoration: 'underline', marginTop: '8px' }}>{transcribingId === m._id ? '正在转文字…' : '转文字（需授权）'}</Text>}
+                    {!isMine && <MedicalReferences references={m.references || []} />}
                     {!isMine && !m.audioUrl && visibleMessageContent(m).trim() && (
                       <View onClick={() => speakText(m)} style={{ marginTop: '7px', display: 'flex', alignItems: 'center' }}>
                         <Text style={{ fontSize: '11px', color: playingMessageId === `tts-${m._id}` ? colors.primary : colors.textMuted }}>

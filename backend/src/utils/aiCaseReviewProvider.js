@@ -12,7 +12,7 @@ function select() {
   return 'qwen';
 }
 
-async function reply({ preferred, sessionId, prompt, context, attachments, history, maxTokens = 1800, retryOnEmptyOrLength = false }) {
+async function replyScoped({ preferred, sessionId, prompt, context, attachments, history, maxTokens = 1800, retryOnEmptyOrLength = false }) {
   const startedAt = Date.now();
   const provider = select(preferred);
   const imageReading = attachments?.length
@@ -35,4 +35,9 @@ async function reply({ preferred, sessionId, prompt, context, attachments, histo
   return { provider, model: 'qwen-plus', sessionId, content, files: [], contextSnapshot, durationMs: Date.now() - startedAt };
 }
 
+async function reply(options) {
+  return options.subjectId
+    ? require('./aiDataConsent').withPersonalData(options.subjectId, 'health', () => replyScoped(options))
+    : replyScoped(options);
+}
 module.exports = { availableProviders, reply };

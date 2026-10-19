@@ -35,7 +35,7 @@ async function ensureAdvisorIntakeTask(order) {
   let followUpDate = new Date(); followUpDate.setDate(followUpDate.getDate() + 7);
   try {
     const { chat } = require('./ai');
-    const text = await chat([{ role: 'user', content: `你是健康管理随访计划助手。客户已购买体检后复查督办服务。根据订单信息生成一条简明、可执行的随访计划草稿。不得虚构诊断、药物、检查结果或医院专家；信息不足时明确由健康顾问结合对话确认。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n订单信息：${context}` }], { maxTokens: 700, temperature: 0 });
+    const text = await require('./aiDataConsent').withPersonalData(order.user, 'health', () => chat([{ role: 'user', content: `你是健康管理随访计划助手。客户已购买体检后复查督办服务。根据订单信息生成一条简明、可执行的随访计划草稿。不得虚构诊断、药物、检查结果或医院专家；信息不足时明确由健康顾问结合对话确认。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n订单信息：${context}` }], { maxTokens: 700, temperature: 0 }));
     const match = String(text || '').match(/\{[\s\S]*\}/);
     const draft = match ? JSON.parse(match[0]) : {};
     if (clean(draft.content)) content = clean(draft.content);
@@ -75,7 +75,7 @@ async function start(order, plannerId, input) {
   let followUpDate = new Date(visitAt.getTime() + 7 * 24 * 60 * 60 * 1000);
   try {
     const { chat } = require('./ai');
-    const text = await chat([{ role: 'user', content: `你是健康管理随访计划助手。根据以下复查督办信息生成一条简明、可执行的随访计划草稿。不得补写诊断、药物或检查结果。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n${summary}\n就医日期：${intake.visitDate}` }], { maxTokens: 700, temperature: 0 });
+    const text = await require('./aiDataConsent').withPersonalData(order.user, 'health', () => chat([{ role: 'user', content: `你是健康管理随访计划助手。根据以下复查督办信息生成一条简明、可执行的随访计划草稿。不得补写诊断、药物或检查结果。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n${summary}\n就医日期：${intake.visitDate}` }], { maxTokens: 700, temperature: 0 }));
     const match = String(text || '').match(/\{[\s\S]*\}/);
     const draft = match ? JSON.parse(match[0]) : {};
     if (clean(draft.content)) content = clean(draft.content);

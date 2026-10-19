@@ -66,7 +66,7 @@ async function generateCareMessage(user) {
 【消息基调】${tone}
 
 请直接输出消息正文。`;
-    const message = await chat([{ role: 'user', content: prompt }], { maxTokens: 300 });
+    const message = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 300 }));
     const text = (message || '').trim();
     if (text) return text;
   } catch (e) {

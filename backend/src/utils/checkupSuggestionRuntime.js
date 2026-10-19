@@ -5,6 +5,6 @@ function models() {
 function service(dependencies = models()) {
   return require('./checkupPreparationSuggestion').createSuggestionService(dependencies, (messages, options, { actor, patient }) =>
     require('./aiBudget').withAiContext({ actorId: String(actor._id), tenantId: String(patient.tenantId || ''), business: 'other', stage: 'checkup_preparation_addons' },
-      () => require('./ai').chat(messages, options)));
+      () => require('./aiDataConsent').withPersonalData(patient._id, 'health', () => require('./ai').chat(messages, options))));
 }
 module.exports = { models, service };

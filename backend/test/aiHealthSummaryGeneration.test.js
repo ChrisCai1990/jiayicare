@@ -4,6 +4,13 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
+// Use the real request-scoped identity helper; external AI remains stubbed.
+function runRouteWithConsentContext(code, context) {
+  const load = context.require;
+  return vm.runInNewContext(code, { ...context, require: name => name.endsWith('/aiDataConsent') ? require('../src/utils/aiDataConsent') : load(name) });
+}
+
+
 test('rejected duplicate requests cannot release the running generation lock', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const start = source.indexOf('const activeAIHealthSummaryJobs = new Set();');
@@ -12,7 +19,7 @@ test('rejected duplicate requests cannot release the running generation lock', a
   const pending = new Promise(resolve => { finish = resolve; });
   const user = { _id: 'member', aiHealthSummary: {} };
   const query = { populate() { return this; }, then(resolve) { return Promise.resolve(user).then(resolve); } };
-  vm.runInNewContext(source.slice(start, end), {
+  runRouteWithConsentContext(source.slice(start, end), {
     router: { post(_path, _auth, callback) { handler = callback; } }, staffAuth: () => {},
     User: { findById: () => query }, DOCTOR_KEYS: ['medical_priority'], LIFESTYLE_KEY: 'lifestyle_assessment',
     generateHealthSummarySections: async () => { calls++; return pending; },
@@ -61,7 +68,7 @@ test('generation cannot overwrite a concurrent review; successful generation sup
   let handler, matchedCount = 0, writeFilter;
   const user = { _id: 'member', aiHealthSummary: {} };
   const query = { populate() { return this; }, then(resolve) { return Promise.resolve(user).then(resolve); } };
-  vm.runInNewContext(code, {
+  runRouteWithConsentContext(code, {
     router: { post(_path, _auth, callback) { handler = callback; } }, staffAuth() {},
     User: { findById: () => query, collection: { updateOne: async filter => { writeFilter = filter; return { matchedCount }; } } },
     DOCTOR_KEYS: ['medical_priority'], LIFESTYLE_KEY: 'lifestyle_assessment',
@@ -95,7 +102,7 @@ test('source re-evaluation ignores reused tumor text and creates a new pending r
   const existing = { byYear: { 2026: { ...prior, records: [prior] } } };
   const user = { _id: 'member', aiHealthSummary: existing };
   const query = { populate() { return this; }, then(resolve) { return Promise.resolve(user).then(resolve); } };
-  vm.runInNewContext(code, {
+  runRouteWithConsentContext(code, {
     router: { post(_path, _auth, callback) { handler = callback; } }, staffAuth() {},
     User: { findById: () => query, collection: { updateOne: async (_filter, update) => {
       saved = update.$set.aiHealthSummary; return { matchedCount: 1 };
@@ -136,7 +143,7 @@ test('review refuses an older draft whose CA72-4 elevation lacks numeric evidenc
   let handler, writes = 0;
   const record = { scope: 'doctor', sections: { tumor_risk: { summary: 'CA72-4持续轻度升高' } } };
   const user = { aiHealthSummary: { latestYear: '2026', byYear: { 2026: { ...record, records: [record] } } } };
-  vm.runInNewContext(code, {
+  runRouteWithConsentContext(code, {
     router: { patch(_path, _auth, callback) { handler = callback; } }, staffAuth() {},
     User: { findById: () => ({ lean: async () => user }), collection: { updateOne: async () => { writes++; return { matchedCount: 1 }; } } },
     MedicalReport: { find: () => ({ select: () => ({ lean: async () => [{ checkDate: '2026-06-01', reportItems: [
@@ -167,7 +174,7 @@ test('a stale tumor claim blocks tumor and whole review but not unrelated sectio
     checkup_completeness: { summary: '已核对体检覆盖' },
   } };
   const user = { _id: 'member', aiHealthSummary: { latestYear: '2026', byYear: { 2026: { ...record, records: [record] } } } };
-  vm.runInNewContext(code, {
+  runRouteWithConsentContext(code, {
     router: { patch(_path, _auth, callback) { handler = callback; } }, staffAuth() {},
     User: { findById: () => ({ lean: async () => user }), collection: { updateOne: async () => { writes++; return { matchedCount: 1 }; } } },
     MedicalReport: { find: () => ({ select: () => ({ lean: async () => [{ checkDate: '2026-09-23', reportItems: [
@@ -210,7 +217,7 @@ test('single-card correction refreshes the overview and invalidates its approval
   const original = { latestYear: '2026', sections: record.sections, byYear: { 2026: { ...record, records: [record] } } };
   const handlers = {};
   let saved, calls = 0;
-  vm.runInNewContext(code, {
+  runRouteWithConsentContext(code, {
     router: { post(route, _auth, callback) { handlers[route] = callback; } }, staffAuth() {},
     User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
       collection: { updateOne: async (filter, update) => { saved = update.$set.aiHealthSummary; assert.equal(filter.aiHealthSummary, original); return { matchedCount: 1 }; } } },
@@ -253,7 +260,7 @@ test('single-card homocysteine regeneration enforces intervention at 10 despite 
   const original = { latestYear: '2026', sections: record.sections, byYear: { 2026: { ...record, records: [record] } } };
   const reports = [{ checkDate: '2026-09-23', reportItems: [{ name: '同型半胱氨酸', value: '13.1', unit: 'μmol/L' }] }];
   let handler, saved, calls = 0;
-  vm.runInNewContext(code, {
+  runRouteWithConsentContext(code, {
     router: { post(route, _auth, callback) { if (route.endsWith('/regenerate-item')) handler = callback; } }, staffAuth() {},
     User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
       collection: { updateOne: async (_filter, update) => { saved = update.$set.aiHealthSummary; return { matchedCount: 1 }; } } },
@@ -299,7 +306,7 @@ test('CA72-4 card correction reads old and recent reference ranges without regen
     { checkDate: '2026-09-23', reportItems: [{ name: 'CA72-4', value: '9.05', referenceRange: '<19.10' }] },
   ];
   const prompts = []; let saved, handler;
-  vm.runInNewContext(code, {
+  runRouteWithConsentContext(code, {
     router: { post(route, _auth, callback) { if (route.endsWith('/regenerate-item')) handler = callback; } }, staffAuth() {},
     User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
       collection: { updateOne: async (_filter, update) => { saved = update.$set.aiHealthSummary; return { matchedCount: 1 }; } } },
@@ -348,7 +355,7 @@ test('single liver cancer card regeneration includes infectious screening result
     ] },
   ];
   const prompts = []; const callOptions = []; let saved, handler;
-  vm.runInNewContext(code, {
+  runRouteWithConsentContext(code, {
     router: { post(route, _auth, callback) { if (route.endsWith('/regenerate-item')) handler = callback; } }, staffAuth() {},
     User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
       collection: { updateOne: async (_filter, update) => { saved = update.$set.aiHealthSummary; return { matchedCount: 1 }; } } },
@@ -394,7 +401,7 @@ test('overview refresh updates an already corrected record without regenerating 
   const original = { latestYear: '2026', sections: doctor.sections, byYear: { 2026: { ...nutrition, records: [nutrition, doctor] } } };
   const handlers = {};
   let saved, calls = 0;
-  vm.runInNewContext(code, {
+  runRouteWithConsentContext(code, {
     router: { post(route, _auth, callback) { handlers[route] = callback; } }, staffAuth() {},
     User: { findById: async () => ({ _id: 'member', aiHealthSummary: original }),
       collection: { updateOne: async (_filter, update) => { saved = update.$set.aiHealthSummary; return { matchedCount: 1 }; } } },
@@ -423,16 +430,18 @@ test('overview refresh updates an already corrected record without regenerating 
 test('priority synchronization replaces only linked abnormal concerns', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const code = source.slice(source.indexOf('const HEALTH_TREND_FIELDS ='), source.indexOf('async function buildHealthTrendOverview'));
-  const context = { require: name => name.endsWith('healthPriorityLinks')
+  const context = { require: name => name.endsWith('aiDataConsent') ? require('../src/utils/aiDataConsent') : name.endsWith('healthPriorityLinks')
     ? require('../src/utils/healthPriorityLinks')
-    : { chat: async () => JSON.stringify({ items: [{ sourceItemName: '血糖', name: '血糖需关注',
-      current: 'HbA1c 7.2%', meaning: '较前次升高', action: '携带报告咨询医生', department: '', urgency: 'medium' }] }) },
+    : { chat: async () => {
+      assert.equal(require('../src/utils/aiDataConsent').currentPersonalData().subjectId, 'member');
+      return JSON.stringify({ items: [{ sourceItemName: '血糖', name: '血糖需关注',
+      current: 'HbA1c 7.2%', meaning: '较前次升高', action: '携带报告咨询医生', department: '', urgency: 'medium' }] }); } },
   };
   vm.createContext(context);
   vm.runInContext(`${code}\nglobalThis.sync = syncMedicalPriorities;`, context);
   const record = { sections: { chronic_disease: { items: [{ name: '血糖', status: 'abnormal', latest: 'HbA1c 7.2%' }] },
     medical_priority: { items: [{ name: '糖化血红蛋白升高', current: '7.0%' }, { name: '胃炎', current: '需复查' }] } } };
-  await context.sync(record, 'chronic_disease', { name: '医生', _id: 'staff' });
+  await context.sync(record, 'chronic_disease', { name: '医生', _id: 'staff' }, null, 'member');
   const items = record.sections.medical_priority.items;
   assert.deepEqual(Array.from(items, item => item.name), ['胃炎', '血糖需关注']);
   assert.equal(items[1].current, 'HbA1c 7.2%');

@@ -22,6 +22,8 @@ function withSignedMessageMedia(message) {
   return obj;
 }
 
+router.post('/:id/transcribe', auth, (req, res) => require('../utils/messageTranscription').handler(req, res, ssePublish));
+
 // 获取未读消息数（含推送记录，用于导航角标）
 router.get('/unread-count', auth, async (req, res) => {
   const [unreadMessages, unreadPushes] = await Promise.all([
@@ -102,7 +104,7 @@ router.get('/thread/:role', auth, async (req, res) => {
       });
       if (log.aiReply) messages.push({
         _id: `chat-ai:${log._id}`, user: log.user, type: 'planner', sender: 'AI健康规划师',
-        content: log.aiReply, isAI: true, createdAt: log.createdAt,
+        content: log.aiReply, isAI: true, references: log.references || [], createdAt: log.createdAt,
       });
     });
   }
@@ -262,36 +264,17 @@ router.post('/', auth, async (req, res) => {
 
     const responseMessage = withSignedMessageMedia(msg);
     ssePublish(conversationId, { type: 'message', data: responseMessage });
-    console.log(`✉️  用户留言 [${senderName}] → ${to}: ${content.trim()}`);
     res.json({ success: true, data: responseMessage, message: '消息已发送' });
 
-    // 先让客户端立即拿到已发送的语音气泡，再在响应后完成转写；避免识别耗时或短语音无结果
-    // 被用户误认为“发送失败”。转写完成后通过轮询/SSE补到同一条消息，并供AI理解。
-    if (audio?.data) {
-      try {
-        const audioTranscript = await require('../utils/asr').transcribeBase64(audio.data, audioMimeType);
-        if (audioTranscript) {
-          msg.audioTranscript = audioTranscript;
-          await Message.updateOne({ _id: msg._id }, { $set: { audioTranscript } });
-          ssePublish(conversationId, { type: 'message-update', data: withSignedMessageMedia(msg) });
-        }
-      } catch (error) {
-        console.warn(`[message-asr] ${conversationId} 语音转写失败，将使用原语音兜底: ${error.message}`);
-      }
-    }
+    // Original recordings remain a human communication path. Transcription is
+    // a separate explicit action and its result is not automatically sent to AI.
+    if (audio?.data) return;
 
-    if (to === 'nutritionist' && aiAnalysis?.trim()) {
-      const aiMsg = await Message.create({
-        user: req.user._id, type: 'nutritionist', sender: 'AI营养初评',
-        title: 'AI生成 · 饮食照片初步分析', content: aiAnalysis.trim(), unread: true,
-        conversationId, isAI: true, aiGenerated: true, aiReviewStatus: 'pending',
-      });
-      ssePublish(conversationId, { type: 'message', data: aiMsg });
-      require('../utils/aiMessageFallback').replyWithAI({
-        userId: req.user._id, recipient: to, content: content.trim() || '用户上传了饮食图片，请结合会话进行沟通', conversationId,
-      });
-      return;
-    }
+    // Human-only applies to every role, including nutritionist; no client supplied
+    // AI analysis may create an unreviewed assistant message.
+    if (suppressAI || !roleConfig.aiEnabled) return;
+    try { await require('../utils/aiDataConsent').assertPermission(String(req.user._id), 'assistant', 'qwen'); }
+    catch { return; }
     if (to === 'nutritionist') {
       require('../utils/aiMessageFallback').replyWithAI({
         userId: req.user._id, recipient: to, content: content.trim() || (audioUrl ? '用户发来一条语音消息，请温和确认收到并请其在方便时补充文字重点' : '用户上传了健康记录图片'), conversationId,

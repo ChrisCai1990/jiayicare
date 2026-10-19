@@ -207,7 +207,7 @@ ${evidenceCatalog}
   "overallSummary": "整体风险综述（50-100字）"
 }`;
 
-  const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500, temperature: 0.05, jsonMode: true });
+  const text = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 1500, temperature: 0.05, jsonMode: true }));
   let raw = {};
   try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
   raw = await auditMedicalJson(raw, evidenceCatalog, { maxTokens: 1800 });

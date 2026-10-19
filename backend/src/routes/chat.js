@@ -300,7 +300,7 @@ router.post('/', auth, async (req, res) => {
     if (audio?.data) {
       audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
       audioUrl = (await uploadBase64(audio.data, audio.mimeType || 'audio/mpeg', 'messages/audio')).url;
-      try { audioTranscript = await require('../utils/asr').transcribeBase64(audio.data, audio.mimeType || 'audio/mpeg'); } catch {}
+      try { audioTranscript = '' /* Original recordings are not automatically transcribed. */; } catch {}
     }
     const message = await Message.create({
       user: userId, type: 'user', sender: req.user.name || req.user.phone,
@@ -311,6 +311,9 @@ router.post('/', auth, async (req, res) => {
     try { require('./messages').ssePublish(plannerConversationId, { type: 'message', data: message }); } catch {}
     return res.json({ success: true, data: { humanActive: true, messageId: message._id, imageUrl, audioUrl, audioDuration, audioTranscript } });
   }
+
+  try { await require('../utils/aiDataConsent').assertPermission(String(userId), 'assistant', 'qwen'); }
+  catch (e) { return res.status(403).json({ success: false, code: e.code, message: e.message }); }
 
   if (!process.env.QWEN_API_KEY) {
     return res.status(503).json({ success: false, message: 'AI服务暂未开通，请联系管理员配置。' });
@@ -343,7 +346,7 @@ router.post('/', auth, async (req, res) => {
     audioUrl = (await uploadBase64(audio.data, audio.mimeType || 'audio/mpeg', 'chat/audio')).url;
     try {
       const asr = require('../utils/asr');
-      audioTranscript = await asr.transcribeBase64(audio.data, audio.mimeType || 'audio/mpeg');
+      audioTranscript = '' /* Transcription requires a separate action. */;
       if (audioTranscript) {
         lastUserMsg = audioTranscript;
         const lastUserIndex = messages.map(message => message.role).lastIndexOf('user');
@@ -374,15 +377,10 @@ router.post('/', auth, async (req, res) => {
   }
 
   // 拼接系统提示
-  const userContext = [
-    userInfo.name  && `姓名：${userInfo.name}`,
-  ].filter(Boolean).join('，');
-
-  const [healthDataContext, followupContext, assistantConfig] = await Promise.all([
-    getUserDataContext(userId),
-    getFollowupContext(userId),
-    getHealthAssistantConfig(),
-  ]);
+  const userContext = '';
+  const healthDataContext = '';
+  const followupContext = '';
+  const assistantConfig = await getHealthAssistantConfig();
   const scopeNotice = `\n【角色边界】你可以使用系统提供的复查事项和日常健康记录帮助会员把复查流程办妥，但只能陈述客观记录与变化，不得诊断、推断病情、开检查项目、制定治疗或调整用药。服务只能从平台实时上架目录中推荐。`;
 
   const systemPrompt = [
@@ -415,19 +413,20 @@ router.post('/', auth, async (req, res) => {
   }
 
   try {
-    const rawReplyText = await chat(chatMessages, { systemPrompt, maxTokens: 600 });
+    const sourcedAnswer = await require('../utils/sourcedAssistantReply').generate(chatMessages, systemPrompt, chat);
+    const rawReplyText = sourcedAnswer.content;
     const replyText = guardUnsupportedCapabilityClaims(rawReplyText);
     const durationMs = Date.now() - t0;
 
     // 需要拿到 _id 返回给前端才能支持"当场撤回"（撤回按 logId 定位 ChatLog 记录）
-    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, imageUrl, audioUrl, audioDuration, audioTranscript, durationMs });
+    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, imageUrl, audioUrl, audioDuration, audioTranscript, durationMs, references: sourcedAnswer.references });
     let proposal = null;
     if (intent === 'service') {
         try { proposal = await maybeCreateServiceProposal({ userId, messages: effectiveMessages, lastUserMsg }); }
       catch (proposalError) { console.error('Service proposal draft error:', proposalError.message); }
     }
 
-    res.json({ success: true, data: { content: proposal ? `${replyText}\n\n我已把您的服务需求和可选服务提交给专属健康规划师确认。` : replyText, intent, logId: log._id, imageUrl, audioUrl, audioDuration, audioTranscript, proposalPending: !!proposal } });
+    res.json({ success: true, data: { content: proposal ? `${replyText}\n\n我已把您的服务需求和可选服务提交给专属健康规划师确认。` : replyText, intent, logId: log._id, imageUrl, audioUrl, audioDuration, audioTranscript, proposalPending: !!proposal, references: sourcedAnswer.references } });
   } catch (err) {
     console.error('Chat error:', err.message);
     res.status(500).json({ success: false, message: `AI响应失败，请稍后重试。（${err.message}）` });
@@ -476,8 +475,8 @@ router.post('/nutrition', auth, async (req, res) => {
     ].filter(Boolean).join('\n');
     const prompt = `${NUTRITION_SYSTEM}\n\n${inputDescription || '客户仅上传了饮食照片，请识别照片中的餐食。'}`;
     const raw = hasImage
-      ? await parseImage(image, prompt, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 1400, timeoutMs: 60000 })
-      : await chat([{ role: 'user', content: inputDescription }], { systemPrompt: NUTRITION_SYSTEM, jsonMode: true, maxTokens: 1400 });
+      ? await require('../utils/aiDataConsent').withPersonalData(req.user._id, 'health', () => parseImage(image, prompt, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 1400, timeoutMs: 60000 }))
+      : await require('../utils/aiDataConsent').withPersonalData(req.user._id, 'health', () => chat([{ role: 'user', content: inputDescription }], { systemPrompt: NUTRITION_SYSTEM, jsonMode: true, maxTokens: 1400 }));
     const analysis = parseAiJson(raw);
     const safeAnalysis = {
       mealSummary: String(analysis.mealSummary || '').slice(0, 300),

@@ -21,7 +21,7 @@ const CATEGORY_META = {
 const ITEM_STATUS_COLOR = { normal: colors.success, abnormal: colors.danger, attention: colors.warning, unknown: colors.textMuted };
 const ITEM_STATUS_LABEL = { normal: '正常', abnormal: '异常', attention: '关注', unknown: '未知' };
 
-async function openOriginalFile(report) {
+export async function openOriginalFile(report) {
   const fileCount = report.fileUrls?.length || (report.fileUrl ? 1 : 0);
   if (fileCount) {
     const isImage = report.mimeType?.startsWith('image/');

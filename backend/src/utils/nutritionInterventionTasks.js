@@ -94,7 +94,7 @@ async function generate(plan) {
   try {
     const { chat } = require('./ai');
     const prompt = `你是营养师的任务整理助手。只根据已确认营养方案、生活方式记录和营养模板，把管理目标拆成1至6条客户可执行的行动草稿。不可诊断、开药、改变医嘱、虚构指标或与模板禁忌冲突。缺少量化目标时保留原目标文字，不编造数值。不要生成每日员工待办。仅输出JSON对象：{"actions":[{"title":"简短行动名称","instruction":"具体做法","frequency":"执行或记录频率","evidence":"阶段复盘要核对的记录"}]}。资料：${JSON.stringify(input.sourceSnapshot).slice(0, 30000)}`;
-    const response = await chat([{ role: 'user', content: prompt }], { maxTokens: 1800, temperature: 0, jsonMode: true, timeoutMs: 90000 });
+    const response = await require('./aiDataConsent').withPersonalData(plan.patientId, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 1800, temperature: 0, jsonMode: true, timeoutMs: 90000 }));
     const actions = parseActions(response);
     await Draft.updateOne({ _id: plan._id, generationToken: token, status: 'generating' }, { $set: { actions, status: 'pending_review', generationError: '' } });
   } catch (e) {

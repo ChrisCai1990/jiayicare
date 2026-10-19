@@ -1,3 +1,4 @@
+import AI_PRIVACY from '../../../../shared/aiPrivacyDisclosure.json';
 import React from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
@@ -23,6 +24,7 @@ const CONTENT = {
   privacy: {
     title: '隐私政策',
     sections: [
+      AI_PRIVACY,
       { heading: '1. 信息收集', body: '我们收集您主动提供的信息（如手机号、年龄、性别、健康数据）以及设备信息（如操作系统版本、浏览器类型），用于提供和改善服务。' },
       { heading: '2. 信息使用', body: '您的信息仅用于提供健康档案整理、趋势展示、服务通知与您主动选择的健康管理服务。向健康顾问或其他服务人员展示必要信息前，我们将依据服务关系和授权控制访问范围，不会出售您的个人信息。' },
       { heading: '3. 健康数据保护', body: '体检报告、健康档案、用药记录及聊天中涉及健康状况的信息属于敏感个人信息。我们将在取得单独同意后，按照明确目的和最小必要范围处理，并通过加密存储和授权访问保护健康数据；拒绝非必要处理不影响您使用其他基础功能。' },

@@ -1,3 +1,4 @@
+import { ensureAiDataConsent } from '../utils/aiDataConsent';
 import React, { useRef, useState } from 'react';
 import { View, Text, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -31,6 +32,7 @@ export default function WaistPhoto({ onSaved }) {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError('');
     try {
+      if (!await ensureAiDataConsent('health')) return;
       let accepted = false;
       try { accepted = !!consentKey && Taro.getStorageSync(consentKey) === true; } catch {}
       if (!accepted) {

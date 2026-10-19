@@ -72,7 +72,7 @@ ${dataText}
   let parsed;
   try {
     const { chat } = require('./ai');
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 600 });
+    const text = await require('./aiDataConsent').withPersonalData(userId, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 600 }));
     parsed = JSON.parse((text || '').replace(/```json|```/g, '').trim());
   } catch (err) {
     console.error('[daily-team-insight] AI生成失败，用兜底模板：' + user.name, err.message);

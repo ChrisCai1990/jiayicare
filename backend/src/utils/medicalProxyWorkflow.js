@@ -477,7 +477,7 @@ async function createPostVisitFollowUpPlan(task, order, patient, reportIds, { me
   try {
     const { chat } = require('./ai');
     const prompt = `你是医疗服务随访计划助手。根据${medicalEscort ? '就医陪同执行情况' : '专家约诊信息'}和已审核的就诊后资料生成一条简明、可执行的随访计划草稿。${medicalEscort ? '本任务必须是提醒客户按医嘱就医、复诊或完成检查的随访，不得生成代配药、购药、配送或补药计划；处方和药物信息只能作为就医提醒中的核对事项。' : ''}不得补写不存在的诊断、药物或检查结果；没有资料时明确需由健康顾问确认客户是否需要后续联系。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n服务信息：${order.serviceRequirements || ''}\n陪同/就诊结果：${task.formData?.executionSnapshot?.executionResult || ''}\n健管审核：${task.formData?.auditSummary || ''}\n资料：${sourceText || '客户或健管专员确认暂无资料上传'}`;
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 700, temperature: 0 });
+    const text = await require('./aiDataConsent').withPersonalData(patient._id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 700, temperature: 0 }));
     const match = String(text || '').match(/\{[\s\S]*\}/);
     const draft = match ? JSON.parse(match[0]) : {};
     if (nonempty(draft.content)) content = nonempty(draft.content);
@@ -589,7 +589,7 @@ async function createPrescriptionMedicationDrafts(task, reportIds) {
     }
     const { chat } = require('./ai');
     const evidence = reports.map(report => ({ id: report._id, title: report.title, reportItems: report.reportItems, aiSummary: report.aiSummary, keyFindings: report.keyFindings, note: report.note }));
-    const raw = await chat([{ role: 'user', content: `你是处方信息录入助手。仅从已审核处方中提取明确记载、且相对当前用药属于新增的药物；病史仅用于识别同名药和核对，不得推断、推荐或调整用药。剂量或频次不明确的条目不要输出。仅输出JSON数组，每项格式：{"name":"通用名","brandName":"商品名或空","specification":"规格或空","dosage":"单次剂量","method":"用法","frequency":"频次","timing":"服药时机或空","startDate":"YYYY-MM-DD或空","endDate":"YYYY-MM-DD或空","purpose":"处方记载用途或空","sourceReportId":"来源报告ID"}。\n病史：${JSON.stringify({ chronicDiseases: patient?.chronicDiseases, healthProfile: patient?.healthProfile }).slice(0, 10000)}\n当前用药：${JSON.stringify(current).slice(0, 10000)}\n已审核处方：${JSON.stringify(evidence).slice(0, 18000)}` }], { maxTokens: 1400, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    const raw = await require('./aiDataConsent').withPersonalData(task.patientId, 'health', () => chat([{ role: 'user', content: `你是处方信息录入助手。仅从已审核处方中提取明确记载、且相对当前用药属于新增的药物；病史仅用于识别同名药和核对，不得推断、推荐或调整用药。剂量或频次不明确的条目不要输出。仅输出JSON数组，每项格式：{"name":"通用名","brandName":"商品名或空","specification":"规格或空","dosage":"单次剂量","method":"用法","frequency":"频次","timing":"服药时机或空","startDate":"YYYY-MM-DD或空","endDate":"YYYY-MM-DD或空","purpose":"处方记载用途或空","sourceReportId":"来源报告ID"}。\n病史：${JSON.stringify({ chronicDiseases: patient?.chronicDiseases, healthProfile: patient?.healthProfile }).slice(0, 10000)}\n当前用药：${JSON.stringify(current).slice(0, 10000)}\n已审核处方：${JSON.stringify(evidence).slice(0, 18000)}` }], { maxTokens: 1400, temperature: 0, jsonMode: true, timeoutMs: 60000 }));
     const match = String(raw || '').match(/\[[\s\S]*\]/); const rows = match ? JSON.parse(match[0]) : [];
     const validReportIds = new Set(reports.map(report => String(report._id))); const created = [];
     for (const row of Array.isArray(rows) ? rows.slice(0, 20) : []) {

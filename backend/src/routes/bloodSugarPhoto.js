@@ -12,7 +12,7 @@ const sweep = setInterval(() => {
 }, 60000);
 sweep.unref();
 
-router.post('/recognize-blood-sugar', auth, async (req, res) => {
+router.post('/recognize-blood-sugar', auth, require('../utils/aiDataConsent').requireHealthConsent, async (req, res) => {
   res.set('Cache-Control', 'no-store');
   if (req.body.consent !== true) return res.status(400).json({ success: false, message: '请先同意将所选图片发送至通义千问进行识别' });
   let hash;
