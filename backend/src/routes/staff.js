@@ -15270,7 +15270,7 @@ function shouldSkipParsedReportPage(parsed) {
 }
 
 const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手。请重新检查这张图片，重点检查首轮容易遗漏的右半页、页面下半部、跨栏表格和小字号栏目。
-输出首轮遗漏的真实检查项目，以及首轮已有项目中检查结果为空、只有横线或明显不完整的项目的完整原文；已有且完整的项目不要重复。汇总、小结、目录、建议、科普、会员信息和只有标题没有结果的栏目一律不输出。
+输出首轮遗漏的真实检查项目，以及首轮已有项目中检查结果为空、只有横线或明显不完整的项目的完整原文。数值项目已有完整结果时不要重复；文字检查即使已有非空所见，仍须从结果栏首行读到末行，核对其全部编号段落，缺后段时以同一项目名输出完整findings。报告内“检查结果/所见/提示”栏的编号段落属于该检查，不因出现“建议”字样而跳过；独立的汇总页、目录、科普、会员信息和无结果标题不输出。
 血液/尿液/粪便检验每个有结果的子项单独输出；内科、外科、全科、眼科、耳鼻喉、妇科、牙科或口腔科等体格检查也要按报告印刷明细逐项输出，禁止按科室合并；心电图、碳13/碳14呼气试验、头颅MRI不得漏；组合超声按器官拆开。
 眼科须逐行核对左右裸眼视力、矫正视力和眼部检查；带文字的结果不可只写横线。明确“未见异常”应标normal。
 严格返回JSON，不要解释：
@@ -16600,7 +16600,7 @@ async function runReportParseControlled(reportId) {
             const firstNames = firstRows.map(it => str(it.name)).filter(Boolean);
             const incompleteNames = firstRows.filter(it => ['lab', 'data'].includes(it.itemType) && !str(it.value))
               .map(it => str(it.name)).filter(Boolean);
-            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}\n结果为空、需要重读同一行的项目：${incompleteNames.length ? incompleteNames.join('、') : '无'}。这些项目若有原文结果，请以相同项目名输出结果值；看不清则不要猜。`;
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}\n结果为空、需要重读同一行的项目：${incompleteNames.length ? incompleteNames.join('、') : '无'}。这些项目若有原文结果，请以相同项目名输出结果值；文字检查还须核对已有非空所见后续的全部编号段落。看不清则不要猜。`;
             const text = await parseImage(img, auditPrompt, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) continue;
@@ -16974,6 +16974,23 @@ async function runReportParseControlled(reportId) {
           continue;
         }
         let pageItems = tagReportPageItems(parsedPage.items, imageIndex + 1);
+        if (isPrescriptionReport) pageItems = pageItems.map(item => ({ ...item, itemType: 'medication', status: 'unknown' }));
+        if (isPrescriptionReport && pageItems.some(it => it.itemType === 'medication' && (!str(it.referenceRange) || !str(it.findings)))) {
+          try {
+            const reviewPrompt = `${PRESCRIPTION_PARSE_PROMPT}\n\n【用法专项复核】首轮已找到的药品：${pageItems.map(it => `${str(it.name)}（${str(it.examDate) || '日期待核'}）`).join('、')}。重新放大阅读每张药单中药名下方的“用法”整行，逐药抄录给药途径、每日频次、每次剂量及药师交代。只输出图片能明确归属到该药品的内容；不得沿用首轮空字段或把另一张药单的用法串入。`;
+            const reviewRaw = await parseImage(activeBuffer.toString('base64'), reviewPrompt, { sourcePage: imageIndex + 1, isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
+            const reviewed = safeParseJSON(reviewRaw);
+            if (Array.isArray(reviewed?.items)) pageItems = require('../utils/reportFocusedReview').mergePrescriptionReview(pageItems, reviewed.items);
+          } catch (reviewError) { rethrowAiControl(reviewError); console.log(`[parse-ai] 图片${imageIndex + 1}处方用法复核异常: ${reviewError.message}`); }
+        }
+        if (!isPrescriptionReport && require('../utils/reportFocusedReview').needsScaleReferenceReview(pageItems)) {
+          try {
+            const reviewPrompt = `${REPORT_PARSE_PROMPT}\n\n【心理量表参考值专项复核】仅输出本页心理量表评分项目。逐字区分总分可取范围和原件明确写出的“正常参考值/正常范围”；referenceRange只能填后者，未写或看不清则留空。name、value须与原件完全对应，不能用量表医学常识补阈值。`;
+            const reviewRaw = await parseImage(activeBuffer.toString('base64'), reviewPrompt, { sourcePage: imageIndex + 1, isUrl: false, model: 'qwen-vl-max', maxTokens: 2048, timeoutMs: 120000 });
+            const reviewed = safeParseJSON(reviewRaw);
+            if (Array.isArray(reviewed?.items)) pageItems = require('../utils/reportFocusedReview').mergeScaleReferenceReview(pageItems, reviewed.items);
+          } catch (reviewError) { rethrowAiControl(reviewError); pageItems = require('../utils/reportFocusedReview').mergeScaleReferenceReview(pageItems, []); console.log(`[parse-ai] 图片${imageIndex + 1}量表参考值复核异常: ${reviewError.message}`); }
+        }
         const isBodyCompPage = isBodyCompositionPage(parsedPage, pageItems, report.type);
         if (!isPrescriptionReport && !isBodyCompPage) {
           try {
@@ -16982,7 +16999,7 @@ async function runReportParseControlled(reportId) {
               (it.itemType === 'imaging' && (!str(it.findings) || /^[\-—－–]+$/.test(str(it.findings))))
               || (it.itemType !== 'imaging' && (!str(it.value) || /^[\-—－–]+$/.test(str(it.value))))
             ).map(it => str(it.name)).filter(Boolean);
-            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整张漏识别）'}\n结果需复核的已有项目：${incompleteNames.length ? incompleteNames.join('、') : '无'}。这些项目如原图有完整检查结果，请用原项目名重新输出，检查结果栏文字放findings（数值检验放value）。`;
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整张漏识别）'}\n结果需复核的已有项目：${incompleteNames.length ? incompleteNames.join('、') : '无'}。对文字检查，即使首轮已有一段所见，也逐段复读原图下方全部编号结果，用原项目名输出完整原文findings；明确的诊断/结论才放相应字段。数值检验结果放value。`;
             const auditText = await parseImage(activeBuffer.toString('base64'), auditPrompt, { sourcePage: imageIndex + 1, isUrl: false, model: 'qwen-vl-max', maxTokens: 4096 });
             const auditPage = safeParseJSON(auditText);
             if (auditPage && Array.isArray(auditPage.items)) {
@@ -17077,18 +17094,23 @@ async function runReportParseControlled(reportId) {
     if (!usePediatricBodyComposition) imageItems = sanitizeBodyCompositionItems(imageItems);
     // 尿/便常规逐项保留；不得在审核前重新聚合。
     sortReportItemsBySource(imageItems);
-    const imageWithoutNoise = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(
-      dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(
-        collapseBreathTestItems(normalizeBreathTestItems(imageItems, report))
-      ))))
-    )));
-    const imageExamNormalized = normalizeSingleExamReportItems(
+    const imageWithoutNoise = isPrescriptionReport
+      ? imageItems.filter(it => str(it.name)).map(it => ({ ...it, itemType: 'medication', status: 'unknown' }))
+      : cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(
+        dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(
+          collapseBreathTestItems(normalizeBreathTestItems(imageItems, report))
+        ))))
+      )));
+    const imageExamNormalized = isPrescriptionReport ? imageWithoutNoise : normalizeSingleExamReportItems(
       normalizeDepartmentExamItems(mergeInternalMedicineSubparts(imageWithoutNoise)), report
     );
-    const cleanedImageItems = fillEmptyDiagnosisFromFindings(
+    const cleanedImageItems = isPrescriptionReport ? imageExamNormalized : fillEmptyDiagnosisFromFindings(
       realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(imageExamNormalized))
     );
-    const classifiedImg = (await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))))).map(item => normalizeExplicitNormalStatus({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
+    const classifiedImg = (isPrescriptionReport
+      ? stripReportSourceOrder(sortReportItemsBySource(cleanedImageItems))
+      : await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems))))))))))
+      .map(item => normalizeExplicitNormalStatus({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
     // 使用完成时的最新版本判断，不能用任务启动时的旧快照。AI迟到或空结果都不得覆盖人工审核内容。
     const latestReport = await MedicalReport.findById(reportId).select('reportItems reviewRevision').lean();
     const completion = resolveImageParseCompletion(parseStartRevision, latestReport?.reviewRevision, latestReport?.reportItems, classifiedImg);
@@ -17170,7 +17192,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const existingItemText = describeExistingReportItems(oldPageAtStart);
   const targetOrgans = inferMissingUltrasoundOrgans(oldPageAtStart);
   const targetText = targetOrgans.map(item => item.label).join('、');
-  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出真实遗漏项目；若已有同名同栏目项目的数值、所见或结论为空，可仅重新输出该项目以补全空字段。人工已核对项目不会被程序覆盖。每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。lab/data 项没有原文数值时不得输出；如看不清或无遗漏，返回 items=[]，禁止猜测。`;
+  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出真实遗漏项目；已有同名同栏目项目的数值、所见或结论为空时可输出该项目补全。文字检查虽有非空所见，但原件同一结果栏还有后续编号段落时，也可用相同项目名输出从首行至末行的完整findings；不得另建检查项。人工已核对项目不会被程序覆盖。每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。lab/data 项没有原文数值时不得输出；如看不清或无遗漏，返回 items=[]，禁止猜测。`;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const isPdf = isPdfReport(report);
@@ -17205,7 +17227,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，仅提取遗漏项目或检查结果为空、只有横线的已有项目。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) { rethrowAiControl(error);
@@ -17219,7 +17241,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
     try {
       const existingNames = [existingItemText, ...regionItems.map(item => str(item.name)).filter(Boolean)].filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧；除遗漏项目，也输出结果为空或只有横线的已有项目的完整结果，保持原项目名和itemType。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧；除遗漏项目，也输出空结果和文字检查后续编号段落的完整原文，保持原项目名和itemType。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
       const audit = safeParseJSON(auditRaw);
       if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
     } catch (auditError) { rethrowAiControl(auditError);
