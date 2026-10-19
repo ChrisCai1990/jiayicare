@@ -13605,6 +13605,7 @@ export default function PatientDetailPage() {
                         ...(showSRDetail.type === 'disease_mgmt' && showSRDetail.diseaseName ? [['专病名称', showSRDetail.diseaseName]] : []),
                         ['负责人', showSRDetail.staffId?.name || '-'],
                         ['服务日期', showSRDetail.date ? new Date(showSRDetail.date).toLocaleDateString('zh-CN') : '-'],
+                        ...(showSRDetail.type === 'nutrition' && showSRDetail.nextDate ? [['下次随访', new Date(showSRDetail.nextDate).toLocaleDateString('zh-CN')]] : []),
                       ].map(([k, v]) => (
                         <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
                           <span style={{ width: 80, color: '#8AA89C', fontSize: 13 }}>{k}</span>

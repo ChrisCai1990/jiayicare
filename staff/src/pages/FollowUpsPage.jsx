@@ -566,6 +566,9 @@ export default function FollowUpsPage() {
                           })()}
                         </span>
                       )}
+                      {f.relatedNutritionStage && <span style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', padding: '2px 8px', borderRadius: 6 }}>
+                        同日阶段专业评估：{f.relatedNutritionStage.status === 'completed' ? '已完成' : f.relatedNutritionStage.isBlocked ? '待健管随访后办理' : '待完成'}（随访与评估分别记录）
+                      </span>}
                       {f.status === 'cancelled' && f.cancelReason && (
                         <span style={{ fontSize: 12, color: '#8AA89C' }}>取消原因：{f.cancelReason}</span>
                       )}

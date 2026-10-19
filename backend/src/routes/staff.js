@@ -798,8 +798,14 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     : []).map(String));
   const careIds = queriedTasks.map(task => task.careFlowId).filter(Boolean);
   const careCases = careIds.length ? await require('../models/CareFlow').find({ _id: { $in: careIds }, tenantId: req.staff.tenantId || null }).lean() : [];
+  const activeNutritionRecordDays = new Set(queriedTasks.filter(task => task.sourceType === 'service_record'
+    && ['planned', 'in_progress', 'missed'].includes(task.status)).map(task =>
+    `${task.patientId?._id || task.patientId}:${require('../utils/nutritionRecordFollowUp').chinaDate(task.date)}`));
   const feedbackFor = task => require('../utils/careFlowFeedbackTask').feedbackForTask(task,careCases.find(c=>String(c._id)===String(task.careFlowId)));
   const tasks = queriedTasks.filter(task => {
+    // 同日记录预约随访先在“待随访任务”呈现；完成后阶段专业评估在服务任务区出现。
+    if (task.formData?.nutritionIntervention?.stage === 'nutritionist'
+      && activeNutritionRecordDays.has(`${task.patientId?._id || task.patientId}:${require('../utils/nutritionRecordFollowUp').chinaDate(task.date)}`)) return false;
     if (task.careFlowId && task.taskRole !== 'supervisor') {
       const c = careCases.find(c => String(c._id) === String(task.careFlowId));
       if (!c || !require('../../../shared/careFlow.cjs').isTask(task)) return false;
@@ -2230,6 +2236,19 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo currentStage serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt');
 
+  // 同日营养方案专业评估与记录预约随访在工作台关联展示，两个任务仍各自留存完成凭据。
+  const nutritionRecordTasks = followUps.filter(f => f.sourceType === 'service_record');
+  const nutritionStageTasks = nutritionRecordTasks.length ? await FollowUp.find({
+    patientId: { $in: nutritionRecordTasks.map(f => f.patientId?._id || f.patientId) },
+    sourceType: 'health_plan', 'formData.nutritionIntervention.stage': 'nutritionist',
+    status: { $ne: 'cancelled' },
+  }).select('_id patientId date status isBlocked').lean() : [];
+  const relatedStage = new Map(nutritionRecordTasks.map(task => {
+    const stage = nutritionStageTasks.find(item => String(item.patientId) === String(task.patientId?._id || task.patientId)
+      && require('../utils/nutritionRecordFollowUp').chinaDate(item.date) === require('../utils/nutritionRecordFollowUp').chinaDate(task.date));
+    return [String(task._id), stage || null];
+  }));
+
   // 获取本页会员最近一次记录健康数据（健康记录）时间
   const patientIds = [...new Set(followUps.map(f => f.patientId?._id).filter(Boolean))];
   const lastRecords = await HealthRecord.aggregate([
@@ -2242,6 +2261,10 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   const annualVisitHandoffs = await require('../utils/annualManagedVisitHandoff').handoffsForTasks(followUps);
   const followUpsWithRecord = followUps.map(f => ({
     ...withSignedServiceChecklist(f),
+    ...(relatedStage.get(String(f._id)) ? { relatedNutritionStage: {
+      id: String(relatedStage.get(String(f._id))._id), status: relatedStage.get(String(f._id)).status,
+      isBlocked: relatedStage.get(String(f._id)).isBlocked,
+    } } : {}),
     annualVisitItems: require('../utils/annualManagedVisitHandoff').handoffForTask(f, annualVisitHandoffs),
     taskRequirements: followUpTaskRequirements(f),
     taskPurposes: followUpTaskPurposes(f),
@@ -2550,6 +2573,12 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   // 查询强制转换后误报“随访记录不存在”。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (followUp.sourceType === 'service_record') {
+    if (['date', 'nextFollowUpDate', 'assignedTo', 'staffId', 'theme', 'remindAt'].some(key => req.body[key] !== undefined)
+      || req.body.status === 'cancelled' || (followUp.status === 'completed' && req.body.status && req.body.status !== 'completed')) {
+      return res.status(409).json({ success: false, message: '此随访的日期和负责人由营养干预记录管理；请修改原记录' });
+    }
+  }
   if (followUp.sourceType === 'order' && followUp.sourceOrderId
     && (require('./decisionReferral').stageOf(followUp)
       || await Order.exists({ _id: followUp.sourceOrderId, serviceName: '企业家健康决策计划' })))
@@ -6641,6 +6670,7 @@ router.post('/service-records', staffAuth, checkPermission('service_records', 'c
     medicalEscort: medicalEscort || {}, tcmRecord: tcmRecord || {}, specialistRecord: specialistRecord || {},
     attachments: Array.isArray(attachments) ? attachments : [],
   });
+  if (record.type === 'nutrition') await require('../utils/nutritionRecordFollowUp').sync(record);
   await record.populate('patientId', 'name phone');
   res.json({ success: true, data: record });
 });
@@ -6658,6 +6688,7 @@ router.put('/service-records/:id', staffAuth, checkPermission('service_records',
   const allowed = ['date', 'title', 'content', 'result', 'nextDate', 'diseaseName', 'medicalEscort', 'tcmRecord', 'specialistRecord', 'attachments'];
   allowed.forEach(k => { if (req.body[k] !== undefined) record[k] = req.body[k]; });
   await record.save();
+  if (record.type === 'nutrition') await require('../utils/nutritionRecordFollowUp').sync(record);
   res.json({ success: true, data: record });
 });
 
@@ -6749,6 +6780,10 @@ router.delete('/service-records/:id/supplement/:suppId', staffAuth, checkPermiss
 router.delete('/service-records/:id', staffAuth, checkPermission('service_records', 'delete'), async (req, res) => {
   if (await ServiceRecord.exists({ _id:req.params.id, 'structuredContent.rehab.status':'published' })) return res.status(409).json({success:false,message:'已发布运动记录保留归档，请通过补充记录修订'});
   const record = await ServiceRecord.findOneAndDelete({ _id: req.params.id, staffId: req.staff._id });
+  if (record?.type === 'nutrition') {
+    record.nextDate = null;
+    await require('../utils/nutritionRecordFollowUp').sync(record);
+  }
   await Promise.all((record?.attachments || []).map(item => item.ossKey).filter(Boolean).map(key => deleteFile(key)));
   res.json({ success: true, message: '已删除' });
 });
@@ -6823,6 +6858,7 @@ router.patch('/service-records/:id/ai-review', staffAuth, checkPermission('servi
       const { reviewedWriteback } = require('../utils/reviewedWriteback');
       record.writeback = reviewedWriteback({ staff: req.staff, sourceType: 'ai_draft' });
       await record.save();
+      if (record.type === 'nutrition') await require('../utils/nutritionRecordFollowUp').sync(record);
       return res.json({ success: true, data: record });
     }
     res.status(400).json({ success: false, message: 'action 必须是 approve 或 discard' });
