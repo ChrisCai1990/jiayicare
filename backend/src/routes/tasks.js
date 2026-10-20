@@ -17,7 +17,7 @@ const VALID_STATUSES   = ['pending', 'completed', 'cancelled'];
 // 获取任务列表
 router.get('/', auth, async (req, res) => {
   const { status } = req.query;
-  const query = { user: req.user._id, sourceTaskKey: { $ne: 'client_plan_execution' } };
+  const query = { user: req.user._id, sourceTaskKey: { $not: /^(?:client_plan_execution$|nutrition:)/ } };
   if (status) query.status = status;
   const tasks = await Task.find(query).sort({ createdAt: -1 })
     .populate('abnormalReviewId', 'title reviewReason reviewHospital reviewDepartment reviewDate abnormalItems notes status');

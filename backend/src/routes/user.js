@@ -685,7 +685,7 @@ router.get('/dashboard', auth, async (req, res) => {
           HealthRecord.findOne({ user: userId, type }).sort({ recordedAt: -1 }).lean()
         )
       ),
-      Task.find({ user: userId, status: 'pending' })
+      Task.find({ user: userId, status: 'pending', sourceTaskKey: { $not: /^nutrition:/ } })
         .sort({ priority: 1, createdAt: 1 }).limit(5).lean(),
       Reminder.find({ user: userId, enabled: true, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: /^service-cycle:/ }] }).lean(),
       HealthRecord.countDocuments({ user: userId }),
@@ -883,8 +883,8 @@ router.get('/report', auth, async (req, res) => {
 
     // Task 完成情况
     const [totalTasks, completedTasks] = await Promise.all([
-      Task.countDocuments({ user: userId, createdAt: { $gte: start } }),
-      Task.countDocuments({ user: userId, status: 'completed', createdAt: { $gte: start } }),
+      Task.countDocuments({ user: userId, sourceTaskKey: { $not: /^nutrition:/ }, createdAt: { $gte: start } }),
+      Task.countDocuments({ user: userId, sourceTaskKey: { $not: /^nutrition:/ }, status: 'completed', createdAt: { $gte: start } }),
     ]);
     const taskRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
@@ -1295,6 +1295,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
         { sourceType: 'ai_no_response' },
         { sourceType: 'order', workflowKey: { $not: /^medical_reminder:(?:followup|documents)$/ } },
         { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
+        { workflowKey: /^nutrition:/ },
         { sourceType: { $in: ['professional_assessment', 'report_followup'] }, taskRole: { $in: ['executor', 'supervisor'] } },
       ],
     })

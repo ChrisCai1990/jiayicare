@@ -5,6 +5,7 @@ import DateField from '../../../shared/DateField.jsx'
 import React, { useState, useEffect, createContext, useContext } from 'react'
 import appointment from '../../../shared/annualAppointment.cjs'
 import DateInput from './DateInput'
+import FoodLibraryPicker from './FoodLibraryPicker'
 import { concretePlanText } from '../utils/annualItemLayout.mjs'
 import nutritionComparisonMetrics from '../../../shared/nutritionComparisonMetrics.cjs'
 
@@ -87,6 +88,7 @@ export function FieldRow({ label, internal, children }) {
 const inputStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
 
 export function FieldInput({ field, value, onChange }) {
+  if (field.type === 'food-library') return <FoodLibraryPicker value={value} onChange={onChange} />
   if (field.type === 'department-experts') {
     const rows = Array.isArray(value) ? value : []
     const updateRow = (index, key, nextValue) => {

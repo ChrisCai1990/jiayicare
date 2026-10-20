@@ -7,6 +7,7 @@ const MODULES = [
   ['forbidden', '禁忌食物'],
   ['supplement', '营养补充信息'],
   ['exercise', '运动建议'],
+  ['notes', '备注'],
 ];
 
 function nutritionPlanItems(plan) {

@@ -4187,12 +4187,6 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
       return invalid;
     })) return res.status(400).json({ success: false, message: '请逐项填写不重复的观察指标、已核实基线和阶段目标（最多32条）' });
   }
-  if (plan.type === 'nutrition' && req.body.content) {
-    const published = await require('../models/NutritionInterventionDraft').exists({ _id: plan._id, status: { $in: ['publishing', 'published'] } });
-    if (published && JSON.stringify(req.body.content) !== JSON.stringify(plan.content || {})) {
-      return res.status(409).json({ success: false, message: '营养干预任务已发布；调整专业方案请建立新方案，保留原任务和复盘记录' });
-    }
-  }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
   if (req.body.content?.aiStatus === 'adopted') {
@@ -4414,10 +4408,6 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   }
   if (plan.content?.aiStatus === 'pending') {
     return res.status(409).json({ success: false, message: 'AI方案尚未审核，不能推送给会员' });
-  }
-  if (plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1) {
-    try { await require('../utils/nutritionInterventionTasks').inputFor(plan); }
-    catch (e) { return res.status(e.statusCode || 409).json({ success: false, message: e.message }); }
   }
   // 重点检查在推送前自动补齐标准准备事项，保证客户收到的方案不是只有项目名。
   // 医学上可能涉及停药的内容统一要求向开单医生确认，避免系统替代医嘱。
@@ -4648,11 +4638,6 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
         serviceStartedBy: req.staff._id, serviceStartEvidence: `已推送就医协助方案：${plan.title}` } }, { new: true });
       if (started) await require('../utils/packageServiceRedemption').safeReconcilePackageOrder(started);
     }
-  }
-  if (plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1) {
-    setImmediate(() => {
-      require('../utils/nutritionInterventionTasks').generate(plan).catch(e => console.error('营养任务草稿生成失败', { planId: String(plan._id), message: e.message }));
-    });
   }
   res.json({ success: true, data: plan });
 });
