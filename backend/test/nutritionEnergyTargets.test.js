@@ -18,6 +18,17 @@ test('餐次预算合计等于管理期能量，含可选加餐', () => {
   assert(validateNutritionEnergy(patient, { ...input, lifeStage: 'pregnant_or_lactating' }).errors.some(x => x.includes('孕哺期')));
 });
 
+test('高体重客户的管理期目标超过当前维持估算30%偏差时提示复核但允许生成', () => {
+  const patient = { gender: '女', age: 42 };
+  const input = { height: 165, weight: 130, activityLevel: 'inactive', lifeStage: 'not_pregnant_lactating',
+    managementPurpose: 'reduce', managementKcal: 1600, breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30 };
+  const result = validateNutritionEnergy(patient, input);
+  assert(result.maintenanceKcal > 1600 / 0.7);
+  assert.deepEqual(result.errors, []);
+  assert(result.warnings.some(warning => warning.includes('当前体重')));
+  assert(validateNutritionEnergy(patient, { ...input, managementKcal: 1100 }).errors.some(error => error.includes('管理期能量须为')));
+});
+
 test('固定三项体成分与可选体重保留个性化目标，只从带日期的测量记录带入固定基线', () => {
   const patient = { bodyComposition: { measuredAt: '2026-10-01', weight: 68, skelMuscle: 24, bodyFatRate: 32, visceralFat: 9 } };
   const rows = withFixedNutritionTargets([{ metric: '体重', baseline: '', target: '67 kg' }, { metric: '腰围', baseline: '88 cm', target: '84 cm' }], patient);

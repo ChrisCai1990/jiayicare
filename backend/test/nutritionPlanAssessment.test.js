@@ -58,4 +58,6 @@ test('管理期能量与餐次预算由服务端重新计算，比例或低能�
   assert.deepEqual(result.assessment.mealEnergyKcal, { breakfast: 609, lunch: 812, dinner: 609, snack: 0 });
   assert(prepareNutritionAssessment({ ...valid, dinnerPercent: 20 }, user).missing.some(text => text.includes('合计100%')));
   assert(prepareNutritionAssessment({ ...valid, managementKcal: 900 }, user).missing.some(text => text.includes('管理期能量')));
+  const highWeight = { ...valid, weight: 130, managementPurpose: 'reduce', managementKcal: 1600 };
+  assert.deepEqual(prepareNutritionAssessment(highWeight, { ...user, weight: 130 }).missing, []);
 });

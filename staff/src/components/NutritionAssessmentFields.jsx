@@ -63,15 +63,16 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
     <NutritionTargetRows value={value.nutritionTargets} onChange={rows => set('nutritionTargets', rows)} fixed />
     <section style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #DCE7E0', borderRadius: 9, background: '#FAFCFB' }}>
       <strong>每日能量与三餐分配</strong>
-      <div style={{ color: '#52675D', fontSize: 12 }}>按档案年龄 {patient?.age || '未录入'} 岁、性别 {patient?.gender || '未录入'}、本次身高体重及活动等级估算维持能量。活动等级须核实，不能仅凭运动次数推定。{patient?.lifestyle_data?.exerciseFrequency && `档案运动频率：${patient.lifestyle_data.exerciseFrequency}。`}</div>
+      <div style={{ color: '#52675D', fontSize: 12 }}>按当前体重估算的能量仅供比较。管理期每日能量由营养师结合本阶段目标、减重速度、疾病和用药情况确定；达到目标体重后的维持能量需届时重新评估。活动等级须核实。{patient?.lifestyle_data?.exerciseFrequency && `档案运动频率：${patient.lifestyle_data.exerciseFrequency}。`}</div>
       <label className="form-label">日常活动等级 *<select className="form-input" value={value.activityLevel || ''} onChange={e => set('activityLevel', e.target.value)}><option value="">请选择已核实等级</option><option value="inactive">活动少（日常生活活动为主）</option><option value="low_active">轻度活动</option><option value="active">中等活动</option><option value="very_active">高活动量</option></select></label>
       {patient?.gender === '女' && <label className="form-label">妊娠／哺乳状态 *<select className="form-input" value={value.lifeStage || ''} onChange={e => set('lifeStage', e.target.value)}><option value="">请选择</option><option value="not_pregnant_lactating">已核实：非妊娠、非哺乳</option><option value="pregnant_or_lactating">妊娠或哺乳，转专门评估</option><option value="unknown">尚未核实</option></select></label>}
-      <div style={{ color: '#355E4F' }}>维持能量估算：<strong>{energy.maintenanceKcal ? `约 ${energy.maintenanceKcal} kcal/日` : '待补齐年龄、性别、身高、体重及活动等级'}</strong></div>
+      <div style={{ color: '#355E4F' }}>当前体重维持能量估算：<strong>{energy.maintenanceKcal ? `约 ${energy.maintenanceKcal} kcal/日` : '待补齐年龄、性别、身高、体重及活动等级'}</strong></div>
+      {energy.warnings?.map(warning => <div key={warning} role="status" style={{ color: '#79551A', background: '#FFF4DC', padding: 10, borderRadius: 6 }}>{warning}</div>)}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
         <label className="form-label">管理方向 *<select className="form-input" value={value.managementPurpose || ''} onChange={e => set('managementPurpose', e.target.value)}><option value="">请选择</option><option value="maintain">维持</option><option value="reduce">降低能量</option><option value="increase">增加能量</option></select></label>
         <label className="form-label">管理期每日能量（kcal） *<input className="form-input" type="number" min="1000" step="10" value={value.managementKcal || ''} onChange={e => set('managementKcal', e.target.value)} placeholder="由营养师根据目标确认" /></label>
       </div>
-      {value.managementPurpose === 'maintain' && energy.maintenanceKcal && <button type="button" className="btn btn-secondary btn-sm" style={{ justifySelf: 'start' }} onClick={() => set('managementKcal', energy.maintenanceKcal)}>采用维持估算值</button>}
+      {value.managementPurpose === 'maintain' && energy.maintenanceKcal && <button type="button" className="btn btn-secondary btn-sm" style={{ justifySelf: 'start' }} onClick={() => set('managementKcal', energy.maintenanceKcal)}>采用当前体重维持估算值</button>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10 }}>
         {[['breakfastPercent', '早餐'], ['lunchPercent', '午餐'], ['dinnerPercent', '晚餐'], ['snackPercent', '加餐（可选）']].map(([key, label]) => <label key={key} className="form-label">{label}（%）<input className="form-input" type="number" min="0" max="100" step="1" value={value[key] ?? ''} onChange={e => set(key, e.target.value)} /></label>)}
       </div>

@@ -39,6 +39,7 @@ function mealEnergyBudgets(total, breakfast, lunch, dinner, snack = 0) {
 
 function validateNutritionEnergy(patient = {}, assessment = {}) {
   const errors = [];
+  const warnings = [];
   const maintenanceKcal = estimateMaintenanceEnergy({
     gender: patient.gender, age: patient.age, height: assessment.height,
     weight: assessment.weight, activityLevel: assessment.activityLevel,
@@ -54,7 +55,7 @@ function validateNutritionEnergy(patient = {}, assessment = {}) {
   // https://www.nhlbi.nih.gov/sites/default/files/media/docs/obesity-evidence-review.pdf
   if (!Number.isInteger(managementKcal) || managementKcal < minimum || managementKcal > 6000) errors.push(`管理期能量须为 ${minimum}–6000 kcal/日的整数；更低能量需专门评估`);
   if (maintenanceKcal && Number.isInteger(managementKcal)) {
-    if (managementKcal < maintenanceKcal * 0.7 || managementKcal > maintenanceKcal * 1.3) errors.push('管理期能量偏离维持估算超过30%，请走专门评估');
+    if (managementKcal < maintenanceKcal * 0.7 || managementKcal > maintenanceKcal * 1.3) warnings.push('管理期能量与当前体重的维持估算相差超过30%，请结合阶段目标、减重速度和健康风险核对；此估算不是目标体重的维持能量');
     if (assessment.managementPurpose === 'reduce' && managementKcal >= maintenanceKcal) errors.push('减重方向的管理期能量需低于维持估算');
     if (assessment.managementPurpose === 'increase' && managementKcal <= maintenanceKcal) errors.push('增重方向的管理期能量需高于维持估算');
     const bmi = Number(assessment.weight) / (Number(assessment.height) / 100) ** 2;
@@ -62,7 +63,7 @@ function validateNutritionEnergy(patient = {}, assessment = {}) {
   }
   const mealKcal = mealEnergyBudgets(managementKcal, assessment.breakfastPercent, assessment.lunchPercent, assessment.dinnerPercent, assessment.snackPercent ?? 0);
   if (!mealKcal) errors.push('早餐、午餐、晚餐及可选加餐的能量比例须为非负整数且合计100%');
-  return { errors, maintenanceKcal, managementKcal, mealKcal };
+  return { errors, warnings, maintenanceKcal, managementKcal, mealKcal };
 }
 
 module.exports = { estimateMaintenanceEnergy, mealEnergyBudgets, validateNutritionEnergy };
