@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import './CoreHealthArchive.css'
+import DateField from '../../../shared/DateField'
+import { buildRoutineUpdate, routineInputValue } from '../utils/initialArchiveRoutine.mjs'
 
 export const CORE_LABELS = { family: '家族史', disease: '疾病史与当前状态', allergy: '过敏史与不良反应史', medication: '首次建档用药与营养补充剂', symptom: '建档主诉与症状', routine: '基础信息与其他常规项目' }
 const definitions = {
@@ -39,7 +41,7 @@ export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit
   const fields = definitions[section]
   const records = current.records || []
   const visible = records
-  const familyReviewedWithoutUpdate = section === 'family' && current.presence === 'uncollected' && user.initialArchiveReview?.sections?.family?.status === 'reviewed'
+  const reviewedWithoutUpdate = current.presence === 'uncollected' && user.initialArchiveReview?.sections?.[section]?.status === 'reviewed'
   async function save() {
     setBusy(true); setError('')
     try { await staffAPI.saveCoreArchive(user._id, section, form); setForm(null); await onSaved() }
@@ -47,7 +49,7 @@ export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit
     finally { setBusy(false) }
   }
   return <section className="card core-archive" id={`core-${section}`}>
-    <div className="card-header"><div><button type="button" className="core-section-toggle card-title" aria-expanded={expanded} aria-controls={`core-body-${section}`} onClick={() => setExpanded(v => !v)}>{CORE_LABELS[section]} <span>{expanded ? "收起 ⌃" : "展开 ⌄"}</span></button><span className="core-muted">{familyReviewedWithoutUpdate ? '原资料已复核，无新增记录' : presenceLabels[current.presence]}{user.initialArchiveReview && ` · ${reviewLabels[user.initialArchiveReview.sections?.[section]?.status || 'pending']}`}</span></div>
+    <div className="card-header"><div><button type="button" className="core-section-toggle card-title" aria-expanded={expanded} aria-controls={`core-body-${section}`} onClick={() => setExpanded(v => !v)}>{CORE_LABELS[section]} <span>{expanded ? "收起 ⌃" : "展开 ⌄"}</span></button><span className="core-muted">{reviewedWithoutUpdate ? '原资料已复核，无新增记录' : presenceLabels[current.presence]}{user.initialArchiveReview && ` · ${reviewLabels[user.initialArchiveReview.sections?.[section]?.status || 'pending']}`}</span></div>
       {canEdit && <button className="btn btn-secondary btn-sm" onClick={() => { setError(''); setForm(JSON.parse(JSON.stringify(current))) }}>补充／修改</button>}
     </div>
     {section === 'symptom' && <p className="core-section-description">来源：健康档案与建档问卷，记录建档前近3个月或更长时间的主诉与症状。</p>}
@@ -62,7 +64,7 @@ export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit
         {row.note && <p>{row.note}</p>}
         {!!row.timeline?.length && <details><summary>状态变化记录（{row.timeline.length}）</summary>{[...row.timeline].reverse().map((t,i) => <div key={i}>{t.statusAt || '发生时间未填写'} · {t.status} {t.evidence && `· ${t.evidence}`}<small className="core-muted">　录入：{t.recordedByName} {when(t.recordedAt)}</small></div>)}</details>}
       </details>)}</div>
-      {!visible.length && <p className="core-muted">{familyReviewedWithoutUpdate ? '已核对原问卷和既有档案，本次无更新。' : current.presence === 'present' ? '此视图暂无记录。' : presenceLabels[current.presence]}</p>}
+      {!visible.length && <p className="core-muted">{reviewedWithoutUpdate ? '已核对原问卷和既有档案，本次无更新。' : current.presence === 'present' ? '此视图暂无记录。' : presenceLabels[current.presence]}</p>}
       {current.updatedAt && <p className="core-muted">最近更新：{current.updatedByName} · {when(current.updatedAt)}</p>}
       {!!user.coreHealthArchiveHistory?.filter(h => h.section === section).length && <details><summary>查看修改历史</summary>{user.coreHealthArchiveHistory.filter(h => h.section === section).slice().reverse().map((h,i) => <div className="core-source" key={i}><b>{when(h.at)} · {h.byName}</b><div>修改前：{presenceLabels[h.before.presence]} {(h.before.records || []).map(r => fields.map(([k,l]) => r[k] ? `${l}：${r[k]}` : '').filter(Boolean).join(' · ')).join('；')}</div><div>修改后：{presenceLabels[h.after.presence]} {(h.after.records || []).map(r => fields.map(([k,l]) => r[k] ? `${l}：${r[k]}` : '').filter(Boolean).join(' · ')).join('；')}</div></div>)}</details>}
     </div>
@@ -82,93 +84,111 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [checked, setChecked] = useState([])
-  const [familyDraft, setFamilyDraft] = useState(null)
+  const [draft, setDraft] = useState(null)
+  const [routineFields, setRoutineFields] = useState([])
+  const [culturalConfirmed, setCulturalConfirmed] = useState(false)
   if (!review) return null
-  const count = Object.keys(CORE_LABELS).filter(k => review.sections?.[k]?.status === 'reviewed').length
-  const archivePresence = user.coreHealthArchive?.[selected]?.presence || 'uncollected'
-  const archiveRequired = Boolean(selected && definitions[selected] && archivePresence === 'uncollected')
-  function startFamilyUpdate() {
-    const current = user.coreHealthArchive?.family || { revision: 0, presence: 'uncollected', records: [] }
-    const presence = current.presence === 'uncollected' ? 'present' : current.presence
-    setFamilyDraft({ revision: current.revision, presence, records: presence === 'present' ? current.records.length ? current.records.map(row => ({ ...row })) : [{ disease: '', relationship: '', source: '人工核实' }] : [] })
+  const count = Object.keys(CORE_LABELS).filter(key => review.sections?.[key]?.status === 'reviewed').length
+  const current = user.coreHealthArchive?.[selected] || { revision: 0, presence: 'uncollected', records: [] }
+  const records = current.records || []
+  const items = (review.items || []).filter(item => item.section === selected)
+  const fields = definitions[selected] || []
+  const legacy = (legacyFields[selected] || []).map(key => format(user.healthProfile?.[key])).filter(Boolean)
+  async function startUpdate() {
+    if (draft || busy) return
+    setError('')
+    if (selected === 'routine') {
+      setBusy(true)
+      try {
+        const available = routineFields.length ? routineFields : (await staffAPI.initialArchiveReviewFields()).data
+        setRoutineFields(available)
+        const paths = new Set(items.map(item => item.path))
+        const visible = available.filter(field => paths.has(field.path))
+        const initial = visible.length ? visible : available.filter(field => ['gender','birthDate','height','weight','address'].includes(field.path))
+        setDraft({ values: Object.fromEntries(initial.map(field => [field.path, routineInputValue(valueAt(user, field.path), field.type)])) })
+      } catch (err) { setError(err.message || '无法加载填写项目，请重试') }
+      finally { setBusy(false) }
+    } else {
+      const presence = current.presence === 'uncollected' ? 'present' : current.presence
+      setDraft({ revision: current.revision || 0, presence, records: presence === 'present' ? records.length ? records.map(row => ({ ...row })) : [{ source: '人工核实' }] : [] })
+    }
   }
-  function setFamilyPresence(presence) {
-    setFamilyDraft(draft => ({ ...draft, presence, records: presence === 'present' ? draft.records.length ? draft.records : [{ disease: '', relationship: '', source: '人工核实' }] : [] }))
+  function setPresence(presence) {
+    setDraft(value => ({ ...value, presence, records: presence === 'present' ? value.records.length ? value.records : [{ source: '人工核实' }] : [] }))
   }
-  function updateFamilyRow(index, key, value) {
-    setFamilyDraft(draft => ({ ...draft, records: draft.records.map((row, i) => i === index ? { ...row, [key]: value } : row) }))
-  }
-  function goToArchive() {
-    const section = selected
-    setSelected(null)
-    onNavigate(section === 'symptom' ? 'symptoms' : 'records', section)
+  function updateRow(index, key, value) {
+    setDraft(old => ({ ...old, records: old.records.map((row, i) => i === index ? { ...row, [key]: value } : row) }))
   }
   async function confirm(status) {
+    if (busy) return
+    if (status === 'needs_info' && !note.trim()) { setError('请填写待补充内容'); return }
     setError(''); setBusy(true)
     let archiveSaved = false
     try {
-      let sectionRevision = user.coreHealthArchive?.[selected]?.revision || 0
-      if (selected === 'family' && familyDraft && status === 'reviewed') {
-        await staffAPI.saveCoreArchive(user._id, 'family', familyDraft)
+      let sectionRevision = current.revision || 0
+      if (draft && status === 'reviewed') {
+        if (selected === 'routine') {
+          const body = buildRoutineUpdate(user, routineFields, draft.values, culturalConfirmed)
+          if (!Object.keys(body).length) throw new Error('请填写需要更新的信息；无更新可返回直接复核')
+          await staffAPI.updatePatient(user._id, body)
+        } else {
+          await staffAPI.saveCoreArchive(user._id, selected, draft)
+          sectionRevision += 1
+        }
         archiveSaved = true
-        sectionRevision += 1
       }
-      const familyQuestionIds = (review.items || []).filter(item => item.section === 'family').map(item => item.questionId)
       await staffAPI.reviewInitialArchive(user._id, selected, {
         revision: review.revision, status,
-        note: note.trim() || (selected === 'family' && status === 'reviewed' ? familyDraft ? '已核对并更新家族史档案' : '已核对原问卷及既有档案，家族史无更新' : ''),
-        checkedQuestionIds: selected === 'family' && status === 'reviewed' ? familyQuestionIds : checked,
-        sectionRevision,
-        noChange: selected === 'family' && status === 'reviewed' && !familyDraft,
+        note: note.trim() || (draft ? `已核对并更新${CORE_LABELS[selected]}档案` : `已核对原问卷及既有档案，${CORE_LABELS[selected]}无更新`),
+        checkedQuestionIds: status === 'reviewed' ? items.map(item => item.questionId) : [],
+        sectionRevision, noChange: status === 'reviewed' && !draft,
       })
-      setSelected(null); setFamilyDraft(null); await onSaved()
+      setSelected(null); setDraft(null); await onSaved()
     } catch (err) {
-      if (archiveSaved) { setFamilyDraft(null); await onSaved(); setError('家族史已保存，但复核未完成。请检查后再次复核。') }
-      else setError(err.message || '复核失败')
+      if (archiveSaved) {
+        setDraft(null)
+        try { await onSaved() } catch { /* Keep the save result and error visible. */ }
+        setError(`${CORE_LABELS[selected]}已保存，但复核未完成：${err.message || '请重新核对后复核'}`)
+      } else setError(err.message || '复核失败')
     } finally { setBusy(false) }
   }
-  return <section className="card core-archive" id="initial-archive-review"><div className="card-header"><div><div className="card-title">初次建档复核 · {count}/6</div><div className="core-muted">{review.questionnaireTitle} · 提交于 {when(review.submittedAt)} · {review.status === 'completed' ? '已完成' : '问卷已写入，待人工逐项核实'}</div></div></div><div className="card-body core-review-grid">
-    {Object.entries(CORE_LABELS).map(([key,label]) => { const state=review.sections?.[key] || {}; return <div className="core-record" key={key}><strong>{label}</strong><p>{reviewLabels[state.status || 'pending']}</p>{state.note && <p>{state.note}</p>}{state.reviewedAt && <small className="core-muted">{state.reviewedByName} · {when(state.reviewedAt)}</small>}<div className="core-actions"><button className="btn btn-secondary btn-sm" onClick={() => onNavigate(key === 'symptom' ? 'symptoms' : 'records',key)}>查看／完善</button>{canEdit && review.status !== 'completed' && <button className="btn btn-primary btn-sm" onClick={() => {setSelected(key);setFamilyDraft(null);setNote(key === 'family' ? '' : state.note || '');setChecked(state.checkedQuestionIds || []);setError('')}}>复核</button>}</div></div> })}
-    {selected && <div className="modal-overlay"><div className="modal core-modal">
-      <div className="modal-header"><h3>复核 · {CORE_LABELS[selected]}</h3><button className="modal-close" disabled={busy} onClick={() => setSelected(null)}>×</button></div>
-      <div className="modal-body">
-        <ArchiveSource user={user} section={selected}/>
-        {selected === 'family' ? <>
-          <div className="core-source">
-            <strong>现有家族史：</strong>
-            {(user.coreHealthArchive?.family?.records || []).map((row, index) => <div key={row.id || index}>{definitions.family.filter(([key]) => row[key]).map(([key, label]) => `${label}：${row[key]}`).join('；')}</div>)}
-            {!user.coreHealthArchive?.family?.records?.length && <div>{archivePresence !== 'uncollected' ? presenceLabels[archivePresence] : format(user.healthProfile?.familyHistoryNote) || format(user.healthProfile?.familyHistory) || '暂无新增记录，请核对问卷原始回答。'}</div>}
+  return <section className="card core-archive" id="initial-archive-review">
+    <div className="card-header"><div><div className="card-title">初次建档复核 · {count}/6</div><div className="core-muted">{review.questionnaireTitle} · 提交于 {when(review.submittedAt)} · {review.status === 'completed' ? '已完成' : '问卷已写入，待人工核实'}</div></div></div>
+    <div className="card-body core-review-grid">
+      {Object.entries(CORE_LABELS).map(([key, label]) => { const state = review.sections?.[key] || {}; return <div className="core-record" key={key}>
+        <strong>{label}</strong><p>{reviewLabels[state.status || 'pending']}</p>{state.note && <p>{state.note}</p>}{state.reviewedAt && <small className="core-muted">{state.reviewedByName} · {when(state.reviewedAt)}</small>}
+        <div className="core-actions"><button className="btn btn-secondary btn-sm" onClick={() => onNavigate(key === 'symptom' ? 'symptoms' : 'records', key)}>查看／完善</button>{canEdit && review.status !== 'completed' && <button className="btn btn-primary btn-sm" onClick={() => { setSelected(key); setDraft(null); setNote(''); setError(''); setCulturalConfirmed(false) }}>复核</button>}</div>
+      </div> })}
+      {selected && <div className="modal-overlay"><div className="modal core-modal">
+        <div className="modal-header"><h3>复核 · {CORE_LABELS[selected]}</h3><button className="modal-close" disabled={busy} onClick={() => setSelected(null)}>×</button></div>
+        <div className="modal-body">
+          <ArchiveSource user={user} section={selected}/>
+          <div className="core-source"><strong>现有记录：</strong>
+            {records.map((row, index) => <div key={row.id || index}>{fields.filter(([key]) => row[key]).map(([key, label]) => `${label}：${row[key]}`).join('；')}</div>)}
+            {!records.length && (selected === 'routine' ? items.length ? items.map((item, index) => <div key={index}>{item.label}：{format(valueAt(user, item.path)) || '尚未填写'}</div>) : <div>暂无记录，可直接填写更新信息。</div> : <div>{current.presence !== 'uncollected' ? presenceLabels[current.presence] : legacy.join('；') || '暂无新增记录，请核对问卷原始回答。'}</div>)}
           </div>
-          <p>核对上方问卷和原有记录后，选择本次是否有更新。</p>
-          <div className="core-actions">
-            <button type="button" className={familyDraft ? 'btn btn-secondary' : 'btn btn-primary'} disabled={busy} onClick={() => setFamilyDraft(null)}>无更新，直接复核</button>
-            <button type="button" className={familyDraft ? 'btn btn-primary' : 'btn btn-secondary'} disabled={busy} onClick={() => { if (!familyDraft) startFamilyUpdate() }}>有更新，填写家族史</button>
-          </div>
-          {familyDraft && <div className="core-archive-status">
-            <label>家族史情况<select className="form-control" value={familyDraft.presence} onChange={e => setFamilyPresence(e.target.value)}>
-              <option value="present">有相关情况</option><option value="none">无相关情况</option><option value="unknown">不详</option>
-            </select></label>
-            {familyDraft.presence === 'present' && <>
-              {familyDraft.records.map((row, index) => <div className="core-record" key={row.id || index}>
-                <div className="core-grid">
-                  {definitions.family.map(([key, label]) => <label key={key}>{label}<input className="form-control" value={row[key] || ''} maxLength={4000} onChange={e => updateFamilyRow(index, key, e.target.value)}/></label>)}
-                </div>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFamilyDraft(draft => ({ ...draft, records: draft.records.filter((_, i) => i !== index) }))}>移除此条</button>
-              </div>)}
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFamilyDraft(draft => ({ ...draft, records: [...draft.records, { disease: '', relationship: '', source: '人工核实' }] }))}>＋ 新增记录</button>
+          {selected === 'medication' && <p className="core-muted">这里核实首次建档时的使用情况；当前用药仍在“用药与营养补充剂”中维护及专业审核。</p>}
+          <div className="core-actions"><button type="button" className={!draft ? 'btn btn-primary' : 'btn btn-secondary'} disabled={busy} onClick={() => { setDraft(null); setError('') }}>无更新</button><button type="button" className={draft ? 'btn btn-primary' : 'btn btn-secondary'} disabled={busy} onClick={startUpdate}>有更新，填写信息</button></div>
+          {draft && <fieldset disabled={busy} className="core-review-editor">
+            {selected === 'routine' ? <>
+              <div className="core-grid">{routineFields.filter(field => Object.hasOwn(draft.values, field.path)).map(field => <label key={field.path}>{field.label}{field.type === 'array' && '（每行一项）'}
+                {field.type === 'enum' ? <select className="form-control" value={draft.values[field.path]} onChange={e => setDraft(old => ({ values: { ...old.values, [field.path]: e.target.value } }))}><option value="">请选择</option>{draft.values[field.path] && !field.options?.includes(draft.values[field.path]) && <option value={draft.values[field.path]}>{draft.values[field.path]}</option>}{field.options.map(option => <option key={option} value={option}>{option === 'yes' ? '接受' : option === 'no' ? '不接受' : option === 'idCard' ? '身份证' : option === 'passport' ? '护照' : option}</option>)}</select> : field.type === 'date' ? <DateField type="date" className="form-control" value={draft.values[field.path]} onChange={e => setDraft(old => ({ values: { ...old.values, [field.path]: e.target.value } }))}/> : <textarea className="form-control" rows={2} maxLength={4000} value={draft.values[field.path]} onChange={e => setDraft(old => ({ values: { ...old.values, [field.path]: e.target.value } }))}/>}
+              </label>)}</div>
+              <label>补充其他项目<select className="form-control" value="" onChange={e => { const field = routineFields.find(item => item.path === e.target.value); if (field) setDraft(old => ({ values: { ...old.values, [field.path]: routineInputValue(valueAt(user, field.path), field.type) } })) }}><option value="">选择需要补充的项目</option>{routineFields.filter(field => !Object.hasOwn(draft.values, field.path)).map(field => <option key={field.path} value={field.path}>{field.group} · {field.label}</option>)}</select></label>
+              {Object.hasOwn(draft.values, 'ethnicity') && <label><input type="checkbox" checked={culturalConfirmed} onChange={e => setCulturalConfirmed(e.target.checked)}/> 已告知民族信息用于尊重服务习惯与禁忌，客户自愿提供（可留空）</label>}
+            </> : <>
+              <label>信息情况<select className="form-control" value={draft.presence} onChange={e => setPresence(e.target.value)}><option value="present">有相关情况</option><option value="none">无相关情况</option><option value="unknown">不详</option></select></label>
+              {draft.presence === 'present' && <>
+                {draft.records.map((row, index) => <div className="core-record" key={row.id || index}><div className="core-grid">{fields.map(([key, label]) => <label key={key}>{label}{key === 'status' && ['disease','symptom'].includes(selected) ? <select className="form-control" value={row[key] || ''} onChange={e => updateRow(index, key, e.target.value)}><option value="">请选择</option>{(selected === 'disease' ? ['持续','缓解','已逆转','复发','已结束','不详'] : ['持续','间歇出现','缓解','已结束','不详']).map(value => <option key={value}>{value}</option>)}</select> : <input className="form-control" value={row[key] || ''} maxLength={4000} onChange={e => updateRow(index, key, e.target.value)}/>}</label>)}</div><button type="button" className="btn btn-secondary btn-sm" onClick={() => setDraft(old => ({ ...old, records: old.records.filter((_, i) => i !== index) }))}>移除此条</button></div>)}
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDraft(old => ({ ...old, records: [...old.records, { source: '人工核实' }] }))}>＋ 新增记录</button>
+              </>}
             </>}
-          </div>}
-          <label>核实说明（复核时选填；标记待补充时必填）<textarea className="form-control" value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={4000}/></label>
-        </> : <>
-          <div>{(review.items || []).filter(item => item.section === selected).map((item, i) => <label className="core-source" style={{display:'block'}} key={i}><input type="checkbox" checked={checked.includes(item.questionId)} onChange={e => setChecked(e.target.checked ? [...checked,item.questionId] : checked.filter(k => k !== item.questionId))}/> 已核实：{item.label}<div className="core-muted">原回答：{format(item.answer)}<br/>旧档案摘要：{format(valueAt(user,item.path)) || '尚未填写'}</div></label>)}</div>
-          {definitions[selected] && <div className="core-archive-status"><strong>本板块档案状态：{presenceLabels[archivePresence]}</strong>{archiveRequired && <><p>问卷回答和旧档案摘要需要人工核对。请先在“{CORE_LABELS[selected]}”中明确记录有相关情况、无相关情况或不详，保存后再复核。</p><button type="button" className="btn btn-secondary btn-sm" onClick={goToArchive}>去填写{CORE_LABELS[selected]}档案</button></>}</div>}
-          <p>先在所属板块核对并修改档案，再确认本板块复核结果。用药核实不替代原有专业审核。</p>
-          <label>核实依据／待补充内容<textarea className="form-control" value={note} onChange={e => setNote(e.target.value)} rows={3} maxLength={4000}/></label>
-        </>}
-        {error && <div role="alert" className="core-error">{error}</div>}
-      </div>
-      <div className="modal-footer"><button className="btn btn-secondary" disabled={busy} onClick={() => confirm('needs_info')}>标记待补充</button><button className="btn btn-primary" disabled={busy || selected !== 'family' && archiveRequired} onClick={() => confirm('reviewed')}>{busy ? '保存中…' : selected === 'family' ? familyDraft ? '保存并复核' : '直接复核' : '确认已核实'}</button></div>
-    </div></div>}
-  </div></section>
+          </fieldset>}
+          <label>核实说明（复核时选填；标记待补充时必填）<textarea className="form-control" disabled={busy} value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={4000}/></label>
+          {error && <div role="alert" className="core-error">{error}</div>}
+        </div>
+        <div className="modal-footer">{!draft && <button className="btn btn-secondary" disabled={busy} onClick={() => confirm('needs_info')}>标记待补充</button>}<button className="btn btn-primary" disabled={busy} onClick={() => confirm('reviewed')}>{busy ? '保存中…' : draft ? '保存并复核' : '直接复核'}</button></div>
+      </div></div>}
+    </div>
+  </section>
 }

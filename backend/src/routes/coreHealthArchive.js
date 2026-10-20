@@ -5,10 +5,18 @@ const checkPermission = require('../middleware/checkPermission');
 const User = require('../models/User');
 const ChildGuardianLink = require('../models/ChildGuardianLink');
 const { childAgeStage } = require('../utils/childAgeStage');
-const { saveSection, reviewSection } = require('../utils/initialArchiveReview');
+const { saveSection, reviewSection, sectionFor } = require('../utils/initialArchiveReview');
 
 module.exports = ({ getVisiblePlanPatientIds }) => {
   const router = express.Router();
+  router.get('/initial-archive-review-fields', staffAuth, checkPermission('patients', 'edit'), (req, res) => {
+    // These fields are edited through the existing patient endpoint, retaining its
+    // phone, identity, cultural consent and lifestyle history rules.
+    const { ARCHIVE_FIELDS } = require('../config/archiveFields');
+    const fields = ARCHIVE_FIELDS.filter(field => sectionFor(field.path) === 'routine'
+      && !/^(childProfile|psychAssessments)\./.test(field.path));
+    res.json({ success: true, data: fields });
+  });
   for (const [path, build] of [['core-health-archive', saveSection], ['initial-archive-review', reviewSection]]) {
     router.put(`/:id/${path}/:section`, staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
       try {

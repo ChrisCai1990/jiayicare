@@ -2,3 +2,4 @@
 
 .core-section-toggle{background:none;border:0;padding:0;cursor:pointer;text-align:left;color:inherit;font:inherit;font-weight:700;display:flex;gap:12px;align-items:center}.core-section-description{padding:0 20px;color:#65776f;font-size:12px}.core-archive .card-body[hidden]{display:none}.core-record summary{list-style:none}.core-record summary::-webkit-details-marker{display:none}
 .core-archive-status{padding:12px;background:#f4f8f6;border:1px solid #dce5e0;border-radius:8px;margin:12px 0}.core-archive-status p{margin:8px 0}
+.core-review-editor{border:0;padding:12px 0;margin:0;min-width:0}.core-review-editor>label{display:block;margin-top:12px}
