@@ -10957,6 +10957,7 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
     const TYPE_META = {
       bloodPressure: { category: 'vitals',     label: '血压',  unit: 'mmHg' },
       bloodSugar:    { category: 'vitals',     label: '血糖',  unit: 'mmol/L' },
+      waist:         { category: 'vitals',     label: '腰围',  unit: 'cm' },
       heartRate:     { category: 'vitals',     label: '心率',  unit: '次/分' },
       weight:        { category: 'metabolism', label: '体重',  unit: 'kg' },
       sleep:         { category: 'lifestyle',  label: '睡眠',  unit: '小时' },
@@ -10971,6 +10972,9 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
     };
     if (!TYPE_META[type]) {
       return res.status(400).json({ success: false, message: '无效的数据类型' });
+    }
+    if (type === 'waist' && (!Number.isFinite(Number(value)) || Number(value) <= 0)) {
+      return res.status(400).json({ success: false, message: '请输入大于0的腰围数值（cm）' });
     }
     const meta = TYPE_META[type];
     // recordedAt 支持历史补录（老客户既往数据整理录入）——未传则用当前时间。（2026-07-10 金娟）
@@ -11193,6 +11197,9 @@ router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (re
     if (value === undefined || value === null || value === '') {
       return res.status(400).json({ success: false, message: '数值不能为空' });
     }
+    if (record.type === 'waist' && (!Number.isFinite(Number(value)) || Number(value) <= 0)) {
+      return res.status(400).json({ success: false, message: '请输入大于0的腰围数值（cm）' });
+    }
 
     const prevValue = record.value;
     record.value = String(value);
@@ -11340,9 +11347,9 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const { date, patientName, healthRecordId } = req.query;
     const staff = req.staff;
 
-    // 全部健康数据记录类型（与用户端一致）
+    // 每日常规项；腰围按需记录，仅在已记录列表显示，不计入缺项。
     const ALL_CHECKIN_TYPES = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
-    const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水', bowel:'排便', smoking:'吸烟', alcohol:'饮酒', symptom:'今日健康状态' };
+    const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', waist:'腰围', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水', bowel:'排便', smoking:'吸烟', alcohol:'饮酒', symptom:'今日健康状态' };
 
     // 个人工作台健康监测只看当前角色自己名下会员，不扩展到下属或团队成员。
     const patientFilter = {};

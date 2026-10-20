@@ -136,7 +136,7 @@ function ClinicalReportSource({ report, loading, error }) {
   </div>
 }
 
-const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
+const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', waist: '腰围', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 const MEMBERSHIP_TIER_LABEL = {
   basic: '基础会员',
   consumer365: '365会员',
@@ -2732,6 +2732,9 @@ export default function PatientDetailPage() {
         payload.extra = { ...editingRecord.extra, sys, dia }
       } else {
         if (!editRecordForm.value) { toast('数值不能为空'); setEditRecordSaving(false); return }
+        if (editingRecord.type === 'waist' && (!Number.isFinite(Number(editRecordForm.value)) || Number(editRecordForm.value) <= 0)) {
+          toast('请输入大于0的腰围数值（cm）'); setEditRecordSaving(false); return
+        }
         payload.value = editRecordForm.value
         payload.extra = editingRecord.extra
       }
@@ -8073,7 +8076,7 @@ export default function PatientDetailPage() {
           const TYPE_COLORS = {
             bloodPressureSystolic: '#DC3545',
             bloodPressureDiastolic: '#0077B6',
-            bloodSugar: '#D97706', weight: '#0077B6', height: '#0891B2', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309',
+            bloodSugar: '#D97706', weight: '#0077B6', waist: '#0F766E', height: '#0891B2', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309',
           };
           const TREND_TYPE_LABELS = {
             ...RECORD_TYPE_LABEL,
@@ -14048,7 +14051,7 @@ function InfoRow({ label, value }) {
 
 const RECORD_TYPE_LABEL = {
   bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率',
-  weight: '体重', height: '身高', bmi: 'BMI', temperature: '体温', respiratoryRate: '呼吸', oxygenSaturation: '血氧饱和度', painScore: '疼痛评分',
+  weight: '体重', waist: '腰围', height: '身高', bmi: 'BMI', temperature: '体温', respiratoryRate: '呼吸', oxygenSaturation: '血氧饱和度', painScore: '疼痛评分',
   leftVision: '左眼视力', rightVision: '右眼视力', axialLength: '眼轴', waistCircumference: '腰围', hipCircumference: '臀围', waistHipRatio: '腰臀比', sleep: '睡眠', mood: '情绪',
   diet: '饮食', exercise: '运动', water: '饮水',
   alcohol: '饮酒', bowel: '排便', smoking: '吸烟',
@@ -14081,6 +14084,7 @@ const RECORD_VALUE_META = {
   bloodSugar: { unit: 'mmol/L', freeText: false },
   heartRate:  { unit: '次/分', freeText: false },
   weight:     { unit: 'kg', freeText: false },
+  waist:      { unit: 'cm', freeText: false },
   height:     { unit: 'cm', freeText: false },
   bmi:        { unit: '', freeText: false },
   temperature: { unit: '℃', freeText: false },
@@ -14104,6 +14108,7 @@ function formatRecordValue(r) {
   } else if (r.type === 'bloodSugar') base = `${r.value} mmol/L`
   else if (r.type === 'heartRate') base = `${r.value} 次/分`
   else if (r.type === 'weight') base = `${r.value} kg`
+  else if (r.type === 'waist') base = `${r.value} cm`
   else if (r.type === 'height') base = `${r.value} cm`
   else if (r.type === 'sleep') base = `${r.value} h`
   else if (r.type === 'mood') base = `${r.value} / 10`
@@ -15294,7 +15299,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
 
   // 提取最近一次各类健康数据记录
   const buildLatestVitals = (records) => {
-    const VITAL_LABEL = { weight:'体重', bloodPressure:'血压', bloodSugar:'血糖', heartRate:'心率', sleep:'睡眠' }
+    const VITAL_LABEL = { weight:'体重', waist:'腰围', bloodPressure:'血压', bloodSugar:'血糖', heartRate:'心率', sleep:'睡眠' }
     const seen = {}
     const result = []
     records.forEach(r => {
@@ -15769,6 +15774,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
   const TYPES = [
     { key: 'bloodPressure', label: '血压',  unit: 'mmHg',   kind: 'bp' },
     { key: 'bloodSugar',    label: '血糖',  unit: 'mmol/L', kind: 'num', placeholder: '如 5.8' },
+    { key: 'waist',         label: '腰围',  unit: 'cm',     kind: 'num', placeholder: '如 82.5' },
     { key: 'heartRate',     label: '心率',  unit: '次/分',  kind: 'num', placeholder: '如 72' },
     { key: 'weight',        label: '体重',  unit: 'kg',     kind: 'num', placeholder: '如 65.0' },
     { key: 'sleep',         label: '睡眠',  unit: '小时',   kind: 'sleep' },
@@ -15834,6 +15840,11 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
 
     const toSubmit = TYPES.map(t => ({ t, payload: buildPayload(t) })).filter(x => x.payload)
     if (!toSubmit.length) { toastFn('请至少填写一项数据'); return }
+    const waist = toSubmit.find(({ t }) => t.key === 'waist')
+    if (waist && (!Number.isFinite(Number(waist.payload.value)) || Number(waist.payload.value) <= 0)) {
+      toastFn('请输入大于0的腰围数值（cm）')
+      return
+    }
     setSaving(true)
     // 归属日期非今天时传 recordedAt（补录历史数据），设为当天中午避免时区错算一天
     const recordedAt = recordDate === todayISO ? undefined : `${recordDate}T12:00:00`

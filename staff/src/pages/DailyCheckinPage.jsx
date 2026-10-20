@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
 
 const TYPE_COLOR = {
-  bloodPressure: '#DC3545', bloodSugar: '#D97706', weight: '#1E6B50',
+  bloodPressure: '#DC3545', bloodSugar: '#D97706', waist: '#0F766E', weight: '#1E6B50',
   heartRate: '#7C3AED', sleep: '#4F46E5', diet: '#B45309',
   exercise: '#0369A1', water: '#0EA5E9', bowel: '#92400E',
   smoking: '#6B7280', alcohol: '#9D174D', mood: '#059669',
