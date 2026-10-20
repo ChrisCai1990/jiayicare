@@ -96,7 +96,7 @@ function reviewSection(user, key, payload, actor, now = new Date()) {
   if (payload.revision !== old.revision) fail('复核进度已更新，请刷新后再操作', 409);
   if (!['reviewed', 'needs_info'].includes(payload.status)) fail('复核状态无效');
   if (typeof payload.note !== 'string' || payload.note.length > 4000 || !payload.note.trim()) fail('请填写核实依据或待补充内容');
-  if (payload.status === 'reviewed' && FIELDS[key] && (!user.coreHealthArchive?.[key] || user.coreHealthArchive[key].presence === 'uncollected')) fail('请先补充本板块档案，或明确记录无相关情况／不详');
+  if (payload.status === 'reviewed' && FIELDS[key] && (!user.coreHealthArchive?.[key] || user.coreHealthArchive[key].presence === 'uncollected') && !(key === 'family' && payload.noChange === true)) fail('请先补充本板块档案，或明确记录无相关情况／不详');
   if (FIELDS[key] && payload.sectionRevision !== (user.coreHealthArchive?.[key]?.revision || 0)) fail('本板块档案已变化，请刷新并重新核对', 409);
   const questionIds = (old.items || []).filter(i => i.section === key).map(i => i.questionId);
   if (payload.status === 'reviewed' && questionIds.some(id => !payload.checkedQuestionIds?.includes(id))) fail('请逐项勾选已核实的问卷信息');

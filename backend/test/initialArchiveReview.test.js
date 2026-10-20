@@ -59,6 +59,17 @@ test('review requires explicit section data, checked questions and note, complet
   assert.equal(user.initialArchiveReview.status,'completed');
   assert.throws(()=>reviewSection(user,'family',{...payload,revision:6},actor),/已完成/);
 });
+test('family history can be reviewed without changing the archive while preserving the original answer',()=>{
+  const review=initial({_id:'u',healthProfile:{}}).update.$set.initialArchiveReview;
+  const user={_id:'u',initialArchiveReview:review,coreHealthArchive:{}};
+  const payload={revision:0,sectionRevision:0,status:'reviewed',note:'已核对原问卷及既有档案，家族史无更新',checkedQuestionIds:['family'],noChange:true};
+  const result=reviewSection(user,'family',payload,actor);
+  assert.equal(result.update.$set.initialArchiveReview.sections.family.status,'reviewed');
+  assert.equal(result.update.$set.initialArchiveReview.items.find(i=>i.questionId==='family').answer,'父亲高血压');
+  assert.equal(result.update.$set['coreHealthArchive.family'],undefined);
+  assert.throws(()=>reviewSection(user,'family',{...payload,noChange:false},actor),/先补充/);
+  assert.throws(()=>reviewSection(user,'allergy',{...payload,checkedQuestionIds:['allergy']},actor),/先补充/);
+});
 test('editing a verified section during intake reopens only that section; later additions do not restart intake',()=>{
   const review=initial({_id:'u'}).update.$set.initialArchiveReview;
   review.sections.family={status:'reviewed'};
