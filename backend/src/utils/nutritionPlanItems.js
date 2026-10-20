@@ -4,7 +4,7 @@ const MODULES = [
   ['dinner', '晚餐方案', '晚餐', '18:00-18:30'],
   ['snack', '加餐方案', '加餐', '15:00-15:30'],
   ['principle', '饮食原则'],
-  ['forbidden', '禁忌食物'],
+  ['forbidden', '可选食物库'],
   ['supplement', '营养补充信息'],
   ['exercise', '运动建议'],
   ['notes', '备注'],
@@ -31,7 +31,7 @@ function nutritionPlanItems(plan) {
         ].filter(Boolean)
       : String(data.content || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => `✔ ${line}`);
     if (!lines.length) return [];
-    const old = oldItems.find(item => item.name === name || (meal && String(item.name || '').startsWith(`${meal}（`)));
+    const old = oldItems.find(item => item.name === name || (key === 'forbidden' && item.name === '禁忌食物') || (meal && String(item.name || '').startsWith(`${meal}（`)));
     const time = String(data.time || defaultTime || '').trim();
     return [{
       ...(old?.toObject ? old.toObject() : old || {}),

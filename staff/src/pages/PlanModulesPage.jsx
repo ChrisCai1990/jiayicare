@@ -41,10 +41,10 @@ const MODULE_DEFS_BY_TYPE = {
       ],
     },
     forbidden: {
-      name: '禁忌食物', icon: '🚫',
+      name: '可选食物库', icon: '🥗',
       fields: [
         { key: 'allowedFoods', label: '推荐食物', type: 'textarea', placeholder: '逗号分隔' },
-        { key: 'forbiddenFoods', label: '禁忌食物', type: 'food-library' },
+        { key: 'forbiddenFoods', label: '禁忌食物', type: 'textarea', placeholder: '逗号分隔' },
       ],
     },
     supplement: {
@@ -638,7 +638,7 @@ export default function PlanModulesPage() {
           ['疾病、用药及检查核对', plan.content.nutritionAssessment.medicalReview],
           ['食物过敏', plan.content.nutritionAssessment.allergyStatus === 'confirmed_none' ? '已核实无已知食物过敏' : plan.content.nutritionAssessment.allergyDetails],
           ['偏好与执行条件', plan.content.nutritionAssessment.practicalConstraints],
-          ...(plan.content.nutritionAssessment.estimatedMaintenanceKcal ? [['维持能量估算', `约 ${plan.content.nutritionAssessment.estimatedMaintenanceKcal} kcal/日`]] : []),
+          ...(plan.content.nutritionAssessment.estimatedMaintenanceKcal ? [['维持能量估算', `约 ${plan.content.nutritionAssessment.estimatedMaintenanceKcal} kcal/日`], ['估算依据', 'NASEM 2023 成人 EER；按年龄、性别、身高、体重和已核实的活动等级计算，结果取整到 10 kcal/日']] : []),
           ...(plan.content.nutritionAssessment.managementKcal ? [['管理期能量', `${plan.content.nutritionAssessment.managementKcal} kcal/日`]] : []),
           ...(plan.content.nutritionAssessment.mealEnergyKcal ? [['餐次预算', `早餐 ${plan.content.nutritionAssessment.mealEnergyKcal.breakfast}、午餐 ${plan.content.nutritionAssessment.mealEnergyKcal.lunch}、晚餐 ${plan.content.nutritionAssessment.mealEnergyKcal.dinner}、加餐 ${plan.content.nutritionAssessment.mealEnergyKcal.snack || 0} kcal`]] : []),
         ].map(([label, value]) => <div key={label} style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}><strong>{label}：</strong>{value}</div>)}
