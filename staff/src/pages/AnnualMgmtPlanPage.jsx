@@ -6,7 +6,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
-import { StaffListContext, ModulePanel, RecordEditor, NutritionComparisonMetricPicker } from '../components/ModulePanel'
+import { StaffListContext, MedicalResourcesContext, ModulePanel, RecordEditor, NutritionComparisonMetricPicker } from '../components/ModulePanel'
 import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
 import AnnualPlanSupplement from '../components/AnnualPlanSupplement'
 import AnnualExecutionReview from '../components/AnnualExecutionReview'
@@ -62,7 +62,9 @@ const MODULE_DEFS = {
       { key: 'visit_time',   label: '就医时间',   type: 'date' },
       { key: 'hospital',     label: '就医医院',   type: 'text', placeholder: '如：省人民医院' },
       { key: 'department',   label: '就诊科室',   type: 'text', placeholder: '如：心内科' },
-      { key: 'expert',       label: '专家姓名',   type: 'text' },
+      { key: 'expertIds',    label: '资源库专家', type: 'medical-experts' },
+      { key: 'expert',       label: '其他专家/原方案专家', type: 'text' },
+      { key: 'bookingRequired', label: '需健管专员预约', type: 'yesno' },
       { key: 'reason',       label: '就医原因',   type: 'textarea' },
       { key: 'coordinator',  label: '协调专员',   type: 'staff-select' },
       { key: 'followUpStaff', label: '随访人员',  type: 'staff-select' },
@@ -77,7 +79,9 @@ const MODULE_DEFS = {
       { key: 'plan_method',  label: '计划会诊方式', type: 'text', placeholder: '如：线上/线下' },
       { key: 'hospital',     label: '会诊医院',     type: 'text' },
       { key: 'department',   label: '会诊科室',     type: 'text' },
-      { key: 'expert',       label: '会诊专家',     type: 'text' },
+      { key: 'expertIds',    label: '资源库专家', type: 'medical-experts' },
+      { key: 'expert',       label: '其他专家/原方案专家', type: 'text' },
+      { key: 'bookingRequired', label: '需健管专员预约', type: 'yesno' },
       { key: 'purpose',      label: '会诊目的',     type: 'textarea' },
       { key: 'coordinator',  label: '协调专员',     type: 'staff-select' },
       { key: 'followUpStaff', label: '随访人员',    type: 'staff-select' },
@@ -96,7 +100,9 @@ const MODULE_DEFS = {
       { key: 'hospital',        label: '复查医院',       type: 'text' },
       { key: 'time',            label: '复查时间',       type: 'date' },
       { key: 'department',      label: '检查科室',       type: 'text' },
-      { key: 'expert',          label: '检查专家',       type: 'text' },
+      { key: 'expertIds',       label: '资源库专家', type: 'medical-experts' },
+      { key: 'expert',          label: '其他专家/原方案专家', type: 'text' },
+      { key: 'bookingRequired', label: '需健管专员预约', type: 'yesno' },
       { key: 'order_dept',      label: '开单科室',       type: 'text' },
       { key: 'order_expert',    label: '开单专家',       type: 'text' },
       ...SERVICE_MODE_FIELDS,
@@ -416,6 +422,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [generationError, setGenerationError] = useState('')
   useEffect(() => setGenerationError(''), [id, year, planType])
   const [staffList, setStaffList]   = useState([])
+  const [medicalResources, setMedicalResources] = useState({ institutions: [], departments: [], experts: [] })
   const [adminTemplates, setAdminTemplates] = useState([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
@@ -442,6 +449,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
+    staffAPI.getMedicalResources().then(r => setMedicalResources(r.data || { institutions: [], departments: [], experts: [] })).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -970,6 +978,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
   return (
     <StaffListContext.Provider value={staffList}>
+    <MedicalResourcesContext.Provider value={medicalResources}>
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px' }}>
 
       {/* 顶部导航 */}
@@ -1301,6 +1310,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
       </div>
     </div>
+    </MedicalResourcesContext.Provider>
     </StaffListContext.Provider>
   )
 }

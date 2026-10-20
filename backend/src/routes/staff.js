@@ -3471,7 +3471,7 @@ router.get('/staff-list', staffAuth, async (req, res) => {
 // 转介选择器使用的启用医疗资源；只暴露专业资料，不返回内部联络备注。
 router.get('/medical-resources', staffAuth, async (req, res) => {
   const [institutions, departments, experts] = await Promise.all([
-    MedicalInstitution.find({ status: 'active' }).select('name level nature region campuses campusDetails contactName contactTitle phone').sort({ name: 1 }).lean(),
+    MedicalInstitution.find({ status: 'active' }).select('name aliases level nature region campuses campusDetails contactName contactTitle phone').sort({ name: 1 }).lean(),
     MedicalDepartment.find({ status: 'active' }).select('institutionId campus name specialties').sort({ name: 1 }).lean(),
     MedicalExpert.find({ status: 'active' }).select('name title institutionId departmentId campus expertise diseaseTags introduction serviceModes outpatientSchedule linkedStaffId').sort({ name: 1 }).lean(),
   ]);
@@ -9415,6 +9415,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       try { moduleData = require('../utils/annualItemManagement').normalizeAnnualItems(moduleData || {}, patient.assignedHealthManager, patient); }
       catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
     }
+    try { moduleData = await require('../utils/annualPlanExperts').resolveAnnualPlanExperts(moduleData); }
+    catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     const { normalizeAnnualTemplate, templateMatchesPatient, byCode } = require('../utils/annualPlanServiceVersions');
     const normalizedTemplate = normalizeAnnualTemplate(template, patient);
     const servicePlanCode = requestedServicePlanCode || normalizedTemplate.content?.servicePlanCode || planType;

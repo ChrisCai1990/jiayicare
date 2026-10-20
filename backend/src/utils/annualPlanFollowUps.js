@@ -112,6 +112,10 @@ async function buildAnnualPlanFollowUps(plan) {
       sourceType: 'scheduled',
       deliveryMode: delivery.serviceMode || 'reminder',
       deliveryType: delivery.serviceType || '',
+      ...(delivery.bookingRequired === true ? { formData: { bookingRequest: {
+        required: true, hospital: delivery.hospital || '', department: delivery.department || '',
+        items: delivery.items || '', experts: delivery.expertSnapshots || [],
+      } } } : {}),
       // 年度方案已经过健康顾问审核及客户确认，不再让健管专员重新制定、
       // 也不重复进入家庭医生审核；负责人可直接在工作台按计划执行。
       aiStatus: 'approved',
@@ -158,7 +162,8 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.standardPlanName && `执行方案：${rec.standardPlanName}`,
         rec.hospital && `就医/会诊医院：${rec.hospital}`,
         rec.department && `科室：${rec.department}`,
-        rec.expert && `专家：${rec.expert}`,
+        rec.expertSnapshots?.length ? `候选专家：${rec.expertSnapshots.map(item => item.name).join('、')}` : rec.expert && `专家：${rec.expert}`,
+        rec.bookingRequired === true && '预约要求：健管专员联系医院，核实候选专家和号源，并向客户确认实际安排。',
         rec.reason && `原因：${rec.reason}`,
         rec.basisSummary && `设置依据：${rec.basisSummary}`,
         rec.goal && `管理目标：${rec.goal}`,
@@ -343,6 +348,10 @@ async function syncAnnualPlanFollowUps(plan) {
         keep.content = row.content;
         keep.deliveryMode = row.deliveryMode;
         keep.deliveryType = row.deliveryType;
+        if (row.formData?.bookingRequest) {
+          keep.formData = { ...(keep.formData || {}), bookingRequest: row.formData.bookingRequest };
+          keep.markModified('formData');
+        }
       }
       // 年度方案的执行人由当前客户归属决定。待开始的旧排期原位同步，避免顾问
       // 审核后仍被保留为普通随访执行人；进行中、已结束记录和独立服务任务不改。
