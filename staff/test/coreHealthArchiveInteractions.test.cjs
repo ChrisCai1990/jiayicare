@@ -22,6 +22,14 @@ test('initial review shows six sections and submits checked source questions wit
   try {assert.match(h.el.textContent,/0\/6/);await act(async()=>button(h.el,'复核').click());const checkbox=h.el.querySelector('input[type="checkbox"]');assert.ok(checkbox);await act(async()=>checkbox.click());await act(async()=>button(h.el,'确认已核实').click());const submitted=writes.at(-1)[2];assert.deepEqual(Array.from(submitted.checkedQuestionIds),['q']);assert.equal(submitted.revision,2);assert.equal(submitted.sectionRevision,3);} finally {await h.close()}
 });
 
+test('legacy negative answer requires an explicit family archive status before review',async()=>{
+  const keys=['family','disease','allergy','medication','symptom','routine'];
+  const navigation=[];
+  const before=writes.length;
+  const h=await mount('InitialArchiveReview',{user:{_id:'u',healthProfile:{familyHistoryNote:'以上均无'},initialArchiveReview:{revision:0,status:'pending',sections:Object.fromEntries(keys.map(k=>[k,{status:'pending'}])),items:[{section:'family',questionId:'q',path:'healthProfile.familyHistoryNote',label:'家族史',answer:'以上均无'}]}},canEdit:true,onSaved:async()=>{},onNavigate:(...args)=>navigation.push(args)});
+  try {await act(async()=>button(h.el,'复核').click());assert.match(h.el.textContent,/旧档案摘要：以上均无/);assert.match(h.el.textContent,/本板块档案状态：待补充/);assert.equal(button(h.el,'确认已核实').disabled,true);assert.equal(writes.length,before);await act(async()=>button(h.el,'去填写家族史档案').click());assert.deepEqual(navigation,[['records','family']]);assert.equal(h.el.querySelector('.modal'),null);} finally {await h.close()}
+});
+
 test('baseline medication section uses saved initial data without requesting current medications',async()=>{
  const h=await mount('CoreArchiveSection',{user:{_id:'u',healthProfile:{medicHistory:'否'},coreHealthArchive:{medication:{revision:1,presence:'present',records:[{id:'m',name:'首次药物',dosage:'首次剂量'}]}}},section:'medication'});
  try{assert.match(h.el.textContent,/首次建档用药/);assert.match(h.el.textContent,/首次药物/);assert.match(h.el.textContent,/首次剂量/);assert.equal(h.el.querySelector('details.core-source').open,false);}finally{await h.close()}
