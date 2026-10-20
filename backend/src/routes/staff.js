@@ -4198,6 +4198,9 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (req.body.content?.aiStatus === 'adopted') {
     plan.content = { ...plan.content, aiStatus: 'approved', reviewedBy: req.staff._id, reviewedAt: new Date() };
   }
+  if (plan.type === 'nutrition' && req.body.content?.moduleData) {
+    plan.items = require('../utils/nutritionPlanItems').nutritionPlanItems(plan);
+  }
   if (plan.type === 'annual_checkup' && req.body.items !== undefined) {
     plan.items.forEach(item => { item.scheduledDate = null; });
   }
@@ -4474,6 +4477,9 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   }
   plan.status = 'active';
   plan.pushedAt = new Date();
+  if (plan.type === 'nutrition' && plan.content?.moduleData) {
+    plan.items = require('../utils/nutritionPlanItems').nutritionPlanItems(plan);
+  }
   if (plan.content?.aiStatus === 'pending') {
     plan.content.aiStatus = 'approved';
     plan.content.aiApprovedAt = new Date();
@@ -17806,8 +17812,9 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
     const tc = template.content || {};
 
     const prompt = `你是一位注册营养师，正在为会员定制营养干预方案。方案的膳食原则/禁忌/营养素补充/运动建议等标准骨架
-已经由模板固定（不可修改），你唯一的任务是：在骨架约束下，把早餐/午餐/晚餐/加餐的具体食物内容，结合会员个人情况
-具体化到可执行的程度。绝对不能推荐模板"禁忌食物"里的东西，也不能违反"膳食总原则"。
+已经由模板固定（不可修改）。请结合会员生活方式，给出早餐/午餐/晚餐/加餐的食物类别和参考分量，供营养师进一步调整。
+不要制定固定食谱，不要写具体菜名、鱼肉品种或具体蔬菜名称。荤菜统一写“荤菜×克”，蔬菜统一写“蔬菜×克”；
+其他食物也优先使用主食、奶类、水果、坚果等类别。绝对不能推荐模板"禁忌食物"里的东西，也不能违反"膳食总原则"。
 
 【会员信息】
 姓名：${user.name}，年龄：${assessment.age}岁，身高：${assessment.height}cm，体重：${assessment.weight}kg，慢病标签：${user.chronicDiseases?.join('、') || '未记录'}
@@ -17828,7 +17835,7 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
 按年龄、性别、身高、体重及活动等级估算维持能量：约 ${assessment.estimatedMaintenanceKcal} kcal/日（仅作估算）。
 营养师确认的管理期能量：${assessment.managementKcal} kcal/日。
 餐次预算：早餐 ${assessment.mealEnergyKcal.breakfast}、午餐 ${assessment.mealEnergyKcal.lunch}、晚餐 ${assessment.mealEnergyKcal.dinner}、加餐 ${assessment.mealEnergyKcal.snack} kcal。
-请围绕各餐预算选择食物与分量；不要虚构精确的食物热量或宣称已核算实际摄入。加餐预算为 0 时不要安排加餐。
+请围绕各餐预算安排食物类别与参考分量；不要虚构精确的食物热量或宣称已核算实际摄入。加餐预算为 0 时不要安排加餐。
 
 【模板固定骨架（不可修改，仅供你参考约束）】
 膳食总原则：${tc.dietPrinciple || '无'}
@@ -17836,19 +17843,16 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
 禁忌食物：${tc.forbiddenFoods || '无'}
 烹饪方式：${tc.cookingMethod || '不限'}
 进餐顺序：${tc.mealOrder || '不限'}
-模板早餐参考：${tc.breakfast || '无'}
-模板午餐参考：${tc.lunch || '无'}
-模板晚餐参考：${tc.dinner || '无'}
-模板加餐参考：${assessment.mealEnergyKcal.snack > 0 ? (tc.snack || '无') : '本次未安排加餐'}
+模板餐次仅用于了解饮食原则，不要照抄其中的具体食物或菜名。
 
-不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应食物；在description中指出需营养师修订模板。餐次写清食物与可执行分量，不承诺治疗效果。
+不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应类别；在description中指出需营养师修订模板。餐次按“一行一个类别及克数”书写，不承诺治疗效果。
 请以JSON格式输出，仅输出JSON：
 {
   "description": "结合会员情况的方案说明（100字以内）",
-  "breakfast": "具体早餐内容（食物种类+分量，符合模板原则和禁忌）",
-  "lunch": "具体午餐内容",
-  "dinner": "具体晚餐内容",
-  "snack": "具体加餐内容（模板没有加餐参考则可留空）"
+  "breakfast": "早餐类别与分量，每行一项",
+  "lunch": "午餐类别与分量，每行一项",
+  "dinner": "晚餐类别与分量，每行一项",
+  "snack": "加餐类别与分量，每行一项；未安排加餐则留空"
 }`;
 
     const text = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 1000 }));
@@ -17878,10 +17882,10 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
     // moduleData：跟年度管理方案同一套板块化呈现结构（staff/src/pages/PlanModulesPage.jsx 消费），
     // 2026-07-13 需求"营养/就医协助方案呈现要跟年度管理方案一致"
     const moduleData = {
-      breakfast: { content: breakfast },
-      lunch: { content: lunch },
-      dinner: { content: dinner },
-      snack: { content: snack },
+      breakfast: { time: '07:30-08:00', content: breakfast },
+      lunch: { time: '11:30-12:00', content: lunch },
+      dinner: { time: '18:00-18:30', content: dinner },
+      snack: { time: '15:00-15:30', content: snack },
       principle: { dietPrinciple: tc.dietPrinciple || '', cookingMethod: tc.cookingMethod || '', mealOrder: tc.mealOrder || '', dailyWater: tc.dailyWater || '' },
       forbidden: { allowedFoods: tc.allowedFoods || '', forbiddenFoods: tc.forbiddenFoods || '' },
       supplement: { content: '' },
@@ -17924,7 +17928,7 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
       title: `${new Date().getFullYear()}年${user.name}营养干预方案`,
       description: raw.description || tc.description || '',
       year: new Date().getFullYear(),
-      items,
+      items: require('../utils/nutritionPlanItems').nutritionPlanItems({ content: { moduleData }, items }),
       content: {
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
         nutritionTaskVersion: 1,

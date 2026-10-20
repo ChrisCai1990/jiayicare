@@ -17,19 +17,19 @@ const MODULE_DEFS_BY_TYPE = {
   nutrition: {
     breakfast: {
       name: '早餐方案', icon: '🍳',
-      fields: [{ key: 'content', label: '早餐内容', type: 'textarea', placeholder: '食物种类、分量' }],
+      fields: [{ key: 'time', label: '用餐时间', type: 'text', placeholder: '07:30-08:00' }, { key: 'content', label: '早餐内容', type: 'textarea', placeholder: '主食、荤菜、蔬菜等类别和分量' }],
     },
     lunch: {
       name: '午餐方案', icon: '🍚',
-      fields: [{ key: 'content', label: '午餐内容', type: 'textarea', placeholder: '食物种类、分量' }],
+      fields: [{ key: 'time', label: '用餐时间', type: 'text', placeholder: '11:30-12:00' }, { key: 'content', label: '午餐内容', type: 'textarea', placeholder: '主食、荤菜、蔬菜等类别和分量' }],
     },
     dinner: {
       name: '晚餐方案', icon: '🍲',
-      fields: [{ key: 'content', label: '晚餐内容', type: 'textarea', placeholder: '食物种类、分量' }],
+      fields: [{ key: 'time', label: '用餐时间', type: 'text', placeholder: '18:00-18:30' }, { key: 'content', label: '晚餐内容', type: 'textarea', placeholder: '主食、荤菜、蔬菜等类别和分量' }],
     },
     snack: {
       name: '加餐方案', icon: '🍎',
-      fields: [{ key: 'content', label: '加餐内容', type: 'textarea', placeholder: '两餐间加餐建议（若需要）' }],
+      fields: [{ key: 'time', label: '用餐时间', type: 'text', placeholder: '15:00-15:30' }, { key: 'content', label: '加餐内容', type: 'textarea', placeholder: '水果、坚果、奶类等类别和分量（若需要）' }],
     },
     principle: {
       name: '饮食原则', icon: '📋',

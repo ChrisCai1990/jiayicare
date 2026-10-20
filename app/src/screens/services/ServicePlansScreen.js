@@ -409,7 +409,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
                   <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
                 </View>
                 {!!item.notes && (
-                  <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 17, marginTop: 4, marginLeft: 24, paddingRight: 20 }} numberOfLines={3}>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 17, marginTop: 4, marginLeft: 24, paddingRight: 20 }} numberOfLines={plan.type === 'nutrition' ? undefined : 3}>
                     {item.notes}
                   </Text>
                 )}

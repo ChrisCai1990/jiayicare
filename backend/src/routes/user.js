@@ -1167,7 +1167,27 @@ router.get('/plans', auth, async (req, res) => {
       .select('title type description content items status startDate endDate checkupDate followupFrequency confirmedAt pushedAt notes year')
       .populate('staffId', 'name role title')
       .sort({ createdAt: -1 });
-    res.json({ success: true, data: plans });
+    const data = await Promise.all(plans.map(async plan => {
+      if (plan.type !== 'nutrition' || !plan.content?.moduleData) return plan;
+      const result = plan.toObject();
+      const items = require('../utils/nutritionPlanItems').nutritionPlanItems(plan);
+      const changed = items.length !== plan.items.length || items.some((item, index) =>
+        item.name !== plan.items[index]?.name || item.notes !== plan.items[index]?.notes);
+      if (changed) {
+        // Repair older pushed plans once so every newly visible section has a real
+        // item ID and can be marked complete. The timestamp guard protects a
+        // concurrent completion or staff edit from being overwritten.
+        const updated = await HealthPlan.findOneAndUpdate(
+          { _id: plan._id, updatedAt: plan.updatedAt }, { $set: { items } }, { new: true });
+        if (updated) result.items = updated.items;
+        else {
+          const fresh = await HealthPlan.findById(plan._id);
+          result.items = fresh ? require('../utils/nutritionPlanItems').nutritionPlanItems(fresh) : plan.items;
+        }
+      } else result.items = items;
+      return result;
+    }));
+    res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取健康方案失败', error: err.message });
   }

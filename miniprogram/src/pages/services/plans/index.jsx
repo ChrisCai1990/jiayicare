@@ -164,7 +164,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
                   {item.isAddon && <Text style={{ fontSize: '10px', color: '#D97706', backgroundColor: '#FEF3E2', borderRadius: '4px', padding: '1px 5px' }}>加项</Text>}
                   <Text style={{ fontSize: '12px', color: colors.textMuted }}>›</Text>
                 </View>
-                {!!item.notes && <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '17px', display: 'block', marginTop: '4px', marginLeft: '24px' }} numberOfLines={3}>{item.notes}</Text>}
+                {!!item.notes && <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '17px', display: 'block', marginTop: '4px', marginLeft: '24px', whiteSpace: 'pre-wrap' }} numberOfLines={plan.type === 'nutrition' ? undefined : 3}>{item.notes}</Text>}
               </View>
             ))
           ) : (
