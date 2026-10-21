@@ -5,6 +5,8 @@ import { useToast, useStaff } from '../App'
 import { StaffListContext, ModulePanel } from '../components/ModulePanel'
 import NutritionTargetRows, { nutritionTargetsFrom, nutritionTargetError } from '../components/NutritionTargetRows'
 import DateField from '../../../shared/DateField.jsx'
+import mealPlans from '../../../shared/nutritionMealPlans.cjs'
+import NutritionMealPlanSelector from '../components/NutritionMealPlanSelector'
 
 // 营养干预方案 / 就医协助方案的板块化编辑页（2026-07-13新增）。
 // 之前这两类方案AI生成后只是扁平items+零散content字段，跟年度管理方案的"选模板→板块折叠面板→
@@ -355,6 +357,9 @@ export default function PlanModulesPage() {
 
   const [plan, setPlan] = useState(null)
   const [moduleData, setModuleData] = useState({})
+  const [mealVariants, setMealVariants] = useState({})
+  const [mealSelection, setMealSelection] = useState('balanced_categories')
+  const [mealPackConfirmed, setMealPackConfirmed] = useState(false)
   const [goal, setGoal] = useState('')
   const [nutritionTargets, setNutritionTargets] = useState(() => nutritionTargetsFrom())
   const [nutritionReviewDate, setNutritionReviewDate] = useState('')
@@ -381,6 +386,9 @@ export default function PlanModulesPage() {
         const p = res.data
         setPlan(p)
         const c = p.content || {}
+        setMealVariants(c.mealPlanVariants || {})
+        setMealSelection(c.mealPlanSelection || 'balanced_categories')
+        setMealPackConfirmed(c.mealPackSuitabilityConfirmed === true)
         const nextModuleData = p.type === 'medical_assist' ? medicalAssistModuleData(c) : (c.moduleData || {})
         const assignedReviewerId = p.patientId?.assignedFamilyDoctor?._id || p.patientId?.assignedFamilyDoctor || ''
         if (p.type === 'medical_assist' && isCheckupMedicalAssist(c, p.title) && assignedReviewerId && !nextModuleData.visit?.reviewerId) {
@@ -440,6 +448,13 @@ export default function PlanModulesPage() {
     setSaving(true)
     try {
       const content = contentFromModules(plan, moduleData, goal, staffList)
+      if (plan.type === 'nutrition' && Object.keys(mealVariants).length) {
+        Object.assign(content, { mealPlanSelection: mealSelection,
+          mealPlanVariants: { ...mealVariants, [mealSelection]: mealPlans.snapshotMeals(moduleData) },
+          mealPackSuitabilityConfirmed: mealPackConfirmed })
+        const mealError = mealPlans.mealPlanError(content)
+        if (mealError) { toast(mealError); return }
+      }
       if (plan.type === 'nutrition') Object.assign(content, {
         nutritionTaskVersion: 1, nutritionTargets, nutritionReviewDate,
         nutritionMetric: nutritionTargets[0].metric, nutritionBaseline: nutritionTargets[0].baseline, nutritionTarget: nutritionTargets[0].target,
@@ -717,6 +732,18 @@ export default function PlanModulesPage() {
             </span>
           </div>
         </div>
+        {plan.type === 'nutrition' && Object.keys(mealVariants).length > 0 && <NutritionMealPlanSelector
+          selected={mealSelection} variants={mealVariants} disabled={!canEdit || saving || pushing}
+          assessment={plan.content?.nutritionAssessment} confirmed={mealPackConfirmed}
+          unavailableReason={plan.content?.mealPackUnavailableReason}
+          onConfirm={checked => { setMealPackConfirmed(checked); setDirty(true) }}
+          onSelect={next => {
+            try {
+              const switched = mealPlans.switchMealPlan(mealVariants, mealSelection, next, moduleData)
+              setMealVariants(switched.variants); setMealSelection(switched.selected); setModuleData(switched.modules); setDirty(true)
+            } catch (error) { toast(error.message) }
+          }} />}
+        {plan.type === 'nutrition' && !Object.keys(mealVariants).length && <div style={{ marginBottom: 12, color: '#66776E', fontSize: 13 }}>本方案保留原配餐内容；重新生成AI营养草稿后，可选择平衡膳食食谱、大类或餐包方式。</div>}
         {moduleKeys.map(mKey => (
           <ModulePanel
             key={mKey}

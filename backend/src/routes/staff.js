@@ -4170,6 +4170,10 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
       return invalid;
     })) return res.status(400).json({ success: false, message: '请逐项填写不重复的观察指标、已核实基线和阶段目标（最多32条）' });
   }
+  if (plan.type === 'nutrition' && req.body.content) {
+    const mealError = require('../../../shared/nutritionMealPlans.cjs').mealPlanError(req.body.content);
+    if (mealError) return res.status(400).json({ success: false, message: mealError });
+  }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
   if (req.body.content?.aiStatus === 'adopted') {
@@ -4447,6 +4451,10 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     if (isCheckupService && !c.reviewerId) return res.status(400).json({ success: false, message: '请先确认方案审核医生（健康顾问）' });
     if (!isCheckupService && !c.supervisorId) return res.status(400).json({ success: false, message: '请先从员工库选择督办人' });
     if (!(c.followUpPlans?.length || c.followUpPlanId)) return res.status(400).json({ success: false, message: '请先关联 Admin 岗位任务方案' });
+  }
+  if (plan.type === 'nutrition') {
+    const mealError = require('../../../shared/nutritionMealPlans.cjs').mealPlanError(plan.content);
+    if (mealError) return res.status(400).json({ success: false, message: mealError });
   }
   plan.status = 'active';
   plan.pushedAt = new Date();
@@ -17790,8 +17798,7 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
 
     const prompt = `你是一位注册营养师，正在为会员定制营养干预方案。方案的膳食原则/禁忌/营养素补充/运动建议等标准骨架
 已经由模板固定（不可修改）。请结合会员生活方式，给出早餐/午餐/晚餐/加餐的食物类别和参考分量，供营养师进一步调整。
-不要制定固定食谱，不要写具体菜名、鱼肉品种或具体蔬菜名称。荤菜统一写“荤菜×克”，蔬菜统一写“蔬菜×克”；
-其他食物也优先使用主食、奶类、水果、坚果等类别。绝对不能推荐模板"禁忌食物"里的东西，也不能违反"膳食总原则"。
+按下方配餐方式分别生成具体食谱和食物大类版本。绝对不能推荐模板"禁忌食物"里的东西，也不能违反"膳食总原则"。
 
 【会员信息】
 姓名：${user.name}，年龄：${assessment.age}岁，身高：${assessment.height}cm，体重：${assessment.weight}kg，慢病标签：${user.chronicDiseases?.join('、') || '未记录'}
@@ -17825,32 +17832,28 @@ ${assessment.dailyEnergyRange ? `轻体力活动参考区间：${assessment.dail
 进餐顺序：${tc.mealOrder || '不限'}
 模板餐次仅用于了解饮食原则，不要照抄其中的具体食物或菜名。
 
-不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应类别；在description中指出需营养师修订模板。餐次按“一行一个类别及克数”书写，不承诺治疗效果。
-请以JSON格式输出，仅输出JSON：
-{
-  "description": "结合会员情况的方案说明（100字以内）",
-  "breakfast": "早餐类别与分量，每行一项",
-  "lunch": "午餐类别与分量，每行一项",
-  "dinner": "晚餐类别与分量，每行一项",
-  "snack": "加餐类别与分量，每行一项；未安排加餐则留空"
-}`;
+不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应类别；在description中指出需营养师修订模板。不承诺治疗效果。
+${require('../utils/nutritionMealVariants').variantPrompt(assessment)}`;
 
-    const text = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 1000 }));
+    const text = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 3500, jsonMode: true, timeoutMs: 90000 }));
     let raw = null;
     try {
       const m = text.trim().match(/\{[\s\S]*\}/);
       if (m) raw = JSON.parse(m[0]);
     } catch {}
-    if (!raw || ['description', 'breakfast', 'lunch', 'dinner'].some(key => typeof raw[key] !== 'string' || !raw[key].trim())) {
+    if (!raw || typeof raw.description !== 'string' || !raw.description.trim()) {
       return res.status(502).json({ success: false, message: 'AI未生成完整方案说明和三餐草稿，请重试；不会用模板餐单冒充个体化结果' });
     }
 
-    // 骨架字段原样锁定，三餐必须由个体化草稿明确给出。
-    const breakfast = raw.breakfast.trim();
-    const lunch = raw.lunch.trim();
-    const dinner = raw.dinner.trim();
-    const snack = assessment.mealEnergyKcal.snack > 0 ? String(raw.snack || '').trim() : '';
-    if (assessment.mealEnergyKcal.snack > 0 && !snack) return res.status(502).json({ success: false, message: 'AI未生成已安排的加餐草稿，请重试' });
+    let generatedMeals;
+    try { generatedMeals = require('../utils/nutritionMealVariants').parseVariants(raw, assessment); }
+    catch (error) { return res.status(502).json({ success: false, message: error.message }); }
+    const mealPlanVariants = generatedMeals.variants;
+    const selectedMeals = mealPlanVariants.balanced_categories;
+    const breakfast = selectedMeals.breakfast.content;
+    const lunch = selectedMeals.lunch.content;
+    const dinner = selectedMeals.dinner.content;
+    const snack = selectedMeals.snack.content;
     const items = [
       { name: '早餐方案', category: '营养干预', notes: breakfast },
       { name: '午餐方案', category: '营养干预', notes: lunch },
@@ -17871,6 +17874,11 @@ ${assessment.dailyEnergyRange ? `轻体力活动参考区间：${assessment.dail
       supplement: { content: '' },
       exercise: { content: tc.exerciseSuggestion || '' },
     };
+
+    for (const variant of Object.values(mealPlanVariants)) {
+      for (const key of ['breakfast', 'lunch', 'dinner', 'snack']) variant[key].time = moduleData[key].time;
+    }
+    Object.assign(moduleData, selectedMeals);
 
     // The nutritionist enters/validates allergy details once. After the AI
     // draft is complete, append that verified evidence to the archive using
@@ -17918,6 +17926,10 @@ ${assessment.dailyEnergyRange ? `轻体力活动参考区间：${assessment.dail
         nutritionMetric: assessment.metric, nutritionBaseline: assessment.baseline,
         nutritionTarget: assessment.target, nutritionReviewDate: assessment.reviewDate,
         nutritionAssessment: { ...assessment, verifiedBy: req.staff._id, verifiedAt: new Date() },
+        mealPlanVariants, mealPlanSelection: 'balanced_categories',
+        mealPackUnavailableReason: generatedMeals.unavailableReason,
+        mealPackNutrition: require('../../../shared/nutritionMealPlans.cjs').PACK,
+        mealPackSuitabilityConfirmed: false,
         moduleData,
       },
       status: 'draft',
