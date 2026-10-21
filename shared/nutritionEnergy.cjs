@@ -38,17 +38,14 @@ function idealWeight(height) {
   return Number.isFinite(h) && h > 105 && h <= 230 ? h - 105 : null;
 }
 
-function activityFactor(level, selected) {
+function activityFactor(level) {
   if (!Object.prototype.hasOwnProperty.call(WEIGHT_ACTIVITY_FACTORS, level)) return null;
-  if (level !== 'light') return WEIGHT_ACTIVITY_FACTORS[level];
-  if (selected === '' || selected === null || selected === undefined) return 22.5;
-  const factor = Number(selected);
-  return Number.isFinite(factor) && factor >= 20 && factor <= 25 ? factor : null;
+  return WEIGHT_ACTIVITY_FACTORS[level];
 }
 
-function estimateDailyEnergy({ height, weightActivityLevel, activityCoefficient }) {
+function estimateDailyEnergy({ height, weightActivityLevel }) {
   const weight = idealWeight(height);
-  const factor = activityFactor(weightActivityLevel, activityCoefficient);
+  const factor = activityFactor(weightActivityLevel);
   return weight !== null && factor !== null ? Math.round(weight * factor) : null;
 }
 
@@ -73,8 +70,10 @@ function validateNutritionEnergy(patient = {}, assessment = {}) {
   const bmi = bodyMassIndex(assessment.height, assessment.weight);
   const overweight = bmi !== null && bmi >= 24;
   const calculatedIdealWeight = overweight ? idealWeight(assessment.height) : null;
-  const coefficient = overweight ? activityFactor(assessment.weightActivityLevel, assessment.activityCoefficient) : null;
+  const coefficient = overweight ? activityFactor(assessment.weightActivityLevel) : null;
   const estimatedDailyKcal = overweight ? estimateDailyEnergy(assessment) : null;
+  const dailyEnergyRange = calculatedIdealWeight !== null && assessment.weightActivityLevel === 'light'
+    ? { min: Math.round(calculatedIdealWeight * 20), max: Math.round(calculatedIdealWeight * 25) } : null;
   const automaticKcal = overweight ? estimatedDailyKcal : null;
   if (!assessment.activityLevel || !EER[patient.gender]?.[assessment.activityLevel]) errors.push('已核实日常活动等级');
   if (!maintenanceKcal) errors.push('可计算当前体重维持能量的成年年龄、性别、身高和体重');
@@ -94,7 +93,7 @@ function validateNutritionEnergy(patient = {}, assessment = {}) {
   }
   const mealKcal = mealEnergyBudgets(managementKcal, assessment.breakfastPercent, assessment.lunchPercent, assessment.dinnerPercent, assessment.snackPercent ?? 0);
   if (!mealKcal) errors.push('早餐、午餐、晚餐及可选加餐的能量比例须为非负整数且合计100%');
-  return { errors, warnings, bmi, overweight, maintenanceKcal, idealWeight: calculatedIdealWeight, activityCoefficient: coefficient, estimatedDailyKcal, automaticKcal, managementKcal, mealKcal };
+  return { errors, warnings, bmi, overweight, maintenanceKcal, idealWeight: calculatedIdealWeight, activityCoefficient: coefficient, estimatedDailyKcal, dailyEnergyRange, automaticKcal, managementKcal, mealKcal };
 }
 
 function updateEnergyAssessment(patient, current, key, fieldValue) {

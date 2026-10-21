@@ -71,9 +71,9 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
       {energy.overweight && <>
         <div style={{ fontWeight: 700 }}>算法2 · 超重／肥胖管理期能量</div>
         <label className="form-label">体力活动强度（算法2） *<select className="form-input" value={value.weightActivityLevel || ''} onChange={e => set('weightActivityLevel', e.target.value)}><option value="">请选择已核实强度</option><option value="bedrest">卧床（15 kcal/kg理想体重/日）</option><option value="light">轻体力活动（20–25 kcal/kg理想体重/日）</option><option value="moderate">中体力活动（30 kcal/kg理想体重/日）</option><option value="heavy">重体力活动（35 kcal/kg理想体重/日）</option></select></label>
-        {value.weightActivityLevel === 'light' && <label className="form-label">轻体力活动能量系数（20–25）<input className="form-input" type="number" min="20" max="25" step="0.5" value={value.activityCoefficient ?? 22.5} onChange={e => set('activityCoefficient', e.target.value)} /></label>}
+        {value.weightActivityLevel === 'light' && <div style={{ color: '#355E4F' }}>轻体力活动能量系数：20–25 kcal/kg理想体重/日，取中间值 <strong>22.5</strong>。</div>}
         <div style={{ color: '#355E4F' }}>第一步 · 理想体重：<strong>{energy.idealWeight !== null ? `${energy.idealWeight} kg（身高 ${value.height} cm－105）` : '请核实身高'}</strong></div>
-        <div style={{ color: '#355E4F' }}>第二步 · 全日参考能量：<strong>{energy.estimatedDailyKcal ? `${energy.idealWeight} × ${energy.activityCoefficient} ≈ ${energy.estimatedDailyKcal} kcal/日` : '请选择体力活动强度'}</strong></div>
+        <div style={{ color: '#355E4F' }}>第二步 · 全日参考能量：{energy.dailyEnergyRange ? <><strong>{energy.dailyEnergyRange.min}–{energy.dailyEnergyRange.max} kcal/日</strong><div>下限：{energy.idealWeight} × 20 = {energy.dailyEnergyRange.min}；上限：{energy.idealWeight} × 25 = {energy.dailyEnergyRange.max} kcal/日。</div><div>取中间值：<strong>{energy.idealWeight} × 22.5 ≈ {energy.estimatedDailyKcal} kcal/日</strong>，自动填入管理期每日能量。</div></> : <strong>{energy.estimatedDailyKcal ? `${energy.idealWeight} × ${energy.activityCoefficient} ≈ ${energy.estimatedDailyKcal} kcal/日` : '请选择体力活动强度'}</strong>}</div>
       </>}
       {energy.automaticKcal && energy.automaticKcal < (patient?.gender === '男' ? 1500 : 1200) && <div role="status" style={{ color: '#79551A', background: '#FFF4DC', padding: 10, borderRadius: 6 }}>自动计算值低于普通成人方案的最低能量，请营养师调整管理期能量或转专门评估。</div>}
       {energy.warnings?.map(warning => <div key={warning} role="status" style={{ color: '#79551A', background: '#FFF4DC', padding: 10, borderRadius: 6 }}>{warning}</div>)}
@@ -83,6 +83,7 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
         <label className="form-label">管理期每日能量（kcal） *<input className="form-input" type="number" min={patient?.gender === '男' ? 1500 : 1200} step="1" value={value.managementKcal || ''} onChange={e => set('managementKcal', e.target.value)} placeholder={energy.overweight ? '核实体力活动强度后自动填入，可调整' : '由营养师根据目标确认'} /></label>
       </div>
       {energy.overweight && energy.automaticKcal && <button type="button" className="btn btn-secondary btn-sm" style={{ justifySelf: 'start' }} onClick={() => set('managementKcal', energy.automaticKcal)}>重新采用算法2管理期参考值</button>}
+      <div style={{ color: '#52675D', fontSize: 12 }}>AI方案及餐次预算均以最终确认的管理期每日能量为准；营养师调整后按调整值生成。</div>
       {!energy.overweight && value.managementPurpose === 'maintain' && energy.maintenanceKcal && <button type="button" className="btn btn-secondary btn-sm" style={{ justifySelf: 'start' }} onClick={() => set('managementKcal', energy.maintenanceKcal)}>采用算法1维持估算值</button>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10 }}>
         {[['breakfastPercent', '早餐'], ['lunchPercent', '午餐'], ['dinnerPercent', '晚餐'], ['snackPercent', '加餐（可选）']].map(([key, label]) => <label key={key} className="form-label">{label}（%）<input className="form-input" type="number" min="0" max="100" step="1" value={value[key] ?? ''} onChange={e => set(key, e.target.value)} /></label>)}

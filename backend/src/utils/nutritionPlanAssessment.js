@@ -65,6 +65,7 @@ function prepareNutritionAssessment(input = {}, user = {}) {
   assessment.idealWeightKg = energy.idealWeight;
   assessment.activityCoefficient = energy.activityCoefficient;
   assessment.estimatedDailyKcal = energy.estimatedDailyKcal;
+  assessment.dailyEnergyRange = energy.dailyEnergyRange;
   assessment.mealEnergyKcal = energy.mealKcal;
   assessment.energyReference = energy.overweight
     ? '算法1：NASEM 2023 成人 EER 当前体重维持估算；算法2：理想体重(kg)=身高(cm)-105，乘体力活动系数'

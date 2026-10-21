@@ -19,6 +19,16 @@ const valid = {
   allergyStatus: 'confirmed_none', riskStatus: 'standard', templateCompatibilityConfirmed: true,
 };
 
+test('服务端重算轻体力区间与中间值，最终管理期能量覆盖自动参考预算', () => {
+  const result = prepareNutritionAssessment({ ...valid, height: 190, weight: 110, weightActivityLevel: 'light', activityCoefficient: 20, dailyEnergyRange: { min: 1, max: 2 }, managementPurpose: 'reduce', managementKcal: 1700 }, { ...user, gender: '男' });
+  assert.deepEqual(result.missing, []);
+  assert.deepEqual(result.assessment.dailyEnergyRange, { min: 1700, max: 2125 });
+  assert.equal(result.assessment.activityCoefficient, 22.5);
+  assert.equal(result.assessment.estimatedDailyKcal, 1913);
+  assert.equal(result.assessment.managementKcal, 1700);
+  assert.deepEqual(result.assessment.mealEnergyKcal, { breakfast: 510, lunch: 680, dinner: 510, snack: 0 });
+});
+
 test('个体化营养草稿需要核实目标、饮食、安全信息和复盘时间', () => {
   assert.deepEqual(prepareNutritionAssessment(valid, user).missing, []);
   const missing = prepareNutritionAssessment({ ...valid, currentDiet: '', allergyStatus: '', reviewDate: '' }, user).missing;

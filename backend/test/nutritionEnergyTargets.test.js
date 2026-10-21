@@ -15,11 +15,11 @@ test('算法2仅为超重肥胖会员按理想体重和独立体力活动系数�
   assert(bodyMassIndex(165, 65) < 24);
   assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'bedrest' }), 900);
   assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'light' }), 1350);
-  assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'light', activityCoefficient: 20 }), 1200);
-  assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'light', activityCoefficient: 25 }), 1500);
+  assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'light', activityCoefficient: 20 }), 1350);
+  assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'light', activityCoefficient: 25 }), 1350);
   assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'moderate' }), 1800);
   assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'heavy' }), 2100);
-  assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'light', activityCoefficient: 26 }), null);
+  assert.equal(estimateDailyEnergy({ height: 165, weightActivityLevel: 'unknown' }), null);
 });
 
 test('餐次预算合计等于管理期能量，含可选加餐', () => {
@@ -46,8 +46,24 @@ test('算法1只显示参考值，算法2在超重肥胖时自动填入且保留
   const withWeightActivity = updateEnergyAssessment(patient, overweight, 'weightActivityLevel', 'light');
   assert.equal(withWeightActivity.managementKcal, 1350);
   assert.equal(updateEnergyAssessment(patient, { ...withWeightActivity, managementKcal: 1600 }, 'activityCoefficient', 25).managementKcal, 1600);
-  assert.equal(updateEnergyAssessment(patient, withWeightActivity, 'activityCoefficient', 25).managementKcal, 1500);
+  assert.equal(updateEnergyAssessment(patient, withWeightActivity, 'height', 168).managementKcal, 1418);
+  assert.equal(updateEnergyAssessment(patient, withWeightActivity, 'height', 170).managementKcal, '');
   assert.deepEqual(validateNutritionEnergy(patient, { ...withWeightActivity, managementKcal: '' }).warnings, []);
+});
+
+test('轻体力活动显示上下限并取中间值，人工管理能量决定餐次预算', () => {
+  const patient = { gender: '男', age: 42 };
+  const input = { height: 190, weight: 110, activityLevel: 'active', managementPurpose: 'reduce', managementKcal: '', breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30 };
+  const automatic = updateEnergyAssessment(patient, input, 'weightActivityLevel', 'light');
+  assert.equal(automatic.managementKcal, 1913);
+  const result = validateNutritionEnergy(patient, { ...automatic, activityCoefficient: '', managementKcal: 1700 });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.dailyEnergyRange, { min: 1700, max: 2125 });
+  assert.equal(result.activityCoefficient, 22.5);
+  assert.equal(result.estimatedDailyKcal, 1913);
+  assert.deepEqual(result.mealKcal, { breakfast: 510, lunch: 680, dinner: 510, snack: 0 });
+  assert.equal(updateEnergyAssessment(patient, { ...automatic, managementKcal: 1700 }, 'height', 191).managementKcal, 1700);
+  assert.equal(validateNutritionEnergy(patient, { ...automatic, weightActivityLevel: 'moderate' }).dailyEnergyRange, null);
 });
 
 test('管理期目标偏离理想体重参考值超过30%时提示复核但允许生成', () => {

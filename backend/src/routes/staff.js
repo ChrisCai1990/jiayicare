@@ -17832,6 +17832,8 @@ ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}�
 算法1（常规参考）：按年龄、性别、身高、当前体重及已核实的日常活动等级估算维持能量，约 ${assessment.estimatedMaintenanceKcal} kcal/日。
 ${assessment.energyCalculationPath === 'overweight' ? `算法2（超重／肥胖管理期）：BMI ${assessment.bmi}；理想体重 ${assessment.idealWeightKg} kg（身高 cm－105），乘已核实的体力活动系数 ${assessment.activityCoefficient}，得约 ${assessment.estimatedDailyKcal} kcal/日。` : ''}
 营养师确认的管理期能量：${assessment.managementKcal} kcal/日。
+${assessment.dailyEnergyRange ? `轻体力活动参考区间：${assessment.dailyEnergyRange.min}–${assessment.dailyEnergyRange.max} kcal/日，系数20–25取中间值22.5。` : ''}
+本方案唯一的每日总能量目标为上述营养师最终确认的 ${assessment.managementKcal} kcal/日。算法1维持估算、算法2参考区间及中间值仅用于评估，不得替代最终目标；description中明确写出最终管理期每日能量，各餐食物类别与参考分量必须按以下餐次预算安排。
 餐次预算：早餐 ${assessment.mealEnergyKcal.breakfast}、午餐 ${assessment.mealEnergyKcal.lunch}、晚餐 ${assessment.mealEnergyKcal.dinner}、加餐 ${assessment.mealEnergyKcal.snack} kcal。
 请围绕各餐预算安排食物类别与参考分量；不要虚构精确的食物热量或宣称已核算实际摄入。加餐预算为 0 时不要安排加餐。
 
