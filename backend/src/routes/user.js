@@ -1280,6 +1280,7 @@ router.get('/points', auth, async (req, res) => {
 // GET /api/user/followup-tasks
 router.get('/followup-tasks', auth, async (req, res) => {
   try {
+    await require('../utils/legacyLifestyleInterview').reconcileLegacyLifestyleInterviews(req.user._id);
     const followups = await FollowUp.find({
       patientId: req.user._id,
       $nor: [routineMedicationNoiseFilter],

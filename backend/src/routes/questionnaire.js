@@ -347,6 +347,11 @@ router.post('/:id/submit', auth, async (req, res) => {
       sourceOrderId: assignment?.sourceOrderId || null,
     });
 
+    if (String(questionnaire._id) === require('../utils/legacyLifestyleInterview').QUESTIONNAIRE_ID) {
+      await require('../utils/legacyLifestyleInterview').reconcileLegacyLifestyleInterviews(subjectId)
+        .catch(error => console.error('[legacy-lifestyle-interview] reconcile failed:', error));
+    }
+
     // 标记已答题用户
     await DynamicQuestionnaire.findByIdAndUpdate(req.params.id, {
       $addToSet: { respondedUsers: subjectId },
