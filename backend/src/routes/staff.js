@@ -4173,8 +4173,6 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (plan.type === 'nutrition' && req.body.content) {
     const mealError = require('../../../shared/nutritionMealPlans.cjs').mealPlanError(req.body.content);
     if (mealError) return res.status(400).json({ success: false, message: mealError });
-    req.body.content.mealEnergyReview = require('../../../shared/nutritionMealEnergy.cjs').estimateEditedMeals(
-      req.body.content.moduleData, req.body.content.nutritionAssessment, req.body.content.mealEnergyManual);
   }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
@@ -4457,9 +4455,6 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   if (plan.type === 'nutrition') {
     const mealError = require('../../../shared/nutritionMealPlans.cjs').mealPlanError(plan.content);
     if (mealError) return res.status(400).json({ success: false, message: mealError });
-    plan.content.mealEnergyReview = require('../../../shared/nutritionMealEnergy.cjs').estimateEditedMeals(
-      plan.content.moduleData, plan.content.nutritionAssessment, plan.content.mealEnergyManual);
-    plan.markModified('content');
   }
   plan.status = 'active';
   plan.pushedAt = new Date();
@@ -17840,13 +17835,19 @@ ${assessment.dailyEnergyRange ? `轻体力活动参考区间：${assessment.dail
 不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应类别；在description中指出需营养师修订模板。不承诺治疗效果。
 ${require('../utils/nutritionMealVariants').variantPrompt(assessment)}`;
 
-    let generatedMeals;
+    const text = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 3500, jsonMode: true, timeoutMs: 90000 }));
+    let raw = null;
     try {
-      generatedMeals = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () =>
-        require('../utils/nutritionMealVariants').generateVariants(
-          messages => chat(messages, { maxTokens: 5500, jsonMode: true, timeoutMs: 90000 }), prompt, assessment));
-    } catch (error) { return res.status(502).json({ success: false, message: error.message }); }
-    const raw = generatedMeals.raw;
+      const m = text.trim().match(/\{[\s\S]*\}/);
+      if (m) raw = JSON.parse(m[0]);
+    } catch {}
+    if (!raw || typeof raw.description !== 'string' || !raw.description.trim()) {
+      return res.status(502).json({ success: false, message: 'AI未生成完整方案说明和三餐草稿，请重试；不会用模板餐单冒充个体化结果' });
+    }
+
+    let generatedMeals;
+    try { generatedMeals = require('../utils/nutritionMealVariants').parseVariants(raw, assessment); }
+    catch (error) { return res.status(502).json({ success: false, message: error.message }); }
     const mealPlanVariants = generatedMeals.variants;
     const selectedMeals = mealPlanVariants.balanced_categories;
     const breakfast = selectedMeals.breakfast.content;
