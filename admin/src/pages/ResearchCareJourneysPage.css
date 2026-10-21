@@ -58,3 +58,14 @@
 .research-candidate small { margin-top: 3px; color: var(--text-secondary); font-size: 11px; }
 .research-candidate em { flex: 0 0 auto; font-size: 11px; font-style: normal; color: #176b58; }
 .research-selected { padding: 10px 12px; margin: -5px 0 15px; border-radius: 8px; background: #f0faf6; color: #176b58; font-size: 13px; }
+.research-counts { display: flex; flex-wrap: wrap; gap: 10px; }
+.research-candidate-table { min-width: 760px; }
+.research-candidate-table td { white-space: normal; }
+.research-row-actions { display: flex; gap: 7px; }
+.research-row-actions .btn { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+.research-setting-shell { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 20px 22px; margin: 18px 0; }
+.research-setting-shell h2 { margin: 0 0 5px; font-size: 16px; }
+.research-setting-shell p { margin: 0; color: var(--text-secondary); font-size: 12.5px; line-height: 1.6; }
+.research-setting-form { flex: 0 0 100%; padding-top: 14px; border-top: 1px solid var(--border); }
+.research-setting-form .form-group { max-width: 620px; }
+@media (max-width: 640px) { .research-counts { width: 100%; } .research-count-card { flex: 1; } }
