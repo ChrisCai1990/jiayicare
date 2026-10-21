@@ -17840,19 +17840,13 @@ ${assessment.dailyEnergyRange ? `轻体力活动参考区间：${assessment.dail
 不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应类别；在description中指出需营养师修订模板。不承诺治疗效果。
 ${require('../utils/nutritionMealVariants').variantPrompt(assessment)}`;
 
-    const text = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 5500, jsonMode: true, timeoutMs: 90000 }));
-    let raw = null;
-    try {
-      const m = text.trim().match(/\{[\s\S]*\}/);
-      if (m) raw = JSON.parse(m[0]);
-    } catch {}
-    if (!raw || typeof raw.description !== 'string' || !raw.description.trim()) {
-      return res.status(502).json({ success: false, message: 'AI未生成完整方案说明和三餐草稿，请重试；不会用模板餐单冒充个体化结果' });
-    }
-
     let generatedMeals;
-    try { generatedMeals = require('../utils/nutritionMealVariants').parseVariants(raw, assessment); }
-    catch (error) { return res.status(502).json({ success: false, message: error.message }); }
+    try {
+      generatedMeals = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () =>
+        require('../utils/nutritionMealVariants').generateVariants(
+          messages => chat(messages, { maxTokens: 5500, jsonMode: true, timeoutMs: 90000 }), prompt, assessment));
+    } catch (error) { return res.status(502).json({ success: false, message: error.message }); }
+    const raw = generatedMeals.raw;
     const mealPlanVariants = generatedMeals.variants;
     const selectedMeals = mealPlanVariants.balanced_categories;
     const breakfast = selectedMeals.breakfast.content;
