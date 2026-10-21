@@ -1,5 +1,5 @@
 // Reference allocation, not nutrient analysis of a specific recipe.
-// Exchange energy: WS/T 558-2017 Annex E. Plate groups: Chinese Dietary Guidelines 2022.
+// Exchange energy: WS/T 558-2017 Annex E. Food groups: Chinese Food Guide Pagoda 2022.
 const VERSION = 2;
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snack'];
 const GROUPS = {

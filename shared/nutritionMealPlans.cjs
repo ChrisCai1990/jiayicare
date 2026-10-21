@@ -22,7 +22,7 @@ const PACK = {
   magnesiumMg: 80, calciumMg: 260, ironMg: 4.75, zincMg: 3.45, taurineMg: 57.5,
 };
 const PACK_LINE = '自研营养餐包：1包（50 g，计入200 kcal）';
-const PLATE_SOURCE = 'https://dg.cnsoc.org/article/04/ya2PbmF0S_CNY0z_Vd9HGQ.html';
+const PAGODA_SOURCE = 'https://dg.cnsoc.org/article/04/RMAbPdrjQ6CGWTwmo62hQg.html';
 
 function packBudgets(meals) {
   if (!meals || !MEALS.every(key => Number.isInteger(meals[key]) && meals[key] >= 0)
@@ -54,4 +54,4 @@ function mealPlanError(content = {}) {
   return null;
 }
 
-module.exports = { categoryMeals, MEALS, OPTIONS, PACK, PACK_LINE, PLATE_SOURCE, packBudgets, snapshotMeals, switchMealPlan, mealPlanError };
+module.exports = { categoryMeals, MEALS, OPTIONS, PACK, PACK_LINE, PAGODA_SOURCE, packBudgets, snapshotMeals, switchMealPlan, mealPlanError };

@@ -65,10 +65,12 @@ test('保存及推送餐包方案需要适用性核实并保持早晚固定餐�
   assert(mealPlanError({ mealPlanSelection: 'bad' }));
 });
 
-test('AI提示包含三种模式、餐盘依据、常规食物剩余预算和成分数据', () => {
+test('AI提示包含三种模式、宝塔依据、常规食物剩余预算和成分数据', () => {
   const prompt = variantPrompt(assessment);
   assert(prompt.includes('balanced_recipes') && prompt.includes('balanced_categories') && prompt.includes('meal_pack'));
   assert(prompt.includes('早餐310') && prompt.includes('晚餐310'));
   assert(prompt.includes('不能等同热量或重量比例'));
   assert(prompt.includes('proteinG'));
+  assert(prompt.includes('中国居民平衡膳食宝塔（2022）'));
+  assert(!prompt.includes('餐盘'));
 });

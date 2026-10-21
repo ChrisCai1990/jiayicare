@@ -8,7 +8,7 @@ export default function NutritionMealPlanSelector({ selected, variants, onSelect
   return <section style={{ padding: 16, marginBottom: 16, border: '1px solid #DCE7E0', borderRadius: 10, background: '#F6FAF8', display: 'grid', gap: 12 }}>
     <strong>配餐方式</strong>
     <label className="form-label">算法<select className="form-input" disabled={disabled} value={isPack ? 'meal_pack' : 'balanced'} onChange={e => onSelect(e.target.value === 'meal_pack' ? 'meal_pack' : 'balanced_categories')}>
-      <option value="balanced">第一种：中国居民平衡膳食餐盘</option>
+      <option value="balanced">第一种：遵循中国居民膳食宝塔进行食物量化分配</option>
       <option value="meal_pack" disabled={!variants.meal_pack}>第二种：早餐、晚餐各一包营养餐包</option>
     </select></label>
     {!isPack && <label className="form-label">呈现方式<select className="form-input" disabled={disabled} value={selected} onChange={e => onSelect(e.target.value)}>
