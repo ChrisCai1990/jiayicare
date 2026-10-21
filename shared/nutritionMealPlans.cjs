@@ -7,6 +7,13 @@ const OPTIONS = {
 // Label supplied by the product owner, 2026-10-21. Energy budgeting explicitly uses 200 kcal/pack.
 const PACK = {
   name: '自研营养餐包', grams: 50, kcal: 200, labelEnergyKj: 855.5,
+  labelName: '蛋白奶昔·蛋白固体饮料', labelVersion: '2026-10-21',
+  ingredients: '分离乳清蛋白、鱼胶原蛋白肽、椰子油粉、大枣粉、全脂乳粉、红豆粉、海藻糖、麦芽糊精、低聚异麦芽糖、大豆分离蛋白、脱脂乳粉、中链甘油三酯微囊粉、魔芋粉、圆苞车前子壳、亚麻籽油粉、抗性糊精、DHA藻油粉（DHA藻油、酪蛋白酸钠、麦芽糊精、抗坏血酸钠）、L-抗坏血酸、dl-α-醋酸生育酚、烟酸、核黄素、醋酸视黄酯、D-泛酸钙、叶酸、盐酸硫胺素、盐酸吡哆醇、氰钴胺、胆钙化醇、碳酸钙、焦磷酸铁、无水硫酸镁、葡萄糖酸锌、牛磺酸',
+  allergenStatement: '本品含有鱼制品、乳制品、豆制品、谷物制品，对以上成分过敏者慎用。',
+  allergens: ['鱼制品', '乳制品', '豆制品', '谷物制品'],
+  preparation: '每次取1袋，加入250–300毫升左右温开水搅拌均匀后食用。',
+  labelDailyUse: '每日食用2–3袋（标签原文；本方案按早餐、晚餐各1袋）',
+  labelWarning: '本品不适用于婴幼儿食用。本产品不能代替特殊医学用途配方食品、婴幼儿配方食品、保健食品等特殊食品。',
   proteinG: 13.2, fatG: 6.2, carbohydrateG: 20.8, fibreG: 6, sodiumMg: 170,
   vitaminA_ugRE: 400, vitaminD_ug: 0.75, vitaminE_mgAlphaTE: 6,
   vitaminB1_mg: 0.65, vitaminB2_mg: 0.7, vitaminB6_mg: 0.7, vitaminB12_ug: 1.2,
