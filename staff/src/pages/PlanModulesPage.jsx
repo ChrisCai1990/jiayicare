@@ -638,8 +638,9 @@ export default function PlanModulesPage() {
           ['疾病、用药及检查核对', plan.content.nutritionAssessment.medicalReview],
           ['食物过敏', plan.content.nutritionAssessment.allergyStatus === 'confirmed_none' ? '已核实无已知食物过敏' : plan.content.nutritionAssessment.allergyDetails],
           ['偏好与执行条件', plan.content.nutritionAssessment.practicalConstraints],
-          ...(plan.content.nutritionAssessment.estimatedDailyKcal ? [['理想体重', `${plan.content.nutritionAssessment.idealWeightKg} kg`], ['全日参考能量', `约 ${plan.content.nutritionAssessment.estimatedDailyKcal} kcal/日`], ['计算依据', `身高(cm)－105，乘活动系数 ${plan.content.nutritionAssessment.activityCoefficient}`]] : []),
-          ...(plan.content.nutritionAssessment.estimatedMaintenanceKcal ? [['历史维持能量估算', `约 ${plan.content.nutritionAssessment.estimatedMaintenanceKcal} kcal/日`]] : []),
+          ...(plan.content.nutritionAssessment.estimatedMaintenanceKcal ? [['算法1 · 当前体重维持能量参考', `约 ${plan.content.nutritionAssessment.estimatedMaintenanceKcal} kcal/日`]] : []),
+          ...(plan.content.nutritionAssessment.energyCalculationPath === 'overweight' && plan.content.nutritionAssessment.estimatedDailyKcal ? [['算法2 · 理想体重', `${plan.content.nutritionAssessment.idealWeightKg} kg`], ['算法2 · 管理期参考能量', `约 ${plan.content.nutritionAssessment.estimatedDailyKcal} kcal/日`], ['算法2 · 计算依据', `身高(cm)－105，乘体力活动系数 ${plan.content.nutritionAssessment.activityCoefficient}`]] : []),
+          ...(!plan.content.nutritionAssessment.energyCalculationPath && plan.content.nutritionAssessment.estimatedDailyKcal ? [['历史理想体重参考值', `约 ${plan.content.nutritionAssessment.estimatedDailyKcal} kcal/日`]] : []),
           ...(plan.content.nutritionAssessment.managementKcal ? [['管理期能量', `${plan.content.nutritionAssessment.managementKcal} kcal/日`]] : []),
           ...(plan.content.nutritionAssessment.mealEnergyKcal ? [['餐次预算', `早餐 ${plan.content.nutritionAssessment.mealEnergyKcal.breakfast}、午餐 ${plan.content.nutritionAssessment.mealEnergyKcal.lunch}、晚餐 ${plan.content.nutritionAssessment.mealEnergyKcal.dinner}、加餐 ${plan.content.nutritionAssessment.mealEnergyKcal.snack || 0} kcal`]] : []),
         ].map(([label, value]) => <div key={label} style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}><strong>{label}：</strong>{value}</div>)}

@@ -71,7 +71,7 @@ export function nutritionAssessmentPrefill(patient = {}, previous = null) {
       practicalConstraints: text(prior.practicalConstraints) || constraintsFromArchive(patient),
       allergyStatus: '', allergyDetails: recordedAllergy || (isUsableFoodAllergy(prior.allergyDetails) ? text(prior.allergyDetails) : ''),
       riskStatus: '', templateCompatibilityConfirmed: false,
-      activityLevel: '', lifeStage: '', managementPurpose: '', managementKcal: '',
+      activityLevel: '', weightActivityLevel: '', activityCoefficient: '', lifeStage: '', managementPurpose: '', managementKcal: '',
       breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30, snackPercent: 0,
     },
   }
