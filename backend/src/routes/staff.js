@@ -949,7 +949,7 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
 // GET /api/staff/checkup-progress — 体检方案回传进度总览（避免健管专员逐个客户查询漏检）
 // 2026-07-02：健管专员反馈"手上10个客户涉及体检，没有统一界面看谁的报告还没回传，得一个个查"。
 // 复用 /patients 同一套角色分配过滤逻辑，找出当前专员名下所有客户，关联查 HealthPlan(年度体检方案)
-// 里状态为 pending 的检验/检查/功能医学检测项目，按客户汇总数量，一次性看到全貌。
+// 按全部方案项目核对完成度，未关联库的项目同样计入；部分完成不能退出待办。
 router.get('/checkup-progress', staffAuth, async (req, res) => {
   try {
     const staff = req.staff;
@@ -972,7 +972,6 @@ router.get('/checkup-progress', staffAuth, async (req, res) => {
     const patients = await User.find(assignFilter).select('name phone').lean();
     if (!patients.length) return res.json({ success: true, data: [] });
     const patientIds = patients.map(p => p._id);
-    const patientMap = new Map(patients.map(p => [String(p._id), p]));
 
     const plans = await HealthPlan.find({
       patientId: { $in: patientIds },
@@ -980,28 +979,9 @@ router.get('/checkup-progress', staffAuth, async (req, res) => {
       status: { $ne: 'cancelled' },
     }).select('patientId title items status createdAt').lean();
 
-    const result = [];
-    plans.forEach(plan => {
-      const pendingItems = (plan.items || []).filter(it =>
-        it.status === 'pending' && it.itemType && ['labTest', 'specialExam', 'functionalTest'].includes(it.itemType)
-      );
-      if (!pendingItems.length) return;
-      const patient = patientMap.get(String(plan.patientId));
-      if (!patient) return;
-      result.push({
-        patientId: plan.patientId,
-        patientName: patient.name,
-        patientPhone: patient.phone,
-        planId: plan._id,
-        planTitle: plan.title,
-        totalItems: (plan.items || []).length,
-        pendingCount: pendingItems.length,
-        pendingNames: pendingItems.map(it => it.name),
-        createdAt: plan.createdAt,
-      });
-    });
-    // 缺项越多越靠前，方便优先跟进
-    result.sort((a, b) => b.pendingCount - a.pendingCount);
+    const result = require('../utils/checkupWorkbenchProgress').buildCheckupWorkbenchRows(
+      plans, patients, req.query.includeCompleted === '1'
+    );
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

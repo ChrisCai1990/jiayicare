@@ -586,7 +586,7 @@ export const staffAPI = {
   getCheckinOverview: (p = {}) => req('/staff/checkin-overview?' + qs(p)),
 
   // 体检方案回传进度总览（哪些客户还有体检项目未完成）
-  getCheckupProgress: () => req('/staff/checkup-progress'),
+  getCheckupProgress: (params = {}) => req('/staff/checkup-progress?' + qs(params)),
 
   // 用户留言收件箱
   getUserMessages: () => req('/staff/user-messages'),
