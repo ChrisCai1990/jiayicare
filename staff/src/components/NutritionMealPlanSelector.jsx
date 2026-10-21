@@ -17,7 +17,7 @@ export default function NutritionMealPlanSelector({ selected, variants, onSelect
     <div style={{ fontSize: 13, color: '#355E4F' }}>最终管理期能量：{assessment?.managementKcal} kcal/日。切换后四个餐次随之更新，各版本的人工修改分别保留；保存、审核后推送当前选择。</div>
     {!variants.meal_pack && <div style={{ fontSize: 13, color: '#79551A' }}>餐包方式暂不可用：{unavailableReason || '请重新生成包含餐包方式的草稿'}。</div>}
     {isPack && <>
-      <div style={{ fontSize: 13 }}>呈现方式：自研营养餐包＋主食、荤菜、蔬菜等大类及分量，不列具体食物。</div>
+      <div style={{ fontSize: 13 }}>呈现方式：自研营养餐包＋食物大类及分量，不列具体食物。新生成的餐包方案：早餐可少量搭配杂粮，晚餐不配置主食；午餐按预算安排。</div>
       <div style={{ fontSize: 13, lineHeight: 1.8 }}><strong>{mealPlans.PACK.labelName}</strong><br />标签致敏源：{mealPlans.PACK.allergenStatement}<br />{mealPlans.PACK.preparation}</div>
       <details style={{ fontSize: 13, lineHeight: 1.8 }}><summary>完整配料及标签提示</summary><div>{mealPlans.PACK.ingredients}</div><div>{mealPlans.PACK.labelWarning}</div></details>
       <div style={{ fontSize: 13, lineHeight: 1.8 }}>早餐：餐包200＋常规食物{pack?.breakfast} kcal；午餐：常规食物{pack?.lunch} kcal；晚餐：餐包200＋常规食物{pack?.dinner} kcal；加餐：{pack?.snack} kcal。餐包共2包／日，已计入总能量。</div>

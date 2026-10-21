@@ -2,6 +2,7 @@ const { MEALS, PACK_LINE } = require('./nutritionMealPlans.cjs');
 const SOURCE = 'https://www.nhc.gov.cn/ewebeditor/uploadfile/2017/08/20170811094322565.pdf';
 // WS/T 558-2017 appendix E exchange estimates, not actual recipe composition.
 const REFERENCES = {
+  杂粮: { per100: 360, bases: ['生重', '干重'], note: '按谷物干料交换份估算' },
   主食: { per100: 360, bases: ['生重', '干重'], note: '按谷物干料交换份；薯类不能直接套用' },
   荤菜: { per100: 180, bases: ['生重', '可食部'], note: '按肉蛋类平均交换份；鱼虾、肥瘦差异需校正' },
   蛋类: { per100: 180, bases: ['生重', '可食部'], note: '按肉蛋类平均交换份估算' },

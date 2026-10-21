@@ -6,7 +6,7 @@ const { nutritionPlanItems } = require('../src/utils/nutritionPlanItems');
 const assessment = { managementKcal: 1700, mealEnergyKcal: { breakfast: 510, lunch: 680, dinner: 510, snack: 0 } };
 const meals = { breakfast: '主食50 g（生重）', lunch: '蔬菜200 g（可食部）', dinner: '荤菜100 g（可食部）', snack: '' };
 const categoryMeals = () => ({ breakfast: [{ category: '主食', amount: 50, unit: 'g', basis: '生重' }], lunch: [{ category: '蔬菜', amount: 200, unit: 'g', basis: '可食部' }], dinner: [{ category: '荤菜', amount: 100, unit: 'g', basis: '可食部' }], snack: [] });
-const raw = () => ({ balanced_recipes: { ...meals, breakfast: '燕麦50 g（干重）' }, balanced_categories: categoryMeals(), meal_pack: categoryMeals() });
+const raw = () => ({ balanced_recipes: { ...meals, breakfast: '燕麦50 g（干重）' }, balanced_categories: categoryMeals(), meal_pack: { ...categoryMeals(), breakfast: [{ category: '杂粮', amount: 20, unit: 'g', basis: '干重' }] } });
 
 test('每包营养成分按50g保存，早餐晚餐扣200且每日总预算不变', () => {
   assert.equal(PACK.proteinG, 13.2);
@@ -82,7 +82,7 @@ test('AI提示包含三种模式、餐盘依据、常规食物剩余预算和成
   assert.equal(categoryText([{ ...row, food: '芦笋', notes: '蒸芦笋' }], 300), '蔬菜：230 g（可食部）');
   const { variants } = parseVariants(raw(), assessment);
   assert.equal(variants.balanced_categories.breakfast.content, '主食：50 g（生重）');
-  assert.equal(variants.meal_pack.breakfast.content, PACK_LINE + '\n主食：50 g（生重）');
+  assert.equal(variants.meal_pack.breakfast.content, PACK_LINE + '\n杂粮：20 g（干重）');
   assert(variants.balanced_recipes.breakfast.content.includes('燕麦'));
  });
 
@@ -106,4 +106,15 @@ test('格式失败自动修正一次，成功后返回完整草稿，不把具�
   calls = 0;
   await assert.rejects(() => generateVariants(async () => { calls++; return '{}'; }, '测试', assessment), /自动修正后仍不完整/);
   assert.equal(calls, 2);
+});
+
+test('餐包晚餐不含主食或杂粮，早餐可有少量杂粮，平衡膳食仍可有主食', () => {
+  const { variants } = parseVariants(raw(), assessment);
+  assert(variants.meal_pack.breakfast.content.includes('杂粮：20 g（干重）'));
+  assert(variants.balanced_categories.breakfast.content.includes('主食'));
+  for (const category of ['主食', '杂粮', '谷薯类']) {
+    assert.throws(() => parseVariants({ ...raw(), meal_pack: { ...raw().meal_pack, dinner: [{ category, amount: 50, unit: 'g', basis: '生重' }] } }, assessment), /晚餐不得配置/);
+  }
+  assert.throws(() => parseVariants({ ...raw(), meal_pack: { ...raw().meal_pack, breakfast: categoryMeals().breakfast } }, assessment), /早餐只可少量/);
+  assert(parseVariants({ ...raw(), meal_pack: { ...raw().meal_pack, breakfast: [{ category: '蛋类', amount: 50, unit: 'g', basis: '可食部' }] } }, assessment).variants.meal_pack);
 });
