@@ -205,7 +205,7 @@ export default function ResearchCareJourneysPage() {
 
     <section className="card research-setting-shell" id="research-setting">
       <div><h2>正式纳入准备</h2><p>维护候选名单无需填写。开始正式纳入前，再登记一次机构资料使用依据，并逐人核验授权。</p></div>
-      {settingLoaded && setting ? <span className="research-status">项目依据已记录</span>
+      {settingLoaded && setting ? <span className="research-status" title={setting.governanceReference}>项目依据已记录：{setting.governanceReference}</span>
         : <button className="btn btn-secondary" onClick={() => setShowSetting(value => !value)}>{showSetting ? '收起' : '登记项目依据'}</button>}
       {!settingLoaded && <span>正在核对项目设置…</span>}
       {showSetting && settingLoaded && !setting && <div className="research-setting-form">
@@ -255,7 +255,8 @@ export default function ResearchCareJourneysPage() {
       <div className="modal-header"><div><h2 className="modal-title">正式纳入研究队列</h2><p className="research-modal-subtitle">{enrollTarget.name} · 核验该客户授权记录</p></div><button className="modal-close" onClick={() => !saving && setEnrollTarget(null)} aria-label="关闭">×</button></div>
       <div className="modal-body">
         {modalError && <div className="research-error" role="alert">{modalError}</div>}
-        <div className="form-group"><label className="form-label" htmlFor="research-authorization">该客户授权记录位置或编号</label><input id="research-authorization" className="form-input" value={authorizationReference} onChange={e => setAuthorizationReference(e.target.value)} maxLength={200} placeholder="填写可追溯的签署记录或资料位置" /></div>
+        <div className="form-group"><span className="form-label">项目依据（已登记，自动关联）</span><div className="form-input research-project-reference" aria-label="项目依据">{setting?.governanceReference}</div></div>
+        <div className="form-group"><label className="form-label" htmlFor="research-authorization">该客户授权文件的存放位置</label><input id="research-authorization" className="form-input" value={authorizationReference} onChange={e => setAuthorizationReference(e.target.value)} maxLength={200} placeholder="例如：客户档案/资料使用授权书/文件名或签署日期" /><p className="research-modal-subtitle">填写能够找到这位客户实际授权文件的位置；上方项目编号无需重复填写。</p></div>
         <label className="research-check"><input type="checkbox" checked={authorizationConfirmed} onChange={e => setAuthorizationConfirmed(e.target.checked)} /><span>我已核验该客户的数据使用授权覆盖本项目</span></label>
         <div className="form-group"><label className="form-label" htmlFor="research-note">纳入说明（可选）</label><textarea id="research-note" className="form-input research-note" value={note} onChange={e => setNote(e.target.value)} maxLength={1000} /></div>
       </div>
