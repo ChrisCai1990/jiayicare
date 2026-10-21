@@ -13,6 +13,7 @@ export default function ContentReviewsPage() {
   const [item, setItem] = useState(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const latestRevision = item?.revisions?.[item.revisions.length - 1]
   // 内容规则以受控稿件模板为准；旧任务记录中的历史链路不能让体检资料整理稿被误归到营养审核。
   const reviewChain = item?.slug === 'checkup-report-organization' ? ['familyDoctor'] : (item?.reviewChain || [])
   const requiresNutrition = reviewChain.includes('nutritionist')
@@ -59,6 +60,12 @@ export default function ContentReviewsPage() {
     <div className="card" style={{ marginTop: 16, padding: 24 }}>
       <div style={{ fontSize: 13, color: '#7C3AED', fontWeight: 600 }}>官网 GEO 内容审核 · {item.status === 'changes_requested' ? '已退回，等待编辑修订；修订后重新送审' : item.status === 'pending' ? `当前环节：${roleName(item.currentRole)}` : '历史记录（只读）'}</div>
       <h2 style={{ margin: '8px 0' }}>{item.title}</h2>
+      {latestRevision && <section aria-label="最新修订说明" style={{ background: '#EAF6F0', border: '1px solid #B6DDCC', borderRadius: 10, padding: 16, margin: '16px 0' }}>
+        <strong>修订稿 · 第{item.revisions.length + 1}版{item.status === 'pending' ? ' · 待重新审核' : ''}</strong>
+        <p>本版送审：{new Date(latestRevision.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p>
+        <p style={{ whiteSpace: 'pre-wrap' }}>修改摘要：{latestRevision.changeSummary}</p>
+        <span>下方为最新正文；旧稿与退回意见保留在历史版本中。</span>
+      </section>}
       <p style={{ color: '#66756E' }}>{item.summary}</p>
       <div style={{ display: 'flex', gap: 18, margin: '16px 0', fontSize: 13, color: '#52615A' }}>
         <span>营养审核：{requiresNutrition ? reviewName(item.nutritionReview) : '无需审核（体检资料整理稿）'}</span>
@@ -66,7 +73,7 @@ export default function ContentReviewsPage() {
         <span>来源更新：{item.sourceUpdatedAt || '-'}</span>
       </div>
       <div style={{ background: '#F8FAF9', border: '1px solid #E3E9E6', borderRadius: 10, padding: 18, whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#22352C' }}>{item.sourceContent}</div>
-      {!!item.revisions?.length && <section style={{ marginTop: 18 }}><h3>本次修订与历史版本</h3>{[...item.revisions].reverse().map((revision, index) => <details key={index} open={index === 0} style={{ marginTop: 12 }}>
+      {!!item.revisions?.length && <section style={{ marginTop: 18 }}><h3>历史版本与修改对照（展开查看）</h3>{[...item.revisions].reverse().map((revision, index) => <details key={index} style={{ marginTop: 12 }}>
         <summary>{new Date(revision.at).toLocaleString()} · {revision.changeSummary}</summary>
         <p>退回意见：{revision.returnNote}</p>
         <p style={{ whiteSpace: 'pre-wrap' }}>修改前：{revision.before?.sourceContent}</p>

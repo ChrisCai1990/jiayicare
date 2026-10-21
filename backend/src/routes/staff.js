@@ -2099,6 +2099,8 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
     if (!hasAccess) return res.status(403).json({ success: false, message: '无权限查看该会员' });
   }
 
+  await require('../utils/legacyLifestyleInterview').reconcileLegacyLifestyleInterviews(req.params.id);
+
   // 历史退款/取消链路可能只更新了订单而漏改待办；详情读取前以订单为事实来源校正，
   // 避免已取消服务仍显示“待执行”。全局启动扫描也会修复未被打开的会员。
   await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(req.params.id);
@@ -2137,6 +2139,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
+  await require('../utils/legacyLifestyleInterview').reconcileLegacyLifestyleInterviews(null, req.staff.role === 'superadmin' ? null : req.staff._id);
   const serviceLinkTaskIds = await FollowUp.find({ assignedTo: req.staff._id, 'serviceTracking.linkId': { $exists: true } }).distinct('_id');
   await require('../utils/followUpServiceLink').safeReconcileServiceLinks({ $or: [{ followUpId: { $in: serviceLinkTaskIds } }, { requestTaskId: { $in: serviceLinkTaskIds } }] });
   const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', dateField = 'date', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '', scope = '', includeFuture = '' } = req.query;
@@ -14460,12 +14463,12 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       contentReviews.forEach(item => todos.push({
         id: `geo_content_${item._id}`,
         type: 'geo_content_review',
-        label: item.currentRole === 'familyDoctor' ? 'GEO 健康教育稿待健康顾问审核' : 'GEO 健康教育稿待营养审核',
+        label: `GEO ${item.revisions?.length ? `修订稿 · 第${item.revisions.length + 1}版 · 待重新审核` : '内容稿待审核'} · ${item.currentRole === 'familyDoctor' ? '健康顾问' : '营养师'}`,
         priority: 3,
         patientName: '官网 GEO 内容',
         patientId: '',
-        summary: item.title,
-        createdAt: item.updatedAt || item.createdAt,
+        summary: item.revisions?.length ? `${item.title}｜修改摘要：${item.revisions[item.revisions.length - 1].changeSummary || '请查看最新正文'}` : item.title,
+        createdAt: item.revisions?.length ? item.revisions[item.revisions.length - 1].at : (item.updatedAt || item.createdAt),
         overdue: false,
         link: `/content-reviews/${item._id}`,
       }));

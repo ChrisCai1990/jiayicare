@@ -1,5 +1,33 @@
 [
   {
+    "title": "关注体重变化时，哪些记录比单次数字更有用？",
+    "summary": "结合测量时间、生活节奏和身体感受，理解变化而非只追求数字。",
+    "updatedAt": "2026-10-19",
+    "publishedAt": "2026-10-21",
+    "href": "guides/weight-trend-notes.html"
+  },
+  {
+    "title": "想调整喝水习惯，先从观察日常开始",
+    "summary": "记录日常饮水场景与习惯，找到适合自己的提醒方式。",
+    "updatedAt": "2026-10-19",
+    "publishedAt": "2026-10-21",
+    "href": "guides/hydration-routine-observation.html"
+  },
+  {
+    "title": "就医协助包含哪些服务？代办、陪同与专家约诊怎样选择？",
+    "summary": "从需要协助的具体事务出发，了解嘉医汇就医协助的服务项目、健康规划师职责、按次办理方式与费用确认事项。",
+    "updatedAt": "2026-09-29",
+    "publishedAt": "2026-09-29",
+    "href": "guides/medical-assistance-service-guide.html"
+  },
+  {
+    "title": "年度健康管理管什么？一年期服务内容、负责人和次数说明",
+    "summary": "了解嘉医汇一年期健康管理的顾问职责、服务内容，以及顾问类服务不限次、慢性病管理和就医协助分别执行的规则。",
+    "updatedAt": "2026-09-29",
+    "publishedAt": "2026-09-29",
+    "href": "guides/annual-health-management-service-guide.html"
+  },
+  {
     "title": "忙碌时，怎样让一餐更容易兼顾多样性？",
     "summary": "从可获得的食物组合出发，为忙碌日常留出弹性。",
     "updatedAt": "2026-09-24",
@@ -61,19 +89,5 @@
     "updatedAt": "2026-09-23",
     "publishedAt": "2026-09-23",
     "href": "guides/weight-regain-review.html"
-  },
-  {
-    "title": "就医协助包含哪些服务？代办、陪同与专家约诊怎样选择？",
-    "summary": "从需要协助的具体事务出发，了解嘉医汇就医协助的服务项目、健康规划师职责、按次办理方式与费用确认事项。",
-    "updatedAt": "2026-09-29",
-    "publishedAt": "2026-09-29",
-    "href": "guides/medical-assistance-service-guide.html"
-  },
-  {
-    "title": "年度健康管理管什么？一年期服务内容、负责人和次数说明",
-    "summary": "了解嘉医汇一年期健康管理的顾问职责、服务内容，以及顾问类服务不限次、慢性病管理和就医协助分别执行的规则。",
-    "updatedAt": "2026-09-29",
-    "publishedAt": "2026-09-29",
-    "href": "guides/annual-health-management-service-guide.html"
   }
 ]
