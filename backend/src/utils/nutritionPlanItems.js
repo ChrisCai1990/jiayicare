@@ -14,7 +14,7 @@ function nutritionPlanItems(plan) {
   const modules = plan.content?.moduleData;
   if (!modules || typeof modules !== 'object') return plan.items || [];
   const oldItems = plan.items || [];
-  return MODULES.flatMap(([key, name, meal, defaultTime]) => {
+  const items = MODULES.flatMap(([key, name, meal, defaultTime]) => {
     const data = modules[key] || {};
     if (data.enabled === false) return [];
     const lines = meal
@@ -41,6 +41,12 @@ function nutritionPlanItems(plan) {
       status: old?.status || 'pending',
     }];
   });
+  if (plan.content?.mealPlanSelection === 'balanced_categories' && modules.breakfast?.categoryWeightBasis) {
+    const previous = oldItems.find(item => item.name === '分量说明');
+    items.push({ ...(previous?.toObject ? previous.toObject() : previous || {}), name: '分量说明', category: '营养干预',
+      notes: modules.breakfast.categoryWeightBasis, status: previous?.status || 'pending' });
+  }
+  return items;
 }
 
 module.exports = { nutritionPlanItems };

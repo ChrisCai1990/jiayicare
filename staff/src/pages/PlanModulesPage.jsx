@@ -398,7 +398,7 @@ export default function PlanModulesPage() {
         if (p.type === 'medical_assist' && assignedHealthPlannerId && !nextModuleData.visit?.supervisorId) {
           nextModuleData.visit = { ...(nextModuleData.visit || {}), supervisorId: assignedHealthPlannerId }
         }
-        const displayModules = p.type === 'nutrition' && c.mealPlanVariants && (c.mealPlanSelection || 'balanced_categories') === 'balanced_categories' ? mealPlans.categoryMeals(nextModuleData) : nextModuleData
+        const displayModules = p.type === 'nutrition' && c.mealPlanVariants && (c.mealPlanSelection || 'balanced_categories') === 'balanced_categories' ? mealPlans.categoryMeals(nextModuleData, c.nutritionAssessment) : nextModuleData
         setModuleData(displayModules)
         setGoal(c.goal || p.description || '')
         setNutritionTargets(nutritionTargetsFrom(c))
@@ -448,7 +448,7 @@ export default function PlanModulesPage() {
     }
     setSaving(true)
     try {
-      const savedModules = plan.type === 'nutrition' && mealSelection === 'balanced_categories' && Object.keys(mealVariants).length ? mealPlans.categoryMeals(moduleData) : moduleData
+      const savedModules = plan.type === 'nutrition' && mealSelection === 'balanced_categories' && Object.keys(mealVariants).length ? mealPlans.categoryMeals(moduleData, plan.content?.nutritionAssessment) : moduleData
       const content = contentFromModules(plan, savedModules, goal, staffList)
       if (plan.type === 'nutrition' && Object.keys(mealVariants).length) {
         Object.assign(content, { mealPlanSelection: mealSelection,
@@ -742,15 +742,11 @@ export default function PlanModulesPage() {
           onConfirm={checked => { setMealPackConfirmed(checked); setDirty(true) }}
           onSelect={next => {
             try {
-              const switched = mealPlans.switchMealPlan(mealVariants, mealSelection, next, moduleData)
+              const switched = mealPlans.switchMealPlan(mealVariants, mealSelection, next, moduleData, plan.content?.nutritionAssessment)
               setMealVariants(switched.variants); setMealSelection(switched.selected); setModuleData(switched.modules); setDirty(true)
             } catch (error) { toast(error.message) }
           }} />}
         {plan.type === 'nutrition' && !Object.keys(mealVariants).length && <div style={{ marginBottom: 12, color: '#66776E', fontSize: 13 }}>本方案保留原配餐内容；重新生成AI营养草稿后，可选择平衡膳食食谱、大类或餐包方式。</div>}
-        {plan.type === 'nutrition' && mealSelection === 'balanced_categories' && ['breakfast', 'lunch', 'dinner', 'snack'].some(key => moduleData[key]?.content?.includes('待核对')) && <details style={{ marginBottom: 12, color: '#946200' }}>
-          <summary>部分大类分量需要核对（展开查看原始记录）</summary>
-          <pre style={{ whiteSpace: 'pre-wrap' }}>{['breakfast', 'lunch', 'dinner', 'snack'].filter(key => moduleData[key]?.content?.includes('待核对')).map(key => moduleData[key]?.categorySource || moduleData[key]?.content).join('\n\n')}</pre>
-        </details>}
         {moduleKeys.map(mKey => (
           <ModulePanel
             key={mKey}
