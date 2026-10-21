@@ -11,8 +11,8 @@ const valid = {
     { metric: '内脏脂肪', baseline: '9级（2026-10-01）', target: '8级' },
     { metric: '体重', baseline: '68 kg（2026-10-01）', target: '67 kg' },
   ],
-  height: 165, weight: 68, activityLevel: 'inactive', lifeStage: 'not_pregnant_lactating',
-  managementPurpose: 'maintain', managementKcal: 2030,
+  height: 165, weight: 68, activityLevel: 'active', lifeStage: 'not_pregnant_lactating',
+  managementPurpose: 'maintain', managementKcal: 1800,
   breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30, snackPercent: 0,
   medicalReview: '已核对疾病、用药及近期检查，无额外饮食限制',
   practicalConstraints: '午餐外卖，预算30元，晚餐可自行准备',
@@ -54,8 +54,10 @@ test('多条观察指标分别保存基线与目标，并拒绝缺项、重复�
 
 test('管理期能量与餐次预算由服务端重新计算，比例或低能量阻止普通生成', () => {
   const result = prepareNutritionAssessment(valid, user);
-  assert.equal(result.assessment.estimatedMaintenanceKcal, 2030);
-  assert.deepEqual(result.assessment.mealEnergyKcal, { breakfast: 609, lunch: 812, dinner: 609, snack: 0 });
+  assert.equal(result.assessment.idealWeightKg, 60);
+  assert.equal(result.assessment.activityCoefficient, 30);
+  assert.equal(result.assessment.estimatedDailyKcal, 1800);
+  assert.deepEqual(result.assessment.mealEnergyKcal, { breakfast: 540, lunch: 720, dinner: 540, snack: 0 });
   assert(prepareNutritionAssessment({ ...valid, dinnerPercent: 20 }, user).missing.some(text => text.includes('合计100%')));
   assert(prepareNutritionAssessment({ ...valid, managementKcal: 900 }, user).missing.some(text => text.includes('管理期能量')));
   const highWeight = { ...valid, weight: 130, managementPurpose: 'reduce', managementKcal: 1600 };

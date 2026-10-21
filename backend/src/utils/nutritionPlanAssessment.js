@@ -28,6 +28,7 @@ function prepareNutritionAssessment(input = {}, user = {}) {
     weight: Number(input.weight || user.weight),
     age: Number(user.age),
     activityLevel: clean(input.activityLevel, 30),
+    activityCoefficient: input.activityCoefficient === undefined || input.activityCoefficient === '' ? null : Number(input.activityCoefficient),
     lifeStage: clean(input.lifeStage, 40),
     managementPurpose: clean(input.managementPurpose, 20),
     managementKcal: Number(input.managementKcal),
@@ -57,9 +58,11 @@ function prepareNutritionAssessment(input = {}, user = {}) {
   if (!Number.isFinite(assessment.weight) || assessment.weight < 25 || assessment.weight > 350) missing.push('已核实体重（kg）');
   const energy = validateNutritionEnergy(user, assessment);
   missing.push(...energy.errors);
-  assessment.estimatedMaintenanceKcal = energy.maintenanceKcal;
+  assessment.idealWeightKg = energy.idealWeight;
+  assessment.activityCoefficient = energy.activityCoefficient;
+  assessment.estimatedDailyKcal = energy.estimatedDailyKcal;
   assessment.mealEnergyKcal = energy.mealKcal;
-  assessment.energyReference = 'NASEM DRI for Energy 2023 EER, adult';
+  assessment.energyReference = '理想体重(kg)=身高(cm)-105；全日参考能量=理想体重×活动系数';
   if (!['confirmed_none', 'confirmed_present'].includes(assessment.allergyStatus)) missing.push('食物过敏核对结果');
   if (assessment.allergyStatus === 'confirmed_present' && !assessment.allergyDetails) missing.push('食物过敏详情');
   if (assessment.allergyStatus === 'confirmed_present' && assessment.allergyDetails && !isUsableFoodAllergy(assessment.allergyDetails)) missing.push('具体过敏食物及反应，不能填写无过敏');

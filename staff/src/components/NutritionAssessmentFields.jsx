@@ -9,7 +9,7 @@ import nutritionSubjective from '../../../shared/nutritionSubjective.cjs'
 import nutritionTargets from '../../../shared/nutritionTargets.cjs'
 
 const { foodAllergyEvidence, hasFoodAllergyRecord, questionnaireFoodAllergyEvidence, isUsableFoodAllergy } = foodAllergy
-const { validateNutritionEnergy } = nutritionEnergy
+const { validateNutritionEnergy, estimateDailyEnergy } = nutritionEnergy
 const { OBJECTIVE_METRICS, SUBJECTIVE_METRICS } = nutritionComparisonMetrics
 
 export const initialNutritionAssessment = (patient = {}, previous = null) => nutritionAssessmentPrefill(patient, previous).assessment
@@ -33,7 +33,18 @@ export function missingNutritionAssessment(value = {}, goal = '', patient = {}) 
 }
 
 export default function NutritionAssessmentFields({ patient, value, onChange, previousAssessmentAt = '' }) {
-  const set = (key, fieldValue) => onChange(current => ({ ...current, [key]: fieldValue }))
+  const set = (key, fieldValue) => onChange(current => {
+    const next = { ...current, [key]: fieldValue }
+    if (key === 'activityLevel') next.activityCoefficient = fieldValue === 'low_active' ? 22.5 : ''
+    if (['height', 'activityLevel', 'activityCoefficient'].includes(key)) {
+      const oldEstimate = estimateDailyEnergy(current)
+      const newEstimate = estimateDailyEnergy(next)
+      if (newEstimate && (!current.managementKcal || Number(current.managementKcal) === oldEstimate)) {
+        next.managementKcal = newEstimate
+      }
+    }
+    return next
+  })
   const recordedAllergy = foodAllergyEvidence(patient)
   const questionnaireAllergy = questionnaireFoodAllergyEvidence(patient)
   const formalRecordedAllergy = foodAllergyEvidence({ ...patient, lifestyle_data: {} })
@@ -63,16 +74,20 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
     <NutritionTargetRows value={value.nutritionTargets} onChange={rows => set('nutritionTargets', rows)} fixed />
     <section style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #DCE7E0', borderRadius: 9, background: '#FAFCFB' }}>
       <strong>每日能量与三餐分配</strong>
-      <div style={{ color: '#52675D', fontSize: 12 }}>按当前体重估算的能量仅供比较。管理期每日能量由营养师结合本阶段目标、减重速度、疾病和用药情况确定；达到目标体重后的维持能量需届时重新评估。活动等级须核实。{patient?.lifestyle_data?.exerciseFrequency && `档案运动频率：${patient.lifestyle_data.exerciseFrequency}。`}</div>
-      <label className="form-label">日常活动等级 *<select className="form-input" value={value.activityLevel || ''} onChange={e => set('activityLevel', e.target.value)}><option value="">请选择已核实等级</option><option value="inactive">活动少（日常生活活动为主）</option><option value="low_active">轻度活动</option><option value="active">中等活动</option><option value="very_active">高活动量</option></select></label>
+      <div style={{ color: '#52675D', fontSize: 12 }}>先按身高计算理想体重，再按活动等级计算全日参考能量。系统自动填入管理期每日能量；营养师结合实际体重、目标、疾病及用药情况调整并确认。{patient?.lifestyle_data?.exerciseFrequency && `档案运动频率：${patient.lifestyle_data.exerciseFrequency}。`}</div>
+      <label className="form-label">日常活动等级 *<select className="form-input" value={value.activityLevel || ''} onChange={e => set('activityLevel', e.target.value)}><option value="">请选择已核实等级</option><option value="inactive">卧床（15 kcal/kg理想体重/日）</option><option value="low_active">轻体力活动（20–25 kcal/kg理想体重/日）</option><option value="active">中体力活动（30 kcal/kg理想体重/日）</option><option value="very_active">重体力活动（35 kcal/kg理想体重/日）</option></select></label>
+      {value.activityLevel === 'low_active' && <label className="form-label">轻体力活动能量系数（20–25）<input className="form-input" type="number" min="20" max="25" step="0.5" value={value.activityCoefficient ?? 22.5} onChange={e => set('activityCoefficient', e.target.value)} /></label>}
       {patient?.gender === '女' && <label className="form-label">妊娠／哺乳状态 *<select className="form-input" value={value.lifeStage || ''} onChange={e => set('lifeStage', e.target.value)}><option value="">请选择</option><option value="not_pregnant_lactating">已核实：非妊娠、非哺乳</option><option value="pregnant_or_lactating">妊娠或哺乳，转专门评估</option><option value="unknown">尚未核实</option></select></label>}
-      <div style={{ color: '#355E4F' }}>当前体重维持能量估算：<strong>{energy.maintenanceKcal ? `约 ${energy.maintenanceKcal} kcal/日` : '待补齐年龄、性别、身高、体重及活动等级'}</strong></div>
+      <div style={{ color: '#355E4F' }}>第一步 · 理想体重：<strong>{energy.idealWeight !== null ? `${energy.idealWeight} kg（身高 ${value.height} cm－105）` : '请核实身高'}</strong></div>
+      <div style={{ color: '#355E4F' }}>第二步 · 全日参考能量：<strong>{energy.estimatedDailyKcal ? `${energy.idealWeight} × ${energy.activityCoefficient} ≈ ${energy.estimatedDailyKcal} kcal/日` : '请选择活动等级并核实身高、能量系数'}</strong></div>
+      {energy.estimatedDailyKcal && energy.estimatedDailyKcal < (patient?.gender === '男' ? 1500 : 1200) && <div role="status" style={{ color: '#79551A', background: '#FFF4DC', padding: 10, borderRadius: 6 }}>参考值低于普通成人方案的最低能量，请营养师调整管理期能量或转专门评估。</div>}
       {energy.warnings?.map(warning => <div key={warning} role="status" style={{ color: '#79551A', background: '#FFF4DC', padding: 10, borderRadius: 6 }}>{warning}</div>)}
+      <div style={{ color: '#355E4F' }}>第三步 · 营养师结合当前体重和整体情况调整管理期每日能量。</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
         <label className="form-label">管理方向 *<select className="form-input" value={value.managementPurpose || ''} onChange={e => set('managementPurpose', e.target.value)}><option value="">请选择</option><option value="maintain">维持</option><option value="reduce">降低能量</option><option value="increase">增加能量</option></select></label>
-        <label className="form-label">管理期每日能量（kcal） *<input className="form-input" type="number" min="1000" step="10" value={value.managementKcal || ''} onChange={e => set('managementKcal', e.target.value)} placeholder="由营养师根据目标确认" /></label>
+        <label className="form-label">管理期每日能量（kcal） *<input className="form-input" type="number" min={patient?.gender === '男' ? 1500 : 1200} step="1" value={value.managementKcal || ''} onChange={e => set('managementKcal', e.target.value)} placeholder="系统自动填入，营养师可调整" /></label>
       </div>
-      {value.managementPurpose === 'maintain' && energy.maintenanceKcal && <button type="button" className="btn btn-secondary btn-sm" style={{ justifySelf: 'start' }} onClick={() => set('managementKcal', energy.maintenanceKcal)}>采用当前体重维持估算值</button>}
+      {energy.estimatedDailyKcal && <button type="button" className="btn btn-secondary btn-sm" style={{ justifySelf: 'start' }} onClick={() => set('managementKcal', energy.estimatedDailyKcal)}>重新采用全日参考能量</button>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10 }}>
         {[['breakfastPercent', '早餐'], ['lunchPercent', '午餐'], ['dinnerPercent', '晚餐'], ['snackPercent', '加餐（可选）']].map(([key, label]) => <label key={key} className="form-label">{label}（%）<input className="form-input" type="number" min="0" max="100" step="1" value={value[key] ?? ''} onChange={e => set(key, e.target.value)} /></label>)}
       </div>

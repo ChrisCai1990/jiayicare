@@ -1,31 +1,36 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { estimateMaintenanceEnergy, mealEnergyBudgets, validateNutritionEnergy } = require('../../shared/nutritionEnergy.cjs');
+const { idealWeight, estimateDailyEnergy, mealEnergyBudgets, validateNutritionEnergy } = require('../../shared/nutritionEnergy.cjs');
 const { withFixedNutritionTargets } = require('../../shared/nutritionTargets.cjs');
 
-test('2023 成人维持能量估算使用年龄、性别、身高体重和活动等级', () => {
-  assert.equal(estimateMaintenanceEnergy({ gender: '女', age: 42, height: 165, weight: 68, activityLevel: 'inactive' }), 2030);
-  assert.equal(estimateMaintenanceEnergy({ gender: '男', age: 42, height: 165, weight: 68, activityLevel: 'inactive' }), 2330);
-  assert.equal(estimateMaintenanceEnergy({ gender: '未知', age: 42, height: 165, weight: 68, activityLevel: 'inactive' }), null);
+test('理想体重与四档活动系数计算全日参考能量', () => {
+  assert.equal(idealWeight(165), 60);
+  assert.equal(estimateDailyEnergy({ height: 165, activityLevel: 'inactive' }), 900);
+  assert.equal(estimateDailyEnergy({ height: 165, activityLevel: 'low_active' }), 1350);
+  assert.equal(estimateDailyEnergy({ height: 165, activityLevel: 'low_active', activityCoefficient: 20 }), 1200);
+  assert.equal(estimateDailyEnergy({ height: 165, activityLevel: 'low_active', activityCoefficient: 25 }), 1500);
+  assert.equal(estimateDailyEnergy({ height: 165, activityLevel: 'active' }), 1800);
+  assert.equal(estimateDailyEnergy({ height: 165, activityLevel: 'very_active' }), 2100);
+  assert.equal(estimateDailyEnergy({ height: 165, activityLevel: 'low_active', activityCoefficient: 26 }), null);
 });
 
 test('餐次预算合计等于管理期能量，含可选加餐', () => {
   assert.deepEqual(mealEnergyBudgets(1600, 30, 40, 20, 10), { breakfast: 480, lunch: 640, dinner: 320, snack: 160 });
   assert.equal(mealEnergyBudgets(1600, 30, 40, 20, 0), null);
   const patient = { gender: '女', age: 42 };
-  const input = { height: 165, weight: 68, activityLevel: 'inactive', lifeStage: 'not_pregnant_lactating', managementPurpose: 'maintain', managementKcal: 2030, breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30 };
+  const input = { height: 165, weight: 68, activityLevel: 'active', lifeStage: 'not_pregnant_lactating', managementPurpose: 'maintain', managementKcal: 1800, breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30 };
   assert.deepEqual(validateNutritionEnergy(patient, input).errors, []);
   assert(validateNutritionEnergy(patient, { ...input, lifeStage: 'pregnant_or_lactating' }).errors.some(x => x.includes('孕哺期')));
 });
 
-test('高体重客户的管理期目标超过当前维持估算30%偏差时提示复核但允许生成', () => {
+test('管理期目标偏离理想体重参考值超过30%时提示复核但允许生成', () => {
   const patient = { gender: '女', age: 42 };
   const input = { height: 165, weight: 130, activityLevel: 'inactive', lifeStage: 'not_pregnant_lactating',
     managementPurpose: 'reduce', managementKcal: 1600, breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30 };
   const result = validateNutritionEnergy(patient, input);
-  assert(result.maintenanceKcal > 1600 / 0.7);
+  assert.equal(result.estimatedDailyKcal, 900);
   assert.deepEqual(result.errors, []);
-  assert(result.warnings.some(warning => warning.includes('当前体重')));
+  assert(result.warnings.some(warning => warning.includes('理想体重')));
   assert(validateNutritionEnergy(patient, { ...input, managementKcal: 1100 }).errors.some(error => error.includes('管理期能量须为')));
 });
 

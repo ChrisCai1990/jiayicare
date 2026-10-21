@@ -17826,7 +17826,7 @@ ${assessment.goal}
 ${assessment.nutritionTargets.map((row, index) => `${index + 1}. ${row.metric}：基线 ${row.baseline}；目标 ${row.target}`).join('\n')}
 
 【已核实能量预算】
-按年龄、性别、身高、体重及活动等级估算维持能量：约 ${assessment.estimatedMaintenanceKcal} kcal/日（仅作估算）。
+理想体重：${assessment.idealWeightKg} kg（身高 cm－105）；按已核实活动等级及系数 ${assessment.activityCoefficient} 计算全日参考能量：约 ${assessment.estimatedDailyKcal} kcal/日。
 营养师确认的管理期能量：${assessment.managementKcal} kcal/日。
 餐次预算：早餐 ${assessment.mealEnergyKcal.breakfast}、午餐 ${assessment.mealEnergyKcal.lunch}、晚餐 ${assessment.mealEnergyKcal.dinner}、加餐 ${assessment.mealEnergyKcal.snack} kcal。
 请围绕各餐预算安排食物类别与参考分量；不要虚构精确的食物热量或宣称已核算实际摄入。加餐预算为 0 时不要安排加餐。
