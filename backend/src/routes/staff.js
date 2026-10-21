@@ -4173,6 +4173,8 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (plan.type === 'nutrition' && req.body.content) {
     const mealError = require('../../../shared/nutritionMealPlans.cjs').mealPlanError(req.body.content);
     if (mealError) return res.status(400).json({ success: false, message: mealError });
+    req.body.content.mealEnergyReview = require('../../../shared/nutritionMealEnergy.cjs').estimateEditedMeals(
+      req.body.content.moduleData, req.body.content.nutritionAssessment, req.body.content.mealEnergyManual);
   }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
@@ -4455,6 +4457,9 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   if (plan.type === 'nutrition') {
     const mealError = require('../../../shared/nutritionMealPlans.cjs').mealPlanError(plan.content);
     if (mealError) return res.status(400).json({ success: false, message: mealError });
+    plan.content.mealEnergyReview = require('../../../shared/nutritionMealEnergy.cjs').estimateEditedMeals(
+      plan.content.moduleData, plan.content.nutritionAssessment, plan.content.mealEnergyManual);
+    plan.markModified('content');
   }
   plan.status = 'active';
   plan.pushedAt = new Date();

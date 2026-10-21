@@ -7,6 +7,8 @@ import NutritionTargetRows, { nutritionTargetsFrom, nutritionTargetError } from 
 import DateField from '../../../shared/DateField.jsx'
 import mealPlans from '../../../shared/nutritionMealPlans.cjs'
 import NutritionMealPlanSelector from '../components/NutritionMealPlanSelector'
+import NutritionMealEnergyReview, { MealEnergySummary } from '../components/NutritionMealEnergyReview'
+import mealEnergyReview from '../../../shared/nutritionMealEnergy.cjs'
 
 // 营养干预方案 / 就医协助方案的板块化编辑页（2026-07-13新增）。
 // 之前这两类方案AI生成后只是扁平items+零散content字段，跟年度管理方案的"选模板→板块折叠面板→
@@ -360,6 +362,7 @@ export default function PlanModulesPage() {
   const [mealVariants, setMealVariants] = useState({})
   const [mealSelection, setMealSelection] = useState('balanced_categories')
   const [mealPackConfirmed, setMealPackConfirmed] = useState(false)
+  const [mealEnergyManual, setMealEnergyManual] = useState({})
   const [goal, setGoal] = useState('')
   const [nutritionTargets, setNutritionTargets] = useState(() => nutritionTargetsFrom())
   const [nutritionReviewDate, setNutritionReviewDate] = useState('')
@@ -389,6 +392,7 @@ export default function PlanModulesPage() {
         setMealVariants(c.mealPlanVariants || {})
         setMealSelection(c.mealPlanSelection || 'balanced_categories')
         setMealPackConfirmed(c.mealPackSuitabilityConfirmed === true)
+        setMealEnergyManual(c.mealEnergyManual || {})
         const nextModuleData = p.type === 'medical_assist' ? medicalAssistModuleData(c) : (c.moduleData || {})
         const assignedReviewerId = p.patientId?.assignedFamilyDoctor?._id || p.patientId?.assignedFamilyDoctor || ''
         if (p.type === 'medical_assist' && isCheckupMedicalAssist(c, p.title) && assignedReviewerId && !nextModuleData.visit?.reviewerId) {
@@ -448,6 +452,10 @@ export default function PlanModulesPage() {
     setSaving(true)
     try {
       const content = contentFromModules(plan, moduleData, goal, staffList)
+      if (plan.type === 'nutrition') {
+        content.mealEnergyManual = mealEnergyManual
+        content.mealEnergyReview = mealEnergyReview.estimateEditedMeals(moduleData, content.nutritionAssessment, mealEnergyManual)
+      }
       if (plan.type === 'nutrition' && Object.keys(mealVariants).length) {
         Object.assign(content, { mealPlanSelection: mealSelection,
           mealPlanVariants: { ...mealVariants, [mealSelection]: mealPlans.snapshotMeals(moduleData) },
@@ -744,7 +752,12 @@ export default function PlanModulesPage() {
             } catch (error) { toast(error.message) }
           }} />}
         {plan.type === 'nutrition' && !Object.keys(mealVariants).length && <div style={{ marginBottom: 12, color: '#66776E', fontSize: 13 }}>本方案保留原配餐内容；重新生成AI营养草稿后，可选择平衡膳食食谱、大类或餐包方式。</div>}
+        {plan.type === 'nutrition' && plan.content?.nutritionAssessment && <NutritionMealEnergyReview
+          modules={moduleData} assessment={plan.content.nutritionAssessment} manual={mealEnergyManual}
+          disabled={!canEdit || saving || pushing}
+          onChange={(meal, line, value) => { setMealEnergyManual(current => ({ ...current, [meal]: { ...(current[meal] || {}), [line]: value } })); setDirty(true) }} />}
         {moduleKeys.map(mKey => (
+          <React.Fragment key={mKey}>
           <ModulePanel
             key={mKey}
             moduleKey={mKey}
@@ -752,6 +765,8 @@ export default function PlanModulesPage() {
             data={moduleData[mKey] || {}}
             onChange={handleModuleChange}
           />
+          {plan.type === 'nutrition' && plan.content?.nutritionAssessment && <MealEnergySummary mealKey={mKey} modules={moduleData} assessment={plan.content.nutritionAssessment} manual={mealEnergyManual} />}
+          </React.Fragment>
         ))}
       </div>}
 
