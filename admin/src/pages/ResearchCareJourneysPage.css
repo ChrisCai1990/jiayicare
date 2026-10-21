@@ -43,3 +43,18 @@
 .research-check input { width: 15px; height: 15px; margin: 2px 0 0; accent-color: var(--primary); }
 .research-note { min-height: 80px; resize: vertical; }
 @media (max-width: 640px) { .research-page-header { align-items: flex-start; flex-direction: column; gap: 14px; } .research-toolbar { align-items: stretch; flex-direction: column; } .research-count-card { min-width: 0; } .research-list-heading { align-items: flex-start; } .research-notice { padding: 13px; } .research-add-button { width: 100%; } }
+.research-setting { padding: 22px; margin-bottom: 18px; }
+.research-setting h2 { margin: 0 0 7px; font-size: 17px; }
+.research-setting p { margin: 0 0 17px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+.research-setting .form-group { max-width: 620px; }
+.research-setting-done { margin: 0 0 18px; padding: 11px 15px; border-radius: 10px; color: #176b58; background: #f0faf6; font-size: 13px; }
+.research-candidates { max-height: 240px; overflow-y: auto; margin: -8px 0 17px; border: 1px solid var(--border); border-radius: 10px; }
+.research-candidates > p { padding: 12px; margin: 0; color: var(--text-secondary); font-size: 13px; }
+.research-candidate { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; border: 0; border-bottom: 1px solid var(--border); background: white; text-align: left; cursor: pointer; }
+.research-candidate:last-child { border-bottom: 0; }
+.research-candidate.selected { background: #eaf8f3; outline: 2px solid var(--primary); outline-offset: -2px; }
+.research-candidate:disabled { color: var(--text-muted); background: #f9fafb; cursor: default; }
+.research-candidate strong, .research-candidate small { display: block; }
+.research-candidate small { margin-top: 3px; color: var(--text-secondary); font-size: 11px; }
+.research-candidate em { flex: 0 0 auto; font-size: 11px; font-style: normal; color: #176b58; }
+.research-selected { padding: 10px 12px; margin: -5px 0 15px; border-radius: 8px; background: #f0faf6; color: #176b58; font-size: 13px; }

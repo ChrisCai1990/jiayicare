@@ -8,6 +8,7 @@ const Draft = require('../models/ReportFollowUpDraft');
 const AnnualPlan = require('../models/AnnualPlan');
 const FollowUp = require('../models/FollowUp');
 const Journey = require('../models/ResearchCareJourney');
+const StudySetting = require('../models/ResearchStudySetting');
 const { deriveJourneySnapshot } = require('../utils/researchCareJourney');
 
 router.use(adminAuth);
@@ -19,6 +20,49 @@ const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, 
 const participantCode = (patientId) => `P-${crypto.createHmac('sha256', process.env.RESEARCH_PSEUDONYM_SECRET || process.env.JWT_SECRET)
   .update(`${STUDY}:${patientId}`).digest('hex').slice(0, 10).toUpperCase()}`;
 const researchNumber = () => `WONCA-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+const annualCustomer = async (patient) => patient.membershipTier === 'annual'
+  || Boolean(await AnnualPlan.exists({ patientId: patient._id }));
+
+router.get('/setting', async (req, res, next) => {
+  try {
+    const setting = await StudySetting.findOne({ studyCode: STUDY }).select('governanceReference verifiedAt').lean();
+    res.set('Cache-Control', 'no-store').json({ data: setting });
+  } catch (error) { next(error); }
+});
+
+router.put('/setting', async (req, res, next) => {
+  try {
+    const governanceReference = clean(req.body.governanceReference, 200);
+    if (!governanceReference || req.body.governanceConfirmed !== true) return res.status(400).json({ message: '请填写并核验本项目的机构依据记录' });
+    const existing = await StudySetting.findOne({ studyCode: STUDY });
+    if (existing) return res.status(409).json({ message: '项目依据已记录；如需更正，请由机构按正式流程处理' });
+    const setting = await StudySetting.create({ studyCode: STUDY, governanceReference, verifiedBy: req.admin._id, verifiedAt: new Date() });
+    res.status(201).json({ data: { governanceReference: setting.governanceReference, verifiedAt: setting.verifiedAt } });
+  } catch (error) { if (error.code === 11000) return res.status(409).json({ message: '项目依据已记录' }); next(error); }
+});
+
+router.get('/candidates', async (req, res, next) => {
+  try {
+    const q = clean(req.query.q, 64);
+    if (q.length < 2) return res.status(400).json({ message: '请至少输入两个字符' });
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const filter = mongoose.isValidObjectId(q)
+      ? { _id: q, isDeleted: { $ne: true } }
+      : { isDeleted: { $ne: true }, $or: [{ name: { $regex: escaped, $options: 'i' } }, { phone: { $regex: escaped } }] };
+    const users = await User.find(filter).select('_id name phone membershipTier servicePackage').limit(12).lean();
+    const existing = await Journey.find({ studyCode: STUDY, patientId: { $in: users.map(user => user._id) } }).select('patientId').lean();
+    const enrolled = new Set(existing.map(row => String(row.patientId)));
+    const data = await Promise.all(users.map(async user => ({
+      patientId: user._id,
+      name: user.name,
+      phone: user.phone,
+      servicePackage: user.servicePackage,
+      isAnnual: await annualCustomer(user),
+      enrolled: enrolled.has(String(user._id)),
+    })));
+    res.set('Cache-Control', 'no-store').json({ data });
+  } catch (error) { next(error); }
+});
 
 async function snapshotFor(patientId, year) {
   const [reports, annualPlan] = await Promise.all([
@@ -36,7 +80,11 @@ router.get('/journeys', async (req, res, next) => {
   try {
     const year = Number(req.query.year) || new Date().getFullYear();
     const rows = await Journey.find({ studyCode: STUDY }).sort({ enrolledAt: -1 }).lean();
-    const data = await Promise.all(rows.map(async row => ({ ...row, participantCode: participantCode(row.patientId), snapshot: await snapshotFor(row.patientId, year) })));
+    const data = await Promise.all(rows.map(async row => ({
+      _id: row._id, researchNumber: row.researchNumber, status: row.status,
+      enrolledAt: row.enrolledAt, participantCode: participantCode(row.patientId),
+      snapshot: await snapshotFor(row.patientId, year),
+    })));
     res.set('Cache-Control', 'no-store').json({ data, year });
   } catch (error) { next(error); }
 });
@@ -45,17 +93,22 @@ router.post('/journeys', async (req, res, next) => {
   try {
     const patientId = req.body.patientId;
     if (!mongoose.isValidObjectId(patientId)) return res.status(400).json({ message: '客户标识无效' });
-    const governanceBasis = req.body.governanceBasis;
-    const governanceReference = clean(req.body.governanceReference, 200);
     const authorizationReference = clean(req.body.authorizationReference, 200);
-    if (!['ethics_approved', 'quality_improvement'].includes(governanceBasis) || !governanceReference || !authorizationReference || req.body.governanceConfirmed !== true || req.body.authorizationConfirmed !== true) return res.status(400).json({ message: '请先核验并填写研究治理依据与数据使用授权记录' });
-    const patient = await User.findById(patientId).select('_id isDeleted');
+    if (!authorizationReference || req.body.authorizationConfirmed !== true) return res.status(400).json({ message: '请填写并核验该客户的数据使用授权记录' });
+    const setting = await StudySetting.findOne({ studyCode: STUDY });
+    if (!setting) return res.status(400).json({ message: '请先记录本项目的机构依据' });
+    const patient = await User.findById(patientId).select('_id isDeleted membershipTier');
     if (!patient || patient.isDeleted) return res.status(404).json({ message: '客户不存在或已归档' });
-    const eligible = await Report.exists({ user: patientId, aiStatus: 'reviewed', audit_status: 'audited', 'familyDoctorAudit.status': 'audited' });
-    if (!eligible) return res.status(400).json({ message: '该会员尚无满足方案纳入条件的已完成专业审核报告' });
+    if (!await annualCustomer(patient)) return res.status(400).json({ message: '该客户尚无年度管理身份或年度方案记录' });
     const verifiedAt = new Date();
-    const row = await Journey.create({ studyCode: STUDY, patientId, researchNumber: researchNumber(), governanceBasis, governanceReference, authorizationReference, governanceVerifiedAt: verifiedAt, authorizationVerifiedAt: verifiedAt, inclusionNote: clean(req.body.inclusionNote, 1000), enrolledBy: req.admin._id });
-    res.status(201).json({ success: true, data: row });
+    const row = await Journey.create({
+      studyCode: STUDY, patientId, researchNumber: researchNumber(),
+      governanceBasis: 'institutional_review', governanceReference: setting.governanceReference,
+      authorizationReference, governanceVerifiedAt: setting.verifiedAt,
+      authorizationVerifiedAt: verifiedAt, inclusionNote: clean(req.body.inclusionNote, 1000),
+      enrolledBy: req.admin._id,
+    });
+    res.status(201).json({ success: true, data: { researchNumber: row.researchNumber } });
   } catch (error) { if (error.code === 11000) return res.status(409).json({ message: '该客户已在 WONCA 研究队列中' }); next(error); }
 });
 

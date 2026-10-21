@@ -7,7 +7,7 @@ const schema = new mongoose.Schema({
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   researchNumber: { type: String, required: true },
   status: { type: String, enum: ['enrolled', 'withdrawn', 'locked'], default: 'enrolled', index: true },
-  governanceBasis: { type: String, enum: ['ethics_approved', 'quality_improvement'], required: true },
+  governanceBasis: { type: String, enum: ['ethics_approved', 'quality_improvement', 'institutional_review'], required: true },
   governanceReference: { type: String, required: true, trim: true, maxlength: 200, immutable: true },
   authorizationReference: { type: String, required: true, trim: true, maxlength: 200, immutable: true },
   governanceVerifiedAt: { type: Date, required: true, immutable: true },
