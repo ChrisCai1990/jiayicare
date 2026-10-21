@@ -37,17 +37,23 @@ const PUSH_TYPE_LABEL = {
 };
 
 function normalizePushRecord(pr) {
+  const pushContent = pr.type === 'plan'
+    ? String(pr.content || '').replace(/请前往["“]?健康方案["”]?查看。?/, '点击通知即可查看完整方案。')
+    : pr.content;
   return {
     _id: pr._id,
     isPushRecord: true,
     type: pr.type,
     sender: pr.staffId?.name || '健康管理团队',
     title: PUSH_TYPE_LABEL[pr.type] || '推送通知',
-    content: pr.title + (pr.content ? `\n${pr.content}` : ''),
+    content: pr.title + (pushContent ? `\n${pushContent}` : ''),
     coverUrl: pr.coverUrl || '',
     unread: !pr.readAt,
     time: new Date(pr.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
     createdAt: pr.createdAt,
+    planId: pr.planId?._id || pr.planId || null,
+    sourceAnnualPlanId: pr.sourceAnnualPlanId?._id || pr.sourceAnnualPlanId || null,
+    planYear: pr.type === 'plan' ? Number(String(pr.title || '').match(/^(\d{4})年度/)?.[1]) || null : null,
     // 产品推送专用
     price: pr.price || null,
     productName: pr.title || '',
@@ -436,10 +442,10 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
       return (
         <TouchableOpacity
           style={[styles.detailCloseBtn, { flex: 2, backgroundColor: '#D97706', borderWidth: 0 }]}
-          onPress={() => { onClose(); navigation.navigate('ServicePlans'); }}
+          onPress={() => { onClose(); navigation.navigate('ServicePlans', { planId: msg.planId || msg.sourceAnnualPlanId || null, planYear: msg.planYear, direct: true }); }}
           activeOpacity={0.85}
         >
-          <Text style={[styles.detailCloseBtnText, { color: colors.white }]}>查看健康方案</Text>
+          <Text style={[styles.detailCloseBtnText, { color: colors.white }]}>查看完整方案</Text>
         </TouchableOpacity>
       );
     }
@@ -833,7 +839,11 @@ export default function MessagesScreen({ navigation }) {
         visible={showNotifModal}
         messages={notifMessages}
         onClose={() => setShowNotifModal(false)}
-        onPress={(msg) => { setShowNotifModal(false); setSelectedMsg(msg); }}
+        onPress={(msg) => {
+          setShowNotifModal(false);
+          if (msg.type === 'plan') navigation.navigate('ServicePlans', { planId: msg.planId || msg.sourceAnnualPlanId || null, planYear: msg.planYear, direct: true });
+          else setSelectedMsg(msg);
+        }}
         onMarkRead={async (msg) => {
           if (!msg.unread) return;
           try {

@@ -81,13 +81,16 @@ const PUSH_TYPE_LABEL = {
 };
 
 function normalizePushRecord(pr, beneficiaryUserId = '') {
+  const pushContent = pr.type === 'plan'
+    ? String(pr.content || '').replace(/请前往["“]?健康方案["”]?查看。?/, '点击通知即可查看完整方案。')
+    : pr.content;
   return {
     _id: pr._id,
     isPushRecord: true,
     type: pr.type,
     sender: pr.staffId?.name || '健康管理团队',
     title: PUSH_TYPE_LABEL[pr.type] || '推送通知',
-    content: `${beneficiaryUserId ? '家庭成员服务推荐 · ' : ''}${pr.title || ''}${pr.content ? `\n${pr.content}` : ''}`,
+    content: `${beneficiaryUserId ? '家庭成员服务推荐 · ' : ''}${pr.title || ''}${pushContent ? `\n${pushContent}` : ''}`,
     coverUrl: pr.coverUrl || '',
     // Reading a family recommendation must not change the recipient's unread state.
     unread: !beneficiaryUserId && !pr.readAt,
@@ -99,6 +102,9 @@ function normalizePushRecord(pr, beneficiaryUserId = '') {
     products: pr.products || [],
     fundProduct: pr.fundProduct || null,
     questionnaireId: pr.questionnaireId?._id || pr.questionnaireId || null,
+    planId: pr.planId?._id || pr.planId || null,
+    sourceAnnualPlanId: pr.sourceAnnualPlanId?._id || pr.sourceAnnualPlanId || null,
+    planYear: pr.type === 'plan' ? Number(String(pr.title || '').match(/^(\d{4})年度/)?.[1]) || null : null,
   };
 }
 
@@ -320,7 +326,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
   };
 
   const markReadAndOpenDetail = async (msg) => {
-    setDetailMsg(msg);
+    if (msg.type !== 'plan') setDetailMsg(msg);
     if (msg.unread) {
       listRequestRef.current += 1;
       setMessages((prev) => prev.map((m) => (m._id === msg._id ? { ...m, unread: false } : m)));
@@ -328,6 +334,14 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
         await withUnreadBadgeUpdate(() => msg.isPushRecord ? pushRecordsAPI.markRead(msg._id) : messagesAPI.markRead(msg._id));
       } catch { /* Refresh below restores the server state if marking read failed. */ }
       finally { loadMessages(); }
+    }
+    if (msg.type === 'plan') {
+      const planId = msg.planId || msg.sourceAnnualPlanId || '';
+      const query = `direct=1&planId=${encodeURIComponent(String(planId))}&year=${encodeURIComponent(String(msg.planYear || ''))}`;
+      Taro.navigateTo({ url: `/pages/services/plans/index?${query}` }).catch(() => {
+        setDetailMsg(msg);
+        Taro.showToast({ title: '方案暂时无法打开，请稍后重试', icon: 'none' });
+      });
     }
   };
 

@@ -9684,14 +9684,18 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     const typeName = plan.templateName || byCode(plan.servicePlanCode || plan.planType)?.label || PLAN_TYPE_NAMES[plan.strategyType || plan.planType] || '健康管理方案';
     const pushTitle = `${targetYear}年度${typeName}`;
     // 同步写 PushRecord，让用户在消息中心收到通知（每个类型独立一条）
-    const existing = await PushRecord.findOne({ patientId: req.params.id, type: 'plan', questionnaireId: null,
+    const existing = await PushRecord.findOne({ patientId: req.params.id, type: 'plan', planId: null, questionnaireId: null,
       title: pushTitle });
+    if (existing && String(existing.sourceAnnualPlanId || '') !== String(plan._id)) {
+      existing.sourceAnnualPlanId = plan._id;
+      await existing.save();
+    }
     if (!existing) {
       await PushRecord.create({
         staffId: req.staff._id, patientId: req.params.id,
-        type: 'plan',
+        type: 'plan', sourceAnnualPlanId: plan._id,
         title: pushTitle,
-        content: `您的${typeName}已发布，请前往"健康方案"查看。`,
+        content: `您的${typeName}已发布，点击通知即可查看完整方案。`,
       });
     }
     res.json({ success: true, data: plan });

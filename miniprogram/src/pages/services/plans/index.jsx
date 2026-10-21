@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import Taro, { useDidShow, useRouter } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { plansAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
@@ -95,7 +95,7 @@ function buildNotes(v) {
   return lines.join('\n') || '';
 }
 
-function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew, onRecommendationResponse }) {
+function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew, onRecommendationResponse }) {
   const meta = TYPE_META[plan.type] || DEFAULT_META;
   const sm = STATUS_META[plan.status] || STATUS_META.draft;
   const isDraft = plan.status === 'draft';
@@ -114,7 +114,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-            <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, flex: 1 }} numberOfLines={1}>{plan.title}</Text>
+            <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, flex: 1 }} numberOfLines={full ? undefined : 1}>{plan.title}</Text>
             <Text style={{ fontSize: '10px', fontWeight: 700, color: sm.color, backgroundColor: sm.bg, padding: '2px 7px', borderRadius: `${radius.full}px` }}>{sm.label}</Text>
           </View>
           {plan.type === 'medical_assist' && plan.content?.templateName && (
@@ -164,7 +164,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
                   {item.isAddon && <Text style={{ fontSize: '10px', color: '#D97706', backgroundColor: '#FEF3E2', borderRadius: '4px', padding: '1px 5px' }}>加项</Text>}
                   <Text style={{ fontSize: '12px', color: colors.textMuted }}>›</Text>
                 </View>
-                {!!item.notes && <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '17px', display: 'block', marginTop: '4px', marginLeft: '24px', whiteSpace: 'pre-wrap' }} numberOfLines={plan.type === 'nutrition' ? undefined : 3}>{item.notes}</Text>}
+                {!!item.notes && <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '17px', display: 'block', marginTop: '4px', marginLeft: '24px', whiteSpace: 'pre-wrap' }} numberOfLines={full || plan.type === 'nutrition' ? undefined : 3}>{item.notes}</Text>}
               </View>
             ))
           ) : (
@@ -243,6 +243,10 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
 
 export default function ServicePlansPage() {
   const { statusBarHeight } = useNavBar();
+  const { params } = useRouter();
+  const direct = params?.direct === '1';
+  const requestedPlanId = String(params?.planId || '');
+  const requestedYear = Number(params?.year || 0);
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
@@ -272,13 +276,23 @@ export default function ServicePlansPage() {
         }))
         : [];
       const healthPlans = (res.success && res.data?.length > 0) ? res.data : [];
-      setPlans([...annualMgmtPlans, ...healthPlans]);
+      const allPlans = [...annualMgmtPlans, ...healthPlans];
+      if (direct) {
+        const annualMatches = allPlans.filter(p => p.type === 'annual_mgmt' && Number(p.year) === requestedYear);
+        const target = allPlans.find(p => String(p._id) === requestedPlanId)
+          || (!requestedPlanId && annualMatches.length === 1 ? annualMatches[0] : null);
+        setPlans(target ? [target] : []);
+        setExpanded(target?._id || null);
+        if (target && target.type !== 'annual_mgmt') plansAPI.view(target._id).catch(() => {});
+      } else {
+        setPlans(allPlans);
+      }
     } catch {
       setPlans([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [direct, requestedPlanId, requestedYear]);
 
   useDidShow(() => { loadPlans(); });
 
@@ -351,7 +365,7 @@ export default function ServicePlansPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>健康方案</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{direct ? '方案详情' : '健康方案'}</Text>
         <View style={{ width: '28px' }} />
       </View>
 
@@ -360,14 +374,14 @@ export default function ServicePlansPage() {
       ) : (
         <View style={{ padding: `${spacing.lg}px` }}>
           <View style={{ display: 'flex', gap: `${spacing.sm}px`, alignItems: 'flex-start', backgroundColor: colors.primary10, borderRadius: `${radius.sm}px`, padding: `${spacing.md}px`, borderLeft: `3px solid ${colors.primary}`, marginBottom: `${spacing.md}px` }}>
-            <Text style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '19px', flex: 1 }}>ℹ️ 以下健康方案由您的医护团队为您定制并推送，请按方案完成各项健康管理任务。</Text>
+            <Text style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '19px', flex: 1 }}>ℹ️ {direct ? '以下是医护团队推送给您的完整方案。' : '以下健康方案由您的医护团队为您定制并推送，请按方案完成各项健康管理任务。'}</Text>
           </View>
 
           {plans.length === 0 ? (
             <View style={{ textAlign: 'center', padding: `${spacing.xl}px 0` }}>
               <Text style={{ fontSize: '40px', display: 'block', marginBottom: `${spacing.sm}px` }}>📄</Text>
-              <Text style={{ fontSize: '14px', color: colors.textMuted, display: 'block' }}>暂无健康方案</Text>
-              <Text style={{ fontSize: '12px', color: colors.textMuted, lineHeight: '18px' }}>待医护团队为您制定并推送健康方案后将在此处显示</Text>
+              <Text style={{ fontSize: '14px', color: colors.textMuted, display: 'block' }}>{direct ? '方案暂不可用' : '暂无健康方案'}</Text>
+              <Text style={{ fontSize: '12px', color: colors.textMuted, lineHeight: '18px' }}>{direct ? '请联系医护团队核对这条方案通知' : '待医护团队为您制定并推送健康方案后将在此处显示'}</Text>
             </View>
           ) : (
             plans.map((plan) => (
@@ -375,6 +389,7 @@ export default function ServicePlansPage() {
                 key={plan._id}
                 plan={plan}
                 expanded={expanded === plan._id}
+                full={direct}
                 onToggle={() => toggle(plan._id)}
                 onItemPress={handleItemPress}
                 onConfirmPlan={handleConfirmPlan}
