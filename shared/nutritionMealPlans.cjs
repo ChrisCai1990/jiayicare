@@ -1,3 +1,4 @@
+const { categoryMeals } = require('./nutritionCategoryDisplay.cjs');
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snack'];
 const OPTIONS = {
   balanced_recipes: '平衡膳食 · 具体食谱',
@@ -36,13 +37,14 @@ function snapshotMeals(modules) {
 function switchMealPlan(variants, selected, next, modules) {
   if (!Object.hasOwn(OPTIONS, next) || !variants?.[next]) throw new Error('所选配餐草稿不可用，请重新生成');
   const saved = { ...variants, [selected]: snapshotMeals(modules) };
-  return { variants: saved, modules: { ...modules, ...snapshotMeals(saved[next]) }, selected: next };
+  return { variants: saved, modules: { ...modules, ...(next === 'balanced_categories' ? categoryMeals(snapshotMeals(saved[next])) : snapshotMeals(saved[next])) }, selected: next };
 }
 
 function mealPlanError(content = {}) {
   const selected = content.mealPlanSelection;
   if (!selected) return null; // Existing plans keep their historical content.
   if (!Object.hasOwn(OPTIONS, selected)) return '请选择有效配餐方式';
+  if (selected === 'balanced_categories' && MEALS.some(key => categoryMeals(content.moduleData)[key]?.content?.includes('待核对'))) return '请先核对并填写食物大类分量';
   if (selected !== 'meal_pack') return null;
   if (!packBudgets(content.nutritionAssessment?.mealEnergyKcal)) return '早餐和晚餐预算须各不少于200 kcal，才能各安排一包餐包';
   if (content.mealPackSuitabilityConfirmed !== true) return '请核实餐包完整配料、过敏原及本会员疾病用药适用性';
@@ -53,4 +55,4 @@ function mealPlanError(content = {}) {
   return null;
 }
 
-module.exports = { MEALS, OPTIONS, PACK, PACK_LINE, PLATE_SOURCE, packBudgets, snapshotMeals, switchMealPlan, mealPlanError };
+module.exports = { categoryMeals, MEALS, OPTIONS, PACK, PACK_LINE, PLATE_SOURCE, packBudgets, snapshotMeals, switchMealPlan, mealPlanError };

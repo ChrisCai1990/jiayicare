@@ -398,11 +398,12 @@ export default function PlanModulesPage() {
         if (p.type === 'medical_assist' && assignedHealthPlannerId && !nextModuleData.visit?.supervisorId) {
           nextModuleData.visit = { ...(nextModuleData.visit || {}), supervisorId: assignedHealthPlannerId }
         }
-        setModuleData(nextModuleData)
+        const displayModules = p.type === 'nutrition' && c.mealPlanVariants && (c.mealPlanSelection || 'balanced_categories') === 'balanced_categories' ? mealPlans.categoryMeals(nextModuleData) : nextModuleData
+        setModuleData(displayModules)
         setGoal(c.goal || p.description || '')
         setNutritionTargets(nutritionTargetsFrom(c))
         setNutritionReviewDate(c.nutritionReviewDate || '')
-        setDirty(false)
+        setDirty(JSON.stringify(displayModules) !== JSON.stringify(nextModuleData))
       })
       .catch(err => toast(err.message || '加载失败'))
       .finally(() => setLoading(false))
@@ -447,10 +448,11 @@ export default function PlanModulesPage() {
     }
     setSaving(true)
     try {
-      const content = contentFromModules(plan, moduleData, goal, staffList)
+      const savedModules = plan.type === 'nutrition' && mealSelection === 'balanced_categories' && Object.keys(mealVariants).length ? mealPlans.categoryMeals(moduleData) : moduleData
+      const content = contentFromModules(plan, savedModules, goal, staffList)
       if (plan.type === 'nutrition' && Object.keys(mealVariants).length) {
         Object.assign(content, { mealPlanSelection: mealSelection,
-          mealPlanVariants: { ...mealVariants, [mealSelection]: mealPlans.snapshotMeals(moduleData) },
+          mealPlanVariants: { ...mealVariants, [mealSelection]: mealPlans.snapshotMeals(savedModules) },
           mealPackSuitabilityConfirmed: mealPackConfirmed })
         const mealError = mealPlans.mealPlanError(content)
         if (mealError) { toast(mealError); return }
@@ -461,6 +463,7 @@ export default function PlanModulesPage() {
       })
       await staffAPI.updatePlan(id, { content, description: goal })
       setPlan(p => ({ ...p, content, description: goal }))
+      setModuleData(savedModules)
       toast('方案已保存')
       setDirty(false)
     } catch (err) {
@@ -744,6 +747,10 @@ export default function PlanModulesPage() {
             } catch (error) { toast(error.message) }
           }} />}
         {plan.type === 'nutrition' && !Object.keys(mealVariants).length && <div style={{ marginBottom: 12, color: '#66776E', fontSize: 13 }}>本方案保留原配餐内容；重新生成AI营养草稿后，可选择平衡膳食食谱、大类或餐包方式。</div>}
+        {plan.type === 'nutrition' && mealSelection === 'balanced_categories' && ['breakfast', 'lunch', 'dinner', 'snack'].some(key => moduleData[key]?.content?.includes('待核对')) && <details style={{ marginBottom: 12, color: '#946200' }}>
+          <summary>部分大类分量需要核对（展开查看原始记录）</summary>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{['breakfast', 'lunch', 'dinner', 'snack'].filter(key => moduleData[key]?.content?.includes('待核对')).map(key => moduleData[key]?.categorySource || moduleData[key]?.content).join('\n\n')}</pre>
+        </details>}
         {moduleKeys.map(mKey => (
           <ModulePanel
             key={mKey}

@@ -44,7 +44,7 @@ test('不足预算或餐包禁忌保留平衡膳食方案并给出不可用原�
 
 test('切换保留各自编辑、时间和启用状态，客户items只来自选中版本', () => {
   const { variants } = parseVariants(raw(), assessment);
-  const modules = { ...variants.balanced_categories, breakfast: { content: '人工主食60 g', time: '08:00', enabled: true }, principle: { dietPrinciple: '保留原则' } };
+  const modules = { ...variants.balanced_categories, breakfast: { content: '主食 60 g', time: '08:00', enabled: true }, principle: { dietPrinciple: '保留原则' } };
   const switched = switchMealPlan(variants, 'balanced_categories', 'meal_pack', modules);
   const restored = switchMealPlan(switched.variants, 'meal_pack', 'balanced_categories', switched.modules);
   assert.deepEqual(restored.modules.breakfast, modules.breakfast);
