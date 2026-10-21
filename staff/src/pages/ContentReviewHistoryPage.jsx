@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
-const statusLabel = status => ({ approved: '专业审核通过', ready_to_publish: '待健康规划师发布', published: '已发布官网', publish_confirmed: '已确认可发布', changes_requested: '已退回修改' }[status] || status || '-')
+const statusLabel = status => ({ pending: '待审核', approved: '专业审核通过', ready_to_publish: '待健康规划师发布', published: '已发布官网', publish_confirmed: '已确认可发布', changes_requested: '已退回修改' }[status] || status || '-')
 const reviewText = review => review?.reviewedAt ? `${review.reviewedByName || '本人'} · ${new Date(review.reviewedAt).toLocaleString()}${review.note ? ` · ${review.note}` : ''}` : ''
 
 export default function ContentReviewHistoryPage() {
@@ -17,6 +17,7 @@ export default function ContentReviewHistoryPage() {
     <h2 style={{ marginTop: 18 }}>我的 GEO 内容审核记录</h2>
     {loading ? <p>加载中…</p> : items.length === 0 ? <p style={{ color: '#8A968F' }}>暂无本人审核记录。</p> : items.map(item => <div key={item._id} className="card" style={{ padding: 18, marginTop: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}><b>{item.title}</b><span style={{ color: '#1E6B50', fontSize: 13 }}>{statusLabel(item.status)}</span></div>
+      <p style={{ fontSize: 13, color: '#52615A' }}>当前第{(item.revisions?.length || 0) + 1}版{item.revisions?.length ? ` · 修改摘要：${item.revisions[item.revisions.length - 1].changeSummary}` : ''}。历史记录保留，不代表仍在本人待办。</p>
       {reviewText(item.nutritionReview) && <p style={{ margin: '10px 0 0', fontSize: 13, color: '#52615A' }}>营养审核：{reviewText(item.nutritionReview)}</p>}
       {reviewText(item.doctorReview) && <p style={{ margin: '6px 0 0', fontSize: 13, color: '#52615A' }}>健康顾问审核：{reviewText(item.doctorReview)}</p>}
       <button className="btn btn-outline" style={{ marginTop: 12 }} onClick={() => nav(`/content-reviews/${item._id}`)}>查看正文与修订记录</button>

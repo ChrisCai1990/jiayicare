@@ -14460,12 +14460,12 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       contentReviews.forEach(item => todos.push({
         id: `geo_content_${item._id}`,
         type: 'geo_content_review',
-        label: item.currentRole === 'familyDoctor' ? 'GEO 健康教育稿待健康顾问审核' : 'GEO 健康教育稿待营养审核',
+        label: `GEO ${item.revisions?.length ? `修订稿 · 第${item.revisions.length + 1}版 · 待重新审核` : '内容稿待审核'} · ${item.currentRole === 'familyDoctor' ? '健康顾问' : '营养师'}`,
         priority: 3,
         patientName: '官网 GEO 内容',
         patientId: '',
-        summary: item.title,
-        createdAt: item.updatedAt || item.createdAt,
+        summary: item.revisions?.length ? `${item.title}｜修改摘要：${item.revisions[item.revisions.length - 1].changeSummary || '请查看最新正文'}` : item.title,
+        createdAt: item.revisions?.length ? item.revisions[item.revisions.length - 1].at : (item.updatedAt || item.createdAt),
         overdue: false,
         link: `/content-reviews/${item._id}`,
       }));
