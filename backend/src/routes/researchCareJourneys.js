@@ -11,6 +11,7 @@ const Journey = require('../models/ResearchCareJourney');
 const Candidate = require('../models/ResearchCandidate');
 const StudySetting = require('../models/ResearchStudySetting');
 const { deriveJourneySnapshot } = require('../utils/researchCareJourney');
+const { isAnnualCustomer } = require('../utils/researchAnnualCustomer');
 
 router.use(adminAuth);
 router.use((req, res, next) => req.admin.role === 'superadmin' && req.admin.staffStatus !== 'inactive'
@@ -21,17 +22,15 @@ const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, 
 const participantCode = (patientId) => `P-${crypto.createHmac('sha256', process.env.RESEARCH_PSEUDONYM_SECRET || process.env.JWT_SECRET)
   .update(`${STUDY}:${patientId}`).digest('hex').slice(0, 10).toUpperCase()}`;
 const researchNumber = () => `WONCA-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-const annualCustomer = async (patient) => patient.membershipTier === 'annual'
-  || Boolean(await AnnualPlan.exists({ patientId: patient._id }));
 
 router.get('/candidate-list', async (req, res, next) => {
   try {
     const rows = await Candidate.find({ studyCode: STUDY, status: 'active' })
-      .sort({ addedAt: 1 }).populate('patientId', 'name phone membershipTier servicePackage isDeleted').lean();
+      .sort({ addedAt: 1 }).populate('patientId', 'name phone membershipTier servicePackage clientBrand isDeleted').lean();
     const enrolled = await Journey.find({ studyCode: STUDY, patientId: { $in: rows.map(row => row.patientId?._id).filter(Boolean) } })
       .select('patientId').lean();
     const enrolledIds = new Set(enrolled.map(row => String(row.patientId)));
-    const data = rows.map(row => ({
+    const data = await Promise.all(rows.map(async row => ({
       _id: row._id, patientId: row.patientId?._id,
       name: row.patientId?.name || '客户档案已移除',
       phone: row.patientId?.phone || '',
@@ -39,7 +38,8 @@ router.get('/candidate-list', async (req, res, next) => {
       isDeleted: !row.patientId || row.patientId.isDeleted === true,
       enrolled: enrolledIds.has(String(row.patientId?._id)),
       addedAt: row.addedAt,
-    }));
+      isAnnual: row.patientId && !row.patientId.isDeleted ? await isAnnualCustomer(row.patientId) : false,
+    })));
     res.set('Cache-Control', 'no-store').json({ data });
   } catch (error) { next(error); }
 });
@@ -48,9 +48,8 @@ router.post('/candidate-list', async (req, res, next) => {
   try {
     const patientId = req.body.patientId;
     if (!mongoose.isValidObjectId(patientId)) return res.status(400).json({ message: '客户标识无效' });
-    const patient = await User.findById(patientId).select('_id isDeleted membershipTier');
+    const patient = await User.findById(patientId).select('_id isDeleted membershipTier servicePackage clientBrand');
     if (!patient || patient.isDeleted) return res.status(404).json({ message: '客户不存在或已归档' });
-    if (!await annualCustomer(patient)) return res.status(400).json({ message: '该客户尚无年度管理身份或年度方案记录' });
     const now = new Date();
     let row = await Candidate.findOne({ studyCode: STUDY, patientId });
     if (row?.status === 'active') return res.status(409).json({ message: '该客户已在候选名单中' });
@@ -112,7 +111,7 @@ router.get('/candidates', async (req, res, next) => {
     const filter = mongoose.isValidObjectId(q)
       ? { _id: q, isDeleted: { $ne: true } }
       : { isDeleted: { $ne: true }, $or: [{ name: { $regex: escaped, $options: 'i' } }, { phone: { $regex: escaped } }] };
-    const users = await User.find(filter).select('_id name phone membershipTier servicePackage').limit(12).lean();
+    const users = await User.find(filter).select('_id name phone membershipTier servicePackage clientBrand').limit(12).lean();
     const existing = await Journey.find({ studyCode: STUDY, patientId: { $in: users.map(user => user._id) } }).select('patientId').lean();
     const listedRows = await Candidate.find({ studyCode: STUDY, status: 'active', patientId: { $in: users.map(user => user._id) } }).select('patientId').lean();
     const listed = new Set(listedRows.map(row => String(row.patientId)));
@@ -122,7 +121,7 @@ router.get('/candidates', async (req, res, next) => {
       name: user.name,
       phone: user.phone,
       servicePackage: user.servicePackage,
-      isAnnual: await annualCustomer(user),
+      isAnnual: await isAnnualCustomer(user),
       enrolled: enrolled.has(String(user._id)),
       listed: listed.has(String(user._id)),
     })));
@@ -165,9 +164,9 @@ router.post('/journeys', async (req, res, next) => {
     if (!setting) return res.status(400).json({ message: '请先记录本项目的机构依据' });
     const candidate = await Candidate.exists({ studyCode: STUDY, patientId, status: 'active' });
     if (!candidate) return res.status(400).json({ message: '请先将该客户加入候选名单' });
-    const patient = await User.findById(patientId).select('_id isDeleted membershipTier');
+    const patient = await User.findById(patientId).select('_id isDeleted membershipTier servicePackage clientBrand');
     if (!patient || patient.isDeleted) return res.status(404).json({ message: '客户不存在或已归档' });
-    if (!await annualCustomer(patient)) return res.status(400).json({ message: '该客户尚无年度管理身份或年度方案记录' });
+    if (!await isAnnualCustomer(patient)) return res.status(400).json({ message: '尚未找到年度管理分层、年度方案或年度服务包配置，请先核对客户服务包' });
     const verifiedAt = new Date();
     const row = await Journey.create({
       studyCode: STUDY, patientId, researchNumber: researchNumber(),

@@ -197,8 +197,8 @@ export default function ResearchCareJourneysPage() {
           <tbody>{candidateList.map((row, index) => <tr key={row._id}>
             <td>{index + 1}</td><td>{row.name}</td><td>{row.phone || '—'}</td><td>{row.servicePackage || '—'}</td>
             <td>{new Date(row.addedAt).toLocaleDateString('zh-CN')}</td>
-            <td>{row.enrolled ? <span className="research-status">已正式纳入</span> : row.isDeleted ? '客户已归档' : '待核验'}</td>
-            <td>{row.enrolled ? '—' : <div className="research-row-actions"><button className="btn btn-primary" onClick={() => startEnroll(row)} disabled={row.isDeleted}>正式纳入</button><button className="btn btn-secondary" onClick={() => removeCandidate(row)}>移除</button></div>}</td>
+            <td>{row.enrolled ? <span className="research-status">已正式纳入</span> : row.isDeleted ? '客户已归档' : row.isAnnual ? '待核验授权' : '年度身份待核对'}</td>
+            <td>{row.enrolled ? '—' : <div className="research-row-actions"><button className="btn btn-primary" onClick={() => startEnroll(row)} disabled={row.isDeleted || !row.isAnnual} title={!row.isAnnual ? '请核对年度服务包或年度管理身份' : ''}>正式纳入</button><button className="btn btn-secondary" onClick={() => removeCandidate(row)}>移除</button></div>}</td>
           </tr>)}</tbody>
         </table></div>}
     </section>
@@ -241,9 +241,9 @@ export default function ResearchCareJourneysPage() {
         <div className="form-group"><label className="form-label" htmlFor="research-candidate-search">姓名或手机号</label><input id="research-candidate-search" className="form-input" autoFocus value={query} onChange={e => { setQuery(e.target.value); setSelected(null) }} placeholder="输入至少两个字符搜索现有客户" /></div>
         {query.trim().length >= 2 && <div className="research-candidates">
           {searching ? <p>正在查找…</p> : searchResults.length === 0 ? <p>未找到客户，请核对姓名或手机号。</p>
-            : searchResults.map(candidate => <button type="button" key={candidate.patientId} className={`research-candidate ${selected?.patientId === candidate.patientId ? 'selected' : ''}`} onClick={() => setSelected(candidate)} disabled={candidate.listed || candidate.enrolled || !candidate.isAnnual}>
+            : searchResults.map(candidate => <button type="button" key={candidate.patientId} className={`research-candidate ${selected?.patientId === candidate.patientId ? 'selected' : ''}`} onClick={() => setSelected(candidate)} disabled={candidate.listed || candidate.enrolled}>
               <span><strong>{candidate.name}</strong><small>{candidate.phone || '无手机号'} · {candidate.servicePackage || '未标注服务包'}</small></span>
-              <em>{candidate.enrolled ? '已正式纳入' : candidate.listed ? '已在名单' : candidate.isAnnual ? '年度客户' : '非年度客户'}</em>
+              <em>{candidate.enrolled ? '已正式纳入' : candidate.listed ? '已在名单' : candidate.isAnnual ? '年度客户' : '身份待核对'}</em>
             </button>)}
         </div>}
         {selected && <div className="research-selected">已选择：{selected.name}（{selected.phone || '无手机号'}）</div>}
