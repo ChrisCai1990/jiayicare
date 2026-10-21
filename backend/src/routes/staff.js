@@ -17835,7 +17835,7 @@ ${assessment.dailyEnergyRange ? `轻体力活动参考区间：${assessment.dail
 不得凭空添加医学诊断、检验数值、营养素剂量或未提供的禁忌。模板与已核实过敏、疾病资料冲突时不要给出相应类别；在description中指出需营养师修订模板。不承诺治疗效果。
 ${require('../utils/nutritionMealVariants').variantPrompt(assessment)}`;
 
-    const text = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 3500, jsonMode: true, timeoutMs: 90000 }));
+    const text = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 5500, jsonMode: true, timeoutMs: 90000 }));
     let raw = null;
     try {
       const m = text.trim().match(/\{[\s\S]*\}/);

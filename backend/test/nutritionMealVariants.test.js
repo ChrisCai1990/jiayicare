@@ -1,11 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { PACK, PACK_LINE, packBudgets, switchMealPlan, mealPlanError } = require('../../shared/nutritionMealPlans.cjs');
-const { variantPrompt, parseVariants } = require('../src/utils/nutritionMealVariants');
+const { variantPrompt, parseVariants, categoryText } = require('../src/utils/nutritionMealVariants');
 const { nutritionPlanItems } = require('../src/utils/nutritionPlanItems');
 const assessment = { managementKcal: 1700, mealEnergyKcal: { breakfast: 510, lunch: 680, dinner: 510, snack: 0 } };
 const meals = { breakfast: '主食50 g（生重）', lunch: '蔬菜200 g（可食部）', dinner: '荤菜100 g（可食部）', snack: '' };
-const raw = () => ({ balanced_recipes: { ...meals, breakfast: '燕麦50 g（干重）' }, balanced_categories: { ...meals }, meal_pack: { ...meals } });
+const categoryMeals = () => ({ breakfast: [{ category: '主食', amount: 50, unit: 'g', basis: '生重' }], lunch: [{ category: '蔬菜', amount: 200, unit: 'g', basis: '可食部' }], dinner: [{ category: '荤菜', amount: 100, unit: 'g', basis: '可食部' }], snack: [] });
+const raw = () => ({ balanced_recipes: { ...meals, breakfast: '燕麦50 g（干重）' }, balanced_categories: categoryMeals(), meal_pack: categoryMeals() });
 
 test('每包营养成分按50g保存，早餐晚餐扣200且每日总预算不变', () => {
   assert.equal(PACK.proteinG, 13.2);
@@ -30,7 +31,7 @@ test('三种草稿严格完整，餐包固定加入早晚且0加餐不生成', (
   assert.throws(() => parseVariants({ ...raw(), balanced_recipes: {} }, assessment));
   assert.throws(() => parseVariants({ ...raw(), meal_pack: { ...meals, dinner: '营养餐包1包' } }, assessment));
   assert.throws(() => parseVariants(raw(), { ...assessment, mealEnergyKcal: { ...assessment.mealEnergyKcal, snack: 100 } }));
-  const exact = parseVariants({ ...raw(), meal_pack: { ...meals, breakfast: '' } }, { ...assessment, mealEnergyKcal: { ...assessment.mealEnergyKcal, breakfast: 200 } });
+  const exact = parseVariants({ ...raw(), meal_pack: { ...categoryMeals(), breakfast: [] } }, { ...assessment, mealEnergyKcal: { ...assessment.mealEnergyKcal, breakfast: 200 } });
   assert.equal(exact.variants.meal_pack.breakfast.content, PACK_LINE);
 });
 
@@ -72,3 +73,14 @@ test('AI提示包含三种模式、餐盘依据、常规食物剩余预算和成
   assert(prompt.includes('不能等同热量或重量比例'));
   assert(prompt.includes('proteinG'));
 });
+
+ test('大类输出只允许类别数量与称重口径，拒绝具体食材及括号举例', () => {
+  const row = { category: '蔬菜', amount: 230, unit: 'g', basis: '可食部' };
+  assert.equal(categoryText([row], 300), '蔬菜：230 g（可食部）');
+  for (const invalid of [{ ...row, category: '凉拌金针菇' }, { ...row, category: '蔬菜（芦笋、木耳）' }, { ...row, basis: '芦笋80g、木耳50g、南瓜100g' }, { ...row, food: '芦笋' }, { ...row, amount: '230（芦笋）' }]) assert.throws(() => categoryText([invalid], 300));
+  assert.throws(() => categoryText([row, row], 300));
+  const { variants } = parseVariants(raw(), assessment);
+  assert.equal(variants.balanced_categories.breakfast.content, '主食：50 g（生重）');
+  assert.equal(variants.meal_pack.breakfast.content, PACK_LINE + '\n主食：50 g（生重）');
+  assert(variants.balanced_recipes.breakfast.content.includes('燕麦'));
+ });
