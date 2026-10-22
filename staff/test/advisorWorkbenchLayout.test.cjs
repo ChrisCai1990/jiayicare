@@ -41,6 +41,7 @@ async function mount(role) {
     'ServiceTasksPanel', 'MedicalAssistClosureAction', 'ServiceSupervisionPanel',
     'MedicalAssistProgressPanel', 'MonthlyReviewWorkbench', 'Pagination',
   ]) mocks['../components/' + name] = { __esModule: true, default: panel(name) }
+  mocks['../components/GeoReviewPanel'] = { __esModule: true, canShowGeoReview: actor => actor.role === 'familyDoctor', default: props => React.createElement('div', { 'data-panel': 'GeoReviewPanel', 'data-compact': String(props.compact) }, React.createElement('button', { onClick: props.onOpen }, '进入 GEO 审核')) }
   const filename = path.resolve(__dirname, '../src/pages/HomePage.jsx')
   const module = { exports: {} }
   vm.runInNewContext(transformSync(fs.readFileSync(filename, 'utf8'), { loader: 'jsx', format: 'cjs' }).code, {
@@ -68,6 +69,10 @@ test('health consultant can switch between tasks, service progress, and data wit
     assert.equal(view.visible('AiTodosPanel'), true)
     assert.equal(view.visible('ServiceTasksPanel'), false)
     assert.equal(view.visible('FollowUpsPanel'), false)
+    assert.equal(view.box.querySelector('[data-panel="GeoReviewPanel"]').dataset.compact, 'true')
+    await view.click('进入 GEO 审核')
+    assert.equal(view.box.querySelector('[data-panel="GeoReviewPanel"]').dataset.compact, 'false')
+    assert.equal(view.visible('AiTodosPanel'), false)
     await view.click('服务事项')
     assert.equal(view.visible('ServiceTasksPanel'), true)
     assert.equal(view.visible('MonthlyReviewWorkbench'), true)
@@ -82,6 +87,7 @@ test('health consultant can switch between tasks, service progress, and data wit
     assert.equal(view.visible('CheckupProgressPanel'), true)
     await view.click('数据概览')
     assert.equal(view.visible('GeoReviewPanel'), true)
+    assert.equal(view.box.querySelector('[data-panel="GeoReviewPanel"]').dataset.compact, 'true')
     assert.match(view.box.textContent, /今日健康数据记录/)
   } finally { await view.close() }
 })

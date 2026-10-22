@@ -81,11 +81,11 @@ const TODO_GROUPS = [
 
 const SUPPLY_TYPES = new Set(['supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'])
 
-export default function AiTodosPanel() {
+export default function AiTodosPanel({ hideGeo = false }) {
   const nav = useNavigate()
   const { staff } = useStaff()
   const { data: allTodos, setData: setTodos, loading, error: loadError, refresh: refreshTodos } = useAiWorkbench()
-  const todos = allTodos.filter(t => !['symptom_verify', 'symptom_review'].includes(t.type)
+  const todos = allTodos.filter(t => !(hideGeo && t.type === 'geo_content_review') && !['symptom_verify', 'symptom_review'].includes(t.type)
     && (staff?.role === 'superadmin' || t.type !== 'assignment_attention'))
   const [page, setPage] = useState(0)
   const [group, setGroup] = useState('all')

@@ -1,5 +1,5 @@
 import CheckupProgressPanel from '../components/CheckupProgressPanel'
-import GeoReviewPanel from '../components/GeoReviewPanel'
+import GeoReviewPanel, { canShowGeoReview } from '../components/GeoReviewPanel'
 import useWorkbenchResource from '../hooks/useWorkbenchResource'
 import { getToken } from '../api'
 import { loadFollowUpPages } from '../utils/loadFollowUpPages.mjs'
@@ -58,6 +58,7 @@ export default function HomePage() {
   const [serviceTasks, setServiceTasks] = useState([])
   const [advisorArea, setAdvisorArea] = useState('todo')
   const [advisorTodoView, setAdvisorTodoView] = useState('review')
+  const [geoCount, setGeoCount] = useState('加载中')
   const [advisorProgressView, setAdvisorProgressView] = useState('overview')
 
   useEffect(() => {
@@ -126,7 +127,6 @@ export default function HomePage() {
         {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
       </div>
 
-      <GeoReviewPanel />
       {isAdvisor && <nav className="advisor-workbench-nav" aria-label="健康顾问工作台">
         {[
           ['todo', '待我处理'], ['progress', '我关注的服务'], ['data', '数据概览'],
@@ -135,6 +135,7 @@ export default function HomePage() {
       {isAdvisor && advisorArea === 'todo' && <div className="advisor-workbench-filter" role="group" aria-label="待我处理筛选">
         {[
           ['review', '审核与异常'], ['service', '服务事项'], ['followup', '随访'],
+          ...(canShowGeoReview(staff) ? [['geo', `GEO 审核 · ${geoCount}`]] : []),
         ].map(([key, label]) => <button key={key} type="button" className={advisorTodoView === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={advisorTodoView === key} onClick={() => setAdvisorTodoView(key)}>{label}</button>)}
       </div>}
       {isAdvisor && advisorArea === 'progress' && <div className="advisor-workbench-filter" role="group" aria-label="服务进度筛选">
@@ -143,6 +144,7 @@ export default function HomePage() {
         ].map(([key, label]) => <button key={key} type="button" className={advisorProgressView === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={advisorProgressView === key} onClick={() => setAdvisorProgressView(key)}>{label}</button>)}
       </div>}
 
+      <GeoReviewPanel compact={isAdvisor && !showAdvisorView('todo', 'geo')} onCountChange={setGeoCount} onOpen={() => { setAdvisorArea('todo'); setAdvisorTodoView('geo') }} />
       <AiWorkbenchProvider>
       <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><SymptomTodosPanel /></div>
       <div style={{ display: showAdvisorView('progress', 'overview') ? undefined : 'none' }}><ServiceSupervisionPanel /></div>
@@ -221,7 +223,7 @@ export default function HomePage() {
       {staff?.role === 'familyDoctor' && <div style={{ display: showAdvisorView('progress', 'medical') ? undefined : 'none' }}><MedicalAssistProgressPanel /></div>}
 
       {/* AI 待审核任务面板 */}
-      <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><AiTodosPanel /></div>
+      <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><AiTodosPanel hideGeo={isAdvisor && canShowGeoReview(staff)} /></div>
 
       {/* 待随访任务面板 */}
       <div style={{ display: showAdvisorView('todo', 'followup') ? undefined : 'none' }}><FollowUpsPanel /></div>
