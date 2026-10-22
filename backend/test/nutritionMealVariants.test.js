@@ -145,3 +145,12 @@ test('仅餐包早晚餐去谷薯，重新分配仍符合预算且不影响午�
   assert.equal(upgraded.breakfast.content.split(PACK_LINE).length - 1, 1);
   assert.deepEqual(packCategoryMeals(upgraded, input), upgraded);
 });
+
+test('模板备注通过备注模块进入客户方案并保留换行，空备注不生成条目', () => {
+  const note = '第一条模板说明\n第二条补充说明';
+  const items = nutritionPlanItems({ content: { moduleData: { notes: { content: note } } } });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].name, '备注');
+  assert.equal(items[0].notes, '✔ 第一条模板说明\n✔ 第二条补充说明');
+  assert.deepEqual(nutritionPlanItems({ content: { moduleData: { notes: { content: '' } } } }), []);
+});

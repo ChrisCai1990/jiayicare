@@ -88,7 +88,7 @@ const defaultContent = {
     dinnerTime: '', dinner: '',
     snackTime: '', snack: '',
     dietPrinciple: '', cookingMethod: '', mealOrder: '',
-    nutritionSupplements: '', exerciseSuggestion: '', allowedFoods: '', forbiddenFoods: '',
+    nutritionSupplements: '', exerciseSuggestion: '', allowedFoods: '', forbiddenFoods: '', notes: '',
     description: '',
   },
   medical_assist: {
@@ -518,6 +518,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <FieldRow label="运动建议" fieldKey="exerciseSuggestion" rows={3} placeholder="运动类型、频率、时长、强度" content={content} set={set} />
       <FieldRow label="推荐食物" fieldKey="allowedFoods" rows={2} placeholder="逗号分隔" content={content} set={set} />
       <FieldRow label="禁忌食物" fieldKey="forbiddenFoods" rows={2} placeholder="逗号分隔" content={content} set={set} />
+      <FieldRow label="备注" fieldKey="notes" rows={3} placeholder="填写本模板的补充说明或注意事项（选填）" content={content} set={set} />
     </div>
   )
 

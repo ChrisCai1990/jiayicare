@@ -533,6 +533,7 @@ function templateToItems(tpl) {
     if (c.mealOrder)            items.push({ name: `进餐顺序：${c.mealOrder}`, category: '饮食干预' })
     if (c.allowedFoods)         items.push({ name: `推荐食物：${c.allowedFoods}`, category: '饮食干预' })
     if (c.forbiddenFoods)       items.push({ name: `禁忌食物：${c.forbiddenFoods}`, category: '饮食干预' })
+    if (c.notes)                items.push({ name: '备注', notes: c.notes, category: '营养干预' })
     if (c.nutritionSupplements) items.push({ name: `营养素补充：${c.nutritionSupplements}`, category: '营养干预' })
     if (c.exerciseSuggestion)   items.push({ name: `运动建议：${c.exerciseSuggestion}`, category: '运动干预' })
     return items

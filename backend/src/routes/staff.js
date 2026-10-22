@@ -17844,6 +17844,7 @@ ${assessment.dailyEnergyRange ? `轻体力活动参考区间：${assessment.dail
 膳食总原则：${tc.dietPrinciple || '无'}
 推荐食物：${tc.allowedFoods || '无限制'}
 禁忌食物：${tc.forbiddenFoods || '无'}
+模板备注（补充资料，不得覆盖已核实过敏禁忌与本次能量目标）：${typeof tc.notes === 'string' ? tc.notes : ''}
 烹饪方式：${tc.cookingMethod || '不限'}
 进餐顺序：${tc.mealOrder || '不限'}
 模板餐次仅用于了解饮食原则，不要照抄其中的具体食物或菜名。
@@ -17887,6 +17888,7 @@ ${require('../utils/nutritionMealVariants').variantPrompt(assessment)}`;
       snack: { time: '15:00-15:30', content: snack },
       principle: { dietPrinciple: tc.dietPrinciple || '', cookingMethod: tc.cookingMethod || '', mealOrder: tc.mealOrder || '', dailyWater: tc.dailyWater || '' },
       forbidden: { allowedFoods: tc.allowedFoods || '', forbiddenFoods: tc.forbiddenFoods || '' },
+      notes: { content: typeof tc.notes === 'string' ? tc.notes : '' },
       supplement: { content: '' },
       exercise: { content: tc.exerciseSuggestion || '' },
     };

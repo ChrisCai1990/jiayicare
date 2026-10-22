@@ -52,3 +52,9 @@
 ## 2026-10-22 餐包早晚餐不搭配谷薯类
 
 仅packCategoryMeals启用早餐/晚餐无谷薯配置，扣每包200kcal后，剩余能量分配到该餐允许的蛋奶豆/畜禽肉水产豆类，不使用油或水果坚果补缺。午餐、加餐及第一种算法分配不变。餐包分配版本升至2，旧餐包草稿打开/切入按原预算更新，保存才入库；当前版本人工修改仍保留。覆盖旧稿升级不重复餐包、早晚能量预算、午餐加餐和第一种算法不变的回归测试。
+
+## 2026-10-22 Admin营养模板备注
+
+所有nutrition模板共用编辑表单，在“禁忌食物”正下方新增选填“备注”(content.notes)。使用现有Mixed content保存/复制，无数据库迁移，旧模板空值兼容。AI生成读取所选模板备注作为补充资料并原文写入moduleData.notes.content，复用医护备注模块及客户items同步；普通模板创建入口同样带入备注。仅新建时复制，不自动覆盖既有方案，也不杜撰备注内容。
+
+核实其余来源：dietPrinciple、cookingMethod、mealOrder、dailyWater、allowedFoods、forbiddenFoods、exerciseSuggestion仍取Admin所选模板；餐次按当前算法与管理能量生成。现有补充记录仍按原逻辑空白待营养师填写，不改变补充推荐边界。
