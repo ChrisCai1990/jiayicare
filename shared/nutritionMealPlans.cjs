@@ -62,8 +62,14 @@ function snapshotMeals(modules) {
 }
 
 function switchMealPlan(variants, selected, next, modules, assessment) {
-  if (!Object.hasOwn(OPTIONS, next) || !variants?.[next]) throw new Error('所选配餐草稿不可用，请重新生成');
+  if (!Object.hasOwn(OPTIONS, next)) throw new Error('所选配餐草稿不可用，请重新生成');
   const saved = { ...variants, [selected]: snapshotMeals(modules) };
+  // Older drafts omitted the pack variant after an AI risk flag. Rebuild only on explicit selection.
+  if (next === 'meal_pack' && !saved.meal_pack && packBudgets(assessment?.mealEnergyKcal)) {
+    const source = snapshotMeals(saved.balanced_categories || modules);
+    saved.meal_pack = packCategoryMeals(source, assessment, { force: true });
+  }
+  if (!saved[next]) throw new Error('所选配餐草稿不可用，请重新生成');
   return { variants: saved, modules: { ...modules, ...(assessment ? prepareMealModules(next, snapshotMeals(saved[next]), assessment) : snapshotMeals(saved[next])) }, selected: next };
 }
 

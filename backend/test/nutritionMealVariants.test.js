@@ -34,7 +34,7 @@ test('三种草稿严格完整，餐包固定加入早晚且0加餐不生成', (
   assert.equal(exact.variants.meal_pack.breakfast.content, PACK_LINE);
 });
 
-test('不足预算或餐包禁忌保留平衡膳食方案并给出不可用原因', () => {
+test('预算不足仍限制餐包，适用性风险保留提示并开放选择', () => {
   const insufficient = parseVariants(raw(), { ...assessment, mealEnergyKcal: { ...assessment.mealEnergyKcal, breakfast: 199 } });
   assert.equal(insufficient.variants.meal_pack, undefined);
   assert(insufficient.unavailableReason.includes('200'));
@@ -122,7 +122,8 @@ test('AI只提供餐包适用性，具体食谱和第一种大类不受餐包分
   assert.equal(result.variants.meal_pack.breakfast.categoryTargetKcal, 310);
   assert(!result.variants.meal_pack.breakfast.content.includes('谷薯类'));
   const denied = parseVariants({ ...raw(), meal_pack: null, mealPackUnavailableReason: '配料不适用' }, assessment);
-  assert.equal(denied.variants.meal_pack, undefined);
+  assert(denied.variants.meal_pack.breakfast.content.startsWith(PACK_LINE));
+  assert.equal(denied.unavailableReason, '配料不适用');
 });
 
 test('仅餐包早晚餐去谷薯，重新分配仍符合预算且不影响午餐加餐或第一种算法', () => {
@@ -153,4 +154,26 @@ test('模板备注通过备注模块进入客户方案并保留换行，空备�
   assert.equal(items[0].name, '备注');
   assert.equal(items[0].notes, '✔ 第一条模板说明\n✔ 第二条补充说明');
   assert.deepEqual(nutritionPlanItems({ content: { moduleData: { notes: { content: '' } } } }), []);
+});
+
+
+test('风险草稿及历史缺失版本可选择餐包，保存仍需人工确认且风险和其他版本保留', () => {
+  const risk = '历史海鲜过敏、麸质过敏记录，需核实当前情况';
+  const result = parseVariants({ ...raw(), meal_pack: { suitable: false }, mealPackUnavailableReason: risk, categoryExcluded: ['seafood', 'staple'] }, assessment);
+  assert.equal(result.unavailableReason, risk);
+  const legacy = { balanced_recipes: result.variants.balanced_recipes, balanced_categories: result.variants.balanced_categories };
+  legacy.balanced_categories.breakfast.time = '08:15';
+  const before = JSON.stringify(legacy);
+  const switched = switchMealPlan(legacy, 'balanced_categories', 'meal_pack', legacy.balanced_categories, assessment);
+  assert.equal(JSON.stringify(legacy), before);
+  assert.equal(switched.modules.breakfast.time, '08:15');
+  assert(switched.modules.breakfast.content.startsWith(PACK_LINE));
+  assert(switched.modules.dinner.content.startsWith(PACK_LINE));
+  assert(!switched.modules.lunch.content.includes('水产类'));
+  const content = { mealPlanSelection: 'meal_pack', nutritionAssessment: assessment, moduleData: switched.modules, mealPackUnavailableReason: risk };
+  assert(mealPlanError(content));
+  assert.equal(mealPlanError({ ...content, mealPackSuitabilityConfirmed: true }), null);
+  const back = switchMealPlan(switched.variants, 'meal_pack', 'balanced_categories', switched.modules, assessment);
+  assert.deepEqual(back.modules.breakfast, legacy.balanced_categories.breakfast);
+  assert.throws(() => switchMealPlan(legacy, 'balanced_categories', 'meal_pack', legacy.balanced_categories, { ...assessment, mealEnergyKcal: { ...assessment.mealEnergyKcal, dinner: 199 } }));
 });
