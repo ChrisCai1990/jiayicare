@@ -675,6 +675,21 @@ router.get('/medical-assist-progress', staffAuth, async (req, res) => {
     if (task.sourceOrderId) preferSupervisor(taskByOrder, String(task.sourceOrderId));
   }
   const progressByTask = await require('../utils/supervisionProgress').loadSupervisionProgress(followUps, FollowUp);
+  const allTasks = await FollowUp.find({
+    $or: [
+      { sourceHealthPlanId: { $in: plans.map(plan => plan._id) } },
+      { sourceOrderId: { $in: [...visibleOrders.map(order => order._id), ...plans.map(plan => plan.sourceOrderId).filter(Boolean)] } },
+    ],
+    taskRole: { $in: ['supervisor', 'executor'] },
+  }).select('sourceHealthPlanId sourceOrderId taskRole status theme workflowKey assignedTo isBlocked createdAt completedAt')
+    .populate('assignedTo', 'name').lean();
+  const stagesFor = (planId, orderId) => allTasks
+    .filter(task => (planId && String(task.sourceHealthPlanId || '') === String(planId))
+      || (orderId && String(task.sourceOrderId || '') === String(orderId)))
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+    .map(task => ({ id: task._id, label: task.theme || task.workflowKey || '未命名环节',
+      status: task.status, assignee: task.assignedTo?.name || '', blocked: !!task.isBlocked,
+      taskRole: task.taskRole, completedAt: task.completedAt }));
   const toProgress = task => task?.taskRole === 'supervisor' ? progressByTask.get(String(task._id)) : null;
   const currentStage = (task, progress) => progress?.current?.[0]?.label || task?.theme || '待处理环节';
   const currentAssignee = (task, progress) => progress?.current?.[0]?.assignee || task?.assignedTo?.name || '';
@@ -688,7 +703,7 @@ router.get('/medical-assist-progress', staffAuth, async (req, res) => {
       stage: plan.status === 'draft' ? '方案待完善与推送' : currentStage(task, progress),
       assignee: plan.status === 'draft' ? '' : currentAssignee(task, progress),
       waitingReason: plan.status === 'draft' ? '方案尚未推送，岗位任务尚未生成' : progress?.message || '关联岗位任务待处理',
-      completed: progress?.completed || 0, total: progress?.total || 0, createdAt: plan.createdAt };
+      completed: progress?.completed || 0, total: progress?.total || 0, stages: stagesFor(plan._id, plan.sourceOrderId), createdAt: plan.createdAt };
   });
   const orderRows = visibleOrders.filter(order => taskByOrder.has(String(order._id))).map(order => {
     const patient = patientById.get(String(order.user));
@@ -699,7 +714,7 @@ router.get('/medical-assist-progress', staffAuth, async (req, res) => {
       supervisorName: task.taskRole === 'supervisor' ? task.assignedTo?.name || patient?.assignedHealthPlanner?.name || '待分配健康规划师' : patient?.assignedHealthPlanner?.name || '待分配健康规划师',
       stage: currentStage(task, progress), assignee: currentAssignee(task, progress),
       waitingReason: progress?.message || '关联岗位任务待处理',
-      completed: progress?.completed || 0, total: progress?.total || 0, createdAt: order.createdAt };
+      completed: progress?.completed || 0, total: progress?.total || 0, stages: stagesFor(null, order._id), createdAt: order.createdAt };
   });
   res.json({ success: true, data: [...planRows, ...orderRows].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 100) });
 });

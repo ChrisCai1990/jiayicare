@@ -24,7 +24,7 @@ async function progressFor({ plans = [], orders = [], tasks = [] }) {
     User: { find: () => query([{ _id: 'patient', name: '测试客户', assignedHealthPlanner: { name: '规划师' } }]) },
     HealthPlan: { find: () => query(plans) },
     Order: { find: () => query(orders) },
-    FollowUp: { find: () => query(tasks) },
+    FollowUp: { find: filter => query(filter?.status?.$in ? tasks.filter(task => filter.status.$in.includes(task.status || 'planned')) : tasks) },
     require: name => {
       assert.equal(name, '../utils/supervisionProgress');
       return { loadSupervisionProgress: async () => new Map() };
@@ -63,4 +63,20 @@ test('a linked order task keeps its active plan visible without a duplicate orde
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id, 'plan:plan');
   assert.equal(rows[0].stage, '预约门诊');
+});
+
+test('detail includes earlier completed stages and the active stage for the same service', async () => {
+  const rows = await progressFor({
+    orders: [{ _id: 'order', user: 'patient', serviceName: '陪同看诊服务' }],
+    tasks: [
+      { _id: 'done', sourceOrderId: 'order', taskRole: 'executor', status: 'completed', theme: '核对资料', assignedTo: { name: '健管专员' }, createdAt: '2026-10-20' },
+      { _id: 'active', sourceOrderId: 'order', taskRole: 'executor', status: 'in_progress', theme: '陪同看诊', assignedTo: { name: '就医专员' }, createdAt: '2026-10-21' },
+      { _id: 'other', sourceOrderId: 'another-order', taskRole: 'executor', status: 'completed', theme: '其他服务' },
+    ],
+  });
+  assert.equal(rows.length, 1);
+  assert.deepEqual(Array.from(rows[0].stages, stage => [stage.label, stage.status, stage.assignee]), [
+    ['核对资料', 'completed', '健管专员'],
+    ['陪同看诊', 'in_progress', '就医专员'],
+  ]);
 });
