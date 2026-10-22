@@ -69,3 +69,16 @@ test('printed reference upper limits can use inequalities or intervals', () => {
   assert.equal(upperReference('0～6.9'), 6.9);
   assert.equal(upperReference('未提供'), null);
 });
+
+test('OCR arrow beside a numeric result does not hide an above-range CA72-4 value', () => {
+  const item = { name: 'CA72-4', value: '6.920↑', referenceRange: '≤6.900', status: 'unknown' };
+  assert.equal(classifyTumorMarkerItem(item), 'elevated');
+  assert.equal(classifyTumorMarkerItem({ ...item, value: '6.900↑' }), 'normal');
+  assert.equal(classifyTumorMarkerItem({ ...item, value: '↑' }), 'unknown');
+  const conflicts = findTumorMarkerConflicts(summary('CA72-4持续升高'), [{
+    _id: 'source-report', checkDate: '2017-05-24', reportItems: [{ ...item, itemId: 'source-item' }],
+  }, report('2026-09-23', '9.05', '<19.10')]);
+  assert.equal(conflicts[0].reason, 'insufficient_repeated_evidence');
+  assert.deepEqual([conflicts[0].evidence[1].reportId, conflicts[0].evidence[1].itemId], ['source-report', 'source-item']);
+  assert.equal(conflicts[0].evidence[1].classification, 'elevated');
+});

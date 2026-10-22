@@ -25,7 +25,9 @@ function classifyTumorMarkerItem(item) {
   if (!matches.length) return null;
   if (matches.length > 1) return 'unknown';
   const value = String(item.value ?? '').trim();
-  const match = value.match(/^(\d+(?:\.\d+)?)(?:\s*[A-Za-zµμ/]+)?$/);
+  // OCR often keeps the printed high/low arrow beside the number. The arrow
+  // is not evidence by itself; compare the numeric value with the printed range.
+  const match = value.match(/^(\d+(?:\.\d+)?)(?:\s*[A-Za-zµμ/]+)?\s*[↑↓]?(?:\s*[A-Za-zµμ/]+)?$/);
   const upper = upperReference(item.referenceRange);
   if (!match || upper === null) return 'unknown';
   return Number(match[1]) > upper ? 'elevated' : 'normal';
@@ -35,12 +37,16 @@ function markerPoints(reports, marker) {
   return (reports || []).flatMap(report => (report.reportItems || []).filter(item =>
     marker.pattern.test(String(item.name || ''))
       && MARKERS.filter(candidate => candidate.pattern.test(String(item.name || ''))).length === 1).map(item => {
+    const classification = classifyTumorMarkerItem(item);
     return {
+      reportId: String(report._id || ''),
+      itemId: String(item.itemId || ''),
+      itemName: String(item.name || ''),
       date: String(report.checkDate || report.date || '').slice(0, 10),
       value: String(item.value ?? '').trim(),
       referenceRange: String(item.referenceRange ?? '').trim(),
-      classification: classifyTumorMarkerItem(item),
-      elevated: classifyTumorMarkerItem(item) === 'elevated',
+      classification,
+      elevated: classification === 'elevated',
     };
   }));
 }
