@@ -33,6 +33,7 @@ import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServic
 import { orderConversationMessages } from '../utils/orderConversation'
 import { expertAppointmentBenefits } from '../utils/expertAppointmentBenefits.mjs'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
+import { lifestyleHistoryLabel } from '../utils/lifestyleHistoryLabels.mjs'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
@@ -6291,7 +6292,6 @@ export default function PatientDetailPage() {
 
         {/* 生活方式变化历史：每次只展示本次真正改变的字段，并关联同期健康状况变化。 */}
         {(() => {
-          const labels = { diet: '饮食习惯', exercise: '运动习惯', sleep: '睡眠习惯', water: '饮水情况', alcohol: '饮酒情况', smoking: '吸烟情况', bowel: '排便情况', mood: '情绪状态' }
           const entries = [...(user.lifestyleHistory || [])].sort((a, b) => new Date(b.effectiveAt || b.recordedAt) - new Date(a.effectiveAt || a.recordedAt))
           if (!entries.length) return null
           return (
@@ -6320,7 +6320,7 @@ export default function PatientDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                         {basicChanges.map(([key, change]) => (
                           <div key={key} style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 10, fontSize: 12 }}>
-                            <b style={{ color: '#1E6B50' }}>{labels[key] || key}</b>
+                            <b style={{ color: '#1E6B50' }}>{lifestyleHistoryLabel(key)}</b>
                             <span style={{ color: '#4A6558' }}><span style={{ color: '#98A59F', textDecoration: change.from ? 'line-through' : 'none' }}>{change.from || '未记录'}</span><span style={{ margin: '0 7px', color: '#A0AEA7' }}>→</span><span style={{ color: '#1A2B24', fontWeight: 600 }}>{change.to || '清空'}</span></span>
                           </div>
                         ))}
@@ -6328,7 +6328,7 @@ export default function PatientDetailPage() {
                           ? Object.entries(change || {}).map(([name, values]) => [`营养评估 · ${name}`, values])
                           : [[key, change]]).map(([key, change]) => (
                           <div key={key} style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 10, fontSize: 12 }}>
-                            <b style={{ color: '#1E6B50' }}>{key === 'autoSummaryFlags' ? '系统自动摘要' : key === 'summaryOverride' ? '人工摘要' : key}</b>
+                            <b style={{ color: '#1E6B50' }}>{lifestyleHistoryLabel(key)}</b>
                             <span style={{ color: '#4A6558' }}>{change.from ? `${change.from} → ` : ''}{Array.isArray(change.to) ? change.to.join('、') : String(change.to || '清空')}</span>
                           </div>
                         ))}
