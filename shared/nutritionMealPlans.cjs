@@ -35,7 +35,7 @@ function packCategoryMeals(modules = {}, assessment, options = {}) {
   if (!remaining) throw new Error('早餐和晚餐预算须各不少于200 kcal');
   // The same category allocator receives only the regular-food budget.
   const allocated = Object.values(remaining).some(value => value > 0)
-    ? categoryMeals(modules, { ...assessment, mealEnergyKcal: remaining }, { ...options, noStapleMeals: ['breakfast', 'dinner'] })
+    ? categoryMeals(modules, { ...assessment, mealEnergyKcal: remaining }, { ...options, noStapleMeals: ['breakfast', 'dinner'], packLunch: true })
     : Object.fromEntries(MEALS.map(key => [key, { ...(modules[key] || {}), content: '', categoryBudgetSignature: JSON.stringify([remaining, 'pack-empty-v2']), categoryTargetKcal: 0, categoryReferenceKcal: 0, categoryPortions: [] }]));
   const result = { ...modules };
   for (const key of MEALS) {

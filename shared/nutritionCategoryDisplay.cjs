@@ -48,7 +48,13 @@ function categoryMeals(modules = {}, assessment, options = {}) {
   const result = { ...modules };
   for (const meal of MEALS) {
     const noStaple = options.noStapleMeals?.includes(meal) === true;
-    const signature = JSON.stringify(noStaple ? [budgets, excluded, 'no-staple-v1'] : [budgets, excluded]);
+    // A specific wheat/gluten restriction is not a ban on every grain/tuber.
+    // Scope the alternative to pack lunch; retain all other meal/category restrictions.
+    const glutenLunch = options.packLunch === true && meal === 'lunch'
+      && /麸|小麦|大麦|黑麦/.test(String(assessment?.allergyDetails || ''))
+      && !/全部谷薯|所有谷薯|禁用谷薯|谷薯类禁忌/.test(String(assessment?.allergyDetails || ''));
+    const mealAllowed = key => (glutenLunch && key === 'staple') || allowed(key);
+    const signature = JSON.stringify(glutenLunch ? [budgets, excluded, 'pack-gluten-lunch-v1'] : noStaple ? [budgets, excluded, 'no-staple-v1'] : [budgets, excluded]);
     const prior = modules[meal] || {};
     // Preserve a nutritionist's edits after initial allocation, including switching versions.
     if (!options.force && prior.categoryAllocationVersion === VERSION && prior.categoryBudgetSignature === signature) { result[meal] = { ...prior }; continue; }
@@ -74,12 +80,12 @@ function categoryMeals(modules = {}, assessment, options = {}) {
         const correction = fillers[0];
         rows[correction] = round(rows[correction] + (budgets[meal] - energy(rows)) / GROUPS[correction].kcal, 1);
       } else {
-        const filler = (meal === 'snack' ? ['fruit', 'dairy', 'nuts', 'staple'] : ['staple', 'soy', 'meat', 'seafood', 'dairy']).find(allowed);
+        const filler = (meal === 'snack' ? ['fruit', 'dairy', 'nuts', 'staple'] : ['staple', 'soy', 'meat', 'seafood', 'dairy']).find(mealAllowed);
         if (!filler) throw new Error('当前类别限制无法满足餐次预算，请调整配餐类别');
         rows[filler] = round((rows[filler] || 0) + (budgets[meal] - energy(rows)) / GROUPS[filler].kcal);
       }
     }
-    const portions = Object.entries(GROUPS).filter(([key]) => rows[key] > 0).map(([key, group]) => ({ category: key, grams: rows[key], label: group.label }));
+    const portions = Object.entries(GROUPS).filter(([key]) => rows[key] > 0).map(([key, group]) => ({ category: key, grams: rows[key], label: glutenLunch && key === 'staple' ? '谷薯类（无麸质，需核对过敏适用性）' : group.label }));
     result[meal] = { ...prior, content: portions.map(row => `${row.label} ${row.grams}克`).join('\n'), enabled: budgets[meal] > 0,
       categoryAllocationVersion: VERSION, categoryBudgetSignature: signature, categoryExcluded: excluded,
       categoryPortions: portions, categoryReferenceKcal: Math.round(energy(rows)), categoryTargetKcal: budgets[meal], categoryWeightBasis: BASIS };

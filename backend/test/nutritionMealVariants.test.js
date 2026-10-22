@@ -177,3 +177,22 @@ test('风险草稿及历史缺失版本可选择餐包，保存仍需人工确�
   assert.deepEqual(back.modules.breakfast, legacy.balanced_categories.breakfast);
   assert.throws(() => switchMealPlan(legacy, 'balanced_categories', 'meal_pack', legacy.balanced_categories, { ...assessment, mealEnergyKcal: { ...assessment.mealEnergyKcal, dinner: 199 } }));
 });
+
+
+test('截图麸质过敏不清除餐包午餐全部谷薯，早晚不变且旧午餐重新平衡预算', () => {
+  const { packCategoryMeals, categoryMeals } = require('../../shared/nutritionMealPlans.cjs');
+  const input = { managementKcal: 1700, allergyStatus: 'confirmed_present', allergyDetails: '海鲜过敏、麸质过敏', mealEnergyKcal: { breakfast: 595, lunch: 680, dinner: 425, snack: 0 } };
+  const residual = categoryMeals({}, { ...input, mealEnergyKcal: packBudgets(input.mealEnergyKcal) }, { excluded: ['staple', 'seafood'], noStapleMeals: ['breakfast', 'dinner'] });
+  const old = Object.fromEntries(Object.entries(residual).map(([key,row]) => [key, { ...row, packCategoryVersion: 2, content: (['breakfast','dinner'].includes(key) ? PACK_LINE + '\n' : '') + row.content }]));
+  old.lunch.time = '12:00';
+  const fixed = packCategoryMeals(old, input);
+  assert.match(fixed.lunch.content, /谷薯类（无麸质/);
+  assert(!fixed.lunch.content.includes('水产类'));
+  assert(fixed.lunch.categoryPortions.find(row => row.category === 'soy').grams < 100);
+  assert(Math.abs(fixed.lunch.categoryReferenceKcal - 680) <= 10);
+  assert.equal(fixed.lunch.time, '12:00');
+  for (const key of ['breakfast', 'dinner', 'snack']) assert.deepEqual(fixed[key], old[key]);
+  assert.deepEqual(packCategoryMeals(fixed, input), fixed);
+  const blocked = packCategoryMeals({}, { ...input, allergyDetails: '全部谷薯类禁忌，麸质过敏' }, { excluded: ['staple'] });
+  assert(!blocked.lunch.content.includes('谷薯类'));
+});
