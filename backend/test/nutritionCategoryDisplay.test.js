@@ -61,11 +61,15 @@ test('过敏和AI禁用类别不会重新加入；新生成无需AI大类文本�
   assert(!items.some(item => /待核对|燕麦/.test(item.notes)));
 });
 
-test('客户方案单独提供称重说明，三餐内容仍只显示大类和克重', () => {
+test('客户方案隐藏分量说明，医护参考保留，已有餐次完成状态及ID保留', () => {
   const modules = categoryMeals({}, assessment);
-  const items = nutritionPlanItems({ content: { mealPlanSelection: 'balanced_categories', moduleData: modules } });
-  assert.equal(items.filter(item => item.name === '分量说明').length, 1);
-  assert(items.find(item => item.name === '分量说明').notes.includes('生重'));
+  const items = nutritionPlanItems({ content: { mealPlanSelection: 'balanced_categories', moduleData: modules }, items: [{ name: '分量说明', notes: '旧参考说明' }, { _id: 'breakfast-id', name: '早餐（07:30-08:00）', status: 'completed' }] });
+  assert(!items.some(item => item.name === '分量说明'));
+  assert(modules.breakfast.categoryWeightBasis.includes('生重'));
+  assert.equal(items.find(item => item.name.startsWith('早餐'))._id, 'breakfast-id');
+  assert.equal(items.find(item => item.name.startsWith('早餐')).status, 'completed');
+  const pack = nutritionPlanItems({ content: { mealPlanSelection: 'meal_pack', moduleData: modules } });
+  assert(!pack.some(item => item.name === '分量说明'));
   assert(!items.find(item => item.name.startsWith('午餐')).notes.includes('当量'));
   const other = nutritionPlanItems({ content: { mealPlanSelection: 'balanced_recipes', moduleData: modules } });
   assert(!other.some(item => item.name === '分量说明'));
