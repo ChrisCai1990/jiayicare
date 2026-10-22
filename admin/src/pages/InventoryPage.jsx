@@ -114,7 +114,13 @@ export default function InventoryPage() {
         <textarea className="form-input" required placeholder="差异原因或盘点依据；如原商城库存为虚拟数字" value={count.note} onChange={e => setCount({ ...count, note:e.target.value })} />
         <button className="btn btn-primary" disabled={busy || !count.productId || count.counted === '' || !count.note.trim()}>按实盘数量校正</button>
       </form>
-    <InventoryLedger products={data.products} records={data.recent} onCorrect={startCount} />
+    <InventoryLedger products={data.products} records={data.recent} onCorrect={startCount} onEntryCorrection={async (row, action) => {
+      const reason = window.prompt(action === 'void' ? '请输入撤销误录原因' : '请输入客户退回原因')
+      if (!reason?.trim()) return
+      const units = action === 'customer_return' ? Number(window.prompt('本次退回数量', String(row.units))) : undefined
+      if (action === 'customer_return' && (!Number.isInteger(units) || units < 1)) return window.alert('退回数量无效')
+      try { await adminAPI.correctInventoryEntry(row._id, { action, reason, units }); await load() } catch (error) { window.alert(error.message) }
+    }} />
     <section className="card" style={{ padding:20, marginTop:18 }}><h2>客户消费来源</h2><p>商城订单与医护录入消费展示服务收入；物资发放、领用按独立实物库存记录。</p><div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>时间</th><th>来源</th><th>客户</th><th>产品</th><th>金额</th><th>凭据</th></tr></thead><tbody>
       {consumption.orders.map(x => <tr key={`o${x._id}`}><td>{date(x.createdAt)}</td><td>商城</td><td>{x.user?.name || '-'}</td><td>{x.serviceName}</td><td>{money(x.paidAmount || x.servicePrice)}</td><td>{x.orderNo}</td></tr>)}
       {consumption.manual.map(x => <tr key={`m${x._id}`}><td>{date(x.createdAt)}</td><td>{x.type === 'manual_sale' ? '医护录入消费' : '实际使用（不计收入）'}</td><td>{x.userId?.name || '-'}</td><td>{x.productId?.name || '-'}</td><td>{x.type === 'manual_sale' ? money(x.units * x.unitPrice) : '-'}</td><td>{x.note || '-'}</td></tr>)}

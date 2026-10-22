@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
 import './InventoryLedger.css'
 
-const labels = { opening:'期初', receipt:'入库', issue:'领用', use:'实际使用', return:'退回', loss:'报损', count:'盘点', manual_sale:'医护录入消费' }
+const labels = { opening:'期初', receipt:'入库', issue:'领用', use:'实际使用', return:'退回', loss:'报损', count:'盘点', manual_sale:'医护录入消费', reversal:'撤销误录', customer_return:'客户退回' }
 const isLegacy = row => row.type === 'opening' && row.note?.startsWith('启用台账时的期初库存')
 const time = value => new Date(value).toLocaleString('zh-CN', { hour12:false })
 
-export default function InventoryLedger({ products, records, onCorrect }) {
+export default function InventoryLedger({ products, records, onCorrect, onEntryCorrection }) {
   const [search, setSearch] = useState('')
   const [type, setType] = useState('')
   const [expanded, setExpanded] = useState(null)
@@ -38,20 +38,21 @@ export default function InventoryLedger({ products, records, onCorrect }) {
             <td><div className="inventory-ledger-actions"><button type="button" aria-expanded={expanded === product._id} aria-controls={`ledger-product-${product._id}`} onClick={() => setExpanded(expanded === product._id ? null : product._id)}>{expanded === product._id ? '收起流水' : `查看流水（${rows.length}）`}</button>{onCorrect && <button type="button" onClick={() => onCorrect(product._id)}>校正库存</button>}</div></td>
           </tr>
           {expanded === product._id && <tr id={`ledger-product-${product._id}`} className="inventory-ledger-detail"><td colSpan="4">
-            <table className="inventory-ledger-table inventory-ledger-history"><thead><tr><th>时间</th><th>类型</th><th>本次数量</th><th>批次 / 有效期</th><th>操作后结存</th><th>详情</th></tr></thead><tbody>
+            <table className="inventory-ledger-table inventory-ledger-history"><thead><tr><th>时间</th><th>类型</th><th>使用客户</th><th>本次数量</th><th>批次 / 有效期</th><th>操作后结存</th><th>详情</th></tr></thead><tbody>
               {rows.map(row => {
                 const legacy = isLegacy(row)
                 const delta = Number(row.quantity)
                 return <tr key={row._id}>
                   <td className="inventory-ledger-time">{time(row.createdAt)}</td>
                   <td><span className={`inventory-ledger-tag ${legacy ? 'legacy' : row.type}`}>{legacy ? '旧商城库存 · 未核实' : labels[row.type] || row.type}</span></td>
+                  <td>{row.userId?.name || '-'}</td>
                   <td className="inventory-ledger-quantity"><strong>{row.type === 'count' ? `实盘 ${row.balanceAfter} ${unit}` : `${row.units} ${unit}`}</strong><small>{legacy ? '历史展示值' : delta === 0 ? '库存不变' : `${row.type === 'count' ? (delta > 0 ? '调增' : '调减') : (delta > 0 ? '增加' : '减少')} ${Math.abs(delta)} ${unit}`}</small></td>
                   <td><span>{row.batchNo || '无批次号'}</span><small>{row.expiresAt ? `有效期至 ${new Date(row.expiresAt).toLocaleDateString('zh-CN', { timeZone:'Asia/Shanghai' })}` : row.type === 'receipt' ? '效期未录入' : '—'}</small></td>
                   <td className="inventory-ledger-balance">{legacy ? '未核实' : `${row.balanceAfter} ${unit}`}</td>
-                  <td><details><summary>详情</summary><div className="inventory-ledger-record-detail"><p>用于服务：{row.serviceProductId?.name || '-'}</p><p>经办人：{row.actorId?.name || '-'}</p><p>使用客户：{row.userId?.name || '-'}</p><p>批次：{row.batchNo || '-'}</p><p>设备编号：{row.serialNo || '-'}</p><p>备注：{row.note || '无备注'}</p></div></details></td>
+                  <td><details><summary>详情</summary><div className="inventory-ledger-record-detail"><p>用于服务：{row.serviceProductId?.name || '-'}</p><p>经办人：{row.actorId?.name || '-'}</p><p>使用客户：{row.userId?.name || '-'}</p><p>交付：{row.delivery?.method === 'shipping' ? `寄送给 ${row.delivery.recipientName || '-'}，${row.delivery.deliveryAddress || '-'}；${row.delivery.carrier || '-'} ${row.delivery.trackingNo || ''}` : row.delivery?.method === 'pickup' ? `线下由 ${row.delivery.pickupBy || '-'} 领取` : '-'}</p><p>批次：{row.batchNo || '-'}</p><p>设备编号：{row.serialNo || '-'}</p><p>备注：{row.note || '无备注'}</p>{row.isReversed && <p>已撤销</p>}{onEntryCorrection && !row.isReversed && ['issue','use','return','manual_sale'].includes(row.type) && <><button type="button" onClick={() => onEntryCorrection(row, 'void')}>撤销误录</button>{row.type === 'use' && row.userId && <button type="button" onClick={() => onEntryCorrection(row, 'customer_return')}>客户退回</button>}</>}</div></details></td>
                 </tr>
               })}
-              {!rows.length && <tr><td colSpan="6" className="inventory-ledger-empty">暂无符合条件的流水</td></tr>}
+              {!rows.length && <tr><td colSpan="7" className="inventory-ledger-empty">暂无符合条件的流水</td></tr>}
             </tbody></table>
           </td></tr>}
         </React.Fragment>

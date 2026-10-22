@@ -80,6 +80,7 @@ export const adminAPI = {
   enableInventoryProduct: (id, data) => req(`/inventory/products/${id}/enable`, { method: 'POST', body: JSON.stringify(data) }),
   updateInventorySettings: (id, data) => req(`/inventory/products/${id}/settings`, { method: 'PATCH', body: JSON.stringify(data) }),
   inventoryEntry: data => req('/inventory/entries', { method: 'POST', body: JSON.stringify(data) }),
+  correctInventoryEntry: (id, data) => req(`/inventory/entries/${id}/correct`, { method: 'POST', body: JSON.stringify(data) }),
   inventoryCount: data => req('/inventory/counts', { method: 'POST', body: JSON.stringify(data) }),
   specialtyLibrary: () => req('/specialty-library'),
   specialtyReviewers: () => req('/specialty-library/reviewers'),

@@ -5,6 +5,7 @@ import { loadFollowUpPages } from '../utils/loadFollowUpPages.mjs'
 import AiWorkbenchProvider from '../components/AiWorkbenchProvider'
 import ConsultationTodosPanel from '../components/ConsultationTodosPanel'
 import OrderShipmentsPanel from '../components/OrderShipmentsPanel'
+import InventoryDispatchPanel from '../components/InventoryDispatchPanel'
 import orderShipping from '../../../shared/orderShipping.cjs'
 import { useNotificationSummary } from '../components/NotificationSummary'
 import React, { useEffect, useState } from 'react'
@@ -122,6 +123,7 @@ export default function HomePage() {
       <AiWorkbenchProvider>
       <SymptomTodosPanel />
       <ServiceSupervisionPanel />
+      {['healthManager', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
       {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
       {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
 

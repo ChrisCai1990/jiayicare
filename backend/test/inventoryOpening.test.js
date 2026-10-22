@@ -24,6 +24,7 @@ function setup() {
     '../models/Order':{ findOne:async filter=>{ assert.equal(filter.tenantId,'tenant'); return { serviceId:'diabetes' } } },
     '../models/User':{ exists:async()=>true }, '../models/Admin':{ exists:async()=>true },
     '../middleware/adminAuth':()=>{}, '../middleware/staffAuth':()=>{}, '../middleware/checkPermission':()=>()=>{},
+    './inventoryDispatches':(_router, addEntry)=>addEntry,
   };
   vm.runInNewContext(source,{ module:{exports:{}}, require:name=>{ if (!(name in mocks)) throw Error(name); return mocks[name] } });
   let sequence=0;

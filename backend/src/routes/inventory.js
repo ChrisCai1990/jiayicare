@@ -16,7 +16,7 @@ adminRouter.use(adminAuth);
 staffRouter.use(staffAuth);
 
 function tenant(req) { return req.admin?.tenantId || req.staff?.tenantId; }
-function actor(req) { return req.admin || req.staff; }
+function actor(req) { return req.inventoryActor || req.admin || req.staff; }
 function bad(res, message, status = 400) { return res.status(status).json({ success: false, message }); }
 function validId(value) { return mongoose.isValidObjectId(value); }
 function productFilter(req) { return { tenantId: tenant(req), 'inventoryTracking.enabled': true }; }
@@ -41,6 +41,8 @@ async function list(req, res) {
   products.forEach(product => { product.needsOpeningCount = legacyByProduct.has(String(product._id)) && !countedProducts.has(String(product._id)); });
   const recent = ids.length ? await InventoryEntry.find({ tenantId: tenant(req), productId: { $in: ids } })
     .sort({ createdAt: -1 }).limit(100).populate('userId', 'name patientNo').populate('actorId', 'name').populate('serviceProductId', 'name').lean() : [];
+  const correctedIds = recent.filter(row => row.reversesEntryId).map(row => String(row.reversesEntryId));
+  recent.forEach(row => { row.isReversed = correctedIds.includes(String(row._id)); });
   res.json({ success: true, data: { products, recent } });
 }
 adminRouter.get('/', list);
@@ -57,11 +59,18 @@ async function users(req, res) {
   const query = String(req.query.q || '').trim();
   if (query.length < 2) return res.json({ success: true, data: [] });
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const list = await User.find({ tenantId: tenant(req), $or: [{ name: new RegExp(escaped, 'i') }, { phone: new RegExp(escaped) }] }).select('name phone patientNo').limit(20).lean();
+  const list = await User.find({ tenantId: tenant(req), $or: [{ name: new RegExp(escaped, 'i') }, { phone: new RegExp(escaped) }] }).select('name phone patientNo contactName contactPhone deliveryAddress assignedHealthManager').limit(20).lean();
   res.json({ success: true, data: list });
 }
 adminRouter.get('/users', users);
 staffRouter.get('/users', users);
+staffRouter.get('/users/:id', async (req, res) => {
+  if (!validId(req.params.id)) return bad(res, '客户编号无效');
+  const user = await User.findOne({ _id: req.params.id, tenantId: tenant(req) })
+    .select('name phone patientNo contactName contactPhone deliveryAddress assignedHealthManager').lean();
+  if (!user) return bad(res, '客户不存在', 404);
+  res.json({ success: true, data: user });
+});
 
 adminRouter.post('/products/:id/enable', (req, res) => bad(res, '请刷新页面，通过新建实物物资建立独立库存', 409));
 adminRouter.post('/materials', async (req, res) => {
@@ -152,8 +161,8 @@ async function addEntry(req, res) {
   if (fromIssued || type === 'return') {
     const ledger = await InventoryEntry.find({ tenantId: tenant(req), productId, assigneeId,
       ...(product.inventoryTracking.kind === 'reusable' ? { serialNo: String(serialNo).trim() } : {}),
-      type: { $in: ['issue', 'use', 'return'] } }).select('type units fromIssued').lean();
-    const remaining = ledger.reduce((sum, row) => sum + (row.type === 'issue' ? row.units : row.type === 'return' || (row.fromIssued && product.inventoryTracking.kind !== 'reusable') ? -row.units : 0), 0);
+      type: { $in: ['issue', 'use', 'return', 'reversal'] } }).select('type units fromIssued quantity').lean();
+    const remaining = ledger.reduce((sum, row) => sum + (row.type === 'issue' ? row.units : row.type === 'return' || (row.type === 'use' && row.fromIssued && product.inventoryTracking.kind !== 'reusable') ? -row.units : row.type === 'reversal' ? (row.fromIssued && row.quantity === 0 ? (product.inventoryTracking.kind === 'reusable' ? 0 : row.units) : -row.quantity) : 0), 0);
     if (remaining < amount) return bad(res, '该人员已领用的未使用数量不足', 409);
   }
   if (type === 'manual_sale' && (!Number.isFinite(Number(unitPrice)) || Number(unitPrice) < 0)) return bad(res, '请输入本次成交单价');
@@ -166,7 +175,7 @@ async function addEntry(req, res) {
   );
   if (!updated) return bad(res, '可用库存不足或物资状态已变化', 409);
   try {
-    const entry = await InventoryEntry.create({ tenantId: tenant(req), productId, materialId: productId, serviceProductId: service?._id || null, requestId, type, quantity: delta, units: amount, fromIssued: !!fromIssued, sourceOrderId: orderId || null, balanceAfter: Number(updated.stock), sourceReceiptId: sourceReceiptId || null, batchNo: resolvedBatch.slice(0, 80), serialNo: String(serialNo).trim().slice(0, 80), expiresAt: resolvedExpiry, location: String(location || product.inventoryTracking.location || '').trim().slice(0, 80), userId: userId || null, assigneeId: assigneeId || null, unitCost: unitCost === undefined || unitCost === '' ? Number(product.inventoryTracking.defaultCost || 0) : Number(unitCost), unitPrice: type === 'manual_sale' ? Number(unitPrice) : 0, note: String(note).trim().slice(0, 500), actorId: actor(req)._id });
+    const entry = await InventoryEntry.create({ tenantId: tenant(req), productId, materialId: productId, serviceProductId: service?._id || null, requestId, type, quantity: delta, units: amount, fromIssued: !!fromIssued, sourceOrderId: orderId || null, balanceAfter: Number(updated.stock), sourceReceiptId: sourceReceiptId || null, batchNo: resolvedBatch.slice(0, 80), serialNo: String(serialNo).trim().slice(0, 80), expiresAt: resolvedExpiry, location: String(location || product.inventoryTracking.location || '').trim().slice(0, 80), userId: userId || null, assigneeId: assigneeId || null, unitCost: unitCost === undefined || unitCost === '' ? Number(product.inventoryTracking.defaultCost || 0) : Number(unitCost), unitPrice: type === 'manual_sale' ? Number(unitPrice) : 0, note: String(note).trim().slice(0, 500), actorId: actor(req)._id, confirmedBy: req.inventoryConfirmedBy || null, dispatchRequestId: req.inventoryDispatchId || null, delivery: req.inventoryDelivery || undefined });
     return res.json({ success: true, data: entry });
   } catch (error) {
     await Material.updateOne({ _id: productId, tenantId: tenant(req) }, { $inc: { stock: -delta } });
@@ -175,7 +184,8 @@ async function addEntry(req, res) {
   }
 }
 adminRouter.post('/entries', addEntry);
-staffRouter.post('/entries', addEntry);
+const queueDispatch = require('./inventoryDispatches')(staffRouter, addEntry);
+staffRouter.post('/entries', (req, res) => ['issue', 'use'].includes(req.body?.type) ? queueDispatch(req, res) : addEntry(req, res));
 
 adminRouter.post('/counts', async (req, res) => {
   const { productId, counted, note = '' } = req.body || {};
@@ -201,7 +211,9 @@ adminRouter.get('/consumption', async (req, res) => {
     InventoryEntry.find({ tenantId: tenant(req), type: { $in: ['use', 'manual_sale'] }, userId: { $ne: null } }).sort({ createdAt: -1 }).limit(500).populate('productId', 'name').populate('materialId', 'name').populate('serviceProductId', 'name').populate('userId', 'name').lean(),
     Order.find({ tenantId: tenant(req), serviceId: { $in: productIds }, orderType: 'product', paymentStatus: 'paid', tradeStatus: { $nin: ['closed', 'refunded'] } }).sort({ createdAt: -1 }).limit(500).select('user serviceId serviceName servicePrice paidAmount createdAt orderNo paymentStatus tradeStatus').populate('user', 'name').lean(),
   ]);
-  res.json({ success: true, data: { manual: manual.map(row => ({ ...row, productId: row.materialId || row.productId })), orders } });
+  const reversals = manual.length ? await InventoryEntry.find({ tenantId: tenant(req), type: 'reversal', reversesEntryId: { $in: manual.map(row => row._id) } }).select('reversesEntryId').lean() : [];
+  const reversed = new Set(reversals.map(row => String(row.reversesEntryId)));
+  res.json({ success: true, data: { manual: manual.filter(row => !reversed.has(String(row._id))).map(row => ({ ...row, productId: row.materialId || row.productId })), orders } });
 });
 
 staffRouter.get('/patients/:id/consumption', async (req, res) => {
@@ -211,7 +223,53 @@ staffRouter.get('/patients/:id/consumption', async (req, res) => {
     InventoryEntry.find({ tenantId: tenant(req), userId: req.params.id, type: { $in: ['use', 'manual_sale'] } }).sort({ createdAt: -1 }).populate('productId', 'name').populate('materialId', 'name').populate('serviceProductId', 'name').lean(),
     Order.find({ tenantId: tenant(req), user: req.params.id, serviceId: { $in: productIds }, orderType: 'product', paymentStatus: 'paid', tradeStatus: { $nin: ['closed', 'refunded'] } }).sort({ createdAt: -1 }).select('serviceId serviceName servicePrice paidAmount createdAt orderNo').lean(),
   ]);
-  res.json({ success: true, data: { manual: manual.map(row => ({ ...row, productId: row.materialId || row.productId })), orders } });
+  const reversals = manual.length ? await InventoryEntry.find({ tenantId: tenant(req), type: 'reversal', reversesEntryId: { $in: manual.map(row => row._id) } }).select('reversesEntryId').lean() : [];
+  const reversed = new Set(reversals.map(row => String(row.reversesEntryId)));
+  res.json({ success: true, data: { manual: manual.filter(row => !reversed.has(String(row._id))).map(row => ({ ...row, productId: row.materialId || row.productId })), orders } });
 });
+
+async function correctEntry(req, res) {
+  const { action, reason, units } = req.body || {};
+  if (!validId(req.params.id) || !['void', 'customer_return'].includes(action) || !String(reason || '').trim()) return bad(res, '请选择操作并填写原因');
+  const original = await InventoryEntry.findOne({ _id: req.params.id, tenantId: tenant(req) });
+  if (!original || !['issue', 'use', 'return', 'manual_sale'].includes(original.type)) return bad(res, '该流水不能在此更正', 409);
+  if (req.staff && String(original.actorId) !== String(req.staff._id) && !['healthManager', 'superadmin'].includes(req.staff.role)) return bad(res, '仅原经办人或健管专员可更正', 403);
+  if (action === 'customer_return' && (original.type !== 'use' || !original.userId)) return bad(res, '只有客户使用记录可以登记客户退回');
+  if (action === 'void' && await InventoryEntry.exists({ tenantId: tenant(req), reversesEntryId: original._id })) return bad(res, '该流水已撤销', 409);
+  if (action === 'void' && await InventoryEntry.exists({ tenantId: tenant(req), returnsEntryId: original._id })) return bad(res, '该流水已有客户退回记录，不能整笔撤销', 409);
+  if (action === 'customer_return' && await InventoryEntry.exists({ tenantId: tenant(req), reversesEntryId: original._id })) return bad(res, '该流水已撤销', 409);
+  const amount = action === 'void' ? original.units : Number(units);
+  if (!Number.isInteger(amount) || amount < 1 || amount > original.units) return bad(res, '退回数量无效');
+  if (action === 'customer_return') {
+    const alreadyReturned = await InventoryEntry.find({ tenantId: tenant(req), returnsEntryId: original._id, type: 'customer_return' }).select('units').lean();
+    if (alreadyReturned.reduce((sum, row) => sum + row.units, 0) + amount > original.units) return bad(res, '退回数量超过已发放数量', 409);
+  }
+  if (action === 'void' && original.type === 'issue') {
+    const ledger = await InventoryEntry.find({ tenantId: tenant(req), productId: original.productId, assigneeId: original.assigneeId,
+      type: { $in: ['issue', 'use', 'return', 'reversal'] } }).select('type units fromIssued quantity reversesEntryId').lean();
+    const balance = ledger.reduce((sum, row) => sum + (row.type === 'issue' ? row.units : row.type === 'return' || (row.type === 'use' && row.fromIssued) ? -row.units : row.type === 'reversal' ? (row.fromIssued && row.quantity === 0 ? row.units : -row.quantity) : 0), 0);
+    if (balance < original.units) return bad(res, '该领用已有后续使用或归还，不能直接撤销', 409);
+  }
+  const delta = action === 'customer_return' ? amount : -Number(original.quantity);
+  const material = await Material.findOneAndUpdate({ ...productFilter(req), _id: original.productId,
+    ...(delta < 0 ? { stock: { $gte: -delta } } : {}) }, { $inc: { stock: delta } }, { new: true });
+  if (!material) return bad(res, '库存不足或物资已变化', 409);
+  try {
+    const entry = await InventoryEntry.create({ tenantId: tenant(req), productId: original.productId, materialId: original.materialId,
+      serviceProductId: original.serviceProductId, sourceReceiptId: original.sourceReceiptId,
+      type: action === 'void' ? 'reversal' : 'customer_return', quantity: delta, units: amount,
+      reversesEntryId: action === 'void' ? original._id : null, returnsEntryId: action === 'customer_return' ? original._id : null,
+      balanceAfter: Number(material.stock), batchNo: original.batchNo, serialNo: original.serialNo, expiresAt: original.expiresAt,
+      userId: original.userId, assigneeId: original.assigneeId, fromIssued: original.fromIssued,
+      actorId: actor(req)._id, note: `${action === 'void' ? '撤销误录' : '客户退回'}：${String(reason).trim()}`.slice(0, 500) });
+    return res.json({ success: true, data: entry });
+  } catch (error) {
+    await Material.updateOne({ tenantId: tenant(req), _id: original.productId }, { $inc: { stock: -delta } });
+    if (error.code === 11000) return bad(res, '该流水已更正，请刷新', 409);
+    throw error;
+  }
+}
+adminRouter.post('/entries/:id/correct', correctEntry);
+staffRouter.post('/entries/:id/correct', correctEntry);
 
 module.exports = { adminRouter, staffRouter };
