@@ -9,7 +9,6 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
 import BloodPressurePhoto from '../../components/BloodPressurePhoto';
-import MetabolicPilotCard from '../../components/MetabolicPilotCard';
 import WeightProgressPhotos from '../../components/WeightProgressPhotos';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期
@@ -95,9 +94,6 @@ function calcSleepDuration(sleepTime, wakeTime) {
 export default function CheckinScreen({ navigation }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [pilotRefresh,setPilotRefresh] = useState(0);
-  const [pilotMember,setPilotMember] = useState(false);
-  const [pilotFeedback,setPilotFeedback] = useState(null);
   const [doneTypes, setDoneTypes] = useState({}); // { type: { note, hasImage } }，来自后端今日记录状态
 
   const todayStr = toLocalDateStr(new Date());
@@ -127,10 +123,10 @@ export default function CheckinScreen({ navigation }) {
       const res = await recordsAPI.todayStatus();
       if (res.success) setDoneTypes(res.doneTypes || {});
     } catch {}
-    finally { setLoading(false); setPilotRefresh(v=>v+1); }
+    finally { setLoading(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { setPilotFeedback(null); loadTodayStatus(); }, [loadTodayStatus]));
+  useFocusEffect(useCallback(() => { loadTodayStatus(); }, [loadTodayStatus]));
 
   // 根据用户慢病标签，决定血压/血糖是否为必记录项；无对应慢病则归为可选，不做"未完成"提示
   const chronicDiseases = user?.chronicDiseases || [];
@@ -223,8 +219,7 @@ export default function CheckinScreen({ navigation }) {
 
     setMeasureSaving(true);
     try {
-      const saved = await recordsAPI.create(payload);
-      setPilotFeedback(saved.feedback || null);
+      await recordsAPI.create(payload);
     } catch (err) {
       setMeasureSaving(false);
       Alert.alert('保存失败', err.message || '网络异常，请重试');
@@ -247,7 +242,6 @@ export default function CheckinScreen({ navigation }) {
     const resolvedTimeSlot = item.key === 'exercise'
       ? (checkinTimeSlot === '现在' ? deriveCurrentTimeSlot() : checkinTimeSlot)
       : '';
-    setPilotFeedback(null);
     setCheckinSaving(true);
     const mealPrefix = item.key === 'diet' && checkinMealType ? `【${checkinMealType}】` : '';
     const slotPrefix = resolvedTimeSlot ? `【${resolvedTimeSlot}】` : '';
@@ -290,7 +284,6 @@ export default function CheckinScreen({ navigation }) {
       return;
     }
     const hasUrgent = selectedSymptoms.some(s => URGENT_SYMPTOMS.includes(s));
-    setPilotFeedback(null);
     setSymptomSaving(true);
     try {
       await recordsAPI.create({
@@ -363,20 +356,19 @@ export default function CheckinScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
-          <MetabolicPilotCard refreshKey={pilotRefresh} onStatus={setPilotMember} feedback={pilotFeedback} />
           <WeightProgressPhotos />
           {/* 必记录项 */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>记录健康数据</Text>
-              {!pilotMember && mandatoryItems.length > 0 && (
+              {mandatoryItems.length > 0 && (
                 <Text style={styles.sectionProgress}>{doneMandatoryCount}/{mandatoryItems.length}</Text>
               )}
             </View>
             <View style={styles.checkinGrid}>
               {mandatoryItems.map(renderCheckinItem)}
             </View>
-            {!pilotMember && allMandatoryDone && (
+            {allMandatoryDone && (
               <View style={styles.checkinAllDone}>
                 <Ionicons name="star" size={14} color="#F39C12" />
                 <Text style={styles.checkinAllDoneText}>今日核心指标已完成！保持健康好习惯 🎉</Text>

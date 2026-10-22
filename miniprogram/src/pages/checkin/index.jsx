@@ -8,7 +8,6 @@ import BloodPressurePhoto from '../../components/BloodPressurePhoto';
 import BloodSugarPhoto from '../../components/BloodSugarPhoto';
 import WaistPhoto from '../../components/WaistPhoto';
 import WeightPhoto from '../../components/WeightPhoto';
-import MetabolicPilotCard from '../../components/MetabolicPilotCard';
 import WeightProgressPhotos from '../../components/WeightProgressPhotos';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
@@ -172,9 +171,6 @@ export default function CheckinPage() {
   const [loading, setLoading] = useState(true);
   const [doneTypes, setDoneTypes] = useState({});
   const [recordedDates, setRecordedDates] = useState({});
-  const [pilotRefresh,setPilotRefresh] = useState(0);
-  const [pilotMember,setPilotMember] = useState(false);
-  const [pilotFeedback,setPilotFeedback] = useState(null);
 
   const todayStr = toLocalDateStr(new Date());
   const [checkinDate, setCheckinDate] = useState(todayStr);
@@ -217,10 +213,9 @@ export default function CheckinPage() {
       setRecordedDates(calendarResult.value.data || {});
     }
     setLoading(false);
-    setPilotRefresh(v=>v+1);
   }, []);
 
-  useDidShow(() => { setPilotFeedback(null); loadTodayStatus(); });
+  useDidShow(() => { loadTodayStatus(); });
 
   const chronicDiseases = user?.chronicDiseases || [];
   const isMandatory = (item) => {
@@ -319,8 +314,7 @@ export default function CheckinPage() {
 
     setMeasureSaving(true);
     try {
-      const saved = await recordsAPI.create(payload);
-      setPilotFeedback(saved.feedback || null);
+      await recordsAPI.create(payload);
     } catch (err) {
       setMeasureSaving(false);
       Taro.showToast({ title: err.message || '保存失败', icon: 'none' });
@@ -346,7 +340,7 @@ export default function CheckinPage() {
     const mealPrefix = item.key === 'diet' && checkinMealType ? `【${checkinMealType}】` : '';
     const slotPrefix = resolvedTimeSlot ? `【${resolvedTimeSlot}】` : '';
     try {
-      const saved = await recordsAPI.create({
+      await recordsAPI.create({
         category: item.category || 'lifestyle',
         type: item.key,
         label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}`
@@ -362,7 +356,6 @@ export default function CheckinPage() {
         },
         recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
       });
-      setPilotFeedback(saved.feedback || null);
     } catch (err) {
       setCheckinSaving(false);
       Taro.showToast({ title: err.message || '保存失败', icon: 'none' });
@@ -399,7 +392,6 @@ export default function CheckinPage() {
       return;
     }
     const hasUrgent = selectedSymptoms.some((s) => URGENT_SYMPTOMS.includes(s));
-    setPilotFeedback(null);
     setSymptomSaving(true);
     try {
       await recordsAPI.create({
@@ -544,7 +536,6 @@ export default function CheckinPage() {
     if (batchValues.sleepTime && batchValues.wakeTime) rows.push({ category: 'lifestyle', type: 'sleep', label: '睡眠记录', unit: '小时', value: calcSleepDuration(batchValues.sleepTime, batchValues.wakeTime), extra: { sleepTime: batchValues.sleepTime, wakeTime: batchValues.wakeTime }, recordedAt: at, _inputKeys: ['sleepTime', 'wakeTime'] });
     if (!rows.length) return Taro.showToast({ title: '请至少填写一项数据', icon: 'none' });
     setBatchSaving(true);
-    setPilotFeedback(null);
     const results = await Promise.allSettled(rows.map(({ preview, _sourceLine, _inputKeys, ...row }) => recordsAPI.create(row)));
     setBatchSaving(false);
     const successIndexes = results.map((result, index) => result.status === 'fulfilled' ? index : -1).filter((index) => index >= 0);
@@ -589,7 +580,6 @@ export default function CheckinPage() {
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>
-      <MetabolicPilotCard refreshKey={pilotRefresh} onStatus={setPilotMember} feedback={pilotFeedback} />
       <WeightProgressPhotos />
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
@@ -601,13 +591,13 @@ export default function CheckinPage() {
               <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>记录健康数据</Text>
               <View style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Text onClick={openBatchModal} style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>多日快速补录</Text>
-                {!pilotMember && mandatoryItems.length > 0 && <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{doneMandatoryCount}/{mandatoryItems.length}</Text>}
+                {mandatoryItems.length > 0 && <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{doneMandatoryCount}/{mandatoryItems.length}</Text>}
               </View>
             </View>
             <View style={{ display: 'flex', flexWrap: 'wrap', gap: `${spacing.sm}px` }}>
               {mandatoryItems.map(renderCheckinItem)}
             </View>
-            {!pilotMember && allMandatoryDone && (
+            {allMandatoryDone && (
               <View style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: `${spacing.sm}px`, padding: `${spacing.sm}px`, backgroundColor: '#FEF9E7', borderRadius: `${radius.sm}px` }}>
                 <Text style={{ fontSize: '12px', color: '#B7791F', fontWeight: 600 }}>⭐ 今日核心指标已完成！保持健康好习惯 🎉</Text>
               </View>
