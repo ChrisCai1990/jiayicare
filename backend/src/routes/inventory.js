@@ -9,12 +9,11 @@ const InventoryEntry = require('../models/InventoryEntry');
 const Admin = require('../models/Admin');
 const adminAuth = require('../middleware/adminAuth');
 const staffAuth = require('../middleware/staffAuth');
-const checkPermission = require('../middleware/checkPermission');
 
 const adminRouter = express.Router();
 const staffRouter = express.Router();
 adminRouter.use(adminAuth);
-staffRouter.use(staffAuth, checkPermission('products', 'view'), checkPermission('patients', 'view'));
+staffRouter.use(staffAuth);
 
 function tenant(req) { return req.admin?.tenantId || req.staff?.tenantId; }
 function actor(req) { return req.admin || req.staff; }
@@ -176,7 +175,7 @@ async function addEntry(req, res) {
   }
 }
 adminRouter.post('/entries', addEntry);
-staffRouter.post('/entries', checkPermission('products', 'create'), addEntry);
+staffRouter.post('/entries', addEntry);
 
 adminRouter.post('/counts', async (req, res) => {
   const { productId, counted, note = '' } = req.body || {};

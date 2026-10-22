@@ -69,7 +69,6 @@ export const ROUTE_MODULE = {
   '/knowledge': 'knowledge',
   '/questionnaires': 'questionnaires',
   '/products': 'products',
-  '/inventory': 'products',
   '/commission': 'commission',
   '/marketing': 'marketing',
   '/visitor-leads': 'leads',
