@@ -74,3 +74,19 @@ test('AI提示包含三种模式、宝塔依据、常规食物剩余预算和成
   assert(prompt.includes('中国居民平衡膳食宝塔（2022）'));
   assert(!prompt.includes('餐盘'));
 });
+
+test('大类加餐限制不影响具体食谱，切换保持三个版本各自内容', () => {
+  const input = raw();
+  input.balanced_recipes.breakfast = '燕麦50g、苹果100g、核桃10g';
+  const { variants } = parseVariants(input, assessment);
+  assert.equal(variants.balanced_recipes.breakfast.content, input.balanced_recipes.breakfast);
+  assert(!/水果|坚果/.test(variants.balanced_categories.breakfast.content));
+  assert(variants.meal_pack.breakfast.content.startsWith(PACK_LINE));
+  let state = switchMealPlan(variants, 'balanced_recipes', 'meal_pack', variants.balanced_recipes, assessment);
+  state = switchMealPlan(state.variants, state.selected, 'balanced_categories', state.modules, assessment);
+  state = switchMealPlan(state.variants, state.selected, 'balanced_recipes', state.modules, assessment);
+  assert.equal(state.modules.breakfast.content, input.balanced_recipes.breakfast);
+  assert(!state.modules.breakfast.content.includes(PACK_LINE));
+  const recipePrompt = variantPrompt(assessment).split('\n').find(line => line.startsWith('balanced_recipes：'));
+  assert.equal(recipePrompt, 'balanced_recipes：遵循中国居民平衡膳食宝塔（2022），给出具体食谱、食材和克数（奶类可用ml）。');
+});
