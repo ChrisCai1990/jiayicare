@@ -599,7 +599,7 @@ router.post('/onboarding', auth, async (req, res) => {
     try {
       if (user.patientCategory === 'child') {
         await require('../utils/childQuestionnaireAutoPush').ensureChildQuestionnairePush(user);
-      } else if (!idOwner) {
+      } else {
         await require('../utils/onboardingPush').pushBatch1(user._id);
       }
     } catch (e) {

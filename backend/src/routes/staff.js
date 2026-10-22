@@ -6476,15 +6476,27 @@ router.get('/questionnaires/:id/responses', staffAuth, checkPermission('question
   }
 });
 
-// GET /api/staff/push-records?patientId=&type=
+// GET /api/staff/push-records?patientId=&type=&search=&page=&limit=
 router.get('/push-records', staffAuth, async (req, res) => {
-  const { patientId, type, page = 1, limit = 20 } = req.query;
-  const filter = { staffId: req.staff._id };
+  const { patientId, type } = req.query;
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const maxLimit = type === 'questionnaire' ? 10 : 100;
+  const limit = Math.min(maxLimit, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+  const filter = req.staff.role === 'superadmin' && type === 'questionnaire'
+    ? {} : { staffId: req.staff._id };
   if (patientId) filter.patientId = patientId;
   if (type) filter.type = type;
-  const skip = (Number(page) - 1) * Number(limit);
+  const search = String(req.query.search || '').trim().slice(0, 80);
+  if (search && type === 'questionnaire') {
+    const special = new Set([...'.*+?^$()|[]{}', String.fromCharCode(92)]);
+    const escaped = Array.from(search, char => special.has(char) ? String.fromCharCode(92) + char : char).join('');
+    const pattern = new RegExp(escaped, 'i');
+    const patients = await User.find({ $or: [{ name: pattern }, { phone: pattern }, { contactPhone: pattern }] }).select('_id').lean();
+    filter.$or = [{ title: pattern }, { patientId: { $in: patients.map(p => p._id) } }];
+  }
+  const skip = (page - 1) * limit;
   const [records, total] = await Promise.all([
-    PushRecord.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
+    PushRecord.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit)
       .populate('patientId', 'name phone'),
     PushRecord.countDocuments(filter),
   ]);

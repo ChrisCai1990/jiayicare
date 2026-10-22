@@ -394,6 +394,13 @@ export default function QuestionnairePushPage() {
   const toast = useToast()
   const [questionnaires, setQuestionnaires] = useState([])
   const [pushRecords, setPushRecords] = useState([])
+  const [pushTotal, setPushTotal] = useState(0)
+  const [recordsLoading, setRecordsLoading] = useState(false)
+  const [recordsError, setRecordsError] = useState('')
+  const [recordSearchInput, setRecordSearchInput] = useState('')
+  const [recordSearch, setRecordSearch] = useState('')
+  const [recordPage, setRecordPage] = useState(1)
+  const [recordsVersion, setRecordsVersion] = useState(0)
   const [loading, setLoading] = useState(true)
   const [pushModal, setPushModal] = useState(null)
   const [viewModal, setViewModal] = useState(null)   // { questionnaire, filterPatientId? }
@@ -402,19 +409,42 @@ export default function QuestionnairePushPage() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    Promise.all([
-      staffAPI.getQuestionnaires(),
-      staffAPI.getPushRecords({ type: 'questionnaire', limit: 50 }),
-    ]).then(([q, pr]) => {
-      setQuestionnaires(q.data)
-      setPushRecords(pr.data.records)
-    }).catch(console.error).finally(() => setLoading(false))
+    staffAPI.getQuestionnaires()
+      .then(q => setQuestionnaires(q.data))
+      .catch(console.error)
+      .finally(() => setLoading(false))
   }, [])
 
-  const reload = async () => {
-    const pr = await staffAPI.getPushRecords({ type: 'questionnaire', limit: 50 })
-    setPushRecords(pr.data.records)
-  }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setRecordPage(1)
+      setRecordSearch(recordSearchInput.trim())
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [recordSearchInput])
+
+  useEffect(() => {
+    if (activeTab !== 'records') return
+    let current = true
+    setRecordsLoading(true)
+    setRecordsError('')
+    staffAPI.getPushRecords({ type: 'questionnaire', page: recordPage, limit: 10, search: recordSearch })
+      .then(pr => {
+        if (!current) return
+        setPushRecords(pr.data.records)
+        setPushTotal(pr.data.total)
+      })
+      .catch(error => {
+        if (current) setRecordsError(error.message || '加载推送记录失败')
+      })
+      .finally(() => {
+        if (current) setRecordsLoading(false)
+      })
+    return () => { current = false }
+  }, [activeTab, recordPage, recordSearch, recordsVersion])
+
+  const reload = () => setRecordsVersion(version => version + 1)
+  const totalPages = Math.max(1, Math.ceil(pushTotal / 10))
 
   if (loading) return <div className="page-loading">加载中...</div>
 
@@ -515,47 +545,73 @@ export default function QuestionnairePushPage() {
 
       {/* 推送记录 */}
       {activeTab === 'records' && (
-        <div className="card">
-          {pushRecords.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无推送记录</div>
-          ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>问卷名称</th>
-                  <th>会员</th>
-                  <th>推送时间</th>
-                  <th>状态</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pushRecords.map(r => (
-                  <tr key={r._id}>
-                    <td style={{ fontWeight: 500 }}>{r.title}</td>
-                    <td>
-                      <div style={{ fontWeight: 500 }}>{r.patientId?.name || '-'}</div>
-                      <div style={{ fontSize: 12, color: '#8AA89C' }}>{r.patientId?.phone}</div>
-                    </td>
-                    <td style={{ fontSize: 13, color: '#4A6558' }}>{new Date(r.createdAt).toLocaleDateString('zh-CN')}</td>
-                    <td>
-                      {r.readAt
-                        ? <span style={{ fontSize: 12, color: '#22A06B', fontWeight: 500 }}>✓ 已读</span>
-                        : <span style={{ fontSize: 12, color: '#D97706' }}>待查看</span>
-                      }
-                    </td>
-                    <td>
-                      {r.questionnaireId && (
-                        <button className="btn btn-secondary btn-sm"
-                          onClick={() => setViewModal({ _id: r.questionnaireId, title: r.title, filterPatientId: r.patientId?._id })}>
-                          查看答案
-                        </button>
-                      )}
-                    </td>
+        <div>
+          <input
+            type="search"
+            aria-label={'搜索推送记录'}
+            value={recordSearchInput}
+            onChange={e => setRecordSearchInput(e.target.value)}
+            placeholder={'搜索会员姓名、手机号或问卷名称'}
+            style={{ width: '100%', maxWidth: 360, padding: '8px 12px', borderRadius: 8, border: '1px solid #E0D9CE', fontSize: 13, marginBottom: 12 }}
+          />
+          <div className="card">
+            {recordsError ? (
+              <div role="alert" style={{ padding: 24, textAlign: 'center' }}>
+                {recordsError}
+                <button className="btn btn-secondary btn-sm" style={{ marginLeft: 12 }} onClick={reload}>{'重试'}</button>
+              </div>
+            ) : recordsLoading ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#8AA89C' }}>{'加载中...'}</div>
+            ) : pushRecords.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
+                {recordSearch ? '没有匹配的推送记录' : '暂无推送记录'}
+              </div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>问卷名称</th>
+                    <th>会员</th>
+                    <th>推送时间</th>
+                    <th>状态</th>
+                    <th>操作</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pushRecords.map(r => (
+                    <tr key={r._id}>
+                      <td style={{ fontWeight: 500 }}>{r.title}</td>
+                      <td>
+                        <div style={{ fontWeight: 500 }}>{r.patientId?.name || '-'}</div>
+                        <div style={{ fontSize: 12, color: '#8AA89C' }}>{r.patientId?.phone}</div>
+                      </td>
+                      <td style={{ fontSize: 13, color: '#4A6558' }}>{new Date(r.createdAt).toLocaleDateString('zh-CN')}</td>
+                      <td>
+                        {r.readAt
+                          ? <span style={{ fontSize: 12, color: '#22A06B', fontWeight: 500 }}>✓ 已读</span>
+                          : <span style={{ fontSize: 12, color: '#D97706' }}>待查看</span>
+                        }
+                      </td>
+                      <td>
+                        {r.questionnaireId && (
+                          <button className="btn btn-secondary btn-sm"
+                            onClick={() => setViewModal({ _id: r.questionnaireId, title: r.title, filterPatientId: r.patientId?._id })}>
+                            查看答案
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          {!recordsLoading && !recordsError && pushTotal > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#8AA89C' }}>{'共'} {pushTotal} {'条，第'} {recordPage} / {totalPages} {'页'}</span>
+              <button className="btn btn-secondary btn-sm" disabled={recordPage <= 1} onClick={() => setRecordPage(page => page - 1)}>{'上一页'}</button>
+              <button className="btn btn-secondary btn-sm" disabled={recordPage >= totalPages} onClick={() => setRecordPage(page => page + 1)}>{'下一页'}</button>
+            </div>
           )}
         </div>
       )}
