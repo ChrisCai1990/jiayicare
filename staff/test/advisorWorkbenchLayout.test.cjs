@@ -36,7 +36,7 @@ async function mount(role) {
     '../../../shared/orderShipping.cjs': { shippingProgress: () => '' },
   }
   for (const name of [
-    'CheckupProgressPanel', 'ConsultationTodosPanel', 'OrderShipmentsPanel', 'InventoryDispatchPanel',
+    'GeoReviewPanel', 'CheckupProgressPanel', 'ConsultationTodosPanel', 'OrderShipmentsPanel', 'InventoryDispatchPanel',
     'AiTodosPanel', 'ClinicalStandardReviewPanel', 'SymptomTodosPanel', 'FollowUpsPanel',
     'ServiceTasksPanel', 'MedicalAssistClosureAction', 'ServiceSupervisionPanel',
     'MedicalAssistProgressPanel', 'MonthlyReviewWorkbench', 'Pagination',
@@ -81,6 +81,7 @@ test('health consultant can switch between tasks, service progress, and data wit
     await view.click('体检方案')
     assert.equal(view.visible('CheckupProgressPanel'), true)
     await view.click('数据概览')
+    assert.equal(view.visible('GeoReviewPanel'), true)
     assert.match(view.box.textContent, /今日健康数据记录/)
   } finally { await view.close() }
 })

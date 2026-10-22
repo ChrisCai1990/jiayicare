@@ -1,4 +1,5 @@
 import CheckupProgressPanel from '../components/CheckupProgressPanel'
+import GeoReviewPanel from '../components/GeoReviewPanel'
 import useWorkbenchResource from '../hooks/useWorkbenchResource'
 import { getToken } from '../api'
 import { loadFollowUpPages } from '../utils/loadFollowUpPages.mjs'
@@ -125,6 +126,7 @@ export default function HomePage() {
         {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
       </div>
 
+      <GeoReviewPanel />
       {isAdvisor && <nav className="advisor-workbench-nav" aria-label="健康顾问工作台">
         {[
           ['todo', '待我处理'], ['progress', '我关注的服务'], ['data', '数据概览'],
