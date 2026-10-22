@@ -55,6 +55,9 @@ export default function HomePage() {
   const [orderPage, setOrderPage] = useState(1)
   const [orderHistoryPage, setOrderHistoryPage] = useState(1)
   const [serviceTasks, setServiceTasks] = useState([])
+  const [advisorArea, setAdvisorArea] = useState('todo')
+  const [advisorTodoView, setAdvisorTodoView] = useState('review')
+  const [advisorProgressView, setAdvisorProgressView] = useState('overview')
 
   useEffect(() => {
     staffAPI.getReports2()
@@ -92,6 +95,8 @@ export default function HomePage() {
   const orderHistoryPageCount = Math.max(1, Math.ceil(orderHistoryRows.length / ORDERS_PER_PAGE))
   const currentOrderHistoryPage = Math.min(orderHistoryPage, orderHistoryPageCount)
   const visibleOrderHistoryRows = orderHistoryRows.slice((currentOrderHistoryPage - 1) * ORDERS_PER_PAGE, currentOrderHistoryPage * ORDERS_PER_PAGE)
+  const isAdvisor = staff?.role === 'familyDoctor'
+  const showAdvisorView = (area, view) => !isAdvisor || (advisorArea === area && (!view || (area === 'todo' ? advisorTodoView : advisorProgressView) === view))
 
   return (
     <div className="page">
@@ -120,14 +125,31 @@ export default function HomePage() {
         {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
       </div>
 
+      {isAdvisor && <nav className="advisor-workbench-nav" aria-label="健康顾问工作台">
+        {[
+          ['todo', '待我处理'], ['progress', '我关注的服务'], ['data', '数据概览'],
+        ].map(([key, label]) => <button key={key} type="button" className={advisorArea === key ? 'btn btn-primary' : 'btn btn-secondary'} aria-pressed={advisorArea === key} onClick={() => setAdvisorArea(key)}>{label}</button>)}
+      </nav>}
+      {isAdvisor && advisorArea === 'todo' && <div className="advisor-workbench-filter" role="group" aria-label="待我处理筛选">
+        {[
+          ['review', '审核与异常'], ['service', '服务事项'], ['followup', '随访'],
+        ].map(([key, label]) => <button key={key} type="button" className={advisorTodoView === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={advisorTodoView === key} onClick={() => setAdvisorTodoView(key)}>{label}</button>)}
+      </div>}
+      {isAdvisor && advisorArea === 'progress' && <div className="advisor-workbench-filter" role="group" aria-label="服务进度筛选">
+        {[
+          ['overview', '全部进度'], ['orders', '订单预约'], ['medical', '就医协助'], ['checkup', '体检方案'],
+        ].map(([key, label]) => <button key={key} type="button" className={advisorProgressView === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={advisorProgressView === key} onClick={() => setAdvisorProgressView(key)}>{label}</button>)}
+      </div>}
+
       <AiWorkbenchProvider>
-      <SymptomTodosPanel />
-      <ServiceSupervisionPanel />
+      <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><SymptomTodosPanel /></div>
+      <div style={{ display: showAdvisorView('progress', 'overview') ? undefined : 'none' }}><ServiceSupervisionPanel /></div>
       {['healthManager', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
       {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
       {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
 
       {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}
+      <div style={{ display: showAdvisorView('progress', 'orders') ? undefined : 'none' }}>
       {(ordersResource.loading || ordersResource.error || orderRows.length > 0 || orderHistoryRows.length > 0) && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -189,20 +211,22 @@ export default function HomePage() {
         </div>
       )}
 
+      </div>
+
       {/* 临时服务方案产生的岗位任务优先处理，固定显示在 AI 审核任务上方。 */}
-      <MonthlyReviewWorkbench />
-      <ClinicalStandardReviewPanel />
-      {staff?.role === 'familyDoctor' && <MedicalAssistProgressPanel />}
-      <ServiceTasksPanel onTasksLoaded={setServiceTasks} />
+      <div style={{ display: showAdvisorView('todo', 'service') ? undefined : 'none' }}><MonthlyReviewWorkbench /><ServiceTasksPanel onTasksLoaded={setServiceTasks} /></div>
+      <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><ClinicalStandardReviewPanel /></div>
+      {staff?.role === 'familyDoctor' && <div style={{ display: showAdvisorView('progress', 'medical') ? undefined : 'none' }}><MedicalAssistProgressPanel /></div>}
 
       {/* AI 待审核任务面板 */}
-      <AiTodosPanel />
+      <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><AiTodosPanel /></div>
 
       {/* 待随访任务面板 */}
-      <FollowUpsPanel />
+      <div style={{ display: showAdvisorView('todo', 'followup') ? undefined : 'none' }}><FollowUpsPanel /></div>
       </AiWorkbenchProvider>
 
       {/* 即将到期客户（30天内，提前一月提醒续约） */}
+      <div style={{ display: showAdvisorView('todo', 'service') ? undefined : 'none' }}>
       {expiringPatients.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -251,7 +275,10 @@ export default function HomePage() {
         </div>
       )}
 
+      </div>
+
       {/* 今日健康数据记录 */}
+      <div style={{ display: showAdvisorView('data') ? undefined : 'none' }}>
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div className="card-title">今日健康数据记录</div>
@@ -296,9 +323,12 @@ export default function HomePage() {
         </div>
       </div>
 
-      <CheckupProgressPanel />
+      </div>
+
+      <div style={{ display: showAdvisorView('progress', 'checkup') ? undefined : 'none' }}><CheckupProgressPanel /></div>
 
       {/* 慢病分布 */}
+      <div style={{ display: showAdvisorView('data') ? undefined : 'none' }}>
       <div className="card">
         <div className="card-header">
           <div className="card-title">慢病分布</div>
@@ -328,6 +358,7 @@ export default function HomePage() {
             <div style={{ color: '#aaa', textAlign: 'center', padding: '20px 0', fontSize: 14 }}>暂无慢病数据</div>
           )}
         </div>
+      </div>
       </div>
     </div>
   )

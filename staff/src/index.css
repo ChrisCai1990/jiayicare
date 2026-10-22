@@ -543,3 +543,22 @@ textarea.form-control { resize: vertical; }
 .home-stats .followup-stat-label { font-size: 12px; }
 @media (max-width: 1200px) { .home-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 680px) { .home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .home-stats .stat-card { padding: 12px 10px; gap: 8px; } .home-stats .stat-card-value, .home-stats .followup-stat-value strong { font-size: 20px; } .home-stats .stat-card-icon { width: 30px; height: 30px; font-size: 18px; } }
+
+/* Health consultant workbench pilot: one clear task area and one progress area. */
+.advisor-workbench-nav, .advisor-workbench-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.advisor-workbench-nav {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e1e9e4;
+}
+.advisor-workbench-nav .btn, .advisor-workbench-filter .btn {
+  white-space: nowrap;
+}
+@media (max-width: 680px) {
+  .advisor-workbench-nav { flex-wrap: nowrap; overflow-x: auto; }
+  .advisor-workbench-filter { flex-wrap: nowrap; overflow-x: auto; }
+}
