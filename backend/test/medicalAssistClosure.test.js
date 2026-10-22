@@ -5,6 +5,8 @@ const HealthPlan = require('../src/models/HealthPlan');
 const Order = require('../src/models/Order');
 const User = require('../src/models/User');
 const CareFlow = require('../src/models/CareFlow');
+const MedicalReport = require('../src/models/MedicalReport');
+const Medication = require('../src/models/Medication');
 const medicalProxyWorkflow = require('../src/utils/medicalProxyWorkflow');
 const closure = require('../src/utils/medicalAssistClosure');
 
@@ -29,6 +31,51 @@ test('all order endings queue one planner closure action without completing the 
     assert.equal(calls[1].update.$set.status, undefined);
   } finally { User.findById = previous.user; FollowUp.findOneAndUpdate = previous.task; FollowUp.updateMany = previous.taskUpdate;
     FollowUp.exists = previous.exists; HealthPlan.find = previous.plans; Order.updateOne = previous.order; }
+});
+
+test('postvisit order waits for advisor, report, and medication reviews before planner closure', async () => {
+  const previous = { user: User.findById, exists: FollowUp.exists, audit: FollowUp.findOne,
+    reports: MedicalReport.exists, medications: Medication.exists, plans: HealthPlan.find,
+    task: FollowUp.findOneAndUpdate, taskUpdate: FollowUp.updateMany, order: Order.updateOne };
+  let approved = false; let reportPending = false; let medicationPending = false;
+  const queued = [];
+  try {
+    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner' }) }) });
+    FollowUp.exists = async query => query.workflowKey === 'medical_proxy:post_visit_audit' ? true
+      : !!query.sourceScheduleKey && approved;
+    FollowUp.findOne = () => ({ select: () => ({ lean: async () => ({ formData: { reportIds: ['report-1'] } }) }) });
+    MedicalReport.exists = async () => reportPending;
+    Medication.exists = async () => medicationPending;
+    HealthPlan.find = () => ({ select: () => ({ lean: async () => [] }) });
+    FollowUp.findOneAndUpdate = async query => { queued.push(query); return {}; };
+    FollowUp.updateMany = async () => ({});
+    Order.updateOne = async () => ({});
+    const order = { _id: 'order-1', user: 'patient', serviceName: '陪同看诊服务', status: 'scheduled' };
+    assert.deepEqual(await closure.requestOrderClosure(order), { pending: false });
+    approved = true; reportPending = true;
+    assert.deepEqual(await closure.requestOrderClosure(order), { pending: false });
+    reportPending = false; medicationPending = true;
+    assert.deepEqual(await closure.requestOrderClosure(order), { pending: false });
+    medicationPending = false;
+    await closure.requestOrderClosure(order);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].workflowKey, closure.KEY);
+  } finally {
+    User.findById = previous.user; FollowUp.exists = previous.exists; FollowUp.findOne = previous.audit;
+    MedicalReport.exists = previous.reports; Medication.exists = previous.medications; HealthPlan.find = previous.plans;
+    FollowUp.findOneAndUpdate = previous.task; FollowUp.updateMany = previous.taskUpdate; Order.updateOne = previous.order;
+  }
+});
+
+test('planner cannot confirm an already queued closure while advisor review is pending', async () => {
+  const previous = { task: FollowUp.findOne, exists: FollowUp.exists };
+  try {
+    FollowUp.findOne = async () => ({ _id: 'closure', sourceType: 'order', sourceOrderId: 'order-1',
+      workflowKey: closure.KEY, assignedTo: 'planner', status: 'planned' });
+    FollowUp.exists = async query => query.workflowKey === 'medical_proxy:post_visit_audit';
+    await assert.rejects(closure.confirmClosure('closure', { _id: 'planner', role: 'healthPlanner' }, '已核对'),
+      /健康顾问尚未通过/);
+  } finally { FollowUp.findOne = previous.task; FollowUp.exists = previous.exists; }
 });
 
 test('planner confirmation rejects unfinished execution and records actual reviewer', async () => {
@@ -138,7 +185,7 @@ test('planner workbench recovers an open read-only order after every executor en
       const rows = query.workflowKey === closure.KEY ? [] : [{ _id: 'supervisor', sourceType: 'order', sourceOrderId: 'order', workflowKey: 'medical_proxy:supervise' }];
       return { lean: async () => rows, limit: () => ({ lean: async () => rows }) };
     } });
-    FollowUp.exists = async query => query.status === 'completed';
+    FollowUp.exists = async query => query.status === 'completed' && query.workflowKey !== 'medical_proxy:post_visit_audit';
     FollowUp.findOneAndUpdate = async (query, update) => { queued.push({ query, update }); return {}; };
     FollowUp.updateMany = async () => ({ modifiedCount: 0 });
     Order.findById = () => ({ select: () => ({ lean: async () => ({ _id: 'order', user: 'patient', status: 'scheduled', serviceName: '专家约诊' }) }) });

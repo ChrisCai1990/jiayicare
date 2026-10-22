@@ -3,11 +3,32 @@ const HealthPlan = require('../models/HealthPlan');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const CareFlow = require('../models/CareFlow');
+const MedicalReport = require('../models/MedicalReport');
+const Medication = require('../models/Medication');
 
 const KEY = 'medical_assist:closure';
 const active = ['planned', 'in_progress', 'missed'];
 const id = value => String(value?._id || value || '');
 const reconciliationAt = new Map();
+
+async function pendingPostVisitReview(orderId) {
+  const auditScope = { sourceType: 'order', sourceOrderId: orderId, workflowKey: 'medical_proxy:post_visit_audit' };
+  if (!await FollowUp.exists({ ...auditScope, status: 'completed' })) return '';
+  const keys = [`medical_escort_followup:${id(orderId)}`, `expert_appointment_followup:${id(orderId)}`];
+  if (!await FollowUp.exists({ sourceType: 'order', sourceOrderId: orderId,
+    sourceScheduleKey: { $in: keys }, aiStatus: 'approved' }))
+    return '健康顾问尚未通过本次就诊后的随访审核';
+  const audit = await FollowUp.findOne(auditScope).select('formData.reportIds').lean();
+  const reportIds = [...new Set((audit?.formData?.reportIds || []).map(id).filter(Boolean))];
+  if (await MedicalReport.exists({ $or: [{ sourceOrderId: orderId }, { _id: { $in: reportIds } }],
+    'healthCourseDraft.status': 'pending_review' }))
+    return '本次就诊病历或检查资料仍待健康顾问审核';
+  if (!reportIds.length) return '';
+  const reportPattern = new RegExp(`^prescription_(?:report|report_review|review):(?:${reportIds.join('|')}):`);
+  if (await Medication.exists({ aiStatus: 'pending', sourceRecordKey: reportPattern }))
+    return '本次就诊用药仍待健康顾问审核';
+  return '';
+}
 
 async function requestOrderClosure(orderOrId, note = '') {
   const order = orderOrId?._id ? orderOrId : await Order.findById(orderOrId);
@@ -20,6 +41,7 @@ async function requestOrderClosure(orderOrId, note = '') {
   const linkedPlans = await HealthPlan.find({ sourceOrderId: order._id, type: 'medical_assist', status: 'active' }).select('_id').lean();
   if (linkedPlans.length && await FollowUp.exists({ sourceHealthPlanId: { $in: linkedPlans.map(plan => plan._id) }, taskRole: 'executor', status: { $in: active } }))
     return { pending: false };
+  if (await pendingPostVisitReview(order._id)) return { pending: false };
   const now = new Date();
   await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: KEY },
@@ -151,6 +173,8 @@ async function confirmClosure(taskId, staff, conclusion) {
   if (unfinished) throw Object.assign(new Error('仍有执行环节未结束，请先完成或处理'), { status: 409 });
   let linkedPlans = [];
   if (task.sourceOrderId) {
+    const pendingReview = await pendingPostVisitReview(task.sourceOrderId);
+    if (pendingReview) throw Object.assign(new Error(pendingReview), { status: 409 });
     const plans = await HealthPlan.find({ sourceOrderId: task.sourceOrderId, type: 'medical_assist', status: 'active' }).select('_id').lean();
     linkedPlans = plans;
     if (plans.length && await FollowUp.exists({ sourceHealthPlanId: { $in: plans.map(plan => plan._id) }, taskRole: 'executor', status: { $in: active } }))

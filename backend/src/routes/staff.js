@@ -3227,12 +3227,15 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
       if (followUp.sourceType === 'order' && followUp.formData?.generatedFromPostCheckupSupervision && followUp.sourceOrderId) {
         await Order.updateOne({ _id: followUp.sourceOrderId }, { $set: { currentStage: 'advisor_rejected', supervisionStatus: 'needs_attention' } });
       }
-      if (followUp.sourceType === 'order' && followUp.formData?.generatedFromMedicalEscort && followUp.sourceOrderId) {
-        const order = await Order.findById(followUp.sourceOrderId).select('medicalProxyPlan').lean();
-        if (order?.medicalProxyPlan?.adHocConsultation) {
+      if (followUp.sourceType === 'order' && followUp.sourceOrderId
+        && (followUp.formData?.generatedFromMedicalEscort || followUp.formData?.generatedFromExpertAppointment)) {
+        const order = await Order.findById(followUp.sourceOrderId).select('_id').lean();
+        if (order) {
           const auditTask = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:post_visit_audit' }).select('assignedTo').lean();
           await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:post_visit_audit' },
-            { $set: { status: 'planned', completedAt: null, completedBy: null, date: new Date(), remindAt: new Date(), content: `健康顾问退回临时加诊随访：${rejectReason}` } });
+            { $set: { status: 'planned', completedAt: null, completedBy: null, date: new Date(), remindAt: new Date(), content: `健康顾问退回就诊后随访：${rejectReason}` } });
+          await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_assist:closure', status: { $in: ['planned', 'in_progress', 'missed'] } },
+            { $set: { status: 'cancelled', cancelReason: '健康顾问退回就诊后审核' } });
           await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'post_visit_audit', currentAssignee: auditTask?.assignedTo || null, supervisionStatus: 'needs_attention' } });
           await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise' },
             { $set: { 'formData.currentStage': 'post_visit_audit', content: `健康顾问退回随访，等待健管专员修订：${rejectReason}` } });
@@ -3280,14 +3283,14 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     followUp.aiStatus = 'approved';
     await followUp.save();
     if (followUp.sourceType === 'order' && followUp.formData?.generatedFromMedicalEscort && followUp.sourceOrderId) {
-      const order = await Order.findById(followUp.sourceOrderId).select('medicalProxyPlan').lean();
-      if (order?.medicalProxyPlan?.adHocConsultation) {
+      const order = await Order.findById(followUp.sourceOrderId).select('_id').lean();
+      if (order) {
         const completedAt = new Date();
         const reportIds = [...new Set((followUp.formData?.reportIds || []).map(String).filter(Boolean))];
         if (reportIds.length) await MedicalReport.updateMany({ _id: { $in: reportIds }, user: followUp.patientId, audit_status: 'audited' }, { $set: { familyDoctorViewedAt: completedAt } });
         await require('../utils/medicalAssistClosure').requestOrderClosure(order,
-          '健康顾问已审核临时加诊随访计划，待健康规划师核对结案。');
-        return res.json({ success: true, message: '已审核临时加诊随访计划，待健康规划师确认结案', data: followUp });
+          '健康顾问已审核陪诊随访计划，待健康规划师核对结案。');
+        return res.json({ success: true, message: '已审核陪诊随访计划；相关病历和用药审核完成后交健康规划师结案', data: followUp });
       }
     }
     if (followUp.sourceType === 'order' && followUp.formData?.generatedFromPostCheckupSupervision && followUp.sourceOrderId) {

@@ -253,8 +253,8 @@ test('on-site consultation keeps its parent escort open and sends closure to pla
   const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   assert.match(workflow, /medicalEscort && !plan\.adHocConsultation && !plan\.sourceFollowUpId/);
   assert.match(workflow, /!order\.medicalProxyPlan\?\.adHocConsultation\) await completeLinkedMedicalReminder/);
-  assert.match(workflow, /currentStage: 'followup_review', currentAssignee: reviewer/);
-  assert.match(routes, /generatedFromMedicalEscort && followUp\.sourceOrderId[\s\S]*?adHocConsultation[\s\S]*?requestOrderClosure\(order/);
+  assert.match(workflow, /currentStage: 'followup_review', currentAssignee: patient\.assignedFamilyDoctor/);
+  assert.match(routes, /generatedFromMedicalEscort && followUp\.sourceOrderId[\s\S]*?requestOrderClosure\(order/);
 });
 
 test('existing staff expert order gains one booking and one planner supervision task on either workbench', async () => {
@@ -647,6 +647,8 @@ test('medical escort audit closes the linked visit reminder and creates an AI fo
   assert.match(escortAudit, /createPrescriptionMedicationDrafts/);
   assert.match(escortAudit, /purgeStaleMedicalEscortReports/);
   assert.match(escortAudit, /createPostVisitFollowUpPlan[\s\S]*medicalEscort: true/);
+  assert.match(escortAudit, /currentStage: 'followup_review', currentAssignee: patient\.assignedFamilyDoctor/);
+  assert.doesNotMatch(escortAudit, /requestOrderClosure/);
   assert.match(workflow, /就医陪同后AI随访计划/);
   assert.match(workflow, /不得生成代配药、购药、配送或补药计划/);
   assert.match(workflow, /aiStatus: 'pending'/);

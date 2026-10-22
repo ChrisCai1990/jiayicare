@@ -488,12 +488,12 @@ async function createPostVisitFollowUpPlan(task, order, patient, reportIds, { me
   }
   const schedulePrefix = medicalEscort ? 'medical_escort_followup' : 'expert_appointment_followup';
   const theme = medicalEscort ? '就医陪同后AI随访计划' : '专家约诊后随访计划';
-  const existing = order.medicalProxyPlan?.adHocConsultation
-    ? await FollowUp.findOne({ sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `${schedulePrefix}:${order._id}` }).select('_id status aiStatus').lean()
-    : null;
+  const existing = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: order._id,
+    sourceScheduleKey: `${schedulePrefix}:${order._id}` }).select('_id status aiStatus').lean();
   if (existing?.status === 'cancelled') await FollowUp.updateOne({ _id: existing._id, status: 'cancelled' },
     { $set: { status: 'planned', aiStatus: 'pending', content, plannedContent: content, date: followUpDate, remindAt: followUpDate,
-      'formData.reportIds': reportIds, 'formData.auditSummary': task.formData?.auditSummary || '' } });
+      assignedTo: patient.assignedHealthManager || null, reviewAssignedTo: patient.assignedFamilyDoctor,
+      cancelReason: '', 'formData.reportIds': reportIds, 'formData.auditSummary': task.formData?.auditSummary || '' } });
   return FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `${schedulePrefix}:${order._id}` },
     { $setOnInsert: { patientId: task.patientId, staffId: patient.assignedFamilyDoctor, reviewAssignedTo: patient.assignedFamilyDoctor, assignedTo: patient.assignedHealthManager || null, date: followUpDate, remindAt: followUpDate, type: 'other', status: 'planned', theme, content, plannedContent: content, tags: [medicalEscort ? '就医陪同' : '专家约诊', '就诊后随访'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `${schedulePrefix}:${order._id}`, aiStatus: 'pending', reviewRole: 'familyDoctor', formData: { reportIds, auditSummary: task.formData?.auditSummary || '', generatedFromExpertAppointment: !medicalEscort, generatedFromMedicalEscort: medicalEscort } } },
@@ -1253,23 +1253,20 @@ async function advanceMedicalProxyWorkflow(task) {
   if (stage === 'post_visit_audit') {
     if (order.medicalProxyPlan?.medicalEscort === true) {
       const reportIds = [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))];
-      if (order.medicalProxyPlan?.adHocConsultation && !patient?.assignedFamilyDoctor) throw Object.assign(new Error('客户尚未分配健康顾问，无法交接临时加诊资料'), { status: 409 });
+      if (!patient?.assignedFamilyDoctor) throw Object.assign(new Error('客户尚未分配健康顾问，无法交接陪诊资料'), { status: 409 });
       await purgeStaleMedicalEscortReports(task, order);
       if (!order.medicalProxyPlan?.adHocConsultation) await completeLinkedMedicalReminder(task, order);
       await createPrescriptionMedicationDrafts(task, reportIds);
       await createPostVisitFollowUpPlan(task, order, patient, reportIds, { medicalEscort: true });
-      if (order.medicalProxyPlan?.adHocConsultation) {
-        const reviewer = patient?.assignedFamilyDoctor;
-        await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` },
-          { $set: { 'formData.currentStage': 'followup_review', content: '健管专员已审核临时加诊资料，等待健康顾问审核随访计划。' } });
-        await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'followup_review', currentAssignee: reviewer, supervisionStatus: 'in_progress' } });
-        return;
-      }
-      await require('./medicalAssistClosure').requestOrderClosure(order, '陪同资料已由健管专员审核归档，待健康规划师核对结案。');
+      await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` },
+        { $set: { 'formData.currentStage': 'followup_review', content: '健管专员已审核陪诊资料，等待健康顾问审核随访计划。' } });
+      await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'followup_review', currentAssignee: patient.assignedFamilyDoctor, supervisionStatus: 'in_progress' } });
       return;
     }
+    if (!patient?.assignedFamilyDoctor) throw Object.assign(new Error('客户尚未分配健康顾问，无法交接就诊资料'), { status: 409 });
     await createPostVisitFollowUpPlan(task, order, patient, [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))]);
     await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'followup_review', content: '健管专员已完成资料审核，AI已生成随访计划，等待健康顾问审核。' } });
+    await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'followup_review', currentAssignee: patient.assignedFamilyDoctor, supervisionStatus: 'in_progress' } });
     return;
   }
   if (stage === 'post_visit_review') {
