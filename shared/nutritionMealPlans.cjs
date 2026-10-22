@@ -30,6 +30,33 @@ function packBudgets(meals) {
   return { breakfast: meals.breakfast - PACK.kcal, lunch: meals.lunch, dinner: meals.dinner - PACK.kcal, snack: meals.snack };
 }
 
+function packCategoryMeals(modules = {}, assessment, options = {}) {
+  const remaining = packBudgets(assessment?.mealEnergyKcal);
+  if (!remaining) throw new Error('早餐和晚餐预算须各不少于200 kcal');
+  // The same category allocator receives only the regular-food budget.
+  const allocated = Object.values(remaining).some(value => value > 0)
+    ? categoryMeals(modules, { ...assessment, mealEnergyKcal: remaining }, options)
+    : Object.fromEntries(MEALS.map(key => [key, { ...(modules[key] || {}), content: '', categoryTargetKcal: 0, categoryReferenceKcal: 0, categoryPortions: [] }]));
+  const result = { ...modules };
+  for (const key of MEALS) {
+    const prior = modules[key] || {};
+    const meal = allocated[key];
+    if (!options.force && prior.packCategoryVersion === 1 && prior.categoryBudgetSignature && prior.categoryBudgetSignature === meal.categoryBudgetSignature) {
+      result[key] = { ...prior };
+      continue;
+    }
+    const fixed = key === 'breakfast' || key === 'dinner';
+    result[key] = { ...meal, content: [fixed ? PACK_LINE : '', meal.content].filter(Boolean).join('\n'),
+      enabled: assessment.mealEnergyKcal[key] > 0, packCategoryVersion: 1 };
+  }
+  return result;
+}
+function prepareMealModules(selected, modules, assessment, options) {
+  if (selected === 'balanced_categories') return categoryMeals(modules, assessment, options);
+  if (selected === 'meal_pack') return packCategoryMeals(modules, assessment, options);
+  return modules;
+}
+
 function snapshotMeals(modules) {
   return Object.fromEntries(MEALS.map(key => [key, { ...(modules[key] || {}) }]));
 }
@@ -37,7 +64,7 @@ function snapshotMeals(modules) {
 function switchMealPlan(variants, selected, next, modules, assessment) {
   if (!Object.hasOwn(OPTIONS, next) || !variants?.[next]) throw new Error('所选配餐草稿不可用，请重新生成');
   const saved = { ...variants, [selected]: snapshotMeals(modules) };
-  return { variants: saved, modules: { ...modules, ...(next === 'balanced_categories' && assessment ? categoryMeals(snapshotMeals(saved[next]), assessment) : snapshotMeals(saved[next])) }, selected: next };
+  return { variants: saved, modules: { ...modules, ...(assessment ? prepareMealModules(next, snapshotMeals(saved[next]), assessment) : snapshotMeals(saved[next])) }, selected: next };
 }
 
 function mealPlanError(content = {}) {
@@ -54,4 +81,4 @@ function mealPlanError(content = {}) {
   return null;
 }
 
-module.exports = { categoryMeals, MEALS, OPTIONS, PACK, PACK_LINE, PAGODA_SOURCE, packBudgets, snapshotMeals, switchMealPlan, mealPlanError };
+module.exports = { prepareMealModules, packCategoryMeals, categoryMeals, MEALS, OPTIONS, PACK, PACK_LINE, PAGODA_SOURCE, packBudgets, snapshotMeals, switchMealPlan, mealPlanError };

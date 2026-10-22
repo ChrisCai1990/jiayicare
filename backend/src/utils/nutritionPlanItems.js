@@ -41,7 +41,7 @@ function nutritionPlanItems(plan) {
       status: old?.status || 'pending',
     }];
   });
-  if (plan.content?.mealPlanSelection === 'balanced_categories' && modules.breakfast?.categoryWeightBasis) {
+  if (['balanced_categories', 'meal_pack'].includes(plan.content?.mealPlanSelection) && modules.breakfast?.categoryWeightBasis) {
     const previous = oldItems.find(item => item.name === '分量说明');
     items.push({ ...(previous?.toObject ? previous.toObject() : previous || {}), name: '分量说明', category: '营养干预',
       notes: modules.breakfast.categoryWeightBasis, status: previous?.status || 'pending' });

@@ -398,7 +398,7 @@ export default function PlanModulesPage() {
         if (p.type === 'medical_assist' && assignedHealthPlannerId && !nextModuleData.visit?.supervisorId) {
           nextModuleData.visit = { ...(nextModuleData.visit || {}), supervisorId: assignedHealthPlannerId }
         }
-        const displayModules = p.type === 'nutrition' && c.mealPlanVariants && (c.mealPlanSelection || 'balanced_categories') === 'balanced_categories' ? mealPlans.categoryMeals(nextModuleData, c.nutritionAssessment) : nextModuleData
+        const displayModules = p.type === 'nutrition' && c.mealPlanVariants ? mealPlans.prepareMealModules(c.mealPlanSelection || 'balanced_categories', nextModuleData, c.nutritionAssessment) : nextModuleData
         setModuleData(displayModules)
         setGoal(c.goal || p.description || '')
         setNutritionTargets(nutritionTargetsFrom(c))
@@ -448,7 +448,7 @@ export default function PlanModulesPage() {
     }
     setSaving(true)
     try {
-      const savedModules = plan.type === 'nutrition' && mealSelection === 'balanced_categories' && Object.keys(mealVariants).length ? mealPlans.categoryMeals(moduleData, plan.content?.nutritionAssessment) : moduleData
+      const savedModules = plan.type === 'nutrition' && Object.keys(mealVariants).length ? mealPlans.prepareMealModules(mealSelection, moduleData, plan.content?.nutritionAssessment) : moduleData
       const content = contentFromModules(plan, savedModules, goal, staffList)
       if (plan.type === 'nutrition' && Object.keys(mealVariants).length) {
         Object.assign(content, { mealPlanSelection: mealSelection,

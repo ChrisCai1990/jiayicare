@@ -28,7 +28,7 @@ test('三种草稿严格完整，餐包固定加入早晚且0加餐不生成', (
   assert.equal(variants.meal_pack.snack.content, '');
   assert.equal(variants.meal_pack.snack.enabled, false);
   assert.throws(() => parseVariants({ ...raw(), balanced_recipes: {} }, assessment));
-  assert.throws(() => parseVariants({ ...raw(), meal_pack: { ...meals, dinner: '营养餐包1包' } }, assessment));
+  assert.throws(() => parseVariants({ ...raw(), meal_pack: {} }, assessment));
   assert.throws(() => parseVariants(raw(), { ...assessment, mealEnergyKcal: { ...assessment.mealEnergyKcal, snack: 100 } }));
   const exact = parseVariants({ ...raw(), meal_pack: { ...meals, breakfast: '' } }, { ...assessment, mealEnergyKcal: { ...assessment.mealEnergyKcal, breakfast: 200 } });
   assert.equal(exact.variants.meal_pack.breakfast.content, PACK_LINE);
@@ -89,4 +89,38 @@ test('大类加餐限制不影响具体食谱，切换保持三个版本各自�
   assert(!state.modules.breakfast.content.includes(PACK_LINE));
   const recipePrompt = variantPrompt(assessment).split('\n').find(line => line.startsWith('balanced_recipes：'));
   assert.equal(recipePrompt, 'balanced_recipes：遵循中国居民平衡膳食宝塔（2022），给出具体食谱、食材和克数（奶类可用ml）。');
+});
+
+test('餐包按截图1748预算扣400后生成大类，重复打开不叠加餐包并保留人工编辑', () => {
+  const { packCategoryMeals } = require('../../shared/nutritionMealPlans.cjs');
+  const input = { managementKcal: 1748, mealEnergyKcal: { breakfast: 524, lunch: 699, dinner: 438, snack: 87 } };
+  const result = packCategoryMeals({ breakfast: { content: PACK_LINE + '\n仅常规食物', time: '08:00' } }, input);
+  assert.deepEqual(['breakfast','lunch','dinner','snack'].map(key => result[key].categoryTargetKcal), [324,699,238,87]);
+  assert.equal(Object.values(result).reduce((sum, row) => sum + row.categoryTargetKcal, 0), 1348);
+  for (const key of ['breakfast','lunch','dinner','snack']) {
+    assert(!result[key].content.includes('仅常规食物'));
+    assert(Math.abs(result[key].categoryReferenceKcal - result[key].categoryTargetKcal) <= 10);
+    if (key !== 'snack') assert(!/水果|坚果/.test(result[key].content));
+  }
+  assert.equal(result.breakfast.time, '08:00');
+  assert.deepEqual(packCategoryMeals(result, input), result);
+  result.lunch.content = '谷薯类 80克\n蔬菜 200克';
+  assert.deepEqual(packCategoryMeals(result, input), result);
+  assert.equal(Object.values(result).map(row => row.content).join('\n').split(PACK_LINE).length - 1, 2);
+  const exact = packCategoryMeals({}, { mealEnergyKcal: { breakfast: 200, lunch: 0, dinner: 200, snack: 0 } });
+  assert.equal(exact.breakfast.content, PACK_LINE);
+  assert.equal(exact.dinner.content, PACK_LINE);
+  assert.equal(exact.breakfast.enabled, true);
+  assert.equal(exact.lunch.content, '');
+  assert.equal(exact.snack.enabled, false);
+  assert.throws(() => packCategoryMeals({}, { mealEnergyKcal: { breakfast: 199, lunch: 600, dinner: 500, snack: 0 } }));
+});
+test('AI只提供餐包适用性，具体食谱和第一种大类不受餐包分配影响', () => {
+  const result = parseVariants({ ...raw(), meal_pack: { suitable: true } }, assessment);
+  assert.equal(result.variants.balanced_recipes.breakfast.content, raw().balanced_recipes.breakfast);
+  assert.equal(result.variants.balanced_categories.breakfast.categoryTargetKcal, 510);
+  assert.equal(result.variants.meal_pack.breakfast.categoryTargetKcal, 310);
+  assert(result.variants.meal_pack.breakfast.content.includes('谷薯类'));
+  const denied = parseVariants({ ...raw(), meal_pack: null, mealPackUnavailableReason: '配料不适用' }, assessment);
+  assert.equal(denied.variants.meal_pack, undefined);
 });
