@@ -1,5 +1,19 @@
 [
   {
+    "title": "对比历年体检报告时，先看哪些变化？",
+    "summary": "按同类项目、检查日期和当时背景排列资料，避免只看单次数字。",
+    "updatedAt": "2026-09-24",
+    "publishedAt": "2026-10-22",
+    "href": "guides/checkup-report-comparison.html"
+  },
+  {
+    "title": "看健康资料前，怎样整理正在使用的药物？",
+    "summary": "保留药品名称、使用方式和开始时间，帮助专业沟通更完整。",
+    "updatedAt": "2026-09-24",
+    "publishedAt": "2026-10-22",
+    "href": "guides/medication-list-preparation.html"
+  },
+  {
     "title": "关注体重变化时，哪些记录比单次数字更有用？",
     "summary": "结合测量时间、生活节奏和身体感受，理解变化而非只追求数字。",
     "updatedAt": "2026-10-19",

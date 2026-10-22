@@ -4,8 +4,22 @@
   <id>https://jiaycare.com/knowledge/</id>
   <link href="https://jiaycare.com/knowledge/feed.xml" rel="self"/>
   <link href="https://jiaycare.com/knowledge/"/>
-  <updated>2026-10-19T00:00:00Z</updated>
+  <updated>2026-09-24T00:00:00Z</updated>
   <subtitle>经专业审核的健康教育内容</subtitle>
+  <entry>
+    <title>对比历年体检报告时，先看哪些变化？</title>
+    <id>https://jiaycare.com/knowledge/guides/checkup-report-comparison.html</id>
+    <link href="https://jiaycare.com/knowledge/guides/checkup-report-comparison.html"/>
+    <updated>2026-09-24T00:00:00Z</updated>
+    <summary>按同类项目、检查日期和当时背景排列资料，避免只看单次数字。</summary>
+  </entry>
+  <entry>
+    <title>看健康资料前，怎样整理正在使用的药物？</title>
+    <id>https://jiaycare.com/knowledge/guides/medication-list-preparation.html</id>
+    <link href="https://jiaycare.com/knowledge/guides/medication-list-preparation.html"/>
+    <updated>2026-09-24T00:00:00Z</updated>
+    <summary>保留药品名称、使用方式和开始时间，帮助专业沟通更完整。</summary>
+  </entry>
   <entry>
     <title>关注体重变化时，哪些记录比单次数字更有用？</title>
     <id>https://jiaycare.com/knowledge/guides/weight-trend-notes.html</id>
