@@ -55,7 +55,7 @@ test('过敏和AI禁用类别不会重新加入；新生成无需AI大类文本�
   const { variants } = parseVariants({ balanced_recipes: meals, meal_pack: meals, categoryExcluded: ['soy'] }, { ...assessment, allergyStatus: 'confirmed_present', allergyDetails: '牛奶和鸡蛋过敏' });
   for (const key of keys) assert(!/奶制品|蛋类|豆制品/.test(variants.balanced_categories[key].content));
   assert.equal(variants.balanced_recipes.breakfast.content, meals.breakfast);
-  assert(variants.meal_pack.breakfast.content.includes('谷薯类'));
+  assert(!variants.meal_pack.breakfast.content.includes('谷薯类'));
   assert(!variants.meal_pack.breakfast.content.includes('燕麦'));
   const items = nutritionPlanItems({ content: { moduleData: variants.balanced_categories }, items: [] });
   assert(!items.some(item => /待核对|燕麦/.test(item.notes)));

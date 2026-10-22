@@ -46,8 +46,9 @@ function categoryMeals(modules = {}, assessment, options = {}) {
     dinner: { meat: 30 * scale, seafood: 40 * scale, vegetables: 150 * scale, soy: 60 * scale, oil: 10 * scale },
   };
   const result = { ...modules };
-  const signature = JSON.stringify([budgets, excluded]);
   for (const meal of MEALS) {
+    const noStaple = options.noStapleMeals?.includes(meal) === true;
+    const signature = JSON.stringify(noStaple ? [budgets, excluded, 'no-staple-v1'] : [budgets, excluded]);
     const prior = modules[meal] || {};
     // Preserve a nutritionist's edits after initial allocation, including switching versions.
     if (!options.force && prior.categoryAllocationVersion === VERSION && prior.categoryBudgetSignature === signature) { result[meal] = { ...prior }; continue; }
@@ -60,9 +61,23 @@ function categoryMeals(modules = {}, assessment, options = {}) {
         rows = Object.fromEntries(Object.entries(rows).map(([key, g]) => [key, round(g * ratio, key === 'oil' ? 1 : 5)]));
       }
       // Use a permitted category for the remaining energy, never add cooking oil as a filler.
-      const filler = (meal === 'snack' ? ['fruit', 'dairy', 'nuts', 'staple'] : ['staple', 'soy', 'meat', 'seafood', 'dairy']).find(allowed);
-      if (!filler) throw new Error('当前类别限制无法满足餐次预算，请调整配餐类别');
-      rows[filler] = round((rows[filler] || 0) + (budgets[meal] - energy(rows)) / GROUPS[filler].kcal);
+      if (noStaple) {
+        // Pack breakfast/dinner: spread the remaining energy across permitted protein groups.
+        const candidates = (meal === 'breakfast' ? ['eggs', 'dairy', 'soy', 'meat', 'seafood'] : ['meat', 'seafood', 'soy', 'dairy', 'eggs']).filter(allowed);
+        const present = candidates.filter(key => rows[key] > 0);
+        const fillers = present.length ? present : candidates.slice(0, 2);
+        if (!fillers.length) throw new Error('当前类别限制无法满足无谷薯类餐次预算，请调整配餐类别');
+        const weights = fillers.map(key => rows[key] ? rows[key] * GROUPS[key].kcal : 1);
+        const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+        const remainder = budgets[meal] - energy(rows);
+        fillers.forEach((key, i) => { rows[key] = round((rows[key] || 0) + remainder * weights[i] / weightTotal / GROUPS[key].kcal); });
+        const correction = fillers[0];
+        rows[correction] = round(rows[correction] + (budgets[meal] - energy(rows)) / GROUPS[correction].kcal, 1);
+      } else {
+        const filler = (meal === 'snack' ? ['fruit', 'dairy', 'nuts', 'staple'] : ['staple', 'soy', 'meat', 'seafood', 'dairy']).find(allowed);
+        if (!filler) throw new Error('当前类别限制无法满足餐次预算，请调整配餐类别');
+        rows[filler] = round((rows[filler] || 0) + (budgets[meal] - energy(rows)) / GROUPS[filler].kcal);
+      }
     }
     const portions = Object.entries(GROUPS).filter(([key]) => rows[key] > 0).map(([key, group]) => ({ category: key, grams: rows[key], label: group.label }));
     result[meal] = { ...prior, content: portions.map(row => `${row.label} ${row.grams}克`).join('\n'), enabled: budgets[meal] > 0,

@@ -120,7 +120,28 @@ test('AI只提供餐包适用性，具体食谱和第一种大类不受餐包分
   assert.equal(result.variants.balanced_recipes.breakfast.content, raw().balanced_recipes.breakfast);
   assert.equal(result.variants.balanced_categories.breakfast.categoryTargetKcal, 510);
   assert.equal(result.variants.meal_pack.breakfast.categoryTargetKcal, 310);
-  assert(result.variants.meal_pack.breakfast.content.includes('谷薯类'));
+  assert(!result.variants.meal_pack.breakfast.content.includes('谷薯类'));
   const denied = parseVariants({ ...raw(), meal_pack: null, mealPackUnavailableReason: '配料不适用' }, assessment);
   assert.equal(denied.variants.meal_pack, undefined);
+});
+
+test('仅餐包早晚餐去谷薯，重新分配仍符合预算且不影响午餐加餐或第一种算法', () => {
+  const { packCategoryMeals, categoryMeals } = require('../../shared/nutritionMealPlans.cjs');
+  const input = { mealEnergyKcal: { breakfast: 524, lunch: 699, dinner: 438, snack: 87 } };
+  const ordinary = categoryMeals({}, input);
+  const residual = categoryMeals({}, { mealEnergyKcal: packBudgets(input.mealEnergyKcal) });
+  const pack = packCategoryMeals({}, input);
+  for (const key of ['breakfast', 'dinner']) {
+    assert(!/谷薯类|水果|坚果/.test(pack[key].content));
+    assert(pack[key].content.startsWith(PACK_LINE));
+    assert(Math.abs(pack[key].categoryReferenceKcal + 200 - input.mealEnergyKcal[key]) <= 10);
+    assert(ordinary[key].content.includes('谷薯类'));
+  }
+  for (const key of ['lunch', 'snack']) assert.equal(pack[key].content, residual[key].content);
+  const old = { ...residual, breakfast: { ...residual.breakfast, packCategoryVersion: 1, content: PACK_LINE + '\n谷薯类 50克', time: '08:00' }, dinner: { ...residual.dinner, packCategoryVersion: 1, content: PACK_LINE + '\n谷薯类 50克' } };
+  const upgraded = packCategoryMeals(old, input);
+  assert.equal(upgraded.breakfast.time, '08:00');
+  assert(!upgraded.breakfast.content.includes('谷薯类'));
+  assert.equal(upgraded.breakfast.content.split(PACK_LINE).length - 1, 1);
+  assert.deepEqual(packCategoryMeals(upgraded, input), upgraded);
 });

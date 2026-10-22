@@ -35,19 +35,19 @@ function packCategoryMeals(modules = {}, assessment, options = {}) {
   if (!remaining) throw new Error('早餐和晚餐预算须各不少于200 kcal');
   // The same category allocator receives only the regular-food budget.
   const allocated = Object.values(remaining).some(value => value > 0)
-    ? categoryMeals(modules, { ...assessment, mealEnergyKcal: remaining }, options)
-    : Object.fromEntries(MEALS.map(key => [key, { ...(modules[key] || {}), content: '', categoryTargetKcal: 0, categoryReferenceKcal: 0, categoryPortions: [] }]));
+    ? categoryMeals(modules, { ...assessment, mealEnergyKcal: remaining }, { ...options, noStapleMeals: ['breakfast', 'dinner'] })
+    : Object.fromEntries(MEALS.map(key => [key, { ...(modules[key] || {}), content: '', categoryBudgetSignature: JSON.stringify([remaining, 'pack-empty-v2']), categoryTargetKcal: 0, categoryReferenceKcal: 0, categoryPortions: [] }]));
   const result = { ...modules };
   for (const key of MEALS) {
     const prior = modules[key] || {};
     const meal = allocated[key];
-    if (!options.force && prior.packCategoryVersion === 1 && prior.categoryBudgetSignature && prior.categoryBudgetSignature === meal.categoryBudgetSignature) {
+    if (!options.force && prior.packCategoryVersion === 2 && prior.categoryBudgetSignature && prior.categoryBudgetSignature === meal.categoryBudgetSignature) {
       result[key] = { ...prior };
       continue;
     }
     const fixed = key === 'breakfast' || key === 'dinner';
     result[key] = { ...meal, content: [fixed ? PACK_LINE : '', meal.content].filter(Boolean).join('\n'),
-      enabled: assessment.mealEnergyKcal[key] > 0, packCategoryVersion: 1 };
+      enabled: assessment.mealEnergyKcal[key] > 0, packCategoryVersion: 2 };
   }
   return result;
 }
