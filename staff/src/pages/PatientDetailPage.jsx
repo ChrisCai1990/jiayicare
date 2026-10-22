@@ -41,6 +41,7 @@ import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
 import FollowUpModal from '../components/FollowUpModal'
+import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
 import HealthRiskEventsPanel from '../components/HealthRiskEventsPanel'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
@@ -10125,6 +10126,7 @@ export default function PatientDetailPage() {
       {/* ── Follow-ups Tab ── */}
       {tab === 'followups' && (
         <>
+        <NutritionAssessmentPanel patientId={id} source="followup" canCreate={['familyDoctor', 'superadmin'].includes(staff?.role)} />
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div><div className="card-title">服务执行任务</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>承接方案生成的营养、监测、体检复查、就医协助、专病管理及沟通任务；随访只是执行方式之一</div></div>

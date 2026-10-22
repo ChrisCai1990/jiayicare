@@ -46,6 +46,7 @@ import HealthFundConfigPage from './pages/settings/HealthFundConfigPage'
 import HealthAssistantConfigPage from './pages/settings/HealthAssistantConfigPage'
 import SupplyWorkflowConfigPage from './pages/settings/SupplyWorkflowConfigPage'
 import ServiceWorkflowAlignmentPage from './pages/settings/ServiceWorkflowAlignmentPage'
+import NutritionAssessmentConfigPage from './pages/settings/NutritionAssessmentConfigPage'
 import AiUsagePage from './pages/settings/AiUsagePage'
 import MedicalResourcesPage from './pages/settings/MedicalResourcesPage'
 import MedicalResourceKnowledgePage from './pages/settings/MedicalResourceKnowledgePage'
@@ -185,6 +186,7 @@ export default function App() {
               <Route path="settings/health-assistant" element={<HealthAssistantConfigPage />} />
               <Route path="settings/supply-workflow" element={<SupplyWorkflowConfigPage />} />
               <Route path="settings/service-workflow-alignment" element={<ServiceWorkflowAlignmentPage />} />
+              <Route path="settings/nutrition-assessment" element={<NutritionAssessmentConfigPage />} />
               <Route path="settings/ai-usage" element={<AiUsagePage />} />
               <Route path="settings/review-experience" element={<ReviewExperiencePage />} />
               <Route path="health-fund" element={<HealthFundConfigPage />} />

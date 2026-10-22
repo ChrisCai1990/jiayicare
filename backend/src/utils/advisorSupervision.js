@@ -61,9 +61,9 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     if (!groups.has(key)) groups.set(key, { key, patientId: id(patientId), source, type, tasks: [] });
     return groups.get(key);
   };
-  const orderActive = o => ['pending', 'scheduled'].includes(o.status)
+  const orderActive = o => (['pending', 'scheduled'].includes(o.status) || (o.status === 'completed' && ['draft', 'active'].includes(o.linkedServicePlan?.status)))
     && (o.paymentStatus === 'paid' || (o.initiationSource === 'staff_direct' && o.paymentStatus === 'unpaid' && o.servicePrice === 0))
-    && ['paid', 'fulfilling', 'partially_refunded'].includes(o.tradeStatus)
+    && (['paid', 'fulfilling', 'partially_refunded'].includes(o.tradeStatus) || (o.tradeStatus === 'completed' && ['draft', 'active'].includes(o.linkedServicePlan?.status)))
     && ['', 'none', 'failed', 'partially_refunded', null, undefined].includes(o.refundStatus)
     && !['completed', 'cancelled'].includes(o.supervisionStatus)
     && !(o.linkedServicePlan?.status === 'completed' && o.specialtyTermsSnapshot?.key !== 'ibd'

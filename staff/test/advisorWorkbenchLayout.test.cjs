@@ -39,7 +39,7 @@ async function mount(role) {
     'GeoReviewPanel', 'CheckupProgressPanel', 'ConsultationTodosPanel', 'OrderShipmentsPanel', 'InventoryDispatchPanel',
     'AiTodosPanel', 'ClinicalStandardReviewPanel', 'SymptomTodosPanel', 'FollowUpsPanel',
     'ServiceTasksPanel', 'MedicalAssistClosureAction', 'ServiceSupervisionPanel',
-    'MedicalAssistProgressPanel', 'MonthlyReviewWorkbench', 'Pagination',
+    'MedicalAssistProgressPanel', 'MonthlyReviewWorkbench', 'NutritionAssessmentPanel', 'Pagination',
   ]) mocks['../components/' + name] = { __esModule: true, default: panel(name) }
   const filename = path.resolve(__dirname, '../src/pages/HomePage.jsx')
   const module = { exports: {} }

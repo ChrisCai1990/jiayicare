@@ -32,7 +32,7 @@ async function progressFor({ plans = [], orders = [], tasks = [] }) {
   };
   vm.runInNewContext(source.slice(start, end), context);
   let response;
-  await handler({ staff: { role: 'familyDoctor', _id: 'advisor' } }, { json: value => { response = value; } });
+  await handler({ staff: { role: 'familyDoctor', _id: 'advisor' }, query: {} }, { json: value => { response = value; } });
   return response.data;
 }
 

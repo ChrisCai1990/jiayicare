@@ -18,6 +18,7 @@ import ClinicalStandardReviewPanel from '../components/ClinicalStandardReviewPan
 import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
 import ServiceTasksPanel from '../components/ServiceTasksPanel'
+import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
 import MedicalAssistClosureAction from '../components/MedicalAssistClosureAction'
 import ServiceSupervisionPanel from '../components/ServiceSupervisionPanel'
 import MedicalAssistProgressPanel from '../components/MedicalAssistProgressPanel'
@@ -44,15 +45,17 @@ export default function HomePage() {
   const [checkinRecords, setCheckinRecords] = useState([])
   const expiringPatients = notification.data?.expiringPatients || []
   const ordersResource = useWorkbenchResource(async () => {
-    const [pending, completed] = await Promise.all([
+    const [pending, completed, supervision] = await Promise.all([
       loadFollowUpPages(staffAPI.getFollowUps, { status: 'active', sourceType: 'order', scope: 'assigned', includeFuture: '1' }),
       loadFollowUpPages(staffAPI.getFollowUps, { status: 'completed', sourceType: 'order', scope: 'assigned' }),
+      staff?.role === 'familyDoctor' ? staffAPI.getServiceSupervision({ includeCompleted: '1' }) : Promise.resolve({ data: { completed: [] } }),
     ])
-    return { pending, completed }
-  }, getToken(), { pending: [], completed: [] })
+    return { pending, completed, completedServices: supervision.data?.completed || [] }
+  }, getToken(), { pending: [], completed: [], completedServices: [] })
   const pendingOrders = ordersResource.data.pending
   const completedOrders = ordersResource.data.completed
   const [orderHistoryOpen, setOrderHistoryOpen] = useState(false)
+  const [orderStatusFilter, setOrderStatusFilter] = useState('pending')
   const [orderPage, setOrderPage] = useState(1)
   const [orderHistoryPage, setOrderHistoryPage] = useState(1)
   const [serviceTasks, setServiceTasks] = useState([])
@@ -86,6 +89,7 @@ export default function HomePage() {
     return `/followups?${query}`
   }
   const orderRows = plannerOrderRows(pendingOrders, serviceTasks)
+  const completedServiceOrders = (ordersResource.data.completedServices || []).filter(item => item.key?.startsWith('order:'))
   const orderHistoryRows = [...new Map(completedOrders
     .filter(item => isCustomerOrder(item.sourceOrderId, item))
     .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0))
@@ -93,6 +97,8 @@ export default function HomePage() {
   const orderPageCount = Math.max(1, Math.ceil(orderRows.length / ORDERS_PER_PAGE))
   const currentOrderPage = Math.min(orderPage, orderPageCount)
   const visibleOrderRows = orderRows.slice((currentOrderPage - 1) * ORDERS_PER_PAGE, currentOrderPage * ORDERS_PER_PAGE)
+  const completedServiceOrderPageCount = Math.max(1, Math.ceil(completedServiceOrders.length / ORDERS_PER_PAGE))
+  const visibleCompletedServiceOrders = completedServiceOrders.slice((Math.min(orderPage, completedServiceOrderPageCount) - 1) * ORDERS_PER_PAGE, Math.min(orderPage, completedServiceOrderPageCount) * ORDERS_PER_PAGE)
   const orderHistoryPageCount = Math.max(1, Math.ceil(orderHistoryRows.length / ORDERS_PER_PAGE))
   const currentOrderHistoryPage = Math.min(orderHistoryPage, orderHistoryPageCount)
   const visibleOrderHistoryRows = orderHistoryRows.slice((currentOrderHistoryPage - 1) * ORDERS_PER_PAGE, currentOrderHistoryPage * ORDERS_PER_PAGE)
@@ -152,19 +158,20 @@ export default function HomePage() {
 
       {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}
       <div style={{ display: showAdvisorView('progress', 'orders') ? undefined : 'none' }}>
-      {(ordersResource.loading || ordersResource.error || orderRows.length > 0 || orderHistoryRows.length > 0) && (
+      {(ordersResource.loading || ordersResource.error || orderRows.length > 0 || orderHistoryRows.length > 0 || completedServiceOrders.length > 0) && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>🛍 用户下单服务进程</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>{orderRows.length}</span>
             </div>
-            {orderHistoryRows.length > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOrderHistoryOpen(value => !value)}>{orderHistoryOpen ? '收起已处理预约' : `查看已处理预约 ${orderHistoryRows.length}`}</button>}
+            {isAdvisor && <div role="group" aria-label="用户下单服务状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', orderRows.length], ['completed', '已完成', completedServiceOrders.length], ['all', '全部', orderRows.length + completedServiceOrders.length]].map(([key, label, count]) => <button key={key} type="button" className={orderStatusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={orderStatusFilter === key} onClick={() => { setOrderStatusFilter(key); setOrderPage(1) }}>{label} {count}</button>)}</div>}
+            {orderHistoryRows.length > 0 && orderStatusFilter !== 'completed' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOrderHistoryOpen(value => !value)}>{orderHistoryOpen ? '收起已处理预约' : `查看已处理预约 ${orderHistoryRows.length}`}</button>}
           </div>
           <div className="card-body" style={{ padding: '8px 20px' }}>
             {ordersResource.loading && <div role="status">正在加载服务预约…</div>}
             {ordersResource.error && <div role="alert" style={{ color: '#B42318', padding: 12 }}>服务预约未完整加载：{ordersResource.error} <button onClick={ordersResource.refresh}>重试</button></div>}
-            {visibleOrderRows.map(({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
+            {orderStatusFilter !== 'completed' && visibleOrderRows.map(({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
               const task = supervisor || serviceTask
               const order = task?.sourceOrderId || f?.sourceOrderId
               const openTarget = task?.workflowKey === 'medical_assist:closure' ? null : action || (supervisor && !/专家约诊/.test(supervisor.theme || '') ? supervisor : null) || (!task ? f : null)
@@ -196,10 +203,12 @@ export default function HomePage() {
                   : <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{task?.workflowKey === 'medical_assist:closure' ? '待确认结案' : action ? '待我办理' : task ? '流程进行中' : `下单 ${new Date(order?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}</span>}
               </div>
             })}
-            {orderRows.length > ORDERS_PER_PAGE && <nav aria-label="用户下单服务进程分页" style={{ paddingBottom: 8 }}>
+            {orderStatusFilter !== 'completed' && orderRows.length > ORDERS_PER_PAGE && <nav aria-label="用户下单服务进程分页" style={{ paddingBottom: 8 }}>
               <Pagination compact page={currentOrderPage} totalPages={orderPageCount} onChange={setOrderPage} />
             </nav>}
-            {orderHistoryOpen && <div style={{ borderTop: '1px solid #E3ECE7', marginTop: 8, paddingTop: 10 }}>
+            {orderStatusFilter !== 'pending' && visibleCompletedServiceOrders.map(item => <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderBottom: '1px solid #F0EDE8' }}><div><b>{item.patientName} · {item.title}</b><div style={{ fontSize: 12, color: '#718578', marginTop: 4 }}>服务已完成 · {item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : ''}</div></div><button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(item.href)}>查看详情</button></div>)}
+            {orderStatusFilter !== 'pending' && completedServiceOrders.length > ORDERS_PER_PAGE && <Pagination compact page={Math.min(orderPage, completedServiceOrderPageCount)} totalPages={completedServiceOrderPageCount} onChange={setOrderPage} />}
+            {orderStatusFilter !== 'completed' && orderHistoryOpen && <div style={{ borderTop: '1px solid #E3ECE7', marginTop: 8, paddingTop: 10 }}>
               <div style={{ fontWeight: 600, color: '#52685D', marginBottom: 6 }}>过往已处理预约（不代表服务已结束）</div>
               {visibleOrderHistoryRows.map(item => <div key={item._id} onClick={() => nav(`/patients/${item.patientId?._id}?tab=followups`)} style={{ padding: '9px 0', borderBottom: '1px solid #F0EDE8', cursor: 'pointer' }}>
                 <b>{item.patientId?.name || '未知客户'}</b> · {item.sourceOrderId?.serviceName || serviceTaskTitle(item)} · {item.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN') : '已处理'}
@@ -216,9 +225,10 @@ export default function HomePage() {
       </div>
 
       {/* 临时服务方案产生的岗位任务优先处理，固定显示在 AI 审核任务上方。 */}
-      <div style={{ display: showAdvisorView('todo', 'service') ? undefined : 'none' }}><MonthlyReviewWorkbench /><ServiceTasksPanel onTasksLoaded={setServiceTasks} /></div>
+      <div style={{ display: showAdvisorView('todo', 'service') ? undefined : 'none' }}><MonthlyReviewWorkbench />{staff?.role !== 'familyDoctor' && <NutritionAssessmentPanel compact />}<ServiceTasksPanel onTasksLoaded={setServiceTasks} /></div>
       <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><ClinicalStandardReviewPanel /></div>
       {staff?.role === 'familyDoctor' && <div style={{ display: showAdvisorView('progress', 'medical') ? undefined : 'none' }}><MedicalAssistProgressPanel /></div>}
+      {staff?.role === 'familyDoctor' && <div style={{ display: showAdvisorView('progress', 'overview') ? undefined : 'none' }}><NutritionAssessmentPanel compact /></div>}
 
       {/* AI 待审核任务面板 */}
       <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><AiTodosPanel /></div>

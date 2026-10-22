@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
+import Pagination from './Pagination'
 
 export default function MedicalAssistProgressPanel() {
   const nav = useNavigate()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
+  const [filter, setFilter] = useState('pending')
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     let active = true
-    const refresh = () => staffAPI.getMedicalAssistProgress()
+    const refresh = () => staffAPI.getMedicalAssistProgress({ includeCompleted: '1' })
       .then(response => { if (active) setItems(response.data || []) })
       .catch(() => { if (active) setItems([]) })
       .finally(() => { if (active) setLoading(false) })
@@ -21,11 +24,18 @@ export default function MedicalAssistProgressPanel() {
     return () => { active = false; window.removeEventListener('focus', refreshIfVisible); window.clearInterval(timer) }
   }, [])
 
+  const pending = items.filter(item => item.status !== 'completed')
+  const completed = items.filter(item => item.status === 'completed')
+  const visible = filter === 'pending' ? pending : filter === 'completed' ? completed : items
+  const pageCount = Math.max(1, Math.ceil(visible.length / 5))
+  const currentPage = Math.min(page, pageCount)
+  const paged = visible.slice((currentPage - 1) * 5, currentPage * 5)
+
   return <div className="card" style={{ marginBottom: 20, border: '1.5px solid #2563EB35' }}>
-    <div className="card-header"><div className="card-title">就医协助进程 <span style={{ fontSize: 12, color: '#667085' }}>只读 · {items.length} 项进行中</span></div></div>
+    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><div className="card-title">就医协助进程 <span style={{ fontSize: 12, color: '#667085' }}>只读</span></div><div role="group" aria-label="就医协助状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', pending.length], ['completed', '已完成', completed.length], ['all', '全部', items.length]].map(([key, label, count]) => <button key={key} type="button" className={filter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={filter === key} onClick={() => { setFilter(key); setPage(1) }}>{label} {count}</button>)}</div></div>
     <div className="card-body" style={{ padding: '8px 20px' }}>
-      {loading ? <div style={{ padding: '12px 0', color: '#667085' }}>加载中...</div> : !items.length ? <div style={{ padding: '12px 0', color: '#667085' }}>暂无进行中的就医协助</div> : items.map((item, index) =>
-        <div key={item.id} style={{ padding: '12px 0', borderBottom: index < items.length - 1 ? '1px solid #f0ede8' : 'none' }}>
+      {loading ? <div style={{ padding: '12px 0', color: '#667085' }}>加载中...</div> : !visible.length ? <div style={{ padding: '12px 0', color: '#667085' }}>暂无{filter === 'completed' ? '已完成' : filter === 'pending' ? '待完成' : ''}的就医协助</div> : paged.map((item, index) =>
+        <div key={item.id} style={{ padding: '12px 0', borderBottom: index < paged.length - 1 ? '1px solid #f0ede8' : 'none' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
             <div><strong>{item.patientName || '未知客户'} · {item.title}</strong>{item.startedBySelf && <span style={{ marginLeft: 8, fontSize: 11, color: '#2563EB' }}>由我发起</span>}</div>
             <button type="button" className="btn btn-secondary btn-sm" aria-expanded={expandedId === item.id} onClick={() => setExpandedId(current => current === item.id ? null : item.id)}>{expandedId === item.id ? '收起进程' : '查看完整进程'}</button>
@@ -44,6 +54,7 @@ export default function MedicalAssistProgressPanel() {
             <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={() => nav(`/patients/${item.patientId}?tab=plans&serviceView=medical`)}>查看客户就医服务档案</button>
           </div>}
         </div>) }
+      {visible.length > 5 && <Pagination compact page={currentPage} totalPages={pageCount} onChange={setPage} />}
     </div>
   </div>
 }
