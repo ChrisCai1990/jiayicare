@@ -1,6 +1,7 @@
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
 import LiverMarkerTrends from '../components/LiverMarkerTrends'
 import { liverMarkerTrends, liverKeyChanges } from '../utils/liverMarkerTrends.mjs'
+import { reviewConflictField, changedReviewConflictSection } from '../utils/aiReviewConflictField.mjs'
 import RehabWorkspace from '../components/RehabWorkspace'
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
@@ -2482,6 +2483,8 @@ export default function PatientDetailPage() {
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
   const [aiReviewConflicts, setAiReviewConflicts] = useState({ token: '', loading: false, error: '', conflicts: [] })
+  const [editingAIConflict, setEditingAIConflict] = useState(null)
+  const [savingAIConflict, setSavingAIConflict] = useState(false)
   useEffect(() => {
     if (!id || screeningWorkspaceView !== 'analysis' || aiAnalysisView !== 'doctor') return
     const byYear = data?.user?.aiHealthSummary?.byYear || {}
@@ -4378,6 +4381,30 @@ export default function PatientDetailPage() {
       setEditingAISummary(false); setEditingAISection('')
       toast(approve ? '该板块已审核通过' : '该板块草稿已保存')
     } catch (err) { toast(err.message || '板块保存失败') }
+  }
+
+  const handleSaveAIConflict = async (year, record) => {
+    if (!editingAIConflict || editingAIConflict.token !== record._reviewToken) return
+    const change = changedReviewConflictSection(record.sections || {}, editingAIConflict.path, editingAIConflict.text)
+    if (!change) {
+      setEditingAIConflict(edit => ({ ...edit, error: '此结论位置已变化，请刷新后重新核对' }))
+      return
+    }
+    try {
+      setSavingAIConflict(true)
+      const res = await staffAPI.updateAIHealthSummary(id, {
+        sections: { [change.sectionKey]: change.section },
+        sectionKey: change.sectionKey, scope: 'doctor', year,
+        recordIndex: record._recordIndex, expectedRecordToken: record._reviewToken,
+      })
+      applyAIHealthSummary(res.data)
+      setEditingAIConflict(null)
+      toast('结论已保存，正在重新核对证据')
+    } catch (err) {
+      setEditingAIConflict(edit => edit ? { ...edit, error: err.message || '保存失败' } : edit)
+    } finally {
+      setSavingAIConflict(false)
+    }
   }
 
   // 按角色维度审核 AI 汇总分析（scope: 'doctor'=5维 / 'nutrition'=生活方式评估）
@@ -8786,6 +8813,24 @@ export default function PatientDetailPage() {
                       <div style={{ color: '#A43C29', marginTop: 6 }}>发现 {conflicts.length} 处结论与可核对的检验依据不一致，请修正后再审核。</div>
                       {conflicts.map((item, index) => <div key={`${item.path}-${index}`} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #EDD5C7' }}>
                         <div><strong>{sectionNames[item.path?.split('.')[0]] || '5维分析'}：</strong>“{item.claim}”</div>
+                        {['familyDoctor', 'superadmin'].includes(staff?.role) && reviewConflictField(doctorRecord.sections || {}, item.path) !== null && (
+                          editingAIConflict?.token === doctorRecord._reviewToken && editingAIConflict.path === item.path
+                            ? <div style={{ marginTop: 8 }}>
+                                <label style={{ display: 'block', fontWeight: 600, marginBottom: 4 }}>修改原结论字段</label>
+                                <textarea className="form-control" rows={4} value={editingAIConflict.text}
+                                  onChange={event => setEditingAIConflict(edit => ({ ...edit, text: event.target.value, error: '' }))}
+                                  style={{ width: '100%', resize: 'vertical', fontSize: 13 }} />
+                                {editingAIConflict.error && <div role="alert" style={{ color: '#A43C29', marginTop: 4 }}>{editingAIConflict.error}</div>}
+                                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                                  <button className="btn btn-primary btn-sm" disabled={savingAIConflict || editingAIConflict.text === reviewConflictField(doctorRecord.sections || {}, item.path)}
+                                    onClick={() => handleSaveAIConflict(curYear, doctorRecord)}>{savingAIConflict ? '保存中…' : '保存并重新核对'}</button>
+                                  <button className="btn btn-secondary btn-sm" disabled={savingAIConflict} onClick={() => setEditingAIConflict(null)}>取消</button>
+                                </div>
+                              </div>
+                            : <button className="btn btn-secondary btn-sm" style={{ marginTop: 7 }}
+                                onClick={() => setEditingAIConflict({ token: doctorRecord._reviewToken, path: item.path,
+                                  text: reviewConflictField(doctorRecord.sections || {}, item.path), error: '' })}>修改这处结论</button>
+                        )}
                         <div>{item.reason === 'latest_not_elevated' ? '最近一次有日期的检测值未能证明高于其报告参考上限。'
                           : item.reason === 'insufficient_repeated_evidence' ? '“持续/反复升高”缺少至少两次超出各自参考上限的检测值。'
                             : '现有检测值中找不到超出报告参考上限的依据。'}</div>
