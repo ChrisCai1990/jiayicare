@@ -2,6 +2,7 @@ import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessme
 import LiverMarkerTrends from '../components/LiverMarkerTrends'
 import { liverMarkerTrends, liverKeyChanges } from '../utils/liverMarkerTrends.mjs'
 import { reviewConflictField, changedReviewConflictSection, removedReviewConflictClaim } from '../utils/aiReviewConflictField.mjs'
+import { aiReviewConflictGuidance } from '../utils/aiReviewConflictGuidance.mjs'
 import RehabWorkspace from '../components/RehabWorkspace'
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
@@ -8846,6 +8847,8 @@ export default function PatientDetailPage() {
                       <div style={{ color: '#A43C29', marginTop: 6 }}>发现 {conflicts.length} 处结论与可核对的检验依据不一致，请修正后再审核。</div>
                       {conflicts.map((item, index) => <div key={`${item.path}-${index}`} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #EDD5C7' }}>
                         <div><strong>{sectionNames[item.path?.split('.')[0]] || '5维分析'}：</strong>“{item.claim}”</div>
+                        <div style={{ marginTop: 7 }}><strong>拦截原因：</strong>{aiReviewConflictGuidance(item).reason}</div>
+                        <div style={{ marginTop: 4 }}><strong>修改建议：</strong>{aiReviewConflictGuidance(item).suggestion}</div>
                         {['familyDoctor', 'superadmin'].includes(staff?.role) && reviewConflictField(doctorRecord.sections || {}, item.path) !== null && (
                           editingAIConflict?.token === doctorRecord._reviewToken && editingAIConflict.path === item.path
                             ? <div style={{ marginTop: 8 }}>
@@ -8853,6 +8856,8 @@ export default function PatientDetailPage() {
                                 <textarea className="form-control" rows={4} value={editingAIConflict.text}
                                   onChange={event => setEditingAIConflict(edit => ({ ...edit, text: event.target.value, error: '' }))}
                                   style={{ width: '100%', resize: 'vertical', fontSize: 13 }} />
+                                {editingAIConflict.text === reviewConflictField(doctorRecord.sections || {}, item.path) &&
+                                  <div style={{ color: '#7A6559', fontSize: 12, marginTop: 4 }}>请按上方建议修改结论文字；文字有改动后才能保存并重新核对。</div>}
                                 {editingAIConflict.error && <div role="alert" style={{ color: '#A43C29', marginTop: 4 }}>{editingAIConflict.error}</div>}
                                 <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
                                   <button className="btn btn-primary btn-sm" disabled={savingAIConflict || editingAIConflict.text === reviewConflictField(doctorRecord.sections || {}, item.path)}
@@ -8868,9 +8873,6 @@ export default function PatientDetailPage() {
                                   onClick={() => handleDeleteAIConflict(curYear, doctorRecord, item)}>删除这处结论</button>
                               </div>
                         )}
-                        <div>{item.reason === 'latest_not_elevated' ? '最近一次有日期的检测值未能证明高于其报告参考上限。'
-                          : item.reason === 'insufficient_repeated_evidence' ? '“持续/反复升高”缺少至少两次超出各自参考上限的检测值。'
-                            : '现有检测值中找不到超出报告参考上限的依据。'}</div>
                         {item.evidence?.length ? <div style={{ marginTop: 4, fontSize: 13 }}>
                           <div>原始检测（状态由数值和该报告的参考范围计算）：</div>
                           {item.evidence.map((row, rowIndex) => <div key={`${row.reportId || row.date}-${row.itemId || rowIndex}`} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
