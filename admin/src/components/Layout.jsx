@@ -53,6 +53,7 @@ const NAV_SECTIONS = [
       { label: '平台合作协议', icon: 'form', path: '/agreements', superadminOnly: true },
       { label: '本机构套餐', icon: 'money', path: '/saas-plan', superadminOnly: true },
       { label: '服务流程管理', icon: 'settings', path: '/settings/supply-workflow' },
+      { label: '营养评估需求单', icon: 'form', path: '/settings/nutrition-assessment', superadminOnly: true },
       { label: '成熟流程对齐', icon: 'settings', path: '/settings/service-workflow-alignment' },
       { label: '小程序审核体验', icon: 'settings', path: '/settings/review-experience' },
     ],
@@ -91,7 +92,7 @@ const NAV_GROUPS = {
   '基础设置': {
     '组织与人员': ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees'],
     '会员与医疗资源': ['/settings/medical-resource-knowledge', '/settings/medical-delivery-resources', '/settings/medical-resources', '/settings/members', '/settings/scoring', '/clinical-standards'],
-    '智能与服务流程': ['/settings/daily-care', '/settings/health-assistant', '/settings/ai-usage', '/settings/supply-workflow', '/settings/service-workflow-alignment', '/settings/review-experience'],
+    '智能与服务流程': ['/settings/daily-care', '/settings/health-assistant', '/settings/ai-usage', '/settings/supply-workflow', '/settings/service-workflow-alignment', '/settings/nutrition-assessment', '/settings/review-experience'],
   },
   '项目设置': {
     '基础项目库': ['/projects/categories', '/projects/diseases', '/projects/specialty-library', '/projects/lab-test-items', '/projects/lab-test-orders', '/projects/lab-test-packages', '/projects/special-exams', '/projects/functional-medicine'],

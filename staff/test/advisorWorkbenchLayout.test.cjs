@@ -39,7 +39,7 @@ async function mount(role) {
     'GeoReviewPanel', 'CheckupProgressPanel', 'ConsultationTodosPanel', 'OrderShipmentsPanel', 'InventoryDispatchPanel',
     'AiTodosPanel', 'ClinicalStandardReviewPanel', 'SymptomTodosPanel', 'FollowUpsPanel',
     'ServiceTasksPanel', 'MedicalAssistClosureAction', 'ServiceSupervisionPanel',
-    'MedicalAssistProgressPanel', 'MonthlyReviewWorkbench', 'Pagination',
+    'MedicalAssistProgressPanel', 'MonthlyReviewWorkbench', 'NutritionAssessmentPanel', 'Pagination',
   ]) mocks['../components/' + name] = { __esModule: true, default: panel(name) }
   mocks['../components/GeoReviewPanel'] = { __esModule: true, canShowGeoReview: actor => actor.role === 'familyDoctor', default: props => React.createElement('div', { 'data-panel': 'GeoReviewPanel', 'data-compact': String(props.compact) }, React.createElement('button', { onClick: props.onOpen }, '进入 GEO 审核')) }
   const filename = path.resolve(__dirname, '../src/pages/HomePage.jsx')

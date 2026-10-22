@@ -10,8 +10,8 @@ const decisionActions = { intake: '确认客户需求并转交顾问', advisor: 
 export default function ServiceSupervisionPanel() {
   const { staff } = useStaff()
   const nav = useNavigate()
-  const resource = useWorkbenchResource(async () => (await staffAPI.getServiceSupervision()).data, getToken(), { services: [], inbox: [] })
-  const [normalOpen, setNormalOpen] = useState(false)
+  const resource = useWorkbenchResource(async () => (await staffAPI.getServiceSupervision({ includeCompleted: '1' })).data, getToken(), { services: [], completed: [], inbox: [] })
+  const [statusFilter, setStatusFilter] = useState('pending')
   const [page, setPage] = useState(1)
   const [inboxPage, setInboxPage] = useState(1)
   const [form, setForm] = useState(null)
@@ -28,9 +28,9 @@ export default function ServiceSupervisionPanel() {
     try { const result = await staffAPI.getSupervisionTask(service.taskId); if (request === previewRequest.current) setPreview({ task: result.data }) }
     catch (e) { if (request === previewRequest.current) setPreview({ error: e.message }) }
   }
-  const { services, inbox } = resource.data
+  const { services = [], completed = [], inbox = [] } = resource.data
   const attention = services.filter(s => s.attention)
-  const rows = [...attention, ...((normalOpen || staff?.role !== 'familyDoctor') ? services.filter(s => !s.attention) : [])]
+  const rows = statusFilter === 'pending' ? services : statusFilter === 'completed' ? completed : [...services, ...completed]
   const currentPage = Math.min(page, Math.max(1, Math.ceil(rows.length / 5)))
   const currentInboxPage = Math.min(inboxPage, Math.max(1, Math.ceil(inbox.length / 5)))
   const start = value => { setForm(value); setNote(''); setError(''); setNotice('') }
@@ -51,7 +51,7 @@ export default function ServiceSupervisionPanel() {
     <div>{r.note}</div><div style={{ color: '#667085' }}>{r.handledAt ? `处理反馈（${date(r.handledAt)}）：${r.response}` : '尚无处理反馈（实际进度以原服务为准）'}</div>
   </div>)}</details>
   return <section className="card" style={{ marginBottom: 20 }} aria-label="服务督办">
-    <div className="card-header"><div className="card-title">{services.length || staff?.role === 'familyDoctor' ? '服务进度总览' : '历史协调提醒'}{attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div></div>
+    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}><div className="card-title">{services.length || staff?.role === 'familyDoctor' ? '服务进度总览' : '历史协调提醒'}{attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div>{staff?.role === 'familyDoctor' && <div role="group" aria-label="服务进度状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', services.length], ['completed', '已完成', completed.length], ['all', '全部', services.length + completed.length]].map(([key, label, count]) => <button key={key} type="button" className={statusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={statusFilter === key} onClick={() => { setStatusFilter(key); setPage(1) }}>{label} {count}</button>)}</div>}</div>
     <div className="card-body">
       {staff?.role === 'familyDoctor' && <p style={{ marginTop: 0, fontSize: 13, color: '#667085' }}>查看所属客户的完整服务进度。随访由健管专员督导，就医协助由健康规划师督导；需要整体健康判断时在本人专业待办中处理。</p>}
       {resource.loading && <div role="status">正在读取服务进度…</div>}
@@ -80,7 +80,7 @@ export default function ServiceSupervisionPanel() {
         {s.current.map((c, i) => <div key={c.taskId || i} style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
           <span>{c.label} · {c.person?.name || '处理人待核对'}{c.blocked ? ' · 等待前置环节' : ''} · 计划时间：{date(c.dueAt)}</span>
         </div>)}
-        <p>下一步：{s.actionTaskId ? `请办理本人任务：${decisionActions[s.actionStage] || '处理当前环节'}。` : s.current.some(c => c.blocked) ? '等待原任务的前置事项完成。' : s.current.some(c => !c.person) ? '原任务负责人待核对，不自动转交其他人员。' : '由当前处理人在原服务中办理并记录结果。'}</p>
+        <p>下一步：{s.status === 'completed' ? '服务已完成，请查看原服务记录。' : s.actionTaskId ? `请办理本人任务：${decisionActions[s.actionStage] || '处理当前环节'}。` : s.current.some(c => c.blocked) ? '等待原任务的前置事项完成。' : s.current.some(c => !c.person) ? '原任务负责人待核对，不自动转交其他人员。' : '由当前处理人在原服务中办理并记录结果。'}</p>
         <div style={{ color: '#667085', whiteSpace: 'pre-wrap' }}>最新进展：{s.latest ? `${date(s.latest.at)} · ${s.latest.content}` : '暂无处理记录，请查看原服务进度。'}</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>{s.coordinator && <span>原服务协调规划师：{s.coordinator.name}</span>}
           {s.actionTaskId && <button className="btn btn-primary btn-sm" onClick={() => nav(`/patients/${s.patientId}?tab=followups&followUpId=${s.actionTaskId}`)}>{decisionActions[s.actionStage] || '办理当前任务'}</button>}
@@ -88,8 +88,7 @@ export default function ServiceSupervisionPanel() {
         {!!s.history.length && history(s)}
       </article>)}
       {rows.length > 5 && <Pagination compact page={currentPage} totalPages={Math.ceil(rows.length / 5)} onChange={setPage} />}
-      {staff?.role === 'familyDoctor' && services.length > attention.length && <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={() => { setNormalOpen(!normalOpen); setPage(1) }}>{normalOpen ? '收起正常进度' : `查看正常进度 ${services.length - attention.length}项`}</button>}
-      {!resource.loading && !resource.error && staff?.role === 'familyDoctor' && !services.length && <span style={{ color: '#667085' }}>暂无进行中的服务。</span>}
+      {!resource.loading && !resource.error && staff?.role === 'familyDoctor' && !rows.length && <span style={{ color: '#667085' }}>暂无{statusFilter === 'completed' ? '已完成' : '待完成'}的服务。</span>}
       {form && <form onSubmit={submit} style={{ marginTop: 16, padding: 16, background: '#F3F7F5', borderRadius: 8 }}>
         <b>{form.request ? '填写实际处理反馈' : `${form.kind === 'coordinate' ? '请求协调' : '提醒处理'} → ${form.person.name}`} · {(form.service || form.request.service).title}</b>
         <p style={{ color: '#667085', fontSize: 13 }}>{form.request ? '反馈供顾问查看。实际服务仍在原入口办理。' : '说明需要跟进的具体事项，接收人会在工作台看到。'}</p>

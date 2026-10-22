@@ -3,6 +3,9 @@ const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
 const FollowUp = require('../models/FollowUp');
 const Order = require('../models/Order');
+const HealthPlan = require('../models/HealthPlan');
+const CareFlow = require('../models/CareFlow');
+const Insurance = require('../models/InsuranceServiceCase');
 const Request = require('../models/ServiceSupervisionRequest');
 const { loadServices, id } = require('../utils/advisorSupervision');
 const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
@@ -27,6 +30,35 @@ async function inbox(actor) {
     return service && advisor.get(id(r.patientId)) === id(r.senderId) && canReceive(service, r) ? [{ ...r, service }] : [];
   });
 }
+async function completedServices(actor) {
+  const patients = await User.find({ ...scope(actor), assignedFamilyDoctor: actor._id, isDeleted: { $ne: true } }).select('name').lean();
+  if (!patients.length) return [];
+  const ids = patients.map(patient => patient._id);
+  const names = new Map(patients.map(patient => [id(patient), patient.name]));
+  const [plans, orders, flows, cases] = await Promise.all([
+    HealthPlan.find({ patientId: { $in: ids }, status: 'completed' }).sort({ updatedAt: -1 }).limit(100).select('patientId title type sourceOrderId updatedAt').lean(),
+    Order.find({ user: { $in: ids }, status: 'completed', $or: [{ paymentStatus: 'paid' }, { initiationSource: 'staff_direct', paymentStatus: 'unpaid', servicePrice: 0 }] }).sort({ updatedAt: -1 }).limit(100).select('user serviceName updatedAt').lean(),
+    CareFlow.find({ patientId: { $in: ids }, 'state.finalized': true }).sort({ updatedAt: -1 }).limit(100).select('patientId state.title updatedAt').lean(),
+    Insurance.find({ patientId: { $in: ids }, status: 'closed' }).sort({ updatedAt: -1 }).limit(100).select('patientId title updatedAt').lean(),
+  ]);
+  const row = (key, patientId, title, type, updatedAt) => ({
+    key, patientId: id(patientId), patientName: names.get(id(patientId)) || '', title,
+    type, status: 'completed', attention: false, current: [], coordinator: null,
+    progress: { label: '服务已完成', step: 1, total: 1 }, reasons: [], history: [],
+    latest: { at: updatedAt, content: '服务已完成' }, updatedAt,
+    href: `/patients/${id(patientId)}?tab=${type === 'plan' ? 'plans' : type === 'order' ? 'consumption' : 'followups'}`,
+  });
+  const activeLinkedPlans = orders.length ? await HealthPlan.find({ sourceOrderId: { $in: orders.map(order => order._id) }, status: { $in: ['draft', 'active'] } }).select('sourceOrderId').lean() : [];
+  const activeLinkedOrderIds = new Set(activeLinkedPlans.map(plan => id(plan.sourceOrderId)));
+  const completedOrderIds = new Set(orders.map(order => id(order)));
+  return [
+    ...plans.filter(plan => !plan.sourceOrderId || !completedOrderIds.has(id(plan.sourceOrderId)))
+      .map(plan => row(plan.sourceOrderId ? `order:${id(plan.sourceOrderId)}` : `plan:${id(plan)}`, plan.patientId, plan.title, 'plan', plan.updatedAt)),
+    ...orders.filter(order => !activeLinkedOrderIds.has(id(order))).map(order => row(`order:${id(order)}`, order.user, order.serviceName, 'order', order.updatedAt)),
+    ...flows.map(flow => row(`flow:${id(flow)}`, flow.patientId, flow.state?.title || '就医协助', 'flow', flow.updatedAt)),
+    ...cases.map(serviceCase => row(`insurance:${id(serviceCase)}`, serviceCase.patientId, serviceCase.title, 'insurance', serviceCase.updatedAt)),
+  ].sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)).slice(0, 100);
+}
 router.get('/', wrap(async (req, res) => {
   let services;
   if (req.staff.role === 'familyDoctor') services = await loadServices(req.staff);
@@ -42,7 +74,8 @@ router.get('/', wrap(async (req, res) => {
   }
   const keys = services.map(s => s.key);
   const history = keys.length ? await Request.find({ ...scope(req.staff), serviceKey: { $in: keys } }).sort({ createdAt: -1 }).lean() : [];
-  res.json({ success: true, data: { services: services.map(s => ({ ...s, history: history.filter(r => r.serviceKey === s.key),
+  const completed = req.staff.role === 'familyDoctor' && req.query.includeCompleted === '1' ? await completedServices(req.staff) : [];
+  res.json({ success: true, data: { completed, services: services.map(s => ({ ...s, history: history.filter(r => r.serviceKey === s.key),
     attention: s.attention || history.some(r => r.serviceKey === s.key && id(r.senderId) === id(req.staff) && r.kind === 'coordinate' && !r.handledAt && canReceive(s, r)),
   })), inbox: await inbox(req.staff) } });
 }));

@@ -313,6 +313,8 @@ export const adminAPI = {
 
   // 随访方案列表（供模板选用）
   followUpPlans: () => req('/followup-plans'),
+  getNutritionAssessmentConfig: () => req('/nutrition-assessment-config'),
+  updateNutritionAssessmentConfig: data => req('/nutrition-assessment-config', { method: 'PUT', body: JSON.stringify(data) }),
   getServiceWorkflowReverseModel: () => req('/service-workflow-reverse-model'),
   linkServiceWorkflowReverseModel: (templateId, data) => req(`/service-workflow-reverse-model/${templateId}/link`, { method: 'PATCH', body: JSON.stringify(data) }),
 

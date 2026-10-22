@@ -7,6 +7,7 @@ import NutritionTargetRows, { nutritionTargetsFrom, nutritionTargetError } from 
 import DateField from '../../../shared/DateField.jsx'
 import mealPlans from '../../../shared/nutritionMealPlans.cjs'
 import NutritionMealPlanSelector from '../components/NutritionMealPlanSelector'
+import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
 
 // 营养干预方案 / 就医协助方案的板块化编辑页（2026-07-13新增）。
 // 之前这两类方案AI生成后只是扁平items+零散content字段，跟年度管理方案的"选模板→板块折叠面板→
@@ -575,6 +576,8 @@ export default function PlanModulesPage() {
   return (
     <StaffListContext.Provider value={staffList}>
     <div style={{ maxWidth: isCheckupService ? 1180 : 860, margin: '0 auto', padding: '24px 20px 80px' }}>
+
+      {plan.type === 'nutrition' && <NutritionAssessmentPanel patientId={plan.patientId?._id || plan.patientId} source="nutrition_plan" sourcePlanId={id} canCreate={['familyDoctor', 'superadmin'].includes(staff?.role)} />}
 
       {/* 顶部导航 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>

@@ -41,6 +41,7 @@ import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
 import FollowUpModal from '../components/FollowUpModal'
+import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
 import HealthRiskEventsPanel from '../components/HealthRiskEventsPanel'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
@@ -2484,6 +2485,7 @@ export default function PatientDetailPage() {
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
   const [aiReviewConflicts, setAiReviewConflicts] = useState({ token: '', loading: false, error: '', conflicts: [] })
+  const [aiReviewEvidenceRevision, setAiReviewEvidenceRevision] = useState(0)
   const [editingAIConflict, setEditingAIConflict] = useState(null)
   const [savingAIConflict, setSavingAIConflict] = useState(false)
   useEffect(() => {
@@ -2506,7 +2508,7 @@ export default function PatientDetailPage() {
       if (active) setAiReviewConflicts({ token, loading: false, error: '证据核对失败，请刷新后重试', conflicts: [] })
     })
     return () => { active = false }
-  }, [id, aiYear, aiRecordIndex.doctor, aiAnalysisView, screeningWorkspaceView, data?.user?.aiHealthSummary])
+  }, [id, aiYear, aiRecordIndex.doctor, aiAnalysisView, screeningWorkspaceView, data?.user?.aiHealthSummary, aiReviewEvidenceRevision])
   useEffect(() => {
     if (!id || screeningWorkspaceView !== 'analysis' || aiAnalysisView !== 'doctor') return
     const byYear = data?.user?.aiHealthSummary?.byYear || {}
@@ -4086,7 +4088,11 @@ export default function PatientDetailPage() {
     try {
       const latestRes = await staffAPI.getReport(r._id)
       if (latestRes.data) latestReport = latestRes.data
-    } catch {}
+    } catch (error) {
+      setOcrSaving(false)
+      toast(error.message || '来源报告读取失败，请重试')
+      return
+    }
     ocrRevisionRef.current = Number(latestReport.reviewRevision || 0)
     setOcrReviewReport(options.screeningRecordEdit ? { ...latestReport, _screeningRecordEdit: true } : latestReport)
     const validStoredDate = [latestReport.checkDate, latestReport.date]
@@ -4150,8 +4156,12 @@ export default function PatientDetailPage() {
       })
     const targets = (Array.isArray(focusItems) ? focusItems : [focusItems]).map(v => String(v || '').trim()).filter(Boolean)
     let focusedIndex = -1
+    if (options.focusItemId) focusedIndex = items.findIndex(it => String(it.itemId || '') === String(options.focusItemId))
+    if (focusedIndex < 0 && options.focusItemValue !== undefined) focusedIndex = items.findIndex(it =>
+      targets.includes(String(it.name || '').trim()) && String(it.value ?? '').trim() === options.focusItemValue
+        && String(it.referenceRange ?? '').trim() === options.focusItemReferenceRange)
     // 具体项目名按点击记录中的顺序优先匹配，目录名只在最后兜底，避免定位到前面的宽泛同名项。
-    for (const target of targets) {
+    if (focusedIndex < 0) for (const target of targets) {
       focusedIndex = items.findIndex(it => String(it.name || '').trim() === target)
       if (focusedIndex >= 0) break
     }
@@ -4227,6 +4237,7 @@ export default function PatientDetailPage() {
       toast(screeningRecordEdit ? '筛查项目归类已更新' : '内容审核完成，已归类项目已同步；未匹配项目可手动选择目录归类')
       setOcrReviewReport(null)
       loadReports()
+      setAiReviewEvidenceRevision(revision => revision + 1)
       if (screeningRecordEdit) loadScreening()
     } catch (err) { toast(err.message || '保存失败') }
     finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
@@ -4251,6 +4262,7 @@ export default function PatientDetailPage() {
       setOcrReviewReport(prev => prev ? { ...prev, ...(saved.data || {}), reportItems: savedItems } : prev)
       setOcrDraftSavedAt(new Date())
       await loadReports()
+      setAiReviewEvidenceRevision(revision => revision + 1)
       toast('草稿已保存并已从服务器确认，审核窗口继续保留')
     } catch (err) { toast(err.message || '保存失败') }
     finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
@@ -8860,7 +8872,15 @@ export default function PatientDetailPage() {
                           : item.reason === 'insufficient_repeated_evidence' ? '“持续/反复升高”缺少至少两次超出各自参考上限的检测值。'
                             : '现有检测值中找不到超出报告参考上限的依据。'}</div>
                         {item.evidence?.length ? <div style={{ marginTop: 4, fontSize: 13 }}>
-                          原始检测：{item.evidence.map(row => `${row.date || '日期不详'} ${item.marker} ${row.value || '无数值'}（参考 ${row.referenceRange || '未提供'}；${row.classification === 'elevated' ? '高于上限' : row.classification === 'normal' ? '未高于上限' : '无法判定'}）`).join('；')}
+                          <div>原始检测（状态由数值和该报告的参考范围计算）：</div>
+                          {item.evidence.map((row, rowIndex) => <div key={`${row.reportId || row.date}-${row.itemId || rowIndex}`} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                            <span>{row.date || '日期不详'} {item.marker} {row.value || '无数值'}（参考 {row.referenceRange || '未提供'}；{row.classification === 'elevated' ? '高于上限' : row.classification === 'normal' ? '未高于上限' : '无法判定'}）</span>
+                            {row.reportId && ['familyDoctor', 'superadmin', 'platformSuper'].includes(staff?.role) &&
+                              <button type="button" className="btn btn-secondary btn-sm"
+                                onClick={() => handleOpenOCRReview({ _id: row.reportId }, [row.itemName || item.marker], {
+                                  focusItemId: row.itemId, focusItemValue: row.value, focusItemReferenceRange: row.referenceRange,
+                                })}>核对并修改来源报告</button>}
+                          </div>)}
                         </div> : <div style={{ marginTop: 4, fontSize: 13 }}>未找到可核对的原始检测值。</div>}
                       </div>)}
                     </> : <div style={{ marginTop: 4 }}>当前未发现肿瘤标志物升高结论与检验数值的矛盾；仍需人工核对其他内容。</div>}
@@ -10125,6 +10145,7 @@ export default function PatientDetailPage() {
       {/* ── Follow-ups Tab ── */}
       {tab === 'followups' && (
         <>
+        <NutritionAssessmentPanel patientId={id} source="followup" canCreate={['familyDoctor', 'superadmin'].includes(staff?.role)} />
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div><div className="card-title">服务执行任务</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>承接方案生成的营养、监测、体检复查、就医协助、专病管理及沟通任务；随访只是执行方式之一</div></div>

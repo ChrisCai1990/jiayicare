@@ -1,0 +1,99 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const express = require('express')
+const mongoose = require('mongoose')
+
+test('nutrition assessment: advisor initiates, manager books, dietitian completes, and plan re-evaluation is gated', async t => {
+  const ids = Object.fromEntries(['tenant', 'patient', 'advisor', 'manager', 'nutritionist', 'request', 'plan'].map(key => [key, new mongoose.Types.ObjectId().toString()]))
+  const staff = {
+    advisor: { _id: ids.advisor, tenantId: ids.tenant, role: 'familyDoctor', name: '顾问' },
+    manager: { _id: ids.manager, tenantId: ids.tenant, role: 'healthManager', name: '健管' },
+    nutritionist: { _id: ids.nutritionist, tenantId: ids.tenant, role: 'nutritionist', name: '营养师' },
+  }
+  const authPath = require.resolve('../src/middleware/staffAuth')
+  const originalAuth = require.cache[authPath]
+  require.cache[authPath] = { id: authPath, filename: authPath, loaded: true,
+    exports: (req, res, next) => { req.staff = staff[req.headers['x-test-role']]; next() } }
+  const Request = require('../src/models/NutritionAssessmentRequest')
+  const Config = require('../src/models/NutritionAssessmentConfig')
+  const User = require('../src/models/User')
+  const Admin = require('../src/models/Admin')
+  const HealthPlan = require('../src/models/HealthPlan')
+  let row = {
+    _id: ids.request, tenantId: ids.tenant, patientId: ids.patient,
+    advisorId: ids.advisor, managerId: ids.manager, nutritionistId: ids.nutritionist,
+    source: 'followup', assessmentType: 'initial', reason: '近期体重变化需要评估',
+    status: 'awaiting_booking', appointment: {}, assessment: {}, events: [{ action: 'requested', actorName: '顾问' }],
+    __v: 0, createdAt: new Date(),
+  }
+  const originals = Object.fromEntries(['findOne', 'findOneAndUpdate', 'find', 'findById', 'exists', 'create'].map(key => [key, Request[key]]))
+  const userFindOne = User.findOne, adminFind = Admin.find, planFindOne = HealthPlan.findOne
+  const configFindOne = Config.findOne
+  const query = data => ({
+    populate() { return this }, select() { return this }, sort() { return this }, limit() { return this },
+    lean: async () => data, then(resolve, reject) { return Promise.resolve(data).then(resolve, reject) },
+  })
+  User.findOne = () => query({ assignedFamilyDoctor: ids.advisor, assignedHealthManager: ids.manager, assignedNutritionist: ids.nutritionist })
+  Admin.find = () => query([staff.manager, staff.nutritionist])
+  let planStatus = 'draft'
+  HealthPlan.findOne = () => query({ _id: ids.plan, status: planStatus, type: 'nutrition' })
+  Request.exists = () => query(null)
+  Request.create = async data => { row = { _id: ids.request, ...data, status: 'awaiting_booking', appointment: {}, assessment: {}, __v: 0, createdAt: new Date() }; return row }
+  Request.findOne = async filter => String(filter._id) === ids.request ? row : null
+  Request.findOneAndUpdate = async (filter, update) => {
+    if (row.status !== filter.status || filter.__v !== undefined && row.__v !== filter.__v) return null
+    row = { ...row, ...update.$set, __v: row.__v + (update.$inc?.__v || 0), events: [...row.events, update.$push.events] }
+    return row
+  }
+  Request.find = filter => query(filter.status?.$in || !filter.status ? [row] : row.status === filter.status ? [row] : [])
+  Request.findById = () => query(row)
+  let config = { enabled: true, onlineEnabled: true, offlineEnabled: true }
+  Config.findOne = () => query(config)
+  const app = express()
+  app.use(express.json())
+  app.use('/nutrition-assessments', require('../src/routes/nutritionAssessments'))
+  const server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)) })
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve))
+    for (const [key, value] of Object.entries(originals)) Request[key] = value
+    Config.findOne = configFindOne
+    User.findOne = userFindOne
+    Admin.find = adminFind
+    HealthPlan.findOne = planFindOne
+    if (originalAuth) require.cache[authPath] = originalAuth
+    else delete require.cache[authPath]
+  })
+  const call = async (role, path, body) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/nutrition-assessments${path}`, {
+      method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'x-test-role': role },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    return { status: response.status, body: await response.json() }
+  }
+  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'followup', reason: '近期体重变化需要评估', focus: '体重与饮食结构' })).status, 201)
+  assert.equal(row.source, 'followup')
+  assert.equal(row.managerId, ids.manager)
+  assert.equal((await call('nutritionist', `/${ids.request}/complete`, { summary: '营养评估尚未预约', recommendations: '建议记录饮食' })).status, 409)
+  assert.equal((await call('nutritionist', `/${ids.request}/booking`, { at: '2099-01-01T10:00:00Z', mode: 'online', meetingRoom: '123' })).status, 403)
+  assert.equal((await call('manager', `/${ids.request}/booking`, { at: '2099-01-01T10:00:00Z', mode: 'online' })).status, 400)
+  config = { ...config, onlineEnabled: false }
+  assert.equal((await call('manager', `/${ids.request}/booking`, { at: '2099-01-01T10:00:00Z', mode: 'online', meetingRoom: '腾讯会议 123' })).status, 409)
+  config = { ...config, onlineEnabled: true }
+  assert.equal((await call('manager', `/${ids.request}/booking`, { at: '2099-01-01T10:00:00Z', mode: 'online', meetingRoom: '腾讯会议 123' })).status, 200)
+  assert.equal(row.status, 'booked')
+  assert.equal((await call('manager', `/${ids.request}/booking`, { at: '2099-01-02T10:30:00Z', mode: 'offline', store: '中心门店' })).status, 200)
+  assert.match(row.events.at(-1).note, /原预约.*腾讯会议 123.*中心门店/)
+  assert.equal((await call('nutritionist', `/${ids.request}/complete`, { summary: '饮食结构需要调整，建议逐步增加蔬菜和蛋白质', recommendations: '两周后复评' })).status, 200)
+  assert.equal(row.status, 'completed')
+  const advisorView = await call('advisor', `/?patientId=${ids.patient}`)
+  assert.equal(advisorView.status, 200)
+  assert.equal(advisorView.body.data[0].assessment.summary, '饮食结构需要调整，建议逐步增加蔬菜和蛋白质')
+  assert.deepEqual(advisorView.body.data[0].events.map(item => item.action), ['requested', 'booked', 'rescheduled', 'completed'])
+  const reassessment = { patientId: ids.patient, source: 'nutrition_plan', sourcePlanId: ids.plan, reason: '干预方案执行后需要复评' }
+  assert.equal((await call('advisor', '/', reassessment)).status, 409)
+  planStatus = 'active'
+  assert.equal((await call('advisor', '/', reassessment)).status, 201)
+  assert.equal(row.assessmentType, 'reassessment')
+  assert.equal(String(row.sourcePlanId), ids.plan)
+})
+

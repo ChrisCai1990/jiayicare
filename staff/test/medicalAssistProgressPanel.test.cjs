@@ -17,6 +17,7 @@ test('medical assistance detail opens the full process without navigating to fol
   const navigations = []
   const mocks = {
     'react-router-dom': { useNavigate: () => target => navigations.push(target) },
+    './Pagination': { default: () => null },
     '../api': { staffAPI: { getMedicalAssistProgress: async () => ({ data: [{
       id: 'order:1', patientId: 'patient', patientName: '测试客户', title: '陪同看诊服务',
       source: 'order', supervisorName: '规划师', stage: '陪同看诊', waitingReason: '等待处理',
