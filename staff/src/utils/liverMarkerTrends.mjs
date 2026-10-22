@@ -34,13 +34,21 @@ export function liverMarkerTrends(card) {
     const datedResults = [...new Set(points.map(p => p.date))].map(date => {
       const rows = points.filter(p => p.date === date)
       const results = rows.filter((p, i) => rows.findIndex(q => resultKey(q) === resultKey(p)) === i)
-      return { date, results, needsDateReview: results.length > 1 }
+      const reportIds = [...new Set(rows.map(p => String(p.reportId || '')).filter(Boolean))]
+      const sameReport = reportIds.length === 1 && rows.every(p => p.reportId)
+      const pages = [...new Set(rows.map(p => Number(p.sourcePage)).filter(p => Number.isInteger(p) && p > 0))].sort((a, b) => a - b)
+      const reviewMessage = results.length <= 1 ? '' : sameReport
+        ? `同一份报告${pages.length ? `第 ${pages.join('、')} 页` : ''}有不同结果，请核对各页原件日期、检测方法和参考范围`
+        : reportIds.length > 1
+          ? '同一日期来自不同报告的结果不同，请核对报告日期和检测方法'
+          : '同一日期有不同检测结果，请核对来源、日期和检测方法'
+      return { date, results, needsDateReview: results.length > 1, reviewMessage }
     })
     const conflictDates = datedResults.filter(row => row.needsDateReview).map(row => row.date)
     const exact = points.every(p => /^\d+(?:\.\d+)?$/.test(p.value))
     let trend = '结果类型不同，需核对'
     if (points.length === 1) trend = '仅一次记录'
-    else if (conflictDates.length) trend = '部分记录日期归属待核对'
+    else if (conflictDates.length) trend = '部分同日结果待核对'
     else if (!sameScale) trend = '单位或参考范围不同'
     else if (points.every(p => resultKey(p) === resultKey(first))) trend = '历次报告结果一致'
     else if (exact && first.unit) trend = Number(last.value) > Number(first.value)

@@ -14,7 +14,26 @@ test('thresholds, incompatible units and same-day conflicts cannot imply numeric
   assert.match(liverMarkerTrends(card([point('2024', '>250'), point('2026', '>250')]))[0].trend, /结果一致/)
   assert.match(liverMarkerTrends(card([point('2024', '<20'), point('2026', '10')]))[0].trend, /不能计算/)
   assert.match(liverMarkerTrends(card([point('2024', '2', 'IU/L'), point('2026', '3')]))[0].trend, /单位或参考范围不同/)
-  assert.match(liverMarkerTrends(card([point('2026', '2'), point('2026', '3')]))[0].trend, /日期归属待核对/)
+  assert.match(liverMarkerTrends(card([point('2026', '2'), point('2026', '3')]))[0].trend, /同日结果待核对/)
+})
+
+test('same-date results from two pages of one report are not described as two reports', () => {
+  const rows = [
+    { ...point('2025-09-23', '2.71', 'IU/ml', '乙肝表面抗体'), sourcePage: 1 },
+    { ...point('2025-09-23', '<2.000', 'IU/ml', '乙肝表面抗体'), sourcePage: 15 },
+  ]
+  const [group] = liverMarkerTrends({ name: '肝癌', sourceEvidence: [{ reportId: 'same-report', items: rows }] })
+  assert.equal(group.datedResults[0].needsDateReview, true)
+  assert.match(group.datedResults[0].reviewMessage, /同一份报告第 1、15 页有不同结果/)
+  assert.doesNotMatch(group.datedResults[0].reviewMessage, /不同报告/)
+})
+
+test('same-date results from separate reports identify the separate sources', () => {
+  const [group] = liverMarkerTrends({ name: '肝癌', sourceEvidence: [
+    { reportId: 'report-a', items: [point('2025-09-23', '2.71')] },
+    { reportId: 'report-b', items: [point('2025-09-23', '<2.000')] },
+  ] })
+  assert.match(group.datedResults[0].reviewMessage, /不同报告/)
 })
 test('all years stay visible and only matching full dates need review', () => {
   const rows = [point('2022-06-23', '>250.00'), point('2023-08-23', '> 250.00 ↑'), point('2023-08-23', '> 250.00'), point('2024-07-11', '>250.00'), point('2025-09-23', '>250.00'), point('2026-09-23', '>250.00')]

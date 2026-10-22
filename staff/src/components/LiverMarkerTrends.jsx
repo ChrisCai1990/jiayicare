@@ -14,7 +14,7 @@ export default function LiverMarkerTrends({ card }) {
       </div>
       {group.datedResults.map(row => <div key={row.date} style={{ color: '#475569', marginTop: 5, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <b>{row.date}</b><span>{row.results.map(result).join(' / ')}</span>
-        {row.needsDateReview && <span style={{ color: '#92400E' }}>此日期下有不同记录，请核对原件日期</span>}
+        {row.needsDateReview && <span style={{ color: '#92400E' }}>{row.reviewMessage}</span>}
       </div>)}
       <details style={{ marginTop: 4 }}>
         <summary style={{ color: '#64748B', cursor: 'pointer' }}>查看来源记录、页码及参考范围</summary>
