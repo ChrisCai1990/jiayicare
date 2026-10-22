@@ -1,7 +1,7 @@
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
 import LiverMarkerTrends from '../components/LiverMarkerTrends'
 import { liverMarkerTrends, liverKeyChanges } from '../utils/liverMarkerTrends.mjs'
-import { reviewConflictField, changedReviewConflictSection } from '../utils/aiReviewConflictField.mjs'
+import { reviewConflictField, changedReviewConflictSection, removedReviewConflictClaim } from '../utils/aiReviewConflictField.mjs'
 import RehabWorkspace from '../components/RehabWorkspace'
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
@@ -4403,6 +4403,27 @@ export default function PatientDetailPage() {
       toast('结论已保存，正在重新核对证据')
     } catch (err) {
       setEditingAIConflict(edit => edit ? { ...edit, error: err.message || '保存失败' } : edit)
+    } finally {
+      setSavingAIConflict(false)
+    }
+  }
+
+  const handleDeleteAIConflict = async (year, record, conflict) => {
+    const change = removedReviewConflictClaim(record.sections || {}, conflict.path, conflict.claim)
+    if (!change) return toast('此结论位置已变化，请刷新后重新核对')
+    if (!window.confirm('将只删除这一处结论文字，原始检验报告和其他结论会保留。删除后会重新核对，是否继续？')) return
+    try {
+      setSavingAIConflict(true)
+      const res = await staffAPI.updateAIHealthSummary(id, {
+        sections: { [change.sectionKey]: change.section },
+        sectionKey: change.sectionKey, scope: 'doctor', year,
+        recordIndex: record._recordIndex, expectedRecordToken: record._reviewToken,
+      })
+      applyAIHealthSummary(res.data)
+      setEditingAIConflict(null)
+      toast('这处结论已删除，正在重新核对证据')
+    } catch (err) {
+      toast(err.message || '删除失败')
     } finally {
       setSavingAIConflict(false)
     }
@@ -8827,9 +8848,13 @@ export default function PatientDetailPage() {
                                   <button className="btn btn-secondary btn-sm" disabled={savingAIConflict} onClick={() => setEditingAIConflict(null)}>取消</button>
                                 </div>
                               </div>
-                            : <button className="btn btn-secondary btn-sm" style={{ marginTop: 7 }}
-                                onClick={() => setEditingAIConflict({ token: doctorRecord._reviewToken, path: item.path,
-                                  text: reviewConflictField(doctorRecord.sections || {}, item.path), error: '' })}>修改这处结论</button>
+                            : <div style={{ display: 'flex', gap: 8, marginTop: 7 }}>
+                                <button className="btn btn-secondary btn-sm" disabled={savingAIConflict || !!editingAIConflict}
+                                  onClick={() => setEditingAIConflict({ token: doctorRecord._reviewToken, path: item.path,
+                                    text: reviewConflictField(doctorRecord.sections || {}, item.path), error: '' })}>修改这处结论</button>
+                                <button className="btn btn-secondary btn-sm" disabled={savingAIConflict || !!editingAIConflict}
+                                  onClick={() => handleDeleteAIConflict(curYear, doctorRecord, item)}>删除这处结论</button>
+                              </div>
                         )}
                         <div>{item.reason === 'latest_not_elevated' ? '最近一次有日期的检测值未能证明高于其报告参考上限。'
                           : item.reason === 'insufficient_repeated_evidence' ? '“持续/反复升高”缺少至少两次超出各自参考上限的检测值。'

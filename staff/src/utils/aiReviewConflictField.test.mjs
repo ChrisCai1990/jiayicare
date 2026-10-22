@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { reviewConflictField, changedReviewConflictSection } from './aiReviewConflictField.mjs'
+import { reviewConflictField, changedReviewConflictSection, removedReviewConflictClaim } from './aiReviewConflictField.mjs'
 
 test('edits exactly the conflicting nested text in a doctor section', () => {
   const sections = {
@@ -28,4 +28,29 @@ test('rejects stale, non-text, and non-doctor conflict paths', () => {
     assert.equal(reviewConflictField(sections, path), null)
     assert.equal(changedReviewConflictSection(sections, path, 'x'), null)
   }
+})
+
+test('deletes one of two conflicting conclusions without changing evidence or the other conclusion', () => {
+  const sections = {
+    tumor_risk: {
+      summary: 'CA72-4持续升高',
+      overview: { headline: 'CA72-4近年持续高于参考上限' },
+      sourceEvidence: [{ value: '9.05', referenceRange: '<19.10' }],
+    },
+  }
+  const changed = removedReviewConflictClaim(sections, 'tumor_risk.summary', 'CA72-4持续升高')
+  assert.equal(changed.section.summary, '')
+  assert.equal(changed.section.overview.headline, 'CA72-4近年持续高于参考上限')
+  assert.deepEqual(changed.section.sourceEvidence, sections.tumor_risk.sourceEvidence)
+  assert.equal(sections.tumor_risk.summary, 'CA72-4持续升高')
+})
+
+test('deletes one array item or clause while retaining adjacent conclusions', () => {
+  const sections = { tumor_risk: {
+    abnormal: ['CA72-4持续升高', '另一项异常'],
+    summary: '已完成筛查；CA72-4持续升高；建议核对其他项目',
+  } }
+  assert.deepEqual(removedReviewConflictClaim(sections, 'tumor_risk.abnormal[0]', 'CA72-4持续升高').section.abnormal, ['另一项异常'])
+  assert.equal(removedReviewConflictClaim(sections, 'tumor_risk.summary', 'CA72-4持续升高').section.summary, '已完成筛查；建议核对其他项目')
+  assert.equal(removedReviewConflictClaim(sections, 'tumor_risk.summary', '不存在的结论'), null)
 })

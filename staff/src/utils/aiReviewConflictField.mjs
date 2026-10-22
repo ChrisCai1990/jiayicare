@@ -30,3 +30,26 @@ export function changedReviewConflictSection(sections, path, text) {
   target[parts.at(-1)] = text
   return { sectionKey, section }
 }
+
+export function removedReviewConflictClaim(sections, path, claim) {
+  const parts = pathParts(path)
+  const original = reviewConflictField(sections, path)
+  if (!parts || original === null || typeof claim !== 'string' || !claim.trim()) return null
+  const start = original.indexOf(claim)
+  if (start < 0) return null
+
+  let before = original.slice(0, start)
+  let after = original.slice(start + claim.length)
+  if (/^[，。；;\n]/.test(after)) after = after.slice(1)
+  else if (/[，。；;\n]$/.test(before)) before = before.slice(0, -1)
+  const remaining = `${before}${after}`.trim()
+
+  const sectionKey = parts[0]
+  const section = structuredClone(sections[sectionKey])
+  let target = section
+  for (const part of parts.slice(1, -1)) target = target[part]
+  const finalPart = parts.at(-1)
+  if (Array.isArray(target) && !remaining) target.splice(Number(finalPart), 1)
+  else target[finalPart] = remaining
+  return { sectionKey, section }
+}
