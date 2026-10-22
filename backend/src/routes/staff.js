@@ -17736,7 +17736,7 @@ router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, 
   try {
     if (!['nutritionist', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师可查看营养评估参考资料' });
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '会员 ID 无效' });
-    const user = await User.findById(req.params.id).select('tenantId assignedNutritionist isDeleted').lean();
+    const user = await User.findById(req.params.id).select('tenantId assignedNutritionist isDeleted bodyComposition bodyCompHistory chronicDiseases healthProfile').lean();
     if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
     if (String(user.tenantId || '') !== String(req.staff.tenantId || '')
       || (req.staff.role !== 'superadmin' && String(user.assignedNutritionist || '') !== String(req.staff._id))) {
@@ -17746,6 +17746,11 @@ router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, 
       'content.nutritionAssessment.verifiedAt': { $exists: true } })
       .sort({ createdAt: -1 }).select('content.nutritionAssessment content.goal createdAt').lean();
     const assessment = previous?.content?.nutritionAssessment;
+    const [healthRecords, reviewedReports] = await Promise.all([
+      HealthRecord.find({ user: user._id, deletedAt: null, reportId: null }).select('type label value unit recordedAt').lean(),
+      MedicalReport.find({ user: user._id, audit_status: 'audited' }).select('title checkDate audit_status reportItems').lean(),
+    ]);
+    const metricEvidence = require('../utils/nutritionLatestEvidence').latestNutritionEvidence(user, healthRecords, reviewedReports);
     const annualPlans = await AnnualPlan.find({ patientId: user._id, year: { $gte: new Date().getFullYear() - 1 } })
       .sort({ year: -1, updatedAt: -1 }).limit(20).select('_id year planType moduleData pushedAt updatedAt').lean();
     const annualNutrition = require('../../../shared/annualNutrition.cjs');
@@ -17761,7 +17766,7 @@ router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, 
     const annualNutritionSource = annualPlan ? {
       planId: String(annualPlan._id), year: annualPlan.year, pushed: Boolean(annualPlan.pushedAt),
     } : null;
-    res.json({ success: true, data: assessment || annualPlan ? {
+    res.json({ success: true, data: {
       planId: previous?._id || null, recordedAt: assessment?.verifiedAt || previous?.createdAt || null,
       goal: annualGoalText || previous?.content?.goal || assessment?.goal || '',
       height: assessment?.height, weight: assessment?.weight,
@@ -17771,7 +17776,8 @@ router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, 
       practicalConstraints: assessment?.practicalConstraints || '',
       allergyDetails: assessment?.allergyDetails || '',
       annualNutritionMetrics, annualNutritionGoals, annualNutritionSource,
-    } : null });
+      latestNutritionEvidence: metricEvidence.latest, suggestedNutritionMetrics: metricEvidence.metrics,
+    } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 

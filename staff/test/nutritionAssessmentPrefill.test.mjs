@@ -31,12 +31,13 @@ test('无上次评估时汇总档案膳食和疾病资料，不虚构已核实�
   assert.equal(assessment.nutritionTargets[0].baseline, '')
 })
 
-test('年度标准营养评估带入体重与慢病指标；未勾选时只保留三项固定体成分指标', () => {
+test('年度指标与独立营养既往指标合并，旧基线不冒充当前测量', () => {
   const prior = { nutritionTargets: [
     { metric: '体重', baseline: '68 kg', target: '67 kg' },
     { metric: '糖化血红蛋白', baseline: '8%', target: '7%' },
   ] }
-  assert.deepEqual(nutritionAssessmentPrefill({}, prior).assessment.nutritionTargets.map(row => row.metric), ['骨骼肌', '体脂率', '内脏脂肪'])
+  assert.deepEqual(nutritionAssessmentPrefill({}, prior).assessment.nutritionTargets.map(row => row.metric), ['骨骼肌', '体脂率', '内脏脂肪', '体重', '糖化血红蛋白'])
+  assert.equal(nutritionAssessmentPrefill({}, prior).assessment.nutritionTargets[3].baseline, '')
   const selected = nutritionAssessmentPrefill({}, { ...prior, annualNutritionMetrics: ['体重', '糖化血红蛋白', '甘油三酯'], annualNutritionSource: { year: 2026, pushed: true } }).assessment
   assert.deepEqual(selected.nutritionTargets.map(row => row.metric), ['骨骼肌', '体脂率', '内脏脂肪', '体重', '糖化血红蛋白', '甘油三酯'])
   assert.equal(selected.nutritionTargets[4].target, '7%')
@@ -94,3 +95,21 @@ test('档案未同步时可带入问卷中的具体食物，只有是或有不�
   assert.equal(foodAllergy.hasFoodAllergyRecord({ healthProfile: { foodAllergy: '有食物过敏史' } }), true)
   assert.equal(foodAllergy.foodAllergyEvidence({ healthProfile: { foodAllergy: '有食物过敏史' } }), '')
 })
+
+
+test('最新基线优先于旧方案；无年度方案自动带入代谢指标，同日冲突留空', () => {
+  const result = nutritionAssessmentPrefill({ weight: 80, bodyComposition: { measuredAt: '2026-01-01', skelMuscle: 20 } }, {
+    nutritionTargets: [{ metric: '骨骼肌', baseline: '19 kg', target: '22 kg' }],
+    suggestedNutritionMetrics: ['体重', '尿酸', '肝脏超声'], latestNutritionEvidence: {
+      骨骼肌: { baseline: '21 kg（2026-10-21；体成分记录）' },
+      体重: { value: '75', unit: 'kg', baseline: '75 kg（2026-10-21；健康记录）' },
+      尿酸: { conflict: true, baseline: '' },
+      肝脏超声: { baseline: '脂肪肝（2026-10-20；已审核报告）' },
+    },
+  }).assessment;
+  assert.equal(result.weight, '75');
+  assert.equal(result.nutritionTargets[0].baseline, '21 kg（2026-10-21；体成分记录）');
+  assert.equal(result.nutritionTargets.find(row => row.metric === '尿酸').baseline, '');
+  assert.match(result.nutritionTargets.find(row => row.metric === '肝脏超声').baseline, /2026-10-20/);
+  assert.equal(result.annualNutritionSource, null);
+});

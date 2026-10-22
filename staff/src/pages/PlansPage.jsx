@@ -1264,7 +1264,7 @@ function NutritionAIDraftModal({ onClose, onSaved, initialPatientId = '', initia
         setAssessment(initialNutritionAssessment(user, previous))
         setGoal(previous?.goal || '')
         setPreviousAssessmentAt(previous?.recordedAt || '')
-        setPrefillError(prefillResult.prefillError ? '上次营养评估暂未加载；目前只带入客户档案。可关闭弹窗后重试。' : '')
+        setPrefillError(prefillResult.prefillError ? '最新检查记录及既往营养评估暂未加载；目前仅带入客户档案，请核实日期。可关闭弹窗后重试。' : '')
         setTemplates(templateResult.data || [])
       })
       .catch(err => { if (active) setError(err.message || '加载会员资料与模板失败') })
