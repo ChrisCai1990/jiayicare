@@ -92,6 +92,12 @@ export const metabolicPilotAPI = {
   get: () => request('/metabolic-pilot/me'),
   action: data => request('/metabolic-pilot/me', {method:'POST',body:JSON.stringify(data)}),
 };
+export const weightProgressPhotosAPI = {
+  list: () => request('/weight-progress-photos'),
+  plans: () => request('/weight-progress-photos/plans'),
+  add: data => request('/weight-progress-photos/base64', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
+  remove: id => request(`/weight-progress-photos/${id}`, { method: 'DELETE' }),
+};
 // ── Auth ─────────────────────────────────────────────────────────
 export const authAPI = {
   reviewStatus: () => request('/auth/review-experience/status'),

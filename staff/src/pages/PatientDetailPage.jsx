@@ -43,6 +43,7 @@ import { useToast, useStaff } from '../App'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
 import FollowUpModal from '../components/FollowUpModal'
 import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
+import WeightProgressPhotos from '../components/WeightProgressPhotos'
 import HealthRiskEventsPanel from '../components/HealthRiskEventsPanel'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
@@ -10052,6 +10053,7 @@ export default function PatientDetailPage() {
             </div>
           </div>
           <ServiceManagementCategories plans={plans} active={serviceManagementView} onChange={setServiceManagementView} />
+          {serviceManagementView === 'nutrition' && <WeightProgressPhotos patientId={id} plans={plans} records={recentRecords} bodyCompHistory={user.bodyCompHistory || []} canEdit={['nutritionist', 'healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role)} />}
           {serviceManagementView === 'rehab' && <RehabWorkspace patientId={id} staff={staff} view="plans" onSaved={loadPlans} />}
           {serviceManagementView === 'annual' && monthlyReviewEnabled && (
             <div style={{ padding: '14px 20px', borderTop: '1px solid #EDF2EE', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>

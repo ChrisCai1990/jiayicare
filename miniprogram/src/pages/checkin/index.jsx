@@ -9,6 +9,7 @@ import BloodSugarPhoto from '../../components/BloodSugarPhoto';
 import WaistPhoto from '../../components/WaistPhoto';
 import WeightPhoto from '../../components/WeightPhoto';
 import MetabolicPilotCard from '../../components/MetabolicPilotCard';
+import WeightProgressPhotos from '../../components/WeightProgressPhotos';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
@@ -589,6 +590,7 @@ export default function CheckinPage() {
 
       <View style={{ padding: `${spacing.lg}px` }}>
       <MetabolicPilotCard refreshKey={pilotRefresh} onStatus={setPilotMember} feedback={pilotFeedback} />
+      <WeightProgressPhotos />
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
       ) : (

@@ -111,6 +111,8 @@ app.use('/api/admin/ai-control', require('./routes/aiControl'));
 const staffRouter = require('./routes/staff');
 app.use('/api/staff/ibd-orders', require('./routes/ibdStaff'));
 app.use('/api/staff/nutrition-assessments', require('./routes/nutritionAssessments'));
+app.use('/api/staff', require('./routes/weightProgressPhotos').staffRouter);
+app.use('/api/weight-progress-photos', require('./routes/weightProgressPhotos').userRouter);
 app.use('/api/staff',         staffRouter);
 app.use('/api/staff/inventory', require('./routes/inventory').staffRouter);
 app.use('/api/staff/specialty-library', require('./routes/specialtyLibrary').staffRouter);

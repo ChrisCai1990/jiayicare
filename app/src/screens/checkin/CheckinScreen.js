@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
 import BloodPressurePhoto from '../../components/BloodPressurePhoto';
 import MetabolicPilotCard from '../../components/MetabolicPilotCard';
+import WeightProgressPhotos from '../../components/WeightProgressPhotos';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期
 function toLocalDateStr(d) {
@@ -363,6 +364,7 @@ export default function CheckinScreen({ navigation }) {
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
           <MetabolicPilotCard refreshKey={pilotRefresh} onStatus={setPilotMember} feedback={pilotFeedback} />
+          <WeightProgressPhotos />
           {/* 必记录项 */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>

@@ -129,6 +129,14 @@ export const staffAPI = {
   getWecomKfUnboundContacts: () => req('/staff/wecom-kf/unbound-contacts'),
   bindWecomKfContact: (data) => req('/staff/wecom-kf/contacts', { method: 'POST', body: JSON.stringify(data) }),
   getPatient:         (id)     => req(`/staff/patients/${id}`),
+  getWeightProgressPhotos: id => req(`/staff/patients/${id}/weight-progress-photos`),
+  addWeightProgressPhoto: (id, fields, photo) => {
+    const body = new FormData()
+    Object.entries(fields).forEach(([key, value]) => body.append(key, value == null ? '' : String(value)))
+    body.append('photo', photo)
+    return req(`/staff/patients/${id}/weight-progress-photos`, { method: 'POST', body })
+  },
+  deleteWeightProgressPhoto: (id, photoId) => req(`/staff/patients/${id}/weight-progress-photos/${photoId}`, { method: 'DELETE' }),
   createPatient:      (data)   => req('/staff/patients', { method: 'POST', body: JSON.stringify(data) }),
   updatePatient:      (id, d)  => req(`/staff/patients/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   updateMedicalRecordSummary: (id, d) => req(`/staff/patients/${id}/medical-record/summary`, { method: 'PUT', body: JSON.stringify(d) }),
