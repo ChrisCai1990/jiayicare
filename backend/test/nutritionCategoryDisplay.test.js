@@ -11,16 +11,16 @@ test('直接按最终预算分配三餐大类，忽略旧食谱与待核对占�
   const result = categoryMeals(old, assessment);
   assert.equal(result.breakfast.time, '08:00');
   for (const key of keys.slice(0, 3)) {
-    assert(result[key].content.includes('主食 '));
+    assert(result[key].content.includes('谷薯类 '));
     assert(result[key].content.includes('蔬菜 '));
     assert(!/待核对|食谱|具体/.test(result[key].content));
     assert(Math.abs(result[key].categoryReferenceKcal - assessment.mealEnergyKcal[key]) <= 10);
-    for (const row of result[key].content.split('\n')) assert.match(row, /^(主食|荤菜|蔬菜|蛋类|奶制品|豆制品|水果|坚果|烹调油) \d+克$/);
+    for (const row of result[key].content.split('\n')) assert.match(row, /^(谷薯类|畜禽肉|水产类|蔬菜|蛋类|奶制品|豆制品|水果|坚果|烹调油) \d+克$/);
   }
   assert(result.breakfast.content.includes('蛋类 '));
   assert(result.breakfast.content.includes('奶制品 '));
-  assert(result.lunch.content.includes('荤菜 '));
-  assert(result.dinner.content.includes('荤菜 '));
+  assert(result.lunch.content.includes('畜禽肉 '));
+  assert(result.dinner.content.includes('畜禽肉 '));
   assert.equal(result.snack.content, '');
   assert.equal(result.snack.enabled, false);
 });
@@ -68,4 +68,27 @@ test('客户方案单独提供称重说明，三餐内容仍只显示大类和�
   assert(!items.find(item => item.name.startsWith('午餐')).notes.includes('当量'));
   const other = nutritionPlanItems({ content: { mealPlanSelection: 'balanced_recipes', moduleData: modules } });
   assert(!other.some(item => item.name === '分量说明'));
+});
+
+test('水果坚果仅在加餐，三餐区分畜禽肉与水产且零加餐不回填', () => {
+  for (const snack of [0, 185]) {
+    const input = { mealEnergyKcal: { breakfast: 555, lunch: 740, dinner: 555 - snack, snack } };
+    const result = categoryMeals({}, input);
+    for (const meal of ['breakfast','lunch','dinner']) {
+      assert(!/水果|坚果/.test(result[meal].content));
+      assert(result[meal].content.includes('谷薯类'));
+      assert(!/主食|荤菜/.test(result[meal].content));
+    }
+    assert(result.lunch.content.includes('畜禽肉'));
+    assert(result.lunch.content.includes('水产类'));
+    if (snack) assert(/水果/.test(result.snack.content) && /坚果/.test(result.snack.content));
+    else assert.equal(result.snack.content, '');
+  }
+});
+test('水产禁忌不补回水产，旧版荤菜禁忌兼容两类', () => {
+  const result = categoryMeals({}, { ...assessment, allergyStatus: 'confirmed_present', allergyDetails: '海鲜过敏' });
+  assert(!result.lunch.content.includes('水产类'));
+  assert(result.lunch.content.includes('畜禽肉'));
+  const legacy = categoryMeals({ breakfast: { categoryAllocationVersion: 2, categoryExcluded: ['meat'] } }, assessment);
+  assert(!/畜禽肉|水产类/.test(legacy.lunch.content));
 });

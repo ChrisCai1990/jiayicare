@@ -13,10 +13,10 @@ export default function NutritionMealPlanSelector({ selected, variants, onSelect
     </select></label>
     {!isPack && <label className="form-label">呈现方式<select className="form-input" disabled={disabled} value={selected} onChange={e => onSelect(e.target.value)}>
       <option value="balanced_recipes">具体食谱（食材、菜名和分量）</option>
-      <option value="balanced_categories">食物大类（主食、荤菜、蔬菜、水果、奶制品、蛋类等及分量）</option>
+      <option value="balanced_categories">食物大类（谷薯类、畜禽肉、水产类、蛋类、奶制品、蔬菜、水果、豆制品、坚果、烹调油及分量）</option>
     </select></label>}
     <div style={{ fontSize: 13, color: '#355E4F' }}>最终管理期能量：{assessment?.managementKcal} kcal/日。切换后四个餐次随之更新，各版本的人工修改分别保留；保存、审核后推送当前选择。</div>
-    {selected === 'balanced_categories' && <div style={{ fontSize: 13, color: '#355E4F', lineHeight: 1.7 }}>{categoryPlan.BASIS} 分量按餐次预算生成并取整，营养师可调整。</div>}
+    {selected === 'balanced_categories' && <div style={{ fontSize: 13, color: '#355E4F', lineHeight: 1.7 }}>{categoryPlan.BASIS} 分量按餐次预算生成并取整，营养师可调整。水果、坚果仅安排在加餐；如需安排，请设置加餐能量比例。</div>}
     {!variants.meal_pack && <div style={{ fontSize: 13, color: '#79551A' }}>餐包方式暂不可用：{unavailableReason || '请重新生成包含餐包方式的草稿'}。</div>}
     {isPack && <>
       <div style={{ fontSize: 13, lineHeight: 1.8 }}><strong>{mealPlans.PACK.labelName}</strong><br />标签致敏源：{mealPlans.PACK.allergenStatement}<br />{mealPlans.PACK.preparation}</div>
