@@ -10973,10 +10973,20 @@ export default function PatientDetailPage() {
                       <thead><tr><th>资料名称</th><th>资料分类</th><th>来源机构</th><th>资料日期</th><th>人工审核</th><th>处理状态</th><th>操作</th></tr></thead>
                       <tbody>
                       {paginatedReportRows.map(({ report: r, typeLabel }) => {
+                        const isOutpatientRecord = inferDocumentCategory(r) === 'outpatient_record'
+                        const courseArchived = isOutpatientRecord && !!archiveHelpers.findReportArchive(data?.user?.diseaseRecords, r._id)
+                        const courseStage = isOutpatientRecord && r.audit_status === 'audited' ? (
+                          courseArchived || r.healthCourseDraft?.status === 'approved' ? '已写入诊疗时间轴'
+                            : r.healthCourseDraft?.status === 'dismissed' ? '健康顾问确认不入档'
+                            : r.healthCourseDraft?.status === 'pending_review' ? '待健康顾问审核诊疗草稿'
+                            : r.healthCourseDraft?.status === 'extracting' ? '健康顾问正在提取诊疗草稿'
+                            : r.courseTargetDiseaseId ? '待健康顾问提取诊疗草稿'
+                            : null
+                        ) : null
                         const auditLabel = r.archiveOnly ? '仅留存·不解析'
                           : getReportTaskKey(r) === 'target' ? '已审核·待确认专病归属'
                           : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改'
-                          : r.audit_status === 'audited' ? '已审核'
+                          : r.audit_status === 'audited' ? courseStage ? `已审核·${courseStage}` : '已审核'
                           : r.audit_status === 'rejected' ? '已驳回'
                           : isManualOnlyReport(r) ? '待人工审核'
                           : r.aiStatus === 'none' ? '待解析'
@@ -10989,7 +10999,6 @@ export default function PatientDetailPage() {
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const manualOnly = isManualOnlyReport(r)
                         const isClinicalDocument = CLINICAL_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r))
-                        const isOutpatientRecord = inferDocumentCategory(r) === 'outpatient_record'
                         const canParseLegacyClinical = isClinicalDocument && r.parseJob?.status === 'skipped' && !r.reportItems?.length
                         const needsAIParse = !r.archiveOnly && !manualOnly && (['none', 'failed'].includes(r.aiStatus) || canParseLegacyClinical)
                         return (
@@ -11018,7 +11027,7 @@ export default function PatientDetailPage() {
                                   if (['audited', 'rejected'].includes(r.audit_status)) { openReportDetail(r); return }
                                   if (!['healthManager', 'superadmin'].includes(staff?.role)) { openReportDetail(r); return }
                                   openClinicalReportReview(r)
-                                }}>{getReportTaskKey(r) === 'target' && ['healthManager','superadmin'].includes(staff?.role) ? '确认专病归属' : r.audit_status === 'audited' || !['healthManager', 'superadmin'].includes(staff?.role) ? '查看资料' : '核对门诊病历'}</button>}
+                                }}>{getReportTaskKey(r) === 'target' && ['healthManager','superadmin'].includes(staff?.role) ? '确认专病归属' : courseStage && ['healthManager','superadmin'].includes(staff?.role) ? '查看流转状态' : r.audit_status === 'audited' || !['healthManager', 'superadmin'].includes(staff?.role) ? '查看资料' : '核对门诊病历'}</button>}
                               </> : manualOnly ? (
                                 <button className="btn btn-sm report-action-primary" onClick={() => {
                                   if (['audited', 'rejected'].includes(r.audit_status)) { openReportDetail(r); return }
@@ -12904,6 +12913,23 @@ export default function PatientDetailPage() {
                   <b style={{ fontSize: 13 }}>发现归类或正常/异常判断有误？退回健管专员修改</b>
                   <textarea className="form-input" rows={2} maxLength={1000} placeholder="请写明报告项目、错误内容和需要核对之处" value={advisorReturnReason} onChange={e => setAdvisorReturnReason(e.target.value)} />
                   <button className="btn btn-danger btn-sm" disabled={!advisorReturnReason.trim() || reportFlowSaving} onClick={returnReportToManager}>退回健管专员修改</button>
+                </div>
+              )}
+              {['healthManager', 'superadmin'].includes(staff?.role) && inferDocumentCategory(showReportDetail) === 'outpatient_record'
+                && showReportDetail.audit_status === 'audited' && !!showReportDetail.courseTargetDiseaseId && (
+                <div role="status" style={{ padding: 10, background: '#EAF5F0', borderRadius: 8, color: '#245343', fontSize: 13 }}>
+                  <b>健管专员已完成原件审核和专病归属确认</b>
+                  <div style={{ marginTop: 5 }}>
+                    {archiveHelpers.findReportArchive(data?.user?.diseaseRecords, showReportDetail._id) || showReportDetail.healthCourseDraft?.status === 'approved'
+                      ? '健康顾问已审核，内容已写入诊疗时间轴。'
+                      : showReportDetail.healthCourseDraft?.status === 'dismissed'
+                        ? '健康顾问已核对，确认不写入诊疗时间轴。'
+                        : showReportDetail.healthCourseDraft?.status === 'pending_review'
+                          ? '诊疗草稿待健康顾问审核；此阶段健管专员没有待审任务。'
+                          : showReportDetail.healthCourseDraft?.status === 'extracting'
+                            ? '健康顾问正在提取诊疗草稿；此阶段健管专员没有待审任务。'
+                            : '等待健康顾问提取诊疗草稿；此阶段健管专员没有待审任务。'}
+                  </div>
                 </div>
               )}
               {['healthManager', 'superadmin'].includes(staff?.role) && showReportDetail.documentCategory === 'outpatient_record'
