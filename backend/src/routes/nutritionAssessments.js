@@ -5,6 +5,7 @@ const Request = require('../models/NutritionAssessmentRequest');
 const User = require('../models/User');
 const Admin = require('../models/Admin');
 const HealthPlan = require('../models/HealthPlan');
+const AnnualPlan = require('../models/AnnualPlan');
 const Order = require('../models/Order');
 const Config = require('../models/NutritionAssessmentConfig');
 const { isAvailableNutritionAssessmentOrder, settleNutritionAssessmentOrder } = require('../utils/nutritionAssessmentOrder');
@@ -17,7 +18,7 @@ const isId = value => mongoose.isValidObjectId(value);
 const event = (staff, action, note = '') => ({ action, note, actorId: staff._id, actorName: staff.name || staff.role, at: new Date() });
 const visible = (row, staff) => same(row.tenantId, staff.tenantId) && (
   staff.role === 'superadmin' || same(row.advisorId, staff._id)
-  || same(row.managerId, staff._id) || same(row.nutritionistId, staff._id));
+  || same(row.plannerId, staff._id) || same(row.managerId, staff._id) || same(row.nutritionistId, staff._id));
 const load = async (req, res) => {
   if (!isId(req.params.id)) { bad(res, 400, '需求单ID无效'); return null; }
   const row = await Request.findOne({ _id: req.params.id, tenantId: req.staff.tenantId });
@@ -26,7 +27,7 @@ const load = async (req, res) => {
   return row;
 };
 const populate = query => query.populate('patientId', 'name phone')
-  .populate('advisorId', 'name role').populate('managerId', 'name role')
+  .populate('advisorId', 'name role').populate('plannerId', 'name role').populate('managerId', 'name role')
   .populate('nutritionistId', 'name role').populate('sourcePlanId', 'title type status')
   .populate('sourceOrderId', 'orderNo serviceName specificationLabel status paymentStatus usedUnits totalUnits');
 const wrap = fn => async (req, res) => {
@@ -45,11 +46,11 @@ router.get('/config', staffAuth, wrap(async (req, res) => {
 
 router.get('/', staffAuth, wrap(async (req, res) => {
   const staff = req.staff;
-  if (!['familyDoctor', 'healthManager', 'nutritionist', 'superadmin'].includes(staff.role))
+  if (!['familyDoctor', 'healthPlanner', 'healthManager', 'nutritionist', 'superadmin'].includes(staff.role))
     return bad(res, 403, '当前岗位无营养评估权限');
   const filter = { tenantId: staff.tenantId };
   if (staff.role !== 'superadmin') filter[{
-    familyDoctor: 'advisorId', healthManager: 'managerId', nutritionist: 'nutritionistId',
+    familyDoctor: 'advisorId', healthPlanner: 'plannerId', healthManager: 'managerId', nutritionist: 'nutritionistId',
   }[staff.role]] = staff._id;
   if (req.query.patientId) {
     if (!isId(req.query.patientId)) return bad(res, 400, '会员ID无效');
@@ -62,12 +63,12 @@ router.get('/', staffAuth, wrap(async (req, res) => {
 }));
 
 router.get('/eligible-orders', staffAuth, wrap(async (req, res) => {
-  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return bad(res, 403, '仅健康顾问可选择评估订单');
+  if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return bad(res, 403, '仅健康规划师可选择评估订单');
   const patientId = req.query.patientId;
   if (!isId(patientId)) return bad(res, 400, '请选择会员');
   const patient = await User.findOne({ _id: patientId, tenantId: req.staff.tenantId, isDeleted: { $ne: true } })
-    .select('assignedFamilyDoctor').lean();
-  if (!patient || req.staff.role !== 'superadmin' && !same(patient.assignedFamilyDoctor, req.staff._id))
+    .select('assignedHealthPlanner').lean();
+  if (!patient || req.staff.role !== 'superadmin' && !same(patient.assignedHealthPlanner, req.staff._id))
     return bad(res, 403, '只能查看本人负责会员的评估订单');
   const orders = await Order.find({ user: patientId, tenantId: req.staff.tenantId, orderType: 'service',
     paymentStatus: 'paid', status: { $in: ['pending', 'scheduled'] } }).sort({ createdAt: -1 }).limit(100).lean();
@@ -82,17 +83,20 @@ router.get('/eligible-orders', staffAuth, wrap(async (req, res) => {
 
 router.post('/', staffAuth, wrap(async (req, res) => {
   const staff = req.staff;
-  if (!['familyDoctor', 'superadmin'].includes(staff.role)) return bad(res, 403, '仅健康顾问可发起营养评估');
+  if (!['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff.role)) return bad(res, 403, '当前岗位不可发起营养评估');
   const { patientId, source, sourcePlanId, sourceOrderId } = req.body || {};
-  if (!isId(patientId) || !['followup', 'nutrition_management', 'nutrition_plan'].includes(source)) return bad(res, 400, '请选择会员和发起入口');
+  if (!isId(patientId) || !['followup', 'nutrition_management', 'nutrition_plan', 'paid_order'].includes(source)) return bad(res, 400, '请选择会员和发起入口');
+  if (source === 'paid_order' && staff.role !== 'healthPlanner' && staff.role !== 'superadmin') return bad(res, 403, '已购评估由健康规划师办理');
+  if (source !== 'paid_order' && staff.role !== 'familyDoctor' && staff.role !== 'superadmin') return bad(res, 403, '年度管理评估由健康顾问发起');
   const config = await Config.findOne({ tenantId: staff.tenantId }).lean();
   if (config?.enabled !== true) return bad(res, 409, '请先在管理端启用营养评估需求单');
   const reason = clean(req.body.reason), focus = clean(req.body.focus);
   if (reason.length < 5) return bad(res, 400, '请填写至少5字的评估原因');
   const patient = await User.findOne({ _id: patientId, tenantId: staff.tenantId, isDeleted: { $ne: true } })
-    .select('assignedFamilyDoctor assignedHealthManager assignedNutritionist').lean();
+    .select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager assignedNutritionist servicePackage serviceExpiry').lean();
   if (!patient) return bad(res, 404, '会员不存在');
-  if (staff.role !== 'superadmin' && !same(patient.assignedFamilyDoctor, staff._id)) return bad(res, 403, '仅该会员所属健康顾问可发起');
+  if (staff.role !== 'superadmin' && !same(source === 'paid_order' ? patient.assignedHealthPlanner : patient.assignedFamilyDoctor, staff._id))
+    return bad(res, 403, source === 'paid_order' ? '仅该会员所属健康规划师可办理' : '仅该会员所属健康顾问可发起');
   if (!patient.assignedHealthManager || !patient.assignedNutritionist) return bad(res, 409, '请先分配健管专员和营养师');
   const assignees = await Admin.find({ _id: { $in: [patient.assignedHealthManager, patient.assignedNutritionist] },
     tenantId: staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id role').lean();
@@ -106,22 +110,30 @@ router.post('/', staffAuth, wrap(async (req, res) => {
     plan = await HealthPlan.findOne({ _id: sourcePlanId, patientId, tenantId: staff.tenantId, type: 'nutrition' }).lean();
     if (!plan) return bad(res, 404, '营养干预方案不存在');
     if (plan.status !== 'active') return bad(res, 409, '请从进行中的营养干预方案发起复评');
-  } else {
+  } else if (source === 'paid_order') {
     if (sourcePlanId) return bad(res, 400, '首次评估不可关联营养方案');
     if (!isId(sourceOrderId)) return bad(res, 400, '请选择已购买的单次营养评估订单');
     const order = await Order.findOne({ _id: sourceOrderId, user: patientId, tenantId: staff.tenantId }).lean();
     if (!isAvailableNutritionAssessmentOrder(order)) return bad(res, 409, '评估订单未付款、已使用或不可用');
     if (await Request.exists({ sourceOrderId, status: { $ne: 'cancelled' } })) return bad(res, 409, '该订单已关联营养评估需求');
+  } else {
+    if (sourcePlanId || sourceOrderId) return bad(res, 400, '年度管理临时评估不关联单次订单或营养方案');
+    const chinaYear = new Date(Date.now() + 8 * 3600000).getUTCFullYear();
+    const annualPlan = await AnnualPlan.exists({ patientId, year: chinaYear, confirmedAt: { $ne: null } });
+    if (!annualPlan && !(patient.servicePackage && patient.serviceExpiry && new Date(patient.serviceExpiry) >= new Date()))
+      return bad(res, 409, '仅年度管理会员可临时发起营养评估');
   }
   if (await Request.exists({ tenantId: staff.tenantId, patientId,
-    source: source === 'nutrition_plan' ? source : { $in: ['followup', 'nutrition_management'] },
+    source: ['followup', 'nutrition_management'].includes(source) ? { $in: ['followup', 'nutrition_management'] } : source,
     sourcePlanId: plan?._id || null, status: { $in: active } }))
     return bad(res, 409, '该会员已有进行中的同类营养评估，请先处理原需求单');
   const row = await Request.create({
     tenantId: staff.tenantId, patientId, source, sourcePlanId: plan?._id || null,
-    sourceOrderId: source === 'nutrition_plan' ? null : sourceOrderId,
+    sourceOrderId: source === 'paid_order' ? sourceOrderId : null,
     assessmentType: source === 'nutrition_plan' ? 'reassessment' : 'initial', reason, focus,
-    advisorId: patient.assignedFamilyDoctor || staff._id, managerId: patient.assignedHealthManager,
+    advisorId: source === 'paid_order' ? null : patient.assignedFamilyDoctor || staff._id,
+    plannerId: source === 'paid_order' ? patient.assignedHealthPlanner || staff._id : null,
+    managerId: patient.assignedHealthManager,
     nutritionistId: patient.assignedNutritionist, events: [event(staff, 'requested', reason)],
   });
   res.status(201).json({ success: true, data: await populate(Request.findById(row._id)) });
@@ -192,7 +204,7 @@ router.post('/:id/complete', staffAuth, wrap(async (req, res) => {
 
 router.post('/:id/cancel', staffAuth, wrap(async (req, res) => {
   const row = await load(req, res); if (!row) return;
-  if (req.staff.role !== 'superadmin' && !same(row.advisorId, req.staff._id))
+  if (req.staff.role !== 'superadmin' && !same(row.source === 'paid_order' ? row.plannerId : row.advisorId, req.staff._id))
     return bad(res, 403, '仅发起顾问可取消需求');
   if (!active.includes(row.status)) return bad(res, 409, '该需求单已结束');
   const reason = clean(req.body?.reason, 1000);

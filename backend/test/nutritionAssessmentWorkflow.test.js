@@ -3,10 +3,11 @@ const assert = require('node:assert/strict')
 const express = require('express')
 const mongoose = require('mongoose')
 
-test('nutrition assessment: advisor initiates, manager books, dietitian completes, and plan re-evaluation is gated', async t => {
-  const ids = Object.fromEntries(['tenant', 'patient', 'advisor', 'manager', 'nutritionist', 'request', 'plan', 'order'].map(key => [key, new mongoose.Types.ObjectId().toString()]))
+test('nutrition assessment: paid order goes to planner, annual ad hoc goes to advisor, manager books and dietitian completes', async t => {
+  const ids = Object.fromEntries(['tenant', 'patient', 'advisor', 'planner', 'manager', 'nutritionist', 'request', 'plan', 'order'].map(key => [key, new mongoose.Types.ObjectId().toString()]))
   const staff = {
     advisor: { _id: ids.advisor, tenantId: ids.tenant, role: 'familyDoctor', name: '顾问' },
+    planner: { _id: ids.planner, tenantId: ids.tenant, role: 'healthPlanner', name: '规划师' },
     manager: { _id: ids.manager, tenantId: ids.tenant, role: 'healthManager', name: '健管' },
     nutritionist: { _id: ids.nutritionist, tenantId: ids.tenant, role: 'nutritionist', name: '营养师' },
   }
@@ -19,6 +20,7 @@ test('nutrition assessment: advisor initiates, manager books, dietitian complete
   const User = require('../src/models/User')
   const Admin = require('../src/models/Admin')
   const HealthPlan = require('../src/models/HealthPlan')
+  const AnnualPlan = require('../src/models/AnnualPlan')
   const Order = require('../src/models/Order')
   const FollowUp = require('../src/models/FollowUp')
   const originalFollowUpUpdateMany = FollowUp.updateMany
@@ -39,17 +41,19 @@ test('nutrition assessment: advisor initiates, manager books, dietitian complete
     __v: 0, createdAt: new Date(),
   }
   const originals = Object.fromEntries(['findOne', 'findOneAndUpdate', 'find', 'findById', 'exists', 'create', 'updateOne'].map(key => [key, Request[key]]))
-  const userFindOne = User.findOne, adminFind = Admin.find, planFindOne = HealthPlan.findOne
+  const userFindOne = User.findOne, adminFind = Admin.find, planFindOne = HealthPlan.findOne, annualExists = AnnualPlan.exists
   const orderOriginals = Object.fromEntries(['findOne', 'find', 'findById', 'findOneAndUpdate'].map(key => [key, Order[key]]))
   const configFindOne = Config.findOne
   const query = data => ({
     populate() { return this }, select() { return this }, sort() { return this }, limit() { return this },
     lean: async () => data, then(resolve, reject) { return Promise.resolve(data).then(resolve, reject) },
   })
-  User.findOne = () => query({ assignedFamilyDoctor: ids.advisor, assignedHealthManager: ids.manager, assignedNutritionist: ids.nutritionist })
+  User.findOne = () => query({ assignedFamilyDoctor: ids.advisor, assignedHealthPlanner: ids.planner, assignedHealthManager: ids.manager, assignedNutritionist: ids.nutritionist })
   Admin.find = () => query([staff.manager, staff.nutritionist])
   let planStatus = 'draft'
   HealthPlan.findOne = () => query({ _id: ids.plan, status: planStatus, type: 'nutrition' })
+  let annualActive = false
+  AnnualPlan.exists = () => query(annualActive ? { _id: ids.plan } : null)
   Order.findOne = () => query(order)
   Order.find = () => query([order])
   Order.findById = () => query(order)
@@ -82,6 +86,7 @@ test('nutrition assessment: advisor initiates, manager books, dietitian complete
     User.findOne = userFindOne
     Admin.find = adminFind
     HealthPlan.findOne = planFindOne
+    AnnualPlan.exists = annualExists
     for (const [key, value] of Object.entries(orderOriginals)) Order[key] = value
     FollowUp.updateMany = originalFollowUpUpdateMany
     if (originalCommission) require.cache[commissionPath] = originalCommission
@@ -96,13 +101,15 @@ test('nutrition assessment: advisor initiates, manager books, dietitian complete
     })
     return { status: response.status, body: await response.json() }
   }
-  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', reason: '近期体重变化需要评估', focus: '体重与饮食结构' })).status, 400)
-  assert.equal((await call('advisor', `/eligible-orders?patientId=${ids.patient}`)).body.data.length, 1)
+  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'paid_order', sourceOrderId: ids.order, reason: '近期体重变化需要评估' })).status, 403)
+  assert.equal((await call('planner', `/eligible-orders?patientId=${ids.patient}`)).body.data.length, 1)
   order.paymentStatus = 'unpaid'
-  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', sourceOrderId: ids.order, reason: '近期体重变化需要评估' })).status, 409)
+  assert.equal((await call('planner', '/', { patientId: ids.patient, source: 'paid_order', sourceOrderId: ids.order, reason: '近期体重变化需要评估' })).status, 409)
   order.paymentStatus = 'paid'
-  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', sourceOrderId: ids.order, reason: '近期体重变化需要评估', focus: '体重与饮食结构' })).status, 201)
-  assert.equal(row.source, 'nutrition_management')
+  assert.equal((await call('planner', '/', { patientId: ids.patient, source: 'paid_order', sourceOrderId: ids.order, reason: '近期体重变化需要评估', focus: '体重与饮食结构' })).status, 201)
+  assert.equal(row.source, 'paid_order')
+  assert.equal(row.plannerId, ids.planner)
+  assert.equal(row.advisorId, null)
   assert.equal(row.managerId, ids.manager)
   assert.equal((await call('nutritionist', `/${ids.request}/complete`, { summary: '营养评估尚未预约', recommendations: '建议记录饮食' })).status, 409)
   assert.equal((await call('nutritionist', `/${ids.request}/booking`, { at: '2099-01-01T10:00:00Z', mode: 'online', meetingRoom: '123' })).status, 403)
@@ -126,10 +133,16 @@ test('nutrition assessment: advisor initiates, manager books, dietitian complete
   assert.equal(closedOrderTasks, 1)
   assert.equal((await call('nutritionist', `/${ids.request}/complete`, {})).status, 200)
   assert.equal(order.redemptions.length, 1)
-  const advisorView = await call('advisor', `/?patientId=${ids.patient}`)
-  assert.equal(advisorView.status, 200)
-  assert.equal(advisorView.body.data[0].assessment.summary, '饮食结构需要调整，建议逐步增加蔬菜和蛋白质')
-  assert.deepEqual(advisorView.body.data[0].events.map(item => item.action), ['requested', 'booked', 'rescheduled', 'completed'])
+  const plannerView = await call('planner', `/?patientId=${ids.patient}`)
+  assert.equal(plannerView.status, 200)
+  assert.equal(plannerView.body.data[0].assessment.summary, '饮食结构需要调整，建议逐步增加蔬菜和蛋白质')
+  assert.deepEqual(plannerView.body.data[0].events.map(item => item.action), ['requested', 'booked', 'rescheduled', 'completed'])
+  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', reason: '年度管理期间临时需要营养评估' })).status, 409)
+  assert.equal((await call('planner', '/', { patientId: ids.patient, source: 'nutrition_management', reason: '年度管理期间临时需要营养评估' })).status, 403)
+  annualActive = true
+  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', reason: '年度管理期间临时需要营养评估' })).status, 201)
+  assert.equal(row.sourceOrderId, null)
+  assert.equal(row.advisorId, ids.advisor)
   const reassessment = { patientId: ids.patient, source: 'nutrition_plan', sourcePlanId: ids.plan, reason: '干预方案执行后需要复评' }
   assert.equal((await call('advisor', '/', reassessment)).status, 409)
   planStatus = 'active'

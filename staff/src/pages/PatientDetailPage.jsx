@@ -10025,7 +10025,7 @@ export default function PatientDetailPage() {
             </div>
           </div>
           <ServiceManagementCategories plans={plans} active={serviceManagementView} onChange={setServiceManagementView} />
-          {serviceManagementView === 'nutrition' && <div style={{ padding: '14px 20px', borderTop: '1px solid #EDF2EE' }}><NutritionAssessmentPanel patientId={id} source="nutrition_management" canCreate={['familyDoctor', 'superadmin'].includes(staff?.role)} embedded /></div>}
+          {serviceManagementView === 'nutrition' && <div style={{ padding: '14px 20px', borderTop: '1px solid #EDF2EE' }}><NutritionAssessmentPanel patientId={id} source={staff?.role === 'healthPlanner' ? 'paid_order' : 'nutrition_management'} canCreate={staff?.role === 'superadmin' || (staff?.role === 'healthPlanner' && String(user.assignedHealthPlanner?._id || user.assignedHealthPlanner || '') === String(staff._id)) || (staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff._id))} embedded /></div>}
           {serviceManagementView === 'nutrition' && <WeightProgressPhotos patientId={id} plans={plans} records={recentRecords} bodyCompHistory={user.bodyCompHistory || []} canEdit={['nutritionist', 'healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role)} />}
           {serviceManagementView === 'rehab' && <RehabWorkspace patientId={id} staff={staff} view="plans" onSaved={loadPlans} />}
           {serviceManagementView === 'annual' && monthlyReviewEnabled && (

@@ -197,6 +197,7 @@ export default function HomePage() {
                       setServiceTasks(current => current.filter(item => String(item.sourceOrderId?._id || item.sourceOrderId) !== id))
                       ordersResource.refresh()
                     }} />
+                    {staff?.role === 'healthPlanner' && /^\s*(?:单次)?营养评估(?:服务)?\s*$/.test(order?.serviceName || '') && <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 6 }} onClick={event => { event.stopPropagation(); nav(`/patients/${(task || f)?.patientId?._id}?tab=plans&serviceView=nutrition`) }}>办理营养评估</button>}
                   </div>
                 </div>
                 {planningReady
