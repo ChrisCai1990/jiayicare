@@ -5778,7 +5778,7 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     if (report.audit_status !== 'audited' || report.healthCourseDraft.status !== 'pending_review') return res.status(409).json({ success:false, message:'病历或草稿状态已变化，请刷新' });
     if (!['approve','dismiss'].includes(req.body.action)) return res.status(400).json({ success:false, message:'无效审核操作' });
     if (report.healthCourseDraft.sourceVersion && report.healthCourseDraft.sourceVersion !== recordVersion(courseEvidence(report))) return res.status(409).json({ success:false, message:'来源病历已修改，请重新提取草稿' });
-    if (req.body.generatedAt && Date.parse(req.body.generatedAt) !== Date.parse(report.healthCourseDraft.generatedAt)) return res.status(409).json({ success:false, message:'草稿已更新，请重新打开核对' });
+    if (req.body.generatedAt && new Date(req.body.generatedAt).getTime() !== new Date(report.healthCourseDraft.generatedAt).getTime()) return res.status(409).json({ success:false, message:'草稿已更新，请重新打开核对' });
     if (req.body.action === 'dismiss') {
       report.healthCourseDraft = { ...report.healthCourseDraft, status:'dismissed', reviewedAt:new Date(), reviewedBy:req.staff._id, reviewedByName:req.staff.name || req.staff.username || '' };
       await report.save();
