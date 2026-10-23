@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const User = require('../src/models/User');
 const HealthPlan = require('../src/models/HealthPlan');
+const StaffRole = require('../src/models/StaffRole');
 const { __test } = require('../src/routes/weightProgressPhotos');
 
 const patientId = '507f1f77bcf86cd799439011';
@@ -44,4 +45,44 @@ test('photo can only be associated with this patient nutrition plan', async () =
 test('image content must match declared format', () => {
   assert.equal(__test.validImage(Buffer.from('89504e470d0a1a0a', 'hex'), 'image/png'), true);
   assert.equal(__test.validImage(Buffer.from('not an image'), 'image/png'), false);
+});
+
+test('assigned nutritionist may edit photos with nutrition plan edit permission', async () => {
+  const original = StaffRole.findById;
+  StaffRole.findById = () => ({ select: () => ({ lean: async () => ({ permissions: {
+    patients: { view: true, edit: false }, plans: { edit: true, planTypes: { nutrition: true } },
+  } }) }) });
+  try {
+    const res = response();
+    let passed = false;
+    await __test.checkStaffPhotoEdit({ staff: { role: 'nutritionist', customRoleId: owner } }, res, () => { passed = true; });
+    assert.equal(passed, true);
+    assert.equal(res.code, 200);
+  } finally { StaffRole.findById = original; }
+});
+
+test('nutritionist with nutrition plan permission disabled cannot edit photos', async () => {
+  const original = StaffRole.findById;
+  StaffRole.findById = () => ({ select: () => ({ lean: async () => ({ permissions: {
+    patients: { view: true, edit: false }, plans: { edit: true, planTypes: { nutrition: false } },
+  } }) }) });
+  try {
+    const res = response();
+    let passed = false;
+    await __test.checkStaffPhotoEdit({ staff: { role: 'nutritionist', customRoleId: owner } }, res, () => { passed = true; });
+    assert.equal(passed, false);
+    assert.equal(res.code, 403);
+  } finally { StaffRole.findById = original; }
+});
+
+test('existing patient edit permission still allows nutritionist photo edits', async () => {
+  const original = StaffRole.findById;
+  StaffRole.findById = () => ({ select: () => ({ lean: async () => ({ permissions: {
+    patients: { edit: true }, plans: { edit: false },
+  } }) }) });
+  try {
+    let passed = false;
+    await __test.checkStaffPhotoEdit({ staff: { role: 'nutritionist', customRoleId: owner } }, response(), () => { passed = true; });
+    assert.equal(passed, true);
+  } finally { StaffRole.findById = original; }
 });

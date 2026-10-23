@@ -4,6 +4,7 @@ const multer = require('multer');
 const staffAuth = require('../middleware/staffAuth');
 const userAuth = require('../middleware/auth');
 const checkPermission = require('../middleware/checkPermission');
+const StaffRole = require('../models/StaffRole');
 const User = require('../models/User');
 const HealthPlan = require('../models/HealthPlan');
 const Photo = require('../models/WeightProgressPhoto');
@@ -27,6 +28,26 @@ const validImage = (buffer, mime) => {
   if (['image/heic', 'image/heif'].includes(mime)) return buffer.toString('ascii', 4, 8) === 'ftyp';
   return false;
 };
+
+// Nutritionists manage these photos as part of nutrition care, even when their
+// custom role cannot edit the patient's general profile.
+async function checkStaffPhotoEdit(req, res, next) {
+  if (req.staff.role !== 'nutritionist') return checkPermission('patients', 'edit')(req, res, next);
+  if (!req.staff.customRoleId) return next();
+  try {
+    const role = await StaffRole.findById(req.staff.customRoleId).select('permissions').lean();
+    if (!role) return next();
+    const permissions = role.permissions || {};
+    const canEditPatient = permissions.patients?.edit === true;
+    const canEditNutritionPlan = permissions.plans?.edit === true
+      && permissions.plans?.planTypes?.nutrition !== false;
+    if (canEditPatient || canEditNutritionPlan) return next();
+    return bad(res, 403, '当前角色无此操作权限');
+  } catch (error) {
+    console.error('[weight-progress-photos] 权限校验异常：', error.message);
+    return next();
+  }
+}
 
 async function staffPatient(req, res) {
   if (!mongoose.isValidObjectId(req.params.patientId)) { bad(res, 400, '会员ID无效'); return null; }
@@ -98,10 +119,10 @@ async function remove(req, res, patient, actorType, actorId) {
 staffRouter.get('/patients/:patientId/weight-progress-photos', staffAuth, checkPermission('patients', 'view'), wrap(async (req, res) => {
   const patient = await staffPatient(req, res); if (patient) await list(req, res, patient);
 }));
-staffRouter.post('/patients/:patientId/weight-progress-photos', staffAuth, checkPermission('patients', 'edit'), acceptPhoto, wrap(async (req, res) => {
+staffRouter.post('/patients/:patientId/weight-progress-photos', staffAuth, checkStaffPhotoEdit, acceptPhoto, wrap(async (req, res) => {
   const patient = await staffPatient(req, res); if (patient) await create(req, res, patient, 'staff', req.staff._id);
 }));
-staffRouter.delete('/patients/:patientId/weight-progress-photos/:photoId', staffAuth, checkPermission('patients', 'edit'), wrap(async (req, res) => {
+staffRouter.delete('/patients/:patientId/weight-progress-photos/:photoId', staffAuth, checkStaffPhotoEdit, wrap(async (req, res) => {
   const patient = await staffPatient(req, res); if (patient) await remove(req, res, patient, 'staff', req.staff._id);
 }));
 userRouter.get('/', userAuth, wrap(async (req, res) => list(req, res, req.user)));
@@ -115,4 +136,4 @@ userRouter.post('/base64', userAuth, express.json({ limit: '17mb' }), wrap(creat
 userRouter.delete('/:photoId', userAuth, wrap(async (req, res) => remove(req, res, req.user, 'patient', req.user._id)));
 
 module.exports = { staffRouter, userRouter };
-module.exports.__test = { staffPatient, planFor, validImage };
+module.exports.__test = { staffPatient, planFor, validImage, checkStaffPhotoEdit };
