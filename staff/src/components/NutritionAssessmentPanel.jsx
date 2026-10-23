@@ -10,7 +10,7 @@ const defaultForm = { reason: '', focus: '', sourceOrderId: '', at: '', mode: 'o
 const card = { border: '1px solid #DCE9E1', borderRadius: 12, padding: 14, background: '#fff' }
 const field = { display: 'grid', gap: 5, fontSize: 13, color: '#52685D' }
 
-export default function NutritionAssessmentPanel({ patientId = '', source = 'nutrition_management', sourcePlanId = '', canCreate = false, compact = false, embedded = false, workbench = false }) {
+export default function NutritionAssessmentPanel({ patientId = '', source = 'nutrition_management', sourcePlanId = '', canCreate = false, compact = false, embedded = false, workbench = false, hideWhenEmpty = false }) {
   const { staff } = useStaff()
   const toast = useToast()
   const [rows, setRows] = useState([])
@@ -51,6 +51,7 @@ export default function NutritionAssessmentPanel({ patientId = '', source = 'nut
   const visible = scopedRows.filter(row => filter === 'all' || (filter === 'active' ? !['completed', 'cancelled'].includes(row.status) || row.orderSettlementStatus === 'needs_review' : row.status === 'completed' && row.orderSettlementStatus !== 'needs_review'))
   if (!['familyDoctor', 'healthPlanner', 'healthManager', 'nutritionist', 'superadmin'].includes(staff?.role)) return null
   if (workbench && !visible.length && !error) return null
+  if (hideWhenEmpty && !rows.length && !error && !createOpen) return null
   return <section className={embedded ? '' : 'card'} style={embedded ? { borderTop: '1px solid #E3ECE7', marginTop: 12 } : { marginBottom: 18 }}>
     <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
       <div><div className="card-title">{embedded ? '营养评估' : config?.requestTitle || '营养评估'}{patientId ? '进度' : '服务事项'}</div><div style={{ color: '#718578', fontSize: 12, marginTop: 4 }}>{source === 'paid_order' ? '订单已到健康规划师工作台 → 健管预约 → 营养师评估' : '健康顾问发起 → 健管预约 → 营养师评估'}；可查看完整流转记录</div></div>
