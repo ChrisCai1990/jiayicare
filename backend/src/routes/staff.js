@@ -7695,11 +7695,17 @@ router.get('/gift-products', staffAuth, async (req, res) => {
 
 // POST /api/staff/patients/:id/gift
 router.post('/patients/:id/gift', staffAuth, async (req, res) => {
-  const { giftType, productId, serviceCount, fundAmount, fundType, validFrom, validTo, remark } = req.body;
+  const { giftType, productId, serviceCount, fundAmount, validFrom, validTo, remark } = req.body;
   if (!giftType) return res.status(400).json({ success: false, message: '赠送类型不能为空' });
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '客户无效' });
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id)))
+    return res.status(403).json({ success: false, message: '无权操作该客户' });
   const patient = await User.findById(req.params.id).select('_id tenantId').lean();
   if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+  const giftAmount = Number(fundAmount);
+  if (giftType === 'fund' && (!Number.isFinite(giftAmount) || giftAmount <= 0 || Math.round(giftAmount * 100) !== giftAmount * 100))
+    return res.status(400).json({ success: false, message: '请输入大于0且最多两位小数的赠送金额' });
   let product = null;
   if (giftType === 'service') {
     if (!mongoose.isValidObjectId(productId)) return res.status(400).json({ success: false, message: '请选择已上架的商城服务' });
@@ -7713,21 +7719,21 @@ router.post('/patients/:id/gift', staffAuth, async (req, res) => {
   const gift = await GiftRecord.create({
     staffId: req.staff._id, patientId: req.params.id,
     giftType, productId: product?._id || null, serviceName: product?.name || '', serviceCount: product ? Number(serviceCount) : 0,
-    fundAmount: fundAmount || 0, fundType: fundType || 'enterprise',
-    validFrom: validFrom ? new Date(validFrom) : null,
-    validTo: validTo ? new Date(validTo) : null,
+    fundAmount: giftType === 'fund' ? giftAmount : 0, fundType: 'enterprise',
+    validFrom: giftType === 'fund' ? null : validFrom ? new Date(validFrom) : null,
+    validTo: giftType === 'fund' ? null : validTo ? new Date(validTo) : null,
     remark: remark || '',
   });
   // 如果赠送健康基金，更新会员 healthFund 余额
-  if (giftType === 'fund' && fundAmount > 0) {
+  if (giftType === 'fund') {
     const updated = await User.findOneAndUpdate(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $inc: { healthFundBalance: fundAmount } },
+      { $inc: { healthFundBalance: giftAmount } },
       { new: true },
     );
     await require('../models/HealthFundTransaction').create({
-      userId:req.params.id, enterpriseId:updated?.enterpriseId || null, type:'grant', source:fundType || 'enterprise',
-      amount:Number(fundAmount), balanceAfter:updated?.healthFundBalance || 0, operatorId:req.staff._id, remark:remark || '健康基金赠送',
+      userId:req.params.id, enterpriseId:updated?.enterpriseId || null, type:'grant', source:'enterprise',
+      amount:giftAmount, balanceAfter:updated?.healthFundBalance || 0, operatorId:req.staff._id, remark:remark || '医护赠送奖励基金',
     });
   }
   res.json({ success: true, data: gift });
@@ -8518,10 +8524,35 @@ router.delete('/abnormal-reviews/:id', staffAuth, checkPermission('abnormal_revi
 // GET /api/staff/patients/:id/membership
 router.get('/patients/:id/membership', staffAuth, async (req, res) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '无效的客户编号' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id)))
+      return res.status(403).json({ success: false, message: '无权查看该客户' });
     await require('../utils/pointsHealthFund').convertExistingPoints(req.params.id);
-    const u = await User.findById(req.params.id).select('name phone cardNumber pointsBalance rechargeBalance healthFundBalance memberType servicePackage serviceExpiry');
+    const u = await User.findById(req.params.id).select('name phone cardNumber pointsBalance vitalityPointsBalance rewardPointsBalance rechargeBalance healthFundBalance memberType servicePackage serviceExpiry');
     if (!u) return res.status(404).json({ success: false, message: '用户不存在' });
-    res.json({ success: true, data: u });
+    const { getPersonalFundAvailable, getCorporateFundAvailable, getVitalityFundAvailable } = require('../utils/healthFundPayment');
+    const HealthFundTransaction = require('../models/HealthFundTransaction');
+    const [personal, corporate, vitality, fundRows, giftRows, pointsLogs, pointsPolicy] = await Promise.all([
+      getPersonalFundAvailable(u), getCorporateFundAvailable(u), getVitalityFundAvailable(u),
+      HealthFundTransaction.find({ userId: u._id }).populate('orderId', 'serviceName orderNo').populate('operatorId', 'name').sort({ createdAt: -1 }).limit(100).lean(),
+      GiftRecord.find({ patientId: u._id, giftType: 'fund' }).populate('staffId', 'name').sort({ createdAt: -1 }).limit(100).lean(),
+      PointsLog.find({ user: u._id }).sort({ createdAt: -1 }).limit(100).lean(),
+      require('../utils/pointsHealthFund').getPointsPolicy(),
+    ]);
+    const total = Number(u.healthFundBalance) || 0;
+    const data = u.toObject();
+    data.healthFund = {
+      total, personal, vitality, corporate,
+      transactions: require('../utils/healthFundLedger').mergeHealthFundLedger(fundRows, giftRows),
+    };
+    data.points = {
+      balance: (u.pointsBalance || 0) + (u.vitalityPointsBalance || 0) + (u.rewardPointsBalance || 0),
+      legacy: u.pointsBalance || 0, vitality: u.vitalityPointsBalance || 0, reward: u.rewardPointsBalance || 0,
+      exchangeEnabled: pointsPolicy.enabled, exchangeRate: pointsPolicy.pointsPerYuan, healthCheckinPoints: pointsPolicy.healthCheckinPoints,
+      purchasePointsPerYuan: 1, logs: pointsLogs,
+    };
+    res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

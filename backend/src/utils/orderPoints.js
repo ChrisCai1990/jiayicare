@@ -13,7 +13,7 @@ function pointsForAmount(paidAmount) {
   return Math.floor(Number(paidAmount) || 0);
 }
 
-function refundBalanceFields({ awardedPoints, convertedFund, pointsPerYuan }) {
+function refundBalanceFields({ awardedPoints, convertedFund, pointsPerYuan, pool = 'legacy' }) {
   const awarded = Math.max(0, Math.floor(Number(awardedPoints) || 0));
   const fund = Math.max(0, Number(convertedFund) || 0);
   const rate = Math.max(1, Math.floor(Number(pointsPerYuan) || 100));
@@ -25,10 +25,10 @@ function refundBalanceFields({ awardedPoints, convertedFund, pointsPerYuan }) {
     healthFundBalance: {
       $round: [{ $max: [0, { $subtract: [currentFund, fund] }] }, 2],
     },
-    pointsBalance: {
+    [pool === 'reward' ? 'rewardPointsBalance' : 'pointsBalance']: {
       $max: [0, {
         $subtract: [
-          { $add: [{ $max: [0, { $ifNull: ['$pointsBalance', 0] }] }, { $multiply: [reversibleFund, rate] }] },
+          { $add: [{ $max: [0, { $ifNull: [pool === 'reward' ? '$rewardPointsBalance' : '$pointsBalance', 0] }] }, { $multiply: [reversibleFund, rate] }] },
           awarded,
         ],
       }],
@@ -62,7 +62,7 @@ async function refundOrderPoints(order) {
   });
   const conversionGrants = await HealthFundTransaction.find({
     userId: pointsOwner, orderId: order._id, type: 'grant', status: 'active',
-    remark: /积分自动兑换.*元健康基金/,
+    remark: /积分自动兑换.*元(健康基金|奖励基金)/,
   });
   if (alreadyRefunded && conversionGrants.length === 0) return;
   const convertedFund = conversionGrants.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
@@ -73,6 +73,7 @@ async function refundOrderPoints(order) {
       awardedPoints: alreadyRefunded ? 0 : awarded.amount,
       convertedFund,
       pointsPerYuan: policy.pointsPerYuan,
+      pool: awarded.pool === 'reward' ? 'reward' : 'legacy',
     }) }],
     { new: false },
   );
@@ -81,7 +82,7 @@ async function refundOrderPoints(order) {
   const balanceAfter = Math.round(Math.max(0, (Number(updatedBefore.healthFundBalance) || 0) - convertedFund) * 100) / 100;
   const writes = [];
   if (!alreadyRefunded) writes.push(PointsLog.create({
-      user: pointsOwner, amount: -awarded.amount, source: 'redeem',
+      user: pointsOwner, amount: -awarded.amount, source: 'redeem', pool: awarded.pool || 'legacy',
       refType: 'Order', refId: order._id, remark: `订单取消/退款退回：${order.serviceName}`,
   }));
   for (const grant of conversionGrants) {

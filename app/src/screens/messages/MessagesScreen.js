@@ -157,7 +157,10 @@ function ProductPushDetail({ msg, onClose }) {
       )
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((total - couponDiscount) * 100) / 100);
-  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const unrestricted = Math.min(priceAfterCoupon, Number(user?.healthFund?.personal || 0) + Number(user?.healthFund?.vitality || 0));
+  const rewardLimit = (priceAfterCoupon - unrestricted) * Number(user?.healthFund?.policy?.corporateDeductionValue ?? 20) / 100;
+  const fundMaximum = Math.min(priceAfterCoupon, unrestricted + Math.min(Number(user?.healthFund?.corporate || 0), rewardLimit));
+  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handlePay = async () => {
@@ -340,7 +343,7 @@ function ProductPushDetail({ msg, onClose }) {
                 onPress={() => {
                   const next = !useFund;
                   setUseFund(next);
-                  if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
+                  if (next) setFundAmountInput(String(fundMaximum));
                 }}
                 style={{
                   paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full,

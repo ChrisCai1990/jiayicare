@@ -497,7 +497,7 @@ router.post('/order', auth, async (req, res) => {
 
   let fundUsed = 0;
   let fundEnterprise = null;
-  let fundBreakdown = { personal: 0, corporate: 0 };
+  let fundBreakdown = { personal: 0, vitality: 0, corporate: 0 };
   if (useHealthFund > 0) {
     try {
       const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:service.category || '', productId: product?._id || serviceId, maximize:true });

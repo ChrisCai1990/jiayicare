@@ -22,7 +22,7 @@ function harness(config = {}) {
     '../models/Coupon': { findOne: async () => config.coupon || null },
     '../models/PushRecord': { findOneAndUpdate: async () => config.locked ? null : record, updateOne: async () => {} },
     '../models/Enterprise': { findById: async () => null },
-    './healthFundPayment': { ...actualFund, getHealthFundPolicy: async () => ({ ...actualFund.DEFAULT_HEALTH_FUND_POLICY, ...(config.policy || {}) }), getPersonalFundAvailable: async () => config.personal || 0, getCorporateFundAvailable: async () => config.corporate || 0 },
+    './healthFundPayment': { ...actualFund, getHealthFundPolicy: async () => ({ ...actualFund.DEFAULT_HEALTH_FUND_POLICY, ...(config.policy || {}) }), getPersonalFundAvailable: async () => config.personal || 0, getVitalityFundAvailable: async () => config.vitality || 0, getCorporateFundAvailable: async () => config.corporate || 0 },
     './enterpriseSharedFund': {
       eligibleAccount: async (_user, productId) => config.sharedAccount?.productIds.includes(productId) ? config.sharedAccount : null,
       reserve: async args => events.push(['sharedReserve', String(args.orderId), args.amount]),
@@ -152,7 +152,7 @@ test('zero-cash coupon checkout uses settlement without WeChat and preserves rec
 test('own fund works without membership while failed eligibility or corporate-only access blocks checkout', async () => {
   for (const config of [{ fundEligible: false, personal: 0, corporate: 100 }, { eligibilityError: true, personal: 100 }]) {
     const h = harness(config);
-    await assert.rejects(h.run({ useHealthFund: 10 }), config.eligibilityError ? /eligibility unavailable/ : /自有健康基金/);
+    await assert.rejects(h.run({ useHealthFund: 10 }), config.eligibilityError ? /eligibility unavailable/ : /自有或活力基金/);
     assert.equal(h.orders.length, 0); assert.equal(h.payments.length, 0); assert.equal(h.events.length, 0);
   }
   const own = harness({ fundEligible: false, personal: 100 });

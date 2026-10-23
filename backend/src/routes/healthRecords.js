@@ -45,7 +45,7 @@ async function awardCheckinPoints(userId, type, recordedAt) {
     const { healthCheckinPoints } = await require('../utils/pointsHealthFund').getPointsPolicy();
     if (healthCheckinPoints <= 0) return;
     await awardPointsAndConvert({
-      userId, amount: healthCheckinPoints, source: 'checkin', refType: type, remark: `${type} 记录健康数据`,
+      userId, amount: Math.min(5, healthCheckinPoints), source: 'checkin', refType: type, remark: `${type} 打卡`,
     });
   } catch { /* 不阻断主流程 */ }
 }

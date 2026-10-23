@@ -11,33 +11,32 @@ function server(config={}) {
   };
   const ctx={module:{exports:{}},require:name=>mocks[name]||{},console};
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/utils/healthFundPayment'),'utf8')+`
-    getPersonalFundAvailable=async()=>${config.personal??1000};
+    getPersonalFundAvailable=async()=>${config.personal??0};
+    getVitalityFundAvailable=async()=>${config.vitality??0};
     getCorporateFundAvailable=async()=>${config.corporate??1000};`,ctx);
   return (requested,maximize=false)=>ctx.module.exports.validateHealthFundDeduction({user:{_id:'synthetic',enterpriseId:config.enterprise?'enterprise':undefined},requested,orderAmount:100,productId:'product',category:'test',productLimit:config.productLimit,maximize});
 }
 test('single-product request is a ceiling, never a second percentage base',async()=>{
   const validate=server();
-  for(const [request,expected] of [[20,20],[5,5],[99,99],[0,0]])assert.equal((await validate(request)).allowed,expected);
-  assert.equal((await validate(5,true)).allowed,100);
+  for(const [request,expected] of [[20,20],[5,5],[99,20],[0,0]])assert.equal((await validate(request)).allowed,expected);
+  assert.equal((await validate(5,true)).allowed,20);
 });
 test('single-product preview agrees with actual validator across product rules and fund sources',async()=>{
   for(const rule of [undefined,{mode:'disabled'},{mode:'percentage',value:5},{mode:'percentage',value:30},{mode:'percentage',value:100},{mode:'fixedAmount',value:8},{mode:'unlimited'}]){
-    for(const [personal,corporate] of [[0,0],[4,580],[580,0],[0,580]]){
-      const estimate=preview.maxFundDeduction({eligible:true,personal,corporate},100,{id:'product',category:'test',healthFundDeduction:rule});
-      const result=await server({rule,personal,corporate})(100);
-      assert.equal(estimate,result.allowed,JSON.stringify({rule,personal,corporate}));
-      assert.equal(Math.round((result.breakdown.personal+result.breakdown.corporate)*100),Math.round(result.allowed*100));
+    for(const [personal,vitality,corporate] of [[0,0,0],[4,0,580],[0,4,580],[580,0,0],[0,580,0],[0,0,580]]){
+      const estimate=preview.maxFundDeduction({eligible:true,personal,vitality,corporate},100,{id:'product',category:'test',healthFundDeduction:rule});
+      const result=await server({rule,personal,vitality,corporate})(100);
+      assert.equal(estimate,result.allowed,JSON.stringify({rule,personal,vitality,corporate}));
+      assert.equal(Math.round((result.breakdown.personal+result.breakdown.vitality+result.breakdown.corporate)*100),Math.round(result.allowed*100));
       assert.ok(estimate<=100);
-      if (!personal) assert.ok(estimate<=productDeductionLimit(rule,100));
     }
   }
 });
-test('own fund remains usable without membership; gifted corporate fund still needs eligibility',async()=>{
+test('自有基金和活力基金不受会员资格限制，奖励基金仍受限制',async()=>{
   assert.equal(preview.maxFundDeduction({personal:1000},100,{}),100);
-  assert.equal(preview.maxFundDeduction({eligible:false,personal:1000},100,{}),100);
-  assert.equal((await server({eligible:false,personal:100})(20)).allowed,20);
-  assert.equal(preview.maxFundDeduction({eligible:false,personal:0,corporate:100},100,{}),0);
-  await assert.rejects(server({eligible:false,personal:0,corporate:100})(20),/自有健康基金/);
+  assert.equal(preview.maxFundDeduction({eligible:false,vitality:1000},100,{}),100);
+  assert.equal(preview.maxFundDeduction({eligible:false,corporate:1000},100,{}),0);
+  assert.equal((await server({eligible:false,personal:20})(20)).allowed,20);
 });
 test('group preview respects each product cap, shared balance and coupon cents',()=>{
   const products=[{price:6800,fundProduct:{id:'a'}},{price:318.44,fundProduct:{id:'b'}}];
@@ -57,5 +56,5 @@ test('inactive enterprise blocks corporate funds while personal balance remains 
 
 test('explicit aggregate limit can cover a whole order without falling back to legacy 20 percent', async()=>{
   assert.equal((await server({productLimit:100})(100)).allowed,100);
-  assert.equal((await server({productLimit:30})(100)).allowed,100);
+  assert.equal((await server({productLimit:30})(100)).allowed,30);
 });

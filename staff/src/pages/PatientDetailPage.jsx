@@ -14008,10 +14008,15 @@ export default function PatientDetailPage() {
 function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, onBenefitsRefresh, onViewRedemption, historyReviewNeeded, isSuperadmin, onReviewHistory, partnerBenefits, partnerBenefitsError }) {
   const toast = useToast()
   const [membership, setMembership] = useState(user)
+  const [showGift, setShowGift] = useState(false)
   const [cardNumber, setCardNumber] = useState(user.cardNumber || '')
   const [pointsDelta, setPointsDelta] = useState('')
   const [rechargeDelta, setRechargeDelta] = useState('')
   const [saving, setSaving] = useState(false)
+  const fund = membership.healthFund || {}
+  const points = membership.points || {}
+  const fundSource = { enterprise: '奖励基金', promotion: '自有基金', other: '自有基金', vitality: '活力基金' }
+  const pointsPool = { vitality: '健康记录积分', reward: '购买积分', legacy: '历史积分' }
 
   const loadMembership = useCallback(async () => {
     try {
@@ -14070,14 +14075,13 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
 
       {/* 会员卡 & 积分管理 */}
       <div className="card">
-        <div className="card-header"><div className="card-title">卡号 & 积分 & 余额</div></div>
+        <div className="card-header"><div className="card-title">会员基金与积分</div></div>
         <div className="card-body">
-          {/* 当前状态 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 12 }}>
             {[
-              { label: '健康基金', value: `¥${(membership.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
-              { label: '充值余额', value: `¥${(membership.rechargeBalance || 0).toFixed(2)}`, color: '#0077B6' },
-              { label: '积分', value: (membership.pointsBalance || 0).toString(), color: '#D97706' },
+              { label: '自有基金', value: `¥${Number(fund.personal || 0).toFixed(2)}`, color: '#1E6B50' },
+              { label: '活力基金', value: `¥${Number(fund.vitality || 0).toFixed(2)}`, color: '#1E6B50' },
+              { label: '奖励基金', value: `¥${Number(fund.corporate || 0).toFixed(2)}`, color: '#1E6B50' },
             ].map(s => (
               <div key={s.label} style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>{s.label}</div>
@@ -14085,7 +14089,24 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: -8, marginBottom: 16 }}>每满100积分自动兑换¥1企业赠送健康基金</div>
+          <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 12 }}>基金合计 ¥{Number(fund.total ?? membership.healthFundBalance ?? 0).toFixed(2)}。自有、活力可抵扣至0元；奖励基金按商品规则比例抵扣。</div>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowGift(true)} style={{ marginBottom: 16 }}>＋ 赠送奖励基金</button>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 12 }}>
+            {[
+              { label: '健康记录积分', value: points.vitality || 0 },
+              { label: '购买积分', value: points.reward || 0 },
+              { label: '历史积分', value: points.legacy || 0 },
+            ].map(s => <div key={s.label} style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}><div style={{ fontSize: 11, color: '#8AA89C' }}>{s.label}</div><div style={{ fontSize: 18, fontWeight: 700, color: '#D97706' }}>{s.value}</div></div>)}
+          </div>
+          <div style={{ fontSize: 12, color: '#4A6558', lineHeight: 1.6, marginBottom: 16 }}>积分合计 {points.balance || 0}。健康记录每项每日首次记录最多得 {points.healthCheckinPoints ?? 5} 分；购买按现金实付每满 ¥1 得 1 分。{points.exchangeEnabled === false ? '积分自动兑换暂未开启。' : `两类分别满 ${points.exchangeRate || 100} 分兑换 ¥1，依次进入活力基金、奖励基金。`}</div>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>基金收支明细</div>
+          <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 16 }}>
+            {!fund.transactions?.length ? <div style={{ color: '#8AA89C', fontSize: 12 }}>暂无记录</div> : fund.transactions.map(item => <div key={`${item.type}-${item._id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '7px 0', borderTop: '1px solid #eee', fontSize: 12 }}><div>{fundSource[item.source] || '奖励基金'} · {item.remark || item.orderName || '基金变动'}<div style={{ color: '#8AA89C' }}>{new Date(item.createdAt).toLocaleString('zh-CN')}{item.orderNo ? ` · ${item.orderNo}` : ''}{item.operatorName ? ` · 操作人：${item.operatorName}` : ''}</div></div><strong style={{ color: item.amount >= 0 ? '#1E6B50' : '#DC3545' }}>{item.amount >= 0 ? '+' : '-'}¥{Math.abs(item.amount).toFixed(2)}</strong></div>)}
+          </div>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>积分明细</div>
+          <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 16 }}>
+            {!points.logs?.length ? <div style={{ color: '#8AA89C', fontSize: 12 }}>暂无记录</div> : points.logs.map(item => <div key={item._id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '7px 0', borderTop: '1px solid #eee', fontSize: 12 }}><div>{pointsPool[item.pool] || '历史积分'} · {item.remark || item.source}<div style={{ color: '#8AA89C' }}>{new Date(item.createdAt).toLocaleString('zh-CN')}</div></div><strong style={{ color: item.amount >= 0 ? '#1E6B50' : '#DC3545' }}>{item.amount >= 0 ? '+' : ''}{item.amount} 分</strong></div>)}
+          </div>
 
           {/* 编辑区 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -14104,9 +14125,11 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
               </div>
             </div>
             <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? '保存中...' : '保存更新'}</button>
+            <div style={{ color: '#8AA89C', fontSize: 12 }}>充值余额 ¥{Number(membership.rechargeBalance || 0).toFixed(2)}；人工积分调整计入历史积分。</div>
           </div>
         </div>
       </div>
+      {showGift && <GiftModal patientId={patientId} patientName={user.name || user.phone} initialGiftType="fund" onClose={() => setShowGift(false)} onSaved={() => { setShowGift(false); loadMembership(); onRefresh() }} />}
     </div>
   )
 }
@@ -15107,10 +15130,10 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
 }
 
 // ── 赠送权益弹窗（供 MarketingPage 导出使用）───────────────────────
-export function GiftModal({ patientId, patientName, onClose, onSaved }) {
+export function GiftModal({ patientId, patientName, onClose, onSaved, initialGiftType = 'service' }) {
   const toast = useToast()
   const [form, setForm] = useState({
-    giftType: 'service', productId: '', serviceCount: 1, fundAmount: 0, fundType: 'enterprise',
+    giftType: initialGiftType, productId: '', serviceCount: 1, fundAmount: 0, fundType: 'enterprise',
     validFrom: '', validTo: '', remark: '',
     couponType: 'amount', couponValue: '', couponTitle: '', couponMinSpend: '',
   })
@@ -15227,14 +15250,7 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
                 <label className="form-label">金额（元）*</label>
                 <input className="form-input" type="number" min={1} placeholder="如：500" value={form.fundAmount || ''} onChange={set('fundAmount')} />
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">基金类型</label>
-                <select className="form-input" value={form.fundType} onChange={set('fundType')}>
-                  <option value="enterprise">企业派送</option>
-                  <option value="promotion">促销赠送</option>
-                  <option value="other">其他</option>
-                </select>
-              </div>
+              <div style={{ fontSize: 12, color: '#4A6558' }}>赠送金额计入奖励基金，按商品规则比例抵扣；赠送原因请填在备注中。</div>
             </>
           ) : (
             <>
@@ -15264,7 +15280,7 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
             </>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: form.giftType === 'coupon' ? '1fr' : '1fr 1fr', gap: 12 }}>
+          {form.giftType !== 'fund' && <div style={{ display: 'grid', gridTemplateColumns: form.giftType === 'coupon' ? '1fr' : '1fr 1fr', gap: 12 }}>
             {form.giftType !== 'coupon' && (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">有效期开始</label>
@@ -15275,7 +15291,7 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
               <label className="form-label">有效期结束</label>
               <DateField className="form-input" type="date" value={form.validTo} onChange={set('validTo')} />
             </div>
-          </div>
+          </div>}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">备注</label>
             <input className="form-input" placeholder="赠送原因或说明..." value={form.remark} onChange={set('remark')} />

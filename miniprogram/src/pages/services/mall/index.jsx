@@ -167,6 +167,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', initialBeneficiar
   const [checkoutUser, setCheckoutUser] = useState(null);
   const fundBalance = checkoutUser?.healthFund?.total || 0;
   const personalFund = checkoutUser?.healthFund?.personal || 0;
+  const vitalityFund = checkoutUser?.healthFund?.vitality || 0;
   const corporateFund = checkoutUser?.healthFund?.corporate || 0;
   const fundRuleDescription = checkoutUser?.healthFund?.rule?.description || '';
   const [useFund, setUseFund] = useState(false);
@@ -442,7 +443,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', initialBeneficiar
               </View>
               {useFund && (
                 <>
-                  <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>自有 ¥{personalFund.toFixed(2)} · 企业赠送 ¥{corporateFund.toFixed(2)}</Text>
+                  <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>自有 ¥{personalFund.toFixed(2)} · 活力 ¥{vitalityFund.toFixed(2)} · 奖励 ¥{corporateFund.toFixed(2)}</Text>
                   {!!fundRuleDescription && <Text style={{ fontSize: '11px', color: colors.textSecondary, lineHeight: '17px', display: 'block', marginBottom: '8px' }}>使用规则：{fundRuleDescription}</Text>}
                   <Text style={{ fontSize: '12px', color: colors.primary, display: 'block', marginBottom: `${spacing.md}px` }}>本单自动抵扣 ¥{fundMaximum.toFixed(2)}</Text>
                 </>
