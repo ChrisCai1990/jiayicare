@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { reportsAPI } from '../services/api';
-import { openOriginalFile } from '../pages/records/medical-reports/index';
+import { openOriginalFile } from '../utils/openOriginalFile';
 
 export default function SourceReports({ reportIds = [] }) {
   const [opening, setOpening] = useState('');
