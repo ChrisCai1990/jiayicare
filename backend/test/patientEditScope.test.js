@@ -31,6 +31,7 @@ async function call({ patient = {}, staff = {}, visible = ['owner'], body = {}, 
   const capture = (...args) => { handler = args.at(-1); };
   vm.runInNewContext(testedRoute, {
     router: { put: capture, post: capture }, staffAuth() {}, checkPermission: () => () => {},
+    checkPatientEditOrLifestyleSurvey() {},
     User, mongoose: { Types: { ObjectId } }, getVisibleStaffIds: async () => visible,
     require(name) {
       if (name === '../utils/annualPlanMonitoringReminders') return { async syncServiceCycleMonitoringReminders() { sideEffects++; } };

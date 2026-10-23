@@ -109,6 +109,7 @@ const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
 const { isNutritionistStaff } = require('../utils/staffRoleCapabilities');
+const { isLifestylePatientUpdate } = require('../utils/lifestylePatientUpdate');
 const { mergeCoverageAuditItems, normalizeExplicitNormalStatus, coverageAuditHasChanges } = require('../utils/reportAuditMerge');
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
 const { rotateImageBuffer, reportRotationCandidates } = require('../utils/imageOrientation');
@@ -1756,10 +1757,10 @@ router.post('/patients/:id/medical-record/course-entries', staffAuth, checkPermi
 
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
 const checkPatientEditOrLifestyleSurvey = async (req, res, next) => {
-  const keys = Object.keys(req.body || {});
-  const lifestyleSurveyOnly = keys.length > 0 && keys.every(key => ['lifestyle', 'lifestyle_data'].includes(key));
+  // The change-record dialog adds metadata to the lifestyle fields. Keep the
+  // nutritionist exception scoped to lifestyle writes, not general patient edits.
   try {
-    if (lifestyleSurveyOnly && await isNutritionistStaff(req.staff)) return next();
+    if (isLifestylePatientUpdate(req.body) && await isNutritionistStaff(req.staff)) return next();
   } catch (err) {
     console.error('[lifestyle-survey-permission] role lookup failed:', err.message);
     return res.status(500).json({ success: false, message: '无法核实营养师权限，请稍后重试' });
