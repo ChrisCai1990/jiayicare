@@ -1,6 +1,23 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { specialtyIssueSuggestions } from '../utils/specialtyIssueSuggestion.mjs'
+
+const pendingReviews = new Map()
+function loadReviews(patientId) {
+  if (!pendingReviews.has(patientId)) {
+    const request = staffAPI.getAiCaseReviews(patientId).then(result => result.data || [])
+      .finally(() => pendingReviews.delete(patientId))
+    pendingReviews.set(patientId, request)
+  }
+  return pendingReviews.get(patientId)
+}
+
+function sourceKey(source) {
+  if (source?.kind === 'ai_health') return `ai_health:${source.year}:${source.sectionKey}:${source.itemName}`
+  if (source?.kind === 'screening_report') return `screening_report:${source.reportId}`
+  if (source?.kind === 'screening') return `screening:${source.reportId}:${source.itemId || source.itemName}`
+  return ''
+}
 
 export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast }) {
   const [open, setOpen] = useState(false)
@@ -9,6 +26,19 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [checking, setChecking] = useState(true)
+  const key = sourceKey(source)
+  useEffect(() => {
+    if (!patientId || !year || !key) { setChecking(false); return }
+    let active = true
+    setChecking(true)
+    loadReviews(patientId).then(topics => {
+      if (!active) return
+      setSaved(topics.some(topic => Number(topic.annualPlanYear) === Number(year)
+        && (topic.concerns || []).some(concern => concern.sourceState !== 'historical' && String(concern.key || '').startsWith(`${key}:issue:`))))
+    }).catch(() => {}).finally(() => { if (active) setChecking(false) })
+    return () => { active = false }
+  }, [patientId, year, key])
   if (!['familyDoctor', 'superadmin'].includes(staff?.role) || !source) return null
   const submit = async () => {
     const title = issueTitle.trim()
@@ -25,7 +55,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     finally { setBusy(false) }
   }
   return <>
-    <button type="button" className="btn btn-secondary btn-sm" onClick={event => { event.stopPropagation(); setIssueTitle(suggestedIssue || suggestions[0] || ''); setError(''); setOpen(true) }}>{saved ? '✓ 已纳入年度研判' : '＋ 纳入年度研判'}</button>
+    <button type="button" className="btn btn-secondary btn-sm" disabled={checking} onClick={event => { event.stopPropagation(); setIssueTitle(suggestedIssue || suggestions[0] || ''); setError(''); setOpen(true) }}>{saved ? '✓ 已纳入年度研判' : checking ? '核对纳入状态…' : '＋ 纳入年度研判'}</button>
     {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 500 }}>
       <div className="modal-header"><div className="modal-title">纳入年度综合研判 · 具体问题</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
       <div className="modal-body"><div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核资料'}。请填写要研判的具体问题，系统会保留原始资料关联。</div>
