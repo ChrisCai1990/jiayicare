@@ -3356,8 +3356,28 @@ export default function PatientDetailPage() {
       .filter(entry => !archiveHelpers.sourceIds(entry).includes(String(review.report._id)))
   }
 
+  const revokeHealthCourseArchive = async report => {
+    const archive = archiveHelpers.findReportArchive(data?.user?.diseaseRecords, report._id)
+    if (!archive) { toast('诊疗记录已变化，请刷新后重新核对'); return }
+    const reason = window.prompt('请填写误入档原因（至少5字）。撤销只移除这份资料；若同次就医有其他资料，其记录会保留：')?.trim()
+    if (!reason) return
+    if (reason.length < 5) { toast('请填写至少5字的撤销原因'); return }
+    if (!window.confirm(`确认撤销「${report.title || '医疗资料'}」的诊疗入档？原始资料及审核、撤销留痕会保留。`)) return
+    setHealthCourseSaving(true)
+    try {
+      await staffAPI.revokeHealthCourseArchive(report._id, { reason, entryId:String(archive.entry._id) })
+      setCourseArchivePreview(null)
+      await Promise.all([loadReports(), load()])
+      toast('误入档已撤销，同次就医的其他资料仍保留')
+    } catch (error) { toast(error.message || '撤销失败，请刷新后重试') }
+    finally { setHealthCourseSaving(false) }
+  }
+
   const reviewHealthCourseDraft = async action => {
     if (!healthCourseReview) return
+    const decisionReason = action === 'dismiss' ? window.prompt('请说明为什么不入档（例如：与已有诊疗记录重复、非本专病资料、原件信息不足；至少5字）：')?.trim() : ''
+    if (action === 'dismiss' && !decisionReason) return
+    if (action === 'dismiss' && decisionReason.length < 5) { setHealthCourseError('请填写至少5字的不入档原因'); return }
     if (action === 'approve' && !healthCourseReview.diseaseName) { setHealthCourseError('请先由健管专员建立并指定专病首页'); return }
     if (action === 'approve' && !healthCourseReview.outpatientRecord && !healthCourseReview.content.trim()) { setHealthCourseError('本次健康及症状变化不能为空'); return }
     if (action === 'approve' && healthCourseVisitCandidates(healthCourseReview).length && !healthCourseReview.visitChoice) { setHealthCourseError('该日期已有诊疗记录，请确认同次就医归并或明确选择不同次就医'); return }
@@ -3365,7 +3385,7 @@ export default function PatientDetailPage() {
     setHealthCourseError('')
     try {
       const { report, visitChoice, ...form } = healthCourseReview
-      await staffAPI.reviewHealthCourseDraft(report._id, { action, ...form, mergeEntryId:visitChoice !== 'separate' ? visitChoice : '', separateVisitConfirmed:visitChoice === 'separate' })
+      await staffAPI.reviewHealthCourseDraft(report._id, { action, decisionReason, ...form, mergeEntryId:visitChoice !== 'separate' ? visitChoice : '', separateVisitConfirmed:visitChoice === 'separate' })
       toast(action === 'approve' ? (healthCourseReview.visitChoice && healthCourseReview.visitChoice !== 'separate' ? '已并入同一次就医记录，原始资料分别保留' : healthCourseReview.outpatientRecord ? '已由健康顾问审核并写入专病诊疗时间轴' : '已由健康顾问审核并写入健康变化时间轴') : '已忽略本次AI草稿，原始资料仍保留')
       setHealthCourseReview(null)
       if (location.state?.sourceTodo?.id === `healthcourse_${report._id}`) {
@@ -10974,13 +10994,15 @@ export default function PatientDetailPage() {
                       <tbody>
                       {paginatedReportRows.map(({ report: r, typeLabel }) => {
                         const isOutpatientRecord = inferDocumentCategory(r) === 'outpatient_record'
-                        const courseArchived = isOutpatientRecord && !!archiveHelpers.findReportArchive(data?.user?.diseaseRecords, r._id)
-                        const courseStage = isOutpatientRecord && r.audit_status === 'audited' ? (
-                          courseArchived || r.healthCourseDraft?.status === 'approved' ? '已写入诊疗时间轴'
+                        const courseArchived = !!archiveHelpers.findReportArchive(data?.user?.diseaseRecords, r._id)
+                        const courseStage = HEALTH_COURSE_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r)) && r.audit_status === 'audited' ? (
+                          courseArchived ? `已写入${isOutpatientRecord ? '诊疗' : '健康变化'}时间轴`
+                            : r.healthCourseDraft?.revokedFromApproved ? '已撤销误入档'
                             : r.healthCourseDraft?.status === 'dismissed' ? '健康顾问确认不入档'
-                            : r.healthCourseDraft?.status === 'pending_review' ? '待健康顾问审核诊疗草稿'
-                            : r.healthCourseDraft?.status === 'extracting' ? '健康顾问正在提取诊疗草稿'
-                            : r.courseTargetDiseaseId ? '待健康顾问提取诊疗草稿'
+                            : r.healthCourseDraft?.status === 'approved' ? '归档状态待核对'
+                            : r.healthCourseDraft?.status === 'pending_review' ? `待健康顾问审核${isOutpatientRecord ? '诊疗' : '健康变化'}草稿`
+                            : r.healthCourseDraft?.status === 'extracting' ? '健康顾问正在提取草稿'
+                            : isOutpatientRecord && r.courseTargetDiseaseId ? '待健康顾问提取诊疗草稿'
                             : null
                         ) : null
                         const auditLabel = r.archiveOnly ? '仅留存·不解析'
@@ -11059,7 +11081,7 @@ export default function PatientDetailPage() {
                               )}
                               {['familyDoctor', 'superadmin'].includes(staff?.role) && r.audit_status === 'audited' && HEALTH_COURSE_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r))
                                 && (inferDocumentCategory(r) !== 'outpatient_record' || !!r.courseTargetDiseaseId) && (
-                                <button className="btn btn-sm report-action-primary" style={{marginLeft:6}} disabled={healthCourseSaving} onClick={()=>openHealthCourseReview(r)}>{healthCourseSaving?'原件提取中…':archiveHelpers.findReportArchive(data?.user?.diseaseRecords,r._id)?'查看诊疗记录':r.healthCourseDraft?.status==='approved'?'核对归档状态':r.healthCourseDraft?.status==='extracting'?'原件提取中…':r.healthCourseDraft?.status==='pending_review'?'审核新增诊疗草稿':'AI提取新增诊疗'}</button>
+                                <>{r.healthCourseDraft?.status === 'dismissed' ? <span style={{ marginLeft:6, fontSize:12, color:'#65776F' }}>{r.healthCourseDraft.revokedFromApproved ? '已撤销误入档' : `不入档：${r.healthCourseDraft.decisionReason || '历史未记录原因'}`}</span> : <button className="btn btn-sm report-action-primary" style={{marginLeft:6}} disabled={healthCourseSaving} onClick={()=>openHealthCourseReview(r)}>{healthCourseSaving?'原件提取中…':archiveHelpers.findReportArchive(data?.user?.diseaseRecords,r._id)?'查看诊疗记录':r.healthCourseDraft?.status==='approved'?'核对归档状态':r.healthCourseDraft?.status==='extracting'?'原件提取中…':r.healthCourseDraft?.status==='pending_review'?'审核新增诊疗草稿':'AI提取新增诊疗'}</button>}{r.healthCourseDraft?.status === 'approved' && archiveHelpers.findReportArchive(data?.user?.diseaseRecords,r._id) && <button className="btn btn-sm btn-secondary" style={{marginLeft:6}} disabled={healthCourseSaving} onClick={()=>revokeHealthCourseArchive(r)}>撤销误入档</button>}</>
                               )}
                               {['familyDoctor', 'superadmin'].includes(staff?.role) && r.audit_status === 'audited' && inferDocumentCategory(r) === 'outpatient_record' && !r.courseTargetDiseaseId && <span style={{ fontSize:12, color:'#B45309' }}>待健管专员确认专病归属</span>}
                               {r.audit_status !== 'audited' && (
@@ -12915,15 +12937,27 @@ export default function PatientDetailPage() {
                   <button className="btn btn-danger btn-sm" disabled={!advisorReturnReason.trim() || reportFlowSaving} onClick={returnReportToManager}>退回健管专员修改</button>
                 </div>
               )}
+              {showReportDetail.healthCourseDraft?.status === 'dismissed' &&
+                (!['healthManager','superadmin'].includes(staff?.role) || inferDocumentCategory(showReportDetail) !== 'outpatient_record') && (
+                <div role="status" style={{ padding:10, background:'#F2F7F4', borderRadius:8, fontSize:13 }}>
+                  <b>{showReportDetail.healthCourseDraft.revokedFromApproved ? '误入档已撤销' : '健康顾问确认不入档'}</b>
+                  <div>原因：{showReportDetail.healthCourseDraft.revokeReason || showReportDetail.healthCourseDraft.decisionReason || '历史未记录'}</div>
+                  <div>处理人：{showReportDetail.healthCourseDraft.revokedByName || showReportDetail.healthCourseDraft.reviewedByName || '历史未记录'} · {showReportDetail.healthCourseDraft.revokedAt || showReportDetail.healthCourseDraft.reviewedAt ? new Date(showReportDetail.healthCourseDraft.revokedAt || showReportDetail.healthCourseDraft.reviewedAt).toLocaleString('zh-CN') : '时间未记录'}</div>
+                </div>
+              )}
               {['healthManager', 'superadmin'].includes(staff?.role) && inferDocumentCategory(showReportDetail) === 'outpatient_record'
                 && showReportDetail.audit_status === 'audited' && !!showReportDetail.courseTargetDiseaseId && (
                 <div role="status" style={{ padding: 10, background: '#EAF5F0', borderRadius: 8, color: '#245343', fontSize: 13 }}>
                   <b>健管专员已完成原件审核和专病归属确认</b>
                   <div style={{ marginTop: 5 }}>
-                    {archiveHelpers.findReportArchive(data?.user?.diseaseRecords, showReportDetail._id) || showReportDetail.healthCourseDraft?.status === 'approved'
+                    {archiveHelpers.findReportArchive(data?.user?.diseaseRecords, showReportDetail._id)
                       ? '健康顾问已审核，内容已写入诊疗时间轴。'
+                      : showReportDetail.healthCourseDraft?.revokedFromApproved
+                        ? `误入档已撤销。原因：${showReportDetail.healthCourseDraft.revokeReason || '历史未记录'}；操作：${showReportDetail.healthCourseDraft.revokedByName || '人员未记录'}。`
                       : showReportDetail.healthCourseDraft?.status === 'dismissed'
-                        ? '健康顾问已核对，确认不写入诊疗时间轴。'
+                        ? `健康顾问已核对，确认不写入诊疗时间轴。原因：${showReportDetail.healthCourseDraft.decisionReason || '历史未记录'}。`
+                      : showReportDetail.healthCourseDraft?.status === 'approved'
+                        ? '审核记录显示已入档，但时间轴未找到对应来源，请联系管理员核对。'
                         : showReportDetail.healthCourseDraft?.status === 'pending_review'
                           ? '诊疗草稿待健康顾问审核；此阶段健管专员没有待审任务。'
                           : showReportDetail.healthCourseDraft?.status === 'extracting'

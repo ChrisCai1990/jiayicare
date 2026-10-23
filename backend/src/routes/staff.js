@@ -1382,7 +1382,7 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
 const { findReportArchive, sourceIds } = require('../../../shared/diseaseReportArchive.cjs');
-const { visitDate, mergeVisitEntries } = require('../../../shared/diseaseVisit.cjs');
+const { visitDate, mergeVisitEntries, removeVisitSource } = require('../../../shared/diseaseVisit.cjs');
 const { summaryKey, validInitialOccurredAt, changeStamp } = require('../../../shared/diseaseSummary.cjs');
 const { recordVersion, generateDiseaseSummary } = require('../utils/diseaseSummary');
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
@@ -5799,6 +5799,49 @@ router.post('/medical-reports/:id/health-course-draft', staffAuth, async (req, r
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }
 });
 
+router.post('/medical-reports/:id/health-course-revoke', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor','superadmin'].includes(req.staff.role)) return res.status(403).json({ success:false, message:'仅健康顾问可撤销误入档诊疗记录' });
+    const reason = cleanMedicalText(req.body?.reason, 500);
+    if (reason.length < 5) return res.status(400).json({ success:false, message:'请填写至少5字的撤销原因' });
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success:false, message:'医疗资料不存在' });
+    const scope = await getVisiblePlanPatientIds(req.staff);
+    if (scope && !scope.some(id => String(id) === String(report.user))) return res.status(403).json({ success:false, message:'无此会员权限' });
+    if (report.healthCourseDraft?.status !== 'approved') return res.status(409).json({ success:false, message:'只有已审核入档的资料可撤销，请刷新' });
+    const patient = await User.findById(report.user).select('diseaseRecords medicalRecord').lean();
+    if (!patient) return res.status(404).json({ success:false, message:'会员不存在' });
+    const records = normalizedDiseaseRecords(patient);
+    const archive = findReportArchive(records, report._id);
+    const revokedEntrySnapshot = archive && sourceIds(archive.entry).length === 1
+      ? archive.entry : report.healthCourseDraft.finalContent || null;
+    if (archive) {
+      if (req.body.entryId !== String(archive.entry._id)) return res.status(409).json({ success:false, message:'诊疗记录已变化，请刷新后重新确认' });
+      const record = records.find(item => String(item._id) === archive.recordId);
+      const index = record.courseEntries.findIndex(item => String(item._id) === String(archive.entry._id));
+      const entry = record.courseEntries[index];
+      if (sourceIds(entry).length > 1 && entry.updatedAt && entry.visitMergeHistory?.length
+        && new Date(entry.updatedAt).getTime() > new Date(entry.visitMergeHistory.at(-1).at).getTime())
+        return res.status(409).json({ success:false, message:'合并后的诊疗记录又被修订，请在专病时间轴人工核对后处理' });
+      const actor = { at:new Date(), id:req.staff._id, name:req.staff.name || req.staff.username || '', reason };
+      const next = removeVisitSource(entry, report._id, actor);
+      if (next) record.courseEntries[index] = next;
+      else record.courseEntries.splice(index, 1);
+      const saved = await User.collection.updateOne({ _id:patient._id, diseaseRecords:patient.diseaseRecords }, { $set:{ diseaseRecords:records } });
+      if (!saved.matchedCount) return res.status(409).json({ success:false, message:'专病档案已变化，请刷新后重试' });
+    }
+    const now = new Date();
+    report.healthCourseDraft = { ...report.healthCourseDraft, status:'dismissed', revokedFromApproved:true,
+      revokedAt:now, revokedBy:req.staff._id, revokedByName:req.staff.name || req.staff.username || '', revokeReason:reason,
+      revokedEntryId:report.healthCourseDraft.approvedEntryId, revokedEntrySnapshot };
+    report.dataEditLog.push({ itemIndex:-1, itemName:'诊疗时间轴误入档撤销', field:'healthCourseDraft.status', oldValue:'approved', newValue:`dismissed: ${reason}`,
+      operatorId:req.staff._id, operatorName:req.staff.name || req.staff.username || '', operatorRole:req.staff.role,
+      source:'health_course_revoke', at:now });
+    await report.save();
+    return res.json({ success:true, data:{ revoked:true } });
+  } catch (err) { return res.status(400).json({ success:false, message:err.message }); }
+});
+
 router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, res) => {
   try {
     if (!['familyDoctor','superadmin'].includes(req.staff.role)) return res.status(403).json({ success:false, message:'仅健康顾问可审核健康变化入档草稿' });
@@ -5814,7 +5857,12 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     if (report.healthCourseDraft.sourceVersion && report.healthCourseDraft.sourceVersion !== recordVersion(courseEvidence(report))) return res.status(409).json({ success:false, message:'来源病历已修改，请重新提取草稿' });
     if (req.body.generatedAt && new Date(req.body.generatedAt).getTime() !== new Date(report.healthCourseDraft.generatedAt).getTime()) return res.status(409).json({ success:false, message:'草稿已更新，请重新打开核对' });
     if (req.body.action === 'dismiss') {
-      report.healthCourseDraft = { ...report.healthCourseDraft, status:'dismissed', reviewedAt:new Date(), reviewedBy:req.staff._id, reviewedByName:req.staff.name || req.staff.username || '' };
+      const decisionReason = cleanMedicalText(req.body.decisionReason, 500);
+      if (decisionReason.length < 5) return res.status(400).json({ success:false, message:'请填写至少5字的不入档原因' });
+      const now = new Date();
+      report.healthCourseDraft = { ...report.healthCourseDraft, status:'dismissed', decisionReason, reviewedAt:now, reviewedBy:req.staff._id, reviewedByName:req.staff.name || req.staff.username || '' };
+      report.dataEditLog.push({ itemIndex:-1, itemName:'诊疗草稿不入档', field:'healthCourseDraft.status', oldValue:'pending_review', newValue:`dismissed: ${decisionReason}`,
+        operatorId:req.staff._id, operatorName:req.staff.name || req.staff.username || '', operatorRole:req.staff.role, source:'health_course_dismiss', at:now });
       await report.save();
       return res.json({ success:true, data:report.healthCourseDraft });
     }

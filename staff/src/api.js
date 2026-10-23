@@ -312,6 +312,7 @@ export const staffAPI = {
   getScreeningCatalog: () => req('/staff/screening-catalog'),
   generateHealthCourseDraft: (reportId, force = false) => req(`/staff/medical-reports/${reportId}/health-course-draft`, { method:'POST', body:JSON.stringify({ force }) }),
   reviewHealthCourseDraft: (reportId, data) => req(`/staff/medical-reports/${reportId}/health-course-draft`, { method:'PUT', body:JSON.stringify(data) }),
+  revokeHealthCourseArchive: (reportId, data) => req(`/staff/medical-reports/${reportId}/health-course-revoke`, { method:'POST', body:JSON.stringify(data) }),
   getScreeningYearSummaries: (id) => req(`/staff/patients/${id}/screening-year-summaries`),
   saveScreeningYearSummary: (id, year, sections, mode = 'new', recordIndex) => req(`/staff/patients/${id}/screening-year-summaries/${year}`, { method: 'PUT', body: JSON.stringify({ sections, mode, recordIndex }) }),
   generateScreeningYearSummary: (id, year) => req(`/staff/patients/${id}/screening-year-summaries/${year}/generate`, { method: 'POST' }),

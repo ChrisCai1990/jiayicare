@@ -54,5 +54,41 @@ function mergeVisitEntries(target, incoming, actor = {}) {
   return merged;
 }
 
-module.exports = { visitDate, sourceDocument, visitDocuments, mergeVisitEntries };
+function removeVisitSource(entry, reportId, actor = {}) {
+  const ids = sourceIds(entry);
+  if (!ids.includes(String(reportId))) throw new Error('该资料不在此诊疗记录中');
+  if (ids.length === 1) return null;
+  const documents = visitDocuments(entry);
+  if (documents.length !== ids.length || documents.some(doc => !doc.sourceReportId))
+    throw new Error('同次就医的来源明细不完整，请先人工核对');
+  const remaining = documents.filter(doc => String(doc.sourceReportId) !== String(reportId));
+  if (remaining.length !== documents.length - 1) throw new Error('同次就医的来源明细不匹配，请先人工核对');
+  const now = actor.at || new Date();
+  const snapshot = { ...entry };
+  delete snapshot.revisionHistory;
+  const first = remaining[0];
+  const next = {
+    ...entry,
+    sourceReportId: first.sourceReportId,
+    sourceReportIds: remaining.map(doc => doc.sourceReportId),
+    sourceTitle: first.title || '',
+    sourceType: first.sourceType || '',
+    sourceInstitution: [...new Set(remaining.map(doc => doc.sourceInstitution).filter(Boolean))].join('；'),
+    verificationStatus: remaining.every(doc => doc.verificationStatus === 'source_verified') ? 'source_verified' : 'pending_verification',
+    visitDocuments: remaining,
+    outpatientRecord: remaining.length === 1 ? first.outpatientRecord || null : null,
+    updatedAt: now,
+    updatedById: actor.id || null,
+    updatedByName: actor.name || '',
+    revisionHistory: [...(entry.revisionHistory || []), { ...snapshot, archivedAt: now, archivedById: actor.id || null, archivedByName: actor.name || '' }].slice(-50),
+    sourceRemovalHistory: [...(entry.sourceRemovalHistory || []), { sourceReportId: String(reportId), at: now, byId: actor.id || null, byName: actor.name || '', reason: actor.reason || '' }].slice(-50),
+  };
+  for (const key of ['content', 'examination', 'diagnosis', 'medicationChange', 'treatmentResponse', 'nextPlan']) {
+    next[key] = remaining.length === 1 ? first[key] || ''
+      : remaining.map(doc => doc[key] ? '【' + (doc.title || doc.sourceInstitution || '医疗资料') + '】\n' + doc[key] : '').filter(Boolean).join('\n\n');
+  }
+  return next;
+}
+
+module.exports = { visitDate, sourceDocument, visitDocuments, mergeVisitEntries, removeVisitSource };
 
