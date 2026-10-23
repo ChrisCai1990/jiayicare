@@ -10955,7 +10955,11 @@ export default function PatientDetailPage() {
         const tableRows = years.flatMap(yr => getL1Keys(yearMap[yr]).flatMap(key => {
           const group = yearMap[yr][key]
           const typeLabel = group.label || group.node?.label || '其他常规筛查'
-          return sortByTree(group.reports).map(report => ({ report, typeLabel }))
+          return sortByTree(group.reports).map(report => ({
+            report,
+            typeLabel: CLINICAL_DOCUMENT_CATEGORIES.has(inferDocumentCategory(report))
+              ? '临床资料' : typeLabel,
+          }))
         })).sort((a, b) => {
           const priority = { target: 0, review: 1, parse: 2, processing: 3, audited: 4, rejected: 5 }
           const taskDiff = (priority[getReportTaskKey(a.report)] ?? 9) - (priority[getReportTaskKey(b.report)] ?? 9)
@@ -11061,10 +11065,10 @@ export default function PatientDetailPage() {
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {r.archiveOnly ? <button className="btn btn-sm report-action-primary" onClick={() => openReportDetail(r)}>查看原件</button> : isOutpatientRecord ? <>
-                                {!['audited', 'rejected'].includes(r.audit_status) && (r.fileUrl || r.content || r.hasContent || r.fileUrls?.length) && r.aiStatus !== 'processing' && <button className="btn btn-sm report-action-review"
+                                {!['audited', 'rejected'].includes(r.audit_status) && (r.fileUrl || r.content || r.hasContent || r.fileUrls?.length) && r.aiStatus !== 'processing' && (!r.clinicalReview || r.aiStatus === 'failed') && <button className="btn btn-sm report-action-review"
                                   disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
                                   onClick={() => handleParseReportAI(r._id, { forceOutpatientParse: true })}>
-                                  {r.parseJob?.status === 'paused' ? '等待管理员恢复' : r.clinicalReview ? 'AI补提病历草稿' : 'AI提取病历草稿'}
+                                  {r.parseJob?.status === 'paused' ? '等待管理员恢复' : r.clinicalReview ? '重新提取病历草稿' : 'AI提取病历草稿'}
                                 </button>}
                                 {r.aiStatus === 'processing' && <span style={{ fontSize: 12, color: '#65776F' }}>病历提取中…</span>}
                                 {r.aiStatus !== 'processing' && <button className="btn btn-sm report-action-primary" onClick={() => {
@@ -15017,6 +15021,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
   const selectedReportType = DOCUMENT_CATEGORY_REPORT_TYPE[form.documentCategory] || 'other'
 
   const [metaDetecting, setMetaDetecting] = useState(false)
+  const [metaMessage, setMetaMessage] = useState('')
   // 单文件自动识别时会先上传拿URL，缓存下来给 handleSubmit 复用，避免同一个文件传两次
   const preUploadedRef = useRef(null) // { file, url, mimeType, fileSize }
   const handleFile = async (e) => {
@@ -15025,6 +15030,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
     setFileDatas(files.map(f => ({ file: f, mimeType: f.type, fileSize: f.size, name: f.name })))
     if (!form.title && files.length === 1) setForm(f => ({ ...f, title: files[0].name.replace(/\.[^.]+$/, '') }))
     setError('')
+    setMetaMessage('')
     preUploadedRef.current = null
 
     // 单份上传时，自动识别报告上印刷的机构名/日期回填表单，专员不用每次手动重复填写
@@ -15037,13 +15043,13 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
       try {
         const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
         preUploadedRef.current = { file: files[0], url: uploaded.url, ossKey: uploaded.ossKey || '', mimeType: uploaded.mimeType, fileSize: uploaded.fileSize }
-        const meta = await staffAPI.quickMetaFromReportFile(uploaded.url, uploaded.mimeType)
+        const meta = await staffAPI.quickMetaFromReportFile(patientId, uploaded.url, uploaded.mimeType)
         setForm(f => ({
           ...f,
           hospital: f.hospital || meta.data?.institution || '',
           date: f.date || meta.data?.checkDate || '',
         }))
-      } catch (err) { /* 识别失败静默忽略，专员仍可手动填写，不阻塞上传流程 */ }
+      } catch (err) { setMetaMessage(err.message || '自动识别失败，请手动填写机构和日期') }
       finally { setMetaDetecting(false) }
     }
   }
@@ -15200,6 +15206,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
               <DateField className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
             </div>
           </div>
+          {metaMessage && <div style={{ fontSize: 12, color: '#A15C27' }}>{metaMessage}</div>}
 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">报告文件（图片/PDF，每个≤100MB，可多选）</label>

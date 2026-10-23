@@ -6421,37 +6421,42 @@ router.get('/upload/report-file/:jobId', staffAuth, (req, res) => {
 // 只提取机构和一个报告级日期，供上传报告时自动回填表单用——
 // 不做完整体检项目提取，控制耗时和AI调用成本（2026-07-21需求：单份上传时医院/日期
 // 报告原文本来就印着，不该让专员每次手动重复填写）
-const QUICK_META_PROMPT = `请只从这张体检报告图片里提取"检查机构名称"和一个"报告日期"，不要提取其他内容。
+const QUICK_META_PROMPT = `请只从这张医疗资料原件里提取"医院/机构名称"和一个"资料日期"，不要提取其他内容。原件可能是体检、检查、检验报告，也可能是门诊病历或处方。
 规则：
 - institution：机构全称必须与报告原文印刷文字逐字一致，不得翻译、音译、编造。找不到就留空字符串。只有报告原文确实印刷的是英文机构名（境外机构报告）时才保留英文，中文报告严禁输出英文或中英混杂机构名。
-- checkDate：格式 YYYY-MM-DD。原件有报告日期时取报告日期；没有报告日期时才取检查日期，仍没有则取采样日期。三者都找不到就留空字符串。只输出一个日期，不拼接多个日期。
+- checkDate：格式 YYYY-MM-DD。报告优先取报告日期，其次检查日期、采样日期；门诊病历优先取就诊日期；处方优先取开方日期。不要把出生日期、打印日期或复诊预约日期当作资料日期。找不到就留空字符串。只输出一个日期，不拼接多个日期。
 仅输出JSON，不要任何额外文字：{"institution":"","checkDate":""}`;
 
 // POST /api/staff/upload/quick-meta — 上传报告后，自动识别机构名+日期回填表单（不做完整体检解析）
 router.post('/upload/quick-meta', staffAuth, async (req, res) => {
   try {
-    const { url, mimeType } = req.body;
-    if (!url) return res.status(400).json({ success: false, message: '缺少文件地址' });
-    if (!process.env.QWEN_API_KEY) return res.json({ success: true, data: { institution: '', checkDate: '' } });
+    const { patientId, url, mimeType } = req.body || {};
+    if (!url || !mongoose.isValidObjectId(patientId)) return res.status(400).json({ success: false, message: '缺少会员或文件地址' });
+    const patient = await User.findOne({ _id: patientId, tenantId: req.staff.tenantId, isDeleted: { $ne: true } }).select('_id').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (!process.env.QWEN_API_KEY) return res.status(503).json({ success: false, message: '自动识别暂不可用，请手动填写机构和日期' });
 
     const { parseImage } = require('../utils/ai');
     const { renderSinglePage, fetchReportBuffer } = require('../utils/pdf');
     // 新文件为 OSS URL，历史文件仍可从 /uploads/ 读取。统一取二进制内容传给 OCR，不依赖本地磁盘或公开链接。
     const buf = await fetchReportBuffer({ fileUrl: url }, UPLOADS_DIR);
 
-    let text;
+    let image;
     if (mimeType === 'application/pdf') {
-      const img = await renderSinglePage(buf, 1, 96); // 机构/日期通常在首页页眉，只转第一页足够
-      if (!img) return res.json({ success: true, data: { institution: '', checkDate: '' } });
-      text = await parseImage(img, QUICK_META_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 200 });
+      image = await renderSinglePage(buf, 1, 96); // 机构/日期通常在首页页眉，只转第一页足够
+      if (!image) return res.json({ success: true, data: { institution: '', checkDate: '' } });
     } else {
-      text = await parseImage(`data:${mimeType || 'image/jpeg'};base64,${buf.toString('base64')}`, QUICK_META_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 200 });
+      image = `data:${mimeType || 'image/jpeg'};base64,${buf.toString('base64')}`;
     }
+    const { withStaffService, withPersonalData } = require('../utils/aiDataConsent');
+    const text = await withStaffService(req.staff, () => withPersonalData(patient._id, 'health', () =>
+      withAiContext({ actorId: String(req.staff._id), tenantId: String(req.staff.tenantId), business: 'ocr', stage: 'quick_meta' }, () =>
+        parseImage(image, QUICK_META_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 200 }))));
     const parsed = safeParseJSON(text) || {};
     res.json({ success: true, data: { institution: sanitizeInstitution(parsed.institution) || '', checkDate: parsed.checkDate || '' } });
   } catch (err) {
-    // 识别失败不影响上传本身，前端静默回退到手动填写
-    res.json({ success: true, data: { institution: '', checkDate: '' } });
+    console.warn('[quick-meta] 机构日期识别失败:', err.code || err.message);
+    res.status(503).json({ success: false, message: '自动识别失败，请手动填写机构和日期' });
   }
 });
 
@@ -16626,9 +16631,9 @@ async function runReportParseControlled(reportId) {
     ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
     : BODY_COMPOSITION_RETRY_PROMPT;
   const shaoyifuTemplate = require('../utils/shaoyifuReportTemplate');
-  const useShaoyifuTemplate = shaoyifuTemplate.isShaoyifuReport(report);
+  const useShaoyifuTemplate = !isPrescriptionReport && shaoyifuTemplate.isShaoyifuReport(report);
   const zheyiTemplate = require('../utils/zheyiReportTemplate');
-  const useZheyiTemplate = zheyiTemplate.isZheyiReport(report);
+  const useZheyiTemplate = !isPrescriptionReport && zheyiTemplate.isZheyiReport(report);
 
   const imagePageEvidence = {};
   const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence) => {
@@ -16743,17 +16748,18 @@ async function runReportParseControlled(reportId) {
             }
             if (p.imageEvidence?.status === 'image_only') { okPages++; continue; }
             if (p._templateSkip) { okPages++; continue; }
-            const firstPassItems = tagReportPageItems(p.items, pageNum);
+            const firstPassItems = tagReportPageItems(p.items, pageNum)
+              .map(item => isPrescriptionReport ? { ...item, itemType: 'medication', status: 'unknown' } : item);
             if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
             const hasStructuredResults = firstPassItems.some(item => str(item.name)
               && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
-            if (shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
+            if (!isPrescriptionReport && shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
               okPages++;
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
             }
             detailPages.add(pageNum);
-            if (isLargeScannedPdf && report.type !== 'body_comp' && hasIncompleteReportEvidence(firstPassItems)) {
+            if (!isPrescriptionReport && isLargeScannedPdf && report.type !== 'body_comp' && hasIncompleteReportEvidence(firstPassItems)) {
               qualityRetryPages.add(pageNum);
               console.log(`[parse-ai] 页${pageNum}首轮存在空值或无有效结果，加入高分辨率质量回退`);
             } else {
@@ -16795,7 +16801,7 @@ async function runReportParseControlled(reportId) {
 
       // 大扫描 PDF 的首轮使用低成本模型；仅对被质量门槛拦下的页回退到完整高分辨率视觉识别。
       // 这样既不会漏把空壳项标为成功，也不会把每一页都昂贵地重跑。
-      if (report.type !== 'body_comp' && isLargeScannedPdf && qualityRetryPages.size) {
+      if (!isPrescriptionReport && report.type !== 'body_comp' && isLargeScannedPdf && qualityRetryPages.size) {
         for (const pageNum of [...qualityRetryPages]) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, 180);
@@ -16821,7 +16827,7 @@ async function runReportParseControlled(reportId) {
 
       // 每个明细页做第二遍覆盖复核。首轮返回合法JSON但漏掉整页内容或右栏时，过去会被误记为成功；
       // 复核改用144dpi和max模型，只允许补充首轮遗漏项，再由程序证据键去重。
-      if (report.type !== 'body_comp' && !isLargeScannedPdf) {
+      if (!isPrescriptionReport && report.type !== 'body_comp' && !isLargeScannedPdf) {
         const coveragePages = useShaoyifuTemplate
           ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
           : useZheyiTemplate
@@ -16929,6 +16935,7 @@ async function runReportParseControlled(reportId) {
         console.log(`[parse-ai] 大扫描PDF ${reportId} 首轮完成后跳过自动覆盖复核，保留给人工按页补提`);
       }
 
+      if (!isPrescriptionReport) {
       // 数量核对+单页重试：检验单标题写了"N项"但实际条数不够，说明这一页大概率漏提了，只重新识别这一页
       const { pagesToRetry, underOrders } = findUnderExtractedPages(allItems);
       if (pagesToRetry.length) {
@@ -17091,7 +17098,8 @@ async function runReportParseControlled(reportId) {
         }
       }
 
-      allItems = usePediatricBodyComposition
+      }
+      allItems = isPrescriptionReport ? allItems : usePediatricBodyComposition
         ? [...new Set(allItems.map(item => item._page || 0))].flatMap(page => {
             const pageItems = allItems.filter(item => (item._page || 0) === page);
             return bodyCompCandidatePages.has(page) ? sanitizePediatricBodyCompositionPage(pageItems, true) : pageItems;
@@ -17112,14 +17120,17 @@ async function runReportParseControlled(reportId) {
       // 若先去重(同名只保留信息量最大的一条)，病理内容会被当"重复"整条丢弃，splitEndoscopyPathology
       // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
-      const advisoryFiltered = dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems)));
+      const advisoryFiltered = isPrescriptionReport ? allItems.filter(item => str(item.name)) : dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems)));
       // 邵逸夫模板的眼科/耳鼻喉科/妇科本来就是“短科室名+多条编号所见”，结构与通用小结回声相似，不能删除。
-      const departmentFiltered = (useShaoyifuTemplate || useZheyiTemplate) ? advisoryFiltered : dropDepartmentSummaryEcho(advisoryFiltered);
-      const cleanedItems = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))));
+      const departmentFiltered = (isPrescriptionReport || useShaoyifuTemplate || useZheyiTemplate) ? advisoryFiltered : dropDepartmentSummaryEcho(advisoryFiltered);
+      const cleanedItems = isPrescriptionReport ? departmentFiltered : cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))));
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
-      const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
-      let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
-      const classified = (await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))))).map(item => normalizeExplicitNormalStatus({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
+      const departmentNormalized = isPrescriptionReport ? cleanedItems : normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
+      const filteredItems = isPrescriptionReport ? departmentNormalized : fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
+      const classified = (isPrescriptionReport
+        ? stripReportSourceOrder(sortReportItemsBySource(filteredItems))
+        : await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))))))))))
+        .map(item => normalizeExplicitNormalStatus({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
       const parsedItemDates = [...new Set(classified.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
       const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : normalizeReportDate(checkDate);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;

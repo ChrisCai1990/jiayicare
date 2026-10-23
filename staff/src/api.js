@@ -255,7 +255,7 @@ export const staffAPI = {
   // 膳食调查问卷营养师复核
   nutritionistReviewResponse: (patientId, responseId) => req(`/staff/patients/${patientId}/questionnaire-responses/${responseId}/nutritionist-review`, { method: 'POST' }),
   // 上传报告后自动识别机构/日期回填表单
-  quickMetaFromReportFile: (url, mimeType) => req('/staff/upload/quick-meta', { method: 'POST', body: JSON.stringify({ url, mimeType }) }),
+  quickMetaFromReportFile: (patientId, url, mimeType) => req('/staff/upload/quick-meta', { method: 'POST', body: JSON.stringify({ patientId, url, mimeType }) }),
   uploadReportFile: (file, onProgress, reportMetadata, onAccepted) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE}/staff/upload/report-file`)
