@@ -724,7 +724,7 @@ const REPORT_L1_TYPES = [
   { key: 'other',          label: '其他常规筛查' },
 ]
 const DOCUMENT_CATEGORIES = [
-  { key: 'physical_exam', label: '体检报告' },
+  { key: 'physical_exam', label: '年度／综合体检报告' },
   { key: 'lab_report', label: '检验报告' },
   { key: 'exam_report', label: '检查报告' },
   { key: 'body_composition', label: '人体成分' },
@@ -3288,7 +3288,7 @@ export default function PatientDetailPage() {
         report = response.data
         if (activePatientId.current !== patientId) return
         if (!report || String(report.user?._id || report.user || '') !== String(patientId)) throw new Error('该资料不属于当前会员，请返回工作台重新打开任务')
-        if (report.healthCourseDraft?.status !== 'pending_review') throw new Error('该健康变化已处理或不再待审核，请返回工作台刷新任务')
+        if (['approved', 'dismissed'].includes(report.healthCourseDraft?.status)) throw new Error('该健康变化已处理，请返回工作台刷新任务')
       }
       const response = await staffAPI.generateHealthCourseDraft(report._id)
       draft = response.data || {}
@@ -3310,7 +3310,7 @@ export default function PatientDetailPage() {
       const selectedDisease = diseaseName || (data?.user?.diseaseRecords || []).find(record => String(record._id) === String(report.courseTargetDiseaseId || ''))?.name || draft.recommendedDiseaseName || ''
       const reportDate = report.checkDate || report.date
       setHealthCourseReview({ report, generatedAt:draft.generatedAt,
-        occurredAt:calendarDate(draft.outpatientRecord?.visitDate) || calendarDate(reportDate)
+        occurredAt:calendarDate(reportDate) || calendarDate(draft.outpatientRecord?.visitDate)
           || (reportDate && !Number.isNaN(Date.parse(reportDate)) ? new Date(reportDate).toLocaleDateString('sv-SE') : ''),
         diseaseName:selectedDisease,
         content: draft.content || '', examination: draft.examination || '', diagnosis: draft.diagnosis || '', medicationChange: draft.medicationChange || '', treatmentResponse: draft.treatmentResponse || '', nextPlan: draft.nextPlan || '', outpatientRecord:draft.outpatientRecord || null, outpatientReviewIssues:draft.outpatientReviewIssues || [] })
@@ -12881,10 +12881,10 @@ export default function PatientDetailPage() {
               )}
               {['healthManager', 'superadmin'].includes(staff?.role) && showReportDetail.documentCategory === 'outpatient_record'
                 && showReportDetail.audit_status === 'audited' && !showReportDetail.courseTargetDiseaseId
-                && showReportDetail.healthCourseDraft?.status === 'pending_review' && (
+                && !['approved', 'dismissed'].includes(showReportDetail.healthCourseDraft?.status) && (
                 <div style={{ display:'grid', gap:8, padding:10, background:'#FFF7E6', borderRadius:8 }}>
                   <b>旧病历待补齐专病归属</b>
-                  <small>请先核对原件，在服务档案建立有首次概况的专病首页，再确认归属。确认后才进入健康顾问工作台待审。</small>
+                  <small>请先核对原件，在服务档案建立有首次概况的专病首页，再确认归属。确认后健康顾问工作台会出现提取与审核任务。</small>
                   <select className="form-input" value={legacyOutpatientTargetId} onChange={e => setLegacyOutpatientTargetId(e.target.value)}>
                     <option value="">请选择已核对的专病首页</option>
                     {(data?.user?.diseaseRecords || []).map(record => <option key={record._id} value={record._id}>{record.name}</option>)}
@@ -12897,7 +12897,7 @@ export default function PatientDetailPage() {
                       await staffAPI.updateReport(showReportDetail._id, { editSource:'outpatient_legacy_target_confirmation', courseTargetDiseaseId:legacyOutpatientTargetId })
                       setShowReportDetail(null)
                       await loadReports()
-                      toast('专病归属已确认，健康顾问工作台将显示待审任务')
+                      toast('专病归属已确认，健康顾问工作台将显示提取与审核任务')
                     } catch (error) { setReportFlowError(error.message || '专病归属确认失败') }
                     finally { setReportFlowSaving(false) }
                   }}>确认归属并交健康顾问审核</button>
@@ -14870,7 +14870,7 @@ const DOCUMENT_CATEGORY_REPORT_TYPE = {
 }
 
 function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, onQueued }) {
-  const [form, setForm] = useState({ documentCategory: 'physical_exam', title: '', hospital: '', date: '', note: '', archiveOnly: false, archiveSourceReportId: '' })
+  const [form, setForm] = useState({ documentCategory: '', title: '', hospital: '', date: '', note: '', archiveOnly: false, archiveSourceReportId: '' })
   const [fileDatas, setFileDatas] = useState([])
   // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
   // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
@@ -14917,6 +14917,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
 
   const handleSubmit = async () => {
     if (!form.title) { setError('请填写资料名称'); return }
+    if (!form.documentCategory) { setError('请先按原件内容选择资料分类'); return }
     if (!fileDatas.length) { setError('请选择资料文件（图片或PDF）'); return }
     if (form.archiveOnly && !form.archiveSourceReportId) { setError('请选择同次体检中已审核的结果报告'); return }
     const normalizedDate = form.date ? calendarDate(form.date) : ''
@@ -15043,10 +15044,11 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">资料分类 *</label>
             <select className="form-input" value={form.documentCategory} onChange={e => setForm(f => ({ ...f, documentCategory: e.target.value }))}>
+              <option value="">请选择资料分类</option>
               {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
             </select>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>
-              与原始资料页面使用同一套分类；专项筛查归类由系统匹配 admin 目录。
+              按原件选：年度／综合体检报告、门诊病历、处方、检验报告或检查报告；单项 MRI、听力等检查请选择“检查报告”。
             </div>
           </div>
 

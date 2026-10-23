@@ -5398,15 +5398,18 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (req.body.editSource === 'outpatient_legacy_target_confirmation') {
       const roleError = clinicalManagerAuditError(report, req.staff);
       if (roleError) return res.status(403).json({ success:false, message:roleError });
+      const scope = await getVisiblePlanPatientIds(req.staff);
+      if (scope && !scope.some(id => String(id) === String(report.user)))
+        return res.status(403).json({ success:false, message:'无此会员权限' });
       if (report.documentCategory !== 'outpatient_record' || report.audit_status !== 'audited'
-        || report.courseTargetDiseaseId || report.healthCourseDraft?.status !== 'pending_review')
-        return res.status(409).json({ success:false, message:'仅已审核且尚未指定专病的待审门诊病历可补齐归属，请刷新资料' });
+        || report.courseTargetDiseaseId || ['approved', 'dismissed'].includes(report.healthCourseDraft?.status))
+        return res.status(409).json({ success:false, message:'仅已审核且尚未指定专病的门诊病历可补齐归属，请刷新资料' });
       const targetId = req.body.courseTargetDiseaseId;
       if (!mongoose.isValidObjectId(targetId)) return res.status(400).json({ success:false, message:'请选择已有专病首页' });
       const targetError = await outpatientCourseTargetError({ documentCategory:'outpatient_record', user:report.user, courseTargetDiseaseId:targetId });
       if (targetError) return res.status(409).json({ success:false, message:targetError });
       const updated = await MedicalReport.updateOne({ _id:report._id, audit_status:'audited', courseTargetDiseaseId:null,
-        'healthCourseDraft.status':'pending_review' }, { $set:{ courseTargetDiseaseId:targetId }, $push:{ dataEditLog:{
+        'healthCourseDraft.status': { $nin:['approved', 'dismissed'] } }, { $set:{ courseTargetDiseaseId:targetId }, $push:{ dataEditLog:{
           itemIndex:-1, itemName:'门诊病历归属专病', field:'courseTargetDiseaseId', oldValue:'', newValue:String(targetId),
           operatorId:req.staff._id, operatorName:req.staff.name || req.staff.username || '', operatorRole:req.staff.role,
           source:'outpatient_legacy_target_confirmation', at:new Date(),
@@ -5726,6 +5729,7 @@ router.post('/medical-reports/:id/health-course-draft', staffAuth, async (req, r
       return res.status(409).json({ success:false, message:'请先由健管专员确认门诊病历归入的专病首页' });
     const { hasOutpatientRecordContent } = require('../utils/outpatientRecordExtraction');
     const needsAttachmentExtraction = report.documentCategory === 'outpatient_record'
+      && (req.body.force || report.healthCourseDraft?.status !== 'pending_review')
       && !hasOutpatientRecordContent(report.clinicalReview) && !hasOutpatientRecordContent(report.healthCourseDraft?.outpatientRecord);
     if (needsAttachmentExtraction) {
       const previous = report.healthCourseDraft || {};
@@ -5756,7 +5760,6 @@ router.post('/medical-reports/:id/health-course-draft', staffAuth, async (req, r
       return res.json({ success:true, data:{ processing:true } });
     }
     const draft = report.healthCourseDraft?.status === 'pending_review' && !req.body.force
-      && (report.documentCategory !== 'outpatient_record' || hasOutpatientRecordContent(report.healthCourseDraft.outpatientRecord))
       ? report.healthCourseDraft : await generateHealthCourseDraft(report);
     res.json({ success:true, data:draft });
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }
@@ -14396,6 +14399,7 @@ const TODO_REVIEW_ROLE = {
   report_plan_conflict: 'healthManager',
   report_parse:         'healthManager',
   report_review:        'healthManager',
+  outpatient_target_review: 'healthManager',
   report_interpretation:'familyDoctor',
   archive_review:       'healthManager',
   checkup_plan_review:  'familyDoctor',
@@ -14643,6 +14647,26 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
         });
       });
+      // 历史病历可能已审核，但当时尚未要求指定专病首页；仍需健管专员接手归属核对。
+      if (['healthManager', 'superadmin'].includes(role)) {
+        const unassignedRecords = await MedicalReport.find({
+          documentCategory: 'outpatient_record', audit_status: 'audited',
+          courseTargetDiseaseId: null, archiveOnly: { $ne: true },
+          'healthCourseDraft.status': { $nin: ['approved', 'dismissed'] },
+          ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+        }).populate('user', 'name diseaseRecords medicalRecord').sort({ updatedAt: -1 }).lean();
+        unassignedRecords.forEach(r => {
+          if (!r.user?._id || findReportArchive(normalizedDiseaseRecords(r.user), r._id)) return;
+          const createdAt = r.audited_at || r.updatedAt || r.createdAt || now;
+          todos.push({
+            id: 'outpatienttarget_' + r._id, type: 'outpatient_target_review', label: '门诊病历待确认专病归属', priority: 2,
+            patientName: r.user.name || '未知', patientId: String(r.user._id),
+            summary: `${r.title || '门诊病历'} · 核对原件和专病首次概况后，确认归属并交健康顾问提取`,
+            createdAt, overdue: (now - new Date(createdAt)) > DAY,
+            link: `/patients/${r.user._id}?tab=reports&reportId=${r._id}`,
+          });
+        });
+      }
     }
 
     // Read-only projection of a persisted conflict, not another task document.
@@ -14735,8 +14759,11 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const healthCourseFilter = {
         audit_status: 'audited',
         documentCategory: { $in: [...HEALTH_COURSE_DOCUMENTS] },
-        'healthCourseDraft.status': 'pending_review',
-        $or: [{ documentCategory:{ $ne:'outpatient_record' } }, { courseTargetDiseaseId:{ $ne:null } }],
+        $or: [
+          { documentCategory: { $ne: 'outpatient_record' }, 'healthCourseDraft.status': 'pending_review' },
+          { documentCategory: 'outpatient_record', courseTargetDiseaseId: { $ne: null },
+            'healthCourseDraft.status': { $nin: ['approved', 'dismissed'] } },
+        ],
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const healthCourseReports = await MedicalReport.find(healthCourseFilter)
@@ -14747,7 +14774,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'healthcourse_' + report._id, type: 'health_course_review', label: report.documentCategory === 'outpatient_record' ? '门诊病历待健康顾问审核' : '健康变化待审核', priority: 2,
           patientName: report.user?.name || '未知', patientId: String(report.user?._id || ''),
-          summary: report.documentCategory === 'outpatient_record' ? `${report.title || '门诊病历'} · 健管专员已确认专病归属，请核对原件后决定是否写入诊疗时间轴` : `${report.title || '医疗资料'} · 请确认是否需要写入健康变化时间轴`,
+          summary: report.documentCategory === 'outpatient_record' ? `${report.title || '门诊病历'} · 健管专员已确认专病归属，请提取并核对原件后决定是否写入诊疗时间轴` : `${report.title || '医疗资料'} · 请确认是否需要写入健康变化时间轴`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${report.user?._id}?tab=reports&reportId=${report._id}`,
         });

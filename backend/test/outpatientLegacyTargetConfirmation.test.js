@@ -10,6 +10,7 @@ const end = source.indexOf("router.post('/medical-reports/:id/health-course-draf
 test('legacy outpatient target needs manager confirmation and a valid dossier before advisor handoff', async () => {
   let handler;
   let writes = 0;
+  let visiblePatientIds = ['patient'];
   const report = { _id:'report', user:'patient', documentCategory:'outpatient_record', audit_status:'audited',
     courseTargetDiseaseId:null, healthCourseDraft:{ status:'pending_review' } };
   const context = {
@@ -17,13 +18,14 @@ test('legacy outpatient target needs manager confirmation and a valid dossier be
     MedicalReport:{ findById:async()=>report, updateOne:async(filter, update)=>{
       assert.equal(filter.audit_status,'audited');
       assert.equal(filter.courseTargetDiseaseId,null);
-      assert.equal(filter['healthCourseDraft.status'],'pending_review');
+      assert.deepEqual(Array.from(filter['healthCourseDraft.status'].$nin), ['approved', 'dismissed']);
       assert.equal(update.$set.courseTargetDiseaseId,'dossier');
       assert.equal(update.$push.dataEditLog.operatorRole,'healthManager');
       writes++;
       return { modifiedCount:1 };
     } },
     clinicalManagerAuditError:(_report, staff)=>staff.role === 'healthManager' ? '' : '仅健管专员可确认',
+    getVisiblePlanPatientIds:async()=>visiblePatientIds,
     outpatientCourseTargetError:async draft=>draft.courseTargetDiseaseId === 'dossier' ? '' : '专病首页缺少首次概况',
     mongoose:{ isValidObjectId:value=>!!value },
   };
@@ -35,8 +37,14 @@ test('legacy outpatient target needs manager confirmation and a valid dossier be
     return res;
   };
   assert.equal((await call('familyDoctor','dossier')).code,403);
+  visiblePatientIds = ['another-patient'];
+  assert.equal((await call('healthManager','dossier')).code,403);
+  visiblePatientIds = ['patient'];
   assert.equal((await call('healthManager','invalid')).code,409);
   assert.equal(writes,0);
   assert.equal((await call('healthManager','dossier')).code,200);
   assert.equal(writes,1);
+  report.healthCourseDraft = null;
+  assert.equal((await call('healthManager','dossier')).code,200);
+  assert.equal(writes,2);
 });
