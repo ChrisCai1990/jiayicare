@@ -1708,7 +1708,7 @@ router.put('/patients/:id', staffAuth, checkPatientEditOrLifestyleSurvey, async 
     _id: new mongoose.Types.ObjectId(req.params.id),
     ...require('../utils/patientEditScope').patientEditScope(req.staff, visibleIds, id => new mongoose.Types.ObjectId(String(id))),
   };
-  const existingPatient = await User.findOne(editFilter).select('phone contactPhone lifestyle lifestyle_data coreHealthArchive healthProfile ethnicity belief').lean();
+  const existingPatient = await User.findOne(editFilter).lean();
   if (!existingPatient) return res.status(403).json({ success: false, message: '会员不存在或无权限修改该会员' });
   let culturalConsent;
   try { culturalConsent = require('../utils/culturalPreferencesConsent').culturalPreferencesConsent(req.body, existingPatient, req.staff._id); }
@@ -1924,13 +1924,41 @@ router.put('/patients/:id', staffAuth, checkPatientEditOrLifestyleSurvey, async 
 
   Object.assign(updateData, culturalConsent.values);
   if (culturalConsent.record) pushOps.culturalPreferencesAttestations = culturalConsent.record;
+  if (req.body._routineEditReason !== undefined) {
+    const reason = String(req.body._routineEditReason || '').trim();
+    if (!existingPatient.initialArchiveReview || existingPatient.initialArchiveReview.status !== 'completed') return res.status(409).json({ success: false, message: '初次建档尚未完成，请使用复核入口' });
+    if (!reason || reason.length > 1000) return res.status(400).json({ success: false, message: '请填写本次修改原因（最多1000字）' });
+    const { ARCHIVE_FIELDS } = require('../config/archiveFields');
+    const { sectionFor } = require('../utils/initialArchiveReview');
+    const { isDeepStrictEqual } = require('node:util');
+    const allowedFields = new Map(ARCHIVE_FIELDS.filter(field => sectionFor(field.path) === 'routine' && !/^(childProfile|psychAssessments)\./.test(field.path)).map(field => [field.path, field]));
+    const read = (object, path) => path.split('.').reduce((value, part) => value?.[part], object);
+    const changes = [];
+    for (const [path, value] of Object.entries(updateData)) {
+      if (path === 'carePreferences' || path === 'lifestyle_data') {
+        for (const [key, after] of Object.entries(value || {})) {
+          const childPath = `${path}.${key}`;
+          if (!allowedFields.has(childPath)) continue;
+          const before = read(existingPatient, childPath) ?? null;
+          if (!isDeepStrictEqual(before, after ?? null)) changes.push({ path: childPath, label: allowedFields.get(childPath).label, before, after });
+        }
+        continue;
+      }
+      if (!allowedFields.has(path)) continue;
+      const before = read(existingPatient, path) ?? null;
+      if (!isDeepStrictEqual(before, value ?? null)) changes.push({ path, label: allowedFields.get(path).label, before, after: value });
+    }
+    if (!changes.length) return res.status(400).json({ success: false, message: '资料没有变化，请修改后再保存' });
+    pushOps.routineArchiveHistory = { at: new Date(), by: req.staff._id, byName: req.staff.name || req.staff.username || '', reason, changes };
+    for (const change of changes) editFilter[change.path] = change.before;
+  }
   const ops = { $set: updateData };
   if (Object.keys(pushOps).length > 0) ops.$push = pushOps;
 
   // Raw collection writes bypass Mongoose tenant middleware. Recheck both tenant
   // and assignment atomically, so reassignment during editing fails closed.
   const editResult = await User.collection.updateOne(editFilter, ops);
-  if (!editResult.matchedCount) return res.status(403).json({ success: false, message: '会员归属已变化，请刷新后重试' });
+  if (!editResult.matchedCount) return res.status(req.body._routineEditReason !== undefined ? 409 : 403).json({ success: false, message: req.body._routineEditReason !== undefined ? '档案已变化，请刷新后重新修改' : '会员归属已变化，请刷新后重试' });
   await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.params.id);
   // 保存设备档案时，把最近一次维护日期同步为负责人工作台任务；稳定键避免重复保存产生重复任务。
   if (Array.isArray(req.body.healthEquipment)) {

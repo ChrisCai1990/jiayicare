@@ -87,6 +87,7 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
   const [draft, setDraft] = useState(null)
   const [routineFields, setRoutineFields] = useState([])
   const [culturalConfirmed, setCulturalConfirmed] = useState(false)
+  const completed = review?.status === 'completed'
   if (!review) return null
   const count = Object.keys(CORE_LABELS).filter(key => review.sections?.[key]?.status === 'reviewed').length
   const current = user.coreHealthArchive?.[selected] || { revision: 0, presence: 'uncollected', records: [] }
@@ -121,6 +122,19 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
   }
   async function confirm(status) {
     if (busy) return
+    if (completed && selected === 'routine') {
+      if (!draft) { setError('请选择有更新并填写需要修改的信息'); return }
+      if (!note.trim()) { setError('请填写本次修改原因'); return }
+      setError(''); setBusy(true)
+      try {
+        const body = buildRoutineUpdate(user, routineFields, draft.values, culturalConfirmed)
+        if (!Object.keys(body).length) throw new Error('资料没有变化，请修改后再保存')
+        await staffAPI.updatePatient(user._id, { ...body, _routineEditReason: note.trim() })
+        setSelected(null); setDraft(null); await onSaved()
+      } catch (err) { setError(err.message || '保存失败，请重试') }
+      finally { setBusy(false) }
+      return
+    }
     if (status === 'needs_info' && !note.trim()) { setError('请填写待补充内容'); return }
     setError(''); setBusy(true)
     let archiveSaved = false
@@ -157,10 +171,11 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
     <div className="card-body core-review-grid">
       {Object.entries(CORE_LABELS).map(([key, label]) => { const state = review.sections?.[key] || {}; return <div className="core-record" key={key}>
         <strong>{label}</strong><p>{reviewLabels[state.status || 'pending']}</p>{state.note && <p>{state.note}</p>}{state.reviewedAt && <small className="core-muted">{state.reviewedByName} · {when(state.reviewedAt)}</small>}
-        <div className="core-actions"><button className="btn btn-secondary btn-sm" onClick={() => onNavigate(key === 'symptom' ? 'symptoms' : 'records', key)}>查看／完善</button>{canEdit && review.status !== 'completed' && <button className="btn btn-primary btn-sm" onClick={() => { setSelected(key); setDraft(null); setNote(''); setError(''); setCulturalConfirmed(false) }}>复核</button>}</div>
+        <div className="core-actions"><button className="btn btn-secondary btn-sm" onClick={() => onNavigate(key === 'symptom' ? 'symptoms' : 'records', key)}>查看／完善</button>{canEdit && (review.status !== 'completed' || key === 'routine') && <button className="btn btn-primary btn-sm" onClick={() => { setSelected(key); setDraft(null); setNote(''); setError(''); setCulturalConfirmed(false) }}>{completed ? '修改资料' : '复核'}</button>}</div>
+        {key === 'routine' && !!user.routineArchiveHistory?.length && <details className="core-source"><summary>查看修改记录（{user.routineArchiveHistory.length}）</summary>{user.routineArchiveHistory.slice().reverse().map((entry, index) => <div key={index} className="core-record"><b>{when(entry.at)} · {entry.byName || '工作人员'}</b><div>原因：{entry.reason}</div>{(entry.changes || []).map((change, i) => <div key={i}>{change.label || change.path}：{format(change.before) || '空'} → {format(change.after) || '空'}</div>)}</div>)}</details>}
       </div> })}
       {selected && <div className="modal-overlay"><div className="modal core-modal">
-        <div className="modal-header"><h3>复核 · {CORE_LABELS[selected]}</h3><button className="modal-close" disabled={busy} onClick={() => setSelected(null)}>×</button></div>
+        <div className="modal-header"><h3>{completed ? '修改' : '复核'} · {CORE_LABELS[selected]}</h3><button className="modal-close" disabled={busy} onClick={() => setSelected(null)}>×</button></div>
         <div className="modal-body">
           <ArchiveSource user={user} section={selected}/>
           <div className="core-source"><strong>现有记录：</strong>
@@ -168,7 +183,7 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
             {!records.length && (selected === 'routine' ? items.length ? items.map((item, index) => <div key={index}>{item.label}：{format(valueAt(user, item.path)) || '尚未填写'}</div>) : <div>暂无记录，可直接填写更新信息。</div> : <div>{current.presence !== 'uncollected' ? presenceLabels[current.presence] : legacy.join('；') || '暂无新增记录，请核对问卷原始回答。'}</div>)}
           </div>
           {selected === 'medication' && <p className="core-muted">这里核实首次建档时的使用情况；当前用药仍在“用药与营养补充剂”中维护及专业审核。</p>}
-          <div className="core-actions"><button type="button" className={!draft ? 'btn btn-primary' : 'btn btn-secondary'} disabled={busy} onClick={() => { setDraft(null); setError('') }}>无更新</button><button type="button" className={draft ? 'btn btn-primary' : 'btn btn-secondary'} disabled={busy} onClick={startUpdate}>有更新，填写信息</button></div>
+          <div className="core-actions">{!completed && <button type="button" className={!draft ? 'btn btn-primary' : 'btn btn-secondary'} disabled={busy} onClick={() => { setDraft(null); setError('') }}>无更新</button>}<button type="button" className={draft ? 'btn btn-primary' : 'btn btn-secondary'} disabled={busy} onClick={startUpdate}>{completed ? '填写修改内容' : '有更新，填写信息'}</button></div>
           {draft && <fieldset disabled={busy} className="core-review-editor">
             {selected === 'routine' ? <>
               <div className="core-grid">{routineFields.filter(field => Object.hasOwn(draft.values, field.path)).map(field => <label key={field.path}>{field.label}{field.type === 'array' && '（每行一项）'}
@@ -184,10 +199,10 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
               </>}
             </>}
           </fieldset>}
-          <label>核实说明（复核时选填；标记待补充时必填）<textarea className="form-control" disabled={busy} value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={4000}/></label>
+          <label>{completed ? '修改原因（必填）' : '核实说明（复核时选填；标记待补充时必填）'}<textarea className="form-control" disabled={busy} value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={completed ? 1000 : 4000}/></label>
           {error && <div role="alert" className="core-error">{error}</div>}
         </div>
-        <div className="modal-footer">{!draft && <button className="btn btn-secondary" disabled={busy} onClick={() => confirm('needs_info')}>标记待补充</button>}<button className="btn btn-primary" disabled={busy} onClick={() => confirm('reviewed')}>{busy ? '保存中…' : draft ? '保存并复核' : '直接复核'}</button></div>
+        <div className="modal-footer">{!completed && !draft && <button className="btn btn-secondary" disabled={busy} onClick={() => confirm('needs_info')}>标记待补充</button>}<button className="btn btn-primary" disabled={busy} onClick={() => confirm('reviewed')}>{busy ? '保存中…' : completed ? '保存修改' : draft ? '保存并复核' : '直接复核'}</button></div>
       </div></div>}
     </div>
   </section>

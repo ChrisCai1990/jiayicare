@@ -286,6 +286,7 @@ const userSchema = new mongoose.Schema({
   initialArchiveImportPending: { type: mongoose.Schema.Types.Mixed, default: null },
   initialArchiveReview: { type: mongoose.Schema.Types.Mixed, default: null },
   initialArchiveReviewHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  routineArchiveHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   archiveDraft: { type: mongoose.Schema.Types.Mixed, default: null },
   // 问卷无冲突自动写入档案的留痕日志（最近20条，供健康顾问查看系统自动做了什么改动）
   // [{ questionnaireTitle, appliedAt, items: [{path,label,valueStr}] }]
