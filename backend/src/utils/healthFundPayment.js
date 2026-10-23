@@ -61,11 +61,12 @@ function allocateHealthFund({ orderAmount, personalAvailable, vitalityAvailable 
 }
 
 async function getVitalityFundAvailable(user) {
-  const [rows, corporate] = await Promise.all([HealthFundTransaction.aggregate([
+  const rows = await HealthFundTransaction.aggregate([
     { $match: { userId: user._id, source: 'vitality', status: 'active', type: { $in: ['grant', 'deduction', 'adjustment'] } } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]), getCorporateFundAvailable(user)]);
-  return Math.max(0, Math.min((Number(user.healthFundBalance) || 0) - corporate, rows[0]?.total || 0));
+  ]);
+  // 活力基金有明确的来源流水；旧奖励账可能大于实际总余额，不能先让其占满余额。
+  return Math.max(0, Math.min(Number(user.healthFundBalance) || 0, rows[0]?.total || 0));
 }
 
 async function getCorporateFundAvailable(user) {
@@ -96,7 +97,8 @@ async function getCorporateFundAvailable(user) {
   ])]);
   const ledgerBalance = (grants[0]?.total || 0) + (pointsExchangeGrants[0]?.total || 0)
     + (legacyFirstLoginGrants[0]?.total || 0) + (spent[0]?.total || 0);
-  return Math.max(0, Math.min(Number(user.healthFundBalance) || 0, ledgerBalance));
+  const vitalityAvailable = await getVitalityFundAvailable(user);
+  return Math.max(0, Math.min((Number(user.healthFundBalance) || 0) - vitalityAvailable, ledgerBalance));
 }
 
 async function getPersonalFundAvailable(user) {
