@@ -51,3 +51,18 @@ test('仅最新异常入选，最新正常覆盖历史异常，保留同报告�
   assert.deepEqual(unknown.metrics, []);
   assert.equal(unknown.latest['尿酸'].referenceRange, '');
 });
+
+
+test('营养指标复用体检关键指标名称映射，排除尿酸结晶和尿肌酐误匹配', () => {
+  const data = latestNutritionEvidence({}, [], [{ audit_status: 'audited', checkDate: '2026-10-21', reportItems: [
+    { name: '血清尿酸（SUA）', value: '500', unit: 'μmol/L', status: 'abnormal', referenceRange: '210–420' },
+    { name: '尿酸结晶', value: '阳性', status: 'abnormal' },
+    { name: '尿液肌酐', value: '100', status: 'abnormal' },
+    { name: '血清肌酐', value: '120', unit: 'μmol/L', status: 'abnormal', referenceRange: '62–106' },
+    { name: '高密度脂蛋白胆固醇', value: '1.8', unit: 'mmol/L', status: 'normal' },
+  ] }], now);
+  assert.equal(data.latest['尿酸'].value, '500');
+  assert.equal(data.latest['血肌酐'].value, '120');
+  assert.equal(data.latest['总胆固醇'], undefined);
+  assert.deepEqual(data.metrics, ['尿酸','血肌酐']);
+});

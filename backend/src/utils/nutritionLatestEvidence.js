@@ -1,3 +1,4 @@
+const checkupKeyMetrics = require('../../../shared/checkupKeyMetrics.cjs');
 const rules = require('../../../shared/nutritionComparisonMetrics.cjs');
 const { FIXED_METRICS } = require('../../../shared/nutritionTargets.cjs');
 const aliases = {
@@ -10,7 +11,7 @@ const aliases = {
   HbA1c: '糖化血红蛋白', TC: '总胆固醇', TG: '甘油三酯',
   '骨骼肌量': '骨骼肌', '体脂肪率': '体脂率', '内脏脂肪等级': '内脏脂肪',
 };
-const names = new Set([...rules.COMMON_METRICS, ...FIXED_METRICS]);
+const names = new Set([...rules.COMMON_METRICS, ...FIXED_METRICS, ...Object.values(checkupKeyMetrics.METRIC_NAMES)]);
 function metricName(name) {
   const text = String(name || '').trim();
   if (names.has(text)) return text;
@@ -50,7 +51,7 @@ function latestNutritionEvidence(patient = {}, records = [], reports = [], now =
     if (report.audit_status !== 'audited') continue;
     for (const item of report.reportItems || []) {
       if (item.reviewIssues?.length) continue;
-      let metric = metricName(item.name);
+      let metric = checkupKeyMetrics.METRIC_NAMES[checkupKeyMetrics.matchingKey(item.name)] || metricName(item.name);
       if (!metric && /超声|彩超|B超|ultrasound/i.test(`${item.name} ${item.modality}`) && /肝/.test(`${item.name} ${item.bodyPart} ${item.diagnosis} ${item.conclusion}`)) metric = /弹性|纤维/.test(item.name) ? '肝脏纤维弹性超声' : '肝脏超声';
       const value = metric?.includes('超声') ? item.conclusion || item.diagnosis || item.value || item.findings : item.value;
       add(metric, value, item.unit, item.examDate || report.checkDate, `已审核报告：${report.title || '检查报告'}`, report._id, item.status, item.referenceRange);
