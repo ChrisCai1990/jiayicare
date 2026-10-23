@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isCustomerOrder, plannerOrderRows, serviceTaskGroupKey } from '../src/utils/plannerOrderProgress.mjs'
+import { decisionReferralProgress, isCustomerOrder, plannerOrderRows, serviceTaskGroupKey } from '../src/utils/plannerOrderProgress.mjs'
+
+test('decision referral card follows the saved order stage after planner handoff', () => {
+  assert.match(decisionReferralProgress({ serviceName: '企业家健康决策计划', currentStage: 'advisor' }), /待健康顾问确认解析方案/)
+  assert.match(decisionReferralProgress({ serviceName: '企业家健康决策计划', currentStage: 'booking' }), /待健管专员预约/)
+  assert.equal(decisionReferralProgress({ serviceName: '普通服务', currentStage: 'advisor' }), '')
+})
 
 test('ongoing order remains visible after its intake follow-up disappears', () => {
   const supervisor = { _id: 'supervisor', sourceType: 'order', taskRole: 'supervisor', sourceOrderId: { _id: 'order-1', initiationSource: 'customer' } }

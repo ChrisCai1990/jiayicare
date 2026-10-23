@@ -60,7 +60,6 @@ const REQUISITION_TYPE_META = {
   labTestPackage:  { label: '套餐', category: '检验检查', itemType: 'labTest' },
 }
 function requisitionTypeMeta(t) { return REQUISITION_TYPE_META[t] || REQUISITION_TYPE_META.specialExam }
-
 function AddItemPanel({ plan, onAdded, onCancel }) {
   const toast = useToast()
   const [searchQ, setSearchQ]     = useState('')
@@ -84,13 +83,13 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
   const handleSearch = (q) => {
     setSearchQ(q)
     setSelected(null)
-    setForm(f => ({ ...f, name: q }))
+    setForm(f => ({ ...f, name: q, category: /(?:超声|彩超|B超)\s*$/i.test(q.trim()) ? '影像检查' : '' }))
     clearTimeout(searchTimer.current)
     if (!q.trim()) { setResults([]); setShowDropdown(false); return }
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
       try {
-        const r = await staffAPI.getRequisitionItems(q)
+        const r = await staffAPI.searchPlanCatalogItems(q)
         setResults(r.data || [])
         setShowDropdown(true)
       } catch { }
@@ -113,6 +112,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
 
   const handleAdd = async () => {
     if (!form.name) { toast('项目名称不能为空'); return }
+    if (plan.type === 'annual_checkup' && !form.category) { toast('请选择项目分类'); return }
     const dup = (plan.items || []).some(it => it.name.trim() === form.name.trim())
     if (dup && !window.confirm(`「${form.name}」已在方案中，确认仍要重复添加？`)) return
     setSaving(true)
@@ -122,8 +122,10 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
         category:      form.category,
         scheduledDate: form.scheduledDate || null,
         notes:         form.notes,
-        itemId:        selected?.id || null,
-        itemType:      selected ? requisitionTypeMeta(selected.type).itemType : '',
+        itemId:        selected?._id || selected?.id || null,
+        itemType:      selected ? requisitionTypeMeta(selected.type).itemType :
+          ({ '检验检查': 'labTest', '影像检查': 'specialExam', '功能医学检测': 'functionalTest' }[form.category] || ''),
+        ...(plan.type === 'annual_checkup' ? { itemGroup: 'addon' } : {}),
       }
       await staffAPI.updatePlan(plan._id, { items: [...(plan.items || []), newItem] })
       toast('已添加')
@@ -174,7 +176,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
         {/* 分类 */}
         <div>
           <label className="form-label" style={{ fontSize: 11 }}>任务分类</label>
-          <select className="form-input" value={form.category} onChange={e => set('category', e.target.value)}>
+          <select className="form-input" value={form.category} disabled={!!selected} onChange={e => set('category', e.target.value)}>
             <option value="">请选择</option>
             {ITEM_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -224,6 +226,9 @@ export default function PlanDetailPage() {
   const [planDrafting, setPlanDrafting] = useState(false)  // 场景七：AI润色方案描述
   const [editingItemId, setEditingItemId] = useState(null)
   const [editingItemForm, setEditingItemForm] = useState({})
+  const [checkupTemplates, setCheckupTemplates] = useState([])
+  const [syncTemplateId, setSyncTemplateId] = useState('')
+  const [syncingTemplate, setSyncingTemplate] = useState(false)
 
   const load = async () => {
     try { const r = await staffAPI.getPlan(id); setPlan(r.data) }
@@ -231,6 +236,31 @@ export default function PlanDetailPage() {
     finally { setLoading(false) }
   }
   useEffect(() => { load() }, [id])
+  useEffect(() => {
+    if (plan?.type !== 'annual_checkup') return
+    const patientId = plan.patientId?._id || plan.patientId
+    staffAPI.getPlanTemplates('annual_checkup', patientId)
+      .then(r => setCheckupTemplates(r.data || []))
+      .catch(err => toast(err.message || '套餐模板加载失败'))
+  }, [plan?._id, plan?.patientId?._id])
+  useEffect(() => {
+    if (plan?.type === 'annual_checkup') setSyncTemplateId(String(plan.content?.templateId || ''))
+  }, [plan?._id, plan?.content?.templateId])
+
+  const syncCheckupTemplate = async () => {
+    const template = checkupTemplates.find(t => String(t._id) === syncTemplateId)
+    if (!template) { toast('请选择最新套餐模板'); return }
+    const oldNames = (plan.items || []).filter(item => item.itemGroup === 'base').map(item => item.name)
+    const newNames = (template.content?.checkItems || []).map(item => item.name)
+    const added = newNames.filter(name => !oldNames.includes(name))
+    const removed = oldNames.filter(name => !newNames.includes(name))
+    const message = `同步「${template.content?.packageName || template.name}」最新模板？\n标准项目：${oldNames.length} → ${newNames.length} 项；新增 ${added.length} 项，移除 ${removed.length} 项。\n加项包：${(plan.content?.addons || []).length} → ${(template.content?.addons || []).length} 项。\n已单独添加的项目和已选加项会保留。`
+    if (!window.confirm(message)) return
+    setSyncingTemplate(true)
+    try { await staffAPI.syncCheckupTemplate(id, syncTemplateId); toast('已同步最新套餐模板'); await load() }
+    catch (err) { toast(err.message) }
+    finally { setSyncingTemplate(false) }
+  }
 
   const handlePush = async () => {
     const importantNames = plan?.type === 'annual_checkup' ? (plan.items || []).filter(isImportantCheckupItem).map(item => item.name) : []
@@ -265,6 +295,10 @@ export default function PlanDetailPage() {
   }
 
   const handleDeleteItem = async (itemId, name) => {
+    if (plan.type === 'annual_checkup' && plan.items?.some(item => item._id === itemId && item.itemGroup === 'base')) {
+      toast('基础套餐项目由体检中心确定，不能删减')
+      return
+    }
     if (!window.confirm(`确认删除方案项目「${name}」？`)) return
     try {
       const items = (plan.items || []).filter(it => it._id !== itemId)
@@ -288,7 +322,13 @@ export default function PlanDetailPage() {
     if (!editingItemForm.name) { toast('项目名称不能为空'); return }
     try {
       const items = (plan.items || []).map(it => it._id === editingItemId
-        ? { ...it, ...editingItemForm, scheduledDate: editingItemForm.scheduledDate || null }
+        ? {
+          ...it, ...editingItemForm,
+          itemType: plan.type === 'annual_checkup' && !it.itemId
+            ? ({ '检验检查': 'labTest', '影像检查': 'specialExam', '功能医学检测': 'functionalTest' }[editingItemForm.category] || '')
+            : it.itemType,
+          scheduledDate: editingItemForm.scheduledDate || null,
+        }
         : it)
       await staffAPI.updatePlan(id, { items })
       toast('已保存')
@@ -636,6 +676,21 @@ export default function PlanDetailPage() {
           <AddItemPanel plan={plan} onAdded={() => { setShowAddItem(false); load() }} onCancel={() => setShowAddItem(false)} />
         )}
 
+        {plan.type === 'annual_checkup' && canEdit && plan.status === 'draft' && !plan.pushedAt && !plan.confirmedAt &&
+          !(plan.items || []).some(item => item.status !== 'pending' || item.reportId) && (
+          <div style={{ padding: '12px 20px', borderBottom: '1px solid #E6EBE7', background: '#F8FAF9', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Admin 最新套餐模板</span>
+            <select className="form-input" aria-label="选择要同步的体检套餐模板" value={syncTemplateId}
+              onChange={e => setSyncTemplateId(e.target.value)} style={{ maxWidth: 320 }}>
+              <option value="">请选择套餐模板</option>
+              {checkupTemplates.map(t => <option key={t._id} value={t._id}>{t.content?.packageName || t.name} · {t.content?.checkItems?.length || 0} 项</option>)}
+            </select>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={!syncTemplateId || syncingTemplate}
+              onClick={syncCheckupTemplate}>{syncingTemplate ? '同步中...' : '同步标准套餐和加项包'}</button>
+            <span style={{ fontSize: 12, color: '#68776F' }}>同步前可核对项目变化；定制项目保留。</span>
+          </div>
+        )}
+
         {!plan.items?.length ? (
           <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无项目，点击"添加项目"开始</div>
         ) : (
@@ -693,7 +748,7 @@ export default function PlanDetailPage() {
                             <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => handleItemStatus(item._id, 'pending')}>撤销</button>
                           )}
                           {canEdit && <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => startEditItem(item)}>编辑</button>}
-                          {canEdit && (
+                          {canEdit && !(plan.type === 'annual_checkup' && item.itemGroup === 'base') && (
                             <button className="btn btn-sm" style={{ color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer' }}
                               onClick={() => handleDeleteItem(item._id, item.name)}>删除</button>
                           )}
@@ -727,8 +782,22 @@ export default function PlanDetailPage() {
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">项目名称 *</label>
                 <input className="form-input" value={editingItemForm.name}
+                  readOnly={plan.type === 'annual_checkup' && plan.items?.some(item => item._id === editingItemId && item.itemGroup === 'base')}
                   onChange={e => setEditingItemForm(f => ({ ...f, name: e.target.value }))} />
+                {plan.type === 'annual_checkup' && plan.items?.some(item => item._id === editingItemId && item.itemGroup === 'base') &&
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 4 }}>基础套餐项目由体检中心确定，项目名称和分类不可修改</div>}
               </div>
+              {plan.type === 'annual_checkup' && <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">项目分类</label>
+                <select className="form-input" value={editingItemForm.category}
+                  disabled={!!plan.items?.find(item => item._id === editingItemId && (item.itemId || item.itemGroup === 'base'))}
+                  onChange={e => setEditingItemForm(f => ({ ...f, category: e.target.value }))}>
+                  <option value="">请选择</option>
+                  {ITEM_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                </select>
+                {!!plan.items?.find(item => item._id === editingItemId)?.itemId &&
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 4 }}>已关联库的项目分类由库中类型决定</div>}
+              </div>}
               {plan.type !== 'annual_checkup' && <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">计划日期</label>
                 <DateField className="form-input" type="date" value={editingItemForm.scheduledDate}

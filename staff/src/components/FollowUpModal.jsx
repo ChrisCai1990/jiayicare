@@ -327,13 +327,14 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [planRows, setPlanRows] = useState([emptyRow()])
   const [planType, setPlanType] = useState('phone')
   const [planPatientId, setPlanPatientId] = useState(patientId || '')
-  // 打卡任务
+  // 记录任务
   const [checkInItems, setCheckInItems] = useState([])
   const [repeatDaily, setRepeatDaily]   = useState(false)
   // 随访方案模板选择
   const [followupPlans, setFollowupPlans] = useState([])
   const [selectedSchemeId, setSelectedSchemeId] = useState('')
   const [schemeFormData, setSchemeFormData] = useState({}) // 预设内容（可编辑）
+  const repeatWeekly = visitTypeForm && String(schemeFormData['监测频率'] || '').trim() === '每周1次'
   const isAdHocMedicalReminder = followupPlans.find(p => p._id === selectedSchemeId)?.workflowStageKey === 'ad_hoc_medical_reminder'
 
   useEffect(() => {
@@ -429,6 +430,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     if (!visitTypeForm && !visitTypeRevisit) { setError('请至少选择一种随访类型'); return }
     const validRows = planRows.filter(r => r.daysAfter || r.date)
     if (validRows.length === 0) { setError('请至少填写一行随访时间'); return }
+    if (repeatWeekly && validRows.length !== 1) { setError('每周1次只需填写一条计划，完成后会自动生成下一条'); return }
     if (isAdHocMedicalReminder && validRows.length !== 1) { setError('事项提醒只需一条任务，后续联系统一记录在本任务中'); return }
     const rowWithoutAssignee = validRows.find(r => !r.assignedTo)
     if (rowWithoutAssignee) { setError('每一条随访计划都必须选择随访人员'); return }
@@ -460,7 +462,8 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           followUpSchemeId: selectedSchemeId || null,
           formData: isAdHocMedicalReminder ? { ...schemeFormData, reminderKind } : Object.keys(schemeFormData).length > 0 ? schemeFormData : null,
           checkInItems: checkInItems.length > 0 ? checkInItems : undefined,
-          repeatDaily: checkInItems.length > 0 ? repeatDaily : undefined,
+          repeatDaily: checkInItems.length > 0 && !repeatWeekly ? repeatDaily : false,
+          repeatWeekly,
         })
       }))
       onSaved()
@@ -715,9 +718,9 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               </div>
             )}
 
-            {/* 打卡任务设置 */}
+            {/* 记录任务设置 */}
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">打卡任务（可选）</label>
+              <label className="form-label">记录任务（可选）</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
                 {[
                   { key: 'diet',          label: '饮食' },
@@ -757,9 +760,9 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               {checkInItems.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 11, color: '#1E6B50' }}>
-                    已选 {checkInItems.length} 项，将出现在会员首页今日打卡
+                    已选 {checkInItems.length} 项，将出现在会员首页今日记录
                   </div>
-                  <RepeatDailyToggle value={repeatDaily} onChange={setRepeatDaily} />
+                  {!repeatWeekly && <RepeatDailyToggle value={repeatDaily} onChange={setRepeatDaily} />}
                 </div>
               )}
             </div>
@@ -967,7 +970,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                       flexShrink: 0,
                     }}
                   >−</button>
-                  {idx === planRows.length - 1 && !isAdHocMedicalReminder && (
+                  {idx === planRows.length - 1 && !isAdHocMedicalReminder && !repeatWeekly && (
                     <button type="button" onClick={addRow} style={{ ...btnPlus, flexShrink: 0 }}>+</button>
                   )}
                 </div>
@@ -975,6 +978,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
 
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
                 💡 填天数将从今天起计算随访日期；或直接选择具体日期，两者互斥
+                {repeatWeekly && <div>每周1次只创建一条待随访计划；完成本条后，按完成日期顺延7天生成下一条。</div>}
               </div>
             </div>
           </div>

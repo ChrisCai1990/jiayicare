@@ -52,26 +52,30 @@ export function nutritionAssessmentPrefill(patient = {}, previous = null) {
   const prior = previous || {}
   const recordedAllergy = foodAllergyEvidence(patient) || questionnaireFoodAllergyEvidence(patient)
   const previousRows = priorTargets(prior)
-  const selectedMetrics = Array.isArray(prior.annualNutritionMetrics) ? prior.annualNutritionMetrics : []
+  const annualMetrics = Array.isArray(prior.annualNutritionMetrics) ? prior.annualNutritionMetrics : []
+  const latest = prior.latestNutritionEvidence || {}
+  const selectedMetrics = [...new Set([...annualMetrics, ...previousRows.map(row => canonicalMetric(row.metric)), ...(prior.suggestedNutritionMetrics || [])])].filter(metric => metric && !FIXED_METRICS.includes(metric))
+    .filter(metric => !Object.hasOwn(prior, 'latestNutritionEvidence') || latest[metric]?.status === 'abnormal' && !latest[metric]?.conflict).slice(0, 29)
   const archivedSubjective = fromArchive(patient)
   const selectedRows = selectedMetrics.map(metric => {
     const old = previousRows.find(row => canonicalMetric(row.metric) === metric)
-    return { metric, baseline: archivedSubjective[metric] || (metric === '体重' ? measuredBaseline(patient, metric) : '') || old?.baseline || '', target: old?.target || '' }
+    return { metric, baseline: (latest[metric] ? latest[metric].baseline : archivedSubjective[metric] || measuredBaseline(patient, metric)) || '', target: old?.target || '', ...(latest[metric] ? { referenceRange: latest[metric].referenceRange || '', evidenceStatus: latest[metric].status || 'unknown' } : {}) }
   })
   return {
     goal: text(prior.goal),
     assessment: {
-      height: patient.height || prior.height || '', weight: patient.weight || prior.weight || '',
+      height: patient.height || prior.height || '', weight: latest['体重'] ? (!latest['体重'].conflict && latest['体重'].unit === 'kg' ? latest['体重'].value : '') : patient.weight || prior.weight || '',
       currentDiet: text(prior.currentDiet) || dietFromArchive(patient),
-      nutritionTargets: withFixedNutritionTargets([...previousRows.filter(row => FIXED_METRICS.includes(canonicalMetric(row.metric))), ...selectedRows], patient),
+      nutritionTargets: withFixedNutritionTargets([...FIXED_METRICS.map(metric => ({ metric, baseline: latest[metric] ? latest[metric].baseline : measuredBaseline(patient, metric), target: previousRows.find(row => canonicalMetric(row.metric) === metric)?.target || '', ...(latest[metric] ? { referenceRange: latest[metric].referenceRange || '', evidenceStatus: latest[metric].status || 'unknown' } : {}) })), ...selectedRows], {}),
       annualNutritionSource: prior.annualNutritionSource || null,
-      annualNutritionMetrics: selectedMetrics,
+      annualNutritionMetrics: annualMetrics,
+      latestNutritionEvidence: latest,
       annualNutritionGoals: Array.isArray(prior.annualNutritionGoals) ? prior.annualNutritionGoals : [],
       reviewDate: '', medicalReview: text(prior.medicalReview) || medicalFromArchive(patient),
       practicalConstraints: text(prior.practicalConstraints) || constraintsFromArchive(patient),
       allergyStatus: '', allergyDetails: recordedAllergy || (isUsableFoodAllergy(prior.allergyDetails) ? text(prior.allergyDetails) : ''),
       riskStatus: '', templateCompatibilityConfirmed: false,
-      activityLevel: '', lifeStage: '', managementPurpose: '', managementKcal: '',
+      activityLevel: '', weightActivityLevel: '', activityCoefficient: '', lifeStage: '', managementPurpose: '', managementKcal: '',
       breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30, snackPercent: 0,
     },
   }

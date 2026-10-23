@@ -1,9 +1,13 @@
-const { chat } = require('./ai');
+const { chat, selectProvider } = require('./ai');
 const { deriveLabFromReports, buildLatestLabText, buildTrendText, extractTumorMarkers, buildTumorMarkerText, extractGeneticFindings, extractExamFindings } = require('./labFromScreening');
 const { assessCancerCoverage, buildCoverageText } = require('./cancerScreeningCoverage');
 const { buildEvidenceCatalog } = require('./aiFactGuard');
 const { priorityLinksToCard } = require('./healthPriorityLinks');
 const { reportsThroughYear, historicalUserSnapshot } = require('./historicalAIHealthContext');
+const { classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation } = require('./tumorMarkerFactGuard');
+const { focusedReportHits, reconcileFocusedTopics } = require('./focusedTrendEvidence');
+const { HOMOCYSTEINE_INTERVENTION_THRESHOLD, enforceHomocysteineIntervention } = require('./homocysteineIntervention');
+const { buildEchoChamberTrend } = require('./echoChamberTrend');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
@@ -23,7 +27,7 @@ function buildCancerCatalogText(user) {
 const CANCER_EVIDENCE_RULES = {
   肺癌: /胸部CT|肺部CT|肺CT|LDCT|肺结节|磨玻璃|肺纤维/i,
   结直肠癌: /肠镜|结肠镜|直肠镜|回肠末端|结肠|直肠|肠息肉|肠病理|粪便隐血|便潜血|FOBT/i,
-  肝癌: /肝脏|肝胆|脂肪肝|甲胎蛋白|\bAFP\b|肝纤维|纤维化|弹性超声|弹性成像|透明质酸|层粘连蛋白|Ⅲ型前胶原|III型前胶原|Ⅳ型胶原|IV型胶原/i,
+  肝癌: /肝脏|肝胆|脂肪肝|甲胎蛋白|\bAFP\b|肝纤维|纤维化|弹性超声|弹性成像|透明质酸|层粘连蛋白|Ⅲ型前胶原|III型前胶原|Ⅳ型胶原|IV型胶原|乙肝|乙型肝炎|丙肝|丙型肝炎|HBsAg|HBV[\s-]?DNA|\bHBV\b|HCV[\s-]?(?:RNA|抗体)|抗[\s-]?HCV|\bHCV\b/i,
   胃癌: /胃镜|胃窦|胃角|胃体|胃底|胃黏膜|胃病理|幽门螺杆|碳13|碳14|13C|14C/i,
   食管癌: /食管|胃镜|食管镜|反流性食管炎|Barrett/i,
   前列腺癌: /前列腺|\bPSA\b|前列腺特异抗原/i,
@@ -50,7 +54,8 @@ function buildCancerEvidenceText(user, reports, referenceYear = new Date().getFu
       if (Number.isFinite(year) && year < cutoffYear) return;
       const reportText = [report.title, report.screeningL2, report.examConclusion, report.note].filter(Boolean).join(' ');
       const matchedItems = (report.reportItems || []).filter(item => pattern.test([
-        item.name, item.bodyPart, item.findings, item.diagnosis, item.conclusion,
+        item.name, item.sourceSection, item.orderName, item.bodyPart, item.value,
+        item.findings, item.diagnosis, item.conclusion,
       ].filter(Boolean).join(' ')));
       if (!pattern.test(reportText) && !matchedItems.length) return;
       const evidenceId = `RPT-${String(reportIndex + 1).padStart(3, '0')}`;
@@ -87,23 +92,11 @@ const FOCUSED_TREND_RULES = {
 };
 
 function buildFocusedTrendEvidenceText(reports, referenceYear = new Date().getFullYear()) {
-  const cutoffYear = referenceYear - 4;
   return Object.entries(FOCUSED_TREND_RULES).map(([topic, pattern]) => {
-    const hits = [];
-    reports.forEach((report, reportIndex) => {
-      const date = String(report.checkDate || report.date || '').slice(0, 10);
-      const year = Number(report.reportYear || date.slice(0, 4));
-      if (Number.isFinite(year) && year < cutoffYear) return;
-      const matched = (report.reportItems || []).filter(item => pattern.test([
-        item.name, item.bodyPart, item.value, item.findings, item.diagnosis, item.conclusion,
-      ].filter(Boolean).join(' ')));
-      if (!matched.length) return;
-      const evidenceId = `RPT-${String(reportIndex + 1).padStart(3, '0')}`;
-      hits.push(`[${evidenceId}] ${date || year || '日期未知'} ${matched.slice(0, 12).map(item =>
-        `${item.name || '未命名'}=${[item.value, item.unit, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join('；') || '未记录结果'}`
-      ).join(' | ')}`);
-    });
-    return `【${topic}】${hits.length ? `\n${hits.join('\n')}` : '近5年无记录'}`;
+    const hits = focusedReportHits(reports, topic, pattern, referenceYear);
+    return `【${topic}】${hits.length ? `\n${hits.map(hit =>
+      `[${hit.evidenceId}] ${hit.date || hit.year} ${hit.name}=${hit.result || '报告结论待核对'}`
+    ).join('\n')}` : '近5年无记录'}`;
   }).join('\n');
 }
 
@@ -128,8 +121,8 @@ async function generateHealthSummarySections(user, {
   const [activeMeds, activeSupplements, recentCheckins] = await Promise.all([
     retrospective ? [] : Medication.find({ user: user._id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
     retrospective ? [] : Supplement.find({ user: user._id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
-    // 近30天打卡记录（体重/血压/血糖/睡眠/运动/情绪等），2026-07-11新增：此前AI健康分析完全没读打卡数据，
-    // 只看体检报告和手动录入的档案字段，导致日常打卡趋势(如体重变化/运动频率/睡眠时长)无法体现在分析里
+    // 近30天健康数据记录（体重/血压/血糖/睡眠/运动/情绪等），2026-07-11新增：此前AI健康分析完全没读健康数据记录，
+    // 只看体检报告和手动录入的档案字段，导致日常健康数据趋势(如体重变化/运动频率/睡眠时长)无法体现在分析里
     retrospective ? [] : HealthRecord.find({ user: user._id, recordedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } })
       .sort({ recordedAt: -1 }).select('type value extra unit recordedAt').lean(),
   ]);
@@ -153,7 +146,10 @@ async function generateHealthSummarySections(user, {
       return Number(report.reportYear || date.slice(0, 4)) === targetYear;
     })
     : allHistoricalReports;
-  const reuseTumor = !!(reusedTumorSection && (scope === 'doctor' || scope === 'all'));
+  // A previously generated tumor section may contain an unsupported marker claim.
+  // Rebuild it when current report evidence contradicts that old prose.
+  const reuseTumor = !!(reusedTumorSection && (scope === 'doctor' || scope === 'all')
+    && !findUnsupportedTumorMarkerElevation(reusedTumorSection, allHistoricalReports));
   if (reuseTumor) {
     allReports = allReports.filter(report => {
       const text = [report.screeningCategory, report.title, report.screeningL2].filter(Boolean).join(' ');
@@ -163,7 +159,13 @@ async function generateHealthSummarySections(user, {
 
   // 【体检关键指标】立足点：优先从专项筛查报告 reportItems 派生真实数值（与医护端「体检关键指标」卡片同源），
   // 而非读几乎为空的 user.labValues。这是"AI提取数据没一次对的"的根因修复（2026-07-10）。
-  const { latest: derivedLab, trend: derivedTrend } = deriveLabFromReports(allReports);
+  const { latest: derivedLab } = deriveLabFromReports(allReports);
+  const fiveYearReports = allReports.filter(report => {
+    const date = String(report.checkDate || report.date || '');
+    const year = Number(report.reportYear || date.slice(0, 4));
+    return Number.isInteger(year) && year >= targetYear - 4 && year <= targetYear;
+  });
+  const { trend: derivedTrend } = deriveLabFromReports(fiveYearReports);
   const lv = user.labValues || {};
   const bc = user.bodyComposition || {};
   // 身体成分（超声/体成分不在专项筛查数值提取范围内，仍读手动录入字段作为补充）
@@ -193,7 +195,10 @@ async function generateHealthSummarySections(user, {
     reportsByYear[year].forEach(r => {
       const evidenceId = `RPT-${String(allReports.findIndex(item => String(item._id) === String(r._id)) + 1).padStart(3, '0')}`;
       const conclusion = r.examConclusion ? r.examConclusion.slice(0, 150) : (r.note ? r.note.slice(0, 100) : '未记录结论');
-      const abnormal = (r.reportItems || []).filter(i => i.status === 'abnormal').map(i => i.name).join('、');
+      const abnormal = (r.reportItems || []).filter(i => {
+        const markerStatus = classifyTumorMarkerItem(i);
+        return markerStatus === 'elevated' || (markerStatus === null && i.status === 'abnormal');
+      }).map(i => i.name).join('、');
       const dateStr = (r.checkDate || r.date || '').slice(0, 10);
       reportSummaryLines.push(`  - [${evidenceId}] ${r.screeningL2 || r.title}（${dateStr}）：${conclusion}${abnormal ? '；异常项：' + abnormal : ''}`);
       (r.reportItems || []).filter(i => i.itemType === 'imaging' && (i.findings || i.diagnosis)).forEach(img => {
@@ -221,8 +226,11 @@ async function generateHealthSummarySections(user, {
   const cancerCatalogText = reuseTumor ? '本次复用' : buildCancerCatalogText(user);
   const cancerEvidenceText = reuseTumor ? '本次复用' : buildCancerEvidenceText(user, allReports, targetYear);
   const focusedTrendEvidenceText = buildFocusedTrendEvidenceText(allReports, targetYear);
+  const echoChamberText = buildEchoChamberTrend(allHistoricalReports, targetYear).map(metric =>
+    `${metric.name}：${metric.points.map(point => `${point.date} ${point.value}${metric.unit}`).join(' → ')}`
+  ).join('\n') || '近5个自然年没有可核对的心房、心室测量数值';
 
-  // 近30天打卡记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
+  // 近30天健康数据记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
   const CHECKIN_LABEL = { weight: '体重(kg)', bloodPressure: '血压(mmHg)', bloodSugar: '血糖(mmol/L)', heartRate: '心率(次/分)', sleep: '睡眠(小时)', mood: '情绪(1-10分)', exercise: '运动', diet: '饮食', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒', symptom: '症状自评' };
   const NUMERIC_CHECKIN_TYPES = new Set(['weight', 'bloodSugar', 'heartRate', 'sleep', 'mood']);
   const checkinByType = {};
@@ -242,7 +250,7 @@ async function generateHealthSummarySections(user, {
     }
     // 文本类（运动/饮食/饮水/排便/吸烟/饮酒）：列最近3条原文，体现近期习惯
     return `${label}：近30天共${recs.length}次记录，最近几条 - ${recs.slice(0, 3).map(r => r.value).join('；')}`;
-  }).filter(Boolean).join('\n') || (retrospective ? '无可核对的目标年度打卡快照，不作判断' : '近30天暂无打卡记录');
+  }).filter(Boolean).join('\n') || (retrospective ? '无可核对的目标年度健康数据记录快照，不作判断' : '近30天暂无健康数据记录');
 
   const ls  = user.lifestyle || {};
   const lsd = user.lifestyle_data || {};
@@ -316,7 +324,7 @@ async function generateHealthSummarySections(user, {
   ]);
 
   const prompt = `${roleIntro}
-${retrospective ? `【历史年度补生成，最高优先级】本次回溯分析截至${targetYear}年12月31日。只能将检查年度不晚于${targetYear}年的原始报告作为该年度事实；未提供历史快照的档案、用药、生活方式和打卡一律写“当年资料不可核对”，不得推断为空或借用现在的状态。生成时间是现在，不能声称本分析在${targetYear}年当时已经完成。\n` : ''}
+${retrospective ? `【历史年度补生成，最高优先级】本次回溯分析截至${targetYear}年12月31日。只能将检查年度不晚于${targetYear}年的原始报告作为该年度事实；未提供历史快照的档案、用药、生活方式和记录健康数据一律写“当年资料不可核对”，不得推断为空或借用现在的状态。生成时间是现在，不能声称本分析在${targetYear}年当时已经完成。\n` : ''}
 【服务边界——最高优先级】本输出仅用于整理用户已提供的健康资料和呈现变化趋势，不提供诊断、疾病概率判断、病因推断、治疗方案、检查开单、处方，以及药物或营养补充剂的新增、停用、替换、剂量和用法建议。异常信息只能忠实引用原报告、参考范围或用户记录，并提示用户携带原始资料咨询正规医疗机构。当前用药和营养补充信息只可作为原始记录展示，不得推断其与指标异常存在因果关系，也不得据此建议调整。department字段固定输出空字符串。问题分析必须身心结合，但不得将心理量表与躯体疾病建立未经原始资料明确记载的因果关系。
 
 【医疗事实铁律——优先级高于其他要求】
@@ -324,28 +332,31 @@ ${retrospective ? `【历史年度补生成，最高优先级】本次回溯分�
 ②严禁相近概念替换：冠心病、冠脉支架、心肌梗死不等于脑梗死/脑卒中；颈动脉斑块不等于脑卒中；肥胖、血脂异常等风险因素不等于已确诊心脑血管病。
 ③每条结论先在证据目录中找到依据；无依据的诊断和病史不得输出。资料冲突时写“资料冲突，待人工确认”。
 ④逐份、逐项核对报告，不得只挑少数重要指标；输出前自检是否遗漏已有检查、是否新增不存在的疾病、是否混淆疾病名称。
+⑤凡提及异常指标，写明对应检查日期（原报告只有年份时写年份）；既往异常与最近一次结果分开说明，不得把旧异常描述为当前异常。
 
 【心理量表铁律——必须严格遵守】①SCL90各因子分必须严格按系统标注的正常/异常判定来解读：因子分＜2一律属正常范围，即使某因子（如精神病性1.2）在数值上略高于其他因子，只要＜2就是正常，绝不能描述为"升高/偏高/异常"。②心理量表（SCL90/SAS/SDS/嗜睡）的因子和结论只能写进"情绪/心理"相关分析，严禁把精神病性、偏执等心理因子塞进 cardiovascular_risk（心脑血管）、tumor_risk（肿瘤）等躯体维度——这些心理因子与躯体疾病风险无直接因果关系。③只有当系统明确标注某因子为异常时，才可在情绪维度提示。
 
-分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【近30天打卡记录】【当前用药与营养素补充】综合评估。【近30天打卡记录】反映的是体检之后更实时的自测数据（如体重是否持续下降、血压近期是否稳定、运动频率、睡眠时长），如果与体检报告结论有出入（如体检时血压正常但近期打卡持续偏高），应在相应维度中明确指出这一变化趋势。专项筛查报告中的检查所见（影像/内镜）请重点比对历年同类检查变化。每个分析维度都应体现「几年数据的趋势变化 → 当前结论 → 下一步」而非仅描述当前值。
+分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【近30天健康数据记录】【当前用药与营养素补充】综合评估。【近30天健康数据记录】反映的是体检之后更实时的自测数据（如体重是否持续下降、血压近期是否稳定、运动频率、睡眠时长），如果与体检报告结论有出入（如体检时血压正常但近期记录健康数据持续偏高），应在相应维度中明确指出这一变化趋势。专项筛查报告中的检查所见（影像/内镜）请重点比对历年同类检查变化。每个分析维度都应体现「几年数据的趋势变化 → 当前结论 → 下一步」而非仅描述当前值。
 
 【心脑血管与慢病趋势卡规则——严格限定范围】
 ①cardiovascular_risk.topics只允许以下主题，且每种检查独立建卡、独立比较：心电图、心脏超声、冠脉CTA、运动评估/运动负荷试验、心脏磁共振；脑血管方向为颈动脉超声、头颅MRI、头颅MRA、同型半胱氨酸、脂蛋白磷脂酶A2（Lp-PLA2）。其他项目不得放入心脑血管趋势卡。
+同型半胱氨酸按本服务干预规则判断：最近一次有效检测值≥${HOMOCYSTEINE_INTERVENTION_THRESHOLD} μmol/L（含阈值）时，status必须为attention，nextAction必须明确“需干预”，提示携带原始报告由医生评估具体方式及复查；不得写“无需干预”“仅常规监测”。不要据此自行给出药物或营养补充剂方案。
 ②chronic_disease.items只允许最多6张聚合卡，并固定按以下顺序输出：血压、血糖、血脂、尿酸、肾功能、骨质疏松。空腹血糖和糖化血红蛋白必须合并在同一张“血糖”卡内；总胆固醇、HDL-C、LDL-C、甘油三酯及报告中同组血脂指标必须合并在同一张“血脂”卡内；肌酐、尿素氮、eGFR、胱抑素C等合并在“肾功能”卡内；骨密度、T值/Z值、骨量减少或骨质疏松描述合并在“骨质疏松”卡内。严禁把子指标拆成独立卡片。肝功能、听力、视力、甲状腺功能及其他专科项目不得输出到慢病趋势卡。
 ③只按会员真实存在的资料建卡，不为凑数量创建空主题。每张卡先找最近一次，再比较最近5个自然年内同名指标或同类检查；0次不建卡，1次=baseline，至少2个可比点才可判断stable/improving/worsening/fluctuating。不同检测方法、单位或部位不得硬比较，写not_comparable。关键变化最多3条，不逐年堆砌全文。
+④心脏超声卡需分别核对左房、右房、左室、右室的同名测量项目，写明各次检查日期及原报告数值；内径、容积、容积指数以及左室舒张末内径不得混作一条趋势。只有同名、同单位或可换算单位的至少两次结果，才可描述数值变化；不要仅凭一个内径推断整个心腔扩大或疾病进展。
 
-【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】除 PSA（前列腺癌相对特异）外，AFP/CEA/CA19-9/CA125/CA15-3/CA724/HE4/NSE 等常见肿瘤标志物特异性都不高：单项轻度升高绝不能直接判为"疑似癌症"或建议会员恐慌就医，必须结合影像/内镜结果、动态趋势（是否持续进行性升高）、既往史家族史综合判断。标志物正常也不代表无肿瘤风险。请在 tumor_risk 维度中明确说明标志物的这一局限性。
+【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】只能提及本会员报告中实际存在的标志物。声称某项“升高”必须有该项数值高于报告原印参考上限的证据；声称“持续升高”还必须有至少两次超上限记录，且最近一次仍超上限。不要把异常状态标签当作数值证据。标志物单项轻度升高不能直接判为“疑似癌症”；正常也不代表排除肿瘤风险。请在 tumor_risk 维度中说明这一局限性。
 
 【肿瘤覆盖与趋势输出铁律】
 ①必须按下方性别对应的10种常见肿瘤逐项输出，既不能遗漏，也不能把“常见肿瘤目录”等同于“每年必须做10项筛查”。
-②先判断该会员是否达到常规或高风险筛查条件。资料不足时状态写unknown，禁止直接写overdue；暂无普通无症状人群常规筛查依据时写not_routinely_recommended，不得写“漏筛”。
+②先判断该会员是否达到常规或高风险筛查条件。已有对应器官的有效检查记录时，应据实标注已覆盖或异常复查，并把尚待核实的筛查适用条件写入riskBasis；不能仅因适用条件待核实就把已有检查写成“资料不足”。确无有效检查且适用条件资料不足时才写unknown，禁止直接写overdue；暂无普通无症状人群常规筛查依据时写not_routinely_recommended，不得写“漏筛”。
 ③提醒优先级：原报告/医生明确复查期限 > 已有异常随访 > 规则引擎筛查周期。只有证据明确支持一年一次时，超过一年才能写overdue；不得把正常肠镜、HPV/TCT等全部粗暴设成一年到期。
 ④趋势最长比较最近5个自然年。0次记录写no_data；1次写baseline（仅建立基线，禁止写稳定）；至少2个可比时间点才可写stable/improving/worsening/fluctuating。不能确认是同一病灶、检查方法或单位不可比时写not_comparable。
 ⑤影像/内镜趋势只比较原报告明确记载的部位、数量、大小、性质和分级；不得自行对应病灶。每项趋势结论必须简短，关键变化最多3条，并保留证据编号。
 ⑥肿瘤标志物只能作为辅助趋势，正常不代表排除肿瘤，单项轻度升高不得判癌。
 ⑦必须逐项使用【常见肿瘤近5年分组证据】核对年份，分组证据中存在的年份不得遗漏。结直肠癌尤其要同时核对历年肠镜；组合名称“泌尿系超声/双肾输尿管膀胱”中明确包含膀胱时，必须计入膀胱影像记录。
 ⑧同一器官的不同检查类型分轨比较：内镜所见只与内镜所见比较，病理只与病理比较，影像只与影像比较，检验指标按同名指标比较。禁止用2023年病理分级与2026年胃镜下分级直接得出“进展/改善”；应分别写“内镜变化”和“病理变化”，缺少同轨时间点时写仅建立基线。
-⑨肝癌卡必须逐项核对：肝脏影像、AFP、肝脏弹性/纤维化超声，以及透明质酸、层粘连蛋白、Ⅲ型前胶原、Ⅳ型胶原等已存在的肝纤维化指标；有记录就呈现其同名指标趋势，不得只写AFP和脂肪肝。
+⑨肝癌卡必须跨分类逐项核对：肝脏影像、AFP、肝脏弹性/纤维化超声及已有的肝纤维化指标，还要查阅“传染病筛查”及其他报告中的乙肝血清学（尤其HBsAg）、HBV-DNA、丙肝抗体和HCV-RNA等实际存在的结果。按检查日期和原报告结果呈现同名指标趋势，不能因为乙肝/丙肝项目归在“其他/传染病筛查”就遗漏。区分乙肝表面抗原与表面抗体、丙肝抗体与HCV-RNA：单项乙肝表面抗体阳性不代表当前感染，丙肝抗体阳性也不能单独确认当前感染；HBsAg或病毒核酸等结果需按原报告准确陈述并由医生结合完整资料解释。感染指标不能单独判定肝癌或个人患癌概率，阴性结果也不能排除其他肝癌风险。缺少确认性资料时写“资料不足以判断”，提示携带原报告由医生结合病史和肝病情况评估。
 ⑩胰弹性蛋白酶/粪便胰弹性蛋白酶反映胰腺外分泌功能，不得作为胰腺癌筛查证据、异常或趋势。胰腺癌基础覆盖只认明确观察胰腺的腹部影像；CA19-9仅作辅助。
 ⑪已经有有效期内肠镜时，粪便隐血/FOBT不得列为“需关注、到期或优先补做”；已经完成胃肠镜也不得仅因粪便隐血阳性直接生成“优先排查消化道器质性病变”，只能忠实记录该结果并提示结合已完成内镜结论由医生判断。
 
@@ -365,7 +376,7 @@ ${psychSummary}
 【生活方式与膳食调查】
 ${lifestyleSummary}
 
-【近30天打卡记录（体重/血压/血糖/心率/睡眠/情绪等日常自测数据，体现短期真实趋势，可与体检报告互相印证或提示体检后的变化）】
+【近30天健康数据记录（体重/血压/血糖/心率/睡眠/情绪等日常自测数据，体现短期真实趋势，可与体检报告互相印证或提示体检后的变化）】
 ${checkinSummary}
 
 【当前用药】
@@ -377,7 +388,7 @@ ${supplementSummary}
 【最近一次体检关键指标】（分析立足点）
 ${labSummary}
 
-【历年体检指标趋势（近几年记录）】
+【体检指标趋势（${targetYear - 4}—${targetYear}年，最近5个自然年）】
 ${labTrendLines}
 
 【历年专项筛查报告（按年份列出所有记录）】
@@ -386,7 +397,7 @@ ${reportSummary}
 【专科检查异常发现（含听力/视力/眼耳鼻喉/口腔/骨密度等所有专科，务必逐条纳入分析，不要遗漏）】
 ${examFindingsText}
 
-【肿瘤标志物（历年，单独维度分析）】
+【肿瘤标志物（完整历史仅作背景；5年趋势只比较${targetYear - 4}—${targetYear}年，旧异常必须标年份）】
 ${tumorMarkerText}
 
 【基因检测报告】
@@ -403,6 +414,9 @@ ${cancerEvidenceText}
 
 【心脑血管与限定慢病近5年分组证据（只允许依据这些主题建趋势卡）】
 ${focusedTrendEvidenceText}
+
+【心超心房心室同名测量值（近5个自然年；程序按报告日期整理）】
+${echoChamberText}
 
 【带编号证据目录（结论必须以此为事实边界）】
 ${evidenceCatalog}
@@ -544,15 +558,16 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   // 输出finding+risk+suggestion三段文字，实测JSON在1700字符左右就被截断报错，1200token撑不住完整输出
   // 肿瘤维度新增男女常见10种肿瘤逐项卡片后，doctor/all 输出明显增长；预留足够空间，
   // 避免JSON尾部截断。生活方式单独生成仍保持原额度。
-  const maxTokens = scope === 'all' ? 8192 : (scope === 'doctor' ? 8192 : 2000);
+  const maxTokens = wantDoctor ? (selectProvider() === 'qwen' ? 16384 : 8192) : 2000;
   // 健康信息整理包含最长5年资料和10种常见肿瘤卡片，属于长文本任务；仅此场景放宽
   // 单次AI请求上限，普通聊天等接口仍保持ai.js默认45秒。
-  const text = await chat([{ role: 'user', content: prompt }], {
+  const text = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], {
     maxTokens, temperature: 0.05, jsonMode: true, timeoutMs: wantDoctor ? 240000 : 45000,
-  });
+  }));
 
   let sections = null;
   let parseFailed = false;
+  let validationError = null;
   try {
     const jsonMatch = text.trim().match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -582,6 +597,7 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   // 还会使总请求超过网关等待时间。事实边界继续由首轮证据目录、确定性分类归并和人工审核保证。
 
   if (!parseFailed && reuseTumor) sections.tumor_risk = reusedTumorSection;
+  if (!parseFailed && wantDoctor && !reuseTumor && sections.tumor_risk) sections.tumor_risk.evidenceVersion = 2;
 
   // 模型偶尔仍会把血糖或血脂子指标拆成多张卡；展示前做确定性归并。
   if (!parseFailed && wantDoctor) normalizeTrendSections(sections, user, allHistoricalReports, targetYear);
@@ -589,6 +605,17 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   // AI 可能无视提示词，把同一份子宫附件超声同时写成“卵巢癌已覆盖”和
   // “子宫内膜癌/经阴道超声缺失”。结构化规则证据优先于模型措辞，生成后强制纠正。
   if (!parseFailed && wantDoctor && !reuseTumor) reconcileGynecologicUltrasoundCoverage(sections, cancerCoverage);
+
+  // Reject unsupported marker elevations before saving any generated draft.
+  // This also checks a reused section and any priority text copied into the result.
+  if (!parseFailed && wantDoctor) {
+    const unsupported = findUnsupportedTumorMarkerElevation(sections, allHistoricalReports);
+    if (unsupported) {
+      console.warn(`[ai-health-summary] 拒绝无检验依据的肿瘤标志物升高结论，userId=${user._id}，marker=${unsupported.marker}`);
+      validationError = `${unsupported.marker}升高结论缺少可核对的检验数值和参考范围，已停止保存本次分析；请先核对原始报告及提取结果`;
+      parseFailed = true;
+    }
+  }
 
   // 数据溯源：AI文本结论核实起来要反复跳转查原始档案，很麻烦。这里不是让AI自己编造溯源标识
   // （AI可能编造或对错号，指错地方比没有链接更误导人），而是后端用规则去 allReports 的
@@ -609,12 +636,12 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   if (scope === 'doctor') {
     const doctorOnly = {};
     DOCTOR_KEYS.forEach(k => { doctorOnly[k] = sections[k]; });
-    return { sections: doctorOnly, failed: parseFailed };
+    return { sections: doctorOnly, failed: parseFailed, validationError };
   }
   if (scope === 'nutrition') {
-    return { sections: { [LIFESTYLE_KEY]: sections[LIFESTYLE_KEY] }, failed: parseFailed };
+    return { sections: { [LIFESTYLE_KEY]: sections[LIFESTYLE_KEY] }, failed: parseFailed, validationError };
   }
-  return { sections, failed: parseFailed };
+  return { sections, failed: parseFailed, validationError };
 }
 
 const CHRONIC_GROUP_PATTERNS = [
@@ -677,7 +704,8 @@ function normalizeTrendSections(sections, user, reports = [], referenceYear = ne
       .sort((a, b) => rank.get(a.name) - rank.get(b.name));
   }
   const cardio = sections && sections.cardiovascular_risk;
-  if (cardio && Array.isArray(cardio.topics)) {
+  if (cardio) {
+    if (!Array.isArray(cardio.topics)) cardio.topics = [];
     const normalized = new Map();
     cardio.topics.forEach(item => {
       const nameText = String(item.name || '');
@@ -685,46 +713,21 @@ function normalizeTrendSections(sections, user, reports = [], referenceYear = ne
       if (matched && !normalized.has(matched[0])) normalized.set(matched[0], { ...item, name: matched[0] });
     });
     cardio.topics = CARDIO_TOPIC_ORDER.map(name => normalized.get(name)).filter(Boolean);
+    if (enforceHomocysteineIntervention(cardio.topics, reports)) {
+      cardio.topics.sort((a, b) => CARDIO_TOPIC_ORDER.indexOf(a.name) - CARDIO_TOPIC_ORDER.indexOf(b.name));
+      cardio.overview = cardio.overview || {};
+      cardio.overview.attentionCount = cardio.topics.filter(item => item.status === 'attention').length;
+    }
     backfillCardioTopicEvidence(cardio.topics, reports, referenceYear);
+    cardio.topics.sort((a, b) => CARDIO_TOPIC_ORDER.indexOf(a.name) - CARDIO_TOPIC_ORDER.indexOf(b.name));
+    const echo = cardio.topics.find(item => item.name === '心脏超声');
+    if (echo) echo.chamberSizeTrend = buildEchoChamberTrend(reports, referenceYear);
   }
   consolidateChronicDiseaseItems(sections);
 }
 
 function backfillCardioTopicEvidence(topics, reports, referenceYear = new Date().getFullYear()) {
-  const cutoffYear = referenceYear - 4;
-  topics.forEach(topic => {
-    const rule = FOCUSED_TREND_RULES[topic.name];
-    if (!rule) return;
-    const hits = [];
-    reports.forEach((report, reportIndex) => {
-      const date = String(report.checkDate || report.date || '').slice(0, 10);
-      const year = Number(report.reportYear || date.slice(0, 4));
-      if (!Number.isFinite(year) || year < cutoffYear) return;
-      const matched = (report.reportItems || []).filter(item => rule.test([
-        item.name, item.bodyPart, item.value, item.findings, item.diagnosis, item.conclusion,
-      ].filter(Boolean).join(' ')));
-      if (!matched.length) return;
-      const item = matched[0];
-      const result = [item.diagnosis, item.conclusion, item.findings, item.value].filter(Boolean).join('；').slice(0, 80);
-      hits.push({
-        date, year, name: item.name || topic.name, result,
-        evidenceId: `RPT-${String(reportIndex + 1).padStart(3, '0')}`,
-      });
-    });
-    if (!hits.length) return;
-    hits.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const latest = hits[hits.length - 1];
-    const years = [...new Set(hits.map(hit => hit.year))];
-    topic.latest = `${latest.date || latest.year} ${latest.name}${latest.result ? `：${latest.result}` : ''}`;
-    const yearPrefix = `近5年检查记录：${years.join('、')}年`;
-    topic.trend = String(topic.trend || '').includes(years[0])
-      ? topic.trend
-      : `${yearPrefix}${topic.trend ? `；${topic.trend}` : ''}`.slice(0, 120);
-    const deterministicChanges = hits.map(hit => `${hit.year}年${hit.name}${hit.result ? `：${hit.result}` : ''}`.slice(0, 100));
-    topic.keyChanges = [...new Set([...deterministicChanges, ...(topic.keyChanges || [])])].slice(-3);
-    topic.evidenceIds = [...new Set([...(topic.evidenceIds || []), ...hits.map(hit => hit.evidenceId)])];
-    if (hits.length === 1) topic.trendStatus = 'baseline';
-  });
+  reconcileFocusedTopics(topics, reports, FOCUSED_TREND_RULES, CARDIO_TOPIC_ORDER, referenceYear);
 }
 
 function consolidateChronicDiseaseItems(sections) {
@@ -783,17 +786,24 @@ function buildStructuredSourceEvidence(name, reports, rule, referenceYear = new 
   return reports.flatMap(report => {
     const date = String(report.checkDate || report.date || '').slice(0, 10);
     const year = Number(report.reportYear || date.slice(0, 4));
-    if (!Number.isFinite(year) || year < cutoffYear) return [];
-    const matchedItems = (report.reportItems || []).map((item, itemIndex) => ({ item, itemIndex })).filter(({ item }) => rule.test([
+    const rawMatchedItems = (report.reportItems || []).map((item, itemIndex) => ({ item, itemIndex })).filter(({ item }) => rule.test([
       item.name, item.sourceSection, item.orderName, item.bodyPart, item.value,
       item.findings, item.diagnosis, item.conclusion,
     ].filter(Boolean).join(' ')));
+    const matchedItems = rawMatchedItems.filter(({ item }) => {
+      const itemYear = Number(String(item.examDate || date || year).slice(0, 4));
+      return Number.isInteger(itemYear) && itemYear >= cutoffYear && itemYear <= referenceYear;
+    });
+    if (rawMatchedItems.length && !matchedItems.length) return [];
     const reportText = [report.title, report.screeningL2, report.examDescription, report.examConclusion, report.note].filter(Boolean).join(' ');
-    if (!matchedItems.length && !rule.test(reportText)) return [];
+    if (!matchedItems.length && (!rule.test(reportText) || !Number.isInteger(year) || year < cutoffYear || year > referenceYear)) return [];
     return [{
       reportId: String(report._id), date, year,
       items: matchedItems.map(({ item, itemIndex }) => ({
         itemIndex, name: item.name || name, sourcePage: item.sourcePage || null,
+        date: String(item.examDate || date || year).slice(0, 10),
+        value: String(item.value || '').slice(0, 80), unit: String(item.unit || '').slice(0, 24),
+        referenceRange: String(item.referenceRange || '').slice(0, 80),
       })),
     }];
   }).sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -808,7 +818,13 @@ function attachSourceLinks(sections, allReports, referenceYear = new Date().getF
     .filter(report => categories.includes(report.screeningCategory)
       || (report.reportItems || []).some(item => categories.includes(item.screeningCategory)))
     .map(report => String(report._id)))];
-  if (sections.tumor_risk) sections.tumor_risk.sourceReportIds = idsFor(['tumor']);
+  if (sections.tumor_risk) sections.tumor_risk.sourceReportIds = [...new Set([
+    ...idsFor(['tumor']),
+    ...allReports.filter(report => (report.reportItems || []).some(item =>
+      CANCER_EVIDENCE_RULES.肝癌.test([item.name, item.sourceSection, item.orderName, item.value,
+        item.findings, item.diagnosis, item.conclusion].filter(Boolean).join(' '))))
+      .map(report => String(report._id)),
+  ])];
   if (sections.cardiovascular_risk) sections.cardiovascular_risk.sourceReportIds = idsFor(['cardiovascular', 'brain_vessel']);
   if (sections.chronic_disease) sections.chronic_disease.sourceReportIds = idsFor(['chronic', 'functional', 'other_routine', 'health_promote', 'other']);
   const allIds = [...new Set(allReports.map(report => String(report._id)))];
@@ -857,4 +873,5 @@ function attachSourceLinks(sections, allReports, referenceYear = new Date().getF
   }
 }
 
-module.exports = { generateHealthSummarySections, reconcileGynecologicUltrasoundCoverage, DOCTOR_KEYS, LIFESTYLE_KEY };
+module.exports = { generateHealthSummarySections, reconcileGynecologicUltrasoundCoverage,
+  buildStructuredSourceEvidence, CANCER_EVIDENCE_RULES, DOCTOR_KEYS, LIFESTYLE_KEY };

@@ -20,6 +20,7 @@ const ALL_NAV = [
   { label: '科普推送',     icon: 'knowledge', path: '/knowledge',   roles: ['healthManager','nutritionist','familyDoctor','superadmin'],                         moduleKey: 'knowledge' },
   { label: '问卷推送',     icon: 'questionnaires', path: '/questionnaires', roles: ['healthManager','familyDoctor','superadmin'],                                      moduleKey: 'questionnaires' },
   { label: '产品推送',     icon: 'products', path: '/products',     roles: [],                                                                                  moduleKey: 'products' },
+  { label: '物资与设备',   icon: 'products', path: '/inventory',    roles: [] },
   { label: '分佣中心',     icon: 'commission', path: '/commission', roles: [],                                                                                  moduleKey: 'commission' },
   { label: '会员营销',     icon: 'marketing', path: '/marketing',   roles: ['superadmin','manager','healthManager','familyDoctor'],                              moduleKey: 'marketing' },
   { label: '官网线索',     icon: 'marketing', path: '/visitor-leads', roles: ['superadmin','healthPlanner'],                                                     moduleKey: 'leads' },

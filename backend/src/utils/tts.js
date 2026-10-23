@@ -77,8 +77,10 @@ function synthesizeAudio(text, token) {
 async function synthesize(text) {
   if (!ttsEnabled()) throw new Error('语音合成服务未配置');
   if (!text || !text.trim()) throw new Error('缺少朗读文本');
+  await require('./aiDataConsent').assertContextPermission('aliyun-nls');
 
   const token = await fetchNlsToken();
+  await require('./aiDataConsent').assertContextPermission('aliyun-nls');
   const audioBuffer = await synthesizeAudio(text.slice(0, 2000), token);
   const base64 = audioBuffer.toString('base64');
   const { url } = await uploadBase64(`data:audio/mpeg;base64,${base64}`, 'audio/mpeg', 'tts');

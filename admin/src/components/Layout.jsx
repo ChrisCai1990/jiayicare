@@ -19,11 +19,11 @@ const NAV_SECTIONS = [
     label: '运营管理',
     items: [
       { label: '商城产品', icon: 'product', path: '/products' },
+      { label: '物资与设备', icon: 'product', path: '/inventory' },
       { label: '合作伙伴权益', icon: 'partner', path: '/partners' },
       { label: '企业客户', icon: 'company', path: '/enterprises' },
       { label: '健康基金', icon: 'fund', path: '/health-fund' },
       { label: '运营看板', icon: 'chart', path: '/ops-dashboard' },
-      { label: '体重管理试点', icon: 'chart', path: '/metabolic-pilot', superadminOnly: true },
       { label: '就医协助质量', icon: 'chart', path: '/care-quality' },
       { label: 'WONCA 研究管理', icon: 'chart', path: '/research-care-journeys', superadminOnly: true },
       { label: '健康方案模板', icon: 'template', path: '/health-plan-templates' },
@@ -52,6 +52,7 @@ const NAV_SECTIONS = [
       { label: '平台合作协议', icon: 'form', path: '/agreements', superadminOnly: true },
       { label: '本机构套餐', icon: 'money', path: '/saas-plan', superadminOnly: true },
       { label: '服务流程管理', icon: 'settings', path: '/settings/supply-workflow' },
+      { label: '营养评估需求单', icon: 'form', path: '/settings/nutrition-assessment', superadminOnly: true },
       { label: '成熟流程对齐', icon: 'settings', path: '/settings/service-workflow-alignment' },
       { label: '小程序审核体验', icon: 'settings', path: '/settings/review-experience' },
     ],
@@ -83,14 +84,14 @@ const NAV_SECTIONS = [
 
 const NAV_GROUPS = {
   '运营管理': {
-    '经营与服务': ['/products', '/partners', '/enterprises', '/health-fund'],
+    '经营与服务': ['/products', '/inventory', '/partners', '/enterprises', '/health-fund'],
     '运营与质量': ['/ops-dashboard', '/care-quality', '/metabolic-pilot', '/research-care-journeys'],
     '内容与工具': ['/health-plan-templates', '/ai-case-review-templates', '/questionnaires', '/change-logs'],
   },
   '基础设置': {
     '组织与人员': ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees'],
     '会员与医疗资源': ['/settings/medical-resource-knowledge', '/settings/medical-delivery-resources', '/settings/medical-resources', '/settings/members', '/settings/scoring', '/clinical-standards'],
-    '智能与服务流程': ['/settings/daily-care', '/settings/health-assistant', '/settings/ai-usage', '/settings/supply-workflow', '/settings/service-workflow-alignment', '/settings/review-experience'],
+    '智能与服务流程': ['/settings/daily-care', '/settings/health-assistant', '/settings/ai-usage', '/settings/supply-workflow', '/settings/service-workflow-alignment', '/settings/nutrition-assessment', '/settings/review-experience'],
   },
   '项目设置': {
     '基础项目库': ['/projects/categories', '/projects/diseases', '/projects/specialty-library', '/projects/lab-test-items', '/projects/lab-test-orders', '/projects/lab-test-packages', '/projects/special-exams', '/projects/functional-medicine'],

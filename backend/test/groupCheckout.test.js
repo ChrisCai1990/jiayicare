@@ -11,6 +11,7 @@ function harness(config = {}) {
   const items = [{ productId: 'a', name: '营养改变生活', price: 6800 }, { productId: 'b', name: '维生素D', price: 318.44 }];
   const products = items.map(item => ({ _id: item.productId, status: 'on', paymentChannel: 'wechat_pay', fulfillmentType: 'delivery_and_service', category: '营养', ...(config.products?.[item.productId] || {}) }));
   const user = { _id: 'u', wechatMpOpenid: 'openid' };
+  const serviceUser = config.serviceUser || user;
   const record = { _id: 'push', staffId: 'doctor', servicePerformers: [{ productId: 'a', role: 'nutritionist', staffId: 'n1' }, { productId: 'b', role: 'nutritionist', staffId: 'n2' }] };
   const save = async function () { return this; };
   const mocks = {
@@ -21,7 +22,7 @@ function harness(config = {}) {
     '../models/Coupon': { findOne: async () => config.coupon || null },
     '../models/PushRecord': { findOneAndUpdate: async () => config.locked ? null : record, updateOne: async () => {} },
     '../models/Enterprise': { findById: async () => null },
-    './healthFundPayment': { ...actualFund, getHealthFundPolicy: async () => ({ ...actualFund.DEFAULT_HEALTH_FUND_POLICY, ...(config.policy || {}) }), getPersonalFundAvailable: async () => config.personal || 0, getCorporateFundAvailable: async () => config.corporate || 0 },
+    './healthFundPayment': { ...actualFund, getHealthFundPolicy: async () => ({ ...actualFund.DEFAULT_HEALTH_FUND_POLICY, ...(config.policy || {}) }), getPersonalFundAvailable: async () => config.personal || 0, getVitalityFundAvailable: async () => config.vitality || 0, getCorporateFundAvailable: async () => config.corporate || 0 },
     './enterpriseSharedFund': {
       eligibleAccount: async (_user, productId) => config.sharedAccount?.productIds.includes(productId) ? config.sharedAccount : null,
       reserve: async args => events.push(['sharedReserve', String(args.orderId), args.amount]),
@@ -34,7 +35,7 @@ function harness(config = {}) {
       return config.fundEligible !== false;
     } },
     './orderInventory': { reserveProduct: async p => { events.push(['reserve', p._id]); return { reserved: config.soldOut !== p._id, available: config.soldOut !== p._id }; }, releaseOrderInventory: async o => events.push(['release', o.serviceId]) },
-    './serviceOwnership': { resolveOrderWorkflowAssignee: async () => 'planner', orderOwnershipFields: () => ({ supervisorId: 'planner' }) },
+    './serviceOwnership': { resolveOrderWorkflowAssignee: async id => { if (config.onAssignee) config.onAssignee(id); return 'planner'; }, orderOwnershipFields: () => ({ supervisorId: 'planner' }) },
     './wechatPay': { createJsapiPayment: async args => { events.push(['gateway', args]); if (config.gatewayError) throw new Error('timeout'); return { prepayId: 'prepay', client: { package: 'prepay_id=prepay', paySign: 'sig' } }; } },
     './orderSettlement': { confirmPayment: async () => { events.push(['settlement']); if (config.settlementError) throw new Error('temporary failure'); } },
   };
@@ -43,8 +44,18 @@ function harness(config = {}) {
   const ctx = { process: { env: { WECHAT_APP_APPID: 'wx1111111111111111' } }, module: { exports: {} }, require: name => { if (!(name in mocks)) throw new Error(name); return mocks[name]; } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/utils/pushGroupCheckout'), 'utf8'), ctx);
   return { ...ctx.module.exports, events, orders, payments, items, products, user, record,
-    run: options => ctx.module.exports.createPushGroupCheckout({ record, user, items, options: { paymentMethod: 'wechat', ...(options || {}) } }) };
+    run: options => ctx.module.exports.createPushGroupCheckout({ record, user, serviceUser, items, options: { paymentMethod: 'wechat', ...(options || {}) } }) };
 }
+
+test('family group purchase charges the payer and assigns both orders to the beneficiary planner', async () => {
+  const assignees = [];
+  const h = harness({ serviceUser: { _id: 'family-member', name: '小明', tenantId: 'tenant' }, onAssignee: id => assignees.push(id) });
+  const result = await h.run({ expectedAmount: 7118.44 });
+  assert.equal(result.success, true);
+  assert.deepEqual(assignees, ['family-member', 'family-member']);
+  assert.ok(h.orders.every(order => order.user === 'family-member' && order.payerUser === 'u' && order.beneficiaryName === '小明' && order.supervisorId === 'planner'));
+  assert.equal(h.payments[0].user, 'u');
+});
 
 test('largest-remainder cents allocation conserves money, including one-cent and large values', () => {
   for (const capacities of [[680000, 31844], [1, 1, 1], [0, 11, 0], [900000000, 100000001]]) {
@@ -91,12 +102,12 @@ test('coupon and fund are allocated per item; cash sums to the single gateway ch
   assert.equal(h.orders.reduce((s, o) => s + cents(o.couponDiscount), 0), 10000);
 });
 
-test('disabled product rejects both fund sources; eligible product still uses personal balance first', async () => {
+test('disabled product rejects corporate funds but accepts its share of personal funds', async () => {
   const h = harness({ personal: 1, corporate: 100, products: { b: { healthFundDeduction: { mode: 'disabled' } } } });
   const q = await h.quoteGroup(h.user, h.items, h.products, { useHealthFund: 68 });
   assert.equal(q.allocations[1].corporate, 0);
-  assert.equal(q.allocations[1].personal, 0);
-  assert.equal(q.allocations[0].personal, 1);
+  assert.equal(q.allocations[1].personal, 0.04);
+  assert.equal(q.allocations[0].personal, 0.96);
   assert.equal(q.allocations[0].corporate, 67);
   assert.equal(q.summary.fundUsed, 68);
 });
@@ -123,11 +134,11 @@ test('gateway timeout preserves both orders and reservations for status/retry, n
   assert.equal(h.payments[0].status, 'processing'); assert.ok(!h.events.some(e => e[0] === 'release'));
 });
 
-test('large personal balance cannot bypass the per-product twenty percent cap', async () => {
+test('large personal balance can cover the entire product price', async () => {
   const h = harness({ personal: 7118.44 }); await h.run({ useHealthFund: 7118.44 });
-  assert.equal(h.payments[0].amount, 5694.76);
-  assert.deepEqual(h.orders.map(o => o.healthFundAmount), [1360, 63.68]);
-  assert.equal(h.events.filter(e => e[0] === 'gateway').length, 1);
+  assert.equal(h.payments[0].amount, 0);
+  assert.deepEqual(h.orders.map(o => o.healthFundAmount), [6800, 318.44]);
+  assert.equal(h.events.filter(e => e[0] === 'gateway').length, 0);
 });
 
 test('zero-cash coupon checkout uses settlement without WeChat and preserves recovery on failure', async () => {
@@ -138,12 +149,15 @@ test('zero-cash coupon checkout uses settlement without WeChat and preserves rec
   assert.ok(!failed.events.some(e => e[0] === 'release')); assert.ok(failed.orders.every(o => o.tradeStatus !== 'closed'));
 });
 
-test('ineligible membership or eligibility failure cannot reserve stock or create payment when using funds', async () => {
-  for (const config of [{ fundEligible: false }, { eligibilityError: true }]) {
-    const h = harness({ personal: 100, ...config });
-    await assert.rejects(h.run({ useHealthFund: 10 }), config.eligibilityError ? /eligibility unavailable/ : /健康基金仅限/);
+test('own fund works without membership while failed eligibility or corporate-only access blocks checkout', async () => {
+  for (const config of [{ fundEligible: false, personal: 0, corporate: 100 }, { eligibilityError: true, personal: 100 }]) {
+    const h = harness(config);
+    await assert.rejects(h.run({ useHealthFund: 10 }), config.eligibilityError ? /eligibility unavailable/ : /自有或活力基金/);
     assert.equal(h.orders.length, 0); assert.equal(h.payments.length, 0); assert.equal(h.events.length, 0);
   }
+  const own = harness({ fundEligible: false, personal: 100 });
+  await own.run({ useHealthFund: 10 });
+  assert.equal(own.orders.reduce((sum, order) => sum + order.healthFundAmount, 0), 10);
   const cash = harness({ fundEligible: false });
   await cash.run(); assert.equal(cash.payments[0].amount, 7118.44);
 });

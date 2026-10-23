@@ -59,6 +59,32 @@ test('review requires explicit section data, checked questions and note, complet
   assert.equal(user.initialArchiveReview.status,'completed');
   assert.throws(()=>reviewSection(user,'family',{...payload,revision:6},actor),/已完成/);
 });
+test('family history can be reviewed without changing the archive while preserving the original answer',()=>{
+  const review=initial({_id:'u',healthProfile:{}}).update.$set.initialArchiveReview;
+  const user={_id:'u',initialArchiveReview:review,coreHealthArchive:{}};
+  const payload={revision:0,sectionRevision:0,status:'reviewed',note:'已核对原问卷及既有档案，家族史无更新',checkedQuestionIds:['family'],noChange:true};
+  const result=reviewSection(user,'family',payload,actor);
+  assert.equal(result.update.$set.initialArchiveReview.sections.family.status,'reviewed');
+  assert.equal(result.update.$set.initialArchiveReview.items.find(i=>i.questionId==='family').answer,'父亲高血压');
+  assert.equal(result.update.$set['coreHealthArchive.family'],undefined);
+  assert.throws(()=>reviewSection(user,'family',{...payload,noChange:false},actor),/先补充/);
+  assert.equal(reviewSection(user,'allergy',{...payload,checkedQuestionIds:['allergy']},actor).update.$set.initialArchiveReview.sections.allergy.status,'reviewed');
+});
+test('all six sections can complete with no changes, without fabricating records or bypassing concurrency',()=>{
+  const user={_id:'u',initialArchiveReview:initial({_id:'u'}).update.$set.initialArchiveReview,coreHealthArchive:{}};
+  const evidence=structuredClone(user.initialArchiveReview.items);
+  for(const section of Object.keys(SECTION_LABELS)) {
+    const payload={revision:user.initialArchiveReview.revision,sectionRevision:0,status:'reviewed',note:'核对无更新',checkedQuestionIds:['family','symptom','allergy'],noChange:true};
+    assert.throws(()=>reviewSection(user,section,{...payload,revision:-1},actor),/进度已更新/);
+    if(section!=='routine') assert.throws(()=>reviewSection(user,section,{...payload,sectionRevision:1},actor),/档案已变化/);
+    const mutation=reviewSection(user,section,payload,actor);
+    assert.equal(Object.keys(mutation.update.$set).length,1);
+    user.initialArchiveReview=mutation.update.$set.initialArchiveReview;
+  }
+  assert.equal(user.initialArchiveReview.status,'completed');
+  assert.deepEqual(user.initialArchiveReview.items,evidence);
+  assert.deepEqual(user.coreHealthArchive,{});
+});
 test('editing a verified section during intake reopens only that section; later additions do not restart intake',()=>{
   const review=initial({_id:'u'}).update.$set.initialArchiveReview;
   review.sections.family={status:'reviewed'};

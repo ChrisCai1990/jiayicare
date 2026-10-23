@@ -9,7 +9,8 @@ test('specific ultrasound name refines broad body context while generic names re
   assert.equal(compatibleNode({ name: '肝胆脾胰彩超' }, { label: '肝脏超声' }), false);
 });
 const assert = require('node:assert/strict');
-const { selectMatchesForItem, norm } = require('../src/utils/screeningMatch');
+const { selectMatchesForItem, inferStoolPanelPages, norm } = require('../src/utils/screeningMatch');
+const { mergeCoverageAuditItems, coverageAuditHasChanges } = require('../src/utils/reportAuditMerge');
 const { reviewMetadataError, isCalendarReportDate, REPORT_PARSE_PROMPT } = require('../src/utils/reportExtractionPolicy');
 const { filterMissingReportItems, mergeSupplementItems } = require('../src/utils/reportPageSupplement');
 const { createBudgetRunner } = require('../src/utils/aiBudget');
@@ -28,6 +29,28 @@ test('same lab name uses its own panel, never falls into blood when urine panel 
   const index = [entry('血常规', ['白细胞']), entry('尿常规'), entry('粪便常规')];
   for (const panel of ['血常规', '尿常规', '粪便常规']) assert.equal(selectMatchesForItem({ name: '白细胞', sourceSection: panel, itemType: 'lab' }, index)[0]?.node.id, panel);
   assert.deepEqual(selectMatchesForItem({ name: '白细胞', sourceSection: '尿常规' }, [index[0]]), []);
+});
+
+test('stool-specific rows resolve ambiguous names only on a consistent page', () => {
+  const index = [entry('血常规', ['红细胞']), entry('尿常规', ['性状']), entry('粪便常规')];
+  const rows = [
+    { name: '颜色', itemType: 'lab', sourcePage: 4, value: '黄褐色' },
+    { name: '性状', itemType: 'lab', sourcePage: 4, value: '软便' },
+    { name: '红细胞', itemType: 'lab', sourcePage: 4, value: '0' },
+    { name: '寄生虫', itemType: 'lab', sourcePage: 4, value: '阴性' },
+  ];
+  assert.deepEqual([...inferStoolPanelPages(rows)], [4]);
+  assert.equal(selectMatchesForItem(rows[2], index, '粪便常规')[0]?.node.id, '粪便常规');
+  assert.deepEqual([...inferStoolPanelPages([...rows, { name: '尿蛋白', itemType: 'lab', sourcePage: 4 }])], []);
+  assert.deepEqual([...inferStoolPanelPages(rows.map(row => ({ ...row, orderName: '血常规' })))], []);
+});
+
+test('coverage review accepts a filled result even when the number of rows is unchanged', () => {
+  const original = [{ name: '颜色', itemType: 'lab', sourcePage: 4, value: '' }];
+  const merged = mergeCoverageAuditItems(original, [{ ...original[0], value: '黄褐色' }]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].value, '黄褐色');
+  assert.equal(coverageAuditHasChanges(original, merged), true);
 });
 
 test('confirmed Admin rules reuse exact clinical context; conflicts remain unclassified', () => {

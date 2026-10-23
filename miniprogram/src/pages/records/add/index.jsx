@@ -17,6 +17,9 @@ const RECORD_TYPES = [
   { id: 'bloodSugar', label: '血糖', icon: '🩸', category: 'vitals', unit: 'mmol/L', fields: [
     { key: 'value', label: '血糖值', unit: 'mmol/L', placeholder: '如：6.1' },
   ] },
+  { id: 'waist', label: '腰围', icon: '📏', category: 'vitals', unit: 'cm', fields: [
+    { key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5' },
+  ] },
   { id: 'heartRate', label: '心率', icon: '❤️', category: 'vitals', unit: '次/分', fields: [
     { key: 'value', label: '心率', unit: '次/分', placeholder: '如：72' },
   ] },
@@ -94,6 +97,7 @@ export default function AddRecordPage() {
     } else {
       const v = values.value;
       if (!v) { setError('请填写数值'); return; }
+      if (activeType.id === 'waist' && (!Number.isFinite(Number(v)) || Number(v) <= 0)) { setError('请输入大于0的腰围数值（cm）'); return; }
       const num = parseFloat(v);
       let status = 'normal';
       if (activeType.id === 'bloodSugar') status = num > 7 ? 'warning' : num < 3.9 ? 'low' : 'normal';

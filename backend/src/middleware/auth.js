@@ -47,7 +47,9 @@ module.exports = async (req, res, next) => {
     if (!tenant || tenant.status !== 'active') return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
 
     req.user = user;
-    tenantContext(req, res, next);
+    tenantContext(req, res, () => require('../utils/aiDataConsent').withPersonalData(
+      user._id, /^\/api\/(messages|chat)(?:\/|$)/.test(req.originalUrl.split('?')[0]) && !req.originalUrl.includes('/nutrition') ? 'assistant' : undefined, next,
+    ));
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Token无效或已过期，请重新登录' });
   }

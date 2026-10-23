@@ -13,7 +13,7 @@ function followUpKey(task) {
 }
 function isAssistance(task) {
   return task.sourceType === 'scheduled' && !!task.sourceAnnualPlanId
-    && ['single', 'managed'].includes(task.deliveryMode)
+    && (['single', 'managed'].includes(task.deliveryMode) || task.formData?.bookingRequest?.required === true)
     && appointmentModules.includes(String(task.sourceScheduleKey || '').split(':')[0]);
 }
 function needsBooking(task) {

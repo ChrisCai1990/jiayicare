@@ -32,10 +32,13 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund, useE
   let sharedAccount = null;
   let shared = prices.map(() => 0);
   if (Number(useHealthFund) > 0) {
+    const memberEligible = await require('./packageFeatureEntitlements').hasHealthFundAccess(user);
     const afterTotal = total - couponTotal;
     const requested = Math.min(cents(useHealthFund), afterTotal);
     const personalAvailable = cents(await fund.getPersonalFundAvailable(user));
     const vitalityAvailable = cents(await fund.getVitalityFundAvailable(user));
+    if (!memberEligible && !personalAvailable && !vitalityAvailable)
+      throw checkoutError('当前没有可用于本服务的自有或活力基金', 400);
     const corporateAvailable = cents(await fund.getCorporateFundAvailable(user));
     personal = splitCents(Math.min(requested, personalAvailable, afterTotal), afterCoupon);
     const afterPersonal = afterCoupon.map((value, index) => value - personal[index]);
@@ -44,14 +47,14 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund, useE
     if (user.enterpriseId && corporateAvailable) enterprise = await require('../models/Enterprise').findById(user.enterpriseId);
     const enterpriseRule = enterprise?.healthFundPaymentRule;
     const corporateAccess = afterTotal >= cents(policy.minOrderAmount || 0)
-      && await require('./packageFeatureEntitlements').hasHealthFundAccess(user);
+      && memberEligible;
     const capacities = products.map((product, index) => {
       if (!corporateAccess) return 0;
       const enterpriseEligible = !user.enterpriseId || (enterprise?.status === 'active' && (!enterpriseRule?.enabled || (
         afterTotal >= cents(enterpriseRule.minOrderAmount || 0) && (!enterpriseRule.eligibleCategories?.length || enterpriseRule.eligibleCategories.includes(product.category))
       )));
       if (!enterpriseEligible || !fund.corporateProductEligible(policy, product._id, product.category, product.healthFundDeduction)) return 0;
-      return Math.min(afterUnrestricted[index], Math.floor(fund.productDeductionLimit(product.healthFundDeduction, afterUnrestricted[index] / 100) * 100 + 1e-7));
+      return Math.min(afterUnrestricted[index], Math.floor(fund.productDeductionLimit(product.healthFundDeduction, afterCoupon[index] / 100) * 100 + 1e-7));
     });
     corporate = splitCents(Math.min(requested - personal.reduce((s, v) => s + v, 0) - vitality.reduce((s, v) => s + v, 0), corporateAvailable, capacities.reduce((s, v) => s + v, 0)), capacities);
   }
@@ -77,21 +80,21 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund, useE
 
 // Kept separate from the released single-item path. Every selected product is
 // validated/reserved; exactly one gateway payment owns immutable allocations.
-async function createPushGroupCheckout({ record, user, items, options }) {
+async function createPushGroupCheckout({ record, user, serviceUser = user, items, options }) {
   const token = new mongoose.Types.ObjectId().toString();
-  const lock = await PushRecord.findOneAndUpdate({ _id: record._id, patientId: user._id,
+  const lock = await PushRecord.findOneAndUpdate({ _id: record._id, patientId: serviceUser._id,
     $or: [{ checkoutLockUntil: null }, { checkoutLockUntil: { $lt: new Date() } }],
   }, { $set: { checkoutLockToken: token, checkoutLockUntil: new Date(Date.now() + 120000) } }, { new: true });
   if (!lock) throw checkoutError('正在创建订单，请勿重复点击');
-  try { return await createLocked({ record, user, items, options }); }
+  try { return await createLocked({ record, user, serviceUser, items, options }); }
   finally { await PushRecord.updateOne({ _id: record._id, checkoutLockToken: token }, { $set: { checkoutLockUntil: null, checkoutLockToken: '' } }); }
 }
 
-async function createLocked({ record, user, items, options }) {
+async function createLocked({ record, user, serviceUser, items, options }) {
   const appPayment = options.paymentScene === 'app';
   if (appPayment) wechatPay.assertAppReady();
   if (items.length > 10 || new Set(items.map(p => String(p.productId))).size !== items.length) throw checkoutError('每次最多合并 10 件不同商品，请重新选择');
-  const pending = await Order.findOne({ user: user._id, pushRecordId: record._id, serviceId: { $in: items.map(p => String(p.productId)) }, paymentStatus: 'pending', tradeStatus: { $ne: 'closed' } });
+  const pending = await Order.findOne({ user: serviceUser._id, pushRecordId: record._id, serviceId: { $in: items.map(p => String(p.productId)) }, paymentStatus: 'pending', tradeStatus: { $ne: 'closed' } });
   if (pending) throw checkoutError('这些商品已有待支付订单，请前往“我的订单”继续支付，或取消后重新选择');
   const products = [];
   const assignees = [];
@@ -99,7 +102,7 @@ async function createLocked({ record, user, items, options }) {
     const product = await Product.findOne({ _id: item.productId, status: 'on' });
     if (!product) throw checkoutError(`“${item.name}”已下架或调整，请联系健康规划师重新推荐`);
     products.push(product);
-    const assignee = await resolveOrderWorkflowAssignee(user._id, item.name);
+    const assignee = await resolveOrderWorkflowAssignee(serviceUser._id, item.name);
     if (!assignee) throw checkoutError('当前没有可用的服务负责人，请联系平台处理后再购买');
     assignees.push(assignee);
   }
@@ -135,7 +138,9 @@ async function createLocked({ record, user, items, options }) {
         sharedReservations.push(reservation);
       }
       const order = await Order.create({
-        _id: ids[index], checkoutGroupId: ids[0], user: user._id, serviceId: String(product._id), serviceName: items[index].name,
+        _id: ids[index], checkoutGroupId: ids[0], user: serviceUser._id, payerUser: user._id,
+        beneficiaryName: serviceUser.name || '', tenantId: serviceUser.tenantId || null,
+        serviceId: String(product._id), serviceName: items[index].name,
         ...(index === 0 ? { checkoutActionLockToken: outTradeNo, checkoutActionLockUntil: new Date(Date.now() + 120000) } : {}),
         servicePrice: allocation.price, orderType: 'product', pushRecordId: record._id, referralSource: 'push', referrerId: record.staffId,
         servicePerformers: (record.servicePerformers || []).filter(sp => sp.role && sp.staffId && (!sp.productId || String(sp.productId) === String(product._id))).map(sp => ({ role: sp.role, staffId: sp.staffId })),

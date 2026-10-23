@@ -49,12 +49,66 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     let rows = await loadServices(advisor); assert.equal(rows.length, 1); assert.equal(rows[0].current.length, 1);
     await Order.collection.updateOne({ _id: o }, { $set: { status: 'cancelled' } }); assert.equal((await loadServices(advisor)).length, 0);
     await task({ sourceType: 'order', sourceOrderId: o, sourceScheduleKey: 'medical_escort_followup:independent' });
-    assert.equal((await loadServices(advisor)).length, 1);
+    assert.equal((await loadServices(advisor)).length, 0);
   });
-  await t.test('standalone plans, insurance and services without tasks are covered', async () => {
+  await t.test('IBD uses its order stage path and remains visible during annual management', async () => {
+    await reset(); const orderId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: 'IBD 年度专病管理服务', status: 'scheduled',
+      paymentStatus: 'paid', tradeStatus: 'fulfilling', currentStage: 'ibd_escort_meeting', currentAssignee: manager._id,
+      specialtyTermsSnapshot: { key: 'ibd', includedEscorts: 2 },
+      specialtyService: { key: 'ibd', includedEscorts: 2, usedEscorts: 0, endsAt: new Date('2099-10-14') } });
+    const escort = await task({ sourceOrderId: orderId, sourceType: 'order', workflowKey: 'ibd:escort' });
+    let rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 5); assert.equal(rows[0].progress.total, 7);
+    await Task.collection.updateOne({ _id: escort._id }, { $set: { status: 'completed' } });
+    await Order.collection.updateOne({ _id: orderId }, { $set: { currentStage: 'ibd_awaiting_first_visit', currentAssignee: null } });
+    rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 6); assert.equal(rows[0].current[0].person.id, String(advisor._id));
+  });
+  await t.test('AI review is not an order service; medical assistance intake shows the full path', async () => {
+    await reset(); await task({ sourceType: 'ai_review', theme: '多病共管与营养-肾功能协同评估' });
+    assert.equal((await loadServices(advisor)).length, 0);
+    const orderId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: '就医陪同服务', status: 'pending',
+      paymentStatus: 'paid', tradeStatus: 'paid', currentStage: 'intake',
+      serviceWorkflowSnapshot: { key: 'medical_assist' } });
+    await task({ sourceType: 'order', sourceOrderId: orderId, theme: '订单服务：就医陪同服务' });
+    const rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 1); assert.equal(rows[0].progress.total, 5);
+  });
+  await t.test('medical proxy intake shows the order path before stage tasks exist', async () => {
+    await reset(); const orderId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: '医疗代诊服务', status: 'pending',
+      paymentStatus: 'paid', tradeStatus: 'paid', currentStage: 'intake',
+      serviceWorkflowSnapshot: { key: 'medical_proxy' } });
+    await task({ sourceType: 'order', sourceOrderId: orderId, theme: '订单服务：医疗代诊服务' });
+    const rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 1); assert.equal(rows[0].progress.total, 5);
+  });
+  await t.test('a completed single-service plan cannot leave a stale advisor order card', async () => {
+    await reset(); const orderId = oid(), planId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: '医务代办服务', totalUnits: 1,
+      status: 'scheduled', paymentStatus: 'paid', tradeStatus: 'fulfilling', currentStage: 'intake' });
+    await Plan.collection.insertOne({ _id: planId, patientId: p, sourceOrderId: orderId,
+      type: 'medical_assist', status: 'draft' });
+    assert.equal((await loadServices(advisor))[0].progress.step, 2);
+    await Plan.collection.updateOne({ _id: planId }, { $set: { status: 'completed' } });
+    assert.equal((await loadServices(advisor)).length, 0);
+  });
+  await t.test('escort order uses the escort stages regardless of its service name', async () => {
+    await reset(); const orderId = oid();
+    await Order.collection.insertOne({ _id: orderId, user: p, serviceName: '陪同看诊服务', status: 'scheduled',
+      paymentStatus: 'paid', tradeStatus: 'paid', currentStage: 'booking',
+      serviceWorkflowSnapshot: { key: 'medical_proxy' }, medicalProxyPlan: { medicalEscort: true } });
+    await task({ sourceType: 'order', sourceOrderId: orderId, workflowKey: 'medical_proxy:booking',
+      theme: '就医陪同：健管专员完成陪同预约 · 陪同看诊服务' });
+    const rows = await loadServices(advisor); assert.equal(rows.length, 1);
+    assert.equal(rows[0].progress.step, 3); assert.equal(rows[0].progress.total, 5);
+  });
+  await t.test('plans without service tasks are omitted; active insurance is covered', async () => {
     await reset(); await Plan.collection.insertMany([{ _id: oid(), patientId: p, title: '已生效营养方案', status: 'active', currentAssignee: manager._id }, { _id: oid(), patientId: p, title: '草稿', status: 'draft' }]);
     await Insurance.collection.insertOne({ _id: oid(), patientId: p, title: '保险', status: 'reviewing', assignedTo: manager._id });
-    const rows = await loadServices(advisor); assert.equal(rows.length, 2); assert.ok(rows.every(r => r.current[0].person.id === String(manager._id)));
+    const rows = await loadServices(advisor); assert.equal(rows.length, 1); assert.equal(rows[0].title, '保险');
   });
   await t.test('CareFlow uses actual stage owner and disappears on finalized only', async () => {
     await reset(); const f = oid(), parent = await task({ _id: f, taskRole: 'supervisor', assignedTo: planner._id, careFlowId: f });
@@ -69,8 +123,8 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     await task({ sourceAnnualPlanId: annual, sourceType: 'scheduled', sourceScheduleKey: 'vaccine:2026-10-01:疫苗' });
     await task({ sourceAnnualPlanId: annual, sourceType: 'annual_service', workflowKey: 'service_request', sourceScheduleKey: 'service-request:vaccine:0:2026-10-01', taskRole: 'supervisor', formData: { serviceRequest: { moduleKey: 'vaccine', itemSnapshot: { name: '疫苗' } } }, annualDispatch: { executionId: String(execution) } });
     await task({ _id: execution, sourceAnnualPlanId: annual, sourceScheduleKey: 'dispatch-execute:other', coordinationGroupId: 'annual-assistance:other' });
-    await task({ sourceAnnualPlanId: annual, sourceScheduleKey: 'vaccine:2026-10-02:第二项' });
-    assert.equal((await loadServices(advisor)).length, 2);
+    await task({ sourceAnnualPlanId: annual, sourceType: 'scheduled', deliveryMode: 'reminder', sourceScheduleKey: 'vaccine:2026-10-02:第二项' });
+    assert.equal((await loadServices(advisor)).length, 1);
   });
   await t.test('remind/coordinate reach correct people, concurrency dedupes and never writes source', async () => {
     await reset(); await task({ coordinationGroupId: 'explicit-service' });

@@ -120,6 +120,7 @@ export default function FollowUpsPanel() {
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#0077B6' }}>{f.theme || '随访'}</span>
                   <span style={{ fontSize: 11 }}>{({ planned: '待开始', in_progress: '进行中', missed: '已错过，待跟进' })[f.status]}</span>
                   {f.taskRole && <span style={{ fontSize: 10, color: f.taskRole === 'executor' ? '#1E6B50' : '#7C3AED', background: f.taskRole === 'executor' ? '#E8F5EF' : '#F3EEFF', padding: '1px 6px', borderRadius: 4 }}>{f.taskRole === 'executor' ? '执行任务' : '督办任务'}</span>}
+                  {f.relatedNutritionStage && <span style={{ fontSize: 10, color: '#1E6B50', background: '#E8F5EF', padding: '1px 6px', borderRadius: 4 }}>关联阶段专业评估 · {f.relatedNutritionStage.status === 'completed' ? '已完成' : '待完成'}</span>}
                   {overdue && (
                     <span style={{ fontSize: 11, color: '#DC3545', background: '#DC354515', padding: '1px 6px', borderRadius: 4 }}>
                       已过期

@@ -42,7 +42,7 @@ test('expired period, unknown plan and cancelled/expired ledger cannot revive ac
   }
 });
 test('frozen ledger wins over edited plan, reports pool totals and only own usage', async () => {
-  const rows = [{ _id: 'ledger', packageName: 'Sold plan', rights: {
+  const rows = [{ _id: 'ledger', ownerUserId:'customer', packageName: 'Sold plan', rights: {
     membershipTier: 'annual', sharedEntitlementPools: [{key:'pool',name:'Consultation',count:5,remainingCount:3}],
     productEntitlements: [{productName:'Review',poolKey:'pool',count:0,remainingCount:0}],
   }, usageRecords: [{usedByUserId:'customer',productName:'Review',usedAt:'2026-09-20',note:'private'}, {usedByUserId:'relative',productName:'Other'}] }];
@@ -59,6 +59,14 @@ test('frozen ledger wins over edited plan, reports pool totals and only own usag
   assert.equal(plan.groups.independent.length,0);
   assert.equal(plan.usage[0].note,undefined);
   assert.equal(await api.hasHealthFundAccess(user),true);
+});
+test('membership cards show only the customer plan while family entitlements remain available elsewhere', async () => {
+  const rows = [
+    { _id:'family', ownerUserId:'relative', packageName:'Family plan', familySharing:true, rights:{ productEntitlements:[] } },
+    { _id:'own', ownerUserId:'customer', packageName:'Own plan', rights:{ productEntitlements:[] } },
+  ];
+  assert.deepEqual((await fixture({rows,pkg}).membershipBenefits(user)).plans.map(plan=>plan.name), ['Own plan']);
+  assert.equal((await fixture({rows:[rows[0]],pkg}).membershipBenefits(user)).plans[0].name, 'Configured plan');
 });
 test('active ledger without qualifying tier cannot be overridden by legacy annual plan',async()=>{
   assert.equal(await fixture({pkg,rows:[{rights:{membershipTier:'basic'}}]}).hasHealthFundAccess(user),false);

@@ -31,7 +31,9 @@ const contentReviewSchema = new mongoose.Schema({
     checkedAt: { type: Date, default: null },
   },
   auditLog: [{ action: String, role: String, note: String, by: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, byName: String, at: Date }],
-}, { timestamps: true });
+  // 原稿、原审核意见和修订稿在同一文档原子保存，自动修订不能伪造人工审核。
+  revisions: [{ type: mongoose.Schema.Types.Mixed }],
+}, { timestamps: true, optimisticConcurrency: true });
 
 contentReviewSchema.index({ status: 1, currentRole: 1, updatedAt: -1 });
 

@@ -19,7 +19,7 @@ const { scanAndCreatePhaseAssessments, eligibleForAutomaticAssessment, completed
 const { scanAndNotifyDueSupplyPlans } = require('../src/utils/recurringSupplyPlanScheduler');
 const USER_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const OTHER_ID = 'bbbbbbbbbbbbbbbbbbbbbbbb';
-const user = { _id: USER_ID, assignedFamilyDoctor: 'doctor', aiPilotFeatures: { stageAssessment: true }, serviceExpiry: '2020-01-01' };
+const user = { _id: USER_ID, membershipTier: 'annual', assignedFamilyDoctor: 'doctor', aiPilotFeatures: { stageAssessment: true }, serviceExpiry: '2020-01-01' };
 const plan = { _id: 'p', patientId: USER_ID, confirmedAt: '2020-01-01', continuitySource: { previousPlanId: 'old' } };
 test.beforeEach(t => {
   t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: 'quarterly' }));
@@ -53,7 +53,7 @@ test('月度自动评估只生成刚结束的月份，已被替代的八月旧�
   assert.equal(period.end.toISOString(), '2026-09-30T15:59:59.999Z');
   assert.equal(completedCalendarPeriod('monthly', new Date('2026-10-02T02:00:00Z'), new Date('2026-10-01')), null);
 });
-test('显式试点客户沿用已启用的月度模板，生成营养师待审九月评估', async t => {
+test('显式试点年度会员沿用月度模板，生成同周期团队复盘', async t => {
   t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: '' }));
   t.mock.method(Template, 'find', () => ({ lean: async () => [{ _id: 't', clientBrand: 'jinyisen', content: { frequency: 'monthly' } }] }));
   t.mock.method(User, 'findById', () => ({ select: async projection => {
@@ -61,15 +61,16 @@ test('显式试点客户沿用已启用的月度模板，生成营养师待审�
     return { ...user, clientBrand: 'jinyisen', assignedNutritionist: 'nutritionist', aiPilotFeatures: { stageAssessment: true, stageAssessmentFrequency: 'monthly', stageAssessmentDomain: 'nutrition' } };
   } }));
   assert.equal(await scanAndCreatePhaseAssessments(), 1);
-  assert.equal(saved[0].periodKey.endsWith(':nutrition'), true);
+  assert.equal(saved[0].periodKey, '2026-09');
   assert.equal(saved[0].primaryReviewRole, 'nutritionist');
-  assert.equal(saved[0].status, 'nutrition_review');
+  assert.equal(saved[0].status, 'team_review');
+  assert.deepEqual(saved[0].teamRoles, ['nutritionist', 'familyDoctor']);
   assert.equal(aiCalls, 1);
 });
 test('续约客户旧档案过期仍可生成待审评估，重复扫描不再次调用AI', async () => {
   assert.equal(await scanAndCreatePhaseAssessments(), 1);
   assert.equal(await scanAndCreatePhaseAssessments(), 0);
-  assert.equal(aiCalls, 1); assert.equal(saved[0].status, 'doctor_review');
+  assert.equal(aiCalls, 1); assert.equal(saved[0].status, 'team_review');
 });
 test('续年总评从有效执行起点计算，不从提前确认日提前触发', async t => {
   t.mock.method(Template, 'find', () => ({ lean: async () => [{ _id: 't', content: { frequency: 'yearly' } }] }));
@@ -98,7 +99,7 @@ test('全量模式允许非试点会员，但仍需有效权益和同频通用�
   ] }));
   assert.equal(await scanAndCreatePhaseAssessments(), 1);
   assert.equal(saved[0].templateId, 'quarterly');
-  assert.equal(saved[0].status, 'doctor_review');
+  assert.equal(saved[0].status, 'team_review');
   assert.equal(aiCalls, 1);
 });
 test('全量模式不为无权益或未配置评估周期的会员猜测生成', async t => {

@@ -48,10 +48,20 @@ test('工作台与审核必须匹配实际客户归属及岗位', () => {
   assert.equal(isAssignedPhaseReviewer(user, { _id: 'b', role: 'rehabSpecialist' }, 'rehabSpecialist'), false);
   assert.equal(isAssignedPhaseReviewer(user, { _id: 'a', role: 'nutritionist' }, 'rehabSpecialist'), false);
 });
+test('一条团队评估按实际参与岗位分别进入待办，健康顾问最后核对', () => {
+  const item = { status: 'team_review', teamRoles: ['healthManager', 'nutritionist', 'familyDoctor'], teamReviews: { healthManager: { status: 'approved', note: '没有问题' } } };
+  assert.equal(currentReviewer(item), 'nutritionist');
+  assert.equal(reviewQueueFilter('healthManager').$or.some(filter => filter.status === 'team_review' && filter.teamRoles === 'healthManager'), true);
+  assert.equal(reviewQueueFilter('psychologist').$or.some(filter => filter.status === 'team_review' && filter.teamRoles === 'psychologist'), true);
+  assert.equal(isAssignedPhaseReviewer({ assignedPsychologist: 'a' }, { _id: 'a', role: 'psychologist' }, 'psychologist'), true);
+  assert.equal(isAssignedPhaseReviewer({ assignedPsychologist: 'a' }, { _id: 'b', role: 'psychologist' }, 'psychologist'), false);
+});
 test('自动扫描仅允许有效服务期内的客户，当日到期仍有效', () => {
   const now = new Date('2026-09-19T12:00:00+08:00');
-  const user = { aiPilotFeatures: { stageAssessment: true }, serviceExpiry: '2026-09-19' };
+  const user = { membershipTier: 'annual', assignedFamilyDoctor: 'doctor', aiPilotFeatures: { stageAssessment: true }, serviceExpiry: '2026-09-19' };
   assert.equal(eligibleForAutomaticAssessment(user, now), true);
   for (const serviceExpiry of ['', 'invalid', '2026-09-18']) assert.equal(eligibleForAutomaticAssessment({ ...user, serviceExpiry }, now), false);
   assert.equal(eligibleForAutomaticAssessment({ ...user, aiPilotFeatures: {} }, now), true);
+  assert.equal(eligibleForAutomaticAssessment({ ...user, membershipTier: 'single' }, now), false);
+  assert.equal(eligibleForAutomaticAssessment({ ...user, assignedFamilyDoctor: null }, now), false);
 });

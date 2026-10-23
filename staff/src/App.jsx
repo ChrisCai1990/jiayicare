@@ -32,6 +32,7 @@ import QuestionnairePushPage from './pages/QuestionnairePushPage'
 import CommissionPage from './pages/CommissionPage'
 import OperationsPage from './pages/OperationsPage'
 import ProductPushPage from './pages/ProductPushPage'
+import InventoryPage from './pages/InventoryPage'
 import TeamPage from './pages/TeamPage'
 import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
@@ -238,6 +239,7 @@ export default function App() {
               <Route path="commission" element={<CommissionPage />} />
               <Route path="operations" element={<OperationsPage />} />
               <Route path="products" element={<ProductPushPage />} />
+              <Route path="inventory" element={<InventoryPage />} />
               <Route path="team" element={<TeamPage />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="notifications" element={<NotificationsPage />} />

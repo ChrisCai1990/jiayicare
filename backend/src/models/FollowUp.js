@@ -66,6 +66,9 @@ const followUpSchema = new mongoose.Schema({
   },
   // 每日自动重复（针对"每日血压/血糖监测"场景）
   repeatDaily:  { type: Boolean, default: false },
+  repeatWeekly: { type: Boolean, default: false }, // 单独建立的每周随访，完成后滚动生成下一条
+  weeklyParentId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: undefined },
+  weeklyTemplate: { type: mongoose.Schema.Types.Mixed, default: null },
   completedAt:  { type: Date, default: null },  // 实际完成时间
   participants: { type: String, default: '' },  // 面谈参与人员（逗号分隔）
   interviewMinutes: { type: String, default: '' }, // 面谈纪要
@@ -82,7 +85,7 @@ const followUpSchema = new mongoose.Schema({
   checkupPreparationCompletion: { type: mongoose.Schema.Types.Mixed, default: null }, // 服务验收回写凭据，不接受通用编辑
   checkupPreparationActivation: { type: mongoose.Schema.Types.Mixed, default: null }, // 准备承接的同文档执行凭据，不接受通用编辑
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成
-  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_case', 'insurance_service', 'annual_coordination', 'annual_service', 'annual_preparation', 'professional_assessment', 'report_followup', 'medication_reminder', 'supply_reminder', 'order', 'symptom', 'ai_no_response', null], default: null },
+  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'service_record', 'insurance_case', 'insurance_service', 'annual_coordination', 'annual_service', 'annual_preparation', 'professional_assessment', 'report_followup', 'medication_reminder', 'supply_reminder', 'order', 'symptom', 'ai_no_response', null], default: null },
   sourceId: { type: mongoose.Schema.Types.ObjectId, default: null }, // 通用来源ID；symptom 时关联 HealthRecord
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null }, // sourceType='order'时关联的订单，供详情弹窗展示订单号/金额/支付方式
   reminderCount: { type: Number, default: 0, min: 0 },

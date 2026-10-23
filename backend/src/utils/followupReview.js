@@ -7,7 +7,7 @@ const monthlyAssignees = (user) => ({
   assignedTo: user.assignedHealthManager || null,
 });
 
-// 月度AI回顾核心逻辑：结合会员近30天打卡数据判断是否需要新增随访，需要则落库为 aiStatus:pending
+// 月度AI回顾核心逻辑：结合会员近30天健康数据记录判断是否需要新增随访，需要则落库为 aiStatus:pending
 // 供 staff.js 的单会员接口和定时任务共用。staffId 是草稿创建人，
 // reviewAssignedTo 是审核顾问，assignedTo 才是实际随访执行人。
 async function runMonthlyFollowUpReview(user, staffId) {
@@ -16,7 +16,7 @@ async function runMonthlyFollowUpReview(user, staffId) {
     .sort({ recordedAt: -1 }).limit(60).lean();
   const recLines = records.length
     ? records.slice(0, 40).map(r => `${String(r.recordedAt).slice(0, 10)} ${r.label}：${r.value}${r.unit || ''}${r.status && r.status !== 'normal' ? '（异常）' : ''}`).join('\n')
-    : '近30天无打卡数据';
+    : '近30天无健康数据记录';
   const lastFu = await FollowUp.findOne({ patientId: user._id }).sort({ date: -1 }).lean();
   const lastFuText = lastFu ? `${String(lastFu.date).slice(0, 10)}（${lastFu.theme || '常规'}）` : '无记录';
 
@@ -24,7 +24,7 @@ async function runMonthlyFollowUpReview(user, staffId) {
 
 【会员】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}
 【上次随访】${lastFuText}
-【近30天打卡数据】
+【近30天健康数据记录】
 ${recLines}
 
 【今天日期】${new Date().toISOString().slice(0, 10)}（suggestedDate 必须晚于今天）
@@ -37,7 +37,7 @@ ${recLines}
   "outline": ["随访提纲要点1", "要点2", "要点3"]
 }`;
 
-  const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1000 });
+  const text = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 1000 }));
   let raw = {};
   try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
   if (!raw.needed) return null;

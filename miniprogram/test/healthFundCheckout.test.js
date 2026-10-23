@@ -32,7 +32,7 @@ test('personal fund precedes reward percentage cap', () => {
     corporate: 580,
     policy: { corporateDeductionType: 'fixedAmount', corporateDeductionValue: 200 },
     rule: { enabled: true },
-  }, 2000, { id: 'checkup', healthFundDeduction: { mode: 'percentage', value: 10 } }), 203.6);
+  }, 2000, { id: 'checkup', healthFundDeduction: { mode: 'percentage', value: 10 } }), 204);
 });
 
 test('vitality can cover the full balance even when reward fund is disabled', () => {

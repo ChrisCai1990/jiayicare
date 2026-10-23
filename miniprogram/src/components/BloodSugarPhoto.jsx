@@ -1,3 +1,4 @@
+import { ensureAiDataConsent } from '../utils/aiDataConsent';
 import React, { useRef, useState } from 'react';
 import { View, Text, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -30,6 +31,7 @@ export default function BloodSugarPhoto({ onSaved }) {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError('');
     try {
+      if (!await ensureAiDataConsent('health')) return;
       const consent = await Taro.showModal({ title: '血糖照片识别', content: '将所选血糖仪照片发送至阿里云通义千问识别。请仅拍摄屏幕，避免包含姓名等无关信息。识别仅辅助录入，核对确认后才保存原图和数据。', confirmText: '同意选图' });
       if (!consent.confirm) return;
       const selected = await chooseImageWithPrivacy({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });

@@ -281,7 +281,7 @@ function ConfirmModal({ visible, title, message, confirmText, confirmColor, onCo
 }
 
 // ── 方案卡片 ─────────────────────────────────────────────────────
-function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew, onRecommendationResponse }) {
+function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew, onRecommendationResponse }) {
   const meta = plan.type === 'medical_assist'
     ? getAssistSubMeta(plan.content?.templateName)
     : (TYPE_META[plan.type] || DEFAULT_META);
@@ -309,7 +309,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
         </View>
         <View style={s.planTitleWrap}>
           <View style={s.planTitleRow}>
-            <Text style={s.planTitle} numberOfLines={1}>{plan.title}</Text>
+            <Text style={s.planTitle} numberOfLines={full ? undefined : 1}>{plan.title}</Text>
             <View style={[s.statusChip, { backgroundColor: sm.bg }]}>
               <Text style={[s.statusChipText, { color: sm.color }]}>{sm.label}</Text>
             </View>
@@ -409,7 +409,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
                   <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
                 </View>
                 {!!item.notes && (
-                  <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 17, marginTop: 4, marginLeft: 24, paddingRight: 20 }} numberOfLines={3}>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 17, marginTop: 4, marginLeft: 24, paddingRight: 20 }} numberOfLines={full || plan.type === 'nutrition' ? undefined : 3}>
                     {item.notes}
                   </Text>
                 )}
@@ -519,8 +519,11 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
 }
 
 // ── 主页面 ────────────────────────────────────────────────────────
-export default function ServicePlansScreen({ navigation }) {
+export default function ServicePlansScreen({ navigation, route }) {
   const { isDemo } = useAuth();
+  const direct = route?.params?.direct === true;
+  const requestedPlanId = String(route?.params?.planId || '');
+  const requestedYear = Number(route?.params?.planYear || 0);
   const [plans, setPlans]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -653,18 +656,23 @@ export default function ServicePlansScreen({ navigation }) {
       const healthPlans = (res.success && res.data?.length > 0) ? res.data : [];
       const allPlans = [...annualMgmtPlans, ...healthPlans];
 
-      if (allPlans.length > 0) {
-        setPlans(allPlans);
+      if (direct) {
+        const annualMatches = allPlans.filter(p => p.type === 'annual_mgmt' && Number(p.year) === requestedYear);
+        const target = allPlans.find(p => String(p._id) === requestedPlanId)
+          || (!requestedPlanId && annualMatches.length === 1 ? annualMatches[0] : null);
+        setPlans(target ? [target] : []);
+        setExpanded(target?._id || null);
+        if (target && target.type !== 'annual_mgmt') plansAPI.view(target._id).catch(() => {});
       } else {
-        setPlans(isDemo ? DEMO_PLANS : []);
+        setPlans(allPlans.length > 0 ? allPlans : (isDemo ? DEMO_PLANS : []));
       }
     } catch {
-      setPlans(isDemo ? DEMO_PLANS : []);
+      setPlans(direct ? [] : (isDemo ? DEMO_PLANS : []));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isDemo]);
+  }, [isDemo, direct, requestedPlanId, requestedYear]);
 
   useEffect(() => { loadPlans(); }, [loadPlans]);
 
@@ -750,7 +758,7 @@ export default function ServicePlansScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={s.pageTitle}>健康方案</Text>
+        <Text style={s.pageTitle}>{direct ? '方案详情' : '健康方案'}</Text>
         <View style={{ width: 32 }} />
       </View>
 
@@ -767,15 +775,15 @@ export default function ServicePlansScreen({ navigation }) {
           <View style={s.introCard}>
             <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
             <Text style={s.introText}>
-              以下健康方案由您的医护团队为您定制并推送，请按方案完成各项健康管理任务。
+              {direct ? '以下是医护团队推送给您的完整方案。' : '以下健康方案由您的医护团队为您定制并推送，请按方案完成各项健康管理任务。'}
             </Text>
           </View>
 
           {plans.length === 0 ? (
             <View style={s.emptyWrap}>
               <Ionicons name="document-text-outline" size={40} color={colors.textMuted} />
-              <Text style={s.emptyText}>暂无健康方案</Text>
-              <Text style={s.emptySubText}>待医护团队为您制定并推送健康方案后{'\n'}将在此处显示</Text>
+              <Text style={s.emptyText}>{direct ? '方案暂不可用' : '暂无健康方案'}</Text>
+              <Text style={s.emptySubText}>{direct ? '请联系医护团队核对这条方案通知' : '待医护团队为您制定并推送健康方案后\n将在此处显示'}</Text>
             </View>
           ) : (
             plans.map(plan => (
@@ -783,6 +791,7 @@ export default function ServicePlansScreen({ navigation }) {
                 key={plan._id}
                 plan={plan}
                 expanded={expanded === plan._id}
+                full={direct}
                 onToggle={() => toggle(plan._id)}
                 onItemPress={handleItemPress}
                 onConfirmPlan={handleConfirmPlan}

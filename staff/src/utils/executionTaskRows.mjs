@@ -18,7 +18,7 @@ export function executionCategoryOf(task) {
   if (/营养|饮食|膳食|体重管理/.test(content)) return 'nutrition'
   if (/体检|复查|检验|检查|筛查|疫苗/.test(content)) return 'checkup'
   if (/专家约诊|约诊|就医|会诊|医院|挂号|陪诊|代诊|科室|医生/.test(content)) return 'medical'
-  if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(content)) return 'monitoring'
+  if (/血压|血糖|体重|睡眠|运动|饮水|监测|记录/.test(content)) return 'monitoring'
   if (/专病|慢病|疾病管理/.test(content)) return 'disease'
   return 'communication'
 }
@@ -52,6 +52,7 @@ export function buildExecutionRows(tasks, isServiceTask, serviceGroupKey) {
 export function executionServiceCurrentTask(row) {
   if (row.items.some(item => ['insurance_case', 'insurance_service'].includes(item.sourceType) || /高端医疗险/.test(item.theme || ''))) {
     return latest(row.items.filter(item => item.taskRole === 'executor' && ACTIVE.includes(item.status)))
+      || latest(row.items.filter(item => item.taskRole === 'executor' && item.status === 'completed'))
       || latest(row.items.filter(item => ['in_progress', 'missed'].includes(item.status)))
       || latest(row.items.filter(item => item.status === 'planned')) || latest(row.items)
   }
@@ -67,6 +68,10 @@ export function executionRowStatus(row) {
   if (row.type === 'group') return row.status
   if (row.type === 'single') return row.item.status
   if (row.items.some(item => ['insurance_case', 'insurance_service'].includes(item.sourceType) || /高端医疗险/.test(item.theme || ''))) {
+    // The service execution row reflects the executor's task. Planner supervision
+    // remains visible in the timeline and in the planner's own workbench.
+    const executor = executionServiceCurrentTask(row)
+    if (executor?.taskRole === 'executor') return executor.status
     if (row.items.some(item => ['in_progress', 'missed'].includes(item.status))) return 'in_progress'
     if (row.items.some(item => item.status === 'planned')) return 'planned'
     if (row.items.some(item => item.status === 'completed')) return 'completed'

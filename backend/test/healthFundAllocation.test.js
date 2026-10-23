@@ -2,13 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { allocateHealthFund } = require('../src/utils/healthFundPayment');
 
-test('自有基金优先，奖励基金比例作用于剩余金额', () => {
+test('自有基金优先，奖励基金按商品金额比例且不超过剩余应付', () => {
   assert.deepEqual(allocateHealthFund({
     orderAmount: 2000,
     personalAvailable: 4,
     corporateAvailable: 580,
     productRule: { mode: 'percentage', value: 10 },
-  }), { personalUsed: 4, vitalityUsed: 0, corporateUsed: 199.6, allowed: 203.6 });
+  }), { personalUsed: 4, vitalityUsed: 0, corporateUsed: 200, allowed: 204 });
 });
 
 test('企业基金不再受固定200元缺省上限影响', () => {
@@ -37,11 +37,11 @@ test('自有和活力基金可全额抵扣到0元，奖励基金仍按余额抵�
   }), { personalUsed: 40, vitalityUsed: 60, corporateUsed: 0, allowed: 100 });
 });
 
-test('奖励基金只对自有和活力抵扣后的余额应用商品比例', () => {
+test('奖励基金保留商品比例上限且不超过剩余应付', () => {
   assert.deepEqual(allocateHealthFund({
     orderAmount: 100, personalAvailable: 30, vitalityAvailable: 20,
     corporateAvailable: 100, productRule: { mode: 'percentage', value: 20 },
-  }), { personalUsed: 30, vitalityUsed: 20, corporateUsed: 10, allowed: 60 });
+  }), { personalUsed: 30, vitalityUsed: 20, corporateUsed: 20, allowed: 70 });
 });
 
 test('商品禁用奖励基金时自有和活力仍可抵扣', () => {

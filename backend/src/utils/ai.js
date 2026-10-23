@@ -84,6 +84,7 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temper
       max_tokens: maxTokens,
       temperature,
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+      ...(jsonMode && p === 'qwen' ? { enable_thinking: false } : {}),
     },
     timeoutMs
   ));
@@ -93,7 +94,12 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temper
 }
 
 // OCR + 视觉理解（仅通义千问支持，图片 base64 或 URL）
-// model 默认 qwen-vl-plus（实测比max快约2.8倍且精度一致，staff.js体检报告解析已用此模型）
+// 当前账号只开放 qwen3-vl-plus；保留旧调用点的兼容映射，避免整条 OCR 链
+// （首轮、覆盖复核、原文校验、单页补提）继续请求已不可用的旧模型。
+const VISION_MODEL = 'qwen3-vl-plus';
+function resolveVisionModel(model) {
+  return ['qwen-vl-plus', 'qwen-vl-max'].includes(model) ? VISION_MODEL : model;
+}
 // 2026-07-03：imageSource 支持传数组——一份报告被拍成多张照片(如"结论页"+"数据页")时，
 // 把全部图片一次性传给模型，让AI自己理解这是同一份报告的不同部分、输出一份合并结果，
 // 比"分别识别再代码拼接"更可靠。单张图片(原有调用方式，字符串)行为完全不变。
@@ -110,9 +116,10 @@ function toImageDataUrl(source) {
   return `data:${mime};base64,${raw}`;
 }
 
-async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl-plus', maxTokens = 3000, timeoutMs = 45000, sourcePage, stage, reportId } = {}) {
+async function parseImage(imageSource, prompt, { isUrl = false, model = VISION_MODEL, maxTokens = 3000, timeoutMs = 45000, sourcePage, stage, reportId } = {}) {
   const key = process.env.QWEN_API_KEY;
   if (!key) throw new Error('图像解析需要 QWEN_API_KEY');
+  const activeModel = resolveVisionModel(model);
 
   const sources = Array.isArray(imageSource) ? imageSource : [imageSource];
   const imageContents = sources.map(src => isUrl
@@ -121,13 +128,14 @@ async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl
 
   const messages = [{ role: 'user', content: [...imageContents, { type: 'text', text: prompt }] }];
   const context = { ...(stage ? { stage } : {}), ...(sourcePage ? { page: sourcePage } : {}), ...(reportId ? { reportId: String(reportId), business: 'ocr' } : {}) };
-  const result = await controlledCall({ provider: 'qwen', model, messages, maxTokens, context }, () => httpPost(
+  const result = await controlledCall({ provider: 'qwen', model: activeModel, messages, maxTokens, context }, () => httpPost(
     `${QWEN_BASE}/chat/completions`,
     { Authorization: `Bearer ${key}` },
     {
-      model,
+      model: activeModel,
       messages,
       max_tokens: maxTokens,
+      ...(activeModel === VISION_MODEL ? { enable_thinking: false } : {}),
     },
     timeoutMs
   ));
@@ -136,4 +144,4 @@ async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl
   return result.choices?.[0]?.message?.content || '';
 }
 
-module.exports = { chat, parseImage, selectProvider, toImageDataUrl };
+module.exports = { chat, parseImage, selectProvider, toImageDataUrl, resolveVisionModel };

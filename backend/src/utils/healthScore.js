@@ -166,7 +166,7 @@ function getLifestyleDeduction(lifestyleData, weight, height) {
 
   // 饮酒: 0 / -3 / -6（＜1天/周 = 偶尔少量 = 0）
   const drinking = d.drinkingFrequency || '';
-  if (!drinking || drinking === '不喝酒' || drinking.includes('＜1天')) {
+  if (!drinking || drinking === '不喝酒' || drinking === '几乎不喝酒' || drinking.includes('＜1天') || drinking.includes('<1天')) {
     // 0
   } else if (drinking.includes('1-3天')) {
     total -= 3; add('饮酒', -3, `饮酒频率 ${drinking}`);

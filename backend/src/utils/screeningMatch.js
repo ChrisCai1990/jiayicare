@@ -283,11 +283,11 @@ function classificationCandidates(item) {
 
 // 项目名是归类的第一事实来源；检验单名/栏目名只在项目名完全无法命中Admin时兜底。
 // 避免“乳酸脱氢酶”因所属栏目写着“肝功能”，让栏目精确命中压过项目名对心肌酶谱的关键词命中。
-function selectMatchesForItem(item, index) {
+function selectMatchesForItem(item, index, inferredPanel = '') {
   index = index.filter(entry => compatibleNode(item, entry.node));
   const learned = index.filter(entry => (entry.node.confirmedRules || []).some(rule => confirmedRuleMatches(item, rule)));
   if (learned.length) return learned.length === 1 ? [{ node: learned[0].node, confidence: 1 }] : [];
-  const authoritativePanel = authoritativePanelClassificationName(item);
+  const authoritativePanel = inferredPanel || authoritativePanelClassificationName(item);
   if (authoritativePanel) {
     const panelMatches = selectAdminMatches([authoritativePanel], item?.itemType, index);
     return panelMatches;
@@ -302,6 +302,36 @@ function selectMatchesForItem(item, index) {
     .filter(value => value && !/[\/＋+、,，;；]/.test(value));
   const context = [...new Set(safeContextValues.flatMap(reportNameCandidates).filter(Boolean))];
   return selectAdminMatches(context, item?.itemType, index);
+}
+
+// 无明确检验单标题的单页截图，只有同时出现多条粪便特有证据时才借用整页上下文。
+// 通用的「颜色/红细胞/白细胞」不能单独决定标本；混合检验页也不能整页推断。
+function inferStoolPanelPages(items) {
+  const pages = new Map();
+  for (const item of items || []) {
+    if (item?.itemType !== 'lab') continue;
+    const page = Number(item.sourcePage || item._page || 0);
+    if (!page) continue;
+    if (!pages.has(page)) pages.set(page, []);
+    pages.get(page).push(item);
+  }
+  const inferred = new Set();
+  for (const [page, rows] of pages) {
+    const headings = rows.map(row => `${row.orderName || ''} ${row.sourceSection || ''}`).join(' ');
+    if (/尿常规|尿液(?:综合|干化学|有形成分|沉渣)?分析|尿干化学|尿沉渣|血常规|血细胞分析|粪便常规|大便常规|便常规|粪便检查/.test(headings)) continue;
+    const names = rows.map(row => String(row.name || '').replace(/\s+/g, ''));
+    if (names.some(name => /尿蛋白|尿糖|尿酮体|尿比重|尿潜血|血红蛋白|血小板|中性粒细胞|淋巴细胞/.test(name))) continue;
+    const parasite = names.some(name => /寄生虫|虫卵/.test(name));
+    const occult = names.some(name => /(?:便|粪)?(?:隐血|潜血)(?:试验|检测)?/.test(name));
+    const stoolTexture = rows.some(row => /^(?:性状|形状)$/.test(String(row.name || '').trim())
+      && /软便|稀便|水样便|糊状便|成形便|硬便/.test(String(row.value || '')));
+    if ((parasite && (occult || stoolTexture)) || (occult && stoolTexture)) inferred.add(page);
+  }
+  return inferred;
+}
+
+function isStoolRoutineRow(item) {
+  return item?.itemType === 'lab' && /^(?:颜色|性状|形状|红细胞|白细胞|寄生虫|虫卵|隐血(?:试验|检测)?|潜血(?:试验|检测)?|黏液|粘液|脓细胞|脂肪球|食物残渣|霉菌|淀粉颗粒)$/.test(String(item.name || '').trim());
 }
 
 // 仅对报告中明确标出的检验单类型使用上下文，解决同名单项跨体系误归类。
@@ -382,10 +412,13 @@ function selectAdminMatches(candidates, itemType, index) {
 async function classifyItemsAsync(items) {
   const index = await buildAdminIndex();
   const list = items || [];
+  const stoolPages = inferStoolPanelPages(list);
   return list.map(item => {
     // 增量归类：已归类项原样返回，只处理待归类项。既避免重复计算，也防止新规则覆盖审核结果。
     if (hasConfirmedClassification(item)) return { ...item };
-    const matches = selectMatchesForItem(item, index);
+    const page = Number(item.sourcePage || item._page || 0);
+    const inferredPanel = page && stoolPages.has(page) && isStoolRoutineRow(item) ? '粪便常规' : '';
+    const matches = selectMatchesForItem(item, index, inferredPanel);
     return classifyItemWithMatches(item, matches);
   });
 }
@@ -405,4 +438,5 @@ module.exports = {
   matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates, reportNameCandidates,
   hasConfirmedClassification, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName,
   findUnclassifiedNamedItems, shouldExcludeClassificationNode,
+  inferStoolPanelPages,
 };

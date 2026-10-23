@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const Jimp = require('jimp-compact');
-const { readJpegExifOrientation, rotateImageBuffer } = require('../src/utils/imageOrientation');
+const { readJpegExifOrientation, rotateImageBuffer, reportRotationCandidates } = require('../src/utils/imageOrientation');
 
 function getBuffer(image, mime) {
   return new Promise((resolve, reject) => image.getBuffer(mime, (error, data) => error ? reject(error) : resolve(data)));
@@ -34,4 +34,11 @@ test('rotates a fallback image before orientation retry', async () => {
   const image = await Jimp.read(rotated);
   assert.equal(image.bitmap.width, 3);
   assert.equal(image.bitmap.height, 2);
+});
+
+test('only sideways report photos receive orientation retry candidates', async () => {
+  const portrait = await getBuffer(new Jimp(2, 3, 0xffffffff), Jimp.MIME_PNG);
+  const landscape = await getBuffer(new Jimp(3, 2, 0xffffffff), Jimp.MIME_PNG);
+  assert.deepEqual(await reportRotationCandidates(portrait), []);
+  assert.deepEqual(await reportRotationCandidates(landscape), [90, 270]);
 });

@@ -30,6 +30,7 @@ const MemberType = require('../models/MemberType');
 const Partner = require('../models/Partner');
 const PartnerBenefit = require('../models/PartnerBenefit');
 const Enterprise = require('../models/Enterprise');
+const EnterpriseServiceRecord = require('../models/EnterpriseServiceRecord');
 const ServicePackage = require('../models/ServicePackage');
 const EnterpriseInsurancePolicy = require('../models/EnterpriseInsurancePolicy');
 const InsuranceEnrollment = require('../models/InsuranceEnrollment');
@@ -2075,8 +2076,10 @@ router.get('/products', adminAuth, async (req, res) => {
   if (name) filter.name = new RegExp(name, 'i');
   if (category) filter.category = category;
   if (status) filter.status = status;
-  const products = await Product.find(filter).sort({ sortOrder: 1, createdAt: -1 });
-  res.json({ success: true, data: products });
+  const products = await Product.find(filter).sort({ sortOrder: 1, createdAt: -1 }).lean();
+  const materials = await require('../models/InventoryMaterial').find({ tenantId: req.admin.tenantId, linkedProductIds: { $in: products.map(p => p._id) } }).select('linkedProductIds').lean();
+  const linkedIds = new Set(materials.flatMap(m => m.linkedProductIds.map(String)));
+  res.json({ success: true, data: products.map(p => ({ ...p, usesSharedInventory: linkedIds.has(String(p._id)) })) });
 });
 
 // 从客户可见详情生成待人工审核的推荐规则，不落库、不自动启用。
@@ -2132,6 +2135,8 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   }
   const existingProduct = await Product.findById(req.params.id);
   if (!existingProduct) return res.status(404).json({ success: false, message: '产品不存在' });
+  const sharedInventory = existingProduct.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: existingProduct._id });
+  if (sharedInventory && stock !== undefined && Number(stock) !== Number(existingProduct.stock)) return res.status(409).json({ success: false, message: '已启用物资台账，请通过入库或盘点调整库存' });
   const priceError = productPublicationError({ name: name ?? existingProduct.name, category: category ?? existingProduct.category,
     originalPrice: originalPrice === undefined ? existingProduct.originalPrice : originalPrice,
     servicePrices: servicePrices ?? existingProduct.servicePrices, memberPrices: memberPrices ?? existingProduct.memberPrices,
@@ -2142,6 +2147,7 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   if (originalPrice === '') updateData.originalPrice = null;
   if (specialtyTerms !== undefined) updateData.specialtyTerms = specialtyTerms;
   if (stock !== undefined) updateData.stockLimited = stockLimited === true || Number(stock) > 0;
+  if (sharedInventory) { delete updateData.stock; delete updateData.stockLimited; }
   // 兼容尚未升级的管理端：请求未携带 aiProfile 时保留原配置，避免普通产品编辑意外关闭 AI 推荐。
   if (aiProfile !== undefined) updateData.aiProfile = require('../utils/productAiProfile').normalizeAiProfile(aiProfile);
   const product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
@@ -2195,6 +2201,8 @@ router.patch('/products/batch-toggle', adminAuth, async (req, res) => {
 
 // DELETE /api/admin/products/:id
 router.delete('/products/:id', adminAuth, async (req, res) => {
+  const tracked = await Product.findById(req.params.id).select('inventoryTracking');
+  if (tracked?.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: req.params.id })) return res.status(409).json({ success: false, message: '已启用物资台账的商品不能删除，请下架' });
   const product = await Product.findByIdAndDelete(req.params.id);
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, message: '产品已删除' });
@@ -2439,6 +2447,9 @@ router.put('/enterprises/:id', adminAuth, async (req, res) => {
 
 // DELETE /api/admin/enterprises/:id
 router.delete('/enterprises/:id', adminAuth, async (req, res) => {
+  if (await EnterpriseServiceRecord.exists({ enterpriseId: req.params.id })) {
+    return res.status(409).json({ success: false, message: '该企业已有历年服务记录，请保留企业档案' });
+  }
   const account = await require('../models/EnterpriseSharedFund').exists({ enterpriseId: req.params.id, creditedCents: { $gt: 0 } });
   if (account) return res.status(409).json({ success: false, message: '该企业有共享基金账本，请先完成财务对账，不能直接删除' });
   const seatsUsed = await User.countDocuments({ enterpriseId: req.params.id });
@@ -2460,7 +2471,16 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
   if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
 
   const num = (v) => (v === '' || v === null || v === undefined ? 0 : Number(v) || 0);
+  const optionalAmount = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
   const str = (v) => (v || '').trim();
+  const insuranceAmounts = ['insurancePremiumTotal', 'insurancePaidClaimsTotal', 'insurancePendingClaimsTotal'];
+  if (insuranceAmounts.some(key => {
+    const value = optionalAmount(data?.[key]);
+    return value !== null && (!Number.isFinite(value) || value < 0);
+  })) return res.status(400).json({ success: false, message: '保费和赔付金额须为非负数字' });
+  if (data?.insuranceClaimsAsOf && !/^\d{4}-\d{2}-\d{2}$/.test(data.insuranceClaimsAsOf)) {
+    return res.status(400).json({ success: false, message: '赔付统计截止日格式无效' });
+  }
   // 附件列表清洗：[{ name, url }]，过滤掉没有url的脏数据
   const cleanAttachments = (arr) => Array.isArray(arr)
     ? arr.filter(a => (a?.url || '').trim()).map(a => ({ name: (a?.name || '').trim() || '附件', url: a.url.trim() }))
@@ -2485,6 +2505,10 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
     insuredFamilyCount: num(data?.insuredFamilyCount),
     insuredChildCount:  num(data?.insuredChildCount),
     insuredAmount: num(data?.insuredAmount),
+    insurancePremiumTotal: optionalAmount(data?.insurancePremiumTotal), // 企业实付总保费，含参保员工及家属
+    insurancePaidClaimsTotal: optionalAmount(data?.insurancePaidClaimsTotal), // 截止日已核算赔付
+    insurancePendingClaimsTotal: optionalAmount(data?.insurancePendingClaimsTotal), // 已报未核算/未决估算，不与已核算赔付混用
+    insuranceClaimsAsOf: str(data?.insuranceClaimsAsOf),
     insuredStartAt: str(data?.insuredStartAt),  // 高端险起止
     insuredEndAt:   str(data?.insuredEndAt),
     insuredAttachments: cleanAttachments(data?.insuredAttachments),   // 保险服务合约附件
@@ -2869,7 +2893,9 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
   if ((/医疗代诊/.test(workflowProduct.name) && key !== 'medical_proxy') || (key === 'medical_proxy' && !/医疗代诊/.test(workflowProduct.name))) {
     return res.status(400).json({ success: false, message: '医疗代诊商品必须使用专属医疗代诊流程' });
   }
-  const closureMode = ['automatic', 'planner_review'].includes(req.body?.closureMode) ? req.body.closureMode : 'planner_review';
+  const closureMode = ['medical_assist', 'medical_proxy', 'checkup'].includes(key)
+    ? 'planner_review'
+    : (['automatic', 'planner_review'].includes(req.body?.closureMode) ? req.body.closureMode : 'planner_review');
   const questionnaireId = key === 'checkup' ? (req.body?.questionnaireId || null) : null;
   if (questionnaireId && !mongoose.Types.ObjectId.isValid(questionnaireId)) return res.status(400).json({ success: false, message: '问卷参数无效' });
   if (questionnaireId && !await DynamicQuestionnaire.exists({ _id: questionnaireId, status: 'active', deletedAt: null })) {

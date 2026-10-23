@@ -28,6 +28,8 @@ function runtime(deps={}) {
   }
   async function add(id,user,body) {
     const f=await load(id,user);writable(f);
+    const isAppUpload=['jiayicare-app-h5','jiayicare-app'].includes(body.clientSource);
+    if (isAppUpload && (body.reportConsent !== true || body.reportConsentVersion !== 'report-upload-20261012')) fail('请先确认本次报告上传与敏感健康信息处理说明',400);
     const title=text(body.title,200),category=body.category;
     if(!categories.includes(category))fail('请选择资料类型',400);
     let claim;
@@ -36,7 +38,7 @@ function runtime(deps={}) {
     const reportId=createHash('sha256').update(`${id}:${claim.key}`).digest('hex').slice(0,24);
     const ids=[...new Set([...(f.state.data.upload?.reportIds||[]).map(String),reportId])];
     if(ids.length>50)fail('单次服务最多50份资料',400);
-    await Report.findOneAndUpdate({_id:reportId,user:user._id,tenantId:user.tenantId||null},{$setOnInsert:{title,type:'other',documentCategory:category,fileUrl:claim.url,ossKey:claim.key,mimeType:claim.mimeType,sourceType:'customer_upload',uploadedByRole:'customer',audit_status:'unaudited',aiStatus:'none',note:`本次就医协助资料 ${id}`}}, {upsert:true,new:true});
+    await Report.findOneAndUpdate({_id:reportId,user:user._id,tenantId:user.tenantId||null},{$setOnInsert:{title,type:'other',documentCategory:category,fileUrl:claim.url,ossKey:claim.key,mimeType:claim.mimeType,sourceType:'customer_upload',uploadedByRole:'customer',audit_status:'unaudited',aiStatus:'none',note:`本次就医协助资料 ${id}`,...(isAppUpload?{uploadConsent:{version:'report-upload-20261012',confirmedAt:new Date(),accountId:user._id,source:body.clientSource}}:{})}}, {upsert:true,new:true});
     if(!(f.state.data.upload?.reportIds||[]).map(String).includes(reportId))await save(f,user,{'state.data.upload.reportIds':ids},{action:'customer_report_uploaded',reportId,title,category});
     return {reportId,...await view(id,user)};
   }

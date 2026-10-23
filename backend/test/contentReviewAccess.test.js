@@ -15,8 +15,8 @@ const actors = {
 };
 
 test('professional GEO access belongs to verified accounts, never names or roles alone', () => {
-  for (const who of ['lan', 'wu', 'planner', 'super']) assert.equal(canAccessContentReview(actors[who]), true);
-  for (const who of ['jin', 'other']) assert.equal(canAccessContentReview(actors[who]), false);
+  for (const who of ['lan', 'wu', 'super']) assert.equal(canAccessContentReview(actors[who]), true);
+  for (const who of ['jin', 'other', 'planner']) assert.equal(canAccessContentReview(actors[who]), false);
   assert.equal(canAccessContentReview({ ...actors.jin, name: '蓝戈文' }), false);
   assert.equal(canAccessContentReview({ ...actors.lan, name: '新显示名' }), true);
   assert.equal(canAccessContentReview({ ...actors.wu, role: 'familyDoctor' }), false);
@@ -24,13 +24,13 @@ test('professional GEO access belongs to verified accounts, never names or roles
   assert.equal(canAccessContentReview(null), false);
 });
 
-function routes(model, ensure = async () => {}) {
+function routes(model, ensure = async () => {}, publish = () => {}) {
   const handlers = {};
   const router = Object.fromEntries(['get', 'patch'].map(method => [method, (path, ...fns) => { handlers[method + path] = fns.at(-1); }]));
   vm.runInNewContext(source.slice(source.indexOf("router.get('/content-reviews'"), source.indexOf("router.get('/ai-todos'")), {
     router, staffAuth: () => {}, ContentReview: model, ensureContentReviews: ensure,
     canAccessContentReview, advanceReview, console,
-    publishGeoArticle: () => { throw new Error('Publication must not run in this test'); },
+    publishGeoArticle: publish,
   });
   return handlers;
 }
@@ -44,7 +44,7 @@ async function call(handler, staff, body = {}, query = {}) {
 test('actual list/history and mutation handlers deny non-owners before database access', async () => {
   const noDB = new Proxy({}, { get() { throw new Error('Unexpected database access'); } });
   const handlers = routes(noDB, () => { throw new Error('Unexpected seeding'); });
-  for (const actor of [actors.jin, actors.other, { ...actors.lan, staffStatus: 'inactive' }]) {
+  for (const actor of [actors.jin, actors.other, actors.planner, { ...actors.lan, staffStatus: 'inactive' }]) {
     for (const query of [{}, { history: '1' }]) assert.equal((await call(handlers['get/content-reviews'], actor, {}, query)).statusCode, 403);
     for (const action of ['approve', 'return', 'publish']) assert.equal((await call(handlers['patch/content-reviews/:id/review'], actor, { action, note: 'test' })).statusCode, 403);
   }
@@ -53,7 +53,7 @@ test('actual list/history and mutation handlers deny non-owners before database 
 test('designated owners see only their current review stage; history stays personally scoped', async () => {
   let query;
   const handlers = routes({ find(filter) { query = filter; return { sort() { return this; }, lean: async () => [] }; } });
-  for (const actor of [actors.lan, actors.wu, actors.planner]) {
+  for (const actor of [actors.lan, actors.wu]) {
     assert.equal((await call(handlers['get/content-reviews'], actor)).statusCode, 200);
     assert.equal(query.currentRole, actor.role);
     await call(handlers['get/content-reviews'], actor, {}, { history: '1' });
@@ -83,15 +83,17 @@ test('workflow forbids same-role outsiders and cross-stage spoofing without chan
   assert.equal(JSON.stringify(record), before);
 });
 
-test('owners retain nutrition-to-advisor-to-planner transitions and reviewer audit', async () => {
+test('last professional approval publishes directly with reviewer audit', async () => {
   const record = { currentRole: 'nutritionist', status: 'pending', reviewChain: ['nutritionist', 'familyDoctor'], auditLog: [], save: async () => {} };
-  const handlers = routes({ findById: async () => record });
+  const publications = [];
+  const handlers = routes({ findById: async () => record, find: () => ({ select: () => ({ lean: async () => [] }) }) }, async () => {}, article => publications.push(article));
   assert.equal((await call(handlers['patch/content-reviews/:id/review'], actors.wu, { action: 'approve' })).statusCode, 200);
   assert.equal(record.currentRole, 'familyDoctor');
   assert.equal(record.nutritionReview.reviewedBy, actors.wu._id);
   assert.equal((await call(handlers['patch/content-reviews/:id/review'], actors.lan, { action: 'approve' })).statusCode, 200);
-  assert.equal(record.currentRole, 'healthPlanner');
-  assert.equal(record.status, 'ready_to_publish');
+  assert.equal(record.currentRole, '');
+  assert.equal(record.status, 'published');
   assert.equal(record.doctorReview.reviewedBy, actors.lan._id);
-  assert.equal(record.auditLog.length, 2);
+  assert.equal(record.auditLog.length, 3);
+  assert.equal(publications.length, 1);
 });

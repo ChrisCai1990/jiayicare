@@ -2,13 +2,11 @@ const FollowUp = require('../models/FollowUp');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Message = require('../models/Message');
+const { orderServiceType } = require('./orderServiceType');
 
 const PREFIX = 'checkup_appointment:';
 const isCheckupAppointmentOrder = order => {
-  const text = typeof order === 'object'
-    ? [order?.serviceName, order?.specificationLabel, order?.serviceRequirements, order?.note, order?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' ')
-    : String(order || '');
-  return /checkup_appointment|待约检|代约检|常规约检|特殊约检/.test(text);
+  return orderServiceType(typeof order === 'string' ? { serviceName: order } : order) === 'checkup_appointment';
 };
 const stageOf = task => String(task?.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
@@ -108,7 +106,7 @@ async function start(order, plannerId, intake) {
   const bookingLabel = '三个预约环节';
   const bookingContent = '请依次确认开检查单、特殊检查预约（如需）及检查后专家门诊；需要提前预约的特殊检查须在转交就医专员前填妥。';
   const manager = await createTask({ order, patient, assignee: patient.assignedHealthManager, stage: 'booking', theme: `待约检：健管专员${bookingLabel} · ${order.serviceName}`, content: bookingContent, formData: { intake, currentStage: 'booking' } });
-  await createTask({ order, patient, assignee: plannerId, stage: 'supervise', theme: `待约检：健康规划师跟进服务 · ${order.serviceName}`, content: `当前环节：健管专员${bookingLabel}中。订单将持续流转，待健康顾问审核后续随访计划后自动结束。`, formData: { intake, currentStage: 'booking' }, taskRole: 'supervisor' });
+  await createTask({ order, patient, assignee: plannerId, stage: 'supervise', theme: `待约检：健康规划师跟进服务 · ${order.serviceName}`, content: `当前环节：健管专员${bookingLabel}中。订单将持续流转，待健康顾问审核后续随访计划、健康规划师确认结案后结束。`, formData: { intake, currentStage: 'booking' }, taskRole: 'supervisor' });
   await Order.updateOne({ _id: order._id }, { $set: { checkupIntake: intake, supervisorId: plannerId, currentStage: 'checkup_manager_booking', currentAssignee: patient.assignedHealthManager, supervisionStatus: 'in_progress' } });
   await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'cancelled', cancelReason: '已进入待约检分阶段流程' } });
   return manager;
@@ -144,7 +142,7 @@ async function advance(task) {
 
 async function validate(task, body, staff) {
   const stage = stageOf(task); if (!stage || body.status !== 'completed') return '';
-  if (stage === 'supervise') return '待约检仍在流转中，请查看当前阶段；健康顾问审核随访计划后将自动结案';
+  if (stage === 'supervise') return '待约检仍在流转中，请查看当前阶段；末端完成后由健康规划师确认结案';
   if (stage === 'booking') { if (!['healthManager', 'superadmin'].includes(staff.role)) return '三号预约由健管专员完成'; return bookingValidation(body.formData || {}); }
   if (stage === 'medical') { const data = body.formData || {}; if (!['medicalAssistant', 'superadmin'].includes(staff.role)) return '开单与检查预约由就医专员完成'; if (!required(data.examOrderStatus) || !Array.isArray(data.checkAppointments) || data.checkAppointments.some(item => !required(item.campus) || !required(item.department) || !required(item.location) || !appointmentDate(item.appointmentDate) || !required(item.appointmentTime))) return '请完整填写开检查单情况及各检查项目的院区、科室、具体地点和预约时间'; }
   if (stage === 'manager_review') { const data = body.formData || {}; const items = data.medical?.checkAppointments || []; if (!['healthManager', 'superadmin'].includes(staff.role)) return '报告与病历审核由健管专员完成'; if (!items.length || items.some(item => !Array.isArray(data.reportAssignments?.[item.item]) || !data.reportAssignments[item.item].length)) return '请逐项上传或关联本次检查报告'; if (!data.aiGenerated) return '请先由 AI 根据检查资料生成随访计划草稿'; if (!required(data.reviewSummary) || !required(data.followUpContent)) return '请填写资料审核结论和后续随访计划'; }

@@ -1,6 +1,10 @@
 // 本地医护端也使用正式 HTTPS 域名：直接访问服务器 IP 会被重定向到 HTTPS，
 // 随后因证书不匹配导致浏览器 fetch 失败。
 import { resolveApiBase } from './utils/isolatedApiBase.mjs'
+export const rehabAPI = {
+  get: id => req(`/staff/patients/${id}/rehab`),
+  send: (id, action, data) => req(`/staff/patients/${id}/rehab/${action}`, { method:'POST', body:JSON.stringify(data) }),
+}
 const BASE = resolveApiBase(import.meta.env)
 export const API_ORIGIN = BASE.replace(/\/api$/, '')
 
@@ -87,14 +91,25 @@ export const serviceGroupAPI = {
 }
 
 export const staffAPI = {
+  inventory: () => req('/staff/inventory'),
+  inventoryPeople: () => req('/staff/inventory/people'),
+  inventoryUsers: q => req(`/staff/inventory/users?q=${encodeURIComponent(q)}`),
+  inventoryUser: id => req("/staff/inventory/users/" + encodeURIComponent(id)),
+  inventoryEntry: data => req('/staff/inventory/entries', { method: 'POST', body: JSON.stringify(data) }),
+  inventoryDispatches: view => req(`/staff/inventory/dispatches?view=${view}`),
+  completeInventoryDispatch: (id, data) => req(`/staff/inventory/dispatches/${id}/complete`, { method: 'POST', body: JSON.stringify(data) }),
+  cancelInventoryDispatch: (id, reason) => req(`/staff/inventory/dispatches/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  correctInventoryEntry: (id, data) => req(`/staff/inventory/entries/${id}/correct`, { method: 'POST', body: JSON.stringify(data) }),
+  patientInventoryConsumption: id => req(`/staff/inventory/patients/${id}/consumption`),
   clinicalStandardUpdates: () => req('/staff/clinical-standards'),
   reviewClinicalStandardUpdate: (id, data) => req(`/staff/clinical-standards/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
   previewAnnualLifestyle: (id,index) => req(`/staff/annual-plans/${id}/lifestyle-interview-preview?index=${index}`),
-  getServiceSupervision: () => req('/staff/service-supervision'),
+  getServiceSupervision: (p = {}) => req('/staff/service-supervision?' + qs(p)),
   getSupervisionTask: id => req(`/staff/service-supervision/tasks/${id}`),
   sendServiceSupervision: data => req('/staff/service-supervision/requests', { method: 'POST', body: JSON.stringify(data) }),
   respondServiceSupervision: (id, data) => req(`/staff/service-supervision/requests/${id}/respond`, { method: 'POST', body: JSON.stringify(data) }),
   retryInitialArchive: id => req(`/staff/patients/${id}/initial-archive-review/retry`, {method:'POST',body:'{}'}),
+  initialArchiveReviewFields: () => req('/staff/patients/initial-archive-review-fields'),
   saveCoreArchive: (id, section, data) => req(`/staff/patients/${id}/core-health-archive/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
   reviewInitialArchive: (id, section, data) => req(`/staff/patients/${id}/initial-archive-review/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
   reviewChildArchive: (id, responseId, data) => req(`/staff/patients/${id}/child-archive/${responseId}/review`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -114,6 +129,14 @@ export const staffAPI = {
   getWecomKfUnboundContacts: () => req('/staff/wecom-kf/unbound-contacts'),
   bindWecomKfContact: (data) => req('/staff/wecom-kf/contacts', { method: 'POST', body: JSON.stringify(data) }),
   getPatient:         (id)     => req(`/staff/patients/${id}`),
+  getWeightProgressPhotos: id => req(`/staff/patients/${id}/weight-progress-photos`),
+  addWeightProgressPhoto: (id, fields, photo) => {
+    const body = new FormData()
+    Object.entries(fields).forEach(([key, value]) => body.append(key, value == null ? '' : String(value)))
+    body.append('photo', photo)
+    return req(`/staff/patients/${id}/weight-progress-photos`, { method: 'POST', body })
+  },
+  deleteWeightProgressPhoto: (id, photoId) => req(`/staff/patients/${id}/weight-progress-photos/${photoId}`, { method: 'DELETE' }),
   createPatient:      (data)   => req('/staff/patients', { method: 'POST', body: JSON.stringify(data) }),
   updatePatient:      (id, d)  => req(`/staff/patients/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   updateMedicalRecordSummary: (id, d) => req(`/staff/patients/${id}/medical-record/summary`, { method: 'PUT', body: JSON.stringify(d) }),
@@ -144,13 +167,26 @@ export const staffAPI = {
   // Follow-ups
   getFollowUps:        (p = {}) => req('/staff/followups?' + qs(p)),
   getServiceTasks:     (p = {}) => req('/staff/service-tasks?' + qs(p)),
-  getMedicalAssistProgress: () => req('/staff/medical-assist-progress'),
-  startLifestyleInterview: id => req(`/staff/patients/${id}/lifestyle-interview/start`, {method:'POST',body:'{}'}),
+  getNutritionAssessmentConfig: () => req('/staff/nutrition-assessments/config'),
+  getNutritionAssessments: (p = {}) => req('/staff/nutrition-assessments?' + qs(p)),
+  createNutritionAssessment: d => req('/staff/nutrition-assessments', { method: 'POST', body: JSON.stringify(d) }),
+  bookNutritionAssessment: (id, d) => req('/staff/nutrition-assessments/' + id + '/booking', { method: 'POST', body: JSON.stringify(d) }),
+  completeNutritionAssessment: (id, d) => req('/staff/nutrition-assessments/' + id + '/complete', { method: 'POST', body: JSON.stringify(d) }),
+  cancelNutritionAssessment: (id, d) => req('/staff/nutrition-assessments/' + id + '/cancel', { method: 'POST', body: JSON.stringify(d) }),
+    confirmMedicalAssistClosure: (id, conclusion) => req(`/staff/medical-assist-closures/${id}/confirm`, { method: 'POST', body: JSON.stringify({ conclusion }) }),
+  getMedicalAssistProgress: (p = {}) => req('/staff/medical-assist-progress?' + qs(p)),
   getLifestyleInterview: id => req(`/staff/followups/${id}/lifestyle-interview`),
   saveLifestyleInterview: (id, data) => req(`/staff/followups/${id}/lifestyle-interview`, {method:'POST',body:JSON.stringify(data)}),
   getPatientFollowUps: (id, p={})=> req(`/staff/patients/${id}/followups?` + qs(p)),
   createFollowUp:      (data)   => req('/staff/followups', { method: 'POST', body: JSON.stringify(data) }),
   updateFollowUp:      (id, d)  => req(`/staff/followups/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  getDecisionReferralTask: id => req(`/staff/decision-referral/tasks/${id}`),
+  getDecisionReferralCoordinators: () => req('/staff/decision-referral/coordinators'),
+  advanceDecisionReferral: (id, data) => req(`/staff/decision-referral/tasks/${id}/advance`, { method: 'POST', body: JSON.stringify(data) }),
+  requestDecisionReferralRevision: (id, note, referralId) => req(`/staff/decision-referral/tasks/${id}/request-revision`, { method: 'POST', body: JSON.stringify({ note, referralId }) }),
+  getDecisionReferralReport: (referralId, reportId) => req(`/staff/decision-referral/referrals/${referralId}/reports/${reportId}`),
+  saveDecisionReferralMembers: (referralId, details) => req(`/staff/decision-referral/referrals/${referralId}/members`, { method: 'PATCH', body: JSON.stringify(details) }),
+  deferMedicationProxy: (id, note) => req(`/staff/followups/${id}/medication-defer`, { method: 'POST', body: JSON.stringify({ note }) }),
   rescheduleExpertAppointment: (id, data) => req(`/staff/followups/${id}/expert-appointment/reschedule`, { method: 'POST', body: JSON.stringify(data) }),
   saveFollowUpProgress: (id, d) => req(`/staff/followups/${id}/progress`, { method: 'POST', body: JSON.stringify(d) }),
   reviewFollowUpOutcome: (id, d) => req(`/staff/followups/${id}/outcome-review`, { method: 'POST', body: JSON.stringify(d) }),
@@ -187,14 +223,13 @@ export const staffAPI = {
   // Health Plans
   getPlans:       (p = {}) => req('/staff/plans?' + qs(p)),
   getPlan:        (id)     => req(`/staff/plans/${id}`),
+  searchPlanCatalogItems: (q) => req(`/staff/plan-catalog-items?${qs({ q })}`),
   createPlan:     (data)   => req('/staff/plans', { method: 'POST', body: JSON.stringify(data) }),
   updatePlan:     (id, d)  => req(`/staff/plans/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  syncCheckupTemplate: (id, templateId) => req(`/staff/plans/${id}/sync-checkup-template`, { method: 'POST', body: JSON.stringify({ templateId }) }),
   regenerateMedicalAssistPurposes: (id) => req(`/staff/plans/${id}/regenerate-medical-assist-purposes`, { method: 'POST' }),
   deletePlan:     (id, reason) => req(`/staff/plans/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   pushPlan:       (id)     => req(`/staff/plans/${id}/push`, { method: 'PATCH' }),
-  getNutritionIntervention: (id) => req(`/staff/nutrition-interventions/plans/${id}`),
-  generateNutritionIntervention: (id) => req(`/staff/nutrition-interventions/plans/${id}/generate`, { method: 'POST' }),
-  publishNutritionIntervention: (id, data) => req(`/staff/nutrition-interventions/plans/${id}/publish`, { method: 'POST', body: JSON.stringify(data) }),
   decideWorkflowModule: (planId, moduleId, data) => req(`/staff/plans/${planId}/workflow-modules/${moduleId}/decision`, { method: 'PATCH', body: JSON.stringify(data) }),
   getFollowUpPlans: ()     => req('/staff/followup-plans'),
   // AI体检方案讨论区
@@ -209,6 +244,7 @@ export const staffAPI = {
   resolveReportPlanConflict: (id, data) => req(`/staff/medical-reports/${id}/plan-item-conflict/resolve`, { method: 'POST', body: JSON.stringify(data) }),
   reportReviewActivity: (id, data) => req(`/staff/medical-reports/${id}/review-activity`, { method: 'POST', body: JSON.stringify(data) }),
   uploadReport:  (data)   => req('/staff/medical-reports', { method: 'POST', body: JSON.stringify(data) }),
+  organizeReport: (data) => req('/staff/medical-reports/organize', { method: 'POST', body: JSON.stringify(data) }),
   // 健康顾问健康档案查看确认（2026-07-28改造，不再逐份审核报告数据本身）
   getPendingDoctorAuditReports: (patientId) => req(`/staff/patients/${patientId}/reports/pending-doctor-audit`),
   confirmArchiveReview: (patientId) => req(`/staff/patients/${patientId}/archive-review`, { method: 'POST' }),
@@ -262,6 +298,8 @@ export const staffAPI = {
     xhr.send(JSON.stringify(data))
   }),
   auditReport:   (id, d)  => req(`/staff/medical-reports/${id}/audit`, { method: 'PATCH', body: JSON.stringify(d) }),
+  archiveReportOnly: (id, sourceReportId) => req(`/staff/medical-reports/${id}/archive-only`, { method: 'PATCH', body: JSON.stringify({ sourceReportId }) }),
+  returnReportToManager: (id, reason) => req(`/staff/medical-reports/${id}/advisor-return`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
   updateReportPageDate: (id, page, date) => req(`/staff/medical-reports/${id}/page-dates/${page}`, { method: 'PATCH', body: JSON.stringify({ date }) }),
   updateReportItem: (id, itemId, d) => req(`/staff/medical-reports/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
@@ -375,6 +413,8 @@ export const staffAPI = {
   getNutritionAssessmentPrefill: (id) => req(`/staff/patients/${id}/nutrition-assessment-prefill`),
   getPatientReports:        (id) => req(`/staff/patients/${id}/reports`),
   startStaffMedicalProxy: (id, data) => req(`/staff/patients/${id}/medical-proxy/start`, { method: 'POST', body: JSON.stringify(data) }),
+  quoteStaffFundOrder: (id, data) => req(`/staff/patients/${id}/fund-orders/quote`, { method: 'POST', body: JSON.stringify(data) }),
+  createStaffFundOrder: (id, data) => req(`/staff/patients/${id}/fund-orders`, { method: 'POST', body: JSON.stringify(data) }),
   startAdHocConsultation: (id, data) => req(`/staff/patients/${id}/ad-hoc-consultation/start`, { method: 'POST', body: JSON.stringify(data) }),
   confirmSupplementReceived: (id) => req(`/staff/orders/${id}/supplement-received`, { method: 'POST' }),
   startPostCheckupSupervision: (id, data) => req(`/staff/patients/${id}/post-checkup-supervision/start`, { method: 'POST', body: JSON.stringify(data) }),
@@ -382,6 +422,7 @@ export const staffAPI = {
 
   // P4 — Gift Service
   giftToPatient:    (id, data) => req(`/staff/patients/${id}/gift`, { method: 'POST', body: JSON.stringify(data) }),
+  getGiftProducts:  (patientId) => req('/staff/gift-products?' + qs({ patientId })),
   getPatientGifts:  (id)       => req(`/staff/patients/${id}/gifts`),
   correctGiftValidity: (patientId, giftId, data) => req(`/staff/patients/${patientId}/gifts/${giftId}/validity`, { method: 'PATCH', body: JSON.stringify(data) }),
   giveCoupon:       (id, data) => req(`/staff/patients/${id}/coupons`, { method: 'POST', body: JSON.stringify(data) }),
@@ -533,7 +574,7 @@ export const staffAPI = {
   // 专项筛查三层目录（从管理端套餐动态读取）
   getScreeningTree:         ()         => req('/staff/screening-tree'),
 
-  // 会员专项筛查 & 日常打卡（医护端查看）
+  // 会员专项筛查 & 日常记录（医护端查看）
   getPatientScreening:      (id)       => req(`/staff/patients/${id}/screening`),
   dedupPatientScreening:    (id)       => req(`/staff/patients/${id}/screening/dedup`, { method: 'POST', body: JSON.stringify({}) }),
   deleteAIScreeningItem:    (id, data) => req(`/staff/patients/${id}/screening/ai-item`, { method: 'DELETE', body: JSON.stringify(data) }),
@@ -560,11 +601,11 @@ export const staffAPI = {
   reviewContentReview: (id, data) => req(`/staff/content-reviews/${id}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
   reviewServiceProposal: (id, data) => req(`/staff/service-proposals/${id}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
 
-  // 日常健康打卡总览
+  // 日常健康数据记录总览
   getCheckinOverview: (p = {}) => req('/staff/checkin-overview?' + qs(p)),
 
   // 体检方案回传进度总览（哪些客户还有体检项目未完成）
-  getCheckupProgress: () => req('/staff/checkup-progress'),
+  getCheckupProgress: (params = {}) => req('/staff/checkup-progress?' + qs(params)),
 
   // 用户留言收件箱
   getUserMessages: () => req('/staff/user-messages'),
@@ -596,7 +637,9 @@ export const staffAPI = {
   dismissArchiveDraft:       (id) => req(`/staff/patients/${id}/archive-draft/dismiss`, { method: 'POST' }),
 
   // 4.4 AI健康汇总 / 4.5 AI管理方案生成
-  generateAIHealthSummary: (id, year, scope, force) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year, scope, force }) }),
+  generateAIHealthSummary: (id, year, scope, force, recheckFromSources = false) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year, scope, force, recheckFromSources }) }),
+  getEchoChamberTrend: (id, year) => req(`/staff/patients/${id}/ai-health-summary/echo-chamber-trend?year=${encodeURIComponent(year)}`),
+  getAIHealthSummaryConflicts: (id, year, token) => req(`/staff/patients/${id}/ai-health-summary/review-conflicts?year=${encodeURIComponent(year)}&token=${encodeURIComponent(token)}`),
   regenerateAIHealthSummaryItem: (id, data) => req(`/staff/patients/${id}/ai-health-summary/regenerate-item`, { method: 'POST', body: JSON.stringify(data) }),
   refreshAIHealthSummaryOverview: (id, data) => req(`/staff/patients/${id}/ai-health-summary/refresh-overview`, { method: 'POST', body: JSON.stringify(data) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),

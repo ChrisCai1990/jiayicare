@@ -11,8 +11,8 @@ test('explicit product rules allow 5, 30 and 100 percent without a platform cap'
 test('existing inherited and legacy unlimited rules keep their previous allowance', () => {
   for (const rule of [undefined,{mode:'inherit'},{mode:'unlimited'}]) assert.equal(productDeductionLimit(rule,500),100);
 });
-test('fund sources share one product cap and cannot exceed balance or order', () => {
-  assert.deepEqual(allocateHealthFund({orderAmount:500,personalAvailable:50,corporateAvailable:600,productRule:{mode:'percentage',value:30}}),{personalUsed:50,corporateUsed:100,allowed:150});
+test('corporate source keeps its product cap after personal funds, without exceeding the order', () => {
+  assert.deepEqual(allocateHealthFund({orderAmount:500,personalAvailable:50,corporateAvailable:600,productRule:{mode:'percentage',value:30}}),{personalUsed:50,vitalityUsed:0,corporateUsed:150,allowed:200});
   assert.equal(allocateHealthFund({orderAmount:500,personalAvailable:10,corporateAvailable:20,productRule:{mode:'percentage',value:100}}).allowed,30);
 });
 test('save validation rejects invalid percentages instead of silently clamping', () => {

@@ -6,8 +6,7 @@ const CONTENT_REVIEW_OWNERS = Object.freeze({
 
 function canAccessContentReview(staff) {
   if (!staff || staff.staffStatus === 'inactive') return false;
-  // 保留既有超管督办、健康规划师最终发布环节。
-  if (['superadmin', 'healthPlanner'].includes(staff.role)) return true;
+  if (staff.role === 'superadmin') return true;
   const owner = CONTENT_REVIEW_OWNERS[staff.role];
   return !!owner && String(staff._id || '') === owner;
 }

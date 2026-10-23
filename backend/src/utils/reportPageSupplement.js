@@ -1,6 +1,7 @@
 function cleanPart(value) {
   return String(value || '').normalize('NFKC').toLowerCase().replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
 }
+const { extendsNarrative } = require('./reportAuditMerge');
 
 function reportItemIdentityKey(item) {
   return [item?.itemType || '', cleanPart(item?.name), cleanPart(item?.orderName || item?.sourceSection), cleanPart(item?.bodyPart), cleanPart(item?.specimen), cleanPart(item?.modality), cleanPart(item?.examDate), cleanPart(item?.unit)].join('|');
@@ -14,14 +15,39 @@ function sameReportItem(a, b) {
   return !(aContext && bContext && aContext !== bContext);
 }
 
+// A page supplement often receives the same lab row with a different unit or
+// section spelling. Match the exact identity first; then treat a same-name
+// measured row on this page as existing instead of adding a competing result.
+function supplementMatches(existingItems, candidate) {
+  const list = existingItems || [];
+  const exact = list.filter(item => sameReportItem(item, candidate));
+  if (exact.length) return exact;
+  if (candidate?.itemType === 'imaging' && cleanPart(candidate.name)) {
+    const narrativeMatches = list.filter(item => item?.itemType === 'imaging'
+      && cleanPart(item.name) === cleanPart(candidate.name)
+      && (!item.sourcePage || !candidate.sourcePage || Number(item.sourcePage) === Number(candidate.sourcePage))
+      && (!cleanPart(item.examDate) || !cleanPart(candidate.examDate) || cleanPart(item.examDate) === cleanPart(candidate.examDate))
+      && extendsNarrative(item.findings, candidate.findings));
+    if (narrativeMatches.length) return narrativeMatches;
+  }
+  if (!['lab', 'data'].includes(candidate?.itemType) || !cleanPart(candidate.name)) return [];
+  return list.filter(item => ['lab', 'data'].includes(item?.itemType)
+    && cleanPart(item.name) === cleanPart(candidate.name)
+    && (!cleanPart(item.specimen) || !cleanPart(candidate.specimen) || cleanPart(item.specimen) === cleanPart(candidate.specimen))
+    && (!cleanPart(item.examDate) || !cleanPart(candidate.examDate) || cleanPart(item.examDate) === cleanPart(candidate.examDate))
+    && (!cleanPart(item.unit) || !cleanPart(candidate.unit)
+      || /[%％]/.test(String(item.unit)) === /[%％]/.test(String(candidate.unit))));
+}
+
 // “有项目名”并不等于识别成功：数值类必须有数值，检查类必须有可核对的原文。
 // 这条规则只用于 OCR 质量控制和补提，不会删除人工已经录入的项目。
 function hasReportItemEvidence(item) {
-  const value = String(item?.value ?? '').trim();
+  const substantive = value => Boolean(String(value ?? '').trim().replace(/^[\-—－–]+$/, ''));
+  const value = substantive(item?.value);
   const narrative = [item?.findings, item?.diagnosis, item?.conclusion]
-    .some(field => String(field || '').trim());
-  if (item?.itemType === 'lab' || item?.itemType === 'data') return Boolean(value || narrative);
-  return Boolean(narrative || value);
+    .some(substantive);
+  if (item?.itemType === 'lab' || item?.itemType === 'data') return value || narrative;
+  return narrative || value;
 }
 
 const PAGE_PARSE_STALE_MS = 15 * 60 * 1000;
@@ -53,6 +79,32 @@ function isHumanReviewed(item) {
   return item?.manualReviewStatus === 'reviewed' || item?.manualReviewedAt || item?.manualReviewedBy;
 }
 
+// A pathology result can be returned as a lab value even when its existing review row is
+// an imaging/narrative item. Keep the existing row's identity so a page supplement enriches
+// it instead of creating a second cervical pathology row.
+function alignSupplementCandidate(existingItems, candidate) {
+  if (candidate?.itemType !== 'lab') return candidate;
+  const value = String(candidate.value || '').trim();
+  if (!value || !/[\u4e00-\u9fffA-Za-z]/.test(value)) return candidate;
+  const matches = (existingItems || []).filter(existing =>
+    existing.itemType === 'imaging'
+    && /病理|细胞|刮片/.test(`${existing.name || ''}${existing.sourceSection || ''}`)
+    && cleanPart(existing.name) === cleanPart(candidate.name)
+    && (!existing.sourcePage || !candidate.sourcePage || Number(existing.sourcePage) === Number(candidate.sourcePage))
+    && (!cleanPart(existing.sourceSection) || !cleanPart(candidate.sourceSection)
+      || cleanPart(existing.sourceSection) === cleanPart(candidate.sourceSection))
+  );
+  if (!matches.length) return candidate;
+  if (matches.length !== 1 || isHumanReviewed(matches[0])
+    || String(matches[0].findings || '').trim().replace(/^[\-—－–]+$/, '')) return null;
+  const existing = matches[0];
+  return { ...candidate, itemType: 'imaging', findings: candidate.findings || value,
+    value: '', unit: existing.unit || '', referenceRange: existing.referenceRange || '',
+    sourceSection: candidate.sourceSection || existing.sourceSection,
+    orderName: candidate.orderName || existing.orderName,
+    sourcePage: candidate.sourcePage || existing.sourcePage };
+}
+
 // 仅允许以“有证据的新候选”补全同一身份的未人工核对空壳项；人工已核对数据永不被 OCR 改写。
 function mergeSupplementItems(existingItems, candidates) {
   const result = [...(existingItems || [])];
@@ -62,25 +114,30 @@ function mergeSupplementItems(existingItems, candidates) {
   for (const candidate of (candidates || [])) {
     if (!cleanPart(candidate?.name) || !hasReportItemEvidence(candidate)) continue;
     const key = reportItemIdentityKey(candidate);
-    const compatible = result.map((item, index) => sameReportItem(item, candidate) ? index : -1).filter(index => index >= 0);
+    const compatibleItems = supplementMatches(result, candidate);
+    const compatible = compatibleItems.map(item => result.indexOf(item));
     const index = indexByKey.get(key) ?? (compatible.length === 1 ? compatible[0] : undefined);
     if (index == null) {
+      if (compatible.length) continue; // multiple same-name rows need human disambiguation
       result.push(candidate);
       indexByKey.set(key, result.length - 1);
       added.push(candidate);
       continue;
     }
     const current = result[index];
+    if (cleanPart(current.unit) && cleanPart(candidate.unit) && cleanPart(current.unit) !== cleanPart(candidate.unit)) continue;
     if (!isHumanReviewed(current) && !hasReportItemEvidence(current)) {
       result[index] = { ...current, ...candidate, itemId: current.itemId || candidate.itemId };
       enriched.push(result[index]);
     } else if (!isHumanReviewed(current)) {
-      // A missing conclusion is still a gap even when findings already exist.
-      // Never replace nonempty values or append competing OCR prose automatically.
+      // A missing conclusion or a verifiably longer transcription is still a gap.
+      // A changed or competing nonempty OCR statement never replaces existing text.
       const patch = {};
       for (const field of ['value', 'findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis']) {
-        if (!String(current[field] ?? '').trim() && String(candidate[field] ?? '').trim()) patch[field] = candidate[field];
+        if (!String(current[field] ?? '').trim().replace(/^[\-—－–]+$/, '') && String(candidate[field] ?? '').trim().replace(/^[\-—－–]+$/, '')) patch[field] = candidate[field];
       }
+      if (current.itemType === 'imaging' && candidate.itemType === 'imaging'
+        && extendsNarrative(current.findings, candidate.findings)) patch.findings = candidate.findings;
       if (Object.keys(patch).length) {
         result[index] = { ...current, ...patch };
         enriched.push(result[index]);
@@ -138,6 +195,7 @@ function describeExistingReportItems(items) {
 function filterMissingReportItems(existingItems, candidates, options = {}) {
   const existingKeys = new Set((existingItems || []).map(reportItemIdentityKey));
   const acceptedKeys = new Set();
+  const acceptedItems = [];
   const targetKeys = new Set((options.targetOrgans || []).map(target => typeof target === 'string' ? target : target.key));
   const existingCoveredOrgans = new Set();
   for (const item of (existingItems || [])) {
@@ -157,13 +215,16 @@ function filterMissingReportItems(existingItems, candidates, options = {}) {
       if (targeted.every(organ => existingCoveredOrgans.has(organ.key))) return false;
     }
     const key = reportItemIdentityKey(item);
-    if (existingKeys.has(key) || (existingItems || []).some(existing => sameReportItem(existing, item)) || acceptedKeys.has(key)) return false;
+    if (existingKeys.has(key) || supplementMatches(existingItems, item).length
+      || acceptedKeys.has(key) || supplementMatches(acceptedItems, item).length) return false;
     acceptedKeys.add(key);
+    acceptedItems.push(item);
     return true;
   });
 }
 
 module.exports = {
+  alignSupplementCandidate,
   describeExistingReportItems,
   filterMissingReportItems,
   hasReportItemEvidence,
@@ -173,5 +234,6 @@ module.exports = {
   PAGE_PARSE_STALE_MS,
   reportItemIdentityKey,
   sameReportItem,
+  supplementMatches,
   resolveImageParseCompletion,
 };

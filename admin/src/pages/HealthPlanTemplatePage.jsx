@@ -88,7 +88,7 @@ const defaultContent = {
     dinnerTime: '', dinner: '',
     snackTime: '', snack: '',
     dietPrinciple: '', cookingMethod: '', mealOrder: '',
-    nutritionSupplements: '', exerciseSuggestion: '', allowedFoods: '', forbiddenFoods: '',
+    nutritionSupplements: '', exerciseSuggestion: '', allowedFoods: '', forbiddenFoods: '', notes: '',
     description: '',
   },
   medical_assist: {
@@ -403,7 +403,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       </div>
       <FieldRow label="状态说明" fieldKey="planDesc" placeholder="方案适用场景或说明" half content={content} set={set} />
       <FieldRow label="策略侧重点 *" fieldKey="strategyFocus" rows={3} placeholder="说明本策略优先解决的方向，例如：体重与代谢重塑、睡眠和运动能力、慢病稳定与风险预警" content={content} set={set} />
-      <FieldRow label="AI优先研判依据" fieldKey="strategyEvidence" rows={3} placeholder="说明AI优先关注的已确认资料，例如：阶段性评估、体成分趋势、血压血糖、睡眠打卡、慢病复查结果" content={content} set={set} />
+      <FieldRow label="AI优先研判依据" fieldKey="strategyEvidence" rows={3} placeholder="说明AI优先关注的已确认资料，例如：阶段性评估、体成分趋势、血压血糖、睡眠记录、慢病复查结果" content={content} set={set} />
       <div className="form-group">
         <label className="form-label">管理周期</label>
         <select className="form-input" value={content.managementCycle || '12个月'} onChange={e => set('managementCycle', e.target.value)}>
@@ -518,6 +518,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <FieldRow label="运动建议" fieldKey="exerciseSuggestion" rows={3} placeholder="运动类型、频率、时长、强度" content={content} set={set} />
       <FieldRow label="推荐食物" fieldKey="allowedFoods" rows={2} placeholder="逗号分隔" content={content} set={set} />
       <FieldRow label="禁忌食物" fieldKey="forbiddenFoods" rows={2} placeholder="逗号分隔" content={content} set={set} />
+      <FieldRow label="备注" fieldKey="notes" rows={3} placeholder="填写本模板的补充说明或注意事项（选填）" content={content} set={set} />
     </div>
   )
 
@@ -596,12 +597,18 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'rehab') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-group" style={{gridColumn:'1/-1'}}><label className="form-label">模板用途</label><select className="form-input" value={content.purpose || 'training_plan'} onChange={e=>set('purpose',e.target.value)}><option value="training_plan">运动指导与复健训练方案</option><option value="assessment_report">首次评估与复评报告</option></select></div>
+      {content.purpose === 'assessment_report' ? <>
+        {Object.entries({goal:'本次目标',history:'运动与伤病情况',tests:'测试项目与实际结果',findings:'评估结论与当前能力',recommendations:'运动方式及起始安排',precautions:'注意事项与调整条件',nextReview:'复评安排',training:'训练内容',response:'客户反馈',nextSteps:'下一步安排'}).map(([key,label])=><label className="form-group" key={key}><span className="form-label">{label}栏目名称</span><input className="form-input" value={content.reportLabels?.[key] || label} onChange={e=>set('reportLabels',{...content.reportLabels,[key]:e.target.value})}/></label>)}
+        <FieldRow label="报告说明" fieldKey="reportFooter" rows={3} content={content} set={set}/>
+      </> : <>
       <FieldRow label="复健目标" fieldKey="goal" placeholder="文字描述" half content={content} set={set} />
       <FieldRow label="每周频次" fieldKey="weeklyFreq" placeholder="如：每周3次" half content={content} set={set} />
       <FieldRow label="每次时长（分钟）" fieldKey="duration" placeholder="如：45" half content={content} set={set} />
       <FieldRow label="运动项目" fieldKey="exercises" rows={4} placeholder="具体动作/器械/活动，每行一项" content={content} set={set} />
       <FieldRow label="注意事项" fieldKey="precautions" rows={3} placeholder="禁忌、需监护事项等" content={content} set={set} />
       <FieldRow label="进阶计划" fieldKey="progression" rows={2} placeholder="如：每两周增加强度" content={content} set={set} />
+      </>}
     </div>
   )
 

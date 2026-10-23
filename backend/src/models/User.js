@@ -286,6 +286,7 @@ const userSchema = new mongoose.Schema({
   initialArchiveImportPending: { type: mongoose.Schema.Types.Mixed, default: null },
   initialArchiveReview: { type: mongoose.Schema.Types.Mixed, default: null },
   initialArchiveReviewHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  routineArchiveHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   archiveDraft: { type: mongoose.Schema.Types.Mixed, default: null },
   // 问卷无冲突自动写入档案的留痕日志（最近20条，供健康顾问查看系统自动做了什么改动）
   // [{ questionnaireTitle, appliedAt, items: [{path,label,valueStr}] }]
@@ -323,6 +324,8 @@ const userSchema = new mongoose.Schema({
 
   // 健康基金余额（由医护端 $inc 累加，Mongoose 必须显式定义才能读取）
   healthFundBalance: { type: Number, default: 0 },
+  // 医护端直接扣款的订单标记与余额在同一用户文档原子更新；服务中断重试不重复扣余额。
+  healthFundDirectDebitOrderIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Order' }],
 
   // 积分余额（打卡+消费累积，由 $inc 累加，Mongoose 必须显式定义才能读取）
   pointsBalance: { type: Number, default: 0 },
@@ -359,6 +362,7 @@ const userSchema = new mongoose.Schema({
     fromUser:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     fromName:  { type: String, default: '' },
     relation:  { type: String, default: '' },
+    source:    { type: String, enum: ['user', 'staff'], default: 'user' },
     createdAt: { type: Date, default: Date.now },
     status:    { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
   }],

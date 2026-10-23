@@ -27,19 +27,28 @@ function enterpriseEligible(healthFund, amount, product) {
     && (!rule.eligibleCategories?.length || rule.eligibleCategories.includes(product?.category || '')));
 }
 function usable(healthFund, amount) {
-  // Older/cached responses without a verified eligibility flag cannot authorize an estimate.
-  return healthFund?.eligible === true && amount >= nonnegative(healthFund?.policy?.minOrderAmount);
+  return (healthFund?.eligible === true || nonnegative(healthFund?.personal) > 0)
+    && amount >= nonnegative(healthFund?.policy?.minOrderAmount);
+}
+function splitCents(amount, capacities) {
+  const total=capacities.reduce((a,b)=>a+b,0);
+  if(!total)return capacities.map(()=>0);
+  const parts=capacities.map(value=>Math.floor(amount*value/total));
+  let left=amount-parts.reduce((a,b)=>a+b,0);
+  const ranks=capacities.map((value,index)=>({index,remainder:amount*value%total})).sort((a,b)=>b.remainder-a.remainder||a.index-b.index);
+  for(const {index} of ranks)if(left&&parts[index]<capacities[index]){parts[index]++;left--;}
+  return parts;
 }
 function maxFundDeduction(healthFund, amount, product) {
   const total = cents(amount) / 100;
   const totalCents = cents(total);
   const personal = Math.min(cents(healthFund?.personal), totalCents);
   const vitality = Math.min(cents(healthFund?.vitality), totalCents - personal);
-  const remaining = (totalCents - personal - vitality) / 100;
+  const remaining = totalCents - personal - vitality;
   const eligible = usable(healthFund, total) && corporateProductEligible(healthFund.policy, product, product?.healthFundDeduction) && enterpriseEligible(healthFund, total, product);
-  const cap = Math.floor(productCap(product?.healthFundDeduction, remaining) * 100 + 1e-7);
-  const corporate = eligible ? Math.min(cents(healthFund?.corporate), cap) : 0;
-  return Math.min(cents(healthFund?.total ?? (nonnegative(healthFund?.personal)+nonnegative(healthFund?.vitality)+nonnegative(healthFund?.corporate))), personal+vitality+corporate) / 100;
+  const cap = Math.floor(productCap(product?.healthFundDeduction, total) * 100 + 1e-7);
+  const corporate = eligible ? Math.min(cents(healthFund?.corporate), cap, remaining) : 0;
+  return Math.min(totalCents,cents(healthFund?.total ?? (nonnegative(healthFund?.personal)+nonnegative(healthFund?.vitality)+nonnegative(healthFund?.corporate))), personal+vitality+corporate) / 100;
 }
 function splitCents(amount, capacities) {
   const total=capacities.reduce((a,b)=>a+b,0);
@@ -68,7 +77,7 @@ function maxGroupFundDeduction(healthFund, amount, products) {
     const current=p.fundProduct;
     // Push snapshots do not contain current product limits; wait for verified metadata.
     if(!current || !corporateProductEligible(healthFund.policy,current,current.healthFundDeduction)||!enterpriseEligible(healthFund,total/100,current))return sum;
-    return sum+Math.floor(productCap(current.healthFundDeduction,afterUnrestricted[index]/100)*100+1e-7);
+    return sum+Math.min(afterUnrestricted[index],Math.floor(productCap(current.healthFundDeduction,afterCoupon[index]/100)*100+1e-7));
   },0):0;
   const unrestricted=personal.reduce((a,b)=>a+b,0)+vitality.reduce((a,b)=>a+b,0);
   return Math.min(total,unrestricted+Math.min(cap,cents(healthFund?.corporate)),cents(healthFund?.total??(nonnegative(healthFund?.personal)+nonnegative(healthFund?.vitality)+nonnegative(healthFund?.corporate))))/100;

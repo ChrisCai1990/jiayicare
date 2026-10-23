@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
+const { reportOwner, canAccessReport, canManageReport } = require('../utils/reportArchiveAccess');
 const { uploadBase64, deleteFile, urlToKey, signStoredUrl, getObjectStream } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
 const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
@@ -12,6 +13,16 @@ const router = express.Router();
 
 function withSignedReportFiles(report) {
   const obj = report.toObject ? report.toObject() : { ...report };
+  if (obj.advisorCorrection?.status === 'returned') {
+    // 顾问指出结果错误后，客户仍可查看原件，但暂不展示有争议的结构化结论。
+    obj.reportItems = [];
+    obj.aiSummary = '';
+    obj.keyFindings = [];
+    obj.examDescription = '';
+    obj.examConclusion = '';
+    obj.examMainConclusions = {};
+  }
+  if (obj.advisorCorrection) obj.advisorCorrection = { status: obj.advisorCorrection.status };
   const urls = obj.fileUrls?.length ? obj.fileUrls : (obj.fileUrl ? [obj.fileUrl] : []);
   const keys = obj.ossKeys?.length ? obj.ossKeys : (obj.ossKey ? [obj.ossKey] : []);
   const signedUrls = urls.map((url, index) => signStoredUrl(url, keys[index] || ''));
@@ -152,7 +163,9 @@ const ALL_CATEGORIES = Object.keys(CATEGORY_LABEL);
 // ── 按年份/类目分组获取报告（需求23）──────────────────────────────
 router.get('/by-category', auth, async (req, res) => {
   try {
-    const reports = await MedicalReport.find({ user: req.user._id })
+    const owner = await reportOwner(req.user, req.query.patientId);
+    if (!owner) return res.status(403).json({ success: false, message: '没有这份档案的监护权限' });
+    const reports = await MedicalReport.find({ user: owner })
       .sort({ reportYear: -1, checkDate: -1, createdAt: -1 });
 
     // 按年份分组
@@ -195,7 +208,8 @@ router.get('/by-category', auth, async (req, res) => {
 // ── AI 解析报告（通义千问视觉模型）────────────────────────────────
 router.post('/:id/parse-ai', auth, async (req, res) => {
   try {
-    const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id });
+    const report = await MedicalReport.findById(req.params.id);
+    if (report && !(await canManageReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份报告的管理权限' });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
 
     const hasOssUrl = !!report.fileUrl;
@@ -662,7 +676,9 @@ findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入�
 // ── 获取用户体检报告列表（列表不返回 content，避免传输过大；用 hasContent 标记是否有 base64 原件可查看）
 router.get('/', auth, async (req, res) => {
   try {
-    const reports = await MedicalReport.find({ user: req.user._id })
+    const owner = await reportOwner(req.user, req.query.patientId);
+    if (!owner) return res.status(403).json({ success: false, message: '没有这份档案的监护权限' });
+    const reports = await MedicalReport.find({ user: owner })
       .sort({ createdAt: -1 });
     const data = reports.map(r => {
       const obj = withSignedReportFiles(r);
@@ -711,8 +727,9 @@ router.get('/:id/file/:index', auth, async (req, res) => {
   try {
     const index = Number(req.params.index);
     if (!Number.isInteger(index) || index < 0) return res.status(400).json({ success: false, message: '文件序号无效' });
-    const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id })
-      .select('fileUrl fileUrls ossKey ossKeys mimeType title');
+    const report = await MedicalReport.findById(req.params.id)
+      .select('user fileUrl fileUrls ossKey ossKeys mimeType title');
+    if (report && !(await canAccessReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份档案的访问权限' });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const urls = report.fileUrls?.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
     const keys = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
@@ -738,7 +755,8 @@ router.get('/:id/file/:index', auth, async (req, res) => {
 // 获取单个报告（含 content，用于预览）
 router.get('/:id', auth, async (req, res) => {
   try {
-    const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id });
+    const report = await MedicalReport.findById(req.params.id);
+    if (report && !(await canAccessReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份档案的访问权限' });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     res.json({ success: true, data: withSignedReportFiles(report) });
   } catch (err) {
@@ -749,11 +767,17 @@ router.get('/:id', auth, async (req, res) => {
 // 创建体检报告记录（若携带 base64 content 则自动上传 OSS）
 router.post('/', auth, async (req, res) => {
   try {
+    const owner = await reportOwner(req.user, req.body?.patientId);
+    if (!owner) return res.status(403).json({ success: false, message: '没有这份档案的监护权限' });
     const { title, type, hospital, date, pages, fileSize, keyFindings, note, content, mimeType,
             screeningCategory, reportYear, checkDate, institution, reportItems, contents,
             fileUrls: suppliedFileUrls, ossKeys: suppliedOssKeys, uploadTokens } = req.body;
     let { fileUrl } = req.body;
     if (!title) return res.status(400).json({ success: false, message: '报告标题不能为空' });
+    const isAppUpload = ['jiayicare-app-h5', 'jiayicare-app'].includes(req.body?.clientSource);
+    if (isAppUpload && (req.body?.reportConsent !== true || req.body?.reportConsentVersion !== 'report-upload-20261012')) {
+      return res.status(400).json({ success: false, message: '请先确认本次报告上传与敏感健康信息处理说明' });
+    }
 
     // contents：多图上传时的 base64 数组（同一份报告的多页，如"结论页"+"数据页"）；content 仍保留
     // 兼容单图上传的旧调用方。两者互斥，contents 存在时优先。
@@ -802,7 +826,10 @@ router.post('/', auth, async (req, res) => {
     const year = reportYear || (date ? new Date(date).getFullYear() : new Date().getFullYear());
 
     const report = await MedicalReport.create({
-      user: req.user._id,
+      user: owner,
+      ...(isAppUpload ? { uploadConsent: {
+        version: 'report-upload-20261012', confirmedAt: new Date(), accountId: req.user._id, source: req.body.clientSource,
+      } } : {}),
       title,
       type:               type               || 'annual',
       hospital:           hospital           || '',
@@ -824,6 +851,7 @@ router.post('/', auth, async (req, res) => {
       reportItems:        reportItems        || [],
       sourceType:         'customer_upload',
       uploadedByRole:     'customer',
+      submittedByUser:   req.user._id,
     });
 
     const { content: _, ...reportObj } = report.toObject();
@@ -836,7 +864,8 @@ router.post('/', auth, async (req, res) => {
 // 删除体检报告（已审核报告不允许删除）
 router.delete('/:id', auth, async (req, res) => {
   try {
-    const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id });
+    const report = await MedicalReport.findById(req.params.id);
+    if (report && !(await canManageReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份报告的管理权限' });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.audit_status === 'audited') {
       return res.status(403).json({ success: false, message: '已审核报告不可删除，如需处理请联系健康管理师' });
@@ -845,7 +874,7 @@ router.delete('/:id', auth, async (req, res) => {
     const keysToDelete = report.ossKeys && report.ossKeys.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
     for (const k of keysToDelete) await deleteFile(k);
     // 级联删除从该报告提取的关联健康记录（如有）
-    await HealthRecord.deleteMany({ user: req.user._id, reportId: report._id });
+    await HealthRecord.deleteMany({ user: report.user, reportId: report._id });
     await report.deleteOne();
     res.json({ success: true, message: '报告已删除' });
   } catch (err) {

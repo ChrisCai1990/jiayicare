@@ -7,7 +7,10 @@ function canonical(value) {
   return value;
 }
 function reviewToken(record) {
-  return crypto.createHash('sha256').update(JSON.stringify(canonical(record))).digest('hex');
+  // The staff response is JSON, while Mongo records can still contain BSON objects.
+  // Hash the same JSON representation on both sides of the request.
+  const serialized = JSON.parse(JSON.stringify(record ?? null));
+  return crypto.createHash('sha256').update(JSON.stringify(canonical(serialized))).digest('hex');
 }
 function withReviewTokens(summary) {
   if (!summary) return summary;

@@ -46,6 +46,7 @@ const reviewSnapshot = row => row ? [row.title, row.datePending ? '日期待确�
 
 // ── 员工列表上下文：供 FieldInput 里的 staff-select 字段渲染下拉选项，避免逐层透传 props ──
 export const StaffListContext = createContext([])
+export const MedicalResourcesContext = createContext({ institutions: [], departments: [], experts: [] })
 
 export function Toggle({ value, onChange }) {
   return (
@@ -87,6 +88,7 @@ export function FieldRow({ label, internal, children }) {
 const inputStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
 
 export function FieldInput({ field, value, onChange }) {
+  if (field.type === 'medical-experts') return <MedicalExpertPicker field={field} value={value} onChange={onChange} />
   if (field.type === 'department-experts') {
     const rows = Array.isArray(value) ? value : []
     const updateRow = (index, key, nextValue) => {
@@ -170,6 +172,35 @@ export function FieldInput({ field, value, onChange }) {
   )
 }
 
+function MedicalExpertPicker({ field, value, onChange }) {
+  const resources = useContext(MedicalResourcesContext)
+  const selected = Array.isArray(value) ? value.map(String) : []
+  const hospital = String(field.record?.hospital || '').trim().replace(/\s/g, '')
+  const department = String(field.record?.department || '').trim().replace(/\s/g, '')
+  const normalizedDepartment = name => String(name || '').replace(/\s|医学|检查/g, '')
+  const institutions = resources.institutions || []
+  const departments = resources.departments || []
+  const candidates = (resources.experts || []).filter(expert => {
+    const institution = institutions.find(item => String(item._id) === String(expert.institutionId))
+    const dept = departments.find(item => String(item._id) === String(expert.departmentId))
+    const names = [institution?.name, ...(institution?.aliases || [])].filter(Boolean).map(name => String(name).replace(/\s/g, ''))
+    const hospitalMatches = hospital && names.some(name => name === hospital || (Math.min(name.length, hospital.length) >= 4 && (name.includes(hospital) || hospital.includes(name))))
+    const deptName = normalizedDepartment(dept?.name)
+    const targetDept = normalizedDepartment(department)
+    return hospitalMatches && targetDept && deptName && (deptName === targetDept || (Math.min(deptName.length, targetDept.length) >= 2 && (deptName.includes(targetDept) || targetDept.includes(deptName))))
+  })
+  const visible = [...candidates, ...(resources.experts || []).filter(item => selected.includes(String(item._id)) && !candidates.includes(item))]
+  return <div style={{ display: 'grid', gap: 7 }}>
+    {!hospital || !department ? <small>先填写医院和科室，再选择专家。</small> : !candidates.length ? <small>该医院和科室暂无可用专家；可在下方填写其他专家，或请 Admin 完善资源库。</small> : null}
+    {visible.map(expert => <label key={expert._id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+      <input type="checkbox" checked={selected.includes(String(expert._id))} onChange={event => onChange(event.target.checked ? [...selected, String(expert._id)] : selected.filter(id => id !== String(expert._id)))} />
+      {expert.name}{expert.title ? ` · ${expert.title}` : ''}{expert.expertise?.length ? ` · 擅长：${expert.expertise.join('、')}` : ''}
+      {!candidates.includes(expert) ? '（医院或科室已变更，请重新核对）' : ''}
+    </label>)}
+    {!!candidates.length && <small>可选一位或多位；方案确认后，所选专家会进入健管专员的预约随访。</small>}
+  </div>
+}
+
 // ── 单条记录编辑区（多条模块用）─────────────────────────────────────
 export function RecordEditor({ def, record, onChange, onDelete, index, total, executionReviewChanges = [], issues = [], visitCandidates = [], onShareVisit, onSelectVisitLeader }) {
   const [open, setOpen] = useState(index === 0 && total === 1)
@@ -182,7 +213,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
   const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['notes','basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
   const optionalEmpty = field => supplementalKeys.includes(field.key)
   const renderField = field => <FieldRow key={field.key} label={def.reviewDriven ? ({notes:'内部备注',basisSummary:'制定依据',precautions:'客户注意事项'}[field.key] || field.label) : field.label} internal={field.internal}>
-    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : field} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
+    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : { ...field, record }} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.key === 'expertIds' && val.length ? { bookingRequired: true } : {}), ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
   </FieldRow>
   return (
     <div style={{ border: '1px solid #E8E3DC', borderRadius: 8, marginBottom: 8, background: '#FAFAF8' }}>

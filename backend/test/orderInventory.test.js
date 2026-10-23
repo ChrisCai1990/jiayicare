@@ -3,6 +3,13 @@ const assert = require('node:assert/strict');
 
 const Product = require('../src/models/Product');
 const Order = require('../src/models/Order');
+const inventoryMaterials = require('../src/utils/inventoryMaterials');
+const originalPhysical = inventoryMaterials.usesPhysicalMaterials;
+const originalEnsure = inventoryMaterials.ensureLegacyMaterial;
+const originalFind = Product.findById;
+const { before, after } = require('node:test');
+before(() => { inventoryMaterials.usesPhysicalMaterials = async () => false; inventoryMaterials.ensureLegacyMaterial = async () => {}; Product.findById = async () => null; });
+after(() => { inventoryMaterials.usesPhysicalMaterials = originalPhysical; inventoryMaterials.ensureLegacyMaterial = originalEnsure; Product.findById = originalFind; });
 const { reserveProduct, releaseOrderInventory } = require('../src/utils/orderInventory');
 
 test('the last limited item can only be reserved once', async (t) => {
@@ -40,4 +47,11 @@ test('cancel releases a reserved item once', async (t) => {
   const order = { _id: 'order', serviceId: 'product', inventoryReserved: true };
   assert.deepEqual(await Promise.all([releaseOrderInventory(order), releaseOrderInventory(order)]), [true, false]);
   assert.equal(stock, 1);
+});
+
+test('checkout of a material-linked service does not reserve physical or catalogue stock', async t => {
+  const previous = inventoryMaterials.usesPhysicalMaterials;
+  inventoryMaterials.usesPhysicalMaterials = async () => true;
+  t.after(() => { inventoryMaterials.usesPhysicalMaterials = previous; });
+  assert.deepEqual(await reserveProduct({ _id:'linked',status:'on',stock:0,stockLimited:true }), { reserved:false,available:true });
 });

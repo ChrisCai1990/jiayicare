@@ -6,8 +6,9 @@ import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
 import BloodPressurePhoto from '../../components/BloodPressurePhoto';
 import BloodSugarPhoto from '../../components/BloodSugarPhoto';
+import WaistPhoto from '../../components/WaistPhoto';
 import WeightPhoto from '../../components/WeightPhoto';
-import MetabolicPilotCard from '../../components/MetabolicPilotCard';
+import WeightProgressPhotos from '../../components/WeightProgressPhotos';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
@@ -22,6 +23,7 @@ function toLocalDateStr(d) {
 }
 
 const CHECKIN_DEFS = {
+  waist: { key: 'waist', label: '腰围', icon: '📏', color: '#0F766E', measureType: 'waist', category: 'vitals', recordLabel: '腰围记录', optional: true },
   diet:          { key: 'diet',          label: '饮食', icon: '🍽️', color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食记录', allowMultiple: true },
   exercise:      { key: 'exercise',      label: '运动', icon: '🏃', color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动记录', allowMultiple: true },
   sleep:         { key: 'sleep',         label: '睡眠', icon: '🌙', color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠记录' },
@@ -37,9 +39,10 @@ const CHECKIN_DEFS = {
   symptom:       { key: 'symptom',       label: '不适', icon: '🩹', color: '#DC2626', measureType: 'symptom',       category: 'vitals',    recordLabel: '症状自评', optional: true },
 };
 
-const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','mood'];
+const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','waist','mood'];
 
 const MEASURE_FIELDS = {
+  waist: [{ key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5', normal: '' }],
   bloodPressure: [
     { key: 'sys', label: '收缩压', unit: 'mmHg', placeholder: '如：130' },
     { key: 'dia', label: '舒张压', unit: 'mmHg', placeholder: '如：80' },
@@ -168,9 +171,6 @@ export default function CheckinPage() {
   const [loading, setLoading] = useState(true);
   const [doneTypes, setDoneTypes] = useState({});
   const [recordedDates, setRecordedDates] = useState({});
-  const [pilotRefresh,setPilotRefresh] = useState(0);
-  const [pilotMember,setPilotMember] = useState(false);
-  const [pilotFeedback,setPilotFeedback] = useState(null);
 
   const todayStr = toLocalDateStr(new Date());
   const [checkinDate, setCheckinDate] = useState(todayStr);
@@ -183,6 +183,7 @@ export default function CheckinPage() {
   const [checkinImages, setCheckinImages] = useState([]);
 
   const [measureModal, setMeasureModal] = useState(null);
+  const [measureError, setMeasureError] = useState('');
   const [measureValues, setMeasureValues] = useState({});
   const [measureOption, setMeasureOption] = useState('');
   const [measureNote, setMeasureNote] = useState('');
@@ -212,10 +213,9 @@ export default function CheckinPage() {
       setRecordedDates(calendarResult.value.data || {});
     }
     setLoading(false);
-    setPilotRefresh(v=>v+1);
   }, []);
 
-  useDidShow(() => { setPilotFeedback(null); loadTodayStatus(); });
+  useDidShow(() => { loadTodayStatus(); });
 
   const chronicDiseases = user?.chronicDiseases || [];
   const isMandatory = (item) => {
@@ -234,6 +234,7 @@ export default function CheckinPage() {
 
   const openCheckinModal = (item) => {
     if (item.measureType) {
+      setMeasureError('');
       setMeasureValues({});
       setMeasureOption('');
       setMeasureNote('');
@@ -255,6 +256,11 @@ export default function CheckinPage() {
     if (measureSaving) return;
     const item = measureModal;
     const measureType = item.measureType;
+    if (measureType === 'waist' && (!Number.isFinite(Number(measureValues.value)) || Number(measureValues.value) <= 0)) {
+      setMeasureError('请手动填写有效的腰围数值（cm，大于0）。上传照片不能代替数值。');
+      return;
+    }
+    setMeasureError('');
     const fields = MEASURE_FIELDS[measureType] || [];
     const isToday = checkinDate === todayStr;
 
@@ -308,8 +314,7 @@ export default function CheckinPage() {
 
     setMeasureSaving(true);
     try {
-      const saved = await recordsAPI.create(payload);
-      setPilotFeedback(saved.feedback || null);
+      await recordsAPI.create(payload);
     } catch (err) {
       setMeasureSaving(false);
       Taro.showToast({ title: err.message || '保存失败', icon: 'none' });
@@ -335,7 +340,7 @@ export default function CheckinPage() {
     const mealPrefix = item.key === 'diet' && checkinMealType ? `【${checkinMealType}】` : '';
     const slotPrefix = resolvedTimeSlot ? `【${resolvedTimeSlot}】` : '';
     try {
-      const saved = await recordsAPI.create({
+      await recordsAPI.create({
         category: item.category || 'lifestyle',
         type: item.key,
         label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}`
@@ -351,7 +356,6 @@ export default function CheckinPage() {
         },
         recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
       });
-      setPilotFeedback(saved.feedback || null);
     } catch (err) {
       setCheckinSaving(false);
       Taro.showToast({ title: err.message || '保存失败', icon: 'none' });
@@ -388,7 +392,6 @@ export default function CheckinPage() {
       return;
     }
     const hasUrgent = selectedSymptoms.some((s) => URGENT_SYMPTOMS.includes(s));
-    setPilotFeedback(null);
     setSymptomSaving(true);
     try {
       await recordsAPI.create({
@@ -525,14 +528,14 @@ export default function CheckinPage() {
     const sys = Number(batchValues.sys), dia = Number(batchValues.dia);
     if ((batchValues.sys || batchValues.dia) && (!(sys > 0) || !(dia > 0))) return Taro.showToast({ title: '血压需同时填写高压和低压', icon: 'none' });
     if (sys > 0 && dia > 0) rows.push({ category: 'vitals', type: 'bloodPressure', label: '血压记录', unit: 'mmHg', value: `${sys}/${dia}`, extra: { sys, dia }, recordedAt: at, _inputKeys: ['sys', 'dia'] });
-    [['heartRate', '心率', '次/分'], ['bloodSugar', '血糖', 'mmol/L'], ['mood', '情绪', '分']].forEach(([key, label, unit]) => {
+    if (batchValues.waist && (!Number.isFinite(Number(batchValues.waist)) || Number(batchValues.waist) <= 0)) return Taro.showToast({ title: '请核对腰围数值（cm）', icon: 'none' });
+    [['heartRate', '心率', '次/分'], ['bloodSugar', '血糖', 'mmol/L'], ['waist', '腰围', 'cm'], ['mood', '情绪', '分']].forEach(([key, label, unit]) => {
       const value = String(batchValues[key] || '').trim();
       if (value) rows.push({ category: key === 'mood' ? 'lifestyle' : 'vitals', type: key, label: `${label}记录`, unit, value, recordedAt: at, _inputKeys: [key] });
     });
     if (batchValues.sleepTime && batchValues.wakeTime) rows.push({ category: 'lifestyle', type: 'sleep', label: '睡眠记录', unit: '小时', value: calcSleepDuration(batchValues.sleepTime, batchValues.wakeTime), extra: { sleepTime: batchValues.sleepTime, wakeTime: batchValues.wakeTime }, recordedAt: at, _inputKeys: ['sleepTime', 'wakeTime'] });
     if (!rows.length) return Taro.showToast({ title: '请至少填写一项数据', icon: 'none' });
     setBatchSaving(true);
-    setPilotFeedback(null);
     const results = await Promise.allSettled(rows.map(({ preview, _sourceLine, _inputKeys, ...row }) => recordsAPI.create(row)));
     setBatchSaving(false);
     const successIndexes = results.map((result, index) => result.status === 'fulfilled' ? index : -1).filter((index) => index >= 0);
@@ -577,7 +580,7 @@ export default function CheckinPage() {
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>
-      <MetabolicPilotCard refreshKey={pilotRefresh} onStatus={setPilotMember} feedback={pilotFeedback} />
+      <WeightProgressPhotos />
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
       ) : (
@@ -588,13 +591,13 @@ export default function CheckinPage() {
               <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>记录健康数据</Text>
               <View style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Text onClick={openBatchModal} style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>多日快速补录</Text>
-                {!pilotMember && mandatoryItems.length > 0 && <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{doneMandatoryCount}/{mandatoryItems.length}</Text>}
+                {mandatoryItems.length > 0 && <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{doneMandatoryCount}/{mandatoryItems.length}</Text>}
               </View>
             </View>
             <View style={{ display: 'flex', flexWrap: 'wrap', gap: `${spacing.sm}px` }}>
               {mandatoryItems.map(renderCheckinItem)}
             </View>
-            {!pilotMember && allMandatoryDone && (
+            {allMandatoryDone && (
               <View style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: `${spacing.sm}px`, padding: `${spacing.sm}px`, backgroundColor: '#FEF9E7', borderRadius: `${radius.sm}px` }}>
                 <Text style={{ fontSize: '12px', color: '#B7791F', fontWeight: 600 }}>⭐ 今日核心指标已完成！保持健康好习惯 🎉</Text>
               </View>
@@ -723,6 +726,7 @@ export default function CheckinPage() {
 
             {measureModal.measureType === 'bloodPressure' && <BloodPressurePhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {measureModal.measureType === 'bloodSugar' && <BloodSugarPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
+            {measureModal.measureType === 'waist' && <WaistPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {measureModal.measureType === 'weight' && <WeightPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {renderDatePicker(measureModal.color)}
             {MEASURE_OPTIONS[measureModal.measureType] && (
@@ -779,7 +783,9 @@ export default function CheckinPage() {
               ))
             )}
 
-            {!['bloodPressure', 'bloodSugar', 'weight'].includes(measureModal.measureType)
+            {!!measureError && <Text style={{ display: 'block', color: '#b42318', marginBottom: '12px' }}>{measureError}</Text>}
+            {measureModal.measureType === 'waist' && <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '13px', marginBottom: '8px' }}>可拍照识别腰围，也可在上方手动填写厘米数值。</Text>}
+            {!['bloodPressure', 'bloodSugar', 'weight', 'waist'].includes(measureModal.measureType)
               && renderImagePicker(measureImages, setMeasureImages, measureModal.color)}
 
             <View style={{ marginBottom: '12px' }}>
@@ -892,7 +898,7 @@ export default function CheckinPage() {
             <View style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><Input type="digit" style={{ ...BATCH_INPUT_STYLE, flex: 1 }} value={batchValues.weight || ''} placeholder="体重" onInput={(e) => updateBatch('weight', e.detail.value)} /><View style={{ display: 'flex', gap: '6px' }}>{['kg', '斤'].map((unit) => <Chip key={unit} label={unit} active={batchValues.weightUnit === unit} color={colors.primary} onClick={() => updateBatch('weightUnit', unit)} />)}</View></View>
             {batchValues.weight && batchValues.weightUnit === '斤' && <Text style={{ color: colors.primary, fontSize: '12px', display: 'block', marginBottom: '8px' }}>自动换算：{Math.round((Number(batchValues.weight) / 2) * 100) / 100} kg</Text>}
             <View style={{ display: 'flex', gap: '8px' }}><Input type="number" style={{ ...BATCH_INPUT_STYLE, flex: 1 }} value={batchValues.sys || ''} placeholder="高压" onInput={(e) => updateBatch('sys', e.detail.value)} /><Input type="number" style={{ ...BATCH_INPUT_STYLE, flex: 1 }} value={batchValues.dia || ''} placeholder="低压" onInput={(e) => updateBatch('dia', e.detail.value)} /></View>
-            {[['heartRate', '心率（次/分）'], ['bloodSugar', '血糖（mmol/L）'], ['mood', '情绪评分（1-10）']].map(([key, placeholder]) => <Input key={key} type="digit" style={{ ...BATCH_INPUT_STYLE, marginBottom: '8px' }} value={batchValues[key] || ''} placeholder={placeholder} onInput={(e) => updateBatch(key, e.detail.value)} />)}
+            {[['heartRate', '心率（次/分）'], ['bloodSugar', '血糖（mmol/L）'], ['waist', '腰围（cm）'], ['mood', '情绪评分（1-10）']].map(([key, placeholder]) => <Input key={key} type="digit" style={{ ...BATCH_INPUT_STYLE, marginBottom: '8px' }} value={batchValues[key] || ''} placeholder={placeholder} onInput={(e) => updateBatch(key, e.detail.value)} />)}
             <View style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>{[['sleepTime', '入睡时间'], ['wakeTime', '醒来时间']].map(([key, label]) => <Picker key={key} mode="time" value={batchValues[key] || ''} onChange={(e) => updateBatch(key, e.detail.value)}><View style={{ ...BATCH_INPUT_STYLE, flex: 1, display: 'flex', alignItems: 'center' }}><Text style={{ color: batchValues[key] ? colors.textPrimary : colors.textMuted }}>{batchValues[key] || label}</Text></View></Picker>)}</View>
             <View style={{ display: 'flex', gap: '10px', marginTop: '18px' }}><View onClick={() => setBatchModal(false)} style={{ flex: 1, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: colors.border }}><Text style={{ color: colors.textSecondary, fontWeight: 600 }}>关闭</Text></View><View onClick={batchSaving ? undefined : saveBatch} style={{ flex: 2, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: batchSaving ? 0.6 : 1 }}><Text style={{ color: '#fff', fontWeight: 700 }}>{batchSaving ? '保存中...' : '保存当天已填项目'}</Text></View></View>
           </View>

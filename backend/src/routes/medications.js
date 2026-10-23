@@ -41,7 +41,7 @@ router.patch('/:id/stop', auth, async (req, res) => {
   res.json({ success: true, data: med, message: '已标记停用' });
 });
 
-// 今日打卡（标记已服药）
+// 今日记录健康数据（标记已服药）
 router.post('/:id/checkin', auth, async (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const med = await Medication.findOne({ _id: req.params.id, user: req.user._id });
@@ -59,7 +59,7 @@ router.post('/:id/checkin', auth, async (req, res) => {
     });
   }
   await med.save();
-  res.json({ success: true, message: '打卡成功', data: med });
+  res.json({ success: true, message: '记录成功', data: med });
 });
 
 // 删除用药

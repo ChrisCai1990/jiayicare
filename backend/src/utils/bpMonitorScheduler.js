@@ -3,9 +3,9 @@ const Message = require('../models/Message');
 const User = require('../models/User');
 
 // AI自主随访跟进试点（血压监测场景）：
-// 每天扫描当日到期、要求打卡血压但会员尚未打卡的随访计划，AI直接发消息提醒会员，
+// 每天扫描当日到期、要求记录健康数据血压但会员尚未记录健康数据的随访计划，AI直接发消息提醒会员，
 // 不经过医护审核（参考 system.js 里"系统推送"的免审核先例）。
-// 会员一旦打卡，healthRecords.js 会自动把对应随访标记为 completed，
+// 会员一旦记录健康数据，healthRecords.js 会自动把对应随访标记为 completed，
 // 因此本轮扫描不会重复提醒同一天的同一条待办；异常值升级走 HealthRecord.aiAlertStatus，
 // 由 staff.js /ai-todos 的 bp_alert_review 聚合，本调度器只负责"未测提醒"这一半。
 async function scanAndRemindMissingBP() {
@@ -39,7 +39,7 @@ async function scanAndRemindMissingBP() {
         type: 'system',
         sender: 'AI健康规划师',
         title,
-        content: '您的健康方案要求今日监测血压，目前还没有看到您的打卡记录。请尽快测量并录入，如结果异常AI会第一时间提醒您的健康顾问关注。',
+        content: '您的健康方案要求今日监测血压，目前还没有看到您的健康数据记录。请尽快测量并录入，如结果异常AI会第一时间提醒您的健康顾问关注。',
         unread: true,
       });
       remindedCount++;

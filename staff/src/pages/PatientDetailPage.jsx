@@ -1,4 +1,10 @@
+import checkupKeyMetrics from '../../../shared/checkupKeyMetrics.cjs'
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
+import LiverMarkerTrends from '../components/LiverMarkerTrends'
+import { liverMarkerTrends, liverKeyChanges } from '../utils/liverMarkerTrends.mjs'
+import { reviewConflictField, changedReviewConflictSection, removedReviewConflictClaim } from '../utils/aiReviewConflictField.mjs'
+import { aiReviewConflictGuidance } from '../utils/aiReviewConflictGuidance.mjs'
+import RehabWorkspace from '../components/RehabWorkspace'
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
@@ -7,6 +13,7 @@ import { resolveReportReviewDate } from '../../../shared/reportReviewDate.mjs'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
 import ChildHealthArchive from '../components/ChildHealthArchive'
 import followUpReview from '../../../shared/followUpReview.cjs'
+import orderServiceType from '../../../shared/orderServiceType.cjs'
 import followUpDetailView from '../utils/followUpDetail.cjs'
 import MedicationReminderModal from '../components/MedicationReminderModal'
 import { summaryTarget } from '../utils/workbenchTargets'
@@ -26,13 +33,18 @@ import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
 import { orderConversationMessages } from '../utils/orderConversation'
+import { expertAppointmentBenefits } from '../utils/expertAppointmentBenefits.mjs'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
+import { lifestyleHistoryLabel } from '../utils/lifestyleHistoryLabels.mjs'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
+import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
 import FollowUpModal from '../components/FollowUpModal'
+import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
+import WeightProgressPhotos from '../components/WeightProgressPhotos'
 import HealthRiskEventsPanel from '../components/HealthRiskEventsPanel'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
@@ -46,6 +58,7 @@ import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../com
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
+import ReviewSourceImage from '../components/ReviewSourceImage'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
@@ -58,6 +71,7 @@ import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckup
 import CheckupReportCollectionForm, { isCheckupReportCollectionTask } from '../components/CheckupReportCollectionForm'
 import CheckupAppointmentBookingForm, { checkupAppointmentBookingFromTask, isCheckupAppointmentBookingTask } from '../components/CheckupAppointmentBookingForm'
 import IbdWorkflowStageForm, { ibdStage, ibdFormDataFromTask, ibdSubmitLabel, ibdTaskTitle, validateIbdStage } from '../components/IbdWorkflowStageForm'
+import DecisionReferralTask, { isDecisionReferralTask } from '../components/DecisionReferralTask'
 import CheckupMedicalExecutionForm, { checkupMedicalExecutionFromTask, isCheckupMedicalExecutionTask, validateCheckupMedicalExecution } from '../components/CheckupMedicalExecutionForm'
 import CheckupManagerReviewForm, { checkupManagerReviewFromTask, isCheckupManagerReviewTask, validateCheckupManagerReview } from '../components/CheckupManagerReviewForm'
 import CheckupAdvisorReviewModal, { isCheckupAdvisorReviewTask } from '../components/CheckupAdvisorReviewModal'
@@ -82,10 +96,27 @@ import { insertReportItemBelow } from '../utils/reportItemOrder'
 import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
 import { resolveScreeningCategory } from '../utils/screeningCategoryLabel.mjs'
 
-// 使用浏览器原生 PDF 阅读器，保留缩放、页码跳转、旋转、查找、打印及下载等常规功能。
-// 预览链接仍是绑定报告与短时令牌的私有 API，不改为公开直链。
-function PdfDocumentPreview({ src, activePage, title, zoom = 100 }) {
-  return <iframe src={`${src}#page=${activePage}&zoom=${zoom}`} title={title} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+// 审核使用服务端生成的原件页图，避免浏览器 PDF 阅读器被下载设置或 OSS 响应策略阻断。
+// 令牌仍绑定报告与文件，页图接口沿用同一短时令牌。
+function reportPdfPagePreviewUrl(src, page) {
+  if (!/\/medical-reports\/[^/]+\/preview\/\d+\?/.test(src || '')) return ''
+  const url = new URL(src, window.location.href)
+  url.pathname = url.pathname.replace(/\/preview\/(\d+)$/, '/preview-page/$1')
+  url.searchParams.set('page', String(page))
+  return url.toString()
+}
+
+function PdfDocumentPreview({ src, activePage, title, zoom = 100, onRefresh }) {
+  const [failed, setFailed] = useState(false)
+  const pageSrc = reportPdfPagePreviewUrl(src, activePage)
+  useEffect(() => setFailed(false), [pageSrc])
+  if (!pageSrc) return <iframe src={`${src}#page=${activePage}&view=FitH`} title={title} style={{ width: '100%', height: '74vh', border: 'none', background: '#fff' }} />
+  return <div style={{ minHeight: 180, textAlign: 'center', background: '#fff' }}>
+    {failed ? <div role="alert" style={{ padding: 20, color: '#B42318' }}>
+      当前页原件加载失败。请刷新预览链接；若仍失败，需检查原文件或服务端页图转换。
+      <div><button className="btn btn-secondary btn-sm" type="button" onClick={onRefresh} style={{ marginTop: 10 }}>刷新预览链接</button></div>
+    </div> : <img src={pageSrc} alt={`${title}第${activePage}页`} onError={() => setFailed(true)} style={{ display: 'block', width: `${zoom}%`, maxWidth: 'none', height: 'auto' }} />}
+  </div>
 }
 
 function ClinicalReportSource({ report, loading, error }) {
@@ -111,7 +142,7 @@ function ClinicalReportSource({ report, loading, error }) {
   </div>
 }
 
-const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
+const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', waist: '腰围', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 const MEMBERSHIP_TIER_LABEL = {
   basic: '基础会员',
   consumer365: '365会员',
@@ -694,7 +725,7 @@ const REPORT_L1_TYPES = [
   { key: 'other',          label: '其他常规筛查' },
 ]
 const DOCUMENT_CATEGORIES = [
-  { key: 'physical_exam', label: '体检报告' },
+  { key: 'physical_exam', label: '年度／综合体检报告' },
   { key: 'lab_report', label: '检验报告' },
   { key: 'exam_report', label: '检查报告' },
   { key: 'body_composition', label: '人体成分' },
@@ -789,13 +820,13 @@ const SR_TYPE_LABEL = {
 const SR_CATEGORY = {
   group_service: '服务群沟通',
   nutrition:     '营养干预',
-  disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '专病管理', tcm: '专病管理',
+  disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '运动评估与复健', tcm: '专病管理',
   medical_visit: '医院就医', medical_escort: '医院就医',
   routine:       '日常随访',
   doctor_followup: '健康顾问跟进',
   stage_assessment: '阶段性健康评估', phase_assessment: '阶段性健康评估',
 }
-const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7' }
+const SR_CATEGORY_COLOR = { '运动评估与复健':'#16836B', '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7' }
 const combinedHealthChange = entry => [entry?.content, entry?.symptoms]
   .map(value => String(value || '').trim())
   .filter((value, index, values) => value && values.indexOf(value) === index)
@@ -1819,9 +1850,11 @@ const SERVICE_MANAGEMENT_CATEGORIES = [
   { key: 'checkup', label: '体检管理', icon: '🩺', color: '#0077B6', description: '历年体检、当次方案与执行进度' },
   { key: 'medical', label: '就医管理', icon: '🏥', color: '#7C3AED', description: '就医方案、预约协调与陪诊服务' },
   { key: 'nutrition', label: '营养管理', icon: '🥗', color: '#D97706', description: '营养评估、干预方案与阶段复盘' },
+  { key: 'rehab', label: '运动管理', icon: '🏃', color: '#16836B', description: '运动服务方案、预约与训练安排' },
 ]
 
 const getServiceManagementCategory = (plan) => {
+  if (plan?.type === 'rehab') return 'rehab'
   const text = `${plan?.title || ''} ${plan?.content?.templateName || ''}`
   if (plan?.type === 'annual_checkup' || /体检/.test(text)) return 'checkup'
   if (plan?.isAnnualPlan || plan?.type === 'health_management') return 'annual'
@@ -2116,6 +2149,10 @@ export default function PatientDetailPage() {
     try {
       const target = entitlement || packageEntitlements.find(item => item.historyVerified === false)
         || (await staffAPI.preparePackageHistoryReview(id)).data
+      if (target?.ownerUserId && String(target.ownerUserId) !== String(id)) {
+        nav(`/patients/${target.ownerUserId}?tab=consumption`)
+        return
+      }
       setHistoryReviewEntitlement(target)
       setTab('consumption')
       await loadMembership()
@@ -2127,6 +2164,11 @@ export default function PatientDetailPage() {
   const [showReferralModal, setShowReferralModal] = useState(() => !!location.state?.editReferral)
   const [editingReferral, setEditingReferral] = useState(() => location.state?.editReferral || null)
   const [showReportDetail, setShowReportDetail] = useState(null)
+  const [archiveSourceReportId, setArchiveSourceReportId] = useState('')
+  const [legacyOutpatientTargetId, setLegacyOutpatientTargetId] = useState('')
+  const [advisorReturnReason, setAdvisorReturnReason] = useState('')
+  const [reportFlowSaving, setReportFlowSaving] = useState(false)
+  const [reportFlowError, setReportFlowError] = useState('')
   const [reportDetailLoading, setReportDetailLoading] = useState(false)
   const [showSRDetail, setShowSRDetail] = useState(null)
   const [reviewingDraft, setReviewingDraft] = useState(null)
@@ -2147,6 +2189,7 @@ export default function PatientDetailPage() {
     try { setPendingReportJobId(localStorage.getItem(`jy_staff_report_upload_${id}`) || '') } catch { setPendingReportJobId('') }
   }, [id])
   const [showMessageModal, setShowMessageModal] = useState(() => new URLSearchParams(location.search).get('openChat') === '1')
+  const [chatCheckinRecord, setChatCheckinRecord] = useState(null)
   useEffect(() => {
     if (new URLSearchParams(location.search).get('openChat') === '1' && location.state?.serviceBooking) setShowMessageModal(true)
   }, [location.search, location.state?.serviceBooking])
@@ -2281,7 +2324,7 @@ export default function PatientDetailPage() {
   // 专项筛查 L1/L2 横向 tab 激活状态
   const [screeningActiveL1, setScreeningActiveL1] = useState(null)  // l1key 或 '__other__'
   const [screeningActiveL2s, setScreeningActiveL2s] = useState({})
-  // 专项筛查 & 打卡记录
+  // 专项筛查 & 健康数据记录
   const [screeningItems, setScreeningItems] = useState([])
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
@@ -2341,7 +2384,7 @@ export default function PatientDetailPage() {
     } catch (err) { setDeleteRecordError(err.message || '删除失败，请重试') }
     finally { setDeleteRecordSaving(false) }
   }
-  const [editingRecord, setEditingRecord] = useState(null) // 正在修正的打卡记录（数据有疑问时医护端修改，留痕修改人）
+  const [editingRecord, setEditingRecord] = useState(null) // 正在修正的健康数据记录（数据有疑问时医护端修改，留痕修改人）
   const [editRecordForm, setEditRecordForm] = useState({ value: '', sys: '', dia: '', note: '' })
   const [editRecordSaving, setEditRecordSaving] = useState(false)
   const screeningSearchTimer = useRef(null)
@@ -2441,8 +2484,48 @@ export default function PatientDetailPage() {
   const [editingAISection, setEditingAISection] = useState('')
   const [aiSummaryForm, setAiSummaryForm] = useState({})
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
+  const [echoChamberTrend, setEchoChamberTrend] = useState({ year: '', trend: [], loading: false, error: '' })
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
+  const [aiReviewConflicts, setAiReviewConflicts] = useState({ token: '', loading: false, error: '', conflicts: [] })
+  const [aiReviewEvidenceRevision, setAiReviewEvidenceRevision] = useState(0)
+  const [editingAIConflict, setEditingAIConflict] = useState(null)
+  const [savingAIConflict, setSavingAIConflict] = useState(false)
+  useEffect(() => {
+    if (!id || screeningWorkspaceView !== 'analysis' || aiAnalysisView !== 'doctor') return
+    const byYear = data?.user?.aiHealthSummary?.byYear || {}
+    const year = String(aiYear || new Date().getFullYear())
+    const entry = byYear[year] || {}
+    const records = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : [])
+    const doctorRecords = records.map((record, index) => ({ record, index })).filter(({ record }) =>
+      record.scope === 'doctor' || record.scope === 'all' || (!record.scope &&
+        ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'].some(key => record.sections?.[key])))
+    const selected = doctorRecords.find(({ index }) => index === aiRecordIndex.doctor) || doctorRecords[0]
+    const token = selected?.record?._reviewToken || ''
+    if (!token) { setAiReviewConflicts({ token: '', loading: false, error: '', conflicts: [] }); return }
+    let active = true
+    setAiReviewConflicts({ token, loading: true, error: '', conflicts: [] })
+    staffAPI.getAIHealthSummaryConflicts(id, year, token).then(result => {
+      if (active) setAiReviewConflicts({ token, loading: false, error: '', conflicts: result.conflicts || [] })
+    }).catch(() => {
+      if (active) setAiReviewConflicts({ token, loading: false, error: '证据核对失败，请刷新后重试', conflicts: [] })
+    })
+    return () => { active = false }
+  }, [id, aiYear, aiRecordIndex.doctor, aiAnalysisView, screeningWorkspaceView, data?.user?.aiHealthSummary, aiReviewEvidenceRevision])
+  useEffect(() => {
+    if (!id || screeningWorkspaceView !== 'analysis' || aiAnalysisView !== 'doctor') return
+    const byYear = data?.user?.aiHealthSummary?.byYear || {}
+    const fallbackYear = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))[0] || String(new Date().getFullYear())
+    const year = String(aiYear || fallbackYear)
+    let active = true
+    setEchoChamberTrend({ year, trend: [], loading: true, error: '' })
+    staffAPI.getEchoChamberTrend(id, year).then(result => {
+      if (active) setEchoChamberTrend({ year, trend: result.trend || [], loading: false, error: '' })
+    }).catch(() => {
+      if (active) setEchoChamberTrend({ year, trend: [], loading: false, error: '心超测量值读取失败，请重试' })
+    })
+    return () => { active = false }
+  }, [id, aiYear, aiAnalysisView, screeningWorkspaceView, data?.user?.aiHealthSummary?.latestYear])
   const [aiTodoTargetMissing, setAiTodoTargetMissing] = useState(false)
   useEffect(() => {
     if (!data?.user) return
@@ -2485,6 +2568,7 @@ export default function PatientDetailPage() {
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
   // 审核时原件常是手机拍照页，或被嵌在窄栏中的 PDF；不能只依赖浏览器 PDF 工具栏。
   const [ocrPreviewZoom, setOcrPreviewZoom] = useState(100)
+  const [ocrPreviewRotations, setOcrPreviewRotations] = useState({})
   const [ocrFocusItemIndex, setOcrFocusItemIndex] = useState(null)
   const [ocrSaving, setOcrSaving] = useState(false)
   const [ocrDraftSavedAt, setOcrDraftSavedAt] = useState(null)
@@ -2634,7 +2718,7 @@ export default function PatientDetailPage() {
     finally { setInsuranceCaseSaving(false) }
   }
 
-  // 打卡数据有疑问时医护端修正：血压拆sys/dia两个数值输入，其余类型统一走单值输入
+  // 健康数据记录有疑问时医护端修正：血压拆sys/dia两个数值输入，其余类型统一走单值输入
   const startEditRecord = (r) => {
     setEditingRecord(r)
     if (r.type === 'bloodPressure') {
@@ -2657,6 +2741,9 @@ export default function PatientDetailPage() {
         payload.extra = { ...editingRecord.extra, sys, dia }
       } else {
         if (!editRecordForm.value) { toast('数值不能为空'); setEditRecordSaving(false); return }
+        if (editingRecord.type === 'waist' && (!Number.isFinite(Number(editRecordForm.value)) || Number(editRecordForm.value) <= 0)) {
+          toast('请输入大于0的腰围数值（cm）'); setEditRecordSaving(false); return
+        }
         payload.value = editRecordForm.value
         payload.extra = editingRecord.extra
       }
@@ -2705,7 +2792,7 @@ export default function PatientDetailPage() {
         if (cancelled) return
         const target = res.data?.followUps?.[0]
         if (ibdStage(target) && ['planned', 'in_progress', 'missed'].includes(target.status)) openExec(target)
-        else if (annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
+        else if (isDecisionReferralTask(target) || annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
         else if (isCheckupAdvisorReviewTask(target)) setCheckupAdvisorReview(target)
         else if (target?.aiStatus === 'pending') setFollowUpDetail(target)
         else toast('该随访审核任务已处理或不存在')
@@ -2748,9 +2835,39 @@ export default function PatientDetailPage() {
           insuranceOutcome: f.formData?.insuranceOutcome || inferredInsuranceOutcome,
         }
       : (f.formData || {})
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: ibdStage(f) ? ibdFormDataFromTask(f) : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : isCheckupManagerReviewTask(f) ? checkupManagerReviewFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    setExecForm({ type: f.type || 'phone', content: f.sourceType === 'insurance_service' ? (f.executedContent || '') : '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: ibdStage(f) ? ibdFormDataFromTask(f) : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : isCheckupManagerReviewTask(f) ? checkupManagerReviewFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+  }
+  const handleSaveInsuranceDraft = async () => {
+    if (execItem?.sourceType !== 'insurance_service' || execItem.taskRole !== 'executor') return
+    setExecSaving(true)
+    try {
+      await staffAPI.updateFollowUp(execItem._id, {
+        type: execForm.type,
+        content: execForm.content.trim(),
+        status: 'in_progress',
+        serviceChecklist: execForm.serviceChecklist,
+      })
+      toast('已临时保存，可稍后继续填写')
+      setExecItem(null)
+      loadFollowUps()
+    } catch (err) { toast(err.message || '临时保存失败') }
+    finally { setExecSaving(false) }
   }
   const handleExec = async () => {
+    if (medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) && execForm.formData?.bookingOutcome === 'customer_not_needed') {
+      const note = execForm.formData.customerDeclineNote?.trim()
+      if (!note) { toast('请记录客户暂不需要代配药的沟通情况'); return }
+      setExecSaving(true)
+      try {
+        await staffAPI.deferMedicationProxy(execItem._id, note)
+        toast('已结束本次代配药需求，客户需要时可重新发起')
+        setExecItem(null)
+        loadFollowUps()
+        loadServiceRecords()
+      } catch (err) { toast(err.message || '结束失败') }
+      finally { setExecSaving(false) }
+      return
+    }
     if (canRecordProgress(execItem) && execForm.status === 'in_progress') {
       if (!execForm.content.trim()) { toast('请填写本次沟通情况'); return }
       setExecSaving(true)
@@ -2834,7 +2951,7 @@ export default function PatientDetailPage() {
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
-        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (isMedicalEscortTask(execItem) ? ({ planner: '健康规划师已安排陪同就医专员', execute: '就医专员已完成陪同并提交资料审核', post_visit_audit: '健管专员已完成陪同资料审核归档' }[proxyStage] || '陪同就医服务环节已完成') : execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : proxyStage === 'booking' && isMedicalProxyMedicationTask(execItem) ? '代配药门诊预约已完成，转健康规划师安排执行人员' : proxyStage === 'booking' && isExpertAppointmentTask(execItem) ? '专家约诊已完成' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行', post_visit_audit: '就诊资料审核', post_visit_review: '就诊资料查看' }[proxyStage] || '服务环节'}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
+        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (isMedicalEscortTask(execItem) ? ({ planner: '健康规划师已安排陪同就医专员，转健管专员预约', booking: '健管专员已完成陪同预约，转就医专员执行', execute: '就医专员已完成陪同并提交资料审核', post_visit_audit: '健管专员已完成陪同资料审核归档' }[proxyStage] || '陪同就医服务环节已完成') : execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : proxyStage === 'booking' && isMedicalProxyMedicationTask(execItem) ? '代配药门诊预约已完成，转健康规划师安排执行人员' : proxyStage === 'booking' && isExpertAppointmentTask(execItem) ? '专家约诊已完成' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行', post_visit_audit: '就诊资料审核', post_visit_review: '就诊资料查看' }[proxyStage] || '服务环节'}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
         status: ibdStage(execItem) ? execForm.status : isReportCollection
           ? (reportClosure?.collectionStatus === 'complete' ? 'completed' : 'in_progress')
           : execItem.taskRole === 'supervisor'
@@ -2853,8 +2970,10 @@ export default function PatientDetailPage() {
         await loadReports()
         toast('资料已保存，已进入报告管理；请逐份完成AI解析与审核')
       } else {
-        toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
+        const planningClosed = proxyStage === 'supervise' && execForm.formData?.medicalPlanning === true
+        toast(planningClosed ? '客户意向已确认，本次就医规划已结案' : isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
         loadFollowUps()
+        if (planningClosed) staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
       }
     } catch (err) { toast(err.message || '保存失败') }
     finally { setExecSaving(false) }
@@ -3060,7 +3179,7 @@ export default function PatientDetailPage() {
     try {
       const [sr, hr, scr, tree, summaries] = await Promise.allSettled([
         staffAPI.getPatientScreening(id),
-        // 今日健康状态必须在会员档案长期可追溯，不能被最近30条普通打卡挤出列表。
+        // 今日健康状态必须在会员档案长期可追溯，不能被最近30条普通记录挤出列表。
         staffAPI.getPatientHealthRecords(id, { type: 'symptom', days: 365, limit: 500 }),
         staffAPI.getScreeningReports(id),
         staffAPI.getScreeningTree(),
@@ -3084,14 +3203,14 @@ export default function PatientDetailPage() {
   const openClinicalReportReview = async (report) => {
     editingReportIdRef.current = report._id
     setEditingReport(report)
-    setEditingReportForm({ title: report.title || '', hospital: report.hospital || report.institution || '', date: report.date || report.checkDate || '', note: report.note || '', documentCategory: inferDocumentCategory(report), clinicalReview: report.clinicalReview || {} })
+    setEditingReportForm({ title: report.title || '', hospital: report.hospital || report.institution || '', date: report.date || report.checkDate || '', note: report.note || '', documentCategory: inferDocumentCategory(report), clinicalReview: report.clinicalReview || {}, courseTargetDiseaseId: report.courseTargetDiseaseId || '' })
     setEditingReportLoadError('')
     setEditingReportLoading(true)
     try {
       const { data: fresh } = await staffAPI.getReport(report._id)
       if (editingReportIdRef.current === report._id) {
         setEditingReport(fresh)
-        setEditingReportForm({ title: fresh.title || '', hospital: fresh.hospital || fresh.institution || '', date: fresh.date || fresh.checkDate || '', note: fresh.note || '', documentCategory: inferDocumentCategory(fresh), clinicalReview: fresh.clinicalReview || {} })
+        setEditingReportForm({ title: fresh.title || '', hospital: fresh.hospital || fresh.institution || '', date: fresh.date || fresh.checkDate || '', note: fresh.note || '', documentCategory: inferDocumentCategory(fresh), clinicalReview: fresh.clinicalReview || {}, courseTargetDiseaseId: fresh.courseTargetDiseaseId || '' })
       }
     } catch (error) {
       if (editingReportIdRef.current === report._id) setEditingReportLoadError(error.message || '未知错误')
@@ -3104,6 +3223,10 @@ export default function PatientDetailPage() {
   const openReportDetail = (r) => {
     // 立即显示弹窗（用列表里已有的数据）
     setShowReportDetail(r)
+    setArchiveSourceReportId('')
+    setLegacyOutpatientTargetId('')
+    setAdvisorReturnReason('')
+    setReportFlowError('')
     setReportDateEditing(false)
     setReportDateDraft(r.checkDate || r.date || '')
     setReportScreeningData([])
@@ -3166,7 +3289,7 @@ export default function PatientDetailPage() {
         report = response.data
         if (activePatientId.current !== patientId) return
         if (!report || String(report.user?._id || report.user || '') !== String(patientId)) throw new Error('该资料不属于当前会员，请返回工作台重新打开任务')
-        if (report.healthCourseDraft?.status !== 'pending_review') throw new Error('该健康变化已处理或不再待审核，请返回工作台刷新任务')
+        if (['approved', 'dismissed'].includes(report.healthCourseDraft?.status)) throw new Error('该健康变化已处理，请返回工作台刷新任务')
       }
       const response = await staffAPI.generateHealthCourseDraft(report._id)
       draft = response.data || {}
@@ -3185,7 +3308,13 @@ export default function PatientDetailPage() {
       if (activePatientId.current !== patientId) return
       if (draft.alreadyArchived) { setCourseArchivePreview(draft.archive); return }
       setDiseaseReportPicker(null)
-      setHealthCourseReview({ report, generatedAt:draft.generatedAt, occurredAt:draft.outpatientRecord?.visitDate || ((report.checkDate || report.date) ? new Date(report.checkDate || report.date).toLocaleDateString('sv-SE') : ''), diseaseName: diseaseName || draft.recommendedDiseaseName || '', content: draft.content || '', examination: draft.examination || '', diagnosis: draft.diagnosis || '', medicationChange: draft.medicationChange || '', treatmentResponse: draft.treatmentResponse || '', nextPlan: draft.nextPlan || '', outpatientRecord:draft.outpatientRecord || null, outpatientReviewIssues:draft.outpatientReviewIssues || [] })
+      const selectedDisease = diseaseName || (data?.user?.diseaseRecords || []).find(record => String(record._id) === String(report.courseTargetDiseaseId || ''))?.name || draft.recommendedDiseaseName || ''
+      const reportDate = report.checkDate || report.date
+      setHealthCourseReview({ report, generatedAt:draft.generatedAt,
+        occurredAt:calendarDate(reportDate) || calendarDate(draft.outpatientRecord?.visitDate)
+          || (reportDate && !Number.isNaN(Date.parse(reportDate)) ? new Date(reportDate).toLocaleDateString('sv-SE') : ''),
+        diseaseName:selectedDisease,
+        content: draft.content || '', examination: draft.examination || '', diagnosis: draft.diagnosis || '', medicationChange: draft.medicationChange || '', treatmentResponse: draft.treatmentResponse || '', nextPlan: draft.nextPlan || '', outpatientRecord:draft.outpatientRecord || null, outpatientReviewIssues:draft.outpatientReviewIssues || [] })
       if (!pendingOnly) await loadReports()
     } catch (err) { if (activePatientId.current === patientId) toast(err.message || (pendingOnly ? '加载待审健康变化失败，请重试' : 'AI提取健康变化失败')) }
     finally { if (activePatientId.current === patientId) setHealthCourseSaving(false) }
@@ -3193,14 +3322,14 @@ export default function PatientDetailPage() {
 
   const reviewHealthCourseDraft = async action => {
     if (!healthCourseReview) return
-    if (action === 'approve' && !healthCourseReview.diseaseName) { setHealthCourseError('请选择要归入的专病档案'); return }
+    if (action === 'approve' && !healthCourseReview.diseaseName) { setHealthCourseError('请先由健管专员建立并指定专病首页'); return }
     if (action === 'approve' && !healthCourseReview.outpatientRecord && !healthCourseReview.content.trim()) { setHealthCourseError('本次健康及症状变化不能为空'); return }
     setHealthCourseSaving(true)
     setHealthCourseError('')
     try {
       const { report, ...form } = healthCourseReview
       await staffAPI.reviewHealthCourseDraft(report._id, { action, ...form })
-      toast(action === 'approve' ? '已由健康顾问审核并写入健康变化时间轴' : '已忽略本次AI草稿，原始资料仍保留')
+      toast(action === 'approve' ? (healthCourseReview.outpatientRecord ? '已由健康顾问审核并写入专病诊疗时间轴' : '已由健康顾问审核并写入健康变化时间轴') : '已忽略本次AI草稿，原始资料仍保留')
       setHealthCourseReview(null)
       if (location.state?.sourceTodo?.id === `healthcourse_${report._id}`) {
         const search = new URLSearchParams(location.search)
@@ -3208,7 +3337,7 @@ export default function PatientDetailPage() {
         nav(location.pathname + (search.toString() ? `?${search}` : ''), { replace: true, state: {} })
       }
       await Promise.all([loadReports(), load()])
-    } catch (err) { setHealthCourseError(err.message || '审核失败') }
+    } catch (err) { setHealthCourseError(err.message || '审核失败'); window.alert(`写入诊疗时间轴失败：${err.message || '请刷新后重试'}`) }
     finally { setHealthCourseSaving(false) }
   }
 
@@ -3357,6 +3486,16 @@ export default function PatientDetailPage() {
         nav(location.pathname + location.search, { replace: true, state: {} })
         return
       }
+      if (isDecisionReferralTask(f)) {
+        setFollowUpDetail(f)
+        nav(location.pathname + location.search, { replace: true, state: {} })
+        return
+      }
+      if (String(f.workflowKey || '').startsWith('rehab:') || f.sourceOrderId?.serviceWorkflowSnapshot?.key === 'rehab') {
+        setTab('plans'); setServiceManagementView('rehab')
+        nav(`${location.pathname}?tab=plans&serviceView=rehab`, { replace: true, state: {} })
+        return
+      }
       if (f.sourceType === 'order' && staff?.role === 'healthPlanner') {
         nav(`${location.pathname}?openChat=1`, { replace: true, state: { serviceBooking: f } })
         return
@@ -3486,7 +3625,7 @@ export default function PatientDetailPage() {
       toast('基本信息已保存')
       setEditingBasicInfo(false)
       load()
-    } catch (err) { toast(err.message || '保存失败') }
+    } catch (err) { setReportFlowError(err.message || '保存失败') }
   }
 
   const handleSaveHealthNeeds = async () => {
@@ -3726,7 +3865,10 @@ export default function PatientDetailPage() {
         const flags = buildLifestyleSummary(d)
         lifestyleForm.lifestyle_data = { ...d, autoSummaryFlags: flags }
       }
-      await staffAPI.updatePatient(id, lifestyleForm)
+      await staffAPI.updatePatient(id, {
+        lifestyle: lifestyleForm.lifestyle || {},
+        lifestyle_data: lifestyleForm.lifestyle_data || {},
+      })
       await staffAPI.recalculateScore(id)
       toast('生活方式已保存，评分已更新')
       setEditingLifestyle(false)
@@ -3742,9 +3884,9 @@ export default function PatientDetailPage() {
       applyAIHealthSummary(res.data)
       const entry = res.data?.byYear?.[year] || {}
       const records = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : [])
-      const record = records.find(item => item.scope === 'nutrition' || item.scope === 'all' || item.sections?.lifestyle_assessment)
+      const record = [...records].reverse().find(item => item.sections?.lifestyle_assessment && ['nutrition', 'all'].includes(item.scope || 'all'))
       setLifestyleAiDraft({ year, recordIndex: Math.max(0, records.indexOf(record)), _reviewToken: record?._reviewToken, section: record?.sections?.lifestyle_assessment || null })
-      toast('AI已结合近30天打卡形成生活方式草稿，请营养师核对')
+      toast('AI已结合近30天健康数据记录形成生活方式草稿，营养师工作台将显示待审核任务')
     } catch (err) { toast(err.message || 'AI生活方式分析生成失败') }
     finally { setLifestyleAiGenerating(false) }
   }
@@ -3849,23 +3991,23 @@ export default function PatientDetailPage() {
     } : prev)
   }
 
-  const handleGenerateAISummary = async (year, scope = 'all', force = false) => {
+  const handleGenerateAISummary = async (year, scope = 'all', force = false, recheckFromSources = false) => {
     const y = String(year || new Date().getFullYear())
     try {
       setAiSummaryLoading(true)
       setAiSummaryError('')
-      const res = await staffAPI.generateAIHealthSummary(id, y, scope, force)
+      const res = await staffAPI.generateAIHealthSummary(id, y, scope, force, recheckFromSources)
       applyAIHealthSummary(res.data)
       // 生成接口已返回最新完整AI汇总，直接更新当前会员状态即可立即展示。
       // 不再调用整页load()重复拉取会员、报告、问卷等大量无关数据。
       setAiYear(y)
-      toast(`${y}年度AI分析已生成`)
+      toast(recheckFromSources ? `${y}年度已依据原始报告新增评估，请核对并审核` : `${y}年度AI分析已生成`)
     } catch (err) {
       if (!err.needConfirm) setAiSummaryError(err.message || 'AI生成失败')
       if (err.needConfirm) {
         const label = scope === 'nutrition' ? '生活方式信息整理' : (scope === 'doctor' ? '5维健康信息整理' : 'AI健康信息整理')
         if (window.confirm(`${err.message}${err.approvedBy ? `（审核人：${err.approvedBy}）` : ''}\n是否确认重新生成${label}？`)) {
-          return await handleGenerateAISummary(year, scope, true)
+          return await handleGenerateAISummary(year, scope, true, recheckFromSources)
         }
       } else if (err.needReportAudit) {
         loadPendingDoctorAudit()
@@ -3879,16 +4021,17 @@ export default function PatientDetailPage() {
     finally { setAiSummaryLoading(false) }
   }
 
-  const handleRegenerateAISummaryItem = async (sectionKey, itemName, expectedRecordToken) => {
+  const handleRegenerateAISummaryItem = async (sectionKey, itemName, target) => {
     const instruction = window.prompt(`请输入“${itemName}”需要重新核对的问题：`, '')
     if (!instruction?.trim()) return
     try {
       setAiSummaryLoading(true)
       const scope = sectionKey === 'tumor_risk' || sectionKey === 'cardiovascular_risk' || sectionKey === 'chronic_disease' ? 'doctor' : 'all'
-      const res = await staffAPI.regenerateAIHealthSummaryItem(id, { year: aiYear, scope, recordIndex: aiRecordIndex.doctor, sectionKey, itemName, instruction: instruction.trim(), expectedRecordToken })
+      const res = await staffAPI.regenerateAIHealthSummaryItem(id, { year: target.year, scope, recordIndex: target.recordIndex, sectionKey, itemName, instruction: instruction.trim(), expectedRecordToken: target.expectedRecordToken })
       applyAIHealthSummary(res.data)
+      if (res.newRecord) setAiRecordIndex(v => ({ ...v, doctor: 0 }))
       setLastRegeneratedItem(`${sectionKey}:${itemName}`)
-      toast(`${itemName}、整体意见及相关关注问题已同步，请重新审核`)
+      toast(`${itemName}已局部重评估${res.newRecord ? '，原已审核版本已保留' : ''}；请核对本卡、整体意见和相关关注问题后审核`)
     } catch (err) { toast(err.message || '单项重新生成失败') }
     finally { setAiSummaryLoading(false) }
   }
@@ -3899,7 +4042,15 @@ export default function PatientDetailPage() {
       const res = await staffAPI.refreshAIHealthSummaryOverview(id, { year, recordIndex, sectionKey, expectedRecordToken })
       applyAIHealthSummary(res.data)
       toast('整体意见及相关关注问题已依据当前卡片同步，请核对并重新审核')
-    } catch (err) { toast(err.message || '整体意见刷新失败') }
+    } catch (err) {
+      if (err.status === 409) {
+        try {
+          const latest = await staffAPI.getPatient(id)
+          applyAIHealthSummary(latest.data.user.aiHealthSummary)
+          toast('分析记录已更新，页面已同步最新版本；请核对卡片后再次点击“同步整体意见”')
+        } catch { toast('分析记录已更新，请刷新页面后重新核对') }
+      } else toast(err.message || '整体意见刷新失败')
+    }
     finally { setAiSummaryLoading(false) }
   }
 
@@ -3940,7 +4091,11 @@ export default function PatientDetailPage() {
     try {
       const latestRes = await staffAPI.getReport(r._id)
       if (latestRes.data) latestReport = latestRes.data
-    } catch {}
+    } catch (error) {
+      setOcrSaving(false)
+      toast(error.message || '来源报告读取失败，请重试')
+      return
+    }
     ocrRevisionRef.current = Number(latestReport.reviewRevision || 0)
     setOcrReviewReport(options.screeningRecordEdit ? { ...latestReport, _screeningRecordEdit: true } : latestReport)
     const validStoredDate = [latestReport.checkDate, latestReport.date]
@@ -3957,6 +4112,7 @@ export default function PatientDetailPage() {
     setOcrDraftSavedAt(null)
     setOcrSaving(false)
     setOcrPreviewZoom(100)
+    setOcrPreviewRotations({})
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
     if (!latestReport.content && !latestReport.fileUrl && !(latestReport.fileUrls && latestReport.fileUrls.length)) {
@@ -4003,8 +4159,12 @@ export default function PatientDetailPage() {
       })
     const targets = (Array.isArray(focusItems) ? focusItems : [focusItems]).map(v => String(v || '').trim()).filter(Boolean)
     let focusedIndex = -1
+    if (options.focusItemId) focusedIndex = items.findIndex(it => String(it.itemId || '') === String(options.focusItemId))
+    if (focusedIndex < 0 && options.focusItemValue !== undefined) focusedIndex = items.findIndex(it =>
+      targets.includes(String(it.name || '').trim()) && String(it.value ?? '').trim() === options.focusItemValue
+        && String(it.referenceRange ?? '').trim() === options.focusItemReferenceRange)
     // 具体项目名按点击记录中的顺序优先匹配，目录名只在最后兜底，避免定位到前面的宽泛同名项。
-    for (const target of targets) {
+    if (focusedIndex < 0) for (const target of targets) {
       focusedIndex = items.findIndex(it => String(it.name || '').trim() === target)
       if (focusedIndex >= 0) break
     }
@@ -4022,6 +4182,21 @@ export default function PatientDetailPage() {
     const pages = items.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0)
     const focused = focusedIndex >= 0 ? items[focusedIndex] : null
     setOcrReviewPage(Number(focused?.sourcePage) || (pages.length ? Math.min(...pages) : 1))
+  }
+
+  const refreshOcrPreview = async () => {
+    if (!ocrReviewReport?._id) return
+    try {
+      const { data } = await staffAPI.getReport(ocrReviewReport._id)
+      if (!data) throw new Error('无法取得新的预览链接')
+      setOcrReviewReport(current => current?._id === data._id ? {
+        ...current,
+        previewUrl: data.previewUrl,
+        previewUrls: data.previewUrls,
+        fileUrl: data.fileUrl,
+        fileUrls: data.fileUrls,
+      } : current)
+    } catch (error) { toast(error.message || '刷新原件预览失败') }
   }
 
   const reviewActivityFlush = useReportReviewActivity(ocrReviewReport?._id)
@@ -4065,6 +4240,7 @@ export default function PatientDetailPage() {
       toast(screeningRecordEdit ? '筛查项目归类已更新' : '内容审核完成，已归类项目已同步；未匹配项目可手动选择目录归类')
       setOcrReviewReport(null)
       loadReports()
+      setAiReviewEvidenceRevision(revision => revision + 1)
       if (screeningRecordEdit) loadScreening()
     } catch (err) { toast(err.message || '保存失败') }
     finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
@@ -4089,6 +4265,7 @@ export default function PatientDetailPage() {
       setOcrReviewReport(prev => prev ? { ...prev, ...(saved.data || {}), reportItems: savedItems } : prev)
       setOcrDraftSavedAt(new Date())
       await loadReports()
+      setAiReviewEvidenceRevision(revision => revision + 1)
       toast('草稿已保存并已从服务器确认，审核窗口继续保留')
     } catch (err) { toast(err.message || '保存失败') }
     finally { ocrActionInFlightRef.current = false; setOcrSaving(false) }
@@ -4220,6 +4397,51 @@ export default function PatientDetailPage() {
       setEditingAISummary(false); setEditingAISection('')
       toast(approve ? '该板块已审核通过' : '该板块草稿已保存')
     } catch (err) { toast(err.message || '板块保存失败') }
+  }
+
+  const handleSaveAIConflict = async (year, record) => {
+    if (!editingAIConflict || editingAIConflict.token !== record._reviewToken) return
+    const change = changedReviewConflictSection(record.sections || {}, editingAIConflict.path, editingAIConflict.text)
+    if (!change) {
+      setEditingAIConflict(edit => ({ ...edit, error: '此结论位置已变化，请刷新后重新核对' }))
+      return
+    }
+    try {
+      setSavingAIConflict(true)
+      const res = await staffAPI.updateAIHealthSummary(id, {
+        sections: { [change.sectionKey]: change.section },
+        sectionKey: change.sectionKey, scope: 'doctor', year,
+        recordIndex: record._recordIndex, expectedRecordToken: record._reviewToken,
+      })
+      applyAIHealthSummary(res.data)
+      setEditingAIConflict(null)
+      toast('结论已保存，正在重新核对证据')
+    } catch (err) {
+      setEditingAIConflict(edit => edit ? { ...edit, error: err.message || '保存失败' } : edit)
+    } finally {
+      setSavingAIConflict(false)
+    }
+  }
+
+  const handleDeleteAIConflict = async (year, record, conflict) => {
+    const change = removedReviewConflictClaim(record.sections || {}, conflict.path, conflict.claim)
+    if (!change) return toast('此结论位置已变化，请刷新后重新核对')
+    if (!window.confirm('将只删除这一处结论文字，原始检验报告和其他结论会保留。删除后会重新核对，是否继续？')) return
+    try {
+      setSavingAIConflict(true)
+      const res = await staffAPI.updateAIHealthSummary(id, {
+        sections: { [change.sectionKey]: change.section },
+        sectionKey: change.sectionKey, scope: 'doctor', year,
+        recordIndex: record._recordIndex, expectedRecordToken: record._reviewToken,
+      })
+      applyAIHealthSummary(res.data)
+      setEditingAIConflict(null)
+      toast('这处结论已删除，正在重新核对证据')
+    } catch (err) {
+      toast(err.message || '删除失败')
+    } finally {
+      setSavingAIConflict(false)
+    }
   }
 
   // 按角色维度审核 AI 汇总分析（scope: 'doctor'=5维 / 'nutrition'=生活方式评估）
@@ -4536,6 +4758,33 @@ export default function PatientDetailPage() {
     }
   }
 
+  const archiveSupplementReport = async () => {
+    if (!archiveSourceReportId || !showReportDetail) return
+    try {
+      setReportFlowSaving(true)
+      await staffAPI.archiveReportOnly(showReportDetail._id, archiveSourceReportId)
+      toast('补充原件已留存，不进入解析和审核')
+      setShowReportDetail(null)
+      loadReports()
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setReportFlowSaving(false) }
+  }
+
+  const returnReportToManager = async () => {
+    const reason = advisorReturnReason.trim()
+    if (!reason || !showReportDetail) return
+    try {
+      setReportFlowSaving(true)
+      await staffAPI.returnReportToManager(showReportDetail._id, reason)
+      toast('已退回健管专员修改')
+      setShowReportDetail(null)
+      loadReports()
+      loadPendingDoctorAudit()
+      load()
+    } catch (err) { setReportFlowError(err.message || '退回失败') }
+    finally { setReportFlowSaving(false) }
+  }
+
   if (loading) return <div className="page-loading">加载中...</div>
   if (!data) return <div className="page">{loadError || '会员不存在'}</div>
 
@@ -4601,7 +4850,8 @@ export default function PatientDetailPage() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {location.state.sourceTodo.type === 'health_course_review' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button type="button" className="btn btn-primary btn-sm" disabled={healthCourseSaving} onClick={() => openHealthCourseReview({ _id: location.state.sourceTodo.id.replace(/^healthcourse_/, '') }, { pendingOnly: true })}>{healthCourseSaving ? '加载中…' : '去审核健康变化'}</button>}
             {location.state.sourceTodo.type === 'risk_review' && <button type="button" className="btn btn-primary btn-sm" disabled={riskApproving} onClick={handleCloseRiskTodo}>{riskApproving ? '处理中…' : '已核对，确认关闭任务'}</button>}
-            <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>{['risk_review', 'health_course_review'].includes(location.state.sourceTodo.type) ? '仅隐藏提示' : '关闭提示'}</button>
+            {location.state.sourceTodo.type === 'archive_review' && user.initialArchiveReview?.status === 'pending' && <button type="button" className="btn btn-primary btn-sm" onClick={() => { setTab('records'); setHealthBaseView('profile'); requestAnimationFrame(() => document.getElementById('initial-archive-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}>去逐项复核</button>}
+            <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>{['risk_review', 'health_course_review', 'archive_review'].includes(location.state.sourceTodo.type) ? '仅隐藏提示' : '关闭提示'}</button>
           </div>
         </div>
       )}
@@ -4696,7 +4946,7 @@ export default function PatientDetailPage() {
       {/* 问卷档案变化：差异待确认 / 历史记录 / 手动生成入口 */}
       {(() => {
         const draft = user.archiveDraft
-        const pending = draft && draft.status === 'pending' && (draft.items || []).length > 0
+        const pending = draft && draft.status === 'pending' && (draft.items || []).length > 0 && String(draft.questionnaireId) !== '6a49eab9fc1595013da70645'
         if (pending) {
           return (
             <div style={{ marginBottom: 12, padding: '10px 16px', background: '#FEF3C7', borderRadius: 8, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -4710,12 +4960,13 @@ export default function PatientDetailPage() {
             </div>
           )
         }
-        if (qResponses.length > 0) {
+        const archiveResponses = qResponses.filter(r => !r.isDietarySurvey)
+        if (archiveResponses.length > 0) {
           return (
             <details style={{ marginBottom: 10 }}><summary style={{ cursor: 'pointer', fontSize: 13, color: '#4A6558' }}>从已答问卷整理档案变化</summary><div style={{ marginBottom: 12, padding: '8px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, color: '#4A6558' }}>📝 从已答问卷识别档案变化：</span>
-              <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={qResponses[0].responseId}>
-                {qResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.proxyEntry ? '营养师代填 · ' : ''}{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
+              <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={archiveResponses[0].responseId}>
+                {archiveResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.proxyEntry ? '营养师代填 · ' : ''}{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
               </select>
               <button className="btn btn-secondary btn-sm" disabled={archiveBusy}
                 onClick={() => handleGenerateArchiveDraft(document.getElementById('qresp-select')?.value)}>
@@ -4727,8 +4978,8 @@ export default function PatientDetailPage() {
         return null
       })()}
 
-      {/* 膳食调查问卷：营养师复核（与健管专员审核写入档案是独立并行的两道确认，互不阻塞） */}
-      {qResponses.filter(r => r.isDietarySurvey && r.nutritionistReview?.status !== 'reviewed').map(r => (
+      {/* 膳食调查问卷只由营养师在营养流程复核。 */}
+      {['nutritionist', 'superadmin'].includes(staff?.role) && qResponses.filter(r => r.isDietarySurvey && r.nutritionistReview?.status !== 'reviewed').map(r => (
         <div key={r.responseId} style={{ marginBottom: 12, padding: '10px 16px', background: '#F0FDF4', borderRadius: 8, border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 18 }}>🥗</span>
           <div style={{ flex: 1, minWidth: 180 }}>
@@ -4754,7 +5005,7 @@ export default function PatientDetailPage() {
 
       </details>
 
-      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled />
+      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={user.membershipTier === 'annual' && !!user.assignedFamilyDoctor} />
 
       {user.initialArchiveImportPending && <div className="card" style={{padding:16,marginBottom:16}}>初次问卷已保存，档案写入待重试。<button className="btn btn-primary btn-sm" disabled={archiveBusy} onClick={async () => {setArchiveBusy(true);try{await staffAPI.retryInitialArchive(id);await load()}catch(err){toast(err.message)}finally{setArchiveBusy(false)}}}>重新写入初次档案</button></div>}
       {/* Tabs */}
@@ -4771,7 +5022,7 @@ export default function PatientDetailPage() {
           ] },
           { key: 'serviceManagement', label: '服务管理', tabs: [
             { key: 'plans', label: '服务方案' },
-            { key: 'aiReview', label: '阶段性评估' },
+            ...(user.membershipTier === 'annual' && user.assignedFamilyDoctor ? [{ key: 'aiReview', label: '阶段性评估与复盘' }] : []),
           ] },
           { key: 'serviceExecution', label: '服务执行', tabs: [{ key: 'followups', label: '执行任务' }] },
           { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }] },
@@ -4805,7 +5056,9 @@ export default function PatientDetailPage() {
       </div>}
       {['records','symptoms','medications'].includes(tab) && <InitialArchiveReview user={user} onSaved={load} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} onNavigate={(target,section) => { setTab(target); if(target==='records') setHealthBaseView('profile'); requestAnimationFrame(() => document.getElementById(`core-${section}`)?.scrollIntoView({behavior:'smooth',block:'start'})) }} />}
 
-      {tab === 'aiReview' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />}
+      {tab === 'aiReview' && (user.membershipTier === 'annual' && user.assignedFamilyDoctor
+        ? <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />
+        : <div className="card" style={{ padding: 20 }}>阶段性评估与复盘仅适用于已分配健康顾问的年度会员。</div>)}
       {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" onNavigate={target => { if (target === 'screening') { setTab('ai'); setScreeningWorkspaceView('screening'); requestAnimationFrame(() => document.getElementById('annual-review-communication')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) } else setTab(target) }} />}
 
       {/* ── Info Tab ── */}
@@ -5746,12 +5999,13 @@ export default function PatientDetailPage() {
 
         {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，会员自填自动写入）── */}
         <PsychAssessmentPanel user={user} />
+        <div className="card"><RehabWorkspace patientId={id} staff={staff} view="assessment" onSaved={loadServiceRecords} /></div>
 
         {/* ── 10年ASCVD风险评估（医护录入体检参数→中国指南自动分层）── */}
         <AscvdRiskPanel user={user} patientId={id} onSaved={load} toast={toast} />
         </>}
 
-        {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，打卡数据在下方 */}
+        {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，健康数据记录在下方 */}
         {tab === 'records' && healthBaseView === 'lifestyle' && <>
         {(() => {
           const ld = editingLifestyle ? (lifestyleForm.lifestyle_data || {}) : (user.lifestyle_data || {})
@@ -5773,15 +6027,14 @@ export default function PatientDetailPage() {
           return (
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="card-header">
-                <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天打卡形成变化分析，经营养师审核后再更新</div></div>
+                <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天健康数据记录形成变化分析，营养师可在工作台审核</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
-                      {['nutritionist','superadmin'].includes(staff.role)&&<button className="btn btn-primary btn-sm" onClick={async()=>{try{const res=await staffAPI.startLifestyleInterview(id);setFollowUpDetail(res.data);loadFollowUps()}catch(e){toast(e.message)}}}>开始生活方式访谈</button>}
                       {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>setFollowUpDetail(f)}>生活方式访谈 · {f.status==='completed'?'查看记录':'代填 / 核实问卷'}</button>)}
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
-                      <button className="btn btn-secondary btn-sm" disabled={lifestyleAiGenerating} onClick={handleGenerateLifestyleDraft}>{lifestyleAiGenerating ? 'AI整理中…' : 'AI整理打卡变化'}</button>
+                      <button className="btn btn-secondary btn-sm" disabled={lifestyleAiGenerating} onClick={handleGenerateLifestyleDraft}>{lifestyleAiGenerating ? 'AI整理中…' : 'AI整理健康数据变化'}</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setLifestyleDetailsOpen(v => !v)}>{lifestyleDetailsOpen ? '收起详细档案' : '展开详细档案'}</button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleDetailsOpen(true); setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>
+                      {(['nutritionist','superadmin'].includes(staff.role) || staff.customRoleName === '营养师' || staff.roleLabel === '营养师') && <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleDetailsOpen(true); setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>}
                     </div>
                   : <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={handleSaveLifestyle}>保存</button>
@@ -5792,10 +6045,10 @@ export default function PatientDetailPage() {
               {!lifestyleDetailsOpen && !editingLifestyle && <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
                 {Object.entries(deriveBasicLifestyle(user.lifestyle_data || {})).filter(([, value]) => value).slice(0, 8).map(([key, value]) => <div key={key} style={{ padding: '9px 11px', background: '#F7FAF8', borderRadius: 8 }}><div style={{ fontSize: 11, color: '#8AA89C' }}>{({ diet:'饮食', exercise:'运动', sleep:'睡眠', water:'饮水', smoking:'吸烟', alcohol:'饮酒', bowel:'排便', mood:'情绪' })[key] || key}</div><div style={{ marginTop: 3, fontSize: 13, color: '#1A2B24' }}>{value}</div></div>)}
                 {Object.entries(user.lifestyle_data?.nutritionSubjective || {}).filter(([, value]) => value).map(([key, value]) => <div key={key} style={{ padding: '9px 11px', background: '#EFF8F2', borderRadius: 8 }}><div style={{ fontSize: 11, color: '#648879' }}>营养评估 · {key}</div><div style={{ marginTop: 3, fontSize: 13, color: '#1A2B24' }}>{value}</div></div>)}
-                {!Object.values(deriveBasicLifestyle(user.lifestyle_data || {})).some(Boolean) && <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无生活方式摘要，可由膳食问卷、打卡变化或营养师沟通逐步补充。</div>}
+                {!Object.values(deriveBasicLifestyle(user.lifestyle_data || {})).some(Boolean) && <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无生活方式摘要，可由膳食问卷、健康数据记录变化或营养师沟通逐步补充。</div>}
               </div>}
               {lifestyleAiDraft?.section && <div style={{ margin: '0 20px 18px', padding: 14, border: '1px solid #86D5B2', background: '#F0FDF7', borderRadius: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}><div><b style={{ color: '#166534' }}>AI打卡变化草稿</b><div style={{ marginTop: 4, fontSize: 12, color: '#4A6558' }}>已自动检索近30天打卡并与当前生活方式档案比较；审核前不会替代正式结论。</div></div>{staff?.role === 'nutritionist' || staff?.role === 'superadmin' ? <button className="btn btn-primary btn-sm" onClick={handleApproveLifestyleDraft}>营养师审核通过</button> : null}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}><div><b style={{ color: '#166534' }}>AI生活方式草稿</b><div style={{ marginTop: 4, fontSize: 12, color: '#4A6558' }}>已自动检索近30天健康数据记录并与当前生活方式档案比较；审核前不会替代正式结论。</div></div>{staff?.role === 'nutritionist' || staff?.role === 'superadmin' ? <button className="btn btn-primary btn-sm" onClick={handleApproveLifestyleDraft}>营养师审核通过</button> : null}</div>
                 <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.8, color: '#1A2B24' }}>{lifestyleAiDraft.section.summary || '已形成生活方式分析，请展开查看具体变化。'}</div>
                 {(lifestyleAiDraft.section.items || []).slice(0, 8).map((item, index) => <div key={index} style={{ marginTop: 6, fontSize: 12, color: '#4A6558' }}>• {item.name || item.category || '变化'}：{item.finding || item.current || item.value || item.summary || item.suggestion || ''}</div>)}
               </div>}
@@ -6075,7 +6328,6 @@ export default function PatientDetailPage() {
 
         {/* 生活方式变化历史：每次只展示本次真正改变的字段，并关联同期健康状况变化。 */}
         {(() => {
-          const labels = { diet: '饮食习惯', exercise: '运动习惯', sleep: '睡眠习惯', water: '饮水情况', alcohol: '饮酒情况', smoking: '吸烟情况', bowel: '排便情况', mood: '情绪状态' }
           const entries = [...(user.lifestyleHistory || [])].sort((a, b) => new Date(b.effectiveAt || b.recordedAt) - new Date(a.effectiveAt || a.recordedAt))
           if (!entries.length) return null
           return (
@@ -6104,7 +6356,7 @@ export default function PatientDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                         {basicChanges.map(([key, change]) => (
                           <div key={key} style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 10, fontSize: 12 }}>
-                            <b style={{ color: '#1E6B50' }}>{labels[key] || key}</b>
+                            <b style={{ color: '#1E6B50' }}>{lifestyleHistoryLabel(key)}</b>
                             <span style={{ color: '#4A6558' }}><span style={{ color: '#98A59F', textDecoration: change.from ? 'line-through' : 'none' }}>{change.from || '未记录'}</span><span style={{ margin: '0 7px', color: '#A0AEA7' }}>→</span><span style={{ color: '#1A2B24', fontWeight: 600 }}>{change.to || '清空'}</span></span>
                           </div>
                         ))}
@@ -6112,7 +6364,7 @@ export default function PatientDetailPage() {
                           ? Object.entries(change || {}).map(([name, values]) => [`营养评估 · ${name}`, values])
                           : [[key, change]]).map(([key, change]) => (
                           <div key={key} style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 10, fontSize: 12 }}>
-                            <b style={{ color: '#1E6B50' }}>{key === 'autoSummaryFlags' ? '系统自动摘要' : key === 'summaryOverride' ? '人工摘要' : key}</b>
+                            <b style={{ color: '#1E6B50' }}>{lifestyleHistoryLabel(key)}</b>
                             <span style={{ color: '#4A6558' }}>{change.from ? `${change.from} → ` : ''}{Array.isArray(change.to) ? change.to.join('、') : String(change.to || '清空')}</span>
                           </div>
                         ))}
@@ -6546,7 +6798,7 @@ export default function PatientDetailPage() {
                 const canManage = ['familyDoctor', 'superadmin'].includes(staff?.role)
                 const pendingSummaryReports = reports.filter(report => {
                   const reportYear = Number(report.reportYear || String(report.checkDate || report.date || '').slice(0, 4))
-                  return reportYear === Number(screeningSummaryYear) && report.audit_status !== 'audited'
+                  return !report.archiveOnly && reportYear === Number(screeningSummaryYear) && report.audit_status !== 'audited'
                 })
                 const summaryGateMessage = pendingSummaryReports.length
                   ? `${screeningSummaryYear}年度还有 ${pendingSummaryReports.length} 份体检报告未完成健管审核，请全部审核后再进行专项筛查小结`
@@ -7335,36 +7587,7 @@ export default function PatientDetailPage() {
               // ── 从专项筛查 reportItems 派生指标值 ──
               // 按检查日期倒序，每个 key 取最新一条
               // 每项可为 string[] 或 { names: string[], exclude: string[] }
-              const REPORT_KEY_MAP = {
-                fpg:   ['空腹血糖','空腹葡萄糖','GLU','FPG','Glu(空腹)','血糖-0'],
-                hba1c: ['糖化血红蛋白','HbA1c','HbA1C','HBA1C','HBA1c','HbA1c(%)'],
-                // 裸'胆固醇'会误命中'高密度脂蛋白胆固醇'(HDL)/'低密度脂蛋白胆固醇'(LDL)——金娟2026 TC误取成HDL的1.73(应4.42)。排除脂蛋白类
-                tc:    { names: ['总胆固醇','TC','CHOL','胆固醇'], exclude: ['高密度','低密度','脂蛋白','HDL','LDL'] },
-                tg:    ['甘油三酯','TG','三酰甘油','TRIG'],
-                ldl:   ['低密度脂蛋白','LDL','LDL-C','LDL-胆固醇'],
-                hdl:   ['高密度脂蛋白','HDL','HDL-C','HDL-胆固醇'],
-                alt:   ['谷丙转氨酶','ALT','丙氨酸转氨酶','丙氨酸氨基转移酶'],
-                // 天/门冬 × 转氨酶/氨基转移酶 四种写法全覆盖（2026-07-10：金娟名下"天冬氨酸氨基转移酶"此前漏配，导致历年AST只显示最新一年）
-                ast:   ['谷草转氨酶','AST','天冬氨酸转氨酶','天冬氨酸氨基转移酶','门冬氨酸转氨酶','门冬氨酸氨基转移酶'],
-                // 故意不含'谷氨酰转肽酶'，避免匹配到 尿谷氨酰转肽酶G（尿液GGT）
-                ggt:   ['γ-谷氨酰转肽酶','γ-谷氨酸转肽酶','GGT','γ-GT','γGT','谷氨酸转肽酶'],
-                // 排除'结晶/盐结晶'：三大常规里的"尿酸结晶"不是血尿酸
-                ua:    { names: ['尿酸','UA','SUA'], exclude: ['结晶','盐结晶'] },
-                // 血肌酐：不含短形式'Cr'，避免匹配到尿Cr（尿液肌酐）。
-                // 2026-07-09修复"血肌酐夹杂尿肌酐"：names含裸"肌酐"会匹配到"尿肌酐/尿液肌酐/U-肌酐"，
-                // 用exclude排除所有尿液标本的肌酐（带"尿"字），确保只取血清肌酐。
-                cr:    { names: ['血肌酐','血清肌酐','肌酐','CREA','SCr','S-Cr','血Cr'], exclude: ['尿','U-','U肌酐','U-Cr'] },
-                umalb: ['尿微量白蛋白','尿微量蛋白','mAlb','MAU','微量白蛋白','MALB'],
-                egfr:  ['肾小球滤过率','eGFR','GFR','估算肾小球滤过率'],
-                hcy:   ['同型半胱氨酸','Hcy','HCY'],
-                lpla2: ['Lp-PLA2','脂蛋白磷脂酶A2','LPLA2'],
-                // 动态血压监测报告里有"夜间收缩压下降率""24小时收缩压最大值"等衍生指标，
-                // name本身包含"收缩压"三个字但value是百分比/衍生值不是真实血压，必须排除，
-                // 否则会被误判命中显示成血压数值（2026-07-03 潘孝银"动态血压"报告复现过）
-                sbp:   { names: ['收缩压','SBP','收缩压(mmHg)'], exclude: ['下降率','最大值','最小值','负荷','标准差','变异'] },
-                dbp:   { names: ['舒张压','DBP','舒张压(mmHg)'], exclude: ['下降率','最大值','最小值','负荷','标准差','变异'] },
-                weight:{ names: ['体重','Weight','BW'], exclude: ['体重指数','BMI','身体质量指数'] },
-              }
+              const REPORT_KEY_MAP = checkupKeyMetrics.REPORT_KEY_MAP
               // 排序报告（最新在前）
               const sortedReports = [...screeningReports].sort((a, b) =>
                 new Date(b.checkDate || b.createdAt || 0) - new Date(a.checkDate || a.createdAt || 0)
@@ -7793,7 +8016,7 @@ export default function PatientDetailPage() {
                   const pending = ['pending_manager', 'pending_doctor'].includes(workflow.status)
                   const source = record.recordedBy?.source === 'staff'
                     ? (record.recordedBy.staffName || '医护人员录入')
-                    : record.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'
+                    : record.recordedBy?.source === 'system' ? '系统记录' : '客户记录'
                   return (
                     <div key={record._id} style={{
                       padding: '11px 13px', borderRadius: 10,
@@ -7887,7 +8110,7 @@ export default function PatientDetailPage() {
           const TYPE_COLORS = {
             bloodPressureSystolic: '#DC3545',
             bloodPressureDiastolic: '#0077B6',
-            bloodSugar: '#D97706', weight: '#0077B6', height: '#0891B2', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309',
+            bloodSugar: '#D97706', weight: '#0077B6', waist: '#0F766E', height: '#0891B2', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309',
           };
           const TREND_TYPE_LABELS = {
             ...RECORD_TYPE_LABEL,
@@ -8006,7 +8229,7 @@ export default function PatientDetailPage() {
           );
         })()}
 
-        {/* 日常健康打卡数据 */}
+        {/* 日常健康数据记录数据 */}
         <div id="submitted-health-records" className="card" style={{ marginTop: 16, scrollMarginTop: 20 }}>
           <div className="card-header"><div className="card-title">日常监测记录</div></div>
           {recentRecords?.length > 0 ? (
@@ -8059,7 +8282,7 @@ export default function PatientDetailPage() {
                                   <img
                                     key={`${imgUrl}-${imageIndex}`}
                                     src={imgUrl}
-                                    alt={`打卡图片${imageIndex + 1}`}
+                                    alt={`记录图片${imageIndex + 1}`}
                                     style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, cursor: 'pointer', border: '1px solid #E0D9CE' }}
                                     onClick={() => setPreviewImageUrl(imgUrl)}
                                   />
@@ -8075,7 +8298,7 @@ export default function PatientDetailPage() {
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              <button className="btn btn-primary btn-sm" onClick={() => setShowMessageModal(true)}>进入对话</button>
+                              <button className="btn btn-primary btn-sm" onClick={() => { setChatCheckinRecord({ _id: r._id, imageUrls }); setShowMessageModal(true) }}>进入对话</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>编辑</button>
                               {canDeleteHealthRecord && <button className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => { setDeletingRecord(r); setDeleteRecordReason(''); setDeleteRecordError('') }}>删除</button>}
                             </div>
@@ -8088,7 +8311,7 @@ export default function PatientDetailPage() {
               </tbody>
             </table>
           ) : (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康打卡记录</div>
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康数据记录</div>
           )}
         </div>
         <div className="card" style={{ marginBottom: 16 }}>
@@ -8130,8 +8353,9 @@ export default function PatientDetailPage() {
           .map(report => Number(report.reportYear || String(report.checkDate || report.date || '').slice(0, 4)))
           .filter(year => Number.isInteger(year) && year >= 1900 && year <= nowY)
           .map(String)
-        const yearOpts = [...new Set([...years, ...reportYears, String(nowY)])].sort((a, b) => Number(b) - Number(a))
-        const curYear = (aiYear && yearOpts.includes(aiYear)) ? aiYear : (years[0] || String(nowY))
+        const recentYears = Array.from({ length: 5 }, (_, index) => String(nowY - index))
+        const yearOpts = [...new Set([...years, ...reportYears, ...recentYears])].sort((a, b) => Number(b) - Number(a))
+        const curYear = (aiYear && yearOpts.includes(aiYear)) ? aiYear : String(nowY)
         const rawYearEntry = byYear[curYear] || {}
         const records = (Array.isArray(rawYearEntry.records) ? rawYearEntry.records : (rawYearEntry.sections ? [rawYearEntry] : []))
           .map((record, index) => ({ ...record, _recordIndex: index }))
@@ -8197,6 +8421,44 @@ export default function PatientDetailPage() {
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
         const STATUS_COLOR = { abnormal: '#DC2626', mild_abnormal: '#D97706', normal: '#16A34A' }
         const TREND_LABEL = { no_data: '暂无趋势', baseline: '已建立基线', stable: '基本稳定', improving: '改善', worsening: '需关注变化', fluctuating: '存在波动', not_comparable: '暂不可比较' }
+        const sourceDates = item => [...new Set((item.sourceEvidence || []).flatMap(source => {
+          const dates = (source.items || []).map(row => row.date).filter(Boolean)
+          return dates.length ? dates : [source.date || (source.year ? `${source.year}年` : '')]
+        }).filter(Boolean))].sort()
+        const renderSourceDates = item => {
+          if (liverMarkerTrends(item).length) return <LiverMarkerTrends card={item} />
+          const dates = sourceDates(item)
+          const values = (item.sourceEvidence || []).flatMap(source => (source.items || [])
+            .filter(row => row.value).map(row => ({ ...row, date: row.date || source.date })))
+          return dates.length ? <div style={{ color: '#64748B' }}>
+            <div><b>依据检查时间：</b>{dates.join('、')}</div>
+            {values.length > 0 && <details style={{ marginTop: 3 }}>
+              <summary style={{ cursor: 'pointer' }}>按时间查看原报告指标值</summary>
+              {values.map((row, index) => <div key={`${row.date}-${row.name}-${index}`} style={{ paddingLeft: 8 }}>
+                {row.date || '日期未记录'} · {row.name}：{row.value}{row.unit ? ` ${row.unit}` : ''}{row.referenceRange ? `（参考 ${row.referenceRange}）` : ''}
+              </div>)}
+            </details>}
+          </div> : null
+        }
+        const renderEchoChamberTrend = item => item.name === '心脏超声' && (
+          <div style={{ border: '1px solid #D7E5DC', borderRadius: 8, padding: '8px 10px', background: '#F8FBF9' }}>
+            <b style={{ color: '#1E6B50' }}>心房、心室原报告测量值（{Number(curYear) - 4}—{curYear}年，只读）</b>
+            {echoChamberTrend.year !== curYear || echoChamberTrend.loading
+              ? <div style={{ marginTop: 5, color: '#64748B' }}>正在读取原报告……</div>
+              : echoChamberTrend.error
+                ? <div style={{ marginTop: 5, color: '#B91C1C' }}>{echoChamberTrend.error}</div>
+                : echoChamberTrend.trend.length
+                  ? echoChamberTrend.trend.map(metric => (
+              <div key={metric.key} style={{ marginTop: 5 }}>
+                <b>{metric.name}：</b>{metric.points.map(point => `${point.date} ${point.value} ${metric.unit}`).join(' → ')}
+                {metric.change !== null && metric.change !== undefined
+                  ? `；首末差值 ${metric.change > 0 ? '+' : ''}${metric.change} ${metric.unit}`
+                  : `；${metric.note || '资料不足，暂不判断变化'}`}
+              </div>
+            )) : <div style={{ marginTop: 5, color: '#64748B' }}>原报告中未识别到带日期、单位的心房或心室测量值，请查看原始报告。</div>}
+            <div style={{ marginTop: 5, color: '#64748B' }}>直接读取原报告，不修改已审核分析；仅比较同名测量值，数值差异需由健康顾问结合原报告判断。</div>
+          </div>
+        )
         const renderHealthTrendCards = (items, overview, accent = '#1D4ED8', sectionKey = '') => {
           const list = Array.isArray(items) ? items : []
           if (!list.length) return null
@@ -8229,14 +8491,16 @@ export default function PatientDetailPage() {
                   <div style={{ marginTop: 9, paddingTop: 8, borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, lineHeight: 1.6 }}>
                     {(item.latest || item.value) && <div><b style={{ color: '#64748B' }}>最近检查：</b>{item.latest || item.value}</div>}
                     {item.trend && <div><b style={{ color: '#64748B' }}>5年趋势：</b>{item.trend}</div>}
-                    {(item.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{item.keyChanges.join('；')}</div>}
+                    {renderSourceDates(item)}
+                    {renderEchoChamberTrend(item)}
+                    {liverKeyChanges(item).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{liverKeyChanges(item).join('；')}</div>}
                     {item.nextAction && <div style={{ color: isAttention ? '#B91C1C' : accent }}><b>下一步：</b>{item.nextAction}</div>}
                     {!item.trend && item.note && <div style={{ color: '#64748B' }}>{item.note}</div>}
                     {sectionKey && <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(item, sectionKey)}>🔗 按年份查看对应材料</button>}
                     {sectionKey && <SpecialtyConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
                       source={{ kind: 'ai_health', year: Number(curYear), sectionKey, itemName: item.name }} suggestedIssue={item.name}
                       sourceLabel={`${curYear}年度已审核健康趋势 · ${item.name}`} />}
-                    {sectionKey && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem(sectionKey, item.name, doctorRecord._reviewToken)}>✎ 录入问题并单项重新生成</button>}
+                    {sectionKey && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem(sectionKey, item.name, { year: curYear, recordIndex: doctorRecord._recordIndex, expectedRecordToken: doctorRecord._reviewToken })}>✎ 录入问题并单项重新生成</button>}
                   </div>
                 </details>
               })}
@@ -8424,7 +8688,21 @@ export default function PatientDetailPage() {
                 </div>
               )
             })()}
-            <h3 style={{ margin: '4px 0 12px', fontSize: 17 }}>{curYear}年度健康信息整理</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '4px 0 12px' }}>
+              <h3 style={{ margin: 0, fontSize: 17 }}>{curYear}年度健康信息整理</h3>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#1E6B50', fontWeight: 600 }}>
+                选择年度
+                <select aria-label="健康信息整理年度" value={curYear} onChange={e => { setAiYear(e.target.value); setAiRecordIndex({ doctor: 0, nutrition: 0 }); setEditingAISummary(false) }}
+                  style={{ padding: '5px 10px', borderRadius: 8, fontSize: 13, border: '1px solid #1E6B50', background: '#E8F5EF', color: '#1E6B50', fontWeight: 700, cursor: 'pointer' }}>
+                  {yearOpts.map(y => {
+                    const yearEntry = byYear[y]
+                    const latest = Array.isArray(yearEntry?.records) ? yearEntry.records[0] : yearEntry
+                    const approved = !!(latest?.doctorApprovedAt || latest?.approvedAt)
+                    return <option key={y} value={y}>{y}年度{approved ? ' ✓' : (yearEntry ? ' ●' : '')}</option>
+                  })}
+                </select>
+              </label>
+            </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>家庭医生5维分析</button>
               <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>营养师生活方式分析</button>
@@ -8432,33 +8710,17 @@ export default function PatientDetailPage() {
             </div>
             <details style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E6B50' }}>评估管理与依据</summary>
-            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期打卡，按年度与历史数据比较。5维分析须由家庭医生审核，生活方式分析须由营养师审核；未审核内容仅为草稿。</div></details>
+            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期记录，按年度与历史数据比较。5维分析须由家庭医生审核，生活方式分析须由营养师审核；未审核内容仅为草稿。</div></details>
 <p style={{ fontSize: 12, color: '#65776F' }}>团队成员可查看已审核结果，生成和审核按专业角色权限开放。</p>
               {aiSummaryLoading && <div role="status" style={{ marginTop: 10, color: '#1E6B50' }}>正在生成，资料较多时可能需要2–4分钟，请勿重复提交。</div>}
               {aiSummaryError && <div role="alert" style={{ marginTop: 10, color: '#B91C1C' }}>{aiSummaryError}</div>}
               <div style={{ marginTop: 12 }}>
-            {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>📅 年度</span>
-              <select value={curYear} onChange={e => { setAiYear(e.target.value); setEditingAISummary(false) }}
-                style={{ padding: '5px 10px', borderRadius: 8, fontSize: 13, border: '1px solid #1E6B50',
-                  background: '#E8F5EF', color: '#1E6B50', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
-                {yearOpts.map(y => {
-                  const generated = !!byYear[y]
-                  const yearEntry = byYear[y] || {}
-                  const latest = Array.isArray(yearEntry.records) ? (yearEntry.records[0] || {}) : yearEntry
-                  const approved = !!(latest.doctorApprovedAt || latest.approvedAt)
-                  return (
-                    <option key={y} value={y}>
-                      {y}年度{approved ? ' ✓' : (generated ? ' ●' : '')}
-                    </option>
-                  )
-                })}
-              </select>
-            </div>
             {Number(curYear) < nowY && <div style={{ fontSize: 12, color: '#8A6B36', marginBottom: 12 }}>
-              历史年度补生成仅依据截至{curYear}年末有明确检查年度的报告；当前档案、用药、生活方式和近期打卡不作为当年事实。生活方式评估无法据此回溯生成。
+              历史年度补生成仅依据截至{curYear}年末有明确检查年度的报告；当前档案、用药、生活方式和近期记录不作为当年事实。生活方式评估无法据此回溯生成。
             </div>}
+            <div style={{ fontSize: 12, color: '#65776F', marginBottom: 12 }}>
+              五维趋势范围：{Number(curYear) - 4}—{curYear}年（最近5个自然年）；更早检查记录只作历史背景，并须注明发生年份。
+            </div>
             {/* 同一年度分成两条独立评估链，各自显示生成时间与历史版本。 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, marginBottom: 14 }}>
               {[
@@ -8489,6 +8751,7 @@ export default function PatientDetailPage() {
                       {(Number(curYear) >= nowY || group.key === 'doctor') && (staff?.role === 'superadmin'
                         || (group.key === 'doctor' && staff?.role === 'familyDoctor')
                         || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
+                        <>
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                           <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved)}
                             onClick={() => {
@@ -8500,11 +8763,23 @@ export default function PatientDetailPage() {
                             }}>
                             {aiSummaryLoading ? '生成中…' : `＋ 新增${group.key === 'doctor' ? '5维分析' : '生活方式分析'}`}
                           </button>
+                          {group.key === 'doctor' && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading}
+                            onClick={() => {
+                              const approved = !!(doctorRecords[0]?.doctorApprovedAt || doctorRecords[0]?.approvedAt)
+                              if (!window.confirm('将重新生成整套健康顾问5维分析，并新增一条待审核记录；原有审核记录保留。若只需纠正某条结论，请使用下方“编辑本板块”，避免重算其他已核对内容。确定继续整套重生成？')) return
+                              handleGenerateAISummary(curYear, 'doctor', approved, true)
+                            }}>
+                            整套5维重新评估
+                          </button>}
                           <button className="btn btn-sm" style={{ color: '#DC3545', borderColor: '#FCA5A5', background: '#FFF5F5' }}
                             onClick={() => handleDeleteAISummaryRecord(group.key, curYear, group.current._recordIndex, group.current.generatedAt)}>
                             删除本次评估
                           </button>
                         </div>
+                      {group.key === 'doctor' && <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6, color: '#8A6B36' }}>
+                        单项结论有误：可展开对应卡片使用“单项重新生成”，或编辑对应板块与关联关注问题；仅核对变更内容后再点击“审核5维度通过”，无需重算其余板块。
+                      </div>}
+                        </>
                       )}
                     </>
                   ) : (
@@ -8532,6 +8807,60 @@ export default function PatientDetailPage() {
             </div>
               </div>
             </details>
+            {aiAnalysisView === 'doctor' && hasDoctorData && (() => {
+              const current = aiReviewConflicts.token === doctorRecord._reviewToken
+              const conflicts = current ? aiReviewConflicts.conflicts : []
+              const pending = !current || aiReviewConflicts.loading
+              const sectionNames = { medical_priority: '优先关注问题', tumor_risk: '肿瘤筛查', cardiovascular_risk: '心脑血管', chronic_disease: '慢病', checkup_completeness: '体检资料覆盖' }
+              return <div role="status" style={{ marginBottom: 16, padding: 14, borderRadius: 8, background: conflicts.length ? '#FFF4ED' : '#F5F8F6', border: `1px solid ${conflicts.length ? '#E6A071' : '#DBE6DF'}` }}>
+                <strong>审核前证据核对</strong>
+                {pending ? <div>正在核对原始检测值与 AI 结论…</div>
+                  : aiReviewConflicts.error ? <div style={{ color: '#A43C29' }}>{aiReviewConflicts.error}</div>
+                    : conflicts.length ? <>
+                      <div style={{ color: '#A43C29', marginTop: 6 }}>发现 {conflicts.length} 处结论与可核对的检验依据不一致，请修正后再审核。</div>
+                      {conflicts.map((item, index) => <div key={`${item.path}-${index}`} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #EDD5C7' }}>
+                        <div><strong>{sectionNames[item.path?.split('.')[0]] || '5维分析'}：</strong>“{item.claim}”</div>
+                        <div style={{ marginTop: 7 }}><strong>拦截原因：</strong>{aiReviewConflictGuidance(item).reason}</div>
+                        <div style={{ marginTop: 4 }}><strong>修改建议：</strong>{aiReviewConflictGuidance(item).suggestion}</div>
+                        {['familyDoctor', 'superadmin'].includes(staff?.role) && reviewConflictField(doctorRecord.sections || {}, item.path) !== null && (
+                          editingAIConflict?.token === doctorRecord._reviewToken && editingAIConflict.path === item.path
+                            ? <div style={{ marginTop: 8 }}>
+                                <label style={{ display: 'block', fontWeight: 600, marginBottom: 4 }}>修改原结论字段</label>
+                                <textarea className="form-control" rows={4} value={editingAIConflict.text}
+                                  onChange={event => setEditingAIConflict(edit => ({ ...edit, text: event.target.value, error: '' }))}
+                                  style={{ width: '100%', resize: 'vertical', fontSize: 13 }} />
+                                {editingAIConflict.text === reviewConflictField(doctorRecord.sections || {}, item.path) &&
+                                  <div style={{ color: '#7A6559', fontSize: 12, marginTop: 4 }}>请按上方建议修改结论文字；文字有改动后才能保存并重新核对。</div>}
+                                {editingAIConflict.error && <div role="alert" style={{ color: '#A43C29', marginTop: 4 }}>{editingAIConflict.error}</div>}
+                                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                                  <button className="btn btn-primary btn-sm" disabled={savingAIConflict || editingAIConflict.text === reviewConflictField(doctorRecord.sections || {}, item.path)}
+                                    onClick={() => handleSaveAIConflict(curYear, doctorRecord)}>{savingAIConflict ? '保存中…' : '保存并重新核对'}</button>
+                                  <button className="btn btn-secondary btn-sm" disabled={savingAIConflict} onClick={() => setEditingAIConflict(null)}>取消</button>
+                                </div>
+                              </div>
+                            : <div style={{ display: 'flex', gap: 8, marginTop: 7 }}>
+                                <button className="btn btn-secondary btn-sm" disabled={savingAIConflict || !!editingAIConflict}
+                                  onClick={() => setEditingAIConflict({ token: doctorRecord._reviewToken, path: item.path,
+                                    text: reviewConflictField(doctorRecord.sections || {}, item.path), error: '' })}>修改这处结论</button>
+                                <button className="btn btn-secondary btn-sm" disabled={savingAIConflict || !!editingAIConflict}
+                                  onClick={() => handleDeleteAIConflict(curYear, doctorRecord, item)}>删除这处结论</button>
+                              </div>
+                        )}
+                        {item.evidence?.length ? <div style={{ marginTop: 4, fontSize: 13 }}>
+                          <div>原始检测（状态由数值和该报告的参考范围计算）：</div>
+                          {item.evidence.map((row, rowIndex) => <div key={`${row.reportId || row.date}-${row.itemId || rowIndex}`} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                            <span>{row.date || '日期不详'} {item.marker} {row.value || '无数值'}（参考 {row.referenceRange || '未提供'}；{row.classification === 'elevated' ? '高于上限' : row.classification === 'normal' ? '未高于上限' : '无法判定'}）</span>
+                            {row.reportId && ['familyDoctor', 'superadmin', 'platformSuper'].includes(staff?.role) &&
+                              <button type="button" className="btn btn-secondary btn-sm"
+                                onClick={() => handleOpenOCRReview({ _id: row.reportId }, [row.itemName || item.marker], {
+                                  focusItemId: row.itemId, focusItemValue: row.value, focusItemReferenceRange: row.referenceRange,
+                                })}>核对并修改来源报告</button>}
+                          </div>)}
+                        </div> : <div style={{ marginTop: 4, fontSize: 13 }}>未找到可核对的原始检测值。</div>}
+                      </div>)}
+                    </> : <div style={{ marginTop: 4 }}>当前未发现肿瘤标志物升高结论与检验数值的矛盾；仍需人工核对其他内容。</div>}
+              </div>
+            })()}
             {/* 操作栏 */}
             {(() => {
               // 按角色拆分审核（健康顾问审5维 / 营养师审生活方式评估；超管两者皆可）
@@ -8566,7 +8895,7 @@ export default function PatientDetailPage() {
               )}
               {/* 角色化审核按钮（仅查看模式） */}
               {!editingAISummary && aiAnalysisView === 'doctor' && canDoc && (
-                <button className="btn btn-primary btn-sm" onClick={() => handleApproveSummaryScope('doctor', curYear, doctorRecord._recordIndex)}>
+                <button className="btn btn-primary btn-sm" disabled={aiReviewConflicts.token !== doctorRecord._reviewToken || aiReviewConflicts.loading || !!aiReviewConflicts.error || aiReviewConflicts.conflicts.length > 0} onClick={() => handleApproveSummaryScope('doctor', curYear, doctorRecord._recordIndex)}>
                   审核5维度通过
                 </button>
               )}
@@ -8656,11 +8985,16 @@ export default function PatientDetailPage() {
                   {docEditing && (!editingAISection || editingAISection === 'tumor_risk') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {sec.tumor_risk?.overview && <textarea className="form-control" rows={3} value={sec.tumor_risk.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('tumor_risk', e.target.value)} style={{ fontSize: 14, lineHeight: 1.7, minHeight: 90, resize: 'vertical', width: '100%' }} />}
-                      {Array.isArray(sec.tumor_risk?.cancers) && sec.tumor_risk.cancers.length > 0
-                        ? renderStructuredEditor('tumor_risk', 'cancers', sec.tumor_risk.cancers, [
+                      {Array.isArray(sec.tumor_risk?.cancers) && sec.tumor_risk.cancers.length > 0 &&
+                        renderStructuredEditor('tumor_risk', 'cancers', sec.tumor_risk.cancers, [
                           ['covered','已覆盖'], ['due_soon','即将到期'], ['overdue','已到期'], ['follow_up_due','异常复查'], ['not_routinely_recommended','无需常规年筛'], ['unknown','资料不足'],
-                        ])
-                        : [['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']].map(([f,lbl]) => (
+                        ])}
+                      {Array.isArray(sec.tumor_risk?.cancers) && sec.tumor_risk.cancers.length > 0 &&
+                        ['completed','abnormal','missing'].some(field => (sec.tumor_risk?.[field] || []).length > 0) &&
+                        <div style={{ fontSize: 12, color: '#8A5A00' }}>以下汇总条目仍参与审核，请与上方卡片一起核对。</div>}
+                      {[['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']]
+                        .filter(([field]) => !sec.tumor_risk?.cancers?.length || (sec.tumor_risk?.[field] || []).length > 0)
+                        .map(([f,lbl]) => (
                           <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.tumor_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('tumor_risk', f, e.target.value)} /></div>
                         ))}
                       <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>总评</div>
@@ -8695,12 +9029,15 @@ export default function PatientDetailPage() {
                               <span>常见肿瘤目录 {cancers.length} 项</span>
                               <span style={{ color: '#15803D' }}>已覆盖 {Number(ov.coveredCount) || cancers.filter(c => c.status === 'covered').length} 项</span>
                               <span style={{ color: '#B91C1C' }}>需关注 {Number(ov.attentionCount) || cancers.filter(c => ['follow_up_due', 'overdue', 'due_soon'].includes(c.status)).length} 项</span>
-                              <span>待补资料 {Number(ov.unknownCount) || cancers.filter(c => c.status === 'unknown').length} 项</span>
+                              <span>待核对 {cancers.filter(c => c.status === 'unknown').length} 项</span>
                             </div>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
                             {cancers.map((cancer, index) => {
-                              const meta = statusMeta[cancer.status] || statusMeta.unknown
+                              const hasExamEvidence = (cancer.sourceEvidence || []).some(source => (source.items || []).length > 0)
+                              const meta = cancer.status === 'unknown' && hasExamEvidence
+                                ? { label: '已有检查·待核适用条件', color: '#64748B', bg: '#F1F5F9' }
+                                : (statusMeta[cancer.status] || statusMeta.unknown)
                               const needsAttention = ['follow_up_due', 'overdue', 'due_soon'].includes(cancer.status)
                               return <details key={`${cancer.name}-${index}`} open={lastRegeneratedItem === `tumor_risk:${cancer.name}`}
                                 style={{ border: `1px solid ${needsAttention ? meta.bg : '#E5E7EB'}`, borderRadius: 9, background: '#fff', padding: '9px 11px' }}>
@@ -8712,14 +9049,16 @@ export default function PatientDetailPage() {
                                 <div style={{ marginTop: 9, paddingTop: 8, borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, lineHeight: 1.6 }}>
                                   {cancer.latest && <div><b style={{ color: '#64748B' }}>最近检查：</b>{cancer.latest}</div>}
                                   {cancer.trend && <div><b style={{ color: '#64748B' }}>5年趋势：</b>{cancer.trend}</div>}
-                                  {(cancer.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{cancer.keyChanges.join('；')}</div>}
+                                  {renderSourceDates(cancer)}
+                                  {liverKeyChanges(cancer).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{liverKeyChanges(cancer).join('；')}</div>}
                                   {cancer.nextAction && <div style={{ color: meta.color }}><b>下一步：</b>{cancer.nextAction}</div>}
                                   {cancer.riskBasis && cancer.status === 'unknown' && <div><b style={{ color: '#64748B' }}>待核对：</b>{cancer.riskBasis}</div>}
                                   <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(cancer, 'tumor_risk')}>🔗 按年份查看对应材料</button>
                                   <SpecialtyConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
-                                    source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'tumor_risk', itemName: cancer.name }} suggestedIssue={cancer.name}
-                                    sourceLabel={`${curYear}年度已审核健康趋势 · ${cancer.name}`} />
-                                  <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem('tumor_risk', cancer.name, doctorRecord._reviewToken)}>✎ 录入问题并单项重新生成</button>
+                                    source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'tumor_risk', itemName: cancer.name }}
+                                    sourceText={[cancer.latest, cancer.trend, ...(cancer.keyChanges || [])].filter(Boolean).join('；')}
+                                    sourceLabel={`${curYear}年度肿瘤筛查 · ${cancer.name}`} />
+                                  <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem('tumor_risk', cancer.name, { year: curYear, recordIndex: doctorRecord._recordIndex, expectedRecordToken: doctorRecord._reviewToken })}>✎ 录入问题并单项重新生成</button>
                                 </div>
                               </details>
                             })}
@@ -8812,7 +9151,7 @@ export default function PatientDetailPage() {
                                   onClick={() => openAIAnalysisSource(item.sourceReportId)}>🔗 查看分析依据</button>
                               )}
                               <SpecialtyConcernButton patientId={id} year={Number(curYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
-                                source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'medical_priority', itemName: item.name }} suggestedIssue={item.name}
+                                source={{ kind: 'ai_health', year: Number(curYear), sectionKey: 'chronic_disease', itemName: item.name }} suggestedIssue={item.name}
                                 sourceLabel={`${curYear}年度已审核健康信息整理 · ${item.name}`} />
                             </div>
                           </div>
@@ -8880,6 +9219,12 @@ export default function PatientDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {sec.medical_priority.items.map((item, i) => {
                           const badge = URGENCY_BADGE[item.urgency] || URGENCY_BADGE.low
+                          const linkedSection = sec[item.sourceSectionKey]
+                          const linkedCard = [...(linkedSection?.cancers || []), ...(linkedSection?.topics || []), ...(linkedSection?.items || [])]
+                            .find(card => card.name === item.sourceItemName)
+                          const report = [...reports, ...screeningReports].find(row => String(row._id) === String(item.sourceReportId || ''))
+                          const priorityDates = linkedCard ? sourceDates(linkedCard)
+                            : report ? [String(report.checkDate || report.date || report.reportYear || '').slice(0, 10)].filter(Boolean) : []
                           return (
                             <div key={i} style={{ border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -8888,6 +9233,7 @@ export default function PatientDetailPage() {
                                 {item.department && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 'auto' }}>→ {item.department}</span>}
                               </div>
                               {item.current && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 4 }}>当前：{item.current}</div>}
+                              {priorityDates.length > 0 && <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>对应检查时间：{priorityDates.join('、')}</div>}
                               {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>信息说明：{item.meaning}</div>}
                               {item.action && <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 500 }}>建议：{item.action}</div>}
                               {item.sourceReportId && (
@@ -9679,6 +10025,8 @@ export default function PatientDetailPage() {
             </div>
           </div>
           <ServiceManagementCategories plans={plans} active={serviceManagementView} onChange={setServiceManagementView} />
+          {serviceManagementView === 'nutrition' && <WeightProgressPhotos patientId={id} plans={plans} records={recentRecords} bodyCompHistory={user.bodyCompHistory || []} canEdit={['nutritionist', 'healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role)} />}
+          {serviceManagementView === 'rehab' && <RehabWorkspace patientId={id} staff={staff} view="plans" onSaved={loadPlans} />}
           {serviceManagementView === 'annual' && monthlyReviewEnabled && (
             <div style={{ padding: '14px 20px', borderTop: '1px solid #EDF2EE', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <span style={{ color: '#65776F', fontSize: 13 }}>年度持续管理客户的每月团队服务复盘</span>
@@ -9694,7 +10042,7 @@ export default function PatientDetailPage() {
               ? nav(`/plans/${plan._id}/modules`, { state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` } })
               : nav(`/plans/${plan._id}`, { state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` } })}
           />}
-          {serviceManagementView !== 'checkup' && <>
+          {!['checkup', 'rehab'].includes(serviceManagementView) && <>
           <div style={{ padding: '14px 20px 8px', borderTop: '1px solid #EDF2EE', marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ fontWeight: 750, color: '#173B2E' }}>{selectedServiceCategory ? `${selectedServiceCategory.label}相关方案` : '全部服务方案'}</div>
             <span style={{ fontSize: 12, color: '#8AA89C' }}>{visibleServicePlans.length} 个方案</span>
@@ -9773,6 +10121,7 @@ export default function PatientDetailPage() {
       {/* ── Follow-ups Tab ── */}
       {tab === 'followups' && (
         <>
+        <NutritionAssessmentPanel patientId={id} source="followup" canCreate={['familyDoctor', 'superadmin'].includes(staff?.role)} />
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div><div className="card-title">服务执行任务</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>承接方案生成的营养、监测、体检复查、就医协助、专病管理及沟通任务；随访只是执行方式之一</div></div>
@@ -10155,7 +10504,7 @@ export default function PatientDetailPage() {
         )
       })()}
 
-      {/* 打卡数据编辑弹窗：数据有疑问时医护端修正，修改人+时间+原值自动留痕 */}
+      {/* 健康数据记录编辑弹窗：数据有疑问时医护端修正，修改人+时间+原值自动留痕 */}
       {deletingRecord && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 440 }} role="dialog" aria-modal="true" aria-label="删除健康记录">
@@ -10326,7 +10675,7 @@ export default function PatientDetailPage() {
                     const workflow = record.symptomWorkflow || {}
                     const workflowLabel = { pending_manager: '待健管专员核实', pending_doctor: '待健康顾问判断', manager_followup: '健管专员跟进', referred: '已转介', resolved: '已处理', dismissed: '已确认为误录' }[workflow.status] || '待处理'
                     const pending = ['pending_manager', 'pending_doctor'].includes(workflow.status)
-                    const source = record.recordedBy?.source === 'staff' ? (record.recordedBy.staffName || '医护人员录入') : record.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'
+                    const source = record.recordedBy?.source === 'staff' ? (record.recordedBy.staffName || '医护人员录入') : record.recordedBy?.source === 'system' ? '系统记录' : '客户记录'
                     const year = new Date(record.recordedAt).getFullYear()
                     const previousYear = index > 0 ? new Date(healthRecords[index - 1].recordedAt).getFullYear() : null
                     const isExpanded = expandedSymptoms.has(String(record._id))
@@ -10421,6 +10770,7 @@ export default function PatientDetailPage() {
         }
         const reportYears = [...new Set(reports.map(getReportYear))].sort((a, b) => b.localeCompare(a, 'zh', { numeric: true }))
         const getReportTaskKey = (report) => {
+          if (report.archiveOnly) return 'archive'
           if (report.audit_status === 'audited' || report.aiStatus === 'reviewed') return 'audited'
           if (report.audit_status === 'rejected' || report.aiStatus === 'rejected') return 'rejected'
           // 历史临床资料曾被跳过解析；归类修正后应回到待解析队列。
@@ -10438,6 +10788,7 @@ export default function PatientDetailPage() {
           { key: 'failed', label: '识别失败' },
           { key: 'review', label: '待审核' },
           { key: 'audited', label: '已审核' },
+          { key: 'archive', label: '仅留存' },
         ]
         // 支持标题/机构关键词及年份筛选，结果统一进入一张总表。
         const kw = reportSearchKw.trim().toLowerCase()
@@ -10572,7 +10923,9 @@ export default function PatientDetailPage() {
                       <thead><tr><th>资料名称</th><th>资料分类</th><th>来源机构</th><th>资料日期</th><th>人工审核</th><th>处理状态</th><th>操作</th></tr></thead>
                       <tbody>
                       {paginatedReportRows.map(({ report: r, typeLabel }) => {
-                        const auditLabel = r.audit_status === 'audited' ? '已审核'
+                        const auditLabel = r.archiveOnly ? '仅留存·不解析'
+                          : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改'
+                          : r.audit_status === 'audited' ? '已审核'
                           : r.audit_status === 'rejected' ? '已驳回'
                           : isManualOnlyReport(r) ? '待人工审核'
                           : r.aiStatus === 'none' ? '待解析'
@@ -10580,21 +10933,21 @@ export default function PatientDetailPage() {
                           : r.parseJob?.status === 'paused' ? '识别已暂停'
                           : r.aiStatus === 'failed' ? '识别失败'
                           : '待审核'
-                        const auditColor = r.audit_status === 'audited' ? '#22A06B'
+                        const auditColor = r.archiveOnly ? '#64748B' : r.advisorCorrection?.status === 'returned' ? '#DC3545' : r.audit_status === 'audited' ? '#22A06B'
                           : (r.audit_status === 'rejected' || (!isManualOnlyReport(r) && r.aiStatus === 'failed')) ? '#DC3545' : '#D97706'
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const manualOnly = isManualOnlyReport(r)
                         const isClinicalDocument = CLINICAL_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r))
                         const isOutpatientRecord = inferDocumentCategory(r) === 'outpatient_record'
                         const canParseLegacyClinical = isClinicalDocument && r.parseJob?.status === 'skipped' && !r.reportItems?.length
-                        const needsAIParse = !manualOnly && (['none', 'failed'].includes(r.aiStatus) || canParseLegacyClinical)
+                        const needsAIParse = !r.archiveOnly && !manualOnly && (['none', 'failed'].includes(r.aiStatus) || canParseLegacyClinical)
                         return (
                           <React.Fragment key={r._id}>
                           <tr>
                             <td>
                               <button type="button" onClick={() => openReportDetail(r)} className="report-table-list-title-btn">{r.title || '未命名报告'}</button>
                               {!manualOnly && r.parseJob?.status === 'paused' && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}；请联系管理员恢复。</div>}
-                              {r.parseJob?.status === 'completed' && r.parseJob.message?.includes('识别失败') && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}</div>}
+                              {((r.parseJob?.status === 'failed') || (r.parseJob?.status === 'completed' && r.parseJob.message?.includes('识别失败'))) && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}</div>}
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
                             <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
@@ -10603,7 +10956,7 @@ export default function PatientDetailPage() {
                             <td style={{ fontSize: 11 }}>{r.audited_at ? new Date(r.audited_at).toLocaleString() : '未完成'}<br />{r.audited_by || ''}<br />{Object.keys(r.reviewActivity || {}).length ? `有效时长 ${Math.round(Object.values(r.reviewActivity).reduce((sum, session) => sum + (session.durationMs || 0), 0) / 60000)} 分钟` : '时长未记录'}</td>
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              {isOutpatientRecord ? <>
+                              {r.archiveOnly ? <button className="btn btn-sm report-action-primary" onClick={() => openReportDetail(r)}>查看原件</button> : isOutpatientRecord ? <>
                                 {!['audited', 'rejected'].includes(r.audit_status) && (r.fileUrl || r.content || r.hasContent || r.fileUrls?.length) && r.aiStatus !== 'processing' && <button className="btn btn-sm report-action-review"
                                   disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
                                   onClick={() => handleParseReportAI(r._id, { forceOutpatientParse: true })}>
@@ -10612,17 +10965,19 @@ export default function PatientDetailPage() {
                                 {r.aiStatus === 'processing' && <span style={{ fontSize: 12, color: '#65776F' }}>病历提取中…</span>}
                                 {r.aiStatus !== 'processing' && <button className="btn btn-sm report-action-primary" onClick={() => {
                                   if (['audited', 'rejected'].includes(r.audit_status)) { openReportDetail(r); return }
+                                  if (!['healthManager', 'superadmin'].includes(staff?.role)) { openReportDetail(r); return }
                                   openClinicalReportReview(r)
-                                }}>{r.audit_status === 'audited' ? '查看资料' : '核对门诊病历'}</button>}
+                                }}>{r.audit_status === 'audited' || !['healthManager', 'superadmin'].includes(staff?.role) ? '查看资料' : '核对门诊病历'}</button>}
                               </> : manualOnly ? (
                                 <button className="btn btn-sm report-action-primary" onClick={() => {
                                   if (['audited', 'rejected'].includes(r.audit_status)) { openReportDetail(r); return }
+                                  if (inferDocumentCategory(r) === 'prescription_order' && !['healthManager', 'superadmin'].includes(staff?.role)) { openReportDetail(r); return }
                                   openClinicalReportReview(r)
                                 }}>
-                                  {['audited', 'rejected'].includes(r.audit_status) ? '查看资料' : ['prescription_order', 'outpatient_record', 'inpatient_record'].includes(inferDocumentCategory(r)) ? '结构化审核' : '人工审核'}
+                                  {['audited', 'rejected'].includes(r.audit_status) || (inferDocumentCategory(r) === 'prescription_order' && !['healthManager', 'superadmin'].includes(staff?.role)) ? '查看资料' : ['prescription_order', 'outpatient_record', 'inpatient_record'].includes(inferDocumentCategory(r)) ? '结构化审核' : '人工审核'}
                                 </button>
                               ) : needsAIParse && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
-                                <button className="btn btn-primary btn-sm report-action-primary"
+                                <button className={`btn btn-sm ${r.aiStatus === 'failed' && !r.reportItems?.length ? 'report-action-review' : 'btn-primary report-action-primary'}`}
                                   disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
                                   onClick={() => handleParseReportAI(r._id)}>
                                   {r.parseJob?.status === 'paused' ? '等待管理员恢复' : parsingReportId === r._id ? '提交中…' : r.aiStatus === 'failed' ? '重新识别' : 'AI解析'}
@@ -10636,15 +10991,17 @@ export default function PatientDetailPage() {
                                   识别中…
                                 </button>
                               )}
-                              {!isOutpatientRecord && (!manualOnly && (r.aiStatus === 'pending' || r.aiStatus === 'reviewed') || manualOnly && r.reportItems?.length > 0) && (
-                                <button className={`btn btn-sm ${r.aiStatus === 'reviewed' ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
+                              {!isOutpatientRecord && (!manualOnly && (r.aiStatus === 'pending' || r.aiStatus === 'reviewed' || r.aiStatus === 'failed' && !r.reportItems?.length) || manualOnly && r.reportItems?.length > 0) && (
+                                <button className={`btn btn-sm ${r.aiStatus === 'reviewed' || !r.reportItems?.length ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
                                   onClick={() => handleOpenOCRReview(r)}>
-                                  {manualOnly ? '核对已有数据' : r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
+                                  {manualOnly ? '核对已有数据' : r.aiStatus === 'reviewed' ? '编辑AI结果' : !r.reportItems?.length ? '对照原件人工录入' : `审核AI结果（${r.reportItems.length}项）`}
                                 </button>
                               )}
-                              {['familyDoctor', 'superadmin'].includes(staff?.role) && r.audit_status === 'audited' && HEALTH_COURSE_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r)) && (
+                              {['familyDoctor', 'superadmin'].includes(staff?.role) && r.audit_status === 'audited' && HEALTH_COURSE_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r))
+                                && (inferDocumentCategory(r) !== 'outpatient_record' || !!r.courseTargetDiseaseId) && (
                                 <button className="btn btn-sm report-action-primary" style={{marginLeft:6}} disabled={healthCourseSaving} onClick={()=>openHealthCourseReview(r)}>{healthCourseSaving?'原件提取中…':archiveHelpers.findReportArchive(data?.user?.diseaseRecords,r._id)?'查看诊疗记录':r.healthCourseDraft?.status==='approved'?'核对归档状态':r.healthCourseDraft?.status==='extracting'?'原件提取中…':r.healthCourseDraft?.status==='pending_review'?'审核新增诊疗草稿':'AI提取新增诊疗'}</button>
                               )}
+                              {['familyDoctor', 'superadmin'].includes(staff?.role) && r.audit_status === 'audited' && inferDocumentCategory(r) === 'outpatient_record' && !r.courseTargetDiseaseId && <span style={{ fontSize:12, color:'#B45309' }}>待健管专员确认专病归属</span>}
                               {r.audit_status !== 'audited' && (
                                 <button className="report-action-more" aria-label="更多报告操作" title="更多操作" onClick={() => setOpenReportActionId(current => current === r._id ? null : r._id)}>
                                   {openReportActionId === r._id ? '×' : '···'}
@@ -10698,7 +11055,7 @@ export default function PatientDetailPage() {
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
         // 评估入口负责生成和审核；服务档案保留审核后的正式结果，两者通过来源 ID 互通。
-        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估']
+        const CATS = ['营养干预', '运动评估与复健', '专病管理', '医院就医', '阶段性健康评估']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
@@ -10737,6 +11094,7 @@ export default function PatientDetailPage() {
             </div>
             {(() => {
               const cat = serviceRecordCategory
+              if (cat === '运动评估与复健') return <div className="card"><RehabWorkspace patientId={id} staff={staff} view="archive" onSaved={loadServiceRecords} /></div>
               const isDiseaseMgmt = cat === '专病管理'
               // 专病管理内部按标题二级分组（同一专病的记录只要标题写法一致就会归到一起，组内保持原有按日期倒序）
               let diseaseGroups = null
@@ -11006,17 +11364,23 @@ export default function PatientDetailPage() {
         const includedServices = packageEntitlements.length ? packageEntitlements.flatMap(entitlement => {
           const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
           return (entitlement.rights?.productEntitlements || []).map((right, index) => {
+            if (entitlement.rights?.aiEntitlements?.expertAppointment && /专家约诊/.test(right.productName || '')) return null
             const pool = pools.get(right.poolKey)
             const usage = (entitlement.usageRecords || []).filter(record => String(record.productId) === String(right.productId))
+            const poolIndex = (entitlement.rights?.sharedEntitlementPools || []).findIndex(item => item.key === right.poolKey)
+            const historyUsed = entitlement.sourceType === 'effective_service' && entitlement.historyUsage
+              ? (pool ? entitlement.historyUsage.poolUsed?.[poolIndex] : entitlement.historyUsage.productUsed?.[index]) : null
             return { key: `${entitlement._id}:${right.productId}:${index}`, name: right.productName, packageName: entitlement.packageName,
               entitlement, productId: right.productId, entitlementKey: right.entitlementKey || '', workflowKey: right.productSnapshot?.serviceWorkflow?.key || '',
               count: pool ? pool.count : right.count, remaining: pool ? pool.remainingCount : right.remainingCount,
               reservedCount: usage.filter(record => record.status === 'reserved').length,
               redeemedCount: usage.filter(record => record.status === 'redeemed').length,
               rightIndex: index,
-              shared: !!pool, historyKnown: entitlement.historyVerified !== false,
+              shared: !!pool, poolName: pool?.name || '', historyUsed, familySharing: entitlement.familySharing,
+              ownerUserId: entitlement.ownerUserId, ownerName: entitlement.ownerName,
+              historyKnown: entitlement.historyVerified !== false,
               automatic: /营养评估/.test(right.productName || '') && right.productSnapshot?.serviceWorkflow?.key === 'nutrition_intervention', validUntil: entitlement.validUntil }
-          })
+          }).filter(Boolean)
         }) : (membershipSummary?.plans || []).filter(plan => plan.source === 'configuration').flatMap(plan => [
           ...(plan.groups?.shared || []).flatMap(pool => (pool.services || []).map((name, index) => ({
             key: `${plan.id}:shared:${pool.name}:${index}`, name, packageName: plan.name, count: pool.total,
@@ -11030,6 +11394,7 @@ export default function PatientDetailPage() {
         const isMedicalService = item => /medical_assist|medical_proxy/.test(item.workflowKey || item.serviceWorkflowSnapshot?.key || '')
           || /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号/.test(item.name || item.serviceName || '')
         const visibleIncludedServices = medicalServiceOnly ? includedServices.filter(isMedicalService) : includedServices
+        const unlimitedExpertBenefit = expertAppointmentBenefits(packageEntitlements, membershipSummary?.plans).length > 0
         const visibleOrders = medicalServiceOnly ? patientOrders.filter(isMedicalService) : patientOrders
         const availableMedicalBenefit = includedServices.some(item => isMedicalService(item) && item.historyKnown && Number(item.remaining) > 0)
         const pendingOrderFor = item => patientOrders.find(order => order.status === 'pending'
@@ -11055,6 +11420,7 @@ export default function PatientDetailPage() {
         }
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <PatientInventoryConsumption patientId={id} />
             {/* 账户概览 */}
             <div className="card">
               <div className="card-header"><div className="card-title">账户概览</div></div>
@@ -11074,9 +11440,9 @@ export default function PatientDetailPage() {
             </div>
 
             <div className="card" id="patient-service-redemption">
-              <div className="card-header"><div className="card-title">服务核销</div><button className="btn btn-secondary btn-sm" onClick={() => { loadMembership(); staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {}) }}>刷新记录</button></div>
+              <div className="card-header"><div className="card-title">服务使用与核销</div><button className="btn btn-secondary btn-sm" onClick={() => { loadMembership(); staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {}) }}>刷新记录</button></div>
               <div className="card-body" style={{ display: 'grid', gap: 10 }}>
-                <div style={{ color: '#4A6558', fontSize: 13 }}>单独购买的订单与套餐包含的 ¥0 服务列在同一张服务清单。套餐次数按实际服务预占，完成后核销；营养访谈与营养阶段评估归档后自动核销。</div>
+                <div style={{ color: '#4A6558', fontSize: 13 }}>单独购买的订单与套餐包含的 ¥0 服务列在同一张服务清单。计次套餐按实际服务预占和核销；年度会员专家约诊不限次，只记录服务过程。</div>
                 {membershipSummary?.redemptionAlerts > 0 && <div role="alert" style={{ color: '#B45309' }}>有 {membershipSummary.redemptionAlerts} 项自动核销异常，需核对服务包来源或剩余次数。</div>}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button className="btn btn-primary btn-sm" onClick={() => document.getElementById('patient-service-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>查看服务清单（套餐 {includedServices.length} 项 · 已安排订单 {patientOrders.filter(order => order.status === 'scheduled' && (order.usedUnits || 0) < (order.totalUnits || 1)).length} 条）</button>
@@ -11084,8 +11450,9 @@ export default function PatientDetailPage() {
                   {staff?.role === 'superadmin' && !packageEntitlements.some(item => item.historyVerified === false) && membershipSummary?.plans?.some(plan => plan.source === 'configuration') && <button className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview()}>核对历史服务次数</button>}
                 </div>
                 {staff?.role === 'superadmin' && packageEntitlements.filter(item => item.historyVerified === false).map(item => <button key={item._id} className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview(item)} style={{ justifySelf: 'start' }}>核对「{item.packageName}」历史次数</button>)}
+                {staff?.role === 'superadmin' && packageEntitlements.filter(item => item.sourceType === 'effective_service' && item.historyVerified !== false).map(item => <button key={`revise:${item._id}`} className="btn btn-secondary btn-sm" onClick={() => openPackageHistoryReview(item)} style={{ justifySelf: 'start' }}>修订「{item.packageName}」历史已用次数</button>)}
                 {historyReviewEntitlement && <PackageHistoryReview key={historyReviewEntitlement._id} entitlement={historyReviewEntitlement} saving={historyReviewSaving} onCancel={() => setHistoryReviewEntitlement(null)} onSave={async data => {
-                  if (!window.confirm('请确认旧服务已用次数与核对依据准确；保存后系统将据此计算可用余额。')) return
+                  if (!window.confirm(`请确认旧服务已用次数与核对依据准确；${historyReviewEntitlement.historyVerified ? '修订将保留原记录，' : ''}系统将合并当前预占及核销记录重新计算可用余额。`)) return
                   setHistoryReviewSaving(true)
                   try { const result = await staffAPI.reconcilePackageHistory(id, historyReviewEntitlement._id, data); toast(result.message || '历史次数已核对'); setHistoryReviewEntitlement(null); await loadMembership() }
                   catch (error) { toast(error.message || '历史次数核对失败'); setHistoryReviewEntitlement(null); await loadMembership() }
@@ -11098,8 +11465,8 @@ export default function PatientDetailPage() {
             {/* 套餐包含服务与单独购买订单共用一张执行清单。权益尚未发起时只是清单行，不伪造订单。 */}
             <div className="card" id="patient-service-orders">
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div className="card-title">服务清单与逐次核销</div>
-                <span style={{ fontSize: 12, color: '#8AA89C' }}>套餐包含 {visibleIncludedServices.length} 项 · 可核销订单 {visibleOrders.filter(o => o.status === 'scheduled' && (o.usedUnits || 0) < (o.totalUnits || 1)).length} 条</span>
+                <div className="card-title">服务清单与使用记录</div>
+                <span style={{ fontSize: 12, color: '#8AA89C' }}>套餐包含 {visibleIncludedServices.length} 项 · 可核销订单 {visibleOrders.filter(o => o.status === 'scheduled' && !o.membershipFeatureUsage && (o.usedUnits || 0) < (o.totalUnits || 1)).length} 条</span>
               </div>
               <div style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <button className={`btn btn-sm ${medicalServiceOnly ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setMedicalServiceOnly(true)}>就医协助</button>
@@ -11107,17 +11474,24 @@ export default function PatientDetailPage() {
                 {medicalServiceOnly && <span style={{ fontSize: 12, color: '#4A6558' }}>先选择可用套餐权益，预占 1 次；实际启动并填写服务依据后自动核销。历史已付款订单保留原支付记录。</span>}
                 {medicalServiceOnly && !availableMedicalBenefit && ['healthPlanner', 'superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" onClick={() => nav(`/products?medicalServices=1&patientId=${id}`, { state: { initialPatient: { _id: id, name: data?.user?.name || '' } } })}>套餐不足 · 选择付费就医服务</button>}
               </div>
-              {!visibleOrders.length && !visibleIncludedServices.length ? (
+              {!visibleOrders.length && !visibleIncludedServices.length && !unlimitedExpertBenefit ? (
                 <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无{medicalServiceOnly ? '就医协助' : ''}套餐权益或已购买订单</div>
               ) : (
                 <table className="table">
                   <thead><tr><th>服务</th><th>来源</th><th>本次金额</th><th>次数</th><th>时间</th><th>归属</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
+                    {unlimitedExpertBenefit && <tr>
+                      <td style={{ fontWeight: 600 }}>专家约诊服务</td>
+                      <td>年度会员权益<div style={{ fontSize: 12, color: '#718579' }}>按有效服务权益判断</div></td>
+                      <td>¥0</td><td>服务期内不限次<br />无需次数核销</td><td>按会员计划有效期</td><td>按服务分配</td>
+                      <td style={{ color: '#1E6B50' }}>可发起</td>
+                      <td><button className="btn btn-primary btn-sm" onClick={() => nav(`/plans?type=medical_assist&openPlan=medical_assist&annualExpert=1&patientId=${id}&patientName=${encodeURIComponent(user.name || '')}`)}>发起专家约诊</button></td>
+                    </tr>}
                     {visibleIncludedServices.map(item => <tr key={`included:${item.key}`}>
                       <td style={{ fontWeight: 600 }}>{item.name}</td>
-                      <td><span style={{ color: '#1E6B50', fontWeight: 600 }}>套餐包含</span><div style={{ fontSize: 12, color: '#718579' }}>{item.packageName}{item.shared ? ' · 共用次数' : ''}</div></td>
+                      <td><span style={{ color: '#1E6B50', fontWeight: 600 }}>套餐包含</span><div style={{ fontSize: 12, color: '#718579' }}>{item.packageName}{item.shared ? ` · ${item.poolName || '共享池'}共用次数` : ''}{item.familySharing ? ` · 家庭共用（持有人：${item.ownerName || '待核对'}）` : ''}</div></td>
                       <td style={{ color: '#1E6B50', fontWeight: 700 }}>¥0</td>
-                      <td style={{ fontSize: 12 }}>{item.historyKnown ? <>{item.shared ? '共享池' : '本项'}可用 {item.remaining || 0} / {item.count || 0} 次<br />本项已预占 {item.reservedCount || 0} · 已核销 {item.redeemedCount || 0}</> : `${item.shared ? '共用' : ''}计划 ${item.count || 0} 次 · 历史余额待核对`}</td>
+                      <td style={{ fontSize: 12 }}>{item.historyKnown ? <><strong>{item.shared ? '共享池' : '本项'}剩余 {item.remaining ?? 0} 次</strong> / 总计 {item.count ?? 0} 次<br />{item.historyUsed != null ? `${item.shared ? '共享池' : '本项'}历史已用 ${item.historyUsed} 次 · ` : ''}该服务新预占 {item.reservedCount || 0} 次 · 新核销 {item.redeemedCount || 0} 次</> : `${item.shared ? '共享池' : '本项'}总计 ${item.count || 0} 次 · 历史已用次数待核对`}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>有效至 {String(item.validUntil || '').slice(0, 10)}</td>
                       <td style={{ fontSize: 12, color: '#718579' }}>按服务分配</td>
                       <td style={{ fontSize: 12, color: item.historyKnown ? '#1E6B50' : '#B45309' }}>{!item.historyKnown ? '待核对' : item.automatic ? '随评估自动核销' : pendingOrderFor(item) ? '待继续办理' : Number(item.remaining) > 0 ? '待发起' : '共享次数已用完'}</td>
@@ -11130,6 +11504,9 @@ export default function PatientDetailPage() {
                       </td>
                     </tr>)}
                     {[...visibleOrders].sort((a, b) => Number(b.status === 'scheduled') - Number(a.status === 'scheduled')).map(order => {
+                      const planningSupervisor = /就医规划/.test(order.serviceName || '') && followUps.find(task =>
+                        task.workflowKey === 'medical_proxy:supervise' && String(task.sourceOrderId?._id || task.sourceOrderId) === String(order._id)
+                        && ['planned', 'in_progress'].includes(task.status))
                       // 谁推送谁获推广费(referrerId=推送时自动关联)，谁服务谁获服务费(fulfillerId)——
                       // 只有该订单的推荐人本人或超管能指定服务人，不是随便谁都能改
                       const canAssignFulfiller = staff?.role === 'superadmin' || String(order.referrerId?._id) === String(staff?._id)
@@ -11139,12 +11516,12 @@ export default function PatientDetailPage() {
                           <div>{order.serviceName || order.serviceId}</div>
                           {order.specificationLabel && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{order.specificationLabel}</div>}
                         </td>
-                        <td style={{ fontSize: 12 }}>{order.giftRecordUsage ? <strong style={{ color: '#1E6B50' }}>赠送服务 · ¥0</strong> : order.packageEntitlementUsage ? <><strong style={{ color: '#1E6B50' }}>套餐 ¥0 履约单</strong><div style={{ color: '#718579' }}>已预占套餐次数</div></> : order.orderType === 'package' ? '购买服务包' : '单独下单'}</td>
+                        <td style={{ fontSize: 12 }}>{order.membershipFeatureUsage?.featureKey === 'expertAppointment' ? <><strong style={{ color: '#1E6B50' }}>年度会员不限次</strong><div style={{ color: '#718579' }}>记录服务，不核销次数</div></> : order.giftRecordUsage ? <strong style={{ color: '#1E6B50' }}>赠送服务 · ¥0</strong> : order.packageEntitlementUsage ? <><strong style={{ color: '#1E6B50' }}>套餐 ¥0 履约单</strong><div style={{ color: '#718579' }}>已预占套餐次数</div></> : order.orderType === 'package' ? '购买服务包' : '单独下单'}</td>
                         <td style={{ color: '#D97706', fontWeight: 600 }}>
                           {order.servicePrice != null ? `¥${order.servicePrice}` : '-'}
                         </td>
                         <td style={{ fontSize: 13 }}>
-                          {order.specialtyService?.key === 'ibd' ? <>
+                          {order.membershipFeatureUsage?.featureKey === 'expertAppointment' ? <div style={{ color: '#1E6B50' }}>不限次 · 本次服务按任务进度记录</div> : order.specialtyService?.key === 'ibd' ? <>
                             <div style={{ fontWeight: 600, color: '#1E6B50' }}>IBD 年度管理 · 陪诊 {order.specialtyService.usedEscorts || 0}/{order.specialtyService.includedEscorts || 2} 次</div>
                             <div style={{ fontSize: 12, color: '#8AA89C' }}>服务期：{order.specialtyService.startsAt ? new Date(order.specialtyService.startsAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '待确认'} 至 {order.specialtyService.endsAt ? new Date(new Date(order.specialtyService.endsAt).getTime() - 1).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '待确认'}</div>
                             {(order.specialtyService.escortRecords || []).map((record, i) => <div key={record.visitKey || i} style={{ fontSize: 12, color: '#4A6558', marginTop: 2 }}>第 {i + 1} 次：{new Date(record.visitDate).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })} · {record.hospital}</div>)}
@@ -11174,8 +11551,12 @@ export default function PatientDetailPage() {
                           {CHECKUP_STAGE_LABEL[order.currentStage] && <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>{CHECKUP_STAGE_LABEL[order.currentStage]}</div>}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
+                          {planningSupervisor && ['healthPlanner', 'superadmin'].includes(staff?.role) &&
+                            (hasPlanningAdvice(planningAdviceFromTask(planningSupervisor))
+                              ? <button className="btn btn-primary btn-sm" onClick={() => openExec({ ...planningSupervisor, formData: { ...planningSupervisor.formData, medicalPlanning: true, advisorSnapshot: planningAdviceFromTask(planningSupervisor) } })}>核对客户意向并结案</button>
+                              : <span style={{ fontSize: 12, color: '#8A6B30' }}>待健康顾问建议同步后确认结案</span>)}
                           {order.status === 'pending' && order.packageEntitlementUsage && isMedicalService(order) && <button className="btn btn-primary btn-sm" onClick={() => continueMedicalOrder(order)}>继续就医协助</button>}
-                          {order.status === 'pending' && !(order.packageEntitlementUsage && isMedicalService(order)) && (
+                          {order.status === 'pending' && !planningSupervisor && !(order.packageEntitlementUsage && isMedicalService(order)) && (
                             <button className="btn btn-primary btn-sm" onClick={async () => {
                               try {
                                 await staffAPI.startOrder(order._id, { action: 'schedule' })
@@ -11254,7 +11635,7 @@ export default function PatientDetailPage() {
                               finally { setRedeemingOrderId(null) }
                             }}>完成服务</button>
                           )}
-                          {order.specialtyService?.key !== 'ibd' && order.status === 'scheduled' && (Number(order.totalUnits || 1) > 1 || (!order.packageEntitlementUsage && !(order.orderType === 'service' && order.paymentStatus === 'paid' && Number(order.paidAmount || 0) > 0))) && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
+                          {order.specialtyService?.key !== 'ibd' && !order.membershipFeatureUsage && order.status === 'scheduled' && (Number(order.totalUnits || 1) > 1 || (!order.packageEntitlementUsage && !(order.orderType === 'service' && order.paymentStatus === 'paid' && Number(order.paidAmount || 0) > 0))) && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
                             <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
                               style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
                               const note = window.prompt(`确认核销第 ${(order.usedUnits || 0) + 1}/${order.totalUnits || 1} 次服务。\n可填写本次服务备注（可留空）：`, '')
@@ -11268,7 +11649,7 @@ export default function PatientDetailPage() {
                               finally { setRedeemingOrderId(null) }
                             }}>{redeemingOrderId === order._id ? '处理中…' : order.packageEntitlementUsage ? '完成1次服务' : '核销1次'}</button>
                           )}
-                          {order.status === 'scheduled' && (!order.packageEntitlementUsage || order.serviceStartedAt) && (order.serviceItemsSnapshot || []).filter(item => (item.usedUnits || 0) < item.units).map(item => (
+                          {order.status === 'scheduled' && !order.membershipFeatureUsage && (!order.packageEntitlementUsage || order.serviceStartedAt) && (order.serviceItemsSnapshot || []).filter(item => (item.usedUnits || 0) < item.units).map(item => (
                             <button key={item.key} className="btn btn-sm" disabled={redeemingOrderId === order._id}
                               style={{background:'#22A06B',color:'#fff',border:'none',margin:'2px'}} onClick={async()=>{
                                 const note=window.prompt(`确认核销“${item.name}”第 ${(item.usedUnits||0)+1}/${item.units} 次。\n可填写备注（可留空）：`,'')
@@ -11363,30 +11744,37 @@ export default function PatientDetailPage() {
                 || (entitlement.validUntil && datePart(entitlement.validUntil) < today)) return []
               const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
               return (entitlement.rights?.productEntitlements || []).filter(right => medicalName(right.productName)
+                && !(entitlement.rights?.aiEntitlements?.expertAppointment && /专家约诊/.test(right.productName || ''))
                 && Number((pools.get(right.poolKey) || right).remainingCount || 0) > 0).map(right => ({ name: right.productName, packageName: entitlement.packageName }))
             })
-            const paidOrders = patientOrders.filter(order => order.orderType === 'service' && order.paymentStatus === 'paid'
-              && Number(order.paidAmount || 0) > 0 && ['pending', 'scheduled'].includes(order.status)
+            const annualExpertPlans = expertAppointmentBenefits(packageEntitlements, membershipSummary?.plans).slice(0, 1)
+            const paidOrders = patientOrders.filter(order => order.paymentStatus === 'paid'
+              && (Number(order.paidAmount || 0) > 0 || Number(order.healthFundAmount || 0) > 0)
+              && ['pending', 'scheduled'].includes(order.status)
               && !order.serviceStartedAt && medicalName(order.serviceName))
             const loadingRights = giftRecordsLoading || patientOrdersLoading || (!membershipSummary && !membershipError)
             const loadError = giftRecordsError || patientOrdersError || membershipError
             const launchUrl = extra => `/plans?type=medical_assist&openPlan=medical_assist&patientId=${id}&patientName=${encodeURIComponent(user.name || '')}&${extra}`
             return <div className="card" style={{ gridColumn: '1 / -1', marginBottom: 16 }}>
-              <div className="card-header"><div className="card-title">发起就医协助 · 先核对会员权益</div></div>
+              <div className="card-header"><div className="card-title">发起就医协助 · 选择服务来源</div></div>
               <div className="card-body" style={{ display: 'grid', gap: 10 }}>
                 {loadingRights ? <div>正在核对赠送、套餐和付费服务…</div> : loadError ? <div role="alert" style={{ color: '#B45309' }}>{loadError}；请刷新后再发起。</div> : <>
                   {gifts.map(gift => <div key={gift._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#EFF8F4', borderRadius: 8 }}>
                     <span>赠送权益 · {gift.serviceName} · 可用 {Number(gift.serviceCount) - Number(gift.usedCount || 0)} 次 · 有效至 {datePart(gift.validTo) || '不限'}</span>
-                    <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl(`giftId=${gift._id}`))}>使用赠送权益发起</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl(`giftId=${gift._id}&giftServiceName=${encodeURIComponent(gift.serviceName || '')}`))}>使用赠送权益发起</button>
                   </div>)}
                   {packageRights.map((right, index) => <div key={`${right.packageName}:${right.name}:${index}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#F4F7F3', borderRadius: 8 }}>
                     <span>套餐权益 · {right.packageName} · {right.name}</span>
                     <button className="btn btn-secondary btn-sm" onClick={() => { setMedicalServiceOnly(true); setTab('consumption') }}>查看可用次数并发起</button>
                   </div>)}
-                  {!gifts.length && !packageRights.length && <>
+                  {annualExpertPlans.map(plan => <div key={`annual-expert:${plan.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#EFF8F4', borderRadius: 8 }}>
+                    <span>年度会员权益 · {plan.name}{plan.familySharing ? `（家庭共用：${plan.ownerName || '家庭成员'}）` : ''} · 专家约诊服务期内不限次，无需次数核销</span>
+                    <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl('annualExpert=1'))}>发起专家约诊</button>
+                  </div>)}
+                  {!gifts.length && !packageRights.length && !annualExpertPlans.length && <>
                     <div>当前没有可用于就医协助的会员权益，正在使用已付费服务。</div>
                     {paidOrders.map(order => <div key={order._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, background: '#F6F8F5', borderRadius: 8 }}>
-                      <span>已付费 · {order.serviceName} · 实付 ¥{Number(order.paidAmount).toFixed(2)}</span>
+                      <span>已付费 · {order.serviceName} · 实付 ¥{Number(order.paidAmount || 0).toFixed(2)}{Number(order.healthFundAmount || 0) > 0 ? ` · 健康基金抵扣 ¥${Number(order.healthFundAmount).toFixed(2)}` : ''}</span>
                       <button className="btn btn-primary btn-sm" onClick={() => nav(launchUrl(`reservedOrderId=${order._id}&reservedProductName=${encodeURIComponent(order.serviceName)}`))}>沿用此订单发起</button>
                     </div>)}
                     {!paidOrders.length && <div role="alert" style={{ color: '#B45309' }}>没有可用会员权益，也没有已付费的就医协助服务。请先确认赠送有效期或完成服务购买，再发起。</div>}
@@ -11509,7 +11897,7 @@ export default function PatientDetailPage() {
               {!aiHelper.loading && !aiHelper.error && aiHelper.type === 'coach' && aiHelper.data && (
                 <>
                   <div style={{ fontSize: 12, color: '#8AA89C' }}>
-                    依从性：{{ high: '良好', medium: '一般', low: '偏低' }[aiHelper.data.adherence] || '-'} · 连续打卡 {aiHelper.data.streak} 天{aiHelper.data.daysSinceLast != null ? ` · 距上次打卡 ${aiHelper.data.daysSinceLast} 天` : ''}
+                    依从性：{{ high: '良好', medium: '一般', low: '偏低' }[aiHelper.data.adherence] || '-'} · 连续记录 {aiHelper.data.streak} 天{aiHelper.data.daysSinceLast != null ? ` · 距上次记录 ${aiHelper.data.daysSinceLast} 天` : ''}
                   </div>
                   <textarea className="form-control" rows={4} value={aiHelper.data.message}
                     onChange={e => setAiHelper(h => ({ ...h, data: { ...h.data, message: e.target.value } }))} />
@@ -11558,7 +11946,7 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: (isCheckupAppointmentBookingTask(execItem) || medicalProxyStage(execItem) || medicationProxyStage(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientStaffAssignmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{ibdStage(execItem) ? ibdTaskTitle(ibdStage(execItem)) : checkupConclusionStage(execItem) ? (checkupConclusionStage(execItem) === 'final_acceptance' ? '体检最终验收' : '体检结果评估与后续安排') : isCheckupAppointmentBookingTask(execItem) ? '待约检 · 三号预约' : medicationProxyStage(execItem) ? ({ intake: '代配药 · 核对用药信息', advisor: '代配药 · 顾问评估', review: '代配药 · 规划师确认', booking: '代配药 · 医院预约', planner: '代配药 · 健康规划师分配执行人员', execute: '代配药 · 采购与配送' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '陪同就医 · 健康规划师安排人员', execute: '陪同就医 · 执行记录', post_visit_audit: '陪同就医 · 健管专员审核资料', supervise: '陪同就医 · 督办进度' }[medicalProxyStage(execItem)] || '陪同就医服务任务') : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'booking' ? '代配药 · 健管专员确认预约' : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'planner' ? '代配药 · 健康规划师安排执行人员' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: isExpertAppointmentTask(execItem) ? '专家约诊 · 健管专员确认预约' : '医疗代诊 · 健管专员预约门诊', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问确认约诊建议', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
+              <h3 className="modal-title">{ibdStage(execItem) ? ibdTaskTitle(ibdStage(execItem)) : checkupConclusionStage(execItem) ? (checkupConclusionStage(execItem) === 'final_acceptance' ? '体检最终验收' : '体检结果评估与后续安排') : isCheckupAppointmentBookingTask(execItem) ? '待约检 · 三号预约' : medicationProxyStage(execItem) ? ({ intake: '代配药 · 核对用药信息', advisor: '代配药 · 顾问评估', review: '代配药 · 规划师确认', booking: '代配药 · 医院预约', planner: '代配药 · 健康规划师分配执行人员', execute: '代配药 · 采购与配送' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '陪同就医 · 健康规划师安排人员', booking: '陪同就医 · 健管专员预约', execute: '陪同就医 · 执行记录', post_visit_audit: '陪同就医 · 健管专员审核资料', supervise: '陪同就医 · 督办进度' }[medicalProxyStage(execItem)] || '陪同就医服务任务') : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'booking' ? '代配药 · 健管专员确认预约' : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'planner' ? '代配药 · 健康规划师安排执行人员' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: isExpertAppointmentTask(execItem) ? '专家约诊 · 健管专员确认预约' : '医疗代诊 · 健管专员预约门诊', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问确认约诊建议', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
@@ -11633,10 +12021,11 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
+              {execItem.sourceType === 'insurance_service' && execItem.taskRole === 'executor' && !execItem.isBlocked && <button className="btn btn-secondary" onClick={handleSaveInsuranceDraft} disabled={execSaving}>临时保存</button>}
               {!execItem.isBlocked && !medicationProxyStage(execItem) && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && medicalProxyStage(execItem) !== 'appointment_review' && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               {!execItem.isBlocked && medicalProxyStage(execItem) === 'post_visit_audit' && <button className="btn btn-secondary" onClick={handleSavePostVisitAuditDraft} disabled={execSaving}>保存并继续资料审核</button>}
               {medicationProxyStage(execItem) !== 'progress' && !execForm.checkupMerged && <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execItem.isBlocked}>
-                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : ibdStage(execItem) ? ibdSubmitLabel(ibdStage(execItem), execForm.status) : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isCheckupManagerReviewTask(execItem) ? '确认资料审核并转健康顾问' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认预约并流转', planner: '确认执行人员并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '确认人员并转就医专员', execute: '完成陪同并提交资料审核', post_visit_audit: '确认资料审核并结束服务' }[medicalProxyStage(execItem)] || '保存') : medicalProxyStage(execItem) === 'planner' && isMedicalProxyMedicationTask(execItem) ? '确认执行人员并转就医专员' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) ? '确认预约并转健康规划师分配' : medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '资料审核完成并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}
+                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) && execForm.formData?.bookingOutcome === 'customer_not_needed' ? '记录客户暂不需要并结束本次计划' : ibdStage(execItem) ? ibdSubmitLabel(ibdStage(execItem), execForm.status) : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isCheckupManagerReviewTask(execItem) ? '确认资料审核并转健康顾问' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认预约并流转', planner: '确认执行人员并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '确认人员并转健管预约', booking: '确认预约并转就医专员', execute: '完成陪同并提交资料审核', post_visit_audit: '确认资料审核并结束服务' }[medicalProxyStage(execItem)] || '保存') : medicalProxyStage(execItem) === 'planner' && isMedicalProxyMedicationTask(execItem) ? '确认执行人员并转就医专员' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) ? '确认预约并转健康规划师分配' : medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '资料审核完成并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}
               </button>}
             </div>
           </div>
@@ -11649,10 +12038,11 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={() => setFollowUpDetail(null)}>
           <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">{ibdStage(followUpDetail) ? 'IBD 专病管理 · 任务记录' : annualDispatch.dedicated(followUpDetail) ? (annualDispatch.isExecution(followUpDetail) ? '就医协助 · 办理记录' : '就医协助 · 派单安排') : annualServiceItem.isAssistance(followUpDetail) ? '就医协助 · 预约安排' : '随访详情'}</h3>
+              <h3 className="modal-title">{isDecisionReferralTask(followUpDetail) ? '企业家健康决策计划 · 转介流程' : ibdStage(followUpDetail) ? 'IBD 专病管理 · 任务记录' : annualDispatch.dedicated(followUpDetail) ? (annualDispatch.isExecution(followUpDetail) ? '就医协助 · 办理记录' : '就医协助 · 派单安排') : annualServiceItem.isAssistance(followUpDetail) ? '就医协助 · 预约安排' : '随访详情'}</h3>
               <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {isDecisionReferralTask(followUpDetail) ? <DecisionReferralTask task={followUpDetail} staff={staff} onDone={() => { setFollowUpDetail(null); loadFollowUps(); load(); toast('本环节已完成') }} /> : <>
               {annualNutrition.isTask(followUpDetail) && <AnnualNutritionAssessmentForm key={`${followUpDetail._id}:${followUpDetail.updatedAt}`} task={followUpDetail} staff={staff} onSaved={updated=>{setFollowUpDetail(updated);loadFollowUps();load();toast(updated.status==='completed'?'已写入生活方式档案并完成评估':'访谈草稿已保存')}}/>}
               <FollowUpServiceLinkCard key={followUpDetail._id} task={followUpDetail} staff={staff} onLinked={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {!annualDispatch.dedicated(followUpDetail) && <OnsiteBookingCard key={`onsite-${followUpDetail._id}`} task={followUpDetail} staff={staff} />}
@@ -11764,10 +12154,10 @@ export default function PatientDetailPage() {
                   </div>
                 </div>
               )}
-              {/* 打卡项目 */}
+              {/* 健康数据项目 */}
               {followUpDetail.checkInItems?.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>打卡项目</div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>健康数据项目</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {followUpDetail.checkInItems.map((item, i) => (
                       <span key={i} style={{ padding: '2px 10px', borderRadius: 99, background: '#E8F5EF', color: '#1E6B50', fontSize: 12, fontWeight: 500 }}>{CHECKIN_LABEL[item] || item}</span>
@@ -11817,8 +12207,10 @@ export default function PatientDetailPage() {
                 </div>
               )}
               </>}
+              </>}
             </div>
             <div className="modal-footer">
+              {!isDecisionReferralTask(followUpDetail) && <>
               {medicalProxyStage(followUpDetail) === 'supervise' && /就医规划/.test(followUpDetail.sourceOrderId?.serviceName || followUpDetail.theme || '') && ['planned', 'in_progress'].includes(followUpDetail.status) && hasPlanningAdvice(planningAdviceFromTask(followUpDetail)) && <button className="btn btn-primary" onClick={() => { const task = { ...followUpDetail, formData: { ...followUpDetail.formData, medicalPlanning: true, advisorSnapshot: planningAdviceFromTask(followUpDetail) } }; setFollowUpDetail(null); openExec(task) }}>记录客户沟通与后续服务意向</button>}
               {followUpDetail.aiStatus === 'pending' && !followUpReview.canReview(followUpDetail, staff, user) && <div style={{ fontSize: 13, color: '#4A6558' }}>待指定审核人员确认；当前账号无审核权限。</div>}
               {followUpReview.canReview(followUpDetail, staff, user) && <>
@@ -11858,6 +12250,7 @@ export default function PatientDetailPage() {
                 assignedTo: (() => { const executor = followUpReview.executor(followUpDetail, user); return executor?._id || executor || '' })(),
                 nextFollowUpDate: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toISOString().slice(0, 10) : '',
               })}>编辑</button>}
+              </>}
               <button className="btn btn-secondary" onClick={() => setFollowUpDetail(null)}>关闭</button>
             </div>
           </div>
@@ -11993,6 +12386,15 @@ export default function PatientDetailPage() {
                 <input className="form-input" value={editingReportForm.note || ''}
                   onChange={e => setEditingReportForm(f => ({ ...f, note: e.target.value }))} />
               </div>
+              {editingReportForm.documentCategory === 'outpatient_record' && <div className="form-group" style={{ padding: 12, background: '#FFF7E6', borderRadius: 8 }}>
+                <label className="form-label">归入专病首页（健管专员审核前必选）</label>
+                <select className="form-input" value={editingReportForm.courseTargetDiseaseId || ''} onChange={e => setEditingReportForm(f => ({ ...f, courseTargetDiseaseId: e.target.value }))}>
+                  <option value="">请选择已有专病首页</option>
+                  {(data?.user?.diseaseRecords || []).map(record => <option key={record._id} value={record._id}>{record.name}</option>)}
+                </select>
+                {!(data?.user?.diseaseRecords || []).length && <div role="alert" style={{ marginTop: 8, color: '#B42318' }}>该会员尚无专病首页。请先在服务档案 → 专病管理中建立并保存，再审核门诊病历。</div>}
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => { setEditingReport(null); setServiceRecordCategory('专病管理'); setTab('serviceRecords') }}>前往专病管理</button>
+              </div>}
               <ClinicalDocumentReviewFields category={editingReportForm.documentCategory} value={editingReportForm.clinicalReview} onChange={clinicalReview => setEditingReportForm(f => ({ ...f, clinicalReview }))} />
               </div>
             </div>
@@ -12004,7 +12406,7 @@ export default function PatientDetailPage() {
                 if (editingReportForm.date && !normalizedDate) { toast('报告日期无效，请填写完整日期（如 2026-09-23）'); return }
                 setEditingReportSaving(true)
                 try {
-                  await staffAPI.updateReport(editingReport._id, { ...editingReportForm, date: normalizedDate })
+                  await staffAPI.updateReport(editingReport._id, { ...editingReportForm, courseTargetDiseaseId: editingReportForm.courseTargetDiseaseId || undefined, date: normalizedDate })
                   editingReportIdRef.current = null
                   setEditingReport(null)
                   loadReports()
@@ -12023,7 +12425,7 @@ export default function PatientDetailPage() {
               {editingReportForm.documentCategory === 'outpatient_record' && <button className="btn btn-secondary" disabled={editingReportSaving || editingReportLoading || editingReport.aiStatus === 'processing'} onClick={async () => {
                 setEditingReportSaving(true)
                 try {
-                  await staffAPI.updateReport(editingReport._id, editingReportForm)
+                  await staffAPI.updateReport(editingReport._id, { ...editingReportForm, courseTargetDiseaseId: editingReportForm.courseTargetDiseaseId || undefined })
                   const result = await staffAPI.parseReportAI(editingReport._id, { forceOutpatientParse: true })
                   toast(result.message || '病历补提已开始')
                   editingReportIdRef.current = null
@@ -12048,6 +12450,7 @@ export default function PatientDetailPage() {
               }}>退回</button>}
               {editingReportForm.documentCategory === 'outpatient_record' && <button className="btn btn-primary" disabled={editingReportSaving || editingReportLoading || !!editingReportLoadError} onClick={async () => {
                 if (!editingReportForm.title?.trim()) { toast('请填写报告标题'); return }
+                if (!editingReportForm.courseTargetDiseaseId) { window.alert('请先到服务档案 → 专病管理建立专病首页，再选择归入的专病'); return }
                 if (!editingReportForm.clinicalReview?.sourceReviewed) { toast('请先核对左侧原始资料并勾选确认'); return }
                 if (!editingReportForm.clinicalReview?.reviewConclusion?.trim()) { toast('请填写本次结构化审核结论'); return }
                 setEditingReportSaving(true)
@@ -12058,7 +12461,7 @@ export default function PatientDetailPage() {
                   setEditingReport(null)
                   loadReports()
                   toast('门诊病历已审核通过')
-                } catch (err) { toast(err.message || '审核失败，已填写内容请核对后重试') }
+                } catch (err) { window.alert(`门诊病历审核失败：${err.message || '已填写内容请核对后重试'}`) }
                 finally { setEditingReportSaving(false) }
               }}>{editingReportSaving ? '提交中…' : '确认审核通过'}</button>}
             </div>
@@ -12169,8 +12572,10 @@ export default function PatientDetailPage() {
                   ...(categoryLabel && categoryLabel !== typeLabel ? [['分类', categoryLabel]] : []),
                   ['医院 / 机构', r.hospital || '-'],
                   ['报告日期', r.checkDate || r.date || '-'],
-                  ['审核状态', r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
+                  ['审核状态', r.archiveOnly ? '仅留存·不解析' : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改' : r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
                   ['审核人', r.audited_by || '-'],
+                  ...(r.archiveOnly ? [['关联已审报告', reports.find(item => item._id === String(r.archiveSourceReportId))?.title || '已关联']] : []),
+                  ...(r.advisorCorrection?.reason ? [['顾问退回原因', r.advisorCorrection.reason]] : []),
                   ...(r.reject_reason ? [['驳回原因', r.reject_reason]] : []),
                   ['上传人', r.uploadedBy?.name || '-'],
                 ]
@@ -12428,9 +12833,51 @@ export default function PatientDetailPage() {
             </div>
             </div>
             <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
+              {reportFlowError && <div role="alert" style={{ color: '#B42318', fontSize: 13 }}>{reportFlowError}</div>}
+              {['healthManager', 'superadmin'].includes(staff?.role) && !showReportDetail.archiveOnly && showReportDetail.audit_status === 'unaudited' && showReportDetail.aiStatus === 'none' && !showReportDetail.reportItems?.length && (showReportDetail.fileUrl || showReportDetail.fileUrls?.length || showReportDetail.content) && (
+                <div style={{ display: 'grid', gap: 7, padding: 10, background: '#F4F7FA', borderRadius: 8 }}>
+                  <b style={{ fontSize: 13 }}>同次体检补充原件：仅留存，不解析</b>
+                  <select className="form-input" value={archiveSourceReportId} onChange={e => setArchiveSourceReportId(e.target.value)}>
+                    <option value="">选择本次体检已审核的截图报告</option>
+                    {reports.filter(item => item._id !== showReportDetail._id && item.audit_status === 'audited' && !item.archiveOnly).map(item => <option key={item._id} value={item._id}>{item.checkDate || item.date || '日期待核对'} · {item.title}</option>)}
+                  </select>
+                  <button className="btn btn-secondary btn-sm" disabled={!archiveSourceReportId || reportFlowSaving} onClick={archiveSupplementReport}>确认仅留存原件</button>
+                </div>
+              )}
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && showReportDetail.audit_status === 'audited' && !showReportDetail.archiveOnly && (
+                <div style={{ display: 'grid', gap: 7, padding: 10, background: '#FFF7F5', borderRadius: 8 }}>
+                  <b style={{ fontSize: 13 }}>发现归类或正常/异常判断有误？退回健管专员修改</b>
+                  <textarea className="form-input" rows={2} maxLength={1000} placeholder="请写明报告项目、错误内容和需要核对之处" value={advisorReturnReason} onChange={e => setAdvisorReturnReason(e.target.value)} />
+                  <button className="btn btn-danger btn-sm" disabled={!advisorReturnReason.trim() || reportFlowSaving} onClick={returnReportToManager}>退回健管专员修改</button>
+                </div>
+              )}
+              {['healthManager', 'superadmin'].includes(staff?.role) && showReportDetail.documentCategory === 'outpatient_record'
+                && showReportDetail.audit_status === 'audited' && !showReportDetail.courseTargetDiseaseId
+                && !['approved', 'dismissed'].includes(showReportDetail.healthCourseDraft?.status) && (
+                <div style={{ display:'grid', gap:8, padding:10, background:'#FFF7E6', borderRadius:8 }}>
+                  <b>旧病历待补齐专病归属</b>
+                  <small>请先核对原件，在服务档案建立有首次概况的专病首页，再确认归属。确认后健康顾问工作台会出现提取与审核任务。</small>
+                  <select className="form-input" value={legacyOutpatientTargetId} onChange={e => setLegacyOutpatientTargetId(e.target.value)}>
+                    <option value="">请选择已核对的专病首页</option>
+                    {(data?.user?.diseaseRecords || []).map(record => <option key={record._id} value={record._id}>{record.name}</option>)}
+                  </select>
+                  <button className="btn btn-primary btn-sm" disabled={!legacyOutpatientTargetId || reportFlowSaving} onClick={async () => {
+                    if (!window.confirm('已核对原件与专病首次概况，确认将此门诊病历交健康顾问审核？')) return
+                    setReportFlowSaving(true)
+                    setReportFlowError('')
+                    try {
+                      await staffAPI.updateReport(showReportDetail._id, { editSource:'outpatient_legacy_target_confirmation', courseTargetDiseaseId:legacyOutpatientTargetId })
+                      setShowReportDetail(null)
+                      await loadReports()
+                      toast('专病归属已确认，健康顾问工作台将显示提取与审核任务')
+                    } catch (error) { setReportFlowError(error.message || '专病归属确认失败') }
+                    finally { setReportFlowSaving(false) }
+                  }}>确认归属并交健康顾问审核</button>
+                </div>
+              )}
               {/* 只有明确无需结构化解析的资料可直接人工审核。用药、处方、病历和检验检查
                   即使尚未开始解析也必须先进入 AI 解析/核对结果流程，避免空解析直接流转顾问。 */}
-              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
+              {!showReportDetail.archiveOnly && showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
                 && isManualOnlyReport(showReportDetail) && (
                 <>
                   {showRejectInput ? (
@@ -12467,7 +12914,7 @@ export default function PatientDetailPage() {
                   )}
                 </>
               )}
-              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
+              {!showReportDetail.archiveOnly && showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
                 && !isManualOnlyReport(showReportDetail) && (
                 <div style={{ fontSize: 12, color: '#8AA89C', textAlign: 'center', padding: '4px 0' }}>
                   {showReportDetail.aiStatus === 'none' ? '请先返回报告列表点击“AI解析”，再在“审核AI结果”中核对并确认' : '请在“审核AI结果”里确认解析数据，确认后自动完成审核'}
@@ -12493,13 +12940,13 @@ export default function PatientDetailPage() {
               {!!healthCourseReview.outpatientReviewIssues?.length && <div role="alert" style={{ padding: 12, marginBottom: 14, borderRadius: 8, background: '#FFF0F0', color: '#B42318', fontSize: 13 }}>原件识别疑点：{healthCourseReview.outpatientReviewIssues.join('；')}</div>}
               {healthCourseError && <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#FFF0F0', color: '#B42318', fontSize: 13 }}>{healthCourseError}</div>}
               <div className="form-group"><label>实际就诊 / 会诊日期 *</label><DateField className="form-input" type="date" value={healthCourseReview.occurredAt} onChange={event => setHealthCourseReview(value => ({ ...value, occurredAt:event.target.value }))} /><small>核对原病历日期，上传日期不等于就诊日期。</small></div>
-              <div className="form-group"><label>归入专病档案 *</label><select className="form-input" value={healthCourseReview.diseaseName} onChange={event => setHealthCourseReview(value => ({ ...value, diseaseName: event.target.value }))}><option value="">请选择已有专病</option>{(data?.user?.diseaseRecords || []).map(record => <option key={record._id || record.name} value={record.name}>{record.name}</option>)}</select></div>
+              <div className="form-group"><label>归入专病档案 *</label><select className="form-input" value={healthCourseReview.diseaseName} disabled={!!healthCourseReview.report.courseTargetDiseaseId} onChange={event => setHealthCourseReview(value => ({ ...value, diseaseName:event.target.value }))}><option value="">请选择已有专病</option>{(data?.user?.diseaseRecords || []).map(record => <option key={record._id || record.name} value={record.name}>{record.name}</option>)}</select>{healthCourseReview.outpatientRecord && !healthCourseReview.report.courseTargetDiseaseId && <div role="alert" style={{ color:'#B42318', marginTop:6 }}>此病历缺少健管专员确认的专病归属，暂不能写入。请健管专员先建立专病首页并补齐归属。</div>}</div>
               {healthCourseReview.outpatientRecord ? <div style={{ display: 'grid', gap: 12 }}>{OUTPATIENT_ARCHIVE_FIELDS.map(([key,label]) => <div className="form-group" key={key}><label>{label}</label><textarea className="form-input" rows={key === 'presentIllness' || key === 'testsAndOrders' ? 4 : 2} value={key === 'diagnoses' ? (healthCourseReview.outpatientRecord.diagnoses || []).join('\n') : healthCourseReview.outpatientRecord[key] || ''} onChange={event => setHealthCourseReview(value => ({ ...value, outpatientRecord:{ ...value.outpatientRecord, [key]:key === 'diagnoses' ? event.target.value.split('\n').map(item => item.trim()).filter(Boolean) : event.target.value } }))} /></div>)}</div> : [
                 ['content', '本次健康及症状变化 *', 4], ['examination', '医疗机构检查信息', 3], ['diagnosis', '医疗机构诊断归档', 3], ['medicationChange', '医疗机构用药医嘱归档', 3], ['treatmentResponse', '治疗后反馈', 3], ['nextPlan', '后续安排', 3],
               ].map(([key, label, rows]) => <div className="form-group" key={key}><label>{label}</label><textarea className="form-input" rows={rows} value={healthCourseReview[key]} onChange={event => setHealthCourseReview(value => ({ ...value, [key]: event.target.value }))} /></div>)}
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => openReportDetail(healthCourseReview.report)}>查看原始资料</button>
             </div>
-            <div className="modal-footer" style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary" disabled={healthCourseSaving} onClick={() => reviewHealthCourseDraft('dismiss')}>不入档</button><button className="btn btn-primary" disabled={healthCourseSaving} onClick={() => reviewHealthCourseDraft('approve')}>{healthCourseSaving ? '保存中…' : healthCourseReview.outpatientRecord ? '确认并写入诊疗时间轴' : '确认并写入健康变化'}</button></div>
+            <div className="modal-footer" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{healthCourseError && <div role="alert" style={{ width: '100%', color: '#B42318' }}>{healthCourseError}</div>}{!(data?.user?.diseaseRecords || []).length && <button className="btn btn-secondary" onClick={() => { setHealthCourseReview(null); setServiceRecordCategory('专病管理'); setTab('serviceRecords') }}>先建立专病首页</button>}<button className="btn btn-secondary" disabled={healthCourseSaving} onClick={() => reviewHealthCourseDraft('dismiss')}>不入档</button><button className="btn btn-primary" disabled={healthCourseSaving || (healthCourseReview.outpatientRecord && !healthCourseReview.report.courseTargetDiseaseId) || !(data?.user?.diseaseRecords || []).length} onClick={() => reviewHealthCourseDraft('approve')}>{healthCourseSaving ? '保存中…' : healthCourseReview.outpatientRecord ? '确认并写入诊疗时间轴' : '确认并写入健康变化'}</button></div>
           </div>
         </div>
       )}
@@ -12589,7 +13036,7 @@ export default function PatientDetailPage() {
           // 只能点右上角✕关闭（2026-07-13 反馈：之前只改了纯查看用的"体检报告详情弹窗"，这个才是真正
           // 审核AI识别结果、会长时间编辑的弹窗，之前漏改了）
           <div className="modal-overlay">
-            <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal ocr-review-modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               <ReportReviewQuality report={ocrReviewReport} items={ocrEditItems} onChange={patch => {
                 setOcrReviewReport(current => ({ ...current, ...patch }))
                 // The save handlers read ocrReportMeta. Keep the header edits in that
@@ -12613,17 +13060,21 @@ export default function PatientDetailPage() {
                 </div>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
-              <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+              <div className="ocr-review-layout" style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 {/* 左：原始报告预览 */}
                 {(() => {
-                  const paneStyle = { width: '40%', borderRight: '1px solid #E0D9CE', overflow: 'auto', flexShrink: 0, background: '#F6F9F7', padding: 8 }
+                  const paneStyle = { borderRight: '1px solid #E0D9CE', overflow: 'auto', background: '#F6F9F7', padding: 8 }
                   const previewToolbar = (url, isPdf) => (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 4px 7px', flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" type="button" aria-label="缩小原始报告" disabled={ocrPreviewZoom <= 50} onClick={() => setOcrPreviewZoom(z => Math.max(50, z - 25))}>−</button>
-                      <span style={{ minWidth: 38, textAlign: 'center', color: '#4A6558', fontSize: 11 }}>{ocrPreviewZoom}%</span>
+                      <span style={{ minWidth: 38, textAlign: 'center', color: '#4A6558', fontSize: 11 }}>{isPdf && ocrPreviewZoom === 100 ? '适合宽度' : `${ocrPreviewZoom}%`}</span>
                       <button className="btn btn-secondary btn-sm" type="button" aria-label="放大原始报告" disabled={ocrPreviewZoom >= 200} onClick={() => setOcrPreviewZoom(z => Math.min(200, z + 25))}>＋</button>
                       <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOcrPreviewZoom(100)}>适合宽度</button>
-                      {isPdf && <button className="btn btn-secondary btn-sm" type="button" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>新窗口查看</button>}
+                      {!isPdf && <>
+                        <button className="btn btn-secondary btn-sm" type="button" aria-label="向左旋转原始报告" onClick={() => setOcrPreviewRotations(current => ({ ...current, [activePage]: ((current[activePage] || 0) + 270) % 360 }))}>↶ 左转</button>
+                        <button className="btn btn-secondary btn-sm" type="button" aria-label="向右旋转原始报告" onClick={() => setOcrPreviewRotations(current => ({ ...current, [activePage]: ((current[activePage] || 0) + 90) % 360 }))}>↷ 右转</button>
+                      </>}
+                      {isPdf && <button className="btn btn-secondary btn-sm" type="button" onClick={() => window.open(reportPdfPagePreviewUrl(url, activePage) || url, '_blank', 'noopener,noreferrer')}>新窗口查看本页</button>}
                     </div>
                   )
                   // 一份报告可能关联多张照片(fileUrls，如"结论页"+"数据页")。content 场景没有多图概念，
@@ -12634,7 +13085,7 @@ export default function PatientDetailPage() {
                   if (multiUrls) {
                     const isPdf = ocrReviewReport.mimeType === 'application/pdf'
                     return (
-                      <div style={paneStyle}>
+                      <div className="ocr-review-source" style={paneStyle}>
                         <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>原始报告（共{multiUrls.length}张，对照核对）</div>
                         {multiUrls.map((u, idx) => {
                           if (idx + 1 !== activePage) return null
@@ -12643,13 +13094,13 @@ export default function PatientDetailPage() {
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
                               {previewToolbar(s, true)}
-                              <PdfDocumentPreview src={s} activePage={activePage} onPageChange={setOcrReviewPage} title={`报告${idx + 1}`} zoom={ocrPreviewZoom} />
+                              <PdfDocumentPreview src={s} activePage={activePage} title={`报告${idx + 1}`} zoom={ocrPreviewZoom} onRefresh={refreshOcrPreview} />
                             </div>
                           ) : (
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
                               {previewToolbar(s, false)}
-                              <img src={s} alt={`报告${idx + 1}`} style={{ width: `${ocrPreviewZoom}%`, maxWidth: 'none', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(s)} />
+                              <ReviewSourceImage src={s} alt={`报告${idx + 1}`} zoom={ocrPreviewZoom} rotation={ocrPreviewRotations[activePage] || 0} onClick={() => { setPreviewRotation(ocrPreviewRotations[activePage] || 0); setPreviewImageUrl(s) }} />
                             </div>
                           )
                         })}
@@ -12657,22 +13108,22 @@ export default function PatientDetailPage() {
                     )
                   }
                   const rawSrc = ocrReviewReport.content || ocrReviewReport.previewUrl || ocrReviewReport.fileUrl || (ocrReviewReport.fileUrls && ocrReviewReport.fileUrls[0]) || ''
-                  if (!rawSrc) return <div style={{ ...paneStyle, color: '#B0C4BB', fontSize: 13, padding: 16 }}>无原始文件可预览</div>
+                  if (!rawSrc) return <div className="ocr-review-source" style={{ ...paneStyle, color: '#B0C4BB', fontSize: 13, padding: 16 }}>无原始文件可预览</div>
                   const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
                   const isPdf = ocrReviewReport.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')
                   const isImg = ocrReviewReport.mimeType?.startsWith('image/') || rawSrc.startsWith('data:image') || /\.(png|jpe?g|webp|gif)$/i.test(rawSrc)
                   return (
-                    <div style={paneStyle}>
+                    <div className="ocr-review-source" style={paneStyle}>
                       <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>原始报告（对照核对）</div>
                       {isImg ? (
                         <>
                           {previewToolbar(src, false)}
-                          <img src={src} alt="报告" style={{ width: `${ocrPreviewZoom}%`, maxWidth: 'none', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
+                          <ReviewSourceImage src={src} alt="报告" zoom={ocrPreviewZoom} rotation={ocrPreviewRotations[activePage] || 0} onClick={() => { setPreviewRotation(ocrPreviewRotations[activePage] || 0); setPreviewImageUrl(src) }} />
                         </>
                       ) : isPdf ? (
                         <>
                           {previewToolbar(src, true)}
-                          <PdfDocumentPreview src={src} activePage={activePage} onPageChange={setOcrReviewPage} title="报告PDF" zoom={ocrPreviewZoom} />
+                          <PdfDocumentPreview src={src} activePage={activePage} title="报告PDF" zoom={ocrPreviewZoom} onRefresh={refreshOcrPreview} />
                         </>
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
@@ -12680,7 +13131,7 @@ export default function PatientDetailPage() {
                     </div>
                   )
                 })()}
-              <div className="modal-body" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
+              <div className="modal-body ocr-review-fields" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
                 {activePageParse && activePageParse.status !== 'image_only' && (
                   <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
                     {pageParsing ? `第${activePage}页正在补提，请稍候，完成后本页会自动刷新。` : pageParseStale ? `第${activePage}页上次补提已中断，可以重新补提。` : activePageParse.message}
@@ -13237,6 +13688,7 @@ export default function PatientDetailPage() {
                         ...(showSRDetail.type === 'disease_mgmt' && showSRDetail.diseaseName ? [['专病名称', showSRDetail.diseaseName]] : []),
                         ['负责人', showSRDetail.staffId?.name || '-'],
                         ['服务日期', showSRDetail.date ? new Date(showSRDetail.date).toLocaleDateString('zh-CN') : '-'],
+                        ...(showSRDetail.type === 'nutrition' && showSRDetail.nextDate ? [['下次随访', new Date(showSRDetail.nextDate).toLocaleDateString('zh-CN')]] : []),
                       ].map(([k, v]) => (
                         <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
                           <span style={{ width: 80, color: '#8AA89C', fontSize: 13 }}>{k}</span>
@@ -13410,6 +13862,8 @@ export default function PatientDetailPage() {
           initialBookingForm={appointmentReviewContext?.formData}
           initialOrder={planningChatContext?.order}
           initialDraft={planningChatContext?.draft}
+          initialCheckinRecord={chatCheckinRecord}
+          onCheckinImageSent={() => setChatCheckinRecord(null)}
           planningTask={planningChatContext?.task}
           onFinishPlanning={async (task, summary) => {
             await staffAPI.updateFollowUp(task._id, { status: 'completed', content: '客户确认暂无其他就医协助需求，本次就医规划服务结束。', formData: { ...(task.formData || {}), medicalPlanning: true, customerCommunicationSummary: summary, planningOutcome: 'no_additional_service' } })
@@ -13468,7 +13922,7 @@ export default function PatientDetailPage() {
             toast(result.message || '服务信息已确认，订单已进入执行流程')
             loadFollowUps()
           }}
-          onClose={() => { setShowMessageModal(false); setPlanningChatContext(null); setAppointmentReviewContext(null) }}
+          onClose={() => { setShowMessageModal(false); setChatCheckinRecord(null); setPlanningChatContext(null); setAppointmentReviewContext(null) }}
         />
       )}
 
@@ -13512,6 +13966,8 @@ export default function PatientDetailPage() {
         <UploadReportModal
           patientId={id}
           screeningTree={screeningTree}
+          reports={reports}
+          staffRole={staff?.role}
           onClose={() => setShowUploadReport(false)}
           onSaved={() => { setShowUploadReport(false); toast('原始资料已上传'); loadReports() }}
           onQueued={jobId => {
@@ -13685,14 +14141,14 @@ function InfoRow({ label, value }) {
 
 const RECORD_TYPE_LABEL = {
   bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率',
-  weight: '体重', height: '身高', bmi: 'BMI', temperature: '体温', respiratoryRate: '呼吸', oxygenSaturation: '血氧饱和度', painScore: '疼痛评分',
+  weight: '体重', waist: '腰围', height: '身高', bmi: 'BMI', temperature: '体温', respiratoryRate: '呼吸', oxygenSaturation: '血氧饱和度', painScore: '疼痛评分',
   leftVision: '左眼视力', rightVision: '右眼视力', axialLength: '眼轴', waistCircumference: '腰围', hipCircumference: '臀围', waistHipRatio: '腰臀比', sleep: '睡眠', mood: '情绪',
   diet: '饮食', exercise: '运动', water: '饮水',
   alcohol: '饮酒', bowel: '排便', smoking: '吸烟',
   symptom: '症状自评',
 }
 
-// 按"类型+归属日期"分组：同一天同类型的多次打卡（如运动打3次、饮食4餐）归到一起展示，
+// 按"类型+归属日期"分组：同一天同类型的多次记录（如运动打3次、饮食4餐）归到一起展示，
 // 而不是与其他类型混在同一条时间线里逐条散落（2026-07-18 反馈）
 function groupRecordsByTypeAndDate(records) {
   const groups = []
@@ -13718,6 +14174,7 @@ const RECORD_VALUE_META = {
   bloodSugar: { unit: 'mmol/L', freeText: false },
   heartRate:  { unit: '次/分', freeText: false },
   weight:     { unit: 'kg', freeText: false },
+  waist:      { unit: 'cm', freeText: false },
   height:     { unit: 'cm', freeText: false },
   bmi:        { unit: '', freeText: false },
   temperature: { unit: '℃', freeText: false },
@@ -13741,6 +14198,7 @@ function formatRecordValue(r) {
   } else if (r.type === 'bloodSugar') base = `${r.value} mmol/L`
   else if (r.type === 'heartRate') base = `${r.value} 次/分`
   else if (r.type === 'weight') base = `${r.value} kg`
+  else if (r.type === 'waist') base = `${r.value} cm`
   else if (r.type === 'height') base = `${r.value} cm`
   else if (r.type === 'sleep') base = `${r.value} h`
   else if (r.type === 'mood') base = `${r.value} / 10`
@@ -13754,7 +14212,7 @@ function formatRecordValue(r) {
 }
 
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
-function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, initialBookingForm, planningTask, onFinishPlanning, onPlanningProductPushed, onConfirmBooking, onClose }) {
+function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, initialCheckinRecord, onCheckinImageSent, initialBookingForm, planningTask, onFinishPlanning, onPlanningProductPushed, onConfirmBooking, onClose }) {
   const { staff } = useStaff()
   const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : staff?.role === 'healthPlanner' ? 'planner' : staff?.role === 'medicalAssistant' ? 'medicalAssistant' : 'manager'
   const toast = useToast()
@@ -13762,6 +14220,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState(initialDraft || '')
   const [images, setImages] = useState([])
+  const [checkinImages, setCheckinImages] = useState(() => initialCheckinRecord?.imageUrls || [])
+  const [checkinRecordId, setCheckinRecordId] = useState(initialCheckinRecord?._id || '')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [planningActionBusy, setPlanningActionBusy] = useState(false)
@@ -13771,17 +14231,18 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [switchingMode, setSwitchingMode] = useState(false)
   const [currentBooking, setCurrentBooking] = useState(serviceBooking || (initialOrder ? { sourceOrderId: initialOrder } : null))
   const order = currentBooking?.sourceOrderId
-  const isMedicalEscortOrder = order?.medicalProxyPlan?.medicalEscort === true || /陪同|陪诊/.test(order?.serviceName || '')
-  const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊|就医规划/.test(order?.serviceName || '')
-  const isCheckupAppointment = /checkup_appointment|待约检|代约检|常规约检|特殊约检/.test([order?.serviceName, order?.specificationLabel, order?.serviceRequirements, order?.note, order?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' '))
-  const isMedicationProxy = /代配药|代取药/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
+  const serviceType = orderServiceType.orderServiceType(order || {})
+  const isMedicalEscortOrder = serviceType === 'medical_escort'
+  const isMedicalProxy = ['medical_proxy', 'expert_appointment', 'medical_planning'].includes(serviceType)
+  const isCheckupAppointment = serviceType === 'checkup_appointment'
+  const isMedicationProxy = serviceType === 'medication_proxy'
   const isSupplementOrder = order?.serviceWorkflowSnapshot?.key === 'supplement_supply'
     || /营养素|营养补充|维生素|叶酸|益生菌|鱼油|蛋白粉|辅酶Q10|矿物质/.test([order?.serviceName, order?.specificationLabel].filter(Boolean).join(' '))
-  const isMedicalReminderOrder = /复查督办|就医提醒/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
+  const isMedicalReminderOrder = serviceType === 'medical_reminder'
   const isMedicalReminder = isMedicalReminderOrder
-  const isExpertAppointment = /专家约诊/.test(order?.serviceName || '')
-  const isMedicalPlanning = /就医规划/.test(order?.serviceName || '')
-  const isIbdManagement = order?.specialtyTermsSnapshot?.key === 'ibd' || order?.specialtyService?.key === 'ibd' || /IBD.*专病管理/i.test(order?.serviceName || '')
+  const isExpertAppointment = serviceType === 'expert_appointment'
+  const isMedicalPlanning = serviceType === 'medical_planning'
+  const isIbdManagement = serviceType === 'ibd'
   const orderId = order?._id || order
   const initialRequirement = String(initialBookingForm?.serviceContent || order?.serviceRequirements || order?.note || '')
   const customerTaskParts = initialRequirement
@@ -13967,17 +14428,21 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   }, [msgs])
 
   const send = async () => {
-    if ((!input.trim() && !images.length) || sending) return
+    if ((!input.trim() && !images.length && !checkinImages.length) || sending) return
     setSendError('')
     setSending(true)
     try {
       const res = await staffAPI.replyChatMessage(patientId, input.trim(), {
         images: images.map(({ data, mimeType }) => ({ data, mimeType })),
+        checkinRecordId,
         orderId,
       })
       setHumanActive(true)
       setInput('')
       setImages([])
+      setCheckinImages([])
+      setCheckinRecordId('')
+      onCheckinImageSent?.()
       isNearBottomRef.current = true // 自己发消息后，无论之前翻到哪，都应该跟到底部
       if (res.data) setMsgs(prev => [...prev, res.data])
       scrollToConversationBottom('smooth')
@@ -14344,8 +14809,14 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
         {/* 输入栏 */}
         <div style={{ borderTop: '1px solid #E0D9CE', padding: '10px 14px', flexShrink: 0, backgroundColor: '#fff' }}>
           {sendError && <div role="alert" style={{ marginBottom: 8, padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{sendError}</div>}
-          {images.length > 0 && (
+          {(checkinImages.length > 0 || images.length > 0) && (
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
+              {checkinImages.map((url, index) => (
+                <div key={`checkin-${index}`} style={{ position: 'relative', flexShrink: 0 }}>
+                  <img src={url} alt="本次打卡图片" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 8, border: '1px solid #E0D9CE' }} />
+                  <span style={{ position: 'absolute', left: 2, bottom: 2, padding: '1px 4px', borderRadius: 4, background: '#1E6B50', color: '#fff', fontSize: 9 }}>打卡原图</span>
+                </div>
+              ))}
               {images.map((image, index) => (
                 <div key={index} style={{ position: 'relative', flexShrink: 0 }}>
                   <img src={image.data} alt="待发送图片" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 8, border: '1px solid #E0D9CE' }} />
@@ -14371,8 +14842,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
           <button
             type="button"
             onClick={send}
-            disabled={sending || (!input.trim() && !images.length)}
-            style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || (!input.trim() && !images.length)) ? 0.5 : 1 }}
+            disabled={sending || (!input.trim() && !images.length && !checkinImages.length)}
+            style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || (!input.trim() && !images.length && !checkinImages.length)) ? 0.5 : 1 }}
           >
             {sending ? '…' : '发送'}
           </button>
@@ -14393,8 +14864,8 @@ const DOCUMENT_CATEGORY_REPORT_TYPE = {
   prescription_order: 'other', questionnaire: 'other', other_customer_material: 'other',
 }
 
-function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
-  const [form, setForm] = useState({ documentCategory: 'physical_exam', title: '', hospital: '', date: '', note: '' })
+function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, onQueued }) {
+  const [form, setForm] = useState({ documentCategory: '', title: '', hospital: '', date: '', note: '', archiveOnly: false, archiveSourceReportId: '' })
   const [fileDatas, setFileDatas] = useState([])
   // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
   // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
@@ -14423,7 +14894,7 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
     // 语义不明确（可能是多页同一份报告，也可能是多份不同报告），不做自动识别，交回手动填写
     // Large PDFs may take minutes to store. Uploading once here and again on
     // submit starts two simultaneous copies when staff confirms immediately.
-    if (files.length === 1 && files[0].size < 8 * 1024 * 1024 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
+    if (!form.archiveOnly && files.length === 1 && files[0].size < 8 * 1024 * 1024 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
       setMetaDetecting(true)
       try {
         const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
@@ -14441,7 +14912,9 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
 
   const handleSubmit = async () => {
     if (!form.title) { setError('请填写资料名称'); return }
+    if (!form.documentCategory) { setError('请先按原件内容选择资料分类'); return }
     if (!fileDatas.length) { setError('请选择资料文件（图片或PDF）'); return }
+    if (form.archiveOnly && !form.archiveSourceReportId) { setError('请选择同次体检中已审核的结果报告'); return }
     const normalizedDate = form.date ? calendarDate(form.date) : ''
     if (form.date && !normalizedDate) { setError('报告日期无效，请填写完整日期（如 2026-09-23）'); return }
     try {
@@ -14470,6 +14943,8 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
           hospital: form.hospital,
           date: normalizedDate,
           note: form.note,
+          archiveOnly: form.archiveOnly,
+          archiveSourceReportId: form.archiveSourceReportId,
           fileUrl: urls[0],
           fileUrls: urls,
           ossKey: ossKeys[0] || '',
@@ -14498,6 +14973,7 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
                 patientId, title: form.title, type: selectedReportType,
                 documentCategory: form.documentCategory, hospital: form.hospital,
                 date: normalizedDate, note: form.note,
+                archiveOnly: form.archiveOnly, archiveSourceReportId: form.archiveSourceReportId,
               } : undefined,
               serverCreatesReport ? () => setServerAccepted(true) : undefined
             )
@@ -14512,6 +14988,8 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
             hospital: form.hospital,
             date: normalizedDate,
             note: form.note,
+            archiveOnly: form.archiveOnly,
+            archiveSourceReportId: form.archiveSourceReportId,
             fileUrl: url,
             fileUrls: [url],
             ossKey: ossKey || '',
@@ -14542,13 +15020,30 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
+          {['healthManager', 'superadmin'].includes(staffRole) && (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={form.archiveOnly} onChange={e => setForm(f => ({ ...f, archiveOnly: e.target.checked, archiveSourceReportId: e.target.checked ? f.archiveSourceReportId : '' }))} />
+                同次体检完整报告仅存档，不重复解析
+              </label>
+              {form.archiveOnly && <>
+                <select className="form-input" style={{ marginTop: 8 }} value={form.archiveSourceReportId} onChange={e => setForm(f => ({ ...f, archiveSourceReportId: e.target.value }))}>
+                  <option value="">选择已审核的单项结果报告 *</option>
+                  {reports.filter(r => r.audit_status === 'audited' && !r.archiveOnly).map(r => <option key={r._id} value={r._id}>{r.checkDate || r.date || '日期待核对'} · {r.title}</option>)}
+                </select>
+                <div style={{ fontSize: 12, color: '#65776F', marginTop: 6 }}>请先核对完整报告是否有尚未录入的新结果；有新结果时按普通报告解析。仅存档原件不参与筛查与小结。</div>
+              </>}
+            </div>
+          )}
+
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">资料分类 *</label>
             <select className="form-input" value={form.documentCategory} onChange={e => setForm(f => ({ ...f, documentCategory: e.target.value }))}>
+              <option value="">请选择资料分类</option>
               {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
             </select>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>
-              与原始资料页面使用同一套分类；专项筛查归类由系统匹配 admin 目录。
+              按原件选：年度／综合体检报告、门诊病历、处方、检验报告或检查报告；单项 MRI、听力等检查请选择“检查报告”。
             </div>
           </div>
 
@@ -14587,7 +15082,7 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
                     </label>
                     <div style={{ fontSize: 11, color: '#8AA89C' }}>
                       {mergeFiles
-                        ? `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
+                        ? form.archiveOnly ? `共 ${fileDatas.length} 个文件将合并为一条仅存档资料` : `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
                         : `共 ${fileDatas.length} 个文件，每个文件将分别创建一条报告记录`}
                     </div>
                   </>
@@ -14631,21 +15126,55 @@ function UploadReportModal({ patientId, onClose, onSaved, onQueued }) {
 }
 
 // ── 赠送权益弹窗（供 MarketingPage 导出使用）───────────────────────
-const SERVICE_OPTIONS = ['就医协助服务', '居家监测套餐', '专家咨询', '陪诊服务', '上门采血', '营养咨询', '其他服务']
-
 export function GiftModal({ patientId, patientName, onClose, onSaved, initialGiftType = 'service' }) {
   const toast = useToast()
   const [form, setForm] = useState({
-    giftType: initialGiftType, serviceName: '', serviceCount: 1, fundAmount: 0, fundType: 'enterprise',
+    giftType: initialGiftType, productId: '', serviceCount: 1, fundAmount: 0, fundType: 'enterprise',
     validFrom: '', validTo: '', remark: '',
     couponType: 'amount', couponValue: '', couponTitle: '', couponMinSpend: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [giftProducts, setGiftProducts] = useState([])
+  const [productSearch, setProductSearch] = useState('')
+  const [productListOpen, setProductListOpen] = useState(false)
+  const [activeProductIndex, setActiveProductIndex] = useState(-1)
+  const [productsLoading, setProductsLoading] = useState(true)
+  const [productsError, setProductsError] = useState('')
+  useEffect(() => {
+    let active = true
+    staffAPI.getGiftProducts(patientId).then(res => { if (active) setGiftProducts(res.data || []) })
+      .catch(err => { if (active) setProductsError(err.message || '商城服务加载失败') })
+      .finally(() => { if (active) setProductsLoading(false) })
+    return () => { active = false }
+  }, [patientId])
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const selectedProduct = giftProducts.find(product => String(product._id) === String(form.productId))
+  const searchKeyword = (form.productId ? '' : productSearch).trim().toLowerCase()
+  const matchingProducts = giftProducts.filter(product =>
+    !searchKeyword || [product.name, product.category, product.description].filter(Boolean).join(' ').toLowerCase().includes(searchKeyword)
+  )
+  const chooseProduct = product => {
+    setForm(value => ({ ...value, productId: String(product._id) }))
+    setProductSearch(product.name)
+    setProductListOpen(false)
+  }
+  const handleProductKeyDown = event => {
+    if (event.key === 'Escape') { setProductListOpen(false); return }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      setProductListOpen(true)
+      setActiveProductIndex(index => event.key === 'ArrowDown'
+        ? Math.min(index + 1, matchingProducts.length - 1)
+        : index < 0 ? matchingProducts.length - 1 : Math.max(index - 1, 0))
+    } else if (event.key === 'Enter' && productListOpen && activeProductIndex >= 0 && matchingProducts.length) {
+      event.preventDefault()
+      chooseProduct(matchingProducts[activeProductIndex])
+    }
+  }
 
   const handleSubmit = async () => {
-    if (form.giftType === 'service' && !form.serviceName) { setError('请选择赠送服务'); return }
+    if (form.giftType === 'service' && !form.productId) { setError('请选择商城服务'); return }
     if (form.giftType === 'fund' && (!form.fundAmount || Number(form.fundAmount) <= 0)) { setError('请输入有效金额'); return }
     if (form.giftType === 'coupon') {
       if (!form.couponValue || Number(form.couponValue) <= 0) { setError('请输入有效面额/折扣'); return }
@@ -14690,11 +15219,21 @@ export function GiftModal({ patientId, patientName, onClose, onSaved, initialGif
           {form.giftType === 'service' ? (
             <>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">服务类型 *</label>
-                <select className="form-input" value={form.serviceName} onChange={set('serviceName')}>
-                  <option value="">-- 请选择 --</option>
-                  {SERVICE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <label className="form-label">商城服务 *</label>
+                <div style={{ position: 'relative' }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setProductListOpen(false) }}>
+                  <input className="form-input" type="search" role="combobox" aria-label="搜索商城服务" aria-autocomplete="list" aria-expanded={productListOpen} aria-controls={productListOpen ? 'gift-product-options' : undefined} aria-activedescendant={productListOpen && activeProductIndex >= 0 && matchingProducts.length ? `gift-product-${activeProductIndex}` : undefined}
+                    placeholder={productsLoading ? '正在加载商城服务…' : '请选择或搜索具体服务'} value={productSearch} disabled={productsLoading || !!productsError}
+                    onFocus={e => { setProductListOpen(true); setActiveProductIndex(-1); if (selectedProduct) e.target.select() }}
+                    onChange={e => { setProductSearch(e.target.value); setForm(value => ({ ...value, productId: '' })); setProductListOpen(true); setActiveProductIndex(0) }}
+                    onKeyDown={handleProductKeyDown} />
+                  {productListOpen && !productsLoading && !productsError && <div id="gift-product-options" role="listbox" style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', background: '#fff', border: '1px solid #DDE4DF', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)' }}>
+                    {matchingProducts.length ? matchingProducts.map((product, index) => <button key={product._id} id={`gift-product-${index}`} type="button" role="option" aria-selected={String(product._id) === String(form.productId)}
+                      onClick={() => chooseProduct(product)} style={{ display: 'block', width: '100%', padding: '9px 12px', textAlign: 'left', border: 0, background: index === activeProductIndex ? '#F0F8F3' : '#fff', color: '#20342B', cursor: 'pointer' }}>
+                      {product.name}<small style={{ marginLeft: 8, color: '#6B7280' }}>{product.category}</small>
+                    </button>) : <div style={{ padding: '10px 12px', color: '#6B7280' }}>没有匹配的商城服务</div>}
+                  </div>}
+                </div>
+                {productsError && <div role="alert" style={{ color: '#B45309', fontSize: 12 }}>{productsError}，请关闭后重试。</div>}
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">赠送次数</label>
@@ -14819,7 +15358,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     ].filter(Boolean).some(value => String(value).toLowerCase().includes(normalizedExpertSearch))
   })
 
-  // 打开时拉取用药、营养补剂、近期打卡记录
+  // 打开时拉取用药、营养补剂、近期健康数据记录
   useEffect(() => {
     Promise.allSettled([
       staffAPI.getPatientMedications(patientId),
@@ -14843,9 +15382,9 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     return Math.floor((Date.now() - new Date(birthDate)) / (365.25 * 24 * 3600 * 1000))
   }
 
-  // 提取最近一次各类打卡数据
+  // 提取最近一次各类健康数据记录
   const buildLatestVitals = (records) => {
-    const VITAL_LABEL = { weight:'体重', bloodPressure:'血压', bloodSugar:'血糖', heartRate:'心率', sleep:'睡眠' }
+    const VITAL_LABEL = { weight:'体重', waist:'腰围', bloodPressure:'血压', bloodSugar:'血糖', heartRate:'心率', sleep:'睡眠' }
     const seen = {}
     const result = []
     records.forEach(r => {
@@ -14898,7 +15437,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         结束或停用时间: s.stopDate || s.endDate || (s.stopped ? '未记录' : '—'),
       })) : null },
       { key: 'dietSummary',      label: '膳食调查概述', val: dietSummary },
-      { key: 'latestVitals',     label: '近期打卡数据', val: latestVitals },
+      { key: 'latestVitals',     label: '近期健康数据记录', val: latestVitals },
     ].filter(s => s.val !== null && s.val !== '' && !(Array.isArray(s.val) && s.val.length === 0))
   }
 
@@ -15202,7 +15741,7 @@ function FamilyTab({ patientId, user, onRefresh }) {
     setSaving(true)
     try {
       await staffAPI.addFamilyLink(patientId, { linkedUserId: addTarget._id, relation: addRelation })
-      toast('已添加家庭成员')
+      toast('医护端关系已确认，等待双方用户授权')
       setShowAdd(false); setAddSearch(''); setAddResults([]); setAddTarget(null); setAddRelation('')
       load()
     } catch (err) { toast(err.message || '添加失败') }
@@ -15210,7 +15749,7 @@ function FamilyTab({ patientId, user, onRefresh }) {
   }
 
   const handleRemove = async (linkId) => {
-    if (!window.confirm('确定移除此家庭成员关联？')) return
+    if (!window.confirm('确定移除此家庭成员关系？')) return
     try {
       await staffAPI.removeFamilyLink(patientId, linkId)
       toast('已移除')
@@ -15292,6 +15831,9 @@ function FamilyTab({ patientId, user, onRefresh }) {
                 >
                   <span style={{ fontWeight: 600, fontSize: 14 }}>{linked?.name || '-'}</span>
                   <span style={{ color: '#8AA89C', fontSize: 12, marginLeft: 8 }}>{m.relation}</span>
+                  {m.authorizationStatus !== 'authorized' && <span style={{ color: '#A66A00', fontSize: 12, marginLeft: 8 }}>
+                    {m.authorizationStatus === 'rejected' ? '用户未授权' : '待用户授权'}
+                  </span>}
                   <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>
                     {linked?.gender || ''}{linked?.gender ? ' · ' : ''}{linked?.birthDate ? calcAge(linked.birthDate) : ''}{linked?.phone ? ' · ' + linked.phone : ''}
                   </div>
@@ -15317,6 +15859,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
   const TYPES = [
     { key: 'bloodPressure', label: '血压',  unit: 'mmHg',   kind: 'bp' },
     { key: 'bloodSugar',    label: '血糖',  unit: 'mmol/L', kind: 'num', placeholder: '如 5.8' },
+    { key: 'waist',         label: '腰围',  unit: 'cm',     kind: 'num', placeholder: '如 82.5' },
     { key: 'heartRate',     label: '心率',  unit: '次/分',  kind: 'num', placeholder: '如 72' },
     { key: 'weight',        label: '体重',  unit: 'kg',     kind: 'num', placeholder: '如 65.0' },
     { key: 'sleep',         label: '睡眠',  unit: '小时',   kind: 'sleep' },
@@ -15360,7 +15903,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
     return { value: cur.val, extra: {} }
   }
 
-  // 2026-07-09：首次建档一次性罗列全部打卡项，医护填了几项就批量提交几项。
+  // 2026-07-09：首次建档一次性罗列全部记录项，医护填了几项就批量提交几项。
   // 此前是单选类型逐条录入(一次只提交当前选中那条)，医护以为填了多项、实际只存了最后确认的一条(金娟只剩"饮酒")。
   // 2026-07-11修复：①血压类要求sys/dia都填才提交，漏填一项会被buildPayload静默过滤掉，之前完全没提示——
   // 现在提交前单独检查"填了一半"的项，明确告知哪项不完整。②逐条await的循环里任何一条失败就会用throw中断
@@ -15382,6 +15925,11 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
 
     const toSubmit = TYPES.map(t => ({ t, payload: buildPayload(t) })).filter(x => x.payload)
     if (!toSubmit.length) { toastFn('请至少填写一项数据'); return }
+    const waist = toSubmit.find(({ t }) => t.key === 'waist')
+    if (waist && (!Number.isFinite(Number(waist.payload.value)) || Number(waist.payload.value) <= 0)) {
+      toastFn('请输入大于0的腰围数值（cm）')
+      return
+    }
     setSaving(true)
     // 归属日期非今天时传 recordedAt（补录历史数据），设为当天中午避免时区错算一天
     const recordedAt = recordDate === todayISO ? undefined : `${recordDate}T12:00:00`
@@ -15430,7 +15978,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
       </div>
       <div className="card-body">
         <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
-          罗列全部打卡项，填写哪些就录入哪些（留空的不提交），一次性作为首次建档基础数据同步到用户端。
+          罗列全部记录项，填写哪些就录入哪些（留空的不提交），一次性作为首次建档基础数据同步到用户端。
         </div>
 
         {/* 归属日期：老客户历史数据补录用，默认今天，可选任意过去日期（2026-07-10 金娟） */}
@@ -15445,7 +15993,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
           <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto', fontSize: 12 }} onClick={() => setRecordDate(todayISO)}>今天</button>
         </div>
 
-        {/* 2026-07-09：所有打卡项平铺，各自独立填写，一次确认批量提交，不再单选逐条录入 */}
+        {/* 2026-07-09：所有记录项平铺，各自独立填写，一次确认批量提交，不再单选逐条录入 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {TYPES.map(t => {
             const setFieldFor = (field, v) => setVals(p => ({ ...p, [t.key]: { ...p[t.key], [field]: v } }))
@@ -15512,7 +16060,7 @@ const REFERRAL_HEALTH_LABELS = {
   longTermMeds:    '长期用药',
   longTermSups:    '长期营养补剂',
   dietSummary:     '膳食调查概述',
-  latestVitals:    '近期打卡数据',
+  latestVitals:    '近期健康数据记录',
   allergies:       '过敏史',
   medications:     '当前用药',
   surgeries:       '手术史',

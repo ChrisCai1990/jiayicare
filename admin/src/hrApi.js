@@ -16,6 +16,23 @@ export function clearHrToken() {
 }
 export function getHrToken() { return _token }
 
+async function downloadPrivateFile(path, fileName) {
+  const res = await fetch(`${BASE}${path}`, { headers: _token ? { Authorization: `Bearer ${_token}` } : {} })
+  if (res.status === 401) { handleUnauthorized(); throw new Error('登录已过期，请重新登录') }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.message || '下载失败')
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName || '服务记录'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 function handleUnauthorized() {
   clearHrToken()
   if (!window.location.pathname.startsWith('/hr/login')) {
@@ -40,4 +57,5 @@ export const hrAPI = {
   login:        (username, password) => req('/login', { method: 'POST', body: JSON.stringify({ username, password }) }, { skipAuth: true }),
   overview:     (year) => req('/overview' + (year ? `?year=${year}` : '')),
   healthSummary:() => req('/health-summary'),
+  downloadServiceRecord: (recordId, fileName) => downloadPrivateFile(`/service-records/${recordId}/file`, fileName),
 }

@@ -9,7 +9,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
 import BloodPressurePhoto from '../../components/BloodPressurePhoto';
-import MetabolicPilotCard from '../../components/MetabolicPilotCard';
+import WeightProgressPhotos from '../../components/WeightProgressPhotos';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期
 function toLocalDateStr(d) {
@@ -17,28 +17,30 @@ function toLocalDateStr(d) {
   return `${y}-${m}-${day}`;
 }
 
-// ── 打卡项目定义（从 HomeScreen 抽离，2026-07-18 打卡页重构）───────
+// ── 健康数据项目定义（从 HomeScreen 抽离，2026-07-18 记录页重构）───────
 const CHECKIN_DEFS = {
-  diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食打卡', allowMultiple: true },
-  exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',       color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动打卡', allowMultiple: true },
-  sleep:         { key: 'sleep',         label: '睡眠', icon: 'moon-outline',          color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠打卡' },
-  weight:        { key: 'weight',        label: '体重', icon: 'scale-outline',         color: '#059669', measureType: 'weight',        category: 'vitals',    recordLabel: '体重打卡' },
-  bowel:         { key: 'bowel',         label: '排便', icon: 'leaf-outline',          color: '#92400E', measureType: null,            category: 'lifestyle', recordLabel: '排便打卡' },
-  water:         { key: 'water',         label: '饮水', icon: 'water-outline',         color: '#0EA5E9', measureType: null,            category: 'lifestyle', recordLabel: '饮水打卡' },
+  waist: { key: 'waist', label: '腰围', icon: 'resize-outline', color: '#0F766E', measureType: 'waist', category: 'vitals', recordLabel: '腰围记录', optional: true },
+  diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食记录', allowMultiple: true },
+  exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',       color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动记录', allowMultiple: true },
+  sleep:         { key: 'sleep',         label: '睡眠', icon: 'moon-outline',          color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠记录' },
+  weight:        { key: 'weight',        label: '体重', icon: 'scale-outline',         color: '#059669', measureType: 'weight',        category: 'vitals',    recordLabel: '体重记录' },
+  bowel:         { key: 'bowel',         label: '排便', icon: 'leaf-outline',          color: '#92400E', measureType: null,            category: 'lifestyle', recordLabel: '排便记录' },
+  water:         { key: 'water',         label: '饮水', icon: 'water-outline',         color: '#0EA5E9', measureType: null,            category: 'lifestyle', recordLabel: '饮水记录' },
   smoking:       { key: 'smoking',       label: '吸烟', icon: 'warning-outline',       color: '#6B7280', measureType: null,            category: 'lifestyle', recordLabel: '吸烟记录' },
   alcohol:       { key: 'alcohol',       label: '饮酒', icon: 'wine-outline',          color: '#9D174D', measureType: null,            category: 'lifestyle', recordLabel: '饮酒记录' },
-  bloodPressure: { key: 'bloodPressure', label: '血压', icon: 'pulse-outline',         color: '#DC3545', measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压打卡', allowMultiple: true, chronicKeys: ['高血压'] },
-  heartRate:     { key: 'heartRate',     label: '心率', icon: 'heart-outline',         color: '#DC3545', measureType: 'heartRate',     category: 'vitals',    recordLabel: '心率打卡' },
-  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: 'water-outline',         color: '#F39C12', measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖打卡', allowMultiple: true, chronicKeys: ['糖尿病'] },
-  mood:          { key: 'mood',          label: '情绪', icon: 'happy-outline',         color: '#7C3AED', measureType: 'mood',          category: 'lifestyle', recordLabel: '情绪打卡' },
+  bloodPressure: { key: 'bloodPressure', label: '血压', icon: 'pulse-outline',         color: '#DC3545', measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压记录', allowMultiple: true, chronicKeys: ['高血压'] },
+  heartRate:     { key: 'heartRate',     label: '心率', icon: 'heart-outline',         color: '#DC3545', measureType: 'heartRate',     category: 'vitals',    recordLabel: '心率记录' },
+  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: 'water-outline',         color: '#F39C12', measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖记录', allowMultiple: true, chronicKeys: ['糖尿病'] },
+  mood:          { key: 'mood',          label: '情绪', icon: 'happy-outline',         color: '#7C3AED', measureType: 'mood',          category: 'lifestyle', recordLabel: '情绪记录' },
   symptom:       { key: 'symptom',       label: '不适', icon: 'medkit-outline',        color: '#DC2626', measureType: 'symptom',       category: 'vitals',    recordLabel: '症状自评', optional: true },
 };
 
-// 12项固定打卡 + 症状自评（症状自评始终可选，不受慢病标签影响）
-const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','mood'];
+// 常用记录与按需记录 + 症状自评（症状自评始终可选，不受慢病标签影响）
+const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','waist','mood'];
 
-// 生理指标打卡项的字段定义，与 AddRecordScreen 字段口径保持一致
+// 生理指标记录项的字段定义，与 AddRecordScreen 字段口径保持一致
 const MEASURE_FIELDS = {
+  waist: [{ key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5', normal: '' }],
   bloodPressure: [
     { key: 'sys', label: '收缩压', unit: 'mmHg', placeholder: '如：130', normal: '90-139' },
     { key: 'dia', label: '舒张压', unit: 'mmHg', placeholder: '如：80', normal: '60-89' },
@@ -65,7 +67,7 @@ const SYMPTOM_OPTIONS = ['头晕', '乏力', '心悸', '腹泻', '恶心', '失�
 const URGENT_SYMPTOMS = ['胸痛', '呼吸困难'];
 const ALL_SYMPTOM_OPTIONS = [...SYMPTOM_OPTIONS, ...URGENT_SYMPTOMS];
 
-// 运动打卡时段选项："现在"表示按当前时刻自动换算，用于即时打卡；其余为补录过去记录时手动选择
+// 运动记录时段选项："现在"表示按当前时刻自动换算，用于即时记录；其余为补录过去记录时手动选择
 const EXERCISE_TIME_SLOTS = ['早上', '上午', '中午', '下午', '晚上'];
 function deriveCurrentTimeSlot() {
   const h = new Date().getHours();
@@ -92,10 +94,7 @@ function calcSleepDuration(sleepTime, wakeTime) {
 export default function CheckinScreen({ navigation }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [pilotRefresh,setPilotRefresh] = useState(0);
-  const [pilotMember,setPilotMember] = useState(false);
-  const [pilotFeedback,setPilotFeedback] = useState(null);
-  const [doneTypes, setDoneTypes] = useState({}); // { type: { note, hasImage } }，来自后端今日打卡状态
+  const [doneTypes, setDoneTypes] = useState({}); // { type: { note, hasImage } }，来自后端今日记录状态
 
   const todayStr = toLocalDateStr(new Date());
   const [checkinDate, setCheckinDate] = useState(todayStr);
@@ -104,7 +103,7 @@ export default function CheckinScreen({ navigation }) {
   const [checkinNote, setCheckinNote] = useState('');
   const [checkinImage, setCheckinImage] = useState(null);
   const [checkinMealType, setCheckinMealType] = useState('');
-  const [checkinTimeSlot, setCheckinTimeSlot] = useState(''); // 运动打卡专用：时段（早上/上午/中午/下午/晚上），"现在"表示按当前时刻自动换算
+  const [checkinTimeSlot, setCheckinTimeSlot] = useState(''); // 运动记录专用：时段（早上/上午/中午/下午/晚上），"现在"表示按当前时刻自动换算
   const [checkinSaving, setCheckinSaving] = useState(false);
 
   const [measureModal, setMeasureModal] = useState(null);
@@ -124,12 +123,12 @@ export default function CheckinScreen({ navigation }) {
       const res = await recordsAPI.todayStatus();
       if (res.success) setDoneTypes(res.doneTypes || {});
     } catch {}
-    finally { setLoading(false); setPilotRefresh(v=>v+1); }
+    finally { setLoading(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { setPilotFeedback(null); loadTodayStatus(); }, [loadTodayStatus]));
+  useFocusEffect(useCallback(() => { loadTodayStatus(); }, [loadTodayStatus]));
 
-  // 根据用户慢病标签，决定血压/血糖是否为必打卡项；无对应慢病则归为可选，不做"未完成"提示
+  // 根据用户慢病标签，决定血压/血糖是否为必记录项；无对应慢病则归为可选，不做"未完成"提示
   const chronicDiseases = user?.chronicDiseases || [];
   const isMandatory = (item) => {
     if (item.optional) return false;
@@ -147,7 +146,7 @@ export default function CheckinScreen({ navigation }) {
 
   const openCheckinModal = (item) => {
     if (isItemDone(item) && !item.allowMultiple) {
-      Alert.alert('今日已打卡', '这一项今天已经打过卡了，明天再来吧～');
+      Alert.alert('今日已记录', '这一项今天已经记录过了，明天再来吧～');
       return;
     }
     if (item.measureType) {
@@ -159,7 +158,7 @@ export default function CheckinScreen({ navigation }) {
       setCheckinNote('');
       setCheckinImage(null);
       setCheckinMealType('');
-      // 打开即默认"现在"，即时打卡不用手动选时段；补录过去日期时用户会再手动改选
+      // 打开即默认"现在"，即时记录不用手动选时段；补录过去日期时用户会再手动改选
       setCheckinTimeSlot(item.key === 'exercise' ? '现在' : '');
       setCheckinSaving(false);
       setCheckinDate(todayStr);
@@ -171,6 +170,10 @@ export default function CheckinScreen({ navigation }) {
     if (measureSaving) return;
     const item = measureModal;
     const measureType = item.measureType;
+    if (measureType === 'waist' && (!Number.isFinite(Number(measureValues.value)) || Number(measureValues.value) <= 0)) {
+      Alert.alert('请核对数值', '请输入大于0的腰围数值（cm）');
+      return;
+    }
     const fields = MEASURE_FIELDS[measureType] || [];
     const isToday = checkinDate === todayStr;
 
@@ -216,8 +219,7 @@ export default function CheckinScreen({ navigation }) {
 
     setMeasureSaving(true);
     try {
-      const saved = await recordsAPI.create(payload);
-      setPilotFeedback(saved.feedback || null);
+      await recordsAPI.create(payload);
     } catch (err) {
       setMeasureSaving(false);
       Alert.alert('保存失败', err.message || '网络异常，请重试');
@@ -236,11 +238,10 @@ export default function CheckinScreen({ navigation }) {
       return;
     }
     const isToday = checkinDate === todayStr;
-    // 运动打卡时段：选"现在"按当前时刻自动换算；未选时段的补录记录，不强制要求（时段是辅助信息，不阻断打卡）
+    // 运动记录时段：选"现在"按当前时刻自动换算；未选时段的补录记录，不强制要求（时段是辅助信息，不阻断记录）
     const resolvedTimeSlot = item.key === 'exercise'
       ? (checkinTimeSlot === '现在' ? deriveCurrentTimeSlot() : checkinTimeSlot)
       : '';
-    setPilotFeedback(null);
     setCheckinSaving(true);
     const mealPrefix = item.key === 'diet' && checkinMealType ? `【${checkinMealType}】` : '';
     const slotPrefix = resolvedTimeSlot ? `【${resolvedTimeSlot}】` : '';
@@ -251,7 +252,7 @@ export default function CheckinScreen({ navigation }) {
         label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}`
           : slotPrefix ? `${item.recordLabel || item.label}·${resolvedTimeSlot}`
           : (item.recordLabel || item.label),
-        value: (mealPrefix + slotPrefix + checkinNote) || checkinMealType || resolvedTimeSlot || '已打卡',
+        value: (mealPrefix + slotPrefix + checkinNote) || checkinMealType || resolvedTimeSlot || '已记录',
         note: '',
         status: 'normal',
         imageUrl: checkinImage || '',
@@ -283,7 +284,6 @@ export default function CheckinScreen({ navigation }) {
       return;
     }
     const hasUrgent = selectedSymptoms.some(s => URGENT_SYMPTOMS.includes(s));
-    setPilotFeedback(null);
     setSymptomSaving(true);
     try {
       await recordsAPI.create({
@@ -356,19 +356,19 @@ export default function CheckinScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
-          <MetabolicPilotCard refreshKey={pilotRefresh} onStatus={setPilotMember} feedback={pilotFeedback} />
-          {/* 必打卡项 */}
+          <WeightProgressPhotos />
+          {/* 必记录项 */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>记录健康数据</Text>
-              {!pilotMember && mandatoryItems.length > 0 && (
+              {mandatoryItems.length > 0 && (
                 <Text style={styles.sectionProgress}>{doneMandatoryCount}/{mandatoryItems.length}</Text>
               )}
             </View>
             <View style={styles.checkinGrid}>
               {mandatoryItems.map(renderCheckinItem)}
             </View>
-            {!pilotMember && allMandatoryDone && (
+            {allMandatoryDone && (
               <View style={styles.checkinAllDone}>
                 <Ionicons name="star" size={14} color="#F39C12" />
                 <Text style={styles.checkinAllDoneText}>今日核心指标已完成！保持健康好习惯 🎉</Text>
@@ -376,7 +376,7 @@ export default function CheckinScreen({ navigation }) {
             )}
           </View>
 
-          {/* 可选打卡项：不做则不提示"未完成"，避免打卡疲劳 */}
+          {/* 可选记录项：不做则不提示"未完成"，避免记录疲劳 */}
           {optionalItems.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>按需记录</Text>
@@ -407,7 +407,7 @@ export default function CheckinScreen({ navigation }) {
         </ScrollView>
       )}
 
-      {/* 打卡记录弹窗（仅用于生活方式打卡项） */}
+      {/* 健康数据记录弹窗（仅用于生活方式记录项） */}
       <Modal visible={!!checkinModal} transparent animationType="slide" onRequestClose={() => setCheckinModal(null)}>
         <View style={styles.checkinModalOverlay}>
           <View style={styles.checkinModalBox}>
@@ -416,7 +416,7 @@ export default function CheckinScreen({ navigation }) {
                 {checkinModal && <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: checkinModal.color + '20', alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name={checkinModal.icon} size={18} color={checkinModal.color} />
                 </View>}
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{checkinModal?.label} 打卡</Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{checkinModal?.label} 记录</Text>
               </View>
               <TouchableOpacity onPress={() => setCheckinModal(null)}>
                 <Ionicons name="close" size={22} color={colors.textMuted} />
@@ -537,14 +537,14 @@ export default function CheckinScreen({ navigation }) {
               </TouchableOpacity>
               <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: checkinModal?.color || colors.primary, flex: 2, opacity: checkinSaving ? 0.6 : 1 }]} onPress={saveCheckin} disabled={checkinSaving}>
                 {checkinSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={18} color="#fff" />}
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{checkinSaving ? '保存中...' : '完成打卡'}</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{checkinSaving ? '保存中...' : '完成记录'}</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* 生理指标打卡弹窗（血压/体重/睡眠/心率/血糖），原地填写，独立提交 */}
+      {/* 生理指标记录弹窗（血压/体重/睡眠/心率/血糖），原地填写，独立提交 */}
       <Modal visible={!!measureModal} transparent animationType="slide" onRequestClose={() => setMeasureModal(null)}>
         <View style={styles.checkinModalOverlay}>
           <View style={[styles.checkinModalBox, { maxHeight: '90%' }]}>
@@ -554,7 +554,7 @@ export default function CheckinScreen({ navigation }) {
                 {measureModal && <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: measureModal.color + '20', alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name={measureModal.icon} size={18} color={measureModal.color} />
                 </View>}
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{measureModal?.label} 打卡</Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{measureModal?.label} 记录</Text>
               </View>
               <TouchableOpacity onPress={() => setMeasureModal(null)}>
                 <Ionicons name="close" size={22} color={colors.textMuted} />
@@ -638,7 +638,7 @@ export default function CheckinScreen({ navigation }) {
               </TouchableOpacity>
               <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: measureModal?.color || colors.primary, flex: 2, opacity: measureSaving ? 0.6 : 1 }]} onPress={saveMeasureCheckin} disabled={measureSaving}>
                 {measureSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={18} color="#fff" />}
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{measureSaving ? '保存中...' : '完成打卡'}</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{measureSaving ? '保存中...' : '完成记录'}</Text>
               </TouchableOpacity>
             </View>
             </ScrollView>

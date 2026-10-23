@@ -1,5 +1,6 @@
 function receipt(input, staffId, task) {
   if (input?.entries !== undefined) return arrangements(input, staffId, task);
+  if (require('../../../shared/annualBookingPlan.cjs').bookingSlots(task || {}).some(slot => slot.candidates?.length)) throw Object.assign(new Error('请逐项确认实际预约专家'), { statusCode: 400 });
   if (require('../../../shared/annualBookingPlan.cjs').bookingSlots(task || {}).length > 1) throw Object.assign(new Error('请逐项填写全部预约安排'), { statusCode: 400 });
   const fail = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
   const { date, time, note = '' } = input || {};
@@ -26,11 +27,13 @@ function arrangements(input, staffId, task) {
     if (!['prebook', 'onsite', 'not_required'].includes(e.mode)) fail('请选择预约办理方式');
     for (const key of ['department', 'expert', 'title', 'type']) if (e[key] !== undefined && e[key] !== slot[key]) fail('不能修改顾问的预约要求');
     if (slot.hospital && e.hospital !== undefined && e.hospital !== slot.hospital) fail('不能修改顾问指定医院');
+    const bookedCandidate = slot.candidates?.find(candidate => candidate.id === e.bookedExpertId);
+    if (slot.candidates?.length && e.mode === 'prebook' && !bookedCandidate) fail('请从顾问候选专家中确认实际预约专家');
     const note = e.note || '';
     if (typeof note !== 'string' || note.length > 2000) fail('预约说明不能超过2000字');
     if (e.mode === 'prebook') {
       const saved = receipt({ date: e.date, time: e.time, hospital: slot.hospital || e.hospital, note }, staffId, { plannedContent: `医院：${slot.hospital || ''}\n科室：${slot.department}\n专家：${slot.expert}` });
-      return { ...slot, mode: e.mode, status: 'booked', date: saved.date, time: saved.time, hospital: saved.hospital, note, confirmedBy: staffId, confirmedAt: saved.confirmedAt };
+      return { ...slot, expert: bookedCandidate?.name || slot.expert, ...(bookedCandidate ? { expertId: bookedCandidate.id } : {}), mode: e.mode, status: 'booked', date: saved.date, time: saved.time, hospital: saved.hospital, note, confirmedBy: staffId, confirmedAt: saved.confirmedAt };
     }
     if (!note.trim()) fail(e.mode === 'onsite' ? '请说明现场预约前置条件及交接要求' : '请填写无需预约的确认依据');
     if (e.mode === 'onsite' && slot.type !== 'exam') fail('门诊预约须先落实；现场办理仅用于检查预约');

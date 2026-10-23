@@ -12,6 +12,12 @@ const messageSchema = new mongoose.Schema({
   audioDuration: { type: Number, default: 0, min: 0, max: 60 },
   audioMimeType: { type: String, default: '' },
   audioTranscript: { type: String, default: '', maxlength: 1000 },
+  audioTranscriptDisplayOnly: { type: Boolean, default: false },
+  audioTranscriptionConsentVersion: { type: String, default: '' },
+  audioTranscriptionConsentedAt: { type: Date },
+  audioTranscriptionRequestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  audioTranscriptionLockToken: { type: String },
+  audioTranscriptionLockUntil: { type: Date },
   aiReviewStatus: { type: String, enum: ['', 'draft', 'pending', 'approved', 'rejected'], default: '' },
   aiReviewedAt: { type: Date, default: null },
   aiReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
@@ -22,6 +28,7 @@ const messageSchema = new mongoose.Schema({
   conversationId: { type: String, index: true, default: null }, // {userId}_{role} 会话线程标识
   isAI: { type: Boolean, default: false }, // 医护未及时回复时AI代为兜底回复的消息（不涉及诊断/建议），医护人工回复后仍可正常追加
   aiGenerated: { type: Boolean, default: false },
+  references: { type: [{ id: String, title: String, url: String, applicability: String }], default: [] },
   // 可操作消息：消息中心据此渲染操作按钮/跳转，让用户不必自己找入口。
   // 目前用于家庭成员邀请：{ type:'family_invite', inviteId, route:'FamilyMembers' }
   action: { type: mongoose.Schema.Types.Mixed, default: null },

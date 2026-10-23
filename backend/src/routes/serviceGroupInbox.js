@@ -46,7 +46,7 @@ module.exports = function install(router, {wrap,group,member,permit,fail,oid,tex
     const p=await member(req,g,req.body.patientId);
     if(!p) fail('请选择具体家庭成员');
     const purpose=req.body.purpose;
-    if(!['checkin','report'].includes(purpose)) fail('请选择打卡原图或就诊资料');
+    if(!['checkin','report'].includes(purpose)) fail('请选择记录健康数据原图或就诊资料');
     await permit(req,purpose==='report'?'reports':'service_records','create');
     const ids=req.body.messageIds;
     if(!Array.isArray(ids)||!ids.length||ids.length>9||new Set(ids).size!==ids.length) fail('每次选择1–9份原件');

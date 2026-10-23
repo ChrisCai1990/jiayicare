@@ -65,6 +65,12 @@ const reportItemSchema = new mongoose.Schema({
 
 const medicalReportSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  uploadConsent: {
+    version: { type: String, default: '' },
+    confirmedAt: { type: Date, default: null },
+    accountId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    source: { type: String, default: '' },
+  },
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键，创建时从 user.tenantId 冗余存一份，避免每次查询都要 populate）
   title: { type: String, required: true },
   sourceSha256: { type: String, default: undefined },
@@ -170,8 +176,21 @@ const medicalReportSchema = new mongoose.Schema({
   audited_by:   { type: String, default: '' },
   audited_at:   { type: Date,   default: null },
   reject_reason:{ type: String, default: '' },
+  // 同次体检后补的完整原件：保留文件，结构化结果仍以关联的已审核报告为准。
+  archiveOnly: { type: Boolean, default: false },
+  archiveSourceReportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
+  archiveOnlyAt: { type: Date, default: null },
+  archiveOnlyBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  // Copies created by a staff member from existing customer uploads.
+  organizedFrom: [{ reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport' }, fileIndex: Number }],
+  organizedAt: { type: Date, default: null },
+  organizedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  // 顾问退回保留原审核快照，避免错误结果在补正期间继续参与分析。
+  advisorCorrection: { type: mongoose.Schema.Types.Mixed, default: null },
   // 处方/门诊/住院资料不复用体检的 reportItems。此处保存人工逐项核对的业务结构及审核结论。
   clinicalReview: { type: mongoose.Schema.Types.Mixed, default: null },
+  // 健管专员审核门诊病历时选定的已有专病首页；顾问只能向该首页的时间轴归档。
+  courseTargetDiseaseId: { type: mongoose.Schema.Types.ObjectId, default: null },
   classificationCorrection: { type: mongoose.Schema.Types.Mixed, default: null },
 
   // 健康顾问单份查看留痕（2026-07-28新增）：健康顾问在"待查看新增报告"清单里点开某份报告，
@@ -222,6 +241,7 @@ const medicalReportSchema = new mongoose.Schema({
   }],
   // 医护端：上传人 & 关联方案项目
   uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  submittedByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // 代孩子上传时保留实际提交者
   // Orthogonal provenance metadata. It does not replace documentCategory/type
   // or screening classification, so the same report keeps one clinical taxonomy.
   sourceType: { type: String, enum: ['customer_upload', 'staff_upload', 'service_record', 'order', 'health_plan', ''], default: '' },

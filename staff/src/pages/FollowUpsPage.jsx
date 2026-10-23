@@ -34,7 +34,7 @@ import CheckupCompletionEvidence from '../components/CheckupCompletionEvidence'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
 const STATUS_MAP = { planned: '待随访', in_progress: '随访中', missed: '随访中', completed: '已随访', cancelled: '已取消' }
-const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
+const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', waist: '腰围', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 const STATUS_COLOR = { planned: '#D97706', in_progress: '#0077B6', missed: '#0077B6', completed: '#22A06B', cancelled: '#8AA89C' }
 
 const STATUS_TABS = [
@@ -110,7 +110,7 @@ function DetailModal({ item, onClose }) {
           {item.routinePeriod && <Row label="周期类型" value={ROUTINE_PERIOD[item.routinePeriod] || item.routinePeriod} />}
           <Row label="执行人" value={item.assignedTo?.name || '未指定'} />
           <Row label="状态" value={STATUS_MAP[item.status] || item.status} />
-          {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
+          {item.checkInItems?.length > 0 && <Row label="健康数据项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
           <Row label="计划内容" value={item.content || item.plannedContent} />
           {getMedicalAssistRequirements(item) !== (item.content || item.plannedContent) && <Row label="本次服务要求" value={getMedicalAssistRequirements(item)} />}
           {item.status === 'completed' && (
@@ -277,7 +277,24 @@ export default function FollowUpsPage() {
     const priorResults = f.dependsOnTaskId?.formData?.nutritionStageAssessment?.targetResults || []
     const targetResults = (f.formData?.nutritionIntervention?.nutritionTargets || []).map((_, index) =>
       f.formData?.nutritionStageAssessment?.targetResults?.[index] || priorResults[index] || { actual: '', outcome: '' })
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: f.formData?.nutritionIntervention ? { ...f.formData, nutritionStageAssessment: { result: '', reason: '', decision: '', ...f.formData.nutritionStageAssessment, targetResults } } : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    setExecForm({ type: f.type || 'phone', content: f.sourceType === 'insurance_service' ? (f.executedContent || '') : '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: f.formData?.nutritionIntervention ? { ...f.formData, nutritionStageAssessment: { result: '', reason: '', decision: '', ...f.formData.nutritionStageAssessment, targetResults } } : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f, f.formData) : emptyOutpatientAssessment(f.formData) })
+  }
+
+  const handleSaveInsuranceDraft = async () => {
+    if (execItem?.sourceType !== 'insurance_service' || execItem.taskRole !== 'executor') return
+    setExecSaving(true)
+    try {
+      await staffAPI.updateFollowUp(execItem._id, {
+        type: execForm.type,
+        content: execForm.content.trim(),
+        status: 'in_progress',
+        serviceChecklist: execForm.serviceChecklist,
+      })
+      toast('已临时保存，可稍后继续填写')
+      setExecItem(null)
+      load()
+    } catch (err) { toast(err.message || '临时保存失败') }
+    finally { setExecSaving(false) }
   }
 
   const handleExec = async () => {
@@ -504,7 +521,7 @@ export default function FollowUpsPage() {
             const checkin = f.patientLastRecord ? (() => {
               const days = Math.floor((Date.now() - new Date(f.patientLastRecord)) / 86400000)
               const color = days === 0 ? '#22A06B' : days <= 3 ? '#D97706' : '#8AA89C'
-              const label = days === 0 ? '今日已打卡' : `${days}天前打卡`
+              const label = days === 0 ? '今日已记录' : `${days}天前记录`
               return { color, label }
             })() : null
             return (
@@ -549,6 +566,9 @@ export default function FollowUpsPage() {
                           })()}
                         </span>
                       )}
+                      {f.relatedNutritionStage && <span style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', padding: '2px 8px', borderRadius: 6 }}>
+                        同日阶段专业评估：{f.relatedNutritionStage.status === 'completed' ? '已完成' : f.relatedNutritionStage.isBlocked ? '待健管随访后办理' : '待完成'}（随访与评估分别记录）
+                      </span>}
                       {f.status === 'cancelled' && f.cancelReason && (
                         <span style={{ fontSize: 12, color: '#8AA89C' }}>取消原因：{f.cancelReason}</span>
                       )}
@@ -689,6 +709,7 @@ export default function FollowUpsPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
+              {execItem.sourceType === 'insurance_service' && execItem.taskRole === 'executor' && !execItem.isBlocked && <button className="btn btn-secondary" onClick={handleSaveInsuranceDraft} disabled={execSaving}>临时保存</button>}
               {execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execForm.checkupMerged} style={execForm.checkupMerged ? { display: 'none' } : undefined}>
                 {execSaving ? '保存中...' : nutritionStageType ? (execForm.status === 'completed' ? '完成本阶段并流转' : '保存本阶段进展') : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}

@@ -48,6 +48,8 @@ export default function PlansPage() {
   const initialPatientName = searchParams.get('patientName') || ''
   const reservedOrderId = searchParams.get('reservedOrderId') || ''
   const giftId = searchParams.get('giftId') || ''
+  const annualExpert = searchParams.get('annualExpert') === '1'
+  const giftServiceName = searchParams.get('giftServiceName') || ''
   const reservedProductName = searchParams.get('reservedProductName') || ''
   const requestedPlanType = searchParams.get('openPlan') || (searchParams.get('openMedicalAssist') === '1' ? 'medical_assist' : '')
 
@@ -102,7 +104,7 @@ export default function PlansPage() {
     if (requestedPlanType === 'annual_mgmt') setShowAhModal(true)
     if (requestedPlanType === 'nutrition') setShowNutritionModal(true)
     if (requestedPlanType === 'medical_assist') {
-      if (reservedOrderId || giftId || (staff?.role === 'superadmin' && searchParams.get('legacyPlan') === '1')) setShowMedicalModal(true)
+      if (reservedOrderId || giftId || annualExpert || (staff?.role === 'superadmin' && searchParams.get('legacyPlan') === '1')) setShowMedicalModal(true)
       else if (initialPatientId) nav(`/patients/${initialPatientId}?tab=membership&medicalLaunch=1`)
       else if (['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role)) setShowMedicalServicePicker(true)
     }
@@ -167,7 +169,7 @@ export default function PlansPage() {
       </div>
       {typeFilter === 'medical_assist' && (
         <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: '#F0F8F4', color: '#426457', fontSize: 13 }}>
-          选择会员后核对就医服务产品、套餐剩余权益及已付款订单；套餐优先，确认实际启动后自动核销。下方保留历史方案。
+          选择会员后核对就医服务权益及已付款订单；年度会员专家约诊在有效期内不限次，记录服务过程，不核销次数。其他计次套餐按实际服务核销。下方保留历史方案。
         </div>
       )}
       {showMedicalServicePicker && <SelectPatientForAhModal title="发起就医协助服务 — 选择会员" actionLabel="核对会员权益" initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowMedicalServicePicker)} onSelected={patientId => { closePlanModal(setShowMedicalServicePicker); nav(`/patients/${patientId}?tab=membership&medicalLaunch=1`) }} />}
@@ -269,7 +271,7 @@ export default function PlansPage() {
               </table>}
           </div>
           {showCheckupModal   && <AnnualCheckupPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowCheckupModal)} onSaved={() => { closePlanModal(setShowCheckupModal); loadPlans(); toast('体检方案已创建') }} />}
-          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} reservedOrderId={reservedOrderId} reservedProductName={reservedProductName} giftId={giftId} onClose={() => { closePlanModal(setShowMedicalModal); if (reservedOrderId || giftId) nav(`/patients/${initialPatientId}?tab=membership`) }} onSaved={result => { closePlanModal(setShowMedicalModal); loadPlans(); toast(result?.warning || (giftId ? '已使用赠送权益发起就医协助' : reservedOrderId ? '原服务订单已进入就医协助流程' : '就医协助方案已创建')); if (reservedOrderId || giftId) nav(result?.warning && result?.planId ? `/plans/${result.planId}/modules` : `/patients/${initialPatientId}?tab=followups`) }} />}
+          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} reservedOrderId={reservedOrderId} reservedProductName={reservedProductName} giftId={giftId} giftServiceName={giftServiceName} annualExpert={annualExpert} onClose={() => { closePlanModal(setShowMedicalModal); if (reservedOrderId || giftId || annualExpert) nav(`/patients/${initialPatientId}?tab=membership`) }} onSaved={result => { closePlanModal(setShowMedicalModal); loadPlans(); toast(result?.warning || (annualExpert ? '已按年度会员不限次权益发起专家约诊' : giftId ? '已使用赠送权益发起就医协助' : reservedOrderId ? '原服务订单已进入就医协助流程' : '就医协助方案已创建')); if (reservedOrderId || giftId || annualExpert) nav(result?.warning && result?.planId ? `/plans/${result.planId}/modules` : `/patients/${initialPatientId}?tab=followups`) }} />}
           {showNutritionModal && <NutritionAIDraftModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowNutritionModal)} onSaved={plan => { closePlanModal(setShowNutritionModal); loadPlans(); toast('AI营养草稿已生成，请核对后推送'); nav(`/plans/${plan._id}/modules`) }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
@@ -464,7 +466,11 @@ const ORDER_TYPE_META = {
   exam: { category: '影像检查', itemType: 'specialExam' },
   func: { category: '功能医学检测', itemType: 'functionalTest' },
 }
-function orderTypeMeta(t) { return ORDER_TYPE_META[t] || ORDER_TYPE_META.exam }
+function normalizeOrderType(t) {
+  return ({ labTestOrder: 'lab', labTestPackage: 'lab', specialExam: 'exam', functionalTest: 'func' })[t] || t
+}
+function orderTypeMeta(t) { return ORDER_TYPE_META[normalizeOrderType(t)] || ORDER_TYPE_META.exam }
+const addonSelectionKey = addon => `${addon.id || addon._id || ''}|${addon.type || ''}|${addon.name || ''}`
 
 // getRequisitionItems 接口返回的 item.type 取值(labTestOrder/specialExam/functionalTest/labTestPackage)
 // 跟上面 admin 模板用的 lab/exam/func 键名不是同一套，单独映射
@@ -527,6 +533,7 @@ function templateToItems(tpl) {
     if (c.mealOrder)            items.push({ name: `进餐顺序：${c.mealOrder}`, category: '饮食干预' })
     if (c.allowedFoods)         items.push({ name: `推荐食物：${c.allowedFoods}`, category: '饮食干预' })
     if (c.forbiddenFoods)       items.push({ name: `禁忌食物：${c.forbiddenFoods}`, category: '饮食干预' })
+    if (c.notes)                items.push({ name: '备注', notes: c.notes, category: '营养干预' })
     if (c.nutritionSupplements) items.push({ name: `营养素补充：${c.nutritionSupplements}`, category: '营养干预' })
     if (c.exerciseSuggestion)   items.push({ name: `运动建议：${c.exerciseSuggestion}`, category: '运动干预' })
     return items
@@ -604,7 +611,7 @@ function templateToItems(tpl) {
 }
 
 // ── 就医协助方案：两步创建弹窗 ────────────────────────────────────────
-function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '', reservedOrderId = '', reservedProductName = '', giftId = '' }) {
+function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '', reservedOrderId = '', reservedProductName = '', giftId = '', giftServiceName = '', annualExpert = false }) {
   const canViewMedicalResources = usePermission()('medical_resources', 'view')
   const [step, setStep] = useState(1)
   const [templates, setTemplates] = useState([])
@@ -622,7 +629,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [form, setForm] = useState({
     name: '', templateName: '', assistanceType: '', hospital: '', campus: '', department: '', expert: '', clinicType: '', insuranceUse: '', insurerName: '', settlementMethod: 'pending',
     staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', escortDepartments: [{ department: '', expert: '', time: '' }], escortExams: [{ item: '', department: '', expert: '', time: '', precautions: '' }], escortTreatments: [{ item: '', department: '', time: '', medicalOrder: '', precautions: '', course: '' }], transport: '', tasks: '', hotel: '', notes: '',
-    preferredDateStart: '', preferredDateEnd: '', sourceMedicationId: '', medicationOptions: [], medicationItems: [{ sourceMedicationId: '', medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '' }], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '', agencyExams: [{ item: '', department: '', expert: '', notes: '' }],
+    preferredDateStart: '', preferredDateEnd: '', appointmentTargets: [{ hospital: '', campus: '', department: '', expert: '' }], sourceMedicationId: '', medicationOptions: [], medicationItems: [{ sourceMedicationId: '', medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '' }], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '', agencyExams: [{ item: '', department: '', expert: '', notes: '' }],
   })
   const set = (k, v) => {
     setForm(prev => ({ ...prev, [k]: v }))
@@ -746,6 +753,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       campus:    c.campus    || '',
       department:c.department|| '',
       expert:    c.expert    || '',
+      appointmentTargets: Array.isArray(c.appointmentTargets) && c.appointmentTargets.length ? c.appointmentTargets.map(item => ({ hospital: item.hospital || '', campus: item.campus || '', department: item.department || '', expert: item.expert || '' })) : [{ hospital: c.hospital || '', campus: c.campus || '', department: c.department || '', expert: c.expert || '' }],
       escortDepartments: Array.isArray(c.escortDepartments) && c.escortDepartments.length ? c.escortDepartments.map(item => ({ department: item.department || '', expert: item.expert || '', time: item.time || '' })) : [{ department: c.department || '', expert: c.expert || '', time: '' }],
       escortExams: Array.isArray(c.escortExams) && c.escortExams.length ? c.escortExams.map(item => ({ item: item.item || '', department: item.department || '', expert: item.expert || '', time: item.time || '', precautions: item.precautions || '' })) : [{ item: c.examItem || '', department: c.department || '', expert: c.expert || '', time: '', precautions: c.examPrecautions || '' }],
       escortTreatments: Array.isArray(c.escortTreatments) && c.escortTreatments.length ? c.escortTreatments.map(item => ({ item: item.item || '', department: item.department || '', time: item.time || '', medicalOrder: item.medicalOrder || '', precautions: item.precautions || '', course: item.course || '' })) : [{ item: c.treatmentItem || '', department: c.department || '', time: '', medicalOrder: c.medicalOrder || '', precautions: c.treatmentPrecautions || '', course: c.treatmentCourse || '' }],
@@ -808,7 +816,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     if (isMedicationProxy && form.institutionType === 'hospital' && !form.hospital.trim()) { setError('请填写配药医院'); return }
     if (isMedicationProxy && form.institutionType === 'online' && (!form.platformName.trim() || !form.purchasePath.trim())) { setError('请填写线上平台和购买路径'); return }
     if (isMedicationProxy && form.institutionType === 'pharmacy' && !form.pharmacyName.trim()) { setError('请填写线下药房'); return }
-    if (isExpertAppointment && (!form.hospital.trim() || !form.department.trim() || !form.preferredDateStart || !form.preferredDateEnd || form.preferredDateEnd < form.preferredDateStart)) { setError('请完整填写医院、科室和有效的期望日期区间'); return }
+    if (isExpertAppointment && (!form.appointmentTargets?.length || form.appointmentTargets.length > 12 || form.appointmentTargets.some(row => !row.hospital.trim() || !row.department.trim()) || !form.preferredDateStart || !form.preferredDateEnd || form.preferredDateEnd < form.preferredDateStart)) { setError('请逐项填写1至12个预约目标的医院、科室和有效的期望日期区间'); return }
     if (isExpertAppointment && (!form.clinicType || !form.insuranceUse)) { setError('请选择门诊类型和费用与保险方式'); return }
     if (isMedicalProxy && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.proxyGoal?.trim() || !form.communicationContent?.trim())) { setError('请完整填写医院、科室、专家、代诊目标和交流内容'); return }
     if (isMedicalProxy && !patientReportsLoaded) { setError('客户资料尚未加载完成，请稍后重试'); return }
@@ -829,7 +837,9 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       if (isMedicalProxy || isExpertAppointment || isMedicationProxy) {
         const medicationItems = isMedicationProxy ? form.medicationItems.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value || '').trim()]))) : []
         const firstMedication = medicationItems[0] || {}
-        await staffAPI.startStaffMedicalProxy(patientId, { reservedOrderId, giftId, hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, noMaterialsConfirmed: isMedicalProxy && !selectedReportIds.length && noMaterialsConfirmed, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, ...firstMedication, medicationItems, institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
+        const appointmentTargets = isExpertAppointment ? form.appointmentTargets.map(row => ({ hospital: row.hospital.trim(), campus: row.campus.trim(), department: row.department.trim(), expert: row.expert.trim() })) : []
+        const firstTarget = appointmentTargets[0]
+        await staffAPI.startStaffMedicalProxy(patientId, { reservedOrderId, giftId, hospital: firstTarget?.hospital || form.hospital.trim(), campus: firstTarget?.campus || form.campus.trim(), department: firstTarget?.department || form.department.trim(), expert: firstTarget?.expert || form.expert.trim(), appointmentTargets, clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, noMaterialsConfirmed: isMedicalProxy && !selectedReportIds.length && noMaterialsConfirmed, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, ...firstMedication, medicationItems, institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
         onSaved()
         return
       }
@@ -881,11 +891,12 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
 
       const created = await staffAPI.createPlan({
         reservedOrderId,
+        giftId,
         patientId, type: 'medical_assist', title: form.name,
         description: isAgencyService ? '' : description, year: Number(form.serviceDate.slice(0, 4)), items,
         content: { ...form, resourceReferences: selectedResourceIds.map(resourceId => ({ resourceId })), supervisorId: assignedPlanner._id, ...(isAgencyService ? { staffId: '', staffName: '', transport: '', hotel: '' } : {}), ...(isAgencyExamBooking ? { tasks: form.agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
       })
-      if (reservedOrderId) {
+      if (reservedOrderId || giftId) {
         try { await staffAPI.pushPlan(created.data._id) }
         catch (pushError) { onSaved({ planId: created.data._id, warning: `方案已保存，但启动未完成：${pushError.message}。请在方案页完成后推送。` }); return }
       }
@@ -901,16 +912,19 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     ? templates.filter(tpl => [tpl.name, tpl.content?.hospital, tpl.content?.campus, tpl.content?.department, tpl.content?.expert]
       .some(value => String(value || '').toLocaleLowerCase().includes(normalizedTemplateQuery)))
     : templates
-  const supportedMedicalTemplate = tpl => /医疗代诊|专家约诊|代配药|代取药|陪同检查|陪同治疗|陪同就医|就医陪同/.test(tpl.name || '')
-  const matchingTemplates = giftId ? visibleTemplates.filter(supportedMedicalTemplate) : reservedProductName
+  const supportedMedicalTemplate = tpl => /医务代办|医疗代诊|专家约诊|代配药|代取药|代配营养素|陪同检查|陪同治疗|陪同就医|就医陪同/.test(tpl.name || '')
+  const targetServiceName = annualExpert ? '专家约诊服务' : giftId ? giftServiceName : reservedProductName
+  const matchingTemplates = giftId && !giftServiceName ? visibleTemplates.filter(supportedMedicalTemplate) : targetServiceName
     ? visibleTemplates.filter(tpl => {
       const name = String(tpl.name || '')
-      if (reservedProductName === '就医协助服务') return supportedMedicalTemplate(tpl)
-      if (/代办/.test(reservedProductName)) return /代办/.test(name)
-      if (/陪同|陪诊/.test(reservedProductName)) return /陪同|陪诊/.test(name)
-      if (/代诊/.test(reservedProductName)) return /代诊/.test(name)
-      if (/约诊/.test(reservedProductName)) return /约诊/.test(name)
-      return name.includes(reservedProductName.replace(/服务$/, ''))
+      if (targetServiceName === '就医协助服务') return supportedMedicalTemplate(tpl)
+      if (/代办/.test(targetServiceName)) return /代办|代配药|代取药|代配营养素/.test(name)
+      if (/陪同检查|陪检/.test(targetServiceName)) return /陪同检查|陪检/.test(name)
+      if (/陪同治疗/.test(targetServiceName)) return /陪同治疗/.test(name)
+      if (/陪同|陪诊/.test(targetServiceName)) return /陪同就医|就医陪同|陪诊/.test(name)
+      if (/代诊/.test(targetServiceName)) return /代诊/.test(name)
+      if (/约诊/.test(targetServiceName)) return /约诊/.test(name)
+      return name.includes(targetServiceName.replace(/服务$/, ''))
     }) : visibleTemplates
   // 注意：作为函数调用而非 JSX 组件，避免每次 render 创建新组件导致输入框失焦
   const renderField = (label, fieldKey, rows, placeholder) => (
@@ -949,6 +963,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>没有匹配的方案模板</div>
           )}
           {reservedOrderId && <div style={{ marginBottom: 12, color: '#1E6B50', fontSize: 13 }}>本次服务：{reservedProductName} · 已关联现有服务订单；提交后沿用原订单。</div>}
+          {annualExpert && <div style={{ marginBottom: 12, color: '#1E6B50', fontSize: 13 }}>年度会员专家约诊服务期内不限次；提交后记录本次服务过程，不核销次数。</div>}
           {giftId && <div style={{ marginBottom: 12, color: '#1E6B50', fontSize: 13 }}>本次使用会员赠送权益；提交服务后记入该赠送记录，不生成付费订单。</div>}
           {matchingTemplates.map(tpl => {
             const c = tpl.content || {}
@@ -1057,10 +1072,10 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
 
           {/* 两栏布局 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {!isMedicationProxy && renderField('医院',     'hospital',   0, '医院名称')}
-            {!isMedicationProxy && renderField('院区',     'campus',     0, '院区名称（可选）')}
-            {!isMedicationProxy && !isMedicalEscort && renderField('科室',     'department', 0, '科室名称')}
-            {!isMedicationProxy && !isMedicalEscort && renderField(isExpertAppointment ? '期望专家或线索（选填）' : '专家', 'expert', 0, isExpertAppointment ? '不清楚姓名可留空，由健管预约时核实' : '专家姓名（可选）')}
+            {!isMedicationProxy && !isExpertAppointment && renderField('医院',     'hospital',   0, '医院名称')}
+            {!isMedicationProxy && !isExpertAppointment && renderField('院区',     'campus',     0, '院区名称（可选）')}
+            {!isMedicationProxy && !isMedicalEscort && !isExpertAppointment && renderField('科室',     'department', 0, '科室名称')}
+            {!isMedicationProxy && !isMedicalEscort && !isExpertAppointment && renderField('专家', 'expert', 0, '专家姓名（可选）')}
             {!isAgencyService && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">就医专员</label>
               <select
@@ -1144,6 +1159,16 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             </div>
             <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康顾问提交后，将自动生成健康规划师全程督办任务，并直接流转给健管专员预约专家。</div>
           </>}
+          {isExpertAppointment && <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
+            <strong>本次预约目标</strong>
+            {form.appointmentTargets.map((row, index) => <div key={index} style={{ padding: 10, background: '#fff', border: '1px solid #DCE8E1', borderRadius: 8, display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><strong>专家预约 {index + 1}</strong>{form.appointmentTargets.length > 1 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => set('appointmentTargets', form.appointmentTargets.filter((_, i) => i !== index))}>删除此项</button>}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                {[[ 'hospital', '医院 *', '医院名称' ], [ 'campus', '院区', '院区名称（可选）' ], [ 'department', '科室 *', '科室名称' ], [ 'expert', '期望专家或线索（选填）', '不清楚姓名可留空，由健管预约时核实' ]].map(([key, label, placeholder]) => <div key={key} className="form-group" style={{ marginBottom: 0 }}><label className="form-label">{label}</label><input className="form-input" value={row[key] || ''} placeholder={placeholder} onChange={e => set('appointmentTargets', form.appointmentTargets.map((item, i) => i === index ? { ...item, [key]: e.target.value } : item))} /></div>)}
+              </div>
+            </div>)}
+            <button type="button" className="btn btn-secondary" style={{ justifySelf: 'start' }} onClick={() => set('appointmentTargets', [...form.appointmentTargets, { hospital: '', campus: '', department: '', expert: '' }])} disabled={form.appointmentTargets.length >= 12}>＋ 增加专家预约</button>
+          </div>}
           {isExpertAppointment && <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">门诊类型 *</label><select className="form-input" value={form.clinicType} onChange={e => set('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="expert">专家门诊</option><option value="special">特需门诊</option><option value="international">国际门诊</option></select></div>
@@ -1186,7 +1211,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             <label className="form-label">{checkupOneStop ? '具体服务需求 *' : '方案说明'}</label>
             <textarea className="form-input" rows={3} placeholder={checkupOneStop ? '请填写服务地点、时间段、体检目标及具体需求' : '简要说明方案目标'} value={description} onChange={e => setDescription(e.target.value)} />
           </div>}
-          {isMedicalEscort && <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康规划师自动作为督办人。已选择就医专员时直接进入陪同执行；未选择时先由健康规划师安排人员。陪同结束并上传资料后，再由健管专员审核归档。此操作只创建陪同服务工单，不生成就医协助方案。</div>}
+          {isMedicalEscort && <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康规划师自动作为督办人。已选择就医专员时先由健管专员完成预约，再直接转给就医专员执行；未选择时先由健康规划师安排人员。陪同结束并上传资料后，再由健管专员审核归档。此操作只创建陪同服务工单，不生成就医协助方案。</div>}
 
         </div>
         <div className="modal-footer">
@@ -1239,7 +1264,7 @@ function NutritionAIDraftModal({ onClose, onSaved, initialPatientId = '', initia
         setAssessment(initialNutritionAssessment(user, previous))
         setGoal(previous?.goal || '')
         setPreviousAssessmentAt(previous?.recordedAt || '')
-        setPrefillError(prefillResult.prefillError ? '上次营养评估暂未加载；目前只带入客户档案。可关闭弹窗后重试。' : '')
+        setPrefillError(prefillResult.prefillError ? '最新检查记录及既往营养评估暂未加载；目前仅带入客户档案，请核实日期。可关闭弹窗后重试。' : '')
         setTemplates(templateResult.data || [])
       })
       .catch(err => { if (active) setError(err.message || '加载会员资料与模板失败') })
@@ -1603,17 +1628,11 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [packageDesc, setPackageDesc] = useState('')
   const [checkItems, setCheckItems] = useState([])   // { type, id, name }
   const [addons, setAddons] = useState([])            // { type, id, name, reason }
+  const [selectedAddonKeys, setSelectedAddonKeys] = useState(new Set())
   const [year, setYear] = useState(new Date().getFullYear())
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-
-  // 检查项目搜索
-  const [showItemSearch, setShowItemSearch] = useState(false)
-  const [itemQ, setItemQ] = useState('')
-  const [itemResults, setItemResults] = useState([])
-  const [itemSearching, setItemSearching] = useState(false)
-  const itemTimer = useRef(null)
 
   // 加项库搜索
   const [showAddonSearch, setShowAddonSearch] = useState(false)
@@ -1623,7 +1642,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const addonTimer = useRef(null)
 
   useEffect(() => {
-    staffAPI.getPlanTemplates('annual_checkup')
+    staffAPI.getPlanTemplates('annual_checkup', initialPatientId)
       .then(res => setTemplates(res.data || []))
       .catch(err => setTplError(err.message || '加载失败'))
       .finally(() => setLoadingTpls(false))
@@ -1636,24 +1655,9 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
     setPackageDesc(c.packageDesc || '')
     setCheckItems((c.checkItems || []).map(ci => ({ ...ci })))
     setAddons((c.addons || []).map(a => ({ ...a })))
+    setSelectedAddonKeys(new Set((c.addons || []).map(addonSelectionKey)))
     setStep(2)
     setError('')
-  }
-
-  // 检查项目搜索
-  const handleItemSearch = (q) => {
-    setItemQ(q)
-    clearTimeout(itemTimer.current)
-    if (!q.trim()) { setItemResults([]); return }
-    itemTimer.current = setTimeout(async () => {
-      setItemSearching(true)
-      try { const r = await staffAPI.getRequisitionItems(q); setItemResults(r.data || []) }
-      catch {} finally { setItemSearching(false) }
-    }, 300)
-  }
-  const addCheckItem = (item) => {
-    setCheckItems(prev => [...prev, { type: item.type, id: item._id, name: item.name }])
-    setItemQ(''); setItemResults([]); setShowItemSearch(false)
   }
 
   // 加项库搜索
@@ -1663,12 +1667,14 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
     if (!q.trim()) { setAddonResults([]); return }
     addonTimer.current = setTimeout(async () => {
       setAddonSearching(true)
-      try { const r = await staffAPI.getRequisitionItems(q); setAddonResults(r.data || []) }
+      try { const r = await staffAPI.searchPlanCatalogItems(q); setAddonResults(r.data || []) }
       catch {} finally { setAddonSearching(false) }
     }, 300)
   }
   const addAddon = (item) => {
-    setAddons(prev => [...prev, { type: item.type, id: item._id, name: item.name, reason: '' }])
+    const addon = { type: normalizeOrderType(item.type), id: item._id, name: item.name, reason: '' }
+    setAddons(prev => [...prev, addon])
+    setSelectedAddonKeys(prev => new Set([...prev, addonSelectionKey(addon)]))
     setAddonQ(''); setAddonResults([]); setShowAddonSearch(false)
   }
 
@@ -1677,16 +1683,29 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
     if (!packageName.trim()) { setError('请填写套餐名称'); return }
     setError(''); setSaving(true)
     try {
-      const items = checkItems.map(ci => ({
+      const baseItems = checkItems.map(ci => ({
         name: ci.name,
         category: orderTypeMeta(ci.type).category,
         itemId: ci.id || null,
         itemType: orderTypeMeta(ci.type).itemType,
+        itemGroup: 'base',
       }))
+      const baseNames = new Set(baseItems.map(item => item.name))
+      const addonItems = addons.filter(addon => selectedAddonKeys.has(addonSelectionKey(addon)) && !baseNames.has(addon.name))
+        .map(addon => ({
+          name: addon.name,
+          category: orderTypeMeta(addon.type).category,
+          itemId: addon.id || null,
+          itemType: orderTypeMeta(addon.type).itemType,
+          itemGroup: 'addon',
+          notes: addon.reason ? `检查意义：${addon.reason}` : '',
+        }))
+      const items = [...baseItems, ...addonItems]
       await staffAPI.createPlan({
         patientId, type: 'annual_checkup', title: packageName,
         description, year, items,
-        content: { packageName, packageDesc, checkItems, addons },
+        content: { packageName, packageDesc, checkItems, addons,
+          templateId: selectedTpl?._id || null, templateUpdatedAt: selectedTpl?.updatedAt || null },
       })
       onSaved()
     } catch (err) { setError(err.message) }
@@ -1694,9 +1713,11 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
   }
 
   // 通用标签样式
-  const typeTag = (t) => t === 'lab'
+  const typeTag = (t) => normalizeOrderType(t) === 'lab'
     ? { label: '检验', color: '#0077B6', bg: '#E8F4FD' }
-    : { label: '检查', color: '#1E6B50', bg: '#E8F5EF' }
+    : normalizeOrderType(t) === 'func'
+      ? { label: '功能医学', color: '#8B5CF6', bg: '#F3EEFF' }
+      : { label: '检查', color: '#1E6B50', bg: '#E8F5EF' }
 
   // 内联搜索下拉
   const SearchDropdown = ({ results, searching, q, onSelect }) => (
@@ -1813,7 +1834,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
           {/* 包含检查项目 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>包含检查项目</span>
+              <span>标准套餐项目（由体检中心确定，不可删减）</span>
               <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>共 {checkItems.length} 项</span>
             </label>
             <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, background: '#faf8f5', overflow: 'hidden' }}>
@@ -1823,48 +1844,18 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
                 return (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderBottom: '1px solid #F0EDE7', fontSize: 13 }}>
                     <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>{tag.label}</span>
-                    <input
-                      value={ci.name}
-                      onChange={e => setCheckItems(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
-                      style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
-                    />
-                    <button type="button" onClick={() => setCheckItems(prev => prev.filter((_, i) => i !== idx))}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 16, padding: '0 2px' }}
-                      onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
-                      onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
-                    >×</button>
+                    <span style={{ flex: 1 }}>{ci.name}</span>
                   </div>
                 )
               })}
-              {/* 添加区 */}
-              <div style={{ padding: '8px 12px', background: '#fff', borderTop: checkItems.length > 0 ? '1px solid #F0EDE7' : 'none' }}>
-                {!showItemSearch ? (
-                  <button type="button" onClick={() => setShowItemSearch(true)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1E6B50', fontSize: 12, padding: 0, fontWeight: 500 }}>
-                    ＋ 从检验/检查库添加
-                  </button>
-                ) : (
-                  <div>
-                    <div style={{ position: 'relative' }}>
-                      <input className="form-input" autoFocus value={itemQ} onChange={e => handleItemSearch(e.target.value)}
-                        placeholder="搜索检验/检查项目名称..." style={{ fontSize: 12, paddingRight: 44 }} />
-                      <button type="button" onClick={() => { setShowItemSearch(false); setItemQ(''); setItemResults([]) }}
-                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 12 }}>
-                        取消
-                      </button>
-                    </div>
-                    <SearchDropdown results={itemResults} searching={itemSearching} q={itemQ} onSelect={addCheckItem} />
-                  </div>
-                )}
-              </div>
             </div>
           </div>
 
-          {/* 可选加项库 */}
+          {/* 本次从套餐加项包中选择 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>可选加项库</span>
-              <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>共 {addons.length} 项</span>
+              <span>本次从套餐加项包中选择</span>
+              <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>已选 {addons.filter(a => selectedAddonKeys.has(addonSelectionKey(a))).length} / {addons.length} 项</span>
             </label>
             <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, background: '#faf8f5', overflow: 'hidden' }}>
               {addons.length === 0 && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>暂无加项</div>}
@@ -1873,17 +1864,16 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
                 return (
                   <div key={idx} style={{ padding: '8px 12px', borderBottom: '1px solid #F0EDE7' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                      <input type="checkbox" checked={selectedAddonKeys.has(addonSelectionKey(a))}
+                        aria-label={`选择加项${a.name}`}
+                        onChange={e => setSelectedAddonKeys(prev => {
+                          const next = new Set(prev)
+                          if (e.target.checked) next.add(addonSelectionKey(a))
+                          else next.delete(addonSelectionKey(a))
+                          return next
+                        })} />
                       <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>{tag.label}</span>
-                      <input
-                        value={a.name}
-                        onChange={e => setAddons(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
-                        style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
-                      />
-                      <button type="button" onClick={() => setAddons(prev => prev.filter((_, i) => i !== idx))}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 16, padding: '0 2px' }}
-                        onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
-                        onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
-                      >×</button>
+                      <span style={{ flex: 1 }}>{a.name}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, paddingLeft: 42 }}>
                       <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>推荐原因：</span>
@@ -1946,13 +1936,14 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
 }
 
 // 自由文本新增一行项目
-function AddFreeItem({ onAdd }) {
+function AddFreeItem({ onAdd, checkup = false }) {
   const [open, setOpen] = useState(false)
   const [val, setVal] = useState('')
+  const [category, setCategory] = useState('')
   const submit = () => {
     const name = val.trim()
-    if (!name) return
-    onAdd(name)
+    if (!name || (checkup && !category)) return
+    onAdd(name, category)
     setVal('')
     setOpen(false)
   }
@@ -1969,12 +1960,25 @@ function AddFreeItem({ onAdd }) {
       <input
         autoFocus
         value={val}
-        onChange={e => setVal(e.target.value)}
+        onChange={e => {
+          setVal(e.target.value)
+          if (checkup && !category && /(?:超声|彩超|B超)\s*$/i.test(e.target.value.trim())) setCategory('影像检查')
+        }}
         onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false) }}
         placeholder="输入项目内容后按 Enter 添加"
         style={{ flex: 1, fontSize: 12, padding: '4px 8px', border: '1px solid #E0D9CE', borderRadius: 6, outline: 'none' }}
       />
-      <button type="button" onClick={submit}
+      {checkup && <select value={category} onChange={e => setCategory(e.target.value)}
+        aria-label="项目分类" title="项目分类"
+        style={{ fontSize: 12, padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff' }}>
+        <option value="">选择分类</option>
+        <option value="检验检查">检验检查</option>
+        <option value="影像检查">影像检查</option>
+        <option value="功能医学检测">功能医学检测</option>
+        <option value="体格检查">体格检查</option>
+        <option value="其他">其他</option>
+      </select>}
+      <button type="button" onClick={submit} disabled={checkup && !category}
         style={{ fontSize: 12, padding: '4px 10px', background: '#1E6B50', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
         添加
       </button>
@@ -2087,7 +2091,7 @@ function NewPlanModal({ onClose, onSaved, type }) {
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
       try {
-        const r = await staffAPI.getRequisitionItems(q)
+        const r = await staffAPI.searchPlanCatalogItems(q)
         setSearchResults(r.data || [])
       } catch {}
       finally { setSearching(false) }
@@ -2277,7 +2281,11 @@ function NewPlanModal({ onClose, onSaved, type }) {
                   {!showSearch ? (
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                       {/* 所有类型都支持自由文本新增 */}
-                      <AddFreeItem onAdd={name => setItems(prev => [...prev, { name, category: type === 'annual_checkup' ? '检验检查' : '方案项目' }])} />
+                      <AddFreeItem checkup={type === 'annual_checkup'} onAdd={(name, category) => setItems(prev => [...prev, {
+                        name,
+                        category: type === 'annual_checkup' ? category : '方案项目',
+                        itemType: type === 'annual_checkup' ? ({ '检验检查': 'labTest', '影像检查': 'specialExam', '功能医学检测': 'functionalTest' }[category] || '') : '',
+                      }])} />
                       {/* 年度体检额外支持从检验/检查库搜索 */}
                       {type === 'annual_checkup' && (
                         <button type="button" onClick={() => setShowSearch(true)}

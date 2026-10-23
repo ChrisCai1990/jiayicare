@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../services/api';
 import MembershipBenefits from '../../components/MembershipBenefits';
 
-const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
+const POINTS_SOURCE_LABEL = { checkin: '记录', consumption: '消费', redeem: '兑换', adjust: '调整' };
 
 const FUND_TYPE_LABEL  = { enterprise: '奖励基金', promotion: '奖励基金', other: '奖励基金' };
 const FUND_SOURCE_LABEL = { enterprise: '奖励基金', promotion: '自有基金', other: '自有基金', vitality: '活力基金' };
@@ -377,7 +377,7 @@ export default function BenefitsScreen({ navigation, route }) {
                   <Text style={{fontSize:12,color:colors.textSecondary,lineHeight:20}}>购买积分 {pointsDetail.reward} 分，距兑换奖励基金还差 {pointsDetail.exchangeRate - pointsDetail.reward} 分。现金实付每满 ¥1 得 1 分。</Text>
                   {!!pointsDetail.legacy && <Text style={{fontSize:12,color:colors.textSecondary}}>历史积分 {pointsDetail.legacy} 分，兑换后归奖励基金。</Text>}
                   {pointsLogs.length === 0 ? (
-                    <Text style={{ fontSize: 12, color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.md }}>暂无积分记录，打卡或消费即可获得积分</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.md }}>暂无积分记录，记录或消费即可获得积分</Text>
                   ) : (
                     pointsLogs.slice(0, 20).map(log => (
                       <View key={log._id} style={styles.pointsLogRow}>

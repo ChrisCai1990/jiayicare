@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, Input, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { reportsAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import useArchiveSubject from '../../../hooks/useArchiveSubject';
 
 // 对齐 app/src/screens/records/MedicalReportsScreen.js
 // 小程序场景适配：原件通过普通鉴权请求读取二进制，写入带正确后缀的本地文件后预览，
@@ -20,7 +21,7 @@ const CATEGORY_META = {
 const ITEM_STATUS_COLOR = { normal: colors.success, abnormal: colors.danger, attention: colors.warning, unknown: colors.textMuted };
 const ITEM_STATUS_LABEL = { normal: '正常', abnormal: '异常', attention: '关注', unknown: '未知' };
 
-async function openOriginalFile(report) {
+export async function openOriginalFile(report) {
   const fileCount = report.fileUrls?.length || (report.fileUrl ? 1 : 0);
   if (fileCount) {
     const isImage = report.mimeType?.startsWith('image/');
@@ -169,21 +170,26 @@ function ReportCard({ report }) {
 
 export default function MedicalReportsPage() {
   const { statusBarHeight } = useNavBar();
+  const archive = useArchiveSubject();
   const [years, setYears] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selYear, setSelYear] = useState(null);
   const [searchKw, setSearchKw] = useState('');
+  const requestId = useRef(0);
 
   const load = useCallback(async () => {
+    const id = ++requestId.current;
     setLoading(true);
+    setYears([]);
     try {
-      const res = await reportsAPI.byCategory();
+      const res = await reportsAPI.byCategory(archive.subject?.id || '');
+      if (id !== requestId.current) return;
       setYears(res.data || []);
       if (res.data?.length > 0) setSelYear(res.data[0].year);
-    } catch {} finally { setLoading(false); }
-  }, []);
+    } catch {} finally { if (id === requestId.current) setLoading(false); }
+  }, [archive.subject?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (!archive.loading && !archive.error) load(); }, [archive.loading, archive.error, load]);
 
   const currentYear = years.find((y) => y.year === selYear);
   const kw = searchKw.trim();
@@ -205,6 +211,8 @@ export default function MedicalReportsPage() {
         <View style={{ width: '28px' }} />
       </View>
 
+      <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', margin: `${spacing.sm}px ${spacing.lg}px` }}>所属档案：{archive.subject?.name || archive.user?.name || '本人'}</Text>
+      {!!archive.error && <Text onClick={archive.refresh} style={{ color: colors.danger, margin: `${spacing.sm}px ${spacing.lg}px` }}>{archive.error} · 点击重试</Text>}
       {years.length > 0 && (
         <View style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: `${spacing.sm}px ${spacing.lg}px ${spacing.xs}px`, padding: '0 12px', height: '36px', borderRadius: `${radius.full}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxSizing: 'border-box' }}>
           <Icon name="🔍" size={13} color={colors.textMuted} />
@@ -213,7 +221,7 @@ export default function MedicalReportsPage() {
         </View>
       )}
 
-      {loading ? (
+      {archive.error ? null : loading || archive.loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, textAlign: 'center', display: 'block', marginTop: '60px' }}>加载中...</Text>
       ) : years.length === 0 ? (
         <View style={{ textAlign: 'center', padding: `${spacing.xl}px` }}>

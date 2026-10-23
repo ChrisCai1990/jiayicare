@@ -23,26 +23,59 @@ const denied = () => Object.assign(new Error('未建立有效的双向家庭关�
 async function loadOverview(actor, memberId, models) {
   const User = models?.User || require('../models/User');
   const Order = models?.Order || require('../models/Order');
+  const PushRecord = models?.PushRecord || require('../models/PushRecord');
   const scope = {tenantId: actor.tenantId || null, isDeleted: {$ne: true}};
   const owner = await User.findOne({_id: actor._id, ...scope}).select('familyLinks').lean();
   const link = owner?.familyLinks?.find(x => String(x.linkedUser) === String(memberId));
-  if (!link || String(actor._id) === String(memberId)) throw denied();
-  const member = await User.findOne({_id: memberId, ...scope}).select('name familyLinks').lean();
-  if (!member?.familyLinks?.some(x => String(x.linkedUser) === String(actor._id))) throw denied();
+  if (String(actor._id) === String(memberId)) throw denied();
+  const member = await User.findOne({_id: memberId, ...scope}).select('name familyLinks patientCategory birthDate').lean();
+  let relation = link?.relation || '家庭成员';
+  if (member?.patientCategory === 'child') {
+    const guardianLink = await (models?.ChildGuardianLink || require('../models/ChildGuardianLink'))
+      .findOne({ guardian: actor._id, child: memberId, status: 'active' }).lean();
+    if (!guardianLink || !require('./childAgeStage').childAgeStage(member.birthDate)) throw denied();
+    relation = guardianLink.relation || '孩子';
+  } else if (!link || !member?.familyLinks?.some(x => String(x.linkedUser) === String(actor._id))) throw denied();
   const filter = activeFilter(member._id, actor.tenantId);
-  const [activeCount, latest, appointments] = await Promise.all([
+  const [activeCount, latest, appointments, unpaidOrders, pushedProducts] = await Promise.all([
     Order.countDocuments(filter),
     Order.findOne(filter).select('serviceName status tradeStatus fulfillmentStatus').sort({createdAt: -1, _id: -1}).lean(),
     Order.find({...filter, $or: [{scheduledAt: {$type: 'date'}}, {desiredServiceDate: {$type: 'date'}}]})
       .select('serviceName status tradeStatus fulfillmentStatus scheduledAt desiredServiceDate')
       .sort({createdAt: -1, _id: -1}).limit(5).lean(),
+    Order.find({user: member._id, tenantId: actor.tenantId || null, status: 'pending',
+      tradeStatus: 'awaiting_payment', paymentStatus: {$in: ['pending', 'unpaid']},
+      $or: [{payerUser: null}, {payerUser: member._id}]})
+      .select('user serviceId serviceName servicePrice status tradeStatus paymentStatus paymentExpectedAmount payerUser checkoutGroupId couponId couponDiscount healthFundAmount enterpriseSharedFundAmount pushRecordId createdAt')
+      .sort({createdAt: -1}).limit(20).lean(),
+    PushRecord.find({patientId: member._id, tenantId: actor.tenantId || null, type: 'product'})
+      .select('products productId title price createdAt').sort({createdAt: -1}).limit(15).lean(),
   ]);
+  const {canClaimFamilyPayment} = require('./familyProxyPayment');
+  const pendingPayments = unpaidOrders.map(order => {
+    const reason = canClaimFamilyPayment(order, member._id, actor._id);
+    return {id: order._id, serviceName: order.serviceName, amount: order.paymentExpectedAmount,
+      pushRecordId: order.pushRecordId || null, payable: !reason, unavailableReason: reason};
+  });
+  const purchasedPushOrders = pushedProducts.length ? await Order.find({user: member._id,
+    pushRecordId: {$in: pushedProducts.map(record => record._id)}, status: {$ne: 'cancelled'},
+    tradeStatus: {$nin: ['closed', 'refunded']}}).select('pushRecordId serviceId').lean() : [];
+  const pendingPushProducts = new Set(purchasedPushOrders.filter(order => order.pushRecordId)
+    .map(order => `${order.pushRecordId}:${order.serviceId}`));
+  const recommendations = pushedProducts.flatMap(record => {
+    const products = record.products?.length ? record.products
+      : record.productId ? [{productId: record.productId, name: record.title, price: record.price}] : [];
+    return products.filter(item => item.productId && !pendingPushProducts.has(`${record._id}:${item.productId}`))
+      .map(item => ({pushRecordId: record._id, productId: item.productId,
+        name: item.name || '推荐服务', quotedPrice: item.price}));
+  }).slice(0, 20);
   return {
-    member: {_id: member._id, name: member.name || '家庭成员', relation: link.relation || '家庭成员'},
+    member: {_id: member._id, name: member.name || '家庭成员', relation},
     service: {activeCount, latestStatus: latest ? statusLabel(latest) : '', latestServiceName: latest?.serviceName || ''},
     appointments: appointments.map(row => ({serviceName: row.serviceName || '服务安排', status: statusLabel(row),
       scheduledAt: row.scheduledAt || null, desiredServiceDate: row.desiredServiceDate || null,
       dateLabel: row.scheduledAt ? '已安排' : '期望日期（待确认）'})),
+    pendingPayments, recommendations,
   };
 }
 module.exports = {loadOverview, activeFilter, statusLabel};

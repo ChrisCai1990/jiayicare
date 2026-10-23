@@ -1,3 +1,5 @@
+import { ensureAiDataConsent, manageAiDataConsent } from '../../utils/aiDataConsent';
+import MedicalReferences from '../../components/MedicalReferences';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Input, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
@@ -5,6 +7,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, ttsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
+import { storedArchiveId } from '../../hooks/useArchiveSubject';
 import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
@@ -77,16 +80,21 @@ const PUSH_TYPE_LABEL = {
   supplement: '营养推荐', product: '产品推送', notice: '通知',
 };
 
-function normalizePushRecord(pr) {
+function normalizePushRecord(pr, beneficiaryUserId = '') {
+  const pushContent = pr.type === 'plan'
+    ? String(pr.content || '').replace(/请前往["“]?健康方案["”]?查看。?/, '点击通知即可查看完整方案。')
+    : pr.content;
   return {
     _id: pr._id,
     isPushRecord: true,
     type: pr.type,
     sender: pr.staffId?.name || '健康管理团队',
     title: PUSH_TYPE_LABEL[pr.type] || '推送通知',
-    content: pr.title + (pr.content ? `\n${pr.content}` : ''),
+    content: `${beneficiaryUserId ? '家庭成员服务推荐 · ' : ''}${pr.title || ''}${pushContent ? `\n${pushContent}` : ''}`,
     coverUrl: pr.coverUrl || '',
-    unread: !pr.readAt,
+    // Reading a family recommendation must not change the recipient's unread state.
+    unread: !beneficiaryUserId && !pr.readAt,
+    beneficiaryUserId,
     createdAt: pr.createdAt,
     price: pr.price || null,
     productName: pr.title || '',
@@ -94,6 +102,9 @@ function normalizePushRecord(pr) {
     products: pr.products || [],
     fundProduct: pr.fundProduct || null,
     questionnaireId: pr.questionnaireId?._id || pr.questionnaireId || null,
+    planId: pr.planId?._id || pr.planId || null,
+    sourceAnnualPlanId: pr.sourceAnnualPlanId?._id || pr.sourceAnnualPlanId || null,
+    planYear: pr.type === 'plan' ? Number(String(pr.title || '').match(/^(\d{4})年度/)?.[1]) || null : null,
   };
 }
 
@@ -111,7 +122,7 @@ function fmtMsgTime(t) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export default function MessagesPage({ embedded = false, refreshKey = 0, assistantConfig = {} }) {
+export default function MessagesPage({ embedded = false, active = true, refreshKey = 0, assistantConfig = {} }) {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   // Older production users can have careTeam saved as null/object. Keep render
@@ -163,18 +174,21 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     const requestId = ++listRequestRef.current;
     listLoadingRef.current = true;
     try {
+      const beneficiaryUserId = storedArchiveId(user?._id);
+      setMessages(previous => previous.filter(message => !message.isPushRecord
+        || (message.beneficiaryUserId || '') === beneficiaryUserId));
       const publish = (promise, push) => promise.then(result => {
         if (requestId === listRequestRef.current && result?.success && Array.isArray(result.data)) {
           setMessages(previous => [
             ...previous.filter(message => !!message.isPushRecord !== push),
-            ...(push ? result.data.map(normalizePushRecord) : result.data),
+            ...(push ? result.data.map(record => normalizePushRecord(record, beneficiaryUserId)) : result.data),
           ].sort((a,b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
           setLoading(false);
         }
         return result;
       });
       const [msgRes, pushRes, pendingRes] = await Promise.allSettled([
-        publish(messagesAPI.list(), false), publish(pushRecordsAPI.list(), true), questionnaireAPI.pending(),
+        publish(messagesAPI.list(), false), publish(pushRecordsAPI.list(beneficiaryUserId), true), questionnaireAPI.pending(),
       ]);
       if (requestId !== listRequestRef.current) return;
       // Each source replaces only its own snapshot. A failed questionnaire
@@ -185,7 +199,8 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
       setLoadError(failed.length ? `${failed.join('、')}暂未完整加载，点击重试` : '');
       setMessages(previous => {
         const msgData = ok(msgRes) ? msgRes.value.data : previous.filter(m => !m.isPushRecord);
-        const pushData = ok(pushRes) ? pushRes.value.data.map(normalizePushRecord) : previous.filter(m => m.isPushRecord);
+        const pushData = ok(pushRes) ? pushRes.value.data.map(record => normalizePushRecord(record, beneficiaryUserId))
+          : previous.filter(m => m.isPushRecord && (m.beneficiaryUserId || '') === beneficiaryUserId);
         return [...msgData, ...pushData].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       });
       if (ok(pendingRes)) {
@@ -203,9 +218,10 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
         setLoading(false);
       }
     }
-  }, []);
+  }, [user?._id]);
 
   useDidShow(() => {
+    if (embedded) return;
     setPageVisible(true);
     openRequestedConversation();
     loadMessages();
@@ -217,13 +233,33 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     }, 5000);
   });
   useDidHide(() => {
+    if (embedded) return;
     setPageVisible(false);
     listRequestRef.current += 1;
     listLoadingRef.current = false;
     clearInterval(listPollRef.current); listPollRef.current = null;
     if (!paymentActivityRef.current) { setShowNotif(false); setDetailMsg(null); }
   });
-  useEffect(() => () => { clearInterval(listPollRef.current); listRequestRef.current += 1; }, []);
+  // The tab page owns visibility in embedded mode. A child component can mount
+  // after the tab's onShow (for example after a family link is removed), and
+  // nested page lifecycle callbacks may otherwise cancel its only request.
+  useEffect(() => {
+    if (embedded && !active) {
+      setPageVisible(false);
+      return undefined;
+    }
+    setPageVisible(true);
+    loadMessages();
+    clearInterval(listPollRef.current);
+    listPollRef.current = setInterval(() => {
+      if (!listLoadingRef.current) loadMessages();
+    }, 5000);
+    return () => {
+      clearInterval(listPollRef.current); listPollRef.current = null;
+      listRequestRef.current += 1;
+      listLoadingRef.current = false;
+    };
+  }, [loadMessages, embedded, active]);
   useEffect(() => { if (refreshKey) loadMessages(); }, [refreshKey, loadMessages]);
 
   // 系统消息有时也会携带 conversationId。它仍然属于用户通知，不能因为
@@ -237,6 +273,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   ));
   const careMessages = notifMessages.filter((m) => m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`));
   const systemMessages = notifMessages.filter((m) => m.type !== 'questionnaire' && !careMessages.includes(m));
+  const familyProductCount = systemMessages.filter((m) => m.type === 'product' && m.beneficiaryUserId).length;
 
   const roleConvs = ROLE_DEFS.map((r) => {
     const msgs = messages.filter((m) => !NOTIF_TYPES.has(m.type) && (m.conversationId
@@ -289,7 +326,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   };
 
   const markReadAndOpenDetail = async (msg) => {
-    setDetailMsg(msg);
+    if (msg.type !== 'plan') setDetailMsg(msg);
     if (msg.unread) {
       listRequestRef.current += 1;
       setMessages((prev) => prev.map((m) => (m._id === msg._id ? { ...m, unread: false } : m)));
@@ -297,6 +334,14 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
         await withUnreadBadgeUpdate(() => msg.isPushRecord ? pushRecordsAPI.markRead(msg._id) : messagesAPI.markRead(msg._id));
       } catch { /* Refresh below restores the server state if marking read failed. */ }
       finally { loadMessages(); }
+    }
+    if (msg.type === 'plan') {
+      const planId = msg.planId || msg.sourceAnnualPlanId || '';
+      const query = `direct=1&planId=${encodeURIComponent(String(planId))}&year=${encodeURIComponent(String(msg.planYear || ''))}`;
+      Taro.navigateTo({ url: `/pages/services/plans/index?${query}` }).catch(() => {
+        setDetailMsg(msg);
+        Taro.showToast({ title: '方案暂时无法打开，请稍后重试', icon: 'none' });
+      });
     }
   };
 
@@ -369,6 +414,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
               <View key={item.label} onClick={() => openNotifications(item.tab)} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, height: '92px', overflow: 'hidden', padding: '11px 5px 9px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
                 <View style={{ width: '34px', height: '34px', borderRadius: '11px', margin: '0 auto 7px', backgroundColor: `${item.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={item.icon} size={16} color={item.color} /></View>
                 <Text style={{ fontSize: '12px', fontWeight: 650, color: colors.textPrimary }}>{item.label}</Text>
+                {item.tab === '系统通知' && familyProductCount > 0 && <Text style={{ display: 'block', fontSize: '10px', color: colors.primary }}>家人推荐 {familyProductCount}</Text>}
                 {item.count > 0 && <View style={{ position: 'absolute', top: '7px', right: '12px', minWidth: '17px', height: '17px', borderRadius: '9px', padding: '0 3px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontSize: '9px', fontWeight: 700 }}>{item.count > 99 ? '99+' : item.count}</Text></View>}
               </View>
             ))}
@@ -498,6 +544,7 @@ function MessageDetailModal({ msg, onClose, paymentActivityRef }) {
 const RENEWAL_PAYMENT_METHODS = [{ key: 'wechat', label: '微信支付' }];
 
 function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false } }) {
+  const familyPayment = !!msg.beneficiaryUserId;
   const { user, updateUser } = useAuth();
   const productList = (msg.products && msg.products.length > 0)
     ? msg.products
@@ -522,6 +569,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
   const [couponId, setCouponId] = useState(null);
 
   useEffect(() => {
+    if (familyPayment) return;
     Promise.all([servicesAPI.coupons(), userAPI.getMe()]).then(([couponRes, userRes]) => {
       if (couponRes.success) setCoupons(couponRes.data || []);
       if (userRes.success) { setCheckoutUser(userRes.data); updateUser(userRes.data); }
@@ -542,6 +590,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((total - couponDiscount) * 100) / 100);
   useEffect(() => {
+    if (familyPayment) { setSharedQuote(0); return; }
     if (!checkedIds.length) { setSharedQuote(0); return; }
     let live = true;
     setSharedQuote(0);
@@ -551,8 +600,8 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
   const fundMaximum = checkedItems.length === 1
     ? (checkedItems[0].fundProduct ? maxSingleFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems[0].fundProduct) : 0)
     : maxGroupFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems);
-  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
-  const sharedApplied = useSharedFund ? sharedQuote : 0;
+  const fundApplied = !familyPayment && useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
+  const sharedApplied = !familyPayment && useSharedFund ? sharedQuote : 0;
   const finalPrice = checkoutQuote?.finalPrice ?? Math.max(0, Math.round((priceAfterCoupon - fundApplied - sharedApplied) * 100) / 100);
 
   const handlePay = async () => {
@@ -562,7 +611,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     paymentActivityRef.current = true;
     setPaying(true); setPayError('');
     try {
-      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, useEnterpriseSharedFund: useSharedFund, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
+      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, beneficiaryUserId: msg.beneficiaryUserId || '', useHealthFund: fundApplied, useEnterpriseSharedFund: !familyPayment && useSharedFund, couponId: familyPayment ? null : couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
       if (result.code === 'CHECKOUT_QUOTE_CHANGED') { setCheckoutQuote(result.summary); throw new Error(result.message); }
       if (!result.success) throw new Error(result.message || '下单失败，请稍后重试');
       if (result.summary) setCheckoutQuote(result.summary);
@@ -606,7 +655,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
       <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
-          <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>为您推荐以下产品</Text>
+          <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{familyPayment ? '为家庭成员推荐以下产品' : '为您推荐以下产品'}</Text>
           {productList.length > 1 && <Text onClick={() => {
             if (payingRef.current) return;
             setCheckoutQuote(null);
@@ -641,7 +690,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
           })}
         </ScrollView>
 
-        {(
+        {!familyPayment && (
           <View style={{ marginBottom: `${spacing.sm}px` }}>
             <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>抵用券</Text>
             {coupons.length === 0 && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>当前账户暂无可用抵用券</Text>}
@@ -660,7 +709,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
           </View>
         )}
 
-        {fundBalance > 0 && fundMaximum > 0 && (
+        {!familyPayment && fundBalance > 0 && fundMaximum > 0 && (
           <View style={{ marginBottom: `${spacing.sm}px` }}>
             <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary }}>健康基金抵扣（余额¥{fundBalance.toFixed(2)}）</Text>
@@ -679,7 +728,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
           </View>
         )}
 
-        {sharedQuote > 0 && <View onClick={() => { if (payingRef.current) return; setCheckoutQuote(null); const next = !useSharedFund; setUseSharedFund(next); if (next) setUseFund(false); }} style={{ padding: '10px 12px', marginBottom: `${spacing.sm}px`, border: `1px solid ${useSharedFund ? colors.primary : colors.border}`, borderRadius: `${radius.md}px` }}>
+        {!familyPayment && sharedQuote > 0 && <View onClick={() => { if (payingRef.current) return; setCheckoutQuote(null); const next = !useSharedFund; setUseSharedFund(next); if (next) setUseFund(false); }} style={{ padding: '10px 12px', marginBottom: `${spacing.sm}px`, border: `1px solid ${useSharedFund ? colors.primary : colors.border}`, borderRadius: `${radius.md}px` }}>
           <Text style={{ fontSize: '12px', color: colors.textPrimary }}>企业共享基金可抵 ¥{sharedQuote.toFixed(2)} · {useSharedFund ? '已启用' : '点击使用'}（最高 50%）</Text>
         </View>}
 
@@ -724,6 +773,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [transcribingId, setTranscribingId] = useState('');
   const [humanActive, setHumanActive] = useState(false);
   const [threadError, setThreadError] = useState('');
   const [sendError, setSendError] = useState('');
@@ -834,9 +884,10 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     setSendError('');
     setInput('');
     try {
-      let extra = {};
+      const allowAI = meta.aiEnabled && !humanActive ? await ensureAiDataConsent('assistant', { cancelText: '不用AI' }) : false;
+      let extra = { suppressAI: !allowAI };
       if (foodImages.length) {
-        extra = { images: foodImages.map(({ data, mimeType }) => ({ data, mimeType })) };
+        extra = { ...extra, images: foodImages.map(({ data, mimeType }) => ({ data, mimeType })) };
       }
       const res = await messagesAPI.send(role, text || '图片记录', extra);
       if (!res?.success) throw new Error(res?.message || '消息未发送成功');
@@ -877,6 +928,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     try {
       const base64 = Taro.getFileSystemManager().readFileSync(tempFilePath, 'base64');
       const res = await messagesAPI.send(role, '', {
+        suppressAI: true,
         audio: { data: `data:audio/mpeg;base64,${base64}`, mimeType: 'audio/mpeg', duration: Math.max(1, Math.ceil(duration / 1000)) },
       });
       if (!res?.success) throw new Error(res?.message || '语音发送失败');
@@ -982,6 +1034,19 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     player.play();
   };
 
+  const transcribeVoice = async (message) => {
+    if (transcribingId || message.type !== 'user') return;
+    setTranscribingId(message._id);
+    try {
+      if (!await ensureAiDataConsent('speech')) return;
+      const decision = await Taro.showModal({ title: '转写这条录音', content: '仅将这条录音交给已说明的阿里云语音服务转成文字；结果仅供查看，不自动用于 AI 回复。', confirmText: '转文字' });
+      if (!decision.confirm) return;
+      const result = await messagesAPI.transcribe(message._id, 'voice-text-20261005');
+      if (result.data?.audioTranscript) { pollRef.current?.invalidate(); setMsgs(rows => rows.map(row => row._id === message._id ? { ...row, ...result.data } : row)); }
+    } catch (error) { Taro.showToast({ title: error.message || '转文字未完成', icon: 'none' }); }
+    finally { setTranscribingId(''); }
+  };
+
   const speakText = async (message) => {
     const messageId = `tts-${message._id}`;
     if (playingMessageId === messageId) { stopPlayback(); return; }
@@ -991,6 +1056,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     stopPlayback();
     setVoiceLoadingId(messageId);
     try {
+      if (!await ensureAiDataConsent('speech')) { setVoiceLoadingId(''); return; }
       const res = await ttsAPI.synthesize(text, 'message');
       if (!res?.url) throw new Error('未生成语音');
       playUrl(messageId, res.url);
@@ -1025,11 +1091,12 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
         <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ {closeLabel}</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{member?.name ? `${member.name} · ${meta.label}` : meta.label}</Text>
-          <Text style={{ fontSize: '11px', color: !meta.aiEnabled || humanActive ? '#D97706' : colors.success }}>● {!meta.aiEnabled ? '人工服务' : humanActive ? '人工服务中' : 'AI在线'}</Text>
+          <Text style={{ fontSize: '11px', color: !meta.aiEnabled || humanActive ? '#D97706' : colors.success }}>● {!meta.aiEnabled ? '人工服务' : humanActive ? '人工服务中' : '人工沟通 · AI需授权'}</Text>
         </View>
         <View style={{ width: '20px' }} />
       </View>
 
+      <Text onClick={manageAiDataConsent} style={{ padding: '9px 16px', color: colors.primary, fontSize: '13px', backgroundColor: '#fff' }}>AI与语音授权 · 查看或撤回</Text>
       {!!threadError && <Text onClick={loadThread} style={{padding:'10px 16px',fontSize:'13px',color:colors.danger}}>{threadError} · 点击重试</Text>}
       {!!sendError && <Text style={{padding:'10px 16px',fontSize:'13px',color:colors.danger}}>{sendError}</Text>}
       <ScrollView scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
@@ -1079,6 +1146,8 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
                       </View>
                     )}
                     {(!m.audioUrl || !/^\[语音消息\]$/.test(m.content || '')) && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>}
+                    {isMine && m.audioUrl && !m.audioTranscript && <Text onClick={() => transcribeVoice(m)} style={{ display: 'block', fontSize: '13px', color: '#fff', textDecoration: 'underline', marginTop: '8px' }}>{transcribingId === m._id ? '正在转文字…' : '转文字（需授权）'}</Text>}
+                    {!isMine && <MedicalReferences references={m.references || []} />}
                     {!isMine && !m.audioUrl && visibleMessageContent(m).trim() && (
                       <View onClick={() => speakText(m)} style={{ marginTop: '7px', display: 'flex', alignItems: 'center' }}>
                         <Text style={{ fontSize: '11px', color: playingMessageId === `tts-${m._id}` ? colors.primary : colors.textMuted }}>

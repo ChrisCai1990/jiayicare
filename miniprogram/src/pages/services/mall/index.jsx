@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Textarea, ScrollView, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { servicesAPI, authAPI, userAPI, paymentsAPI, mediaUrl } from '../../../services/api';
+import { servicesAPI, authAPI, userAPI, paymentsAPI, familyLinksAPI, guardianChildrenAPI, mediaUrl } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { requestWechatPayment, waitForPayment } from '../../../utils/wechatPay';
 import { maxFundDeduction } from '../../../utils/healthFundCheckout';
 import { captureInviteCode } from '../../../utils/invitation';
+import { storedArchiveId } from '../../../hooks/useArchiveSubject';
 
 const PAY_METHODS = [
   { key: 'wechat_pay', label: '微信支付' },
@@ -144,7 +145,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated, 
   );
 }
 
-function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
+function PurchaseModal({ item, mode, onClose, shareToken = '', initialBeneficiaryUserId = '', pushRecordId = '' }) {
   const { statusBarHeight, navBarHeight, totalHeight } = useNavBar();
   const { user, updateUser } = useAuth();
   const isPay = mode === 'pay';
@@ -177,6 +178,24 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const [benefitsLoading, setBenefitsLoading] = useState(false);
   const [benefitsError, setBenefitsError] = useState('');
   const [benefitsRefresh, setBenefitsRefresh] = useState(0);
+  const [beneficiaries, setBeneficiaries] = useState([]);
+  const [beneficiariesLoaded, setBeneficiariesLoaded] = useState(false);
+  const [beneficiaryUserId, setBeneficiaryUserId] = useState(initialBeneficiaryUserId);
+  const selectedBeneficiary = beneficiaries.find(person => person.id === beneficiaryUserId);
+  const familyPayment = !!beneficiaryUserId;
+
+  useEffect(() => {
+    if (!item) return;
+    let live = true;
+    Promise.all([familyLinksAPI.list(), guardianChildrenAPI.list()]).then(([family, children]) => {
+      if (!live) return;
+      const adults = (family.data || []).filter(link => link.user?._id).map(link => ({ id: String(link.user._id), name: link.user.name, relation: link.relation }));
+      const minors = (children.data || []).filter(child => child.id).map(child => ({ id: String(child.id), name: child.name, relation: '孩子' }));
+      setBeneficiaries([...adults, ...minors]);
+      setBeneficiariesLoaded(true);
+    }).catch(() => { if (live) { setBeneficiaries([]); setBeneficiariesLoaded(true); } });
+    return () => { live = false; };
+  }, [item?.id]);
 
   useEffect(() => {
     if (!isPay) return;
@@ -221,6 +240,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
 
   const handleSubmit = async () => {
     if (submittingRef.current) return;
+    if (beneficiaryUserId && !selectedBeneficiary) { setErrMsg(beneficiariesLoaded ? '当前档案关联已失效，请重新选择服务对象' : '家庭成员信息加载中，请稍后重试'); return; }
     if (requiresServiceDetails && !desiredServiceDate) { setErrMsg('请选择期望服务时间'); return; }
     if (requiresServiceDetails && !serviceRequirements.trim()) { setErrMsg('请填写具体服务需求'); return; }
     if (!serviceAgreed) { setErrMsg('请先阅读并同意《健康管理服务说明》'); return; }
@@ -251,15 +271,15 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
         updateUser(boundUser);
       }
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
-      const checkoutKey = JSON.stringify([currentSpecLabel, couponId, fundApplied, sharedApplied, finalPrice, desiredServiceDate, serviceRequirements.trim(), note.trim()]);
+      const checkoutKey = JSON.stringify([beneficiaryUserId, pushRecordId, currentSpecLabel, familyPayment ? null : couponId, fundApplied, sharedApplied, finalPrice, desiredServiceDate, serviceRequirements.trim(), note.trim()]);
       if (isPay && pendingOrderRef.current && pendingOrderRef.current.key !== checkoutKey) {
         throw new Error('已有待支付订单；如需修改，请先到“我的订单”取消原订单后重新购买');
       }
       const res = isPay
         ? (pendingOrderRef.current
           ? await paymentsAPI.retry(pendingOrderRef.current.id)
-          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice, useSharedFund))
-        : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined);
+          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, familyPayment ? null : couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice, familyPayment ? false : useSharedFund, beneficiaryUserId, pushRecordId))
+        : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined, beneficiaryUserId);
       if (res.success) {
         if (res.data?.packageCovered) {
           setSubmittedPackage(true);
@@ -305,10 +325,10 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
 
   return (
     <View style={{position:'fixed',top:0,left:0,right:0,bottom:0,backgroundColor:'#fff',zIndex:100}}>
-    <View style={{paddingTop:`${statusBarHeight}px`,height:`${totalHeight}px`,boxSizing:'border-box',backgroundColor:'#fff'}}>
-      <View onClick={onClose} style={{height:`${navBarHeight}px`,display:'flex',alignItems:'center',paddingLeft:'20px',width:'120px'}}><Text style={{fontSize:'17px',color:colors.primary}}>‹ 返回商城</Text></View>
+    <View style={{position:'relative',zIndex:2,paddingTop:`${statusBarHeight}px`,height:`${totalHeight}px`,boxSizing:'border-box',backgroundColor:'#fff'}}>
+      <View onClick={(event) => { event.stopPropagation(); onClose(); }} style={{position:'relative',zIndex:3,height:`${navBarHeight}px`,display:'flex',alignItems:'center',paddingLeft:'20px',width:'120px'}}><Text style={{fontSize:'17px',color:colors.primary}}>‹ 返回商城</Text></View>
     </View>
-    <ScrollView scrollY enhanced showScrollbar style={{ position: 'absolute', top: `${totalHeight}px`, left: 0, right: 0, bottom: 0, width: '100%', height: `calc(100vh - ${totalHeight}px)`, backgroundColor: '#fff' }}>
+    <ScrollView scrollY enhanced showScrollbar style={{ position: 'absolute', zIndex: 1, top: `${totalHeight}px`, left: 0, right: 0, bottom: 0, width: '100%', height: `calc(100vh - ${totalHeight}px)`, backgroundColor: '#fff' }}>
       <View style={{ padding: `${spacing.lg}px`, paddingBottom: '40px', width: '100%', minHeight: '100vh', boxSizing: 'border-box' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View>
@@ -356,6 +376,19 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
               ))}
             </View>
           )}
+
+          <View style={{ backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
+            <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>服务对象</Text>
+            <Picker mode="selector" disabled={!!pushRecordId} range={[`本人${user?.name ? ` · ${user.name}` : ''}`, ...beneficiaries.map(person => `${person.name} · ${person.relation || '家庭成员'}`)]}
+              value={Math.max(0, beneficiaries.findIndex(person => person.id === beneficiaryUserId) + 1)}
+              onChange={event => { const index = Number(event.detail.value); setBeneficiaryUserId(index > 0 ? beneficiaries[index - 1]?.id || '' : ''); setCouponId(null); setUseFund(false); setUseSharedFund(false); }}>
+              <View style={{ padding: '12px', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, backgroundColor: '#fff' }}>
+                <Text style={{ color: colors.primary }}>{selectedBeneficiary ? `${selectedBeneficiary.name} · ${selectedBeneficiary.relation || '家庭成员'}` : beneficiaryUserId ? '关联家人加载中' : `本人${user?.name ? ` · ${user.name}` : ''}`} ›</Text>
+              </View>
+            </Picker>
+            <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '8px' }}>服务需求和后续跟进归属所选成员；{isPay ? '本次微信支付由您完成。' : '工作人员将按该成员的归属联系。'}</Text>
+            {familyPayment && isPay && <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>为家人支付暂不使用您的基金或抵用券。</Text>}
+          </View>
 
           {isPay && (
             <>
@@ -556,7 +589,9 @@ export default function ServiceMallPage() {
       setServices(res.data?.services || []);
       setCategoryTree(res.data?.categoryTree || (res.data?.categories || []).filter((name) => name !== '全部').map((name) => ({ id: name, name, children: [] })));
       const target = (res.data?.services || []).find((service) => service.id === routeParams.productId);
-      if (target) setDetailService(target);
+      if (target && routeParams.beneficiaryUserId && routeParams.pushRecordId && user?.onboardingCompleted) {
+        setSelectedService(target); setPurchaseMode('pay');
+      } else if (target) setDetailService(target);
     }).catch(() => {
       setServices([]);
       setCategoryTree([]);
@@ -706,7 +741,10 @@ export default function ServiceMallPage() {
       )}
 
       {selectedService && (
-        <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''} onClose={() => setSelectedService(null)} />
+        <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''}
+          initialBeneficiaryUserId={selectedService.id === routeParams.productId && routeParams.beneficiaryUserId ? routeParams.beneficiaryUserId : storedArchiveId(user?._id)}
+          pushRecordId={selectedService.id === routeParams.productId ? routeParams.pushRecordId || '' : ''}
+          onClose={() => setSelectedService(null)} />
       )}
     </View>
   );

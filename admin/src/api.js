@@ -18,6 +18,23 @@ export function clearToken() {
 }
 export function getToken() { return _token }
 
+async function downloadPrivateFile(path, fileName) {
+  const res = await fetch(`${BASE}${path}`, { headers: _token ? { Authorization: `Bearer ${_token}` } : {} })
+  if (res.status === 401) { handleUnauthorized(); throw new Error('登录已过期，请重新登录') }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.message || '下载失败')
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName || '服务记录'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 // 登录态失效（401）：清掉 token 并跳回登录页，避免每个页面卡在"Token 无效或已过期"红框
 function handleUnauthorized() {
   clearToken()
@@ -55,6 +72,16 @@ export const metabolicPilotAPI = {
   access: (id,action) => reqRoot(`/metabolic-pilot/admin/${id}`, {method:'PATCH',body:JSON.stringify({action})}),
 }
 export const adminAPI = {
+  inventory: () => req('/inventory'),
+  createInventoryMaterial: data => req('/inventory/materials', { method: 'POST', body: JSON.stringify(data) }),
+  inventoryPeople: () => req('/inventory/people'),
+  inventoryUsers: q => req(`/inventory/users?q=${encodeURIComponent(q)}`),
+  inventoryConsumption: () => req('/inventory/consumption'),
+  enableInventoryProduct: (id, data) => req(`/inventory/products/${id}/enable`, { method: 'POST', body: JSON.stringify(data) }),
+  updateInventorySettings: (id, data) => req(`/inventory/products/${id}/settings`, { method: 'PATCH', body: JSON.stringify(data) }),
+  inventoryEntry: data => req('/inventory/entries', { method: 'POST', body: JSON.stringify(data) }),
+  correctInventoryEntry: (id, data) => req(`/inventory/entries/${id}/correct`, { method: 'POST', body: JSON.stringify(data) }),
+  inventoryCount: data => req('/inventory/counts', { method: 'POST', body: JSON.stringify(data) }),
   specialtyLibrary: () => req('/specialty-library'),
   specialtyReviewers: () => req('/specialty-library/reviewers'),
   createSpecialtyLibrary: data => req('/specialty-library', { method: 'POST', body: JSON.stringify(data) }),
@@ -87,6 +114,12 @@ export const adminAPI = {
   },
   verifySignedAgreement: (id, pdfHash, password) => req(`/agreements/${id}/verify-signed-pdf`, { method: 'POST', body: JSON.stringify({ pdfHash, password }) }),
   importPatientHealthRecords: (id, data) => req(`/patients/${id}/health-records/import`, { method: 'POST', body: JSON.stringify(data) }),
+  researchStudySetting: () => req('/research-care-journeys/setting'),
+  saveResearchStudySetting: data => req('/research-care-journeys/setting', { method: 'PUT', body: JSON.stringify(data) }),
+  researchCandidates: q => req('/research-care-journeys/candidates?' + new URLSearchParams({ q })),
+  researchCandidateList: () => req('/research-care-journeys/candidate-list'),
+  addResearchCandidate: patientId => req('/research-care-journeys/candidate-list', { method: 'POST', body: JSON.stringify({ patientId }) }),
+  removeResearchCandidate: id => req('/research-care-journeys/candidate-list/' + encodeURIComponent(id), { method: 'DELETE' }),
   researchJourneys: (year) => req(`/research-care-journeys/journeys?${new URLSearchParams(year ? { year } : {})}`),
   enrollResearchJourney: data => req('/research-care-journeys/journeys', { method: 'POST', body: JSON.stringify(data) }),
   getCareQuality: () => req('/care-quality'),
@@ -214,6 +247,18 @@ export const adminAPI = {
   updateEnterprise:       (id, data) => req(`/enterprises/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEnterprise:       (id)       => req(`/enterprises/${id}`, { method: 'DELETE' }),
   saveEnterpriseHrData:   (id, year, data) => req(`/enterprises/${id}/hr-data`, { method: 'PUT', body: JSON.stringify({ year, data }) }),
+  enterpriseServiceRecords: (id) => req(`/enterprises/${id}/service-records`),
+  uploadEnterpriseServiceRecord: async (id, formData) => {
+    const res = await fetch(`${BASE}/enterprises/${id}/service-records`, {
+      method: 'POST', headers: _token ? { Authorization: `Bearer ${_token}` } : {}, body: formData,
+    })
+    if (res.status === 401) { handleUnauthorized(); throw new Error('登录已过期，请重新登录') }
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.message || '上传失败')
+    return data
+  },
+  publishEnterpriseServiceRecord: (id, recordId, published) => req(`/enterprises/${id}/service-records/${recordId}`, { method: 'PATCH', body: JSON.stringify({ published }) }),
+  downloadEnterpriseServiceRecord: (id, recordId, fileName) => downloadPrivateFile(`/enterprises/${id}/service-records/${recordId}/file`, fileName),
   enterpriseSharedFunds: (id) => req(`/enterprises/${id}/shared-funds`),
   saveEnterpriseSharedFund: (id, year, data) => req(`/enterprises/${id}/shared-funds/${year}`, { method: 'PUT', body: JSON.stringify(data) }),
   creditEnterpriseSharedFund: (id, year, data) => req(`/enterprises/${id}/shared-funds/${year}/credits`, { method: 'POST', body: JSON.stringify(data) }),
@@ -268,6 +313,8 @@ export const adminAPI = {
 
   // 随访方案列表（供模板选用）
   followUpPlans: () => req('/followup-plans'),
+  getNutritionAssessmentConfig: () => req('/nutrition-assessment-config'),
+  updateNutritionAssessmentConfig: data => req('/nutrition-assessment-config', { method: 'PUT', body: JSON.stringify(data) }),
   getServiceWorkflowReverseModel: () => req('/service-workflow-reverse-model'),
   linkServiceWorkflowReverseModel: (templateId, data) => req(`/service-workflow-reverse-model/${templateId}/link`, { method: 'PATCH', body: JSON.stringify(data) }),
 

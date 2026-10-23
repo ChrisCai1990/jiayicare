@@ -6,7 +6,9 @@ const tenantFilter = actor => ({ tenantId: actor?.tenantId || null });
 const configId = actor => `metabolic-pilot:${String(actor?.tenantId || 'legacy')}`;
 async function configFor(actor) {
   const row = await SystemConfig.findOne({ key: configId(actor) }).maxTimeMS(1000).lean();
-  return { enabled: row?.value?.enabled === true, accepting: row?.value?.accepting === true, revision: Number(row?.value?.revision || 0) };
+  // The standalone pilot has been retired. Keep stored settings and history for audit,
+  // but never resume automated feedback or enrollment from a stale admin setting.
+  return { enabled: false, accepting: false, revision: Number(row?.value?.revision || 0) };
 }
 async function contextFor(user) {
   const [config, enrollment] = await Promise.all([configFor(user), Pilot.findOne({ _id: user._id, ...tenantFilter(user) }).maxTimeMS(1000).lean()]);

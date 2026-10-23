@@ -30,6 +30,9 @@ test('all years and records remain pending; independent nutrition records cannot
   assert.equal(new Set(todos.map(t => t.id)).size, 3);
   assert.ok(todos.some(t => t.link.includes('aiYear=2025')));
   assert.ok(todos.some(t => t.link.includes('aiRecordIndex=1')));
+  const nutritionTodo = todos.find(t => t.type === 'lifestyle_review');
+  assert.equal(nutritionTodo.label, 'AI生活方式草稿待营养师审核');
+  assert.match(nutritionTodo.link, /aiScope=nutrition/);
   assert.equal(summaryTodos(user, type => type === 'summary_review', now).length, 2);
 });
 test('root-only summaries preserve prior approvals and ignore empty dimensions', () => {

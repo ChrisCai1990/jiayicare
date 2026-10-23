@@ -1,6 +1,8 @@
+import { ensureAiDataConsent } from '../utils/aiDataConsent';
 import React, { useRef, useState } from 'react';
 import { View, Text, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
+import { useAuth } from '../context/AuthContext';
 import { recordsAPI } from '../services/api';
 import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePicker';
 
@@ -14,6 +16,8 @@ function localTime() {
 }
 
 export default function WeightPhoto({ onSaved }) {
+  const { user } = useAuth();
+  const consentKey = user?._id ? 'weight-photo-consent:tongyi:v1:' + user._id : null;
   const [draft, setDraft] = useState(null);
   const [photo, setPhoto] = useState(null);
   const [value, setValue] = useState('');
@@ -28,8 +32,14 @@ export default function WeightPhoto({ onSaved }) {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError('');
     try {
+      if (!await ensureAiDataConsent('health')) return;
+      let accepted = false;
+      try { accepted = !!consentKey && Taro.getStorageSync(consentKey) === true; } catch {}
+      if (!accepted) {
       const consent = await Taro.showModal({ title: '体重照片识别', content: '将所选体重秤照片发送至阿里云通义千问识别。请仅拍摄屏幕，避免包含姓名等无关信息。识别仅辅助录入，核对确认后才保存原图和数据。', confirmText: '同意选图' });
       if (!consent.confirm) return;
+      if (consentKey) { try { Taro.setStorageSync(consentKey, true); } catch {} }
+      }
       const selected = await chooseImageWithPrivacy({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
       const path = selected.tempFilePaths[0];
       const data = Taro.getFileSystemManager().readFileSync(path, 'base64');
@@ -39,6 +49,7 @@ export default function WeightPhoto({ onSaved }) {
       setDraft(null); setConfirmed(false); setValue(''); setUnit('kg'); setPhoto({ path, image }); setWhen(localTime());
       const result = await recordsAPI.recognizeWeight(image);
       setDraft(result.data);
+      if (result.data.value == null || String(result.data.value).trim() === '') setError('未识别出体重，请重新拍摄清晰的体重秤读数，或手动补填。');
       setValue(result.data.value == null ? '' : String(result.data.value));
       setUnit(result.data.unit === '斤' ? '斤' : 'kg');
     } catch (err) { if (!isImagePickerCancelled(err)) setError(err.message || err.errMsg || '无法识别，请重试或在下方手工录入'); }
@@ -69,6 +80,11 @@ export default function WeightPhoto({ onSaved }) {
   return <View style={box}>
     <Button disabled={busy} loading={busy} onClick={choose}>{busy ? '处理中，请稍候' : '拍照 / 选图识别体重'}</Button>
     <Text style={{ display: 'block', fontSize: '12px', marginTop: '8px' }}>支持 kg（公斤）和斤；选择斤时自动换算为公斤入档，识别后仍需核对确认。</Text>
+    <Text style={{ display: 'block', fontSize: '12px', marginTop: '8px' }}>照片将发送至阿里云通义千问识别，仅辅助录入。</Text>
+    <Text style={{ display: 'block', fontSize: '12px', color: '#1E6B50', padding: '8px 0' }} onClick={async () => {
+      const answer = await Taro.showModal({ title: '体重照片识别说明', content: '所选照片发送至阿里云通义千问识别；核对确认后才保存原图和数据。您可以撤回同意，下次使用时会重新询问。', confirmText: '撤回同意', cancelText: '关闭' });
+      if (answer.confirm && consentKey) { Taro.removeStorageSync(consentKey); Taro.showToast({ title: '已撤回同意', icon: 'none' }); }
+    }}>识别说明与授权管理</Text>
     {photo && <Image src={photo.path} mode="aspectFit" style={{ width: '100%', height: '180px' }} onClick={() => Taro.previewImage({ current: photo.path, urls: [photo.path] })} />}
     {draft && <View>
       <Text>{draft.message}</Text>

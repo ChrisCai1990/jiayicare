@@ -2,6 +2,7 @@ const { chat } = require('./ai');
 
 const RISK_LEVELS = ['low', 'medium', 'high', 'critical']; // 低 / 中 / 高 / 危急值
 const { buildEvidenceCatalog, auditMedicalJson } = require('./aiFactGuard');
+const { HOMOCYSTEINE_INTERVENTION_THRESHOLD } = require('./homocysteineIntervention');
 
 function snapshotRiskAssessment(record) {
   if (!record) return null;
@@ -27,7 +28,7 @@ function ruleEngineSignals(lv = {}) {
   if (tc >= 6.2) sig.cardiovascular.push(`总胆固醇偏高 ${tc} mmol/L`);
   if (tg >= 2.3) sig.cardiovascular.push(`甘油三酯偏高 ${tg} mmol/L`);
   if (hdl !== null && hdl < 1.0) sig.cardiovascular.push(`HDL-C 偏低 ${hdl} mmol/L`);
-  if (hcy >= 15) sig.cardiovascular.push(`同型半胱氨酸偏高 ${hcy} μmol/L`);
+  if (hcy >= HOMOCYSTEINE_INTERVENTION_THRESHOLD) sig.cardiovascular.push(`同型半胱氨酸 ${hcy} μmol/L，达到需干预阈值（≥${HOMOCYSTEINE_INTERVENTION_THRESHOLD} μmol/L），请由医生评估`);
   if (bmi >= 28) sig.cardiovascular.push(`肥胖 BMI ${bmi.toFixed(1)} kg/m²`);
   else if (bmi >= 24) sig.cardiovascular.push(`超重 BMI ${bmi.toFixed(1)} kg/m²`);
   if (waist !== null && waist >= (lv.gender === '女' ? 85 : 90)) sig.cardiovascular.push(`中心性肥胖 腰围 ${waist} cm`);
@@ -160,7 +161,7 @@ async function generateRiskAssessment(user) {
     computedBmi ? `身高体重确定性计算：BMI=${computedBmi.toFixed(1)}kg/m²` : '',
   ]);
 
-  // 近30天打卡记录：与体检报告互补，体现更实时的血压/血糖/体重波动，可能影响心血管/糖尿病风险的即时判断（2026-07-11）
+  // 近30天健康数据记录：与体检报告互补，体现更实时的血压/血糖/体重波动，可能影响心血管/糖尿病风险的即时判断（2026-07-11）
   const HealthRecord = require('../models/HealthRecord');
   const recentCheckins = await HealthRecord.find({
     user: user._id, type: { $in: ['bloodPressure', 'bloodSugar', 'weight', 'heartRate'] },
@@ -173,8 +174,8 @@ async function generateRiskAssessment(user) {
     const label = CHECKIN_LABEL2[type] || type;
     const fmt = (r) => type === 'bloodPressure' && r.extra?.sys && r.extra?.dia ? `${r.extra.sys}/${r.extra.dia}` : r.value;
     const first = recs[recs.length - 1], last = recs[0];
-    return `${label}：近30天共${recs.length}次打卡，最早${fmt(first)}→最近${fmt(last)}`;
-  }).join('\n') || '近30天暂无相关打卡记录';
+    return `${label}：近30天共${recs.length}次记录健康数据，最早${fmt(first)}→最近${fmt(last)}`;
+  }).join('\n') || '近30天暂无相关健康数据记录';
 
   const prompt = `你是健康信息整理助手。请基于已有报告原文和规则信号，对以下4类信息给出关注程度，帮助用户核对资料和决定是否携带原始报告咨询正规医疗机构。不得作疾病诊断、患病概率判断、治疗建议、检查开单、处方、药品或营养素推荐，也不得建议停换药或调整剂量。
 
@@ -187,12 +188,12 @@ async function generateRiskAssessment(user) {
 ${sigText}
 【基因检测报告】
 ${geneticText}
-【近30天打卡记录（血压/血糖/体重/心率日常自测，体现比体检报告更实时的波动）】
+【近30天健康数据记录（血压/血糖/体重/心率日常自测，体现比体检报告更实时的波动）】
 ${checkinText}
 【带编号证据目录（所有会员事实以此为边界）】
 ${evidenceCatalog}
 
-心血管和糖尿病风险维度请特别关注【近30天打卡记录】：如果打卡显示血压/血糖近期持续偏高或波动明显，即使体检报告是达标的，也应在相应维度提示"近期自测数据显示XX有上升趋势，建议复查"，不能仅依赖可能已经过时的体检报告下结论。
+心血管和糖尿病风险维度请特别关注【近30天健康数据记录】：如果记录健康数据显示血压/血糖近期持续偏高或波动明显，即使体检报告是达标的，也应在相应维度提示"近期自测数据显示XX有上升趋势，建议复查"，不能仅依赖可能已经过时的体检报告下结论。
 肿瘤风险维度请结合上方"tumor"信号（近一年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、个人生活习惯（吸烟/饮酒/饮食是肺癌/肝癌/胃肠癌的强相关因素）、既往史、家族史、基因检测报告（如有明确高风险位点/基因，应显著提高风险等级）综合判断；信号为空不代表零风险，需结合年龄、性别、生活习惯、家族史等基础风险因素给出合理评估，不要机械地判为low。
 
 请严格按以下JSON输出。level 仅表示信息关注程度：low=一般关注、medium=持续关注、high=重点关注、critical=建议尽快携带原始资料咨询医疗机构；score 仅用于界面排序，不代表疾病概率：
@@ -206,7 +207,7 @@ ${evidenceCatalog}
   "overallSummary": "整体风险综述（50-100字）"
 }`;
 
-  const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500, temperature: 0.05, jsonMode: true });
+  const text = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 1500, temperature: 0.05, jsonMode: true }));
   let raw = {};
   try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
   raw = await auditMedicalJson(raw, evidenceCatalog, { maxTokens: 1800 });

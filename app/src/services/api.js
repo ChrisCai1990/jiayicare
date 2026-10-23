@@ -78,6 +78,12 @@ export const metabolicPilotAPI = {
   get: () => request('/metabolic-pilot/me'),
   action: data => request('/metabolic-pilot/me', {method:'POST',body:JSON.stringify(data)}),
 };
+export const weightProgressPhotosAPI = {
+  list: () => request('/weight-progress-photos'),
+  plans: () => request('/weight-progress-photos/plans'),
+  add: data => request('/weight-progress-photos/base64', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
+  remove: id => request(`/weight-progress-photos/${id}`, { method: 'DELETE' }),
+};
 // ── Auth ─────────────────────────────────────────────────────────
 export const authAPI = {
   sendCode: (phone) =>
@@ -194,8 +200,8 @@ export const remindersAPI = {
 
 // ── Medical Reports ───────────────────────────────────────────────
 export const reportsAPI = {
-  list:        ()     => request('/reports'),
-  byCategory:  ()     => request('/reports/by-category'),
+  list:        (patientId = '') => request(`/reports${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
+  byCategory:  (patientId = '') => request(`/reports/by-category${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
   get:         (id)   => request(`/reports/${id}`),
   uploadBase64: (content, mimeType) => request('/reports/upload-base64', { method: 'POST', body: JSON.stringify({ content, mimeType }), timeout: 60000 }),
   cleanupUploads: (uploadTokens) => request('/reports/upload-cleanup', { method: 'POST', body: JSON.stringify({ uploadTokens }) }),
@@ -318,6 +324,7 @@ export const familyAPI = {
 // 系统内家庭成员关联（需求6/18）
 export const familyLinksAPI = {
   list:           ()                       => request('/user/family-links'),
+  archive:        (memberId)             => request(`/user/family-links/${memberId}/archive`),
   search:         (q)                      => request(`/user/family-links/search?q=${encodeURIComponent(q)}`),
   add:            (linkedUserId, relation) => request('/user/family-links', { method: 'POST', body: JSON.stringify({ linkedUserId, relation }) }),
   remove:         (linkId)                 => request(`/user/family-links/${linkId}`, { method: 'DELETE' }),

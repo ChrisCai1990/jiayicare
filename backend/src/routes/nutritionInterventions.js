@@ -4,7 +4,6 @@ const staffAuth = require('../middleware/staffAuth');
 const HealthPlan = require('../models/HealthPlan');
 const User = require('../models/User');
 const Draft = require('../models/NutritionInterventionDraft');
-const workflow = require('../utils/nutritionInterventionTasks');
 
 async function source(req, res, write = false) {
   if (!mongoose.isValidObjectId(req.params.planId)) { res.status(400).json({ success: false, message: '方案ID无效' }); return null; }
@@ -35,19 +34,11 @@ router.get('/plans/:planId', staffAuth, wrap(async (req, res) => {
 }));
 router.post('/plans/:planId/generate', staffAuth, wrap(async (req, res) => {
   const plan = await source(req, res, true); if (!plan) return;
-  await workflow.inputFor(plan);
-  setImmediate(() => workflow.generate(plan).catch(e => console.error('营养任务草稿重试失败', { planId: String(plan._id), message: e.message })));
-  res.status(202).json({ success: true, queued: true });
+  res.status(410).json({ success: false, message: '营养方案仅向客户展示方案内容，不再生成客户行动任务' });
 }));
 router.post('/plans/:planId/publish', staffAuth, wrap(async (req, res) => {
   const plan = await source(req, res, true); if (!plan) return;
-  if (!plan.pushedAt || plan.status !== 'active') return res.status(409).json({ success: false, message: '方案尚未推送' });
-  const draft = await Draft.findById(plan._id).lean();
-  if (!draft) return res.status(404).json({ success: false, message: '请先生成并审核任务草稿' });
-  if (draft.status !== 'publishing' && req.body.revision !== draft.revision) return res.status(409).json({ success: false, message: '草稿已变化，请刷新后再确认' });
-  if (draft.status === 'publishing' && String(draft.approvedBy) !== String(req.staff._id) && req.staff.role !== 'superadmin') return res.status(403).json({ success: false, message: '请由原确认人重试发布' });
-  const published = await workflow.publish(plan, draft, req.staff, req.body.actions);
-  res.json({ success: true, data: published });
+  res.status(410).json({ success: false, message: '营养方案仅向客户展示方案内容，不再发布客户行动任务' });
 }));
 
 module.exports = router;

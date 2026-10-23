@@ -17,6 +17,9 @@ const RECORD_TYPES = [
   { id: 'bloodSugar', label: '血糖', icon: 'water', color: colors.info, fields: [
     { key: 'value', label: '血糖值', unit: 'mmol/L', placeholder: '如：6.1', normal: '3.9-6.1' },
   ]},
+  { id: 'waist', label: '腰围', icon: 'resize-outline', color: '#0F766E', fields: [
+    { key: 'value', label: '腰围', unit: 'cm', placeholder: '如：82.5', normal: '' },
+  ]},
   { id: 'heartRate', label: '心率', icon: 'pulse', color: colors.danger, fields: [
     { key: 'value', label: '心率', unit: '次/分', placeholder: '如：72', normal: '60-100' },
   ]},
@@ -218,6 +221,10 @@ export default function AddRecordScreen({ navigation, route }) {
   const statusConfig = { normal: { color: colors.success, label: '正常' }, high: { color: colors.danger, label: '偏高' }, low: { color: colors.info, label: '偏低' } };
 
   const handleSubmit = async () => {
+    if (activeType.id === 'waist' && (!Number.isFinite(Number(values.value)) || Number(values.value) <= 0)) {
+      showToast('warn', '请输入大于0的腰围数值（cm）');
+      return;
+    }
     const hasValue = activeType.id === 'sleep'
       ? (values.sleepTime && values.wakeTime)
       : activeType.id === 'mood'

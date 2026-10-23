@@ -22,6 +22,7 @@ const orderSchema = new mongoose.Schema({
     servicePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
     handoffId: { type: mongoose.Schema.Types.ObjectId, ref: 'CheckupPreparationHandoff', default: null },
     finalTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
+    rehabRecordId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceRecord', default: null },
   }],
   // 购买时快照，后续产品规则调整不影响历史订单。
   serviceItemsSnapshot: [{
@@ -63,8 +64,8 @@ const orderSchema = new mongoose.Schema({
     consentVersion: { type: String, default: '' },
     consentedAt: { type: Date, default: null },
   },
-  initiationSource: { type: String, enum: ['', 'staff_direct'], default: '' },
   checkupIntake: { type: mongoose.Schema.Types.Mixed, default: null },
+  rehabBooking: { type: mongoose.Schema.Types.Mixed, default: null },
   serviceIcon: { type: String },
   note:        { type: String, default: '' },
   desiredServiceDate: { type: Date, default: null },
@@ -74,6 +75,8 @@ const orderSchema = new mongoose.Schema({
   annualServiceSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   // 服务包权益使用后生成的零元履约订单反查来源；实际剩余次数在 PackageEntitlement 中原子扣减。
   packageEntitlementUsage: { type: mongoose.Schema.Types.Mixed, default: null },
+  // 年度会员不限次服务仅记录本次资格来源，不预占或核销次数。
+  membershipFeatureUsage: { type: mongoose.Schema.Types.Mixed, default: null },
   giftRecordUsage: { type: mongoose.Schema.Types.Mixed, default: null },
   inventoryReserved: { type: Boolean, default: false },
   inventoryReleased: { type: Boolean, default: false },
@@ -107,6 +110,7 @@ const orderSchema = new mongoose.Schema({
     missingFields: { type: [String], default: [] }, riskFlags: { type: [String], default: [] }, summary: { type: String, default: '' },
   },
   medicalProxyPlan: { type: mongoose.Schema.Types.Mixed, default: null },
+  decisionReferral: { type: mongoose.Schema.Types.Mixed, default: null }, // 企业家健康决策计划：专科转介与订单闭环
   medicalAssistPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
   medicalReminderIntake: { type: mongoose.Schema.Types.Mixed, default: null },
   // 商城营养素为实物履约，不走就医方案；保留履约订单号与收货确认审计。
@@ -114,7 +118,9 @@ const orderSchema = new mongoose.Schema({
 
   // 服务编排归属：发起来源、总督办与当前执行人相互独立。
   // supervisorId 在订单全生命周期保持为健康规划师；专业环节只更新 currentAssignee 或子任务 assignedTo。
-  initiationSource: { type: String, enum: ['customer', 'staff', 'staff_direct', 'admin', 'system'], default: 'customer', index: true },
+  // Earlier paid orders stored an empty source. Keep it valid when later
+  // fulfillment and commission updates save those historical documents.
+  initiationSource: { type: String, enum: ['', 'customer', 'staff', 'staff_direct', 'admin', 'system'], default: 'customer', index: true },
   initiatedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   supervisorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, index: true },
   currentStage: { type: String, default: 'intake' },

@@ -55,7 +55,7 @@ ${chatText}
   const { chat } = require('./ai');
   let text;
   try {
-    text = await chat([{ role: 'user', content: prompt }], { maxTokens: 800 });
+    text = await require('./aiDataConsent').withPersonalData(patientId, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 800 }));
   } catch (err) {
     return { status: 'failed', message: 'AI生成失败，请稍后重试或人工记录' };
   }

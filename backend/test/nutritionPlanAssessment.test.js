@@ -11,13 +11,23 @@ const valid = {
     { metric: '内脏脂肪', baseline: '9级（2026-10-01）', target: '8级' },
     { metric: '体重', baseline: '68 kg（2026-10-01）', target: '67 kg' },
   ],
-  height: 165, weight: 68, activityLevel: 'inactive', lifeStage: 'not_pregnant_lactating',
-  managementPurpose: 'maintain', managementKcal: 2030,
+  height: 165, weight: 68, activityLevel: 'active', weightActivityLevel: 'moderate', lifeStage: 'not_pregnant_lactating',
+  managementPurpose: 'maintain', managementKcal: 1800,
   breakfastPercent: 30, lunchPercent: 40, dinnerPercent: 30, snackPercent: 0,
   medicalReview: '已核对疾病、用药及近期检查，无额外饮食限制',
   practicalConstraints: '午餐外卖，预算30元，晚餐可自行准备',
   allergyStatus: 'confirmed_none', riskStatus: 'standard', templateCompatibilityConfirmed: true,
 };
+
+test('服务端重算轻体力区间与中间值，最终管理期能量覆盖自动参考预算', () => {
+  const result = prepareNutritionAssessment({ ...valid, height: 190, weight: 110, weightActivityLevel: 'light', activityCoefficient: 20, dailyEnergyRange: { min: 1, max: 2 }, managementPurpose: 'reduce', managementKcal: 1700 }, { ...user, gender: '男' });
+  assert.deepEqual(result.missing, []);
+  assert.deepEqual(result.assessment.dailyEnergyRange, { min: 1700, max: 2125 });
+  assert.equal(result.assessment.activityCoefficient, 22.5);
+  assert.equal(result.assessment.estimatedDailyKcal, 1913);
+  assert.equal(result.assessment.managementKcal, 1700);
+  assert.deepEqual(result.assessment.mealEnergyKcal, { breakfast: 510, lunch: 680, dinner: 510, snack: 0 });
+});
 
 test('个体化营养草稿需要核实目标、饮食、安全信息和复盘时间', () => {
   assert.deepEqual(prepareNutritionAssessment(valid, user).missing, []);
@@ -54,8 +64,27 @@ test('多条观察指标分别保存基线与目标，并拒绝缺项、重复�
 
 test('管理期能量与餐次预算由服务端重新计算，比例或低能量阻止普通生成', () => {
   const result = prepareNutritionAssessment(valid, user);
-  assert.equal(result.assessment.estimatedMaintenanceKcal, 2030);
-  assert.deepEqual(result.assessment.mealEnergyKcal, { breakfast: 609, lunch: 812, dinner: 609, snack: 0 });
+  assert.equal(result.assessment.energyCalculationPath, 'overweight');
+  assert.equal(result.assessment.estimatedMaintenanceKcal, 2330);
+  assert.equal(result.assessment.idealWeightKg, 60);
+  assert.equal(result.assessment.activityCoefficient, 30);
+  assert.equal(result.assessment.estimatedDailyKcal, 1800);
+  const routine = prepareNutritionAssessment({ ...valid, weight: 60, managementKcal: 2240, weightActivityLevel: '' }, { ...user, weight: 60 });
+  assert.deepEqual(routine.missing, []);
+  assert.equal(routine.assessment.energyCalculationPath, 'routine');
+  assert.equal(routine.assessment.estimatedDailyKcal, null);
+  assert.equal(routine.assessment.estimatedMaintenanceKcal, 2240);
+  assert.deepEqual(result.assessment.mealEnergyKcal, { breakfast: 540, lunch: 720, dinner: 540, snack: 0 });
   assert(prepareNutritionAssessment({ ...valid, dinnerPercent: 20 }, user).missing.some(text => text.includes('合计100%')));
   assert(prepareNutritionAssessment({ ...valid, managementKcal: 900 }, user).missing.some(text => text.includes('管理期能量')));
+  const highWeight = { ...valid, weight: 130, managementPurpose: 'reduce', managementKcal: 1600 };
+  assert.deepEqual(prepareNutritionAssessment(highWeight, { ...user, weight: 130 }).missing, []);
+});
+
+
+test('参考范围及异常标记随本次已核实指标保存，阶段目标仍由营养师确定', () => {
+  const metric = { metric: '尿酸', baseline: '500 μmol/L（2026-10-22）', target: '按本次确认目标复查', referenceRange: '210–430 μmol/L', evidenceStatus: 'abnormal' };
+  const result = prepareNutritionAssessment({ ...valid, nutritionTargets: [...valid.nutritionTargets, metric] }, user);
+  assert.deepEqual(result.missing, []);
+  assert.deepEqual(result.assessment.nutritionTargets.at(-1), metric);
 });

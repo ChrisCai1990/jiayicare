@@ -24,22 +24,22 @@ async function checkReportAuditGate(userId, { throughYear } = {}) {
 
   if (throughYear) {
     const { reportsThroughYear } = require('./historicalAIHealthContext');
-    const reports = reportsThroughYear(await MedicalReport.find({ user: userId })
-      .select('reportYear checkDate date audit_status createdAt').lean(), throughYear);
+    const reports = reportsThroughYear(await MedicalReport.find({ user: userId, archiveOnly: { $ne: true } })
+      .select('reportYear checkDate date audit_status createdAt advisorCorrection.resubmittedAt').lean(), throughYear);
     if (!reports.length) return '请先上传目标年度及此前的体检报告后再生成历史AI健康信息整理';
     const notStaffAudited = reports.filter(report => report.audit_status !== 'audited').length;
     if (notStaffAudited) return `截至${throughYear}年度还有 ${notStaffAudited} 份体检报告健管专员未审核，请先完成审核后再生成`;
     const snapshotAt = user.archiveReviewSnapshotAt ? new Date(user.archiveReviewSnapshotAt).getTime() : 0;
-    if (!snapshotAt || reports.some(report => report.createdAt && new Date(report.createdAt).getTime() > snapshotAt)) {
+    if (!snapshotAt || reports.some(report => (report.createdAt && new Date(report.createdAt).getTime() > snapshotAt) || (report.advisorCorrection?.resubmittedAt && new Date(report.advisorCorrection.resubmittedAt).getTime() > snapshotAt))) {
       return '历史体检报告有新增内容，健康顾问需先查看确认后再生成';
     }
     return null;
   }
 
-  const total = await MedicalReport.countDocuments({ user: userId });
+  const total = await MedicalReport.countDocuments({ user: userId, archiveOnly: { $ne: true } });
   if (total === 0) return '请先上传体检报告后再生成AI健康信息整理/健康关注提示';
 
-  const notStaffAudited = await MedicalReport.countDocuments({ user: userId, audit_status: { $ne: 'audited' } });
+  const notStaffAudited = await MedicalReport.countDocuments({ user: userId, archiveOnly: { $ne: true }, audit_status: { $ne: 'audited' } });
   if (notStaffAudited > 0) return `还有 ${notStaffAudited} 份体检报告健管专员未审核，请先完成审核后再生成`;
 
   const newReportCount = await MedicalReport.countDocuments(pendingDoctorAuditFilter(userId, user.archiveReviewSnapshotAt));
@@ -60,8 +60,8 @@ async function checkScreeningYearSummaryGate(userId, year) {
     { date: new RegExp(`^${yearNumber}[-/]`) },
   ] };
   const [total, pending] = await Promise.all([
-    MedicalReport.countDocuments({ user: userId, ...yearMatch }),
-    MedicalReport.countDocuments({ user: userId, audit_status: { $ne: 'audited' }, ...yearMatch }),
+    MedicalReport.countDocuments({ user: userId, archiveOnly: { $ne: true }, ...yearMatch }),
+    MedicalReport.countDocuments({ user: userId, archiveOnly: { $ne: true }, audit_status: { $ne: 'audited' }, ...yearMatch }),
   ]);
   if (!total) return `${yearNumber}年度没有体检报告，无法生成专项筛查小结`;
   if (pending) return `${yearNumber}年度还有 ${pending} 份体检报告未完成健管审核，请全部审核后再进行专项筛查小结`;
@@ -87,8 +87,8 @@ function getLatestArchiveUpdate(user, snapshotValue) {
 // 待办面板/前置校验共用的查询条件：健管已审，且晚于健康顾问上次确认快照的新增报告
 // （这是增量查询——只返回"新增部分"，已确认过的历史报告不会再出现在这个列表里）
 function pendingDoctorAuditFilter(userId, snapshotAt) {
-  const filter = { user: userId, audit_status: 'audited' };
-  if (snapshotAt) filter.createdAt = { $gt: snapshotAt };
+  const filter = { user: userId, archiveOnly: { $ne: true }, audit_status: 'audited' };
+  if (snapshotAt) filter.$or = [{ createdAt: { $gt: snapshotAt } }, { 'advisorCorrection.resubmittedAt': { $gt: snapshotAt } }];
   return filter;
 }
 

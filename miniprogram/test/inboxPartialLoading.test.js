@@ -9,18 +9,32 @@ const success = data => ({ success: true, data });
 function harness() {
   const state = { messages: [], pending: new Set(), assignments: new Set(), error: '', loading: true };
   const responses = { messages: success([]), pushes: success([]), pending: success([]) };
+  let selectedArchiveId = '';
+  let requestedArchiveId = '';
   const resolve = key => async () => { const r = responses[key]; if (r instanceof Error) throw r; return await r; };
   const ctx = { useCallback: f => f, listRequestRef: { current: 0 }, listLoadingRef: { current: false },
-    messagesAPI: { list: resolve('messages') }, pushRecordsAPI: { list: resolve('pushes') }, questionnaireAPI: { pending: resolve('pending') },
-    normalizePushRecord: r => ({ ...r, isPushRecord: true }), refreshUnreadBadge() {},
+    user: { _id: 'owner' }, storedArchiveId: () => selectedArchiveId,
+    messagesAPI: { list: resolve('messages') }, pushRecordsAPI: { list: id => { requestedArchiveId = id; return resolve('pushes')(); } }, questionnaireAPI: { pending: resolve('pending') },
+    normalizePushRecord: (r, beneficiaryUserId) => ({ ...r, isPushRecord: true, beneficiaryUserId }), refreshUnreadBadge() {},
     setMessages: f => { state.messages = typeof f === 'function' ? f(state.messages) : f; },
     setPendingQuestionnaireIds: value => { state.pending = value; },
     setPendingQuestionnaireAssignmentIds: value => { state.assignments = value; },
     setLoadError: value => { state.error = value; }, setLoading: value => { state.loading = value; },
   };
   vm.runInNewContext(source.slice(start, end) + '\nthis.load = loadMessages;', ctx);
-  return { state, responses, ctx, load: () => ctx.load() };
+  return { state, responses, ctx, load: () => ctx.load(), selectArchive: id => { selectedArchiveId = id; }, requestedArchive: () => requestedArchiveId };
 }
+test('switching archive loads that family member’s product pushes and drops the prior archive’s pushes', async () => {
+  const h = harness();
+  h.responses.pushes = success([{ _id: 'self-push', type: 'product' }]);
+  await h.load();
+  h.selectArchive('family-member');
+  h.responses.pushes = success([{ _id: 'family-push', type: 'product' }]);
+  await h.load();
+  assert.equal(h.requestedArchive(), 'family-member');
+  assert.equal(h.state.messages.filter(row => row.isPushRecord).map(row => row._id).join(','), 'family-push');
+  assert.equal(h.state.messages.find(row => row._id === 'family-push').beneficiaryUserId, 'family-member');
+});
 test('first-load questionnaire failure does not suppress conversations and historical notifications', async () => {
   const h = harness();
   h.responses.messages = success([{ _id: 'care', type: 'system' }, { _id: 'chat', type: 'planner' }]);
@@ -64,4 +78,33 @@ test('background polling does not supersede requests slower than five seconds', 
   assert.equal(h.ctx.listRequestRef.current, 1);
   finish(success([{ _id: 'slow' }])); await request;
   assert.equal(h.state.messages[0]._id, 'slow'); assert.equal(h.ctx.listLoadingRef.current, false);
+});
+test('embedded inbox starts after family unlink even when tab onShow has already fired', () => {
+  const start = source.indexOf('  useEffect(() => {', source.indexOf('The tab page owns visibility'));
+  const end = source.indexOf('  useEffect(() => { if (refreshKey)', start);
+  assert.ok(start >= 0 && end > start);
+  const state = { loads: 0, visible: null };
+  const requestRef = { current: 0 };
+  const pollRef = { current: null };
+  const loadingRef = { current: false };
+  const mount = active => {
+    let effect;
+    vm.runInNewContext(source.slice(start, end), {
+      embedded: true, active, useEffect: callback => { effect = callback; },
+      setPageVisible: value => { state.visible = value; },
+      loadMessages: () => { state.loads += 1; },
+      listPollRef: pollRef, listLoadingRef: loadingRef, listRequestRef: requestRef,
+      clearInterval: () => {}, setInterval: () => 1,
+    });
+    return effect();
+  };
+  const cleanup = mount(true);
+  assert.equal(state.loads, 1);
+  assert.equal(state.visible, true);
+  cleanup();
+  assert.equal(requestRef.current, 1);
+  assert.equal(mount(false), undefined);
+  assert.equal(state.visible, false);
+  mount(true);
+  assert.equal(state.loads, 2);
 });

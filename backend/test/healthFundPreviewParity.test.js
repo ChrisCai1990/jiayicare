@@ -47,7 +47,7 @@ test('group preview respects each product cap, shared balance and coupon cents',
   assert.equal(preview.maxGroupFundDeduction({eligible:true,personal:9000},0,products),0);
   assert.equal(preview.maxGroupFundDeduction({eligible:true,personal:9000},100,[{price:100}]),100);
 });
-test('inactive enterprise blocks corporate funds but single-product personal balance remains capped',async()=>{
+test('inactive enterprise blocks corporate funds while personal balance remains available',async()=>{
   const healthFund={eligible:true,personal:4,corporate:100,enterprise:{bound:true,active:false}};
   assert.equal(preview.maxFundDeduction(healthFund,100,{}),4);
   assert.equal((await server({personal:4,corporate:100,enterprise:{status:'inactive'}})(20)).allowed,4);

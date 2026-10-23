@@ -11,10 +11,15 @@ function ConcernRow({ concern, number, patientId, topicId, canEdit, toast, onUpd
   const [form, setForm] = useState({ title: concern.title || '', status: concern.status || 'suggested', pathway: concern.pathway || 'undecided', note: concern.note || '' })
   const [busy, setBusy] = useState(false)
   useEffect(() => setForm({ title: concern.title || '', status: concern.status || 'suggested', pathway: concern.pathway || 'undecided', note: concern.note || '' }), [concern.id, concern.reviewedAt])
-  const changed = form.title !== concern.title || form.status !== concern.status || form.pathway !== concern.pathway || form.note !== (concern.note || '')
+  const changed = form.title !== (concern.title || '') || form.status !== (concern.status || 'suggested') || form.pathway !== (concern.pathway || 'undecided') || form.note !== (concern.note || '')
+  const needsPathway = !evidenceRow && form.status === 'included' && form.pathway === 'undecided'
+  const needsReview = form.status === 'suggested' || needsPathway
+  const saveStatus = busy ? '正在保存，请稍候…' : changed ? '有修改待保存' : concern.reviewedAt
+    ? needsReview ? '已暂存，尚未完成核实' : '已保存，暂无修改'
+    : '暂无修改，无需重复保存'
   const save = async () => {
     setBusy(true)
-    try { const result = await staffAPI.updateAiCaseReviewConcern(patientId, topicId, concern.id, form); onUpdate(result.data); toast('问题去向已保存') }
+    try { const result = await staffAPI.updateAiCaseReviewConcern(patientId, topicId, concern.id, form); onUpdate(result.data); toast(needsReview ? '已暂存，尚未完成核实' : '问题去向已保存') }
     catch (error) { toast(error.message || '保存失败', 'error') }
     finally { setBusy(false) }
   }
@@ -26,10 +31,15 @@ function ConcernRow({ concern, number, patientId, topicId, canEdit, toast, onUpd
     {canEdit && <input className="form-input" style={{ marginTop: 8 }} maxLength={60} disabled={busy} value={form.title} onChange={e => setForm(value => ({ ...value, title: e.target.value }))} aria-label="具体问题名称" />}
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
       <select className="form-input" style={{ width: 210 }} disabled={!canEdit || busy} value={form.status} onChange={e => setForm(value => ({ ...value, status: e.target.value }))}>{STATUS.filter(([value]) => !evidenceRow || ['suggested', 'included', 'excluded', form.status].includes(value)).map(([value, label]) => <option key={value} value={value}>{value === 'suggested' ? concernStatusLabel({ ...concern, status: value }) : evidenceRow && value === 'included' ? '作为依据' : evidenceRow && value === 'excluded' ? '不采用此依据' : label}</option>)}</select>
-      {!evidenceRow && <select className="form-input" style={{ width: 185 }} disabled={!canEdit || busy} value={form.pathway} onChange={e => setForm(value => ({ ...value, pathway: e.target.value }))}>{PATHWAY.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>}
+      {!evidenceRow && <select className="form-input" aria-label="专业去向" aria-describedby={needsPathway ? `annual-concern-pathway-hint-${concern.id}` : undefined} style={{ width: 185 }} disabled={!canEdit || busy} value={form.pathway} onChange={e => setForm(value => ({ ...value, pathway: e.target.value }))}>{PATHWAY.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>}
     </div>
+    {canEdit && needsPathway && <div id={`annual-concern-pathway-hint-${concern.id}`} style={{ marginTop: 6, color: '#8A5414', fontSize: 12 }}>请选择专业去向并保存，才能完成本项核实。修改其他内容可先暂存。</div>}
+    {canEdit && form.status === 'suggested' && <div style={{ marginTop: 6, color: '#8A5414', fontSize: 12 }}>请先核实并选择处理方式；仅保存修改不会完成本项核实。</div>}
     <input className="form-input" style={{ marginTop: 7 }} disabled={!canEdit || busy} maxLength={500} value={form.note} onChange={e => setForm(value => ({ ...value, note: e.target.value }))} placeholder="补充判断依据；排除或重复时必填" />
-    {canEdit && <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={!changed || busy} onClick={save}>{busy ? '保存中…' : '保存去向'}</button>}
+    {canEdit && <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
+      <button type="button" className="btn btn-secondary btn-sm" disabled={!changed || busy} aria-describedby={`annual-concern-save-status-${concern.id}`} onClick={save}>{busy ? '保存中…' : '保存去向'}</button>
+      <span id={`annual-concern-save-status-${concern.id}`} role="status" style={{ color: '#65776F', fontSize: 12 }}>{saveStatus}</span>
+    </div>}
   </details>
 }
 

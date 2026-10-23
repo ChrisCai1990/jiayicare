@@ -27,7 +27,7 @@ async function collectYesterdayData(userId, dateStr) {
 }
 
 function formatRecordsForPrompt(records) {
-  if (records.length === 0) return '（昨日无任何打卡记录）';
+  if (records.length === 0) return '（昨日无任何健康数据记录）';
   return records.map(r => {
     if (r.type === 'bloodPressure') return `血压 ${r.value}mmHg（${r.status}）`;
     if (r.extra && typeof r.extra === 'object' && !Array.isArray(r.extra) && Object.keys(r.extra).length) {
@@ -50,11 +50,11 @@ async function generateDailyTeamInsight(userId, dateStr) {
     return upsertInsight(userId, dateStr, { ...FALLBACK });
   }
 
-  const prompt = `你是"金伊森"健康管理团队的助手，需要基于会员${user.name}昨日（${dateStr}）的健康打卡数据，
+  const prompt = `你是"金伊森"健康管理团队的助手，需要基于会员${user.name}昨日（${dateStr}）的健康数据记录，
 以健康顾问、营养师、健康管理师、AI健康信息整理四个视角分别给出简短反馈，供会员今天打开App时查看。
 
 【会员慢病标签】${user.chronicDiseases?.join('、') || '无'}
-【昨日打卡数据】
+【昨日健康数据记录】
 ${dataText}
 
 要求：
@@ -72,7 +72,7 @@ ${dataText}
   let parsed;
   try {
     const { chat } = require('./ai');
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 600 });
+    const text = await require('./aiDataConsent').withPersonalData(userId, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 600 }));
     parsed = JSON.parse((text || '').replace(/```json|```/g, '').trim());
   } catch (err) {
     console.error('[daily-team-insight] AI生成失败，用兜底模板：' + user.name, err.message);

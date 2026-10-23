@@ -37,17 +37,23 @@ const PUSH_TYPE_LABEL = {
 };
 
 function normalizePushRecord(pr) {
+  const pushContent = pr.type === 'plan'
+    ? String(pr.content || '').replace(/请前往["“]?健康方案["”]?查看。?/, '点击通知即可查看完整方案。')
+    : pr.content;
   return {
     _id: pr._id,
     isPushRecord: true,
     type: pr.type,
     sender: pr.staffId?.name || '健康管理团队',
     title: PUSH_TYPE_LABEL[pr.type] || '推送通知',
-    content: pr.title + (pr.content ? `\n${pr.content}` : ''),
+    content: pr.title + (pushContent ? `\n${pushContent}` : ''),
     coverUrl: pr.coverUrl || '',
     unread: !pr.readAt,
     time: new Date(pr.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
     createdAt: pr.createdAt,
+    planId: pr.planId?._id || pr.planId || null,
+    sourceAnnualPlanId: pr.sourceAnnualPlanId?._id || pr.sourceAnnualPlanId || null,
+    planYear: pr.type === 'plan' ? Number(String(pr.title || '').match(/^(\d{4})年度/)?.[1]) || null : null,
     // 产品推送专用
     price: pr.price || null,
     productName: pr.title || '',
@@ -91,7 +97,7 @@ function MessageItem({ msg, onPress }) {
         {msg.action?.type === 'checkin' && (
           <View style={styles.inviteActionBtn}>
             <Ionicons name="add-circle" size={13} color={colors.white} />
-            <Text style={styles.inviteActionText}>去打卡</Text>
+            <Text style={styles.inviteActionText}>记录健康数据</Text>
           </View>
         )}
       </View>
@@ -439,10 +445,10 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
       return (
         <TouchableOpacity
           style={[styles.detailCloseBtn, { flex: 2, backgroundColor: '#D97706', borderWidth: 0 }]}
-          onPress={() => { onClose(); navigation.navigate('ServicePlans'); }}
+          onPress={() => { onClose(); navigation.navigate('ServicePlans', { planId: msg.planId || msg.sourceAnnualPlanId || null, planYear: msg.planYear, direct: true }); }}
           activeOpacity={0.85}
         >
-          <Text style={[styles.detailCloseBtnText, { color: colors.white }]}>查看健康方案</Text>
+          <Text style={[styles.detailCloseBtnText, { color: colors.white }]}>查看完整方案</Text>
         </TouchableOpacity>
       );
     }
@@ -699,7 +705,7 @@ export default function MessagesScreen({ navigation }) {
   const handlePress = async (msg) => {
     const msgId = msg._id || msg.id;
     // 可操作消息（如家庭成员邀请）：直接跳到对应页面处理，不弹详情，省去用户自己找入口
-    // 可操作消息（家庭成员邀请 / 每日打卡关怀等）：直接跳对应页面处理，不弹详情
+    // 可操作消息（家庭成员邀请 / 每日记录关怀等）：直接跳对应页面处理，不弹详情
     const isActionable = msg.action?.type === 'family_invite' || msg.action?.type === 'checkin';
     if (!isActionable) setSelectedMsg(msg);
     if (msg.unread) {
@@ -836,7 +842,11 @@ export default function MessagesScreen({ navigation }) {
         visible={showNotifModal}
         messages={notifMessages}
         onClose={() => setShowNotifModal(false)}
-        onPress={(msg) => { setShowNotifModal(false); setSelectedMsg(msg); }}
+        onPress={(msg) => {
+          setShowNotifModal(false);
+          if (msg.type === 'plan') navigation.navigate('ServicePlans', { planId: msg.planId || msg.sourceAnnualPlanId || null, planYear: msg.planYear, direct: true });
+          else setSelectedMsg(msg);
+        }}
         onMarkRead={async (msg) => {
           if (!msg.unread) return;
           try {

@@ -103,15 +103,10 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
   try {
     // 人工接手后 AI 必须静默。生成前后各检查一次，覆盖生成期间人工刚接手的并发场景。
     if (await ChatConversationState.exists(humanPresentQuery(conversationId))) return;
-    const [history, user, healthContext, orderServiceContext] = await Promise.all([
-      Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(20).select('type content audioTranscript createdAt').lean(),
-      User.findById(userId).select('name gender preferredTitle tenantId').lean(),
-      buildHealthContext(userId),
-      recipient === 'planner' ? buildOrderServiceContext(userId, conversationId) : '',
+    await require('./aiDataConsent').assertPermission(String(userId), 'assistant', 'qwen');
+    const [history] = await Promise.all([
+      Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(20).select('type content audioTranscript audioTranscriptDisplayOnly createdAt').lean(),
     ]);
-
-    const feedback=recipient==='manager'?await require('./careFlowFeedbackMessages').list(userId,user?.tenantId):[];
-    history.push(...feedback);
     history.sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
     // 只保留与最新一条连续的对话段；长时间前的旧话题不参与本轮推理。
     let segmentStart = 0;
@@ -124,15 +119,17 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
     const recentHistory = history.slice(segmentStart).slice(-12);
     const isFirstAIReply = !recentHistory.some(m => m.type !== 'user');
     const disclaimer = isFirstAIReply ? FULL_DISCLAIMER : SHORT_DISCLAIMER;
-    const title = resolveTitle(user);
-    const systemPrompt = buildSystemPrompt(isFirstAIReply, title, [healthContext,feedback.length?'客户已保存的当前就医反馈（不是人工核实结论；不要沿用旧聊天中的补传要求）：\n'+feedback.map(m=>m.content).join('\n'):''].filter(Boolean).join('\n'), orderServiceContext);
+    const title = '您';
+    const systemPrompt = buildSystemPrompt(isFirstAIReply, title, '', '');
 
     const chatMessages = recentHistory.map(m => ({
       role: m.type === 'user' ? 'user' : 'assistant',
-      content: `[${new Date(m.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}] ${m.audioTranscript?.trim() ? `[语音转写，仅供理解] ${m.audioTranscript.trim()}` : m.content.replace(FULL_DISCLAIMER, '').replace(SHORT_DISCLAIMER, '').trim()}`,
+      content: `[${new Date(m.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}] ${!m.audioTranscriptDisplayOnly && m.audioTranscript?.trim() ? `[语音转写，仅供理解] ${m.audioTranscript.trim()}` : m.content.replace(FULL_DISCLAIMER, '').replace(SHORT_DISCLAIMER, '').trim()}`,
     }));
-    const generatedReply = await chat(chatMessages, { systemPrompt, maxTokens: 300 });
-    const replyText = stripRepeatedOpeningTitle(generatedReply, isFirstAIReply, title);
+    const answer = await require('./aiDataConsent').withPersonalData(userId, 'assistant', () =>
+      require('./sourcedAssistantReply').generate(chatMessages, systemPrompt, chat));
+    const replyText = stripRepeatedOpeningTitle(answer.content, isFirstAIReply, title);
+    await require('./aiDataConsent').assertPermission(String(userId), 'assistant', 'qwen');
     if (await ChatConversationState.exists(humanPresentQuery(conversationId))) return;
     const aiMsg = await Message.create({
       user: userId,
@@ -143,10 +140,11 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
       unread: true,
       conversationId,
       isAI: true,
+      references: answer.references,
     });
     ssePublish(conversationId, { type: 'message', data: aiMsg });
   } catch (e) {
-    console.error('[ai-msg-fallback] 会话 ' + conversationId + ' AI兜底回复失败', e.message);
+    if (e.code !== 'AI_DATA_CONSENT_REQUIRED') console.error('[ai-msg-fallback] AI回复失败', e.code || 'FAILED');
   }
 }
 

@@ -5,7 +5,7 @@ import { useReportReviewActivity } from '../components/ReportReviewQuality'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { staffAPI, API_ORIGIN } from '../api'
 import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
-import { useToast, usePermission } from '../App'
+import { useToast, usePermission, useStaff } from '../App'
 import Pagination from '../components/Pagination'
 
 const REPORT_TYPE = { annual:'年度体检', blood:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜', pathology:'病理', other:'其他', body_comp:'身体成分', functional:'功能医学' }
@@ -15,6 +15,7 @@ const AUDIT_COLOR = { unaudited:'#D97706', audited:'#22A06B', rejected:'#DC3545'
 export default function ReportsPage() {
   const toast = useToast()
   const can = usePermission()
+  const { staff } = useStaff()
   const [reports, setReports] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -23,6 +24,7 @@ export default function ReportsPage() {
   const [searchInput, setSearchInput] = useState('')
   const [page, setPage] = useState(1)
   const [showUpload, setShowUpload] = useState(false)
+  const [organizeSource, setOrganizeSource] = useState(null)
   const [showDetail, setShowDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [rejectModal, setRejectModal] = useState(null) // report object pending rejection
@@ -135,6 +137,9 @@ export default function ReportsPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => openDetail(r)}>查看</button>
+                      {can('reports', 'create') && ['healthManager', 'superadmin'].includes(staff?.role) && r.user?._id && Boolean(r.fileUrls?.length || r.fileUrl || r.ossKeys?.length) && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => setOrganizeSource(r)}>整理归档</button>
+                      )}
                       {r.audit_status !== 'audited' && (
                         <button className="btn btn-secondary btn-sm" onClick={() => { setEditModal(r); setEditForm({ title: r.title || '', type: r.type || 'annual', hospital: r.hospital || r.institution || '', date: r.checkDate || r.date || '', note: r.note || '', institutionStatus: r.institutionStatus || 'pending' }) }}>✏️ 修改</button>
                       )}
@@ -158,6 +163,7 @@ export default function ReportsPage() {
 
       {/* 上传弹窗 */}
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); toast('上传成功'); load() }} />}
+      {organizeSource && <OrganizeModal source={organizeSource} onClose={() => setOrganizeSource(null)} onSaved={() => { setOrganizeSource(null); toast('已生成待审核的整理记录'); load() }} />}
 
       {/* 详情弹窗 */}
       {showDetail && (
@@ -462,4 +468,102 @@ function UploadModal({ onClose, onSaved }) {
       </div>
     </div>
   )
+}
+
+const DOCUMENT_CATEGORIES = {
+  physical_exam: '体检报告', lab_report: '检验报告', exam_report: '检查报告',
+  body_composition: '身体成分', functional_medicine: '功能医学', genetic_test: '基因检测',
+  outpatient_record: '门诊病历', inpatient_record: '住院病历', prescription_order: '处方/检查单',
+  questionnaire: '问卷', other_customer_material: '其他资料',
+}
+
+function OrganizeModal({ source, onClose, onSaved }) {
+  const patientId = source.user?._id
+  const [reports, setReports] = useState([])
+  const [selected, setSelected] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    title: source.title || '', type: REPORT_TYPE[source.type] ? source.type : 'other',
+    documentCategory: DOCUMENT_CATEGORIES[source.documentCategory] ? source.documentCategory : 'physical_exam',
+    hospital: source.hospital || '', date: source.checkDate || source.date || '', note: '',
+  })
+  useEffect(() => {
+    let active = true
+    staffAPI.getPatientReports(patientId).then(res => {
+      if (!active) return
+      const rows = Array.isArray(res.data) ? res.data : []
+      setReports(rows)
+      const first = rows.find(row => String(row._id) === String(source._id))
+      const count = first?.fileUrls?.length || (first?.fileUrl ? 1 : 0)
+      setSelected(Array.from({ length: count }, (_, fileIndex) => ({ reportId: source._id, fileIndex })))
+    }).catch(err => { if (active) setError(err.message || '资料加载失败') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [patientId, source._id])
+  const set = key => event => setForm(current => ({ ...current, [key]: event.target.value }))
+  const token = item => `${item.reportId}:${item.fileIndex}`
+  const toggle = item => setSelected(current => current.some(entry => token(entry) === token(item))
+    ? current.filter(entry => token(entry) !== token(item)) : [...current, item])
+  const move = (index, direction) => setSelected(current => {
+    const next = [...current]; const target = index + direction
+    if (target < 0 || target >= next.length) return current
+    ;[next[index], next[target]] = [next[target], next[index]]
+    return next
+  })
+  const submit = async () => {
+    if (!selected.length) { setError('请选择至少一个原件'); return }
+    if (!form.title.trim()) { setError('请填写整理后的标题'); return }
+    const date = form.date ? calendarDate(form.date) : ''
+    if (form.date && !date) { setError('报告日期无效'); return }
+    setSaving(true); setError('')
+    try {
+      await staffAPI.organizeReport({ patientId, files: selected, ...form, date })
+      onSaved()
+    } catch (err) { setError(err.message || '整理失败') }
+    finally { setSaving(false) }
+  }
+  return <div className="modal-overlay">
+    <div className="modal" style={{ maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="modal-header"><h3 className="modal-title">整理客户已上传的资料</h3><button className="modal-close" onClick={onClose}>✕</button></div>
+      <div className="modal-body" style={{ overflowY: 'auto' }}>
+        <p style={{ fontSize: 13, color: '#667', marginTop: 0 }}>选择同一客户的文件，按下方顺序生成一条新的待审核记录。整份 PDF 会作为一个文件保留，原始资料不会删除。</p>
+        {error && <div className="login-err" role="alert">{error}</div>}
+        {loading ? <p>加载原件中…</p> : <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #e5e9e7', borderRadius: 8, padding: 8 }}>
+          {reports.flatMap(report => {
+            const urls = report.fileUrls?.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : [])
+            return urls.map((url, fileIndex) => {
+              const item = { reportId: report._id, fileIndex }
+              return <label key={token(item)} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 6, fontSize: 13 }}>
+                <input type="checkbox" checked={selected.some(entry => token(entry) === token(item))} onChange={() => toggle(item)} />
+                <span style={{ flex: 1 }}>{report.title || '未命名资料'} · 文件 {fileIndex + 1} {report.checkDate || report.date || ''}</span>
+                {url && <a href={url.startsWith('/') ? API_ORIGIN + url : url} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>查看</a>}
+              </label>
+            })
+          })}
+        </div>}
+        <div style={{ marginTop: 12, fontSize: 13 }}>归档顺序</div>
+        {selected.map((item, index) => {
+          const report = reports.find(row => String(row._id) === String(item.reportId))
+          return <div key={token(item)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', fontSize: 13 }}>
+            <span style={{ flex: 1 }}>{index + 1}. {report?.title || '原件'} · 文件 {item.fileIndex + 1}</span>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={index === 0} onClick={() => move(index, -1)}>上移</button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={index === selected.length - 1} onClick={() => move(index, 1)}>下移</button>
+          </div>
+        })}
+        <div className="form-group"><label className="form-label">整理后标题 *</label><input className="form-input" value={form.title} onChange={set('title')} maxLength={200} /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-group"><label className="form-label">资料类别</label><select className="form-input" value={form.documentCategory} onChange={set('documentCategory')}>{Object.entries(DOCUMENT_CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <div className="form-group"><label className="form-label">报告类型</label><select className="form-input" value={form.type} onChange={set('type')}>{Object.entries(REPORT_TYPE).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-group"><label className="form-label">医院</label><input className="form-input" value={form.hospital} onChange={set('hospital')} maxLength={200} /></div>
+          <div className="form-group"><label className="form-label">报告日期</label><DateField className="form-input" type="date" value={form.date} onChange={set('date')} /></div>
+        </div>
+        <div className="form-group"><label className="form-label">整理说明</label><textarea className="form-input" rows={2} value={form.note} onChange={set('note')} maxLength={1000} /></div>
+      </div>
+      <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose} disabled={saving}>取消</button><button className="btn btn-primary" onClick={submit} disabled={saving || loading || !selected.length}>{saving ? '整理中…' : '生成待审核记录'}</button></div>
+    </div>
+  </div>
 }

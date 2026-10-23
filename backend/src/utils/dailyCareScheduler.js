@@ -3,12 +3,12 @@ const HealthRecord = require('../models/HealthRecord');
 const Message = require('../models/Message');
 const SystemConfig = require('../models/SystemConfig');
 
-// AI 每日健康关怀：每天给活跃客户生成一条 AI 专属关怀/提醒消息，带「去打卡」入口，
-// 目的是把系统从"等客户来"变成"主动关心客户"，提升打开率与打卡留存。
-// 复用场景九 AI 教练消息的逻辑（读打卡→算依从性→AI 生成温暖话术），做成定时批量。
+// AI 每日健康关怀：每天给活跃客户生成一条 AI 专属关怀/提醒消息，带「去记录健康数据」入口，
+// 目的是把系统从"等客户来"变成"主动关心客户"，提升打开率与记录健康数据留存。
+// 复用场景九 AI 教练消息的逻辑（读记录健康数据→算依从性→AI 生成温暖话术），做成定时批量。
 // 失败兜底：AI 不可用时用预设暖心模板，保证每天都能触达，不因 AI 挂掉而静默。
 
-// 计算某客户近 14 天的连续打卡天数与距上次打卡天数
+// 计算某客户近 14 天的连续记录健康数据天数与距上次记录健康数据天数
 async function calcAdherence(userId) {
   const since = new Date(Date.now() - 14 * 86400000);
   const records = await HealthRecord.find({ user: userId, recordedAt: { $gte: since } })
@@ -40,10 +40,10 @@ function resolveTitle(user) {
 function fallbackMessage(user, adh) {
   const name = resolveTitle(user);
   if (adh.daysSinceLast >= 3) {
-    return `${name}，好几天没见您打卡啦～花一分钟记录下今天的身体状况吧，我们一直在关注您的健康 💚`;
+    return `${name}，好几天没见您记录健康数据啦～花一分钟记录下今天的身体状况吧，我们一直在关注您的健康 💚`;
   }
   if (adh.streak >= 7) {
-    return `${name}，已经连续打卡 ${adh.streak} 天，太棒了！坚持记录让健康看得见，今天也别忘了哦 🌿`;
+    return `${name}，已经连续记录健康数据 ${adh.streak} 天，太棒了！坚持记录让健康看得见，今天也别忘了哦 🌿`;
   }
   return `${name}，今天感觉怎么样？记得记录一下健康数据，小小的坚持会带来大大的改变 ☀️`;
 }
@@ -62,11 +62,11 @@ async function generateCareMessage(user) {
 
 【会员】${user.name}，性别：${user.gender || '未知'}，慢病标签：${user.chronicDiseases?.join('、') || '无'}
 【称呼】必须称呼对方为"${title}"，不要自己改称呼，绝对不要叫错性别（如男性叫"姐"）。
-【打卡情况】连续打卡 ${adh.streak} 天，距上次打卡 ${adh.daysSinceLast >= 999 ? '很久' : adh.daysSinceLast + ' 天'}
+【健康数据记录情况】连续记录健康数据 ${adh.streak} 天，距上次记录健康数据 ${adh.daysSinceLast >= 999 ? '很久' : adh.daysSinceLast + ' 天'}
 【消息基调】${tone}
 
 请直接输出消息正文。`;
-    const message = await chat([{ role: 'user', content: prompt }], { maxTokens: 300 });
+    const message = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { maxTokens: 300 }));
     const text = (message || '').trim();
     if (text) return text;
   } catch (e) {
@@ -89,7 +89,7 @@ async function scanAndSendDailyCare() {
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
 
-  // 只发给「近30天有过打卡」或「近30天新建档」的活跃客户，避免给僵尸账号发无效消息
+  // 只发给「近30天有过记录健康数据」或「近30天新建档」的活跃客户，避免给僵尸账号发无效消息
   const activeUserIds = await HealthRecord.distinct('user', { recordedAt: { $gte: thirtyDaysAgo } });
   const recentUsers = await User.find({ createdAt: { $gte: thirtyDaysAgo } }).select('_id').lean();
   const candidateIds = [...new Set([...activeUserIds.map(String), ...recentUsers.map(u => String(u._id))])];
@@ -113,7 +113,7 @@ async function scanAndSendDailyCare() {
         title: '今日健康关怀',
         content,
         unread: true,
-        action: { type: 'checkin', route: 'AddRecord' }, // 客户端消息中心据此显「去打卡」按钮
+        action: { type: 'checkin', route: 'AddRecord' }, // 客户端消息中心据此显「去记录健康数据」按钮
       });
       sent++;
     } catch (e) {

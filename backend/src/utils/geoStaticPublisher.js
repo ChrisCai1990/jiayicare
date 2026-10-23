@@ -33,7 +33,16 @@ function publicationAudit(item) {
   return { reviewedBy: String(reviewedBy || '').trim(), reviewedAt: date };
 }
 
-function publishGeoArticle({ slug, publishedBy, publishedAt, alreadyPublished = [] }) {
+function applyReviewedRevision(article, record) {
+  if (!record?.revisions?.length) return article;
+  if (!record.sourceContent?.trim()) throw new Error('修订正文缺失，禁止发布旧稿');
+  return { ...article, title: record.title, summary: record.summary,
+    updatedAt: record.sourceUpdatedAt,
+    // 修订稿全文已在审核页呈现，不拼回未经本轮审核的旧标题或段落。
+    sections: [{ heading: '正文', paragraphs: record.sourceContent.split(/\n\s*\n/).filter(Boolean) }] };
+}
+
+function publishGeoArticle({ slug, reviewedRecord, publishedBy, publishedAt, alreadyPublished = [] }) {
   const published = new Map(alreadyPublished
     .filter((item) => item?.slug)
     .map((item) => [item.slug, publicationAudit(item)]));
@@ -51,7 +60,8 @@ function publishGeoArticle({ slug, publishedBy, publishedAt, alreadyPublished = 
     const articlePath = path.join(articlesRoot, `${itemSlug}.json`);
     if (!articlePath.startsWith(`${articlesRoot}${path.sep}`) || !fs.existsSync(articlePath)) continue;
     const original = fs.readFileSync(articlePath, 'utf8');
-    const article = JSON.parse(original);
+    const record = itemSlug === slug ? reviewedRecord : alreadyPublished.find(item => item.slug === itemSlug);
+    const article = applyReviewedRevision(JSON.parse(original), record);
     if (itemSlug === slug) {
       article.status = 'published';
       article.reviewedBy = publishedBy || '健康规划师';
@@ -77,4 +87,4 @@ function publishGeoArticle({ slug, publishedBy, publishedAt, alreadyPublished = 
   }
 }
 
-module.exports = { publishGeoArticle };
+module.exports = { publishGeoArticle, applyReviewedRevision };

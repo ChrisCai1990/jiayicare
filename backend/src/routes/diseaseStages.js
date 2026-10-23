@@ -33,7 +33,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       const reports = await reportsFor(patient, ids);
       // Reports are evidence for the reviewed timeline; never ingest unrelated/unreviewed uploads.
       if (reports.length !== ids.length) throw new Error('关联报告已变化或尚未审核，请先核对来源资料');
-      const result = await generateDiseaseSummary(scoped.record, reports, require('../utils/ai').chat);
+      const result = await require('../utils/aiDataConsent').withPersonalData(patient._id, 'health', () => generateDiseaseSummary(scoped.record, reports, require('../utils/ai').chat));
       const draft = { _id:new mongoose.Types.ObjectId(), summary:result.summary, cutoff:req.body.cutoff,
         coverage:result.coverage, coveredChanges:scoped.coveredChanges, excludedCount:scoped.excludedCount,
         sourceReports:reports.map(r => ({ id:String(r._id), title:r.title })), reportsVersion:recordVersion(reports),

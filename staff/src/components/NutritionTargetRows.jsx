@@ -6,10 +6,10 @@ export const emptyNutritionTarget = () => ({ metric: '', baseline: '', target: '
 
 export function nutritionTargetsFrom(source = {}) {
   if (Array.isArray(source.nutritionTargets) && source.nutritionTargets.length) return source.nutritionTargets.map(row => ({
-    metric: row.metric || '', baseline: row.baseline || '', target: row.target || '',
+    metric: row.metric || '', baseline: row.baseline || '', target: row.target || '', ...(row.evidenceStatus ? { referenceRange: row.referenceRange || '', evidenceStatus: row.evidenceStatus } : {}),
   }))
   if (Array.isArray(source.targets) && source.targets.length) return source.targets.map(row => ({
-    metric: row.metric || '', baseline: row.baseline || '', target: row.target || '',
+    metric: row.metric || '', baseline: row.baseline || '', target: row.target || '', ...(row.evidenceStatus ? { referenceRange: row.referenceRange || '', evidenceStatus: row.evidenceStatus } : {}),
   }))
   if (source.metric || source.baseline || source.target || source.nutritionMetric || source.nutritionBaseline || source.nutritionTarget) return [{
     metric: source.metric || source.nutritionMetric || '',
@@ -33,7 +33,7 @@ export function nutritionTargetError(targets, requireFixed = false) {
   return ''
 }
 
-export default function NutritionTargetRows({ value, onChange, disabled = false, fixed = false }) {
+export default function NutritionTargetRows({ value, onChange, disabled = false, fixed = false, evidence = {} }) {
   const targets = nutritionTargetsFrom({ nutritionTargets: value })
   const setRow = (index, key, fieldValue) => onChange(targets.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: fieldValue } : row))
   return <div style={{ display: 'grid', gap: 10 }}>
@@ -45,6 +45,9 @@ export default function NutritionTargetRows({ value, onChange, disabled = false,
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
         {[['metric', '指标名称', '如每周含糖饮料次数'], ['baseline', '已核实基线', '填入数值、单位及测量日期或当前情况'], ['target', '阶段目标', '填入可对比的数值、单位或目标情况']].map(([key, label, placeholder]) => <label key={key} className="form-label">{label} *<input className="form-input" value={row[key]} maxLength={key === 'metric' ? 100 : 200} disabled={disabled || fixed && index < FIXED_METRICS.length && key === 'metric'} placeholder={placeholder} onChange={e => setRow(index, key, e.target.value)} /></label>)}
       </div>
+      {(evidence[row.metric] || row.evidenceStatus) && <div style={{ fontSize: 12, marginTop: 8, color: '#52675D' }}>
+        结果状态：{({ abnormal: '异常', normal: '正常', unknown: '待判断' })[evidence[row.metric]?.status || row.evidenceStatus] || '待判断'}；参考范围：{evidence[row.metric]?.referenceRange || row.referenceRange || '来源未提供，需核对原始报告'}
+      </div>}
       {row.metric === '消化功能' && !disabled && <div style={{ fontSize: 12, color: '#52675D', marginTop: 7 }}>常见感受：{['腹胀', '便秘', '腹泻'].map(symptom => <button key={symptom} type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 5 }} onClick={() => setRow(index, 'baseline', [row.baseline, symptom].filter(Boolean).join('、'))}>{symptom}</button>)}；也可在基线中手工填写其他情况。</div>}
     </div>)}
     {!disabled && targets.length < 32 && <button type="button" className="btn btn-secondary btn-sm" style={{ justifySelf: 'start' }} onClick={() => onChange([...targets, emptyNutritionTarget()])}>＋ 添加观察指标</button>}

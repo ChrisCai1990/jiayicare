@@ -7,6 +7,7 @@ import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
 import { ORDER_TABS, formatOrderTime, getOrderCategory, getOrderCounts } from '../../utils/orderStatus';
+import useArchiveSubject from '../../hooks/useArchiveSubject';
 
 const STATUS_META = {
   pending: { label: '待处理', color: colors.warning },
@@ -34,6 +35,7 @@ const FULFILLMENT_LABELS = {
 
 export default function OrdersPage() {
   const { statusBarHeight } = useNavBar();
+  const archive = useArchiveSubject();
   const router = useRouter();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,8 +51,10 @@ export default function OrdersPage() {
 
   useDidShow(() => { load(); });
 
-  const counts = getOrderCounts(list);
-  const visibleList = activeTab === 'all' ? list : list.filter((order) => getOrderCategory(order) === activeTab);
+  const memberOrders = archive.subject ? list.filter(order => String(order.user?._id || order.user) === String(archive.subject.id))
+    : list.filter(order => String(order.user?._id || order.user) === String(archive.user?._id));
+  const counts = getOrderCounts(memberOrders);
+  const visibleList = activeTab === 'all' ? memberOrders : memberOrders.filter((order) => getOrderCategory(order) === activeTab);
 
   const cancel = async (id) => {
     const order = list.find(item => item._id === id);
@@ -107,6 +111,8 @@ export default function OrdersPage() {
     }
   };
 
+  if (archive.loading) return <View style={{ padding: '24px' }}>正在核对订单归属…</View>;
+  if (archive.error) return <View style={{ padding: '24px' }}><Text onClick={archive.refresh}>{archive.error} · 点击重试</Text></View>;
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{
@@ -117,7 +123,7 @@ export default function OrdersPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>我的订单</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{archive.subject ? `${archive.subject.name}的订单` : '我的订单'}</Text>
         <View style={{ width: '28px' }} />
       </View>
 
@@ -138,7 +144,7 @@ export default function OrdersPage() {
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
       ) : visibleList.length === 0 ? (
         <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}>
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>{list.length === 0 ? '暂无订单' : '当前分类暂无订单'}</Text>
+          <Text style={{ fontSize: '13px', color: colors.textMuted }}>{memberOrders.length === 0 ? '暂无订单' : '当前分类暂无订单'}</Text>
         </View>
       ) : (
         visibleList.map((o) => {

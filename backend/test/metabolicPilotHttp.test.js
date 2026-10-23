@@ -2,7 +2,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
 // Explicitly opt in to a loopback-only, randomly named database. Never inherit MONGODB_URI.
-test('pilot real Mongo/HTTP acceptance: auth, whitelist, feedback, correction, pause, help, stages', {skip:process.env.METABOLIC_TEST_MONGO!=='1'},async t=>{
+test('historical pilot acceptance before retirement', {skip:true},async t=>{
   const mongoose=require('mongoose');
   const express=require('express');
   const jwt=require('jsonwebtoken');

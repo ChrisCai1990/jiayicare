@@ -19,6 +19,7 @@ connectDB();
 // 报"PDF预览失败"——医护端审核弹窗看不到原图的真正根因。CORS必须在静态文件服务之前挂载。
 const ALLOWED_ORIGINS = [
   'https://jiaycare.com',
+  'https://app.joinwehealth.com',
   'https://admin.jiaycare.com',
   'https://staff.jiaycare.com',
   // 本地开发
@@ -93,19 +94,27 @@ app.use('/api/services',      require('./routes/services'));
 app.use('/api/visitor-assistant', require('./routes/visitorAssistant'));
 app.use('/api/partner-benefits', require('./routes/partnerBenefits'));
 app.use('/api/enterprise-hr', require('./routes/enterpriseHr'));
+app.use('/api/enterprise-hr', require('./routes/enterpriseServiceRecords').hrRouter);
 app.use('/api/ops-dashboard', require('./routes/opsDashboard'));
 app.use('/api/orders',        require('./routes/orders'));
 app.use('/api/feedback',      require('./routes/feedback'));
 app.use('/api/system',        require('./routes/system'));
 app.use('/api/share',         require('./routes/share'));
+app.use('/api/admin/nutrition-assessment-config', require('./routes/nutritionAssessmentConfig'));
 app.use('/api/admin',         require('./routes/admin'));
+app.use('/api/admin/inventory', require('./routes/inventory').adminRouter);
+app.use('/api/admin',         require('./routes/enterpriseServiceRecords').adminRouter);
 app.use('/api/admin/clinical-standards', require('./routes/clinicalStandardsAdmin'));
 app.use('/api/admin',         require('./routes/settings'));
 app.use('/api/admin/specialty-library', require('./routes/specialtyLibrary').adminRouter);
 app.use('/api/admin/ai-control', require('./routes/aiControl'));
 const staffRouter = require('./routes/staff');
 app.use('/api/staff/ibd-orders', require('./routes/ibdStaff'));
+app.use('/api/staff/nutrition-assessments', require('./routes/nutritionAssessments'));
+app.use('/api/staff', require('./routes/weightProgressPhotos').staffRouter);
+app.use('/api/weight-progress-photos', require('./routes/weightProgressPhotos').userRouter);
 app.use('/api/staff',         staffRouter);
+app.use('/api/staff/inventory', require('./routes/inventory').staffRouter);
 app.use('/api/staff/specialty-library', require('./routes/specialtyLibrary').staffRouter);
 app.use('/api/staff/clinical-standards', require('./routes/clinicalStandardsStaff'));
 app.use('/api/staff',         require('./routes/aiCaseReviews'));
@@ -121,6 +130,7 @@ app.use('/api/integrations/wecom-kf', require('./routes/wecomKfCallback'));
 app.use('/api/integrations/insurance', require('./routes/insuranceIntegrations'));
 app.use('/api/screening',     require('./routes/screening'));
 app.use('/api/tts',           require('./routes/tts'));
+app.use('/api/ai-data-consent', require('./routes/aiDataConsent'));
 
 // 404
 app.use((req, res) => {
@@ -163,6 +173,9 @@ app.listen(PORT, () => {
   // 已确认管理方案会员的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
   require('./utils/monthlyFollowUpScheduler').startMonthlyReviewScheduler();
   require('./utils/phaseAssessmentScheduler').startPhaseAssessmentScheduler();
+  require('./utils/nutritionRecordFollowUp').reconcileUpcoming().then(count => {
+    console.log(`[nutrition-followup] 已核对 ${count} 条未来预约记录`);
+  }).catch(error => console.error('[nutrition-followup] 预约任务核对失败', error.message));
   require('./utils/packageServiceRedemption').startPackageServiceRedemptionScheduler();
   require('./utils/phaseAssessmentTemplates').ensurePhaseAssessmentTemplateDrafts().catch(error => console.error('[phase-assessment] template drafts failed', error.message));
 

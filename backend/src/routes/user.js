@@ -23,6 +23,7 @@ const User = require('../models/User');
 const Enterprise = require('../models/Enterprise');
 const UserChangeLog = require('../models/UserChangeLog');
 const HealthRecord = require('../models/HealthRecord');
+const MedicalReport = require('../models/MedicalReport');
 const DailyTeamInsight = require('../models/DailyTeamInsight');
 const Task = require('../models/Task');
 const Reminder = require('../models/Reminder');
@@ -47,7 +48,7 @@ const ExamRequisition  = require('../models/ExamRequisition');
 const AnnualPlan       = require('../models/AnnualPlan');
 const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
 const { onCustomerConfirmedCheckupPlan } = require('../utils/checkupOneStopFlow');
-const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
+const { reverseFamilyRelation } = require('../utils/familyLinks');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 const wechatPay = require('../utils/wechatPay');
@@ -229,9 +230,9 @@ router.get('/me', auth, async (req, res) => {
           description: platformFundPolicy.description || '',
         },
       };
-      healthFund.rule.description = fundEligible
-        ? '自有基金优先，两类基金合计受商品抵扣上限限制（最高20%）；适用范围及实际金额以服务端核价为准。'
-        : '当前会员权益不支持基金抵扣，可按原价购买；已有基金余额保留。';
+      healthFund.rule.description = personalAvailable > 0 || fundEligible
+        ? '自有基金可在余额内全额抵扣；企业赠送基金仅限符合会员及商品规则的服务使用。实际金额以服务端核价为准。'
+        : '当前没有可用的自有健康基金；企业赠送基金需符合会员及商品规则。';
 
     // 查询已分配的责任人员信息（实时 populate）
     // 健康规划师是服务协调岗位；已分配的就医专员属于客户可沟通的健康服务团队。
@@ -600,7 +601,7 @@ router.post('/onboarding', auth, async (req, res) => {
     try {
       if (user.patientCategory === 'child') {
         await require('../utils/childQuestionnaireAutoPush').ensureChildQuestionnairePush(user);
-      } else if (!idOwner) {
+      } else {
         await require('../utils/onboardingPush').pushBatch1(user._id);
       }
     } catch (e) {
@@ -686,7 +687,7 @@ router.get('/dashboard', auth, async (req, res) => {
           HealthRecord.findOne({ user: userId, type }).sort({ recordedAt: -1 }).lean()
         )
       ),
-      Task.find({ user: userId, status: 'pending' })
+      Task.find({ user: userId, status: 'pending', sourceTaskKey: { $not: /^nutrition:/ } })
         .sort({ priority: 1, createdAt: 1 }).limit(5).lean(),
       Reminder.find({ user: userId, enabled: true, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: /^service-cycle:/ }] }).lean(),
       HealthRecord.countDocuments({ user: userId }),
@@ -884,8 +885,8 @@ router.get('/report', auth, async (req, res) => {
 
     // Task 完成情况
     const [totalTasks, completedTasks] = await Promise.all([
-      Task.countDocuments({ user: userId, createdAt: { $gte: start } }),
-      Task.countDocuments({ user: userId, status: 'completed', createdAt: { $gte: start } }),
+      Task.countDocuments({ user: userId, sourceTaskKey: { $not: /^nutrition:/ }, createdAt: { $gte: start } }),
+      Task.countDocuments({ user: userId, sourceTaskKey: { $not: /^nutrition:/ }, status: 'completed', createdAt: { $gte: start } }),
     ]);
     const taskRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
@@ -1000,19 +1001,45 @@ router.post('/change-phone', auth, async (req, res) => {
 router.post('/report/share', auth, async (req, res) => {
   try {
     const { period = 'week', snapshot } = req.body;
+    if (req.body?.consent !== true || req.body?.consentVersion !== 'report-share-20261012') {
+      return res.status(400).json({ success: false, message: '请先确认分享内容及链接访问范围' });
+    }
     if (!snapshot) {
       return res.status(400).json({ success: false, message: '缺少报告数据' });
     }
 
-    const token = crypto.randomBytes(8).toString('hex');          // 16 位随机 hex
+    // Keep only the fields rendered by the public summary page.
+    const sharedSummary = {
+      period: String(snapshot.period || '').slice(0, 40),
+      dateRange: String(snapshot.dateRange || '').slice(0, 80),
+      healthScore: Number(snapshot.healthScore) || 0,
+      recordCount: Number(snapshot.recordCount) || 0,
+      taskCompletion: {
+        completed: Number(snapshot.taskCompletion?.completed) || 0,
+        total: Number(snapshot.taskCompletion?.total) || 0,
+        rate: Number(snapshot.taskCompletion?.rate) || 0,
+      },
+      metrics: Array.isArray(snapshot.metrics) ? snapshot.metrics.slice(0, 30).map(item => ({
+        label: String(item.label || '').slice(0, 60), value: String(item.value || '').slice(0, 60),
+        unit: String(item.unit || '').slice(0, 20), status: String(item.status || '').slice(0, 20),
+        trend: String(item.trend || '').slice(0, 20), delta: String(item.delta || '').slice(0, 40),
+      })) : [],
+      highlights: Array.isArray(snapshot.highlights) ? snapshot.highlights.slice(0, 20).map(item => ({
+        type: String(item.type || '').slice(0, 20), text: String(item.text || '').slice(0, 200),
+      })) : [],
+    };
+
+    const token = crypto.randomBytes(16).toString('hex');         // 128 位随机分享令牌
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);  // 7 天有效
 
     await ShareToken.create({
       token,
       userId: req.user._id,
-      userName: req.user.name || req.user.phone,
+      userName: req.user.name || '',
       period,
-      reportData: snapshot,
+      reportData: sharedSummary,
+      consentVersion: 'report-share-20261012',
+      consentConfirmedAt: new Date(),
       expiresAt,
     });
 
@@ -1020,6 +1047,16 @@ router.post('/report/share', auth, async (req, res) => {
     res.json({ success: true, data: { token, shareUrl, expiresAt } });
   } catch (err) {
     res.status(500).json({ success: false, message: '创建分享链接失败', error: err.message });
+  }
+});
+
+router.delete('/report/share/:token', auth, async (req, res) => {
+  try {
+    const deleted = await ShareToken.findOneAndDelete({ token: req.params.token, userId: req.user._id });
+    if (!deleted) return res.status(404).json({ success: false, message: '链接已失效或不存在' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '取消分享失败' });
   }
 });
 
@@ -1132,7 +1169,27 @@ router.get('/plans', auth, async (req, res) => {
       .select('title type description content items status startDate endDate checkupDate followupFrequency confirmedAt pushedAt notes year')
       .populate('staffId', 'name role title')
       .sort({ createdAt: -1 });
-    res.json({ success: true, data: plans });
+    const data = await Promise.all(plans.map(async plan => {
+      if (plan.type !== 'nutrition' || !plan.content?.moduleData) return plan;
+      const result = plan.toObject();
+      const items = require('../utils/nutritionPlanItems').nutritionPlanItems(plan);
+      const changed = items.length !== plan.items.length || items.some((item, index) =>
+        item.name !== plan.items[index]?.name || item.notes !== plan.items[index]?.notes);
+      if (changed) {
+        // Repair older pushed plans once so every newly visible section has a real
+        // item ID and can be marked complete. The timestamp guard protects a
+        // concurrent completion or staff edit from being overwritten.
+        const updated = await HealthPlan.findOneAndUpdate(
+          { _id: plan._id, updatedAt: plan.updatedAt }, { $set: { items } }, { new: true });
+        if (updated) result.items = updated.items;
+        else {
+          const fresh = await HealthPlan.findById(plan._id);
+          result.items = fresh ? require('../utils/nutritionPlanItems').nutritionPlanItems(fresh) : plan.items;
+        }
+      } else result.items = items;
+      return result;
+    }));
+    res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取健康方案失败', error: err.message });
   }
@@ -1229,6 +1286,7 @@ router.get('/points', auth, async (req, res) => {
 // GET /api/user/followup-tasks
 router.get('/followup-tasks', auth, async (req, res) => {
   try {
+    await require('../utils/legacyLifestyleInterview').reconcileLegacyLifestyleInterviews(req.user._id);
     const followups = await FollowUp.find({
       patientId: req.user._id,
       $nor: [routineMedicationNoiseFilter],
@@ -1244,6 +1302,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
         { sourceType: 'ai_no_response' },
         { sourceType: 'order', workflowKey: { $not: /^medical_reminder:(?:followup|documents)$/ } },
         { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
+        { workflowKey: /^nutrition:/ },
         { sourceType: { $in: ['professional_assessment', 'report_followup'] }, taskRole: { $in: ['executor', 'supervisor'] } },
       ],
     })
@@ -1306,6 +1365,9 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     }
     const done = req.body.done !== false; // 默认 true，传 false 则取消
     const needFollowUp = req.body.needFollowUp === true;
+    if (!done && followup.repeatWeekly && await FollowUp.exists({ _id: require('../utils/rollingWeeklyFollowUp').weeklySuccessorId(followup._id) })) {
+      return res.status(409).json({ success: false, message: '下一次每周随访已生成，如需调整请联系健管专员' });
+    }
 
     const changes = {
       completedByUser: done,
@@ -1341,6 +1403,9 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     // 使用原子更新，仅修改完成状态字段。部分历史随访由旧版本写入过已废弃的枚举值，
     // document.save() 会重新校验整条旧记录，导致用户点击“完成”时报 validation failed。
     const updated = await FollowUp.findByIdAndUpdate(followup._id, { $set: changes }, { new: true });
+    if (updated.status === 'completed' && updated.repeatWeekly) {
+      await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(updated);
+    }
     if (done && !needFollowUp && followup.workflowKey === 'medical_reminder:followup') {
       await require('../utils/medicalReminderWorkflow').markVisitCompleted(updated);
     }
@@ -1368,12 +1433,21 @@ router.post('/followup-tasks/:id/form', auth, async (req, res) => {
   }
 });
 
-// GET /api/user/push-records — 医护端推送给我的记录（科普/方案/问卷通知等）
+// GET /api/user/push-records — 本人的医护推送；memberId 仅允许读取已关联家人的产品推荐。
 router.get('/push-records', auth, async (req, res) => {
   try {
+    const memberId = String(req.query.memberId || '');
+    let patientId = req.user._id;
+    if (memberId && memberId !== String(req.user._id)) {
+      const member = await require('../utils/orderBeneficiary').resolveOrderBeneficiary(req.user, memberId);
+      if (!member) return res.status(403).json({ success: false, message: '无权查看该家庭成员的服务推荐' });
+      patientId = member._id;
+    }
+    const filter = memberId && memberId !== String(req.user._id)
+      ? { patientId, type: 'product' } : { patientId };
     const [recent, unread] = await Promise.all([
-      PushRecord.find({ patientId: req.user._id }).sort({ createdAt: -1 }).limit(50).populate('staffId', 'name role title'),
-      PushRecord.find({ patientId: req.user._id, $or: [{ readAt: null }, { type: 'questionnaire' }] })
+      PushRecord.find(filter).sort({ createdAt: -1 }).limit(50).populate('staffId', 'name role title'),
+      PushRecord.find({ ...filter, $or: [{ readAt: null }, { type: 'questionnaire' }] })
         .sort({ createdAt: -1 }).populate('staffId', 'name role title'),
     ]);
     const records = require('../utils/messageInbox').mergeInboxRecords(recent, unread).map(row => row.toObject ? row.toObject() : { ...row });
@@ -1409,9 +1483,17 @@ router.post('/push-records/:id/shared-fund-quote', auth, async (req, res) => {
 // useHealthFund: 抵扣的健康基金金额（作用于勾选产品合计）；couponId: 使用的优惠券；paymentMethod: 支付方式
 router.post('/push-records/:id/pay', auth, async (req, res) => {
   try {
-    const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id });
+    const beneficiaryUserId = String(req.body.beneficiaryUserId || '');
+    const serviceUser = beneficiaryUserId && beneficiaryUserId !== String(req.user._id)
+      ? await require('../utils/orderBeneficiary').resolveOrderBeneficiary(req.user, beneficiaryUserId)
+      : req.user;
+    if (!serviceUser) return res.status(403).json({ success: false, message: '无权为该家庭成员购买服务' });
+    const familyPayment = String(serviceUser._id) !== String(req.user._id);
+    const record = await PushRecord.findOne({ _id: req.params.id, patientId: serviceUser._id, type: 'product' });
     if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
     const { selectedProductIds, useHealthFund, useEnterpriseSharedFund, couponId, paymentMethod, paymentCapability } = req.body;
+    if (familyPayment && (Number(useHealthFund) > 0 || useEnterpriseSharedFund || couponId))
+      return res.status(400).json({ success: false, message: '家庭代付暂不使用本人优惠券或基金，请使用微信支付' });
     if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
     if (!Array.isArray(selectedProductIds) || !selectedProductIds.length) return res.status(400).json({ success: false, message: '请选择要购买的产品' });
     // Released clients before 1.0.166 never call requestPayment and would show
@@ -1437,7 +1519,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     if (selectedIdSet.size !== toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中或存在重复，请重新选择' });
     if (toPay.length > 1) {
       try {
-        const result = await require('../utils/pushGroupCheckout').createPushGroupCheckout({ record, user: req.user, items: toPay, options: req.body });
+        const result = await require('../utils/pushGroupCheckout').createPushGroupCheckout({ record, user: req.user, serviceUser, items: toPay, options: req.body });
         return res.json(result);
       } catch (error) { return res.status(error.status || 500).json({ success: false, message: error.message || '合并下单失败' }); }
     }
@@ -1520,7 +1602,10 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       paid = Math.max(0, paid);
       allocated += paid;
       return {
-        user: req.user._id,
+        user: serviceUser._id,
+        payerUser: req.user._id,
+        beneficiaryName: serviceUser.name || '',
+        tenantId: serviceUser.tenantId || null,
         serviceId: p.productId,
         serviceName: p.name,
         servicePrice: p.price,
@@ -1544,7 +1629,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     // 先完成负责人预检，避免订单创建成功后才发现无人承接而静默掉单。
     const orderAssignees = [];
     for (const orderDoc of orderDocs) {
-      const assignee = await resolveOrderWorkflowAssignee(req.user._id, orderDoc.serviceName);
+      const assignee = await resolveOrderWorkflowAssignee(serviceUser._id, orderDoc.serviceName);
       if (!assignee) return res.status(409).json({ success: false, message: '当前没有可用的服务负责人，请联系平台处理后再购买' });
       orderAssignees.push(assignee);
     }
@@ -1562,7 +1647,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     // opening WeChat Pay. Close those placeholders when the member retries so
     // the genuine payment flow cannot leave duplicate orders/tasks behind.
     const legacyOrders = await Order.find({
-      user: req.user._id,
+      user: serviceUser._id,
       pushRecordId: record._id,
       serviceId: toPay[0].productId,
       paymentStatus: 'unpaid',
@@ -1659,7 +1744,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         followUps.push(FollowUp.create({
           staffId:   followUpStaffId,
           assignedTo: followUpStaffId,
-          patientId: req.user._id,
+          patientId: serviceUser._id,
           type:      'other',
           status:    'planned',
           theme:     `预约：${order.serviceName}`,
@@ -1674,6 +1759,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
 
     orders[0].paidAt = new Date();
     await orders[0].save();
+    await require('../utils/orderPlannerConversation').ensureOrderPlannerPrompt(orders[0]);
     res.json({
       success: true,
       data: { orderId: orders[0]._id, paymentStatus: 'paid' },
@@ -1775,12 +1861,16 @@ router.use('/guardian-children', auth, require('./guardianChildren'));
 // GET /api/user/family-links — 获取已关联的家庭成员
 router.get('/family-links', auth, async (req, res) => {
   try {
-    // 兼容旧数据：首次查看时自动补齐同一已确认家庭网络中的成员关系。
-    await synchronizeFamilyGroup([req.user._id]);
     const u = await User.findById(req.user._id)
       .populate('familyLinks.linkedUser', 'name phone gender birthDate isDeleted')
       .select('familyLinks');
-    const links = (u?.familyLinks || []).filter(l => l.linkedUser && !l.linkedUser.isDeleted).map(l => ({
+    const targets = (u?.familyLinks || []).map(link => link.linkedUser?._id).filter(Boolean);
+    const reciprocals = targets.length ? await User.find({ _id: { $in: targets },
+      tenantId: req.user.tenantId || null, patientCategory: { $ne: 'child' }, isDeleted: { $ne: true },
+      'familyLinks.linkedUser': req.user._id }).select('_id').lean() : [];
+    const authorized = new Set(reciprocals.map(member => String(member._id)));
+    const links = (u?.familyLinks || []).filter(l => l.linkedUser && !l.linkedUser.isDeleted &&
+      authorized.has(String(l.linkedUser._id))).map(l => ({
       _id: l._id,
       relation: l.relation,
       createdAt: l.createdAt,
@@ -1789,6 +1879,7 @@ router.get('/family-links', auth, async (req, res) => {
         name: l.linkedUser.name,
         phone: l.linkedUser.phone,
         gender: l.linkedUser.gender,
+        birthDate: l.linkedUser.birthDate,
         age: l.linkedUser.birthDate
           ? Math.floor((Date.now() - new Date(l.linkedUser.birthDate)) / (365.25 * 86400000))
           : null,
@@ -1800,6 +1891,21 @@ router.get('/family-links', auth, async (req, res) => {
   }
 });
 
+// Confirmed family members can read each other's archive; editing remains with the owner.
+router.get('/family-links/:memberId/archive', auth, async (req, res) => {
+  try {
+    const member = await require('../utils/authorizedFamilyMember').authorizedFamilyMember(req.user, req.params.memberId);
+    if (!member) return res.status(403).json({ success: false, message: '家庭关系未授权或已解除' });
+    res.json({ success: true, data: {
+      id: member._id, name: member.name, birthDate: member.birthDate, gender: member.gender,
+      bloodTypeABO: member.bloodTypeABO || '', bloodTypeRH: member.bloodTypeRH || '',
+      healthProfile: member.healthProfile || {}, infectiousHistory: member.infectiousHistory || '',
+      chronicDiseases: member.chronicDiseases || [], height: member.height || null,
+      weight: member.weight || null, lifestyle: member.lifestyle || {},
+    } });
+  } catch (err) { res.status(500).json({ success: false, message: '读取家庭成员档案失败' }); }
+});
+
 // GET /api/user/family-links/search?q=手机号或姓名 — 搜索已注册用户
 router.get('/family-links/search', auth, async (req, res) => {
   try {
@@ -1807,7 +1913,7 @@ router.get('/family-links/search', auth, async (req, res) => {
     if (!q) return res.json({ success: true, data: [] });
     const query = {
       _id: { $ne: req.user._id },
-      patientCategory: 'adult',
+      patientCategory: { $ne: 'child' },
       $or: [
         { phone: { $regex: q, $options: 'i' } },
         { name:  { $regex: q, $options: 'i' } },
@@ -1858,7 +1964,7 @@ router.post('/family-links', auth, async (req, res) => {
       User.findById(linkedUserId).select('familyLinks familyInvites name patientCategory'),
     ]);
     if (!userB) return res.status(404).json({ success: false, message: '用户不存在' });
-    if (userB.patientCategory !== 'adult') return res.status(400).json({ success: false, message: '未成年人请使用监护人建档入口' });
+    if (userB.patientCategory === 'child') return res.status(400).json({ success: false, message: '未成年人请使用监护人建档入口' });
     if (userA.familyLinks.find(l => String(l.linkedUser) === String(linkedUserId))) {
       return res.status(400).json({ success: false, message: '已是家庭成员' });
     }
@@ -1890,7 +1996,7 @@ router.post('/family-links', auth, async (req, res) => {
       type:    'system',
       sender:  '系统通知',
       title:   '家庭成员邀请',
-      content: `${senderName} 邀请您成为家庭成员${relationText}，点击下方「去确认」即可接受或拒绝。`,
+      content: `${senderName} 邀请您成为家庭成员${relationText}。接受后双方可查看健康档案和报告、代传报告、代付订单并使用可共享权益；请确认是否同意。`,
       unread:  true,
       action:  { type: 'family_invite', inviteId: String(savedInvite?._id || ''), route: 'FamilyMembers' },
     });
@@ -1904,14 +2010,18 @@ router.post('/family-links', auth, async (req, res) => {
 // GET /api/user/family-links/pending-invites — 查看收到的待确认邀请
 router.get('/family-links/pending-invites', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('familyInvites');
+    const user = await User.findById(req.user._id).select('familyInvites familyLinks');
     const pending = (user?.familyInvites || [])
-      .filter(inv => inv.status === 'pending')
+      .filter(inv => inv.status === 'pending' || (inv.source === 'staff' && inv.status === 'accepted' &&
+        !(user.familyLinks || []).some(link => String(link.linkedUser) === String(inv.fromUser))))
       .map(inv => ({
         _id: inv._id,
         fromUser: inv.fromUser,
         fromName: inv.fromName,
         relation: inv.relation,
+        displayRelation: reverseFamilyRelation(inv.relation),
+        source: inv.source || 'user',
+        status: inv.status,
         createdAt: inv.createdAt,
       }));
     res.json({ success: true, data: pending });
@@ -1925,11 +2035,34 @@ router.patch('/family-links/invites/:inviteId/accept', auth, async (req, res) =>
   try {
     const userB = await User.findById(req.user._id).select('familyLinks familyInvites name');
     const invite = userB.familyInvites.id(req.params.inviteId);
-    if (!invite || invite.status !== 'pending') {
+    if (!invite || (invite.status !== 'pending' && !(invite.source === 'staff' && invite.status === 'accepted'))) {
       return res.status(404).json({ success: false, message: '邀请不存在或已处理' });
     }
-    const userA = await User.findById(invite.fromUser).select('familyLinks name');
+    const userA = await User.findById(invite.fromUser).select('familyLinks familyInvites name');
     if (!userA) return res.status(404).json({ success: false, message: '邀请方用户不存在' });
+
+    if (invite.source === 'staff') {
+      const reciprocal = userA.familyInvites.find(i => i.source === 'staff' && String(i.fromUser) === String(userB._id));
+      if (!reciprocal) return res.status(409).json({ success: false, message: '医护确认记录不完整，请联系工作人员核实' });
+      if (reciprocal.status === 'rejected') return res.status(409).json({ success: false, message: '对方未授权此家庭关系' });
+      if (invite.status === 'pending') {
+        invite.status = 'accepted';
+        await userB.save();
+      }
+      // 双方分别授权后才创建用户端双向关联。重复请求可补偿中途失败的单边写入。
+      const other = await User.findById(userA._id).select('familyInvites');
+      const otherInvite = other.familyInvites.find(i => i.source === 'staff' && String(i.fromUser) === String(userB._id));
+      if (otherInvite?.status !== 'accepted') {
+        return res.json({ success: true, message: '您已授权，等待另一位家庭成员授权' });
+      }
+      await Promise.all([
+        User.updateOne({ _id: userA._id, 'familyLinks.linkedUser': { $ne: userB._id } },
+          { $push: { familyLinks: { linkedUser: userB._id, relation: reciprocal.relation } } }),
+        User.updateOne({ _id: userB._id, 'familyLinks.linkedUser': { $ne: userA._id } },
+          { $push: { familyLinks: { linkedUser: userA._id, relation: invite.relation } } }),
+      ]);
+      return res.json({ success: true, message: '双方已授权，家庭成员关联成功' });
+    }
 
     invite.status = 'accepted';
     // A 邀请时填的 relation 语义是"B 是 A 的 X"（如 A 选"父亲"表示 B 是 A 的父亲）。
@@ -1944,8 +2077,7 @@ router.patch('/family-links/invites/:inviteId/accept', auth, async (req, res) =>
       userB.familyLinks.push({ linkedUser: invite.fromUser, relation: aRelationToB });
     }
     await Promise.all([userA.save(), userB.save()]);
-    const syncResult = await synchronizeFamilyGroup([userA._id, userB._id]);
-    res.json({ success: true, message: '已接受邀请，家庭成员关联成功', data: syncResult });
+    res.json({ success: true, message: '已接受邀请，家庭成员关联成功' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -1961,6 +2093,19 @@ router.patch('/family-links/invites/:inviteId/reject', auth, async (req, res) =>
     }
     invite.status = 'rejected';
     await user.save();
+    if (invite.source === 'staff') {
+      // 拒绝授权优先于并发的接受请求，撤销可能刚建立的双向用户权限。
+      const other = await User.findById(invite.fromUser).select('familyInvites');
+      const reciprocal = other?.familyInvites.find(i => i.source === 'staff' && String(i.fromUser) === String(user._id));
+      if (reciprocal && reciprocal.status !== 'rejected') {
+        reciprocal.status = 'rejected';
+        await other.save();
+      }
+      await Promise.all([
+        User.updateOne({ _id: user._id }, { $pull: { familyLinks: { linkedUser: invite.fromUser } } }),
+        User.updateOne({ _id: invite.fromUser }, { $pull: { familyLinks: { linkedUser: user._id } } }),
+      ]);
+    }
     res.json({ success: true, message: '已拒绝邀请' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -1970,17 +2115,23 @@ router.patch('/family-links/invites/:inviteId/reject', auth, async (req, res) =>
 // DELETE /api/user/family-links/:linkId — 解除家庭成员关联（双向）
 router.delete('/family-links/:linkId', auth, async (req, res) => {
   try {
-    const userA = await User.findById(req.user._id).select('familyLinks');
+    const userA = await User.findById(req.user._id).select('familyLinks familyInvites');
     const link = userA.familyLinks.id(req.params.linkId);
     if (!link) return res.status(404).json({ success: false, message: '关联不存在' });
     const linkedUserId = link.linkedUser;
     userA.familyLinks.pull(req.params.linkId);
 
-    const userB = await User.findById(linkedUserId).select('familyLinks');
+    const userB = await User.findById(linkedUserId).select('familyLinks familyInvites');
     if (userB) {
       const reverse = userB.familyLinks.find(l => String(l.linkedUser) === String(req.user._id));
       if (reverse) userB.familyLinks.pull(reverse._id);
+      for (const pending of userB.familyInvites || []) {
+        if (pending.source === 'staff' && String(pending.fromUser) === String(req.user._id)) pending.status = 'rejected';
+      }
       await userB.save();
+    }
+    for (const pending of userA.familyInvites || []) {
+      if (pending.source === 'staff' && String(pending.fromUser) === String(linkedUserId)) pending.status = 'rejected';
     }
     await userA.save();
     res.json({ success: true, message: '已解除家庭成员关联' });
@@ -2029,6 +2180,23 @@ router.get('/ai-health-summary', auth, async (req, res) => {
       hasLifestyle,
       isSelfService,
     };
+    // An older approved statement can be copied into a new draft. Do not show
+    // that draft to the member while the source measurements contradict it.
+    const { findUnsupportedTumorMarkerElevation } = require('../utils/tumorMarkerFactGuard');
+    if (hasDoctor && hasSections && !isSelfService && findUnsupportedTumorMarkerElevation(data.sections, [])) {
+      const { reportsThroughYear } = require('../utils/historicalAIHealthContext');
+      const reports = await MedicalReport.find({ user: user._id })
+        .select('checkDate date reportYear reportItems').lean();
+      const year = Number(data.latestYear) || new Date().getFullYear();
+      const sourceReports = year < new Date().getFullYear() ? reportsThroughYear(reports, year) : reports;
+      if (findUnsupportedTumorMarkerElevation(data.sections, sourceReports)) {
+        return res.json({ success: true, hasDoctor, pendingReview: true,
+          reviewStatus: { ...reviewStatus, doctorApproved: false },
+          data: { ...data, sections: {}, byYear: undefined, doctorApprovedAt: null, approvedAt: null },
+          message: '当前健康信息整理中的肿瘤标志物结论需要重新核对原始报告，暂不展示，请等待健康顾问重新评估。',
+        });
+      }
+    }
     if (hasDoctor && hasSections && !isSelfService) {
       return res.json({
         success: true, data, hasDoctor, reviewStatus,
@@ -2074,8 +2242,8 @@ router.post('/ai-health-summary', auth, async (req, res) => {
       return res.status(429).json({ success: false, code: 'YEARLY_LIMIT_REACHED', message: '今年已生成过AI健康信息整理结果（每年限1次），如需更新请联系客服' });
     }
 
-    const { sections, failed } = await generateHealthSummarySections(user);
-    if (failed) return res.status(500).json({ success: false, message: 'AI生成失败，请重试' });
+    const { sections, failed, validationError } = await generateHealthSummarySections(user);
+    if (failed) return res.status(validationError ? 422 : 500).json({ success: false, message: validationError || 'AI生成失败，请重试' });
     const year = String(new Date().getFullYear());
     const existing = user.aiHealthSummary || {};
     const byYear = { ...(existing.byYear || {}) };

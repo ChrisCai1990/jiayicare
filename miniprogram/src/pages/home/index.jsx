@@ -3,12 +3,14 @@ import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { userAPI, tasksAPI, followupTasksAPI, systemAPI, servicesAPI, metabolicPilotAPI } from '../../services/api';
+import { userAPI, tasksAPI, followupTasksAPI, systemAPI, servicesAPI } from '../../services/api';
 import TrendChart from '../../components/TrendChart';
 import Icon from '../../components/Icon';
 import useNavBar from '../../hooks/useNavBar';
 import { openManagerConversation } from '../../utils/managerConversation';
 import { homeTaskCards } from '../../utils/homeTaskCards';
+import useArchiveSubject, { storedArchiveId } from '../../hooks/useArchiveSubject';
+import FamilySubjectView from '../../components/FamilySubjectView';
 
 // 对齐 app/src/screens/home/HomeScreen.js（2026-07-18 首页瘦身+打卡页重构后）：
 // 打卡网格已抽离到独立页 pages/checkin/index，首页只保留入口按钮；健康管家团队卡片已移至"我的"页。
@@ -179,6 +181,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
 export default function HomePage() {
   const { user: authUser, token, loading: authLoading, isDemo } = useAuth();
   const { statusBarHeight } = useNavBar();
+  const archive = useArchiveSubject();
   const runtimeInfo = (() => {
     try {
       const info = Taro.getAccountInfoSync?.();
@@ -188,7 +191,6 @@ export default function HomePage() {
     }
   })();
   const [dashData, setDashData] = useState(null);
-  const [pilotData, setPilotData] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [followups, setFollowups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -202,11 +204,12 @@ export default function HomePage() {
   // Each source publishes independently; a slow mall request must not hold up tasks.
   const loadCore = useCallback(async () => {
     if (authLoading) return;
+    if (storedArchiveId(authUser?._id)) return;
     const requestId = ++loadRequestRef.current;
     const current = () => requestId === loadRequestRef.current && sessionRef.current === token;
     setLoading(true);
     setSectionState({ dashboard: token ? 'loading' : 'ready', tasks: token ? 'loading' : 'ready', followups: token ? 'loading' : 'ready', services: 'loading' });
-    if (!token) { setDashData(null); setTasks([]); setFollowups([]); setPilotData(null); }
+    if (!token) { setDashData(null); setTasks([]); setFollowups([]); }
     const load = async (key, request, apply) => {
       try {
         const result = await request();
@@ -222,17 +225,20 @@ export default function HomePage() {
     if (token) jobs.push(
       load('dashboard', () => userAPI.getDashboard(), setDashData),
       load('tasks', () => tasksAPI.list(), data => setTasks((data || []).filter(t => t.status === 'pending'))),
-      load('followups', () => followupTasksAPI.list(), data => setFollowups((data || []).filter(p => !p.completedByUser && !['completed', 'cancelled'].includes(p.status)))),
-      metabolicPilotAPI.get().then(result => { if (current()) setPilotData(result?.data || null); }).catch(() => { if (current()) setPilotData(null); })
+      load('followups', () => followupTasksAPI.list(), data => setFollowups((data || []).filter(p => !p.completedByUser && !['completed', 'cancelled'].includes(p.status))))
     );
     await Promise.all(jobs);
     if (current()) setLoading(false);
-  }, [token, authLoading]);
+  }, [token, authLoading, authUser?._id]);
 
-  useEffect(() => { setDashData(null); setTasks([]); setFollowups([]); setPilotData(null); setTaskDetail(null); }, [token]);
+  useEffect(() => { setDashData(null); setTasks([]); setFollowups([]); setTaskDetail(null); }, [token]);
   useEffect(() => () => { loadRequestRef.current += 1; }, []);
 
   useEffect(() => { loadCore(); }, [loadCore]);
+
+  useEffect(() => {
+    if (!archive.loading && !archive.subject && token) loadCore();
+  }, [archive.loading, archive.subject?.id, token]);
 
   useDidShow(() => { loadCore(); });
   usePullDownRefresh(() => { loadCore().then(() => { Taro.stopPullDownRefresh(); }); });
@@ -240,9 +246,10 @@ export default function HomePage() {
   // systemAPI.push() 同理挪到首屏之后延迟触发，fire-and-forget，不参与启动阶段的并发请求
   useEffect(() => {
     if (!token) return undefined;
+    if (storedArchiveId(authUser?._id)) return undefined;
     const timer = setTimeout(() => { systemAPI.push().catch(() => {}); }, 1500);
     return () => clearTimeout(timer);
-  }, [token]);
+  }, [token, authUser?._id, archive.subject?.id]);
 
   const user = { ...(authUser || {}), ...(dashData?.user || {}) };
   const manager = (Array.isArray(authUser?.careTeam) ? authUser.careTeam : []).find(m => m.kind === 'healthManager');
@@ -324,6 +331,10 @@ export default function HomePage() {
     }
   };
 
+  if (archive.loading || archive.error || archive.subject) {
+    return <FamilySubjectView archive={archive} section="home" statusBarHeight={statusBarHeight} />;
+  }
+
   return (
     <ScrollView scrollY style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{padding:`${statusBarHeight+8}px ${spacing.lg}px 18px`,paddingRight:'112px',backgroundColor:colors.background}}>
@@ -342,10 +353,6 @@ export default function HomePage() {
           <View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{display:'flex',alignItems:'center',gap:'9px',backgroundColor:colors.primary,borderRadius:'12px',padding:'13px 15px'}}>
             <Text style={{fontSize:'22px',color:'#fff'}}>＋</Text><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>记录健康数据</Text><Text style={{color:'#fff'}}>›</Text>
           </View>
-          {(pilotData?.help?.status==='open'||(pilotData?.help?.status==='closed'&&!pilotData.help.readAt))&&<View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{backgroundColor:colors.primary10,borderRadius:'12px',padding:'12px',marginTop:'12px'}}>
-            <Text style={{display:'block',fontSize:'13px',fontWeight:600,color:colors.primary}}>{pilotData.help.status==='open'?'体重管理求助待处理':'体重管理求助已回复'} ›</Text>
-            <Text style={{display:'block',fontSize:'12px',color:colors.textPrimary,marginTop:'5px'}} numberOfLines={2}>{pilotData.help.status==='open'?`负责人：${pilotData.helpOwner||'待核对'}`:pilotData.help.reply||'点击查看处理结果'}</Text>
-          </View>}
           <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',textAlign:'center',marginTop:'10px'}}>{growth.totalCheckinDays>0?`近30天已记录 ${growth.totalCheckinDays} 天`:'每一次记录，都多一份了解'}</Text>
         </View>
 

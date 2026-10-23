@@ -38,7 +38,7 @@ router.put('/:id', auth, async (req, res) => {
   res.json({ success: true, data: item, message: '更新成功' });
 });
 
-// 今日打卡（标记今日已服）
+// 今日记录健康数据（标记今日已服）
 router.post('/:id/checkin', auth, async (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const item = await Supplement.findOneAndUpdate(
@@ -47,7 +47,7 @@ router.post('/:id/checkin', auth, async (req, res) => {
     { new: true }
   );
   if (!item) return res.status(404).json({ success: false, message: '记录不存在或已停用' });
-  res.json({ success: true, data: item, message: '打卡成功' });
+  res.json({ success: true, data: item, message: '记录成功' });
 });
 
 // 标记停用

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, isActivePageParse, mergeSupplementItems, resolveImageParseCompletion } = require('../src/utils/reportPageSupplement');
+const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, isActivePageParse, mergeSupplementItems, resolveImageParseCompletion, supplementMatches } = require('../src/utils/reportPageSupplement');
 
 test('只拦截近期同页补提，进程中断留下的陈旧状态允许重试', () => {
   const now = new Date('2026-09-11T05:30:00.000Z');
@@ -32,6 +32,37 @@ test('单页补提硬过滤已有项目，即使AI返回了不同数值', () => 
     { name: '血小板计数', itemType: 'lab', value: '210', unit: '10^9/L', orderName: '血常规' },
   ];
   assert.deepEqual(filterMissingReportItems(existing, candidates).map(item => item.name), ['血小板计数']);
+});
+
+test('同页检验项单位和栏目写法改变时不重复新增或覆盖已核对值', () => {
+  const existing = [{ itemId: 'old', name: '铁蛋白[FER]', itemType: 'lab', value: '481.06',
+    unit: 'ng/ml', sourceSection: '肿瘤十二项（女）', manualReviewStatus: 'reviewed' }];
+  const candidate = { name: '铁蛋白 [FER]', itemType: 'lab', value: '481.60',
+    unit: 'μg/L', sourceSection: '肿瘤标志物十二项' };
+  assert.equal(supplementMatches(existing, candidate).length, 1);
+  assert.deepEqual(filterMissingReportItems(existing, [candidate]), []);
+  assert.deepEqual(mergeSupplementItems(existing, [candidate]), { items: existing, added: [], enriched: [] });
+});
+
+test('未核对空值可按同页唯一检验名补全，多个同名项不猜测归属', () => {
+  const blank = { itemId: 'blank', name: '铁蛋白[FER]', itemType: 'lab', value: '', unit: 'ng/ml', sourceSection: '肿瘤十二项' };
+  const candidate = { name: '铁蛋白[FER]', itemType: 'lab', value: '481.06', unit: 'ng/ml', sourceSection: '肿瘤标志物' };
+  const enriched = mergeSupplementItems([blank], [candidate]);
+  assert.equal(enriched.items.length, 1);
+  assert.equal(enriched.items[0].value, '481.06');
+  assert.equal(enriched.items[0].itemId, 'blank');
+  assert.equal(mergeSupplementItems([blank], [{ ...candidate, unit: 'mg/L' }]).enriched.length, 0);
+  const ambiguous = [blank, { ...blank, itemId: 'other', sourceSection: '另一检验单' }];
+  assert.equal(mergeSupplementItems(ambiguous, [candidate]).added.length, 0);
+  assert.deepEqual(filterMissingReportItems(ambiguous, [candidate]), []);
+});
+
+test('本轮两次返回同名检验项且单位或栏目不同，只接受第一条', () => {
+  const candidates = [
+    { name: '脂蛋白a', itemType: 'lab', value: '318.4', unit: 'mg/L', sourceSection: '血脂五项' },
+    { name: '脂蛋白a', itemType: 'lab', value: '318.4', unit: 'mg/dL', sourceSection: '血脂检测' },
+  ];
+  assert.deepEqual(filterMissingReportItems([], candidates), [candidates[0]]);
 });
 
 test('不同栏目下的同名项目仍可作为真实缺项补提', () => {

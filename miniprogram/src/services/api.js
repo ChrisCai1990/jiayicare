@@ -92,6 +92,12 @@ export const metabolicPilotAPI = {
   get: () => request('/metabolic-pilot/me'),
   action: data => request('/metabolic-pilot/me', {method:'POST',body:JSON.stringify(data)}),
 };
+export const weightProgressPhotosAPI = {
+  list: () => request('/weight-progress-photos'),
+  plans: () => request('/weight-progress-photos/plans'),
+  add: data => request('/weight-progress-photos/base64', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
+  remove: id => request(`/weight-progress-photos/${id}`, { method: 'DELETE' }),
+};
 // ── Auth ─────────────────────────────────────────────────────────
 export const authAPI = {
   reviewStatus: () => request('/auth/review-experience/status'),
@@ -167,8 +173,6 @@ export const userAPI = {
   changePhone: (newPhone, code) => request('/user/change-phone', { method: 'POST', body: JSON.stringify({ newPhone, code }) }),
   getAiHealthSummary: () => request('/user/ai-health-summary'),
   postAiHealthSummary: () => request('/user/ai-health-summary', { method: 'POST' }),
-  getAiRiskAssessment: () => request('/user/ai-risk-assessment'),
-  postAiRiskAssessment: () => request('/user/ai-risk-assessment', { method: 'POST' }),
   getScreeningYearlySummary: (year) => request(`/user/screening-yearly-summary${year ? `?year=${year}` : ''}`),
   requestRenewal: (data) => request('/user/renewal-request', { method: 'POST', body: JSON.stringify(data) }),
 };
@@ -177,6 +181,7 @@ export const userAPI = {
 export const recordsAPI = {
   recognizeBloodPressure: (image) => request('/records/recognize-blood-pressure', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   recognizeBloodSugar: (image) => request('/records/recognize-blood-sugar', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
+  recognizeWaist: (image) => request('/records/recognize-waist', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   recognizeWeight: (image) => request('/records/recognize-weight', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   list: (params = {}) => {
     const q = Object.keys(params).filter(k => params[k] != null && params[k] !== '')
@@ -233,6 +238,7 @@ export const tasksAPI = {
 
 // ── Messages ──────────────────────────────────────────────────────
 export const messagesAPI = {
+  transcribe: (id, consentVersion) => request(`/messages/${id}/transcribe`, { method: 'POST', body: JSON.stringify({ consentVersion }), timeout: 60000 }),
   list: () => request('/messages'),
   unreadCount: () => request('/messages/unread-count'),
   markRead: (id) => request(`/messages/${id}/read`, { method: 'PATCH' }),
@@ -249,7 +255,7 @@ export const messagesAPI = {
 // ── Push Records (医护端推送) ─────────────────────────────────────
 export const pushRecordsAPI = {
   sharedFundQuote: (id, selectedProductIds, couponId) => request(`/user/push-records/${id}/shared-fund-quote`, { method: 'POST', body: JSON.stringify({ selectedProductIds, couponId }) }),
-  list: () => request('/user/push-records'),
+  list: (memberId = '') => request(`/user/push-records${memberId ? `?memberId=${encodeURIComponent(memberId)}` : ''}`),
   markRead: (id) => request(`/user/push-records/${id}/read`, { method: 'PATCH' }),
   pay: (id, data) => request(`/user/push-records/${id}/pay`, { method: 'POST', body: JSON.stringify(data) }),
 };
@@ -265,8 +271,8 @@ export const remindersAPI = {
 
 // ── Medical Reports ───────────────────────────────────────────────
 export const reportsAPI = {
-  list: () => request('/reports'),
-  byCategory: () => request('/reports/by-category'),
+  list: (patientId = '') => request(`/reports${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
+  byCategory: (patientId = '') => request(`/reports/by-category${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
   get: (id) => request(`/reports/${id}`),
   create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
   delete: (id) => request(`/reports/${id}`, { method: 'DELETE' }),
@@ -358,10 +364,10 @@ export const servicesAPI = {
   claimProductShare: (token) => request(`/services/product-shares/${token}/claim`, { method: 'POST' }),
   list: () => request('/services'),
   packages: () => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount, useEnterpriseSharedFund = false) =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount, useEnterpriseSharedFund }) }),
-  inquire: (serviceId, note, specificationLabel) =>
-    request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount, useEnterpriseSharedFund = false, beneficiaryUserId = '', pushRecordId = '') =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount, useEnterpriseSharedFund, beneficiaryUserId, pushRecordId }) }),
+  inquire: (serviceId, note, specificationLabel, beneficiaryUserId = '') =>
+    request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel, beneficiaryUserId }) }),
   coupons: () => request('/services/coupons'),
 };
 
@@ -378,6 +384,7 @@ export const partnerBenefitsAPI = {
 // ── Orders ────────────────────────────────────────────────────
 export const ordersAPI = {
   list: () => request('/orders'),
+  claimFamilyPayment: (id) => request(`/orders/${id}/family-pay`, { method: 'POST' }),
   cancel: (id) => request(`/orders/${id}/cancel`, { method: 'PATCH' }),
   requestRefund: (id, reason) => request(`/orders/${id}/refund-request`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
@@ -435,6 +442,7 @@ export const familyAPI = {
 
 export const familyLinksAPI = {
   list: () => request('/user/family-links'),
+  archive: (memberId) => request(`/user/family-links/${memberId}/archive`),
   serviceOverview: (memberId) => request(`/user/family-links/${memberId}/service-overview`),
   search: (q) => request(`/user/family-links/search?q=${encodeURIComponent(q)}`),
   add: (linkedUserId, relation) => request('/user/family-links', { method: 'POST', body: JSON.stringify({ linkedUserId, relation }) }),
@@ -467,4 +475,9 @@ export const userPhoneAPI = {
 export const ttsAPI = {
   synthesize: (text, sceneType) =>
     request('/tts/synthesize', { method: 'POST', body: JSON.stringify({ text, sceneType }), timeout: 30000 }),
+};
+
+export const aiDataConsentAPI = {
+  list: () => request("/ai-data-consent"),
+  update: (purpose, data) => request(`/ai-data-consent/${purpose}`, {method: "PUT", body: JSON.stringify(data)}),
 };

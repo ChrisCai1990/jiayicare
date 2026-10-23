@@ -6,6 +6,8 @@ const shareTokenSchema = new mongoose.Schema({
   userName:   { type: String, default: '' },    // 分享者姓名（快照，避免关联查询）
   period:     { type: String, required: true },  // 'week' | 'month'
   reportData: { type: mongoose.Schema.Types.Mixed }, // 报告完整快照
+  consentVersion: { type: String, default: '' },
+  consentConfirmedAt: { type: Date, default: null },
   expiresAt:  { type: Date, required: true },
   views:      { type: Number, default: 0 },
 }, { timestamps: true });

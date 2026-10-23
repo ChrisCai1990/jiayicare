@@ -918,6 +918,8 @@ export default function ReportUploadScreen(props) {
 }
 function RegularReportUploadScreen({ navigation, route }) {
   const { isDemo } = useAuth();
+  const patientId = route?.params?.patientId || '';
+  const patientName = route?.params?.patientName || '家庭成员';
   const initialType = route?.params?.type || null;
   const [reports, setReports]       = useState([]);
   const [annualCheckupPlans, setAnnualCheckupPlans] = useState([]);
@@ -943,7 +945,7 @@ function RegularReportUploadScreen({ navigation, route }) {
   };
 
   const loadRequisitions = useCallback(async () => {
-    if (isDemo) return;
+    if (isDemo || patientId) return;
     try {
       const [plansRes] = await Promise.allSettled([plansAPI.list()]);
       if (plansRes.status === 'fulfilled' && plansRes.value?.success) {
@@ -951,19 +953,19 @@ function RegularReportUploadScreen({ navigation, route }) {
         setAnnualCheckupPlans(checkupPlans);
       }
     } catch { /* ignore */ }
-  }, [isDemo]);
+  }, [isDemo, patientId]);
 
   const loadReports = useCallback(async () => {
     try {
-      const res = await reportsAPI.list();
+      const res = await reportsAPI.list(patientId);
       if (res.success && res.data.length > 0) setReports(res.data);
-      else setReports(isDemo ? mockMedicalReports : []);
+      else setReports(isDemo && !patientId ? mockMedicalReports : []);
     } catch {
-      setReports(isDemo ? mockMedicalReports : []);
+      setReports(isDemo && !patientId ? mockMedicalReports : []);
     } finally {
       setLoading(false);
     }
-  }, [isDemo]);
+  }, [isDemo, patientId]);
 
   useEffect(() => { loadReports(); loadRequisitions(); }, [loadReports, loadRequisitions]);
 
@@ -1199,6 +1201,7 @@ function RegularReportUploadScreen({ navigation, route }) {
         uploadTokens.push(upload.data.uploadToken);
       }
       const payload = {
+        ...(patientId ? { patientId } : {}),
         title,
         type,
         hospital,
@@ -1217,10 +1220,10 @@ function RegularReportUploadScreen({ navigation, route }) {
       if (res.success) {
         setReports(prev => [res.data, ...prev]);
         setTypeFilter(type);   // 自动切换到对应 tab
-        showToast('上传成功，正在AI解析…');
+        showToast(patientId ? '报告已提交，等待服务团队处理' : '上传成功，正在AI解析…');
         // 上传后立即触发AI解析（此前一直没有屏幕调用这个接口，报告只能停在"待解读"等人工处理）
         const reportId = res.data._id || res.data.id;
-        reportsAPI.parseAI(reportId).catch(() => {});
+        if (!patientId) reportsAPI.parseAI(reportId).catch(() => {});
       } else {
         await reportsAPI.cleanupUploads(uploadTokens).catch(() => {});
         showToast('上传失败，请重试', true);
@@ -1273,12 +1276,12 @@ function RegularReportUploadScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>健康报告</Text>
+        <Text style={styles.pageTitle}>{patientId ? `${patientName}的报告` : '健康报告'}</Text>
         <View style={{ width: 32 }} />
       </View>
 
       {/* 页面 Tab 切换 */}
-      <View style={styles.pageTabs}>
+      {!patientId && <View style={styles.pageTabs}>
         {[{ key: 'reports', label: '体检报告' }, { key: 'trends', label: '趋势对比' }, { key: 'monitoring', label: '居家监测' }].map(t => (
           <TouchableOpacity
             key={t.key}
@@ -1288,7 +1291,7 @@ function RegularReportUploadScreen({ navigation, route }) {
             <Text style={[styles.pageTabText, pageTab === t.key && styles.pageTabTextActive]}>{t.label}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </View>}
 
       {/* ── 趋势对比 Tab ──────────────────────────────────────────── */}
       {pageTab === 'trends' ? (

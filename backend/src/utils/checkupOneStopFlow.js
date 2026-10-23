@@ -172,16 +172,8 @@ async function onCheckupReportAudited(report) {
 }
 
 async function closeCheckupService(servicePlan, followUp) {
-  const completedAt = new Date()
-  await HealthPlan.updateOne({ _id: servicePlan._id }, { $set: {
-    status: 'completed',
-    'content.workflowCompletedAt': completedAt,
-    'content.workflowCompletedBy': followUp.assignedTo || followUp.staffId,
-  } })
-  if (servicePlan.sourceOrderId) await Order.updateOne(
-    { _id: servicePlan.sourceOrderId, totalUnits: { $lte: 1 }, status: { $nin: ['completed', 'cancelled'] } },
-    { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt, usedUnits: 1 } },
-  )
+  await require('./medicalAssistClosure').requestPlanClosure(servicePlan,
+    '体检服务最终验收已完成，待健康规划师核对结案。')
 }
 
 async function advanceCheckupTask(followUp) {

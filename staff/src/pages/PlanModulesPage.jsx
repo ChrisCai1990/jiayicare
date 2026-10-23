@@ -5,6 +5,9 @@ import { useToast, useStaff } from '../App'
 import { StaffListContext, ModulePanel } from '../components/ModulePanel'
 import NutritionTargetRows, { nutritionTargetsFrom, nutritionTargetError } from '../components/NutritionTargetRows'
 import DateField from '../../../shared/DateField.jsx'
+import mealPlans from '../../../shared/nutritionMealPlans.cjs'
+import NutritionMealPlanSelector from '../components/NutritionMealPlanSelector'
+import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
 
 // 营养干预方案 / 就医协助方案的板块化编辑页（2026-07-13新增）。
 // 之前这两类方案AI生成后只是扁平items+零散content字段，跟年度管理方案的"选模板→板块折叠面板→
@@ -17,19 +20,19 @@ const MODULE_DEFS_BY_TYPE = {
   nutrition: {
     breakfast: {
       name: '早餐方案', icon: '🍳',
-      fields: [{ key: 'content', label: '早餐内容', type: 'textarea', placeholder: '食物种类、分量' }],
+      fields: [{ key: 'time', label: '用餐时间', type: 'text', placeholder: '07:30-08:00' }, { key: 'content', label: '早餐内容', type: 'textarea', placeholder: '主食、荤菜、蔬菜等类别和分量' }],
     },
     lunch: {
       name: '午餐方案', icon: '🍚',
-      fields: [{ key: 'content', label: '午餐内容', type: 'textarea', placeholder: '食物种类、分量' }],
+      fields: [{ key: 'time', label: '用餐时间', type: 'text', placeholder: '11:30-12:00' }, { key: 'content', label: '午餐内容', type: 'textarea', placeholder: '主食、荤菜、蔬菜等类别和分量' }],
     },
     dinner: {
       name: '晚餐方案', icon: '🍲',
-      fields: [{ key: 'content', label: '晚餐内容', type: 'textarea', placeholder: '食物种类、分量' }],
+      fields: [{ key: 'time', label: '用餐时间', type: 'text', placeholder: '18:00-18:30' }, { key: 'content', label: '晚餐内容', type: 'textarea', placeholder: '主食、荤菜、蔬菜等类别和分量' }],
     },
     snack: {
       name: '加餐方案', icon: '🍎',
-      fields: [{ key: 'content', label: '加餐内容', type: 'textarea', placeholder: '两餐间加餐建议（若需要）' }],
+      fields: [{ key: 'time', label: '用餐时间', type: 'text', placeholder: '15:00-15:30' }, { key: 'content', label: '加餐内容', type: 'textarea', placeholder: '水果、坚果、奶类等类别和分量（若需要）' }],
     },
     principle: {
       name: '饮食原则', icon: '📋',
@@ -41,7 +44,7 @@ const MODULE_DEFS_BY_TYPE = {
       ],
     },
     forbidden: {
-      name: '禁忌食物', icon: '🚫',
+      name: '可选食物库', icon: '🥗',
       fields: [
         { key: 'allowedFoods', label: '推荐食物', type: 'textarea', placeholder: '逗号分隔' },
         { key: 'forbiddenFoods', label: '禁忌食物', type: 'textarea', placeholder: '逗号分隔' },
@@ -54,6 +57,10 @@ const MODULE_DEFS_BY_TYPE = {
     exercise: {
       name: '运动建议', icon: '🏃',
       fields: [{ key: 'content', label: '运动建议', type: 'textarea', placeholder: '运动类型、频率、时长、强度' }],
+    },
+    notes: {
+      name: '备注', icon: '📝',
+      fields: [{ key: 'content', label: '特别事项', type: 'textarea', placeholder: '填写需要客户特别留意的事项（选填）' }],
     },
   },
   medical_assist: {
@@ -351,11 +358,12 @@ export default function PlanModulesPage() {
 
   const [plan, setPlan] = useState(null)
   const [moduleData, setModuleData] = useState({})
+  const [mealVariants, setMealVariants] = useState({})
+  const [mealSelection, setMealSelection] = useState('balanced_categories')
+  const [mealPackConfirmed, setMealPackConfirmed] = useState(false)
   const [goal, setGoal] = useState('')
   const [nutritionTargets, setNutritionTargets] = useState(() => nutritionTargetsFrom())
   const [nutritionReviewDate, setNutritionReviewDate] = useState('')
-  const [nutritionDraft, setNutritionDraft] = useState(null)
-  const [nutritionDraftBusy, setNutritionDraftBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [pushing, setPushing] = useState(false)
@@ -379,6 +387,9 @@ export default function PlanModulesPage() {
         const p = res.data
         setPlan(p)
         const c = p.content || {}
+        setMealVariants(c.mealPlanVariants || {})
+        setMealSelection(c.mealPlanSelection || 'balanced_categories')
+        setMealPackConfirmed(c.mealPackSuitabilityConfirmed === true)
         const nextModuleData = p.type === 'medical_assist' ? medicalAssistModuleData(c) : (c.moduleData || {})
         const assignedReviewerId = p.patientId?.assignedFamilyDoctor?._id || p.patientId?.assignedFamilyDoctor || ''
         if (p.type === 'medical_assist' && isCheckupMedicalAssist(c, p.title) && assignedReviewerId && !nextModuleData.visit?.reviewerId) {
@@ -388,22 +399,16 @@ export default function PlanModulesPage() {
         if (p.type === 'medical_assist' && assignedHealthPlannerId && !nextModuleData.visit?.supervisorId) {
           nextModuleData.visit = { ...(nextModuleData.visit || {}), supervisorId: assignedHealthPlannerId }
         }
-        setModuleData(nextModuleData)
+        const displayModules = p.type === 'nutrition' && c.mealPlanVariants ? mealPlans.prepareMealModules(c.mealPlanSelection || 'balanced_categories', nextModuleData, c.nutritionAssessment) : nextModuleData
+        setModuleData(displayModules)
         setGoal(c.goal || p.description || '')
         setNutritionTargets(nutritionTargetsFrom(c))
         setNutritionReviewDate(c.nutritionReviewDate || '')
-        if (p.type === 'nutrition') staffAPI.getNutritionIntervention(id).then(d => setNutritionDraft(d.data || null)).catch(() => {})
-        setDirty(false)
+        setDirty(JSON.stringify(displayModules) !== JSON.stringify(nextModuleData))
       })
       .catch(err => toast(err.message || '加载失败'))
       .finally(() => setLoading(false))
   }, [id])
-
-  useEffect(() => {
-    if (plan?.type !== 'nutrition' || !plan.pushedAt || ['pending_review', 'publishing', 'published', 'failed'].includes(nutritionDraft?.status)) return
-    const timer = window.setInterval(() => staffAPI.getNutritionIntervention(id).then(result => setNutritionDraft(result.data || null)).catch(() => {}), 3000)
-    return () => window.clearInterval(timer)
-  }, [id, plan?.type, plan?.pushedAt, nutritionDraft?.status])
 
   useEffect(() => {
     const selectedId = moduleData.visit?.supervisorId
@@ -444,13 +449,22 @@ export default function PlanModulesPage() {
     }
     setSaving(true)
     try {
-      const content = contentFromModules(plan, moduleData, goal, staffList)
+      const savedModules = plan.type === 'nutrition' && Object.keys(mealVariants).length ? mealPlans.prepareMealModules(mealSelection, moduleData, plan.content?.nutritionAssessment) : moduleData
+      const content = contentFromModules(plan, savedModules, goal, staffList)
+      if (plan.type === 'nutrition' && Object.keys(mealVariants).length) {
+        Object.assign(content, { mealPlanSelection: mealSelection,
+          mealPlanVariants: { ...mealVariants, [mealSelection]: mealPlans.snapshotMeals(savedModules) },
+          mealPackSuitabilityConfirmed: mealPackConfirmed })
+        const mealError = mealPlans.mealPlanError(content)
+        if (mealError) { toast(mealError); return }
+      }
       if (plan.type === 'nutrition') Object.assign(content, {
         nutritionTaskVersion: 1, nutritionTargets, nutritionReviewDate,
         nutritionMetric: nutritionTargets[0].metric, nutritionBaseline: nutritionTargets[0].baseline, nutritionTarget: nutritionTargets[0].target,
       })
       await staffAPI.updatePlan(id, { content, description: goal })
       setPlan(p => ({ ...p, content, description: goal }))
+      setModuleData(savedModules)
       toast('方案已保存')
       setDirty(false)
     } catch (err) {
@@ -499,31 +513,12 @@ export default function PlanModulesPage() {
       }
       const res = await staffAPI.pushPlan(id)
       setPlan(p => ({ ...p, content: res.data?.content || p.content, pushedAt: res.data?.pushedAt || new Date().toISOString(), status: 'active' }))
-      if (plan.type === 'nutrition') staffAPI.getNutritionIntervention(id).then(d => setNutritionDraft(d.data || null)).catch(() => {})
-      toast(res.warning || (outpatientService ? '服务已启动，资料收集任务已转交健管专员' : plan.type === 'nutrition' ? '营养方案已推送，AI行动草稿待营养师确认' : pendingReview ? '方案已审核推送，岗位任务已生成' : '方案已推送给客户'))
+      toast(res.warning || (outpatientService ? '服务已启动，资料收集任务已转交健管专员' : pendingReview ? '方案已审核推送' : '方案已推送给客户'))
     } catch (err) {
       toast(err.message || '推送失败')
     } finally {
       setPushing(false)
     }
-  }
-
-  const handleGenerateNutritionDraft = async () => {
-    if (dirty) { toast('请先保存方案修改'); return }
-    setNutritionDraftBusy(true)
-    try { await staffAPI.generateNutritionIntervention(id); setNutritionDraft({ status: 'generating' }); toast('已开始生成营养行动草稿') }
-    catch (e) { toast(e.message || '生成失败') }
-    finally { setNutritionDraftBusy(false) }
-  }
-
-  const handlePublishNutritionDraft = async () => {
-    if (!window.confirm('确认这些行动符合营养方案和客户实际情况？发布后将建立客户行动及岗位阶段任务。')) return
-    setNutritionDraftBusy(true)
-    try {
-      const res = await staffAPI.publishNutritionIntervention(id, { revision: nutritionDraft.revision, actions: nutritionDraft.actions })
-      setNutritionDraft(res.data); toast('营养干预任务已发布')
-    } catch (e) { toast(e.message || '发布失败') }
-    finally { setNutritionDraftBusy(false) }
   }
 
   const handleDelete = async () => {
@@ -581,6 +576,8 @@ export default function PlanModulesPage() {
   return (
     <StaffListContext.Provider value={staffList}>
     <div style={{ maxWidth: isCheckupService ? 1180 : 860, margin: '0 auto', padding: '24px 20px 80px' }}>
+
+      {plan.type === 'nutrition' && <NutritionAssessmentPanel patientId={plan.patientId?._id || plan.patientId} source="nutrition_plan" sourcePlanId={id} canCreate={['familyDoctor', 'superadmin'].includes(staff?.role)} />}
 
       {/* 顶部导航 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
@@ -662,25 +659,14 @@ export default function PlanModulesPage() {
           ['疾病、用药及检查核对', plan.content.nutritionAssessment.medicalReview],
           ['食物过敏', plan.content.nutritionAssessment.allergyStatus === 'confirmed_none' ? '已核实无已知食物过敏' : plan.content.nutritionAssessment.allergyDetails],
           ['偏好与执行条件', plan.content.nutritionAssessment.practicalConstraints],
-          ...(plan.content.nutritionAssessment.estimatedMaintenanceKcal ? [['维持能量估算', `约 ${plan.content.nutritionAssessment.estimatedMaintenanceKcal} kcal/日`]] : []),
+          ...(plan.content.nutritionAssessment.estimatedMaintenanceKcal ? [['算法1 · 当前体重维持能量参考', `约 ${plan.content.nutritionAssessment.estimatedMaintenanceKcal} kcal/日`]] : []),
+          ...(plan.content.nutritionAssessment.energyCalculationPath === 'overweight' && plan.content.nutritionAssessment.estimatedDailyKcal ? [['算法2 · 理想体重', `${plan.content.nutritionAssessment.idealWeightKg} kg`], ['算法2 · 管理期参考能量', `约 ${plan.content.nutritionAssessment.estimatedDailyKcal} kcal/日`], ['算法2 · 计算依据', `身高(cm)－105，乘体力活动系数 ${plan.content.nutritionAssessment.activityCoefficient}`]] : []),
+          ...(plan.content.nutritionAssessment.dailyEnergyRange ? [['算法2 · 轻体力活动参考区间', `${plan.content.nutritionAssessment.dailyEnergyRange.min}–${plan.content.nutritionAssessment.dailyEnergyRange.max} kcal/日；系数20–25取中间值22.5`]] : []),
+          ...(!plan.content.nutritionAssessment.energyCalculationPath && plan.content.nutritionAssessment.estimatedDailyKcal ? [['历史理想体重参考值', `约 ${plan.content.nutritionAssessment.estimatedDailyKcal} kcal/日`]] : []),
           ...(plan.content.nutritionAssessment.managementKcal ? [['管理期能量', `${plan.content.nutritionAssessment.managementKcal} kcal/日`]] : []),
           ...(plan.content.nutritionAssessment.mealEnergyKcal ? [['餐次预算', `早餐 ${plan.content.nutritionAssessment.mealEnergyKcal.breakfast}、午餐 ${plan.content.nutritionAssessment.mealEnergyKcal.lunch}、晚餐 ${plan.content.nutritionAssessment.mealEnergyKcal.dinner}、加餐 ${plan.content.nutritionAssessment.mealEnergyKcal.snack || 0} kcal`]] : []),
         ].map(([label, value]) => <div key={label} style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}><strong>{label}：</strong>{value}</div>)}
         <div style={{ color: '#65776F', fontSize: 12, marginTop: 7 }}>餐次预算是估算目标，不代表餐食实际热量；营养师需核对食物、分量、过敏禁忌和模板适用性后推送。</div>
-      </section>}
-
-      {plan.type === 'nutrition' && plan.pushedAt && <section className="card" style={{ marginBottom: 20, padding: 18 }} aria-label="营养干预行动草稿">
-        <div style={{ fontWeight: 700 }}>营养干预行动与阶段复盘</div>
-        <p style={{ fontSize: 13, color: '#65776F' }}>方案由营养师负责。AI行动仅为待审草稿；确认后客户收到行动事项，健管负责阶段随访，营养师评估结果，顾问最后复盘整体目标。</p>
-        <div style={{ fontSize: 13 }}>状态：{{ generating: '生成中', pending_review: '待营养师确认', publishing: '发布中，可重试', published: '已发布', failed: '生成失败' }[nutritionDraft?.status] || '尚未生成'}</div>
-        {nutritionDraft?.generationError && <p role="alert" style={{ color: '#B42318' }}>{nutritionDraft.generationError}</p>}
-        {canEdit && (!nutritionDraft || ['failed', 'generating'].includes(nutritionDraft.status)) && <button type="button" className="btn btn-secondary btn-sm" disabled={nutritionDraftBusy} onClick={handleGenerateNutritionDraft}>{nutritionDraftBusy ? '处理中…' : '生成或重试 AI 行动草稿'}</button>}
-        {nutritionDraft?.actions?.map((action, index) => <div key={action.key || index} style={{ marginTop: 12, padding: 10, border: '1px solid #E3ECE7', borderRadius: 8 }}>
-          <b>客户行动 {index + 1}</b>
-          {canEdit && nutritionDraft.status === 'pending_review' && nutritionDraft.actions.length > 1 && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={() => setNutritionDraft(prev => ({ ...prev, actions: prev.actions.filter((_, i) => i !== index) }))}>删除此行动</button>}
-          {['title', 'instruction', 'frequency', 'evidence'].map(field => <label key={field} style={{ display: 'block', fontSize: 12, marginTop: 7 }}>{({ title: '行动名称', instruction: '具体做法', frequency: '执行或记录频率', evidence: '阶段核对依据' })[field]}<textarea className="form-input" rows={field === 'instruction' ? 2 : 1} value={action[field] || ''} disabled={!canEdit || nutritionDraft.status !== 'pending_review'} onChange={e => setNutritionDraft(prev => ({ ...prev, actions: prev.actions.map((row, i) => i === index ? { ...row, [field]: e.target.value } : row) }))} style={{ display: 'block', width: '100%', marginTop: 4 }} /></label>)}
-        </div>)}
-        {canEdit && ['pending_review', 'publishing'].includes(nutritionDraft?.status) && <button type="button" className="btn btn-primary btn-sm" disabled={nutritionDraftBusy} onClick={handlePublishNutritionDraft} style={{ marginTop: 12 }}>{nutritionDraftBusy ? '发布中…' : nutritionDraft.status === 'publishing' ? '重试完成发布' : '确认并发布行动及阶段任务'}</button>}
       </section>}
 
       {/* 板块列表 */}
@@ -752,6 +738,18 @@ export default function PlanModulesPage() {
             </span>
           </div>
         </div>
+        {plan.type === 'nutrition' && Object.keys(mealVariants).length > 0 && <NutritionMealPlanSelector
+          selected={mealSelection} variants={mealVariants} disabled={!canEdit || saving || pushing}
+          assessment={plan.content?.nutritionAssessment} confirmed={mealPackConfirmed}
+          unavailableReason={plan.content?.mealPackUnavailableReason}
+          onConfirm={checked => { setMealPackConfirmed(checked); setDirty(true) }}
+          onSelect={next => {
+            try {
+              const switched = mealPlans.switchMealPlan(mealVariants, mealSelection, next, moduleData, plan.content?.nutritionAssessment)
+              setMealVariants(switched.variants); setMealSelection(switched.selected); setModuleData(switched.modules); setDirty(true)
+            } catch (error) { toast(error.message) }
+          }} />}
+        {plan.type === 'nutrition' && !Object.keys(mealVariants).length && <div style={{ marginBottom: 12, color: '#66776E', fontSize: 13 }}>本方案保留原配餐内容；重新生成AI营养草稿后，可选择平衡膳食食谱、大类或餐包方式。</div>}
         {moduleKeys.map(mKey => (
           <ModulePanel
             key={mKey}

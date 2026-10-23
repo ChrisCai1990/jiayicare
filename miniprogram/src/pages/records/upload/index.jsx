@@ -1,15 +1,17 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, Button } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { View, Text, Button, Picker } from '@tarojs/components';
+import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { reportsAPI, mediaUrl } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { chooseImageWithPrivacy, isImagePickerCancelled, isPrivacyDeclarationMissing, showImagePickerError } from '../../../utils/imagePicker';
+import useArchiveSubject from '../../../hooks/useArchiveSubject';
 
 // 逐张读取压缩图并通过普通 HTTPS 请求上传，避免 uploadFile 域名配置导致真机端请求未到后端。
 export default function ReportUploadPage() {
   const { statusBarHeight } = useNavBar();
+  const archive = useArchiveSubject();
   const [reports, setReports] = useState([]);
   const [uploading, setUploading] = useState(false);
   const uploadLock = useRef(false);
@@ -21,21 +23,26 @@ export default function ReportUploadPage() {
 
   const load = useCallback(async () => {
     const id = ++listRequest.current;
+    setReports([]);
     setListLoading(true);
     try {
-      const res = await reportsAPI.list();
+      const res = await reportsAPI.list(archive.subject?.id || '');
       if (!res?.success || !Array.isArray(res.data)) throw new Error('报告列表暂未加载');
       if (id !== listRequest.current) return;
       setReports(res.data); setListError('');
     } catch (error) {
       if (id === listRequest.current) setListError(error.message || '报告列表暂未加载');
     } finally { if (id === listRequest.current) setListLoading(false); }
-  }, []);
+  }, [archive.subject?.id]);
 
-  useDidShow(() => { load(); });
+  useEffect(() => { if (!archive.loading && !archive.error) load(); }, [archive.loading, archive.error, load]);
 
   const pickAndUpload = async () => {
-    if (uploadLock.current) return;
+    if (uploadLock.current || archive.loading || archive.error) return;
+    const patientId = archive.subject?.id || '';
+    const ownerName = archive.subject?.name || archive.user?.name || '本人';
+    const confirmation = await Taro.showModal({ title: '确认报告所属档案', content: `本次报告将存入「${ownerName}」的健康档案，是否继续？`, confirmText: '确认上传' });
+    if (!confirmation.confirm) return;
     uploadLock.current = true;
     setUploading(true);
     setUploadError('');
@@ -55,18 +62,20 @@ export default function ReportUploadPage() {
           : (ext === 'heic' || ext === 'heif') ? 'image/heic'
           : 'image/jpeg';
         const uploaded = await reportsAPI.uploadBase64(`data:${mimeType};base64,${base64}`, mimeType);
-        if (!uploaded?.success || !uploaded.data?.fileUrl) throw new Error(uploaded?.message || '图片上传未完成');
+        if (!uploaded?.success || !uploaded.data?.fileUrl || !uploaded.data?.uploadToken) throw new Error(uploaded?.message || '图片上传凭证未返回，请重试');
         uploadedFiles.push(uploaded.data);
         setProgress({ done: uploadedFiles.length, total: filePaths.length, stage: '正在上传' });
       }
       saving = true;
       setProgress({ done: uploadedFiles.length, total: filePaths.length, stage: '图片上传完成，正在保存报告' });
       const createRes = await reportsAPI.create({
+        patientId,
         title: `体检报告 ${new Date().getFullYear()}年${new Date().getMonth() + 1}月${new Date().getDate()}日`,
         category: '',
         fileUrl: uploadedFiles[0]?.fileUrl || '',
         fileUrls: uploadedFiles.map((item) => item.fileUrl).filter(Boolean),
         ossKeys: uploadedFiles.map((item) => item.ossKey).filter(Boolean),
+        uploadTokens: uploadedFiles.map((item) => item.uploadToken),
         mimeType: uploadedFiles[0]?.mimeType || 'image/jpeg',
         pages: uploadedFiles.length,
         fileSize: uploadedFiles.reduce((sum, item) => sum + (Number(item.fileSize) || 0), 0),
@@ -108,7 +117,16 @@ export default function ReportUploadPage() {
         <View style={{ width: '28px' }} />
       </View>
       <View style={{ padding: `${spacing.lg}px` }}>
-      <Button disabled={uploading}
+      <View style={{ backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
+        <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>报告所属档案</Text>
+        <Picker mode="selector" disabled={uploading || archive.loading || !!archive.error} range={[`本人 · ${archive.user?.name || ''}`, ...archive.subjects.map(member => `${member.name} · ${member.kind === 'child' ? '孩子' : '家人'}`)]}
+          value={Math.max(0, archive.subjects.findIndex(member => String(member.id) === String(archive.subject?.id)) + 1)}
+          onChange={event => archive.select(Number(event.detail.value))}>
+          <View style={{ color: colors.primary, fontSize: '16px', fontWeight: 700, padding: '6px 0' }}>{archive.loading ? '正在核对档案…' : archive.subject ? `${archive.subject.name} · ${archive.subject.kind === 'child' ? '孩子' : '家人'} ▾` : `本人 · ${archive.user?.name || ''} ▾`}</View>
+        </Picker>
+        {!!archive.error && <Text onClick={archive.refresh} style={{ fontSize: '12px', color: colors.danger }}>{archive.error} · 点击重试</Text>}
+      </View>
+      <Button disabled={uploading || archive.loading || !!archive.error}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
           backgroundColor: colors.primary, borderRadius: `${radius.md}px`, padding: '16px 0', marginBottom: `${spacing.lg}px`,
@@ -122,7 +140,7 @@ export default function ReportUploadPage() {
 
       <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textMuted, marginBottom: `${spacing.sm}px`, display: 'block' }}>已上传报告</Text>
       {!!listError && <Text onClick={load} style={{display:'block',fontSize:'13px',color:colors.danger,padding:'12px 0'}}>{listError} · 点击重试</Text>}
-      {listLoading && reports.length === 0 ? <Text style={{fontSize:'13px',color:colors.textSecondary}}>报告加载中…</Text> : reports.length === 0 ? (listError ? null : (
+      {archive.loading || archive.error || listLoading && reports.length === 0 ? <Text style={{fontSize:'13px',color:colors.textSecondary}}>{archive.error ? '请先重新核对档案' : '报告加载中…'}</Text> : reports.length === 0 ? (listError ? null : (
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无报告</Text>
       )) : (
         reports.map((r) => (

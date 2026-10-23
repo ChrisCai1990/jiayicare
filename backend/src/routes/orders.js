@@ -9,6 +9,8 @@ const wechatPay = require('../utils/wechatPay');
 const { confirmRefund } = require('../utils/orderSettlement');
 const router = express.Router();
 const { pendingServiceConfirmationQuery, needsCustomerServiceConfirmation } = require('../utils/orderServiceConfirmation');
+const { resolveOrderBeneficiary } = require('../utils/orderBeneficiary');
+const { canClaimFamilyPayment } = require('../utils/familyProxyPayment');
 
 const visibleOrderQuery = userId => ({ $or: [{ user: userId }, { payerUser: userId }] });
 const payerOrderQuery = userId => ({ $or: [{ payerUser: userId }, { user: userId, payerUser: null }] });
@@ -69,6 +71,62 @@ router.get('/pending-service-confirmation', auth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: '获取待确认服务失败', error: err.message });
   }
+});
+
+// 已关联家人接手一笔尚未付款的订单。先关闭原微信预支付，再改变付款人；
+// 服务对象与医护推送来源始终保持原样，后续由 /payments/:id/retry 建立新支付单。
+router.post('/:id/family-pay', auth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    const member = await resolveOrderBeneficiary(req.user, order.user);
+    if (!member || String(member._id) === String(req.user._id)) return res.status(403).json({ success: false, message: '仅已关联家人可以代付' });
+    return await require('../utils/groupPaymentActions').withGroupLock(order, async () => {
+      const fresh = await Order.findById(order._id);
+      if (!fresh || String(fresh.tenantId || '') !== String(member.tenantId || '')) {
+        return res.status(403).json({ success: false, message: '订单不属于该家庭成员的机构' });
+      }
+      if (String(fresh.payerUser || '') === String(req.user._id)
+        && fresh.tradeStatus === 'awaiting_payment' && ['pending', 'unpaid'].includes(fresh.paymentStatus)) {
+        return res.json({ success: true, data: { orderId: fresh._id }, message: '请继续完成微信支付' });
+      }
+      const reason = canClaimFamilyPayment(fresh, member._id, req.user._id);
+      if (reason) return res.status(409).json({ success: false, message: reason });
+      const payment = await Payment.findOne({ ...require('../utils/checkoutAmounts').paymentOrderQuery(fresh._id),
+        status: { $in: ['created', 'processing', 'succeeded'] } }).sort({ createdAt: -1 });
+      if (payment) {
+        if (payment.status === 'succeeded') {
+          await require('../utils/orderSettlement').confirmPayment({ outTradeNo: payment.outTradeNo,
+            transactionId: payment.transactionId, paidAt: payment.paidAt,
+            snapshot: { source: 'family_pay_guard', tradeState: 'SUCCESS' } });
+          return res.status(409).json({ success: false, message: '原订单已付款，请刷新后查看' });
+        }
+        let remote;
+        try { remote = await wechatPay.queryOrder(payment.outTradeNo); }
+        catch (error) {
+          if (error.code !== 'ORDER_NOT_EXIST') return res.status(409).json({ success: false, message: '原付款状态暂无法确认，请稍后重试' });
+        }
+        if (remote?.trade_state === 'SUCCESS') {
+          await require('../utils/orderSettlement').confirmPayment({ outTradeNo: payment.outTradeNo,
+            transactionId: remote.transaction_id, paidAt: remote.success_time ? new Date(remote.success_time) : new Date(),
+            snapshot: { source: 'family_pay_query', tradeState: 'SUCCESS' } });
+          return res.status(409).json({ success: false, message: '原订单已付款，请刷新后查看' });
+        }
+        if (remote?.trade_state === 'USERPAYING') return res.status(409).json({ success: false, message: '原付款正在确认，请稍后重试' });
+        if (remote && !['CLOSED', 'REVOKED'].includes(remote.trade_state)) {
+          try { await wechatPay.closeOrder(payment.outTradeNo); }
+          catch (error) { if (error.code !== 'ORDER_NOT_EXIST') return res.status(409).json({ success: false, message: '无法关闭原付款，请稍后重试' }); }
+        }
+        payment.status = 'closed'; payment.closedAt = new Date(); await payment.save();
+      }
+      const updated = await Order.findOneAndUpdate({ _id: fresh._id, user: member._id,
+        $or: [{ payerUser: null }, { payerUser: member._id }], tradeStatus: 'awaiting_payment',
+        paymentStatus: { $in: ['pending', 'unpaid'] } },
+      { $set: { payerUser: req.user._id, beneficiaryName: member.name || fresh.beneficiaryName || '' } }, { new: true });
+      if (!updated) return res.status(409).json({ success: false, message: '订单状态已变化，请刷新后重试' });
+      return res.json({ success: true, data: { orderId: updated._id }, message: '代付人已确认，请继续完成微信支付' });
+    });
+  } catch (error) { return res.status(409).json({ success: false, message: error.message || '暂无法代付，请稍后重试' }); }
 });
 
 // 获取单个订单详情

@@ -44,13 +44,24 @@ export default function PatientPicker({ value, onChange }) {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(null)
   const search = usePatientSearch(query)
+  const [selectionError, setSelectionError] = useState('')
+  useEffect(() => {
+    let active = true
+    setSelectionError('')
+    if (!value) { setSelected(null); return }
+    if (selected?._id === value) return
+    setSelected(null)
+    staffAPI.getPatient(value).then(r => { if (active) setSelected(r.data.user || r.data.patient || r.data) }).catch(e => { if (active) setSelectionError(e.message) })
+    return () => { active = false }
+  }, [value])
   return <div>
+    {value && !selected && <div role="status">{selectionError || '正在加载已选客户…'}<button type="button" className="btn btn-secondary" onClick={() => onChange('')}>重新选择客户</button></div>}
     {value && selected && <div style={{ padding: 8, background: '#EAF5F0', marginBottom: 8 }}>
       已选：{selected.name} · {selected.phone || '未登记手机号'}
       <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setSelected(null); onChange('') }}>重新选择会员</button>
     </div>}
     {!value && <>
-      <input aria-label="搜索上传报告的会员" className="form-input" placeholder="输入姓名或手机号搜索全部可见会员" value={query} onChange={e => setQuery(e.target.value)} />
+      <input aria-label="搜索客户" className="form-input" placeholder="输入姓名或手机号搜索全部可见会员" value={query} onChange={e => setQuery(e.target.value)} />
       <PatientSearchStatus search={search} />
       <div style={{ maxHeight: 180, overflowY: 'auto' }}>
         {search.patients.map(patient => <button type="button" className="btn btn-secondary" key={patient._id} style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 4 }}

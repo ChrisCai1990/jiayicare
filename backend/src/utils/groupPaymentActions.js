@@ -47,7 +47,8 @@ async function retryGroupPayment(order, user, scene = 'jsapi') {
     if (!payment) throw new Error('支付记录不存在，请联系客服');
     if (await recoverIfPaid(payment)) return { order: await Order.findById(order._id), alreadyPaid: true };
     const rows = paymentAllocations(payment);
-    const orders = await Order.find({ _id: { $in: rows.map(row => row.order) }, user: user._id });
+    const orders = await Order.find({ _id: { $in: rows.map(row => row.order) },
+      user: order.user, payerUser: order.payerUser || null });
     if (orders.length !== rows.length || orders.some(item => ['closed', 'refunded'].includes(item.tradeStatus) || ['paid', 'refunded'].includes(item.paymentStatus))) throw new Error('合并订单状态已变化，请刷新后重试');
     if (!appPayment && !user.wechatMpOpenid) throw new Error('请先绑定当前微信身份后再支付');
     await closePayment(payment);

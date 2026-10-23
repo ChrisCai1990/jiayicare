@@ -46,7 +46,7 @@ export default function ExpertAppointmentRescheduleForm({ task, onSaved, showHis
   const slots = booking.appointmentSlots?.length ? booking.appointmentSlots : [{ appointmentDate: booking.appointmentDate, appointmentTime: booking.appointmentTime, department: booking.department, expert: booking.appointmentExpert }]
   const plan = task?.sourceOrderId?.medicalProxyPlan || {}
   const correction = task?.sourceOrderId?.status === 'completed'
-  const [hospital,setHospital]=useState(booking.hospital || plan.hospital || '')
+  const [hospital,setHospital]=useState(slots[0]?.hospital || booking.hospital || plan.hospital || '')
   const [campus,setCampus]=useState(slots[0]?.campus || booking.campus || '')
   const [department,setDepartment]=useState(slots[0]?.department || plan.department || '')
   const [expert,setExpert]=useState(slots[0]?.expert || booking.appointmentExpert || plan.expert || '')
@@ -84,7 +84,7 @@ export default function ExpertAppointmentRescheduleForm({ task, onSaved, showHis
     </div>
     {showHistory && <ExpertAppointmentHistory order={task?.sourceOrderId} />}
     {open && <>
-      {slots.length > 1 && <label>选择需要改期的预约<select className="form-control" value={slotIndex} onChange={e => { const index = Number(e.target.value); setSlotIndex(index); setAppointmentDate(slots[index].appointmentDate || ''); setAppointmentTime(slots[index].appointmentTime || '');setCampus(slots[index].campus||booking.campus||'');setDepartment(slots[index].department||plan.department||'');setExpert(slots[index].expert||plan.expert||'') }}>{slots.map((row, index) => <option key={index} value={index}>{index + 1}. {row.department || row.expert || '预约'} · {row.appointmentDate} {row.appointmentTime}</option>)}</select></label>}
+      {slots.length > 1 && <label>选择需要改期的预约<select className="form-control" value={slotIndex} onChange={e => { const index = Number(e.target.value); setSlotIndex(index); setAppointmentDate(slots[index].appointmentDate || ''); setAppointmentTime(slots[index].appointmentTime || '');setHospital(slots[index].hospital||booking.hospital||plan.hospital||'');setCampus(slots[index].campus||booking.campus||'');setDepartment(slots[index].department||plan.department||'');setExpert(slots[index].expert||plan.expert||'') }}>{slots.map((row, index) => <option key={index} value={index}>{index + 1}. {row.department || row.expert || '预约'} · {row.appointmentDate} {row.appointmentTime}</option>)}</select></label>}
       <div style={{ fontSize: 12, color: '#63766D' }}>{correction ? '补正实际预约信息并保留历史，不重新派任务或发送通知。' : '记录已与客户及医院确认的安排，同步就诊提醒并通知客户。'}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <label>新预约日期 *<DateField className="form-control" type="date" value={appointmentDate} onChange={e => setAppointmentDate(e.target.value)} /></label>

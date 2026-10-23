@@ -9,13 +9,13 @@ const canonicalMetric = value => {
 
 function measuredBaseline(patient, metric) {
   const history = Array.isArray(patient?.bodyCompHistory) ? patient.bodyCompHistory : [];
-  const records = [patient?.bodyComposition, ...history.slice().reverse()].filter(Boolean);
+  const records = [patient?.bodyComposition, ...history].filter(Boolean).sort((a, b) => String(b.measuredAt || b.recordedAt || '').localeCompare(String(a.measuredAt || a.recordedAt || '')));
   const field = { 体重: 'weight', 骨骼肌: 'skelMuscle', 体脂率: 'bodyFatRate', 内脏脂肪: 'visceralFat' }[metric];
   const unit = { 体重: 'kg', 骨骼肌: 'kg', 体脂率: '%', 内脏脂肪: '级' }[metric];
   for (const record of records) {
     const date = String(record.measuredAt || record.recordedAt || '').slice(0, 10);
     const value = Number(record[field]);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(value) && value > 0
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && date <= new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10) && Number.isFinite(value) && value > 0
       && (metric !== '体脂率' || value <= 100)) return `${value} ${unit}（${date}）`;
   }
   return '';
@@ -23,10 +23,10 @@ function measuredBaseline(patient, metric) {
 
 function withFixedNutritionTargets(rows = [], patient = {}) {
   const normalized = Array.isArray(rows) ? rows.map(row => ({ metric: canonicalMetric(row?.metric),
-    baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim() })) : [];
+    baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim(), ...(row?.evidenceStatus ? { referenceRange: String(row.referenceRange || ''), evidenceStatus: row.evidenceStatus } : {}) })) : [];
   const fixed = FIXED_METRICS.map(metric => {
     const prior = normalized.find(row => row.metric === metric);
-    return { metric, baseline: prior?.baseline || measuredBaseline(patient, metric), target: prior?.target || '' };
+    return { metric, baseline: prior?.baseline || measuredBaseline(patient, metric), target: prior?.target || '', ...(prior?.evidenceStatus ? { referenceRange: prior.referenceRange || '', evidenceStatus: prior.evidenceStatus } : {}) };
   });
   const extras = normalized.filter(row => row.metric && !FIXED_METRICS.includes(row.metric));
   return [...fixed, ...extras].slice(0, 32);

@@ -15,10 +15,13 @@ const phaseAssessmentSchema = new mongoose.Schema({
   periodLabel: { type: String, default: '' },
   status: {
     type: String,
-    enum: ['pending', 'nutrition_review', 'professional_review', 'doctor_review', 'archive_pending', 'finalized', 'approved', 'rejected'],
+    enum: ['pending', 'nutrition_review', 'professional_review', 'doctor_review', 'team_review', 'archive_pending', 'finalized', 'approved', 'rejected'],
     default: 'nutrition_review', index: true,
   },
   content: { type: String, required: true },
+  // 新的常规评估与服务复盘共用一条记录；仅本次服务团队成员需要逐岗核对。
+  teamRoles: { type: [String], default: [] },
+  teamReviews: { type: mongoose.Schema.Types.Mixed, default: {} },
   evidenceSources: { type: [String], default: [] },
   templateSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
   clinicalReview: {

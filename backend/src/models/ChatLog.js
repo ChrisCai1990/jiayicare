@@ -6,6 +6,7 @@ const chatLogSchema = new mongoose.Schema({
   intent:     { type: String, enum: ['service', 'knowledge', 'data', 'nutrition', 'out_of_scope'], default: 'knowledge' },
   userMessage:{ type: String, required: true },
   aiReply:    { type: String, default: '' },
+  references: { type: [{ id: String, title: String, url: String, applicability: String }], default: [] },
   imageUrl:   { type: String, default: '' },
   audioUrl:   { type: String, default: '' },
   audioDuration: { type: Number, default: 0 },

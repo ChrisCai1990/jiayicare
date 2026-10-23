@@ -63,9 +63,20 @@ function runtime(injected = {}) {
           content: review.content, plannedContent: review.content, aiStatus: 'approved', status: 'planned',
         } }, { upsert: true });
       }
-      // Only the service coordination closes here. Original clinical follow-up and annual plan remain intact.
-      await Task.updateOne({ _id: flow._id, careFlowId: flow._id }, { $set: { status: 'completed', completedAt: new Date() } });
-      await Flow.updateOne({ _id: flow._id, tenantId: flow.tenantId, 'state.stage': 'closed' }, { $set: { 'state.finalized': true } });
+      // The final clinical review hands the service to its planner for closure.
+      // The annual plan and subsequent clinical follow-up remain independent.
+      if (!s.finalized) {
+        const planner = s.people.healthPlanner;
+        if (!planner?.id) fail('缺少健康规划师，不能提交结案');
+        await Task.findOneAndUpdate({ _id: hash(`care-closure:${flow._id}`) },
+          { $setOnInsert: { tenantId: flow.tenantId || null,
+            patientId: flow.patientId, staffId: planner.id, assignedTo: planner.id,
+            sourceType: 'annual_service', sourceId: flow._id, sourceAnnualPlanId: flow.annualPlanId,
+            careFlowId: flow._id, coordinationGroupId: `care:${flow._id}`, workflowKey: 'medical_assist:closure',
+            taskRole: 'supervisor', type: 'other', formData: {}, theme: `就医协助：健康规划师确认结案 · ${s.title}`,
+            status: 'planned', date: new Date(), remindAt: new Date(),
+            content: '执行及顾问审核已完成，请核对服务结果后确认结案。' } }, { upsert: true, new: true }).lean();
+      }
     }
     await Task.updateMany({ careFlowId: flow._id, workflowKey: /^care_flow:/, 'formData.careFlowSequence': { $lt: s.sequence }, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date() } });
     const after = await Flow.findOne({ _id: flow._id, tenantId: flow.tenantId }).lean();

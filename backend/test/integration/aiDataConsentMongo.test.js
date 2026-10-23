@@ -1,0 +1,70 @@
+const test = require('node:test'), assert = require('node:assert/strict');
+const mongoose = require('mongoose'), express = require('express'), jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
+
+test('authenticated consent API: account binding, concurrent grants, revoke, report-owner and staff isolation', { timeout: 30000 }, async t => {
+  const uri = process.env.AI_CONSENT_TEST_MONGO;
+  assert.match(uri || '', /^mongodb:\/\/127\.0\.0\.1:27993\/?$/);
+  const dbName = `ai_consent_test_${randomUUID().replaceAll('-', '')}`;
+  await mongoose.connect(uri, { dbName, autoIndex: false, serverSelectionTimeoutMS: 3000 });
+  const previous = { JWT_SECRET: process.env.JWT_SECRET, QWEN_API_KEY: process.env.QWEN_API_KEY };
+  process.env.JWT_SECRET = randomUUID(); process.env.QWEN_API_KEY = 'synthetic-no-network';
+  t.after(async () => {
+    assert.equal(mongoose.connection.name, dbName);
+    await mongoose.connection.dropDatabase(); await mongoose.disconnect();
+    for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  });
+  const User = require('../../src/models/User'), Tenant = require('../../src/models/Tenant');
+  const Consent = require('../../src/models/AiDataConsent'), Report = require('../../src/models/MedicalReport');
+  const c = require('../../src/utils/aiDataConsent');
+  const a = new mongoose.Types.ObjectId(), b = new mongoose.Types.ObjectId(), tenant = new mongoose.Types.ObjectId();
+  await Tenant.collection.insertOne({ _id: tenant, status: 'active' });
+  await User.collection.insertMany([{ _id: a, tenantId: tenant, name: 'Synthetic A' }, { _id: b, tenantId: tenant, name: 'Synthetic B' }]);
+  const app = express(); app.use(express.json()); app.use('/api/ai-data-consent', require('../../src/routes/aiDataConsent'));
+  app.get('/api/photo-consent-check', require('../../src/middleware/auth'), c.requireHealthConsent, (req, res) => res.json(c.currentPersonalData()));
+  app.use((error, req, res, next) => res.status(error.status || 500).json({ message: error.message }));
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const call = async (actor, path = '', body) => {
+    const token = jwt.sign({ id: String(actor) }, process.env.JWT_SECRET);
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/ai-data-consent${path}`, { method: body ? 'PUT' : 'GET', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: response.status, ...await response.json() };
+  };
+  const initial = await call(a); assert.equal(initial.status, 200);
+  const photo = async actor => {
+    const token = jwt.sign({ id: String(actor) }, process.env.JWT_SECRET);
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/photo-consent-check`, { headers: { authorization: `Bearer ${token}` } });
+    return { status: response.status, body: await response.json() };
+  };
+  assert.equal((await photo(a)).status, 403, 'photo recognition is blocked before health consent');
+  assert.ok(initial.data.every(row => !row.granted && row.subjectId === String(a)));
+  const grant = { subjectId: String(a), granted: true, version: c.VERSION, revision: 0 };
+  assert.equal((await call(b, '/assistant', grant)).status, 409, 'a modal opened for A cannot authorize B after account switch');
+  assert.equal((await call(a, '/assistant', { ...grant, version: 'stale' })).status, 400);
+  const simultaneous = await Promise.all([call(a, '/assistant', grant), call(a, '/assistant', grant)]);
+  assert.deepEqual(simultaneous.map(row => row.status).sort(), [200, 409]);
+  assert.equal(await Consent.countDocuments({ user: a, purpose: 'assistant' }), 1);
+  await c.assertPermission(a, 'assistant', 'qwen');
+  await assert.rejects(c.assertPermission(b, 'assistant', 'qwen'), { code: 'AI_DATA_CONSENT_REQUIRED' });
+  await assert.rejects(c.withPersonalData(a, 'assistant', () => c.assertContextPermission('aliyun-nls')), { code: 'AI_DATA_CONSENT_REQUIRED' });
+  assert.equal((await call(a, '/assistant', { ...grant, revision: 1, granted: false })).status, 200);
+  assert.equal((await call(a, '/assistant', { ...grant, revision: 1 })).status, 409);
+  await assert.rejects(c.assertPermission(a, 'assistant', 'qwen'), { code: 'AI_DATA_CONSENT_REQUIRED' });
+  assert.equal((await call(a, '/health', grant)).status, 200);
+  assert.deepEqual(await photo(a), { status: 200, body: { subjectId: String(a), purpose: 'health' } });
+  assert.equal((await photo(b)).status, 403, 'another account cannot borrow health consent');
+  const reportId = new mongoose.Types.ObjectId();
+  await Report.collection.insertOne({ _id: reportId, user: b, tenantId: tenant });
+  await assert.rejects(c.withPersonalData(a, 'health', () => c.assertContextPermission('qwen', { reportId })), { code: 'AI_DATA_CONSENT_REQUIRED' });
+  assert.equal((await call(b, '/health', { ...grant, subjectId: String(b) })).status, 200);
+  await c.withPersonalData(a, 'health', () => c.assertContextPermission('qwen', { reportId }));
+  await assert.rejects(c.assertContextPermission('qwen', { actorId: String(a) }), { code: 'AI_DATA_CONSENT_REQUIRED' });
+  const { controlledCall } = require('../../src/utils/aiBudget'); let sent = 0;
+  await assert.rejects(c.withPersonalData(b, 'assistant', () => controlledCall({ provider: 'qwen', model: 'qwen-plus', messages: [], maxTokens: 1 }, () => sent++)), { code: 'AI_DATA_CONSENT_REQUIRED' });
+  assert.equal(sent, 0);
+  const saved = await Consent.findOne({ user: a, purpose: 'assistant' }).lean();
+  assert.deepEqual(saved.events.map(row => row.granted), [true, false]);
+  assert.ok(saved.events.every(row => String(row.actor) === String(a)));
+  assert.equal((await call(a, '/health', { ...grant, revision: 1, granted: false })).status, 200);
+  assert.equal((await photo(a)).status, 403, 'revocation blocks subsequent photo recognition');
+});

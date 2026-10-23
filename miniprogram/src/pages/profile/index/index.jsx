@@ -7,6 +7,9 @@ import { ordersAPI, userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { getOrderBadgeCounts } from '../../../utils/orderStatus';
+import useArchiveSubject from '../../../hooks/useArchiveSubject';
+import FamilySubjectView from '../../../components/FamilySubjectView';
+import { manageAiDataConsent } from '../../../utils/aiDataConsent';
 
 const PACKAGE_LABELS = {
   pkg_1y: '年度会员', pkg_6m: '半年会员', pkg_3m: '季度会员',
@@ -47,6 +50,7 @@ function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
 
 export default function ProfilePage() {
   const { statusBarHeight } = useNavBar();
+  const archive = useArchiveSubject();
   const { user, token, loading: authLoading, logout, updateUser } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
   const [orderCounts, setOrderCounts] = useState({ payment: 0, service: 0, progress: 0, afterSale: 0 });
@@ -96,6 +100,10 @@ export default function ProfilePage() {
       Taro.showToast({ title: res.message || '续约需求已提交', icon: 'none', duration: 2500 });
     } catch (err) { Taro.showToast({ title: err.message || '提交失败，请稍后重试', icon: 'none' }); }
   };
+
+  if (archive.loading || archive.error || archive.subject) {
+    return <FamilySubjectView archive={archive} section="profile" statusBarHeight={statusBarHeight} />;
+  }
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -241,6 +249,7 @@ export default function ProfilePage() {
           <MenuItem icon="users" iconColor="#D97706" label="邀请好友" value="分享专属邀请链接" onClick={() => nav('/pages/profile/invite/index')} />
           <MenuItem icon="🔔" iconColor="#7C3AED" label="通知设置" onClick={() => nav('/pages/profile/notifications/index')} />
           <MenuItem icon="🔒" iconColor="#22A06B" label="账号安全" onClick={() => nav('/pages/profile/security/index')} />
+          <MenuItem icon="🔒" iconColor="#22A06B" label="AI与语音授权" value="本人授权、查看或撤回" onClick={manageAiDataConsent} />
           <MenuItem icon="❓" iconColor="#D97706" label="帮助与反馈" onClick={() => nav('/pages/profile/feedback/index')} isLast />
         </View>
       </View>

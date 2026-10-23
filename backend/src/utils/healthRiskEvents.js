@@ -20,7 +20,7 @@ function recordCandidate(record) {
     ruleCode: `${type}_existing_danger_status`,
     level: 'review',
     title: `${label}记录待核对`,
-    summary: `新录入${label}数值被现有打卡规则标记为异常，请核对原始记录、测量条件及客户情况。`,
+    summary: `新录入${label}数值被现有健康数据规则标记为异常，请核对原始记录、测量条件及客户情况。`,
     evidence: { recordedAt: record.recordedAt, value: raw, unit: record.unit || '', status: record.status, source: 'health_record' },
   };
 }
@@ -53,7 +53,7 @@ function bloodPressureTrendCandidate(records = []) {
   return {
     ruleCode: 'three_recent_bp_warning_records', level: 'review',
     title: '连续血压记录需核对',
-    summary: '近期连续三次血压记录均被现有打卡规则标为“需关注”，请核对测量条件、原始记录和客户情况。',
+    summary: '近期连续三次血压记录均被现有健康数据规则标为“需关注”，请核对测量条件、原始记录和客户情况。',
     evidence: { source: 'monitoring_trend', records: records.map(record => ({
       id: String(record._id), recordedAt: record.recordedAt,
       value: `${record.extra?.sys ?? String(record.value || '').split('/')[0]}/${record.extra?.dia ?? (String(record.value || '').split('/')[1] || '-')}`,

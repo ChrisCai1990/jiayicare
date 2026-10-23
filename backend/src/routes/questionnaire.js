@@ -337,7 +337,7 @@ router.post('/:id/submit', auth, async (req, res) => {
       user: subjectId,
       submittedBy: childId ? req.user._id : null,
       answers,
-      questionnaireSnapshot: questionnaire.archivePurpose === 'child_health' ? {
+      questionnaireSnapshot: questionnaire.archivePurpose === 'child_health' || questionnaire.standardTemplateKey === 'rehab_screening_v1' ? {
         title: questionnaire.title, ageStage: childStage, questions: effectiveQuestions.map(q => ({ id: q.id, text: q.text, archiveField: q.archiveField, type: q.type })),
         submittedByName: childId ? req.user.name || '监护人' : '',
       } : null,
@@ -346,6 +346,11 @@ router.post('/:id/submit', auth, async (req, res) => {
       pushRecordId: assignment?._id || null,
       sourceOrderId: assignment?.sourceOrderId || null,
     });
+
+    if (String(questionnaire._id) === require('../utils/legacyLifestyleInterview').QUESTIONNAIRE_ID) {
+      await require('../utils/legacyLifestyleInterview').reconcileLegacyLifestyleInterviews(subjectId)
+        .catch(error => console.error('[legacy-lifestyle-interview] reconcile failed:', error));
+    }
 
     // 标记已答题用户
     await DynamicQuestionnaire.findByIdAndUpdate(req.params.id, {
@@ -404,7 +409,8 @@ router.post('/:id/submit', auth, async (req, res) => {
       let initialImportAttempt = false;
       try {
         const hasMapping = (questionnaire.questions || []).some(q => q.archiveField);
-        if (hasMapping) {
+        // 膳食调查由营养师在营养流程复核，不生成健管专员的档案确认草稿。
+        if (hasMapping && String(questionnaire._id) !== '6a49eab9fc1595013da70645') {
           const { buildArchiveDraft } = require('../utils/archiveImport');
           const fullUser = await User.findById(req.user._id).lean();
           const draft = buildArchiveDraft(fullUser, questionnaire, response);

@@ -63,7 +63,10 @@ async function transcribeBase64(data, mimeType) {
   if (!asrEnabled()) return '';
   const audioBuffer = decodeAudioData(data);
   if (!audioBuffer.length) return '';
-  return recognizeAudio(audioBuffer, mimeType, await fetchNlsToken());
+  await require('./aiDataConsent').assertContextPermission('aliyun-nls');
+  const token = await fetchNlsToken();
+  await require('./aiDataConsent').assertContextPermission('aliyun-nls');
+  return recognizeAudio(audioBuffer, mimeType, token);
 }
 
 module.exports = { transcribeBase64, asrEnabled, audioFormat, decodeAudioData };

@@ -1,0 +1,15 @@
+# Apple consent/citation revision 2026-10-19
+
+Based on production 6a00fe5332a5eedd3639adadb6143c41809c4f44. The user authorized source synchronization, tests, deployment, EAS build and Apple resubmission. This document does not assert deployment or approval.
+
+The server stores user/purpose/provider/disclosure-version consent with revision checks and audit history. Missing, withdrawn or other-account consent blocks external transmission before budget reservation and immediately before sending. Staff and background jobs use the actual patient scope; staff authorization is not patient consent. Speech transcription requires a separate explicit action. Existing customer records are not migrated or backfilled as consent.
+
+Ordinary H5 and miniprogram source expose consent and withdrawal. Four photo recognition flows obtain health consent before recognition, preserving manual entry and image verification. Previously released miniprogram clients do not yet contain these controls; missing authorization will block their AI operations until an updated client is released or the same account authorizes via the updated H5. Manual and non-AI functions remain available. Public visitor AI without an authenticated consent scope falls back to existing non-AI service assistance.
+
+Patient report links are permission-checked original evidence, not clinical guideline citations. Newly generated general chat health education renders only verified source passages and links; unsupported personal clinical questions refer to professional care. This does not establish that every historical health recommendation satisfies Apple guideline 1.4.1. Real-device, current Apple metadata and historical-output review remain pending.
+
+Validation: 47 targeted tests pass, including isolated local Mongo HTTP authorization/revocation/concurrency/ownership and transcription checks; no supplier calls. Ordinary H5 production build succeeds with two size warnings. An unrelated existing reviewPlanAmendment test expects an item title while current annualNutritionDispatch prefers personalizedAdvice; these production files are unchanged in this revision. No production data migration, no real customer or secret export.
+
+Deployment procedure: production revision and changed-file hashes must match, versioned Git bundle transferred only to the existing server, backup untracked source collisions and static roots, fast-forward source, overlay immutable assets while preserving existing review/demo paths, restart only the ordinary backend and verify health/auth/static hashes. On failure restore backed-up static roots and revert only this release if no intervening source edits. No GitHub push, Apple upload, review submission or approval is implied by a local commit.
+
+Separate H5 source candidate: apple-h5-candidate-20261018, retaining existing platform adaptations. iOS build 1.0.0(3) is already FINISHED (EAS 025b5221-3172-4493-bbfc-71b1dc6d8d11); do not rebuild it unnecessarily. Its URL remains app.joinwehealth.com/mobile-preview/. This work does not change domain registration or filing status.

@@ -11,21 +11,23 @@ const { incomingImagePayloads, withSafeHealthRecordImages, withoutLegacyImageExt
 const router = express.Router();
 const { validateConfirmation } = require('../utils/bloodPressurePhoto');
 const { validateConfirmation: validateBloodSugarConfirmation } = require('../utils/bloodSugarPhoto');
+const { validateConfirmation: validateWaistConfirmation } = require('../utils/waistPhoto');
 const { validateConfirmation: validateWeightConfirmation } = require('../utils/weightPhoto');
 router.use(require('./bloodPressurePhoto'));
 router.use(require('./bloodSugarPhoto'));
 router.use(require('./weightPhoto'));
+router.use(require('./waistPhoto'));
 
 function withSignedHealthImages(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
 }
 
-// 每种打卡类型每天（CST）限计一次，奖励值由 Admin 健康基金页配置。
+// 每种健康数据记录类型每天（CST）限计一次，奖励值由 Admin 健康基金页配置。
 async function awardCheckinPoints(userId, type, recordedAt) {
   try {
     const CST_OFFSET = 8 * 60 * 60 * 1000;
     const now = new Date();
-    // 只有录入日期就是今天（CST）才算真实打卡，历史补录（recordedAt 指向过去）不给分，防止批量导入刷分
+    // 只有录入日期就是今天（CST）才算真实记录健康数据，历史补录（recordedAt 指向过去）不给分，防止批量导入刷分
     const nowCST = new Date(now.getTime() + CST_OFFSET);
     const todayStr = nowCST.toISOString().slice(0, 10);
     const recCST = new Date(recordedAt.getTime() + CST_OFFSET);
@@ -100,7 +102,7 @@ async function recalcHealthScore(userId) {
       else if (h < 7) score -= 5;
     }
 
-    // 运动打卡加分（近30天3次+）
+    // 运动记录加分（近30天3次+）
     const exerciseCount = recentRecords.filter(r => r.type === 'exercise').length;
     if (exerciseCount >= 10) score += 5;
     else if (exerciseCount >= 3) score += 3;
@@ -109,7 +111,7 @@ async function recalcHealthScore(userId) {
     const diseases = user.chronicDiseases || [];
     score -= Math.min(diseases.length * 3, 15);
 
-    // 吸烟/饮酒（生活方式打卡）
+    // 吸烟/饮酒（生活方式记录）
     const smokingCount = recentRecords.filter(r => r.type === 'smoking').length;
     const alcoholCount = recentRecords.filter(r => r.type === 'alcohol').length;
     if (smokingCount > 0) score -= 5;
@@ -172,8 +174,8 @@ router.get('/trend/:type', auth, async (req, res) => {
   }
 });
 
-// 今日（CST自然日）各类型打卡状态：用户端打卡页据此判断"是否已打卡"，替代此前的 localStorage 本地缓存，
-// 保证医护代录后用户端能实时看到当天状态（2026-07-18 打卡页重构）
+// 今日（CST自然日）各类型健康数据记录状态：用户端健康数据记录页据此判断"是否已记录健康数据"，替代此前的 localStorage 本地缓存，
+// 保证医护代录后用户端能实时看到当天状态（2026-07-18 健康数据记录页重构）
 router.get('/today-status', auth, async (req, res) => {
   try {
     const CST_OFFSET = 8 * 60 * 60 * 1000;
@@ -196,11 +198,11 @@ router.get('/today-status', auth, async (req, res) => {
 
     res.json({ success: true, date: dateStr, doneTypes });
   } catch (err) {
-    res.status(500).json({ success: false, message: '获取今日打卡状态失败', error: err.message });
+    res.status(500).json({ success: false, message: '获取今日健康数据记录状态失败', error: err.message });
   }
 });
 
-// 最近各日期的打卡次数，供用户补录时确认“哪天已经填过”；只返回日期和类型，不暴露记录内容。
+// 最近各日期的健康数据记录次数，供用户补录时确认“哪天已经填过”；只返回日期和类型，不暴露记录内容。
 router.get('/checkin-calendar', auth, async (req, res) => {
   try {
     const days = Math.min(Math.max(parseInt(req.query.days) || 90, 1), 365);
@@ -218,7 +220,7 @@ router.get('/checkin-calendar', auth, async (req, res) => {
     }
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ success: false, message: '获取打卡日期失败', error: err.message });
+    res.status(500).json({ success: false, message: '获取健康数据记录日期失败', error: err.message });
   }
 });
 
@@ -232,7 +234,7 @@ router.post('/', auth, async (req, res) => {
         ? validateBloodSugarConfirmation(req.body, req.user._id)
         : req.body.type === 'weight'
           ? validateWeightConfirmation(req.body, req.user._id)
-          : validateConfirmation(req.body, req.user._id);
+          : req.body.type === 'waist' ? validateWaistConfirmation(req.body, req.user._id) : validateConfirmation(req.body, req.user._id);
     }
     catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     if (photoRecognition) {
@@ -286,7 +288,7 @@ router.post('/', auth, async (req, res) => {
         .catch(error => console.error('[health-risk] record sync failed', record._id, error));
     }
 
-    // 打卡后自动同步随访计划状态：找今日（CST UTC+8）含该 checkIn 类型的随访，更新为 completed
+    // 记录健康数据后自动同步随访计划状态：找今日（CST UTC+8）含该 checkIn 类型的随访，更新为 completed
     try {
       // 用 UTC+8 算今日边界，避免服务器时区误差
       const CST_OFFSET = 8 * 60 * 60 * 1000;
@@ -304,7 +306,13 @@ router.post('/', auth, async (req, res) => {
       });
       if (matched.length > 0) {
         const ids = matched.map(f => f._id);
-        await FollowUp.updateMany({ _id: { $in: ids } }, { $set: { status: 'completed', completedAt: new Date() } });
+        const completedAt = new Date();
+        await FollowUp.updateMany({ _id: { $in: ids } }, { $set: { status: 'completed', completedAt } });
+        for (const fu of matched.filter(f => f.repeatWeekly)) {
+          await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp({
+            ...fu.toObject(), status: 'completed', completedAt,
+          });
+        }
 
         // 若有 repeatDaily=true 的随访，为明天自动创建 planned 记录
         const tomorrowStr = new Date(Date.now() + CST_OFFSET + 86400000).toISOString().split('T')[0];
@@ -338,14 +346,13 @@ router.post('/', auth, async (req, res) => {
     // 异步重算健康评分（不阻断响应）
     recalcHealthScore(req.user._id).catch(() => {});
 
-    // 异步打卡积分（不阻断响应，历史补录不计分）
+    // 异步记录健康数据积分（不阻断响应，历史补录不计分）
     awardCheckinPoints(req.user._id, type, record.recordedAt).catch(() => {});
     if (type === 'bloodPressure' || type === 'weight') {
       require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.user._id).catch(() => {});
     }
 
-    const feedback = await require('../utils/metabolicPilot').feedbackAfterSave(req.user, record);
-    res.status(201).json({ success: true, data: record, feedback, message: '记录成功' });
+    res.status(201).json({ success: true, data: record, feedback: null, message: '记录成功' });
   } catch (err) {
     if (err.code === 11000) return res.status(409).json({ success: false, message: '这张图片已经提交过，请在健康记录中查看' });
     res.status(500).json({ success: false, message: '保存记录失败', error: err.message });
@@ -383,8 +390,7 @@ router.put('/:id', auth, async (req, res) => {
       require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.user._id).catch(() => {});
     }
 
-    const feedback = await require('../utils/metabolicPilot').feedbackAfterSave(req.user, record);
-    res.json({ success: true, data: record, feedback, message: '修改成功' });
+    res.json({ success: true, data: record, feedback: null, message: '修改成功' });
   } catch (err) {
     res.status(500).json({ success: false, message: '修改失败', error: err.message });
   }
