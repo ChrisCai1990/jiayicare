@@ -152,6 +152,7 @@ export const staffAPI = {
   deleteDiseaseRecord: (id, recordId) => req(`/staff/patients/${id}/disease-records/${recordId}`, { method: 'DELETE' }),
   removeDiseaseGroup: (id, diseaseName) => req(`/staff/patients/${id}/disease-record-by-name`, { method: 'DELETE', body: JSON.stringify({ diseaseName }) }),
   mergeDiseaseCourseEntries: (id, recordId, d) => req('/staff/patients/' + id + '/disease-records/' + recordId + '/course-entries/merge', { method:'POST', body:JSON.stringify(d) }),
+  cancelDiseaseCourseEntry: (id, recordId, entryId, d) => req(`/staff/patients/${id}/disease-records/${recordId}/course-entries/${entryId}/cancel`, { method:'POST', body:JSON.stringify(d) }),
   updateDiseaseCourseEntry: (id, recordId, entryId, d) => req(`/staff/patients/${id}/disease-records/${recordId}/course-entries/${entryId}`, { method: 'PUT', body: JSON.stringify(d) }),
   generateHealthRiskTags: id => req(`/staff/patients/${id}/health-risk-tags/generate`, { method: 'POST' }),
   reviewHealthRiskTags: (id, tags) => req(`/staff/patients/${id}/health-risk-tags/review`, { method: 'PUT', body: JSON.stringify({ tags }) }),

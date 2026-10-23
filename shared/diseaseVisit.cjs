@@ -27,6 +27,9 @@ const sourceDocument = entry => ({
 const visitDocuments = entry => Array.isArray(entry.visitDocuments) && entry.visitDocuments.length
   ? entry.visitDocuments : [sourceDocument(entry)];
 
+const isClinicalVisitEntry = entry => sourceIds(entry).length > 0
+  || ['medical_record', 'exam_report'].includes(entry?.sourceType);
+
 function mergeVisitEntries(target, incoming, actor = {}) {
   const targetDate = visitDate(target.occurredAt);
   if (!targetDate || targetDate !== visitDate(incoming.occurredAt)) throw new Error('两条资料的实际就诊日期不同，请先核对日期');
@@ -57,10 +60,13 @@ function mergeVisitEntries(target, incoming, actor = {}) {
 function removeVisitSource(entry, reportId, actor = {}) {
   const ids = sourceIds(entry);
   if (!ids.includes(String(reportId))) throw new Error('该资料不在此诊疗记录中');
-  if (ids.length === 1) return null;
   const documents = visitDocuments(entry);
-  if (documents.length !== ids.length || documents.some(doc => !doc.sourceReportId))
+  if (documents.length === 1 && ids.length === 1) return null;
+  const detailedIds = documents.map(doc => String(doc.sourceReportId || '')).filter(Boolean);
+  if (detailedIds.length !== ids.length || ids.some(id => !detailedIds.includes(id)))
     throw new Error('同次就医的来源明细不完整，请先人工核对');
+  if (documents.filter(doc => String(doc.sourceReportId || '') === String(reportId)).length !== 1)
+    throw new Error('同次就医的来源明细不匹配，请先人工核对');
   const remaining = documents.filter(doc => String(doc.sourceReportId) !== String(reportId));
   if (remaining.length !== documents.length - 1) throw new Error('同次就医的来源明细不匹配，请先人工核对');
   const now = actor.at || new Date();
@@ -69,8 +75,8 @@ function removeVisitSource(entry, reportId, actor = {}) {
   const first = remaining[0];
   const next = {
     ...entry,
-    sourceReportId: first.sourceReportId,
-    sourceReportIds: remaining.map(doc => doc.sourceReportId),
+    sourceReportId: first.sourceReportId || null,
+    sourceReportIds: remaining.map(doc => doc.sourceReportId).filter(Boolean),
     sourceTitle: first.title || '',
     sourceType: first.sourceType || '',
     sourceInstitution: [...new Set(remaining.map(doc => doc.sourceInstitution).filter(Boolean))].join('；'),
@@ -90,5 +96,5 @@ function removeVisitSource(entry, reportId, actor = {}) {
   return next;
 }
 
-module.exports = { visitDate, sourceDocument, visitDocuments, mergeVisitEntries, removeVisitSource };
+module.exports = { visitDate, sourceDocument, visitDocuments, isClinicalVisitEntry, mergeVisitEntries, removeVisitSource };
 

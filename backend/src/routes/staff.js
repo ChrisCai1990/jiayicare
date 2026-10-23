@@ -1382,7 +1382,7 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
 const { findReportArchive, sourceIds } = require('../../../shared/diseaseReportArchive.cjs');
-const { visitDate, mergeVisitEntries, removeVisitSource } = require('../../../shared/diseaseVisit.cjs');
+const { visitDate, isClinicalVisitEntry, mergeVisitEntries, removeVisitSource } = require('../../../shared/diseaseVisit.cjs');
 const { summaryKey, validInitialOccurredAt, changeStamp } = require('../../../shared/diseaseSummary.cjs');
 const { recordVersion, generateDiseaseSummary } = require('../utils/diseaseSummary');
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
@@ -1595,7 +1595,7 @@ router.post('/patients/:id/disease-records/:recordId/course-entries/merge', staf
     const sourceIndex = (record.courseEntries || []).findIndex(item => String(item._id) === String(req.body.sourceEntryId));
     if (targetIndex < 0 || sourceIndex < 0 || targetIndex === sourceIndex) return res.status(400).json({ success:false, message:'请选择本专病下两条不同的诊疗资料' });
     const target = record.courseEntries[targetIndex], source = record.courseEntries[sourceIndex];
-    if (!sourceIds(target).length || !sourceIds(source).length) return res.status(400).json({ success:false, message:'仅可合并有原始医疗资料来源的诊疗记录' });
+    if (!isClinicalVisitEntry(target) || !isClinicalVisitEntry(source)) return res.status(400).json({ success:false, message:'仅可合并医疗病历或检查资料形成的诊疗记录' });
     const entry = mergeVisitEntries(target, source, { at:new Date(), id:req.staff._id, name:req.staff.name || req.staff.username || '' });
     record.courseEntries[targetIndex] = entry;
     record.courseEntries.splice(sourceIndex, 1);
@@ -1608,6 +1608,34 @@ router.post('/patients/:id/disease-records/:recordId/course-entries/merge', staf
     }
     res.json({ success:true, data:entry });
   } catch (err) { res.status(400).json({ success:false, message:err.message }); }
+});
+
+router.post('/patients/:id/disease-records/:recordId/course-entries/:entryId/cancel', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success:false, message:'请由健康顾问撤销诊疗记录' });
+    const scope = await getVisiblePlanPatientIds(req.staff);
+    if (scope && !scope.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success:false, message:'无此会员权限' });
+    const reason = cleanMedicalText(req.body?.reason, 500);
+    if (reason.length < 5) return res.status(400).json({ success:false, message:'请填写至少5字的撤销原因' });
+    const patient = await User.findById(req.params.id).select('diseaseRecords medicalRecord').lean();
+    if (!patient) return res.status(404).json({ success:false, message:'会员不存在' });
+    const records = normalizedDiseaseRecords(patient);
+    const record = records.find(item => String(item._id) === String(req.params.recordId));
+    if (!record) return res.status(404).json({ success:false, message:'专病档案不存在' });
+    const index = (record.courseEntries || []).findIndex(item => String(item._id) === String(req.params.entryId));
+    if (index < 0) return res.status(409).json({ success:false, message:'诊疗记录已变化，请刷新后重新核对' });
+    const entry = record.courseEntries[index];
+    if (sourceIds(entry).length || (entry.visitDocuments || []).some(item => item.sourceReportId))
+      return res.status(409).json({ success:false, message:'此记录关联原始医疗资料，请从对应资料撤销入档；多份资料请逐份核对' });
+    const now = new Date();
+    const cancelled = { ...entry, cancelledAt:now, cancelledById:req.staff._id,
+      cancelledByName:req.staff.name || req.staff.username || '', cancellationReason:reason };
+    record.courseEntries.splice(index, 1);
+    record.cancelledCourseEntries = [...(record.cancelledCourseEntries || []), cancelled];
+    const saved = await User.collection.updateOne({ _id:patient._id, diseaseRecords:patient.diseaseRecords }, { $set:{ diseaseRecords:records } });
+    if (!saved.matchedCount) return res.status(409).json({ success:false, message:'专病档案已更新，请刷新后重试' });
+    return res.json({ success:true, data:{ cancelledAt:now, reason } });
+  } catch (err) { return res.status(500).json({ success:false, message:err.message }); }
 });
 
 router.put('/patients/:id/disease-records/:recordId/course-entries/:entryId', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
@@ -5820,7 +5848,7 @@ router.post('/medical-reports/:id/health-course-revoke', staffAuth, async (req, 
       const record = records.find(item => String(item._id) === archive.recordId);
       const index = record.courseEntries.findIndex(item => String(item._id) === String(archive.entry._id));
       const entry = record.courseEntries[index];
-      if (sourceIds(entry).length > 1 && entry.updatedAt && entry.visitMergeHistory?.length
+      if ((entry.visitDocuments || []).length > 1 && entry.updatedAt && entry.visitMergeHistory?.length
         && new Date(entry.updatedAt).getTime() > new Date(entry.visitMergeHistory.at(-1).at).getTime())
         return res.status(409).json({ success:false, message:'合并后的诊疗记录又被修订，请在专病时间轴人工核对后处理' });
       const actor = { at:new Date(), id:req.staff._id, name:req.staff.name || req.staff.username || '', reason };
@@ -5905,7 +5933,7 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
       reviewedAt:now, reviewedById:req.staff._id, reviewedByName:reviewerName,
       ...(outpatientRecord ? { outpatientRecord } : {}),
     };
-    const sameDayEntries = (record.courseEntries || []).filter(item => sourceIds(item).length && visitDate(item.occurredAt) === req.body.occurredAt);
+    const sameDayEntries = (record.courseEntries || []).filter(item => isClinicalVisitEntry(item) && visitDate(item.occurredAt) === req.body.occurredAt);
     const mergeTarget = sameDayEntries.find(item => String(item._id) === String(req.body.mergeEntryId || ''));
     if (sameDayEntries.length && !mergeTarget && req.body.separateVisitConfirmed !== true)
       return res.status(409).json({ success:false, message:'该日期已有诊疗记录，请确认是否属于同一次就医并选择归入；不同次就医请明确确认后单独归档' });

@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync(require.resolve('../src/routes/staff'),'utf8');
 const start=source.indexOf("router.post('/patients/:id/disease-records/course-entries'");
-const end=source.indexOf("router.put('/patients/:id/disease-records/:recordId/course-entries/:entryId'",start);
+const end=source.indexOf("router.post('/patients/:id/disease-records/:recordId/course-entries/merge'",start);
 async function run({duplicate=false,foreign=false,match=1,scope=['p'],role='familyDoctor'}={}){
   let handler,write,query;
   const patient={_id:'p',diseaseRecords:[{_id:'d',name:'测试',courseEntries:duplicate?[{sourceHealthRecordId:'h'}]:[]}]};

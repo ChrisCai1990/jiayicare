@@ -45,6 +45,7 @@ async function approval(options={}) {
     MedicalReport:{findById:async()=>report},
     User:{findById:()=>({select:()=>({lean:async()=>patient})}),collection:{updateOne:async(q,u)=>{write={q,u};return{matchedCount:options.match ?? 1}}}},
     normalizedDiseaseRecords:p=>structuredClone(p.diseaseRecords),findReportArchive,sourceIds,visitDate,mergeVisitEntries,
+    isClinicalVisitEntry:require('../../shared/diseaseVisit.cjs').isClinicalVisitEntry,
     cleanMedicalText:v=>String(v||''),mergedHealthChange:b=>b.content,hasMedicalSummary:s=>!!s?.initialDiagnosis,
     recordVersion:()=>'',courseEvidence:()=>({}),mongoose:{Types:{ObjectId:function(){return 'new'}}},
     require:name=>require(name.endsWith('clinicalDocumentReview')?'../src/utils/clinicalDocumentReview':name),
@@ -86,15 +87,16 @@ test('confirmed separate same-day visit remains two entries; stale merge selecti
 });
 async function historicalMerge(options={}) {
   let handler,write,reportUpdate=false;
-  const patient={_id:'p',diseaseRecords:[{_id:'d',name:'眩晕',courseEntries:[oldEntry(),newEntry()]}]};
+  const patient={_id:'p',diseaseRecords:[{_id:'d',name:'眩晕',courseEntries:options.entries || [oldEntry(),newEntry()]}]};
   const start=routeSource.indexOf("router.post('/patients/:id/disease-records/:recordId/course-entries/merge'");
-  const end=routeSource.indexOf("router.put('/patients/:id/disease-records/:recordId/course-entries/:entryId'",start);
+  const end=routeSource.indexOf("router.post('/patients/:id/disease-records/:recordId/course-entries/:entryId/cancel'",start);
   vm.runInNewContext(routeSource.slice(start,end),{
     router:{post:(_path,...fns)=>{handler=fns.at(-1)}},staffAuth:()=>{},checkPermission:()=>{},
     getVisiblePlanPatientIds:async()=>options.scope ?? ['p'],
     User:{findById:()=>({select:()=>({lean:async()=>patient})}),collection:{updateOne:async(q,u)=>{write={q,u};return{matchedCount:options.match ?? 1}}}},
     MedicalReport:{updateMany:async()=>{reportUpdate=true}},
     normalizedDiseaseRecords:p=>structuredClone(p.diseaseRecords),sourceIds,mergeVisitEntries,
+    isClinicalVisitEntry:require('../../shared/diseaseVisit.cjs').isClinicalVisitEntry,
   });
   const res=response();
   await handler({params:{id:'p',recordId:'d'},staff:{role:options.role||'familyDoctor',_id:'advisor',name:'顾问'},
@@ -116,5 +118,15 @@ test('historical merge enforces advisor scope and concurrency',async()=>{
     assert.equal(result.res.code,code);
     assert.equal(result.reportUpdate,false);
   }
+});
+test('historical verified medical entries without report IDs can be merged after same-visit confirmation',async()=>{
+  const entries=[oldEntry(),newEntry()].map(({sourceReportId,...entry})=>entry);
+  const result=await historicalMerge({entries});
+  assert.equal(result.res.code,200,JSON.stringify(result.res.body));
+  const merged=result.write.u.$set.diseaseRecords[0].courseEntries[0];
+  assert.equal(merged.visitDocuments.length,2);
+  assert.match(merged.content,/眼震检查正常[\s\S]*头晕复诊/);
+  assert.equal(sourceIds(merged).length,0);
+  assert.equal(merged.visitMergeHistory.length,1);
 });
 
