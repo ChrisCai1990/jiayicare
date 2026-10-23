@@ -1382,6 +1382,7 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
 const { findReportArchive, sourceIds } = require('../../../shared/diseaseReportArchive.cjs');
+const { visitDate, mergeVisitEntries } = require('../../../shared/diseaseVisit.cjs');
 const { summaryKey, validInitialOccurredAt, changeStamp } = require('../../../shared/diseaseSummary.cjs');
 const { recordVersion, generateDiseaseSummary } = require('../utils/diseaseSummary');
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
@@ -1577,6 +1578,36 @@ router.post('/patients/:id/disease-records/course-entries', staffAuth, checkPerm
     if (!saved.matchedCount) return res.status(409).json({ success: false, message: '专病档案已更新，请刷新后重试' });
     res.status(201).json({ success: true, data: entry });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/patients/:id/disease-records/:recordId/course-entries/merge', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success:false, message:'请由健康顾问核对同次就医资料' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success:false, message:'无此会员权限' });
+    if (req.body.confirmSameVisit !== true) return res.status(400).json({ success:false, message:'请先确认两条资料属于同一次就医' });
+    const patient = await User.findById(req.params.id).select('diseaseRecords medicalRecord').lean();
+    if (!patient) return res.status(404).json({ success:false, message:'会员不存在' });
+    const records = normalizedDiseaseRecords(patient);
+    const record = records.find(item => String(item._id) === String(req.params.recordId));
+    if (!record) return res.status(404).json({ success:false, message:'专病档案不存在' });
+    const targetIndex = (record.courseEntries || []).findIndex(item => String(item._id) === String(req.body.targetEntryId));
+    const sourceIndex = (record.courseEntries || []).findIndex(item => String(item._id) === String(req.body.sourceEntryId));
+    if (targetIndex < 0 || sourceIndex < 0 || targetIndex === sourceIndex) return res.status(400).json({ success:false, message:'请选择本专病下两条不同的诊疗资料' });
+    const target = record.courseEntries[targetIndex], source = record.courseEntries[sourceIndex];
+    if (!sourceIds(target).length || !sourceIds(source).length) return res.status(400).json({ success:false, message:'仅可合并有原始医疗资料来源的诊疗记录' });
+    const entry = mergeVisitEntries(target, source, { at:new Date(), id:req.staff._id, name:req.staff.name || req.staff.username || '' });
+    record.courseEntries[targetIndex] = entry;
+    record.courseEntries.splice(sourceIndex, 1);
+    const saved = await User.collection.updateOne({ _id:patient._id, diseaseRecords:patient.diseaseRecords }, { $set:{ diseaseRecords:records } });
+    if (!saved.matchedCount) return res.status(409).json({ success:false, message:'专病档案已更新，请刷新后重新核对' });
+    try {
+      await MedicalReport.updateMany({ _id:{ $in:sourceIds(source) }, user:patient._id, 'healthCourseDraft.status':'approved' }, { $set:{ 'healthCourseDraft.approvedEntryId':entry._id } });
+    } catch (linkError) {
+      console.error('Merged visit saved but report entry pointer refresh failed', linkError);
+    }
+    res.json({ success:true, data:entry });
+  } catch (err) { res.status(400).json({ success:false, message:err.message }); }
 });
 
 router.put('/patients/:id/disease-records/:recordId/course-entries/:entryId', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
@@ -5800,7 +5831,7 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     if (!record) return res.status(409).json({ success:false, message:'所选专病首页不存在或已删除，请返回专病管理核对后重试' });
     if (report.documentCategory === 'outpatient_record' && diseaseName !== record.name) return res.status(409).json({ success:false, message:`此病历由健管专员指定归入「${record.name}」，请刷新草稿后重试` });
     if (!hasMedicalSummary(record.summary)) return res.status(409).json({ success:false, message:'专病首页尚无首次概况，请先在专病管理填写并保存' });
-    if ((record.courseEntries || []).some(item => String(item.sourceReportId || '') === String(report._id))) return res.status(409).json({ success:false, message:'该医疗资料已经写入健康变化时间轴' });
+    if ((record.courseEntries || []).some(item => sourceIds(item).includes(String(report._id)))) return res.status(409).json({ success:false, message:'该医疗资料已经写入健康变化时间轴' });
     const draft = report.healthCourseDraft;
     const outpatientRecord = draft.outpatientRecord
       ? require('../utils/clinicalDocumentReview').normalizeClinicalReview('outpatient_record', req.body.outpatientRecord || draft.outpatientRecord) : null;
@@ -5821,17 +5852,27 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
       medicationChange:outpatientRecord ? outpatientRecord.medicationInstruction : cleanMedicalText(req.body.medicationChange ?? draft.medicationChange,5000),
       treatmentResponse:outpatientRecord ? outpatientRecord.treatmentPlan : cleanMedicalText(req.body.treatmentResponse ?? draft.treatmentResponse,5000),
       nextPlan:outpatientRecord ? outpatientRecord.referralAndFollowUp : cleanMedicalText(req.body.nextPlan ?? draft.nextPlan,5000),
-      sourceType:'medical_record', sourceInstitution:cleanMedicalText(report.hospital || report.institution,200), verificationStatus:'source_verified', sourceReportId:report._id,
+      sourceType:'medical_record', sourceInstitution:cleanMedicalText(report.hospital || report.institution,200), sourceTitle:cleanMedicalText(report.title,200), verificationStatus:'source_verified', sourceReportId:report._id,
       aiGenerated:true, aiGeneratedAt:draft.generatedAt, recordedAt:now, recordedById:req.staff._id, recordedByName:reviewerName, recordedByRole:req.staff.role,
       reviewedAt:now, reviewedById:req.staff._id, reviewedByName:reviewerName,
       ...(outpatientRecord ? { outpatientRecord } : {}),
     };
-    record.courseEntries = [entry, ...(record.courseEntries || [])].slice(0,500);
+    const sameDayEntries = (record.courseEntries || []).filter(item => sourceIds(item).length && visitDate(item.occurredAt) === req.body.occurredAt);
+    const mergeTarget = sameDayEntries.find(item => String(item._id) === String(req.body.mergeEntryId || ''));
+    if (sameDayEntries.length && !mergeTarget && req.body.separateVisitConfirmed !== true)
+      return res.status(409).json({ success:false, message:'该日期已有诊疗记录，请确认是否属于同一次就医并选择归入；不同次就医请明确确认后单独归档' });
+    if (req.body.mergeEntryId && !mergeTarget) return res.status(409).json({ success:false, message:'所选同次就医记录已变化，请刷新核对' });
+    const finalEntry = mergeTarget
+      ? mergeVisitEntries(mergeTarget, entry, { at:now, id:req.staff._id, name:reviewerName })
+      : entry;
+    record.courseEntries = mergeTarget
+      ? record.courseEntries.map(item => String(item._id) === String(mergeTarget._id) ? finalEntry : item)
+      : [entry, ...(record.courseEntries || [])].slice(0,500);
     const saved = await User.collection.updateOne({ _id:patient._id, diseaseRecords:patient.diseaseRecords }, { $set:{ diseaseRecords:records } });
     if (!saved.matchedCount) return res.status(409).json({ success:false, message:'专病档案已更新，请刷新核对，避免重复归档' });
-    report.healthCourseDraft = { ...draft, status:'approved', diseaseName, approvedEntryId:entry._id, reviewedAt:now, reviewedBy:req.staff._id, reviewedByName:reviewerName, finalContent:entry };
+    report.healthCourseDraft = { ...draft, status:'approved', diseaseName, approvedEntryId:finalEntry._id, reviewedAt:now, reviewedBy:req.staff._id, reviewedByName:reviewerName, finalContent:entry };
     await report.save();
-    res.json({ success:true, data:{ draft:report.healthCourseDraft, entry } });
+    res.json({ success:true, data:{ draft:report.healthCourseDraft, entry:finalEntry, merged:!!mergeTarget } });
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }
 });
 
