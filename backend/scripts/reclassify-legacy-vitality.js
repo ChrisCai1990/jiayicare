@@ -42,7 +42,7 @@ async function main() {
     const user = await User.findById(id).select('healthFundBalance pointsBalance vitalityPointsBalance rewardPointsBalance').lean();
     if (!user) { summary.skipped.push({key:anonymous(id), reason:'user_missing'}); continue; }
     const backupId = `${KEY}:${id}`;
-    let backup = APPLY ? await backups.findOne({_id:backupId}) : null;
+    let backup = await backups.findOne({_id:backupId});
     if (backup?.appliedAt) {
       summary.skipped.push({key:anonymous(id), reason:'already_applied'});
       continue;
@@ -60,12 +60,24 @@ async function main() {
     const moveFund = backup?.plan.moveFund ?? round((earned - movePoints) / 100);
     const originalCorporate = backup?.original.corporateAvailable ?? round(corporateAvailable);
     const originalTotal = backup?.original.healthFundBalance ?? round(user.healthFundBalance);
+    // A mixed legacy balance can still be attributed when all debits predate
+    // the first health check-in: those later check-in points have not been spent.
+    let checkinUnspent = false;
+    if (!grants && purchased > 0 && legacy !== earned + purchased) {
+      const firstCheckin = await points.find({user:id, source:'checkin', pool:{$exists:false}})
+        .sort({createdAt:1}).limit(1).next();
+      if (firstCheckin && legacy >= earned) {
+        checkinUnspent = !(await points.countDocuments({user:id, amount:{$lt:0},
+          createdAt:{$gte:firstCheckin.createdAt}, migrationKey:{$ne:KEY}}));
+      }
+    }
     const row = {key:anonymous(id), checkinPoints:earned, purchasePoints:purchased, oldConversionYuan:grants,
       legacyPoints:legacy, totalFund:round(user.healthFundBalance), corporateAvailable:round(corporateAvailable),
-      vitalityAvailable:round(vitalityAvailable), personalAvailable:round(personalAvailable), movePoints, moveFund};
+      vitalityAvailable:round(vitalityAvailable), personalAvailable:round(personalAvailable),
+      checkinUnspent, movePoints, moveFund};
     let reason = '';
     if (!Number.isSafeInteger(earned) || !Number.isSafeInteger(legacy) || earned <= 0 || legacy < 0) reason='invalid_points';
-    else if (!grants && purchased > 0 && legacy !== earned + purchased) reason='mixed_points_unreconciled';
+    else if (!grants && purchased > 0 && legacy !== earned + purchased && !checkinUnspent) reason='mixed_points_unreconciled';
     else if (moveFund > grants + 0.001) reason='fund_exceeds_old_conversion';
     else if (moveFund > originalCorporate + 0.001) reason='insufficient_corporate_fund';
     else if (moveFund > originalTotal + 0.001) reason='insufficient_total_fund';
@@ -92,8 +104,15 @@ async function main() {
       throw new Error(`Backup plan differs: ${row.key}`);
     const current = await users.findOne({_id:id});
     if (!current[marker]) {
+      if ((Number(current.pointsBalance)||0) !== backup.original.pointsBalance
+        || round(current.healthFundBalance) !== backup.original.healthFundBalance)
+        throw new Error(`Balance changed since backup: ${row.key}`);
+      const fundField = Object.prototype.hasOwnProperty.call(current,'healthFundBalance')
+        ? current.healthFundBalance : {$exists:false};
+      const pointsField = Object.prototype.hasOwnProperty.call(current,'pointsBalance')
+        ? current.pointsBalance : {$exists:false};
       const changed = await users.updateOne({_id:id, [marker]:{$exists:false},
-        pointsBalance:backup.original.pointsBalance, healthFundBalance:backup.original.healthFundBalance},
+        pointsBalance:pointsField, healthFundBalance:fundField},
       {$inc:{pointsBalance:-movePoints, vitalityPointsBalance:movePoints}, $set:{[marker]:KEY}});
       if (changed.modifiedCount !== 1) throw new Error(`Balance changed since preview: ${row.key}`);
     }

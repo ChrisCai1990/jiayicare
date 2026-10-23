@@ -82,9 +82,14 @@ const env = require('dotenv').parse(fs.readFileSync('backend/.env'));
   for (const [id, source] of perUser) {
     if (!source.checkin || conversionIds.has(id)) continue;
     const user = await User.findById(id).select('healthFundBalance pointsBalance vitalityPointsBalance rewardPointsBalance').lean();
+    const pointFlow = await points.aggregate([
+      {$match:{user:new mongoose.Types.ObjectId(id)}},
+      {$project:{source:1,amount:1,pool:1,createdAt:1,kind:{$cond:[{$regexMatch:{input:{$ifNull:['$remark','']},regex:'积分自动兑换'}},'conversion',{$cond:[{$regexMatch:{input:{$ifNull:['$remark','']},regex:'订单取消|退款'}},'refund','other']}]}}},
+      {$group:{_id:{source:'$source',pool:{$ifNull:['$pool','missing']},kind:'$kind'},records:{$sum:1},amount:{$sum:'$amount'},first:{$min:'$createdAt'},last:{$max:'$createdAt'}}}
+    ]).toArray();
     noConversionCheckinUsers.push({key:crypto.createHash('sha256').update(id).digest('hex').slice(0,8),
       legacyCheckinPoints:source.checkin, legacyPurchasePoints:source.consumption,
-      legacyPointsBalance:user?.pointsBalance||0, totalFund:user?.healthFundBalance||0});
+      legacyPointsBalance:user?.pointsBalance||0, totalFund:user?.healthFundBalance||0,pointFlow});
   }
   const migrationBackups = await db.collection('maintenance_backups').find({migrationKey:'legacy-vitality-20261023-v1'}).toArray();
   const migration = [];
