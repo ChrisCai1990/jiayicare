@@ -17821,7 +17821,7 @@ router.get('/patients/:id/nutrition-assessment-prefill', staffAuth, async (req, 
       .sort({ createdAt: -1 }).select('content.nutritionAssessment content.goal createdAt').lean();
     const assessment = previous?.content?.nutritionAssessment;
     const [healthRecords, reviewedReports] = await Promise.all([
-      HealthRecord.find({ user: user._id, deletedAt: null, reportId: null }).select('type label value unit recordedAt').lean(),
+      HealthRecord.find({ user: user._id, deletedAt: null, reportId: null }).select('type label value unit recordedAt status').lean(),
       MedicalReport.find({ user: user._id, audit_status: 'audited' }).select('title checkDate audit_status reportItems').lean(),
     ]);
     const metricEvidence = require('../utils/nutritionLatestEvidence').latestNutritionEvidence(user, healthRecords, reviewedReports);

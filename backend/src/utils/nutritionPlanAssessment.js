@@ -9,6 +9,7 @@ function prepareNutritionAssessment(input = {}, user = {}) {
     : input.nutritionTargets;
   const nutritionTargets = Array.isArray(targetInput) ? targetInput.slice(0, 32).map(row => ({
     metric: canonicalMetric(clean(row?.metric, 100)), baseline: clean(row?.baseline, 200), target: clean(row?.target, 200),
+    ...(row?.evidenceStatus ? { referenceRange: clean(row.referenceRange, 300), evidenceStatus: ['normal', 'abnormal'].includes(row.evidenceStatus) ? row.evidenceStatus : 'unknown' } : {}),
   })) : [];
   const assessment = {
     goal: clean(input.goal, 500),

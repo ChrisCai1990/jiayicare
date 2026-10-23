@@ -54,18 +54,19 @@ export function nutritionAssessmentPrefill(patient = {}, previous = null) {
   const previousRows = priorTargets(prior)
   const annualMetrics = Array.isArray(prior.annualNutritionMetrics) ? prior.annualNutritionMetrics : []
   const latest = prior.latestNutritionEvidence || {}
-  const selectedMetrics = [...new Set([...annualMetrics, ...previousRows.map(row => canonicalMetric(row.metric)), ...(prior.suggestedNutritionMetrics || [])])].filter(metric => metric && !FIXED_METRICS.includes(metric)).slice(0, 29)
+  const selectedMetrics = [...new Set([...annualMetrics, ...previousRows.map(row => canonicalMetric(row.metric)), ...(prior.suggestedNutritionMetrics || [])])].filter(metric => metric && !FIXED_METRICS.includes(metric))
+    .filter(metric => !Object.hasOwn(prior, 'latestNutritionEvidence') || latest[metric]?.status === 'abnormal' && !latest[metric]?.conflict).slice(0, 29)
   const archivedSubjective = fromArchive(patient)
   const selectedRows = selectedMetrics.map(metric => {
     const old = previousRows.find(row => canonicalMetric(row.metric) === metric)
-    return { metric, baseline: (latest[metric] ? latest[metric].baseline : archivedSubjective[metric] || measuredBaseline(patient, metric)) || '', target: old?.target || '' }
+    return { metric, baseline: (latest[metric] ? latest[metric].baseline : archivedSubjective[metric] || measuredBaseline(patient, metric)) || '', target: old?.target || '', ...(latest[metric] ? { referenceRange: latest[metric].referenceRange || '', evidenceStatus: latest[metric].status || 'unknown' } : {}) }
   })
   return {
     goal: text(prior.goal),
     assessment: {
       height: patient.height || prior.height || '', weight: latest['体重'] ? (!latest['体重'].conflict && latest['体重'].unit === 'kg' ? latest['体重'].value : '') : patient.weight || prior.weight || '',
       currentDiet: text(prior.currentDiet) || dietFromArchive(patient),
-      nutritionTargets: withFixedNutritionTargets([...FIXED_METRICS.map(metric => ({ metric, baseline: latest[metric] ? latest[metric].baseline : measuredBaseline(patient, metric), target: previousRows.find(row => canonicalMetric(row.metric) === metric)?.target || '' })), ...selectedRows], {}),
+      nutritionTargets: withFixedNutritionTargets([...FIXED_METRICS.map(metric => ({ metric, baseline: latest[metric] ? latest[metric].baseline : measuredBaseline(patient, metric), target: previousRows.find(row => canonicalMetric(row.metric) === metric)?.target || '', ...(latest[metric] ? { referenceRange: latest[metric].referenceRange || '', evidenceStatus: latest[metric].status || 'unknown' } : {}) })), ...selectedRows], {}),
       annualNutritionSource: prior.annualNutritionSource || null,
       annualNutritionMetrics: annualMetrics,
       latestNutritionEvidence: latest,

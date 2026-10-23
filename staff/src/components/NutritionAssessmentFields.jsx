@@ -50,18 +50,19 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
       <label className="form-label">阶段复盘日期 *<DateField className="form-input" type="date" value={value.reviewDate} onChange={e => set('reviewDate', e.target.value)} /></label>
     </div>
     <div style={{ fontWeight: 700 }}>固定体成分指标：骨骼肌、体脂率、内脏脂肪</div>
-    <div style={{ color: '#66776E', fontSize: 12 }}>观察指标综合年度方案参考、既往营养干预及客户最新记录自动带入，无年度方案也可使用。基线按实际测量／检查日期取最新值；请核实来源、日期及本次阶段目标，缺少可靠结果时补录或删除可选指标。</div>
+    <div style={{ color: '#66776E', fontSize: 12 }}>除三项固定体成分外，默认仅带入最新结果明确标记异常的指标。正常或待判断项目不自动加入，可按需手动选择。基线按实际测量／检查日期取最新值；请核实来源、日期及本次阶段目标，缺少可靠结果时补录或删除可选指标。</div>
     {value.annualNutritionSource && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7 }}>{value.annualNutritionMetrics?.length ? `参考 ${value.annualNutritionSource.year} 年健康顾问年度方案所选的 ${value.annualNutritionMetrics.length} 项对比指标` : `${value.annualNutritionSource.year} 年健康顾问年度方案未选对比指标`}{value.annualNutritionSource.pushed ? '' : '（年度方案尚未推送，请核对）'}；年度方案仅提供追踪项目参考，不作为当前测量值。营养师可按本次沟通修改。生成草稿后，核实的主观描述将追加到健康档案历史。</div>}
     {!!value.annualNutritionGoals?.length && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7, marginTop: 6 }}>已带入年度方案中 {value.annualNutritionGoals.length} 条营养相关管理目标与干预重点；请核实后确定本次营养方案的具体目标。</div>}
     <label className="form-label">沟通后增加对比指标<select className="form-input" value="" onChange={e => {
       const metric = e.target.value
-      if (metric && !(value.nutritionTargets || []).some(row => row.metric === metric)) set('nutritionTargets', [...(value.nutritionTargets || []), { metric, baseline: value.latestNutritionEvidence?.[metric] ? value.latestNutritionEvidence[metric].baseline : nutritionSubjective.fromArchive(patient)[metric] || nutritionTargets.measuredBaseline(patient, metric) || '', target: '' }])
+      if (metric && !(value.nutritionTargets || []).some(row => row.metric === metric)) set('nutritionTargets', [...(value.nutritionTargets || []), { metric, baseline: value.latestNutritionEvidence?.[metric] ? value.latestNutritionEvidence[metric].baseline : nutritionSubjective.fromArchive(patient)[metric] || nutritionTargets.measuredBaseline(patient, metric) || '', target: '', ...(value.latestNutritionEvidence?.[metric] ? { referenceRange: value.latestNutritionEvidence[metric].referenceRange || '', evidenceStatus: value.latestNutritionEvidence[metric].status || 'unknown' } : {}) }])
     }}><option value="">选择指标；已有指标可在下方编辑或删除</option>
       <optgroup label="客观数据">{OBJECTIVE_METRICS.filter(([name]) => !(value.nutritionTargets || []).some(row => row.metric === name)).map(([name, unit]) => <option key={name} value={name}>{name}{unit ? `（${unit}）` : ''}</option>)}</optgroup>
       <optgroup label="主观感受">{SUBJECTIVE_METRICS.filter(name => !(value.nutritionTargets || []).some(row => row.metric === name)).map(name => <option key={name} value={name}>{name}</option>)}</optgroup>
     </select></label>
     {Object.values(value.latestNutritionEvidence || {}).some(row => row.conflict) && <div role="alert" style={{ color: '#79551A', fontSize: 12 }}>同日存在不同结果，请核对后填写基线：{Object.values(value.latestNutritionEvidence).filter(row => row.conflict).map(row => `${row.metric}（${row.date}）：${row.candidates.map(item => `${item.value} ${item.unit}，${item.source}`).join(' / ')}`).join('；')}</div>}
-    <NutritionTargetRows value={value.nutritionTargets} onChange={rows => set('nutritionTargets', rows)} fixed />
+    {!!Object.keys(value.latestNutritionEvidence || {}).length && <details style={{ fontSize: 12, color: '#52675D' }}><summary>查看全部指标记录（含正常、待判断项目）</summary>{Object.values(value.latestNutritionEvidence).map(row => <div key={row.metric} style={{ marginTop: 6 }}>{row.metric}：{row.value} {row.unit}；{({ abnormal: '异常', normal: '正常', unknown: '待判断' })[row.status] || '待判断'}；参考范围：{row.referenceRange || '来源未提供，需核对'}；{row.date}，{row.source}</div>)}</details>}
+    <NutritionTargetRows evidence={value.latestNutritionEvidence || {}} value={value.nutritionTargets} onChange={rows => set('nutritionTargets', rows)} fixed />
     <section style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #DCE7E0', borderRadius: 9, background: '#FAFCFB' }}>
       <strong>每日能量与三餐分配</strong>
       <div style={{ color: '#52675D', fontSize: 12 }}>算法1按当前体重估算维持能量，仅作常规管理参考。BMI达到24的超重或肥胖会员，另用算法2自动填入管理期能量；营养师须结合目标、疾病及用药情况确认。{patient?.lifestyle_data?.exerciseFrequency && `档案运动频率：${patient.lifestyle_data.exerciseFrequency}。`}</div>

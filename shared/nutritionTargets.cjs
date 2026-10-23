@@ -23,10 +23,10 @@ function measuredBaseline(patient, metric) {
 
 function withFixedNutritionTargets(rows = [], patient = {}) {
   const normalized = Array.isArray(rows) ? rows.map(row => ({ metric: canonicalMetric(row?.metric),
-    baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim() })) : [];
+    baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim(), ...(row?.evidenceStatus ? { referenceRange: String(row.referenceRange || ''), evidenceStatus: row.evidenceStatus } : {}) })) : [];
   const fixed = FIXED_METRICS.map(metric => {
     const prior = normalized.find(row => row.metric === metric);
-    return { metric, baseline: prior?.baseline || measuredBaseline(patient, metric), target: prior?.target || '' };
+    return { metric, baseline: prior?.baseline || measuredBaseline(patient, metric), target: prior?.target || '', ...(prior?.evidenceStatus ? { referenceRange: prior.referenceRange || '', evidenceStatus: prior.evidenceStatus } : {}) };
   });
   const extras = normalized.filter(row => row.metric && !FIXED_METRICS.includes(row.metric));
   return [...fixed, ...extras].slice(0, 32);

@@ -29,10 +29,10 @@ function dateOf(value) {
 function latestNutritionEvidence(patient = {}, records = [], reports = [], now = new Date()) {
   const candidates = {};
   const today = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
-  function add(metric, value, unit, measuredAt, source, sourceId) {
+  function add(metric, value, unit, measuredAt, source, sourceId, status = 'unknown', referenceRange = '') {
     const date = dateOf(measuredAt);
     if (!names.has(metric) || value == null || !String(value).trim() || !date || date > today) return;
-    const entry = { metric, value: String(value).trim(), unit: String(unit || '').trim(), date, source, sourceId: String(sourceId || '') };
+    const entry = { metric, value: String(value).trim(), unit: String(unit || '').trim(), date, source, sourceId: String(sourceId || ''), status: ['abnormal', 'warning', 'danger'].includes(status) ? 'abnormal' : status === 'normal' ? 'normal' : 'unknown', referenceRange: String(referenceRange || '').trim() };
     (candidates[metric] ||= []).push(entry);
   }
   const fields = { weight: ['体重', 'kg'], skelMuscle: ['骨骼肌', 'kg'], bodyFatRate: ['体脂率', '%'], visceralFat: ['内脏脂肪', '级'] };
@@ -44,7 +44,7 @@ function latestNutritionEvidence(patient = {}, records = [], reports = [], now =
   for (const row of records) {
     if (row.deletedAt || row.reportId) continue; // Report measurements use the reviewed report and actual exam date below.
     const metric = metricName(row.label) || ({ weight: '体重', bloodPressure: '血压', uricAcid: '尿酸' })[row.type];
-    add(metric, row.value, row.unit, row.recordedAt, '健康记录', row._id);
+    add(metric, row.value, row.unit, row.recordedAt, '健康记录', row._id, row.status);
   }
   for (const report of reports) {
     if (report.audit_status !== 'audited') continue;
@@ -53,22 +53,18 @@ function latestNutritionEvidence(patient = {}, records = [], reports = [], now =
       let metric = metricName(item.name);
       if (!metric && /超声|彩超|B超|ultrasound/i.test(`${item.name} ${item.modality}`) && /肝/.test(`${item.name} ${item.bodyPart} ${item.diagnosis} ${item.conclusion}`)) metric = /弹性|纤维/.test(item.name) ? '肝脏纤维弹性超声' : '肝脏超声';
       const value = metric?.includes('超声') ? item.conclusion || item.diagnosis || item.value || item.findings : item.value;
-      add(metric, value, item.unit, item.examDate || report.checkDate, `已审核报告：${report.title || '检查报告'}`, report._id);
+      add(metric, value, item.unit, item.examDate || report.checkDate, `已审核报告：${report.title || '检查报告'}`, report._id, item.status, item.referenceRange);
     }
   }
   const latest = {};
   for (const [metric, entries] of Object.entries(candidates)) {
     entries.sort((a,b) => b.date.localeCompare(a.date));
     const current = entries.filter(row => row.date === entries[0].date);
-    const unique = [...new Set(current.map(row => `${row.value} ${row.unit}`))];
+    const unique = [...new Set(current.map(row => `${row.value} ${row.unit}|${row.status}|${row.referenceRange}`))];
     const chosen = entries[0];
-    latest[metric] = { ...chosen, conflict: unique.length > 1, candidates: current,
+    latest[metric] = { ...chosen, status: unique.length > 1 ? 'unknown' : chosen.status, conflict: unique.length > 1, candidates: current,
       baseline: unique.length > 1 ? '' : `${chosen.value} ${chosen.unit}（${chosen.date}；${chosen.source}）` };
   }
-  const context = [...(patient.chronicDiseases || []), patient.healthProfile?.pastHistory || ''].join('；');
-  const suggested = rules.metricsFromTargets([{ nutritionRelevant: true, goal: context }]);
-  // Condition labels select follow-up topics only, never supply a current diagnosis or a numeric result.
-  if (/脂肪肝/.test(context)) suggested.push('肝脏超声');
-  return { latest, metrics: [...new Set([...suggested, ...Object.keys(latest)])] };
+  return { latest, metrics: Object.keys(latest).filter(metric => latest[metric].status === 'abnormal' && !latest[metric].conflict) };
 }
 module.exports = { latestNutritionEvidence, metricName, dateOf };

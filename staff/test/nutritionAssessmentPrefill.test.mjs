@@ -104,12 +104,24 @@ test('最新基线优先于旧方案；无年度方案自动带入代谢指标�
       骨骼肌: { baseline: '21 kg（2026-10-21；体成分记录）' },
       体重: { value: '75', unit: 'kg', baseline: '75 kg（2026-10-21；健康记录）' },
       尿酸: { conflict: true, baseline: '' },
-      肝脏超声: { baseline: '脂肪肝（2026-10-20；已审核报告）' },
+      肝脏超声: { status: 'abnormal', baseline: '脂肪肝（2026-10-20；已审核报告）' },
     },
   }).assessment;
   assert.equal(result.weight, '75');
   assert.equal(result.nutritionTargets[0].baseline, '21 kg（2026-10-21；体成分记录）');
-  assert.equal(result.nutritionTargets.find(row => row.metric === '尿酸').baseline, '');
+  assert.equal(result.nutritionTargets.find(row => row.metric === '尿酸'), undefined);
   assert.match(result.nutritionTargets.find(row => row.metric === '肝脏超声').baseline, /2026-10-20/);
   assert.equal(result.annualNutritionSource, null);
+});
+
+
+test('年度及旧方案不能把最新正常指标加入默认清单，异常参考范围随行保留', () => {
+  const prior = { annualNutritionMetrics: ['尿酸', '甘油三酯'], nutritionTargets: [{ metric: '尿酸', baseline: '旧异常', target: '旧目标' }], suggestedNutritionMetrics: ['尿酸', '甘油三酯'], latestNutritionEvidence: {
+    尿酸: { status: 'normal', baseline: '350 μmol/L', referenceRange: '210–430 μmol/L' },
+    甘油三酯: { status: 'abnormal', baseline: '3 mmol/L', referenceRange: '<1.7 mmol/L' },
+  } };
+  const result = nutritionAssessmentPrefill({}, prior).assessment;
+  assert(!result.nutritionTargets.some(row => row.metric === '尿酸'));
+  assert.equal(result.nutritionTargets.find(row => row.metric === '甘油三酯').referenceRange, '<1.7 mmol/L');
+  assert.equal(result.latestNutritionEvidence['尿酸'].status, 'normal');
 });

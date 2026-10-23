@@ -80,3 +80,11 @@ test('管理期能量与餐次预算由服务端重新计算，比例或低能�
   const highWeight = { ...valid, weight: 130, managementPurpose: 'reduce', managementKcal: 1600 };
   assert.deepEqual(prepareNutritionAssessment(highWeight, { ...user, weight: 130 }).missing, []);
 });
+
+
+test('参考范围及异常标记随本次已核实指标保存，阶段目标仍由营养师确定', () => {
+  const metric = { metric: '尿酸', baseline: '500 μmol/L（2026-10-22）', target: '按本次确认目标复查', referenceRange: '210–430 μmol/L', evidenceStatus: 'abnormal' };
+  const result = prepareNutritionAssessment({ ...valid, nutritionTargets: [...valid.nutritionTargets, metric] }, user);
+  assert.deepEqual(result.missing, []);
+  assert.deepEqual(result.assessment.nutritionTargets.at(-1), metric);
+});
