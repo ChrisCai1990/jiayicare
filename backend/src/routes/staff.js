@@ -1382,7 +1382,7 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
 const { findReportArchive, sourceIds } = require('../../../shared/diseaseReportArchive.cjs');
-const { summaryKey, changeStamp } = require('../../../shared/diseaseSummary.cjs');
+const { summaryKey, validInitialOccurredAt, changeStamp } = require('../../../shared/diseaseSummary.cjs');
 const { recordVersion, generateDiseaseSummary } = require('../utils/diseaseSummary');
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
 const mergedHealthChange = body => {
@@ -1511,6 +1511,9 @@ router.put('/patients/:id/disease-records/summary', staffAuth, checkPermission('
     if (req.body.expectedRecordVersion) return res.status(409).json({ success:false, message:'首次概况不再接收后续AI汇总，请刷新页面使用阶段性概要' });
     const name = cleanMedicalText(req.body.diseaseName, 100);
     if (!name) return res.status(400).json({ success: false, message: '请填写专病名称' });
+    const initialOccurredAt = String(req.body.initialOccurredAt || '').trim();
+    if (!validInitialOccurredAt(initialOccurredAt)) return res.status(400).json({ success: false, message: '请核对并填写首次概况对应的实际日期（YYYY-MM-DD），不能用建档或上传时间代替' });
+    if (initialOccurredAt > new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })) return res.status(400).json({ success: false, message: '首次概况日期不能晚于今天' });
     const summary = {};
     MEDICAL_SUMMARY_FIELDS.forEach(key => { summary[key] = cleanMedicalText(req.body[key]); });
     if (!MEDICAL_SUMMARY_FIELDS.some(key => summary[key])) return res.status(400).json({ success: false, message: '请至少填写一项健康信息摘要' });
@@ -1518,7 +1521,7 @@ router.put('/patients/:id/disease-records/summary', staffAuth, checkPermission('
     const recordId = cleanMedicalText(req.body.recordId, 100);
     let record = records.find(item => recordId && String(item._id) === recordId) || records.find(item => item.name === name);
     if (req.body.expectedRecordVersion && (!record || recordVersion(record) !== req.body.expectedRecordVersion)) return res.status(409).json({ success: false, message: '专病资料已更新，请重新加载或生成摘要，避免覆盖新资料' });
-    const nextSummary = { ...summary, ...cleanHealthInfoProvenance(req.body) };
+    const nextSummary = { initialOccurredAt, ...summary, ...cleanHealthInfoProvenance(req.body) };
     const contentUnchanged = record && record.name === name && summaryKey(record.summary) === summaryKey(nextSummary);
     if (contentUnchanged && !req.body.expectedRecordVersion) return res.json({ success: true, data: record, unchanged: true, message: '摘要内容未变化，无需重复保存' });
     const now = new Date();
