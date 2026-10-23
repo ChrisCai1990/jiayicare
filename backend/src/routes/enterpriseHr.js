@@ -26,11 +26,29 @@ router.post('/login', async (req, res) => {
   if (admin.staffStatus === 'inactive') {
     return res.status(403).json({ success: false, message: '账号已停用' });
   }
-  const token = jwt.sign({ id: admin._id, type: 'admin', role: admin.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign({ id: admin._id, type: 'admin', role: admin.role, hrTokenVersion: admin.hrTokenVersion || 0 }, process.env.JWT_SECRET, { expiresIn: '7d' });
   res.json({
     success: true,
-    data: { token, admin: { _id: admin._id, name: admin.name, role: admin.role, enterpriseId: admin.enterpriseId } },
+    data: { token, admin: { _id: admin._id, name: admin.name, role: admin.role, enterpriseId: admin.enterpriseId, mustChangePassword: !!admin.mustChangePassword } },
   });
+});
+
+// HR 首次登录及后续主动修改密码，共用当前密码校验。
+router.put('/me/password', enterpriseHrAuth, async (req, res) => {
+  const { oldPassword, newPassword } = req.body || {};
+  if (typeof oldPassword !== 'string' || typeof newPassword !== 'string' || newPassword.length < 10 || newPassword.length > 128 || oldPassword === newPassword) {
+    return res.status(400).json({ success: false, message: '请输入当前密码及10至128位的新密码，且新密码不能与当前密码相同' });
+  }
+  const hr = await Admin.findById(req.admin._id);
+  if (!hr || !(await hr.comparePassword(oldPassword))) {
+    return res.status(400).json({ success: false, message: '当前密码不正确' });
+  }
+  hr.password = newPassword;
+  hr.mustChangePassword = false;
+  hr.hrTokenVersion = (hr.hrTokenVersion || 0) + 1;
+  await hr.save();
+  const token = jwt.sign({ id: hr._id, type: 'admin', role: hr.role, hrTokenVersion: hr.hrTokenVersion }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  res.json({ success: true, data: { token }, message: '密码已修改' });
 });
 
 // GET /api/enterprise-hr/overview —— 本企业总览：合同信息 + 员工参与率

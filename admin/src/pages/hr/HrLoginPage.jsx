@@ -19,7 +19,7 @@ export default function HrLoginPage() {
       const res = await hrAPI.login(username.trim(), password)
       setHrToken(res.data.token)
       login(res.data.admin)
-      nav('/hr/dashboard', { replace: true })
+      nav(res.data.admin.mustChangePassword ? '/hr/change-password' : '/hr/dashboard', { replace: true })
     } catch (err) {
       setError(err.message || '登录失败，请检查用户名和密码')
     } finally { setLoading(false) }

@@ -275,6 +275,7 @@ export const adminAPI = {
   saveInsuranceEnrollments: (enterpriseId, policyId, enrollments, replace = true) => req(`/enterprises/${enterpriseId}/insurance-policies/${policyId}/enrollments`, { method: 'PUT', body: JSON.stringify({ enrollments, replace }) }),
   enterpriseHrAccounts:   (id)       => req(`/enterprises/${id}/hr-accounts`),
   createEnterpriseHr:     (id, data) => req(`/enterprises/${id}/hr-accounts`, { method: 'POST', body: JSON.stringify(data) }),
+  resetEnterpriseHrPassword: (id, hrId, password) => req(`/enterprises/${id}/hr-accounts/${hrId}/reset-password`, { method: 'PATCH', body: JSON.stringify({ password }) }),
   deleteEnterpriseHr:     (id)       => req(`/hr-accounts/${id}`, { method: 'DELETE' }),
 
   // 合作伙伴管理

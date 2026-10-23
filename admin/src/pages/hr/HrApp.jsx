@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { getHrToken, clearHrToken } from '../../hrApi'
 import HrLoginPage from './HrLoginPage'
 import HrDashboardPage from './HrDashboardPage'
+import HrChangePasswordPage from './HrChangePasswordPage'
 
 const HrCtx = createContext(null)
 export function useHr() { return useContext(HrCtx) }
@@ -19,7 +20,9 @@ function HrProvider({ children }) {
 function RequireHrAuth({ children }) {
   const { admin } = useHr()
   const token = getHrToken()
+  const location = useLocation()
   if (!admin || !token) return <Navigate to="/hr/login" replace />
+  if (admin.mustChangePassword && location.pathname !== '/hr/change-password') return <Navigate to="/hr/change-password" replace />
   return children
 }
 
@@ -36,6 +39,7 @@ export default function HrApp() {
       <Routes>
         <Route path="login" element={<HrLoginPage />} />
         <Route path="dashboard" element={<RequireHrAuth><HrDashboardPage /></RequireHrAuth>} />
+        <Route path="change-password" element={<RequireHrAuth><HrChangePasswordPage /></RequireHrAuth>} />
         <Route path="*" element={<Navigate to="/hr/dashboard" replace />} />
       </Routes>
     </HrProvider>

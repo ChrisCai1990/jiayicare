@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { hrAPI, API_ORIGIN } from '../../hrApi'
 import { useHr } from './HrApp'
 
@@ -205,6 +206,7 @@ const ASCVD_COLOR = { 低危: '#22A06B', 中危: '#D97706', 高危: '#DC3545', �
 
 export default function HrDashboardPage() {
   const { admin, logout } = useHr()
+  const navigate = useNavigate()
   const [overview, setOverview] = useState(null)
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -272,6 +274,7 @@ export default function HrDashboardPage() {
               </select>
             </div>
           )}
+          <button className="btn btn-ghost" onClick={() => navigate('/hr/change-password')}>修改密码</button>
           <button className="btn btn-ghost" onClick={logout}>退出登录</button>
         </div>
       </div>

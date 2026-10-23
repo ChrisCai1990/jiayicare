@@ -9,6 +9,7 @@ import annualDispatch from '../../../shared/annualDispatch.cjs'
 import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 import { isCustomerOrder, serviceTaskGroupKey } from '../utils/plannerOrderProgress.mjs'
 import MedicalAssistClosureAction from './MedicalAssistClosureAction'
+import NutritionAssessmentPanel from './NutritionAssessmentPanel'
 
 const TASKS_PER_PAGE = 5
 
@@ -251,7 +252,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })
   }
 
-  if (!loading && !loadError && !serviceGroups.length && !historyOpen) return <section id="service-tasks-panel" className="workbench-compact"><span>服务流程任务（执行/督办） · 暂无待办</span><button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>查看已处理</button></section>
+  if (!loading && !loadError && !serviceGroups.length && !historyOpen) return <section id="service-tasks-panel" className="workbench-compact"><span>服务流程任务（执行/督办） · 暂无待办</span><button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>查看已处理</button>{staff?.role !== 'familyDoctor' && <NutritionAssessmentPanel compact embedded workbench />}</section>
 
   return (
     <div id="service-tasks-panel" className="card" style={{ marginBottom: 20, border: '1.5px solid #1E6B5035' }}>
@@ -283,6 +284,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         })}
       </div>
       <div className="card-body" style={{ padding: '8px 20px' }}>
+        {staff?.role !== 'familyDoctor' && <NutritionAssessmentPanel compact embedded workbench />}
         {!loading && !loadError && !pagedServices.length && <div style={{ padding: '12px 0', color: '#667085', fontSize: 13 }}>没有找到匹配的服务任务</div>}
         {pagedServices.map((service, index) => {
           const task = service.task

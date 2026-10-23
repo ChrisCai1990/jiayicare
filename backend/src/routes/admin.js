@@ -2717,9 +2717,27 @@ router.post('/enterprises/:id/hr-accounts', adminAuth, async (req, res) => {
   if (usernameExists) return res.status(400).json({ success: false, message: '用户名已存在' });
   const hr = await Admin.create({
     username: finalUsername, password, name, phone: phone || '',
-    role: 'enterprise_hr', enterpriseId: req.params.id, staffStatus: 'active',
+    role: 'enterprise_hr', enterpriseId: req.params.id, staffStatus: 'active', mustChangePassword: true,
   });
   res.json({ success: true, data: { _id: hr._id, username: hr.username, name: hr.name }, message: 'HR账号已创建' });
+});
+
+// PATCH /api/admin/enterprises/:id/hr-accounts/:hrId/reset-password
+router.patch('/enterprises/:id/hr-accounts/:hrId/reset-password', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') {
+    return res.status(403).json({ success: false, message: '仅超级管理员可重置企业HR密码' });
+  }
+  const { password } = req.body;
+  if (typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ success: false, message: '新密码不能少于6位' });
+  }
+  const hr = await Admin.findOne({ _id: req.params.hrId, enterpriseId: req.params.id, role: 'enterprise_hr' });
+  if (!hr) return res.status(404).json({ success: false, message: '该企业的HR账号不存在' });
+  hr.password = password;
+  hr.mustChangePassword = true;
+  hr.hrTokenVersion = (hr.hrTokenVersion || 0) + 1;
+  await hr.save();
+  res.json({ success: true, message: 'HR账号密码已重置' });
 });
 
 // DELETE /api/admin/hr-accounts/:id —— 删除HR账号
