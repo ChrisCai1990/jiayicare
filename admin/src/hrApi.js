@@ -55,6 +55,7 @@ async function req(path, opts = {}, { skipAuth = false } = {}) {
 
 export const hrAPI = {
   login:        (username, password) => req('/login', { method: 'POST', body: JSON.stringify({ username, password }) }, { skipAuth: true }),
+  changePassword: (oldPassword, newPassword) => req('/me/password', { method: 'PUT', body: JSON.stringify({ oldPassword, newPassword }) }),
   overview:     (year) => req('/overview' + (year ? `?year=${year}` : '')),
   healthSummary:() => req('/health-summary'),
   downloadServiceRecord: (recordId, fileName) => downloadPrivateFile(`/service-records/${recordId}/file`, fileName),
