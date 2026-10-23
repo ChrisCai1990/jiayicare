@@ -1,6 +1,11 @@
 const SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
 const SOURCE_FIELDS = ['sourceType', 'sourceInstitution', 'sourceDepartment', 'sourceDoctor', 'verificationStatus'];
-const summaryKey = summary => JSON.stringify([...SUMMARY_FIELDS, ...SOURCE_FIELDS].map(key => String(summary?.[key] || '').trim()));
+const summaryKey = summary => JSON.stringify(['initialOccurredAt', ...SUMMARY_FIELDS, ...SOURCE_FIELDS].map(key => String(summary?.[key] || '').trim()));
+const validInitialOccurredAt = value => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+};
 function groupSummaryHistory(history = []) {
   const groups = [];
   for (const item of history) {
@@ -26,4 +31,4 @@ function summaryCoverageState(record) {
   const dates = entries.map(e => e.occurredAt).filter(Boolean).sort((a,b) => new Date(a) - new Date(b));
   return { pendingCount: pending.length, coverageKnown: Array.isArray(covered), latestOccurredAt: dates.at(-1) || null };
 }
-module.exports = { SUMMARY_FIELDS, summaryKey, groupSummaryHistory, changeStamp, summaryCoverageState };
+module.exports = { SUMMARY_FIELDS, summaryKey, validInitialOccurredAt, groupSummaryHistory, changeStamp, summaryCoverageState };

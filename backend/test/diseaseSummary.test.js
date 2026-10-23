@@ -2,10 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
-const { SUMMARY_FIELDS, summaryKey, groupSummaryHistory, changeStamp } = require('../../shared/diseaseSummary.cjs');
+const { SUMMARY_FIELDS, summaryKey, validInitialOccurredAt, groupSummaryHistory, changeStamp } = require('../../shared/diseaseSummary.cjs');
 const { recordVersion, buildSummaryContext, generateDiseaseSummary } = require('../src/utils/diseaseSummary');
 const summary = Object.fromEntries(SUMMARY_FIELDS.map(k => [k, '旧资料']));
-const record = { _id: 'record', name: '测试专病', summary: { ...summary, sourceType: 'medical_record', verificationStatus: 'verified' }, summaryHistory: [], courseEntries: [
+const record = { _id: 'record', name: '测试专病', summary: { ...summary, initialOccurredAt: '2024-11-18', sourceType: 'medical_record', verificationStatus: 'verified' }, summaryHistory: [], courseEntries: [
   { _id: 'later', occurredAt: '2026-09-01', content: '后续症状变化', medicationChange: '后续用药记录', sourceReportId: 'report' },
   { _id: 'first', occurredAt: '2024-11-18', content: '首次症状' },
 ] };
@@ -44,7 +44,7 @@ function saveHarness(body, matchedCount = 1) {
   const context = { sourceIds:require('../../shared/diseaseReportArchive.cjs').sourceIds, router: { put: (path, ...fns) => { handler = fns.at(-1); } }, staffAuth: () => {}, checkPermission: () => {},
     User: { findById: () => ({ select: () => ({ lean: async () => patient }) }), collection: { updateOne: async (filter, update) => { written = { filter, update }; return { matchedCount }; } } },
     cleanMedicalText: v => String(v || '').trim(), MEDICAL_SUMMARY_FIELDS: SUMMARY_FIELDS,
-    normalizedDiseaseRecords: p => p.diseaseRecords.map(r => ({ ...r })), recordVersion, summaryKey, changeStamp,
+    normalizedDiseaseRecords: p => p.diseaseRecords.map(r => ({ ...r })), recordVersion, summaryKey, validInitialOccurredAt, changeStamp,
     cleanHealthInfoProvenance: b => ({ sourceType: b.sourceType, verificationStatus: b.verificationStatus }), hasMedicalSummary: s => !!s?.chiefComplaint,
   };
   const start = routeSource.indexOf("router.put('/patients/:id/disease-records/summary'");
@@ -54,6 +54,24 @@ function saveHarness(body, matchedCount = 1) {
   return { async run() { await handler({ params: { id: 'patient' }, body, staff: { _id: 'staff', name: '测试顾问' } }, response); return { response, written, patient }; } };
 }
 const payload = { ...record.summary, diseaseName: record.name, recordId: 'record' };
+test('initial date validates real calendar days and date-only corrections keep the prior value in history', async () => {
+  assert.equal(validInitialOccurredAt('2024-02-29'), true);
+  for (const value of ['2025-02-29', '2025-13-01', '2025-1-01', '']) assert.equal(validInitialOccurredAt(value), false);
+  const { response, written } = await saveHarness({ ...payload, initialOccurredAt: '2024-11-19' }).run();
+  assert.equal(response.code, 200);
+  const saved = written.update.$set.diseaseRecords[0];
+  assert.equal(saved.summary.initialOccurredAt, '2024-11-19');
+  assert.equal(saved.summaryHistory[0].initialOccurredAt, '2024-11-18');
+  assert.notEqual(summaryKey(saved.summary), summaryKey(saved.summaryHistory[0]));
+  assert.equal(groupSummaryHistory(saved.summaryHistory)[0].initialOccurredAt, '2024-11-18');
+});
+test('missing or impossible initial date does not write a disease overview', async () => {
+  for (const initialOccurredAt of ['', '2025-02-30']) {
+    const { response, written } = await saveHarness({ ...payload, initialOccurredAt }).run();
+    assert.equal(response.code, 400);
+    assert.equal(written, undefined);
+  }
+});
 test('unchanged save does not append history or write the database', async () => {
   const { response, written } = await saveHarness(payload).run();
   assert.equal(response.body.unchanged, true); assert.equal(written, undefined);
@@ -87,7 +105,7 @@ test('draft endpoint scopes patient and reports, returns only a draft, and detec
       User: { findById: () => ({ select: () => ({ lean: async () => ({ _id: 'patient', diseaseRecords: [{ ...record, ...(scenario === 'changed' && ++reads > 1 ? { name: '已修改' } : {}) }] }) }) }) },
       mongoose: { isValidObjectId: v => v === 'report' },
       MedicalReport: { find: q => { query = q; return { select: () => ({ lean: async () => [] }) }; } },
-      recordVersion, require: () => ({ chat: () => {} }),
+      recordVersion, require: module => module.endsWith('aiDataConsent') ? { withPersonalData: async (_id, _scope, callback) => callback() } : { chat: () => {} },
       generateDiseaseSummary: async r => { generated = true; return { expectedRecordVersion: recordVersion(r), summary }; },
     };
     vm.runInNewContext(routeSource.slice(start, end), context);

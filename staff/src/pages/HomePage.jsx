@@ -21,6 +21,7 @@ import ServiceTasksPanel from '../components/ServiceTasksPanel'
 import MedicalAssistClosureAction from '../components/MedicalAssistClosureAction'
 import ServiceSupervisionPanel from '../components/ServiceSupervisionPanel'
 import MedicalAssistProgressPanel from '../components/MedicalAssistProgressPanel'
+import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
 import MonthlyReviewWorkbench from '../components/MonthlyReviewWorkbench'
 import Pagination from '../components/Pagination'
 import { decisionReferralProgress, isCustomerOrder, plannerOrderRows } from '../utils/plannerOrderProgress.mjs'
@@ -28,6 +29,10 @@ import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 import { planningAdviceFromTask, hasPlanningAdvice } from '../utils/medicalPlanningAdvice'
 
 const ORDERS_PER_PAGE = 5
+const WORKBENCH_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'psychologist', 'rehabSpecialist', 'tcmDoctor', 'specialist', 'superadmin'])
+const ORDER_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'medicalAssistant', 'superadmin'])
+const CHECKUP_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'superadmin'])
+const SERVICE_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'superadmin'])
 
 const DISEASE_COLOR = {
   '高血压': '#e74c3c', '糖尿病': '#e67e22', '高血脂': '#f39c12',
@@ -60,6 +65,7 @@ export default function HomePage() {
   const [serviceTasks, setServiceTasks] = useState([])
   const [advisorArea, setAdvisorArea] = useState('todo')
   const [advisorTodoView, setAdvisorTodoView] = useState('review')
+  const [roleTodoView, setRoleTodoView] = useState('all')
   const [geoCount, setGeoCount] = useState('加载中')
   const [advisorProgressView, setAdvisorProgressView] = useState('overview')
 
@@ -103,7 +109,12 @@ export default function HomePage() {
   const currentOrderHistoryPage = Math.min(orderHistoryPage, orderHistoryPageCount)
   const visibleOrderHistoryRows = orderHistoryRows.slice((currentOrderHistoryPage - 1) * ORDERS_PER_PAGE, currentOrderHistoryPage * ORDERS_PER_PAGE)
   const isAdvisor = staff?.role === 'familyDoctor'
-  const showAdvisorView = (area, view) => !isAdvisor || (advisorArea === area && (!view || (area === 'todo' ? advisorTodoView : advisorProgressView) === view))
+  const hasWorkbenchNav = WORKBENCH_ROLES.has(staff?.role)
+  const selectedTodoView = isAdvisor ? advisorTodoView : roleTodoView
+  const showWorkbenchView = (area, view) => !hasWorkbenchNav || (advisorArea === area && (!view || (area === 'todo' ? selectedTodoView === 'all' || selectedTodoView === view : advisorProgressView === view || !isAdvisor && advisorProgressView === 'overview')))
+  const progressTabs = isAdvisor
+    ? [['overview', '全部进度'], ['orders', '订单预约'], ['medical', '就医协助'], ['checkup', '体检方案']]
+    : [['overview', '全部进度'], ...(ORDER_PROGRESS_ROLES.has(staff?.role) ? [['orders', '订单预约']] : []), ...(CHECKUP_PROGRESS_ROLES.has(staff?.role) ? [['checkup', '体检方案']] : [])]
 
   return (
     <div className="page">
@@ -132,33 +143,34 @@ export default function HomePage() {
         {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
       </div>
 
-      {isAdvisor && <nav className="advisor-workbench-nav" aria-label="健康顾问工作台">
+      {hasWorkbenchNav && <nav className="advisor-workbench-nav" aria-label={isAdvisor ? '健康顾问工作台' : '岗位工作台'}>
         {[
-          ['todo', '待我处理'], ['progress', '我关注的服务'], ['data', '数据概览'],
+          ['todo', '待我处理'], ...(SERVICE_PROGRESS_ROLES.has(staff?.role) ? [['progress', '我关注的服务']] : []), ['data', '数据概览'],
         ].map(([key, label]) => <button key={key} type="button" className={advisorArea === key ? 'btn btn-primary' : 'btn btn-secondary'} aria-pressed={advisorArea === key} onClick={() => setAdvisorArea(key)}>{label}</button>)}
       </nav>}
-      {isAdvisor && advisorArea === 'todo' && <div className="advisor-workbench-filter" role="group" aria-label="待我处理筛选">
+      {hasWorkbenchNav && advisorArea === 'todo' && <div className="advisor-workbench-filter" role="group" aria-label="待我处理筛选">
         {[
+          ...(!isAdvisor ? [['all', '全部待办']] : []),
           ['review', '审核与异常'], ['service', '服务事项'], ['followup', '随访'],
           ...(canShowGeoReview(staff) ? [['geo', `GEO 审核 · ${geoCount}`]] : []),
-        ].map(([key, label]) => <button key={key} type="button" className={advisorTodoView === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={advisorTodoView === key} onClick={() => setAdvisorTodoView(key)}>{label}</button>)}
+        ].map(([key, label]) => <button key={key} type="button" className={selectedTodoView === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={selectedTodoView === key} onClick={() => isAdvisor ? setAdvisorTodoView(key) : setRoleTodoView(key)}>{label}</button>)}
       </div>}
-      {isAdvisor && advisorArea === 'progress' && <div className="advisor-workbench-filter" role="group" aria-label="服务进度筛选">
-        {[
-          ['overview', '全部进度'], ['orders', '订单预约'], ['medical', '就医协助'], ['checkup', '体检方案'],
-        ].map(([key, label]) => <button key={key} type="button" className={advisorProgressView === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={advisorProgressView === key} onClick={() => setAdvisorProgressView(key)}>{label}</button>)}
+      {hasWorkbenchNav && advisorArea === 'progress' && progressTabs.length > 1 && <div className="advisor-workbench-filter" role="group" aria-label="服务进度筛选">
+        {progressTabs.map(([key, label]) => <button key={key} type="button" className={advisorProgressView === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={advisorProgressView === key} onClick={() => setAdvisorProgressView(key)}>{label}</button>)}
       </div>}
 
-      <GeoReviewPanel compact={isAdvisor && !showAdvisorView('todo', 'geo')} onCountChange={setGeoCount} onOpen={() => { setAdvisorArea('todo'); setAdvisorTodoView('geo') }} />
+      <GeoReviewPanel compact={hasWorkbenchNav && !showWorkbenchView('todo', 'geo')} onCountChange={setGeoCount} onOpen={() => { setAdvisorArea('todo'); setAdvisorTodoView('geo') }} />
       <AiWorkbenchProvider>
-      <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><SymptomTodosPanel /></div>
-      <div style={{ display: showAdvisorView('progress', 'overview') ? undefined : 'none' }}><ServiceSupervisionPanel /></div>
-      {['healthManager', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
-      {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
-      {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
+      <div style={{ display: showWorkbenchView('todo', 'review') ? undefined : 'none' }}><SymptomTodosPanel /></div>
+      <div style={{ display: showWorkbenchView(SERVICE_PROGRESS_ROLES.has(staff?.role) ? 'progress' : 'todo', SERVICE_PROGRESS_ROLES.has(staff?.role) ? 'overview' : 'review') ? undefined : 'none' }}><ServiceSupervisionPanel />{!isAdvisor && ['healthPlanner', 'healthManager', 'nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel compact hideWhenEmpty />}</div>
+      <div style={{ display: showWorkbenchView('todo', 'service') ? undefined : 'none' }}>
+        {['healthManager', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
+        {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
+        {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
+      </div>
 
       {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}
-      <div style={{ display: showAdvisorView('progress', 'orders') ? undefined : 'none' }}>
+      <div style={{ display: showWorkbenchView('progress', 'orders') || (!isAdvisor && ORDER_PROGRESS_ROLES.has(staff?.role) && showWorkbenchView('todo', 'service')) ? undefined : 'none' }}>
       {(ordersResource.loading || ordersResource.error || orderRows.length > 0 || orderHistoryRows.length > 0 || completedServiceOrders.length > 0) && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -166,7 +178,7 @@ export default function HomePage() {
               <span>🛍 用户下单服务进程</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>{orderRows.length}</span>
             </div>
-            {isAdvisor && <div role="group" aria-label="用户下单服务状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', orderRows.length], ['completed', '已完成', completedServiceOrders.length], ['all', '全部', orderRows.length + completedServiceOrders.length]].map(([key, label, count]) => <button key={key} type="button" className={orderStatusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={orderStatusFilter === key} onClick={() => { setOrderStatusFilter(key); setOrderPage(1) }}>{label} {count}</button>)}</div>}
+            {hasWorkbenchNav && <div role="group" aria-label="用户下单服务状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', orderRows.length], ['completed', '已完成', completedServiceOrders.length], ['all', '全部', orderRows.length + completedServiceOrders.length]].map(([key, label, count]) => <button key={key} type="button" className={orderStatusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={orderStatusFilter === key} onClick={() => { setOrderStatusFilter(key); setOrderPage(1) }}>{label} {count}</button>)}</div>}
             {orderHistoryRows.length > 0 && orderStatusFilter !== 'completed' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOrderHistoryOpen(value => !value)}>{orderHistoryOpen ? '收起已处理预约' : `查看已处理预约 ${orderHistoryRows.length}`}</button>}
           </div>
           <div className="card-body" style={{ padding: '8px 20px' }}>
@@ -227,19 +239,19 @@ export default function HomePage() {
       </div>
 
       {/* 临时服务方案产生的岗位任务优先处理，固定显示在 AI 审核任务上方。 */}
-      <div style={{ display: showAdvisorView('todo', 'service') ? undefined : 'none' }}><MonthlyReviewWorkbench /><ServiceTasksPanel onTasksLoaded={setServiceTasks} /></div>
-      <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><ClinicalStandardReviewPanel /></div>
-      {staff?.role === 'familyDoctor' && <div style={{ display: showAdvisorView('progress', 'medical') ? undefined : 'none' }}><MedicalAssistProgressPanel /></div>}
+      <div style={{ display: showWorkbenchView('todo', 'service') ? undefined : 'none' }}><MonthlyReviewWorkbench /><ServiceTasksPanel onTasksLoaded={setServiceTasks} /></div>
+      <div style={{ display: showWorkbenchView('todo', 'review') ? undefined : 'none' }}><ClinicalStandardReviewPanel /></div>
+      {staff?.role === 'familyDoctor' && <div style={{ display: showWorkbenchView('progress', 'medical') ? undefined : 'none' }}><MedicalAssistProgressPanel /></div>}
 
       {/* AI 待审核任务面板 */}
-      <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><AiTodosPanel hideGeo={isAdvisor && canShowGeoReview(staff)} /></div>
+      <div style={{ display: showWorkbenchView('todo', 'review') ? undefined : 'none' }}><AiTodosPanel hideGeo={hasWorkbenchNav && canShowGeoReview(staff)} /></div>
 
       {/* 待随访任务面板 */}
-      <div style={{ display: showAdvisorView('todo', 'followup') ? undefined : 'none' }}><FollowUpsPanel /></div>
+      <div style={{ display: showWorkbenchView('todo', 'followup') ? undefined : 'none' }}><FollowUpsPanel /></div>
       </AiWorkbenchProvider>
 
       {/* 即将到期客户（30天内，提前一月提醒续约） */}
-      <div style={{ display: showAdvisorView('todo', 'service') ? undefined : 'none' }}>
+      <div style={{ display: showWorkbenchView('todo', 'service') ? undefined : 'none' }}>
       {expiringPatients.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -291,7 +303,7 @@ export default function HomePage() {
       </div>
 
       {/* 今日健康数据记录 */}
-      <div style={{ display: showAdvisorView('data') ? undefined : 'none' }}>
+      <div style={{ display: showWorkbenchView('data') ? undefined : 'none' }}>
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div className="card-title">今日健康数据记录</div>
@@ -338,10 +350,10 @@ export default function HomePage() {
 
       </div>
 
-      <div style={{ display: showAdvisorView('progress', 'checkup') ? undefined : 'none' }}><CheckupProgressPanel /></div>
+      {CHECKUP_PROGRESS_ROLES.has(staff?.role) && <div style={{ display: showWorkbenchView('progress', 'checkup') ? undefined : 'none' }}><CheckupProgressPanel /></div>}
 
       {/* 慢病分布 */}
-      <div style={{ display: showAdvisorView('data') ? undefined : 'none' }}>
+      <div style={{ display: showWorkbenchView('data') ? undefined : 'none' }}>
       <div className="card">
         <div className="card-header">
           <div className="card-title">慢病分布</div>
