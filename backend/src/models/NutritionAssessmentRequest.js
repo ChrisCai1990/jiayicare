@@ -11,8 +11,10 @@ const eventSchema = new mongoose.Schema({
 const schema = new mongoose.Schema({
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  source: { type: String, enum: ['followup', 'nutrition_plan'], required: true },
+  source: { type: String, enum: ['followup', 'nutrition_management', 'nutrition_plan'], required: true },
   sourcePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
+  sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
+  orderSettlementStatus: { type: String, enum: ['pending', 'completed', 'needs_review'], default: 'pending' },
   assessmentType: { type: String, enum: ['initial', 'reassessment'], required: true },
   reason: { type: String, required: true, maxlength: 2000 },
   focus: { type: String, default: '', maxlength: 2000 },
@@ -37,6 +39,9 @@ const schema = new mongoose.Schema({
 
 schema.index({ tenantId: 1, patientId: 1, createdAt: -1 });
 schema.index({ tenantId: 1, patientId: 1, source: 1, sourcePlanId: 1 }, { unique: true, partialFilterExpression: { status: { $in: ['awaiting_booking', 'booked'] } } });
+schema.index({ tenantId: 1, patientId: 1, assessmentType: 1 }, { unique: true,
+  partialFilterExpression: { assessmentType: 'initial', status: { $in: ['awaiting_booking', 'booked'] } } });
+schema.index({ sourceOrderId: 1 }, { unique: true, partialFilterExpression: { sourceOrderId: { $type: 'objectId' }, status: { $in: ['awaiting_booking', 'booked', 'completed'] } } });
 schema.plugin(require('../utils/patientTenantFence').patientTenantFence);
 schema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 

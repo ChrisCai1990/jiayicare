@@ -10025,6 +10025,7 @@ export default function PatientDetailPage() {
             </div>
           </div>
           <ServiceManagementCategories plans={plans} active={serviceManagementView} onChange={setServiceManagementView} />
+          {serviceManagementView === 'nutrition' && <div style={{ padding: '14px 20px', borderTop: '1px solid #EDF2EE' }}><NutritionAssessmentPanel patientId={id} source="nutrition_management" canCreate={['familyDoctor', 'superadmin'].includes(staff?.role)} embedded /></div>}
           {serviceManagementView === 'nutrition' && <WeightProgressPhotos patientId={id} plans={plans} records={recentRecords} bodyCompHistory={user.bodyCompHistory || []} canEdit={['nutritionist', 'healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role)} />}
           {serviceManagementView === 'rehab' && <RehabWorkspace patientId={id} staff={staff} view="plans" onSaved={loadPlans} />}
           {serviceManagementView === 'annual' && monthlyReviewEnabled && (
@@ -10121,7 +10122,6 @@ export default function PatientDetailPage() {
       {/* ── Follow-ups Tab ── */}
       {tab === 'followups' && (
         <>
-        <NutritionAssessmentPanel patientId={id} source="followup" canCreate={['familyDoctor', 'superadmin'].includes(staff?.role)} />
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div><div className="card-title">服务执行任务</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>承接方案生成的营养、监测、体检复查、就医协助、专病管理及沟通任务；随访只是执行方式之一</div></div>
@@ -11551,6 +11551,9 @@ export default function PatientDetailPage() {
                           {CHECKUP_STAGE_LABEL[order.currentStage] && <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>{CHECKUP_STAGE_LABEL[order.currentStage]}</div>}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
+                          {order.orderType === 'service' && /^\s*(?:单次)?营养评估(?:服务)?\s*$/.test(order.serviceName || '') && Number(order.totalUnits || 1) === 1
+                            ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setTab('plans'); setServiceManagementView('nutrition') }}>到营养管理查看评估与核销</button>
+                            : <>
                           {planningSupervisor && ['healthPlanner', 'superadmin'].includes(staff?.role) &&
                             (hasPlanningAdvice(planningAdviceFromTask(planningSupervisor))
                               ? <button className="btn btn-primary btn-sm" onClick={() => openExec({ ...planningSupervisor, formData: { ...planningSupervisor.formData, medicalPlanning: true, advisorSnapshot: planningAdviceFromTask(planningSupervisor) } })}>核对客户意向并结案</button>
@@ -11658,6 +11661,7 @@ export default function PatientDetailPage() {
                                 try{const res=await staffAPI.redeemOrder(order._id,note,item.key);setPatientOrders(prev=>prev.map(o=>o._id===order._id?res.data:o));toast(res.message||'核销成功')}catch(err){toast(err.message||'操作失败')}finally{setRedeemingOrderId(null)}
                               }}>{order.packageEntitlementUsage ? '完成' : '核销'}：{item.name}</button>
                           ))}
+                          </>}
                         </td>
                       </tr>
                       )

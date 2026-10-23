@@ -9879,6 +9879,8 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const actionableOrder = await Order.exists({ _id: req.params.id, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() });
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const currentOrder = await Order.findById(req.params.id);
+    if (action !== 'schedule' && require('../utils/nutritionAssessmentOrder').isSingleNutritionAssessmentOrder(currentOrder))
+      return res.status(409).json({ success: false, message: '单次营养评估请在营养管理发起；营养师完成评估后自动核销订单' });
     if (require('./decisionReferral').isDecisionOrder(currentOrder) && action === 'complete')
       return res.status(409).json({ success: false, message: '请由健康规划师完成最终验收后结单' });
     if (action === 'complete' && (require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(currentOrder)
@@ -10335,6 +10337,8 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (require('../utils/nutritionAssessmentOrder').isSingleNutritionAssessmentOrder(order))
+      return res.status(409).json({ success: false, message: '单次营养评估由营养师完成评估后自动核销，请到营养管理查看进度' });
     if (require('./decisionReferral').isDecisionOrder(order))
       return res.status(409).json({ success: false, message: '本服务须完成专科转介、顾问归档及规划师验收后结单' });
     if (order.membershipFeatureUsage?.featureKey === 'expertAppointment')

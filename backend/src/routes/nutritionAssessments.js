@@ -5,7 +5,9 @@ const Request = require('../models/NutritionAssessmentRequest');
 const User = require('../models/User');
 const Admin = require('../models/Admin');
 const HealthPlan = require('../models/HealthPlan');
+const Order = require('../models/Order');
 const Config = require('../models/NutritionAssessmentConfig');
+const { isAvailableNutritionAssessmentOrder, settleNutritionAssessmentOrder } = require('../utils/nutritionAssessmentOrder');
 
 const active = ['awaiting_booking', 'booked'];
 const clean = (value, limit = 2000) => String(value || '').trim().slice(0, limit);
@@ -25,7 +27,8 @@ const load = async (req, res) => {
 };
 const populate = query => query.populate('patientId', 'name phone')
   .populate('advisorId', 'name role').populate('managerId', 'name role')
-  .populate('nutritionistId', 'name role').populate('sourcePlanId', 'title type status');
+  .populate('nutritionistId', 'name role').populate('sourcePlanId', 'title type status')
+  .populate('sourceOrderId', 'orderNo serviceName specificationLabel status paymentStatus usedUnits totalUnits');
 const wrap = fn => async (req, res) => {
   try { await fn(req, res); }
   catch (error) {
@@ -58,11 +61,30 @@ router.get('/', staffAuth, wrap(async (req, res) => {
   res.json({ success: true, data: rows });
 }));
 
+router.get('/eligible-orders', staffAuth, wrap(async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return bad(res, 403, '仅健康顾问可选择评估订单');
+  const patientId = req.query.patientId;
+  if (!isId(patientId)) return bad(res, 400, '请选择会员');
+  const patient = await User.findOne({ _id: patientId, tenantId: req.staff.tenantId, isDeleted: { $ne: true } })
+    .select('assignedFamilyDoctor').lean();
+  if (!patient || req.staff.role !== 'superadmin' && !same(patient.assignedFamilyDoctor, req.staff._id))
+    return bad(res, 403, '只能查看本人负责会员的评估订单');
+  const orders = await Order.find({ user: patientId, tenantId: req.staff.tenantId, orderType: 'service',
+    paymentStatus: 'paid', status: { $in: ['pending', 'scheduled'] } }).sort({ createdAt: -1 }).limit(100).lean();
+  const candidates = orders.filter(isAvailableNutritionAssessmentOrder);
+  const used = await Request.find({ tenantId: req.staff.tenantId, sourceOrderId: { $in: candidates.map(order => order._id) }, status: { $ne: 'cancelled' } })
+    .select('sourceOrderId').lean();
+  const usedIds = new Set(used.map(row => String(row.sourceOrderId)));
+  res.json({ success: true, data: candidates.filter(order => !usedIds.has(String(order._id)))
+    .map(order => ({ _id: order._id, orderNo: order.orderNo, serviceName: order.serviceName,
+      specificationLabel: order.specificationLabel, createdAt: order.createdAt })) });
+}));
+
 router.post('/', staffAuth, wrap(async (req, res) => {
   const staff = req.staff;
   if (!['familyDoctor', 'superadmin'].includes(staff.role)) return bad(res, 403, '仅健康顾问可发起营养评估');
-  const { patientId, source, sourcePlanId } = req.body || {};
-  if (!isId(patientId) || !['followup', 'nutrition_plan'].includes(source)) return bad(res, 400, '请选择会员和发起入口');
+  const { patientId, source, sourcePlanId, sourceOrderId } = req.body || {};
+  if (!isId(patientId) || !['followup', 'nutrition_management', 'nutrition_plan'].includes(source)) return bad(res, 400, '请选择会员和发起入口');
   const config = await Config.findOne({ tenantId: staff.tenantId }).lean();
   if (config?.enabled !== true) return bad(res, 409, '请先在管理端启用营养评估需求单');
   const reason = clean(req.body.reason), focus = clean(req.body.focus);
@@ -79,16 +101,26 @@ router.post('/', staffAuth, wrap(async (req, res) => {
     return bad(res, 409, '责任健管专员或营养师不可用，请核对人员归属');
   let plan = null;
   if (source === 'nutrition_plan') {
+    if (sourceOrderId) return bad(res, 400, '方案复评不重复占用单次评估订单');
     if (!isId(sourcePlanId)) return bad(res, 400, '请选择营养干预方案');
     plan = await HealthPlan.findOne({ _id: sourcePlanId, patientId, tenantId: staff.tenantId, type: 'nutrition' }).lean();
     if (!plan) return bad(res, 404, '营养干预方案不存在');
     if (plan.status !== 'active') return bad(res, 409, '请从进行中的营养干预方案发起复评');
-  } else if (sourcePlanId) return bad(res, 400, '随访发起不可关联营养方案');
-  if (await Request.exists({ tenantId: staff.tenantId, patientId, source, sourcePlanId: plan?._id || null, status: { $in: active } }))
+  } else {
+    if (sourcePlanId) return bad(res, 400, '首次评估不可关联营养方案');
+    if (!isId(sourceOrderId)) return bad(res, 400, '请选择已购买的单次营养评估订单');
+    const order = await Order.findOne({ _id: sourceOrderId, user: patientId, tenantId: staff.tenantId }).lean();
+    if (!isAvailableNutritionAssessmentOrder(order)) return bad(res, 409, '评估订单未付款、已使用或不可用');
+    if (await Request.exists({ sourceOrderId, status: { $ne: 'cancelled' } })) return bad(res, 409, '该订单已关联营养评估需求');
+  }
+  if (await Request.exists({ tenantId: staff.tenantId, patientId,
+    source: source === 'nutrition_plan' ? source : { $in: ['followup', 'nutrition_management'] },
+    sourcePlanId: plan?._id || null, status: { $in: active } }))
     return bad(res, 409, '该会员已有进行中的同类营养评估，请先处理原需求单');
   const row = await Request.create({
     tenantId: staff.tenantId, patientId, source, sourcePlanId: plan?._id || null,
-    assessmentType: source === 'followup' ? 'initial' : 'reassessment', reason, focus,
+    sourceOrderId: source === 'nutrition_plan' ? null : sourceOrderId,
+    assessmentType: source === 'nutrition_plan' ? 'reassessment' : 'initial', reason, focus,
     advisorId: patient.assignedFamilyDoctor || staff._id, managerId: patient.assignedHealthManager,
     nutritionistId: patient.assignedNutritionist, events: [event(staff, 'requested', reason)],
   });
@@ -100,6 +132,10 @@ router.post('/:id/booking', staffAuth, wrap(async (req, res) => {
   if (req.staff.role !== 'superadmin' && (req.staff.role !== 'healthManager' || !same(row.managerId, req.staff._id)))
     return bad(res, 403, '仅责任健管专员可确认预约');
   if (!active.includes(row.status)) return bad(res, 409, '当前状态不可预约');
+  if (row.sourceOrderId) {
+    const order = await Order.findById(row.sourceOrderId).lean();
+    if (!isAvailableNutritionAssessmentOrder(order)) return bad(res, 409, '关联订单已退款、取消或核销，请先核对订单');
+  }
   const body = req.body || {};
   const at = new Date(body.at);
   const mode = body.mode;
@@ -127,13 +163,30 @@ router.post('/:id/complete', staffAuth, wrap(async (req, res) => {
   const row = await load(req, res); if (!row) return;
   if (req.staff.role !== 'superadmin' && (req.staff.role !== 'nutritionist' || !same(row.nutritionistId, req.staff._id)))
     return bad(res, 403, '仅责任营养师可提交评估');
+  if (row.status === 'completed' && row.sourceOrderId) {
+    try { await settleNutritionAssessmentOrder(row, req.staff, Order);
+      await Request.updateOne({ _id: row._id }, { $set: { orderSettlementStatus: 'completed' } }); }
+    catch (error) { await Request.updateOne({ _id: row._id }, { $set: { orderSettlementStatus: 'needs_review' } });
+      return bad(res, 503, `评估已保存，订单核销待核对：${error.message}`); }
+    return res.json({ success: true, data: await populate(Request.findById(row._id)) });
+  }
   if (row.status !== 'booked') return bad(res, 409, '请先由健管专员完成预约');
+  if (row.sourceOrderId) {
+    const order = await Order.findById(row.sourceOrderId).lean();
+    if (!isAvailableNutritionAssessmentOrder(order)) return bad(res, 409, '关联订单已退款、取消或核销，请先核对订单');
+  }
   const summary = clean(req.body?.summary, 10000), recommendations = clean(req.body?.recommendations, 10000);
   if (summary.length < 10 || recommendations.length < 5) return bad(res, 400, '请填写评估结论和后续建议');
   const updated = await Request.findOneAndUpdate({ _id: row._id, status: 'booked' },
     { $set: { status: 'completed', assessment: { summary, recommendations, completedAt: new Date() } },
       $push: { events: event(req.staff, 'completed', summary.slice(0, 200)) } }, { new: true });
   if (!updated) return bad(res, 409, '需求单已被其他人更新，请刷新');
+  if (updated.sourceOrderId) {
+    try { await settleNutritionAssessmentOrder(updated, req.staff, Order);
+      await Request.updateOne({ _id: updated._id }, { $set: { orderSettlementStatus: 'completed' } }); }
+    catch (error) { await Request.updateOne({ _id: updated._id }, { $set: { orderSettlementStatus: 'needs_review' } });
+      return bad(res, 503, `评估已保存，订单核销待核对：${error.message}`); }
+  }
   res.json({ success: true, data: await populate(Request.findById(updated._id)) });
 }));
 

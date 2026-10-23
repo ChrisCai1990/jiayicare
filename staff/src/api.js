@@ -169,6 +169,7 @@ export const staffAPI = {
   getServiceTasks:     (p = {}) => req('/staff/service-tasks?' + qs(p)),
   getNutritionAssessmentConfig: () => req('/staff/nutrition-assessments/config'),
   getNutritionAssessments: (p = {}) => req('/staff/nutrition-assessments?' + qs(p)),
+  getNutritionAssessmentEligibleOrders: (patientId) => req('/staff/nutrition-assessments/eligible-orders?' + qs({ patientId })),
   createNutritionAssessment: d => req('/staff/nutrition-assessments', { method: 'POST', body: JSON.stringify(d) }),
   bookNutritionAssessment: (id, d) => req('/staff/nutrition-assessments/' + id + '/booking', { method: 'POST', body: JSON.stringify(d) }),
   completeNutritionAssessment: (id, d) => req('/staff/nutrition-assessments/' + id + '/complete', { method: 'POST', body: JSON.stringify(d) }),

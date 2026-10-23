@@ -15,6 +15,7 @@ async function mount({ data = { services: [service], inbox: [] }, role = 'family
     if (name === '../api') return { getToken: () => 'test', staffAPI: api };
     if (name.includes('useWorkbenchResource')) return { default: () => resource, __esModule: true };
     if (name.includes('Pagination')) return { default: ({ page, totalPages, onChange }) => React.createElement('button', { onClick: () => onChange(page + 1) }, `${page}/${totalPages}`), __esModule: true };
+    if (name === './NutritionAssessmentPanel') return { default: () => null, __esModule: true };
     throw Error(name);
   } });
   const el = document.createElement('div'); document.body.append(el); const root = createRoot(el);
@@ -22,9 +23,9 @@ async function mount({ data = { services: [service], inbox: [] }, role = 'family
   return { el, writes, navigation, click: async text => act(async () => [...el.querySelectorAll('button')].find(b => b.textContent === text).click()), close: async () => { await act(async () => root.unmount()); el.remove() } };
 }
 const type = async (el, value) => act(async () => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, value); el.dispatchEvent(new window.Event('input', { bubbles: true })); });
-test('normal services collapsed, exceptions shown, pagination retains all rows', async () => {
+test('service progress pagination retains all rows', async () => {
   const h = await mount({ data: { services: [service, ...Array.from({ length: 6 }, (_, i) => ({ ...service, key: `n${i}`, title: `正常${i}`, attention: false }))], inbox: [] } });
-  try { assert.match(h.el.textContent, /合成服务/); assert.doesNotMatch(h.el.textContent, /正常0/); await h.click('查看正常进度 6项'); assert.match(h.el.textContent, /正常0/); await h.click('1/2'); assert.match(h.el.textContent, /正常5/); } finally { await h.close() }
+  try { assert.match(h.el.textContent, /合成服务/); assert.match(h.el.textContent, /正常0/); assert.doesNotMatch(h.el.textContent, /正常5/); await h.click('1/2'); assert.match(h.el.textContent, /正常5/); } finally { await h.close() }
 });
 test('advisor sees service progress without creating reminder or coordination work', async () => {
   const h = await mount(); try {

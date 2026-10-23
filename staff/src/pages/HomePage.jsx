@@ -18,7 +18,6 @@ import ClinicalStandardReviewPanel from '../components/ClinicalStandardReviewPan
 import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
 import ServiceTasksPanel from '../components/ServiceTasksPanel'
-import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
 import MedicalAssistClosureAction from '../components/MedicalAssistClosureAction'
 import ServiceSupervisionPanel from '../components/ServiceSupervisionPanel'
 import MedicalAssistProgressPanel from '../components/MedicalAssistProgressPanel'
@@ -227,10 +226,9 @@ export default function HomePage() {
       </div>
 
       {/* 临时服务方案产生的岗位任务优先处理，固定显示在 AI 审核任务上方。 */}
-      <div style={{ display: showAdvisorView('todo', 'service') ? undefined : 'none' }}><MonthlyReviewWorkbench />{staff?.role !== 'familyDoctor' && <NutritionAssessmentPanel compact />}<ServiceTasksPanel onTasksLoaded={setServiceTasks} /></div>
+      <div style={{ display: showAdvisorView('todo', 'service') ? undefined : 'none' }}><MonthlyReviewWorkbench /><ServiceTasksPanel onTasksLoaded={setServiceTasks} /></div>
       <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><ClinicalStandardReviewPanel /></div>
       {staff?.role === 'familyDoctor' && <div style={{ display: showAdvisorView('progress', 'medical') ? undefined : 'none' }}><MedicalAssistProgressPanel /></div>}
-      {staff?.role === 'familyDoctor' && <div style={{ display: showAdvisorView('progress', 'overview') ? undefined : 'none' }}><NutritionAssessmentPanel compact /></div>}
 
       {/* AI 待审核任务面板 */}
       <div style={{ display: showAdvisorView('todo', 'review') ? undefined : 'none' }}><AiTodosPanel hideGeo={isAdvisor && canShowGeoReview(staff)} /></div>
