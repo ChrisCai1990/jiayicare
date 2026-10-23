@@ -8,8 +8,7 @@ const FLOW_CARDS = [
   ['年度健康管理', '评估建档 → 方案制定 → 周期服务 → 阶段复盘 → 年度总结', '/health-plan-templates', '管理方案模板'],
   ['健康档案管理', '资料收集 → 归档核验 → 持续更新 → 异常提示 → 授权输出', '/health-plan-templates', '管理方案模板'],
   ['健康评估与复查', '信息采集 → 风险评估 → 建议审核 → 复查提醒 → 结果复盘', '/health-plan-templates', '管理方案模板'],
-  ['营养干预', '营养评估 → 目标与方案 → 执行跟踪 → 指标复评 → 调整方案', '/health-plan-templates', '管理方案模板'],
-  ['营养评估需求', '顾问发起需求 → 健管预约 → 营养师评估 → 顾问查看进度', '/settings/nutrition-assessment', '配置需求单'],
+  ['营养干预', '顾问发起单次营养评估 → 健管预约 → 营养师评估；营养方案执行后可复评', '/health-plan-templates', '管理方案模板'],
   ['体检／检查管理', '需求确认 → 预约 → 检查提醒 → 报告解读 → 异常跟进', '/health-plan-templates', '管理方案模板'],
   ['就医协助', '需求与风险评估 → 预约协调 → 就医执行 → 医嘱整理 → 后续随访', '/projects/followup-plans', '管理随访方案'],
   ['医疗代诊服务', '规划师核对诉求并指导上传 → 健管审核资料 → 健康顾问确认方案 → 规划师复核指派 → 健管预约专家 → 就医专员代诊上传病历 → 健康顾问审核随访；规划师全程督办', '/products', '管理服务产品'],
@@ -115,7 +114,7 @@ export default function SupplyWorkflowConfigPage() {
   return <div className="page" style={{ maxWidth: 1220, margin: '0 auto' }}>
     <div className="page-header"><div><h1 className="page-title">服务流程管理</h1><p className="page-subtitle">统一查看服务流程，并把每个服务产品关联到实际执行流程和随访方案。</p></div><button className="btn btn-primary" disabled={savingAll} onClick={saveAll}>{savingAll ? '保存中...' : '保存当前全部关联'}</button></div>
     <div style={{ ...card, marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20 }}><div><div style={{ fontSize: 13, color: '#64766D' }}>产品流程覆盖</div><div style={{ fontSize: 28, fontWeight: 800, marginTop: 4 }}>{assigned} / {products.length}</div><div style={{ fontSize: 12, color: '#8AA89C' }}>未关联产品继续按原履约逻辑运行，但不会获得专属流程标识。</div></div><button className="btn btn-secondary" onClick={() => navigate('/products')}>管理服务产品</button></div>
-    <h2 style={{ fontSize: 18, margin: '26px 0 12px' }}>已接入的流程</h2><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(250px,1fr))', gap: 14 }}>{FLOW_CARDS.map(([title, desc, path, action]) => <div key={title} style={card}><h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3><p style={{ color: '#6B7D74', fontSize: 13, lineHeight: 1.7, minHeight: 44 }}>{desc}</p><button className="btn btn-secondary" onClick={() => navigate(path)}>{action}</button></div>)}</div>
+    <h2 style={{ fontSize: 18, margin: '26px 0 12px' }}>已接入的流程</h2><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(250px,1fr))', gap: 14 }}>{FLOW_CARDS.map(([title, desc, path, action]) => <div key={title} style={card}><h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3><p style={{ color: '#6B7D74', fontSize: 13, lineHeight: 1.7, minHeight: 44 }}>{desc}</p><button className="btn btn-secondary" onClick={() => navigate(path)}>{action}</button>{title === '营养干预' && <button className="btn btn-secondary" style={{ marginLeft: 8 }} onClick={() => navigate('/settings/nutrition-assessment')}>配置评估与预约</button>}</div>)}</div>
     <h2 style={{ fontSize: 18, margin: '28px 0 12px' }}>产品与流程关联</h2><div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}><div style={{ color: '#6B7D74', fontSize: 13 }}>主流程、随访方案和备注修改后会自动保存；页面上方“保存全部关联”用于重试尚未保存的项目。</div><input className="form-input" style={{ width: 220 }} value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="搜索产品" /></div>
       <div style={{ padding: '10px 12px', marginBottom: 12, borderRadius: 10, background: '#F4F8F6', color: '#4A6558', fontSize: 12, lineHeight: 1.7 }}><strong>主流程阶段</strong>说明整项服务怎样完成；<strong>工作台任务模块</strong>只列需要分配给岗位并跟踪完成的任务。固定任务购买后执行，按需任务仅在识别到条件并经人工审核后执行。</div>

@@ -4,6 +4,7 @@ import { useStaff } from '../App'
 import { getToken, staffAPI } from '../api'
 import useWorkbenchResource from '../hooks/useWorkbenchResource'
 import Pagination from './Pagination'
+import NutritionAssessmentPanel from './NutritionAssessmentPanel'
 
 const date = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '未设定'
 const decisionActions = { intake: '确认客户需求并转交顾问', advisor: '确认方案并发起转介', booking: '完成预约和客户沟通', specialist: '整理专家并回复转介', advisor_review: '审核专科回复并归档', planner_final: '确认服务并完成验收' }
@@ -53,6 +54,7 @@ export default function ServiceSupervisionPanel() {
   return <section className="card" style={{ marginBottom: 20 }} aria-label="服务督办">
     <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}><div className="card-title">{services.length || staff?.role === 'familyDoctor' ? '服务进度总览' : '历史协调提醒'}{attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div>{staff?.role === 'familyDoctor' && <div role="group" aria-label="服务进度状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', services.length], ['completed', '已完成', completed.length], ['all', '全部', services.length + completed.length]].map(([key, label, count]) => <button key={key} type="button" className={statusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={statusFilter === key} onClick={() => { setStatusFilter(key); setPage(1) }}>{label} {count}</button>)}</div>}</div>
     <div className="card-body">
+      {staff?.role === 'familyDoctor' && <details style={{ marginBottom: 14, borderBottom: '1px solid #E3ECE7', paddingBottom: 12 }}><summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>营养评估进度</summary><NutritionAssessmentPanel compact embedded /></details>}
       {staff?.role === 'familyDoctor' && <p style={{ marginTop: 0, fontSize: 13, color: '#667085' }}>查看所属客户的完整服务进度。随访由健管专员督导，就医协助由健康规划师督导；需要整体健康判断时在本人专业待办中处理。</p>}
       {resource.loading && <div role="status">正在读取服务进度…</div>}
       {resource.error && <div role="alert">进度更新失败：{resource.error} <button onClick={resource.refresh}>重试</button></div>}
