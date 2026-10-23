@@ -92,12 +92,28 @@ test('health consultant can switch between tasks, service progress, and data wit
   } finally { await view.close() }
 })
 
-test('other roles retain the original workbench sections', async () => {
-  const view = await mount('healthPlanner')
-  try {
-    assert.equal(view.box.querySelector('nav[aria-label="健康顾问工作台"]'), null)
-    assert.equal(view.visible('ServiceTasksPanel'), true)
-    assert.equal(view.visible('AiTodosPanel'), true)
-    assert.equal(view.visible('FollowUpsPanel'), true)
-  } finally { await view.close() }
-})
+for (const role of ['healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'specialist', 'psychologist', 'rehabSpecialist', 'tcmDoctor', 'superadmin']) {
+  test(`${role} starts with all work visible and can focus on tasks or progress`, async () => {
+    const view = await mount(role)
+    try {
+      assert.ok(view.box.querySelector('nav[aria-label="岗位工作台"]'))
+      assert.equal(view.visible('ServiceTasksPanel'), true)
+      assert.equal(view.visible('AiTodosPanel'), true)
+      assert.equal(view.visible('FollowUpsPanel'), true)
+      await view.click('审核与异常')
+      assert.equal(view.visible('AiTodosPanel'), true)
+      assert.equal(view.visible('ServiceTasksPanel'), false)
+      await view.click('服务事项')
+      assert.equal(view.visible('ServiceTasksPanel'), true)
+      assert.equal(view.visible('FollowUpsPanel'), false)
+      if (['healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'superadmin'].includes(role)) {
+        await view.click('我关注的服务')
+        assert.equal(view.visible('ServiceSupervisionPanel'), true)
+        assert.equal(view.visible('ServiceTasksPanel'), false)
+      } else assert.equal([...view.box.querySelectorAll('button')].some(button => button.textContent === '我关注的服务'), false)
+      await view.click('数据概览')
+      assert.match(view.box.textContent, /今日健康数据记录/)
+      assert.equal(view.visible('ServiceTasksPanel'), false)
+    } finally { await view.close() }
+  })
+}
