@@ -431,6 +431,46 @@ function HrAccountModal({ enterprise, onClose, onSaved }) {
   )
 }
 
+function HrPasswordResetModal({ enterprise, hr, onClose }) {
+  const toast = useToast()
+  const [password, setPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (password.length < 6) { toast('❌ 新密码不能少于6位'); return }
+    setSaving(true)
+    try {
+      await adminAPI.resetEnterpriseHrPassword(enterprise._id, hr._id, password)
+      toast('✅ HR账号密码已重置')
+      onClose()
+    } catch (err) {
+      toast('❌ ' + (err.message || '操作失败'))
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 420, width: '96%' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">重置「{hr.name}」的HR账号密码</div>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <label className="form-group">
+            <span className="form-label">新密码（至少6位）</span>
+            <input className="form-input" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} />
+          </label>
+          <div style={{ fontSize: 12, color: '#65776F', marginTop: 8 }}>重置后请将新密码安全地告知该HR账号使用人；首次登录须自行修改。</div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? '重置中...' : '确认重置'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const STATUS_LABEL = { active: '合作中', expired: '已到期', suspended: '已暂停' }
 const STATUS_BADGE = { active: 'badge-green', expired: 'badge-gray', suspended: 'badge-gray' }
 
@@ -522,6 +562,7 @@ export default function EnterprisesPage() {
   const [hrByEnt, setHrByEnt] = useState({})
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [showHrModal, setShowHrModal] = useState(false)
+  const [resetHr, setResetHr] = useState(null)
   const [hrDataEnt, setHrDataEnt] = useState(null)   // 正在录入HR看板数据的企业
   const [insuranceEnt, setInsuranceEnt] = useState(null)
   const [sharedFundEnt, setSharedFundEnt] = useState(null)
@@ -664,6 +705,7 @@ export default function EnterprisesPage() {
                     {(hrByEnt[e._id] || []).map(hr => (
                       <div key={hr._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px dashed #f0ede7' }}>
                         <div style={{ flex: 1 }}>{hr.name} <span style={{ fontSize: 12, color: '#888' }}>@{hr.username}</span></div>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setResetHr({ enterprise: e, hr })}>重置密码</button>
                         <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => deleteHr(e._id, hr._id)}>删除</button>
                       </div>
                     ))}
@@ -684,6 +726,7 @@ export default function EnterprisesPage() {
       {showHrModal && expandedId && (
         <HrAccountModal enterprise={list.find(e => e._id === expandedId)} onClose={() => setShowHrModal(false)} onSaved={() => loadDetail(expandedId)} />
       )}
+      {resetHr && <HrPasswordResetModal enterprise={resetHr.enterprise} hr={resetHr.hr} onClose={() => setResetHr(null)} />}
       {hrDataEnt && (
         <HrDataModal enterprise={hrDataEnt} onClose={() => setHrDataEnt(null)} onSaved={() => load(q)} toast={toast} />
       )}

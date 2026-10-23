@@ -18,6 +18,12 @@ module.exports = async (req, res, next) => {
     if (admin.role !== 'enterprise_hr' || !admin.enterpriseId) {
       return res.status(403).json({ success: false, message: '非企业HR账号或未绑定企业' });
     }
+    if ((decoded.hrTokenVersion || 0) !== (admin.hrTokenVersion || 0)) {
+      return res.status(401).json({ success: false, message: '密码已重置，请重新登录' });
+    }
+    if (admin.mustChangePassword && String(req.originalUrl).split('?')[0] !== '/api/enterprise-hr/me/password') {
+      return res.status(403).json({ success: false, message: '请先修改初始密码' });
+    }
     req.admin = admin;
     req.enterpriseId = admin.enterpriseId;
     next();
