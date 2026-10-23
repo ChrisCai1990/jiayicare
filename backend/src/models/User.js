@@ -326,6 +326,8 @@ const userSchema = new mongoose.Schema({
 
   // 积分余额（打卡+消费累积，由 $inc 累加，Mongoose 必须显式定义才能读取）
   pointsBalance: { type: Number, default: 0 },
+  vitalityPointsBalance: { type: Number, default: 0 },
+  rewardPointsBalance: { type: Number, default: 0 },
 
   // ── 医疗保障信息（需求15）───────────────────────────────────────
   basic_insurance:   { type: String, default: '' }, // 基础医疗保障：城镇医疗保险/居民医疗保险/自费

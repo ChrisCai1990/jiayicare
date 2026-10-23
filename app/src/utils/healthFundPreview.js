@@ -32,28 +32,45 @@ function usable(healthFund, amount) {
 }
 function maxFundDeduction(healthFund, amount, product) {
   const total = cents(amount) / 100;
-  if (!usable(healthFund, total)) return 0;
-  const cap = Math.floor(productCap(product?.healthFundDeduction, total) * 100 + 1e-7);
-  const personal = Math.min(cents(healthFund.personal), cap);
-  const eligible = corporateProductEligible(healthFund.policy, product, product?.healthFundDeduction) && enterpriseEligible(healthFund, total, product);
-  const corporate = eligible ? Math.min(cents(healthFund.corporate), cap-personal) : 0;
-  return Math.min(cents(healthFund.total ?? (nonnegative(healthFund.personal)+nonnegative(healthFund.corporate))), personal+corporate) / 100;
+  const totalCents = cents(total);
+  const personal = Math.min(cents(healthFund?.personal), totalCents);
+  const vitality = Math.min(cents(healthFund?.vitality), totalCents - personal);
+  const remaining = (totalCents - personal - vitality) / 100;
+  const eligible = usable(healthFund, total) && corporateProductEligible(healthFund.policy, product, product?.healthFundDeduction) && enterpriseEligible(healthFund, total, product);
+  const cap = Math.floor(productCap(product?.healthFundDeduction, remaining) * 100 + 1e-7);
+  const corporate = eligible ? Math.min(cents(healthFund?.corporate), cap) : 0;
+  return Math.min(cents(healthFund?.total ?? (nonnegative(healthFund?.personal)+nonnegative(healthFund?.vitality)+nonnegative(healthFund?.corporate))), personal+vitality+corporate) / 100;
+}
+function splitCents(amount, capacities) {
+  const total=capacities.reduce((a,b)=>a+b,0);
+  if (!total || !amount) return capacities.map(()=>0);
+  const parts=capacities.map(value=>Math.floor(amount*value/total));
+  let left=amount-parts.reduce((a,b)=>a+b,0);
+  const ranks=capacities.map((value,index)=>({index,remainder:amount*value%total})).sort((a,b)=>b.remainder-a.remainder||a.index-b.index);
+  for(const {index} of ranks) if(left&&parts[index]<capacities[index]){parts[index]++;left--;}
+  return parts;
 }
 function maxGroupFundDeduction(healthFund, amount, products) {
   const total = cents(amount), prices = products.map(p=>cents(p.price)), gross=prices.reduce((a,b)=>a+b,0);
-  if (!usable(healthFund,total/100)||!gross||total>gross||!products.length) return 0;
+  if (!gross||total>gross||!products.length) return 0;
   // Split the coupon in cents with the same largest-remainder tie order as checkout.
   const discount=gross-total;
   const portions=prices.map(price=>Math.floor(discount*price/gross));
   let left=discount-portions.reduce((a,b)=>a+b,0);
   const ranks=prices.map((price,index)=>({index,remainder:discount*price%gross})).sort((a,b)=>b.remainder-a.remainder||a.index-b.index);
   for(const {index} of ranks) if(left&&portions[index]<prices[index]){portions[index]++;left--;}
-  const cap=products.reduce((sum,p,index)=>{
+  const afterCoupon=prices.map((price,index)=>price-portions[index]);
+  const personal=splitCents(Math.min(cents(healthFund?.personal),total),afterCoupon);
+  const afterPersonal=afterCoupon.map((value,index)=>value-personal[index]);
+  const vitality=splitCents(Math.min(cents(healthFund?.vitality),afterPersonal.reduce((a,b)=>a+b,0)),afterPersonal);
+  const afterUnrestricted=afterPersonal.map((value,index)=>value-vitality[index]);
+  const cap=usable(healthFund,total/100)?products.reduce((sum,p,index)=>{
     const current=p.fundProduct;
     // Push snapshots do not contain current product limits; wait for verified metadata.
     if(!current || !corporateProductEligible(healthFund.policy,current,current.healthFundDeduction)||!enterpriseEligible(healthFund,total/100,current))return sum;
-    return sum+Math.floor(productCap(current.healthFundDeduction,(prices[index]-portions[index])/100)*100+1e-7);
-  },0);
-  return Math.min(cap,cents(healthFund.personal)+cents(healthFund.corporate),cents(healthFund.total??(nonnegative(healthFund.personal)+nonnegative(healthFund.corporate))))/100;
+    return sum+Math.floor(productCap(current.healthFundDeduction,afterUnrestricted[index]/100)*100+1e-7);
+  },0):0;
+  const unrestricted=personal.reduce((a,b)=>a+b,0)+vitality.reduce((a,b)=>a+b,0);
+  return Math.min(total,unrestricted+Math.min(cap,cents(healthFund?.corporate)),cents(healthFund?.total??(nonnegative(healthFund?.personal)+nonnegative(healthFund?.vitality)+nonnegative(healthFund?.corporate))))/100;
 }
 module.exports={policyLimit,corporateProductEligible,maxFundDeduction,maxGroupFundDeduction};

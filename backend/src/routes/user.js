@@ -170,10 +170,11 @@ router.get('/enterprise-shared-fund/quote', auth, async (req, res) => {
 
 router.get('/me', auth, async (req, res) => {
   try {
-      const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
-      const [personalAvailable, corporateAvailable, enterprise, platformFundPolicy, fundEligible] = await Promise.all([
+      const { getCorporateFundAvailable, getPersonalFundAvailable, getVitalityFundAvailable } = require('../utils/healthFundPayment');
+      const [personalAvailable, corporateAvailable, vitalityAvailable, enterprise, platformFundPolicy, fundEligible] = await Promise.all([
         getPersonalFundAvailable(req.user),
         getCorporateFundAvailable(req.user),
+        getVitalityFundAvailable(req.user),
         req.user.enterpriseId ? Enterprise.findById(req.user.enterpriseId).select('status healthFundPaymentRule').lean() : null,
         require('../utils/healthFundPayment').getHealthFundPolicy(),
         require('../utils/packageFeatureEntitlements').hasHealthFundAccess(req.user),
@@ -185,25 +186,26 @@ router.get('/me', auth, async (req, res) => {
         eligible: fundEligible,
         enterprise: { bound: !!req.user.enterpriseId, active: enterprise?.status === 'active', rule: enterprise?.healthFundPaymentRule || null },
         total:     totalBalance,
-        corporate: cents(Math.min(corporateAvailable, Math.max(0, totalBalance - personal))),
+        corporate: cents(Math.min(corporateAvailable, Math.max(0, totalBalance - personal - vitalityAvailable))),
+        vitality: cents(Math.min(vitalityAvailable, Math.max(0, totalBalance - personal))),
         personal,
         rule: (() => {
           const rule = enterprise?.healthFundPaymentRule;
           if (!rule?.enabled) {
             if (corporateAvailable > 0 && !req.user.enterpriseId) return {
               enabled: true,
-              description: '企业健康基金按本单实时可用额度抵扣；退款审核通过后按原来源退回。',
+              description: '自有基金与活力基金可抵扣至0元；奖励基金按商品规则比例抵扣。退款审核通过后按原来源退回。',
             };
             return {
               enabled: false,
-              description: '自有健康基金可在余额内抵扣；企业赠送基金暂未启用支付抵扣。',
+              description: '自有基金与活力基金可抵扣至0元；奖励基金按商品规则比例抵扣。',
             };
           }
           const limit = rule.deductionType === 'percentage'
-            ? `企业基金每单最高抵扣订单金额的${Number(rule.deductionValue) || 0}%`
+            ? `奖励基金每单最高抵扣订单金额的${Number(rule.deductionValue) || 0}%`
             : rule.deductionType === 'fixedAmount'
-              ? `企业基金每单最高抵扣¥${Number(rule.deductionValue) || 0}`
-              : '企业基金可在可用余额内抵扣';
+              ? `奖励基金每单最高抵扣¥${Number(rule.deductionValue) || 0}`
+              : '奖励基金按商品规则比例抵扣';
           const threshold = Number(rule.minOrderAmount) > 0 ? `，订单满¥${Number(rule.minOrderAmount)}可用` : '';
           const categories = rule.eligibleCategories?.length ? `，适用于：${rule.eligibleCategories.join('、')}` : '，适用于全部服务分类';
           return {
@@ -212,7 +214,7 @@ router.get('/me', auth, async (req, res) => {
             deductionValue: Number(rule.deductionValue) || 0,
             minOrderAmount: Number(rule.minOrderAmount) || 0,
             eligibleCategories: rule.eligibleCategories || [],
-            description: rule.note?.trim() || `自有基金优先抵扣；${limit}${threshold}${categories}。退款审核通过后，基金按原来源退回。`,
+            description: rule.note?.trim() || `自有基金与活力基金可抵扣至0元；${limit}${threshold}${categories}。退款审核通过后按原来源退回。`,
           };
         })(),
         policy: {
@@ -295,12 +297,12 @@ router.get('/me', auth, async (req, res) => {
 router.get('/health-fund', auth, async (req, res) => {
   try {
     const HealthFundTransaction = require('../models/HealthFundTransaction');
-    const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
+    const { getCorporateFundAvailable, getPersonalFundAvailable, getVitalityFundAvailable } = require('../utils/healthFundPayment');
     await require('../utils/pointsHealthFund').convertExistingPoints(req.user._id);
     const currentUser = await User.findById(req.user._id);
     if (!currentUser) return res.status(404).json({ success:false, message:'用户不存在' });
-    const [personalAvailable, corporateAvailable, transactions, grants, config] = await Promise.all([
-      getPersonalFundAvailable(currentUser), getCorporateFundAvailable(currentUser),
+    const [personalAvailable, corporateAvailable, vitalityAvailable, transactions, grants, config] = await Promise.all([
+      getPersonalFundAvailable(currentUser), getCorporateFundAvailable(currentUser), getVitalityFundAvailable(currentUser),
       HealthFundTransaction.find({ userId: req.user._id }).populate('orderId', 'serviceName orderNo').sort({ createdAt: -1 }).limit(100).lean(),
       GiftRecord.find({ patientId: req.user._id, giftType: 'fund' }).sort({ createdAt: -1 }).limit(100).lean(),
       SystemConfig.findOne({ key: 'healthFundPolicy' }).lean(),
@@ -309,7 +311,7 @@ router.get('/health-fund', auth, async (req, res) => {
     const total = cents(currentUser.healthFundBalance);
     const personal = cents(Math.min(personalAvailable, total));
     const ledger = require('../utils/healthFundLedger').mergeHealthFundLedger(transactions, grants);
-    res.json({ success:true, data:{ total, personal, corporate:cents(Math.min(corporateAvailable,Math.max(0,total-personal))), policy:config?.value||{}, transactions:ledger.map(item => ({ ...item, amount:cents(item.amount), balanceAfter:cents(item.balanceAfter) })) } });
+    res.json({ success:true, data:{ total, personal, vitality:cents(vitalityAvailable), corporate:cents(Math.min(corporateAvailable,Math.max(0,total-personal-vitalityAvailable))), policy:config?.value||{}, transactions:ledger.map(item => ({ ...item, amount:cents(item.amount), balanceAfter:cents(item.balanceAfter) })) } });
   } catch (err) { res.status(500).json({ success:false, message:'获取健康基金明细失败', error:err.message }); }
 });
 
@@ -1212,8 +1214,12 @@ router.get('/points', auth, async (req, res) => {
   try {
     await require('../utils/pointsHealthFund').convertExistingPoints(req.user._id);
     const logs = await PointsLog.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(100);
-    const user = await User.findById(req.user._id).select('pointsBalance');
-    res.json({ success: true, data: { balance: user?.pointsBalance || 0, exchangeRate: 100, logs } });
+    const user = await User.findById(req.user._id).select('pointsBalance vitalityPointsBalance rewardPointsBalance');
+    const pointPolicy = await require('../utils/pointsHealthFund').getPointsPolicy();
+    const legacy = user?.pointsBalance || 0;
+    const vitality = user?.vitalityPointsBalance || 0;
+    const reward = user?.rewardPointsBalance || 0;
+    res.json({ success: true, data: { balance: legacy + vitality + reward, legacy, vitality, reward, exchangeEnabled: pointPolicy.enabled, exchangeRate: pointPolicy.pointsPerYuan, healthCheckinPoints: pointPolicy.healthCheckinPoints, purchasePointsPerYuan: 1, logs } });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取积分记录失败', error: err.message });
   }
@@ -1462,7 +1468,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
 
     let fundUsed = 0;
     let fundEnterprise = null;
-    let fundBreakdown = { personal: 0, corporate: 0 };
+    let fundBreakdown = { personal: 0, vitality: 0, corporate: 0 };
     if (useHealthFund > 0) {
       try {
         const productDocs = await Product.find({ _id:{ $in:toPay.map(p=>p.productId).filter(id=>require('mongoose').Types.ObjectId.isValid(id)) } }).select('category healthFundDeduction');
@@ -1529,7 +1535,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         paymentMethod: fundUsed > 0 && finalPrice === 0 ? 'healthFund' : (paymentMethod || ''),
         paidAmount: paid,
         healthFundAmount: idx === 0 ? fundUsed : 0,
-        healthFundBreakdown: idx === 0 ? fundBreakdown : { personal: 0, corporate: 0 },
+        healthFundBreakdown: idx === 0 ? fundBreakdown : { personal: 0, vitality: 0, corporate: 0 },
         enterpriseSharedFundId: idx === 0 ? sharedFund?._id || null : null,
         enterpriseSharedFundAmount: idx === 0 ? sharedFundAmount : 0,
       };

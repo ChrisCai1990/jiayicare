@@ -46,17 +46,26 @@ function corporateProductEligible(policy, productId, category, productRule) {
   return true;
 }
 
-function allocateHealthFund({ orderAmount, personalAvailable, corporateAvailable, corporateEligible = true, productRule }) {
+function allocateHealthFund({ orderAmount, personalAvailable, vitalityAvailable = 0, corporateAvailable, corporateEligible = true, productRule }) {
   const amount = Math.max(0, Number(orderAmount) || 0);
-  const productLimit = productDeductionLimit(productRule, amount);
-  const personalUsed = Math.min(productLimit, Math.max(0, Number(personalAvailable) || 0));
-  const remainingAfterPersonal = Math.max(0, productLimit - personalUsed);
+  const personalUsed = Math.min(amount, Math.max(0, Number(personalAvailable) || 0));
+  const vitalityUsed = Math.min(amount - personalUsed, Math.max(0, Number(vitalityAvailable) || 0));
+  const remainingAfterUnrestricted = Math.max(0, amount - personalUsed - vitalityUsed);
+  const productLimit = productDeductionLimit(productRule, remainingAfterUnrestricted);
   const corporateUsed = Math.min(
-    remainingAfterPersonal,
+    remainingAfterUnrestricted,
     Math.max(0, Number(corporateAvailable) || 0),
-    corporateEligible ? remainingAfterPersonal : 0,
+    corporateEligible ? productLimit : 0,
   );
-  return { personalUsed, corporateUsed, allowed: Math.round((personalUsed + corporateUsed) * 100) / 100 };
+  return { personalUsed, vitalityUsed, corporateUsed, allowed: Math.round((personalUsed + vitalityUsed + corporateUsed) * 100) / 100 };
+}
+
+async function getVitalityFundAvailable(user) {
+  const [rows, corporate] = await Promise.all([HealthFundTransaction.aggregate([
+    { $match: { userId: user._id, source: 'vitality', status: 'active', type: { $in: ['grant', 'deduction', 'adjustment'] } } },
+    { $group: { _id: null, total: { $sum: '$amount' } } },
+  ]), getCorporateFundAvailable(user)]);
+  return Math.max(0, Math.min((Number(user.healthFundBalance) || 0) - corporate, rows[0]?.total || 0));
 }
 
 async function getCorporateFundAvailable(user) {
@@ -64,14 +73,17 @@ async function getCorporateFundAvailable(user) {
     '首次使用小程序健康基金奖励', '邀请好友首次使用小程序奖励', '通过好友邀请首次使用小程序奖励',
   ];
   const [grants, pointsExchangeGrants, legacyFirstLoginGrants, spent] = await Promise.all([GiftRecord.aggregate([
-    { $match: { patientId: user._id, giftType: 'fund', fundType: 'enterprise', status: 'active' } },
+    { $match: { patientId: user._id, giftType: 'fund', status: 'active' } },
     { $group: { _id: null, total: { $sum: '$fundAmount' } } },
   ]), HealthFundTransaction.aggregate([
-    // 积分是平台按客户行为赠送的权益，兑换所得属于企业赠送健康基金。
+    // 历史混合积分及新购买积分兑换所得归奖励基金，健康记录积分单独归活力基金。
     // 这类入账没有对应 GiftRecord，需要从健康基金流水单独汇总。
     // 兼容本次规则生效前误记为 promotion 的兑换流水，使既有余额也正确
-    // 归入企业赠送基金，而不是继续按可全额抵扣的自有基金处理。
-    { $match: { userId: user._id, type: 'grant', source: { $in: ['enterprise', 'promotion'] }, status: 'active', remark: /积分自动兑换.*元健康基金/ } },
+    // 历史误记为 promotion 的兑换流水也按奖励基金处理。
+    { $match: { userId: user._id, type: 'grant', source: { $in: ['enterprise', 'promotion'] }, status: 'active', $or: [
+      { remark: /积分自动兑换.*元(健康基金|奖励基金)/ },
+      { remark: /^(分享产品成交奖励|通过好友分享购买奖励)/ },
+    ] } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]), HealthFundTransaction.aggregate([
     // 1.0.86 之前首登赠金曾误记为 promotion；按明确的业务备注兼容
@@ -88,37 +100,17 @@ async function getCorporateFundAvailable(user) {
 }
 
 async function getPersonalFundAvailable(user) {
-  const platformRewardRemarks = [
-    '首次使用小程序健康基金奖励', '邀请好友首次使用小程序奖励', '通过好友邀请首次使用小程序奖励',
-  ];
-  const grants = await GiftRecord.aggregate([
-    { $match: { patientId: user._id, giftType: 'fund', fundType: { $in: ['promotion', 'other'] }, status: 'active' } },
-    { $group: { _id: null, total: { $sum: '$fundAmount' } } },
-  ]);
-  const deductions = await HealthFundTransaction.aggregate([
-    { $match: { userId: user._id, source: { $in: ['promotion', 'other'] }, status: 'active', type: 'deduction' } },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
   const totalBalance = Math.max(0, Number(user.healthFundBalance) || 0);
-  const legacyFirstLogin = await HealthFundTransaction.aggregate([
-    { $match: { userId: user._id, type: 'grant', status: 'active', remark: { $in: platformRewardRemarks } } },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
-  const recordedPersonal = Math.max(0, (grants[0]?.total || 0) + (deductions[0]?.total || 0) - (legacyFirstLogin[0]?.total || 0));
-  const corporateAvailable = await getCorporateFundAvailable(user);
+  const [corporateAvailable, vitalityAvailable] = await Promise.all([getCorporateFundAvailable(user), getVitalityFundAvailable(user)]);
   // 历史余额可能早于分账流水上线。未能在流水中归类的余额按自有基金处理，
   // 避免用户端显示有余额、结算却判定可用额为0。
-  return Math.max(0, Math.min(totalBalance, Math.max(recordedPersonal, totalBalance - corporateAvailable)));
+  return Math.max(0, Math.min(totalBalance, totalBalance - corporateAvailable - vitalityAvailable));
 }
 
 async function validateHealthFundDeduction({ user, requested, orderAmount, category, categories, productId, productIds, productLimit, maximize = false }) {
   const amount = Number(requested) || 0;
   if (amount <= 0) return { allowed: 0, enterprise: null };
-  if (!(await require('./packageFeatureEntitlements').hasHealthFundAccess(user))) {
-    throw new Error('健康基金仅限有效的365、年度、疗程或企业会员使用；基础会员可按原价购买服务');
-  }
   const policy = await getHealthFundPolicy();
-  if (orderAmount < (Number(policy.minOrderAmount) || 0)) throw new Error(`订单满¥${policy.minOrderAmount}方可使用健康基金`);
   let productRule = null;
   let finalProductLimit = Number.isFinite(Number(productLimit)) ? Math.max(0, Number(productLimit)) : orderAmount;
   if (productId && productLimit === undefined && require('mongoose').Types.ObjectId.isValid(productId)) {
@@ -126,8 +118,10 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
     productRule = product?.healthFundDeduction;
     finalProductLimit = productDeductionLimit(productRule, orderAmount);
   }
-  const corporateEligible = corporateProductEligible(policy, productId, category, productRule);
-  const personalAvailable = await getPersonalFundAvailable(user);
+  const corporateEligible = corporateProductEligible(policy, productId, category, productRule)
+    && orderAmount >= (Number(policy.minOrderAmount) || 0)
+    && await require('./packageFeatureEntitlements').hasHealthFundAccess(user);
+  const [personalAvailable, vitalityAvailable] = await Promise.all([getPersonalFundAvailable(user), getVitalityFundAvailable(user)]);
   // 平台发放的首登企业健康基金并不要求用户先绑定某个企业档案。
   const corporateAvailable = await getCorporateFundAvailable(user);
   let enterprise = null;
@@ -141,12 +135,11 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
       if (rule.eligibleCategories?.length && !rule.eligibleCategories.includes(category)) enterpriseEnabled = false;
     }
   }
-  // 正式小程序的基金开关会提交一个客户端报价。服务端只把正数视为
-  // “启用基金”，始终按实时余额和商品上限重算。余额来源只影响流水归属，
-  // 不改变商品可抵扣上限；这样旧版客户端报价不会覆盖服务端规则。
+  // 客户端提交的金额只作为抵扣上限，服务端按三类余额实时重算。
   const allocation = allocateHealthFund({
     orderAmount,
     personalAvailable,
+    vitalityAvailable,
     corporateAvailable,
     corporateEligible: corporateEligible && enterpriseEnabled,
     productRule: productRule || (productLimit !== undefined && Number.isFinite(finalProductLimit)
@@ -156,8 +149,9 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
   // The requested deduction is a ceiling, not the base for the product percentage.
   const allowed = Math.floor(Math.min(maximize ? allocation.allowed : amount, allocation.allowed) * 100 + 1e-7) / 100;
   const personalUsed = Math.min(allocation.personalUsed, allowed);
-  const corporateUsed = Math.round((allowed - personalUsed) * 100) / 100;
-  return { allowed, enterprise, policy, breakdown: { personal: personalUsed, corporate: corporateUsed } };
+  const vitalityUsed = Math.min(allocation.vitalityUsed, Math.round((allowed - personalUsed) * 100) / 100);
+  const corporateUsed = Math.round((allowed - personalUsed - vitalityUsed) * 100) / 100;
+  return { allowed, enterprise, policy, breakdown: { personal: personalUsed, vitality: vitalityUsed, corporate: corporateUsed } };
 }
 
 async function deductHealthFund({ user, enterprise, order, amount, breakdown }) {
@@ -175,10 +169,12 @@ async function deductHealthFund({ user, enterprise, order, amount, breakdown }) 
   if (!updated) throw new Error('健康基金余额发生变化，请刷新后重试');
   const split = breakdown || { personal: 0, corporate: amount };
   const personalAmount = Math.round((Number(split.personal) || 0) * 100) / 100;
+  const vitalityAmount = Math.round((Number(split.vitality) || 0) * 100) / 100;
   const corporateAmount = Math.round((Number(split.corporate) || 0) * 100) / 100;
   const rows = [];
   if (personalAmount > 0) rows.push({ userId:user._id, orderId:order._id, type:'deduction', source:'promotion', amount:-personalAmount, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}自有基金抵扣` });
-  if (corporateAmount > 0) rows.push({ userId:user._id, enterpriseId:enterprise?._id || null, orderId:order._id, type:'deduction', source:'enterprise', amount:-corporateAmount, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}企业基金抵扣` });
+  if (vitalityAmount > 0) rows.push({ userId:user._id, orderId:order._id, type:'deduction', source:'vitality', amount:-vitalityAmount, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}活力基金抵扣` });
+  if (corporateAmount > 0) rows.push({ userId:user._id, enterpriseId:enterprise?._id || null, orderId:order._id, type:'deduction', source:'enterprise', amount:-corporateAmount, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}奖励基金抵扣` });
   return HealthFundTransaction.insertMany(rows);
 }
 
@@ -221,4 +217,4 @@ async function reverseHealthFund({ order, remark = '订单退款返还' }) {
   return amount;
 }
 
-module.exports = { DEFAULT_HEALTH_FUND_POLICY, getHealthFundPolicy, deductionLimit, productDeductionLimit, corporateProductEligible, allocateHealthFund, validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
+module.exports = { DEFAULT_HEALTH_FUND_POLICY, getHealthFundPolicy, deductionLimit, productDeductionLimit, corporateProductEligible, allocateHealthFund, validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable, getVitalityFundAvailable };

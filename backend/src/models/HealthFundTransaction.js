@@ -5,7 +5,7 @@ const schema = new mongoose.Schema({
   enterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null, index: true },
   orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null, index: true },
   type: { type: String, enum: ['grant', 'deduction', 'reversal', 'adjustment'], required: true },
-  source: { type: String, enum: ['enterprise', 'promotion', 'other'], default: 'enterprise' },
+  source: { type: String, enum: ['enterprise', 'promotion', 'other', 'vitality'], default: 'enterprise' },
   amount: { type: Number, required: true },
   balanceAfter: { type: Number, default: 0 },
   status: { type: String, enum: ['active', 'reversed'], default: 'active' },

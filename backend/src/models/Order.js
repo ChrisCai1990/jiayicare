@@ -135,7 +135,7 @@ const orderSchema = new mongoose.Schema({
   paymentEnvironment: { type: String, enum: ['', 'sandbox', 'production'], default: '' },
   paymentClientConfirmedAt: { type: Date, default: null },
   healthFundAmount: { type: Number, default: 0 },
-  healthFundBreakdown: { personal: { type: Number, default: 0 }, corporate: { type: Number, default: 0 } },
+  healthFundBreakdown: { personal: { type: Number, default: 0 }, vitality: { type: Number, default: 0 }, corporate: { type: Number, default: 0 } },
   healthFundEnterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null },
   enterpriseSharedFundId: { type: mongoose.Schema.Types.ObjectId, ref: 'EnterpriseSharedFund', default: null },
   enterpriseSharedFundAmount: { type: Number, default: 0 },

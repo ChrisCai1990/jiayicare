@@ -119,19 +119,21 @@ async function rememberPendingInvitation(user, inviteCode) {
 // 计算用户健康基金汇总（与 /user/me 保持一致）
 async function computeHealthFund(user) {
   try {
-    const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
-    const [enterpriseFund, personalFund] = await Promise.all([
+    const { getCorporateFundAvailable, getPersonalFundAvailable, getVitalityFundAvailable } = require('../utils/healthFundPayment');
+    const [enterpriseFund, personalFund, vitalityFund] = await Promise.all([
       getCorporateFundAvailable(user),
       getPersonalFundAvailable(user),
+      getVitalityFundAvailable(user),
     ]);
     const totalBalance = user.healthFundBalance || 0;
     const personal = Math.min(personalFund, totalBalance);
     return {
       total:     totalBalance,
-      corporate: Math.min(enterpriseFund, Math.max(0, totalBalance - personal)),
+      corporate: Math.min(enterpriseFund, Math.max(0, totalBalance - personal - vitalityFund)),
+      vitality: Math.min(vitalityFund, Math.max(0, totalBalance - personal)),
       personal,
     };
-  } catch { return { total: 0, corporate: 0, personal: 0 }; }
+  } catch { return { total: 0, corporate: 0, vitality: 0, personal: 0 }; }
 }
 
 // 简单 https GET 工具（避免额外依赖）

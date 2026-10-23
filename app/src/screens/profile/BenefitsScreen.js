@@ -11,7 +11,8 @@ import MembershipBenefits from '../../components/MembershipBenefits';
 
 const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
 
-const FUND_TYPE_LABEL  = { enterprise: '企业赠送', promotion: '活动奖励', other: '其他赠送' };
+const FUND_TYPE_LABEL  = { enterprise: '奖励基金', promotion: '奖励基金', other: '奖励基金' };
+const FUND_SOURCE_LABEL = { enterprise: '奖励基金', promotion: '自有基金', other: '自有基金', vitality: '活力基金' };
 const GIFT_TYPE_LABEL  = { fund: '健康基金', service: '服务权益' };
 const GIFT_TYPE_COLOR  = { fund: '#D97706', service: colors.primary };
 const GIFT_TYPE_BG     = { fund: '#FEF3E2', service: colors.primary + '14' };
@@ -64,7 +65,7 @@ const styles = StyleSheet.create({
   },
   fundLabel: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 },
   fundTotal: { fontSize: 34, fontWeight: '800', color: '#fff', letterSpacing: -1, marginBottom: spacing.md },
-  fundRow:   { flexDirection: 'row', gap: spacing.xl },
+  fundRow:   { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.xs },
   fundItemLabel: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 2 },
   fundItemVal:   { fontSize: 17, fontWeight: '700', color: '#fff' },
 
@@ -240,6 +241,7 @@ export default function BenefitsScreen({ navigation, route }) {
   const fund = fundDetail || user?.healthFund || {};
   const fundTotal    = fund.total    ?? (user?.healthFundBalance || 0);
   const fundPersonal = fund.personal ?? 0;
+  const fundVitality = fund.vitality ?? 0;
   const fundCorp     = fund.corporate ?? 0;
 
   const loadGifts = useCallback(async () => {
@@ -257,12 +259,13 @@ export default function BenefitsScreen({ navigation, route }) {
 
   // ── 积分 ──
   const [pointsBalance, setPointsBalance] = useState(0);
+  const [pointsDetail, setPointsDetail] = useState({ vitality: 0, reward: 0, legacy: 0, exchangeRate: 100, healthCheckinPoints: 5 });
   const [pointsLogs, setPointsLogs] = useState([]);
   const [pointsExpanded, setPointsExpanded] = useState(false);
   const loadPoints = useCallback(async () => {
     try {
       const res = await pointsAPI.get();
-      if (res.success) { setPointsBalance(res.data.balance || 0); setPointsLogs(res.data.logs || []); }
+      if (res.success) { setPointsBalance(res.data.balance || 0); setPointsDetail(res.data); setPointsLogs(res.data.logs || []); }
     } catch {}
   }, []);
 
@@ -338,16 +341,22 @@ export default function BenefitsScreen({ navigation, route }) {
                   <Text style={styles.fundItemVal}>¥{fundPersonal.toLocaleString()}</Text>
                 </View>
                 <View>
-                  <Text style={styles.fundItemLabel}>企业赠送</Text>
+                  <Text style={styles.fundItemLabel}>活力基金</Text>
+                  <Text style={styles.fundItemVal}>¥{fundVitality.toLocaleString()}</Text>
+                </View>
+                <View>
+                  <Text style={styles.fundItemLabel}>奖励基金</Text>
                   <Text style={styles.fundItemVal}>¥{fundCorp.toLocaleString()}</Text>
                 </View>
               </View>
             </View>
 
+            <View style={styles.pointsCard}><Text style={styles.pointsLabel}>基金使用规则</Text><Text style={{fontSize:12,color:colors.textSecondary,lineHeight:19,marginTop:6}}>自有基金、活力基金在余额内可抵扣至¥0；奖励基金按商品规则比例抵扣。实际可用金额以结算页为准。</Text></View>
+
             {!!fund.policy?.description && <View style={styles.pointsCard}><Text style={styles.pointsLabel}>{fund.policy.title||'健康基金使用规则'}</Text><Text style={{fontSize:12,color:colors.textSecondary,lineHeight:19,marginTop:6}}>{fund.policy.description}</Text></View>}
             <View style={styles.pointsCard}>
               <Text style={styles.pointsLabel}>基金收支明细</Text>
-              {!fund.transactions?.length ? <Text style={{fontSize:12,color:colors.textMuted,marginTop:8}}>暂无基金收支记录</Text> : fund.transactions.slice((fundPage-1)*5,fundPage*5).map(item=><View key={`${item.type}-${item._id}`} style={{flexDirection:'row',justifyContent:'space-between',paddingVertical:9,borderTopWidth:1,borderTopColor:colors.border}}><View style={{flex:1}}><Text style={{fontSize:13,color:colors.textPrimary}}>{item.remark||item.orderName||'健康基金变动'}</Text><Text style={{fontSize:11,color:colors.textMuted}}>{new Date(item.createdAt).toLocaleString('zh-CN')}</Text></View><Text style={{fontSize:14,fontWeight:'700',color:item.amount>=0?colors.success:colors.danger}}>{item.amount>=0?'+':'-'}¥{Math.abs(item.amount).toFixed(2)}</Text></View>)}
+              {!fund.transactions?.length ? <Text style={{fontSize:12,color:colors.textMuted,marginTop:8}}>暂无基金收支记录</Text> : fund.transactions.slice((fundPage-1)*5,fundPage*5).map(item=><View key={`${item.type}-${item._id}`} style={{flexDirection:'row',justifyContent:'space-between',paddingVertical:9,borderTopWidth:1,borderTopColor:colors.border}}><View style={{flex:1}}><Text style={{fontSize:13,color:colors.textPrimary}}>{FUND_SOURCE_LABEL[item.source] || '奖励基金'} · {item.remark||item.orderName||'基金变动'}</Text><Text style={{fontSize:11,color:colors.textMuted}}>{new Date(item.createdAt).toLocaleString('zh-CN')}{item.orderNo?` · ${item.orderNo}`:''}</Text></View><Text style={{fontSize:14,fontWeight:'700',color:item.amount>=0?colors.success:colors.danger}}>{item.amount>=0?'+':'-'}¥{Math.abs(item.amount).toFixed(2)}</Text></View>)}
             </View>
 
             <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginHorizontal:20,marginBottom:12}}><TouchableOpacity disabled={fundPage===1} onPress={()=>setFundPage(p=>Math.max(1,p-1))}><Text style={{padding:8,color:fundPage===1?colors.textMuted:colors.primary}}>上一页</Text></TouchableOpacity><Text style={{fontSize:12,color:colors.textMuted}}>{fundPage} / {fundPageCount} 页</Text><TouchableOpacity disabled={fundPage===fundPageCount} onPress={()=>setFundPage(p=>Math.min(fundPageCount,p+1))}><Text style={{padding:8,color:fundPage===fundPageCount?colors.textMuted:colors.primary}}>下一页</Text></TouchableOpacity></View>
@@ -358,19 +367,22 @@ export default function BenefitsScreen({ navigation, route }) {
                 <View>
                   <Text style={styles.pointsLabel}>我的积分</Text>
                   <Text style={styles.pointsTotal}>{pointsBalance}</Text>
-                  <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>每满100积分自动兑换¥1健康基金</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>{pointsDetail.exchangeEnabled === false ? '积分自动兑换暂未开启' : `两类积分分别满${pointsDetail.exchangeRate}分兑换¥1`}</Text>
                 </View>
                 <Ionicons name={pointsExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textMuted} />
               </View>
               {pointsExpanded && (
                 <View style={{ marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
+                  <Text style={{fontSize:12,color:colors.textSecondary,lineHeight:20}}>健康记录积分 {pointsDetail.vitality} 分，距兑换活力基金还差 {pointsDetail.exchangeRate - pointsDetail.vitality} 分。每项每日首次记录最多得 {pointsDetail.healthCheckinPoints} 分。</Text>
+                  <Text style={{fontSize:12,color:colors.textSecondary,lineHeight:20}}>购买积分 {pointsDetail.reward} 分，距兑换奖励基金还差 {pointsDetail.exchangeRate - pointsDetail.reward} 分。现金实付每满 ¥1 得 1 分。</Text>
+                  {!!pointsDetail.legacy && <Text style={{fontSize:12,color:colors.textSecondary}}>历史积分 {pointsDetail.legacy} 分，兑换后归奖励基金。</Text>}
                   {pointsLogs.length === 0 ? (
                     <Text style={{ fontSize: 12, color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.md }}>暂无积分记录，打卡或消费即可获得积分</Text>
                   ) : (
                     pointsLogs.slice(0, 20).map(log => (
                       <View key={log._id} style={styles.pointsLogRow}>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.pointsLogRemark}>{log.remark || POINTS_SOURCE_LABEL[log.source] || log.source}</Text>
+                          <Text style={styles.pointsLogRemark}>{log.pool === 'vitality' ? '健康记录' : log.pool === 'reward' ? '购买' : '历史'} · {log.remark || POINTS_SOURCE_LABEL[log.source] || log.source}</Text>
                           <Text style={styles.pointsLogDate}>{new Date(log.createdAt).toLocaleDateString('zh-CN')}</Text>
                         </View>
                         <Text style={[styles.pointsLogAmount, { color: log.amount >= 0 ? colors.success : colors.danger }]}>

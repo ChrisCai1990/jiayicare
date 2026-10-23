@@ -71,6 +71,7 @@ export default function ProfilePage() {
   const fund = user?.healthFund || {};
   const fundTotal = fund.total ?? 0;
   const fundPersonal = fund.personal ?? 0;
+  const fundVitality = fund.vitality ?? 0;
   const fundCorp = fund.corporate ?? 0;
   const memberType = hasService
     ? (user.memberType || PACKAGE_LABELS[user.servicePackage] || user.servicePackage || '标准会员')
@@ -158,7 +159,7 @@ export default function ProfilePage() {
           </View>
           <View style={{ textAlign: 'right' }}>
             <Text style={{ fontSize: '15px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>¥{Number(fundTotal).toFixed(2)}</Text>
-            <Text style={{ fontSize: '10px', color: colors.textMuted }}>自有 ¥{Number(fundPersonal).toFixed(2)} · 企业 ¥{Number(fundCorp).toFixed(2)}</Text>
+            <Text style={{ fontSize: '10px', color: colors.textMuted }}>自有 ¥{Number(fundPersonal).toFixed(2)} · 活力 ¥{Number(fundVitality).toFixed(2)} · 奖励 ¥{Number(fundCorp).toFixed(2)}</Text>
           </View>
         </View>
       </View>

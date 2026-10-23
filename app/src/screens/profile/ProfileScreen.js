@@ -305,6 +305,7 @@ export default function ProfileScreen({ navigation }) {
   const fund = user?.healthFund || {};
   const fundTotal    = fund.total    ?? 0;
   const fundPersonal = fund.personal ?? 0;
+  const fundVitality = fund.vitality ?? 0;
   const fundCorp     = fund.corporate ?? 0;
   // 会员类型（服务包 ID / 方案类型 → 显示名）
   const PACKAGE_LABELS = {
@@ -406,7 +407,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
             <View style={styles.fundRight}>
               <Text style={styles.fundTotal}>¥{fundTotal.toLocaleString()}</Text>
-              <Text style={styles.fundBreakdown}>自有 ¥{fundPersonal.toLocaleString()} · 企业 ¥{fundCorp.toLocaleString()}</Text>
+              <Text style={styles.fundBreakdown}>自有 ¥{fundPersonal.toLocaleString()} · 活力 ¥{fundVitality.toLocaleString()} · 奖励 ¥{fundCorp.toLocaleString()}</Text>
             </View>
           </View>
         </View>

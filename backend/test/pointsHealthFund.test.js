@@ -36,7 +36,7 @@ test('order-triggered conversions stay linked to the order and refund reverses t
   const refundSource = fs.readFileSync(path.join(__dirname, '../src/utils/orderPoints.js'), 'utf8');
   assert.match(conversionSource, /orderId: refType === 'Order' \? refId : null/);
   assert.match(conversionSource, /refType: refType === 'Order' \? 'Order' : 'HealthFund'/);
-  assert.match(conversionSource, /type: 'grant', source: 'enterprise', amount: conversion\.fundAmount/);
+  assert.match(conversionSource, /source: pool === 'vitality' \? 'vitality' : 'enterprise'/);
   assert.match(refundSource, /refundBalanceFields/);
   assert.match(refundSource, /reversedFund = Math\.min/);
 });
@@ -46,6 +46,19 @@ test('order refund balance update clamps both fund and points at zero', () => {
   assert.deepEqual(fields.healthFundBalance.$round[0].$max[0], 0);
   assert.deepEqual(fields.pointsBalance.$max[0], 0);
   assert.deepEqual(fields.healthFundBalance.$round[0].$max[1].$subtract[1], 6);
+});
+
+test('购买积分退款只调整购买积分余额', () => {
+  const fields = refundBalanceFields({ awardedPoints: 60, convertedFund: 1, pointsPerYuan: 100, pool: 'reward' });
+  assert.ok(fields.rewardPointsBalance);
+  assert.equal(fields.pointsBalance, undefined);
+});
+
+test('健康记录积分使用独立兑换池', () => {
+  const fields = pointsBalanceFields(5, { enabled: true, pointsPerYuan: 100 }, 'vitality');
+  assert.ok(fields.vitalityPointsBalance);
+  assert.equal(fields.rewardPointsBalance, undefined);
+  assert.equal(fields.pointsBalance, undefined);
 });
 
 test('admin cancellation checks the confirmed payment record before changing order state', () => {

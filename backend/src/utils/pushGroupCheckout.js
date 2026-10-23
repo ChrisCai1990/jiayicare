@@ -28,32 +28,32 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund, useE
   }
   const coupons = splitCents(couponTotal, prices);
   const afterCoupon = prices.map((price, index) => price - coupons[index]);
-  let personal = prices.map(() => 0), corporate = prices.map(() => 0), enterprise = null;
+  let personal = prices.map(() => 0), vitality = prices.map(() => 0), corporate = prices.map(() => 0), enterprise = null;
   let sharedAccount = null;
   let shared = prices.map(() => 0);
   if (Number(useHealthFund) > 0) {
-    if (!(await require('./packageFeatureEntitlements').hasHealthFundAccess(user))) {
-      throw checkoutError('健康基金仅限有效的365、年度、疗程或企业会员使用；基础会员可按原价购买服务', 400);
-    }
     const afterTotal = total - couponTotal;
-    if (afterTotal < cents(policy.minOrderAmount || 0)) throw checkoutError(`订单满 ¥${policy.minOrderAmount} 方可使用健康基金`);
     const requested = Math.min(cents(useHealthFund), afterTotal);
     const personalAvailable = cents(await fund.getPersonalFundAvailable(user));
+    const vitalityAvailable = cents(await fund.getVitalityFundAvailable(user));
     const corporateAvailable = cents(await fund.getCorporateFundAvailable(user));
+    personal = splitCents(Math.min(requested, personalAvailable, afterTotal), afterCoupon);
+    const afterPersonal = afterCoupon.map((value, index) => value - personal[index]);
+    vitality = splitCents(Math.min(requested - personal.reduce((s, v) => s + v, 0), vitalityAvailable, afterPersonal.reduce((s, v) => s + v, 0)), afterPersonal);
+    const afterUnrestricted = afterPersonal.map((value, index) => value - vitality[index]);
     if (user.enterpriseId && corporateAvailable) enterprise = await require('../models/Enterprise').findById(user.enterpriseId);
     const enterpriseRule = enterprise?.healthFundPaymentRule;
+    const corporateAccess = afterTotal >= cents(policy.minOrderAmount || 0)
+      && await require('./packageFeatureEntitlements').hasHealthFundAccess(user);
     const capacities = products.map((product, index) => {
+      if (!corporateAccess) return 0;
       const enterpriseEligible = !user.enterpriseId || (enterprise?.status === 'active' && (!enterpriseRule?.enabled || (
         afterTotal >= cents(enterpriseRule.minOrderAmount || 0) && (!enterpriseRule.eligibleCategories?.length || enterpriseRule.eligibleCategories.includes(product.category))
       )));
       if (!enterpriseEligible || !fund.corporateProductEligible(policy, product._id, product.category, product.healthFundDeduction)) return 0;
-      return Math.min(afterCoupon[index], Math.floor(fund.productDeductionLimit(product.healthFundDeduction, afterCoupon[index] / 100) * 100 + 1e-7));
+      return Math.min(afterUnrestricted[index], Math.floor(fund.productDeductionLimit(product.healthFundDeduction, afterUnrestricted[index] / 100) * 100 + 1e-7));
     });
-    // 所有健康基金来源共用商品上限；先使用哪类余额只影响流水归属，
-    // 不会把“自有”余额绕过商品的 0–20% 设置。
-    personal = splitCents(Math.min(requested, personalAvailable, capacities.reduce((s, v) => s + v, 0)), capacities);
-    const remainingCapacities = capacities.map((value, index) => Math.max(0, value - personal[index]));
-    corporate = splitCents(Math.min(requested - personal.reduce((s, v) => s + v, 0), corporateAvailable, remainingCapacities.reduce((s, v) => s + v, 0)), remainingCapacities);
+    corporate = splitCents(Math.min(requested - personal.reduce((s, v) => s + v, 0) - vitality.reduce((s, v) => s + v, 0), corporateAvailable, capacities.reduce((s, v) => s + v, 0)), capacities);
   }
   if (useEnterpriseSharedFund) {
     const sharedFund = require('./enterpriseSharedFund');
@@ -67,10 +67,10 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund, useE
     if (!shared.some(Boolean)) throw checkoutError('所选商品暂无可用的企业共享基金');
   }
   const allocations = prices.map((price, index) => ({
-    price: price / 100, coupon: coupons[index] / 100, personal: personal[index] / 100, corporate: corporate[index] / 100, shared: shared[index] / 100,
-    cash: (afterCoupon[index] - personal[index] - corporate[index] - shared[index]) / 100,
+    price: price / 100, coupon: coupons[index] / 100, personal: personal[index] / 100, vitality: vitality[index] / 100, corporate: corporate[index] / 100, shared: shared[index] / 100,
+    cash: (afterCoupon[index] - personal[index] - vitality[index] - corporate[index] - shared[index]) / 100,
   }));
-  const fundUsed = (personal.reduce((s, v) => s + v, 0) + corporate.reduce((s, v) => s + v, 0)) / 100;
+  const fundUsed = (personal.reduce((s, v) => s + v, 0) + vitality.reduce((s, v) => s + v, 0) + corporate.reduce((s, v) => s + v, 0)) / 100;
   const enterpriseSharedFundUsed = shared.reduce((a, b) => a + b, 0) / 100;
   return { allocations, coupon, enterprise, sharedAccount, summary: { totalPrice: total / 100, couponDiscount: couponTotal / 100, fundUsed, enterpriseSharedFundUsed, finalPrice: (total - couponTotal - cents(fundUsed) - cents(enterpriseSharedFundUsed)) / 100 } };
 }
@@ -150,8 +150,8 @@ async function createLocked({ record, user, items, options }) {
         serviceWorkflowSnapshot: product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null,
         specialtyTermsSnapshot: product.specialtyTerms?.toObject?.() || product.specialtyTerms || null,
         couponId: quote.coupon?._id || null, couponDiscount: allocation.coupon,
-        healthFundAmount: (cents(allocation.personal) + cents(allocation.corporate)) / 100,
-        healthFundBreakdown: { personal: allocation.personal, corporate: allocation.corporate }, healthFundEnterpriseId: quote.enterprise?._id || null,
+        healthFundAmount: (cents(allocation.personal) + cents(allocation.vitality) + cents(allocation.corporate)) / 100,
+        healthFundBreakdown: { personal: allocation.personal, vitality: allocation.vitality, corporate: allocation.corporate }, healthFundEnterpriseId: quote.enterprise?._id || null,
         enterpriseSharedFundId: allocation.shared > 0 ? quote.sharedAccount._id : null, enterpriseSharedFundAmount: allocation.shared,
       });
       orders.push(order);
