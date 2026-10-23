@@ -5,9 +5,11 @@ const fs = require('fs');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const path = require('path');
-const env = require('dotenv').parse(fs.readFileSync(path.resolve('.env')));
-const { getCorporateFundAvailable, getPersonalFundAvailable, getVitalityFundAvailable } = require('./src/utils/healthFundPayment');
-const User = require('./src/models/User');
+const root = fs.existsSync(path.resolve('src/utils/healthFundPayment.js'))
+  ? process.cwd() : path.resolve(__dirname, '..');
+const env = require('dotenv').parse(fs.readFileSync(path.join(root, '.env')));
+const { getCorporateFundAvailable, getPersonalFundAvailable, getVitalityFundAvailable } = require(path.join(root, 'src/utils/healthFundPayment'));
+const User = require(path.join(root, 'src/models/User'));
 
 const KEY = 'legacy-vitality-20261023-v1';
 const APPLY = process.env.APPLY === '1';
