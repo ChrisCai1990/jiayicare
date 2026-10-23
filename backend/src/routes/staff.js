@@ -1476,7 +1476,10 @@ const cleanHealthInfoProvenance = body => ({
 const cleanLinkedDiseases = value => [...new Set((Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]+/)).map(item => cleanMedicalText(item, 100)).filter(Boolean))].slice(0, 30);
 const hasMedicalSummary = summary => MEDICAL_SUMMARY_FIELDS.some(key => summary?.[key]) || (summary?.linkedDiseases || []).length;
 const normalizedDiseaseRecords = patient => {
-  const records = Array.isArray(patient.diseaseRecords) ? patient.diseaseRecords.map(item => ({ ...item })) : [];
+  // Keep the loaded snapshot untouched for the updateOne array-version check.
+  // Timeline merge, cancellation and source revocation splice or replace this array.
+  const records = Array.isArray(patient.diseaseRecords)
+    ? patient.diseaseRecords.map(item => ({ ...item, courseEntries:[...(item.courseEntries || [])] })) : [];
   if (records.length || !hasMedicalSummary(patient.medicalRecord?.summary)) return records;
   const legacy = patient.medicalRecord || {};
   const summary = legacy.summary?.toObject?.() || legacy.summary || {};
