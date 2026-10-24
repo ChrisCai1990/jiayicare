@@ -194,7 +194,7 @@ export default function MedicalReportsPage() {
                 display: 'inline-block', padding: '7px 16px', borderRadius: `${radius.full}px`, marginRight: '8px',
                 border: `1.5px solid ${selYear === y.year ? colors.primary : colors.border}`, backgroundColor: selYear === y.year ? colors.primary : '#fff',
               }}>
-                <Text style={{ fontSize: '13px', fontWeight: 600, color: selYear === y.year ? '#fff' : colors.textSecondary }}>{y.year} 年</Text>
+                <Text style={{ fontSize: '13px', fontWeight: 600, color: selYear === y.year ? '#fff' : colors.textSecondary }}>{y.year ? `${y.year} 年` : '日期待核对'}</Text>
               </View>
             ))}
           </ScrollView>

@@ -181,6 +181,11 @@ const medicalReportSchema = new mongoose.Schema({
   archiveSourceReportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
   archiveOnlyAt: { type: Date, default: null },
   archiveOnlyBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  duplicateOf: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
+  duplicateReason: { type: String, default: '' },
+  duplicateMarkedAt: { type: Date, default: null },
+  duplicateMarkedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  duplicateOriginal: { type: mongoose.Schema.Types.Mixed, default: null },
   // Copies created by a staff member from existing customer uploads.
   organizedFrom: [{ reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport' }, fileIndex: Number }],
   organizedAt: { type: Date, default: null },

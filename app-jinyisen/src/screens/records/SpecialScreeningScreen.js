@@ -295,7 +295,6 @@ export default function SpecialScreeningScreen({ navigation }) {
         mimeType: fileData.mimeType,
         fileSize: fileData.sizeStr,
         pages: 1,
-        date: new Date().toISOString().slice(0, 10),
       });
 
       await loadItems();

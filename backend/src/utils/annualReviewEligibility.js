@@ -25,7 +25,7 @@ const medicalDomainRules = [
 function examReports(reports) {
   const batches = new Map();
   for (const report of reports) {
-    if (report.audit_status !== 'audited' || excludedCategories.has(report.documentCategory)) continue;
+    if (report.audit_status !== 'audited' || report.archiveOnly || excludedCategories.has(report.documentCategory)) continue;
     const date = day(report.checkDate || report.date);
     if (!date) continue;
     if (!batches.has(date)) batches.set(date, []);
@@ -52,7 +52,7 @@ function eligibility(reports, now = new Date()) {
     message: '近12个月内没有已审核的有效体检资料，请先完成体检并录入审核后，再发起年度管理研判。' };
 }
 async function check(patientId) {
-  const reports = await require('../models/MedicalReport').find({ user: patientId, audit_status: 'audited' })
+  const reports = await require('../models/MedicalReport').find({ user: patientId, audit_status: 'audited', archiveOnly: { $ne: true } })
     .select('_id title type documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection').lean();
   return eligibility(reports);
 }

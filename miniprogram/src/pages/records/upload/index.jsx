@@ -70,7 +70,7 @@ export default function ReportUploadPage() {
       setProgress({ done: uploadedFiles.length, total: filePaths.length, stage: '图片上传完成，正在保存报告' });
       const createRes = await reportsAPI.create({
         patientId,
-        title: `体检报告 ${new Date().getFullYear()}年${new Date().getMonth() + 1}月${new Date().getDate()}日`,
+        title: '体检报告（日期待核对）',
         category: '',
         fileUrl: uploadedFiles[0]?.fileUrl || '',
         fileUrls: uploadedFiles.map((item) => item.fileUrl).filter(Boolean),
@@ -81,8 +81,8 @@ export default function ReportUploadPage() {
         fileSize: uploadedFiles.reduce((sum, item) => sum + (Number(item.fileSize) || 0), 0),
       });
       if (createRes.success) {
-        setProgress({ done: uploadedFiles.length, total: filePaths.length, stage: '报告已提交，等待服务团队处理' });
-        Taro.showToast({ title: '报告已提交', icon: 'success' });
+        setProgress({ done: uploadedFiles.length, total: filePaths.length, stage: createRes.duplicate ? '这份报告已上传过，已保留原记录' : '报告已提交，等待服务团队处理' });
+        Taro.showToast({ title: createRes.duplicate ? '报告已存在' : '报告已提交', icon: 'success' });
         load();
       } else {
         throw new Error(createRes.message || '报告未保存成功');

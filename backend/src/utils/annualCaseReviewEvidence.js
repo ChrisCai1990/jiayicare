@@ -146,7 +146,7 @@ async function loadRawAnnualEvidence(patientId, query) {
   const requestedDays = [...String(query || '').matchAll(/近\s*(\d+)\s*[天日]/g)].map(match => Number(match[1]));
   const since = new Date(Date.now() - Math.min(365, Math.max(30, ...requestedDays)) * 86400000);
   const [reports, bloodPressure] = await Promise.all([
-    MedicalReport.find({ user: patientId, audit_status: 'audited' }).sort({ checkDate: -1, createdAt: -1 })
+    MedicalReport.find({ user: patientId, audit_status: 'audited', archiveOnly: { $ne: true } }).sort({ checkDate: -1, createdAt: -1 })
       .select('_id title checkDate reportYear fileUrl fileUrls reportItems.name reportItems.value reportItems.unit reportItems.referenceRange reportItems.status reportItems.findings reportItems.diagnosis reportItems.conclusion').lean(),
     HealthRecord.find({ user: patientId, type: 'bloodPressure', recordedAt: { $gte: since }, deletedAt: null })
       .sort({ recordedAt: -1 }).limit(1000).select('recordedAt value unit extra.sys extra.dia').lean(),

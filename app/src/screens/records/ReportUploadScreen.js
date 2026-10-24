@@ -1205,7 +1205,6 @@ function RegularReportUploadScreen({ navigation, route }) {
         title,
         type,
         hospital,
-        date: new Date().toISOString().slice(0, 10),
         pages: fd.pages.length,
         fileSize: fd.sizeStr,
         keyFindings: [],
@@ -1218,12 +1217,12 @@ function RegularReportUploadScreen({ navigation, route }) {
       };
       const res = await reportsAPI.create(payload);
       if (res.success) {
-        setReports(prev => [res.data, ...prev]);
+        setReports(prev => [res.data, ...prev.filter(item => String(item._id || item.id) !== String(res.data._id || res.data.id))]);
         setTypeFilter(type);   // 自动切换到对应 tab
-        showToast(patientId ? '报告已提交，等待服务团队处理' : '上传成功，正在AI解析…');
+        showToast(res.duplicate ? '这份报告已上传过，已显示原记录' : patientId ? '报告已提交，等待服务团队处理' : '上传成功，正在AI解析…');
         // 上传后立即触发AI解析（此前一直没有屏幕调用这个接口，报告只能停在"待解读"等人工处理）
         const reportId = res.data._id || res.data.id;
-        if (!patientId) reportsAPI.parseAI(reportId).catch(() => {});
+        if (!patientId && !res.duplicate) reportsAPI.parseAI(reportId).catch(() => {});
       } else {
         await reportsAPI.cleanupUploads(uploadTokens).catch(() => {});
         showToast('上传失败，请重试', true);

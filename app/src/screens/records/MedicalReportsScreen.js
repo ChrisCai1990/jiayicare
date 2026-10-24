@@ -271,7 +271,7 @@ export default function MedicalReportsScreen({ navigation, route }) {
               <TouchableOpacity key={y.year}
                 style={[styles.yearChip, selYear === y.year && styles.yearChipActive]}
                 onPress={() => setSelYear(y.year)}>
-                <Text style={[styles.yearChipText, selYear === y.year && styles.yearChipTextActive]}>{y.year} 年</Text>
+                <Text style={[styles.yearChipText, selYear === y.year && styles.yearChipTextActive]}>{y.year ? `${y.year} 年` : '日期待核对'}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>

@@ -205,7 +205,6 @@ export default function SpecialScreeningPage() {
         mimeType: 'image/jpeg',
         fileSize: fileInfo?.size ? `${(fileInfo.size / 1024).toFixed(0)}KB` : '',
         pages: 1,
-        date: new Date().toISOString().slice(0, 10),
       });
       await loadItems();
       Taro.showToast({ title: '上传成功', icon: 'success' });

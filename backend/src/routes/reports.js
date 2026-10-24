@@ -4,6 +4,8 @@ const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
+const { sha256, validDigest, reportDigest, unusedUploadKeys } = require('../utils/reportUploadIdentity');
+const { normalizeReportDate } = require('../utils/reportExtractionPolicy');
 const HealthRecord = require('../models/HealthRecord');
 const { reportOwner, canAccessReport, canManageReport } = require('../utils/reportArchiveAccess');
 const { uploadBase64, deleteFile, urlToKey, signStoredUrl, getObjectStream } = require('../utils/oss');
@@ -13,6 +15,7 @@ const router = express.Router();
 
 function withSignedReportFiles(report) {
   const obj = report.toObject ? report.toObject() : { ...report };
+  delete obj.duplicateOriginal;
   if (obj.advisorCorrection?.status === 'returned') {
     // 顾问指出结果错误后，客户仍可查看原件，但暂不展示有争议的结构化结论。
     obj.reportItems = [];
@@ -74,6 +77,7 @@ function createUploadToken(userId, file) {
     key: file.ossKey,
     url: file.fileUrl,
     mimeType: file.mimeType,
+    sha256: file.sha256,
   }, process.env.JWT_SECRET, { expiresIn: '30m' });
 }
 
@@ -85,8 +89,13 @@ function verifyUploadTokens(tokens, userId) {
     if (claim.scope !== 'report-upload' || claim.userId !== String(userId) || !claim.key || !claim.url) {
       throw new Error('上传凭证无效，请重新上传文件');
     }
-    return { fileUrl: claim.url, ossKey: claim.key, mimeType: claim.mimeType || '' };
+    return { fileUrl: claim.url, ossKey: claim.key, mimeType: claim.mimeType || '', sha256: validDigest(claim.sha256) ? claim.sha256 : '' };
   });
+}
+
+async function discardUnusedUploads(existing, verifiedFiles, contentUploadedKeys) {
+  const unused = unusedUploadKeys(existing, verifiedFiles, contentUploadedKeys);
+  await Promise.all(unused.map(key => deleteFile(key).catch(() => {})));
 }
 router.post('/upload', auth, (req, res, next) => {
   reportUpload.single('file')(req, res, async (err) => {
@@ -102,7 +111,7 @@ router.post('/upload', auth, (req, res, next) => {
       const dataUrl = `data:${detectedMime};base64,${req.file.buffer.toString('base64')}`;
       const result = await uploadBase64(dataUrl, detectedMime);
       console.info('[report-upload]', { userId: String(req.user._id), size: req.file.size, mimeType: detectedMime, key: result.key });
-      res.status(201).json({ success: true, data: { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: req.file.size } });
+      res.status(201).json({ success: true, data: { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: req.file.size, sha256: sha256(req.file.buffer) } });
     } catch (uploadErr) {
       console.error('[report-upload] failed', { userId: String(req.user._id), message: uploadErr.message });
       next(uploadErr);
@@ -129,7 +138,7 @@ router.post('/upload-base64', auth, async (req, res, next) => {
     if (!process.env.JWT_SECRET) return res.status(503).json({ success: false, message: '上传凭证服务暂不可用，请稍后重试' });
     const result = await uploadBase64(`data:${detectedMime};base64,${raw}`, detectedMime);
     console.info('[report-upload-base64]', { userId: String(req.user._id), size: buffer.length, declaredMime, mimeType: detectedMime, key: result.key });
-    const file = { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: buffer.length };
+    const file = { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: buffer.length, sha256: sha256(buffer) };
     res.status(201).json({ success: true, data: { ...file, uploadToken: createUploadToken(req.user._id, file) } });
   } catch (uploadErr) {
     console.error('[report-upload-base64] failed', { userId: String(req.user?._id || ''), message: uploadErr.message });
@@ -173,11 +182,10 @@ router.get('/by-category', auth, async (req, res) => {
     reports.forEach(r => {
       const dateValue = r.checkDate || r.date;
       const dateYear = dateValue ? new Date(dateValue).getFullYear() : NaN;
-      const createdYear = r.createdAt ? new Date(r.createdAt).getFullYear() : NaN;
-      // 检查日期优先；reportYear 只作为历史数据没有合法日期时的兜底。
+      // 上传时间不是检查年份。旧 reportYear 仅用于兼容历史记录。
       const year = !Number.isNaN(dateYear)
         ? dateYear
-        : (r.reportYear || (!Number.isNaN(createdYear) ? createdYear : 'unknown'));
+        : (r.reportYear || 'unknown');
       if (!yearMap[year]) yearMap[year] = {};
       const cat = r.screeningCategory || 'other_routine';
       if (!yearMap[year][cat]) yearMap[year][cat] = [];
@@ -188,8 +196,8 @@ router.get('/by-category', auth, async (req, res) => {
     });
 
     // 转成数组，年份倒序
-    const result = Object.keys(yearMap).sort((a, b) => b - a).map(year => ({
-      year: Number(year),
+    const result = Object.keys(yearMap).sort((a, b) => a === 'unknown' ? 1 : b === 'unknown' ? -1 : Number(b) - Number(a)).map(year => ({
+      year: year === 'unknown' ? null : Number(year),
       categories: ALL_CATEGORIES
         .filter(cat => yearMap[year][cat]?.length > 0)
         .map(cat => ({
@@ -659,12 +667,14 @@ findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入�
       normalizeBreathTestItems(filteredItems, report)
     ), report));
 
+    const parsedDate = normalizeReportDate(parsed.checkDate) || report.checkDate || '';
     await MedicalReport.findByIdAndUpdate(report._id, {
       reportItems: normalizedItems,
       aiSummary:   parsed.summary || '',
       aiStatus:    'pending',
       institution: parsed.institution || report.institution,
-      checkDate:   parsed.checkDate   || report.checkDate,
+      checkDate:   parsedDate,
+      reportYear: parsedDate ? Number(parsedDate.slice(0, 4)) : null,
     });
 
     res.json({ success: true, message: 'AI 解析完成，已提交健管专员审核', items: parsed.items?.length || 0 });
@@ -778,6 +788,10 @@ router.post('/', auth, async (req, res) => {
     if (isAppUpload && (req.body?.reportConsent !== true || req.body?.reportConsentVersion !== 'report-upload-20261012')) {
       return res.status(400).json({ success: false, message: '请先确认本次报告上传与敏感健康信息处理说明' });
     }
+    const actualDate = String(checkDate || date || '').trim();
+    if (actualDate && (!/^\d{4}-\d{2}-\d{2}$/.test(actualDate) || Number.isNaN(Date.parse(actualDate)) || new Date(actualDate).toISOString().slice(0, 10) !== actualDate)) {
+      return res.status(400).json({ success: false, message: '报告日期无效，请按原件填写完整日期' });
+    }
 
     // contents：多图上传时的 base64 数组（同一份报告的多页，如"结论页"+"数据页"）；content 仍保留
     // 兼容单图上传的旧调用方。两者互斥，contents 存在时优先。
@@ -791,6 +805,17 @@ router.post('/', auth, async (req, res) => {
     } catch (tokenError) {
       return res.status(400).json({ success: false, message: tokenError.message || '上传凭证无效，请重新上传文件' });
     }
+    const sourceSha256 = contentList.length
+      ? reportDigest(contentList.map(content => ({ sha256: sha256(Buffer.from(String(content).split(',').pop(), 'base64')) })))
+      : reportDigest(verifiedUploadedFiles);
+    if (sourceSha256) {
+      const existing = await MedicalReport.findOne({ user: owner, sourceSha256 });
+      if (existing) {
+        await discardUnusedUploads(existing, verifiedUploadedFiles, []);
+        const { content: _, duplicateOriginal: _snapshot, ...original } = existing.toObject();
+        return res.status(200).json({ success: true, duplicate: true, data: original });
+      }
+    }
     let ossKeys = verifiedUploadedFiles.length
       ? verifiedUploadedFiles.map(file => file.ossKey)
       : (Array.isArray(suppliedOssKeys) ? suppliedOssKeys.filter(Boolean) : []);
@@ -801,6 +826,7 @@ router.post('/', auth, async (req, res) => {
     else if (!fileUrl && fileUrls.length) fileUrl = fileUrls[0];
     if (ossKeys.length) ossKey = ossKeys[0];
     let storedContent = '';
+    const contentUploadedKeys = [];
     let effectiveMimeType = verifiedUploadedFiles[0]?.mimeType || mimeType || '';
     if (contentList.length) {
       if (!process.env.OSS_ACCESS_KEY_ID) {
@@ -813,6 +839,7 @@ router.post('/', auth, async (req, res) => {
           fileUrls.push(result.url);
           ossKeys.push(result.key);
           uploadedKeys.push(result.key);
+          contentUploadedKeys.push(result.key);
           effectiveMimeType = result.mimeType || effectiveMimeType; // HEIC等会被转成JPEG，字段需跟实际文件保持一致
         }
         fileUrl = fileUrls[0];
@@ -823,9 +850,11 @@ router.post('/', auth, async (req, res) => {
       }
     }
 
-    const year = reportYear || (date ? new Date(date).getFullYear() : new Date().getFullYear());
+    // A missing source date is unknown, not the day the customer uploaded it.
+    const year = actualDate ? Number(actualDate.slice(0, 4)) : null;
 
-    const report = await MedicalReport.create({
+    let report;
+    try { report = await MedicalReport.create({
       user: owner,
       ...(isAppUpload ? { uploadConsent: {
         version: 'report-upload-20261012', confirmedAt: new Date(), accountId: req.user._id, source: req.body.clientSource,
@@ -833,7 +862,7 @@ router.post('/', auth, async (req, res) => {
       title,
       type:               type               || 'annual',
       hospital:           hospital           || '',
-      date:               date               || new Date().toISOString().slice(0, 10),
+      date:               actualDate,
       pages:              pages              || contentList.length || 1,
       fileSize:           fileSize           || '',
       fileUrl:            fileUrl            || '',
@@ -846,13 +875,21 @@ router.post('/', auth, async (req, res) => {
       mimeType:           effectiveMimeType,
       screeningCategory:  screeningCategory  || '',
       reportYear:         year,
-      checkDate:          checkDate          || date || '',
+      checkDate:          actualDate,
+      ...(sourceSha256 ? { sourceSha256 } : {}),
       institution:        institution        || hospital || '',
       reportItems:        reportItems        || [],
       sourceType:         'customer_upload',
       uploadedByRole:     'customer',
       submittedByUser:   req.user._id,
-    });
+    }); } catch (error) {
+      if (error.code !== 11000 || !sourceSha256) throw error;
+      const existing = await MedicalReport.findOne({ user: owner, sourceSha256 });
+      if (!existing) throw error;
+      await discardUnusedUploads(existing, verifiedUploadedFiles, contentUploadedKeys);
+      const { content: _, duplicateOriginal: _snapshot, ...original } = existing.toObject();
+      return res.status(200).json({ success: true, duplicate: true, data: original });
+    }
 
     const { content: _, ...reportObj } = report.toObject();
     res.status(201).json({ success: true, data: reportObj });

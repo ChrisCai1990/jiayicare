@@ -5252,7 +5252,7 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
       user: patient._id, tenantId: patient.tenantId,
       title: String(title).trim().slice(0, 200), type: selectedType, documentCategory: selectedCategory,
       hospital: String(hospital || '').trim().slice(0, 200), date: date || '', checkDate: date || '',
-      reportYear: date ? Number(date.slice(0, 4)) : new Date().getFullYear(),
+      reportYear: date ? Number(date.slice(0, 4)) : null,
       note: String(note || '').trim().slice(0, 1000),
       fileUrl: copied[0].url, fileUrls: copied.map(file => file.url),
       ossKey: copied[0].key, ossKeys: copied.map(file => file.key),
@@ -6069,6 +6069,54 @@ router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'del
   }
 });
 
+// 同一原件重复上传：保留两份上传记录，只撤出重复件派生的筛查结果。
+// 有业务引用时拒绝自动合并，交由相应流程负责人先核对引用。
+router.patch('/medical-reports/:id/duplicate', staffAuth, checkPermission('reports', 'audit'), async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健管专员可确认重复报告' });
+    const sourceReportId = String(req.body?.sourceReportId || '');
+    const reason = String(req.body?.reason || '').trim();
+    if (!mongoose.isValidObjectId(sourceReportId) || sourceReportId === req.params.id || reason.length < 4 || reason.length > 1000) return res.status(400).json({ success: false, message: '请选择主报告并填写核对原件的依据（4至1000字）' });
+    const [report, source] = await Promise.all([MedicalReport.findById(req.params.id), MedicalReport.findById(sourceReportId)]);
+    if (!report || !source) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (String(report.user) !== String(source.user) || source.archiveOnly || source.duplicateOf) return res.status(409).json({ success: false, message: '主报告必须是同一客户的有效结果报告' });
+    const patient = await User.findById(report.user).select('tenantId assignedHealthManager').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+    if (req.staff.role !== 'superadmin' && (String(patient.tenantId || '') !== String(req.staff.tenantId || '') || String(patient.assignedHealthManager || '') !== String(req.staff._id))) return res.status(403).json({ success: false, message: '仅客户所属健管专员可核对重复报告' });
+    if (report.duplicateOf && String(report.duplicateOf) !== sourceReportId) return res.status(409).json({ success: false, message: '该资料已关联另一份主报告' });
+    if (report.archiveOnly && !report.duplicateOf) return res.status(409).json({ success: false, message: '仅留存原件已有其他用途，不能标记重复' });
+    if (report.aiStatus === 'processing' || report.parseJob?.status === 'processing' || report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return res.status(409).json({ success: false, message: '报告正在处理，请稍后刷新' });
+    if (report.audit_status === 'audited' && source.audit_status !== 'audited') return res.status(409).json({ success: false, message: '已审核的报告只能关联另一份已审核主报告' });
+    const id = report._id;
+    const checks = [
+      ['年度报告问题', require('../models/AnnualReportProblemReview'), { sourceReportIds: id }],
+      ['报告随访草稿', require('../models/ReportFollowUpDraft'), { reportId: id }],
+      ['健康计划', HealthPlan, { reportId: id }],
+      ['检查计划', require('../models/CheckupPlan'), { reportId: id }],
+      ['检查申请', ExamRequisition, { reportId: id }],
+      ['健康记录', HealthRecord, { reportId: id }],
+      ['异常复核', AbnormalReview, { reportId: id }],
+      ['转介', Referral, { $or: [{ 'feedback.sourceReportId': { $in: [id, String(id)] } }, { 'sourceReports.reportId': { $in: [id, String(id)] } }] }],
+      ['随访', FollowUp, { $or: [{ reportId: id }, { sourceId: { $in: [id, String(id)] } }, { 'formData.reportIds': { $in: [id, String(id)] } }] }],
+      ['其他原件关联', MedicalReport, { $or: [{ archiveSourceReportId: id }, { 'organizedFrom.reportId': id }] }],
+    ];
+    const reportYear = Number(String(report.checkDate || report.date || '').slice(0, 4));
+    if (Number.isInteger(reportYear) && reportYear >= 2000) checks.push(['已审核年度小结', require('../models/ScreeningYearSummary'), { user: report.user, year: reportYear, status: 'approved' }]);
+    const hits = await Promise.all(checks.map(async ([label, Model, query]) => (await Model.exists(query)) ? label : ''));
+    const blockers = hits.filter(Boolean);
+    if (blockers.length) return res.status(409).json({ success: false, message: `该报告已被以下业务引用，请先核对并处理：${blockers.join('、')}` });
+    if (!report.duplicateOf) {
+      const before = report.toObject();
+      const original = Object.fromEntries(['audit_status', 'aiStatus', 'date', 'checkDate', 'reportYear', 'reportItems', 'keyFindings', 'aiSummary', 'examDescription', 'examConclusion', 'examMainConclusions'].map(key => [key, before[key]]));
+      const updated = await MedicalReport.updateOne({ _id: id, reviewRevision: report.reviewRevision, archiveOnly: { $ne: true } }, { $set: { archiveOnly: true, archiveSourceReportId: source._id, archiveOnlyAt: new Date(), archiveOnlyBy: req.staff._id, duplicateOf: source._id, duplicateReason: reason, duplicateMarkedAt: new Date(), duplicateMarkedBy: req.staff._id, duplicateOriginal: original, audit_status: 'unaudited', aiStatus: 'none', date: '', checkDate: '', reportYear: null, reportItems: [], keyFindings: [], aiSummary: '', examDescription: '', examConclusion: '', examMainConclusions: {} }, $inc: { reviewRevision: 1 } });
+      if (!updated.modifiedCount) return res.status(409).json({ success: false, message: '报告状态已变化，请刷新后重试' });
+    }
+    await UserScreeningItem.deleteMany({ user: report.user, reportId: id });
+    await require('../utils/healthRiskEvents').syncReportRisk(await MedicalReport.findById(id));
+    res.json({ success: true, data: { duplicateOf: sourceReportId } });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 // 后补完整原件只归档。原先已审的截图继续作为本次体检的结构化依据。
 router.patch('/medical-reports/:id/archive-only', staffAuth, checkPermission('reports', 'audit'), async (req, res) => {
   try {
@@ -6395,7 +6443,7 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
         user: metadata.patientId, tenantId: metadata.tenantId, title: metadata.title,
         type: metadata.type, documentCategory: metadata.documentCategory,
         hospital: metadata.hospital, date: metadata.date, checkDate: metadata.date,
-        reportYear: metadata.date ? Number(metadata.date.slice(0, 4)) : new Date().getFullYear(),
+        reportYear: metadata.date ? Number(metadata.date.slice(0, 4)) : null,
         note: metadata.note, fileUrl: stored.url, fileUrls: [stored.url],
         ossKey: stored.key, ossKeys: [stored.key], mimeType: stored.mimeType,
         fileSize: String(stored.size), sourceSha256,
@@ -14481,7 +14529,7 @@ router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
     // 体积暴涨到几十MB、耗时超1分钟。前端已有兜底：handleOpenOCRReview 发现列表缺 content
     // 时会调 staffAPI.getReport(id) 单独补拉，所以这里裁掉即可，不影响任何现有功能。
     const reports = await MedicalReport.find({
-      user: req.params.id,
+      user: req.params.id, archiveOnly: { $ne: true },
     }).select(REPORT_LIST_PROJECTION).sort({ checkDate: -1, createdAt: -1 }).lean();
     // 专项筛查板块也会直接打开报告原件。这里此前返回数据库中的私有 OSS 裸地址，
     // 导致“查看报告 PDF”跳转后 AccessDenied；与报告列表/审核弹窗统一返回受控预览地址。
@@ -17186,7 +17234,7 @@ async function runReportParseControlled(reportId) {
         aiSummary:   aiSummaryOut,
         aiStatus:    allFailed ? 'failed' : 'pending',
         parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}` },
-        institution, checkDate: resolvedCheckDate,
+        institution, checkDate: resolvedCheckDate, reportYear: resolvedCheckDate ? Number(resolvedCheckDate.slice(0, 4)) : null,
       });
       if (!savedPdf) throw new Error('审核期间内容已修改，AI结果未覆盖人工数据');
       const totalMs = Date.now() - t0;
@@ -17420,6 +17468,7 @@ async function runReportParseControlled(reportId) {
       parseJob:    { status: noReviewableItems ? 'failed' : 'completed', completedAt: new Date(), message: noReviewableItems ? `未提取到可审核项目：${failureDetail}` : `识别完成：${bufs.length}张，提取${resolvedImageItems.length}项` },
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate),
+      reportYear: (resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate)) ? Number(String(resolvedImageCheckDate || report.checkDate).slice(0, 4)) : null,
     };
     if (completion.shouldWriteItems) {
       const saved = await MedicalReport.findOneAndUpdate(

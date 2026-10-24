@@ -2215,6 +2215,8 @@ export default function PatientDetailPage() {
   const [editingReferral, setEditingReferral] = useState(() => location.state?.editReferral || null)
   const [showReportDetail, setShowReportDetail] = useState(null)
   const [archiveSourceReportId, setArchiveSourceReportId] = useState('')
+  const [duplicateSourceReportId, setDuplicateSourceReportId] = useState('')
+  const [duplicateReason, setDuplicateReason] = useState('')
   const [legacyOutpatientTargetId, setLegacyOutpatientTargetId] = useState('')
   const [advisorReturnReason, setAdvisorReturnReason] = useState('')
   const [reportFlowSaving, setReportFlowSaving] = useState(false)
@@ -4850,6 +4852,23 @@ export default function PatientDetailPage() {
     finally { setReportFlowSaving(false) }
   }
 
+  const markDuplicateReport = async () => {
+    if (!duplicateSourceReportId || !duplicateReason.trim() || !showReportDetail) return
+    if (!window.confirm('已对照两份原件，确认它们是同一份报告的重复上传？重复件将保留原件，但不再计作一次检查。')) return
+    try {
+      setReportFlowSaving(true)
+      setReportFlowError('')
+      await staffAPI.markDuplicateReport(showReportDetail._id, duplicateSourceReportId, duplicateReason.trim())
+      toast('重复上传已关联主报告；重复结果已撤出筛查')
+      setShowReportDetail(null)
+      setDuplicateSourceReportId('')
+      setDuplicateReason('')
+      loadReports()
+      loadScreening()
+    } catch (err) { setReportFlowError(err.message || '重复报告处理失败') }
+    finally { setReportFlowSaving(false) }
+  }
+
   const returnReportToManager = async () => {
     const reason = advisorReturnReason.trim()
     if (!reason || !showReportDetail) return
@@ -6641,7 +6660,7 @@ export default function PatientDetailPage() {
                     })}
                     style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer', userSelect: 'none', flex: 1, minWidth: 0 }}>
                     <span style={{ fontSize: 11, color: '#aaa', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {r.checkDate || (r.createdAt && new Date(r.createdAt).toLocaleDateString('zh-CN'))}
+                      {r.checkDate || '日期待核对'}
                     </span>
                     {r.hospital && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>📍 {r.hospital}</span>}
                     {r.note && <span style={{ fontSize: 12, color: '#4A6558', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.note}</span>}
@@ -7053,8 +7072,6 @@ export default function PatientDetailPage() {
                 })
 
                 // 把 AI 识别的 UserScreeningItem 转成虚拟记录合并进 treeData
-                const reportTitleMap = {}
-                reports.forEach(r => { reportTitleMap[String(r._id)] = r.title || new Date(r.createdAt).toLocaleDateString('zh-CN') })
                 const aiVirtualMap = {}
                 screeningItems.forEach(it => {
                   const originalL1 = knownTreeIds.has(String(it.category)) ? String(it.category) : (catToTreeId[it.category] || `ai_${it.category}`)
@@ -7067,7 +7084,7 @@ export default function PatientDetailPage() {
                   if (!aiVirtualMap[vKey]) {
                     aiVirtualMap[vKey] = {
                       _id: vKey, isAI: true,
-                      checkDate: it.checkDate || reportTitleMap[rid] || '体检报告',
+                      checkDate: it.checkDate || '',
                       hospital: it.institution || '',
                       note: '', reportItems: [],
                       _l1Key: l1Key, _l2: l2, _l3: l3,
@@ -10854,8 +10871,7 @@ export default function PatientDetailPage() {
         const getReportYear = (report) => {
           const dateStr = report.checkDate || report.date
           const dateYear = dateStr ? new Date(dateStr).getFullYear() : NaN
-          const createdYear = report.createdAt ? new Date(report.createdAt).getFullYear() : NaN
-          return String(!Number.isNaN(dateYear) ? dateYear : (report.reportYear || (!Number.isNaN(createdYear) ? createdYear : '未知')))
+          return String(!Number.isNaN(dateYear) ? dateYear : (report.reportYear || '日期待核对'))
         }
         const reportYears = [...new Set(reports.map(getReportYear))].sort((a, b) => b.localeCompare(a, 'zh', { numeric: true }))
         const getReportTaskKey = (report) => {
@@ -11034,7 +11050,7 @@ export default function PatientDetailPage() {
                             : isOutpatientRecord && r.courseTargetDiseaseId ? '待健康顾问提取诊疗草稿'
                             : null
                         ) : null
-                        const auditLabel = r.archiveOnly ? '仅留存·不解析'
+                        const auditLabel = r.duplicateOf ? '重复上传·已关联主报告' : r.archiveOnly ? '仅留存·不解析'
                           : getReportTaskKey(r) === 'target' ? '已审核·待确认专病归属'
                           : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改'
                           : r.audit_status === 'audited' ? courseStage ? `已审核·${courseStage}` : '已审核'
@@ -12692,9 +12708,10 @@ export default function PatientDetailPage() {
                   ...(categoryLabel && categoryLabel !== typeLabel ? [['分类', categoryLabel]] : []),
                   ['医院 / 机构', r.hospital || '-'],
                   ['报告日期', r.checkDate || r.date || '-'],
-                  ['审核状态', r.archiveOnly ? '仅留存·不解析' : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改' : r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
+                  ['审核状态', r.duplicateOf ? '重复上传·不计入筛查' : r.archiveOnly ? '仅留存·不解析' : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改' : r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
                   ['审核人', r.audited_by || '-'],
                   ...(r.archiveOnly ? [['关联已审报告', reports.find(item => item._id === String(r.archiveSourceReportId))?.title || '已关联']] : []),
+                  ...(r.duplicateOf ? [['重复确认依据', r.duplicateReason || '已核对原件']] : []),
                   ...(r.advisorCorrection?.reason ? [['顾问退回原因', r.advisorCorrection.reason]] : []),
                   ...(r.reject_reason ? [['驳回原因', r.reject_reason]] : []),
                   ['上传人', r.uploadedBy?.name || '-'],
@@ -12954,6 +12971,18 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
               {reportFlowError && <div role="alert" style={{ color: '#B42318', fontSize: 13 }}>{reportFlowError}</div>}
+              {['healthManager', 'superadmin'].includes(staff?.role) && !showReportDetail.archiveOnly && (showReportDetail.fileUrl || showReportDetail.fileUrls?.length || showReportDetail.content) && (
+                <div style={{ display: 'grid', gap: 7, padding: 10, background: '#F4F7FA', borderRadius: 8 }}>
+                  <b style={{ fontSize: 13 }}>同一份报告重复上传</b>
+                  <span style={{ fontSize: 12, color: '#60756B' }}>先分别查看原件，确认两份内容相同；此操作保留上传记录，仅撤出重复检查结果。已有业务引用时系统会阻止处理。</span>
+                  <select className="form-input" value={duplicateSourceReportId} onChange={e => setDuplicateSourceReportId(e.target.value)}>
+                    <option value="">选择要保留的主报告</option>
+                    {reports.filter(item => item._id !== showReportDetail._id && !item.archiveOnly && (!showReportDetail.audit_status || showReportDetail.audit_status !== 'audited' || item.audit_status === 'audited')).map(item => <option key={item._id} value={item._id}>{item.checkDate || item.date || '日期待核对'} · {item.title}</option>)}
+                  </select>
+                  <textarea className="form-input" rows={2} maxLength={1000} placeholder="填写核对依据，如报告编号、检查项目与原件页内容一致" value={duplicateReason} onChange={e => setDuplicateReason(e.target.value)} />
+                  <button className="btn btn-secondary btn-sm" disabled={!duplicateSourceReportId || duplicateReason.trim().length < 4 || reportFlowSaving} onClick={markDuplicateReport}>确认重复上传并关联主报告</button>
+                </div>
+              )}
               {['healthManager', 'superadmin'].includes(staff?.role) && !showReportDetail.archiveOnly && showReportDetail.audit_status === 'unaudited' && showReportDetail.aiStatus === 'none' && !showReportDetail.reportItems?.length && (showReportDetail.fileUrl || showReportDetail.fileUrls?.length || showReportDetail.content) && (
                 <div style={{ display: 'grid', gap: 7, padding: 10, background: '#F4F7FA', borderRadius: 8 }}>
                   <b style={{ fontSize: 13 }}>同次体检补充原件：仅留存，不解析</b>

@@ -20,7 +20,7 @@ async function buildScreeningYearlySummary(userId, year) {
   const nameToId = new Map(l1Nodes.map(n => [n.name, String(n._id)]));
 
   const reports = await MedicalReport.find({
-    user: userId, audit_status: 'audited', reportYear: Number(year),
+    user: userId, audit_status: 'audited', archiveOnly: { $ne: true }, reportYear: Number(year),
   }).select('reportItems checkDate date title').lean();
 
   return YEARLY_SUMMARY_CATEGORIES.map(cat => {
