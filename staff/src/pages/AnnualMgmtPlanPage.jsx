@@ -698,6 +698,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   // 还没有任何内容，不存在"覆盖"风险，不用弹确认框打断体验）
   const runAIGenerate = async (type, skipConfirm = false) => {
     if (!type) { toast('请先在下方选择一个方案类型，再点AI生成'); return }
+    if (pushedAt || confirmedAt) { toast(confirmedAt ? '客户已确认，新检查结果请走单项随访' : '方案已推送，等待客户确认或退回后再修改'); return }
     const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
     if (patientMode && !selectedTemplate) { toast('请先选择从Admin后台调取的健康管理方案模板'); return }
     let requestType = type
@@ -1020,20 +1021,20 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <>
               <button
                 onClick={handleGenerateAIAnnualPlan}
-                disabled={aiPlanLoading || preparationBlocked}
-                title={preparationBlocked ? '请先完成方案准备清单' : '按顾问已确认的管理方向及审核资料生成草稿'}
-                style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || preparationBlocked) ? 0.5 : 1 }}
+                disabled={aiPlanLoading || preparationBlocked || !!pushedAt || !!confirmedAt}
+                title={confirmedAt ? '客户已确认，新检查结果走单项随访' : pushedAt ? '已推送，等待客户确认或退回' : preparationBlocked ? '请先完成方案准备清单' : '按顾问已确认的管理方向及审核资料生成草稿'}
+                style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || preparationBlocked || pushedAt || confirmedAt) ? 0.5 : 1 }}
               >
                 {aiPlanLoading ? 'AI生成中…' : '✨ AI生成方案'}
               </button>
-              <button
+              {!pushedAt && !confirmedAt && <button
                 onClick={handlePush}
                 disabled={pushing || dirty || metricSelectionDirty || !planType || preparationBlocked}
                 title={preparationBlocked ? '请先完成首次方案准备清单' : ''}
-                style={{ background: pushedAt && !dirty ? '#0077B6' : '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType || preparationBlocked) ? 0.5 : 1 }}
+                style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType || preparationBlocked) ? 0.5 : 1 }}
               >
-                {pushing ? '推送中...' : pushedAt && !dirty ? '重新推送' : '推送给客户'}
-              </button>
+                {pushing ? '推送中...' : '推送给客户'}
+              </button>}
             </>
           )}
           <button
@@ -1048,6 +1049,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </div>
 
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
+      {patientMode && pushedAt && !confirmedAt && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，正在等待确认。客户退回并填写原因后，顾问可调整草稿再推送；此时重新生成不会修改已发送的方案。</div>}
       {patientMode && plansByType[planType]?.returnedAt && !pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户退回方案：{plansByType[planType].returnReason || '请核对客户反馈'}。请修改草稿并重新推送。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}

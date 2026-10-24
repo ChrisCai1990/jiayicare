@@ -10053,6 +10053,8 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (planType) query.planType = planType;
     const plan = await AnnualPlan.findOne(query);
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
+    if (plan.confirmedAt) return res.status(409).json({ success: false, message: '客户已确认本年度方案，新检查结果请走单项随访' });
+    if (plan.pushedAt) return res.status(409).json({ success: false, message: '方案已推送，正在等待客户确认；客户退回后再修改并重新推送' });
     const hasLegacyNutritionAssessment = (plan.moduleData?.personalized_followups?.records || []).some(row =>
       require('../../../shared/annualNutrition.cjs').isRow(row) || /营养评估/.test(row.standardPlanName || ''));
     if (!plan.moduleData?.nutrition_assessment && !hasLegacyNutritionAssessment) {
@@ -13372,6 +13374,15 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const targetYear = Number(req.body.year) || new Date().getFullYear();
+    if (!req.body.supplement) {
+      const publishedPlan = await AnnualPlan.findOne({ patientId: user._id, year: targetYear,
+        $or: [{ pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }] })
+        .select('_id confirmedAt').lean();
+      if (publishedPlan) return res.status(409).json({ success: false, code: 'ANNUAL_PLAN_ALREADY_PUSHED',
+        message: publishedPlan.confirmedAt
+          ? '本年度方案已获客户确认，新检查结果请走单项随访；不能重新生成年度方案'
+          : '本年度方案已推送，正等待客户确认；客户退回并说明原因后，才能修改并重新生成草稿' });
+    }
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(user._id);
     if (req.body.supplement && !closedLoop) return res.status(403).json({ success: false, message: '当前客户尚未开放方案补充入口' });
     const supplement = req.body.supplement ? await require('../utils/annualSupplementSources').loadSupplement(req.body.supplement, user._id, AiCaseReview, MedicalReport) : null;

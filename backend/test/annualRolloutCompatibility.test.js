@@ -10,17 +10,22 @@ test('actual annual page buttons preserve legacy availability and enforce pilot 
   const { renderToStaticMarkup } = require('react-dom/server');
   const { transformSync } = require('esbuild');
   const start = page.lastIndexOf('<button', page.indexOf('onClick={handleGenerateAIAnnualPlan}'));
-  const end = page.indexOf('</button>', page.indexOf('onClick={handlePush}', start)) + '</button>'.length;
+  const end = page.indexOf('</button>}', page.indexOf('onClick={handlePush}', start)) + '</button>}'.length;
   const expression = page.match(/const preparationBlocked = ([^\r\n]+)/)[1];
   const compiled = transformSync('const buttons = <>' + page.slice(start, end) + '</>; buttons;', { loader: 'jsx', format: 'cjs' }).code;
-  for (const [closedLoopEnabled, ready, disabled, preparationSelectionChanged = false] of [[false, false, false], [true, false, true], [true, true, false], [true, true, true, true], [false, true, false, true]]) {
+  for (const [closedLoopEnabled, ready, disabled, preparationSelectionChanged = false] of [[false, false, false], [true, false, true], [true, true, false], [true, true, false, true], [false, true, false, true]]) {
     const preparation = { checklist: { ready } };
-    const preparationBlocked = vm.runInNewContext(expression, { closedLoopEnabled, preparation, preparationSelectionChanged });
+    const preparationBlocked = vm.runInNewContext(expression, { closedLoopEnabled, preparation, preparationSelectionChanged, pushedAt: null });
     const buttons = vm.runInNewContext(compiled, { React, preparationBlocked, handleGenerateAIAnnualPlan() {}, handlePush() {},
-      patient: { aiHealthSummary: { sections: {} } }, aiPlanLoading: false, pushing: false, dirty: false, planType: 'legacy', pushedAt: null });
-    const html = renderToStaticMarkup(buttons);
-    assert.equal((html.match(/disabled=""/g) || []).length, disabled ? 2 : 0);
+      patient: { aiHealthSummary: { sections: {} } }, aiPlanLoading: false, pushing: false, dirty: false, metricSelectionDirty: false, planType: 'legacy', pushedAt: null, confirmedAt: null });
+    assert.equal(Boolean(buttons.props.children[0].props.disabled), disabled, JSON.stringify({ closedLoopEnabled, ready, preparationBlocked }));
+    assert.equal(Boolean(buttons.props.children[1].props.disabled), disabled, JSON.stringify({ closedLoopEnabled, ready, preparationBlocked }));
   }
+  const published = vm.runInNewContext(compiled, { React, preparationBlocked: false, handleGenerateAIAnnualPlan() {}, handlePush() {},
+    patient: {}, aiPlanLoading: false, pushing: false, dirty: false, metricSelectionDirty: false, planType: 'legacy',
+    pushedAt: '2026-10-02T00:00:00Z', confirmedAt: null });
+  assert.equal(published.props.children[0].props.disabled, true);
+  assert.equal(published.props.children[1], false);
 });
 function handler(method, path, context) {
   const start = source.indexOf(`router.${method}('${path}', staffAuth, async (req, res) => {`);
@@ -30,40 +35,64 @@ function handler(method, path, context) {
   return vm.runInNewContext('(' + source.slice(first, end + 2) + ')', context);
 }
 function response() { return { code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } }; }
-test('annual AI readiness applies only to selected customers; absent clinical summary still blocks legacy AI', async () => {
-  for (const patientId of [other, selected]) {
-    let checklistReads = 0;
-    const run = handler('post', '/patients/:id/ai-annual-plan', {
-      getVisiblePlanPatientIds: async () => [patientId], User: { findById: async () => ({ _id: patientId }) },
-      require: name => {
-        if (name.endsWith('/healthManagementRollout')) return { enabledForPatient: id => id === selected };
-        if (name.endsWith('/annualPlanPreparation')) return { loadAnnualPlanPreparationChecklist: async () => { checklistReads++; return { checklist: { ready: false } }; } };
-        assert.fail('unexpected dependency ' + name);
-      },
-    });
+test('selected customer readiness blocks annual AI before generation dependencies', async () => {
+  let checklistReads = 0;
+  const run = handler('post', '/patients/:id/ai-annual-plan', {
+    getVisiblePlanPatientIds: async () => [selected], User: { findById: async () => ({ _id: selected }) },
+    AnnualPlan: { findOne: () => ({ select: () => ({ lean: async () => null }) }) },
+    require: name => {
+      if (name.endsWith('/healthManagementRollout')) return { enabledForPatient: () => true };
+      if (name.endsWith('/annualPlanPreparation')) return { loadAnnualPlanPreparationChecklist: async () => { checklistReads++; return { checklist: { ready: false } }; } };
+      assert.fail('unexpected dependency ' + name);
+    },
+  });
+  const res = response();
+  await run({ staff: { role: 'familyDoctor' }, params: { id: selected }, body: {} }, res);
+  assert.equal(res.code, 409);
+  assert.equal(checklistReads, 1);
+  assert.match(res.body.message, /准备清单/);
+});
+test('已推送或已确认的年度方案不再启动AI生成，客户退回后才允许重新准备', async () => {
+  const runFor = plan => handler('post', '/patients/:id/ai-annual-plan', {
+    getVisiblePlanPatientIds: async () => [selected], User: { findById: async () => ({ _id: selected }) },
+    AnnualPlan: { findOne: () => ({ select: () => ({ lean: async () => plan }) }) },
+    require: () => assert.fail('正式方案不应再读取AI生成依赖'),
+  });
+  for (const [plan, expected] of [[{ _id: 'p1', confirmedAt: null }, /等待客户确认/], [{ _id: 'p1', confirmedAt: new Date() }, /单项随访/]]) {
     const res = response();
-    await run({ staff: { role: 'familyDoctor' }, params: { id: patientId }, body: {} }, res);
-    assert.equal(res.code, patientId === selected ? 409 : 400);
-    assert.equal(checklistReads, patientId === selected ? 1 : 0);
-    assert.match(res.body.message, patientId === selected ? /准备清单/ : /AI健康信息/);
+    await runFor(plan)({ staff: { role: 'familyDoctor' }, params: { id: selected }, body: { year: 2026 } }, res);
+    assert.equal(res.code, 409);
+    assert.match(res.body.message, expected);
   }
+});
+test('等待客户确认时重复推送不重新校验已经变化的来源', async () => {
+  const run = handler('patch', '/patients/:id/annual-plan/push', {
+    getVisiblePlanPatientIds: async () => [selected],
+    AnnualPlan: { findOne: async () => ({ _id: 'p1', pushedAt: new Date('2026-10-02T00:00:00Z') }) },
+    require: () => assert.fail('已推送方案不应再读当前来源'),
+  });
+  const res = response();
+  await run({ staff: { role: 'familyDoctor' }, params: { id: selected }, query: { year: '2026' } }, res);
+  assert.equal(res.code, 409);
+  assert.match(res.body.message, /等待客户确认/);
 });
 test('annual publishing reads readiness only for persisted selected owner', async () => {
   for (const patientId of [other, selected]) {
     let checklistReads = 0, saves = 0;
-    const plan = { patientId, save: async () => { saves++; throw Error('test stops before dispatch and notification'); } };
+    const plan = { patientId, moduleData: {}, markModified() {}, save: async () => { saves++; throw Error('test stops before dispatch and notification'); } };
     const run = handler('patch', '/patients/:id/annual-plan/push', {
       getVisiblePlanPatientIds: async () => [patientId], AnnualPlan: { findOne: async () => plan },
       require: name => {
         if (name.endsWith('/healthManagementRollout')) return { enabledForPatient: id => id === selected };
         if (name.endsWith('/annualPlanPreparation')) return { loadAnnualPlanPreparationChecklist: async () => { checklistReads++; return { checklist: { ready: false } }; } };
+        if (name.endsWith('/annualPlanPublishValidation')) return { validate: () => '' };
         assert.fail('unexpected dependency ' + name);
       },
     });
     const res = response();
     await run({ staff: { role: 'familyDoctor' }, params: { id: patientId }, query: {} }, res);
     assert.equal(checklistReads, patientId === selected ? 1 : 0);
-    assert.equal(saves, patientId === selected ? 0 : 1);
+    assert.equal(saves, patientId === selected ? 0 : 1, JSON.stringify(res.body));
     assert.equal(res.code, patientId === selected ? 409 : 500);
     if (patientId === other) assert.equal(plan.formalizedAt, undefined);
   }

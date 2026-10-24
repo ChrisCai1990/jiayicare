@@ -6792,6 +6792,10 @@ export default function PatientDetailPage() {
                                 <span style={{ fontWeight: 600, color: '#1E40AF', fontSize: 12 }}>{item.name}</span>
                                 {item.bodyPart && <span style={{ fontSize: 11, color: '#3B82F6' }}>· {item.bodyPart}</span>}
                                 {(item.examDate || r.checkDate) && <span style={{ fontSize: 11, color: '#93C5FD', marginLeft: 'auto' }}>{item.examDate || r.checkDate}</span>}
+                                <SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast}
+                                  source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                                  sourceText={[item.name, item.conclusion, item.diagnosis, item.findings].filter(Boolean).join('；')}
+                                  sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} />
                               </div>
                               <div style={{ padding: '6px 10px', fontSize: 12, background: '#fff', lineHeight: 1.7 }}>
                                 {item.conclusion && <div style={{ color: '#5B21B6', fontWeight: 600, marginBottom: 4 }}><span style={{ color: '#7C3AED' }}>主要结论：</span>{item.conclusion}</div>}
@@ -6859,6 +6863,10 @@ export default function PatientDetailPage() {
                           <div key={j} style={{ display: 'flex', gap: 12, fontSize: 12, padding: '3px 0', borderBottom: '1px solid #f0ece4' }}>
                             <span style={{ color: '#1A2B24', flex: 1 }}>{item.name}</span>
                             <span style={{ color: '#4A6558' }}>{item.value || '-'}</span>
+                            <SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast}
+                              source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                              sourceText={[item.name, item.value, item.conclusion].filter(Boolean).join('；')}
+                              sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} />
                           </div>
                         ))}
                       </div>
