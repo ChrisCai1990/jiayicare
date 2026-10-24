@@ -9219,7 +9219,8 @@ router.get('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
     const year = Number(req.query.year);
     if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
-    const data = await require('../models/AnnualManagementDecision').find({ patientId: req.params.id, year, status: { $ne: 'withdrawn' } }).lean();
+    const decisions = await require('../models/AnnualManagementDecision').find({ patientId: req.params.id, year, status: { $ne: 'withdrawn' } }).lean();
+    const data = require('../utils/annualManagementEvidence').effectiveDecisions(decisions);
     res.json({ success: true, data });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });

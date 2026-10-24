@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { load, validatePlanCoverage } = require('../src/utils/annualManagementEvidence');
+const { load, validatePlanCoverage, effectiveDecisions } = require('../src/utils/annualManagementEvidence');
 const { buildAnnualPlanDisplayItems, customerModuleData } = require('../src/utils/annualPlanPresentation');
 
 test('顾问选择完善检查后，不能以复查事项代替并推送', () => {
@@ -44,6 +44,25 @@ test('撤销旧版归属后不再阻止年度方案生成', async () => {
   assert.deepEqual(selector.status, { $ne: 'withdrawn' });
   assert.deepEqual(result.stale, []);
   assert.deepEqual(result.staleDecisionIds, []);
+});
+
+test('同报告同问题同方向已归到检查项时，旧整份报告归属自动让位', async () => {
+  const updatedAt = new Date('2026-10-20T00:00:00Z');
+  const legacy = { _id: 'legacy', title: '脂肪肝', direction: 'ongoing_management', reportId: 'report',
+    sourceKey: 'screening_report:report', sourceSnapshot: { reportUpdatedAt: updatedAt } };
+  const current = { _id: 'item', title: '脂肪肝', direction: 'ongoing_management', reportId: 'report', itemId: 'liver-ultrasound',
+    sourceKey: 'screening:report:liver-ultrasound', sourceSnapshot: { reportUpdatedAt: updatedAt, item: { name: '肝脏超声' } } };
+  assert.deepEqual(effectiveDecisions([legacy, current]).map(row => row._id), ['item']);
+  assert.equal(effectiveDecisions([legacy, { ...current, title: '肾结晶' }]).length, 2);
+  assert.equal(effectiveDecisions([legacy, { ...current, direction: 'abnormal_followup' }]).length, 2);
+  const Decision = { find: () => ({ sort: () => ({ lean: async () => [legacy, current] }) }) };
+  const Report = { findOne: () => ({ select: () => ({ lean: async () => ({ _id: 'report', title: '体检报告', updatedAt, reportItems: [
+    { screeningKey: 'liver', name: '肝脏超声' }, { screeningKey: 'kidney', name: '肾脏超声' },
+  ] }) }) }) };
+  const User = { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) };
+  const result = await load('patient', 2026, { Decision, Report, User });
+  assert.deepEqual(result.stale, []);
+  assert.deepEqual(result.evidence.map(row => row.id), ['management_issue:item']);
 });
 
 test('已审核 AI 缺口必须逐项处理，确需检查进入完善检查且不能被复查替代', async () => {

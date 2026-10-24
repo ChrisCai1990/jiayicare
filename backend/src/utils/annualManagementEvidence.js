@@ -1,9 +1,21 @@
+function effectiveDecisions(decisions = []) {
+  const sameIssue = value => String(value || '').replace(/\s+/g, '').trim();
+  return decisions.filter(legacy => {
+    const reportId = String(legacy.reportId || '');
+    if (legacy.sourceKey !== `screening_report:${reportId}`) return true;
+    // 顾问已在同份报告的具体检查项重新保存同一问题和方向时，旧报告级归属只保留为历史，不再阻断年度方案。
+    return !decisions.some(item => item !== legacy && String(item.reportId || '') === reportId
+      && item.itemId && item.sourceKey === `screening:${reportId}:${item.itemId}`
+      && sameIssue(item.title) === sameIssue(legacy.title) && item.direction === legacy.direction);
+  });
+}
+
 async function load(patientId, year, dependencies = {}) {
   const Decision = dependencies.Decision || require('../models/AnnualManagementDecision');
   const Report = dependencies.Report || require('../models/MedicalReport');
   const CheckupReview = dependencies.CheckupReview || require('../models/AIHealthCheckupReview');
   const User = dependencies.User || require('../models/User');
-  const decisions = await Decision.find({ patientId, year, status: { $ne: 'withdrawn' } }).sort({ reviewedAt: 1 }).lean();
+  const decisions = effectiveDecisions(await Decision.find({ patientId, year, status: { $ne: 'withdrawn' } }).sort({ reviewedAt: 1 }).lean());
   const evidence = [], stale = [], staleDecisionIds = [];
   for (const decision of decisions) {
     const report = await Report.findOne({ _id: decision.reportId, user: patientId, audit_status: 'audited' })
@@ -69,4 +81,4 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
   return '';
 }
 
-module.exports = { load, managementTargets, validatePlanCoverage };
+module.exports = { load, managementTargets, validatePlanCoverage, effectiveDecisions };
