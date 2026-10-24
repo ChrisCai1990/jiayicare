@@ -33,6 +33,17 @@ test('多项目报告的旧报告级决定需由顾问重新指定检查项', as
   const result = await load('patient', 2026, { Decision, Report, User, CheckupReview });
   assert.equal(result.evidence.length, 0);
   assert.match(result.stale[0], /重新归属/);
+  assert.deepEqual(result.staleDecisionIds, ['decision']);
+});
+
+test('撤销旧版归属后不再阻止年度方案生成', async () => {
+  let selector;
+  const Decision = { find: query => { selector = query; return { sort: () => ({ lean: async () => [] }) }; } };
+  const User = { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) };
+  const result = await load('patient', 2026, { Decision, User });
+  assert.deepEqual(selector.status, { $ne: 'withdrawn' });
+  assert.deepEqual(result.stale, []);
+  assert.deepEqual(result.staleDecisionIds, []);
 });
 
 test('已审核 AI 缺口必须逐项处理，确需检查进入完善检查且不能被复查替代', async () => {

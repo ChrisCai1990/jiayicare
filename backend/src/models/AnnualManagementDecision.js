@@ -12,6 +12,10 @@ const schema = new mongoose.Schema({
   sourceSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   reviewedAt: { type: Date, required: true },
+  status: { type: String, enum: ['active', 'withdrawn'], default: 'active' },
+  withdrawnAt: { type: Date, default: null },
+  withdrawnBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  withdrawalReason: { type: String, default: '' },
 }, { timestamps: true });
 
 schema.index({ patientId: 1, year: 1, sourceKey: 1 }, { unique: true });

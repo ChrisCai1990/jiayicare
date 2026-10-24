@@ -3,16 +3,16 @@ async function load(patientId, year, dependencies = {}) {
   const Report = dependencies.Report || require('../models/MedicalReport');
   const CheckupReview = dependencies.CheckupReview || require('../models/AIHealthCheckupReview');
   const User = dependencies.User || require('../models/User');
-  const decisions = await Decision.find({ patientId, year }).sort({ reviewedAt: 1 }).lean();
-  const evidence = [], stale = [];
+  const decisions = await Decision.find({ patientId, year, status: { $ne: 'withdrawn' } }).sort({ reviewedAt: 1 }).lean();
+  const evidence = [], stale = [], staleDecisionIds = [];
   for (const decision of decisions) {
     const report = await Report.findOne({ _id: decision.reportId, user: patientId, audit_status: 'audited' })
       .select('_id title checkDate updatedAt reportItems').lean();
     const changed = !report || String(report.updatedAt) !== String(decision.sourceSnapshot?.reportUpdatedAt);
-    if (changed) { stale.push(decision.title); continue; }
+    if (changed) { stale.push(decision.title); staleDecisionIds.push(String(decision._id)); continue; }
     if (decision.sourceKey === `screening_report:${report._id}`) {
       const groups = new Set((report.reportItems || []).map(item => item.screeningKey || item.screeningKeys?.[0]).filter(Boolean));
-      if (groups.size > 1) { stale.push(`${decision.title}（旧版整份报告纳入，请在对应检查项重新归属）`); continue; }
+      if (groups.size > 1) { stale.push(`${decision.title}（旧版整份报告纳入，请在对应检查项重新归属）`); staleDecisionIds.push(String(decision._id)); continue; }
     }
     evidence.push({ id: `management_issue:${decision._id}`, content: {
       reportId: report._id, reportTitle: report.title, checkDate: report.checkDate,
@@ -40,7 +40,7 @@ async function load(patientId, year, dependencies = {}) {
       }
     }
   }
-  return { evidence, stale, unresolved };
+  return { evidence, stale, staleDecisionIds, unresolved };
 }
 
 const DIRECTION_LABELS = {

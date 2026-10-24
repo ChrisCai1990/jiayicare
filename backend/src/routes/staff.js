@@ -9219,7 +9219,7 @@ router.get('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
     const year = Number(req.query.year);
     if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
-    const data = await require('../models/AnnualManagementDecision').find({ patientId: req.params.id, year }).lean();
+    const data = await require('../models/AnnualManagementDecision').find({ patientId: req.params.id, year, status: { $ne: 'withdrawn' } }).lean();
     res.json({ success: true, data });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -9242,22 +9242,30 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     const sourceItems = (report.reportItems || []).filter(item => [item.itemId, item.name, item.screeningKey, ...(item.screeningKeys || [])].some(value => String(value || '') === itemId));
     const sourceItem = sourceItems[0];
     if (source.kind === 'screening' && (!itemId || !sourceItem)) return res.status(409).json({ success: false, message: '来源检查项已变化，请刷新后核对' });
-    const confirmed = await AnnualPlan.exists({ patientId: req.params.id, year: Number(year), confirmedAt: { $ne: null } });
-    if (confirmed) return res.status(409).json({ success: false, message: '本年度方案已确认，新检查结果请走单项随访' });
+    if (source.kind === 'screening_report') {
+      const groups = new Set((report.reportItems || []).map(item => item.screeningKey || item.screeningKeys?.[0]).filter(Boolean));
+      if (groups.size > 1) return res.status(409).json({ success: false, message: '该报告包含多个检查项目，请在对应检查项逐项纳入管理' });
+    }
+    const formal = await AnnualPlan.exists({ patientId: req.params.id, year: Number(year),
+      $or: [{ pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }] });
+    if (formal) return res.status(409).json({ success: false, message: '本年度方案已推送或确认，客户退回后才能调整管理来源；新检查结果请走单项随访' });
     const sourceKey = `${source.kind}:${report._id}${itemId ? `:${itemId}` : ''}`;
     const Decision = require('../models/AnnualManagementDecision');
+    if (source.kind === 'screening_report' && await Decision.exists({ patientId: req.params.id, year: Number(year), sourceKey, status: 'withdrawn' })) {
+      return res.status(409).json({ success: false, message: '旧版整份报告归属已撤销，请在具体检查项重新纳入管理' });
+    }
     const legacyDecisionId = req.body.legacyDecisionId;
     let legacy = null;
     if (legacyDecisionId) {
       if (source.kind !== 'screening' || !mongoose.isValidObjectId(legacyDecisionId)) return res.status(400).json({ success: false, message: '旧管理决定来源无效' });
-      legacy = await Decision.findOne({ _id: legacyDecisionId, patientId: req.params.id, year: Number(year), reportId: report._id,
+      legacy = await Decision.findOne({ _id: legacyDecisionId, patientId: req.params.id, year: Number(year), reportId: report._id, status: { $ne: 'withdrawn' },
         sourceKey: `screening_report:${report._id}` });
       if (!legacy) return res.status(409).json({ success: false, message: '旧管理决定已变化，请刷新后核对' });
       if (await Decision.exists({ patientId: req.params.id, year: Number(year), sourceKey })) {
         return res.status(409).json({ success: false, message: '该检查项已有管理决定，请刷新后核对' });
       }
     }
-    const update = { reportId: report._id, itemId, title, direction, note, sourceSnapshot: {
+    const update = { reportId: report._id, itemId, title, direction, note, status: 'active', withdrawnAt: null, withdrawnBy: null, withdrawalReason: '', sourceSnapshot: {
         reportTitle: report.title || '', checkDate: report.checkDate || '', reportUpdatedAt: report.updatedAt,
         item: source.kind === 'screening' ? sourceItem : null,
       }, reviewedBy: req.staff._id, reviewedAt: new Date() };
@@ -9266,6 +9274,28 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
       : await Decision.findOneAndUpdate({ patientId: req.params.id, year: Number(year), sourceKey },
         { $set: update }, { upsert: true, new: true, setDefaultsOnInsert: true });
     if (!row) return res.status(409).json({ success: false, message: '管理决定已变化，请刷新后重试' });
+    res.json({ success: true, data: row });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 仅撤销旧版整份报告级决定；保留原记录和撤销原因供追溯。
+router.post('/patients/:id/annual-management-decisions/:decisionId/withdraw', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可撤销管理决定' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
+    if (!mongoose.isValidObjectId(req.params.decisionId)) return res.status(400).json({ success: false, message: '管理决定无效' });
+    const reason = String(req.body.reason || '').trim();
+    if (reason.length < 4 || reason.length > 500) return res.status(400).json({ success: false, message: '请填写4至500字的撤销原因' });
+    const Decision = require('../models/AnnualManagementDecision');
+    const decision = await Decision.findOne({ _id: req.params.decisionId, patientId: req.params.id, status: { $ne: 'withdrawn' } });
+    if (!decision || decision.sourceKey !== `screening_report:${decision.reportId}`) return res.status(409).json({ success: false, message: '旧版整份报告决定已变化，请刷新' });
+    const formal = await AnnualPlan.exists({ patientId: req.params.id, year: decision.year,
+      $or: [{ pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }] });
+    if (formal) return res.status(409).json({ success: false, message: '已推送方案等待客户确认，不能撤销其来源；客户退回后再处理' });
+    const row = await Decision.findOneAndUpdate({ _id: decision._id, sourceKey: decision.sourceKey, status: { $ne: 'withdrawn' } },
+      { $set: { status: 'withdrawn', withdrawnAt: new Date(), withdrawnBy: req.staff._id, withdrawalReason: reason } }, { new: true });
+    if (!row) return res.status(409).json({ success: false, message: '管理决定已变化，请刷新' });
     res.json({ success: true, data: row });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -9655,7 +9685,7 @@ router.get('/patients/:id/annual-management-targets', staffAuth, async (req, res
     if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
     if (require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) {
       const management = await require('../utils/annualManagementEvidence').load(req.params.id, year);
-      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence), stale: management.stale, unresolved: management.unresolved });
+      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved });
     }
     const confirmed = await AiCaseReview.find({
       ...require('../utils/annualCaseReviewScope').annualCaseReviewQuery(req.params.id, year),

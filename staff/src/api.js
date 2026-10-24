@@ -347,6 +347,7 @@ export const staffAPI = {
   getAiCaseReviews: (patientId) => req(`/staff/patients/${patientId}/ai-case-reviews`),
   getAnnualManagementDecisions: (patientId, year) => req(`/staff/patients/${patientId}/annual-management-decisions?year=${year}`),
   saveAnnualManagementDecision: (patientId, data) => req(`/staff/patients/${patientId}/annual-management-decisions`, { method: 'PUT', body: JSON.stringify(data) }),
+  withdrawLegacyAnnualManagementDecision: (patientId, decisionId, reason) => req(`/staff/patients/${patientId}/annual-management-decisions/${decisionId}/withdraw`, { method: 'POST', body: JSON.stringify({ reason }) }),
   getAICheckupReviews: (patientId, year) => req(`/staff/patients/${patientId}/ai-checkup-reviews?year=${year}`),
   saveAICheckupReview: (patientId, data) => req(`/staff/patients/${patientId}/ai-checkup-reviews`, { method: 'PUT', body: JSON.stringify(data) }),
   createSpecialtyReviewFromSource: (patientId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/specialty-from-source`, { method: 'POST', body: JSON.stringify(data) }),

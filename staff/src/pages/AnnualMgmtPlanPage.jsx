@@ -363,6 +363,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [moduleData, setModuleData] = useState({})
   const [confirmedReviewTargets, setConfirmedReviewTargets] = useState([])
   const [unresolvedAiCheckups, setUnresolvedAiCheckups] = useState([])
+  const [staleManagementSources, setStaleManagementSources] = useState([])
+  const [staleLegacyDecisions, setStaleLegacyDecisions] = useState([])
+  const [withdrawalTarget, setWithdrawalTarget] = useState(null)
+  const [withdrawalReason, setWithdrawalReason] = useState('')
+  const [withdrawalBusy, setWithdrawalBusy] = useState(false)
   const [phaseAssessmentFrequency, setPhaseAssessmentFrequency] = useState('')
   const [lastGenerationKey, setLastGenerationKey] = useState('')
   const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
@@ -483,7 +488,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         staffAPI.getAnnualPlanPreparation(id, year),
         staffAPI.getProfessionalHealthAssessments(id),
         staffAPI.getAnnualManagementTargets(id, year),
-      ]).then(([patRes, planRes, preparationRes, assessmentRes, targetsRes]) => {
+        staffAPI.getAnnualManagementDecisions(id, year),
+      ]).then(([patRes, planRes, preparationRes, assessmentRes, targetsRes, decisionsRes]) => {
         if (cancelled) return
         setClosedLoopEnabled(preparationRes.enabled !== false)
         setPatient(patRes.data?.user || patRes.data)
@@ -514,6 +520,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const confirmedTargets = targetsRes.data || []
         setConfirmedReviewTargets(confirmedTargets)
         setUnresolvedAiCheckups(targetsRes.unresolved || [])
+        setStaleManagementSources(targetsRes.stale || [])
+        setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
+          (targetsRes.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
         const targetModules = target?.moduleData || {}
         const carryTargets = !target?.pushedAt && !targetModules.management_targets?.records?.length && confirmedTargets.length > 0
         setModuleData(carryTargets ? { ...targetModules, management_targets: { enabled: true, records: confirmedTargets } } : targetModules)
@@ -637,14 +646,38 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     const existing = moduleData.management_targets?.records || []
     if (existing.length && !window.confirm('将用已确认的年度管理方向更新草稿目标，确认继续？')) return
     try {
-      const res = await staffAPI.getAnnualManagementTargets(id, year)
+      const [res, decisionsRes] = await Promise.all([staffAPI.getAnnualManagementTargets(id, year), staffAPI.getAnnualManagementDecisions(id, year)])
       setUnresolvedAiCheckups(res.unresolved || [])
+      setStaleManagementSources(res.stale || [])
+      setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
+        (res.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
       if (!res.data?.length) return toast('专项筛查及AI健康信息整理中暂无已纳入管理的问题')
       setConfirmedReviewTargets(res.data)
       setModuleData(prev => ({ ...prev, management_targets: { enabled: true, records: res.data } }))
       setDirty(true)
       toast(`已带入 ${res.data.length} 条目标，请核对并保存草稿`)
     } catch (error) { toast(error.message || '读取管理方向失败') }
+  }
+
+  const withdrawLegacyDecision = async () => {
+    if (!withdrawalTarget || withdrawalReason.trim().length < 4) return toast('请填写至少4字的撤销依据')
+    setWithdrawalBusy(true)
+    try {
+      await staffAPI.withdrawLegacyAnnualManagementDecision(id, withdrawalTarget._id, withdrawalReason.trim())
+      const [targetsRes, decisionsRes] = await Promise.all([staffAPI.getAnnualManagementTargets(id, year), staffAPI.getAnnualManagementDecisions(id, year)])
+      setConfirmedReviewTargets(targetsRes.data || [])
+      setStaleManagementSources(targetsRes.stale || [])
+      setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
+        (targetsRes.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
+      setUnresolvedAiCheckups(targetsRes.unresolved || [])
+      setModuleData(prev => ({ ...prev, management_targets: { ...(prev.management_targets || {}),
+        records: (prev.management_targets?.records || []).filter(row => row.issueId !== `management_issue:${withdrawalTarget._id}`) } }))
+      setDirty(true)
+      setGenerationError('')
+      setWithdrawalTarget(null); setWithdrawalReason('')
+      toast('旧版错误归属已撤销并留痕，请重新生成、核对并保存草稿')
+    } catch (error) { toast(error.message || '撤销失败，请刷新后重试') }
+    finally { setWithdrawalBusy(false) }
   }
 
   const handleSave = async (options = {}) => {
@@ -1049,6 +1082,23 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </div>
 
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
+      {patientMode && staleManagementSources.length > 0 && !pushedAt && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF7ED', border: '1px solid #F4C995', borderRadius: 10, color: '#713F12' }}>
+        <b>管理来源待核对</b><div style={{ marginTop: 5, fontSize: 13 }}>{staleManagementSources.join('、')}</div>
+        {staleLegacyDecisions.map(row => <div key={row._id} style={{ marginTop: 10, padding: 10, background: '#fff', borderRadius: 8 }}>
+          <div><b>{row.title}</b> · {row.sourceSnapshot?.reportTitle || '原报告'} · 旧版整份报告归属</div>
+          <div style={{ fontSize: 12, marginTop: 5 }}>若该问题确实来自报告中的某项检查，请到专项筛查的具体检查项重新归属；若旧纳入本身有误，可说明原因并撤销。删除年度方案不会自动删除管理来源。</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=ai`)}>去专项筛查重新归属</button>
+            {canEdit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setWithdrawalTarget(row); setWithdrawalReason('') }}>撤销错误归属</button>}
+          </div>
+          {withdrawalTarget?._id === row._id && <div style={{ marginTop: 10 }}>
+            <label style={{ display: 'block', fontSize: 12 }}>撤销原因（保留原决定及本次操作记录）</label>
+            <textarea className="form-input" rows={2} maxLength={500} value={withdrawalReason} onChange={event => setWithdrawalReason(event.target.value)} placeholder="例如：脂肪肝已在其他检查项管理，原整份报告归属有误" style={{ width: '100%', boxSizing: 'border-box', marginTop: 5 }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 7 }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => setWithdrawalTarget(null)}>取消</button><button type="button" className="btn btn-primary btn-sm" disabled={withdrawalBusy || withdrawalReason.trim().length < 4} onClick={withdrawLegacyDecision}>{withdrawalBusy ? '处理中…' : '确认撤销旧归属'}</button></div>
+          </div>}
+        </div>)}
+        {!staleLegacyDecisions.length && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>查看专项筛查来源</button>}
+      </div>}
       {patientMode && pushedAt && !confirmedAt && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，正在等待确认。客户退回并填写原因后，顾问可调整草稿再推送；此时重新生成不会修改已发送的方案。</div>}
       {patientMode && plansByType[planType]?.returnedAt && !pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户退回方案：{plansByType[planType].returnReason || '请核对客户反馈'}。请修改草稿并重新推送。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
