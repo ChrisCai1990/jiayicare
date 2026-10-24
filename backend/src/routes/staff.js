@@ -13717,13 +13717,14 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
           }, (candidate, message, missingLinks) => {
             const gaps = repair.missingManagementActions(candidate, evidence, availableAnnualFollowUpCatalog);
             const content = gaps.length
-              ? repair.managementRegenerationPrompt(checkedPrompt, candidate, gaps, message)
+              ? repair.managementActionRepairPrompt(candidate, gaps, availableAnnualFollowUpCatalog, message)
               : missingLinks.length
                 ? repair.sourceLinkRepairPrompt(candidate, evidence, missingLinks, message)
                 : repair.annualCorrectionPrompt(candidate, evidence, message);
             return require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content }],
-              { maxTokens: gaps.length ? 6000 : missingLinks.length ? 2000 : 2500, temperature: 0, jsonMode: true, timeoutMs: gaps.length ? 120000 : 90000 }));
-          }, candidate => clinicalRules.consolidateSameDayConsultations(require('../utils/annualArrangementHistory').inheritArrangements(repair.applyAnnualSchedule(candidate, reports), reports, previousVisits)));
+              { maxTokens: gaps.length ? 2400 : missingLinks.length ? 2000 : 2500, temperature: 0, jsonMode: true, timeoutMs: 90000 }));
+          }, candidate => clinicalRules.consolidateSameDayConsultations(require('../utils/annualArrangementHistory').inheritArrangements(repair.applyAnnualSchedule(repair.normalizeConfirmedManagement(candidate, evidence, availableAnnualFollowUpCatalog), reports), reports, previousVisits)),
+          { evidence, catalog: availableAnnualFollowUpCatalog });
         }
         return parsed;
       }

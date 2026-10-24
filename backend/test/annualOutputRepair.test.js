@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { normalizeAnnualOutput, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, missingManagementActions, managementRegenerationPrompt } = require('../src/utils/annualOutputRepair');
+const { normalizeAnnualOutput, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, missingManagementActions, normalizeConfirmedManagement, managementActionRepairPrompt } = require('../src/utils/annualOutputRepair');
 const { validateAnnualRaw } = require('../src/utils/annualGenerationConsistency');
 const { validateClinicalRules } = require('../src/utils/annualClinicalRules');
 const keys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
@@ -202,7 +202,7 @@ test('annual focus correction bounds historical evidence and keeps referenced ti
   assert.equal(repairs,1);assert.equal(result.raw.annual_checkup.focus,'检查乙');
 });
 
-test('misrouted confirmed issues require a full regenerated plan in their chosen directions', async () => {
+test('misrouted confirmed issues are repaired with a bounded action patch', async () => {
   const sources = [
     { id: 'management_issue:kidney', content: { problem: '肾结晶', direction: 'ongoing_management' } },
     { id: 'management_issue:review', content: { problem: '复查肺结节', direction: 'abnormal_followup' } },
@@ -213,18 +213,25 @@ test('misrouted confirmed issues require a full regenerated plan in their chosen
     templateNodes: [{ standardPlanId: 'daily', standardPlanName: '【日常跟进】', matchReason: '已审问题', sourceIds: sources.map(item => item.id) }],
     evidenceCoverage: sources.map(item => ({ sourceId: item.id, status: 'deferred', reason: '模型误判' })) };
   const check = value => validateAnnualRaw(value, templates, sources, keys);
-  assert.deepEqual(missingManagementActions(original, sources, templates).map(item => item.id), sources.map(item => item.id));
-  assert.match(managementRegenerationPrompt('原始生成依据', original, sources, '方向错误'), /不得用“日常跟进”代替就医/);
-  const repaired = { ...original,
-    templateNodes: [{ ...original.templateNodes[0], sourceIds: [sources[0].id] }],
-    abnormal_followup: [{ standardPlanId: 'review-template', items: '复查肺结节', time: '2026-11-01', basisSummary: '已审报告建议复查', sourceIds: [sources[1].id] }],
-    evidenceCoverage: sources.map(item => ({ sourceId: item.id, status: 'included', reason: '对应行动已安排' })) };
-  const result = await validateOrRepairAnnual(original, check, async () => JSON.stringify(repaired));
+  const normalized = normalizeConfirmedManagement(original, sources, templates);
+  assert.deepEqual(normalized.templateNodes[0].sourceIds, [sources[0].id]);
+  assert.deepEqual(missingManagementActions(normalized, sources, templates).map(item => item.id), [sources[1].id]);
+  const prompt = managementActionRepairPrompt(normalized, [sources[1]], templates, '方向错误');
+  assert.ok(prompt.length < 4000);
+  assert.match(prompt, /每个缺失来源恰好返回一项/);
+  const action = { standardPlanId: 'review-template', items: '复查肺结节', time: '2026-11-01',
+    basisSummary: '已审报告建议复查', ownerRole: '健管专员', sourceIds: [sources[1].id] };
+  const patch = { managementActionCorrections: [{ sourceId: sources[1].id, module: 'abnormal_followup', action }] };
+  const repair = value => normalizeConfirmedManagement(value, sources, templates);
+  const result = await validateOrRepairAnnual(original, check, async () => JSON.stringify(patch), repair, { evidence: sources, catalog: templates });
   check(result);
   assert.equal(result.abnormal_followup.length, 1);
   assert.equal(original.abnormal_followup.length, 0);
-  await assert.rejects(validateOrRepairAnnual(original, check, async () => JSON.stringify({ ...repaired,
-    templateNodes: original.templateNodes })), /日常跟进关联了非持续管理/);
-  await assert.rejects(validateOrRepairAnnual(original, check, async () => JSON.stringify({ ...repaired,
-    evidenceCoverage: original.evidenceCoverage })), /未进入方案/);
+  assert.equal(result.evidenceCoverage.every(item => item.status === 'included'), true);
+  await assert.rejects(validateOrRepairAnnual(original, check, async () => JSON.stringify({ managementActionCorrections: [
+    { ...patch.managementActionCorrections[0], action: { ...action, standardPlanId: 'daily' } }] }), repair,
+  { evidence: sources, catalog: templates }), /缺少有效方向/);
+  await assert.rejects(validateOrRepairAnnual(original, check, async () => JSON.stringify({ managementActionCorrections: [
+    { ...patch.managementActionCorrections[0], action: { ...action, time: '' } }] }), repair,
+  { evidence: sources, catalog: templates }), /缺少有效方向/);
 });

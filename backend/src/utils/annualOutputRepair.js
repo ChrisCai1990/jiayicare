@@ -37,11 +37,32 @@ function missingManagementActions(raw, evidence = [], catalog = []) {
   });
 }
 
-function managementRegenerationPrompt(generationPrompt, candidate, gaps, errorMessage) {
-  const issues = gaps.map(item => ({ sourceId: item.id, problem: item.content?.problem,
-    direction: item.content?.direction, reportTitle: item.content?.reportTitle,
-    checkDate: item.content?.checkDate, advisorNote: item.content?.advisorNote }));
-  return `${generationPrompt}\n【上次生成未通过校验，须重新生成完整JSON】${errorMessage}。以下顾问已确认问题缺少对应方向的行动或被错误标成暂缓：${JSON.stringify(issues)}。请重新逐项生成，不得将已确认事项降级为deferred/not_applicable，也不得用“日常跟进”代替就医、完善检查或定期复查。日常跟进的sourceIds只能包含方向为ongoing_management的问题。每项行动使用相应category的已选模板、明确的负责人和有依据的建议日期；缺乏临床日期依据时如实说明并接受校验失败，不能编造。保留有依据的其他行动。只返回完整方案JSON，包含所有模块和完整evidenceCoverage，不返回coverageCorrections等局部补丁。`;
+function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
+  if (!raw || !Array.isArray(raw.evidenceCoverage)) return raw;
+  const templates = new Map(catalog.map(item => [String(item.id), item]));
+  const management = evidence.filter(item => item.id.startsWith('management_issue:'));
+  const ongoing = new Set(management.filter(item => item.content?.direction === 'ongoing_management').map(item => item.id));
+  const nodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(row => {
+    if (!require('./annualPlanPresentation').internalDaily({ standardPlanName: templates.get(String(row.standardPlanId || ''))?.name })) return row;
+    return { ...row, sourceIds: Array.isArray(row.sourceIds) ? row.sourceIds.filter(id => !id.startsWith('management_issue:') || ongoing.has(id)) : row.sourceIds };
+  }) : raw.templateNodes;
+  const updated = { ...raw, templateNodes: nodes };
+  const linked = new Set(management.filter(item => !missingManagementActions({ ...updated,
+    evidenceCoverage: [{ sourceId: item.id, status: 'included', reason: '已关联行动' }] }, [item], catalog).length).map(item => item.id));
+  updated.evidenceCoverage = raw.evidenceCoverage.map(item => linked.has(item.sourceId) && item.status !== 'included'
+    ? { ...item, status: 'included', reason: '顾问已确认纳入管理，已关联所选方向的行动' } : item);
+  return updated;
+}
+
+function managementActionRepairPrompt(candidate, gaps, catalog, errorMessage) {
+  const issues = gaps.map(item => ({ sourceId: item.id, ...item.content,
+    source: JSON.stringify(item.content?.source || '').slice(0, 1200) }));
+  const directions = new Set(gaps.map(item => item.content?.direction === 'ongoing_management' ? 'personalized' : item.content?.direction));
+  const templates = catalog.filter(item => directions.has(item.category)).map(item => ({ id: item.id, category: item.category, name: item.name }));
+  const existing = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'templateNodes']
+    .flatMap(module => (candidate[module] || []).map(row => ({ module, standardPlanId: row.standardPlanId,
+      name: row.items || row.name || row.reason || row.standardPlanName, sourceIds: row.sourceIds || [] })));
+  return `仅修补年度方案中顾问已确认、却未进入对应管理方向的事项，不重写已有方案。输出合法JSON：{"managementActionCorrections":[{"sourceId":"management_issue:...","module":"abnormal_followup","action":{"standardPlanId":"已选模板ID","items":"明确项目","reason":"原建议","basisSummary":"已审来源及事实","time":"YYYY-MM-DD","frequency":"单次","precautions":"待检查机构确认","customerAction":"按确认时间完成","ownerRole":"健管专员","sourceIds":["同一sourceId"]}}]}。medical_treatment使用reason、visit_time，checkup_completion使用items、time，vaccine使用name、time；ongoing_management使用templateNodes内已选日常跟进模板及executionDate。每个缺失来源恰好返回一项，模板类别必须与顾问方向一致。建议日期须依据已审资料中的期限或检查日期，不能虚构已预约时间；没有足够依据时保持空日期并由系统拦截，不得改管理方向或标为暂缓。只输出新增行动，系统将自动标记这些来源已纳入并验证完整草稿。\n校验问题：${errorMessage}\n缺失问题：${JSON.stringify(issues)}\n可用模板：${JSON.stringify(templates)}\n已有行动索引（避免重复）：${JSON.stringify(existing)}`;
 }
 
 function sourceLinkRepairPrompt(candidate, evidence, missingLinks, errorMessage) {
@@ -95,7 +116,7 @@ function annualCorrectionPrompt(candidate, evidence, errorMessage) {
 
 // A single bounded correction replaces the former focus-only call. Both attempts go
 // through the identical source/template/clinical checks; invalid output is never cached ready.
-async function validateOrRepairAnnual(raw, validate, complete, normalize = value => value) {
+async function validateOrRepairAnnual(raw, validate, complete, normalize = value => value, repairContext = {}) {
   let candidate = normalize(normalizeAnnualOutput(raw));
   let initialError;
   try { validate(candidate); return candidate; } catch (error) { initialError = error; }
@@ -115,13 +136,36 @@ async function validateOrRepairAnnual(raw, validate, complete, normalize = value
       return candidate;
     }
     if ((!Object.hasOwn(parsed || {}, 'annual_checkup') || !Array.isArray(parsed.evidenceCoverage))
-      && !['sourceLinkCorrections', 'timingCorrections', 'scheduleCorrections'].some(key => Array.isArray(parsed?.[key]))) {
+      && !['sourceLinkCorrections', 'timingCorrections', 'scheduleCorrections', 'managementActionCorrections'].some(key => Array.isArray(parsed?.[key]))) {
       throw Object.assign(new Error('AI年度体检校正缺少模块或来源核对，未替换原方案'), { statusCode: 502 });
     }
     // A source-only reply leaves the clinical plan and other coverage untouched.
     candidate = normalize(normalizeAnnualOutput({ ...candidate,
       annual_checkup: Object.hasOwn(parsed, 'annual_checkup') ? parsed.annual_checkup : candidate.annual_checkup,
       evidenceCoverage: Array.isArray(parsed.evidenceCoverage) ? parsed.evidenceCoverage : candidate.evidenceCoverage }));
+    if (parsed.managementActionCorrections !== undefined) {
+      if (!Array.isArray(parsed.managementActionCorrections)) throw new Error('管理行动校正格式无效');
+      const gaps = missingManagementActions(candidate, repairContext.evidence || [], repairContext.catalog || []);
+      const byId = new Map(gaps.map(item => [item.id, item]));
+      const templates = new Map((repairContext.catalog || []).map(item => [String(item.id), item]));
+      const seen = new Set();
+      for (const patch of parsed.managementActionCorrections) {
+        const source = byId.get(patch?.sourceId), action = patch?.action;
+        const module = source?.content?.direction === 'ongoing_management' ? 'templateNodes' : source?.content?.direction;
+        const category = module === 'templateNodes' ? 'personalized' : module;
+        const dateField = module === 'medical_treatment' ? 'visit_time' : module === 'templateNodes' ? 'executionDate' : 'time';
+        if (!source || seen.has(source.id) || patch.module !== module || !Array.isArray(candidate[module])
+          || !action || typeof action !== 'object' || Array.isArray(action)
+          || templates.get(String(action.standardPlanId || ''))?.category !== category
+          || (module === 'templateNodes' && !require('./annualPlanPresentation').internalDaily({ standardPlanName: templates.get(String(action.standardPlanId))?.name }))
+          || !Array.isArray(action.sourceIds) || action.sourceIds.length !== 1 || action.sourceIds[0] !== source.id
+          || !String(action.basisSummary || '').trim() || !String(action.ownerRole || '').trim()
+          || !/^\d{4}-\d{2}-\d{2}$/.test(String(action[dateField] || ''))) throw new Error('管理行动校正缺少有效方向、模板、来源或日期');
+        seen.add(source.id);
+        candidate = { ...candidate, [module]: [...candidate[module], action] };
+      }
+      candidate = normalize(candidate);
+    }
     if (parsed.coverageCorrections !== undefined) {
       if (!Array.isArray(parsed.coverageCorrections)) throw new Error('来源状态校正格式无效');
       const pending = new Map();
@@ -194,4 +238,4 @@ const correctionInstruction = `仅输出一个合法JSON对象，不要Markdown�
 对相近日期未统筹的问题，逐对核对已有排期依据，返回scheduleCorrections数组：[{"module":"medical_treatment","index":0,"scheduleSeparationReason":"保留分别安排的实际依据或具体待核实原因"}]。仅允许补充排期说明，不改已讨论的日期、医院或行动。依据不足时明确指出需要核实的兼容性或先后条件，不能编造医嘱、号源或声称已经确认；不能用空泛的“已统筹”冒充依据。无此问题时不返回该字段。
 annual_checkup.focus必须逐行文本；纯字符串列表可无损转为文本。年度focus只列实际安排项目，“不重复安排/已在近期安排”的说明应放内部notes，不能伪装成年度项目。每个保留项目必须引用真实对应sourceIds；如项目来自missing:0、missing:1，不能错挂priority:0。evidenceCoverage与保留事项同步，纳入年度同样算included。
 如已审依据确实不支持任何年度项目，可返回annual_checkup:{}，并在对应evidenceCoverage明确说明未纳入原因；不得用空focus的非空模块占位，更不能以忽略有依据项目换取通过。日期、科室、来源及统筹规则仍必须满足。返回annual_checkup与完整evidenceCoverage。若已生成事项实际涵盖某来源，却遗漏sourceIds关联，额外返回sourceLinkCorrections数组：[{"module":"medical_treatment","index":0,"sourceIds":["真实来源id"]}]；module也可为annual_checkup（index固定为0）。只给已有事项补充真实且语义对应的来源，不得把无关来源挂到事项上；若确实没有对应事项，须如实把该来源改为deferred或not_applicable并说明原因，不能仅靠修改状态掩盖已确认的行动需求。若其他模块的timingSourceId或timingBaseDate有误，额外返回timingCorrections数组：[{"module":"checkup_completion","index":0,"timingSourceId":"report_history中真实项目id","timingBaseDate":"该项目真实date","dateSelectionReason":"选用此日期的依据"}]。index为原数组从0开始的位置。仅校正已有事项的时间来源元数据，禁止编造来源、清空日期绕过校验或改变行动内容及执行时间；不需要时返回空数组。系统保留其他字段并重新进行全部校验。`;
-module.exports = { normalizeAnnualOutput, applyAnnualSchedule, missingIncludedSourceIds, missingManagementActions, managementRegenerationPrompt, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, correctionInstruction };
+module.exports = { normalizeAnnualOutput, applyAnnualSchedule, missingIncludedSourceIds, missingManagementActions, normalizeConfirmedManagement, managementActionRepairPrompt, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, correctionInstruction };
