@@ -64,6 +64,7 @@ import ReviewSourceImage from '../components/ReviewSourceImage'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
+import AICheckupReview from '../components/AICheckupReview'
 import AnnualReviewCommunicationPanel from '../components/AnnualReviewCommunicationPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
@@ -9314,7 +9315,9 @@ export default function PatientDetailPage() {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {(sec.checkup_completeness?.covered || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>已覆盖</div><AIListLines items={sec.checkup_completeness.covered} /></div>}
-                      {(sec.checkup_completeness?.missing || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>待完善检查</div><AIListLines items={sec.checkup_completeness.missing} color="#D97706" /></div>}
+                      {(sec.checkup_completeness?.missing || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>待完善检查</div>{doctorRecord._recordIndex === doctorRecords[0]?._recordIndex
+                        ? <AICheckupReview patientId={id} year={Number(curYear)} versionKey={doctorRecord._reviewToken} staff={staff} toast={toast} />
+                        : <><AIListLines items={sec.checkup_completeness.missing} color="#D97706" /><div style={{ fontSize: 12, color: '#64748B' }}>历史分析仅供查看，请切换到最新记录核对。</div></>}</div>}
                       {sec.checkup_completeness?.suggestion && <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1A2B24', background: '#F2EDE3', borderRadius: 8, padding: '9px 12px', marginTop: 2 }}>{sec.checkup_completeness.suggestion}</div>}
                     </div>
                   )}

@@ -9162,6 +9162,57 @@ router.post('/professional-health-assessments/:assessmentId/ai-followup-draft', 
 });
 
 // 顾问在已审核专项筛查中直接确定年度管理方向；团队研判可选。
+router.get('/patients/:id/ai-checkup-reviews', staffAuth, async (req, res) => {
+  try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
+    const year = Number(req.query.year);
+    if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
+    const user = await User.findById(req.params.id).select('aiHealthSummary').lean();
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    const source = require('../utils/aiHealthCheckupItems').approvedItems(user.aiHealthSummary, year);
+    const Review = require('../models/AIHealthCheckupReview');
+    const reviews = source.approved ? await Review.find({ patientId: req.params.id, year, sourceVersion: source.version }).lean() : [];
+    res.json({ success: true, data: { ...source, reviews } });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+router.put('/patients/:id/ai-checkup-reviews', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可核对待完善检查' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
+    const year = Number(req.body.year);
+    if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
+    const user = await User.findById(req.params.id).select('aiHealthSummary').lean();
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    const source = require('../utils/aiHealthCheckupItems').approvedItems(user.aiHealthSummary, year);
+    if (!source.approved) return res.status(409).json({ success: false, message: '请先审核体检资料覆盖板块' });
+    const item = source.items.find(row => row.sourceKey === req.body.sourceKey);
+    if (!item) return res.status(409).json({ success: false, message: '待完善检查项目已变化，请刷新后重新核对' });
+    const disposition = String(req.body.disposition || '');
+    if (!['needs_exam', 'request_records', 'not_needed', 'already_managed'].includes(disposition)) return res.status(400).json({ success: false, message: '请选择处理方式' });
+    const title = String(req.body.title || '').trim(), note = String(req.body.note || '').trim();
+    if (note.length > 1000 || (disposition === 'needs_exam' && (title.length < 2 || title.length > 80)) ||
+        (disposition !== 'needs_exam' && !note)) return res.status(400).json({ success: false, message: '请填写检查名称或处理原因' });
+    const confirmed = await AnnualPlan.exists({ patientId: req.params.id, year, confirmedAt: { $ne: null } });
+    if (confirmed) return res.status(409).json({ success: false, message: '本年度方案已确认，新检查结果请走单项随访' });
+    let linkedDecisionId = null;
+    if (disposition === 'already_managed') {
+      if (!mongoose.isValidObjectId(req.body.linkedDecisionId)) return res.status(400).json({ success: false, message: '请选择已有的完善检查事项' });
+      const linked = await require('../models/AnnualManagementDecision').findOne({ _id: req.body.linkedDecisionId, patientId: req.params.id, year, direction: 'checkup_completion' }).lean();
+      if (!linked) return res.status(409).json({ success: false, message: '关联事项已变化，请刷新后重新选择' });
+      linkedDecisionId = linked._id;
+    }
+    const Review = require('../models/AIHealthCheckupReview');
+    const row = await Review.findOneAndUpdate({ patientId: req.params.id, year, sourceKey: item.sourceKey },
+      { $set: { sourceVersion: source.version, itemKey: item.itemKey, itemText: item.text, disposition,
+        title: disposition === 'needs_exam' ? title : '', note, linkedDecisionId, reviewedBy: req.staff._id, reviewedAt: new Date() } },
+      { upsert: true, new: true, setDefaultsOnInsert: true });
+    res.json({ success: true, data: row });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 router.get('/patients/:id/annual-management-decisions', staffAuth, async (req, res) => {
   try {
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
@@ -9604,7 +9655,7 @@ router.get('/patients/:id/annual-management-targets', staffAuth, async (req, res
     if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
     if (require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) {
       const management = await require('../utils/annualManagementEvidence').load(req.params.id, year);
-      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence), stale: management.stale });
+      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence), stale: management.stale, unresolved: management.unresolved });
     }
     const confirmed = await AiCaseReview.find({
       ...require('../utils/annualCaseReviewScope').annualCaseReviewQuery(req.params.id, year),
@@ -10028,6 +10079,7 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (closedLoop) {
       const management = await require('../utils/annualManagementEvidence').load(req.params.id, targetYear);
       if (management.stale.length) return res.status(409).json({ success: false, message: `管理来源已变化，请先重新核对：${management.stale.join('、')}` });
+      if (management.unresolved.length) return res.status(409).json({ success: false, message: `已审核AI健康信息整理还有待完善检查未由顾问逐项处理：${management.unresolved.join('、')}` });
       const omission = require('../utils/annualManagementEvidence').validatePlanCoverage(plan.moduleData, management.evidence);
       if (omission) return res.status(409).json({ success: false, message: omission });
       const patient = await User.findById(req.params.id).select('assignedHealthManager assignedNutritionist assignedFamilyDoctor').lean();
@@ -13417,6 +13469,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const management = closedLoop ? await require('../utils/annualManagementEvidence').load(user._id, year) : { evidence: [], stale: [] };
     if (management.stale.length) return res.status(409).json({ success: false, message: `以下管理方向的来源报告已变化，请重新核对：${management.stale.join('、')}` });
+    if (management.unresolved?.length) return res.status(409).json({ success: false, message: `已审核AI健康信息整理还有待完善检查未由顾问逐项处理：${management.unresolved.join('、')}` });
     for (const source of management.evidence) {
       const direction = source.content.direction;
       const category = direction === 'ongoing_management' ? 'personalized' : direction;
@@ -13492,7 +13545,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const chronicText = (s.chronic_disease?.items || [])
       .map(i => `${i.name}：${i.value || ''}（${i.note || ''}）`).join('；') || '无';
 
-    const missingCheckups = (s.checkup_completeness?.missing || []).join('、') || '无';
+    const missingCheckups = management.evidence.filter(item => item.content.sourceKind === 'ai_checkup').map(item => item.content.problem).join('、') || '无已确认新增检查';
 
     const todayText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
     const prompt = `你是一位健康顾问，请根据以下AI健康分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。今天是${todayText}，所有待执行日期必须晚于或等于今天，禁止生成过期日期。
@@ -13597,7 +13650,6 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       ...confirmedCaseReviews.map(item => ({ id: `review:${item._id}`, content: item.conclusion })),
       ...professionalAssessments.map(item => ({ id: `assessment:${item._id}`, content: item })),
       ...(s.medical_priority?.items || []).map((item, i) => ({ id: `priority:${i}`, content: item })),
-      ...(s.checkup_completeness?.missing || []).map((item, i) => ({ id: `missing:${i}`, content: item })),
       { id: 'summary', content: promptEvidence.compactHealthSummary(s) },
       { id: 'report_history', content: promptEvidence.compactReportTimeline(timeline, [confirmedReviewText, ...confirmedManagementTargets.flatMap(row => [row.goal, row.focus]), ...confirmedCaseReviews.flatMap(row => (row.concerns || []).map(concern => concern.title))].filter(Boolean).join('；')) },
       ...(supplement ? [{ id: 'supplement', content: { reviews: supplement.reviews, reports: supplement.reports, advisorConfirmedNote: supplement.note } }] : []),

@@ -362,6 +362,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
   const [confirmedReviewTargets, setConfirmedReviewTargets] = useState([])
+  const [unresolvedAiCheckups, setUnresolvedAiCheckups] = useState([])
   const [phaseAssessmentFrequency, setPhaseAssessmentFrequency] = useState('')
   const [lastGenerationKey, setLastGenerationKey] = useState('')
   const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
@@ -512,6 +513,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           : (queryPlanType ? map[strategyOf(queryPlanType)] || null : list.find(p => p.servicePlanCode || p.planType))
         const confirmedTargets = targetsRes.data || []
         setConfirmedReviewTargets(confirmedTargets)
+        setUnresolvedAiCheckups(targetsRes.unresolved || [])
         const targetModules = target?.moduleData || {}
         const carryTargets = !target?.pushedAt && !targetModules.management_targets?.records?.length && confirmedTargets.length > 0
         setModuleData(carryTargets ? { ...targetModules, management_targets: { enabled: true, records: confirmedTargets } } : targetModules)
@@ -633,10 +635,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const reloadManagementTargets = async () => {
     if (pushedAt) return toast('已推送年度方案不能直接覆盖目标')
     const existing = moduleData.management_targets?.records || []
-    if (existing.length && !window.confirm('将用专项筛查已确定的管理方向更新年度草稿目标，确认继续？')) return
+    if (existing.length && !window.confirm('将用已确认的年度管理方向更新草稿目标，确认继续？')) return
     try {
       const res = await staffAPI.getAnnualManagementTargets(id, year)
-      if (!res.data?.length) return toast('专项筛查中暂无已纳入管理的问题')
+      setUnresolvedAiCheckups(res.unresolved || [])
+      if (!res.data?.length) return toast('专项筛查及AI健康信息整理中暂无已纳入管理的问题')
       setConfirmedReviewTargets(res.data)
       setModuleData(prev => ({ ...prev, management_targets: { enabled: true, records: res.data } }))
       setDirty(true)
@@ -1018,7 +1021,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               <button
                 onClick={handleGenerateAIAnnualPlan}
                 disabled={aiPlanLoading || preparationBlocked}
-                title={preparationBlocked ? '请先完成方案准备清单' : '按专项筛查已确定的管理方向及审核资料生成草稿'}
+                title={preparationBlocked ? '请先完成方案准备清单' : '按顾问已确认的管理方向及审核资料生成草稿'}
                 style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || preparationBlocked) ? 0.5 : 1 }}
               >
                 {aiPlanLoading ? 'AI生成中…' : '✨ AI生成方案'}
@@ -1233,8 +1236,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
           {patientMode && <section style={{ marginBottom: 16 }} aria-label="按问题查看年度管理方案">
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>年度管理项目 · 目标与执行安排</div>
-            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>更新专项筛查管理目标</button>}
-            {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。请先在专项筛查中选择“纳入管理”并确定方向。</div>}
+            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>更新已确认管理目标</button>}
+            {unresolvedAiCheckups.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>AI健康信息整理还有 {unresolvedAiCheckups.length} 项待完善检查未逐项核对：{unresolvedAiCheckups.join('、')}。请在体检资料覆盖板块处理后再生成或推送方案。</div>}
+            {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。可在专项筛查选择“纳入管理”，或在AI健康信息整理中核对待完善检查。</div>}
             {managementTargetGroups.map(group => <div key={group.ids[0]} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
               {group.entries.length > 1 && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>联合就诊安排 · {group.entries.length} 项问题，一次执行</div>}
               {group.entries.map(({ row, index }) => <div key={targetIssueId(row, index)} style={group.entries.length > 1 ? { paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid #E4ECE7' } : undefined}>

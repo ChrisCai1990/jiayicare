@@ -35,7 +35,7 @@ function compactHealthSummary(sections = {}) {
     cardiovascularFindings: sections.cardiovascular_risk?.high || [],
     chronicFindings: (sections.chronic_disease?.items || []).filter(item => ['abnormal', 'mild_abnormal'].includes(item.status))
       .map(({ name, latest, current, value, trend, meaning, action, status }) => present({ name, latest, current, value, trend, meaning, action, status })),
-    missingCheckups: sections.checkup_completeness?.missing || [],
+    // 未经顾问逐项确认的 AI 缺口只作页面提醒，不能成为方案行动的依据。
   };
 }
 

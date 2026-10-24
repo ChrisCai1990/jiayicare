@@ -28,7 +28,34 @@ test('多项目报告的旧报告级决定需由顾问重新指定检查项', as
   ] };
   const Decision = { find: () => ({ sort: () => ({ lean: async () => decisions }) }) };
   const Report = { findOne: () => ({ select: () => ({ lean: async () => report }) }) };
-  const result = await load('patient', 2026, { Decision, Report });
+  const User = { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) };
+  const CheckupReview = { find: () => ({ lean: async () => [] }) };
+  const result = await load('patient', 2026, { Decision, Report, User, CheckupReview });
   assert.equal(result.evidence.length, 0);
   assert.match(result.stale[0], /重新归属/);
+});
+
+test('已审核 AI 缺口必须逐项处理，确需检查进入完善检查且不能被复查替代', async () => {
+  const summary = { byYear: { 2026: { records: [{ scope: 'doctor', generatedAt: '2026-10-24',
+    sections: { checkup_completeness: { missing: ['补做肾脏超声', '补传已做的肺部CT'] } },
+    sectionReviews: { checkup_completeness: { status: 'approved', approvedAt: '2026-10-24T04:00:00Z' } },
+  }] } } };
+  const { approvedItems } = require('../src/utils/aiHealthCheckupItems');
+  const [exam, records] = approvedItems(summary, 2026).items;
+  const Decision = { find: () => ({ sort: () => ({ lean: async () => [] }) }) };
+  const User = { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: summary }) }) }) };
+  const CheckupReview = { find: () => ({ lean: async () => [
+    { _id: 'ai1', sourceKey: exam.sourceKey, itemText: exam.text, disposition: 'needs_exam', title: '肾脏超声', note: '核对后需检查' },
+    { _id: 'ai2', sourceKey: records.sourceKey, itemText: records.text, disposition: 'request_records', note: '检查已完成，补传报告' },
+  ] }) };
+  const result = await load('patient', 2026, { Decision, User, CheckupReview });
+  assert.deepEqual(result.unresolved, []);
+  assert.equal(result.evidence.length, 1);
+  assert.equal(result.evidence[0].content.direction, 'checkup_completion');
+  assert.match(validatePlanCoverage({ abnormal_followup: { records: [{ sourceIds: [result.evidence[0].id] }] } }, result.evidence), /肾脏超声/);
+  assert.equal(validatePlanCoverage({ checkup_completion: { records: [{ sourceIds: [result.evidence[0].id] }] } }, result.evidence), '');
+  const newSummary = structuredClone(summary);
+  newSummary.byYear[2026].records[0].sections.checkup_completeness.missing.push('补做心脏超声');
+  const next = approvedItems(newSummary, 2026);
+  assert.notEqual(next.version, approvedItems(summary, 2026).version);
 });

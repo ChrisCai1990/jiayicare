@@ -1,6 +1,8 @@
 async function load(patientId, year, dependencies = {}) {
   const Decision = dependencies.Decision || require('../models/AnnualManagementDecision');
   const Report = dependencies.Report || require('../models/MedicalReport');
+  const CheckupReview = dependencies.CheckupReview || require('../models/AIHealthCheckupReview');
+  const User = dependencies.User || require('../models/User');
   const decisions = await Decision.find({ patientId, year }).sort({ reviewedAt: 1 }).lean();
   const evidence = [], stale = [];
   for (const decision of decisions) {
@@ -18,7 +20,27 @@ async function load(patientId, year, dependencies = {}) {
       source: decision.sourceSnapshot?.item || null, reviewedAt: decision.reviewedAt,
     } });
   }
-  return { evidence, stale };
+  const patient = await User.findById(patientId).select('aiHealthSummary').lean();
+  const approved = require('./aiHealthCheckupItems').approvedItems(patient?.aiHealthSummary, year);
+  const reviews = approved.approved ? await CheckupReview.find({ patientId, year, sourceVersion: approved.version }).lean() : [];
+  const byKey = new Map(reviews.map(row => [row.sourceKey, row]));
+  const unresolved = [];
+  for (const item of approved.items) {
+    const review = byKey.get(item.sourceKey);
+    if (!review || review.itemText !== item.text) { unresolved.push(item.text); continue; }
+    if (review.disposition === 'needs_exam') {
+      evidence.push({ id: `management_issue:${review._id}`, content: {
+        problem: review.title, direction: 'checkup_completion', advisorNote: review.note,
+        reportTitle: '已审核AI健康信息整理 · 体检资料覆盖', sourceKind: 'ai_checkup', source: item.text, reviewedAt: review.reviewedAt,
+      } });
+    } else if (review.disposition === 'already_managed') {
+      const linked = decisions.find(row => String(row._id) === String(review.linkedDecisionId));
+      if (!linked || linked.direction !== 'checkup_completion' || !evidence.some(row => row.id === `management_issue:${linked._id}`)) {
+        stale.push(`${item.text}（关联的年度管理事项已变化，请重新核对）`);
+      }
+    }
+  }
+  return { evidence, stale, unresolved };
 }
 
 const DIRECTION_LABELS = {
