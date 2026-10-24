@@ -277,10 +277,26 @@ test('priority deferral suggestion cannot hide an uncovered action, but valid li
   const linked = await validateOrRepairAnnual(raw, check, async () => JSON.stringify({
     sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: [source.id] }],
     coverageCorrections: [deferral],
-  }));
+  }), undefined, { evidence: sources, catalog });
   check(linked);
   assert.equal(linked.evidenceCoverage.find(item => item.sourceId === source.id).status, 'included');
   await assert.rejects(validateOrRepairAnnual(raw, check, async () => JSON.stringify({
     sourceLinkCorrections: [], coverageCorrections: [deferral], unresolvedSourceIds: [source.id],
   })), /优先关注问题第3项标记为已纳入/);
+});
+
+test('AI context priority may be deferred with review reason, high priority remains blocked', async () => {
+  const source = { id: 'priority:4', content: { urgency: 'medium', name: '需核对的信息' } };
+  const raw = rawPlan();
+  raw.evidenceCoverage.push({ sourceId: source.id, status: 'included', reason: '初次AI标记' });
+  const check = candidate => validateAnnualRaw(candidate, catalog, [...evidence, source], keys);
+  const correction = { coverageCorrections: [{ sourceId: source.id, status: 'deferred', reason: '本次未发现独立执行事项，待健康顾问核对' }] };
+  const result = await validateOrRepairAnnual(raw, check, async () => JSON.stringify(correction), undefined,
+    { evidence: [...evidence, source], catalog });
+  check(result);
+  assert.equal(result.evidenceCoverage.at(-1).status, 'deferred');
+  const high = { ...source, content: { ...source.content, urgency: 'high' } };
+  const highCheck = candidate => validateAnnualRaw(candidate, catalog, [...evidence, high], keys);
+  await assert.rejects(validateOrRepairAnnual(raw, highCheck, async () => JSON.stringify(correction), undefined,
+    { evidence: [...evidence, high], catalog }), /优先关注问题第5项/);
 });

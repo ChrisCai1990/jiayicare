@@ -82,7 +82,7 @@ function sourceLinkRepairPrompt(candidate, evidence, missingLinks, errorMessage)
   const sources = evidence.filter(item => missingLinks.includes(item.id) || annualSources.includes(item.id)).map(item => ({
     id: item.id, content: JSON.stringify(item.content || '').slice(0, item.id === 'report_history' ? 3500 : 2400),
   }));
-  return `你只修复年度方案的来源关联和空白年度体检项，不重新生成方案。以下已有行动内容、日期和模板不可改。把确实对应的来源ID补到已有行动，按module和index分组返回sourceLinkCorrections；不能为了过校验关联无关事项。仅summary、report_history这两类汇总来源如确实没有独立对应行动，可用coverageCorrections改为deferred或not_applicable并说明具体原因。priority来源不能改状态；若确实没有对应行动，请在unresolvedSourceIds中列出，系统将停止生成并请顾问核对，不能用暂缓掩盖遗漏。顾问已确认的management_issue也不能降级。${annualNeedsCorrection ? '当前annual_checkup有模板却缺少focus。请根据其已关联的真实来源填写明确、简短的focus，并返回完整annual_checkup对象；若来源不支持年度体检行动，返回annual_checkup:{}，同时如实修正对应evidenceCoverage。不能保留空focus占位。' : ''}只输出JSON，包含需要的字段：{"sourceLinkCorrections":[{"module":"medical_treatment","index":0,"sourceIds":["真实来源ID"]}],"unresolvedSourceIds":[],"coverageCorrections":[{"sourceId":"summary","status":"deferred","reason":"具体原因"}]${annualExample}}。无须重复整份方案。\n校验问题：${errorMessage}\n已有行动：${JSON.stringify(actions)}\n相关来源：${JSON.stringify(sources)}`;
+  return `你只修复年度方案的来源关联和空白年度体检项，不重新生成方案。以下已有行动内容、日期和模板不可改。把确实对应的来源ID补到已有行动，按module和index分组返回sourceLinkCorrections；不能为了过校验关联无关事项。summary、report_history这两类汇总来源如确实没有独立对应行动，可用coverageCorrections改为deferred或not_applicable并说明具体原因。priority是AI信息整理的关注提示，不等于顾问已确认纳入；仅在确实没有对应行动、且不是high高优先级时，可用coverageCorrections改为deferred，具体说明为何本次无独立行动并提示顾问核对。high高优先级及顾问已确认的management_issue不得降级；若找不到行动，在unresolvedSourceIds列出，系统将停止生成。${annualNeedsCorrection ? '当前annual_checkup有模板却缺少focus。请根据其已关联的真实来源填写明确、简短的focus，并返回完整annual_checkup对象；若来源不支持年度体检行动，返回annual_checkup:{}，同时如实修正对应evidenceCoverage。不能保留空focus占位。' : ''}只输出JSON，包含需要的字段：{"sourceLinkCorrections":[{"module":"medical_treatment","index":0,"sourceIds":["真实来源ID"]}],"unresolvedSourceIds":[],"coverageCorrections":[{"sourceId":"summary","status":"deferred","reason":"具体原因"}]${annualExample}}。无须重复整份方案。\n校验问题：${errorMessage}\n已有行动：${JSON.stringify(actions)}\n相关来源：${JSON.stringify(sources)}`;
 }
 
 // A repair edits a small part of an existing plan, so never resend the original
@@ -176,10 +176,18 @@ async function validateOrRepairAnnual(raw, validate, complete, normalize = value
       if (!Array.isArray(parsed.coverageCorrections)) throw new Error('来源状态校正格式无效');
       const pending = new Map();
       for (const patch of parsed.coverageCorrections) {
-        // Priority items stay included until linked. A model may nevertheless
-        // propose deferral alongside usable links; discard only that proposal,
-        // then let the full validator decide whether every item is covered.
-        if (/^priority:\d+$/.test(String(patch?.sourceId || '')) && missingLinks.includes(patch.sourceId)) continue;
+        // AI summaries are context, not advisor-confirmed management decisions.
+        // A non-high priority can remain pending with a specific explanation;
+        // high-priority and confirmed management issues still require action.
+        if (/^priority:\d+$/.test(String(patch?.sourceId || '')) && missingLinks.includes(patch.sourceId)) {
+          const source = (repairContext.evidence || []).find(item => item.id === patch.sourceId);
+          if (source && source.content?.urgency !== 'high' && patch.status === 'deferred'
+            && !parsed.sourceLinkCorrections?.some(link => link.sourceIds?.includes(patch.sourceId))
+            && String(patch.reason || '').trim().length >= 10 && !pending.has(patch.sourceId)) {
+            pending.set(patch.sourceId, patch);
+          }
+          continue;
+        }
         if (!['summary', 'report_history'].includes(patch?.sourceId) || !missingLinks.includes(patch.sourceId)
           || !['deferred', 'not_applicable'].includes(patch?.status)
           || !String(patch.reason || '').trim() || pending.has(patch.sourceId)) throw new Error('来源状态校正缺少有效依据');
