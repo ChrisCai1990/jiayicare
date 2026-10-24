@@ -13527,7 +13527,11 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     }
     const previousVisits = await require('../utils/annualArrangementHistory').loadVisits(user._id);
     const dentalGiftContext = closedLoop && year === 2026 ? await require('../utils/dentalGift').context(user._id) : null;
-    const dentalGift = dentalGiftContext ? require('../utils/dentalGift').view(dentalGiftContext.row) : null;
+    const enterpriseDentalGift = dentalGiftContext ? require('../utils/dentalGift').view(dentalGiftContext.row) : null;
+    const serviceDentalGifts = closedLoop ? await GiftRecord.find({ patientId: user._id, giftType: 'service', status: 'active', serviceName: /艾维口腔/ })
+      .select('serviceName serviceCount usedCount validFrom validTo').lean() : [];
+    const todayForGift = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const dentalGift = require('../utils/annualCareLogistics').selectDentalGift(serviceDentalGifts, enterpriseDentalGift, todayForGift);
     const auditedGlucose = await require('../utils/annualAuditedGlucose').latestAuditedGlucose(user._id, year);
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
@@ -13702,7 +13706,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       ...(supplement ? [{ id: 'supplement', content: { reviews: supplement.reviews, reports: supplement.reports, advisorConfirmedNote: supplement.note } }] : []),
     ];
     const carePreferences = require('../utils/carePreferences').carePreferenceContext(user);
-    const logisticsPrompt = '\n【就医机构与服务权益】同一专科的已核实既往就诊医院优先；体检报告标题不能写入医院字段。没有已核实医院时，顾问填写的偏好仅作待确认线索。洁牙可建议艾维口腔；如有赠送权益，须核对使用状态及有效期，不得称已预约。复查项目和复查原因必须对应同一来源，不得把不同部位检查或肿瘤标志物混写为一次CT。日常跟进请写明对应的具体问题和工作人员要核对的事项，避免空白方案或内部代码。\n已核实既往就诊记录：' + JSON.stringify([...previousVisits].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12)) + '\n就医偏好：' + JSON.stringify(carePreferences) + '\n本年度企业赠送洁牙权益：' + JSON.stringify(dentalGift || '无已确认适用权益');
+    const logisticsPrompt = '\n【就医机构与服务权益】同一专科的已核实既往就诊医院优先；体检报告标题不能写入医院字段。没有已核实医院时，顾问填写的偏好仅作待确认线索。洁牙可建议艾维口腔；如有赠送权益，须核对使用状态及有效期，不得称已预约。复查项目和复查原因必须对应同一来源，不得把不同部位检查或肿瘤标志物混写为一次CT。日常跟进请写明对应的具体问题和工作人员要核对的事项，避免空白方案或内部代码。\n已核实既往就诊记录：' + JSON.stringify([...previousVisits].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12)) + '\n就医偏好：' + JSON.stringify(carePreferences) + '\n当前可核对的赠送洁牙权益：' + JSON.stringify(dentalGift || '无已确认适用权益');
     const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n' + clinicalRules.clinicalRulesPrompt + logisticsPrompt + (supplement ? '\n【补充生成模式】只针对supplement中的顾问选定依据提出新增或需调整事项，不重新生成整份，不重复已落实行动。原方案仅供对照，不是新的医学依据：' + JSON.stringify(supplement.baseModuleData) + '\n未涉及的模块返回空，不能把未输出当作取消。年度focus只给新增重点，不重复原项目；其他原内容由系统保留。每项补充建议sourceIds必须包含supplement及具体来源。' : '') : prompt;
     const generate = async (resumeRaw = null) => {
       let parsed = resumeRaw;

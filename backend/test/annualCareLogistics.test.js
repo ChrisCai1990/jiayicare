@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeLogistics } = require('../src/utils/annualCareLogistics');
+const { normalizeLogistics, selectDentalGift } = require('../src/utils/annualCareLogistics');
 
 test('report title cannot become a followup hospital', () => {
   const raw = { abnormal_followup: [{ hospital: '爱康卓悦健康体检报告', items: '胸部CT' }] };
@@ -30,4 +30,13 @@ test('usable cleaning gift takes priority over historical dental clinic', () => 
     { visits: [{ date: '2026-08-01', department: '口腔科', hospital: '旧口腔医院' }],
       today: '2026-10-24', dentalGift: { status: 'available', expired: false, expiresAt: '2026-10-31' } });
   assert.equal(next.medical_treatment[0].hospital, '艾维口腔');
+});
+
+test('active unused service gift is recognized alongside enterprise dental benefit', () => {
+  const enterprise = { status: 'unknown', expiresAt: '2026-10-31' };
+  const records = [{ status: 'active', serviceName: '艾维口腔洁牙服务', serviceCount: 1, usedCount: 0,
+    validFrom: '2026-01-01', validTo: '2026-12-31' }];
+  assert.deepEqual(selectDentalGift(records, enterprise, '2026-10-24'), { status: 'available', expired: false,
+    expiresAt: '2026-12-31', serviceName: '艾维口腔洁牙服务' });
+  assert.equal(selectDentalGift([{ ...records[0], usedCount: 1 }], enterprise, '2026-10-24'), enterprise);
 });
