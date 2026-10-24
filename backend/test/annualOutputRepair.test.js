@@ -10,6 +10,27 @@ const rawPlan = () => ({ templateNodes: [], medical_treatment: [], abnormal_foll
   annual_checkup: { standardPlanId: 'annual_checkup', focus: ['检查乙'], date: '2027-05-01', basisSummary: '已审来源', sourceIds: ['missing:1'] },
   evidenceCoverage: evidence.map(x => ({ sourceId: x.id, status: 'included', reason: '已有事项' })),
 });
+test('same-day daily followups for different confirmed problems combine without losing content', () => {
+  const sources = [
+    { id: 'management_issue:kidney', content: { problem: '肾结晶', direction: 'ongoing_management', advisorNote: '核对饮水记录' } },
+    { id: 'management_issue:weight', content: { problem: '体重', direction: 'ongoing_management', advisorNote: '核对体重趋势' } },
+  ];
+  const templates = [{ id: 'daily', name: '【日常跟进】', category: 'personalized' }];
+  const raw = { ...rawPlan(), annual_checkup: {}, checkup_completion: [],
+    templateNodes: sources.map(item => ({ standardPlanId: 'daily', executionDate: '2026-10-30',
+      basisSummary: item.content.problem, matchReason: 'ongoing_management', sourceIds: [item.id] })),
+    evidenceCoverage: sources.map(item => ({ sourceId: item.id, status: 'included', reason: '顾问已确认' })) };
+  const result = normalizeConfirmedManagement(raw, sources, templates);
+  assert.equal(result.templateNodes.length, 1);
+  assert.deepEqual(result.templateNodes[0].sourceIds, sources.map(item => item.id));
+  assert.match(result.templateNodes[0].personalization, /肾结晶/);
+  assert.match(result.templateNodes[0].personalization, /体重/);
+  validateAnnualRaw(result, [...catalog.filter(item => item.category !== 'annual_checkup'), ...templates, { id: 'annual_checkup', category: 'annual_checkup' }], sources, keys);
+  const separateDates = { ...raw, templateNodes: raw.templateNodes.map((row, index) => ({ ...row, executionDate: index ? '2026-11-30' : '2026-10-30' })) };
+  validateAnnualRaw(separateDates, [...catalog, ...templates], sources, keys);
+  const duplicate = { ...raw, templateNodes: [raw.templateNodes[0], { ...raw.templateNodes[0] }] };
+  assert.throws(() => validateAnnualRaw(duplicate, [...catalog, ...templates], sources, keys), /个性化事项“【日常跟进】”.*关联问题：肾结晶/);
+});
 const validate = raw => { validateAnnualRaw(raw, catalog, evidence, keys); validateClinicalRules(raw, [], evidence); };
 test('string-list focus is losslessly normalized and passes actual validators without AI retry', async () => {
   const raw = rawPlan();

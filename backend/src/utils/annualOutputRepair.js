@@ -61,7 +61,23 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
         ? `工作人员跟进${labels.join('、')}的执行情况，记录变化及需要健康顾问处理的问题。${details.length ? `顾问补充：${details.join('；')}` : ''}` : ''),
     };
   }) : raw.templateNodes;
-  const updated = { ...raw, templateNodes: nodes };
+  const combinedNodes = [];
+  for (const node of nodes || []) {
+    const daily = require('./annualPlanPresentation').internalDaily({ standardPlanName: templates.get(String(node.standardPlanId || ''))?.name });
+    const prior = daily && /^\d{4}-\d{2}-\d{2}$/.test(String(node.executionDate || ''))
+      && combinedNodes.find(row => String(row.standardPlanId || '') === String(node.standardPlanId || '')
+      && String(row.executionDate || '') === String(node.executionDate || '')
+      && String(row.frequency || '') === String(node.frequency || '')
+      && String(row.serviceMode || '') === String(node.serviceMode || '')
+      && String(row.serviceType || '') === String(node.serviceType || '')
+      && String(row.timingSourceId || '') === String(node.timingSourceId || ''));
+    if (!prior) { combinedNodes.push(node); continue; }
+    prior.sourceIds = [...new Set([...(prior.sourceIds || []), ...(node.sourceIds || [])])];
+    for (const key of ['matchReason', 'personalization', 'basisSummary', 'precautions', 'customerAction', 'notes']) {
+      prior[key] = [...new Set([prior[key], node[key]].map(value => String(value || '').trim()).filter(Boolean))].join('；');
+    }
+  }
+  const updated = { ...raw, templateNodes: combinedNodes };
   const linked = new Set(management.filter(item => !missingManagementActions({ ...updated,
     evidenceCoverage: [{ sourceId: item.id, status: 'included', reason: '已关联行动' }] }, [item], catalog).length).map(item => item.id));
   updated.evidenceCoverage = raw.evidenceCoverage.map(item => linked.has(item.sourceId) && item.status !== 'included'

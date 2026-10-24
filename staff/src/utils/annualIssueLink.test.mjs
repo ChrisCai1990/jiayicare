@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { targetIssueId, linkedIssueId, groupTargetsBySharedActions } from './annualIssueLink.mjs'
+import { targetIssueId, linkedIssueId, actionTargetIds, groupTargetsBySharedActions } from './annualIssueLink.mjs'
 
 test('only a unique reviewed issue is linked automatically', () => {
   const targets = [{ sourceReviewId: 'abc', sourceIndex: 0, goal: '目标' }]
@@ -23,4 +23,18 @@ test('confirmed management source IDs attach actions to their problem and share 
 test('multiple targets in one review stay unassigned', () => {
   const targets = [{ sourceReviewId: 'abc', sourceIndex: 0 }, { sourceReviewId: 'abc', sourceIndex: 1 }]
   assert.equal(linkedIssueId({ sourceIds: ['review:abc:action:1'] }, targets), '')
+})
+
+test('same-day category groups problems while retaining separate actions and sources', () => {
+  const targets = [{ issueId: 'lung' }, { issueId: 'stomach' }, { issueId: 'kidney' }, { issueId: 'later' }]
+  const actions = [
+    { key: 'abnormal_followup', date: '2026-11-20', record: { sourceIds: ['lung'], items: '胸部CT' } },
+    { key: 'abnormal_followup', date: '2026-11-20', record: { sourceIds: ['stomach'], items: '胃镜' } },
+    { key: 'medical_treatment', date: '2026-11-20', record: { sourceIds: ['kidney'] } },
+    { key: 'abnormal_followup', date: '2026-12-20', record: { sourceIds: ['later'] } },
+  ]
+  const groups = groupTargetsBySharedActions(targets, actions)
+  assert.deepEqual(groups.map(group => group.ids), [['lung', 'stomach'], ['kidney'], ['later']])
+  assert.deepEqual(actions.map(action => actionTargetIds(action, targets)), [['lung'], ['stomach'], ['kidney'], ['later']])
+  assert.equal(actions.length, 4)
 })

@@ -39,15 +39,22 @@ function validateAnnualRaw(raw, catalog, evidence = [], allowedKeys = null) {
     if (key === 'annual_checkup' && (typeof value !== 'object' || Array.isArray(value))) throw fail('年度体检格式不正确');
     if (key !== 'annual_checkup' && !Array.isArray(value)) throw fail(`AI的${key}格式不正确`);
     const rows = key === 'annual_checkup' ? (Object.keys(value).length ? [value] : []) : value;
-    const seen = new Set();
+    const seen = new Map();
     for (const row of rows) {
       if (key === 'annual_checkup' && !require('./annualFocusRepair').hasFocus(row)) throw fail('年度体检缺少明确内容');
       const source = sources.get(String(row.standardPlanId || ''));
       if (!source || source.category !== (key === 'templateNodes' ? 'personalized' : key)) throw fail(`${key}存在模板不匹配项目，未删除项目，请核对生成记录`);
       if (!String(row.basisSummary || row.reason || row.matchReason || '').trim()) throw fail(`${key}缺少来源依据，未替换现有方案`);
-      const identity = String(row.items || row.name || row.reason || row.focus || row.standardPlanId).trim();
-      if (seen.has(identity)) throw fail(`${key}存在重复事项，未替换现有方案`);
-      seen.add(identity);
+      const title = String(row.items || row.name || row.reason || row.focus || source.name || row.standardPlanName || key).trim();
+      const date = String(row.visit_time || row.time || row.executionDate || row.date || '').trim();
+      const related = [...new Set((row.sourceIds || []).map(String))].sort();
+      const identity = JSON.stringify([String(row.standardPlanId || ''), title, date, related]);
+      if (seen.has(identity)) {
+        const labels = related.map(id => evidence.find(item => item.id === id)?.content?.problem).filter(Boolean);
+        const moduleLabel = { medical_treatment: '就医安排', checkup_completion: '完善检查', abnormal_followup: '定期复查', vaccine: '疫苗接种', annual_checkup: '年度体检', templateNodes: '个性化事项' }[key] || key;
+        throw fail(`${moduleLabel}“${title}”${date ? `（${date}）` : ''}重复生成${labels.length ? `，关联问题：${[...new Set(labels)].join('、')}` : ''}；请核对同一事项，未替换现有方案`);
+      }
+      seen.set(identity, row);
     }
   }
   if (raw.lifestyle && Object.keys(raw.lifestyle).length && (Array.isArray(raw.lifestyle) || !String(raw.lifestyle.focus || '').trim())) throw fail('生活方式模块格式不完整');

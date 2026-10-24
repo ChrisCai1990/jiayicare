@@ -71,6 +71,17 @@ test('same-day consultation consolidation retains both issues and timing sources
   assert.throws(() => validateClinicalRules(merged, [{ id: 'report:a', date: '2026-06-09', group: '直肠' }]), /日期与报告不一致/);
   assert.equal(validateClinicalRules(merged, [{ id: 'report:a', date: '2026-06-09', group: '直肠' }, { id: 'report:b', date: '2026-06-11', group: '盲肠' }]), merged);
 });
+test('same-day same-clinic visit groups independent issues without merging other appointments', () => {
+  const base = { standardPlanId: 'visit', visit_time: '2026-11-10', hospital: '浙二医院', department: '消化内科' };
+  const first = { ...base, sourceIds: ['stomach'], reason: '评估胃炎' };
+  const second = { ...base, sourceIds: ['polyp'], reason: '评估息肉' };
+  const separate = { ...base, sourceIds: ['lung'], hospital: '浙江医院', reason: '评估肺部问题' };
+  const merged = consolidateSameDayConsultations({ medical_treatment: [first, second, separate] });
+  assert.equal(merged.medical_treatment.length, 2);
+  assert.deepEqual(merged.medical_treatment[0].sourceIds, ['stomach', 'polyp']);
+  assert.match(merged.medical_treatment[0].reason, /胃炎.*息肉/);
+  assert.equal(merged.medical_treatment[1].hospital, '浙江医院');
+});
 test('annual focus cannot repeat near-term checks without independent sourced repeat reason', () => {
   const raw = { checkup_completion: [{ items: '骨密度检测（DXA）', time: '2026-10-01' }], annual_checkup: { date: '2027-05-01', focus: '骨密度检测（DXA，已有近期安排）' } };
   assert.throws(() => validateClinicalRules(raw, [], [{ id: 'review:1' }]), /重复近期检查/);

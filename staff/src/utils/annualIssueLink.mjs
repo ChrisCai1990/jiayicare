@@ -31,16 +31,20 @@ export function displayIssueId(record, targets) {
   return best > 0 && matches.length === 1 ? matches[0].id : ''
 }
 
-// A single reviewed visit may address several separately documented problems.
-// Keep the original goals intact while rendering their shared action once.
+export function actionTargetIds(action, targets) {
+  const known = new Set(targets.map((row, index) => targetIssueId(row, index)))
+  return [...new Set([action.issueId, action.record?.issueId,
+    ...(action.record?.issueIds || []), ...(action.record?.sourceIds || [])]
+    .filter(Boolean).map(String).filter(id => known.has(id)))]
+}
+
+// Group same-day, same-category arrangements for review. Each action and its
+// source evidence stay separate unless the backend has established one visit.
 export function groupTargetsBySharedActions(targets, actions) {
   const groups = targets.map((row, index) => ({ entries: [{ row, index }], ids: [targetIssueId(row, index)] }))
-  for (const action of actions) {
-    const known = new Set(groups.flatMap(group => group.ids))
-    const ids = [...new Set([...(action.record?.issueIds || []), ...(action.record?.sourceIds || [])].map(String).filter(id => known.has(id)))]
-    if (ids.length < 2) continue
+  const merge = ids => {
     const matching = groups.filter(group => group.ids.some(id => ids.includes(id)))
-    if (matching.length < 2 || !ids.every(id => matching.some(group => group.ids.includes(id)))) continue
+    if (matching.length < 2) return
     const first = matching[0]
     for (const group of matching.slice(1)) {
       first.entries.push(...group.entries)
@@ -49,5 +53,19 @@ export function groupTargetsBySharedActions(targets, actions) {
     }
     first.entries.sort((a, b) => a.index - b.index)
   }
+  for (const action of actions) {
+    merge(actionTargetIds(action, targets))
+  }
+  const byDayAndCategory = new Map()
+  for (const action of actions) {
+    const date = String(action.date || '').trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    const category = String(action.key || '')
+    if (!['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'personalized_followups'].includes(category)) continue
+    const template = category === 'personalized_followups' ? String(action.record?.standardPlanId || action.record?.standardPlanName || '') : ''
+    const key = `${category}:${template}:${date}`
+    byDayAndCategory.set(key, [...(byDayAndCategory.get(key) || []), ...actionTargetIds(action, targets)])
+  }
+  for (const ids of byDayAndCategory.values()) merge([...new Set(ids)])
   return groups
 }

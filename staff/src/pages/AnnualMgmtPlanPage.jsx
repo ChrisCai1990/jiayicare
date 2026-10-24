@@ -18,7 +18,7 @@ import { annualTemplateCode, matchingAnnualTemplate } from '../utils/annualTempl
 import { annualItemLayout } from '../utils/annualItemLayout.mjs'
 import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
-import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
+import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
 import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
@@ -969,7 +969,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   })
   const integratedActions = planActions.map(action => ({ ...action, issueId: patientMode ? displayIssueId(action.record, managementTargets) : '' }))
   const managementTargetGroups = groupTargetsBySharedActions(managementTargets, integratedActions)
-  const sharedActions = integratedActions.filter(action => !action.issueId)
+  const groupActions = group => integratedActions.filter(action => actionTargetIds(action, managementTargets).some(id => group.ids.includes(id)))
+  const groupHeading = group => {
+    const actions = groupActions(group)
+    const sameDayAndCategory = actions.length > 1 && actions[0].date && actions.every(action => action.date === actions[0].date && action.key === actions[0].key)
+    return `${sameDayAndCategory ? '同日同类安排' : '关联问题安排'} · ${group.entries.length} 项问题 · ${actions.length} 项执行事项`
+  }
+  const sharedActions = integratedActions.filter(action => actionTargetIds(action, managementTargets).length === 0)
   const renderPlanAction = action => {
     const entry = visibleModuleEntries.find(item => item.key === action.key)
     const def = annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name, patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name, currentPlanId, dirty)
@@ -1296,7 +1302,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             {unresolvedAiCheckups.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>AI健康信息整理还有 {unresolvedAiCheckups.length} 项待完善检查未逐项核对：{unresolvedAiCheckups.join('、')}。请在体检资料覆盖板块处理后再生成或推送方案。</div>}
             {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。可在专项筛查选择“纳入管理”，或在AI健康信息整理中核对待完善检查。</div>}
             {managementTargetGroups.map(group => <div key={group.ids[0]} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
-              {group.entries.length > 1 && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>联合就诊安排 · {group.entries.length} 项问题，一次执行</div>}
+              {group.entries.length > 1 && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>{groupHeading(group)}</div>}
               {group.entries.map(({ row, index }) => <div key={targetIssueId(row, index)} style={group.entries.length > 1 ? { paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid #E4ECE7' } : undefined}>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', marginBottom: 5 }}>{index + 1}. {(row.goal || row.sourceTitle || '管理问题').replace(/：按.+安排完成本年度可核对的管理行动$/, '')}{row.sourceGoal && !(row.goal || '').includes(` · ${row.sourceGoal}`) ? ` · ${row.sourceGoal}` : ''}</div>
               <details><summary style={{ cursor: 'pointer', fontSize: 12, color: '#62776A' }}>查看来源依据、调整目标与干预重点</summary>
@@ -1309,7 +1315,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               </details>
               {row.nutritionRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>营养师参与 · 纳入下方统一评估</div>}
               </div>)}
-              {integratedActions.filter(action => group.ids.includes(action.issueId) || [...(action.record.issueIds || []), ...(action.record.sourceIds || [])].some(id => group.ids.includes(String(id)))).map(renderPlanAction)}
+              {groupActions(group).map(renderPlanAction)}
             </div>)}
           </section>}
           <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
