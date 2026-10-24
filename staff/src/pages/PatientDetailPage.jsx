@@ -6683,7 +6683,9 @@ export default function PatientDetailPage() {
                     <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
                   </div>
                   <SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
-                    source={{ kind: 'screening_report', reportId: (r._sourceItems || [])[0]?.reportId || r._id }}
+                    source={r.isAI && r._sourceItems?.[0]?.itemId
+                      ? { kind: 'screening', reportId: r._sourceItems[0].reportId, itemId: r._sourceItems[0].itemId }
+                      : { kind: 'screening_report', reportId: (r._sourceItems || [])[0]?.reportId || r._id }}
                     sourceText={[r.note, r.examConclusion, ...(r.reportItems || []).filter(item => item.status === 'abnormal' || item.status === 'attention' || item.itemType === 'imaging').flatMap(item => [item.name, item.conclusion, item.diagnosis, item.findings])].filter(Boolean).join('；')}
                     sourceLabel={`${r.checkDate || '日期待核实'} · ${r.title || r.screeningL3 || '专项筛查记录'}`} />
                   {r.isAI
@@ -7124,7 +7126,7 @@ export default function PatientDetailPage() {
                   })
                   // 记录原始 reportId 和 itemLabel 供删除用
                   if (!aiVirtualMap[vKey]._sourceItems) aiVirtualMap[vKey]._sourceItems = []
-                  aiVirtualMap[vKey]._sourceItems.push({ reportId: rid, itemLabel: it.itemLabel || '' })
+                  aiVirtualMap[vKey]._sourceItems.push({ reportId: rid, itemId: it.itemId || '', itemLabel: it.itemLabel || '' })
                 })
                 Object.values(aiVirtualMap).forEach(({ _l1Key, _l2, _l3, _sourceItems, ...rec }) => {
                   rec._sourceItems = _sourceItems || []

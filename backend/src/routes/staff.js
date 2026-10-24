@@ -9188,17 +9188,33 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
       .select('_id title checkDate updatedAt reportItems examConclusion').lean();
     if (!report) return res.status(409).json({ success: false, message: '来源报告尚未审核或已变化，请先核对' });
     const itemId = source.kind === 'screening' ? String(source.itemId || source.itemName || '').trim() : '';
-    const sourceItem = (report.reportItems || []).find(item => [item.itemId, item.name, item.screeningKey, ...(item.screeningKeys || [])].some(value => String(value || '') === itemId));
+    const sourceItems = (report.reportItems || []).filter(item => [item.itemId, item.name, item.screeningKey, ...(item.screeningKeys || [])].some(value => String(value || '') === itemId));
+    const sourceItem = sourceItems[0];
     if (source.kind === 'screening' && (!itemId || !sourceItem)) return res.status(409).json({ success: false, message: '来源检查项已变化，请刷新后核对' });
     const confirmed = await AnnualPlan.exists({ patientId: req.params.id, year: Number(year), confirmedAt: { $ne: null } });
     if (confirmed) return res.status(409).json({ success: false, message: '本年度方案已确认，新检查结果请走单项随访' });
     const sourceKey = `${source.kind}:${report._id}${itemId ? `:${itemId}` : ''}`;
     const Decision = require('../models/AnnualManagementDecision');
-    const row = await Decision.findOneAndUpdate({ patientId: req.params.id, year: Number(year), sourceKey },
-      { $set: { reportId: report._id, itemId, title, direction, note, sourceSnapshot: {
+    const legacyDecisionId = req.body.legacyDecisionId;
+    let legacy = null;
+    if (legacyDecisionId) {
+      if (source.kind !== 'screening' || !mongoose.isValidObjectId(legacyDecisionId)) return res.status(400).json({ success: false, message: '旧管理决定来源无效' });
+      legacy = await Decision.findOne({ _id: legacyDecisionId, patientId: req.params.id, year: Number(year), reportId: report._id,
+        sourceKey: `screening_report:${report._id}` });
+      if (!legacy) return res.status(409).json({ success: false, message: '旧管理决定已变化，请刷新后核对' });
+      if (await Decision.exists({ patientId: req.params.id, year: Number(year), sourceKey })) {
+        return res.status(409).json({ success: false, message: '该检查项已有管理决定，请刷新后核对' });
+      }
+    }
+    const update = { reportId: report._id, itemId, title, direction, note, sourceSnapshot: {
         reportTitle: report.title || '', checkDate: report.checkDate || '', reportUpdatedAt: report.updatedAt,
         item: source.kind === 'screening' ? sourceItem : null,
-      }, reviewedBy: req.staff._id, reviewedAt: new Date() } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+      }, reviewedBy: req.staff._id, reviewedAt: new Date() };
+    const row = legacy
+      ? await Decision.findOneAndUpdate({ _id: legacy._id, sourceKey: legacy.sourceKey }, { $set: { ...update, sourceKey } }, { new: true })
+      : await Decision.findOneAndUpdate({ patientId: req.params.id, year: Number(year), sourceKey },
+        { $set: update }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    if (!row) return res.status(409).json({ success: false, message: '管理决定已变化，请刷新后重试' });
     res.json({ success: true, data: row });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });

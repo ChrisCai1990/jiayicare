@@ -8,6 +8,10 @@ async function load(patientId, year, dependencies = {}) {
       .select('_id title checkDate updatedAt reportItems').lean();
     const changed = !report || String(report.updatedAt) !== String(decision.sourceSnapshot?.reportUpdatedAt);
     if (changed) { stale.push(decision.title); continue; }
+    if (decision.sourceKey === `screening_report:${report._id}`) {
+      const groups = new Set((report.reportItems || []).map(item => item.screeningKey || item.screeningKeys?.[0]).filter(Boolean));
+      if (groups.size > 1) { stale.push(`${decision.title}（旧版整份报告纳入，请在对应检查项重新归属）`); continue; }
+    }
     evidence.push({ id: `management_issue:${decision._id}`, content: {
       reportId: report._id, reportTitle: report.title, checkDate: report.checkDate,
       problem: decision.title, direction: decision.direction, advisorNote: decision.note,
