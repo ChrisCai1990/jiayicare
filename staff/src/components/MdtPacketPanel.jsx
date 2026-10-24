@@ -14,24 +14,26 @@ const FIELDS = [
   ['conclusion', '综合结论', '会后由健康顾问汇总共识和未解决的问题'],
   ['nextSteps', '后续安排', '事项、负责人、日期或频次'],
 ]
+const TABLES = [
+  ['timelineRows', '病程时间轴', [['date', '日期'], ['event', '事件／病程'], ['symptoms', '症状变化'], ['assessment', '当时诊断记录'], ['response', '处置及反应']]],
+  ['triggerRows', '诱因与缓解因素', [['factor', '因素／情境'], ['effect', '记录的影响（诱发／缓解）']]],
+  ['treatmentRows', '用药与治疗反应', [['treatment', '药物／治疗'], ['period', '时间／剂量'], ['response', '记录的效果或不适'], ['currentStatus', '当前状态']]],
+  ['testRows', '关键检查', [['date', '检查日期'], ['test', '项目'], ['originalResult', '报告原始结果'], ['interpretation', '待专家解读']]],
+  ['questionRows', '会诊问题清单', [['discipline', '学科'], ['question', '需要回答的问题'], ['expectedAnswer', '期望形成的结论／决策']]],
+]
+const blankTables = () => Object.fromEntries(TABLES.map(([key]) => [key, []]))
 const show = value => value === 0 || value ? String(value) : '未记录'
 const dateText = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '未记录'
 const reportDate = report => report.checkDate || report.reportYear || '日期未记录'
 const newForm = (user, medications) => {
   const summary = user?.medicalRecord?.summary || {}
-  const entries = user?.medicalRecord?.courseEntries || []
-  const currentMedication = (medications || []).filter(item => item.active === true && !item.stopped)
-  const stoppedMedication = (medications || []).filter(item => item.stopped || item.active === false).slice(0, 20)
   return {
-    title: '', consultationDate: '', disciplines: '', selectedReportIds: [],
+    title: '', consultationDate: '', disciplines: '', selectedReportIds: [], tables: blankTables(),
     sections: {
       goal: '', overview: [summary.chiefComplaint, summary.presentIllness].filter(Boolean).join('\n'),
-      timeline: entries.map(item => [item.occurredAt || item.date, item.content, item.examination, item.treatmentResponse].filter(Boolean).join('：')).filter(Boolean).join('\n'),
+      timeline: '',
       symptoms: (user?.healthProfile?.recentSymptoms || []).join('、'),
-      treatment: [summary.currentMedication,
-        ...currentMedication.map(item => `在用：${[item.name, item.dosage, item.frequency, item.startDate].filter(Boolean).join(' ')}`),
-        ...stoppedMedication.map(item => `已停用：${[item.name, item.dosage, item.frequency, item.stopDate, item.stopReason].filter(Boolean).join(' ')}`),
-      ].filter(Boolean).join('\n'),
+      treatment: '',
       questions: '', uncertainties: '', disciplineOpinions: '', conclusion: '', nextSteps: '',
     },
   }
@@ -55,7 +57,8 @@ export default function MdtPacketPanel({ patientId, user, reports, medications, 
   useEffect(() => { if (!packet && !dirty) setForm(newForm(user, medications)) }, [user, medications])
   const update = patch => { setForm(prev => ({ ...prev, ...patch })); setDirty(true) }
   const section = (key, value) => { setForm(prev => ({ ...prev, sections: { ...prev.sections, [key]: value } })); setDirty(true) }
-  const choose = row => { setPacket(row); setForm({ title: row.title, consultationDate: row.consultationDate || '', disciplines: row.disciplines || '', sections: row.sections || {}, selectedReportIds: (row.selectedReportIds || []).map(String), version: row.__v }); setDirty(false) }
+  const tableRows = (key, rows) => { setForm(prev => ({ ...prev, tables: { ...prev.tables, [key]: rows } })); setDirty(true) }
+  const choose = row => { setPacket(row); setForm({ title: row.title, consultationDate: row.consultationDate || '', disciplines: row.disciplines || '', sections: row.sections || {}, tables: { ...blankTables(), ...(row.tables || {}) }, selectedReportIds: (row.selectedReportIds || []).map(String), version: row.__v }); setDirty(false) }
   const save = async () => {
     if (!form.title.trim()) return toast('请填写会诊主题', 'error')
     setBusy(true)
@@ -78,8 +81,11 @@ export default function MdtPacketPanel({ patientId, user, reports, medications, 
     try {
       const result = await staffAPI.organizeMdtPacket(patientId, packet._id, packet.__v)
       const prefill = newForm(user, medications).sections
-      setForm(prev => ({ ...prev, sections: Object.fromEntries(Object.entries(prev.sections).map(([key, value]) =>
-        [key, result.data[key] && (!value || value === prefill[key]) ? result.data[key] : value])) }))
+      setForm(prev => ({ ...prev,
+        sections: Object.fromEntries(Object.entries(prev.sections).map(([key, value]) =>
+          [key, result.data.sections?.[key] && (!value || value === prefill[key]) ? result.data.sections[key] : value])),
+        tables: Object.fromEntries(TABLES.map(([key]) => [key, prev.tables?.[key]?.length ? prev.tables[key] : (result.data.tables?.[key] || [])])),
+      }))
       setDirty(true)
       toast('已填充资料草稿，请逐项核对并保存')
     } catch (error) { toast(error.message || 'AI整理失败', 'error') }
@@ -108,20 +114,32 @@ export default function MdtPacketPanel({ patientId, user, reports, medications, 
           else { setPacket(null); setForm(newForm(user, medications)); setDirty(false) }
         }}><option value="">新建会诊资料包</option>{packets.map(row => <option key={row._id} value={row._id}>{row.title} · {row.status === 'reviewed' ? '已审核' : '草稿'} · {String(row.updatedAt || '').slice(0, 10)}</option>)}</select>
           <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? '处理中…' : '保存草稿'}</button>
-          {packet && <button className="btn btn-secondary" disabled={busy || dirty} onClick={organize}>AI整理空白栏目</button>}
+          {packet && <button className="btn btn-secondary" disabled={busy || dirty} onClick={organize}>通义千问生成草稿</button>}
           {packet && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-secondary" disabled={busy || dirty || packet.status === 'reviewed'} onClick={review}>审核资料包</button>}
           <button className="btn btn-secondary" disabled={!printable} onClick={print}>打印 / 保存为 PDF</button>
         </div>
         {!loaded && <div className="mdt-hint">正在加载已有资料包…</div>}
         <p className="mdt-hint">基本信息在保存时从健康档案生成快照；之后档案若有更新，请重新保存并审核。未记录的信息不会写成“无”。</p>
-        <p className="mdt-hint">AI整理会将本次资料发送给已配置的通义千问，须有客户对应授权；只填充空白或系统预填栏目，不覆盖人工修改。结果仅是草稿。</p>
+        <p className="mdt-hint">通义千问会在客户授权后整理所选资料，只填空白摘要和空表；生成行均标为待核实。请逐行对照原始资料，尤其核对报告结果、用药状态和来源日期，再由健康顾问审核。</p>
         <div className="mdt-form-row"><label>会诊主题<input className="form-input" value={form.title} onChange={e => update({ title: e.target.value })} placeholder="例如：反复眩晕多学科会诊" /></label><label>会诊日期<input className="form-input" type="date" value={form.consultationDate} onChange={e => update({ consultationDate: e.target.value })} /></label><label>参与学科<input className="form-input" value={form.disciplines} onChange={e => update({ disciplines: e.target.value })} placeholder="耳鼻喉科、神经内科" /></label></div>
         <details className="mdt-reports" open><summary>选择本次相关的已审核报告（已选 {form.selectedReportIds.length} 份）</summary>
           {!availableReports.length && <p>暂无可选的已审核报告。</p>}
           {availableReports.map(row => <label key={row._id}><input type="checkbox" checked={form.selectedReportIds.includes(String(row._id))} onChange={() => addReport(String(row._id))} /> {reportDate(row)} · {row.title}</label>)}
           {form.selectedReportIds.length > 30 && <p>一次最多选择30份报告，请缩小到本次会诊相关资料。</p>}
         </details>
-        <div className="mdt-fields">{FIELDS.map(([key, label, placeholder], index) => <label key={key}><strong>{index + 1}. {label}</strong><textarea className="form-input" rows={key === 'timeline' || key === 'questions' ? 5 : 3} value={form.sections[key] || ''} placeholder={placeholder} onChange={e => section(key, e.target.value)} /></label>)}</div>
+        <div className="mdt-fields">{FIELDS.filter(([key]) => ['goal', 'overview', 'symptoms', 'uncertainties'].includes(key)).map(([key, label, placeholder]) => <label key={key}><strong>{label}</strong><textarea className="form-input" rows={3} value={form.sections[key] || ''} placeholder={placeholder} onChange={e => section(key, e.target.value)} /></label>)}</div>
+        {TABLES.map(([key, title, columns]) => <section className="mdt-table-editor" key={key}><div className="mdt-table-heading"><strong>{title}</strong><button type="button" className="btn btn-secondary" onClick={() => tableRows(key, [...(form.tables?.[key] || []), { verification: '待核实' }])}>添加一行</button></div>
+          {(form.tables?.[key] || []).map((row, index) => <div className="mdt-edit-row" key={`${key}-${index}`}>
+            {columns.map(([field, label]) => <label key={field}>{label}<textarea className="form-input" rows={2} value={row[field] || ''} onChange={e => tableRows(key, form.tables[key].map((item, i) => i === index ? { ...item, [field]: e.target.value } : item))} /></label>)}
+            <label>来源（档案／报告）<input className="form-input" value={row.source || ''} onChange={e => tableRows(key, form.tables[key].map((item, i) => i === index ? { ...item, source: e.target.value } : item))} /></label>
+            <label>来源日期<input className="form-input" value={row.sourceDate || ''} onChange={e => tableRows(key, form.tables[key].map((item, i) => i === index ? { ...item, sourceDate: e.target.value } : item))} /></label>
+            <label>核对状态<select className="form-input" value={row.verification || '待核实'} onChange={e => tableRows(key, form.tables[key].map((item, i) => i === index ? { ...item, verification: e.target.value } : item))}><option>待核实</option><option>已核对</option></select></label>
+            <button type="button" className="btn btn-secondary" onClick={() => tableRows(key, form.tables[key].filter((_, i) => i !== index))}>删除本行</button>
+          </div>)}
+          {!form.tables?.[key]?.length && <div className="mdt-hint">暂无记录，可人工添加或先保存会诊目标后让通义千问生成草稿。</div>}
+        </section>)}
+        {(form.sections.timeline || form.sections.treatment || form.sections.questions) && <details className="mdt-legacy"><summary>补充文字记录／旧版资料包内容</summary>{[['timeline', '病程时间线'], ['treatment', '治疗与用药经过'], ['questions', '分学科问题']].map(([key, label]) => <label key={key}>{label}<textarea className="form-input" value={form.sections[key] || ''} onChange={e => section(key, e.target.value)} /></label>)}</details>}
+        <div className="mdt-fields">{FIELDS.filter(([key]) => ['disciplineOpinions', 'conclusion', 'nextSteps'].includes(key)).map(([key, label, placeholder]) => <label key={key}><strong>{label}</strong><textarea className="form-input" rows={3} value={form.sections[key] || ''} placeholder={placeholder} onChange={e => section(key, e.target.value)} /></label>)}</div>
       </div>
     </div>
     {packet && <article className="mdt-print-sheet">
@@ -129,9 +147,11 @@ export default function MdtPacketPanel({ patientId, user, reports, medications, 
       <section><h2>1. 客户基本信息</h2><div className="mdt-basic">
         <span>姓名：{show(basic.name)}</span><span>性别：{show(basic.gender)}</span><span>年龄：{show(basic.age)}</span><span>身高：{basic.height === 0 || basic.height ? `${basic.height} cm` : '未记录'}</span><span>体重：{basic.weight === 0 || basic.weight ? `${basic.weight} kg` : '未记录'}</span>
       </div>{[['已记录诊断', basic.recordedDiagnosis], ['慢性病史', basic.chronicDiseases], ['既往史', basic.pastHistory], ['手术史', basic.surgeryHistory], ['过敏史', basic.allergies], ['家族史', basic.familyHistory]].map(([label, value]) => <p key={label}><strong>{label}：</strong>{show(value)}</p>)}</section>
-      {FIELDS.slice(0, 4).map(([key, label], index) => <section key={key}><h2>{index + 2}. {label}</h2><div className="mdt-preline">{show(packet.sections?.[key])}</div></section>)}
-      <section><h2>6. 检查与客观证据</h2>{(packet.reportSnapshot || []).length ? packet.reportSnapshot.map(row => <div className="mdt-report-print" key={row.reportId}><strong>{show(row.date)} · {show(row.title)}</strong><div>机构：{show(row.institution)}</div><div>报告结论：{show(row.conclusion)}</div>{row.findings?.length > 0 && <ul>{row.findings.map((line, index) => <li key={index}>{line}</li>)}</ul>}</div>) : <div>未选择相关已审核报告</div>}</section>
-      {FIELDS.slice(4).map(([key, label], index) => <section key={key}><h2>{index + 7}. {label}</h2><div className="mdt-preline">{show(packet.sections?.[key])}</div></section>)}
+      <section><h2>2. 会诊目标与摘要</h2><p><strong>目标：</strong>{show(packet.sections?.goal)}</p><p><strong>病情摘要：</strong>{show(packet.sections?.overview)}</p><p><strong>当前症状与影响：</strong>{show(packet.sections?.symptoms)}</p><p><strong>待核实事项：</strong>{show(packet.sections?.uncertainties)}</p></section>
+      {TABLES.map(([key, title, columns], index) => <section key={key}><h2>{index + 3}. {title}</h2>{packet.tables?.[key]?.length ? <table className="mdt-print-table"><thead><tr>{columns.map(([field, label]) => <th key={field}>{label}</th>)}<th>来源／日期</th><th>核对</th></tr></thead><tbody>{packet.tables[key].map((row, i) => <tr key={i}>{columns.map(([field]) => <td key={field}>{show(row[field])}</td>)}<td>{show(row.source)}<br />{show(row.sourceDate)}</td><td>{show(row.verification)}</td></tr>)}</tbody></table> : <div className="mdt-hint">本次未整理此表</div>}</section>)}
+      {(packet.sections?.timeline || packet.sections?.treatment || packet.sections?.questions) && <section><h2>旧版及补充文字记录</h2>{[['timeline', '病程'], ['treatment', '用药治疗'], ['questions', '会诊问题']].filter(([key]) => packet.sections?.[key]).map(([key, label]) => <p key={key}><strong>{label}：</strong>{packet.sections[key]}</p>)}</section>}
+      <section><h2>附件：已选报告摘要（详细结果以原件为准）</h2>{(packet.reportSnapshot || []).length ? packet.reportSnapshot.map(row => <div className="mdt-report-print" key={row.reportId}><strong>{show(row.date)} · {show(row.title)}</strong><div>机构：{show(row.institution)}</div><div>报告结论：{show(row.conclusion)}</div>{row.findings?.length > 0 && <ul>{row.findings.map((line, index) => <li key={index}>{line}</li>)}</ul>}</div>) : <div>未选择相关已审核报告</div>}</section>
+      {FIELDS.slice(7).map(([key, label]) => <section key={key}><h2>{label}</h2><div className="mdt-preline">{show(packet.sections?.[key])}</div></section>)}
       <footer>资料截止：{dateText(packet.sourceCapturedAt)}　审核：{packet.reviewedByName || '待审核'}（{dateText(packet.reviewedAt)}）<br />资料由健康档案整理，打印前请核对原始报告及最新用药记录。</footer>
     </article>}
   </div>

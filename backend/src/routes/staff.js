@@ -19012,7 +19012,27 @@ router.get('/wecom-kf/handoffs', staffAuth, checkPermission('followups', 'view')
 // 多学科会诊资料包：只引用已审核报告，保存当次打印快照；修改后须重新审核。
 const MdtPacket = require('../models/MdtPacket');
 const MDT_SECTION_KEYS = ['goal', 'overview', 'timeline', 'symptoms', 'treatment', 'questions', 'uncertainties', 'disciplineOpinions', 'conclusion', 'nextSteps'];
+const MDT_TABLE_FIELDS = {
+  timelineRows: ['date', 'event', 'symptoms', 'assessment', 'response', 'source', 'sourceDate', 'verification'],
+  triggerRows: ['factor', 'effect', 'source', 'sourceDate', 'verification'],
+  treatmentRows: ['treatment', 'period', 'response', 'currentStatus', 'source', 'sourceDate', 'verification'],
+  testRows: ['date', 'test', 'originalResult', 'interpretation', 'source', 'sourceDate', 'verification'],
+  questionRows: ['discipline', 'question', 'expectedAnswer', 'source', 'sourceDate', 'verification'],
+};
 const mdtText = (value, max = 12000) => String(value || '').trim().slice(0, max);
+function mdtTables(input) {
+  if (input != null && (typeof input !== 'object' || Array.isArray(input))) throw Object.assign(new Error('会诊表格格式无效'), { status: 400 });
+  return Object.fromEntries(Object.entries(MDT_TABLE_FIELDS).map(([key, fields]) => {
+    const rows = input?.[key] || [];
+    if (!Array.isArray(rows) || rows.length > 80) throw Object.assign(new Error(`${key} 行数或格式无效`), { status: 400 });
+    return [key, rows.map(row => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) throw Object.assign(new Error(`${key} 行格式无效`), { status: 400 });
+      const cleaned = Object.fromEntries(fields.map(field => [field, mdtText(row[field], 1500)]));
+      cleaned.verification = cleaned.verification === '已核对' ? '已核对' : '待核实';
+      return cleaned;
+    }).filter(row => fields.some(field => !['verification', 'source', 'sourceDate'].includes(field) && row[field]))];
+  }));
+}
 async function mdtPatient(req, res) {
   if (!mongoose.isValidObjectId(req.params.id)) { res.status(400).json({ success: false, message: '客户ID无效' }); return null; }
   const patient = await User.findOne({ _id: req.params.id, isDeleted: { $ne: true } }).lean();
@@ -19071,14 +19091,15 @@ async function mdtSave(req, res, packet = null) {
     if (!title) return res.status(400).json({ success: false, message: '请填写会诊主题' });
     if (packet && Number(req.body.version) !== packet.__v) return res.status(409).json({ success: false, message: '资料包已由其他人更新，请重新打开后核对' });
     const sections = Object.fromEntries(MDT_SECTION_KEYS.map(key => [key, mdtText(req.body.sections?.[key]) ]));
+    const tables = mdtTables(req.body.tables);
     const reportSnapshot = await mdtReportSnapshot(patient._id, req.body.selectedReportIds);
-    const values = { title, consultationDate: mdtText(req.body.consultationDate, 30), disciplines: mdtText(req.body.disciplines, 300), sections,
+    const values = { title, consultationDate: mdtText(req.body.consultationDate, 30), disciplines: mdtText(req.body.disciplines, 300), sections, tables,
       selectedReportIds: reportSnapshot.map(row => row.reportId), basicSnapshot: mdtBasicSnapshot(patient, req.body.consultationDate), reportSnapshot,
       sourceCapturedAt: new Date(), status: 'draft', reviewedByName: '', reviewedAt: null, updatedBy: req.staff._id };
     if (packet) {
       if (packet.status === 'reviewed') packet.reviewedHistory = [...(packet.reviewedHistory || []), {
         title: packet.title, consultationDate: packet.consultationDate, disciplines: packet.disciplines,
-        sections: packet.sections, basicSnapshot: packet.basicSnapshot, reportSnapshot: packet.reportSnapshot,
+        sections: packet.sections, tables: packet.tables, basicSnapshot: packet.basicSnapshot, reportSnapshot: packet.reportSnapshot,
         sourceCapturedAt: packet.sourceCapturedAt, reviewedAt: packet.reviewedAt, reviewedByName: packet.reviewedByName,
       }].slice(-20);
       Object.assign(packet, values);
@@ -19108,7 +19129,8 @@ router.post('/patients/:id/mdt-packets/:packetId/review', staffAuth, async (req,
   const packet = await MdtPacket.findOne({ _id: req.params.packetId, patientId: patient._id });
   if (!packet) return res.status(404).json({ success: false, message: '资料包不存在' });
   if (Number(req.body.version) !== packet.__v) return res.status(409).json({ success: false, message: '资料包已由其他人更新，请重新打开后核对' });
-  if (!packet.sections?.goal || !packet.sections?.questions) return res.status(400).json({ success: false, message: '请填写会诊目标和分学科问题后审核' });
+  if (!packet.sections?.goal || (!packet.sections?.questions && !packet.tables?.questionRows?.some(row => row.question))) return res.status(400).json({ success: false, message: '请填写会诊目标和分学科问题后审核' });
+  if (Object.entries(packet.tables || {}).some(([key, rows]) => key !== 'questionRows' && Array.isArray(rows) && rows.some(row => !row.source))) return res.status(400).json({ success: false, message: '请为表格中的事实补充来源，或删除无来源行' });
   packet.status = 'reviewed'; packet.reviewedByName = req.staff.name || req.staff.username || '健康顾问'; packet.reviewedAt = new Date();
   try { await packet.save(); res.json({ success: true, data: packet }); }
   catch (error) { res.status(error.name === 'VersionError' ? 409 : 500).json({ success: false, message: error.name === 'VersionError' ? '资料包已由其他人更新，请重新打开后核对' : error.message }); }
@@ -19123,7 +19145,7 @@ router.post('/patients/:id/mdt-packets/:packetId/organize', staffAuth, async (re
     if (!packet.sections?.goal) return res.status(400).json({ success: false, message: '请先填写并保存本次会诊目标' });
     const drugs = await Medication.find({ user: patient._id }).sort({ createdAt: -1 }).limit(80)
       .select('name dosage frequency startDate stopped stopDate stopReason aiStatus reviewedAt').lean();
-    const prompt = `请根据提供的档案事实整理多学科会诊的会前资料草稿。只返回JSON对象，键固定为overview、timeline、symptoms、treatment、questions、uncertainties，值均为中文纯文本。每条事实标明来源名称和日期；无来源或信息缺失写“待人工补充”，不得写成“无”。冲突记录全部放入uncertainties并标出两个来源，不自行选择其一。questions仅围绕会诊目标和参与学科提出需要专家回答的问题。不得推断新诊断、建议处方或改写原始结果，不生成会后意见或后续任务。\n会诊目标：${packet.sections.goal}\n参与学科：${packet.disciplines || '未填写'}`;
+    const prompt = `请根据给出的档案整理多学科会诊前草稿。仅返回JSON对象：overview、symptoms、uncertainties为中文字符串；tables为对象，包含timelineRows、triggerRows、treatmentRows、testRows、questionRows数组。每行字段必须对应如下定义：${JSON.stringify(MDT_TABLE_FIELDS)}。不适用的字段给空字符串，verification一律“待核实”。每条事实填写source来源名称与sourceDate原资料日期；缺失日期留空，不猜测。timelineRows按日期列症状、诊断记录、处置及反应；triggerRows区分诱发和缓解；treatmentRows仅写已有用药/治疗及实际记录的反应；testRows.originalResult只能摘录报告原文/原数值，不作改写，interpretation留空以供人工或专家补充；questionRows围绕会诊目标列具体待回答问题，不预设答案。overview和symptoms只概括已记录事实；矛盾和缺失写入uncertainties并列来源。不得推断新诊断、病因、预后、疗效或建议处方，不得把“未记录”写成“无”，不得生成会后意见或任务。\n会诊目标：${packet.sections.goal}\n参与学科：${packet.disciplines || '未填写'}`;
     const medicalSummary = Object.fromEntries(['chiefComplaint', 'presentIllness', 'physicalExam', 'initialDiagnosis', 'currentMedication']
       .map(key => [key, patient.medicalRecord?.summary?.[key] || '']));
     const medicalCourse = (patient.medicalRecord?.courseEntries || []).slice(-80).map(row => ({
@@ -19134,14 +19156,16 @@ router.post('/patients/:id/mdt-packets/:packetId/organize', staffAuth, async (re
       reports: packet.reportSnapshot || [], medicalRecord: { summary: medicalSummary, courseEntries: medicalCourse }, medications: drugs,
       sources: ['健康档案当前版本', '已保存的病历记录', ...(packet.reportSnapshot || []).map(row => `${row.date || '日期未记录'} · ${row.title}`), '用药记录当前版本'] };
     const result = await require('../utils/aiCaseReviewProvider').reply({ subjectId: patient._id, preferred: 'qwen',
-      sessionId: `mdt-${packet._id}`, prompt, context, attachments: [], history: [], maxTokens: 3500 });
+      sessionId: `mdt-${packet._id}`, prompt, context, attachments: [], history: [], maxTokens: 6000 });
     const raw = String(result.content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
     let parsed;
     try { parsed = JSON.parse(raw); }
     catch { throw Object.assign(new Error('AI资料整理格式异常，请重试或手工填写'), { status: 502 }); }
-    const allowed = ['overview', 'timeline', 'symptoms', 'treatment', 'questions', 'uncertainties'];
-    if (!parsed || typeof parsed !== 'object' || allowed.some(key => typeof parsed[key] !== 'string')) throw Object.assign(new Error('AI资料整理格式异常，请重试或手工填写'), { status: 502 });
-    res.json({ success: true, data: Object.fromEntries(allowed.map(key => [key, mdtText(parsed[key])])), provider: result.provider });
+    const allowed = ['overview', 'symptoms', 'uncertainties'];
+    if (!parsed || typeof parsed !== 'object' || allowed.some(key => typeof parsed[key] !== 'string') || !parsed.tables || Object.keys(MDT_TABLE_FIELDS).some(key => !Array.isArray(parsed.tables[key]))) throw Object.assign(new Error('AI资料整理格式异常，请重试或手工填写'), { status: 502 });
+    const tables = mdtTables(parsed.tables);
+    Object.values(tables).forEach(rows => rows.forEach(row => { row.verification = '待核实'; }));
+    res.json({ success: true, data: { sections: Object.fromEntries(allowed.map(key => [key, mdtText(parsed[key])])), tables }, provider: result.provider });
   } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message }); }
 });
 

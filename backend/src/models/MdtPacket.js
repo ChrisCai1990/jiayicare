@@ -7,6 +7,7 @@ const mdtPacketSchema = new mongoose.Schema({
   consultationDate: { type: String, default: '' },
   disciplines: { type: String, default: '' },
   sections: { type: mongoose.Schema.Types.Mixed, default: {} },
+  tables: { type: mongoose.Schema.Types.Mixed, default: {} },
   selectedReportIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport' }],
   basicSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
   reportSnapshot: { type: mongoose.Schema.Types.Mixed, default: [] },
