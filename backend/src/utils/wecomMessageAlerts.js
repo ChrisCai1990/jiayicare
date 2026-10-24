@@ -94,7 +94,7 @@ async function tick() {
   try {
     // Recover the narrow gap between saving a customer message and enqueueing it.
     const missed = await Message.find({ type: 'user', createdAt: { $gte: config.startAt },
-      wecomAlertQueuedAt: { $exists: false } }).sort({ createdAt: 1 }).limit(100).select('_id').lean();
+      wecomAlertQueuedAt: null }).sort({ createdAt: 1 }).limit(100).select('_id').lean();
     for (const message of missed) await enqueue(message._id);
     const pending = await Delivery.find({ status: 'queued' }).sort({ createdAt: 1 }).limit(50).lean();
     for (const candidate of pending) {

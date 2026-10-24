@@ -42,6 +42,7 @@ const messageSchema = new mongoose.Schema({
 
 messageSchema.index({ user: 1, unread: 1 });
 messageSchema.index({ conversationId: 1, createdAt: 1 });
+messageSchema.index({ type: 1, wecomAlertQueuedAt: 1, createdAt: 1 });
 messageSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Message', messageSchema);
