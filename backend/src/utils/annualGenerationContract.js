@@ -17,6 +17,7 @@ function annualGenerationExample(catalog, evidence, allowedKeys) {
   const personalized = catalog.find(item => item.category === 'personalized');
   if (personalized) example.templateNodes = [{ standardPlanId: personalized.id, standardPlanName: personalized.name, basisSummary: '来源原建议', sourceIds, matchReason: '适用依据', personalization: '', executionDate: '' }];
   if (allowedKeys.includes('specialist_collab')) example.specialist_collab = [];
+  if (allowedKeys.includes('monitoring')) example.monitoring = [];
   if (allowedKeys.includes('lifestyle')) example.lifestyle = {};
   const linked = Object.values(example).flatMap(value => Array.isArray(value) ? value : [value]).some(row => row.sourceIds?.length);
   example.evidenceCoverage = evidence.map((item, index) => ({ sourceId: item.id, status: index === 0 && linked ? 'included' : 'deferred', reason: '示例占位：必须逐项填写真实处理原因，不得照抄' }));
@@ -27,8 +28,10 @@ function annualGenerationPrompt(prompt, catalog, evidence, allowedKeys) {
   const start = prompt.indexOf(marker);
   if (start < 0) throw new Error('年度输出协议缺失');
   return prompt.slice(0, start) + marker + '\n' + JSON.stringify(annualGenerationExample(catalog, evidence, allowedKeys), null, 2)
-    + '\n以上是字段结构示例，不是客户建议。无依据的类别返回空数组，年度体检返回空对象；不要为填满示例而新增事项。每条事项（包括年度体检和个性化事项）都必须包含basisSummary及非空sourceIds，且来源ID必须来自下方清单。不得输出未允许模块，包括monitoring。'
+    + '\n以上是字段结构示例，不是客户建议。无依据的类别返回空数组，年度体检返回空对象；不要为填满示例而新增事项。每条事项（包括年度体检、日常监测和个性化事项）都必须包含basisSummary及非空sourceIds，且来源ID必须来自下方清单。不得输出未允许模块。'
     + '\n【必须逐项核对的来源】' + JSON.stringify(evidence)
+    + '\nmanagement_issue开头的来源是健康顾问在专项筛查中已确认纳入管理的问题，direction即顾问选定的现有方案方向。每项须在对应方向生成行动并用sourceIds关联；不得以年度研判未完成为由跳过。若原始资料与方向明显冲突或重要信息缺失，返回待核实并阻止本次正式生成，交顾问修改管理方向或补充资料。团队研判和AI健康信息整理仅作可选补充。'
+    + '\nmissing开头的来源是已审核AI健康信息整理中的待完善检查。仍未完成的检查应进入本年度“完善检查”，不可只写入下一年度或年度体检；若最新已审核报告证明已完成，标记not_applicable并写明报告与日期，交顾问核对。'
     + '\nreport_issue开头的来源是顾问已确认的报告问题及建议，同样属于年度方案主题范围，不得因主评估未提及而忽略。逐项与现有建议合并去重；顾问确认建议为准，原文时间要求须保留。仅待核实/待评估的问题不能直接升级为治疗或检查安排。每个问题均须在evidenceCoverage中记录纳入或暂缓及具体原因。'
     + '\n每个来源在evidenceCoverage中恰好出现一次，status仅限included/deferred/not_applicable；reason必须具体。included必须有事项的sourceIds引用；存在矛盾或信息不足时deferred交顾问确认，不自行编造。项目名称简短。'
     + '\n日期为建议就医/复查日期，不是已预约：优先承接已确认研判目标中的复评期限和明确安排；其他事项以原检查日期timingBaseDate（YYYY-MM-DD）及有依据的timingIntervalMonths换算具体visit_time/time/date（YYYY-MM-DD）。timingReason解释日期依据及不确定性，供健康顾问审核。无法可靠确定时日期字段留空字符串，不得填“待确认”或捏造检查日期。预约安排日期由系统提前7天计算，不由AI重复生成。医院、科室、专家优先保留顾问已确认安排；否则只沿用输入中上一次对应问题或同类检查的真实记录，年度体检沿用上次体检机构。不可从无关就诊记录移植，不可猜测，没有依据留空。这些安排不表示已经预约。同一就医安排内的检查写明具体项目，不再以相同目的在复查类别重复列项。管理目标及预期沿用已确认研判，不为每个执行事项另造目标。focus必须为逐行文本，不得为对象。';

@@ -6755,7 +6755,7 @@ export default function PatientDetailPage() {
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                             <thead>
                               <tr style={{ background: '#f5f2ec' }}>
-                                {['项目','结果','参考范围','状态','研判'].map(h => (
+                                {['项目','结果','参考范围','状态','管理方向'].map(h => (
                                   <th key={h} style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>{h}</th>
                                 ))}
                               </tr>

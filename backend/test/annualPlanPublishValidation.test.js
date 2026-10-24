@@ -7,5 +7,6 @@ test('发布拒绝不完整或非法执行日期，完整方案可发布',()=>{
  assert.equal(check({followUpStaff:'s',executionDate:'2026-10-01'}),'');
  assert.equal(check({executionDate:'2026-10-01',collaborator:'old'}),'');
  assert.ok(validate({medical_treatment:{records:[{serviceMode:'single'}]}}));
+ assert.match(validate({annual_checkup:{focus:'年度体检'}},'2026-10-01'),/年度体检日期/);
  assert.equal(validate({personalized_followups:{enabled:false,records:[{}]}}),'');
 });

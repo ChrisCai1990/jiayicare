@@ -62,6 +62,15 @@ function validateAnnualRaw(raw, catalog, evidence = [], allowedKeys = null) {
       seen.add(item.sourceId);
       if (item.status === 'included' && !rows.some(row => row.sourceIds?.includes(item.sourceId))) throw fail('AI声称已纳入来源但遗漏对应事项');
     }
+    for (const source of evidence.filter(item => item.id.startsWith('management_issue:'))) {
+      const decision = coverage.find(item => item.sourceId === source.id);
+      if (decision?.status !== 'included') throw fail(`已纳入管理的问题“${source.content?.problem || ''}”未进入方案，请顾问核对来源或调整管理方向`);
+      const direction = source.content?.direction;
+      const destination = direction === 'ongoing_management' ? 'templateNodes' : direction;
+      const selected = raw[destination];
+      const destinationRows = Array.isArray(selected) ? selected : selected && typeof selected === 'object' ? [selected] : [];
+      if (!destinationRows.some(row => row.sourceIds?.includes(source.id))) throw fail(`“${source.content?.problem || ''}”未按顾问选择的管理方向生成，请核对后重试`);
+    }
     for (const row of rows) if (row.standardPlanId && (!Array.isArray(row.sourceIds) || !row.sourceIds.length || row.sourceIds.some(id => !valid.has(id)))) throw fail('AI事项缺少有效来源关联');
   }
   return raw;

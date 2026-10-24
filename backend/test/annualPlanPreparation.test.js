@@ -13,8 +13,8 @@ test('首次年度方案在必需准备项缺失时保持阻断', () => {
   const result = buildAnnualPlanPreparationChecklist({ patient: assignedPatient });
   assert.equal(result.ready, false);
   assert.ok(result.blockingKeys.includes('audited_reports'));
-  assert.ok(result.blockingKeys.includes('medications'));
-  assert.ok(result.blockingKeys.includes('assessment_scope'));
+  assert.equal(result.blockingKeys.includes('medications'), false);
+  assert.equal(result.blockingKeys.includes('assessment_scope'), false);
 });
 
 test('健康顾问可对无法取得的关键资料留痕后放行该资料项', () => {
@@ -30,7 +30,7 @@ test('健康顾问可对无法取得的关键资料留痕后放行该资料项',
   assert.equal(result.items.find(item => item.key === 'audited_reports').waived, true);
 });
 
-test('所有必需专业领域都必须存在已审核年度输入评估', () => {
+test('专业协作领域即使未完成，也不阻断年度方案', () => {
   const preparation = {
     medicationStatus: 'documented', supplementStatus: 'documented',
     requiredAssessmentDomains: ['心血管', '营养'], advisorReadyConfirmedAt: new Date(),
@@ -39,11 +39,11 @@ test('所有必需专业领域都必须存在已审核年度输入评估', () =>
     patient: assignedPatient, preparation, auditedReportCount: 1,
     assessments: [{ purpose: 'annual_input', domain: '心血管', status: 'approved' }],
   });
-  assert.equal(result.ready, false);
-  assert.deepEqual(result.blockingKeys, ['assessment:营养']);
+  assert.equal(result.ready, true);
+  assert.deepEqual(result.blockingKeys, []);
 });
 
-test('综合健康终审不自动满足肝病科，顾问确认适用领域后才满足', () => {
+test('专项专业评估仅作参考，不参与发布准备清单', () => {
   const preparation = {
     medicationStatus: 'none', supplementStatus: 'none',
     requiredAssessmentDomains: ['肝病科'], advisorReadyConfirmedAt: new Date(),
@@ -52,8 +52,7 @@ test('综合健康终审不自动满足肝病科，顾问确认适用领域后�
   const unmatched = buildAnnualPlanPreparationChecklist({
     ...base, assessments: [{ purpose: 'annual_input', domain: '综合健康', status: 'approved' }],
   });
-  assert.deepEqual(unmatched.blockingKeys, ['assessment:肝病科']);
-  assert.match(unmatched.items.find(item => item.key === 'assessment:肝病科').label, /尚无匹配/);
+  assert.deepEqual(unmatched.blockingKeys, []);
   const confirmed = buildAnnualPlanPreparationChecklist({
     ...base, assessments: [{ purpose: 'annual_input', domain: '综合健康', annualDomains: ['肝病科'], status: 'approved' }],
   });

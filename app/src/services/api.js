@@ -287,6 +287,8 @@ export const plansAPI = {
     request(`/user/plans/${planId}/confirm`, { method: 'PATCH' }),
   confirmAnnualMgmt: (planId) =>
     request(`/user/annual-mgmt-plans/${planId}/confirm`, { method: 'PATCH' }),
+  returnAnnualMgmt: (planId, reason) =>
+    request(`/user/annual-mgmt-plans/${planId}/return`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   completeItem: (planId, itemId) =>
     request(`/user/plans/${planId}/items/${itemId}/complete`, { method: 'PATCH' }),
 };

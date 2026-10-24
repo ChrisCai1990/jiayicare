@@ -70,11 +70,11 @@ test('reviewed tumor concern tags, including lung ground-glass nodules, enter an
   assert.deepEqual(reviewedTumorConcerns(2026, { ...tags, status: 'unreviewed' }).concerns, []);
 });
 
-test('annual plan preparation uses confirmed review without a second customer discussion gate', () => {
+test('annual plan preparation does not gate on annual review or customer discussion', () => {
   const confirmedAt = new Date('2026-10-03T05:00:00Z');
   const review = { reviewType: 'annual', annualPlanYear: 2026, requiresCustomerDiscussion: true,
     conclusion: { status: 'confirmed', confirmedAt }, customerDiscussion: { status: 'pending' } };
   const checklist = buildAnnualPlanPreparationChecklist({ year: 2026, caseReviews: [review] });
   assert.equal(checklist.items.some(row => row.key === 'annual_review_customer_discussion'), false);
-  assert.equal(checklist.items.find(row => row.key === 'annual_comprehensive_review').complete, true);
+  assert.equal(checklist.items.some(row => row.key === 'annual_comprehensive_review'), false);
 });

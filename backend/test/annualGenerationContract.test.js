@@ -15,6 +15,7 @@ test('complete output example passes unchanged runtime contract, including annua
 test('new prompt replaces old incomplete examples instead of appending competing rules', () => {
   const prompt = annualGenerationPrompt('rules\n请严格按以下JSON格式输出，仅输出JSON：\nOLD_MONITORING_EXAMPLE', catalog, evidence, keys);
   assert.ok(!prompt.includes('OLD_MONITORING_EXAMPLE')); assert.ok(prompt.includes('basisSummary')); assert.ok(prompt.includes('sourceIds'));
+  assert.match(prompt, /仍未完成的检查应进入本年度“完善检查”/);
   assert.ok(!Object.hasOwn(annualGenerationExample(catalog, evidence, keys), 'monitoring'));
 });
 test('missing provenance and forbidden modules remain blocked; error is understandable', () => {

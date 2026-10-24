@@ -322,6 +322,9 @@ const templateEntries = template => {
   // v3起年度规则统一调用全局随访方案库；模板内旧 followUpPlans 只兼容存量，
   // 不再决定客户页面板块。AI筛选结果统一进入“个性化随访方案”。
   const entries = BASIC_STANDARD_MODULE_KEYS.map(key => ({ key, def: MODULE_DEFS[key], source: { key, standardScreening: true } }))
+  if (!(template?.content?.moduleRules || []).some(rule => rule.key === 'monitoring' && rule.enabled === false)) {
+    entries.push({ key: 'monitoring', def: MODULE_DEFS.monitoring, source: { key: 'monitoring' } })
+  }
   const usedBaseKeys = new Set(entries.map(entry => entry.key.startsWith('lifestyle_') ? 'lifestyle' : entry.key))
   ;(template?.content?.moduleRules || []).filter(rule => rule.enabled !== false).forEach(rule => {
     const key = ADMIN_RULE_MODULE_MAP[rule.key]
@@ -438,10 +441,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [generationCoverage, setGenerationCoverage] = useState([])
   useEffect(() => { setLastGenerationKey(''); setGenerationCoverage([]) }, [id, year, planType])
   const [preparationSaving, setPreparationSaving] = useState(false)
-  const [annualReviewBusy, setAnnualReviewBusy] = useState(false)
   const [preparationDraft, setPreparationDraft] = useState({ assessmentMode: 'required', assessmentConfirmedCriteria: [], assessmentNotRequiredReason: '', requiredAssessmentDomains: '', requiredCaseReviewIds: [], medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
-  const preparationSelectionChanged = JSON.stringify([...(preparationDraft.requiredCaseReviewIds || [])].sort()) !== JSON.stringify([...(preparation?.preparation?.requiredCaseReviewIds || [])].map(String).sort()) || (preparationDraft.assessmentMode === 'none' && !assessmentCriteria.every(item => preparationDraft.assessmentConfirmedCriteria.includes(item.key)))
-  const preparationBlocked = closedLoopEnabled && !pushedAt && (!preparation?.checklist?.ready || preparationSelectionChanged)
+  const preparationBlocked = closedLoopEnabled && !pushedAt && !preparation?.checklist?.ready
   const [professionalAssessments, setProfessionalAssessments] = useState([])
   const [assessmentBusy, setAssessmentBusy] = useState(false)
   const [assessmentSaving, setAssessmentSaving] = useState(false)
@@ -632,15 +633,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const reloadManagementTargets = async () => {
     if (pushedAt) return toast('已推送年度方案不能直接覆盖目标')
     const existing = moduleData.management_targets?.records || []
-    if (existing.length && !window.confirm('将用当前年度已确认的专项研判目标替换年度草稿中的目标，确认继续？')) return
+    if (existing.length && !window.confirm('将用专项筛查已确定的管理方向更新年度草稿目标，确认继续？')) return
     try {
       const res = await staffAPI.getAnnualManagementTargets(id, year)
-      if (!res.data?.length) return toast('本年度尚无已确认的逐条管理目标')
+      if (!res.data?.length) return toast('专项筛查中暂无已纳入管理的问题')
       setConfirmedReviewTargets(res.data)
       setModuleData(prev => ({ ...prev, management_targets: { enabled: true, records: res.data } }))
       setDirty(true)
       toast(`已带入 ${res.data.length} 条目标，请核对并保存草稿`)
-    } catch (error) { toast(error.message || '读取研判目标失败') }
+    } catch (error) { toast(error.message || '读取管理方向失败') }
   }
 
   const handleSave = async (options = {}) => {
@@ -715,7 +716,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       const enabledRuleKeys = new Set(configuredRules.filter(rule => rule.enabled !== false && rule.aiCanGenerate !== false).map(rule => ADMIN_RULE_MODULE_MAP[rule.key]).filter(Boolean))
       const strategyType = strategyOf(type)
       const configuredKeys = configuredRules.length ? (PLAN_TYPE_MODULES[strategyType] || []).filter(key => enabledRuleKeys.has(key) || ![...Object.values(ADMIN_RULE_MODULE_MAP)].includes(key)) : (PLAN_TYPE_MODULES[strategyType] || [])
-      const allowedKeys = [...new Set([...configuredKeys, ...BASIC_STANDARD_MODULE_KEYS])]
+      const monitoringRule = configuredRules.find(rule => rule.key === 'monitoring')
+      const allowedKeys = [...new Set([...configuredKeys, ...BASIC_STANDARD_MODULE_KEYS, ...(!monitoringRule || (monitoringRule.enabled !== false && monitoringRule.aiCanGenerate !== false) ? ['monitoring'] : [])])]
       setModuleData(prev => {
         const merged = { ...prev }
         if (Array.isArray(res.managementTargets)) merged.management_targets = { enabled: true, records: res.managementTargets }
@@ -775,19 +777,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
   }
   const handleGenerateAIAnnualPlan = () => runAIGenerate(planType, false)
-
-  const openAnnualComprehensiveReview = async () => {
-    setAnnualReviewBusy(true)
-    try {
-      const result = await staffAPI.prepareAnnualComprehensiveReview(id, year)
-      if (!result.data.reused) {
-        try { await staffAPI.sendAiCaseReviewMessage(id, result.data._id, { autoStart: true, requestId: `auto_${result.data._id}` }) }
-        catch (error) { toast(`年度研判已建立，自动分析未启动：${error.message}`) }
-      }
-      nav(`/patients/${id}?tab=aiCase&caseReviewId=${result.data._id}`)
-    } catch (err) { toast(err.message || '准备年度综合研判失败') }
-    finally { setAnnualReviewBusy(false) }
-  }
 
   const handleSavePreparation = async () => {
     if (preparationDraft.assessmentMode === 'none' && !assessmentCriteria.every(item => preparationDraft.assessmentConfirmedCriteria.includes(item.key))) {
@@ -1028,9 +1017,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <>
               <button
                 onClick={handleGenerateAIAnnualPlan}
-                disabled={aiPlanLoading || !patient?.aiHealthSummary?.sections || preparationBlocked}
-                title={preparationBlocked ? '请先完成首次方案准备清单' : (!patient?.aiHealthSummary?.sections ? '请先在AI信息整理及方案标签页生成健康信息整理结果' : 'AI自动填充方案板块')}
-                style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || !patient?.aiHealthSummary?.sections || preparationBlocked) ? 0.5 : 1 }}
+                disabled={aiPlanLoading || preparationBlocked}
+                title={preparationBlocked ? '请先完成方案准备清单' : '按专项筛查已确定的管理方向及审核资料生成草稿'}
+                style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || preparationBlocked) ? 0.5 : 1 }}
               >
                 {aiPlanLoading ? 'AI生成中…' : '✨ AI生成方案'}
               </button>
@@ -1056,6 +1045,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </div>
 
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
+      {patientMode && plansByType[planType]?.returnedAt && !pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户退回方案：{plansByType[planType].returnReason || '请核对客户反馈'}。请修改草稿并重新推送。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
       {patientMode && plansByType[planType]?.internalTaskReleaseEligible && !confirmedAt && <section aria-label="郭学清年度方案内部任务启动" style={{ background: '#FFF9ED', border: '1px solid #E9D3A3', borderRadius: 10, padding: 14, marginBottom: 14 }}>
@@ -1067,24 +1057,18 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </section>}
       <details id="annual-plan-preparation" className="annual-plan-secondary" open={['#professional-assessments', '#annual-execution-review'].includes(window.location.hash) || undefined}>
         <summary>方案准备{!pushedAt && preparation?.checklist && ` · ${preparation.checklist.ready ? '已就绪' : `还差 ${preparation.checklist.progress.total - preparation.checklist.progress.completed} 项`}`}{!pushedAt && !preparation?.checklist?.ready && preparation?.checklist?.items?.length ? `：${preparation.checklist.items.filter(item => !item.complete).map(item => item.label).slice(0, 2).join('、')}${preparation.checklist.items.filter(item => !item.complete).length > 2 ? '等' : ''}` : ''} · 展开办理</summary>
-      {patientMode && closedLoopEnabled && pushedAt && <div style={{ padding: 12, marginBottom: 16, borderRadius: 8, background: '#F0F8F3', color: '#2F614A', fontSize: 13 }}>本年度方案已推送，以方案中保存的内容为准。新流程的“年度综合研判”用于尚未发布的年度方案，本方案无需追溯补做。</div>}
+      {patientMode && closedLoopEnabled && pushedAt && <div style={{ padding: 12, marginBottom: 16, borderRadius: 8, background: '#F0F8F3', color: '#2F614A', fontSize: 13 }}>本年度方案已推送，以方案中保存的内容为准；后续新检查结果按单项随访处理。</div>}
       {patientMode && closedLoopEnabled && !pushedAt && preparation?.checklist && (
         <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>{preparation.continuity?.mode === 'renewal' ? '下一年度方案准备清单' : '首次方案准备清单'}</div>
               <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>已完成 {preparation.checklist.progress.completed}/{preparation.checklist.progress.total}；未完成前不能由 AI 生成或正式发布年度方案。</div>
-              {preparationSelectionChanged && <div style={{ color: '#9A5B13', marginTop: 6 }}>当前选择尚未满足或与已保存记录不同，请核对并保存准备情况。</div>}
             </div>
             <span style={{ fontSize: 12, fontWeight: 700, color: preparation.checklist.ready ? '#15803D' : '#B45309' }}>{preparation.checklist.ready ? '✓ 已就绪' : '待完善'}</span>
           </div>
-          {preparation.continuity?.mode === 'renewal' && <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558' }}>引用 {preparation.continuity.previousYear} 年度总评；不重复要求首次会诊。<a href={`/patients/${id}?tab=aiReview${preparation.continuity.source?.annualReviewId ? `&phaseAssessmentId=${preparation.continuity.source.annualReviewId}` : ''}`}>查看/准备年度总评</a>{preparation.continuity.summary && <details style={{ marginTop: 8 }}><summary>已审核总评内容</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{preparation.continuity.summary}</div></details>}</div>}
-          <div style={{ marginTop: 12, padding: 12, border: '1px solid #DDEAE0', borderRadius: 8, background: '#F7FAF8' }}>
-            <div style={{ fontWeight: 700 }}>本年度综合研判 · 固定议题</div>
-            <div style={{ fontSize: 13, color: '#4A6558', marginTop: 5 }}>年度研判汇总专项筛查、已审核的5年趋势和AI风险提示；健康顾问核对问题、判断专科或营养师去向，并与客户确认目标后作为本方案依据。具体营养干预方案由营养师单独发出。</div>
-            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={!canEdit || annualReviewBusy} onClick={openAnnualComprehensiveReview}>{annualReviewBusy ? '正在打开…' : preparation.caseReviews?.some(item => item.reviewType === 'annual' && Number(item.annualPlanYear) === Number(year)) ? '继续年度综合研判' : '开始年度综合研判'}</button>
-          </div>
-          {!!preparation.caseReviews?.length && <details open={preparation.caseReviews.some(item => item.required && item.conclusion?.status !== 'confirmed')} style={{ marginTop: 10 }}><summary>本年度研判依据</summary><div>年度综合研判固定必需。其他专项研判按本次方案需要勾选；已确认结论自动引用，草稿不引用。</div>{preparation.caseReviews.map(item => <label key={item._id} style={{ display: 'block', marginTop: 6 }}><input type="checkbox" disabled={!canEdit || !!item.annualPlanYear} checked={!!item.annualPlanYear || (preparationDraft.requiredCaseReviewIds || []).includes(String(item._id))} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredCaseReviewIds: e.target.checked ? [...(prev.requiredCaseReviewIds || []), String(item._id)] : (prev.requiredCaseReviewIds || []).filter(id => id !== String(item._id)), advisorReady: false }))} /> {item.annualPlanYear ? '固定必需：' : '本次必需：'}{item.title}（{item.conclusion?.status === 'confirmed' ? '已确认，将引用' : item.annualPlanYear || item.required ? '待确认，阻断生成' : '未引用，不阻断'}）</label>)}<a href={`/patients/${id}?tab=aiCase`}>查看研判</a></details>}
+          {preparation.continuity?.mode === 'renewal' && <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558' }}>参考 {preparation.continuity.previousYear} 年已确认方案；年度总评可作为补充资料。{preparation.continuity.summary && <details style={{ marginTop: 8 }}><summary>已审核总评内容</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{preparation.continuity.summary}</div></details>}</div>}
+          {!!preparation.caseReviews?.length && <details style={{ marginTop: 10 }}><summary>按需查看团队研判</summary><div>专项研判仅用于复杂问题的团队讨论，不作为年度方案生成或推送条件。已确认的结论可作补充依据。</div><a href={`/patients/${id}?tab=aiCase`}>查看研判记录</a></details>}
           {!!generationCoverage.length && <details style={{ marginTop: 10 }}><summary>本次来源核对（含待确认及未采用原因）</summary>{generationCoverage.map(item => <div key={item.sourceId}>{item.sourceId}：{{ included: '已纳入', deferred: '待确认', not_applicable: '未采用' }[item.status]}；{item.reason}</div>)}</details>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
             {preparation.checklist.items.filter(item => !item.complete).map(item => (
@@ -1249,13 +1233,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
           {patientMode && <section style={{ marginBottom: 16 }} aria-label="按问题查看年度管理方案">
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>年度管理项目 · 目标与执行安排</div>
-            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>更新已确认研判目标</button>}
-            {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。请先在专项研判中确认，保存年度草稿时也会自动带入。</div>}
+            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>更新专项筛查管理目标</button>}
+            {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。请先在专项筛查中选择“纳入管理”并确定方向。</div>}
             {managementTargetGroups.map(group => <div key={group.ids[0]} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
               {group.entries.length > 1 && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>联合就诊安排 · {group.entries.length} 项问题，一次执行</div>}
               {group.entries.map(({ row, index }) => <div key={targetIssueId(row, index)} style={group.entries.length > 1 ? { paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid #E4ECE7' } : undefined}>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', marginBottom: 5 }}>{index + 1}. {row.goal || row.sourceTitle || '管理问题'}</div>
-              <details><summary style={{ cursor: 'pointer', fontSize: 12, color: '#62776A' }}>查看研判依据、调整目标与干预重点</summary>
+              <details><summary style={{ cursor: 'pointer', fontSize: 12, color: '#62776A' }}>查看来源依据、调整目标与干预重点</summary>
               <div style={{ fontSize: 12, color: '#62776A', marginBottom: 10 }}>来源：{row.sourceTitle || '年度方案补充'}{row.sourceConfirmedAt ? ` · ${new Date(row.sourceConfirmedAt).toLocaleDateString('zh-CN')}` : ''}{row.sourceGoal && (row.goal !== row.sourceGoal || row.focus !== row.sourceFocus) ? ' · 年度草稿已调整' : ''}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8 }}>
                 <label style={{ fontSize: 12, color: '#62776A' }}>管理目标<textarea className="form-input" aria-label={`管理目标 ${index + 1}`} rows={2} style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} value={row.goal || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, goal: e.target.value } : item))} /></label>

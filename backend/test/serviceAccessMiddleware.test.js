@@ -7,10 +7,11 @@ async function call(method, url) {
   await checkServiceActive({ method, originalUrl: url, user: { _id: 'patient' } }, { status(value) { status = value; return this; }, json(value) { body = value; return this; } }, () => { next = true; });
   return { status, body, next };
 }
-test('已到期客户可查看与确认本人年度方案，白名单只匹配指定路径', async t => {
+test('已到期客户可查看并答复本人年度方案，白名单只匹配指定路径', async t => {
   t.mock.method(resolver, 'resolveServiceAccess', async () => ({ active: false, reason: '服务期已结束' }));
   assert.equal((await call('GET', '/api/user/annual-mgmt-plans?year=2027')).next, true);
   assert.equal((await call('PATCH', '/api/user/annual-mgmt-plans/000000000000000000000001/confirm')).next, true);
+  assert.equal((await call('PATCH', '/api/user/annual-mgmt-plans/000000000000000000000001/return')).next, true);
   for (const [method, url] of [['POST', '/api/user/annual-mgmt-plans'], ['PATCH', '/api/user/annual-mgmt-plans/000000000000000000000001/confirm/other'], ['POST', '/api/records']]) assert.equal((await call(method, url)).status, 403);
 });
 test('服务有效放行，核验异常返回可重试503不回退旧日期', async t => {

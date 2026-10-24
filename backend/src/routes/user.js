@@ -1147,13 +1147,46 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
     const confirmation = require('../utils/annualPlanConfirmation');
     await confirmation.assertAnnualConfirmationAccess(plan, req.user);
-    await confirmation.confirmPublishedAnnualPlan(plan);
+    if (require('../utils/healthManagementRollout').enabledForPatient(plan.patientId)) {
+      if (!plan.pushedAt || plan.reviewStatus !== 'approved') return res.status(409).json({ success: false, message: '方案尚未审核发布，不能确认或启动任务' });
+      if (!plan.confirmedAt) {
+        const now = new Date();
+        const confirmed = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.user._id,
+          pushedAt: plan.pushedAt, reviewStatus: 'approved', confirmedAt: null },
+        { $set: { confirmedAt: now, frozenAt: now, checkupPreparationVersion: 2,
+          ...(require('../utils/annualCheckupDispatch').enabled() ? { checkupPreparationAutoConfirmedAt: now } : {}) } }, { new: true });
+        if (!confirmed) return res.status(409).json({ success: false, message: '方案状态已变化，请刷新后核对' });
+        plan.confirmedAt = confirmed.confirmedAt;
+        plan.frozenAt = confirmed.frozenAt;
+        plan.checkupPreparationVersion = confirmed.checkupPreparationVersion;
+        plan.checkupPreparationAutoConfirmedAt = confirmed.checkupPreparationAutoConfirmedAt;
+      }
+    } else await confirmation.confirmPublishedAnnualPlan(plan);
     // 客户确认是必要门槛；续年另需有效凭据及服务期生效，日扫描也可补同步。
-    const taskSplit = await syncAnnualPlanTaskSplit(plan);
+    let taskSplit;
+    try { taskSplit = await syncAnnualPlanTaskSplit(plan); }
+    catch (error) { taskSplit = { warnings: ['方案已确认，随访同步待系统重试'] }; }
     res.json({ success: true, data: plan, taskSplit });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.statusCode ? err.message : '操作失败' });
   }
+});
+
+// 客户不同意或需要修改时退回顾问；未确认的版本不产生执行任务。
+router.patch('/annual-mgmt-plans/:id/return', auth, async (req, res) => {
+  try {
+    const reason = String(req.body?.reason || '').trim();
+    if (reason.length < 2 || reason.length > 500) return res.status(400).json({ success: false, message: '请填写需要调整的原因（2 至 500 字）' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.id, patientId: req.user._id, pushedAt: { $ne: null }, confirmedAt: null }).select('pushedAt');
+    if (!plan) return res.status(409).json({ success: false, message: '方案已变化，请刷新后核对' });
+    const at = new Date();
+    const returned = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.user._id, pushedAt: plan.pushedAt, confirmedAt: null }, {
+      $set: { returnedAt: at, returnReason: reason, reviewStatus: 'rejected', reviewNote: reason, pushedAt: null, pushedBy: null },
+      $push: { returnHistory: { at, reason, pushedAt: plan.pushedAt } },
+    }, { new: true });
+    if (!returned) return res.status(409).json({ success: false, message: '方案已变化，请刷新后核对' });
+    res.json({ success: true, data: { _id: returned._id, returnedAt: at, returnReason: reason } });
+  } catch (error) { res.status(500).json({ success: false, message: '退回失败，请重试' }); }
 });
 
 // ── Req 10: 健康方案（医护端创建，用户端展示）────────────────────
@@ -1289,6 +1322,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
     await require('../utils/legacyLifestyleInterview').reconcileLegacyLifestyleInterviews(req.user._id);
     const followups = await FollowUp.find({
       patientId: req.user._id,
+      clientVisible: { $ne: false },
       $nor: [routineMedicationNoiseFilter],
       aiStatus: { $ne: 'pending' },
       status: { $in: ['planned', 'in_progress', 'missed'] },
@@ -1335,7 +1369,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
 // needFollowUp: false（默认）→ 用户确认"不需要跟进"，直接 status=completed + completedBy=user，闭环
 router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
-    const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
+    const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id, clientVisible: { $ne: false } });
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
     if (followup.formData?.autoEndedAt) return res.status(409).json({ success: false, message: '当天提醒已结束，执行情况未确认；请查看今天的提醒' });
     if (require('../../../shared/annualNutrition.cjs').isTask(followup)) return res.status(403).json({success:false,message:'营养评估由营养师提交结果、健康顾问审核后完成'});
@@ -1421,7 +1455,7 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
 // POST /api/user/followup-tasks/:id/form — 用户提交随访表单
 router.post('/followup-tasks/:id/form', auth, async (req, res) => {
   try {
-    const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
+    const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id, clientVisible: { $ne: false } });
     if (!followup) return res.status(404).json({ success: false, message: '随访记录不存在' });
     if (followup.sourceType === 'annual_service') return res.status(403).json({ message: '不能提交内部派单任务的表单' });
     if (['professional_assessment', 'report_followup'].includes(followup.sourceType) && ['executor', 'supervisor'].includes(followup.taskRole)) return res.status(403).json({ success: false, message: '不能提交医护内部任务的表单' });

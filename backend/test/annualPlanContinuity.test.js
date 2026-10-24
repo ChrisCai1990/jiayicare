@@ -31,10 +31,10 @@ test('续年只采用上一方案的顾问终审综合年度总评及真实归�
   assert.equal(value.source.previousPlanId, 'previous'); assert.equal(value.source.annualReviewId, 'review');
   assert.match(continuityPrompt(value), /年度目标达成情况/); assert.match(continuityPrompt(value), /不得照搬为新任务/);
 });
-test('缺少总评或归档时不得使用来源', async () => {
+test('缺少总评或归档时仍保留上一已确认方案作为续年来源', async () => {
   for (const patch of [{ review: null }, { record: null }]) {
     const value = await loadAnnualPlanContinuity('patient', 2027, models(patch));
-    assert.equal(value.ready, false); assert.equal(value.source, null); assert.equal(value.summary, '');
+    assert.equal(value.ready, false); assert.deepEqual(value.source, { previousPlanId: 'previous' }); assert.equal(value.summary, '');
   }
 });
 const readyBase = {
@@ -42,15 +42,15 @@ const readyBase = {
   preparation: { medicationStatus: 'none', supplementStatus: 'none', advisorReadyConfirmedAt: new Date(), requiredAssessmentDomains: [] },
   auditedReportCount: 1,
 };
-test('续年不重复首次专科门槛，总评不可豁免', () => {
+test('续年不强制年度总评及团队研判', () => {
   assert.equal(buildAnnualPlanPreparationChecklist({ ...readyBase, continuity: { mode: 'renewal', ready: true } }).ready, true);
   const result = buildAnnualPlanPreparationChecklist({ ...readyBase, preparation: { ...readyBase.preparation, waivers: [{ key: 'annual_review', reason: '不可跳过' }] }, continuity: { mode: 'renewal', ready: false } });
-  assert.deepEqual(result.blockingKeys, ['annual_review']);
-  assert.ok(buildAnnualPlanPreparationChecklist(readyBase).blockingKeys.includes('assessment_scope'));
+  assert.deepEqual(result.blockingKeys, []);
+  assert.equal(buildAnnualPlanPreparationChecklist(readyBase).ready, true);
 });
-test('顾问指定补充领域仍需审核，续年允许已审核专项协作输入', () => {
+test('顾问指定补充领域供参考但不阻断年度方案', () => {
   const base = { ...readyBase, preparation: { ...readyBase.preparation, requiredAssessmentDomains: ['运动'] }, continuity: { mode: 'renewal', ready: true } };
-  assert.deepEqual(buildAnnualPlanPreparationChecklist(base).blockingKeys, ['assessment:运动']);
+  assert.deepEqual(buildAnnualPlanPreparationChecklist(base).blockingKeys, []);
   assert.equal(buildAnnualPlanPreparationChecklist({ ...base, assessments: [{ domain: '运动', purpose: 'issue_collaboration', status: 'approved' }] }).ready, true);
 });
 test('草稿保存和推送的来源不能错配、为空或沿用旧总评', () => {
@@ -58,6 +58,7 @@ test('草稿保存和推送的来源不能错配、为空或沿用旧总评', ()
   assert.equal(matchesContinuitySource(source, source), true);
   for (const actual of [null, {}, { ...source, annualReviewId: 'old' }, { ...source, previousPlanId: 'other' }]) assert.equal(matchesContinuitySource(actual, source), false);
   assert.equal(matchesContinuitySource({}, {}), false);
+  assert.equal(matchesContinuitySource({ previousPlanId: 'previous' }, { previousPlanId: 'previous' }), true);
 });
 test('进入第11个月启动总评，同一年度方案不按后续年份复制', () => {
   const start = new Date(2025, 10, 15);

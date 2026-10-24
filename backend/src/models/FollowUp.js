@@ -4,6 +4,7 @@ const followUpSchema = new mongoose.Schema({
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true },
   staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true }, // 随访人
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true }, // 会员
+  clientVisible: { type: Boolean, default: true }, // 内部日常跟进只进入员工工作台
   date:      { type: Date, default: Date.now },
   type: {
     type: String,

@@ -38,10 +38,11 @@ const WHITELIST = [
 
 function isWhitelisted(req) {
   const url = req.originalUrl.split('?')[0];
-  // 到期后仍可查看本人已发布方案并确认；派发门槛在确认接口内另行校验。
+  // 到期后仍可查看本人已发布方案并答复；派发门槛在确认接口内另行校验。
   if (require('../utils/healthManagementRollout').enabledForPatient(req.user?._id)) {
     if (req.method === 'GET' && /^\/api\/user\/annual-mgmt-plans\/?$/.test(url)) return true;
     if (req.method === 'PATCH' && /^\/api\/user\/annual-mgmt-plans\/[a-f\d]{24}\/confirm\/?$/i.test(url)) return true;
+    if (req.method === 'PATCH' && /^\/api\/user\/annual-mgmt-plans\/[a-f\d]{24}\/return\/?$/i.test(url)) return true;
   }
   return WHITELIST.some(w => (w.method === 'ALL' || w.method === req.method) && url.startsWith(w.prefix));
 }

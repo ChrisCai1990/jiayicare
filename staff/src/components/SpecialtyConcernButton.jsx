@@ -2,69 +2,65 @@ import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { specialtyIssueSuggestions } from '../utils/specialtyIssueSuggestion.mjs'
 
-const pendingReviews = new Map()
-function loadReviews(patientId) {
-  if (!pendingReviews.has(patientId)) {
-    const request = staffAPI.getAiCaseReviews(patientId).then(result => result.data || [])
-      .finally(() => pendingReviews.delete(patientId))
-    pendingReviews.set(patientId, request)
-  }
-  return pendingReviews.get(patientId)
+const DIRECTIONS = [
+  ['checkup_completion', '完善检查'], ['medical_treatment', '安排就医'],
+  ['abnormal_followup', '定期复查'], ['ongoing_management', '持续管理或观察'],
+  ['vaccine', '疫苗接种'], ['monitoring', '日常监测'],
+]
+const pending = new Map()
+function load(patientId, year) {
+  const key = `${patientId}:${year}`
+  if (!pending.has(key)) pending.set(key, staffAPI.getAnnualManagementDecisions(patientId, year).finally(() => pending.delete(key)))
+  return pending.get(key)
 }
-
 function sourceKey(source) {
-  if (source?.kind === 'ai_health') return `ai_health:${source.year}:${source.sectionKey}:${source.itemName}`
-  if (source?.kind === 'screening_report') return `screening_report:${source.reportId}`
-  if (source?.kind === 'screening') return `screening:${source.reportId}:${source.itemId || source.itemName}`
-  return ''
+  const itemId = source?.kind === 'screening' ? source.itemId || source.itemName : ''
+  return `${source?.kind}:${source?.reportId}${itemId ? `:${itemId}` : ''}`
 }
 
 export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(false), [busy, setBusy] = useState(false)
+  const [title, setTitle] = useState(''), [direction, setDirection] = useState(''), [note, setNote] = useState('')
+  const [saved, setSaved] = useState(null), [error, setError] = useState('')
   const suggestions = specialtyIssueSuggestions(sourceText)
-  const [issueTitle, setIssueTitle] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
-  const [checking, setChecking] = useState(true)
   const key = sourceKey(source)
   useEffect(() => {
-    if (!patientId || !year || !key) { setChecking(false); return }
+    if (!patientId || !year || !source?.reportId || !['screening', 'screening_report'].includes(source.kind)) return
     let active = true
-    setChecking(true)
-    loadReviews(patientId).then(topics => {
-      if (!active) return
-      setSaved(topics.some(topic => Number(topic.annualPlanYear) === Number(year)
-        && (topic.concerns || []).some(concern => concern.sourceState !== 'historical' && String(concern.key || '').startsWith(`${key}:issue:`))))
-    }).catch(() => {}).finally(() => { if (active) setChecking(false) })
+    load(patientId, year).then(result => {
+      if (active) setSaved((result.data || []).find(item => item.sourceKey === key) || null)
+    }).catch(() => {})
     return () => { active = false }
   }, [patientId, year, key])
-  if (!['familyDoctor', 'superadmin'].includes(staff?.role) || !source) return null
+  if (!['familyDoctor', 'superadmin'].includes(staff?.role) || !source?.reportId || !['screening', 'screening_report'].includes(source.kind)) return null
   const submit = async () => {
-    const title = issueTitle.trim()
-    if (title.length < 2 || title.length > 60) { setError('请填写2至60字的具体问题，如“肺结节”'); return }
-    setError('')
-    setBusy(true)
+    if (title.trim().length < 2 || !direction) { setError('请填写具体问题并选择管理方向'); return }
+    setBusy(true); setError('')
     try {
-      const prepared = await staffAPI.prepareAnnualComprehensiveReview(patientId, year)
-      const result = await staffAPI.addAiCaseReviewConcern(patientId, prepared.data._id, { ...source, issueTitle: title })
-      setOpen(false)
-      setSaved(true)
-      toast(result.reused ? '该问题已在年度综合研判中，可在年度研判页查看' : '纳入成功，可在年度研判页查看', 5000)
-    } catch (error) { setError(error.message || '纳入年度研判失败，请重试') }
+      const result = await staffAPI.saveAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction, note: note.trim() })
+      setSaved(result.data); setOpen(false)
+      toast('已纳入管理，生成年度方案时将按此方向带入', 5000)
+    } catch (e) { setError(e.message || '保存失败，请重试') }
     finally { setBusy(false) }
   }
   return <>
-    <button type="button" className="btn btn-secondary btn-sm" disabled={checking} onClick={event => { event.stopPropagation(); setIssueTitle(suggestedIssue || suggestions[0] || ''); setError(''); setOpen(true) }}>{saved ? '✓ 已纳入年度研判' : checking ? '核对纳入状态…' : '＋ 纳入年度研判'}</button>
-    {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 500 }}>
-      <div className="modal-header"><div className="modal-title">纳入年度综合研判 · 具体问题</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
-      <div className="modal-body"><div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核资料'}。请填写要研判的具体问题，系统会保留原始资料关联。</div>
-        <label className="form-label">具体问题名称（可修改）</label><input autoFocus className="form-input" maxLength={60} value={issueTitle} onChange={event => setIssueTitle(event.target.value)} placeholder="例如：肺结节" onKeyDown={event => { if (event.key === 'Enter') submit() }} />
-        {error && <div role="alert" style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: '#FEF2F2', color: '#B42318', fontSize: 13 }}>{error}</div>}
-        {!suggestedIssue && suggestions.length > 0 && <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>从当前资料提取的候选问题，请核对：<div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 5 }}>{suggestions.map(title => <button key={title} type="button" className="btn btn-secondary btn-sm" onClick={() => setIssueTitle(title)}>{title}</button>)}</div></div>}
-        {!suggestedIssue && suggestions.length === 0 && <div style={{ fontSize: 12, color: '#A16620', marginTop: 8 }}>当前资料未识别出明确的问题名称，请健康顾问填写。</div>}
-        <div style={{ fontSize: 12, color: '#65776F', marginTop: 8 }}>该问题将和其他具体问题、五年趋势及风险维度一起分析；请在年度研判页启动或更新 AI 分析。</div>
-      </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setOpen(false)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={submit}>{busy ? '保存中…' : '纳入年度研判'}</button></div>
+    <button type="button" className="btn btn-secondary btn-sm" onClick={event => {
+      event.stopPropagation(); setTitle(saved?.title || suggestedIssue || suggestions[0] || '');
+      setDirection(saved?.direction || ''); setNote(saved?.note || ''); setError(''); setOpen(true)
+    }}>{saved ? '✓ 已纳入管理' : '＋ 纳入管理'}</button>
+    {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 520 }}>
+      <div className="modal-header"><div className="modal-title">纳入年度管理</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
+      <div className="modal-body">
+        <div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核专项筛查'}。请选择对应现有方案的管理方向。</div>
+        <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
+        <label className="form-label" style={{ marginTop: 12 }}>管理方向</label>
+        <select className="form-input" value={direction} onChange={e => setDirection(e.target.value)}><option value="">请选择</option>{DIRECTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <label className="form-label" style={{ marginTop: 12 }}>顾问补充说明（可选）</label>
+        <textarea className="form-input" rows={2} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="如已确认的复查时限、就医意向或待核实事项" />
+        {error && <div role="alert" style={{ marginTop: 8, color: '#B42318' }}>{error}</div>}
+        <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>团队专项研判可另行开展，不影响本项进入年度方案。</div>
+      </div>
+      <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setOpen(false)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={submit}>{busy ? '保存中…' : '确认纳入管理'}</button></div>
     </div></div>}
   </>
 }

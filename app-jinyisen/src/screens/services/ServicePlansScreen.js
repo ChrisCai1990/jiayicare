@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, ActivityIndicator,
-  RefreshControl, Modal, Alert,
+  RefreshControl, Modal, Alert, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -281,7 +281,7 @@ function ConfirmModal({ visible, title, message, confirmText, confirmColor, onCo
 }
 
 // ── 方案卡片 ─────────────────────────────────────────────────────
-function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew, onRecommendationResponse }) {
+function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, onReturnPlan, confirming, onConsult, onRenew, onRecommendationResponse }) {
   const meta = plan.type === 'medical_assist'
     ? getAssistSubMeta(plan.content?.templateName)
     : (TYPE_META[plan.type] || DEFAULT_META);
@@ -474,7 +474,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
           {/* 底部按钮行 */}
           <View style={s.planFooter}>
             {needsConfirm ? (
-              <TouchableOpacity
+              <View style={{ flex: 1, gap: 8 }}><TouchableOpacity
                 style={[s.confirmBtn, confirming && { opacity: 0.6 }]}
                 onPress={() => onConfirmPlan && onConfirmPlan(plan)}
                 disabled={confirming}
@@ -486,6 +486,8 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
                 }
                 <Text style={s.confirmBtnText}>{confirming ? '确认中…' : '确认方案'}</Text>
               </TouchableOpacity>
+              {plan.type === 'annual_mgmt' && !String(plan._id).startsWith('demo') && <TouchableOpacity style={s.confirmCancelBtn} onPress={() => onReturnPlan?.(plan)} disabled={confirming}><Text style={s.confirmCancelText}>需要调整，退回顾问</Text></TouchableOpacity>}
+              </View>
             ) : plan.confirmedAt ? (
               <View style={{ flexDirection: 'row', flex: 1, gap: 8 }}>
                 <View style={[s.consultBtn, { borderColor: colors.success + '60', flex: 1, backgroundColor: '#E8F5EF' }]}>
@@ -534,6 +536,8 @@ export default function ServicePlansScreen({ navigation }) {
 
   // 方案确认弹窗
   const [planConfirmTarget, setPlanConfirmTarget] = useState(null); // plan
+  const [planReturnTarget, setPlanReturnTarget] = useState(null);
+  const [returnReason, setReturnReason] = useState('');
 
   const loadPlans = useCallback(async () => {
     try {
@@ -688,13 +692,26 @@ export default function ServicePlansScreen({ navigation }) {
         } else {
           await plansAPI.confirm(_id);
         }
-      } catch { /* 静默失败，乐观更新 */ }
+      } catch (error) { Alert.alert('确认失败', error.message || '请稍后重试'); return; }
       finally { setConfirmingPlanId(null); }
     }
     setPlans(prev => prev.map(p =>
       p._id === _id ? { ...p, confirmedAt: new Date().toISOString() } : p
     ));
     setPlanConfirmTarget(null);
+  };
+
+  const doReturnPlan = async () => {
+    const reason = returnReason.trim();
+    if (reason.length < 2) { Alert.alert('请填写原因', '请说明需要调整的内容'); return; }
+    setConfirmingPlanId(planReturnTarget._id);
+    try {
+      await plansAPI.returnAnnualMgmt(planReturnTarget._id, reason);
+      setPlans(prev => prev.filter(p => p._id !== planReturnTarget._id));
+      setPlanReturnTarget(null); setReturnReason('');
+      Alert.alert('已退回', '健康顾问将按您的原因调整后重新推送。');
+    } catch (error) { Alert.alert('退回失败', error.message || '请稍后重试'); }
+    finally { setConfirmingPlanId(null); }
   };
 
   // ── 咨询入口 ─────────────────────────────────────────────────
@@ -772,6 +789,7 @@ export default function ServicePlansScreen({ navigation }) {
                 onToggle={() => toggle(plan._id)}
                 onItemPress={handleItemPress}
                 onConfirmPlan={handleConfirmPlan}
+                onReturnPlan={plan => { setReturnReason(''); setPlanReturnTarget(plan); }}
                 confirming={confirmingPlanId === plan._id}
                 onConsult={handleConsult}
                 onRenew={() => navigation.navigate('Renewal')}
@@ -867,6 +885,17 @@ export default function ServicePlansScreen({ navigation }) {
         onCancel={() => setPlanConfirmTarget(null)}
         loading={confirmingPlanId === planConfirmTarget?._id}
       />
+      <Modal visible={!!planReturnTarget} transparent animationType="fade" onRequestClose={() => setPlanReturnTarget(null)}>
+        <View style={s.confirmOverlay}><View style={s.confirmBox}>
+          <Text style={s.confirmTitle}>退回年度方案</Text>
+          <Text style={s.confirmMessage}>请说明不同意或希望调整的内容，顾问修改后会重新推送。</Text>
+          <TextInput multiline maxLength={500} value={returnReason} onChangeText={setReturnReason} placeholder="填写调整原因" style={{ minHeight: 86, borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 8, padding: 10, textAlignVertical: 'top', marginBottom: 16 }} />
+          <View style={s.confirmBtnRow}>
+            <TouchableOpacity style={s.confirmCancelBtn} onPress={() => setPlanReturnTarget(null)}><Text style={s.confirmCancelText}>取消</Text></TouchableOpacity>
+            <TouchableOpacity style={s.confirmOkBtn} onPress={doReturnPlan} disabled={!!confirmingPlanId}><Text style={s.confirmOkText}>提交退回</Text></TouchableOpacity>
+          </View>
+        </View></View>
+      </Modal>
     </SafeAreaView>
   );
 }

@@ -1,43 +1,20 @@
 const hasWaiver = (preparation, key) => (preparation?.waivers || []).some(item => item.key === key && String(item.reason || '').trim());
 
-function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, year = preparation?.year, auditedReportCount = 0, activeMedicationCount = 0, activeSupplementCount = 0, assessments = [], continuity = null, caseReviews, recentCheckup }) {
+function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, auditedReportCount = 0, continuity = null }) {
   const items = [];
   const add = (key, label, complete, options = {}) => {
     const waived = !complete && options.waivable === true && hasWaiver(preparation, key);
     items.push({ key, label, complete: !!complete || waived, waived, blocking: options.blocking !== false, detail: options.detail || '' });
   };
 
-  if (recentCheckup) add('recent_checkup', '近12个月内有已审核体检资料', recentCheckup.allowed, { detail: recentCheckup.allowed ? `最近体检：${recentCheckup.latest.date}` : recentCheckup.message });
   add('onboarding', '基础健康档案已完成', patient.onboardingCompleted === true);
   add('family_doctor', '已分配健康顾问', !!patient.assignedFamilyDoctor);
   add('health_manager', '已分配健管专员', !!patient.assignedHealthManager);
   add('health_planner', '已分配健康规划师', !!patient.assignedHealthPlanner);
   add('audited_reports', '关键健康资料已审核', auditedReportCount > 0, { waivable: true, detail: auditedReportCount ? `已有${auditedReportCount}份已审核资料` : '暂无已审核资料' });
-  add('medications', '当前用药已完善或确认无', preparation?.medicationStatus === 'none' || preparation?.medicationStatus === 'documented' || activeMedicationCount > 0);
-  add('supplements', '当前营养素已完善或确认无', preparation?.supplementStatus === 'none' || preparation?.supplementStatus === 'documented' || activeSupplementCount > 0);
-
   const isRenewal = continuity?.mode === 'renewal';
-  if (isRenewal) add('annual_review', '上一年度健康管理总评已由顾问终审并归档', continuity.ready === true);
-  const approvedAssessments = assessments
-    .filter(item => (item.purpose === 'annual_input' || (isRenewal && item.purpose === 'issue_collaboration')) && item.status === 'approved');
-  const approvedAnnualDomains = new Set(approvedAssessments
-    .flatMap(item => [item.domain, ...(item.annualDomains || [])])
-    .map(domain => String(domain || '').trim()).filter(Boolean));
-  const noneSelected = preparation?.assessmentMode === 'none';
-  const noAssessmentConfirmed = noneSelected && preparation.assessmentCriteriaVersion === 1 && require('./annualAssessmentDecision').allAssessmentCriteriaConfirmed(preparation.assessmentConfirmedCriteria) && !!preparation.assessmentDecisionBy && !!preparation.assessmentDecisionAt;
-  const requiredDomains = noneSelected ? [] : [...new Set((preparation?.requiredAssessmentDomains || []).map(item => String(item).trim()).filter(Boolean))];
-  if (!isRenewal || noneSelected) add('assessment_scope', noneSelected ? '健康顾问已确认本年度无需新增专科评估的全部五项条件' : '已确定首次方案所需专业评估领域', noAssessmentConfirmed || (!noneSelected && requiredDomains.length > 0));
-  requiredDomains.forEach(domain => add(`assessment:${domain}`, approvedAnnualDomains.has(domain)
-    ? `${domain}专业健康评估已审核`
-    : `${domain}尚无匹配的已终审专业健康评估${approvedAssessments.length ? '（已有其他领域的已终审评估）' : ''}`,
-  approvedAnnualDomains.has(domain)));
-  add('advisor_ready', '健康顾问已确认资料足够生成方案', !!preparation?.advisorReadyConfirmedAt);
-  if (caseReviews) {
-    const annualReview = require('./annualComprehensiveReview').annualReviewForYear(caseReviews, year);
-    add('annual_comprehensive_review', '本年度综合研判已由健康顾问确认', annualReview?.conclusion?.status === 'confirmed', { detail: annualReview ? annualReview.title : '尚未创建年度综合研判' });
-    const pending = caseReviews.filter(item => item.required && item.conclusion?.status !== 'confirmed');
-    add('case_reviews', pending.length ? `本次必需研判待确认：${pending.map(item => item.title).join('、')}` : '本次必需研判已就绪（未指定的草稿不阻断、不引用）', pending.length === 0);
-  }
+  // 专业评估和团队研判只为复杂事项提供补充依据，不是年度方案的必经步骤。
+  // 资料完整性及重要遗漏由生成来源核对承担；没有近期年度体检时可在方案中安排完善检查。
 
   const blockingItems = items.filter(item => item.blocking && !item.complete);
   return {

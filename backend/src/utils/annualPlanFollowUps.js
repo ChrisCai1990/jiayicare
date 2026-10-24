@@ -276,8 +276,11 @@ async function buildAnnualPlanFollowUps(plan) {
       }
       dates.filter(date => !isNaN(date.getTime()) && date >= todayStart && date <= horizonEnd).forEach((date, cycleIndex) => {
         const nutrition = rec.directNutritionAssessment === true;
+        const internalDaily = /^日常跟进(?:与动态调整)?$/.test(String(rec.standardPlanName || rec.items || '').trim());
+        const before = created.length;
         push(date, `${nutrition ? '营养评估' : '标准随访'} · ${rec.standardPlanName || rec.items || '年度管理'}`, content, nutrition ? patient?.assignedNutritionist : patient?.assignedHealthManager,
           `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`, { ...rec, aiNoResponseEligible: !nutrition });
+        if (internalDaily && created.length > before) created[created.length - 1].clientVisible = false;
         if (nutrition && created.length && patient?.assignedNutritionist) Object.assign(created[created.length-1], {workflowKey:'annual_nutrition_assessment',reviewAssignedTo:null,reviewRole:null});
       });
       if (!rec.managementFollowUpVersion && rec.collaborator && rec.collaborationDate) {
@@ -339,7 +342,7 @@ async function syncAnnualPlanFollowUps(plan) {
         keep.tags=[...new Set([...(keep.tags||[]),'人工跟进'])]; keep.repeatDaily=false;
       }
       if (keep.aiStatus === 'pending' && !keep.formData?.healthDataPlan) {
-        ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'aiStatus', 'reviewRole', 'deliveryMode', 'deliveryType'].forEach(k => { keep[k] = row[k]; });
+        ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'aiStatus', 'reviewRole', 'deliveryMode', 'deliveryType', 'clientVisible'].forEach(k => { keep[k] = row[k]; });
       }
       // 自动排期仍未执行时，用方案中的完整结构化内容修复旧版只保存了“空腹”等
       // 单个字段的展示问题；已完成历史记录保持原样。
@@ -348,6 +351,7 @@ async function syncAnnualPlanFollowUps(plan) {
         keep.content = row.content;
         keep.deliveryMode = row.deliveryMode;
         keep.deliveryType = row.deliveryType;
+        keep.clientVisible = row.clientVisible !== false;
         if (row.formData?.bookingRequest) {
           keep.formData = { ...(keep.formData || {}), bookingRequest: row.formData.bookingRequest };
           keep.markModified('formData');

@@ -12,14 +12,14 @@ test('no assessment needs five conditions and server reviewer; never accepts cli
   assert.deepEqual(result.requiredAssessmentDomains, []);
   assert.equal(result.assessmentNotRequiredReason, '理由');
 });
-test('only assessment gate waived; other preparation and next year remain required', () => {
+test('专业评估选择不再阻断方案，基础资料和责任岗位仍校验', () => {
   const decision = annualAssessmentDecision({ assessmentMode: 'none', assessmentConfirmedCriteria: criteria, assessmentNotRequiredReason: '已核对资料' }, 'd');
   const preparation = { ...decision, medicationStatus: 'none', supplementStatus: 'none', advisorReadyConfirmedAt: new Date() };
   assert.equal(checklist({ patient, preparation, auditedReportCount: 1 }).ready, true);
   assert.ok(checklist({ patient, preparation }).blockingKeys.includes('audited_reports'));
-  assert.ok(checklist({ patient, preparation: { ...preparation, advisorReadyConfirmedAt: null }, auditedReportCount: 1 }).blockingKeys.includes('advisor_ready'));
-  assert.ok(checklist({ patient, preparation: null }).blockingKeys.includes('assessment_scope'));
-  assert.ok(checklist({ patient, preparation: { ...preparation, assessmentDecisionBy: null } }).blockingKeys.includes('assessment_scope'));
+  assert.equal(checklist({ patient, preparation: { ...preparation, advisorReadyConfirmedAt: null }, auditedReportCount: 1 }).ready, true);
+  assert.equal(checklist({ patient, preparation: null, auditedReportCount: 1 }).ready, true);
+  assert.ok(checklist({ patient: { onboardingCompleted: true }, preparation, auditedReportCount: 1 }).blockingKeys.includes('family_doctor'));
 });
 test('every missing condition, duplicates and unconfirmed legacy records fail closed', () => {
   for (const missing of criteria) assert.throws(() => annualAssessmentDecision({ assessmentMode: 'none', assessmentConfirmedCriteria: criteria.filter(key => key !== missing) }, 'd'));
@@ -28,12 +28,12 @@ test('every missing condition, duplicates and unconfirmed legacy records fail cl
   assert.equal(saved.assessmentCriteriaVersion, 1);
   assert.equal(saved.assessmentNotRequiredReason, ''); // confirmations are separate; no duplicate prose
   for (const preparation of [{ ...saved, assessmentConfirmedCriteria: [] }, { ...saved, assessmentCriteriaVersion: null }]) {
-    assert.ok(checklist({ patient, preparation }).blockingKeys.includes('assessment_scope'));
+    assert.equal(checklist({ patient, preparation, auditedReportCount: 1 }).ready, true);
   }
 });
-test('switching back to required restores domain approval requirements', () => {
+test('选择专业评估只影响协作记录，不成为年度方案门槛', () => {
   const decision = annualAssessmentDecision({ assessmentMode: 'required', assessmentNotRequiredReason: '旧理由', requiredAssessmentDomains: ['心血管'] }, 'd');
   assert.equal(decision.assessmentNotRequiredReason, '');
-  assert.ok(checklist({ patient, preparation: decision }).blockingKeys.includes('assessment:心血管'));
+  assert.equal(checklist({ patient, preparation: decision, auditedReportCount: 1 }).ready, true);
   assert.equal(annualAssessmentDecision({}, 'd').assessmentMode, 'required');
 });

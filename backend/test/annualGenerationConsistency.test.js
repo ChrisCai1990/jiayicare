@@ -37,10 +37,10 @@ test('coverage cannot claim included without linked record; missing and invented
   assert.throws(() => validateAnnualRaw(raw, [], evidence), /遗漏/);
   raw.evidenceCoverage[0].status = 'deferred'; assert.equal(validateAnnualRaw(raw, [], evidence), raw);
 });
-test('annual review scope uses current year and excludes archived and unrelated daily/nutrition reviews', () => {
+test('optional annual review scope uses current year and excludes archived reviews', () => {
   const q = require('../src/utils/annualCaseReviewScope').annualCaseReviewQuery('p', 2026);
-  assert.equal(q.status.$ne, 'archived'); assert.deepEqual(q.$and[0].$or[0].reviewType.$in, ['annual', 'medical', 'specialty', 'checkup']);
-  assert.equal(q.$and[1].$or[0]['conclusion.confirmedAt'].$gte.toISOString(), '2025-12-31T16:00:00.000Z');
+  assert.equal(q.status.$ne, 'archived'); assert.deepEqual(q.$and[0].$or[0].reviewType.$in, ['annual', 'medical', 'specialty', 'checkup', 'nutrition']);
+  assert.equal(q.$and[1].$or[1]['conclusion.confirmedAt'].$gte.toISOString(), '2025-12-31T16:00:00.000Z');
 });
 
 

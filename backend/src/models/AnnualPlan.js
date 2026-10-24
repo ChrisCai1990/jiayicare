@@ -34,6 +34,9 @@ const annualPlanSchema = new mongoose.Schema({
   pushedAt:    { type: Date, default: null },
   pushedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   confirmedAt: { type: Date, default: null },
+  returnedAt: { type: Date, default: null },
+  returnReason: { type: String, default: '' },
+  returnHistory: { type: [mongoose.Schema.Types.Mixed], default: [], select: false },
   followUpReleasedAt: { type: Date, default: null }, // 单客户例外：提前生成随访，不代表客户确认
   serviceTaskReleasedAt: { type: Date, default: null }, // 单客户例外：内部服务任务提前启动，不代表客户确认
   staffTaskReleasedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, select: false },

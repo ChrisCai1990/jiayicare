@@ -55,10 +55,8 @@ async function syncAnnualPlanTaskSplit(plan) {
   const rejected = settled.find(result => result.status === 'rejected');
   if (rejected) throw rejected.reason;
   const [scheduledFollowUps, serviceTasks] = settled.map(result => result.value);
-  if (plan.continuitySource?.previousPlanId && gate.period?.activationStatus !== 'active') {
-    await require('./annualPlanSupplyPlans').syncAnnualPlanSupplyPlans(plan);
-    await require('./annualPlanTreatmentSync').syncAnnualPlanTreatments(plan);
-  }
+  await require('./annualPlanSupplyPlans').syncAnnualPlanSupplyPlans(plan);
+  await require('./annualPlanTreatmentSync').syncAnnualPlanTreatments(plan);
   const warnings = [];
   if (!patient?.assignedHealthPlanner) warnings.push('客户尚未绑定健康规划师，请完善服务任务责任岗位');
   if (gate.period && !patient?.assignedHealthManager) warnings.push('客户尚未绑定健管专员，请完善随访责任岗位');
