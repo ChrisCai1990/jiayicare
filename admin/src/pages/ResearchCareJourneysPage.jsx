@@ -217,15 +217,15 @@ export default function ResearchCareJourneysPage() {
     </section>
 
     <section className="card research-list-card">
-      <div className="research-list-heading"><div><h2>正式纳入的服务旅程</h2><p>仅展示去标识化编号与所选年度的流程进度</p></div><span className="research-total">共 {journeys.length} 条</span></div>
+      <div className="research-list-heading"><div><h2>正式纳入的服务旅程</h2><p>仅展示去标识化编号与流程进度。资料审核为历年最近100条上传资料（含体检、门诊、处方等）；年度方案与随访按所选年度显示。</p></div><span className="research-total">共 {journeys.length} 条</span></div>
       {loading ? <div className="research-empty"><strong>正在加载研究旅程</strong></div>
         : journeys.length === 0 ? <div className="research-empty"><strong>尚未正式纳入客户</strong><p>候选名单建好后，可逐人核验并纳入。</p></div>
         : <div className="research-table-wrap"><table className="research-table">
-          <thead><tr>{['研究编号', '参与者编码', '报告审核', 'AI 草稿', '年度方案', '随访闭环', '状态'].map(x => <th key={x}>{x}</th>)}</tr></thead>
+          <thead><tr>{['研究编号', '参与者编码', '资料审核（最近100条）', 'AI 草稿', '年度方案', '随访闭环', '状态'].map(x => <th key={x}>{x}</th>)}</tr></thead>
           <tbody>{journeys.map(row => <tr key={row._id}>
             <td><span className="research-code">{row.researchNumber}</span></td>
             <td><span className="research-participant">{row.participantCode}</span></td>
-            <td>{row.snapshot.report.advisorAudited}/{row.snapshot.report.total}</td>
+            <td><div>健管专员 {row.snapshot.report.managerAudited}/{row.snapshot.report.total}</div><div className="research-review-secondary">健康顾问 {row.snapshot.report.advisorAudited}/{row.snapshot.report.total}</div></td>
             <td>{row.snapshot.draft.approved}/{row.snapshot.draft.total}</td>
             <td><span className={row.snapshot.annualPlan ? 'research-plan-ready' : 'research-plan-empty'}>{row.snapshot.annualPlan ? row.snapshot.annualPlan.reviewStatus : '未创建'}</span></td>
             <td>{row.snapshot.followUp.completed}/{row.snapshot.followUp.total}{row.snapshot.followUp.overdue ? <span className="research-overdue">超期 {row.snapshot.followUp.overdue}</span> : null}</td>

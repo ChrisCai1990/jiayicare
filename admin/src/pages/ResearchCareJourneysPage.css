@@ -26,6 +26,7 @@
 .research-table tbody tr:hover { background: #fbfdfc; }
 .research-code { color: var(--primary); font-weight: 650; }
 .research-participant { color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.research-review-secondary { margin-top: 3px; color: var(--text-secondary); font-size: 12px; }
 .research-plan-ready { color: #177153; }
 .research-plan-empty { color: var(--text-muted); }
 .research-overdue { display: inline-block; margin-left: 6px; color: #b54708; font-size: 11px; }
