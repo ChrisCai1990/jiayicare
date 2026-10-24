@@ -24,6 +24,7 @@ import visitHelpers from '../../../shared/diseaseVisit.cjs'
 import standardAssessment from '../../../shared/standardDiseaseAssessment.cjs'
 import DiseaseReportPicker, { ArchivedDiagnosis } from '../components/DiseaseReportPicker'
 import DiseaseStagePanel from '../components/DiseaseStagePanel'
+import MdtPacketPanel from '../components/MdtPacketPanel'
 import '../components/DiseaseWorkspace.css'
 import ReportReviewQuality, { useReportReviewActivity } from '../components/ReportReviewQuality'
 import ClinicalDocumentReviewFields from '../components/ClinicalDocumentReviewFields'
@@ -5103,6 +5104,7 @@ export default function PatientDetailPage() {
             { key: 'symptoms', label: '不适主诉与症状' },
             { key: 'medications', label: '用药与营养补充剂' },
             { key: 'ai', label: '专项筛查与评估' },
+            { key: 'mdt', label: '多学科会诊资料包' },
             { key: 'reports', label: '原始资料' },
             { key: 'portrait', label: '健康画像' },
           ] },
@@ -5146,6 +5148,7 @@ export default function PatientDetailPage() {
         ? <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />
         : <div className="card" style={{ padding: 20 }}>阶段性评估与复盘仅适用于已分配健康顾问的年度会员。</div>)}
       {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" onNavigate={target => { if (target === 'screening') { setTab('ai'); setScreeningWorkspaceView('screening'); requestAnimationFrame(() => document.getElementById('annual-review-communication')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) } else setTab(target) }} />}
+      {tab === 'mdt' && <MdtPacketPanel patientId={id} user={user} reports={reports} medications={medications} staff={staff} toast={toast} />}
 
       {/* ── Info Tab ── */}
       {tab === 'info' && (

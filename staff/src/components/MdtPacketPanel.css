@@ -1,0 +1,30 @@
+.mdt-workspace { display: grid; gap: 16px; }
+.mdt-hint { color: #65776f; font-size: 12px; line-height: 1.55; margin: 5px 0 12px; }
+.mdt-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mdt-toolbar select { flex: 1; min-width: 240px; }
+.mdt-form-row { display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 10px; margin: 18px 0; }
+.mdt-form-row label, .mdt-fields label { display: grid; gap: 6px; font-size: 13px; color: #344b40; }
+.mdt-reports { border: 1px solid #dce8e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 18px; max-height: 230px; overflow: auto; }
+.mdt-reports summary { cursor: pointer; font-weight: 700; margin-bottom: 8px; }
+.mdt-reports label { display: block; padding: 4px 0; font-size: 13px; }
+.mdt-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.mdt-fields textarea { resize: vertical; white-space: pre-wrap; }
+.mdt-print-sheet { background: white; border: 1px solid #dce8e1; border-radius: 8px; padding: 30px 36px; color: #1d2b24; font-size: 13px; line-height: 1.65; }
+.mdt-print-sheet header { border-bottom: 2px solid #375f4b; padding-bottom: 12px; margin-bottom: 16px; }
+.mdt-print-sheet h1 { font-size: 22px; text-align: center; margin: 0 0 10px; }
+.mdt-print-sheet h2 { font-size: 15px; color: #1d5a3f; margin: 15px 0 6px; }
+.mdt-print-sheet h2 { break-after: avoid; page-break-after: avoid; }
+.mdt-report-print { break-inside: avoid; page-break-inside: avoid; }
+.mdt-print-sheet p { margin: 4px 0; white-space: pre-wrap; }
+.mdt-basic { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+.mdt-preline { white-space: pre-wrap; overflow-wrap: anywhere; }
+.mdt-report-print { border-top: 1px solid #e1e9e4; padding: 8px 0; }
+.mdt-report-print ul { margin: 4px 0; padding-left: 20px; }
+.mdt-print-sheet footer { border-top: 1px solid #b9ccc0; margin-top: 24px; padding-top: 8px; font-size: 11px; color: #53655a; }
+@media (max-width: 800px) { .mdt-form-row, .mdt-fields { grid-template-columns: 1fr; } .mdt-print-sheet { padding: 16px; } }
+@media print {
+  @page { size: A4; margin: 15mm; @bottom-right { content: "第 " counter(page) " 页"; font-size: 9pt; color: #53655a; } }
+  body * { visibility: hidden !important; }
+  .mdt-print-sheet, .mdt-print-sheet * { visibility: visible !important; }
+  .mdt-print-sheet { position: absolute; top: 0; left: 0; width: 100%; border: 0; padding: 0; margin: 0; box-shadow: none; }
+}

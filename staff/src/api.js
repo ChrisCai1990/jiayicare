@@ -137,6 +137,11 @@ export const staffAPI = {
     return req(`/staff/patients/${id}/weight-progress-photos`, { method: 'POST', body })
   },
   deleteWeightProgressPhoto: (id, photoId) => req(`/staff/patients/${id}/weight-progress-photos/${photoId}`, { method: 'DELETE' }),
+  getMdtPackets:      (id)     => req(`/staff/patients/${id}/mdt-packets`),
+  createMdtPacket:    (id, data) => req(`/staff/patients/${id}/mdt-packets`, { method: 'POST', body: JSON.stringify(data) }),
+  updateMdtPacket:    (id, packetId, data) => req(`/staff/patients/${id}/mdt-packets/${packetId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  reviewMdtPacket:    (id, packetId, version) => req(`/staff/patients/${id}/mdt-packets/${packetId}/review`, { method: 'POST', body: JSON.stringify({ version }) }),
+  organizeMdtPacket:  (id, packetId, version) => req(`/staff/patients/${id}/mdt-packets/${packetId}/organize`, { method: 'POST', body: JSON.stringify({ version }) }),
   createPatient:      (data)   => req('/staff/patients', { method: 'POST', body: JSON.stringify(data) }),
   updatePatient:      (id, d)  => req(`/staff/patients/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   updateMedicalRecordSummary: (id, d) => req(`/staff/patients/${id}/medical-record/summary`, { method: 'PUT', body: JSON.stringify(d) }),

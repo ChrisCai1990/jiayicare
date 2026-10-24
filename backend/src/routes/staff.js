@@ -18958,6 +18958,142 @@ router.get('/wecom-kf/handoffs', staffAuth, checkPermission('followups', 'view')
   }))});
 });
 
+// 多学科会诊资料包：只引用已审核报告，保存当次打印快照；修改后须重新审核。
+const MdtPacket = require('../models/MdtPacket');
+const MDT_SECTION_KEYS = ['goal', 'overview', 'timeline', 'symptoms', 'treatment', 'questions', 'uncertainties', 'disciplineOpinions', 'conclusion', 'nextSteps'];
+const mdtText = (value, max = 12000) => String(value || '').trim().slice(0, max);
+async function mdtPatient(req, res) {
+  if (!mongoose.isValidObjectId(req.params.id)) { res.status(400).json({ success: false, message: '客户ID无效' }); return null; }
+  const patient = await User.findOne({ _id: req.params.id, isDeleted: { $ne: true } }).lean();
+  if (!patient) { res.status(404).json({ success: false, message: '会员不存在' }); return null; }
+  if (String(patient.tenantId || '') !== String(req.staff.tenantId || '')) {
+    res.status(403).json({ success: false, message: '不可访问其他机构的会员' }); return null;
+  }
+  if (req.staff.role !== 'superadmin') {
+    const staffIds = (await getVisibleStaffIds(req.staff)).map(String);
+    if (!PLAN_ASSIGN_FIELDS.some(field => patient[field] && staffIds.includes(String(patient[field])))) {
+      res.status(403).json({ success: false, message: '无权限查看该会员' }); return null;
+    }
+  }
+  return patient;
+}
+const mdtHistoryRows = (items, fields) => (Array.isArray(items) ? items : []).map(item =>
+  typeof item === 'string' ? item : fields.map(field => item?.[field]).filter(Boolean).join('；')).filter(Boolean);
+function mdtAge(patient, referenceDate) {
+  const born = String(patient.birthDate || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const on = String(referenceDate || new Date().toISOString().slice(0, 10)).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!born || !on) return patient.age ?? '';
+  const age = Number(on[1]) - Number(born[1]) - (Number(on[2]) < Number(born[2]) || (Number(on[2]) === Number(born[2]) && Number(on[3]) < Number(born[3])) ? 1 : 0);
+  return age >= 0 && age < 130 ? age : patient.age ?? '';
+}
+function mdtBasicSnapshot(patient, referenceDate) {
+  const profile = patient.healthProfile || {};
+  return {
+    name: patient.name || '', gender: patient.gender || '', age: mdtAge(patient, referenceDate),
+    birthDate: patient.birthDate || '', height: patient.height ?? '', weight: patient.weight ?? '',
+    chronicDiseases: Array.isArray(patient.chronicDiseases) ? patient.chronicDiseases.join('、') : patient.chronicDiseases || '',
+    recordedDiagnosis: patient.medicalRecord?.summary?.initialDiagnosis || '',
+    pastHistory: [profile.pastHistory, ...mdtHistoryRows(profile.medicalHistory, ['disease', 'onsetDate', 'hospital', 'treatment'])].filter(Boolean).join('\n'),
+    surgeryHistory: [profile.surgeryHistory, ...mdtHistoryRows(profile.surgeries, ['name', 'date', 'hospital', 'outcome'])].filter(Boolean).join('\n'),
+    allergies: [profile.drugAllergy, profile.foodAllergy, ...mdtHistoryRows(profile.allergies, ['substance', 'type', 'reaction'])].filter(Boolean).join('\n'),
+    familyHistory: [profile.familyHistoryNote, ...mdtHistoryRows(profile.familyHistory, ['disease', 'relative', 'diagnosisDate'])].filter(Boolean).join('\n'),
+  };
+}
+async function mdtReportSnapshot(patientId, ids) {
+  const selected = [...new Set((Array.isArray(ids) ? ids : []).map(String))];
+  if (selected.length > 30 || selected.some(id => !mongoose.isValidObjectId(id))) throw Object.assign(new Error('报告选择无效或超过30份'), { status: 400 });
+  const reports = await MedicalReport.find({ _id: { $in: selected }, user: patientId, audit_status: 'audited' })
+    .select('title checkDate reportYear institution examConclusion reportItems.name reportItems.value reportItems.unit reportItems.status reportItems.conclusion reportItems.diagnosis reportItems.findings').lean();
+  if (reports.length !== selected.length) throw Object.assign(new Error('所选报告已变化或尚未审核，请重新选择'), { status: 409 });
+  return selected.map(id => {
+    const report = reports.find(row => String(row._id) === id);
+    return { reportId: id, title: report.title, date: report.checkDate || String(report.reportYear || ''), institution: report.institution || '',
+      conclusion: report.examConclusion || '', findings: (report.reportItems || []).filter(item =>
+        ['abnormal', 'attention'].includes(item.status) || item.conclusion || item.diagnosis).slice(0, 30)
+        .map(item => [item.name, item.value, item.unit, item.conclusion || item.diagnosis || item.findings].filter(Boolean).join('：')) };
+  });
+}
+async function mdtSave(req, res, packet = null) {
+  try {
+    const patient = await mdtPatient(req, res); if (!patient) return;
+    const title = mdtText(req.body.title, 160);
+    if (!title) return res.status(400).json({ success: false, message: '请填写会诊主题' });
+    if (packet && Number(req.body.version) !== packet.__v) return res.status(409).json({ success: false, message: '资料包已由其他人更新，请重新打开后核对' });
+    const sections = Object.fromEntries(MDT_SECTION_KEYS.map(key => [key, mdtText(req.body.sections?.[key]) ]));
+    const reportSnapshot = await mdtReportSnapshot(patient._id, req.body.selectedReportIds);
+    const values = { title, consultationDate: mdtText(req.body.consultationDate, 30), disciplines: mdtText(req.body.disciplines, 300), sections,
+      selectedReportIds: reportSnapshot.map(row => row.reportId), basicSnapshot: mdtBasicSnapshot(patient, req.body.consultationDate), reportSnapshot,
+      sourceCapturedAt: new Date(), status: 'draft', reviewedByName: '', reviewedAt: null, updatedBy: req.staff._id };
+    if (packet) {
+      if (packet.status === 'reviewed') packet.reviewedHistory = [...(packet.reviewedHistory || []), {
+        title: packet.title, consultationDate: packet.consultationDate, disciplines: packet.disciplines,
+        sections: packet.sections, basicSnapshot: packet.basicSnapshot, reportSnapshot: packet.reportSnapshot,
+        sourceCapturedAt: packet.sourceCapturedAt, reviewedAt: packet.reviewedAt, reviewedByName: packet.reviewedByName,
+      }].slice(-20);
+      Object.assign(packet, values);
+    }
+    else packet = new MdtPacket({ patientId: patient._id, tenantId: patient.tenantId, createdBy: req.staff._id, ...values });
+    await packet.save();
+    res.json({ success: true, data: packet });
+  } catch (error) { res.status(error.status || (error.name === 'VersionError' ? 409 : 500)).json({ success: false, message: error.name === 'VersionError' ? '资料包已由其他人更新，请重新打开后核对' : error.message }); }
+}
+router.get('/patients/:id/mdt-packets', staffAuth, async (req, res) => {
+  const patient = await mdtPatient(req, res); if (!patient) return;
+  const rows = await MdtPacket.find({ patientId: patient._id }).sort({ updatedAt: -1 }).limit(50).lean();
+  res.json({ success: true, data: rows });
+});
+router.post('/patients/:id/mdt-packets', staffAuth, (req, res) => mdtSave(req, res));
+router.put('/patients/:id/mdt-packets/:packetId', staffAuth, async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.packetId)) return res.status(400).json({ success: false, message: '资料包ID无效' });
+  const patient = await mdtPatient(req, res); if (!patient) return;
+  const packet = await MdtPacket.findOne({ _id: req.params.packetId, patientId: req.params.id });
+  if (!packet) return res.status(404).json({ success: false, message: '资料包不存在' });
+  return mdtSave(req, res, packet);
+});
+router.post('/patients/:id/mdt-packets/:packetId/review', staffAuth, async (req, res) => {
+  const patient = await mdtPatient(req, res); if (!patient) return;
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可审核会诊资料包' });
+  if (!mongoose.isValidObjectId(req.params.packetId)) return res.status(400).json({ success: false, message: '资料包ID无效' });
+  const packet = await MdtPacket.findOne({ _id: req.params.packetId, patientId: patient._id });
+  if (!packet) return res.status(404).json({ success: false, message: '资料包不存在' });
+  if (Number(req.body.version) !== packet.__v) return res.status(409).json({ success: false, message: '资料包已由其他人更新，请重新打开后核对' });
+  if (!packet.sections?.goal || !packet.sections?.questions) return res.status(400).json({ success: false, message: '请填写会诊目标和分学科问题后审核' });
+  packet.status = 'reviewed'; packet.reviewedByName = req.staff.name || req.staff.username || '健康顾问'; packet.reviewedAt = new Date();
+  try { await packet.save(); res.json({ success: true, data: packet }); }
+  catch (error) { res.status(error.name === 'VersionError' ? 409 : 500).json({ success: false, message: error.name === 'VersionError' ? '资料包已由其他人更新，请重新打开后核对' : error.message }); }
+});
+router.post('/patients/:id/mdt-packets/:packetId/organize', staffAuth, async (req, res) => {
+  try {
+    const patient = await mdtPatient(req, res); if (!patient) return;
+    if (!mongoose.isValidObjectId(req.params.packetId)) return res.status(400).json({ success: false, message: '资料包ID无效' });
+    const packet = await MdtPacket.findOne({ _id: req.params.packetId, patientId: patient._id }).lean();
+    if (!packet) return res.status(404).json({ success: false, message: '资料包不存在' });
+    if (Number(req.body.version) !== packet.__v) return res.status(409).json({ success: false, message: '资料包已由其他人更新，请重新打开后核对' });
+    if (!packet.sections?.goal) return res.status(400).json({ success: false, message: '请先填写并保存本次会诊目标' });
+    const drugs = await Medication.find({ user: patient._id }).sort({ createdAt: -1 }).limit(80)
+      .select('name dosage frequency startDate stopped stopDate stopReason aiStatus reviewedAt').lean();
+    const prompt = `请根据提供的档案事实整理多学科会诊的会前资料草稿。只返回JSON对象，键固定为overview、timeline、symptoms、treatment、questions、uncertainties，值均为中文纯文本。每条事实标明来源名称和日期；无来源或信息缺失写“待人工补充”，不得写成“无”。冲突记录全部放入uncertainties并标出两个来源，不自行选择其一。questions仅围绕会诊目标和参与学科提出需要专家回答的问题。不得推断新诊断、建议处方或改写原始结果，不生成会后意见或后续任务。\n会诊目标：${packet.sections.goal}\n参与学科：${packet.disciplines || '未填写'}`;
+    const medicalSummary = Object.fromEntries(['chiefComplaint', 'presentIllness', 'physicalExam', 'initialDiagnosis', 'currentMedication']
+      .map(key => [key, patient.medicalRecord?.summary?.[key] || '']));
+    const medicalCourse = (patient.medicalRecord?.courseEntries || []).slice(-80).map(row => ({
+      occurredAt: row.occurredAt || row.date || '', content: row.content || '', examination: row.examination || '',
+      diagnosis: row.diagnosis || '', medicationChange: row.medicationChange || '', treatmentResponse: row.treatmentResponse || '',
+    }));
+    const context = { basic: Object.fromEntries(Object.entries(packet.basicSnapshot || {}).filter(([key]) => !['name', 'birthDate'].includes(key))),
+      reports: packet.reportSnapshot || [], medicalRecord: { summary: medicalSummary, courseEntries: medicalCourse }, medications: drugs,
+      sources: ['健康档案当前版本', '已保存的病历记录', ...(packet.reportSnapshot || []).map(row => `${row.date || '日期未记录'} · ${row.title}`), '用药记录当前版本'] };
+    const result = await require('../utils/aiCaseReviewProvider').reply({ subjectId: patient._id, preferred: 'qwen',
+      sessionId: `mdt-${packet._id}`, prompt, context, attachments: [], history: [], maxTokens: 3500 });
+    const raw = String(result.content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { throw Object.assign(new Error('AI资料整理格式异常，请重试或手工填写'), { status: 502 }); }
+    const allowed = ['overview', 'timeline', 'symptoms', 'treatment', 'questions', 'uncertainties'];
+    if (!parsed || typeof parsed !== 'object' || allowed.some(key => typeof parsed[key] !== 'string')) throw Object.assign(new Error('AI资料整理格式异常，请重试或手工填写'), { status: 502 });
+    res.json({ success: true, data: Object.fromEntries(allowed.map(key => [key, mdtText(parsed[key])])), provider: result.provider });
+  } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message }); }
+});
+
 require('./rehab')(router, { staffAuth, getVisiblePlanPatientIds, checkPermission });
 router.syncScreeningItems = syncScreeningItems;
 module.exports = router;
