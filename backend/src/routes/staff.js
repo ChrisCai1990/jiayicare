@@ -19126,6 +19126,7 @@ router.get('/wecom-kf/handoffs', staffAuth, checkPermission('followups', 'view')
 
 // 多学科会诊资料包：只引用已审核报告，保存当次打印快照；修改后须重新审核。
 const MdtPacket = require('../models/MdtPacket');
+const { buildMdtEvidence } = require('../utils/mdtEvidence');
 const MDT_SECTION_KEYS = ['goal', 'overview', 'timeline', 'symptoms', 'treatment', 'questions', 'uncertainties', 'disciplineOpinions', 'conclusion', 'nextSteps'];
 const MDT_TABLE_FIELDS = {
   timelineRows: ['date', 'event', 'symptoms', 'assessment', 'response', 'source', 'sourceDate', 'verification'],
@@ -19178,7 +19179,8 @@ function mdtBasicSnapshot(patient, referenceDate) {
     name: patient.name || '', gender: patient.gender || '', age: mdtAge(patient, referenceDate),
     birthDate: patient.birthDate || '', height: patient.height ?? '', weight: patient.weight ?? '',
     chronicDiseases: Array.isArray(patient.chronicDiseases) ? patient.chronicDiseases.join('、') : patient.chronicDiseases || '',
-    recordedDiagnosis: patient.medicalRecord?.summary?.initialDiagnosis || '',
+    recordedDiagnosis: (patient.diseaseRecords || []).filter(record => record.summary?.initialDiagnosis)
+      .map(record => [record.name, record.summary.initialDiagnosis].filter(Boolean).join('：')).join('\n') || patient.medicalRecord?.summary?.initialDiagnosis || '',
     pastHistory: [profile.pastHistory, ...mdtHistoryRows(profile.medicalHistory, ['disease', 'onsetDate', 'hospital', 'treatment'])].filter(Boolean).join('\n'),
     surgeryHistory: [profile.surgeryHistory, ...mdtHistoryRows(profile.surgeries, ['name', 'date', 'hospital', 'outcome'])].filter(Boolean).join('\n'),
     allergies: [profile.drugAllergy, profile.foodAllergy, ...mdtHistoryRows(profile.allergies, ['substance', 'type', 'reaction'])].filter(Boolean).join('\n'),
@@ -19229,6 +19231,15 @@ router.get('/patients/:id/mdt-packets', staffAuth, async (req, res) => {
   const rows = await MdtPacket.find({ patientId: patient._id }).sort({ updatedAt: -1 }).limit(50).lean();
   res.json({ success: true, data: rows });
 });
+router.post('/patients/:id/mdt-packets/source-draft', staffAuth, async (req, res) => {
+  try {
+    const patient = await mdtPatient(req, res); if (!patient) return;
+    const reports = await mdtReportSnapshot(patient._id, req.body.selectedReportIds);
+    const medications = await Medication.find({ user: patient._id }).sort({ createdAt: -1 }).limit(80)
+      .select('name dosage frequency startDate stopped active stopDate stopReason aiStatus createdAt').lean();
+    res.json({ success: true, data: buildMdtEvidence(patient, reports, medications) });
+  } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message }); }
+});
 router.post('/patients/:id/mdt-packets', staffAuth, (req, res) => mdtSave(req, res));
 router.put('/patients/:id/mdt-packets/:packetId', staffAuth, async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.packetId)) return res.status(400).json({ success: false, message: '资料包ID无效' });
@@ -19259,17 +19270,18 @@ router.post('/patients/:id/mdt-packets/:packetId/organize', staffAuth, async (re
     if (Number(req.body.version) !== packet.__v) return res.status(409).json({ success: false, message: '资料包已由其他人更新，请重新打开后核对' });
     if (!packet.sections?.goal) return res.status(400).json({ success: false, message: '请先填写并保存本次会诊目标' });
     const drugs = await Medication.find({ user: patient._id }).sort({ createdAt: -1 }).limit(80)
-      .select('name dosage frequency startDate stopped stopDate stopReason aiStatus reviewedAt').lean();
+      .select('name dosage frequency startDate stopped active stopDate stopReason aiStatus reviewedAt').lean();
     const prompt = `请根据给出的档案整理多学科会诊前草稿。仅返回JSON对象：overview、symptoms、uncertainties为中文字符串；tables为对象，包含timelineRows、triggerRows、treatmentRows、testRows、questionRows数组。每行字段必须对应如下定义：${JSON.stringify(MDT_TABLE_FIELDS)}。不适用的字段给空字符串，verification一律“待核实”。每条事实填写source来源名称与sourceDate原资料日期；缺失日期留空，不猜测。timelineRows按日期列症状、诊断记录、处置及反应；triggerRows区分诱发和缓解；treatmentRows仅写已有用药/治疗及实际记录的反应；testRows.originalResult只能摘录报告原文/原数值，不作改写，interpretation留空以供人工或专家补充；questionRows围绕会诊目标列具体待回答问题，不预设答案。overview和symptoms只概括已记录事实；矛盾和缺失写入uncertainties并列来源。不得推断新诊断、病因、预后、疗效或建议处方，不得把“未记录”写成“无”，不得生成会后意见或任务。\n会诊目标：${packet.sections.goal}\n参与学科：${packet.disciplines || '未填写'}`;
-    const medicalSummary = Object.fromEntries(['chiefComplaint', 'presentIllness', 'physicalExam', 'initialDiagnosis', 'currentMedication']
-      .map(key => [key, patient.medicalRecord?.summary?.[key] || '']));
-    const medicalCourse = (patient.medicalRecord?.courseEntries || []).slice(-80).map(row => ({
-      occurredAt: row.occurredAt || row.date || '', content: row.content || '', examination: row.examination || '',
-      diagnosis: row.diagnosis || '', medicationChange: row.medicationChange || '', treatmentResponse: row.treatmentResponse || '',
-    }));
+    const diseases = (patient.diseaseRecords?.length ? patient.diseaseRecords : [{ name: '旧版病历', ...(patient.medicalRecord || {}) }])
+      .map(record => ({ name: record.name || '', summary: Object.fromEntries(['chiefComplaint', 'presentIllness', 'initialDiagnosis', 'currentMedication']
+        .map(key => [key, record.summary?.[key] || ''])), courseEntries: (record.courseEntries || []).filter(row => !row.cancelledAt && !row.isCancelled).slice(-80).map(row => ({
+        occurredAt: row.occurredAt || row.date || '', content: row.content || '', symptoms: row.symptoms || '', examination: row.examination || '',
+        diagnosis: row.diagnosis || '', medicationChange: row.medicationChange || '', treatmentResponse: row.treatmentResponse || '',
+        sourceLabel: row.sourceLabel || '', sourceInstitution: row.sourceInstitution || '', verificationStatus: row.verificationStatus || '',
+      })) }));
     const context = { basic: Object.fromEntries(Object.entries(packet.basicSnapshot || {}).filter(([key]) => !['name', 'birthDate'].includes(key))),
-      reports: packet.reportSnapshot || [], medicalRecord: { summary: medicalSummary, courseEntries: medicalCourse }, medications: drugs,
-      sources: ['健康档案当前版本', '已保存的病历记录', ...(packet.reportSnapshot || []).map(row => `${row.date || '日期未记录'} · ${row.title}`), '用药记录当前版本'] };
+      reports: packet.reportSnapshot || [], diseaseRecords: diseases, medications: drugs,
+      sources: ['健康档案当前版本', '专病档案诊疗时间轴', ...(packet.reportSnapshot || []).map(row => `${row.date || '日期未记录'} · ${row.title}`), '用药记录当前版本'] };
     const result = await require('../utils/aiCaseReviewProvider').reply({ subjectId: patient._id, preferred: 'qwen',
       sessionId: `mdt-${packet._id}`, prompt, context, attachments: [], history: [], maxTokens: 6000 });
     const raw = String(result.content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
@@ -19279,6 +19291,8 @@ router.post('/patients/:id/mdt-packets/:packetId/organize', staffAuth, async (re
     const allowed = ['overview', 'symptoms', 'uncertainties'];
     if (!parsed || typeof parsed !== 'object' || allowed.some(key => typeof parsed[key] !== 'string') || !parsed.tables || Object.keys(MDT_TABLE_FIELDS).some(key => !Array.isArray(parsed.tables[key]))) throw Object.assign(new Error('AI资料整理格式异常，请重试或手工填写'), { status: 502 });
     const tables = mdtTables(parsed.tables);
+    const archive = buildMdtEvidence(patient, packet.reportSnapshot || [], drugs).tables;
+    for (const key of ['timelineRows', 'treatmentRows', 'testRows']) if (!tables[key].length) tables[key] = archive[key];
     Object.values(tables).forEach(rows => rows.forEach(row => { row.verification = '待核实'; }));
     res.json({ success: true, data: { sections: Object.fromEntries(allowed.map(key => [key, mdtText(parsed[key])])), tables }, provider: result.provider });
   } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message }); }

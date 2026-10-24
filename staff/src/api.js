@@ -139,6 +139,7 @@ export const staffAPI = {
   },
   deleteWeightProgressPhoto: (id, photoId) => req(`/staff/patients/${id}/weight-progress-photos/${photoId}`, { method: 'DELETE' }),
   getMdtPackets:      (id)     => req(`/staff/patients/${id}/mdt-packets`),
+  getMdtSourceDraft:  (id, selectedReportIds) => req(`/staff/patients/${id}/mdt-packets/source-draft`, { method: 'POST', body: JSON.stringify({ selectedReportIds }) }),
   createMdtPacket:    (id, data) => req(`/staff/patients/${id}/mdt-packets`, { method: 'POST', body: JSON.stringify(data) }),
   updateMdtPacket:    (id, packetId, data) => req(`/staff/patients/${id}/mdt-packets/${packetId}`, { method: 'PUT', body: JSON.stringify(data) }),
   reviewMdtPacket:    (id, packetId, version) => req(`/staff/patients/${id}/mdt-packets/${packetId}/review`, { method: 'POST', body: JSON.stringify({ version }) }),

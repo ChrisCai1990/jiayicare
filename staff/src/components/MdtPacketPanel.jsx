@@ -26,7 +26,8 @@ const show = value => value === 0 || value ? String(value) : '未记录'
 const dateText = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '未记录'
 const reportDate = report => report.checkDate || report.reportYear || '日期未记录'
 const newForm = (user, medications) => {
-  const summary = user?.medicalRecord?.summary || {}
+  const diseaseSummaries = (user?.diseaseRecords || []).map(record => record.summary || {}).filter(row => row.chiefComplaint || row.presentIllness)
+  const summary = diseaseSummaries[0] || user?.medicalRecord?.summary || {}
   return {
     title: '', consultationDate: '', disciplines: '', selectedReportIds: [], tables: blankTables(),
     sections: {
@@ -38,6 +39,9 @@ const newForm = (user, medications) => {
     },
   }
 }
+const packetForm = row => ({ title: row.title, consultationDate: row.consultationDate || '', disciplines: row.disciplines || '',
+  sections: row.sections || {}, tables: { ...blankTables(), ...(row.tables || {}) },
+  selectedReportIds: (row.selectedReportIds || []).map(String), version: row.__v })
 
 export default function MdtPacketPanel({ patientId, user, reports, medications, staff, toast }) {
   const [packets, setPackets] = useState([])
@@ -58,13 +62,32 @@ export default function MdtPacketPanel({ patientId, user, reports, medications, 
   const update = patch => { setForm(prev => ({ ...prev, ...patch })); setDirty(true) }
   const section = (key, value) => { setForm(prev => ({ ...prev, sections: { ...prev.sections, [key]: value } })); setDirty(true) }
   const tableRows = (key, rows) => { setForm(prev => ({ ...prev, tables: { ...prev.tables, [key]: rows } })); setDirty(true) }
-  const choose = row => { setPacket(row); setForm({ title: row.title, consultationDate: row.consultationDate || '', disciplines: row.disciplines || '', sections: row.sections || {}, tables: { ...blankTables(), ...(row.tables || {}) }, selectedReportIds: (row.selectedReportIds || []).map(String), version: row.__v }); setDirty(false) }
+  const choose = row => { setPacket(row); setForm(packetForm(row)); setDirty(false) }
+  const importSource = async () => {
+    setBusy(true)
+    try {
+      const result = await staffAPI.getMdtSourceDraft(patientId, form.selectedReportIds)
+      const incoming = result.data.tables || blankTables()
+      const imported = TABLES.filter(([key]) => !form.tables?.[key]?.length && incoming[key]?.length)
+      if (!imported.length) return toast('档案中没有可带入的新增表格资料；请核对已选报告和专病档案，或手工填写')
+      setForm(prev => ({ ...prev, tables: Object.fromEntries(TABLES.map(([key]) => [key, prev.tables?.[key]?.length ? prev.tables[key] : (incoming[key] || [])])) }))
+      setDirty(true)
+      const counts = result.data.counts || {}
+      toast(`档案可用：病程 ${counts.courseEntries || 0} 条、用药 ${counts.medications || 0} 条、检查摘录 ${counts.testExcerpts || 0} 条。已填入空表，请核对后保存。`)
+    } catch (error) { toast(error.message || '读取档案失败', 'error') }
+    finally { setBusy(false) }
+  }
   const save = async () => {
     if (!form.title.trim()) return toast('请填写会诊主题', 'error')
     setBusy(true)
     try {
       const result = packet ? await staffAPI.updateMdtPacket(patientId, packet._id, form) : await staffAPI.createMdtPacket(patientId, form)
-      setPacket(result.data); setForm(prev => ({ ...prev, version: result.data.__v })); setDirty(false); await load(); toast('会诊资料包草稿已保存')
+      setPacket(result.data)
+      const refreshed = await staffAPI.getMdtPackets(patientId)
+      const saved = (refreshed.data || []).find(row => row._id === result.data._id)
+      if (!saved || saved.__v !== result.data.__v || JSON.stringify(saved.tables || {}) !== JSON.stringify(result.data.tables || {})) throw new Error('资料包保存后读取核对失败，请刷新后检查，避免重复提交')
+      setPackets(refreshed.data || []); setPacket(saved); setForm(packetForm(saved)); setDirty(false)
+      toast('会诊资料包已保存并重新读取核对')
     } catch (error) { toast(error.message || '保存失败', 'error') }
     finally { setBusy(false) }
   }
@@ -114,13 +137,14 @@ export default function MdtPacketPanel({ patientId, user, reports, medications, 
           else { setPacket(null); setForm(newForm(user, medications)); setDirty(false) }
         }}><option value="">新建会诊资料包</option>{packets.map(row => <option key={row._id} value={row._id}>{row.title} · {row.status === 'reviewed' ? '已审核' : '草稿'} · {String(row.updatedAt || '').slice(0, 10)}</option>)}</select>
           <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? '处理中…' : '保存草稿'}</button>
+          <button className="btn btn-secondary" disabled={busy} onClick={importSource}>从档案带入资料</button>
           {packet && <button className="btn btn-secondary" disabled={busy || dirty} onClick={organize}>通义千问生成草稿</button>}
           {packet && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-secondary" disabled={busy || dirty || packet.status === 'reviewed'} onClick={review}>审核资料包</button>}
           <button className="btn btn-secondary" disabled={!printable} onClick={print}>打印 / 保存为 PDF</button>
         </div>
         {!loaded && <div className="mdt-hint">正在加载已有资料包…</div>}
-        <p className="mdt-hint">基本信息在保存时从健康档案生成快照；之后档案若有更新，请重新保存并审核。未记录的信息不会写成“无”。</p>
-        <p className="mdt-hint">通义千问会在客户授权后整理所选资料，只填空白摘要和空表；生成行均标为待核实。请逐行对照原始资料，尤其核对报告结果、用药状态和来源日期，再由健康顾问审核。</p>
+        <p className="mdt-hint">操作顺序：选择报告 → 点“从档案带入资料”读取专病时间轴、用药和报告 → 核对并保存；需要整理诱因及会诊问题时，再点“通义千问生成草稿”并重新保存。基本信息在保存时生成快照。</p>
+        <p className="mdt-hint">通义千问须有客户对应授权，只填空白摘要和空表。生成及带入的事实均标为待核实；请对照原始资料核对结果、用药状态和来源日期。未记录不等于“无”。</p>
         <div className="mdt-form-row"><label>会诊主题<input className="form-input" value={form.title} onChange={e => update({ title: e.target.value })} placeholder="例如：反复眩晕多学科会诊" /></label><label>会诊日期<input className="form-input" type="date" value={form.consultationDate} onChange={e => update({ consultationDate: e.target.value })} /></label><label>参与学科<input className="form-input" value={form.disciplines} onChange={e => update({ disciplines: e.target.value })} placeholder="耳鼻喉科、神经内科" /></label></div>
         <details className="mdt-reports" open><summary>选择本次相关的已审核报告（已选 {form.selectedReportIds.length} 份）</summary>
           {!availableReports.length && <p>暂无可选的已审核报告。</p>}

@@ -3621,6 +3621,7 @@ export default function PatientDetailPage() {
     }
     else if (tab === 'referrals') loadPatientReferrals()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
+    else if (tab === 'mdt') { loadMedications(); loadReports() }
     else if (tab === 'portrait' || tab === 'symptoms') {
       loadScreening()
       if (reports.length === 0) loadReports()
