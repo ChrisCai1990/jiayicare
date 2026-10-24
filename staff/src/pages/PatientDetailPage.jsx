@@ -11174,7 +11174,7 @@ export default function PatientDetailPage() {
         })
         const renderTable = (records) => (
           <table className="table">
-            <thead><tr><th>类型</th><th>标题</th><th>内容摘要</th><th>负责人</th><th>日期</th></tr></thead>
+            <thead><tr><th>类型</th><th>标题</th><th>{serviceRecordCategory === '医院就医' ? '执行结果 / 安排' : '内容摘要'}</th><th>负责人</th><th>日期</th></tr></thead>
             <tbody>
               {records.map(r => (
                 <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => r.aiStatus === 'pending' ? setReviewingDraft(r) : setShowSRDetail(r)}>
@@ -11183,7 +11183,12 @@ export default function PatientDetailPage() {
                     {r.aiStatus === 'pending' && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 999, background: '#7C3AED20', color: '#7C3AED', fontWeight: 600 }}>AI待审</span>}
                   </td>
                   <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title || '-'}</td>
-                  <td style={{ fontSize: 13, color: '#666', maxWidth: 200 }}>{r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : '-'}</td>
+                  <td style={{ fontSize: 13, color: '#666', maxWidth: 260, whiteSpace: 'pre-line' }}>
+                    {(() => {
+                      const summary = r.type === 'medical_visit' ? (r.result || r.content || '') : (r.content || '')
+                      return summary ? (summary.length > 100 ? `${summary.slice(0, 100)}...` : summary) : '-'
+                    })()}
+                  </td>
                   <td style={{ fontSize: 13, color: '#666' }}>{r.staffId?.name || '-'}</td>
                   <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.date).toLocaleDateString('zh-CN')}</td>
                 </tr>

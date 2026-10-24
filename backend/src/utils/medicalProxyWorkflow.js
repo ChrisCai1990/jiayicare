@@ -424,7 +424,13 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: plan.adHocConsultation ? '临时加诊服务' : medicationProxy ? '代配药服务' : medicalEscort ? '就医陪同服务' : /专家约诊/.test(order.serviceName || '') ? '专家约诊服务' : '医疗代诊服务', content,
     medicalEscort: { serviceType: medicalEscort ? 'accompany' : 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: /专家约诊/.test(order.serviceName || '') ? (booking.appointmentExpert || '') : (booking.appointmentExpert || plan.expert || '') } };
   if (completed) {
-    update.result = supplyResolutionSummary(task.formData) || nonempty(task.formData?.resolutionResult || task.formData?.fulfillmentProof || task.formData?.executionResult);
+    update.result = [
+      task.formData?.executionSnapshot?.executionResult && `首次执行：${nonempty(task.formData.executionSnapshot.executionResult)}`,
+      supplyResolutionSummary(task.formData),
+      nonempty(task.formData?.resolutionResult),
+      nonempty(task.formData?.fulfillmentProof),
+      nonempty(task.formData?.executionResult),
+    ].filter(Boolean).filter((line, index, lines) => lines.indexOf(line) === index).join('\n');
     update.attachments = (medicationProxy
       ? ['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].flatMap(key => task.formData?.[key] || [])
       : (task.formData?.medicalEscort === true ? medicalEscortAttachments(task.formData) : (task.formData?.medicalRecordAttachments || []))).filter(file => file?.url);

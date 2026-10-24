@@ -3222,6 +3222,15 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       type: 'medical_assist',
     }).lean();
     if (sourcePlan) {
+      const completedTasks = await FollowUp.find({ patientId: followUp.patientId, sourceHealthPlanId: sourcePlan._id, taskRole: { $ne: 'supervisor' }, status: 'completed' })
+        .select('status taskRole theme date completedAt executedContent content serviceChecklist formData').lean();
+      const { summarizeMedicalVisitTasks } = require('../utils/medicalVisitRecordResult');
+      const identity = { type: 'medical_visit', $or: [{ sourceHealthPlanId: sourcePlan._id }, ...(sourcePlan.sourceOrderId ? [{ sourceOrderId: sourcePlan.sourceOrderId }] : [])] };
+      const existingRecord = await ServiceRecord.findOne(identity).select('result').lean();
+      const generated = summarizeMedicalVisitTasks(completedTasks) || followUp.executedContent || followUp.content || '';
+      const previousGenerated = summarizeMedicalVisitTasks(completedTasks.filter(task => String(task._id) !== String(followUp._id)));
+      const mayUpdateResult = !existingRecord?.result || existingRecord.result === generated || existingRecord.result === previousGenerated
+        || completedTasks.some(task => existingRecord.result === task.executedContent || existingRecord.result === task.content);
       const c = sourcePlan.content || {};
       const requirements = [
         c.hospital && `医院：${c.hospital}`,
@@ -3235,7 +3244,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         c.notes && `注意事项：${c.notes}`,
       ].filter(Boolean).join('\n');
       await ServiceRecord.findOneAndUpdate(
-        { type: 'medical_visit', $or: [{ sourceHealthPlanId: sourcePlan._id }, ...(sourcePlan.sourceOrderId ? [{ sourceOrderId: sourcePlan.sourceOrderId }] : [])] },
+        identity,
         {
           $set: {
             staffId: req.staff._id,
@@ -3245,7 +3254,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
             date: followUp.date || followUp.completedAt || new Date(),
             title: sourcePlan.title || '就医协助方案',
             content: requirements,
-            result: followUp.executedContent || followUp.content || '',
+            ...(mayUpdateResult ? { result: generated } : {}),
             medicalEscort: {
               hospital: c.hospital || '',
               department: c.department || '',
@@ -7797,8 +7806,29 @@ router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
   const records = await ServiceRecord.find({ patientId: req.params.id })
     .sort({ date: -1 })
     .populate('staffId', 'name role');
+  // Show specialist details already saved in completed tasks for older records too.
+  // A manually edited result takes precedence over an automatically generated one.
+  const planIds = [...new Set(records.filter(record => record.type === 'medical_visit' && record.sourceHealthPlanId)
+    .map(record => String(record.sourceHealthPlanId)))];
+  const completedTasks = planIds.length ? await FollowUp.find({ patientId: req.params.id, sourceHealthPlanId: { $in: planIds }, taskRole: { $ne: 'supervisor' }, status: 'completed' })
+    .select('sourceHealthPlanId status taskRole theme date completedAt executedContent content serviceChecklist formData').lean() : [];
+  const tasksByPlan = new Map();
+  completedTasks.forEach(task => {
+    const key = String(task.sourceHealthPlanId);
+    if (!tasksByPlan.has(key)) tasksByPlan.set(key, []);
+    tasksByPlan.get(key).push(task);
+  });
+  const { summarizeMedicalVisitTasks } = require('../utils/medicalVisitRecordResult');
   // 早期测试版曾把通用AI研判伪装成正式阶段评估；仅展示真正由PhaseAssessment模板任务产生并审核的记录。
-  res.json({ success: true, data: records.filter(record => record.type !== 'phase_assessment' || record.sourcePhaseAssessmentId).map(withSignedServiceRecord) });
+  res.json({ success: true, data: records.filter(record => record.type !== 'phase_assessment' || record.sourcePhaseAssessmentId).map(record => {
+    const item = withSignedServiceRecord(record);
+    const tasks = tasksByPlan.get(String(item.sourceHealthPlanId)) || [];
+    const generated = summarizeMedicalVisitTasks(tasks);
+    if (item.type === 'medical_visit' && generated && (!item.result || tasks.some(task => item.result === task.executedContent || item.result === task.content))) {
+      item.result = generated;
+    }
+    return item;
+  }) });
 });
 
 // 心理健康评估已改为走问卷库（Epworth/SCL90/SDS/SAS，questionnaire.js /:id/submit 自动写入 User.psychAssessments）

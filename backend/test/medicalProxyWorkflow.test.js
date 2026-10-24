@@ -318,6 +318,21 @@ test('escort service records use escort title and accompany type', async () => {
   }
 });
 
+test('completed proxy resolution keeps specialist execution and resolution details', async () => {
+  const previous = { findPlan: HealthPlan.findOne, upsert: ServiceRecord.findOneAndUpdate };
+  try {
+    HealthPlan.findOne = () => ({ select: () => ({ sort: () => ({ lean: async () => null }) }) });
+    ServiceRecord.findOneAndUpdate = async (_filter, update) => update.$set;
+    const record = await upsertMedicalProxyServiceRecord({ patientId: 'patient', assignedTo: 'manager', date: new Date('2026-10-23'), workflowKey: 'medical_proxy:resolution', sourceType: 'order', formData: { executionSnapshot: { executionResult: '原药房缺货' }, resolutionType: 'online', purchaseActor: 'staff', purchaseChannel: '互联网药房', resolutionResult: '已购得药品', fulfillmentProof: '已交付客户' } }, { _id: 'order', serviceName: '代配药服务', medicalProxyPlan: {} }, true);
+    assert.match(record.result, /原药房缺货/);
+    assert.match(record.result, /已购得药品/);
+    assert.match(record.result, /已交付客户/);
+  } finally {
+    HealthPlan.findOne = previous.findPlan;
+    ServiceRecord.findOneAndUpdate = previous.upsert;
+  }
+});
+
 test('collection is due three days before proxy visit or immediately inside the window', () => {
   assert.equal(preparationDueDate(new Date('2026-09-20T00:00:00+08:00'), new Date('2026-09-14T00:00:00+08:00')).toISOString(), new Date('2026-09-17T00:00:00+08:00').toISOString());
   assert.equal(preparationDueDate(new Date('2026-09-16T00:00:00+08:00'), new Date('2026-09-14T11:00:00+08:00')).toISOString(), new Date('2026-09-14T11:00:00+08:00').toISOString());
