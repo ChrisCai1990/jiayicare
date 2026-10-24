@@ -230,6 +230,7 @@ test('misrouted confirmed issues are repaired with a bounded action patch', asyn
   const check = value => validateAnnualRaw(value, templates, sources, keys);
   const normalized = normalizeConfirmedManagement(original, sources, templates);
   assert.deepEqual(normalized.templateNodes[0].sourceIds, [sources[0].id]);
+  assert.match(normalized.templateNodes[0].personalization, /工作人员跟进肾结晶/);
   assert.deepEqual(missingManagementActions(normalized, sources, templates).map(item => item.id), [sources[1].id]);
   const prompt = managementActionRepairPrompt(normalized, [sources[1]], templates, '方向错误');
   assert.ok(prompt.length < 4000);

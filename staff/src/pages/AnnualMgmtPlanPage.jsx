@@ -1285,21 +1285,20 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           <div style={{ marginBottom: 14 }}>
             <h2 style={{ margin: 0, fontSize: 20, color: '#1A2B24' }}>本年度管理方案</h2>
             <div style={{ marginTop: 5, fontSize: 13, color: '#62776A' }}>
-              {(moduleData.management_targets?.records || []).length} 项管理目标 · {visibleModuleEntries.reduce((count, entry) => count + (entry.def.multi ? (moduleData[entry.key]?.records || []).length : 1), 0)} 项服务与行动
+              已纳入 {managementTargets.length} 项问题 · 已生成 {planActions.length} 项执行安排
               {!pushedAt && preparation?.checklist && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; panel.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: preparation.checklist.ready ? '#287A50' : '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>准备情况：{preparation.checklist.progress.completed}/{preparation.checklist.progress.total} · 查看</button>}
               {pendingExecutionChanges.length > 0 && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; document.getElementById('annual-execution-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>{pendingExecutionChanges.length} 项执行待核对 · 处理</button>}
             </div>
           </div>
-          <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
           {patientMode && <section style={{ marginBottom: 16 }} aria-label="按问题查看年度管理方案">
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>年度管理项目 · 目标与执行安排</div>
-            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>更新已确认管理目标</button>}
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>已纳入的问题与对应方案</div>
+            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>同步最新纳入问题</button>}
             {unresolvedAiCheckups.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>AI健康信息整理还有 {unresolvedAiCheckups.length} 项待完善检查未逐项核对：{unresolvedAiCheckups.join('、')}。请在体检资料覆盖板块处理后再生成或推送方案。</div>}
             {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。可在专项筛查选择“纳入管理”，或在AI健康信息整理中核对待完善检查。</div>}
             {managementTargetGroups.map(group => <div key={group.ids[0]} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
               {group.entries.length > 1 && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>联合就诊安排 · {group.entries.length} 项问题，一次执行</div>}
               {group.entries.map(({ row, index }) => <div key={targetIssueId(row, index)} style={group.entries.length > 1 ? { paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid #E4ECE7' } : undefined}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', marginBottom: 5 }}>{index + 1}. {row.goal || row.sourceTitle || '管理问题'}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', marginBottom: 5 }}>{index + 1}. {(row.goal || row.sourceTitle || '管理问题').replace(/：按.+安排完成本年度可核对的管理行动$/, '')}{row.sourceGoal && !(row.goal || '').includes(` · ${row.sourceGoal}`) ? ` · ${row.sourceGoal}` : ''}</div>
               <details><summary style={{ cursor: 'pointer', fontSize: 12, color: '#62776A' }}>查看来源依据、调整目标与干预重点</summary>
               <div style={{ fontSize: 12, color: '#62776A', marginBottom: 10 }}>来源：{row.sourceTitle || '年度方案补充'}{row.sourceConfirmedAt ? ` · ${new Date(row.sourceConfirmedAt).toLocaleDateString('zh-CN')}` : ''}{row.sourceGoal && (row.goal !== row.sourceGoal || row.focus !== row.sourceFocus) ? ' · 年度草稿已调整' : ''}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8 }}>
@@ -1310,9 +1309,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               </details>
               {row.nutritionRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>营养师参与 · 纳入下方统一评估</div>}
               </div>)}
-              {integratedActions.filter(action => group.ids.includes(action.issueId) || (action.record.issueIds || []).some(id => group.ids.includes(String(id)))).map(renderPlanAction)}
+              {integratedActions.filter(action => group.ids.includes(action.issueId) || [...(action.record.issueIds || []), ...(action.record.sourceIds || [])].some(id => group.ids.includes(String(id)))).map(renderPlanAction)}
             </div>)}
           </section>}
+          <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
           {patientMode && <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
             <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 营养评估与干预 · {nutritionSummary.metrics.length} 项对比指标{nutritionTask ? ' · 已派发营养师' : ' · 待派发'}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment') && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</summary>
             <div style={{ fontSize: 12, color: '#62776A', margin: '8px 0' }}>研判内容自动带入，统一派发一次；营养师评估后调整并形成方案。</div>

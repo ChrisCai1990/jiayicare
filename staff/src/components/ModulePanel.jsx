@@ -238,7 +238,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
             </select>
           </label>}
           {executionReviewChanges.map((change, reviewIndex) => <details key={reviewIndex} style={{ marginTop: 10, padding: 10, background: '#FFF9ED', borderRadius: 8, fontSize: 12 }}><summary style={{ cursor: 'pointer', color: '#9A5B13' }}>查看本项修订 · {change.action}</summary><div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>原方案：{reviewSnapshot(change.before)}</div><div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>当前方案：{reviewSnapshot(change.after)}</div></details>)}
-          {def.reviewDriven && <p style={{fontSize:12,color:'#64796E'}}>内容由研判补入后带入，顾问核对即可；缺项可回研判提取补充，无需重新生成整份方案。</p>}
+          {def.reviewDriven && <p style={{fontSize:12,color:'#64796E'}}>已按纳入管理的方向和现有模板生成草稿，请核对本项内容与执行安排；专项研判结论可作为补充依据。</p>}
           {def.fields.filter(field=>!optionalEmpty(field)).map(renderField)}
           {def.fields.some(optionalEmpty) && <details style={{marginTop:12}}><summary style={{cursor:'pointer'}}>其他补充（研判未明确）</summary>{def.fields.filter(optionalEmpty).map(renderField)}</details>}
           {def.templateFields?.length > 0 && <details style={{ marginTop: 16, padding: 12, background: '#F0F5F2', borderRadius: 8 }}>

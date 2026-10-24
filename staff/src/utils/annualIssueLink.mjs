@@ -1,6 +1,10 @@
 export const targetIssueId = (target, index) => String(target?.issueId || (target?.sourceReviewId ? `review:${target.sourceReviewId}:target:${target.sourceIndex ?? index}` : `manual:${index}`))
 
 export function linkedIssueId(record, targets) {
+  const sourceIds = new Set((Array.isArray(record?.sourceIds) ? record.sourceIds : []).map(String))
+  const direct = targets.map((target, index) => targetIssueId(target, index)).filter(id => sourceIds.has(id))
+  if (direct.length === 1) return direct[0]
+  if (direct.length > 1) return ''
   const explicit = String(record?.issueId || '')
   if (explicit) return targets.some((target, index) => targetIssueId(target, index) === explicit) ? explicit : ''
   const reviewIds = [...new Set((Array.isArray(record?.sourceIds) ? record.sourceIds : []).map(id => String(id).match(/^review:([^:]+)/)?.[1]).filter(Boolean))]
@@ -32,7 +36,8 @@ export function displayIssueId(record, targets) {
 export function groupTargetsBySharedActions(targets, actions) {
   const groups = targets.map((row, index) => ({ entries: [{ row, index }], ids: [targetIssueId(row, index)] }))
   for (const action of actions) {
-    const ids = [...new Set((action.record?.issueIds || []).map(String))]
+    const known = new Set(groups.flatMap(group => group.ids))
+    const ids = [...new Set([...(action.record?.issueIds || []), ...(action.record?.sourceIds || [])].map(String).filter(id => known.has(id)))]
     if (ids.length < 2) continue
     const matching = groups.filter(group => group.ids.some(id => ids.includes(id)))
     if (matching.length < 2 || !ids.every(id => matching.some(group => group.ids.includes(id)))) continue

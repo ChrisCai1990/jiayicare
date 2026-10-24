@@ -36,8 +36,8 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
   }
   const inputStyle = { padding: '6px 8px', border: '1px solid #D6DED8', borderRadius: 6, maxWidth: '100%' }
   return <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-    <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>就医与检查排期统筹 · {rows.length} 项</summary>
-    <p style={{ fontSize: 12, color: '#62776A' }}>按建议日期排列，相隔 14 天以内的事项相邻显示。顾问可修改 AI 建议日期；同次就诊需核实医院、时限、准备要求及实际行程后再归类。归类后仅保留一次服务安排，全部事项仍会交给执行人员。</p>
+    <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>可选：合并同次就医与检查</summary>
+    <p style={{ fontSize: 12, color: '#62776A' }}>下面是年度方案中已有的就医和检查事项，仅供核对是否能同次办理，不会另生成方案。相隔 14 天以内的日期相邻显示；核实医院、时限、准备要求后可统一日期和服务安排。</p>
     {groups.map((group, groupIndex) => <div key={group[0].cluster} style={{ borderTop: '1px solid #E5ECE7', paddingTop: 10, marginTop: 10 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 5 }}>排期段 {groupIndex + 1} · {group.length} 项{group.length > 1 ? '（相邻日期不代表必须同次就诊）' : ''}</div>
       {group.map(item => <div key={item.key} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(180px,1fr) minmax(165px,auto)', gap: 9, alignItems: 'center', padding: '7px 0' }}>

@@ -4,6 +4,8 @@ function inheritArrangements(raw, reports = [], visits = []) {
   for (const key of ['medical_treatment','checkup_completion','abnormal_followup','annual_checkup']) {
     const rows = Array.isArray(result[key]) ? result[key] : Array.isArray(result[key]?.records) ? result[key].records : result[key] && typeof result[key] === 'object' ? [result[key]] : [];
     for (const row of rows) {
+      if (row.hospital && (!require('./annualCareLogistics').usablePlace(row.hospital)
+        || reports.some(report => String(report.title || '').trim() === String(row.hospital).trim()))) row.hospital = '';
 
       let match;
       if (key === 'annual_checkup') {
@@ -23,7 +25,8 @@ function inheritArrangements(raw, reports = [], visits = []) {
       // Do not copy names from unrelated departments or from a different hospital.
       const history = visits.filter(v => v.department && v.department.replace(/内科$|科$/,'') === String(row.department || '').replace(/内科$|科$/,'') && v.hospital)
         .sort((a,b) => String(b.date).localeCompare(String(a.date)))[0];
-      const hospital = match?.institution || match?.hospital || history?.hospital;
+      const usablePlace = require('./annualCareLogistics').usablePlace;
+      const hospital = [history?.hospital, match?.institution, match?.hospital].find(usablePlace);
       if (hospital && !row.hospital && !row.institution) {
         row.hospital = hospital;
         if (match) row.logisticsSourceReportId = String(match._id);

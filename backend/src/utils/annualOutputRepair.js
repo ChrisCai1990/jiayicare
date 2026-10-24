@@ -48,9 +48,18 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
   const templates = new Map(catalog.map(item => [String(item.id), item]));
   const management = evidence.filter(item => item.id.startsWith('management_issue:'));
   const ongoing = new Set(management.filter(item => item.content?.direction === 'ongoing_management').map(item => item.id));
+  const ongoingById = new Map(management.filter(item => ongoing.has(item.id)).map(item => [item.id, item.content]));
   const nodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(row => {
     if (!require('./annualPlanPresentation').internalDaily({ standardPlanName: templates.get(String(row.standardPlanId || ''))?.name })) return row;
-    return { ...row, sourceIds: Array.isArray(row.sourceIds) ? row.sourceIds.filter(id => !id.startsWith('management_issue:') || ongoing.has(id)) : row.sourceIds };
+    const sourceIds = Array.isArray(row.sourceIds) ? row.sourceIds.filter(id => !id.startsWith('management_issue:') || ongoing.has(id)) : row.sourceIds;
+    const issues = sourceIds.map(id => ongoingById.get(id)).filter(Boolean);
+    const labels = [...new Set(issues.map(item => String(item.problem || '').trim()).filter(Boolean))];
+    const details = [...new Set(issues.map(item => String(item.advisorNote || '').trim()).filter(Boolean))];
+    return { ...row, sourceIds,
+      matchReason: /ongoing_management/.test(String(row.matchReason || '')) ? `顾问已确认持续管理：${labels.join('、')}` : row.matchReason,
+      personalization: String(row.personalization || '').trim() || (labels.length
+        ? `工作人员跟进${labels.join('、')}的执行情况，记录变化及需要健康顾问处理的问题。${details.length ? `顾问补充：${details.join('；')}` : ''}` : ''),
+    };
   }) : raw.templateNodes;
   const updated = { ...raw, templateNodes: nodes };
   const linked = new Set(management.filter(item => !missingManagementActions({ ...updated,
