@@ -13650,7 +13650,7 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
 
 【Admin统一标准随访方案库】
 ${standardFollowUpPromptCatalog.length ? JSON.stringify(standardFollowUpPromptCatalog) : '暂无启用方案；不得生成方案'}
-必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。顾问标记为ongoing_management（持续管理或观察）的每个问题，必须在templateNodes中关联已选的【日常跟进】标准模板，作为工作人员内部跟进，不向客户展示该随访；客户仍可看到年度管理目标。其他templateNodes只能从category=personalized的Admin已选模板中选择，并且必须符合当前策略侧重点和客户证据；没有合适模板返回空数组。不得调用未列出的随访模板，不得虚构方案名称或ID。
+必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。每条management_issue均为顾问已确认的管理事项，evidenceCoverage须标记included，并在顾问所选方向生成有sourceIds关联的行动，不可改成deferred。顾问标记为ongoing_management（持续管理或观察）的每个问题，必须在templateNodes中关联已选的【日常跟进】标准模板，作为工作人员内部跟进，不向客户展示该随访；客户仍可看到年度管理目标。日常跟进只能关联ongoing_management的问题，不能把就医、完善检查、定期复查等其他方向的问题合并进去。其他templateNodes只能从category=personalized的Admin已选模板中选择，并且必须符合当前策略侧重点和客户证据；没有合适模板返回空数组。不得调用未列出的随访模板，不得虚构方案名称或ID。
 
 【Admin已确认的统一事项字段】
 ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
@@ -13714,11 +13714,16 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
           parsed = await repair.validateOrRepairAnnual(parsed, candidate => {
             consistency.validateAnnualRaw(candidate, availableAnnualFollowUpCatalog, evidence, allowedKeys);
             clinicalRules.validateClinicalRules(candidate, timeline, evidence, { scheduleAsNote: true });
-          }, (candidate, message, missingLinks) => missingLinks.length
-            ? require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content: repair.sourceLinkRepairPrompt(candidate, evidence, missingLinks, message) }],
-              { maxTokens: 2000, temperature: 0, jsonMode: true, timeoutMs: 90000 }))
-            : require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content: repair.annualCorrectionPrompt(candidate, evidence, message) }],
-              { maxTokens: 2500, temperature: 0, jsonMode: true, timeoutMs: 90000 })), candidate => clinicalRules.consolidateSameDayConsultations(require('../utils/annualArrangementHistory').inheritArrangements(repair.applyAnnualSchedule(candidate, reports), reports, previousVisits)));
+          }, (candidate, message, missingLinks) => {
+            const gaps = repair.missingManagementActions(candidate, evidence, availableAnnualFollowUpCatalog);
+            const content = gaps.length
+              ? repair.managementRegenerationPrompt(checkedPrompt, candidate, gaps, message)
+              : missingLinks.length
+                ? repair.sourceLinkRepairPrompt(candidate, evidence, missingLinks, message)
+                : repair.annualCorrectionPrompt(candidate, evidence, message);
+            return require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => chat([{ role: 'user', content }],
+              { maxTokens: gaps.length ? 6000 : missingLinks.length ? 2000 : 2500, temperature: 0, jsonMode: true, timeoutMs: gaps.length ? 120000 : 90000 }));
+          }, candidate => clinicalRules.consolidateSameDayConsultations(require('../utils/annualArrangementHistory').inheritArrangements(repair.applyAnnualSchedule(candidate, reports), reports, previousVisits)));
         }
         return parsed;
       }
@@ -13726,7 +13731,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 11, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, management: management.evidence, confirmedReportIssues, confirmedCaseReviews: confirmedCaseReviews.map(({ messages, ...review }) => review), discussedScheduling, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 12, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, management: management.evidence, confirmedReportIssues, confirmedCaseReviews: confirmedCaseReviews.map(({ messages, ...review }) => review), discussedScheduling, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;

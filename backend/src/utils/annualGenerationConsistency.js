@@ -76,8 +76,11 @@ function validateAnnualRaw(raw, catalog, evidence = [], allowedKeys = null) {
       }
     }
     const ongoingIds = new Set(evidence.filter(item => item.content?.direction === 'ongoing_management').map(item => item.id));
-    for (const row of raw.templateNodes || []) if (require('./annualPlanPresentation').internalDaily({ standardPlanName: sources.get(String(row.standardPlanId || ''))?.name })
-      && !(row.sourceIds || []).some(id => ongoingIds.has(id))) throw fail('日常跟进只用于顾问已确认的持续管理事项');
+    for (const row of raw.templateNodes || []) if (require('./annualPlanPresentation').internalDaily({ standardPlanName: sources.get(String(row.standardPlanId || ''))?.name })) {
+      if (!(row.sourceIds || []).some(id => ongoingIds.has(id))) throw fail('日常跟进只用于顾问已确认的持续管理事项');
+      if ((row.sourceIds || []).some(id => id.startsWith('management_issue:') && !ongoingIds.has(id)))
+        throw fail('日常跟进关联了非持续管理的问题，请按顾问选择的方向分别生成行动');
+    }
     for (const row of rows) if (row.standardPlanId && (!Array.isArray(row.sourceIds) || !row.sourceIds.length || row.sourceIds.some(id => !valid.has(id)))) throw fail('AI事项缺少有效来源关联');
   }
   return raw;
