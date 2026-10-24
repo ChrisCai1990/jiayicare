@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { staffAPI } from '../api'
+import { serviceGroupAPI, staffAPI } from '../api'
 import { useStaff, useToast } from '../App'
 
 const ROLE_LABEL = {
@@ -26,6 +26,39 @@ export default function ProfilePage() {
   const [pwForm, setPwForm] = useState({ oldPassword: '', newPassword: '', confirm: '' })
   const [pwError, setPwError] = useState('')
   const [pwSaving, setPwSaving] = useState(false)
+  const [wecomLink, setWecomLink] = useState(null)
+  const [wecomError, setWecomError] = useState('')
+  const [wecomBusy, setWecomBusy] = useState(false)
+  const [pairCode, setPairCode] = useState('')
+  useEffect(() => {
+    let active = true
+    serviceGroupAPI.get('/app-link')
+      .then(res => { if (active) setWecomLink(res.data) })
+      .catch(err => { if (active) setWecomError(err.message) })
+    return () => { active = false }
+  }, [])
+  const refreshWecomLink = async () => {
+    setWecomBusy(true)
+    setWecomError('')
+    try {
+      const res = await serviceGroupAPI.get('/app-link')
+      setWecomLink(res.data)
+      if (res.data.linked) setPairCode('')
+    } catch (err) { setWecomError(err.message) }
+    finally { setWecomBusy(false) }
+  }
+  const createPairCode = async () => {
+    setWecomBusy(true)
+    setWecomError('')
+    try {
+      const res = await serviceGroupAPI.post('/app-pair-code', {})
+      if (res.data.linked) {
+        setPairCode('')
+        await refreshWecomLink()
+      } else setPairCode(res.data.code)
+    } catch (err) { setWecomError(err.message) }
+    finally { setWecomBusy(false) }
+  }
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const handleSave = async () => {
@@ -145,6 +178,31 @@ export default function ProfilePage() {
                 {pwSaving ? '修改中...' : '确认修改'}
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* 企业微信绑定 */}
+        <div className="card" style={{ gridColumn: 'span 2' }}>
+          <div className="card-header"><div className="card-title">企业微信消息提醒</div></div>
+          <div className="card-body">
+            {wecomError && <div className="login-err" style={{ marginBottom: 12 }}>⚠️ {wecomError}</div>}
+            {wecomLink?.linked ? (
+              <p>已绑定企业微信账号：<strong>{wecomLink.userId}</strong>。负责客户的新消息可发送至该账号。</p>
+            ) : wecomLink?.configured ? (
+              <>
+                <p>绑定本人企业微信账号后，即使没有登录医护网页，也可接收负责客户的新消息提醒。</p>
+                <p>1. 点击下方按钮生成口令。2. 在企业微信“工作台”打开嘉医汇应用，将完整口令作为文字消息发送给应用。3. 返回这里点击“刷新绑定状态”。</p>
+                <button className="btn btn-primary" onClick={createPairCode} disabled={wecomBusy}>
+                  {pairCode ? '重新生成口令' : '生成绑定口令'}
+                </button>
+                {pairCode && <div style={{ marginTop: 16 }}>
+                  <label className="form-label" htmlFor="wecom-pair-code">绑定口令（10分钟有效，仅供本人使用）</label>
+                  <textarea id="wecom-pair-code" className="form-input" readOnly rows={2} value={pairCode}
+                    onFocus={e => e.target.select()} style={{ width: '100%' }} />
+                  <button className="btn btn-secondary" onClick={refreshWecomLink} disabled={wecomBusy}>刷新绑定状态</button>
+                </div>}
+              </>
+            ) : wecomLink ? <p>企业微信应用回调尚未配置，请联系管理员。</p> : !wecomError ? <p>正在读取绑定状态…</p> : null}
           </div>
         </div>
 

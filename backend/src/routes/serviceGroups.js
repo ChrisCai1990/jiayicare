@@ -144,9 +144,16 @@ router.get('/family-candidates/:patientId', wrap(async (req, res) => {
   }
   res.json({success:true, data:candidates});
 }));
+router.get('/app-link',wrap(async(req,res)=>{
+  const configured=process.env.WECOM_APP_CALLBACK_ENABLED==='true' && !!process.env.WECOM_CORP_ID;
+  const link=configured && await require('../models/WecomAppLink').findOne({
+    staffId:req.staff._id,tenantId:req.staff.tenantId || null,corpId:process.env.WECOM_CORP_ID,
+  }).select('userId').lean();
+  res.json({success:true,data:{configured,linked:!!link?.userId,userId:link?.userId || ''}});
+}));
 router.post('/app-pair-code',wrap(async(req,res)=>{
   if(req.staff.staffStatus==='inactive')fail('员工账号已停用',403);
-  if(process.env.WECOM_APP_CALLBACK_ENABLED !== 'true') fail('应用消息回调尚未配置，暂不能绑定',409);
+  if(process.env.WECOM_APP_CALLBACK_ENABLED !== 'true' || !process.env.WECOM_CORP_ID) fail('应用消息回调尚未配置，暂不能绑定',409);
   const Link=require('../models/WecomAppLink');
   const existing=await Link.findOne({staffId:req.staff._id});
   if(existing?.userId) return res.json({success:true,data:{linked:true}});
