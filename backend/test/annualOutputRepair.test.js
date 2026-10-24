@@ -94,13 +94,28 @@ test('source-only correction uses a bounded prompt and still rejects false cover
   assert.match(prompt, /review:action:0/);
   assert.ok(prompt.length < 4000);
   const result = await validateOrRepairAnnual(raw, check, async () => JSON.stringify({
-    sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: [source.id] }],
+    sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: [source.id] },
+      { module: 'checkup_completion', index: 99, sourceIds: [source.id] }],
     coverageCorrections: [],
   }));
   check(result);
   await assert.rejects(validateOrRepairAnnual(raw, check, async () => JSON.stringify({
     sourceLinkCorrections: [], coverageCorrections: [{ sourceId: source.id, status: 'deferred', reason: '回避已审行动' }],
-  })), /有效依据/);
+  })), /遗漏对应事项/);
+});
+
+test('unsupported coverage downgrade does not discard a valid source link in the same reply', async () => {
+  const source = { id: 'review:action:0', content: { instruction: '已审核建议' } };
+  const raw = rawPlan();
+  raw.evidenceCoverage.push({ sourceId: source.id, status: 'included', reason: '已审核建议' });
+  const check = candidate => validateAnnualRaw(candidate, catalog, [...evidence, source], keys);
+  const result = await validateOrRepairAnnual(raw, check, async () => JSON.stringify({
+    sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: [source.id] }],
+    coverageCorrections: [{ sourceId: source.id, status: 'deferred', reason: '无效的附带建议' }],
+  }));
+  check(result);
+  assert.equal(result.evidenceCoverage.at(-1).status, 'included');
+  assert.ok(result.checkup_completion[0].sourceIds.includes(source.id));
 });
 
 test('source-link repair also corrects an empty annual checkup focus', async () => {

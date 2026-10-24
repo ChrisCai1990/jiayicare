@@ -190,7 +190,7 @@ async function validateOrRepairAnnual(raw, validate, complete, normalize = value
         }
         if (!['summary', 'report_history'].includes(patch?.sourceId) || !missingLinks.includes(patch.sourceId)
           || !['deferred', 'not_applicable'].includes(patch?.status)
-          || !String(patch.reason || '').trim() || pending.has(patch.sourceId)) throw new Error('来源状态校正缺少有效依据');
+          || !String(patch.reason || '').trim() || pending.has(patch.sourceId)) continue;
         pending.set(patch.sourceId, patch);
       }
       candidate = { ...candidate, evidenceCoverage: candidate.evidenceCoverage.map(item => pending.has(item.sourceId)
@@ -211,7 +211,7 @@ async function validateOrRepairAnnual(raw, validate, complete, normalize = value
           || !Number.isInteger(index) || index < 0 || (key === 'annual_checkup' && index !== 0)
           || !row?.standardPlanId
           || !Array.isArray(sourceIds) || !sourceIds.length
-          || sourceIds.some(id => typeof id !== 'string' || !id.trim())) throw new Error('事项来源校正缺少有效事项或来源');
+          || sourceIds.some(id => typeof id !== 'string' || !id.trim())) continue;
         const linked = [...new Set([...(Array.isArray(row.sourceIds) ? row.sourceIds : []), ...sourceIds])];
         candidate = { ...candidate, [key]: key === 'annual_checkup' ? { ...row, sourceIds: linked }
           : candidate[key].map((item, i) => i === index ? { ...item, sourceIds: linked } : item) };
