@@ -155,6 +155,7 @@ app.listen(PORT, () => {
   require('./utils/serviceGroupCleanup').startServiceGroupCleanup();
   require('./utils/clinicalStandardMonitor').startClinicalStandardMonitor();
   require('./utils/wecomEmployeeReminders').start();
+  require('./utils/wecomMessageAlerts').start();
   console.log(`🚀 服务启动成功，端口：${PORT}`);
   // 报告 OCR 是可恢复后台任务：进程重启后继续跑，不能把 processing 误改为待审核。
   setTimeout(() => staffRouter.resumeReportParseJobs?.().catch(error => {

@@ -62,7 +62,8 @@ export default function NotificationsPage() {
   const toast = useToast()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState(location.state?.tab || 'referrals')
+  const [tab, setTab] = useState(new URLSearchParams(location.search).get('tab') === 'userMsgs'
+    ? 'userMsgs' : (location.state?.tab || 'referrals'))
   const [metabolicPage,setMetabolicPage]=useState(1)
   const [respondModal, setRespondModal] = useState(null)
   const [memberModal, setMemberModal] = useState(null)

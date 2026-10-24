@@ -262,6 +262,12 @@ router.post('/', auth, async (req, res) => {
       action: orderAction,
     });
 
+    // 消息保存优先。提醒入队异常不应让客户误以为发送失败；后台扫描会补入队。
+    if (process.env.WECOM_MESSAGE_ALERTS_ENABLED === 'true') {
+      try { await require('../utils/wecomMessageAlerts').enqueue(msg._id); }
+      catch (error) { console.error('[wecom-message-alert] enqueue failed', error.message); }
+    }
+
     const responseMessage = withSignedMessageMedia(msg);
     ssePublish(conversationId, { type: 'message', data: responseMessage });
     res.json({ success: true, data: responseMessage, message: '消息已发送' });
