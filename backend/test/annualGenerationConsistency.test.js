@@ -37,6 +37,16 @@ test('coverage cannot claim included without linked record; missing and invented
   assert.throws(() => validateAnnualRaw(raw, [], evidence), /遗漏/);
   raw.evidenceCoverage[0].status = 'deferred'; assert.equal(validateAnnualRaw(raw, [], evidence), raw);
 });
+test('持续管理只由已选的工作人员日常跟进模板承接', () => {
+  const evidence = [{ id: 'management_issue:kidney', content: { problem: '肾结晶', direction: 'ongoing_management' } }];
+  const catalog = [{ id: 'daily', name: '【日常跟进】', category: 'personalized' }, { id: 'other', name: '饮水指导', category: 'personalized' }];
+  const raw = empty();
+  raw.evidenceCoverage = [{ sourceId: evidence[0].id, status: 'included', reason: '顾问已纳入管理' }];
+  raw.templateNodes = [{ standardPlanId: 'other', matchReason: '同一问题', sourceIds: [evidence[0].id] }];
+  assert.throws(() => validateAnnualRaw(raw, catalog, evidence), /日常跟进模板/);
+  raw.templateNodes[0].standardPlanId = 'daily';
+  assert.equal(validateAnnualRaw(raw, catalog, evidence), raw);
+});
 test('optional annual review scope uses current year and excludes archived reviews', () => {
   const q = require('../src/utils/annualCaseReviewScope').annualCaseReviewQuery('p', 2026);
   assert.equal(q.status.$ne, 'archived'); assert.deepEqual(q.$and[0].$or[0].reviewType.$in, ['annual', 'medical', 'specialty', 'checkup', 'nutrition']);

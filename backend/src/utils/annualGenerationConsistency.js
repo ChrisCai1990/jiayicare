@@ -69,8 +69,15 @@ function validateAnnualRaw(raw, catalog, evidence = [], allowedKeys = null) {
       const destination = direction === 'ongoing_management' ? 'templateNodes' : direction;
       const selected = raw[destination];
       const destinationRows = Array.isArray(selected) ? selected : selected && typeof selected === 'object' ? [selected] : [];
-      if (!destinationRows.some(row => row.sourceIds?.includes(source.id))) throw fail(`“${source.content?.problem || ''}”未按顾问选择的管理方向生成，请核对后重试`);
+      const linked = destinationRows.filter(row => row.sourceIds?.includes(source.id));
+      if (!linked.length) throw fail(`“${source.content?.problem || ''}”未按顾问选择的管理方向生成，请核对后重试`);
+      if (direction === 'ongoing_management' && !linked.some(row => require('./annualPlanPresentation').internalDaily({ standardPlanName: sources.get(String(row.standardPlanId || ''))?.name }))) {
+        throw fail(`“${source.content?.problem || ''}”未关联工作人员的日常跟进模板，请核对后重试`);
+      }
     }
+    const ongoingIds = new Set(evidence.filter(item => item.content?.direction === 'ongoing_management').map(item => item.id));
+    for (const row of raw.templateNodes || []) if (require('./annualPlanPresentation').internalDaily({ standardPlanName: sources.get(String(row.standardPlanId || ''))?.name })
+      && !(row.sourceIds || []).some(id => ongoingIds.has(id))) throw fail('日常跟进只用于顾问已确认的持续管理事项');
     for (const row of rows) if (row.standardPlanId && (!Array.isArray(row.sourceIds) || !row.sourceIds.length || row.sourceIds.some(id => !valid.has(id)))) throw fail('AI事项缺少有效来源关联');
   }
   return raw;

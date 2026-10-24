@@ -29,3 +29,13 @@ test('个性化表单仅显示一个日期，无主协同人，服务字段独�
  assert.deepEqual(view.fields.map(f=>f.key),['executionDate']);assert.equal(view.fields[0].label,'随访日期');
  assert.equal(view.managerName,'健管');assert.ok(view.serviceFields[1].options.some(o=>o.value==='nutrition_assessment'));
 });
+test('现有【日常跟进】模板生成健管内部随访，客户任务不可见',async t=>{
+ const manager='aaaaaaaaaaaaaaaaaaaaaaaa';
+ const date=new Date(Date.now()+10*86400000).toISOString().slice(0,10);
+ const User=require('../src/models/User'),Admin=require('../src/models/Admin');
+ t.mock.method(User,'findById',()=>({select:()=>({lean:async()=>({assignedHealthManager:manager})})}));
+ t.mock.method(Admin,'find',()=>({select:()=>({lean:async()=>[]})}));
+ const moduleData=normalizeAnnualItems({personalized_followups:{records:[{standardPlanId:'daily',standardPlanName:'【日常跟进】',executionDate:date,sourceIds:['management_issue:kidney']}]}},manager);
+ const rows=await require('../src/utils/annualPlanFollowUps').buildAnnualPlanFollowUps({_id:'plan',patientId:'patient',moduleData});
+ assert.equal(rows.length,1);assert.equal(rows[0].assignedTo,manager);assert.equal(rows[0].clientVisible,false);
+});

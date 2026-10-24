@@ -276,7 +276,7 @@ async function buildAnnualPlanFollowUps(plan) {
       }
       dates.filter(date => !isNaN(date.getTime()) && date >= todayStart && date <= horizonEnd).forEach((date, cycleIndex) => {
         const nutrition = rec.directNutritionAssessment === true;
-        const internalDaily = /^日常跟进(?:与动态调整)?$/.test(String(rec.standardPlanName || rec.items || '').trim());
+        const internalDaily = require('./annualPlanPresentation').internalDaily(rec);
         const before = created.length;
         push(date, `${nutrition ? '营养评估' : '标准随访'} · ${rec.standardPlanName || rec.items || '年度管理'}`, content, nutrition ? patient?.assignedNutritionist : patient?.assignedHealthManager,
           `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`, { ...rec, aiNoResponseEligible: !nutrition });

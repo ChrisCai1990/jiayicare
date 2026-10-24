@@ -7,7 +7,7 @@ const MODULE_NAME = {
 const SERVICE_MODE = { reminder: '仅提醒', single: '单项服务', managed: '全托管' };
 const SERVICE_TYPE = { proxy_booking: '代约/代办', proxy_visit: '代诊', escort_visit: '陪诊', escort_exam: '陪检', consult_coordination: '会诊协调' };
 const first = (...values) => values.find(value => value !== undefined && value !== null && String(value).trim()) || '';
-const internalDaily = record => /^日常跟进(?:与动态调整)?$/.test(String(record?.standardPlanName || record?.items || '').trim());
+const internalDaily = record => /^【?日常跟进(?:与动态调整)?】?$/.test(String(record?.standardPlanName || record?.items || '').trim());
 
 function normalizeItem(moduleKey, record, index) {
   if (moduleKey === 'management_targets') return {
@@ -51,4 +51,4 @@ function customerModuleData(value) {
   if (!value || typeof value !== 'object' || value.constructor !== Object) return value;
   return Object.fromEntries(Object.entries(value).filter(([key]) => !internalFields.has(key)).map(([key, child]) => [key, customerModuleData(child)]));
 }
-module.exports = { buildAnnualPlanDisplayItems, normalizeItem, customerModuleData };
+module.exports = { buildAnnualPlanDisplayItems, normalizeItem, customerModuleData, internalDaily };

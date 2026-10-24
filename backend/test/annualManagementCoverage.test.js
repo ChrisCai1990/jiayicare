@@ -11,12 +11,19 @@ test('顾问选择完善检查后，不能以复查事项代替并推送', () =>
 
 test('日常跟进保留在员工方案中，客户方案项目和原始板块均不展示', () => {
   const source = { personalized_followups: { records: [
-    { standardPlanName: '日常跟进', executionDate: '2026-11-10' },
+    { standardPlanName: '【日常跟进】', executionDate: '2026-11-10' },
     { standardPlanName: '定期复评', executionDate: '2026-11-11' },
   ] } };
   assert.equal(buildAnnualPlanDisplayItems(source).length, 1);
   assert.equal(customerModuleData(source).personalized_followups.records.length, 1);
   assert.equal(source.personalized_followups.records.length, 2);
+});
+
+test('持续管理仅由工作人员日常跟进模板承接，不以其他个性化模板代替', () => {
+  const evidence = [{ id: 'management_issue:kidney', content: { problem: '肾结晶', direction: 'ongoing_management' } }];
+  const record = standardPlanName => ({ sourceIds: ['management_issue:kidney'], standardPlanName });
+  assert.match(validatePlanCoverage({ personalized_followups: { records: [record('饮水指导')] } }, evidence), /肾结晶/);
+  assert.equal(validatePlanCoverage({ personalized_followups: { records: [record('【日常跟进】')] } }, evidence), '');
 });
 
 test('多项目报告的旧报告级决定需由顾问重新指定检查项', async () => {

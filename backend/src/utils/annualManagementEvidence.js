@@ -74,7 +74,8 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
     const key = source.content.direction === 'ongoing_management' ? 'personalized_followups' : source.content.direction;
     const module = moduleData[key];
     const rows = module?.enabled === false ? [] : Array.isArray(module?.records) ? module.records : module ? [module] : [];
-    if (!rows.some(row => Array.isArray(row.sourceIds) && row.sourceIds.includes(source.id))) {
+    if (!rows.some(row => Array.isArray(row.sourceIds) && row.sourceIds.includes(source.id)
+      && (source.content.direction !== 'ongoing_management' || require('./annualPlanPresentation').internalDaily(row)))) {
       return `“${source.content.problem}”尚未按顾问选定的管理方向进入方案，请重新生成或补齐对应事项`;
     }
   }

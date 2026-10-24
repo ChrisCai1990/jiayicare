@@ -13515,6 +13515,9 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     for (const source of management.evidence) {
       const direction = source.content.direction;
       const category = direction === 'ongoing_management' ? 'personalized' : direction;
+      if (direction === 'ongoing_management' && !personalizedStandardFollowUpCatalog.some(item => require('../utils/annualPlanPresentation').internalDaily({ standardPlanName: item.name }))) {
+        return res.status(409).json({ success: false, message: '年度管理规则尚未选择现有【日常跟进】标准随访模板，请在Admin的“可调用的个性化方案”中配置后再生成' });
+      }
       if (category !== 'monitoring' && !availableAnnualFollowUpCatalog.some(item => item.category === category)) {
         return res.status(409).json({ success: false, message: `“${source.content.problem}”选择的管理方向尚未配置现有标准随访模板，请在Admin模板中配置后再生成` });
       }
@@ -13647,7 +13650,7 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
 
 【Admin统一标准随访方案库】
 ${standardFollowUpPromptCatalog.length ? JSON.stringify(standardFollowUpPromptCatalog) : '暂无启用方案；不得生成方案'}
-必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。完成基础筛查后，templateNodes只能从category=personalized的Admin已选模板中选择，并且必须符合当前策略侧重点和客户证据；没有合适模板返回空数组。不得调用未列出的随访模板，不得虚构方案名称或ID。
+必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。顾问标记为ongoing_management（持续管理或观察）的每个问题，必须在templateNodes中关联已选的【日常跟进】标准模板，作为工作人员内部跟进，不向客户展示该随访；客户仍可看到年度管理目标。其他templateNodes只能从category=personalized的Admin已选模板中选择，并且必须符合当前策略侧重点和客户证据；没有合适模板返回空数组。不得调用未列出的随访模板，不得虚构方案名称或ID。
 
 【Admin已确认的统一事项字段】
 ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
