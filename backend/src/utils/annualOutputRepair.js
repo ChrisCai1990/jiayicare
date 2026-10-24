@@ -227,10 +227,21 @@ async function validateOrRepairAnnual(raw, validate, complete, normalize = value
           ? { ...item, scheduleSeparationReason: patch.scheduleSeparationReason.trim() } : item) };
       }
     }
-    validate(candidate);
-    return candidate;
+    try { validate(candidate); return candidate; }
+    catch (error) {
+      // The first bounded pass may add the advisor-confirmed actions while
+      // leaving already-included summary/priority provenance unlinked. Repair
+      // those links once against the completed actions, then validate again.
+      if (!repairContext.sourceLinkPassUsed && Array.isArray(parsed.managementActionCorrections)
+        && parsed.managementActionCorrections.length && /声称已纳入来源但遗漏对应事项/.test(error.message)
+        && missingIncludedSourceIds(candidate).length) {
+        return validateOrRepairAnnual(candidate, validate, complete, normalize,
+          { ...repairContext, sourceLinkPassUsed: true });
+      }
+      throw error;
+    }
   } catch (error) {
-    error.generationRaw = candidate;
+    error.generationRaw = error.generationRaw || candidate;
     throw error;
   }
 }

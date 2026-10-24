@@ -235,3 +235,34 @@ test('misrouted confirmed issues are repaired with a bounded action patch', asyn
     { ...patch.managementActionCorrections[0], action: { ...action, time: '' } }] }), repair,
   { evidence: sources, catalog: templates }), /缺少有效方向/);
 });
+
+test('management action repair gets one subsequent source-link pass for included priorities', async () => {
+  const management = { id: 'management_issue:review', content: { problem: '定期复查', direction: 'abnormal_followup' } };
+  const priority = { id: 'priority:2', content: { title: '同项复查重点' } };
+  const sources = [management, priority];
+  const templates = [{ id: 'followup', category: 'abnormal_followup', name: '定期复查' }];
+  const raw = { medical_treatment: [], checkup_completion: [], abnormal_followup: [], vaccine: [], templateNodes: [], annual_checkup: {},
+    evidenceCoverage: [{ sourceId: management.id, status: 'deferred', reason: 'AI遗漏' },
+      { sourceId: priority.id, status: 'included', reason: '已确认重点' }] };
+  const action = { standardPlanId: 'followup', items: '定期复查', time: '2026-11-01', ownerRole: '健管专员',
+    basisSummary: '已审建议', sourceIds: [management.id] };
+  const check = candidate => validateAnnualRaw(candidate, templates, sources, keys);
+  const normalize = candidate => normalizeConfirmedManagement(candidate, sources, templates);
+  let calls = 0;
+  const result = await validateOrRepairAnnual(raw, check, async (candidate, message, missing) => {
+    calls++;
+    if (calls === 1) return JSON.stringify({ managementActionCorrections: [
+      { sourceId: management.id, module: 'abnormal_followup', action }] });
+    assert.deepEqual(missing, [priority.id]);
+    assert.equal(candidate.abnormal_followup.length, 1);
+    return JSON.stringify({ sourceLinkCorrections: [{ module: 'abnormal_followup', index: 0, sourceIds: [priority.id] }] });
+  }, normalize, { evidence: sources, catalog: templates });
+  assert.equal(calls, 2);
+  assert.deepEqual(result.abnormal_followup[0].sourceIds, [management.id, priority.id]);
+  check(result);
+  let failedCalls = 0;
+  await assert.rejects(validateOrRepairAnnual(raw, check, async () => (++failedCalls === 1
+    ? JSON.stringify({ managementActionCorrections: [{ sourceId: management.id, module: 'abnormal_followup', action }] })
+    : JSON.stringify({ sourceLinkCorrections: [] })), normalize,
+  { evidence: sources, catalog: templates }), /遗漏对应事项/);
+});
