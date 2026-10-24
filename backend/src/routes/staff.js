@@ -42,6 +42,7 @@ const { calcStatus: calcHealthRecordStatus } = require('../utils/healthRecordSta
 const MedicalReport = require('../models/MedicalReport');
 const { REPORT_LIST_PROJECTION, toReportListItem } = require('../utils/reportListPayload');
 const HealthPlan = require('../models/HealthPlan');
+const { checkupAnalysisReadiness } = require('../utils/checkupAnalysisReadiness');
 const KnowledgeItem = require('../models/KnowledgeItem');
 const ContentReview = require('../models/ContentReview');
 const { ensureContentReviews, advanceReview } = require('../utils/contentReviewWorkflow');
@@ -12128,6 +12129,15 @@ router.get('/patients/:id/ai-health-summary/echo-chamber-trend', staffAuth, asyn
     res.json({ success: true, year, trend: buildEchoChamberTrend(reports, year) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
+router.get('/patients/:id/ai-health-summary/checkup-readiness', staffAuth, async (req, res) => {
+  try {
+    const year = Number(req.query.year || new Date().getFullYear());
+    if (!Number.isInteger(year) || year < 1900 || year > new Date().getFullYear()) {
+      return res.status(400).json({ success: false, message: '年度不正确' });
+    }
+    res.json({ success: true, data: await checkupAnalysisReadiness(req.params.id, year) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 // PM2 currently runs this service as a single fork. Keep one expensive generation per
 // member/scope in flight so a timed-out browser request or a second tab cannot append
 // a duplicate history record while the first request is still working.
@@ -12184,6 +12194,13 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       || (scope === 'nutrition' && role === 'nutritionist');
     if (!canGen) {
       return res.status(403).json({ success: false, message: '您没有生成该AI健康信息整理的权限，仅可查看' });
+    }
+    if (scope === 'doctor' || scope === 'all') {
+      const readiness = await checkupAnalysisReadiness(req.params.id, requestedYear);
+      if (!readiness.ready) return res.status(409).json({
+        success: false, needCheckupReports: true, checkupReadiness: readiness,
+        message: `${requestedYear}年度体检方案资料未齐（${readiness.completed}/${readiness.total}项），请先核对未完成项目及报告审核状态`,
+      });
     }
     generationJobKey = `${req.params.id}:${scope}`;
     if (activeAIHealthSummaryJobs.has(generationJobKey)) {
@@ -12385,6 +12402,13 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       byYear, latestYear,
     };
 
+    if (scope === 'doctor' || scope === 'all') {
+      const latestReadiness = await checkupAnalysisReadiness(req.params.id, requestedYear);
+      if (!latestReadiness.ready) return res.status(409).json({
+        success: false, needCheckupReports: true, checkupReadiness: latestReadiness,
+        message: '生成期间体检方案资料状态发生变化，请核对后重试',
+      });
+    }
     const saved = await User.collection.updateOne(
       { _id: user._id, ...(Object.keys(existing).length ? { aiHealthSummary: existing }
         : { $or: [{ aiHealthSummary: {} }, { aiHealthSummary: null }] }) },
@@ -12828,6 +12852,13 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // 审核：按角色维度拆分（健康顾问审5维 / 营养师审生活方式评估）
     // scope: 'doctor' | 'nutrition' | 'all'（缺省=all，兼容旧前端）
     if (action === 'approve') {
+      if (sc === 'doctor' || sc === 'all' || (sectionKey && sectionKey !== LIFESTYLE_KEY)) {
+        const readiness = await checkupAnalysisReadiness(req.params.id, y);
+        if (!readiness.ready) return res.status(409).json({
+          success: false, needCheckupReports: true, checkupReadiness: readiness,
+          message: `${y}年度体检方案资料未齐（${readiness.completed}/${readiness.total}项），暂不能审核5维分析`,
+        });
+      }
       const now = new Date();
       const isSuper = req.staff.role === 'superadmin';
       if (sc === 'doctor' || sc === 'all' || (sectionKey && sectionKey !== LIFESTYLE_KEY)) {

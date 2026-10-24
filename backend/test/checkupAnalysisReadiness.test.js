@@ -1,0 +1,47 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { summarizeCheckupPlan } = require('../src/utils/checkupAnalysisReadiness');
+
+const plan = {
+  _id: 'plan-1', title: '2026年度体检方案',
+  items: [
+    { _id: 'item-1', name: '血常规', status: 'completed', reportId: 'report-1' },
+    { _id: 'item-2', name: '心电图', status: 'pending', reportId: null },
+  ],
+};
+
+test('a designed plan remains incomplete while any item lacks an audited report', () => {
+  const result = summarizeCheckupPlan(plan, [{ _id: 'report-1', audit_status: 'audited' }]);
+  assert.equal(result.ready, false);
+  assert.equal(result.completed, 1);
+  assert.deepEqual(result.pending, [{ id: 'item-2', name: '心电图' }]);
+});
+
+test('a completed item with a withdrawn or missing report is not complete evidence', () => {
+  const item = { ...plan.items[0] };
+  const result = summarizeCheckupPlan({ ...plan, items: [item] }, [{ _id: 'report-1', audit_status: 'pending' }]);
+  assert.equal(result.ready, false);
+  assert.equal(result.completed, 0);
+});
+
+test('a skipped scheme item does not count as collected material', () => {
+  const result = summarizeCheckupPlan({ ...plan, items: [{ ...plan.items[0], status: 'skipped' }] },
+    [{ _id: 'report-1', audit_status: 'audited' }]);
+  assert.equal(result.ready, false);
+  assert.equal(result.completed, 0);
+});
+
+test('all items require completed status and audited linked reports', () => {
+  const complete = { ...plan, items: [{ ...plan.items[0] }, { ...plan.items[1], status: 'completed', reportId: 'report-2' }] };
+  const result = summarizeCheckupPlan(complete, [
+    { _id: 'report-1', audit_status: 'audited' },
+    { _id: 'report-2', audit_status: 'audited' },
+  ]);
+  assert.equal(result.ready, true);
+  assert.equal(result.completed, 2);
+});
+
+test('no designed plan keeps the existing analysis path; an empty plan is incomplete', () => {
+  assert.equal(summarizeCheckupPlan(null).ready, true);
+  assert.equal(summarizeCheckupPlan({ ...plan, items: [] }).ready, false);
+});

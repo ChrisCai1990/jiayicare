@@ -2224,6 +2224,12 @@ router.post('/ai-health-summary', auth, async (req, res) => {
     const { checkReportAuditGate } = require('../utils/reportAuditGate');
     const gateMsg = await checkReportAuditGate(req.user._id);
     if (gateMsg) return res.status(403).json({ success: false, code: 'REPORT_AUDIT_PENDING', message: gateMsg });
+    const { checkupAnalysisReadiness } = require('../utils/checkupAnalysisReadiness');
+    const readiness = await checkupAnalysisReadiness(req.user._id, new Date().getFullYear());
+    if (!readiness.ready) return res.status(409).json({
+      success: false, code: 'CHECKUP_REPORTS_PENDING', checkupReadiness: readiness,
+      message: `本年度体检方案资料未齐（${readiness.completed}/${readiness.total}项），暂不能生成5维分析`,
+    });
 
     // 已被审核的版本，客户端不能再重新生成覆盖。关键：审核是分部分的（家医审5维度写doctorApprovedAt、
     // 营养师审生活方式写nutritionApprovedAt），而客户端生成是【整份覆盖】——只要任一部分已审，重新生成就会
@@ -2244,6 +2250,11 @@ router.post('/ai-health-summary', auth, async (req, res) => {
 
     const { sections, failed, validationError } = await generateHealthSummarySections(user);
     if (failed) return res.status(validationError ? 422 : 500).json({ success: false, message: validationError || 'AI生成失败，请重试' });
+    const latestReadiness = await checkupAnalysisReadiness(req.user._id, new Date().getFullYear());
+    if (!latestReadiness.ready) return res.status(409).json({
+      success: false, code: 'CHECKUP_REPORTS_PENDING', checkupReadiness: latestReadiness,
+      message: '生成期间体检方案资料状态发生变化，请核对后重试',
+    });
     const year = String(new Date().getFullYear());
     const existing = user.aiHealthSummary || {};
     const byYear = { ...(existing.byYear || {}) };

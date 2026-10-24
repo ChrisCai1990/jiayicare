@@ -7,7 +7,7 @@ const path = require('node:path');
 // Use the real request-scoped identity helper; external AI remains stubbed.
 function runRouteWithConsentContext(code, context) {
   const load = context.require;
-  return vm.runInNewContext(code, { ...context, require: name => name.endsWith('/aiDataConsent') ? require('../src/utils/aiDataConsent') : load(name) });
+  return vm.runInNewContext(code, { checkupAnalysisReadiness: async () => ({ ready: true }), ...context, require: name => name.endsWith('/aiDataConsent') ? require('../src/utils/aiDataConsent') : load(name) });
 }
 
 

@@ -57,9 +57,10 @@ async function req(path, options = {}) {
   if (!res.ok) {
     const err = new Error(data.message || '请求失败')
     err.status = res.status
-    for (const flag of ['needReportAudit', 'needDoctorAnalysis', 'needDietaryReview', 'generationInProgress']) {
+    for (const flag of ['needReportAudit', 'needDoctorAnalysis', 'needDietaryReview', 'needCheckupReports', 'generationInProgress']) {
       if (data[flag]) err[flag] = true
     }
+    if (data.checkupReadiness) err.checkupReadiness = data.checkupReadiness
     if (data.needConfirm) { err.needConfirm = true; err.approvedBy = data.approvedBy }
     throw err
   }
@@ -650,6 +651,7 @@ export const staffAPI = {
   generateAIHealthSummary: (id, year, scope, force, recheckFromSources = false) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year, scope, force, recheckFromSources }) }),
   getEchoChamberTrend: (id, year) => req(`/staff/patients/${id}/ai-health-summary/echo-chamber-trend?year=${encodeURIComponent(year)}`),
   getAIHealthSummaryConflicts: (id, year, token) => req(`/staff/patients/${id}/ai-health-summary/review-conflicts?year=${encodeURIComponent(year)}&token=${encodeURIComponent(token)}`),
+  getCheckupAnalysisReadiness: (id, year) => req(`/staff/patients/${id}/ai-health-summary/checkup-readiness?year=${encodeURIComponent(year)}`),
   regenerateAIHealthSummaryItem: (id, data) => req(`/staff/patients/${id}/ai-health-summary/regenerate-item`, { method: 'POST', body: JSON.stringify(data) }),
   refreshAIHealthSummaryOverview: (id, data) => req(`/staff/patients/${id}/ai-health-summary/refresh-overview`, { method: 'POST', body: JSON.stringify(data) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),

@@ -2537,6 +2537,17 @@ export default function PatientDetailPage() {
   const [aiSummaryForm, setAiSummaryForm] = useState({})
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
   const [echoChamberTrend, setEchoChamberTrend] = useState({ year: '', trend: [], loading: false, error: '' })
+  const [checkupReadiness, setCheckupReadiness] = useState(null)
+  const [checkupReadinessLoading, setCheckupReadinessLoading] = useState(false)
+  const refreshCheckupReadiness = async (year = aiYear || new Date().getFullYear()) => {
+    setCheckupReadinessLoading(true)
+    try {
+      const result = await staffAPI.getCheckupAnalysisReadiness(id, year)
+      setCheckupReadiness({ ...result.data, year: String(year) })
+    } catch { setCheckupReadiness({ year: String(year), error: true }) }
+    finally { setCheckupReadinessLoading(false) }
+  }
+  useEffect(() => { refreshCheckupReadiness() }, [id, aiYear])
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
   const [aiReviewConflicts, setAiReviewConflicts] = useState({ token: '', loading: false, error: '', conflicts: [] })
@@ -4096,6 +4107,9 @@ export default function PatientDetailPage() {
         toast(err.message || '请先审核确认体检报告')
       } else if (err.needDoctorAnalysis) {
         toast(err.message || '请先完成并审核5维分析')
+      } else if (err.needCheckupReports) {
+        setCheckupReadiness({ ...err.checkupReadiness, year: y })
+        toast(err.message || '体检方案资料未齐，暂不能生成5维分析')
       } else {
         toast(err.message || 'AI生成失败')
       }
@@ -8809,6 +8823,21 @@ export default function PatientDetailPage() {
                 </select>
               </label>
             </div>
+            {checkupReadiness?.year === String(curYear) && checkupReadiness.error && (
+              <div role="alert" style={{ marginBottom: 12, color: '#B91C1C', fontSize: 13 }}>
+                体检方案完成状态暂时无法读取。
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => refreshCheckupReadiness(curYear)}>重新查询</button>
+              </div>
+            )}
+            {checkupReadiness?.year === String(curYear) && checkupReadiness.applicable && (
+              <div style={{ marginBottom: 12, padding: '10px 14px', background: checkupReadiness.ready ? '#E8F5EF' : '#FFFBEB', border: `1px solid ${checkupReadiness.ready ? '#B7D8C5' : '#FCD34D'}`, borderRadius: 8, fontSize: 13 }}>
+                <strong>{checkupReadiness.ready ? '体检方案资料已齐' : '体检方案资料未齐，暂不能生成或审核5维分析'}</strong>
+                <span style={{ marginLeft: 8 }}>{checkupReadiness.planTitle} · {checkupReadiness.completed}/{checkupReadiness.total}项完成</span>
+                {!checkupReadiness.ready && <div style={{ marginTop: 5, color: '#92400E' }}>待完成：{checkupReadiness.pending?.map(item => item.name).slice(0, 8).join('、') || '方案项目尚未登记'}{checkupReadiness.pending?.length > 8 ? ' 等' : ''}</div>}
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => refreshCheckupReadiness(curYear)} disabled={checkupReadinessLoading}>{checkupReadinessLoading ? '核对中…' : '刷新完成状态'}</button>
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8, marginLeft: 8 }} onClick={() => nav(`/plans/${checkupReadiness.planId}`)}>查看体检方案</button>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>家庭医生5维分析</button>
               <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>营养师生活方式分析</button>
@@ -8859,7 +8888,7 @@ export default function PatientDetailPage() {
                         || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
                         <>
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                          <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved)}
+                          <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved) || (group.key === 'doctor' && checkupReadiness?.year === String(curYear) && !checkupReadiness.ready)}
                             onClick={() => {
                               const approved = group.key === 'doctor'
                                 ? !!(doctorRecords[0]?.doctorApprovedAt || doctorRecords[0]?.approvedAt)
@@ -8901,7 +8930,7 @@ export default function PatientDetailPage() {
                         || (group.key === 'doctor' && staff?.role === 'familyDoctor')
                         || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
                         <button className="btn btn-primary btn-sm"
-                          disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved)}
+                          disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved) || (group.key === 'doctor' && checkupReadiness?.year === String(curYear) && !checkupReadiness.ready)}
                           onClick={() => handleGenerateAISummary(curYear, group.key, false)}>
                           {aiSummaryLoading ? '生成中…' : `＋ 新增${group.key === 'doctor' ? '5维分析' : '生活方式分析'}`}
                         </button>
@@ -9001,7 +9030,7 @@ export default function PatientDetailPage() {
               )}
               {/* 角色化审核按钮（仅查看模式） */}
               {!editingAISummary && aiAnalysisView === 'doctor' && canDoc && (
-                <button className="btn btn-primary btn-sm" disabled={aiReviewConflicts.token !== doctorRecord._reviewToken || aiReviewConflicts.loading || !!aiReviewConflicts.error || aiReviewConflicts.conflicts.length > 0} onClick={() => handleApproveSummaryScope('doctor', curYear, doctorRecord._recordIndex)}>
+                <button className="btn btn-primary btn-sm" disabled={aiReviewConflicts.token !== doctorRecord._reviewToken || aiReviewConflicts.loading || !!aiReviewConflicts.error || aiReviewConflicts.conflicts.length > 0 || (checkupReadiness?.year === String(curYear) && !checkupReadiness.ready)} onClick={() => handleApproveSummaryScope('doctor', curYear, doctorRecord._recordIndex)}>
                   审核5维度通过
                 </button>
               )}
