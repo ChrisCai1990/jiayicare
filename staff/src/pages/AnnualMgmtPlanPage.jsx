@@ -441,7 +441,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [annualReviewBusy, setAnnualReviewBusy] = useState(false)
   const [preparationDraft, setPreparationDraft] = useState({ assessmentMode: 'required', assessmentConfirmedCriteria: [], assessmentNotRequiredReason: '', requiredAssessmentDomains: '', requiredCaseReviewIds: [], medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
   const preparationSelectionChanged = JSON.stringify([...(preparationDraft.requiredCaseReviewIds || [])].sort()) !== JSON.stringify([...(preparation?.preparation?.requiredCaseReviewIds || [])].map(String).sort()) || (preparationDraft.assessmentMode === 'none' && !assessmentCriteria.every(item => preparationDraft.assessmentConfirmedCriteria.includes(item.key)))
-  const preparationBlocked = closedLoopEnabled && (!preparation?.checklist?.ready || preparationSelectionChanged)
+  const preparationBlocked = closedLoopEnabled && !pushedAt && (!preparation?.checklist?.ready || preparationSelectionChanged)
   const [professionalAssessments, setProfessionalAssessments] = useState([])
   const [assessmentBusy, setAssessmentBusy] = useState(false)
   const [assessmentSaving, setAssessmentSaving] = useState(false)
@@ -1066,8 +1066,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         {canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={internalTaskStarting || dirty || remotePlanChanged} onClick={handleInternalTaskRelease} style={{ marginTop: 8 }}>{internalTaskStarting ? '同步中…' : plansByType[planType].serviceTaskReleasedAt ? '重新同步内部任务' : '确认并启动内部任务'}</button>}
       </section>}
       <details id="annual-plan-preparation" className="annual-plan-secondary" open={['#professional-assessments', '#annual-execution-review'].includes(window.location.hash) || undefined}>
-        <summary>方案准备{preparation?.checklist && ` · ${preparation.checklist.ready ? '已就绪' : `还差 ${preparation.checklist.progress.total - preparation.checklist.progress.completed} 项`}`}{!preparation?.checklist?.ready && preparation?.checklist?.items?.length ? `：${preparation.checklist.items.filter(item => !item.complete).map(item => item.label).slice(0, 2).join('、')}${preparation.checklist.items.filter(item => !item.complete).length > 2 ? '等' : ''}` : ''} · 展开办理</summary>
-      {patientMode && closedLoopEnabled && preparation?.checklist && (
+        <summary>方案准备{!pushedAt && preparation?.checklist && ` · ${preparation.checklist.ready ? '已就绪' : `还差 ${preparation.checklist.progress.total - preparation.checklist.progress.completed} 项`}`}{!pushedAt && !preparation?.checklist?.ready && preparation?.checklist?.items?.length ? `：${preparation.checklist.items.filter(item => !item.complete).map(item => item.label).slice(0, 2).join('、')}${preparation.checklist.items.filter(item => !item.complete).length > 2 ? '等' : ''}` : ''} · 展开办理</summary>
+      {patientMode && closedLoopEnabled && pushedAt && <div style={{ padding: 12, marginBottom: 16, borderRadius: 8, background: '#F0F8F3', color: '#2F614A', fontSize: 13 }}>本年度方案已推送，以方案中保存的内容为准。新流程的“年度综合研判”用于尚未发布的年度方案，本方案无需追溯补做。</div>}
+      {patientMode && closedLoopEnabled && !pushedAt && preparation?.checklist && (
         <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div>
@@ -1241,7 +1242,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <h2 style={{ margin: 0, fontSize: 20, color: '#1A2B24' }}>本年度管理方案</h2>
             <div style={{ marginTop: 5, fontSize: 13, color: '#62776A' }}>
               {(moduleData.management_targets?.records || []).length} 项管理目标 · {visibleModuleEntries.reduce((count, entry) => count + (entry.def.multi ? (moduleData[entry.key]?.records || []).length : 1), 0)} 项服务与行动
-              {preparation?.checklist && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; panel.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: preparation.checklist.ready ? '#287A50' : '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>准备情况：{preparation.checklist.progress.completed}/{preparation.checklist.progress.total} · 查看</button>}
+              {!pushedAt && preparation?.checklist && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; panel.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: preparation.checklist.ready ? '#287A50' : '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>准备情况：{preparation.checklist.progress.completed}/{preparation.checklist.progress.total} · 查看</button>}
               {pendingExecutionChanges.length > 0 && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; document.getElementById('annual-execution-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>{pendingExecutionChanges.length} 项执行待核对 · 处理</button>}
             </div>
           </div>

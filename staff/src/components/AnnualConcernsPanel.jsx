@@ -51,7 +51,7 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
   const canEdit = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const concerns = (topic.concerns || []).filter(isActiveAnnualConcern)
   const latestAiAt = (topic.messages || []).filter(row => row.role === 'ai').at(-1)?.createdAt
-  const analysisStale = !!topic.concernsUpdatedAt && (!latestAiAt || new Date(latestAiAt) < new Date(topic.concernsUpdatedAt))
+  const analysisStale = !!topic.concernsUpdatedAt && (!latestAiAt || new Date(latestAiAt) <= new Date(topic.concernsUpdatedAt))
   const evidenceRows = concerns.filter(isEvidenceConcern)
   const pending = concerns.filter(row => !isEvidenceConcern(row) && (row.status === 'suggested' || (row.status === 'included' && (!row.pathway || row.pathway === 'undecided'))))
   const issues = concerns.filter(row => !isEvidenceConcern(row))
@@ -87,7 +87,7 @@ export default function AnnualConcernsPanel({ topic, patientId, staff, toast, on
     {!!other.length && <details style={{ marginTop: 14 }}><summary style={{ cursor: 'pointer', fontWeight: 700 }}>未纳入管理或继续观察（{other.length}项）</summary>{other.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}</details>}
     {!!evidenceRows.length && <details style={{ marginTop: 14 }}><summary style={{ cursor: 'pointer', fontWeight: 700 }}>检查与指标依据（{evidenceRows.length}项）</summary>{evidenceRows.map((concern, index) => <ConcernRow key={concern.id} concern={concern} number={index + 1} patientId={patientId} topicId={topic._id} canEdit={canEdit} toast={toast} onUpdate={onUpdate} />)}</details>}
     {!!(topic.retiredConcerns || []).length && <details style={{ marginTop: 12, color: '#65776F', fontSize: 12 }}><summary>历史线索（{topic.retiredConcerns.length}项，已退出当前研判）</summary>{topic.retiredConcerns.map(row => <div key={row.id || row.key} style={{ marginTop: 5 }}>{row.title}：{row.retiredReason}</div>)}</details>}
-    {analysisStale && <div role="alert" style={{ marginTop: 12, color: '#A16620', fontSize: 12 }}>问题清单已更新，既有 AI 分析尚未覆盖最新线索。</div>}
-    {canEdit && concerns.length > 0 && topic.messages?.length > 0 && <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={onAnalyze}>按当前问题更新完整年度研判</button>}
+    {analysisStale && <div role="alert" style={{ marginTop: 12, color: '#A16620', fontSize: 12 }}>问题清单已更新，既有 AI 分析尚未覆盖最新线索。请更新一次完整研判，再核对下方逐项目标。</div>}
+    {canEdit && analysisStale && concerns.length > 0 && topic.messages?.length > 0 && <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={onAnalyze}>更新当前问题的完整研判</button>}
   </div></div>
 }

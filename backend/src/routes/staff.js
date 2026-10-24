@@ -9900,7 +9900,9 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(plan.patientId);
     if (closedLoop) {
     const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
-    if (!preparation?.checklist?.ready) return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
+    // A plan published before the current preparation rules keeps its original
+    // approval basis when it is resent. New drafts still require the checklist.
+    if (!plan.pushedAt && !preparation?.checklist?.ready) return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
     if (preparation.continuity?.mode === 'renewal' && !require('../utils/annualPlanContinuity').matchesContinuitySource(plan.continuitySource, preparation.continuity.source)) return res.status(409).json({ success: false, message: '年度总评来源已变化，请重新核对并保存下一年度草稿' });
     const otherFormal = await AnnualPlan.findOne({
       patientId: req.params.id,

@@ -9256,16 +9256,16 @@ export default function PatientDetailPage() {
                   {renderSectionActions('checkup_completeness')}
                   {docEditing && (!editingAISection || editingAISection === 'checkup_completeness') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {[['covered','✅ 已覆盖项目（每行一条）'],['missing','❌ 缺失重要项目（每行一条）']].map(([f,lbl]) => (
+                      {[['covered','✅ 已覆盖项目（每行一条）'],['missing','⚠️ 本年度待完善检查（每行一条）']].map(([f,lbl]) => (
                         <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.checkup_completeness?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('checkup_completeness', f, e.target.value)} /></div>
                       ))}
-                      <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>补项建议</div>
+                      <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>本年度完善建议</div>
                         <textarea className="form-control" rows={2} value={sec.checkup_completeness?.suggestion || ''} onChange={e => updSec('checkup_completeness', 'suggestion', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {(sec.checkup_completeness?.covered || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>已覆盖</div><AIListLines items={sec.checkup_completeness.covered} /></div>}
-                      {(sec.checkup_completeness?.missing || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>缺失项目</div><AIListLines items={sec.checkup_completeness.missing} color="#D97706" /></div>}
+                      {(sec.checkup_completeness?.missing || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>待完善检查</div><AIListLines items={sec.checkup_completeness.missing} color="#D97706" /></div>}
                       {sec.checkup_completeness?.suggestion && <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1A2B24', background: '#F2EDE3', borderRadius: 8, padding: '9px 12px', marginTop: 2 }}>{sec.checkup_completeness.suggestion}</div>}
                     </div>
                   )}

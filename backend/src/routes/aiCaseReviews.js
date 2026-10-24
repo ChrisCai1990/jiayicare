@@ -745,8 +745,24 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
         : incrementalGuide;
       const result = await providerAdapter.reply({ subjectId: user._id, preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isAnnualReview ? 5000 : isSupplement ? 900 : automatic ? 3200 : 1800, retryOnEmptyOrLength: isAnnualReview });
       if (isAnnualReview && (automatic || reframeAnnual)) {
-        result.managementTargets = require('../utils/caseReviewManagementTargets')
-          .targetsFromIncludedConcerns(topic.concerns, result.content, proposedTargets);
+        const targetLogic = require('../utils/caseReviewManagementTargets');
+        const initialTargets = targetLogic.targetsFromIncludedConcerns(topic.concerns, result.content, proposedTargets);
+        result.managementTargets = initialTargets;
+        if (initialTargets.some(row => !row.goal || !row.focus)) {
+          const included = (topic.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row) && row.status === 'included');
+          try {
+            const draftReply = await providerAdapter.reply({ subjectId: user._id, preferred: topic.preferredProvider,
+              sessionId: String(topic._id), context: { sources: [] }, attachments: [], history: [], maxTokens: 2800,
+              prompt: `请只为以下已纳入年度管理的问题逐项起草本年度管理目标和干预重点，供健康顾问核对。每个问题一条，issueId原样保留。合并讨论的卡片也须按问题拆开，不得把整段共同措施复制给各项；已有人工目标不得改写。目标写可核对的年度结果，干预重点写具体资料核对、监测、专科评估或复评动作。无充分证据时写核实基线与安排，不臆造诊断、数值、药物或复查频率。仅输出JSON：{"targets":[{"issueId":"原样ID","goal":"目标","focus":"干预重点"}]}。\n问题：${JSON.stringify(included.map(row => ({ issueId: String(row.id), title: row.title, evidence: row.evidence || '', pathway: row.pathway, note: row.note || '' })))}\n本轮完整研判：${String(result.content || '').slice(0, 12000)}` });
+            const drafted = targetLogic.parseAnnualTargetDraft(draftReply.content, topic.concerns);
+            result.managementTargets = initialTargets.map((row, index) => ({ ...row,
+              goal: row.goal || drafted[index].goal, focus: row.focus || drafted[index].focus }));
+          } catch (error) {
+            // Keep the completed discussion and any existing staff targets if the
+            // separate AI draft is incomplete. The explicit draft action can retry.
+            console.warn('[ai-case-review] Annual target draft needs review:', error.message);
+          }
+        }
       } else if (automatic && !proposedTargets.length) {
         result.managementTargets = require('../utils/caseReviewManagementTargets').proposeTargetsFromActions(result.content.split(/\r?\n/));
       }

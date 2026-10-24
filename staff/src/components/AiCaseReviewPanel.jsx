@@ -230,7 +230,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     const savedTargets = active?.conclusion?.managementTargets || []
     const included = active?.annualPlanYear ? (active.concerns || []).filter(row => isActiveAnnualConcern(row) && !isEvidenceConcern(row) && row.status === 'included') : []
     setManagementTargets(active?.annualPlanYear && (savedTargets.length !== included.length || included.some(concern => !savedTargets.some(row => row.issueId === concern.id)))
-      ? included.map(concern => ({ issueId: concern.id, goal: '', focus: '', nutritionRelevant: ['nutrition', 'both'].includes(concern.pathway) }))
+      ? included.map(concern => {
+        const saved = savedTargets.find(row => String(row.issueId) === String(concern.id))
+        return { issueId: concern.id, goal: saved?.goal || '', focus: saved?.focus || '', nutritionRelevant: saved?.nutritionRelevant === true || ['nutrition', 'both'].includes(concern.pathway) }
+      })
       : savedTargets)
     setTargetChangeNote('')
     setTimeout(() => { if (chatRef.current) chatRef.current.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }) }, 30)
