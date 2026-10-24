@@ -264,5 +264,23 @@ test('management action repair gets one subsequent source-link pass for included
   await assert.rejects(validateOrRepairAnnual(raw, check, async () => (++failedCalls === 1
     ? JSON.stringify({ managementActionCorrections: [{ sourceId: management.id, module: 'abnormal_followup', action }] })
     : JSON.stringify({ sourceLinkCorrections: [] })), normalize,
-  { evidence: sources, catalog: templates }), /遗漏对应事项/);
+  { evidence: sources, catalog: templates }), /优先关注问题第3项/);
+});
+
+test('priority deferral suggestion cannot hide an uncovered action, but valid links still apply', async () => {
+  const source = { id: 'priority:2', content: { title: '已审重点' } };
+  const raw = rawPlan();
+  raw.evidenceCoverage.push({ sourceId: source.id, status: 'included', reason: '已审重点' });
+  const sources = [...evidence, source];
+  const check = candidate => validateAnnualRaw(candidate, catalog, sources, keys);
+  const deferral = { sourceId: source.id, status: 'deferred', reason: '模型建议暂缓但顾问尚未确认' };
+  const linked = await validateOrRepairAnnual(raw, check, async () => JSON.stringify({
+    sourceLinkCorrections: [{ module: 'checkup_completion', index: 0, sourceIds: [source.id] }],
+    coverageCorrections: [deferral],
+  }));
+  check(linked);
+  assert.equal(linked.evidenceCoverage.find(item => item.sourceId === source.id).status, 'included');
+  await assert.rejects(validateOrRepairAnnual(raw, check, async () => JSON.stringify({
+    sourceLinkCorrections: [], coverageCorrections: [deferral], unresolvedSourceIds: [source.id],
+  })), /优先关注问题第3项标记为已纳入/);
 });

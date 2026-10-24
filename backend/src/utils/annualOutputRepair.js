@@ -25,6 +25,12 @@ function missingIncludedSourceIds(raw) {
     .map(item => item.sourceId);
 }
 
+function unresolvedPriorityMessage(raw) {
+  const numbers = missingIncludedSourceIds(raw).filter(id => /^priority:\d+$/.test(id))
+    .map(id => Number(id.split(':')[1]) + 1);
+  return numbers.length ? `优先关注问题第${numbers.join('、')}项标记为已纳入，但没有对应的年度行动。请在AI健康信息整理中核对其本年度管理方向；系统不会自动暂缓或关联无关行动` : '';
+}
+
 function missingManagementActions(raw, evidence = [], catalog = []) {
   const templates = new Map(catalog.map(item => [String(item.id), item]));
   return evidence.filter(item => item.id.startsWith('management_issue:')).filter(item => {
@@ -76,7 +82,7 @@ function sourceLinkRepairPrompt(candidate, evidence, missingLinks, errorMessage)
   const sources = evidence.filter(item => missingLinks.includes(item.id) || annualSources.includes(item.id)).map(item => ({
     id: item.id, content: JSON.stringify(item.content || '').slice(0, item.id === 'report_history' ? 3500 : 2400),
   }));
-  return `你只修复年度方案的来源关联和空白年度体检项，不重新生成方案。以下已有行动内容、日期和模板不可改。把确实对应的来源ID补到已有行动，按module和index分组返回sourceLinkCorrections；不能为了过校验关联无关事项。仅summary、report_history这两类汇总来源如确实没有独立对应行动，可用coverageCorrections改为deferred或not_applicable并说明具体原因；已确认的具体来源必须关联行动。${annualNeedsCorrection ? '当前annual_checkup有模板却缺少focus。请根据其已关联的真实来源填写明确、简短的focus，并返回完整annual_checkup对象；若来源不支持年度体检行动，返回annual_checkup:{}，同时如实修正对应evidenceCoverage。不能保留空focus占位。' : ''}只输出JSON，包含需要的字段：{"sourceLinkCorrections":[{"module":"medical_treatment","index":0,"sourceIds":["真实来源ID"]}],"coverageCorrections":[{"sourceId":"summary","status":"deferred","reason":"具体原因"}]${annualExample}}。无须重复整份方案。\n校验问题：${errorMessage}\n已有行动：${JSON.stringify(actions)}\n相关来源：${JSON.stringify(sources)}`;
+  return `你只修复年度方案的来源关联和空白年度体检项，不重新生成方案。以下已有行动内容、日期和模板不可改。把确实对应的来源ID补到已有行动，按module和index分组返回sourceLinkCorrections；不能为了过校验关联无关事项。仅summary、report_history这两类汇总来源如确实没有独立对应行动，可用coverageCorrections改为deferred或not_applicable并说明具体原因。priority来源不能改状态；若确实没有对应行动，请在unresolvedSourceIds中列出，系统将停止生成并请顾问核对，不能用暂缓掩盖遗漏。顾问已确认的management_issue也不能降级。${annualNeedsCorrection ? '当前annual_checkup有模板却缺少focus。请根据其已关联的真实来源填写明确、简短的focus，并返回完整annual_checkup对象；若来源不支持年度体检行动，返回annual_checkup:{}，同时如实修正对应evidenceCoverage。不能保留空focus占位。' : ''}只输出JSON，包含需要的字段：{"sourceLinkCorrections":[{"module":"medical_treatment","index":0,"sourceIds":["真实来源ID"]}],"unresolvedSourceIds":[],"coverageCorrections":[{"sourceId":"summary","status":"deferred","reason":"具体原因"}]${annualExample}}。无须重复整份方案。\n校验问题：${errorMessage}\n已有行动：${JSON.stringify(actions)}\n相关来源：${JSON.stringify(sources)}`;
 }
 
 // A repair edits a small part of an existing plan, so never resend the original
@@ -136,7 +142,7 @@ async function validateOrRepairAnnual(raw, validate, complete, normalize = value
       return candidate;
     }
     if ((!Object.hasOwn(parsed || {}, 'annual_checkup') || !Array.isArray(parsed.evidenceCoverage))
-      && !['sourceLinkCorrections', 'timingCorrections', 'scheduleCorrections', 'managementActionCorrections'].some(key => Array.isArray(parsed?.[key]))) {
+      && !['sourceLinkCorrections', 'timingCorrections', 'scheduleCorrections', 'managementActionCorrections', 'coverageCorrections', 'unresolvedSourceIds'].some(key => Array.isArray(parsed?.[key]))) {
       throw Object.assign(new Error('AI年度体检校正缺少模块或来源核对，未替换原方案'), { statusCode: 502 });
     }
     // A source-only reply leaves the clinical plan and other coverage untouched.
@@ -170,6 +176,10 @@ async function validateOrRepairAnnual(raw, validate, complete, normalize = value
       if (!Array.isArray(parsed.coverageCorrections)) throw new Error('来源状态校正格式无效');
       const pending = new Map();
       for (const patch of parsed.coverageCorrections) {
+        // Priority items stay included until linked. A model may nevertheless
+        // propose deferral alongside usable links; discard only that proposal,
+        // then let the full validator decide whether every item is covered.
+        if (/^priority:\d+$/.test(String(patch?.sourceId || '')) && missingLinks.includes(patch.sourceId)) continue;
         if (!['summary', 'report_history'].includes(patch?.sourceId) || !missingLinks.includes(patch.sourceId)
           || !['deferred', 'not_applicable'].includes(patch?.status)
           || !String(patch.reason || '').trim() || pending.has(patch.sourceId)) throw new Error('来源状态校正缺少有效依据');
@@ -238,6 +248,8 @@ async function validateOrRepairAnnual(raw, validate, complete, normalize = value
         return validateOrRepairAnnual(candidate, validate, complete, normalize,
           { ...repairContext, sourceLinkPassUsed: true });
       }
+      const priorityMessage = /声称已纳入来源但遗漏对应事项/.test(error.message) && unresolvedPriorityMessage(candidate);
+      if (priorityMessage) throw Object.assign(new Error(priorityMessage), { statusCode: 409 });
       throw error;
     }
   } catch (error) {
@@ -249,4 +261,4 @@ const correctionInstruction = `仅输出一个合法JSON对象，不要Markdown�
 对相近日期未统筹的问题，逐对核对已有排期依据，返回scheduleCorrections数组：[{"module":"medical_treatment","index":0,"scheduleSeparationReason":"保留分别安排的实际依据或具体待核实原因"}]。仅允许补充排期说明，不改已讨论的日期、医院或行动。依据不足时明确指出需要核实的兼容性或先后条件，不能编造医嘱、号源或声称已经确认；不能用空泛的“已统筹”冒充依据。无此问题时不返回该字段。
 annual_checkup.focus必须逐行文本；纯字符串列表可无损转为文本。年度focus只列实际安排项目，“不重复安排/已在近期安排”的说明应放内部notes，不能伪装成年度项目。每个保留项目必须引用真实对应sourceIds；如项目来自missing:0、missing:1，不能错挂priority:0。evidenceCoverage与保留事项同步，纳入年度同样算included。
 如已审依据确实不支持任何年度项目，可返回annual_checkup:{}，并在对应evidenceCoverage明确说明未纳入原因；不得用空focus的非空模块占位，更不能以忽略有依据项目换取通过。日期、科室、来源及统筹规则仍必须满足。返回annual_checkup与完整evidenceCoverage。若已生成事项实际涵盖某来源，却遗漏sourceIds关联，额外返回sourceLinkCorrections数组：[{"module":"medical_treatment","index":0,"sourceIds":["真实来源id"]}]；module也可为annual_checkup（index固定为0）。只给已有事项补充真实且语义对应的来源，不得把无关来源挂到事项上；若确实没有对应事项，须如实把该来源改为deferred或not_applicable并说明原因，不能仅靠修改状态掩盖已确认的行动需求。若其他模块的timingSourceId或timingBaseDate有误，额外返回timingCorrections数组：[{"module":"checkup_completion","index":0,"timingSourceId":"report_history中真实项目id","timingBaseDate":"该项目真实date","dateSelectionReason":"选用此日期的依据"}]。index为原数组从0开始的位置。仅校正已有事项的时间来源元数据，禁止编造来源、清空日期绕过校验或改变行动内容及执行时间；不需要时返回空数组。系统保留其他字段并重新进行全部校验。`;
-module.exports = { normalizeAnnualOutput, applyAnnualSchedule, missingIncludedSourceIds, missingManagementActions, normalizeConfirmedManagement, managementActionRepairPrompt, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, correctionInstruction };
+module.exports = { normalizeAnnualOutput, applyAnnualSchedule, missingIncludedSourceIds, unresolvedPriorityMessage, missingManagementActions, normalizeConfirmedManagement, managementActionRepairPrompt, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, correctionInstruction };
