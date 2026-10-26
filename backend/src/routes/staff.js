@@ -653,10 +653,10 @@ router.get('/medical-assist-progress', staffAuth, async (req, res) => {
   const patientById = new Map(patients.map(patient => [String(patient._id), patient]));
   const [plans, orders] = await Promise.all([
     HealthPlan.find({ patientId: { $in: patientIds }, type: 'medical_assist', status: { $in: includeCompleted ? ['draft', 'active', 'completed'] : ['draft', 'active'] } })
-      .sort({ createdAt: -1 }).limit(100).select('patientId staffId initiatedByStaff supervisorId sourceOrderId title status createdAt pushedAt').lean(),
+      .sort({ createdAt: -1 }).limit(100).select('patientId staffId initiatedByStaff supervisorId sourceOrderId title description content status createdAt pushedAt').lean(),
     Order.find({ user: { $in: patientIds }, status: { $in: includeCompleted ? ['pending', 'scheduled', 'completed'] : ['pending', 'scheduled'] }, paymentStatus: 'paid', serviceId: { $ne: 'staff_post_checkup_supervision' },
       serviceName: /就医|门诊|住院|代诊|约诊|约检|代办|陪诊|陪同|体检|检查预约|代配药|代取药/ })
-      .sort({ createdAt: -1 }).limit(100).select('user serviceName status initiationSource initiatedByStaff supervisorId currentStage createdAt').lean(),
+      .sort({ createdAt: -1 }).limit(100).select('user serviceName status initiationSource initiatedByStaff supervisorId currentStage scheduledAt note createdAt').lean(),
   ]);
   const linkedOrderIds = new Set(plans.map(plan => String(plan.sourceOrderId || '')).filter(Boolean));
   const visibleOrders = orders.filter(order => !linkedOrderIds.has(String(order._id)));
@@ -665,7 +665,7 @@ router.get('/medical-assist-progress', staffAuth, async (req, res) => {
       { sourceHealthPlanId: { $in: plans.map(plan => plan._id) } },
       { sourceOrderId: { $in: [...visibleOrders.map(order => order._id), ...plans.map(plan => plan.sourceOrderId).filter(Boolean)] } },
     ],
-  }).select('patientId sourceType sourceHealthPlanId sourceOrderId taskRole status workflowKey theme assignedTo isBlocked formData')
+  }).select('patientId sourceType sourceHealthPlanId sourceOrderId taskRole status workflowKey theme date plannedContent content assignedTo isBlocked formData')
     .populate('assignedTo', 'name').lean();
   const taskByPlan = new Map();
   const taskByOrder = new Map();
@@ -700,8 +700,13 @@ router.get('/medical-assist-progress', staffAuth, async (req, res) => {
     const patient = patientById.get(String(plan.patientId));
     const task = taskByPlan.get(String(plan._id)) || taskByOrder.get(String(plan.sourceOrderId));
     const progress = toProgress(task);
+    const visit = plan.content?.moduleData?.visit || {};
+    const serviceTime = plan.content?.serviceDate || visit.visitDate || plan.content?.serviceTime || visit.serviceTime || null;
+    const requestContent = [plan.description, task?.plannedContent || task?.content, plan.content?.notes || plan.content?.moduleData?.notes?.content]
+      .map(value => typeof value === 'string' ? value.trim() : '').filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join('\n');
     return { id: `plan:${plan._id}`, patientId: plan.patientId, patientName: patient?.name || '', title: plan.title, status: plan.status === 'completed' ? 'completed' : 'pending',
       source: 'plan', startedBySelf: String(plan.initiatedByStaff || plan.staffId) === String(req.staff._id),
+      createdAt: plan.createdAt, serviceTime, requestContent,
       supervisorName: task?.taskRole === 'supervisor' ? task.assignedTo?.name || patient?.assignedHealthPlanner?.name || '待分配健康规划师' : patient?.assignedHealthPlanner?.name || '待分配健康规划师',
       stage: plan.status === 'completed' ? '服务已完成' : plan.status === 'draft' ? '方案待完善与推送' : currentStage(task, progress),
       assignee: plan.status === 'draft' ? '' : currentAssignee(task, progress),
@@ -714,6 +719,7 @@ router.get('/medical-assist-progress', staffAuth, async (req, res) => {
     const progress = toProgress(task);
     return { id: `order:${order._id}`, patientId: order.user, patientName: patient?.name || '', title: order.serviceName, status: order.status === 'completed' ? 'completed' : 'pending',
       source: 'order', startedBySelf: String(order.initiatedByStaff || '') === String(req.staff._id),
+      createdAt: order.createdAt, serviceTime: order.scheduledAt || null, requestContent: String(order.note || task?.plannedContent || task?.content || '').trim(),
       supervisorName: task?.taskRole === 'supervisor' ? task.assignedTo?.name || patient?.assignedHealthPlanner?.name || '待分配健康规划师' : patient?.assignedHealthPlanner?.name || '待分配健康规划师',
       stage: order.status === 'completed' ? '服务已完成' : currentStage(task, progress), assignee: currentAssignee(task, progress),
       waitingReason: order.status === 'completed' ? '订单已完成' : progress?.message || '关联岗位任务待处理',
@@ -2407,6 +2413,9 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   // 医护端"记录随访"表单默认传 status=completed（语义是"我刚做完记一笔"），只在派给自己/不指派时成立。
   const assignedToOther = plannedAssignee && String(plannedAssignee) !== String(req.staff._id);
   const finalStatus = assignedToOther ? 'planned' : (status || 'completed');
+  if (finalStatus === 'planned' && !String(content || '').trim()) {
+    return res.status(400).json({ success: false, message: '请填写本次随访的具体事项或要求，方便执行人和发起人核对' });
+  }
 
   const followUp = await FollowUp.create({
     staffId: req.staff._id,

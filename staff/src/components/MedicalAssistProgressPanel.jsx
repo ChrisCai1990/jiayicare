@@ -3,6 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import Pagination from './Pagination'
 
+const displayServiceTime = value => {
+  if (!value) return '尚未安排'
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const parsed = new Date(value)
+  return !Number.isNaN(parsed.getTime()) && /^\d{4}-\d{2}-\d{2}T/.test(String(value))
+    ? parsed.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : String(value)
+}
+
 export default function MedicalAssistProgressPanel() {
   const nav = useNavigate()
   const [items, setItems] = useState([])
@@ -41,6 +49,8 @@ export default function MedicalAssistProgressPanel() {
             <button type="button" className="btn btn-secondary btn-sm" aria-expanded={expandedId === item.id} onClick={() => setExpandedId(current => current === item.id ? null : item.id)}>{expandedId === item.id ? '收起进程' : '查看完整进程'}</button>
           </div>
           <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>总督办：{item.supervisorName} · 当前环节：{item.stage}{item.assignee ? ` · 处理人：${item.assignee}` : ''}</div>
+          <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>发起时间：{item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '未记录'} · 服务时间：{displayServiceTime(item.serviceTime)}</div>
+          <div style={{ fontSize: 12, color: '#52685D', marginTop: 5, whiteSpace: 'pre-wrap' }}>需求说明：{item.requestContent || '原服务未填写具体需求，请查看客户就医服务档案'}</div>
           <div style={{ fontSize: 12, color: '#667085', marginTop: 3 }}>{item.waitingReason}{item.total ? ` · 已生成任务完成 ${item.completed}/${item.total}` : ''}</div>
           {expandedId === item.id && <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 8, background: '#F7FAF8' }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>本次服务全流程</div>

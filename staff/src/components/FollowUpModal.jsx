@@ -446,6 +446,10 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           ].filter(Boolean).join('\n')
         : ''
 
+      if (validRows.some(row => ![revisitContent, row.notes].filter(Boolean).join('\n').trim())) {
+        throw new Error('请为每一条随访计划填写具体事项或要求')
+      }
+
       await Promise.all(validRows.map(row => {
         const resolvedDate = row.date
           ? row.date

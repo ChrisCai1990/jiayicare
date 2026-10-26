@@ -36,6 +36,15 @@ test('advisor sees service progress without creating reminder or coordination wo
     assert.equal(h.writes.length, 0);
   } finally { await h.close() }
 });
+test('initiated follow-up shows planned time and concrete request', async () => {
+  const h = await mount({ data: { services: [{ ...service, startedBySelf: true,
+    plannedAt: '2026-11-02T01:30:00.000Z', requestContent: '核对专项筛查结果并联系客户' }], inbox: [] } });
+  try {
+    assert.match(h.el.textContent, /由我发起/);
+    assert.match(h.el.textContent, /计划时间：/);
+    assert.match(h.el.textContent, /具体事项：核对专项筛查结果并联系客户/);
+  } finally { await h.close() }
+});
 test('receiver submits actual response without execution controls', async () => {
   const h = await mount({ role: 'healthPlanner', data: { services: [], inbox: [{ _id: 'r', kind: 'coordinate', senderName: '顾问', note: '请协调', service }] } });
   try { await h.click('填写处理反馈'); await type(h.el.querySelector('textarea'), '已核对接续人员'); await h.click('提交'); assert.equal(h.writes[0][0], 'r'); assert.equal(h.writes[0][1].response, '已核对接续人员'); assert.doesNotMatch(h.el.textContent, /完成服务|重新派单/); } finally { await h.close() }

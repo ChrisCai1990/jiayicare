@@ -31,9 +31,9 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
   if (!patients.length) return [];
   const ids = patients.map(p => p._id);
   const [tasks, orders, plans, flows, cases, links, people] = await Promise.all([
-    FollowUp.find({ patientId: { $in: ids } }).select('patientId status theme date remindAt assignedTo taskRole isBlocked workflowKey sourceType sourceId sourceOrderId sourceHealthPlanId sourceAnnualPlanId sourceScheduleKey coordinationGroupId careFlowId annualDispatchKey annualDispatch serviceTracking deliveryMode aiStatus reviewRole reviewAssignedTo staffId formData.serviceRequest formData.generatedFromExpertAppointment formData.generatedFromMedicalEscort formData.linkedFollowUpActionKey progressRecords executedContent updatedAt createdAt completedAt').lean(),
+    FollowUp.find({ patientId: { $in: ids } }).select('patientId status theme date remindAt content plannedContent assignedTo taskRole isBlocked workflowKey sourceType sourceId sourceOrderId sourceHealthPlanId sourceAnnualPlanId sourceScheduleKey coordinationGroupId careFlowId annualDispatchKey annualDispatch serviceTracking deliveryMode aiStatus reviewRole reviewAssignedTo staffId formData.serviceRequest formData.generatedFromExpertAppointment formData.generatedFromMedicalEscort formData.linkedFollowUpActionKey progressRecords executedContent updatedAt createdAt completedAt').lean(),
     Order.find({ user: { $in: ids } }).select('user serviceName specificationLabel totalUnits status paymentStatus tradeStatus refundStatus servicePrice initiationSource currentStage currentAssignee supervisorId supervisionStatus scheduledAt updatedAt createdAt fulfillmentStatus fulfillmentType serviceWorkflowSnapshot medicalProxyPlan.medicalEscort medicalProxyPlan.adHocConsultation medicalProxyPlan.supplementProxy specialtyTermsSnapshot.key specialtyTermsSnapshot.includedEscorts specialtyService.key specialtyService.startsAt specialtyService.endsAt specialtyService.usedEscorts specialtyService.includedEscorts note').lean(),
-    HealthPlan.find({ patientId: { $in: ids } }).select('patientId title status type sourceOrderId currentStage currentAssignee supervisorId supervisionStatus pushedAt endDate updatedAt createdAt').lean(),
+    HealthPlan.find({ patientId: { $in: ids } }).select('patientId title description status type sourceOrderId currentStage currentAssignee supervisorId supervisionStatus pushedAt endDate updatedAt createdAt').lean(),
     CareFlow.find({ patientId: { $in: ids }, tenantId }).select('patientId parentId state revision updatedAt createdAt').lean(),
     Insurance.find({ patientId: { $in: ids } }).select('patientId title status assignedTo dueAt steps updatedAt createdAt').lean(),
     Link.find({ patientId: { $in: ids } }).select('patientId requestTaskId followUpId targetType targetId status updatedAt').lean(),
@@ -149,8 +149,9 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
         person: person(s.currentAssignee), blocked: false, dueAt: s.scheduledAt || null }];
     const ownDecisionTask = decisionOrder
       ? stageTasks.find(t => id(t.assignedTo || t.staffId) === id(actor) && !t.isBlocked) : null;
-    if (!includeOwn && !ownDecisionTask && !ibdAnnual && current.every(c => c.person?.id === id(actor))) continue;
-    if (!includeOwn && !ownDecisionTask && !ibdAnnual) current = current.filter(c => c.person?.id !== id(actor));
+    const startedBySelf = g.type === 'followup' && g.tasks.some(t => !t.sourceType && id(t.staffId) === id(actor));
+    if (!includeOwn && !startedBySelf && !ownDecisionTask && !ibdAnnual && current.every(c => c.person?.id === id(actor))) continue;
+    if (!includeOwn && !startedBySelf && !ownDecisionTask && !ibdAnnual) current = current.filter(c => c.person?.id !== id(actor));
     const explicitCoordinator = s.state?.people?.healthPlanner?.id || s.supervisorId;
     const supervisors = [...new Set(remaining.filter(t => t.taskRole === 'supervisor').map(t => id(t.assignedTo)).filter(Boolean))];
     const coordinatorId = explicitCoordinator || (supervisors.length === 1 ? supervisors[0] : null);
@@ -168,7 +169,10 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
       .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0))[0];
     const intakeRecord = decisionOrder ? g.tasks.find(t => !t.workflowKey && t.executedContent)?.executedContent : '';
     const title = s.serviceName || s.title || s.state?.title || (g.type === 'flow' ? g.tasks.find(t => id(t) === id(s.parentId))?.theme : s.theme) || '服务进度';
+    const requestTask = g.type === 'followup' ? g.tasks.find(t => !t.sourceType && id(t.staffId) === id(actor)) || g.tasks[0] : null;
     const row = { key: g.key, patientId: g.patientId, patientName: p.name, title, current, coordinator,
+      startedBySelf, plannedAt: requestTask?.date || s.scheduledAt || null,
+      requestContent: String(requestTask?.plannedContent || requestTask?.content || s.description || s.note || '').trim(),
       progress: serviceProgress(g.type, s, g.tasks, current, now),
       reasons, attention: !!reasons.length, latest: latest || (intakeRecord
         ? { at: s.updatedAt, content: `规划师记录客户需求：${intakeRecord}` }

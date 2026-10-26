@@ -66,7 +66,11 @@ export default function ServiceSupervisionPanel() {
       </article>)}
       {inbox.length > 5 && <Pagination compact page={currentInboxPage} totalPages={Math.ceil(inbox.length / 5)} onChange={setInboxPage} />}
       {rows.slice((currentPage - 1) * 5, currentPage * 5).map(s => <article key={s.key} style={{ padding: '14px 0', borderBottom: '1px solid #E3ECE7', fontSize: 13 }}>
-        <div style={{ fontSize: 15 }}><b>{s.patientName} · {s.title}</b></div>
+        <div style={{ fontSize: 15 }}><b>{s.patientName} · {s.title}</b>{s.startedBySelf && <span style={{ marginLeft: 8, fontSize: 12, color: '#2563EB' }}>由我发起</span>}</div>
+        {(s.plannedAt || s.requestContent || s.startedBySelf) && <div style={{ marginTop: 6, color: '#52685D', whiteSpace: 'pre-wrap' }}>
+          <div>计划时间：{s.plannedAt ? date(s.plannedAt) : '未设定'}</div>
+          <div>具体事项：{s.requestContent || '原任务未填写具体内容，请到随访管理补充'}</div>
+        </div>}
         {s.progress && <div style={{ marginTop: 8, padding: '8px 10px', background: '#F0F8F4', borderRadius: 8 }}>
           <b>当前进度：{s.progress.label}</b>{s.progress.step && s.progress.total ? ` · 第 ${s.progress.step}/${s.progress.total} 步` : ''} · 负责人：{s.current.map(c => c.person?.name || '待核对').filter((name, index, names) => names.indexOf(name) === index).join('、') || '待核对'}
           {s.progress.observed ? <div style={{ marginTop: 8 }}>

@@ -148,13 +148,24 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
   });
   await t.test('legacy tasks retain staffId owner; customer planner is not a task coordinator', async () => {
     await reset(); const own = await task({ assignedTo: null, staffId: advisor._id });
-    assert.equal((await loadServices(advisor)).length, 0);
+    assert.equal((await loadServices(advisor))[0].startedBySelf, true);
     await Task.collection.updateOne({ _id: own._id }, { $set: { assignedTo: manager._id, date: new Date('2099-01-01') } });
     const row = (await loadServices(advisor))[0];
     assert.equal(row.current[0].person.id, String(manager._id)); assert.equal(row.coordinator, null); assert.equal(row.attention, false);
     assert.equal((await call(advisor, '/requests', { serviceKey: row.key, version: row.version, kind: 'coordinate', recipientId: String(planner._id), note: '不能默认转交' })).status, 409);
     await Task.collection.updateOne({ _id: own._id }, { $set: { assignedTo: null, staffId: manager._id } });
     assert.equal((await loadServices(advisor))[0].current[0].person.id, String(manager._id));
+  });
+  await t.test('advisor initiated screening follow-up retains date and original instructions', async () => {
+    await reset();
+    const date = new Date('2026-11-02T01:30:00.000Z');
+    await task({ staffId: advisor._id, assignedTo: manager._id, theme: '专项筛查随访',
+      date, content: '核对筛查结果并联系客户确认复查安排' });
+    const row = (await loadServices(advisor))[0];
+    assert.equal(row.startedBySelf, true);
+    assert.equal(new Date(row.plannedAt).toISOString(), date.toISOString());
+    assert.equal(row.requestContent, '核对筛查结果并联系客户确认复查安排');
+    assert.equal(row.current[0].person.id, String(manager._id));
   });
   await t.test('stale version, disabled staff, terminal source and changed responsibility are safe', async () => {
     await reset(); const original = await task(); let row = (await call(advisor)).body.data.services[0];

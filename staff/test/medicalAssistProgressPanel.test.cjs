@@ -21,6 +21,7 @@ test('medical assistance detail opens the full process without navigating to fol
     '../api': { staffAPI: { getMedicalAssistProgress: async () => ({ data: [{
       id: 'order:1', patientId: 'patient', patientName: '测试客户', title: '陪同看诊服务',
       source: 'order', supervisorName: '规划师', stage: '陪同看诊', waitingReason: '等待处理',
+      createdAt: '2026-10-26T02:00:00.000Z', serviceTime: '2026-11-02', requestContent: '核对报告并安排陪诊',
       stages: [
         { id: 'a', label: '核对资料', status: 'completed', assignee: '健管专员' },
         { id: 'b', label: '陪同看诊', status: 'in_progress', assignee: '就医专员' },
@@ -39,6 +40,8 @@ test('medical assistance detail opens the full process without navigating to fol
     await act(async () => root.render(React.createElement(module.exports.default)))
     const button = [...container.querySelectorAll('button')].find(node => node.textContent === '查看完整进程')
     assert.ok(button)
+    assert.match(container.textContent, /发起时间：.*服务时间：2026-11-02/)
+    assert.match(container.textContent, /需求说明：核对报告并安排陪诊/)
     await act(async () => button.click())
     assert.match(container.textContent, /核对资料.*已完成.*陪同看诊.*进行中/)
     assert.deepEqual(navigations, [])

@@ -80,3 +80,15 @@ test('detail includes earlier completed stages and the active stage for the same
     ['陪同看诊', 'in_progress', '就医专员'],
   ]);
 });
+test('initiated medical service projects creation time, appointment and request', async () => {
+  const rows = await progressFor({
+    plans: [{ _id: 'plan', patientId: 'patient', title: '专家约诊服务方案', status: 'active',
+      initiatedByStaff: 'advisor', createdAt: '2026-10-26T02:00:00.000Z', description: '安排心内科专家复诊',
+      content: { serviceDate: '2026-11-02' } }],
+    tasks: [{ _id: 'task', sourceHealthPlanId: 'plan', taskRole: 'executor', theme: '预约专家' }],
+  });
+  assert.equal(rows[0].startedBySelf, true);
+  assert.equal(rows[0].createdAt, '2026-10-26T02:00:00.000Z');
+  assert.equal(rows[0].serviceTime, '2026-11-02');
+  assert.equal(rows[0].requestContent, '安排心内科专家复诊');
+});
