@@ -116,11 +116,11 @@ function createConsentCheckedCall(run, permission = (provider, context) => requi
 const controlledCall = createConsentCheckedCall(createBudgetRunner());
 // Read-only preflight for the supplement's extraction + independent evidence + coverage calls.
 // Per-call atomic reservations remain authoritative; this does not grant or reset any quota.
-async function assertSupplementCallCapacity(context, db = store) {
+async function assertSupplementCallCapacity(context, db = store, requiredCalls = 3) {
   const policy = await db.policy();
   for (const scope of budgetScopes(policy, { ...context, business: 'ocr' }, new Date())) {
     if (!scope.calls) continue;
-    const reason = budgetRefusalReason(scope, await db.counter(scope.id), 0, 0, 3);
+    const reason = budgetRefusalReason(scope, await db.counter(scope.id), 0, 0, requiredCalls);
     if (reason) throw new AiControlError(reason, scope.id.startsWith('page:') ? 'AI_PAGE_BUDGET_PAUSED' : 'AI_BUDGET_PAUSED');
   }
 }

@@ -90,8 +90,9 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
   return async (source, prompt, options = {}) => {
     const { sourcePage } = options;
     const modelOptions = { ...options, ...(report._id ? { reportId: String(report._id) } : {}) };
-    if (imageOnlyPages.has(sourcePage)) {
-      const skipped = imageOnlyPages.get(sourcePage);
+    const sourceKey = createHash('sha256').update(source).digest('hex');
+    if (imageOnlyPages.has(sourceKey)) {
+      const skipped = imageOnlyPages.get(sourceKey);
       onEvidence(sourcePage, skipped.imageEvidence);
       return JSON.stringify(skipped);
     }
@@ -104,7 +105,7 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
       || parsed.items.some(item => ['imaging', 'diagnosis', 'pathology'].includes(item.itemType)
         || item.findings || item.diagnosis || /超声|彩超|B超|内镜|心电|CT|MRI/i.test(item.name || ''));
     if (!needsCheck) return JSON.stringify(parsed);
-    const key = createHash('sha256').update(source).digest('hex');
+    const key = sourceKey;
     if (!cache.has(key)) {
       if (cache.size >= 24) cache.delete(cache.keys().next().value);
       const pending = parseImage(source, IMAGE_EVIDENCE_PROMPT, {
@@ -125,7 +126,7 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
     }
     const guarded = guardImageEvidence(parsed, evidence);
     if (Number.isInteger(sourcePage) && guarded.imageEvidence?.status === 'image_only') {
-      imageOnlyPages.set(sourcePage, guarded);
+      imageOnlyPages.set(sourceKey, guarded);
     }
     if (guarded.imageEvidence) onEvidence(sourcePage, guarded.imageEvidence);
     return JSON.stringify(guarded);

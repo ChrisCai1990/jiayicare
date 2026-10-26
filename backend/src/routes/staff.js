@@ -17776,7 +17776,6 @@ async function runReportPageParse(reportId, pageNum) {
 }
 
 async function runReportPageParseControlled(reportId, pageNum) {
-  await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum });
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
   const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
@@ -17812,8 +17811,16 @@ async function runReportPageParseControlled(reportId, pageNum) {
   if (isPdf) {
     const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
     // 单页补提必须保留整张表格的同一行关系。过去无差别左右切图，会把左侧项目名和右侧数值拆开，
-    // 导致模型返回“有名称、无数值”的空壳项；密集页统一完整渲染后只在这一页提高模型预算。
+    // 导致模型返回“有名称、无数值”的空壳项；先渲染整页，再对较大的页按上下分区。
     images = [await renderSinglePage(pdfBuf, pageNum, 200)];
+    // Large, dense pages can repeatedly hit the model's 180-second limit as a
+    // whole image. Split top/bottom with overlap while retaining each table row's
+    // left/right relationship. The independent evidence check still runs per crop.
+    const densePageBase64Threshold = 800000; // 约 600 KB JPEG；分区可缩短单次视觉调用。
+    if (images[0]?.length > densePageBase64Threshold) {
+      images = await renderSinglePageRegions(pdfBuf, pageNum, 160);
+      if (images.length !== 2 || images.some(image => !image)) throw new Error(`第${pageNum}页分区渲染不完整`);
+    }
   } else {
     const buffers = report.fileUrls?.length
       ? await fetchReportBuffers(report, UPLOADS_DIR)
@@ -17822,16 +17829,18 @@ async function runReportPageParseControlled(reportId, pageNum) {
     images = [buffers[pageNum - 1].toString('base64')];
   }
   if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
+  await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * 3);
   let parsedItems = [];
+  let allRegionsImageOnly = true;
   for (let regionIndex = 0; regionIndex < images.length; regionIndex++) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '左半部分' : '右半部分'}，边界有重叠；` : '';
+      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对本图可见内容，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) { rethrowAiControl(error);
@@ -17840,6 +17849,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     }
     }
     if (!Array.isArray(parsed?.items)) throw new Error(`第${pageNum}页${images.length > 1 ? (regionIndex === 0 ? '上半部分' : '下半部分') : ''}未返回有效结果，原数据未改动`);
+    if (parsed.imageEvidence?.status !== 'image_only') allRegionsImageOnly = false;
     if (shouldSkipParsedReportPage(parsed)) continue;
     let regionItems = parsed.items;
     // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
@@ -17853,6 +17863,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     }
     parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
   }
+  if (!allRegionsImageOnly && imagePageEvidence[pageNum]?.status === 'image_only') delete imagePageEvidence[pageNum];
   if (imagePageEvidence[pageNum]?.status === 'image_only') {
     const evidence = imagePageEvidence[pageNum];
     await MedicalReport.findByIdAndUpdate(reportId, { $set: {

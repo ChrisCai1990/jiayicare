@@ -17,7 +17,10 @@ test('supplement refuses before starting when independent verification cannot fi
   await assert.rejects(assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db), error => error.code === 'AI_PAGE_BUDGET_PAUSED' && /需要 3 次/.test(error.message));
   extraCalls = 2;
   await assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db);
-  assert.equal(extraCalls, 2); // Preflight never resets or increases the allowance.
+  await assert.rejects(assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db, 6), error => error.code === 'AI_PAGE_BUDGET_PAUSED' && /需要 6 次/.test(error.message));
+  extraCalls = 5;
+  await assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db, 6);
+  assert.equal(extraCalls, 5); // Preflight never resets or increases the allowance.
 });
 
 test('supplement fills a missing field without replacing existing or reviewed prose', () => {

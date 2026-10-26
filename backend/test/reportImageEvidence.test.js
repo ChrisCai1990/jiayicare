@@ -102,6 +102,18 @@ test('verifier failure cannot return unchecked candidates and is retriable', asy
   assert.deepEqual(statuses, ['needs_review', 'image_only']);
 });
 
+test('image-only top crop does not suppress a different crop on the same page', async () => {
+  let candidates = 0;
+  const parse = createReportImageParser(async (source, prompt) => {
+    if (prompt === IMAGE_EVIDENCE_PROMPT) return JSON.stringify(source === 'top' ? imageOnly : { hasMedicalImages: false, readability: 'clear', clinicalText: '血糖 5.1 mmol/L' });
+    candidates++;
+    return JSON.stringify({ items: source === 'top' ? [narrative] : [{ name: '血糖', itemType: 'lab', value: '5.1', unit: 'mmol/L' }] });
+  });
+  assert.deepEqual(JSON.parse(await parse('top', 'extract', { sourcePage: 9 })).items, []);
+  assert.equal(JSON.parse(await parse('bottom', 'extract', { sourcePage: 9 })).items.length, 1);
+  assert.equal(candidates, 2);
+});
+
 test('later coverage cannot erase an evidence rejection warning', () => {
   const pages = {};
   recordPageEvidence(pages, 1, { status: 'needs_review', blockedCount: 2 });
@@ -150,6 +162,90 @@ test('single-page route stops before coverage/classification and preserves exist
   assert.equal(writes[0].$set.reportItems, undefined);
   assert.equal(writes[0].$set.aiStatus, undefined);
   assert.equal(report.reportItems[0], oldItem);
+});
+
+test('dense PDF supplement splits vertically and checks six calls before model use', async () => {
+  const fs = require('fs');
+  const vm = require('vm');
+  const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
+  const start = source.indexOf('async function runReportPageParse(');
+  const end = source.indexOf('// POST /api/staff/medical-reports/:id/parse-ai', start);
+  const report = { _id: 'fixture', user: 'synthetic', type: 'annual', title: '测试体检', reportItems: [] };
+  let regions = 0, requiredCalls = 0, modelCalls = 0;
+  const modules = {
+    '../utils/aiBudget': { assertSupplementCallCapacity: async (_, __, calls) => { requiredCalls = calls; } },
+    '../utils/ai': { parseImage: async (_, prompt) => {
+      modelCalls++;
+      assert.match(prompt, /上半部分/);
+      throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('stopped', 'AI_CIRCUIT_PAUSED');
+    } },
+    '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
+    '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
+    '../models/MedicalReport': { findById: async () => report },
+    '../utils/pdf': {
+      isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
+      renderSinglePage: async () => 'x'.repeat(800001),
+      renderSinglePageRegions: async () => { regions++; return ['top', 'bottom']; },
+    },
+    '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('No model result'); } },
+    '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
+    '../utils/zheyiReportTemplate': { isZheyiReport: () => false },
+  };
+  const run = vm.runInNewContext(`${source.slice(start, end)};runReportPageParse`, {
+    withAiContext: require('../src/utils/aiBudget').withAiContext,
+    ...require('../src/utils/aiBudgetPolicy'),
+    require: name => { assert.ok(modules[name], name); return modules[name]; },
+    User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
+    isManualOnlyReport: () => false, console,
+  });
+  await assert.rejects(run('fixture', 9), /stopped/);
+  assert.equal(regions, 1);
+  assert.equal(requiredCalls, 6);
+  assert.equal(modelCalls, 1);
+});
+
+test('image-only upper crop does not discard lower crop lab results', async () => {
+  const fs = require('fs');
+  const vm = require('vm');
+  const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
+  const start = source.indexOf('async function runReportPageParse(');
+  const end = source.indexOf('// POST /api/staff/medical-reports/:id/parse-ai', start);
+  const lab = { name: '血糖', itemType: 'lab', value: '5.1', unit: 'mmol/L' };
+  const modules = {
+    '../utils/aiBudget': { assertSupplementCallCapacity: async () => {} },
+    '../utils/ai': { parseImage: async (image, prompt) => {
+      if (prompt === IMAGE_EVIDENCE_PROMPT) return JSON.stringify(imageOnly);
+      if (prompt.startsWith('coverage')) return JSON.stringify({ items: [] });
+      return JSON.stringify({ items: image === 'top' ? [{ name: '影像', itemType: 'imaging', findings: '无证据' }] : [lab] });
+    } },
+    '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
+    '../utils/reportPageSupplement': {
+      alignSupplementCandidate: (_, item) => item, describeExistingReportItems: () => '',
+      filterMissingReportItems: (_, items) => items, hasReportItemEvidence: () => true,
+      inferMissingUltrasoundOrgans: () => [], mergeSupplementItems: () => { throw new Error('Not reached'); },
+      supplementMatches: () => [],
+    },
+    '../models/MedicalReport': { findById: async () => ({ _id: 'fixture', user: 'synthetic', type: 'annual', title: '测试体检', reportItems: [] }) },
+    '../utils/pdf': {
+      isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
+      renderSinglePage: async () => 'x'.repeat(800001), renderSinglePageRegions: async () => ['top', 'bottom'],
+    },
+    '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('Not reached'); } },
+    '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
+    '../utils/zheyiReportTemplate': { isZheyiReport: () => false },
+  };
+  const run = vm.runInNewContext(`${source.slice(start, end)};runReportPageParse`, {
+    withAiContext: require('../src/utils/aiBudget').withAiContext,
+    ...require('../src/utils/aiBudgetPolicy'),
+    require: name => { assert.ok(modules[name], name); return modules[name]; },
+    User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', PAGE_COVERAGE_AUDIT_PROMPT: 'coverage',
+    isManualOnlyReport: () => false, safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true,
+    mergeCoverageAuditItems: (left, right) => [...left, ...right], str: String, console,
+    tagReportPageItems: items => { assert.equal(JSON.stringify(items), JSON.stringify([lab])); throw new Error('lower-crop-retained'); },
+  });
+  await assert.rejects(run('fixture', 9), /lower-crop-retained/);
 });
 
 for (const mode of ['normal', 'budget-pause', 'page-budget', 'checkpoint']) for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR ${mode} preserves evidence and progress`, async () => {
