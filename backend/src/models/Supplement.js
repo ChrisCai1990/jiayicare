@@ -65,6 +65,12 @@ const supplementSchema = new mongoose.Schema({
 supplementSchema.index({ user: 1, stopped: 1 });
 supplementSchema.index({ annualDispatchKey: 1 }, { unique: true, sparse: true });
 supplementSchema.index({ sourceAnnualPlanId: 1, sourceRecordKey: 1, stopped: 1 });
-supplementSchema.index({ sourceOrderId: 1 }, { unique: true, sparse: true });
+// Manual records have sourceOrderId: null. A sparse index still indexes null,
+// so only order-linked records should participate in the uniqueness constraint.
+supplementSchema.index({ sourceOrderId: 1 }, {
+  name: 'sourceOrderId_objectId_unique',
+  unique: true,
+  partialFilterExpression: { sourceOrderId: { $type: 'objectId' } },
+});
 
 module.exports = mongoose.model('Supplement', supplementSchema);
