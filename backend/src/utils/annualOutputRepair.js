@@ -34,7 +34,8 @@ function unresolvedPriorityMessage(raw) {
 function missingManagementActions(raw, evidence = [], catalog = []) {
   const templates = new Map(catalog.map(item => [String(item.id), item]));
   return evidence.filter(item => item.id.startsWith('management_issue:')).filter(item => {
-    const destination = item.content?.direction === 'ongoing_management' ? 'templateNodes' : item.content?.direction;
+    const destination = item.content?.reviewPlan?.kind === 'recheck' ? 'abnormal_followup'
+      : item.content?.direction === 'ongoing_management' ? 'templateNodes' : item.content?.direction;
     const selected = raw?.[destination];
     const rows = Array.isArray(selected) ? selected : selected && typeof selected === 'object' ? [selected] : [];
     const linked = rows.some(row => row.sourceIds?.includes(item.id) && (destination !== 'templateNodes'
@@ -47,11 +48,14 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
   if (!raw || !Array.isArray(raw.evidenceCoverage)) return raw;
   const templates = new Map(catalog.map(item => [String(item.id), item]));
   const management = evidence.filter(item => item.id.startsWith('management_issue:'));
-  const ongoing = new Set(management.filter(item => item.content?.direction === 'ongoing_management').map(item => item.id));
+  const reviewGroups = require('./annualReviewPlan').reviewGroups(management);
+  const reviewIds = new Set(reviewGroups.flatMap(group => group.sourceIds));
+  const ongoing = new Set(management.filter(item => item.content?.direction === 'ongoing_management' && !reviewIds.has(item.id)).map(item => item.id));
   const ongoingById = new Map(management.filter(item => ongoing.has(item.id)).map(item => [item.id, item.content]));
   const nodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(row => {
     if (!require('./annualPlanPresentation').internalDaily({ standardPlanName: templates.get(String(row.standardPlanId || ''))?.name })) return row;
     const sourceIds = Array.isArray(row.sourceIds) ? row.sourceIds.filter(id => !id.startsWith('management_issue:') || ongoing.has(id)) : row.sourceIds;
+    if (Array.isArray(row.sourceIds) && row.sourceIds.length && !sourceIds.length) return null;
     const issues = sourceIds.map(id => ongoingById.get(id)).filter(Boolean);
     const labels = [...new Set(issues.map(item => String(item.problem || '').trim()).filter(Boolean))];
     const details = [...new Set(issues.map(item => String(item.advisorNote || '').trim()).filter(Boolean))];
@@ -63,6 +67,7 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
   }) : raw.templateNodes;
   const combinedNodes = [];
   for (const node of nodes || []) {
+    if (!node) continue;
     const daily = require('./annualPlanPresentation').internalDaily({ standardPlanName: templates.get(String(node.standardPlanId || ''))?.name });
     const prior = daily && /^\d{4}-\d{2}-\d{2}$/.test(String(node.executionDate || ''))
       && combinedNodes.find(row => String(row.standardPlanId || '') === String(node.standardPlanId || '')
@@ -77,7 +82,32 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
       prior[key] = [...new Set([prior[key], node[key]].map(value => String(value || '').trim()).filter(Boolean))].join('；');
     }
   }
-  const updated = { ...raw, templateNodes: combinedNodes };
+  const cleanRows = rows => (Array.isArray(rows) ? rows : []).flatMap(row => {
+    if (row.sourceIds?.some(id => reviewIds.has(id)) && row.sourceIds?.some(id => !reviewIds.has(id)))
+      throw Object.assign(new Error('AI把已确认复查与其他来源混入同一事项，请顾问核对后重新生成'), { statusCode: 409 });
+    const sourceIds = Array.isArray(row.sourceIds) ? row.sourceIds.filter(id => !reviewIds.has(id)) : [];
+    return row.sourceIds?.some(id => reviewIds.has(id)) && !sourceIds.length ? [] : [{ ...row, ...(row.sourceIds ? { sourceIds } : {}) }];
+  });
+  const recheckTemplate = catalog.find(item => item.category === 'abnormal_followup');
+  const rechecks = reviewGroups.map(group => ({
+    standardPlanId: recheckTemplate?.id || '', items: `复查${group.items.length}项检查`,
+    reviewItems: group.items, reason: group.problems.join('、'),
+    basisSummary: `顾问已确认约${group.intervalMonths}个月后复查；项目：${group.items.join('、')}`,
+    time: group.dueDate, frequency: '单次', precautions: '按检查机构要求准备',
+    customerAction: `完成${group.items.join('、')}并上传报告`, ownerRole: '健管专员', sourceIds: group.sourceIds,
+    reviewGroupVersion: 1,
+  }));
+  const updated = { ...raw,
+    templateNodes: cleanRows(combinedNodes),
+    medical_treatment: cleanRows(raw.medical_treatment),
+    checkup_completion: cleanRows(raw.checkup_completion),
+    abnormal_followup: [...cleanRows(raw.abnormal_followup), ...rechecks],
+    vaccine: cleanRows(raw.vaccine),
+  };
+  if (reviewIds.size && raw.annual_checkup?.standardPlanId) {
+    const remaining = (raw.annual_checkup.sourceIds || []).filter(id => !reviewIds.has(id));
+    updated.annual_checkup = remaining.length ? { ...raw.annual_checkup, sourceIds: remaining } : {};
+  }
   const linked = new Set(management.filter(item => !missingManagementActions({ ...updated,
     evidenceCoverage: [{ sourceId: item.id, status: 'included', reason: '已关联行动' }] }, [item], catalog).length).map(item => item.id));
   updated.evidenceCoverage = raw.evidenceCoverage.map(item => linked.has(item.sourceId) && item.status !== 'included'

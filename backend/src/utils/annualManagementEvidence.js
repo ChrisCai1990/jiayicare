@@ -29,6 +29,7 @@ async function load(patientId, year, dependencies = {}) {
     evidence.push({ id: `management_issue:${decision._id}`, content: {
       reportId: report._id, reportTitle: report.title, checkDate: report.checkDate,
       problem: decision.title, direction: decision.direction, advisorNote: decision.note,
+      reviewPlan: decision.reviewPlan || null, legacyReviewNote: decision.reviewPlan?.kind !== 'recheck' && require('./annualReviewPlan').legacyReviewNote(decision.note),
       source: decision.sourceSnapshot?.item || null, reviewedAt: decision.reviewedAt,
     } });
   }
@@ -70,12 +71,24 @@ function managementTargets(evidence = []) {
 }
 
 function validatePlanCoverage(moduleData = {}, evidence = []) {
+  for (const group of require('./annualReviewPlan').reviewGroups(evidence)) {
+    const rows = moduleData.abnormal_followup?.records || [];
+    const linked = rows.filter(row => row.sourceIds?.some(id => group.sourceIds.includes(id)));
+    if (linked.length !== 1 || !group.sourceIds.every(id => linked[0].sourceIds.includes(id))
+      || linked[0].items !== `复查${group.items.length}项检查`
+      || linked[0].reviewItems?.length !== group.items.length
+      || !group.items.every(item => linked[0].reviewItems.includes(item))) {
+      return `约${group.intervalMonths}个月后的复查没有归为一次完整安排，请核对项目与来源`;
+    }
+  }
   for (const source of evidence) {
-    const key = source.content.direction === 'ongoing_management' ? 'personalized_followups' : source.content.direction;
+    const key = source.content.reviewPlan?.kind === 'recheck' ? 'abnormal_followup'
+      : source.content.direction === 'ongoing_management' ? 'personalized_followups' : source.content.direction;
     const module = moduleData[key];
     const rows = module?.enabled === false ? [] : Array.isArray(module?.records) ? module.records : module ? [module] : [];
     if (!rows.some(row => Array.isArray(row.sourceIds) && row.sourceIds.includes(source.id)
-      && (source.content.direction !== 'ongoing_management' || require('./annualPlanPresentation').internalDaily(row)))) {
+      && (source.content.reviewPlan?.kind === 'recheck' ? source.content.reviewPlan.items.every(item => row.reviewItems?.includes(item))
+        : source.content.direction !== 'ongoing_management' || require('./annualPlanPresentation').internalDaily(row)))) {
       return `“${source.content.problem}”尚未按顾问选定的管理方向进入方案，请重新生成或补齐对应事项`;
     }
   }
