@@ -122,6 +122,29 @@ function PdfDocumentPreview({ src, activePage, title, zoom = 100, onRefresh }) {
   </div>
 }
 
+function ClinicalReportSourceImage({ src, pageNumber, pageCount }) {
+  const [rotation, setRotation] = useState(0)
+  const [dimensions, setDimensions] = useState(null)
+  const sideways = rotation % 180 !== 0
+  const width = dimensions?.width
+  const height = dimensions?.height
+
+  return <>
+    <div className="clinical-report-source-page-title">
+      <span>原件 {pageNumber} / {pageCount}</span>
+      <div className="clinical-report-source-actions">
+        <button type="button" aria-label={`原件 ${pageNumber} 向左旋转 90 度`} onClick={() => setRotation(value => (value + 270) % 360)} disabled={!dimensions}>↶ 向左旋转</button>
+        <button type="button" aria-label={`原件 ${pageNumber} 向右旋转 90 度`} onClick={() => setRotation(value => (value + 90) % 360)} disabled={!dimensions}>↷ 向右旋转</button>
+        <a href={src} target="_blank" rel="noopener noreferrer">新窗口打开</a>
+      </div>
+    </div>
+    <div className="clinical-report-source-image-frame" style={dimensions ? { aspectRatio: sideways ? `${height} / ${width}` : `${width} / ${height}` } : undefined}>
+      <img src={src} alt={`原始资料第 ${pageNumber} 页`} onLoad={event => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+        style={dimensions ? { width: sideways ? `${width / height * 100}%` : '100%', transform: `translate(-50%, -50%) rotate(${rotation}deg)` } : undefined} />
+    </div>
+  </>
+}
+
 function ClinicalReportSource({ report, loading, error }) {
   if (loading) return <div className="clinical-report-source-empty">原始资料加载中…</div>
   if (error) return <div className="clinical-report-source-empty">原始资料加载失败：{error}。请关闭后重新打开。</div>
@@ -136,9 +159,10 @@ function ClinicalReportSource({ report, loading, error }) {
       const pdf = isPdfReportFile(report, rawUrl)
       const image = isImageReportFile(report, rawUrl) || rawUrl.startsWith('data:image/')
       return <div className="clinical-report-source-page" key={`${index}:${rawUrl.slice(0, 80)}`}>
-        <div className="clinical-report-source-page-title">原件 {index + 1} / {rawUrls.length} <a href={src} target="_blank" rel="noopener noreferrer">新窗口打开</a></div>
+        {image && !pdf ? <ClinicalReportSourceImage src={src} pageNumber={index + 1} pageCount={rawUrls.length} />
+          : <div className="clinical-report-source-page-title"><span>原件 {index + 1} / {rawUrls.length}</span><a href={src} target="_blank" rel="noopener noreferrer">新窗口打开</a></div>}
         {pdf ? <iframe src={src} title={`原始资料第 ${index + 1} 页`} />
-          : image ? <img src={src} alt={`原始资料第 ${index + 1} 页`} />
+          : image ? null
             : <div className="clinical-report-source-empty">此文件无法在页面预览，请点击“新窗口打开”。</div>}
       </div>
     })}

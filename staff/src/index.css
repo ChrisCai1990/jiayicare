@@ -327,7 +327,13 @@ textarea.form-control { resize: vertical; }
 .clinical-report-source-page + .clinical-report-source-page { margin-top: 14px; }
 .clinical-report-source-page-title { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: 12px; color: #60756b; }
 .clinical-report-source-page-title a { color: #1e6b50; }
-.clinical-report-source-page img { display: block; width: 100%; height: auto; background: white; }
+.clinical-report-source-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.clinical-report-source-actions button { border: 1px solid #cbded3; border-radius: 5px; padding: 3px 7px; background: white; color: #1e6b50; cursor: pointer; font: inherit; }
+.clinical-report-source-actions button:disabled { opacity: .5; cursor: default; }
+.clinical-report-source-actions button:focus-visible { outline: 2px solid #1e6b50; outline-offset: 2px; }
+.clinical-report-source-image-frame { position: relative; width: 100%; background: white; }
+.clinical-report-source-image-frame img { display: block; width: 100%; height: auto; background: white; }
+.clinical-report-source-image-frame[style] img { position: absolute; top: 50%; left: 50%; max-width: none; height: auto; transform-origin: center; }
 .clinical-report-source-page iframe { width: 100%; height: 65vh; border: 0; background: white; }
 .clinical-report-source-empty { padding: 24px; color: #60756b; font-size: 13px; }
 .report-detail-layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
