@@ -58,12 +58,14 @@ function completedCalendarPeriod(frequency, now = new Date(), anchor = null) {
 }
 
 async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null, assessmentAnchor = plan.confirmedAt, frequencyOverride = '', contextWindow = null }) {
-  if (user.membershipTier !== 'annual' || !user.assignedFamilyDoctor) throw new Error('阶段性评估与复盘仅适用于已分配健康顾问的年度会员');
+  if (!user.assignedFamilyDoctor) throw new Error('阶段性评估与复盘须先分配健康顾问');
   const frequency = ['biweekly', 'monthly', 'quarterly', 'yearly'].includes(frequencyOverride)
     ? frequencyOverride : ['monthly', 'quarterly', 'yearly'].includes(template.content?.frequency)
     ? template.content.frequency : 'quarterly';
   const routing = routingFor(frequency === 'yearly' ? 'comprehensive' : assessmentDomain || template.content?.assessmentDomain || 'comprehensive', assessmentMode);
   if (!user[ROLE_FIELDS[routing.primaryReviewRole]]) throw new Error(`请先分配该客户的${ROLE_LABELS[routing.primaryReviewRole]}`);
+  const advisorNutritionReview = assessmentMode === 'routine' && frequency !== 'yearly' && routing.assessmentDomain === 'comprehensive';
+  if (advisorNutritionReview && !user.assignedNutritionist) throw Object.assign(new Error('请先分配该客户的营养师，以完成生活方式阶段评估'), { statusCode: 409 });
   const basePeriod = periodOverride || periodFor(frequency, new Date(), assessmentAnchor);
   const period = basePeriod && { ...basePeriod, key: assessmentMode === 'routine' ? basePeriod.key : `${basePeriod.key}:${routing.assessmentDomain}` };
   if (!period) return null;
@@ -109,13 +111,12 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
   const content = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 3500, temperature: 0.05, timeoutMs: 90000 }));
   if (!await PhaseAssessmentGeneration.exists({ _id: generationId, token, status: 'generating' })) return null;
   const teamRoles = assessmentMode === 'routine'
-    ? ['healthManager', 'nutritionist', routing.primaryReviewRole, 'familyDoctor'].filter((role, index, roles) =>
-      roles.indexOf(role) === index && user[ROLE_FIELDS[role]])
+    ? advisorNutritionReview ? ['nutritionist', 'familyDoctor'] : [routing.primaryReviewRole]
     : [];
   const item = await PhaseAssessment.create({
     patientId: user._id, annualPlanId: plan._id, templateId: template._id,
     assessmentMode, sourceNutritionPlanId, interventionWeek, ...routing,
-    ...(assessmentMode === 'routine' ? { status: 'team_review', teamRoles: teamRoles.length ? teamRoles : [routing.primaryReviewRole], teamReviews: {} } : {}),
+    ...(assessmentMode === 'routine' ? { status: 'team_review', reviewWorkflow: advisorNutritionReview ? 'advisor_nutrition' : 'single_owner', teamRoles, teamReviews: {} } : {}),
     periodKey: period.key, periodLabel: period.label, content,
     evidenceSources: context.sources || [], templateSnapshot: { name: template.name, frequency, windowDays, focus, instructions, minimumData, outputSections, triggerRule: template.content?.triggerRule || '' },
   });
@@ -168,11 +169,12 @@ async function scanAndCreatePhaseAssessments() {
     const eligibleTemplates = templates.filter(t => String(t.tenantId || '') === String(user.tenantId || ''))
       .filter(t => !t.clientBrand || t.clientBrand === brand)
       .filter(t => t.content?.frequency === frequency || (frequency === 'biweekly' && t.content?.frequency === 'monthly'))
+      .filter(t => !t.content?.assessmentDomain || t.content.assessmentDomain === 'comprehensive')
       .sort((a, b) => Number(b.clientBrand === brand) - Number(a.clientBrand === brand));
     for (const template of eligibleTemplates.slice(0, 1)) {
       const completed = completedCalendarPeriod(frequency, new Date(), gate.anchor);
       if (['monthly', 'quarterly'].includes(frequency) && !completed) continue;
-      try { if (await createAssessment({ plan, user, template, assessmentDomain: pilotFrequency ? user.aiPilotFeatures.stageAssessmentDomain || undefined : undefined, assessmentAnchor: gate.anchor, frequencyOverride: frequency,
+      try { if (await createAssessment({ plan, user, template, assessmentDomain: 'comprehensive', assessmentAnchor: gate.anchor, frequencyOverride: frequency,
         periodOverride: completed && { key: completed.key, label: completed.label }, contextWindow: completed && { start: completed.start, end: completed.end } })) created++; }
       catch (error) { console.error('[phase-assessment] create failed', String(plan.patientId), error.message); }
     }
@@ -192,7 +194,7 @@ function startPhaseAssessmentScheduler() {
 }
 
 function eligibleForAutomaticAssessment(user, now = new Date(), access = null) {
-  if (!user || user.isDeleted || user.membershipTier !== 'annual' || !user.assignedFamilyDoctor) return false;
+  if (!user || user.isDeleted || !user.assignedFamilyDoctor) return false;
   const { legacyAccess, dayOf } = require('./serviceAccess');
   const effective = access || legacyAccess(user, now);
   // 自动AI评估比普通访问更严格：必须有可核验的结束日期。

@@ -22,6 +22,7 @@ const phaseAssessmentSchema = new mongoose.Schema({
   // 新的常规评估与服务复盘共用一条记录；仅本次服务团队成员需要逐岗核对。
   teamRoles: { type: [String], default: [] },
   teamReviews: { type: mongoose.Schema.Types.Mixed, default: {} },
+  reviewWorkflow: { type: String, enum: ['', 'single_owner', 'advisor_nutrition'], default: '' },
   evidenceSources: { type: [String], default: [] },
   templateSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
   clinicalReview: {

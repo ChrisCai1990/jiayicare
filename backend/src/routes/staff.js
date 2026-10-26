@@ -1338,6 +1338,14 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   }
   displayedUser.aiHealthSummary = withReviewTokens(displayedUser.aiHealthSummary);
   displayedUser.lifestyle_data = require('../utils/effectiveLifestyle').effectiveLifestyle(displayedUser);
+  try {
+    const access = await require('../utils/serviceAccess').resolveServiceAccess(user);
+    const rights = await require('../utils/packageFeatureEntitlements').getAiEntitlements(user, access);
+    displayedUser.phaseAssessmentEnabled = Boolean(user.assignedFamilyDoctor && rights.phaseAssessment);
+  } catch (error) {
+    displayedUser.phaseAssessmentEnabled = false;
+    console.error('[phase-assessment] patient eligibility failed', String(user._id), error.message);
+  }
   res.json({ success: true, data: { user: displayedUser, recentFollowUps, recentRecords, insuranceCoverage, insuranceCases } });
 });
 
@@ -15584,20 +15592,28 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const assessmentFilter = { ...reviewQueueFilter(isSuper ? 'superadmin' : role), ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name membershipTier ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
       assessments.filter(item => {
-        if (!item.patientId || item.patientId.membershipTier !== 'annual' || !item.patientId.assignedFamilyDoctor) return false;
+        if (!item.patientId || !item.patientId.assignedFamilyDoctor) return false;
         if (item.status === 'team_review') {
           const targetRole = isSuper ? phaseReviewer(item) : role;
           return !!targetRole && (item.teamRoles || []).includes(targetRole) && item.teamReviews?.[targetRole]?.status !== 'approved'
             && isAssignedPhaseReviewer(item.patientId, req.staff, targetRole);
         }
         return isAssignedPhaseReviewer(item.patientId, req.staff, phaseReviewer(item));
-      }).forEach(item => todos.push({
-        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'team_review' ? `阶段性评估与复盘 · 待${PHASE_ROLE_LABELS[isSuper ? phaseReviewer(item) : role]}核对` : item.status === 'archive_pending' ? '阶段性评估已审核·待归档重试' : item.status === 'rejected' ? '阶段性评估待AI重生成' : `阶段性评估待${PHASE_ROLE_LABELS[phaseReviewer(item)]}审核`, priority: item.status === 'doctor_review' ? 3 : 2,
+      }).forEach(item => {
+        const targetRole = isSuper ? phaseReviewer(item) : role;
+        const teamLabel = item.reviewWorkflow === 'advisor_nutrition'
+          ? targetRole === 'nutritionist' ? '生活方式阶段评估 · 待营养师核对'
+            : targetRole === 'familyDoctor' ? '阶段性复盘 · 待健康顾问总督办'
+              : '阶段性评估 · 待运动复健师核对'
+          : `阶段性评估与复盘 · 待${PHASE_ROLE_LABELS[targetRole]}核对`;
+        todos.push({
+        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'team_review' ? teamLabel : item.status === 'archive_pending' ? '阶段性评估已审核·待归档重试' : item.status === 'rejected' ? '阶段性评估待AI重生成' : `阶段性评估待${PHASE_ROLE_LABELS[phaseReviewer(item)]}审核`, priority: item.status === 'doctor_review' ? 3 : 2,
         patientName: item.patientId?.name || '未知', patientId: String(item.patientId?._id || ''),
         summary: `${item.periodLabel} · ${item.status === 'team_review' ? '请核对本岗位服务情况与问题；没有问题填写“没有问题”' : (item.templateSnapshot?.name || '阶段性评估')}`,
         createdAt: item.createdAt, overdue: (now - new Date(item.createdAt)) > DAY,
         link: `/patients/${item.patientId?._id}?tab=aiReview&phaseAssessmentId=${item._id}`,
-      }));
+        });
+      });
     }
 
     // ── 方案确认后自动生成的随访计划待审核：按 reviewRole 分流（未设置的旧数据默认归健康顾问）──

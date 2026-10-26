@@ -5151,7 +5151,7 @@ export default function PatientDetailPage() {
 
       </details>
 
-      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={user.membershipTier === 'annual' && !!user.assignedFamilyDoctor} />
+      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={user.phaseAssessmentEnabled === true} />
 
       {user.initialArchiveImportPending && <div className="card" style={{padding:16,marginBottom:16}}>初次问卷已保存，档案写入待重试。<button className="btn btn-primary btn-sm" disabled={archiveBusy} onClick={async () => {setArchiveBusy(true);try{await staffAPI.retryInitialArchive(id);await load()}catch(err){toast(err.message)}finally{setArchiveBusy(false)}}}>重新写入初次档案</button></div>}
       {/* Tabs */}
@@ -5169,7 +5169,7 @@ export default function PatientDetailPage() {
           ] },
           { key: 'serviceManagement', label: '服务管理', tabs: [
             { key: 'plans', label: '服务方案' },
-            ...(user.membershipTier === 'annual' && user.assignedFamilyDoctor ? [{ key: 'aiReview', label: '阶段性评估与复盘' }] : []),
+            ...(user.phaseAssessmentEnabled === true ? [{ key: 'aiReview', label: '阶段性评估与复盘' }] : []),
           ] },
           { key: 'serviceExecution', label: '服务执行', tabs: [{ key: 'followups', label: '执行任务' }] },
           { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }] },
@@ -5203,9 +5203,9 @@ export default function PatientDetailPage() {
       </div>}
       {['records','symptoms','medications'].includes(tab) && <InitialArchiveReview user={user} onSaved={load} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} onNavigate={(target,section) => { setTab(target); if(target==='records') setHealthBaseView('profile'); requestAnimationFrame(() => document.getElementById(`core-${section}`)?.scrollIntoView({behavior:'smooth',block:'start'})) }} />}
 
-      {tab === 'aiReview' && (user.membershipTier === 'annual' && user.assignedFamilyDoctor
+      {tab === 'aiReview' && (user.phaseAssessmentEnabled === true
         ? <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />
-        : <div className="card" style={{ padding: 20 }}>阶段性评估与复盘仅适用于已分配健康顾问的年度会员。</div>)}
+        : <div className="card" style={{ padding: 20 }}>阶段性评估与复盘须有有效服务权益及已分配的健康顾问。</div>)}
       {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" onNavigate={target => { if (target === 'screening') { setTab('ai'); setScreeningWorkspaceView('screening'); requestAnimationFrame(() => document.getElementById('annual-review-communication')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) } else setTab(target) }} />}
       {tab === 'mdt' && <MdtPacketPanel patientId={id} user={user} reports={reports} medications={medications} staff={staff} toast={toast} />}
 

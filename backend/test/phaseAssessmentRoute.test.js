@@ -40,7 +40,7 @@ function setup(t, role = 'rehabSpecialist', patch = {}) {
   actor = { _id: ids.reviewer, role };
   const fields = { rehabSpecialist: 'assignedRehabSpecialist', familyDoctor: 'assignedFamilyDoctor', nutritionist: 'assignedNutritionist' };
   const row = { _id: ids.assessment, patientId: ids.patient, __v: 0, primaryReviewRole: role, status: role === 'familyDoctor' ? 'doctor_review' : 'professional_review', content: '作息较规律', auditLog: [], save: async () => {}, ...patch };
-  t.mock.method(User, 'findById', async () => ({ _id: ids.patient, membershipTier: 'annual', assignedFamilyDoctor: ids.reviewer, [fields[role]]: ids.reviewer, aiPilotFeatures: { stageAssessment: true } }));
+  t.mock.method(User, 'findById', async () => ({ _id: ids.patient, membershipTier: 'annual', assignedFamilyDoctor: ids.reviewer, assignedNutritionist: ids.nutrition, [fields[role]]: ids.reviewer, aiPilotFeatures: { stageAssessment: true } }));
   t.mock.method(PhaseAssessment, 'findOne', async () => row);
   t.mock.method(PhaseAssessment, 'findOneAndUpdate', async (filter, update) => {
     if (filter.status !== row.status) return null;
@@ -66,15 +66,25 @@ test('未绑定客户不能查看或修改评估', async t => {
   setup(t); actor._id = '000000000000000000000009';
   assert.equal((await request(t, { action: 'approve', revision: 0 })).status, 403);
 });
-test('非年度会员和未分配健康顾问不进入阶段性评估流程', async t => {
+test('无评估权益和未分配健康顾问不进入阶段性评估流程', async t => {
   setup(t, 'familyDoctor');
   t.mock.method(User, 'findById', async () => ({ _id: ids.patient, membershipTier: 'single', assignedFamilyDoctor: ids.reviewer }));
-  const single = await request(t, null, 'GET');
-  assert.equal(single.status, 403); assert.match(single.body.message, /年度会员/);
+  packageFeatures.getAiEntitlements.mock.restore();
+  t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: false }));
+  const noRight = await request(t, null, 'GET');
+  assert.equal(noRight.status, 403); assert.match(noRight.body.message, /阶段性评估.*权益/);
   User.findById.mock.restore();
   t.mock.method(User, 'findById', async () => ({ _id: ids.patient, membershipTier: 'annual', assignedFamilyDoctor: null }));
   const noAdvisor = await request(t, null, 'GET');
   assert.equal(noAdvisor.status, 403); assert.match(noAdvisor.body.message, /健康顾问/);
+});
+test('档案未标年度但有有效评估权益时可查看阶段性评估', async t => {
+  const row = setup(t, 'familyDoctor');
+  t.mock.method(User, 'findById', async () => ({ _id: ids.patient, membershipTier: undefined, assignedFamilyDoctor: ids.reviewer }));
+  t.mock.method(PhaseAssessment, 'find', () => ({ sort: () => ({ limit: () => ({ lean: async () => [row] }) }) }));
+  const result = await request(t, null, 'GET');
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.data.length, 1);
 });
 test('综合评估由顾问直接确认归档', async t => {
   const row = setup(t, 'familyDoctor'); let archives = 0;
@@ -94,6 +104,47 @@ test('团队复盘逐岗必须填写问题，没有问题需写明，全部核�
   assert.equal((await request(t, { action: 'approve', revision: 0 }, 'PATCH')).status, 400);
   assert.equal((await request(t, { action: 'approve', revision: 0, reviewNote: '没有问题' }, 'PATCH')).status, 200);
   assert.equal(row.teamReviews.familyDoctor.note, '没有问题');
+  assert.equal(row.status, 'finalized');
+});
+
+test('新常规复盘固定单岗，不追加其他岗位待办', async t => {
+  setup(t, 'familyDoctor', { status: 'team_review', reviewWorkflow: 'single_owner', teamRoles: ['familyDoctor'], teamReviews: {} });
+  const result = await request(t, { action: 'include_role', role: 'nutritionist', revision: 0 });
+  assert.equal(result.status, 409);
+  assert.match(result.body.message, /单一岗位/);
+});
+
+test('常规综合复盘先由营养师核对，再由健康顾问总确认', async t => {
+  const row = setup(t, 'familyDoctor', { status: 'team_review', reviewWorkflow: 'advisor_nutrition', teamRoles: ['nutritionist', 'familyDoctor'], teamReviews: {}, markModified: () => {} });
+  t.mock.method(ServiceRecord, 'findOneAndUpdate', async () => ({ _id: 'archive' }));
+  const early = await request(t, { action: 'approve', revision: 0, reviewNote: '总复盘' });
+  assert.equal(early.status, 409);
+  actor = { _id: ids.nutrition, role: 'nutritionist' };
+  const nutrition = await request(t, { action: 'approve', revision: 0, reviewNote: '饮食与运动记录已核对' });
+  assert.equal(nutrition.status, 200, JSON.stringify(nutrition.body));
+  assert.equal(row.teamReviews.nutritionist.status, 'approved');
+  actor = { _id: ids.reviewer, role: 'familyDoctor' };
+  const advisor = await request(t, { action: 'approve', revision: 0, reviewNote: '总复盘已确认' });
+  assert.equal(advisor.status, 200, JSON.stringify(advisor.body));
+  assert.equal(row.status, 'finalized');
+});
+
+test('常规综合复盘仅允许顾问按需转交运动复健师', async t => {
+  const row = setup(t, 'familyDoctor', { status: 'team_review', reviewWorkflow: 'advisor_nutrition', teamRoles: ['nutritionist', 'familyDoctor'], teamReviews: {}, markModified: () => {} });
+  t.mock.method(User, 'findById', async () => ({ _id: ids.patient, assignedFamilyDoctor: ids.reviewer, assignedNutritionist: ids.nutrition, assignedRehabSpecialist: ids.reviewer }));
+  t.mock.method(ServiceRecord, 'findOneAndUpdate', async () => ({ _id: 'archive' }));
+  assert.equal((await request(t, { action: 'include_role', role: 'psychologist', revision: 0 })).status, 400);
+  const result = await request(t, { action: 'include_role', role: 'rehabSpecialist', revision: 0 });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.deepEqual(row.teamRoles, ['nutritionist', 'familyDoctor', 'rehabSpecialist']);
+  actor = { _id: ids.nutrition, role: 'nutritionist' };
+  assert.equal((await request(t, { action: 'approve', revision: 0, reviewNote: '生活方式已核对' })).status, 200);
+  actor = { _id: ids.reviewer, role: 'familyDoctor' };
+  assert.equal((await request(t, { action: 'approve', revision: 0, reviewNote: '总复盘' })).status, 409);
+  actor.role = 'rehabSpecialist';
+  assert.equal((await request(t, { action: 'approve', revision: 0, reviewNote: '运动功能已核对' })).status, 200);
+  actor.role = 'familyDoctor';
+  assert.equal((await request(t, { action: 'approve', revision: 0, reviewNote: '总复盘' })).status, 200);
   assert.equal(row.status, 'finalized');
 });
 
@@ -179,7 +230,7 @@ test('手动年度总评使用有效执行起点，提前确认不能提前进�
 });
 test('可信续约有效时档案旧到期日不阻断手动评估', async t => {
   generation(t, { continuitySource: { previousPlanId: 'old' } });
-  t.mock.method(User, 'findById', async () => ({ _id: ids.patient, membershipTier: 'annual', assignedFamilyDoctor: ids.reviewer, serviceExpiry: '2020-01-01', aiPilotFeatures: { stageAssessment: true } }));
+  t.mock.method(User, 'findById', async () => ({ _id: ids.patient, membershipTier: 'annual', assignedFamilyDoctor: ids.reviewer, assignedNutritionist: ids.nutrition, serviceExpiry: '2020-01-01', aiPilotFeatures: { stageAssessment: true } }));
   t.mock.method(periodic, 'annualPeriodicGate', actualPeriodicGate);
   t.mock.method(require('../src/utils/annualServicePeriod'), 'annualExecutionGate', async () => ({ allowed: true, anchor: '2020-01-01' }));
   const result = await request(t, {}, 'POST'); assert.equal(result.status, 201, JSON.stringify(result.body)); assert.equal(aiCalls, 1);

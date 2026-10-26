@@ -147,8 +147,8 @@ async function caseReviewPatientOr404(req, res) {
 async function patientOr404(req, res) {
   const user = await caseReviewPatientOr404(req, res);
   if (!user) return null;
-  if (user.membershipTier !== 'annual' || !user.assignedFamilyDoctor) {
-    res.status(403).json({ success: false, message: '阶段性评估与复盘仅适用于已分配健康顾问的年度会员' }); return null;
+  if (!user.assignedFamilyDoctor) {
+    res.status(403).json({ success: false, message: '阶段性评估与复盘须先分配健康顾问' }); return null;
   }
   const assignedFields = [...Object.values(ROLE_FIELDS), 'assignedHealthManager', 'assignedHealthPlanner', 'assignedSpecialist', 'assignedMedicalAssistant', 'assignedPsychologist'];
   if (req.staff.role !== 'superadmin' && !assignedFields.some(field => user[field] && String(user[field]) === String(req.staff._id))) {
@@ -270,7 +270,7 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
       return res.status(409).json({ success: false, message: '本周期已经生成阶段性评估', data: existing });
     }
     res.status(201).json({ success: true, data: item });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 
 router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, async (req, res) => {
@@ -283,8 +283,10 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
       const role = req.staff.role;
       const canInvite = role === 'superadmin' || (role === 'familyDoctor' && isAssignedReviewer(user, req.staff, 'familyDoctor'));
       if (req.body.action === 'include_role') {
+        if (item.reviewWorkflow === 'single_owner') return res.status(409).json({ success: false, message: '常规阶段性复盘由单一岗位负责，不增加其他岗位待办' });
         if (!canInvite) return res.status(403).json({ success: false, message: '请由该客户的团队协调岗位邀请其他服务成员参与复盘' });
         const addedRole = String(req.body.role || '');
+        if (item.reviewWorkflow === 'advisor_nutrition' && addedRole !== 'rehabSpecialist') return res.status(400).json({ success: false, message: '常规复盘仅可按需转交已分配的运动复健师参与' });
         if (!['psychologist', 'rehabSpecialist', 'tcmDoctor'].includes(addedRole) || !user[ROLE_FIELDS[addedRole]]) return res.status(400).json({ success: false, message: '该岗位尚未加入本客户服务团队，请先完成服务人员分配' });
         if (item.teamReviews?.familyDoctor?.status === 'approved') return res.status(409).json({ success: false, message: '健康顾问已完成总复盘，不能再增加参与岗位' });
         item.teamRoles = [...new Set([...(item.teamRoles || []), addedRole])];
@@ -297,7 +299,7 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
       const reviewerRole = role === 'superadmin' ? String(req.body.role || (item.teamRoles || []).find(value => item.teamReviews?.[value]?.status !== 'approved') || '') : role;
       if (!(item.teamRoles || []).includes(reviewerRole) || !isAssignedReviewer(user, req.staff, reviewerRole)) return res.status(403).json({ success: false, message: '当前岗位未参与该客户的本次评估复盘' });
       if (item.teamReviews?.[reviewerRole]?.status === 'approved') return res.status(409).json({ success: false, message: '本岗位已核对，请刷新查看最新进度' });
-      if (reviewerRole === 'familyDoctor' && (item.teamRoles || []).some(value => value !== 'familyDoctor' && item.teamReviews?.[value]?.status !== 'approved')) return res.status(409).json({ success: false, message: '请先等待健管专员、营养师及受邀团队成员完成各自核对' });
+      if (reviewerRole === 'familyDoctor' && (item.teamRoles || []).some(value => value !== 'familyDoctor' && item.teamReviews?.[value]?.status !== 'approved')) return res.status(409).json({ success: false, message: item.reviewWorkflow === 'advisor_nutrition' ? '请先等待营养师及受邀运动复健师完成核对' : '请先等待其他参与岗位完成各自核对' });
       const note = String(req.body.reviewNote || '').trim();
       if (!note) return res.status(400).json({ success: false, message: '请填写本岗位的情况与问题；没有问题请填写“没有问题”' });
       const now = new Date();
