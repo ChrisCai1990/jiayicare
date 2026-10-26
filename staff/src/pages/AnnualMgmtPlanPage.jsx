@@ -979,6 +979,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const renderPlanAction = action => {
     const entry = visibleModuleEntries.find(item => item.key === action.key)
     const def = annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name, patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name, currentPlanId, dirty)
+    if (action.record.reviewGroupVersion === 1) def.fields = def.fields.filter(field => field.key !== 'items')
     if (action.issueId) def.fields = def.fields.filter(field => field.key !== 'goal' && (field.key !== 'completionStandard' || action.record.completionStandard))
     const changes = pendingExecutionChanges.filter(change => change.key === action.key && (!change.after?.title || change.after.title === (action.record.items || action.record.name || action.record.department || action.record.standardPlanName)))
     const visitCandidates = VISIT_DATE_FIELDS[action.key] ? matchingVisitLeaders(moduleData, action.key, action.index) : []
@@ -988,6 +989,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
     return <div key={`${action.key}:${action.index}`} style={{ marginTop: 8 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 4 }}>{action.date || '时间待确认'}{action.record.hospital ? ` · ${action.record.hospital}` : ''}{action.record.department ? ` · ${action.record.department}` : ''}</div>
+      {!!action.record.reviewItems?.length && <div style={{ fontSize: 13, color: '#254C3B', marginBottom: 5 }}>本次复查项目：{action.record.reviewItems.join('、')}</div>}
       {entry.def.multi ? <RecordEditor def={{ ...def, summaryKey: '__displayTitle' }} record={{ ...action.record, __displayTitle: action.title }} index={action.index} total={Math.max(2, planActions.length)} executionReviewChanges={changes}
         visitCandidates={visitCandidates} onShareVisit={() => {
           if (visitCandidates.length === 1) { selectVisitLeader(visitCandidates[0].key); return }

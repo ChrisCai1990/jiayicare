@@ -9,6 +9,7 @@ const schema = new mongoose.Schema({
   title: { type: String, required: true },
   direction: { type: String, enum: ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'ongoing_management'], required: true },
   note: { type: String, default: '' },
+  reviewPlan: { type: mongoose.Schema.Types.Mixed, default: { kind: 'none', intervalMonths: null, items: [] } },
   sourceSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   reviewedAt: { type: Date, required: true },

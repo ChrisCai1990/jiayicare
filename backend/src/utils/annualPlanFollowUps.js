@@ -170,6 +170,7 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.completionStandard && `完成标准：${rec.completionStandard}`,
         rec.purpose && `目的：${rec.purpose}`,
         rec.items && `项目：${rec.items}`,
+        rec.reviewItems?.length && `本次复查项目：${rec.reviewItems.join('、')}`,
         rec.name && `项目：${rec.name}`,
         rec.institution && `机构：${rec.institution}`,
         rec.brand && `品牌：${rec.brand}`,

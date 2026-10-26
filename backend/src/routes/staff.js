@@ -9275,7 +9275,16 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
         return res.status(409).json({ success: false, message: '该检查项已有管理决定，请刷新后核对' });
       }
     }
-    const update = { reportId: report._id, itemId, title, direction, note, status: 'active', withdrawnAt: null, withdrawnBy: null, withdrawalReason: '', sourceSnapshot: {
+    let reviewPlan;
+    try { reviewPlan = require('../utils/annualReviewPlan').reviewPlanFromInput(req.body.reviewPlan); }
+    catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+    if (reviewPlan.kind !== 'recheck' && require('../utils/annualReviewPlan').legacyReviewNote(note)) {
+      return res.status(400).json({ success: false, message: '补充说明包含复查期限，请选择“安排一次复查”并逐项填写项目' });
+    }
+    if (reviewPlan.kind === 'recheck' && !['ongoing_management', 'abnormal_followup'].includes(direction)) {
+      return res.status(400).json({ success: false, message: '复查计划仅适用于“持续管理或观察”或“定期复查”方向；其他方向请单独确认行动' });
+    }
+    const update = { reportId: report._id, itemId, title, direction, note, reviewPlan, status: 'active', withdrawnAt: null, withdrawnBy: null, withdrawalReason: '', sourceSnapshot: {
         reportTitle: report.title || '', checkDate: report.checkDate || '', reportUpdatedAt: report.updatedAt,
         item: source.kind === 'screening' ? sourceItem : null,
       }, reviewedBy: req.staff._id, reviewedAt: new Date() };
@@ -13521,15 +13530,21 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const management = closedLoop ? await require('../utils/annualManagementEvidence').load(user._id, year) : { evidence: [], stale: [] };
     if (management.stale.length) return res.status(409).json({ success: false, message: `以下管理方向的来源报告已变化，请重新核对：${management.stale.join('、')}` });
     if (management.unresolved?.length) return res.status(409).json({ success: false, message: `已审核AI健康信息整理还有待完善检查未由顾问逐项处理：${management.unresolved.join('、')}` });
+    const confirmedReviews = require('../utils/annualReviewPlan').reviewGroups(management.evidence);
+    const generationToday = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    if (confirmedReviews.some(group => !group.dueDate || group.dueDate < generationToday)) return res.status(409).json({ success: false, message: '已有复查期限无效或已过，请顾问重新核对复查间隔和项目后再生成' });
     for (const source of management.evidence) {
       const direction = source.content.direction;
-      const category = direction === 'ongoing_management' ? 'personalized' : direction;
-      if (direction === 'ongoing_management' && !personalizedStandardFollowUpCatalog.some(item => require('../utils/annualPlanPresentation').internalDaily({ standardPlanName: item.name }))) {
+      if (source.content.legacyReviewNote) return res.status(409).json({ success: false, message: `“${source.content.problem}”的顾问备注写有复查期限，请在原管理决定中补齐复查间隔和具体项目后重新生成` });
+      const review = source.content.reviewPlan?.kind === 'recheck';
+      const category = review ? 'abnormal_followup' : direction === 'ongoing_management' ? 'personalized' : direction;
+      if (direction === 'ongoing_management' && !review && !personalizedStandardFollowUpCatalog.some(item => require('../utils/annualPlanPresentation').internalDaily({ standardPlanName: item.name }))) {
         return res.status(409).json({ success: false, message: '年度管理规则尚未选择现有【日常跟进】标准随访模板，请在Admin的“可调用的个性化方案”中配置后再生成' });
       }
       if (category !== 'monitoring' && !availableAnnualFollowUpCatalog.some(item => item.category === category)) {
         return res.status(409).json({ success: false, message: `“${source.content.problem}”选择的管理方向尚未配置现有标准随访模板，请在Admin模板中配置后再生成` });
       }
+      if (review && !allowedKeys.includes('abnormal_followup')) return res.status(409).json({ success: false, message: `“${source.content.problem}”需要复查，但当前模板未启用定期复查板块` });
       if (direction !== 'ongoing_management' && !allowedKeys.includes(direction)) {
         return res.status(409).json({ success: false, message: `“${source.content.problem}”的管理方向未在当前年度方案服务版本启用，请核对模板` });
       }
@@ -13666,6 +13681,7 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
 【Admin统一标准随访方案库】
 ${standardFollowUpPromptCatalog.length ? JSON.stringify(standardFollowUpPromptCatalog) : '暂无启用方案；不得生成方案'}
 必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。每条management_issue均为顾问已确认的管理事项，evidenceCoverage须标记included，并在顾问所选方向生成有sourceIds关联的行动，不可改成deferred。多个问题的执行日期和管理类别一致时，应归入同日同类安排；确属同一次就诊或同一项工作人员跟进时只生成一条行动，sourceIds关联全部问题，并逐项说明处理内容。不同检查项目、不同就医机构或科室仍保留独立行动，不得为了归组把无关检查写成一项或混用检查原因。顾问标记为ongoing_management（持续管理或观察）的问题，必须在templateNodes中关联已选的【日常跟进】标准模板，作为工作人员内部跟进，不向客户展示该随访；客户仍可看到年度管理目标。同日同模板的多个持续管理问题请合成一条日常跟进，用sourceIds关联全部对应问题，并在具体方案中逐项写清工作人员跟进内容，不要为每个问题重复输出同一模板。日常跟进只能关联ongoing_management的问题，不能把就医、完善检查、定期复查等其他方向的问题合并进去。其他templateNodes只能从category=personalized的Admin已选模板中选择，并且必须符合当前策略侧重点和客户证据；没有合适模板返回空数组。不得调用未列出的随访模板，不得虚构方案名称或ID。
+已确认reviewPlan.kind=recheck的问题由系统在生成后按复查月份归为一次abnormal_followup行动，项目和来源以顾问填写内容为准；AI不要再为这些问题生成日常跟进、就医、完善检查或年度体检重复事项，也不要增删复查项目。没有结构化复查计划的持续管理事项才使用【日常跟进】。复查到期日由系统计算，顾问审核后确定实际日期。
 
 【Admin已确认的统一事项字段】
 ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
@@ -13754,7 +13770,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 13, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, management: management.evidence, confirmedReportIssues, confirmedCaseReviews: confirmedCaseReviews.map(({ messages, ...review }) => review), discussedScheduling, professionalAssessments, continuity: preparation.continuity || null, dentalGift, previousVisits, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 14, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, management: management.evidence, confirmedReportIssues, confirmedCaseReviews: confirmedCaseReviews.map(({ messages, ...review }) => review), discussedScheduling, professionalAssessments, continuity: preparation.continuity || null, dentalGift, previousVisits, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;

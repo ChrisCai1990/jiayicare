@@ -73,13 +73,20 @@ function validateAnnualRaw(raw, catalog, evidence = [], allowedKeys = null) {
       const decision = coverage.find(item => item.sourceId === source.id);
       if (decision?.status !== 'included') throw fail(`已纳入管理的问题“${source.content?.problem || ''}”未进入方案，请顾问核对来源或调整管理方向`);
       const direction = source.content?.direction;
-      const destination = direction === 'ongoing_management' ? 'templateNodes' : direction;
+      const destination = source.content?.reviewPlan?.kind === 'recheck' ? 'abnormal_followup'
+        : direction === 'ongoing_management' ? 'templateNodes' : direction;
       const selected = raw[destination];
       const destinationRows = Array.isArray(selected) ? selected : selected && typeof selected === 'object' ? [selected] : [];
       const linked = destinationRows.filter(row => row.sourceIds?.includes(source.id));
       if (!linked.length) throw fail(`“${source.content?.problem || ''}”未按顾问选择的管理方向生成，请核对后重试`);
-      if (direction === 'ongoing_management' && !linked.some(row => require('./annualPlanPresentation').internalDaily({ standardPlanName: sources.get(String(row.standardPlanId || ''))?.name }))) {
+      if (direction === 'ongoing_management' && destination === 'templateNodes' && !linked.some(row => require('./annualPlanPresentation').internalDaily({ standardPlanName: sources.get(String(row.standardPlanId || ''))?.name }))) {
         throw fail(`“${source.content?.problem || ''}”未关联工作人员的日常跟进模板，请核对后重试`);
+      }
+      if (destination === 'abnormal_followup' && source.content?.reviewPlan?.kind === 'recheck'
+        && !linked.some(row => row.reviewGroupVersion === 1
+          && row.time === require('./annualReviewPlan').reviewGroups(evidence).find(group => group.sourceIds.includes(source.id))?.dueDate
+          && source.content.reviewPlan.items.every(item => row.reviewItems?.includes(item)))) {
+        throw fail(`“${source.content?.problem || ''}”的复查项目或期限未按顾问确认内容生成`);
       }
     }
     const ongoingIds = new Set(evidence.filter(item => item.content?.direction === 'ongoing_management').map(item => item.id));
@@ -87,6 +94,20 @@ function validateAnnualRaw(raw, catalog, evidence = [], allowedKeys = null) {
       if (!(row.sourceIds || []).some(id => ongoingIds.has(id))) throw fail('日常跟进只用于顾问已确认的持续管理事项');
       if ((row.sourceIds || []).some(id => id.startsWith('management_issue:') && !ongoingIds.has(id)))
         throw fail('日常跟进关联了非持续管理的问题，请按顾问选择的方向分别生成行动');
+    }
+    const reviewIds = new Set(evidence.filter(item => item.content?.reviewPlan?.kind === 'recheck').map(item => item.id));
+    if (reviewIds.size) {
+      for (const [key, value] of Object.entries(raw)) {
+        if (key === 'abnormal_followup' || key === 'evidenceCoverage') continue;
+        const records = Array.isArray(value) ? value : value?.standardPlanId ? [value] : [];
+        if (records.some(row => row.sourceIds?.some(id => reviewIds.has(id))))
+          throw fail('已确认的复查来源被重复分配到其他年度行动');
+      }
+      const annual = raw.annual_checkup || {};
+      const reviewItems = new Set(evidence.filter(item => reviewIds.has(item.id)).flatMap(item => item.content.reviewPlan.items));
+      if (String(annual.focus || '').split(/[\n；;]/).some(line => [...reviewItems].some(item => item.length >= 2 && line.includes(item)))
+        && (!String(annual.futureRepeatReason || '').trim() || !annual.futureRepeatSourceId || reviewIds.has(annual.futureRepeatSourceId)))
+        throw fail('年度体检重复列入已安排的复查项目，缺少独立再次检查依据');
     }
     for (const row of rows) if (row.standardPlanId && (!Array.isArray(row.sourceIds) || !row.sourceIds.length || row.sourceIds.some(id => !valid.has(id)))) throw fail('AI事项缺少有效来源关联');
   }
