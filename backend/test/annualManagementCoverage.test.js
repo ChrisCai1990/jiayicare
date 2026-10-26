@@ -43,6 +43,33 @@ test('多项目报告的旧报告级决定需由顾问重新指定检查项', as
   assert.deepEqual(result.staleDecisionIds, ['decision']);
 });
 
+test('报告其他内容更新后，已纳入的检查项内容未变仍可生成年度方案', async () => {
+  const original = new Date('2026-10-20T00:00:00Z');
+  const item = { itemId: 'lung-ct', name: '肺部CT', diagnosis: '肺结节', status: 'abnormal' };
+  const decision = { _id: 'decision', title: '肺结节', direction: 'abnormal_followup', reportId: 'report', itemId: 'lung-ct',
+    sourceKey: 'screening:report:lung-ct', sourceSnapshot: { reportUpdatedAt: original, checkDate: '2026-10-19', item } };
+  const report = { _id: 'report', title: '体检报告', checkDate: '2026-10-19',
+    updatedAt: new Date('2026-10-25T00:00:00Z'), reportItems: [
+      { ...item, classificationReviewedAt: new Date('2026-10-25T00:00:00Z') },
+      { itemId: 'kidney', name: '肾脏超声', diagnosis: '肾结晶' },
+    ] };
+  const Decision = { find: () => ({ sort: () => ({ lean: async () => [decision] }) }) };
+  const Report = { findOne: () => ({ select: () => ({ lean: async () => report }) }) };
+  const User = { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) };
+  const CheckupReview = { find: () => ({ lean: async () => [] }) };
+  const dependencies = { Decision, Report, User, CheckupReview };
+  const unchanged = await load('patient', 2026, dependencies);
+  assert.deepEqual(unchanged.stale, []);
+  assert.deepEqual(unchanged.evidence.map(row => row.id), ['management_issue:decision']);
+
+  report.reportItems[0].diagnosis = '肺结节增大';
+  const changed = await load('patient', 2026, dependencies);
+  assert.deepEqual(changed.stale, ['肺结节']);
+  assert.deepEqual(changed.staleDecisionIds, ['decision']);
+  report.reportItems.shift();
+  assert.deepEqual((await load('patient', 2026, dependencies)).stale, ['肺结节']);
+});
+
 test('撤销旧版归属后不再阻止年度方案生成', async () => {
   let selector;
   const Decision = { find: query => { selector = query; return { sort: () => ({ lean: async () => [] }) }; } };
@@ -58,13 +85,13 @@ test('同报告同问题同方向已归到检查项时，旧整份报告归属�
   const legacy = { _id: 'legacy', title: '脂肪肝', direction: 'ongoing_management', reportId: 'report',
     sourceKey: 'screening_report:report', sourceSnapshot: { reportUpdatedAt: updatedAt } };
   const current = { _id: 'item', title: '脂肪肝', direction: 'ongoing_management', reportId: 'report', itemId: 'liver-ultrasound',
-    sourceKey: 'screening:report:liver-ultrasound', sourceSnapshot: { reportUpdatedAt: updatedAt, item: { name: '肝脏超声' } } };
+    sourceKey: 'screening:report:liver-ultrasound', sourceSnapshot: { reportUpdatedAt: updatedAt, item: { itemId: 'liver-ultrasound', name: '肝脏超声' } } };
   assert.deepEqual(effectiveDecisions([legacy, current]).map(row => row._id), ['item']);
   assert.equal(effectiveDecisions([legacy, { ...current, title: '肾结晶' }]).length, 2);
   assert.equal(effectiveDecisions([legacy, { ...current, direction: 'abnormal_followup' }]).length, 2);
   const Decision = { find: () => ({ sort: () => ({ lean: async () => [legacy, current] }) }) };
   const Report = { findOne: () => ({ select: () => ({ lean: async () => ({ _id: 'report', title: '体检报告', updatedAt, reportItems: [
-    { screeningKey: 'liver', name: '肝脏超声' }, { screeningKey: 'kidney', name: '肾脏超声' },
+    { itemId: 'liver-ultrasound', screeningKey: 'liver', name: '肝脏超声' }, { screeningKey: 'kidney', name: '肾脏超声' },
   ] }) }) }) };
   const User = { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) };
   const result = await load('patient', 2026, { Decision, Report, User });

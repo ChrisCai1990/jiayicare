@@ -10,6 +10,35 @@ function effectiveDecisions(decisions = []) {
   });
 }
 
+// 报告补图、归类审核等保存也会更新整份报告的 updatedAt，不能据此撤销顾问对检查项的决定。
+const CLINICAL_ITEM_FIELDS = [
+  'name', 'value', 'unit', 'referenceRange', 'status', 'itemType', 'bodyPart',
+  'specimen', 'modality', 'reviewIssues', 'findings', 'diagnosis', 'conclusion',
+  'examDate', 'institution',
+];
+function clinicalItem(item) {
+  return CLINICAL_ITEM_FIELDS.map(key => item?.[key] ?? null);
+}
+function currentSourceItem(report, decision) {
+  const snapshot = decision.sourceSnapshot?.item;
+  const items = report.reportItems || [];
+  if (snapshot?.itemId) return items.find(item => String(item.itemId) === String(snapshot.itemId));
+  const id = String(decision.itemId || '');
+  return items.find(item => [item.itemId, item.name, item.screeningKey, ...(item.screeningKeys || [])]
+    .some(value => String(value || '') === id));
+}
+function sourceChanged(report, decision) {
+  if (!report) return true;
+  const snapshot = decision.sourceSnapshot || {};
+  if (decision.sourceKey === `screening_report:${decision.reportId}`) {
+    return String(report.updatedAt) !== String(snapshot.reportUpdatedAt);
+  }
+  if (!snapshot.item) return true;
+  const current = currentSourceItem(report, decision);
+  return !current || String(report.checkDate || '') !== String(snapshot.checkDate || '')
+    || JSON.stringify(clinicalItem(current)) !== JSON.stringify(clinicalItem(snapshot.item));
+}
+
 async function load(patientId, year, dependencies = {}) {
   const Decision = dependencies.Decision || require('../models/AnnualManagementDecision');
   const Report = dependencies.Report || require('../models/MedicalReport');
@@ -20,7 +49,7 @@ async function load(patientId, year, dependencies = {}) {
   for (const decision of decisions) {
     const report = await Report.findOne({ _id: decision.reportId, user: patientId, audit_status: 'audited' })
       .select('_id title checkDate updatedAt reportItems').lean();
-    const changed = !report || String(report.updatedAt) !== String(decision.sourceSnapshot?.reportUpdatedAt);
+    const changed = sourceChanged(report, decision);
     if (changed) { stale.push(decision.title); staleDecisionIds.push(String(decision._id)); continue; }
     if (decision.sourceKey === `screening_report:${report._id}`) {
       const groups = new Set((report.reportItems || []).map(item => item.screeningKey || item.screeningKeys?.[0]).filter(Boolean));
