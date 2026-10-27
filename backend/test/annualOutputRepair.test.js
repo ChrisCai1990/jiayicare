@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { normalizeAnnualOutput, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, missingManagementActions, normalizeConfirmedManagement, managementActionRepairPrompt } = require('../src/utils/annualOutputRepair');
+const { normalizeAnnualOutput, bindConfiguredAnnualTemplate, sourceLinkRepairPrompt, annualCorrectionPrompt, validateOrRepairAnnual, missingManagementActions, normalizeConfirmedManagement, managementActionRepairPrompt } = require('../src/utils/annualOutputRepair');
 const { validateAnnualRaw } = require('../src/utils/annualGenerationConsistency');
 const { validateClinicalRules } = require('../src/utils/annualClinicalRules');
 const keys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
@@ -40,6 +40,17 @@ test('string-list focus is losslessly normalized and passes actual validators wi
   for (const focus of [{ a: '不猜结构' }, ['检查', { bad: true }]]) {
     const input = { annual_checkup: { focus } }; assert.equal(normalizeAnnualOutput(input), input);
   }
+});
+test('annual focus with omitted template ID uses the sole Admin configured annual template', async () => {
+  const raw = rawPlan();
+  delete raw.annual_checkup.standardPlanId;
+  const bind = value => bindConfiguredAnnualTemplate(value, catalog);
+  const result = await validateOrRepairAnnual(raw, validate, () => assert.fail('no AI retry needed'), bind);
+  assert.equal(result.annual_checkup.standardPlanId, 'annual_checkup');
+  assert.equal(raw.annual_checkup.standardPlanId, undefined);
+  assert.deepEqual(result.annual_checkup.sourceIds, ['missing:1']);
+  assert.equal(bindConfiguredAnnualTemplate(raw, [...catalog, { id: 'other-annual', category: 'annual_checkup' }]), raw);
+  assert.equal(bindConfiguredAnnualTemplate({ ...raw, annual_checkup: { ...raw.annual_checkup, standardPlanId: 'invalid' } }, catalog).annual_checkup.standardPlanId, 'invalid');
 });
 test('observed list with exclusion note is repaired once, not silently discarded or allowed as duplicate', async () => {
   const raw = rawPlan(); raw.annual_checkup.focus.push('检查甲——已在近期安排，年度不重复安排');
