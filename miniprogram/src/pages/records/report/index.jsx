@@ -81,7 +81,6 @@ export default function HealthReportPage() {
     });
   }, [report, period]);
 
-  const score = report?.healthScore ?? report?.score;
   const bpRecords = records.filter(record => record.type === 'bloodPressure');
   const bpByArm = ['左臂', '右臂'].map(arm => ({ arm, record: bpRecords.find(record => bloodPressureArm(record) === arm) })).filter(item => item.record);
 
@@ -95,7 +94,7 @@ export default function HealthReportPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>健康报告</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>健康记录汇总</Text>
         <View style={{ width: '28px' }} />
       </View>
 
@@ -124,37 +123,15 @@ export default function HealthReportPage() {
         <>
           <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
             <View>
-              <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{report.periodLabel || (period === 'month' ? '本月报告' : '本周报告')}</Text>
+              <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{report.periodLabel || (period === 'month' ? '本月记录汇总' : '本周记录汇总')}</Text>
               <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', margin: '4px 0' }}>{report.dateRange}</Text>
               {!!report.taskCompletion && (
                 <Text style={{ fontSize: '12px', color: colors.textSecondary }}>☑ {report.taskCompletion.completed}/{report.taskCompletion.total} 任务完成（{report.taskCompletion.rate}%）</Text>
               )}
             </View>
-            <View style={{
-              width: '72px', height: '72px', borderRadius: '36px', border: `5px solid ${score >= 80 ? colors.success : score >= 60 ? colors.warning : colors.danger}`,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Text style={{ fontSize: '22px', fontWeight: 800, color: score >= 80 ? colors.success : score >= 60 ? colors.warning : colors.danger }}>{score ?? '--'}</Text>
-              <Text style={{ fontSize: '10px', color: colors.textMuted }}>分</Text>
-            </View>
           </View>
 
-          {report.highlights?.length > 0 && (
-            <View style={{ marginBottom: `${spacing.md}px` }}>
-              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>本期亮点</Text>
-              <View style={{ backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
-                {report.highlights.map((h, i) => {
-                  const icon = h.type === 'danger' ? '⚠️' : h.type === 'warning' ? '⚡' : '✅';
-                  return (
-                    <View key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginBottom: i < report.highlights.length - 1 ? '8px' : 0 }}>
-                      <Text style={{ fontSize: '14px' }}>{icon}</Text>
-                      <Text style={{ flex: 1, fontSize: '13px', color: colors.textSecondary, lineHeight: '19px' }}>{h.text}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          )}
+          <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '12px', lineHeight: '20px', marginBottom: '12px' }}>本页汇总已记录的数据；数值升降不代表健康状况改善或恶化。</Text>
 
           {report.metrics?.length > 0 && (
             <View style={{ marginBottom: `${spacing.md}px` }}>
@@ -162,8 +139,8 @@ export default function HealthReportPage() {
               {report.metrics.map((m, i) => {
                 const key = m.type || m.key || m.label;
                 const points = chartData[key];
-                const statusColor = m.status === 'normal' ? colors.success : m.status === 'warning' ? colors.warning : colors.danger;
-                const trendColor = m.trend === 'down' ? colors.success : m.trend === 'up' ? colors.warning : colors.textMuted;
+                const statusColor = colors.textPrimary;
+                const trendColor = colors.textSecondary;
                 return (
                   <View key={i} style={{ backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.md}px`, marginBottom: '8px', boxShadow: shadow.card }}>
                     <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -216,12 +193,6 @@ export default function HealthReportPage() {
             </View>
           )}
 
-          {Array.isArray(report.summary) && report.summary.map((item, i) => (
-            <View key={i} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '8px', boxShadow: shadow.card, marginTop: `${spacing.sm}px` }}>
-              <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{item.label || item.title}</Text>
-              <Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.desc || item.value}</Text>
-            </View>
-          ))}
         </>
       )}
       </View>

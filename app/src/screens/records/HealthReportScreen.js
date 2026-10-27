@@ -10,25 +10,10 @@ import ShareSheet from '../../components/ShareSheet';
 
 const PERIOD_TABS = ['周报', '月报'];
 
-function HighlightItem({ item }) {
-  const config = {
-    good:    { icon: 'checkmark-circle', color: colors.success },
-    warning: { icon: 'warning',          color: colors.warning },
-    danger:  { icon: 'alert-circle',     color: colors.danger  },
-  };
-  const c = config[item.type] || config.good;
-  return (
-    <View style={styles.highlightItem}>
-      <Ionicons name={c.icon} size={16} color={c.color} style={{ marginTop: 1 }} />
-      <Text style={styles.highlightText}>{item.text}</Text>
-    </View>
-  );
-}
-
 function MetricRow({ m }) {
-  const statusColor = m.status === 'normal' ? colors.success : m.status === 'warning' ? colors.warning : colors.danger;
+  const statusColor = colors.textPrimary;
   const trendIcon = m.trend === 'down' ? 'trending-down' : m.trend === 'up' ? 'trending-up' : 'remove';
-  const trendColor = m.trend === 'down' ? colors.success : m.trend === 'up' ? colors.warning : colors.textMuted;
+  const trendColor = colors.textSecondary;
   return (
     <View style={styles.metricRow}>
       <Text style={styles.metricLabel}>{m.label}</Text>
@@ -40,26 +25,6 @@ function MetricRow({ m }) {
           <Text style={[styles.trendTagText, { color: trendColor }]}>{m.delta}</Text>
         </View>
       </View>
-    </View>
-  );
-}
-
-function ScoreRing({ score, delta }) {
-  const color = score >= 80 ? colors.success : score >= 60 ? colors.warning : colors.danger;
-  return (
-    <View style={styles.scoreRingWrap}>
-      <View style={[styles.scoreRing, { borderColor: color }]}>
-        <Text style={[styles.scoreRingNum, { color }]}>{score}</Text>
-        <Text style={styles.scoreRingLabel}>分</Text>
-      </View>
-      {delta != null && (
-        <View style={[styles.deltaBadge, { backgroundColor: delta >= 0 ? colors.success + '15' : colors.danger + '15' }]}>
-          <Ionicons name={delta >= 0 ? 'trending-up' : 'trending-down'} size={12} color={delta >= 0 ? colors.success : colors.danger} />
-          <Text style={[styles.deltaText, { color: delta >= 0 ? colors.success : colors.danger }]}>
-            {delta >= 0 ? '+' : ''}{delta}
-          </Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -122,7 +87,7 @@ export default function HealthReportScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>健康报告</Text>
+        <Text style={styles.pageTitle}>健康记录汇总</Text>
         <TouchableOpacity
           style={styles.shareIconBtn}
           onPress={() => setShowShare(true)}
@@ -182,18 +147,7 @@ export default function HealthReportScreen({ navigation }) {
                 rate={report.taskCompletion.rate}
               />
             </View>
-            <ScoreRing score={report.healthScore} delta={report.scoreDelta} />
           </View>
-
-          {/* Highlights */}
-          {report.highlights && report.highlights.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>本期亮点</Text>
-              <View style={styles.highlightCard}>
-                {report.highlights.map((h, i) => <HighlightItem key={i} item={h} />)}
-              </View>
-            </View>
-          )}
 
           {/* Metrics */}
           {report.metrics && report.metrics.length > 0 && (
