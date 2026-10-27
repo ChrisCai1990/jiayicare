@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('./utils/accountDeletionStartupGuard').assertStartupAllowed();
 require('express-async-errors'); // 让 Express 4 自动捕获 async 路由里的异常
 const express = require('express');
 const cors = require('cors');
@@ -7,10 +8,10 @@ const path = require('path');
 const fs = require('fs');
 const connectDB = require('./config/db');
 
+async function startApplication() {
+// Verify the connection and deletion ledger before importing routes or starting jobs.
+await connectDB();
 const app = express();
-
-// 连接数据库
-connectDB();
 
 // 中间件 — CORS 白名单（生产域名 + 本地开发端口）
 // 2026-07-07 修复：CORS 中间件此前挂载在静态文件服务(/api/uploads)之后，导致上传的图片/PDF等
@@ -210,4 +211,10 @@ app.listen(PORT, () => {
   require('./utils/combinedMedicationReminder').startMedicationReminderScheduler();
   require('./utils/appointmentReminderScheduler').startAppointmentReminderScheduler();
   require('./utils/checkupAppointmentReminderScheduler').startCheckupAppointmentReminderScheduler();
+});
+
+}
+startApplication().catch(() => {
+  console.error('[startup] application_start_failed');
+  process.exit(1);
 });

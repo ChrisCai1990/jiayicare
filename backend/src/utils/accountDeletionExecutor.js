@@ -19,7 +19,7 @@ async function prepareJob({jobs,request,manifest}) {
 }
 async function executeDeletion({jobs,requests,models,jobId,runtime,now=()=>new Date()}) {
  // All production adapters must exist BEFORE claiming or changing any customer data.
- for(const method of ['assertFrozen','verifyManifest','archiveFinancialData','eraseFiles','eraseOtherCopies','verifyExternalErasure'])
+ for(const method of ['assertFrozen','verifyManifest','archiveFinancialData','eraseFiles','eraseOtherCopies','verifyExternalErasure','recordCompletion'])
   if(typeof runtime?.[method]!=='function') fail('EXECUTOR_ADAPTER_MISSING');
  const original=await jobs.findOne({_id:jobId});
  if(!original || digest(original.manifest)!==original.manifestHash) fail('JOB_MANIFEST_INVALID');
@@ -30,6 +30,8 @@ async function executeDeletion({jobs,requests,models,jobId,runtime,now=()=>new D
  if(request.status==='completed') {
   if(!original.completionEvidence || request.completionEvidence!==original.completionEvidence) fail('COMPLETION_EVIDENCE_MISMATCH');
   if(await models.User.collection.findOne({_id:subject.userId})) fail('ACCOUNT_IDENTITY_REMAINS');
+  if(await runtime.assertFrozen(subject)!==true) fail('WRITER_FENCE_NOT_HELD');
+  if((await runtime.recordCompletion({userId:subject.userId,tenantId:subject.tenantId,requestId:request._id,completionEvidence:request.completionEvidence,completedAt:request.completedAt},{fence:()=>runtime.assertFrozen(subject)}))?.verified!==true) fail('COMPLETION_LEDGER_UNVERIFIED');
   await jobs.updateOne({_id:jobId,completionEvidence:request.completionEvidence},{$set:{state:'completed',completedAt:request.completedAt,leaseToken:''}});
   return {completed:true,evidence:request.completionEvidence};
  }
@@ -55,6 +57,7 @@ async function executeDeletion({jobs,requests,models,jobId,runtime,now=()=>new D
   if((await requests.updateOne({_id:request._id,status:{$ne:'completed'}},{$set:{status:'processing'}})).matchedCount!==1) fail('REQUEST_CHANGED');
   // Adapters are idempotent and must reverify durable state even on a retry. A checkpoint
   // alone does not prove that a prior file deletion or encrypted archive is still valid.
+  if((await jobs.updateOne(lease,{$set:{destructiveStartedAt:original.destructiveStartedAt||now()}})).matchedCount!==1) fail('DELETION_FENCE_LOST');
   for(const [stage,method] of [['finance','archiveFinancialData'],['files','eraseFiles'],['otherCopies','eraseOtherCopies']]) {
    await fence();const proof=await runtime[method](original.manifest,{subject,fence});await checkpoint(stage,proof);
   }
@@ -76,12 +79,18 @@ async function executeDeletion({jobs,requests,models,jobId,runtime,now=()=>new D
   await fence();
   if(!(await auditResidualReferences({models,subject})).clear) fail('PERSONAL_REFERENCES_REMAIN');
   if((await runtime.verifyExternalErasure(original.manifest,{subject,fence}))?.verified!==true) fail('EXTERNAL_ERASURE_UNVERIFIED');
-  const completedAt=now();
   const stored=await jobs.findOne(lease);
-  const evidence=digest({jobId:String(jobId),requestId:String(request._id),manifestHash:original.manifestHash,checkpoints:stored.checkpoints,completedAt});
+  const completionProof=original.completionProof || {jobId:String(jobId),requestId:String(request._id),manifestHash:original.manifestHash,checkpoints:stored.checkpoints,completedAt:now()};
+  const completedAt=completionProof.completedAt;
+  const evidence=digest(completionProof);
+  if(original.completionEvidence && original.completionEvidence!==evidence) fail('COMPLETION_EVIDENCE_MISMATCH');
   // Persist the exact evidence before publishing the receipt so a crash between the
   // final two writes can be reconciled without repeating destructive stages.
-  if((await jobs.updateOne(lease,{$set:{completionEvidence:evidence,completedAt}})).matchedCount!==1) fail('DELETION_FENCE_LOST');
+  if((await jobs.updateOne(lease,{$set:{completionEvidence:evidence,completedAt,completionProof}})).matchedCount!==1) fail('DELETION_FENCE_LOST');
+  // Independent restore ledger is durable BEFORE the public completed receipt.
+  await fence();
+  const recorded=await runtime.recordCompletion({userId:subject.userId,tenantId:subject.tenantId,requestId:request._id,completionEvidence:evidence,completedAt},{fence});
+  if(recorded?.verified!==true) fail('COMPLETION_LEDGER_UNVERIFIED');
   // Both writes are idempotent; do not delete the receipt identity with the account.
   const done=await requests.updateOne({_id:request._id,user:subject.userId,tenantId:subject.tenantId,status:{$ne:'completed'}},{$set:{status:'completed',completedAt,completionEvidence:evidence}});
   if(done.matchedCount!==1) fail('COMPLETION_RECEIPT_WRITE_FAILED');

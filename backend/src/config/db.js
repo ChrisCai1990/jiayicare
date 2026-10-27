@@ -4,12 +4,15 @@ const connectDB = async () => {
   try {
     // Explicit deployment/test control. Set before connect/model registration;
     // this does not make HTTP routes or the database read-only.
+    const guard = require('../utils/accountDeletionStartupGuard');
+    guard.assertStartupAllowed();
     const schemaWritesEnabled = process.env.STARTUP_SCHEMA_WRITES_ENABLED !== 'false';
     if (!schemaWritesEnabled) {
       mongoose.set('autoIndex', false);
       mongoose.set('autoCreate', false);
     }
     const conn = await mongoose.connect(process.env.MONGODB_URI);
+    await guard.verifyRestoredDatabase({ db: conn.connection.db, objectId: id => new mongoose.Types.ObjectId(id) });
     console.log(`✅ MongoDB 连接成功: ${conn.connection.host}`);
     if (!schemaWritesEnabled) {
       console.log('[startup] automatic schema writes disabled; indexes require reviewed migration');

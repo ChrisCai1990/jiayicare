@@ -1,0 +1,2 @@
+{"testRoot": "/var/tmp/jiayicare-deletion-isolated-6cc26e99e0af4925b7d0eaadbbea65d8", "exitCode": 0, "networkNamespace": true, "output": "TAP version 13\n# Subtest: real API starts only after database/ledger verification; restored account prevents listening\nok 1 - real API starts only after database/ledger verification; restored account prevents listening\n  ---\n  duration_ms: 3986.947244\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 4662.546641\n"}
+

@@ -10,9 +10,11 @@ const schema=new mongoose.Schema({
  // prove that the previous execution process has stopped while the write fence is held.
  leaseToken:{type:String,default:'',select:false},
  leaseStartedAt:{type:Date,default:null},
+ destructiveStartedAt:{type:Date,default:null},
  checkpoints:{type:mongoose.Schema.Types.Mixed,default:{}},
  failureCode:{type:String,default:''},
  completedAt:{type:Date,default:null},
+ completionProof:{type:mongoose.Schema.Types.Mixed,default:null,select:false},
  completionEvidence:{type:String,default:''},
 },{timestamps:true});
 schema.index({tenantId:1,state:1,createdAt:1});
