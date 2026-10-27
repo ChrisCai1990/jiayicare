@@ -36,8 +36,33 @@ test('all years and records remain pending; independent nutrition records cannot
   assert.equal(summaryTodos(user, type => type === 'summary_review', now).length, 2);
 });
 test('root-only summaries preserve prior approvals and ignore empty dimensions', () => {
-  assert.equal(summaryTodos({ _id: 'u', aiHealthSummary: { ...doctor, doctorApprovedAt: now } }, () => true).length, 0);
+  assert.equal(summaryTodos({ _id: 'u', aiHealthSummary: { ...doctor, doctorApprovedAt: now } }, () => true, now)
+    .filter(todo => todo.type === 'summary_review').length, 0);
   assert.equal(summaryTodos({ _id: 'u', aiHealthSummary: { ...doctor, sections: {} } }, () => true).length, 0);
+});
+test('doctor approval hands off lifestyle generation and the draft replaces the handoff', async () => {
+  const clock = new Date('2026-10-27T12:00:00Z');
+  const approval = '2026-10-27T08:00:00Z';
+  const reviewedDoctor = { ...doctor, doctorApprovedAt: approval };
+  const user = { _id: 'u', name: '会员', aiHealthSummary: { byYear: { 2026: { records: [reviewedDoctor] } } } };
+  const nutritionTodos = () => summaryTodos(user, type => type.startsWith('lifestyle_'), clock);
+  assert.deepEqual(nutritionTodos().map(todo => todo.type), ['lifestyle_generate']);
+  assert.match(nutritionTodos()[0].link, /aiAction=generate/);
+  const { summaryTarget } = await import('../../staff/src/utils/workbenchTargets.js');
+  assert.deepEqual(summaryTarget(user.aiHealthSummary, nutritionTodos()[0].link.split('?')[1]),
+    { year: '2026', scope: 'nutrition', index: null, missing: false });
+  assert.equal(summaryTodos(user, type => type === 'summary_review', clock).length, 0);
+  user.aiHealthSummary.byYear[2026].records.unshift({ scope: 'nutrition', generatedAt: '2026-10-27T09:00:00Z',
+    sections: { lifestyle_assessment: { summary: '草稿' } } });
+  assert.deepEqual(nutritionTodos().map(todo => todo.type), ['lifestyle_review']);
+  user.aiHealthSummary.byYear[2026].records[0].nutritionApprovedAt = '2026-10-27T10:00:00Z';
+  assert.deepEqual(nutritionTodos(), []);
+  user.aiHealthSummary.byYear[2026].records[0].generatedAt = '2026-10-26T09:00:00Z';
+  user.aiHealthSummary.byYear[2026].records[0].nutritionApprovedAt = '2026-10-26T10:00:00Z';
+  assert.deepEqual(nutritionTodos().map(todo => todo.type), ['lifestyle_generate']);
+  user.aiHealthSummary.byYear[2026].records.unshift({ ...doctor, doctorApprovedAt: null });
+  assert.deepEqual(nutritionTodos(), []);
+  assert.deepEqual(summaryTodos(user, type => type === 'lifestyle_generate', new Date('2027-01-01T12:00:00Z')), []);
 });
 test('assigned KF handoff survives membership reassignment without leaking to other staff', () => {
   const todo = { type: 'wecom_kf_handoff', assignedTo: 'a', patientId: 'other' };

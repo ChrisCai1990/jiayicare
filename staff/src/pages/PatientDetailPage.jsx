@@ -2621,7 +2621,7 @@ export default function PatientDetailPage() {
     setAiTodoTargetMissing(!!target?.missing)
     if (!target) return
     setAiYear(target.year); setScreeningWorkspaceView('analysis'); setAiAnalysisView(target.scope)
-    if (!target.missing) setAiRecordIndex(v => ({ ...v, [target.scope]: target.index }))
+    if (!target.missing && target.index !== null) setAiRecordIndex(v => ({ ...v, [target.scope]: target.index }))
   }, [location.search, data?.user?.aiHealthSummary])
   const [lastRegeneratedItem, setLastRegeneratedItem] = useState('')
   const [aiSourceGroup, setAiSourceGroup] = useState(null) // { title, ids }

@@ -25,6 +25,7 @@ const TYPE_CONFIG = {
   archive_review:  { icon: '🗂️', label: '健康档案问卷待审核', color: '#0077B6', priority: 3 },
   summary_review:  { icon: '🩺', label: '健康信息整理待核对', color: '#22A06B', priority: 2 },
   lifestyle_review:{ icon: '🌿', label: '生活方式评估待审核', color: '#16A34A', priority: 3 },
+  lifestyle_generate:{ icon: '🌿', label: '待生成生活方式分析', color: '#16A34A', priority: 3 },
   dietary_survey_review: { icon: '🥗', label: '膳食调查问卷待复核', color: '#16A34A', priority: 3 },
   trend_review:    { icon: '📈', label: 'AI趋势分析待审核', color: '#22A06B', priority: 3 },
   plan_review:     { icon: '📝', label: 'AI管理方案待审核', color: '#22A06B', priority: 3 },
@@ -76,7 +77,7 @@ const PAGE_SIZE = 5
 const TODO_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','outpatient_target_review','report_interpretation','report_followup_review','health_course_review','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
-  { key: 'plan', label: '方案与评估', types: ['annual_execution_review','annual_plan_input_review','annual_plan_customer_response','trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
+  { key: 'plan', label: '方案与评估', types: ['annual_execution_review','annual_plan_input_review','annual_plan_customer_response','lifestyle_generate','trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
   { key: 'risk', label: '风险与异常', types: ['package_history_review','chat_followup_failed','assignment_attention','risk_review','risk_event_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
   { key: 'content', label: '内容与安排', types: ['annual_service_interest','geo_content_review','checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]

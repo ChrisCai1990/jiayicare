@@ -14912,6 +14912,7 @@ const TODO_REVIEW_ROLE = {
   risk_review:          'familyDoctor',
   medication_review:    'familyDoctor',
   lifestyle_review:     'nutritionist',
+  lifestyle_generate:   'nutritionist',
   dietary_survey_review:'nutritionist',
   supplement_review:    'nutritionist',
   nutrition_plan_review:'nutritionist',
@@ -15425,7 +15426,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
 
     // ── 健康顾问 / 营养师：AI 汇总分析按维度拆分审核 ──
-    if (can('summary_review') || can('lifestyle_review')) {
+    if (can('summary_review') || can('lifestyle_review') || can('lifestyle_generate')) {
       // summary_review(健康顾问)和lifestyle_review(营养师)各自归属字段不同，若都能审(如superadmin)则不限制；
       // 否则用当前角色对应的会员范围（myPatientIds 已按 role 算好）
       const sumFilter = { aiHealthSummary: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
