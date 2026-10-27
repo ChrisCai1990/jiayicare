@@ -65,6 +65,7 @@ app.get('/api/health', (req, res) => {
 
 // 路由
 app.use('/api/auth',    require('./routes/auth'));
+app.use('/api/account-deletion', require('./routes/accountDeletion'));
 app.use('/api/push-devices', require('./routes/pushDevices'));
 app.use('/api/metabolic-pilot', require('./routes/metabolicPilot'));
 app.use('/api/payments', require('./routes/payments'));

@@ -1,0 +1,517 @@
+// ─── API Service（小程序版） ─────────────────────────────────────
+// 移植自 app/src/services/api.js。核心差异：
+//  - 小程序不能用 fetch/localStorage，改用 Taro.request + Taro.setStorageSync/getStorageSync
+//  - 其余 API 分组/方法/路径/参数与 app 端保持一致（同一套后端）
+import Taro from '@tarojs/taro';
+import { isNativeApp } from '../utils/appBridge';
+import { guardPurchaseRequest } from '../utils/purchaseAvailability';
+import { apiBase, isReviewEnvironment, serviceOrigin, storageKey } from '../utils/reviewEnvironment';
+
+
+const BASE_URL = apiBase;
+
+// 后端返回的图片等资源常是相对路径(/api/uploads/xxx.png)，小程序 <Image> 需要完整 URL 才能加载。
+const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
+export function mediaUrl(u) {
+  if (!u) return u;
+  if (isReviewEnvironment) {
+    const url = new URL(u, serviceOrigin);
+    if (url.origin !== serviceOrigin && url.origin !== 'https://jiaycare.com') return '';
+    if (url.pathname.startsWith('/api/')) return apiBase + url.pathname.slice(4) + url.search;
+    return url.pathname.startsWith('/review-api/') ? serviceOrigin + url.pathname + url.search : '';
+  }
+  if (/^https?:\/\//.test(u)) {
+    if (serviceOrigin !== 'https://jiaycare.com' && /^https:\/\/jiaycare\.com\/api\/uploads\//.test(u)) {
+      return serviceOrigin + u.slice('https://jiaycare.com'.length);
+    }
+    return u;
+  }
+  return API_ORIGIN + (u.startsWith('/') ? u : '/' + u);
+}
+
+let _token = null;
+let _onUnauthorized = null; // 401 回调，由 AuthContext 注册
+
+export function setUnauthorizedHandler(fn) { _onUnauthorized = fn; }
+
+export function loadToken() {
+  try { _token = Taro.getStorageSync(storageKey('jy_token')) || null; } catch { _token = null; }
+  return _token;
+}
+
+export function saveToken(token) {
+  _token = token;
+  try { Taro.setStorageSync(storageKey('jy_token'), token); } catch {}
+}
+
+export function clearToken() {
+  _token = null;
+  try {
+    Taro.removeStorageSync(storageKey('jy_token'));
+    Taro.removeStorageSync(storageKey('jy_user'));
+  } catch {}
+}
+
+async function request(path, options = {}) {
+  guardPurchaseRequest(path, options.method || 'GET');
+  const { method = 'GET', body, timeout: customTimeout, header, sessionToken, isolatedSession = false } = options;
+  const headers = { 'Content-Type': 'application/json', ...(header || {}) };
+  // App.componentDidShow may request unread counts before AuthProvider effects run.
+  // Restore the persisted token here as well so that startup requests cannot race
+  // with session hydration and accidentally behave as logged-out requests.
+  const requestToken = isolatedSession ? sessionToken : loadToken();
+  if (requestToken) headers['Authorization'] = `Bearer ${requestToken}`;
+
+  let data;
+  if (body) {
+    try { data = JSON.parse(body); } catch { data = body; }
+  }
+
+  try {
+    const res = await Taro.request({
+      url: `${BASE_URL}${path}`,
+      method,
+      data,
+      header: headers,
+      timeout: customTimeout || 15000,
+    });
+
+    const resData = res.data || {};
+
+    // Another tab or a new login may have replaced this request's session.
+    // Never publish its data, refresh its credential, or clear the new login.
+    if (!isolatedSession && requestToken && loadToken() !== requestToken) {
+      throw Object.assign(new Error('账号已切换，请重新加载页面'), { code: 'SESSION_CHANGED' });
+    }
+
+    // 服务端会把旧的短期登录凭证平滑升级为可撤销的持久会话。
+    const refreshedToken = res.header?.['X-Auth-Token'] || res.header?.['x-auth-token'];
+    if (!isolatedSession && refreshedToken && requestToken && _token === requestToken) saveToken(refreshedToken);
+
+    if (res.statusCode === 401) {
+      // 登录前或旧凭证发出的并发请求不能清掉刚保存的新凭证。
+      if (!isolatedSession && requestToken && _token === requestToken) {
+        clearToken();
+        if (_onUnauthorized) _onUnauthorized();
+      }
+      throw Object.assign(new Error('登录已过期，请重新登录'), { status: 401 });
+    }
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const errMsg = (resData.message || '') + (resData.error ? `（${resData.error}）` : '') || `请求失败(${res.statusCode})`;
+      const err = new Error(errMsg);
+      err.status = res.statusCode;
+      if (resData.code) err.code = resData.code;
+      throw err;
+    }
+    return resData;
+  } catch (err) {
+    if (err.errMsg && /timeout/i.test(err.errMsg)) throw new Error('请求超时，请检查网络后重试');
+    throw err;
+  }
+}
+
+// Capture the credential once so delayed permission/cleanup cannot use a new account.
+export function pushSessionAPI(sessionToken) {
+  const scoped = (path, options = {}) => request(path, { ...options, sessionToken, isolatedSession: true });
+  return {
+    capabilities: () => scoped('/push-devices/capabilities'),
+    register: device => scoped('/push-devices', { method: 'PUT', body: JSON.stringify(device) }),
+    unregister: async device => {
+      try { return await scoped('/push-devices', { method: 'DELETE', body: JSON.stringify(device) }); }
+      catch (error) { if (error.status !== 401) throw error; } // Revoked sessions are excluded by the sender.
+    },
+  };
+}
+
+export const metabolicPilotAPI = {
+  get: () => request('/metabolic-pilot/me'),
+  action: data => request('/metabolic-pilot/me', {method:'POST',body:JSON.stringify(data)}),
+};
+// ── Auth ─────────────────────────────────────────────────────────
+export const authAPI = {
+  oneClickStatus: () => request('/auth/one-click/status'),
+  oneClickLogin: async (accessToken) => {
+    let deviceInfo = {};
+    let inviteCode = '';
+    try { deviceInfo = Taro.getSystemInfoSync?.() || {}; } catch {}
+    try { inviteCode = Taro.getStorageSync(storageKey('jy_invite_code')) || ''; } catch {}
+    const result = await request('/auth/one-click/login', { method: 'POST', body: JSON.stringify({ accessToken, deviceInfo, inviteCode }) });
+    if (result?.success && inviteCode) { try { Taro.removeStorageSync(storageKey('jy_invite_code')); } catch {} }
+    return result;
+  },
+  reviewLogin: (username, password) => request('/auth/review-account/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  reviewCapabilities: () => request('/auth/review-account/capabilities'),
+  sendCode: (phone) =>
+    request('/auth/send-code', { method: 'POST', body: JSON.stringify({ phone }) }),
+
+  login: async (phone, code, { bindWechat = true } = {}) => {
+    let wxLoginCode = '';
+    let deviceInfo = {};
+    let inviteCode = '';
+    if (bindWechat && process.env.TARO_ENV === 'weapp') {
+      try { wxLoginCode = (await Taro.login()).code || ''; } catch {}
+    }
+    try { deviceInfo = Taro.getSystemInfoSync?.() || {}; } catch {}
+    try { inviteCode = Taro.getStorageSync(storageKey('jy_invite_code')) || ''; } catch {}
+    const result = await request('/auth/login', { method: 'POST', body: JSON.stringify({ phone, code, wxLoginCode, deviceInfo, inviteCode }) });
+    if (result?.success && inviteCode) { try { Taro.removeStorageSync(storageKey('jy_invite_code')); } catch {} }
+    return result;
+  },
+
+  // 小程序登录：不再走网页授权 code，而是 Taro.login() 拿 code 后传给 /auth/wechat-mp
+  wechatLogin: () =>
+    Taro.login().then(({ code }) => {
+      if (!code) throw new Error('微信登录失败，请重试');
+      let inviteCode = '';
+      let deviceInfo = {};
+      try { inviteCode = Taro.getStorageSync(storageKey('jy_invite_code')) || ''; } catch {}
+      try { deviceInfo = Taro.getSystemInfoSync?.() || {}; } catch {}
+      return request('/auth/wechat-mp', { method: 'POST', body: JSON.stringify({ code, inviteCode, deviceInfo }) })
+        .then((result) => {
+          if (result?.success && inviteCode) { try { Taro.removeStorageSync(storageKey('jy_invite_code')); } catch {} }
+          return result;
+        });
+    }),
+  wechatPhoneLogin: (phoneCode) =>
+    Taro.login().then(({ code: loginCode }) => {
+      if (!loginCode || !phoneCode) throw new Error('微信手机号授权失败，请重试');
+      let inviteCode = '';
+      let deviceInfo = {};
+      try { inviteCode = Taro.getStorageSync(storageKey('jy_invite_code')) || ''; } catch {}
+      try { deviceInfo = Taro.getSystemInfoSync?.() || {}; } catch {}
+      return request('/auth/wechat-mp/phone-login', {
+        method: 'POST', body: JSON.stringify({ loginCode, phoneCode, inviteCode, deviceInfo }),
+      }).then((result) => {
+        if (result?.success && inviteCode) { try { Taro.removeStorageSync(storageKey('jy_invite_code')); } catch {} }
+        return result;
+      });
+    }),
+  bindWechat: () =>
+    Taro.login().then(({ code }) => {
+      if (!code) throw new Error('微信身份获取失败，请重试');
+      return request('/auth/wechat-mp/bind', { method: 'POST', body: JSON.stringify({ code }) });
+    }),
+  sessionActivity: (event = 'heartbeat') => request('/auth/session/activity', { method: 'POST', body: JSON.stringify({ event }) }),
+};
+
+// ── User ─────────────────────────────────────────────────────────
+export const userAPI = {
+  getMembershipBenefits: () => request('/user/membership-benefits'),
+  referrals: () => request('/user/referrals'),
+  getMe: () => request('/user/me'),
+  getHealthFund: () => request('/user/health-fund'),
+  getDashboard: () => request('/user/dashboard'),
+  updateMe: (data) => request('/user/me', { method: 'PUT', body: JSON.stringify(data) }),
+  onboarding: (data) => request('/user/onboarding', { method: 'POST', body: JSON.stringify(data) }),
+  sendOnboardingCode: (phone) => request('/auth/send-code', { method: 'POST', body: JSON.stringify({ phone }) }),
+  getReport: (period) => request(`/user/report?period=${period || 'week'}`),
+  sendChangeCode: (newPhone) => request('/user/change-phone/send-code', { method: 'POST', body: JSON.stringify({ newPhone }) }),
+  changePhone: (newPhone, code) => request('/user/change-phone', { method: 'POST', body: JSON.stringify({ newPhone, code }) }),
+  getAiHealthSummary: () => request('/user/ai-health-summary'),
+  postAiHealthSummary: () => request('/user/ai-health-summary', { method: 'POST' }),
+  getAiRiskAssessment: () => request('/user/ai-risk-assessment'),
+  postAiRiskAssessment: () => request('/user/ai-risk-assessment', { method: 'POST' }),
+  getScreeningYearlySummary: (year) => request(`/user/screening-yearly-summary${year ? `?year=${year}` : ''}`),
+  requestRenewal: (data) => request('/user/renewal-request', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// ── Health Records ────────────────────────────────────────────────
+export const recordsAPI = {
+  recognizeBloodPressure: (image) => request('/records/recognize-blood-pressure', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
+  recognizeBloodSugar: (image) => request('/records/recognize-blood-sugar', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
+  recognizeWaist: (image) => request('/records/recognize-waist', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
+  recognizeWeight: (image) => request('/records/recognize-weight', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
+  list: (params = {}) => {
+    const q = Object.keys(params).filter(k => params[k] != null && params[k] !== '')
+      .map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
+    return request(`/records${q ? '?' + q : ''}`);
+  },
+  trend: (type) => request(`/records/trend/${type}`),
+  create: (data) => request('/records', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/records/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/records/${id}`, { method: 'DELETE' }),
+  todayStatus: () => request('/records/today-status'),
+  checkinCalendar: (days = 90) => request(`/records/checkin-calendar?days=${days}`),
+};
+
+// ── Medications ───────────────────────────────────────────────────
+export const medicationsAPI = {
+  list: (status) => request(`/medications${status ? '?status=' + status : ''}`),
+  create: (data) => request('/medications', { method: 'POST', body: JSON.stringify(data) }),
+  checkin: (id) => request(`/medications/${id}/checkin`, { method: 'POST' }),
+  stop: (id, data) => request(`/medications/${id}/stop`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id) => request(`/medications/${id}`, { method: 'DELETE' }),
+};
+
+// ── Supplements ───────────────────────────────────────────────────
+export const supplementsAPI = {
+  list: (status) => request(`/supplements${status ? '?status=' + status : ''}`),
+  create: (data) => request('/supplements', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/supplements/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  checkin: (id) => request(`/supplements/${id}/checkin`, { method: 'POST' }),
+  stop: (id, data) => request(`/supplements/${id}/stop`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id) => request(`/supplements/${id}`, { method: 'DELETE' }),
+};
+
+// ── Tasks ─────────────────────────────────────────────────────────
+export const tasksAPI = {
+  careReports: id => request(`/tasks/care-flow/${id}/reports`),
+  addCareReport: (id,data) => request(`/tasks/care-flow/${id}/reports`,{method:'POST',body:JSON.stringify(data)}),
+  declareCareReports: (id,data) => request(`/tasks/care-flow/${id}/reports/declaration`,{method:'POST',body:JSON.stringify(data)}),
+  completeCareReports: id => request(`/tasks/care-flow/${id}/reports/complete`,{method:'POST',body:JSON.stringify({confirmed:true})}),
+  list: () => request('/tasks'),
+  setStatus: (id, status) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  complete: (id) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'completed' }) }),
+  uncomplete: (id) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'pending' }) }),
+  create: (data) => request('/tasks', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// ── Messages ──────────────────────────────────────────────────────
+export const messagesAPI = {
+  transcribe: (id, consentVersion) => request(`/messages/${encodeURIComponent(id)}/transcribe`, { method: 'POST', body: { consentVersion }, timeout: 65000 }),
+  list: () => request('/messages'),
+  unreadCount: () => request('/messages/unread-count'),
+  markRead: (id) => request(`/messages/${id}/read`, { method: 'PATCH' }),
+  markAllRead: () => request('/messages/read-all', { method: 'PATCH' }),
+  markBatchRead: (messageIds, pushRecordIds) => request('/messages/read-batch', {
+    method: 'PATCH', body: { messageIds, pushRecordIds },
+  }),
+  send: (to, content, extra = {}) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content, ...extra }) }),
+  submitNutritionAnalysis: (content) => request('/messages/nutrition-analysis', { method: 'POST', body: JSON.stringify({ content }) }),
+  getThread: (role) => request(`/messages/thread/${role}`),
+  recall: (id) => request(`/messages/${id}/recall`, { method: 'PATCH' }),
+};
+
+// ── Push Records (医护端推送) ─────────────────────────────────────
+export const pushRecordsAPI = {
+  list: () => request('/user/push-records'),
+  markRead: (id) => request(`/user/push-records/${id}/read`, { method: 'PATCH' }),
+  pay: (id, data) => request(`/user/push-records/${id}/pay`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// ── Reminders ────────────────────────────────────────────────────
+export const remindersAPI = {
+  list: () => request('/reminders'),
+  setMonitoringConsent: (enabled) => request('/reminders/monitoring-consent', { method: 'PATCH', body: JSON.stringify({ enabled }) }),
+  toggle: (id) => request(`/reminders/${id}/toggle`, { method: 'PATCH' }),
+  create: (data) => request('/reminders', { method: 'POST', body: JSON.stringify(data) }),
+  delete: (id) => request(`/reminders/${id}`, { method: 'DELETE' }),
+};
+
+// ── Medical Reports ───────────────────────────────────────────────
+export const reportsAPI = {
+  list: () => request('/reports'),
+  byCategory: () => request('/reports/by-category'),
+  get: (id) => request(`/reports/${id}`),
+  create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
+  delete: (id) => request(`/reports/${id}`, { method: 'DELETE' }),
+  parseAI: (id) => request(`/reports/${id}/parse-ai`, { method: 'POST' }),
+  downloadOriginal: (id, index, mimeType = '') => {
+    const ext = mimeType === 'application/pdf' ? 'pdf'
+      : mimeType.includes('png') ? 'png'
+      : mimeType.includes('webp') ? 'webp' : 'jpg';
+    const filePath = process.env.TARO_ENV === 'h5' ? '' : `${Taro.env.USER_DATA_PATH}/report-${id}-${index}.${ext}`;
+    return Taro.request({
+      url: `${BASE_URL}/reports/${id}/file/${index}`,
+      header: _token ? { Authorization: `Bearer ${_token}` } : {},
+      responseType: 'arraybuffer',
+      timeout: 60000,
+    }).then(async (res) => {
+      if (res.statusCode !== 200 || !(res.data instanceof ArrayBuffer) || res.data.byteLength === 0) {
+        throw new Error(`原始文件读取失败（${res.statusCode || '网络异常'}）`);
+      }
+      if (process.env.TARO_ENV === 'h5') {
+        return URL.createObjectURL(new Blob([res.data], { type: mimeType || (ext === 'pdf' ? 'application/pdf' : `image/${ext === 'jpg' ? 'jpeg' : ext}`) }));
+      }
+      await new Promise((resolve, reject) => {
+        Taro.getFileSystemManager().writeFile({
+          filePath,
+          data: res.data,
+          success: resolve,
+          fail: (err) => reject(new Error(err?.errMsg || '本地文件写入失败')),
+        });
+      });
+      return filePath;
+    });
+  },
+  // 使用普通 request 逐图上传，避免微信 uploadFile 域名白名单未同步时请求在客户端被拦截。
+  uploadBase64: (content, mimeType) => request('/reports/upload-base64', {
+    method: 'POST',
+    body: JSON.stringify({ content, mimeType }),
+    timeout: 60000,
+  }),
+  // 保留文件上传能力供其他已配置 uploadFile 域名的环境使用。
+  uploadFile: (filePath) =>
+    Taro.uploadFile({
+      url: `${BASE_URL}/reports/upload`,
+      filePath,
+      name: 'file',
+      header: _token ? { Authorization: `Bearer ${_token}` } : {},
+    }).then((res) => {
+      let data;
+      try { data = JSON.parse(res.data); } catch { data = res.data; }
+      if (res.statusCode < 200 || res.statusCode >= 300 || !data?.success) {
+        const error = new Error(data?.message || `上传失败（${res.statusCode}）`);
+        error.statusCode = res.statusCode;
+        throw error;
+      }
+      return data;
+    }),
+};
+
+// ── AI Chat ───────────────────────────────────────────────────────
+export const chatAPI = {
+  getConfig: () => request('/chat/config'),
+  getStatus: () => request('/chat/status'),
+  send: (messages, userInfo, media = {}) =>
+    request('/chat', {
+      method: 'POST',
+      body: JSON.stringify({ messages, userInfo, ...media }),
+      timeout: 50000,
+    }),
+  transfer: (lastMessage) =>
+    request('/chat/transfer', { method: 'POST', body: JSON.stringify({ lastMessage }) }),
+  getLogs: (userId) => request(`/chat/logs/${userId}`),
+  recall: (logId) => request(`/chat/logs/${logId}/recall`, { method: 'PATCH' }),
+  analyzeNutrition: (data) => request('/chat/nutrition', {
+    method: 'POST', body: JSON.stringify(data), timeout: 70000,
+  }),
+};
+
+// ── Questionnaire ─────────────────────────────────────────────────
+export const questionnaireAPI = {
+  submit: (answers) => request('/questionnaire', { method: 'POST', body: JSON.stringify({ answers }) }),
+  pending: () => request('/questionnaire/pending'),
+  submitDynamic: (id, answers, assignmentId) => request(`/questionnaire/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers, assignmentId }) }),
+};
+
+// ── Checkup Plan ────────────────────────────────────────────────
+export const checkupAPI = {
+  get: () => request('/user/checkup-plan'),
+};
+
+// ── Services / 服务商城 ───────────────────────────────────────────
+export const servicesAPI = {
+  createProductShare: (productId) => request('/services/product-shares', { method: 'POST', body: JSON.stringify({ productId }) }),
+  claimProductShare: (token) => request(`/services/product-shares/${token}/claim`, { method: 'POST' }),
+  list: () => request('/services'),
+  packages: () => request('/services/packages'),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount) =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount, ...(isNativeApp() && Number(expectedAmount) > 0 ? { paymentScene: 'app' } : {}) }) }),
+  inquire: (serviceId, note, specificationLabel) =>
+    request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel }) }),
+  coupons: () => request('/services/coupons'),
+};
+
+export const paymentsAPI = {
+  capabilities: () => request('/payments/capabilities'),
+  status: (orderId) => request(`/payments/${orderId}/status`),
+  retry: (orderId) => request(`/payments/${orderId}/retry`, { method: 'POST', body: JSON.stringify(isNativeApp() ? { paymentScene: 'app' } : {}) }),
+};
+
+// ── Partner Benefits ────────────────────────────────────────────
+export const partnerBenefitsAPI = {
+  list: () => request('/partner-benefits'),
+};
+
+// ── Orders ────────────────────────────────────────────────────
+export const ordersAPI = {
+  list: () => request('/orders'),
+  cancel: (id) => request(`/orders/${id}/cancel`, { method: 'PATCH' }),
+  requestRefund: (id, reason) => request(`/orders/${id}/refund-request`, { method: 'POST', body: JSON.stringify({ reason }) }),
+};
+
+// ── Feedback ──────────────────────────────────────────────────────
+export const feedbackAPI = {
+  submit: (type, content) => request('/feedback', { method: 'POST', body: JSON.stringify({ type, content }) }),
+  mine: () => request('/feedback/mine'),
+};
+
+// ── System ─────────────────────────────────────────────────────
+export const systemAPI = {
+  push: () => request('/system/push', { method: 'POST' }),
+};
+
+// ── Plans / Gifts / Points / Followup / Requisitions / Screening ──
+export const plansAPI = {
+  list: () => request('/user/plans'),
+  listAnnualMgmt: () => request('/user/annual-mgmt-plans'),
+  respondAnnualRecommendation: (planId, id, response) => request(`/user/annual-mgmt-plans/${planId}/service-recommendations/${id}/respond`, { method: 'PATCH', body: JSON.stringify({ response }) }),
+  view: (planId) => request(`/user/plans/${planId}/view`, { method: 'PATCH' }),
+  confirm: (planId) => request(`/user/plans/${planId}/confirm`, { method: 'PATCH' }),
+  confirmAnnualMgmt: (planId) => request(`/user/annual-mgmt-plans/${planId}/confirm`, { method: 'PATCH' }),
+  completeItem: (planId, itemId) => request(`/user/plans/${planId}/items/${itemId}/complete`, { method: 'PATCH' }),
+};
+
+export const giftsAPI = {
+  list: () => request('/user/gifts'),
+};
+
+export const pointsAPI = {
+  get: () => request('/user/points'),
+};
+
+export const followupTasksAPI = {
+  list: () => request('/user/followup-tasks'),
+  done: (id, done = true, needFollowUp = false) => request(`/user/followup-tasks/${id}/done`, { method: 'PATCH', body: JSON.stringify({ done, needFollowUp }) }),
+  submitForm: (id, formData) => request(`/user/followup-tasks/${id}/form`, { method: 'POST', body: JSON.stringify({ formData }) }),
+};
+
+export const screeningAPI = {
+  list: () => request('/screening'),
+  select: (data) => request('/screening', { method: 'POST', body: JSON.stringify(data) }),
+  deselect: (id) => request(`/screening/${id}`, { method: 'DELETE' }),
+  upload: (id, data) => request(`/screening/${id}/report`, { method: 'PATCH', body: JSON.stringify(data), timeout: 60000 }),
+  complete: (id, note) => request(`/screening/${id}/complete`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+};
+
+// ── Family Members ────────────────────────────────────────────────
+export const familyAPI = {
+  list: () => request('/user/family'),
+  add: (data) => request('/user/family', { method: 'POST', body: JSON.stringify(data) }),
+  remove: (index) => request(`/user/family/${index}`, { method: 'DELETE' }),
+};
+
+export const familyLinksAPI = {
+  list: () => request('/user/family-links'),
+  serviceOverview: (memberId) => request(`/user/family-links/${memberId}/service-overview`),
+  search: (q) => request(`/user/family-links/search?q=${encodeURIComponent(q)}`),
+  add: (linkedUserId, relation) => request('/user/family-links', { method: 'POST', body: JSON.stringify({ linkedUserId, relation }) }),
+  remove: (linkId) => request(`/user/family-links/${linkId}`, { method: 'DELETE' }),
+  pendingInvites: () => request('/user/family-links/pending-invites'),
+  acceptInvite: (inviteId) => request(`/user/family-links/invites/${inviteId}/accept`, { method: 'PATCH' }),
+  rejectInvite: (inviteId) => request(`/user/family-links/invites/${inviteId}/reject`, { method: 'PATCH' }),
+};
+
+// ── Share ──────────────────────────────────────────────────────
+export const shareAPI = {
+  create: (period, snapshot) => request('/user/report/share', { method: 'POST', body: JSON.stringify({ period, snapshot }) }),
+  getPublic: (token) => request(`/share/${token}`),
+};
+
+// ── change phone ───────────────────────────────────────────────
+export const userPhoneAPI = {
+  sendChangeCode: (newPhone) => request('/user/change-phone/send-code', { method: 'POST', body: JSON.stringify({ newPhone }) }),
+  changePhone: (newPhone, code) => request('/user/change-phone', { method: 'POST', body: JSON.stringify({ newPhone, code }) }),
+};
+
+// ── TTS ────────────────────────────────────────────────────────
+export const ttsAPI = {
+  synthesize: (text, sceneType) =>
+    request('/tts/synthesize', { method: 'POST', body: JSON.stringify({ text, sceneType }), timeout: 30000 }),
+};
+
+export const aiDataConsentAPI = { list: () => request('/ai-data-consent'), update: (purpose, data) => request(`/ai-data-consent/${purpose}`, { method: 'PUT', body: JSON.stringify(data) }) };
+
+// Account deletion requests are separate from ordinary help/feedback tickets.
+export const accountDeletionAPI = {
+  receipt: async (receiptToken) => {
+    // A receipt remains usable after account/session deletion; never attach login credentials.
+    const res = await Taro.request({ url: `${BASE_URL}/account-deletion/receipt`, method: 'POST',
+      header: { 'Content-Type': 'application/json' }, data: { receiptToken }, timeout: 15000 });
+    if (res.statusCode !== 200 || !res.data?.success) throw new Error(res.data?.message || '查询失败，请稍后重试');
+    return res.data;
+  },
+  get: () => request('/account-deletion'),
+  submit: (confirmationToken) => request('/account-deletion', { method: 'POST', body: JSON.stringify({ confirmation: 'DELETE_MY_ACCOUNT', confirmationToken }) }),
+};

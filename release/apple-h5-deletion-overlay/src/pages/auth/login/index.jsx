@@ -1,0 +1,301 @@
+import React, { useEffect, useState } from 'react';
+import { View, Text, Input, Button, Image } from '@tarojs/components';
+import Taro from '@tarojs/taro';
+import { colors, spacing, radius } from '../../../theme';
+import { authAPI } from '../../../services/api';
+import { useAuth } from '../../../context/AuthContext';
+import Icon from '../../../components/Icon';
+import { captureInviteCode } from '../../../utils/invitation';
+import { isReviewEnvironment, enterReviewEnvironment, storageKey } from '../../../utils/reviewEnvironment';
+import ReviewLogin from '../../../components/ReviewLogin';
+import brandLogo from '../../../assets/jiayicare-brand-icon.png';
+import { callNative, isNativeApp } from '../../../utils/appBridge';
+
+export default function LoginPage() {
+  if (isReviewEnvironment) return <ReviewLogin />;
+  const isWeapp = process.env.TARO_ENV === 'weapp';
+  Taro.useLoad((options = {}) => {
+    captureInviteCode(options);
+  });
+  Taro.useShareAppMessage(() => ({
+    title: '嘉医汇｜全生命周期健康管理',
+    path: '/pages/home/index',
+  }));
+  const { login } = useAuth();
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [countdown, setCountdown] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [notRegistered, setNotRegistered] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [oneClickAvailable, setOneClickAvailable] = useState(false);
+
+  useEffect(() => {
+    if (!isNativeApp() || window.__JIAYICARE_NATIVE_NUMBER_AUTH__ !== true) return;
+    let active = true;
+    authAPI.oneClickStatus().then(result => {
+      if (active) setOneClickAvailable(result?.data?.enabled === true);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const cancelLogin = () => {
+    try { Taro.removeStorageSync(storageKey('jy_post_login_url')); } catch {}
+    Taro.switchTab({ url: '/pages/home/index' }).catch(() => {
+      Taro.reLaunch({ url: '/pages/home/index' });
+    });
+  };
+
+  const waitForAuthCommit = () => new Promise((resolve) => {
+    if (typeof Taro.nextTick === 'function') Taro.nextTick(resolve);
+    else setTimeout(resolve, 0);
+  });
+
+  const afterLoginSuccess = (user) => {
+    if (user?.onboardingCompleted && (!user?.residence?.province || !user?.residence?.city)) {
+      Taro.redirectTo({ url: '/pages/profile/location/index' });
+    } else if (user?.onboardingCompleted) {
+      let target = '';
+      try { target = Taro.getStorageSync(storageKey('jy_post_login_url')) || ''; Taro.removeStorageSync(storageKey('jy_post_login_url')); } catch {}
+      if (target) Taro.redirectTo({ url: target });
+      else Taro.switchTab({ url: '/pages/home/index' });
+    } else {
+      Taro.redirectTo({ url: '/pages/onboarding/index' });
+    }
+  };
+
+  const sendCode = async () => {
+    if (!agreed) { setError('请先阅读并勾选同意《用户协议》《隐私政策》和《健康管理服务说明》'); return; }
+    if (!phone || phone.length !== 11) return;
+    setError('');
+    try {
+      setLoading(true);
+      const res = await authAPI.sendCode(phone);
+      if (res.code) setCode(res.code);
+      setCountdown(60);
+      const timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) { clearInterval(timer); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      setError(err.message || '验证码发送失败，请稍后重试');
+    } finally { setLoading(false); }
+  };
+
+  const handleLogin = async () => {
+    if (!phone || !code) return;
+    if (!agreed) { setError('请先阅读并勾选同意《用户协议》《隐私政策》和《健康管理服务说明》'); return; }
+    setError('');
+    setNotRegistered(false);
+    try {
+      setLoading(true);
+      const res = await authAPI.login(phone, code);
+      if (res.success) {
+        await login(res.data.user, res.data.token);
+        await waitForAuthCommit();
+        afterLoginSuccess(res.data.user);
+      }
+    } catch (err) {
+      if (err.code === 'NOT_REGISTERED') setNotRegistered(true);
+      else setError(err.message || '登录失败，请检查验证码后重试');
+    } finally { setLoading(false); }
+  };
+
+  const handleOneClickLogin = async () => {
+    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
+    setError('');
+    try {
+      setLoading(true);
+      const { token } = await callNative('get-one-click-token', {}, 30000);
+      const res = await authAPI.oneClickLogin(token);
+      if (res.success) {
+        await login(res.data.user, res.data.token);
+        await waitForAuthCommit();
+        afterLoginSuccess(res.data.user);
+      }
+    } catch (err) {
+      setError(err.message || '一键登录未完成，请使用短信验证码');
+    } finally { setLoading(false); }
+  };
+
+  const wechatLogin = async (event) => {
+    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
+    const phoneCode = event?.detail?.code;
+    if (!phoneCode) {
+      setError(event?.detail?.errMsg?.includes('deny') ? '您已取消手机号授权，可使用短信验证码登录' : '未能获取手机号，请重试或使用短信验证码登录');
+      return;
+    }
+    setError('');
+    try {
+      setLoading(true);
+      const res = await authAPI.wechatPhoneLogin(phoneCode);
+      if (res.success) {
+        await login(res.data.user, res.data.token);
+        await waitForAuthCommit();
+        afterLoginSuccess(res.data.user);
+      }
+    } catch (err) {
+      setError(err.message || '手机号快捷登录失败，请稍后重试或使用短信验证码登录');
+    } finally { setLoading(false); }
+  };
+
+  const canSend = phone.length === 11 && countdown === 0;
+  const canLogin = phone.length === 11 && code.length === 6;
+
+  return (
+    <View style={{ minHeight: '100vh', backgroundColor: '#1A2B24', display: 'flex', flexDirection: 'column' }}>
+      {/* Hero */}
+      <View style={{ padding: `${spacing.xl}px ${spacing.lg}px`, textAlign: 'center', position: 'relative' }}>
+        {process.env.TARO_ENV === 'h5' && <Text onClick={enterReviewEnvironment} style={{ position: 'absolute', top: '12px', right: '16px', fontSize: '14px', color: 'rgba(255,255,255,0.65)' }}>测试账号登录</Text>}
+        <View style={{
+          width: '88px', height: '88px', borderRadius: '50%', overflow: 'hidden', background: '#fff',
+          margin: '0 auto', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Image src={brandLogo} mode="aspectFit" style={{ width: '88px', height: '88px' }} />
+        </View>
+        <Text style={{ fontSize: '28px', fontWeight: 800, color: '#fff', letterSpacing: '2px', display: 'block' }}>嘉医汇</Text>
+        <Text style={{ fontSize: '14px', color: 'rgba(255,255,255,0.85)', marginTop: '6px', display: 'block' }}>全生命周期健康管理</Text>
+        <View style={{
+          display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: `${radius.md}px`,
+          padding: '12px 0', marginTop: spacing.lg,
+        }}>
+          {[{ num: '10,000+', label: '服务用户' }, { num: '300+', label: '签约医生' }, { num: '99%', label: '满意度' }].map((it, i) => (
+            <View key={i} style={{ flex: 1, textAlign: 'center' }}>
+              <Text style={{ fontSize: '17px', fontWeight: 800, color: '#5EC99B', display: 'block' }}>{it.num}</Text>
+              <Text style={{ fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>{it.label}</Text>
+            </View>
+          ))}
+        </View>
+
+      </View>
+
+      {/* 表单卡片 */}
+      <View style={{
+        flex: 1, backgroundColor: colors.background, borderRadius: '28px 28px 0 0',
+        padding: `${spacing.lg}px`,
+      }}>
+        <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 20px' }} />
+        <Button onClick={cancelLogin} style={{ width: '100%', margin: '0 0 16px', height: '46px', lineHeight: '46px', backgroundColor: '#fff', color: colors.primary, border: `1.5px solid ${colors.primary}`, borderRadius: `${radius.md}px`, fontSize: '16px', fontWeight: 700 }}>
+          暂不登录，先浏览
+        </Button>
+        <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>手机号登录</Text>
+        <Text style={{ fontSize: '14px', color: colors.textSecondary, marginBottom: '24px', display: 'block' }}>手机号验证码登录，新用户自动注册</Text>
+
+        <View style={{
+          display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
+          border: `1.5px solid ${colors.border}`, marginBottom: '12px', padding: '0 16px', height: '54px',
+        }}>
+          <Text style={{ fontSize: '14px', color: colors.textSecondary, fontWeight: 600 }}>+86</Text>
+          <View style={{ width: '1px', height: '18px', backgroundColor: colors.border, margin: '0 12px' }} />
+          <Input
+            style={{ flex: 1, fontSize: '16px', color: colors.textPrimary }}
+            type="number"
+            maxlength={11}
+            placeholder="请输入手机号"
+            value={phone}
+            onInput={(e) => setPhone(e.detail.value)}
+          />
+        </View>
+
+        <View style={{
+          display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
+          border: `1.5px solid ${colors.border}`, marginBottom: '12px', padding: '0 16px', height: '54px',
+        }}>
+          <Input
+            style={{ flex: 1, fontSize: '16px', color: colors.textPrimary }}
+            type="number"
+            maxlength={6}
+            placeholder="输入验证码"
+            value={code}
+            onInput={(e) => setCode(e.detail.value)}
+          />
+          <View
+            style={{
+              padding: '7px 12px', borderRadius: `${radius.sm}px`,
+              border: `1.5px solid ${canSend ? colors.primary : colors.border}`,
+              backgroundColor: canSend ? colors.primary10 : 'transparent',
+            }}
+            onClick={sendCode}
+          >
+            <Text style={{ fontSize: '14px', fontWeight: 600, color: canSend ? colors.primary : colors.textMuted }}>
+              {countdown > 0 ? `${countdown}s` : '获取验证码'}
+            </Text>
+          </View>
+        </View>
+
+        {!!error && (
+          <View style={{ backgroundColor: colors.danger10, borderRadius: `${radius.sm}px`, padding: '8px 12px', marginBottom: '12px' }}>
+            <Text style={{ fontSize: '14px', color: colors.danger }}>{error}</Text>
+          </View>
+        )}
+
+        {notRegistered && (
+          <View style={{
+            backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, border: '1px solid #BEE3F8',
+            padding: `${spacing.md}px`, marginBottom: '12px', textAlign: 'center',
+          }}>
+            <Text style={{ fontSize: '15px', fontWeight: 700, color: '#0077B6', display: 'block', marginBottom: '6px' }}>该手机号暂未开通会员</Text>
+            <Text style={{ fontSize: '14px', color: '#4A6558', display: 'block', marginBottom: '14px' }}>
+              嘉医汇为邀请制会员服务，如需加入请联系客服申请开通
+            </Text>
+            <Button
+              style={{ backgroundColor: '#0077B6', color: '#fff', fontSize: '14px', borderRadius: `${radius.sm}px` }}
+              openType="call"
+              onClick={() => Taro.makePhoneCall({ phoneNumber: '19106761448' })}
+            >
+              拨打客服：19106761448
+            </Button>
+          </View>
+        )}
+
+        <Button
+          style={{
+            height: '54px', lineHeight: '54px', borderRadius: `${radius.md}px`,
+            backgroundColor: '#1A2B24', color: '#fff', fontSize: '16px', fontWeight: 700,
+            marginTop: '4px', marginBottom: `${spacing.lg}px`,
+            opacity: canLogin ? 1 : 0.35,
+          }}
+          disabled={!canLogin || loading}
+          loading={loading}
+          onClick={handleLogin}
+        >
+          立即登录
+        </Button>
+
+        <View style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: `0 0 ${spacing.md}px` }}>
+          <View style={{ height: '1px', backgroundColor: colors.border, flex: 1 }} />
+          <Text style={{ fontSize: '14px', color: colors.textSecondary }}>或</Text>
+          <View style={{ height: '1px', backgroundColor: colors.border, flex: 1 }} />
+        </View>
+        {isWeapp && <Button style={{ height: '48px', lineHeight: '48px', backgroundColor: '#fff', border: `1.5px solid ${colors.border}`, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, color: colors.primary }} openType="getPhoneNumber" onGetPhoneNumber={wechatLogin} disabled={loading || !agreed}>
+          手机号快捷登录
+        </Button>}
+        {oneClickAvailable && <Button onClick={handleOneClickLogin} disabled={loading || !agreed} loading={loading} style={{ width: '100%', height: '48px', lineHeight: '48px', backgroundColor: '#fff', border: `1.5px solid ${colors.border}`, color: colors.primary, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, opacity: agreed ? 1 : 0.65 }}>本机号码一键登录</Button>}
+
+        <Text style={{ display: 'block', textAlign: 'center', marginTop: '10px', fontSize: '14px', color: colors.textSecondary }}>
+          可先浏览公开服务；购买或使用个人健康服务时再登录。
+        </Text>
+
+        <Button style={{ color: colors.primary, backgroundColor: '#fff', marginTop: '12px' }} onClick={() => Taro.navigateTo({ url: '/pages/account-deletion/receipt/index' })}>查询注销进度／回执</Button>
+
+        <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '10px', marginTop: '14px', padding: '12px 0', minHeight: '44px' }}>
+          <View style={{ width: '24px', height: '24px', borderRadius: '4px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '22px', flexShrink: 0 }}>
+            {agreed && <Text style={{ color: '#fff', fontSize: '18px' }}>✓</Text>}
+          </View>
+          <Text style={{ fontSize: '16px', lineHeight: '26px', color: colors.textSecondary }}>
+          我已阅读并同意
+          <Text style={{ color: colors.primary }} onClick={(e) => { e.stopPropagation?.(); Taro.navigateTo({ url: '/pages/legal/index?type=terms' }); }}>《用户协议》</Text>
+          及
+          <Text style={{ color: colors.primary }} onClick={(e) => { e.stopPropagation?.(); Taro.navigateTo({ url: '/pages/legal/index?type=privacy' }); }}>《隐私政策》</Text>
+          和
+          <Text style={{ color: colors.primary }} onClick={(e) => { e.stopPropagation?.(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}>《健康管理服务说明》</Text>
+          </Text>
+        </View>
+
+      </View>
+    </View>
+  );
+}

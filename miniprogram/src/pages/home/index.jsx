@@ -256,40 +256,10 @@ export default function HomePage() {
   const sectionError = keys => keys.some(key => sectionState[key] === 'error');
   const tasksLoading = ['tasks', 'followups', 'dashboard'].some(key => sectionState[key] === 'loading');
   const hasData = dashData?.has_any_health_data ?? false;
-  const score = user?.healthScore || 0;
-  const scoreDisplay = hasData ? score : null;
   const name = user?.name || '用户';
   const hour = new Date().getHours();
   const greeting = hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
   const growth = dashData?.growth || { streak: 0, totalCheckinDays: 0, monthCalendar: [], trendHighlight: null };
-
-  const statusEmoji = score >= 80 ? '✨' : score >= 60 ? '💪' : '🌱';
-  const statusText = score >= 80 ? '今天状态不错' : score >= 60 ? '继续保持' : '需要关注';
-
-  const scoreHistory = dashData?.scoreHistory || [];
-  const grade = user?.healthScoreDetail?.grade || (score >= 90 ? '优' : score >= 75 ? '良' : score >= 60 ? '中' : '差');
-  const gradeColors = { 优: '#22A06B', 良: '#86EFAC', 中: '#FCD34D', 差: '#FCA5A5' };
-  const scoreTrendPoints = scoreHistory.map((h) => ({ label: h.date, value: h.score }));
-
-  // 血压/血糖状态判断（仅用于首页趋势文案，具体数值展示在健康档案页）
-  const vitals = dashData?.latestVitals || {};
-  const bpStatusKey = vitals.bloodPressure?.status || 'normal';
-  const bsStatusKey = vitals.bloodSugar?.status || 'normal';
-  const bpLabel = bpStatusKey === 'normal' ? '正常' : bpStatusKey === 'low' ? '偏低' : '偏高';
-  const bsLabel = bsStatusKey === 'normal' ? '正常' : bsStatusKey === 'low' ? '偏低' : '偏高';
-  const trendActionText = (() => {
-    if (bpStatusKey !== 'normal') return `血压${bpLabel}，建议今天测量并联系医师`;
-    if (bsStatusKey !== 'normal') return `血糖${bsLabel}，建议今天复测并联系医师`;
-    if (scoreHistory.length >= 2) {
-      const first = scoreHistory[0]?.score, last = scoreHistory[scoreHistory.length - 1]?.score;
-      if (first != null && last != null) {
-        if (last - first <= -3) return `近${scoreHistory.length}日评分下降，建议关注近期生活方式`;
-        if (last - first >= 3) return `近${scoreHistory.length}日评分上升，继续保持`;
-      }
-      return `近${scoreHistory.length}日趋势稳定`;
-    }
-    return null;
-  })();
 
   const todayReminders = dashData?.todayReminders || [];
   // 合并待办：Task表任务 + 随访计划（对齐app端allPendingTaskItems，同一口径过滤已完成/取消）
@@ -316,7 +286,7 @@ export default function HomePage() {
 
   const submittedFeedback=homeTaskCards(allPendingTaskItems.filter(t=>t.documentDeclaration||t.customerActionRequired===false));
   const taskCards = homeTaskCards(allPendingTaskItems.filter(t=>!t.documentDeclaration&&t.customerActionRequired!==false));
-  const showScoreTrend = () => Taro.showModal({title:'健康评分趋势',content:(scoreHistory.length ? scoreHistory.map(h => `${h.date}：${h.score} 分`).join('\n') : '暂无历史评分记录') + '\n\n评分仅供健康管理参考，不作为医学诊断。',showCancel:false});
+  const openRecordSummary = () => Taro.navigateTo({ url: '/pages/records/report/index' });
 
   const markTaskDone = async () => {
     if (!taskDetail || taskDetail.customerReadOnly) return;
@@ -345,11 +315,11 @@ export default function HomePage() {
         <View style={{backgroundColor:'#fff',borderRadius:'18px',padding:'18px',marginBottom:'22px'}}>
           <View style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}>
             <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'12px',color:colors.textMuted,display:'block'}}>{name}，{greeting}</Text><Text style={{fontSize:'19px',fontWeight:600,color:colors.textPrimary,display:'block',marginTop:'6px'}}>照顾好今天的你</Text></View>
-            <View onClick={showScoreTrend} style={{padding:'8px 10px',borderRadius:'12px',backgroundColor:colors.primary10,textAlign:'center',flexShrink:0}}>
-              <Text style={{fontSize:'26px',fontWeight:700,color:colors.primary,display:'block'}}>{scoreDisplay ?? '--'}</Text><Text style={{fontSize:'10px',color:colors.textMuted}}>健康评分 ›</Text>
+            <View onClick={openRecordSummary} style={{padding:'8px 10px',borderRadius:'12px',backgroundColor:colors.primary10,textAlign:'center',flexShrink:0}}>
+              <Text style={{fontSize:'14px',fontWeight:600,color:colors.primary,display:'block'}}>记录汇总 ›</Text>
             </View>
           </View>
-          <View onClick={sectionState.dashboard === 'error' ? loadCore : showScoreTrend} style={{display:'flex',alignItems:'center',gap:'7px',margin:'14px 0'}}><Icon name="📈" size={16} color={colors.textSecondary}/><Text style={{flex:1,fontSize:'12px',color:colors.textSecondary}}>{sectionState.dashboard === 'error' ? '健康概览暂未更新' : (trendActionText || '记录近期变化，了解健康趋势').split('，')[0]}</Text><Text style={{fontSize:'12px',color:colors.primary}}>{sectionState.dashboard === 'error' ? '重试 ›' : '查看趋势 ›'}</Text></View>
+          <View onClick={sectionState.dashboard === 'error' ? loadCore : openRecordSummary} style={{display:'flex',alignItems:'center',gap:'7px',margin:'14px 0'}}><Icon name="📈" size={16} color={colors.textSecondary}/><Text style={{flex:1,fontSize:'12px',color:colors.textSecondary}}>{sectionState.dashboard === 'error' ? '健康概览暂未更新' : '查看已记录的数值与变化'}</Text><Text style={{fontSize:'12px',color:colors.primary}}>{sectionState.dashboard === 'error' ? '重试 ›' : '查看趋势 ›'}</Text></View>
           <View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{display:'flex',alignItems:'center',gap:'9px',backgroundColor:colors.primary,borderRadius:'12px',padding:'13px 15px'}}>
             <Text style={{fontSize:'22px',color:'#fff'}}>＋</Text><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>记录健康数据</Text><Text style={{color:'#fff'}}>›</Text>
           </View>

@@ -6,6 +6,7 @@ import { userPhoneAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import AccountDeletionPanel from '../../../components/AccountDeletionPanel';
 
 // 换绑手机号（发验证码 + 提交），对齐 app/src/screens/profile/AccountSecurityScreen.js 的核心链路
 export default function AccountSecurityPage() {
@@ -93,6 +94,7 @@ export default function AccountSecurityPage() {
       >
         确认更换
       </Button>
+      <AccountDeletionPanel />
       </View>
     </View>
   );

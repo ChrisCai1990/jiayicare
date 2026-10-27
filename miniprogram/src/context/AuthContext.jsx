@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
     let route = '';
     try {
       const pages = Taro.getCurrentPages?.() || [];
-      route = pages[pages.length - 1]?.route || '';
+      route = (pages[pages.length - 1]?.route || '').split('?')[0].replace(/^\/+/, '');
     } catch {}
     // 审核和普通访客应当可以先体验公开内容，只有进入个人健康数据等
     // 受保护页面时才要求登录。首页也是小程序默认启动页，不能在这里
@@ -48,6 +48,7 @@ export function AuthProvider({ children }) {
       'pages/records/public-report/index',
       'pages/auth/login/index',
       'pages/legal/index',
+      'pages/account-deletion/receipt/index',
     ]);
     if (!route || publicRoutes.has(route)) return;
     Taro.reLaunch({ url: '/pages/auth/login/index' }).catch(() => {});

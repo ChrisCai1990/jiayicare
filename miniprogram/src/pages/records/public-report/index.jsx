@@ -86,39 +86,17 @@ export default function PublicReportPage() {
               <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', margin: '4px 0' }}>{report.dateRange}</Text>
               <Text style={{ fontSize: '12px', color: colors.textSecondary }}>☑ {report.taskCompletion?.completed}/{report.taskCompletion?.total} 任务完成（{report.taskCompletion?.rate}%）</Text>
             </View>
-            <View style={{
-              width: '72px', height: '72px', borderRadius: '36px', border: `5px solid ${report.healthScore >= 80 ? colors.success : report.healthScore >= 60 ? colors.warning : colors.danger}`,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Text style={{ fontSize: '22px', fontWeight: 800, color: report.healthScore >= 80 ? colors.success : report.healthScore >= 60 ? colors.warning : colors.danger }}>{report.healthScore}</Text>
-              <Text style={{ fontSize: '10px', color: colors.textMuted }}>分</Text>
-            </View>
           </View>
 
-          {report.highlights?.length > 0 && (
-            <View style={{ margin: `0 ${spacing.lg}px`, marginTop: `${spacing.md}px` }}>
-              <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>本期亮点</Text>
-              <View style={{ backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.md}px`, boxShadow: shadow.sm }}>
-                {report.highlights.map((h, i) => {
-                  const icon = h.type === 'danger' ? '⚠️' : h.type === 'warning' ? '⚡' : '✅';
-                  return (
-                    <View key={i} style={{ display: 'flex', gap: `${spacing.sm}px`, alignItems: 'flex-start', marginBottom: i < report.highlights.length - 1 ? `${spacing.sm}px` : 0 }}>
-                      <Text style={{ fontSize: '14px' }}>{icon}</Text>
-                      <Text style={{ flex: 1, fontSize: '13px', color: colors.textSecondary, lineHeight: '20px' }}>{h.text}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          )}
+          <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '12px', lineHeight: '20px', margin: `0 ${spacing.lg}px 12px` }}>本页汇总已记录的数据；数值升降不代表健康状况改善或恶化。</Text>
 
           {report.metrics?.length > 0 && (
             <View style={{ margin: `0 ${spacing.lg}px`, marginTop: `${spacing.md}px` }}>
               <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>健康指标</Text>
               <View style={{ backgroundColor: '#fff', borderRadius: `${radius.lg}px`, overflow: 'hidden', boxShadow: shadow.sm }}>
                 {report.metrics.map((m, i) => {
-                  const statusColor = m.status === 'normal' ? colors.success : m.status === 'warning' ? colors.warning : colors.danger;
-                  const trendColor = m.trend === 'down' ? colors.success : m.trend === 'up' ? colors.warning : colors.textMuted;
+                  const statusColor = colors.textPrimary;
+                  const trendColor = colors.textSecondary;
                   const trendIcon = m.trend === 'down' ? '↓' : m.trend === 'up' ? '↑' : '–';
                   return (
                     <View key={i}>

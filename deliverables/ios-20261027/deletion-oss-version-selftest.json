@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "createdVersions": 2,
+  "deletedVersions": 2,
+  "remainingVersions": 0,
+  "syntheticOnly": true,
+  "customerObjectsTouched": 0,
+  "keyHash": "5033d722bf5c12b5e9388ca8dd97d396ea7b6b49646d856d046ad1c868a66348",
+  "evidenceDirectory": "/var/backups/jiayicare-deletion-storage-selftest-8dd617e4ee004a2f8353d00a70276487",
+  "moduleSha256": "6cefd1a829e5472c71c1f1f6292ed1a36b123d410d3dbee4f532208448e314ef",
+  "readBackVerification": {
+    "remainingVersions": 0
+  },
+  "readBackExitCode": 0,
+  "runnerNote": "Removed inherited PM2 Node IPC descriptors for standalone verification."
+}

@@ -761,182 +761,22 @@ router.get('/dashboard', auth, async (req, res) => {
 router.get('/report', auth, async (req, res) => {
   try {
     const userId = req.user._id;
-    const { period = 'week' } = req.query;
-
-    const days = period === 'month' ? 30 : 7;
+    const period = req.query.period === 'month' ? 'month' : 'week';
     const now = new Date();
-    const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-
-    // 格式化日期范围，如 "5/11 - 5/17"
-    const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
-    const dateRange = `${fmt(start)} - ${fmt(now)}`;
-    const periodLabel = period === 'month' ? '本月报告' : '本周报告';
-
-    // 查询该期间所有健康记录
-    const records = await HealthRecord.find({
-      user: userId,
-      recordedAt: { $gte: start },
-    }).sort({ recordedAt: 1 });
-
-    // 按 type 分组
-    const typeMap = {};
-    for (const r of records) {
-      if (!typeMap[r.type]) typeMap[r.type] = [];
-      typeMap[r.type].push(r);
-    }
-
-    // 指标元数据
-    const META = {
-      bloodPressure: { label: '血压', unit: 'mmHg' },
-      bloodSugar:    { label: '血糖', unit: 'mmol/L' },
-      heartRate:     { label: '心率', unit: 'bpm' },
-      weight:        { label: '体重', unit: 'kg' },
-    };
-
-    // 血压状态判断（按收缩压）
-    function bpStatus(sys) {
-      if (sys >= 140) return 'danger';
-      if (sys >= 130) return 'warning';
-      return 'normal';
-    }
-
-    // 通用状态判断
-    function metricStatus(type, value, extra) {
-      const v = parseFloat(value);
-      if (type === 'bloodPressure') {
-        const sys = extra?.sys ? parseFloat(extra.sys) : v;
-        return bpStatus(sys);
-      }
-      if (type === 'bloodSugar') {
-        if (v >= 7.0 || v < 3.9) return 'danger';
-        if (v >= 6.1) return 'warning';
-        return 'normal';
-      }
-      if (type === 'heartRate') {
-        if (v > 100 || v < 60) return 'warning';
-        return 'normal';
-      }
-      return 'normal';
-    }
-
-    const metrics = [];
-    const highlights = [];
-    let totalRecordCount = 0;
-
-    for (const [type, recs] of Object.entries(typeMap)) {
-      const meta = META[type];
-      if (!meta) continue;
-
-      totalRecordCount += recs.length;
-      const first = recs[0];
-      const last = recs[recs.length - 1];
-
-      let displayValue, delta, trend;
-
-      if (type === 'bloodPressure') {
-        // 最新值
-        const lastSys = last.extra?.sys ? parseFloat(last.extra.sys) : parseFloat(last.value);
-        const lastDia = last.extra?.dia ? parseFloat(last.extra.dia) : null;
-        displayValue = lastDia != null ? `${lastSys}/${lastDia}` : String(lastSys);
-
-        // 趋势（收缩压差）
-        const firstSys = first.extra?.sys ? parseFloat(first.extra.sys) : parseFloat(first.value);
-        const firstDia = first.extra?.dia ? parseFloat(first.extra.dia) : null;
-        const deltaSys = Math.round(lastSys - firstSys);
-        if (firstDia != null && lastDia != null) {
-          const deltaDia = Math.round(lastDia - firstDia);
-          delta = `${deltaSys >= 0 ? '+' : ''}${deltaSys}/${deltaDia >= 0 ? '+' : ''}${deltaDia}`;
-        } else {
-          delta = `${deltaSys >= 0 ? '+' : ''}${deltaSys}`;
-        }
-        trend = deltaSys < 0 ? 'down' : deltaSys > 0 ? 'up' : 'stable';
-      } else {
-        const lastV = parseFloat(last.value);
-        const firstV = parseFloat(first.value);
-        displayValue = String(lastV);
-        const d = parseFloat((lastV - firstV).toFixed(2));
-        delta = `${d >= 0 ? '+' : ''}${d}`;
-        trend = d < 0 ? 'down' : d > 0 ? 'up' : 'stable';
-      }
-
-      const status = metricStatus(type, last.value, last.extra);
-
-      metrics.push({
-        label: meta.label,
-        type,
-        value: displayValue,
-        unit: meta.unit,
-        status,
-        trend,
-        delta,
-        count: recs.length,
-      });
-
-      // 生成 highlights
-      if (recs.length >= 5) {
-        highlights.push({ type: 'good', text: `${periodLabel.replace('报告', '')}共记录${meta.label}${recs.length}次，坚持监测` });
-      }
-      if (status === 'warning') {
-        highlights.push({ type: 'warning', text: `${meta.label}最新值偏高，请注意` });
-      } else if (status === 'danger') {
-        highlights.push({ type: 'warning', text: `${meta.label}最新值异常，建议就医` });
-      }
-    }
-
-    // Task 完成情况
-    const [totalTasks, completedTasks] = await Promise.all([
-      Task.countDocuments({ user: userId, sourceTaskKey: { $not: /^nutrition:/ }, createdAt: { $gte: start } }),
-      Task.countDocuments({ user: userId, sourceTaskKey: { $not: /^nutrition:/ }, status: 'completed', createdAt: { $gte: start } }),
+    const start = new Date(now.getTime() - (period === 'month' ? 30 : 7) * 86400000);
+    const records = await HealthRecord.find({ user: userId, recordedAt: { $gte: start, $lte: now } }).sort({ recordedAt: 1 });
+    const [total, completed] = await Promise.all([
+      Task.countDocuments({ user: userId, sourceTaskKey: { $not: /^nutrition:/ }, createdAt: { $gte: start, $lte: now } }),
+      Task.countDocuments({ user: userId, sourceTaskKey: { $not: /^nutrition:/ }, status: 'completed', createdAt: { $gte: start, $lte: now } }),
     ]);
-    const taskRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
-    // 健康评分：从 SystemConfig 读取权重配置
-    const scoringCfg = await SystemConfig.findOne({ key: 'health_scoring' }).lean();
-    const w = scoringCfg?.value || {};
-    const base           = w.base            ?? 60;
-    const perRecord      = w.perRecord       ?? 2;
-    const maxRecordBonus = w.maxRecordBonus  ?? 20;
-    const taskRateWeight = w.taskRateWeight  ?? 0.1;
-    const dangerPenalty  = w.dangerPenalty   ?? 10;
-    const warningPenalty = w.warningPenalty  ?? 5;
-
-    const dangerCount  = metrics.filter((m) => m.status === 'danger').length;
-    const warningCount = metrics.filter((m) => m.status === 'warning').length;
-    let healthScore = base;
-    healthScore += Math.min(totalRecordCount * perRecord, maxRecordBonus);
-    healthScore += Math.round(taskRate * taskRateWeight);
-    healthScore -= dangerCount * dangerPenalty + warningCount * warningPenalty;
-    healthScore = Math.max(0, Math.min(100, healthScore));
-
-    // 评分明细（供前端展示）
-    const scoreBreakdown = {
-      base,
-      recordBonus: Math.min(totalRecordCount * perRecord, maxRecordBonus),
-      taskBonus:   Math.round(taskRate * taskRateWeight),
-      dangerDeduct: dangerCount * dangerPenalty,
-      warningDeduct: warningCount * warningPenalty,
-    };
-
-    // scoreDelta 用随机小幅波动模拟（实际可存历史分）
-    const scoreDelta = Math.floor(Math.random() * 7) - 2;
-
-    res.json({
-      success: true,
-      data: {
-        period: periodLabel,
-        dateRange,
-        healthScore,
-        scoreDelta,
-        scoreBreakdown,
-        recordCount: totalRecordCount,
-        taskCompletion: { total: totalTasks, completed: completedTasks, rate: taskRate },
-        metrics,
-        highlights,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: '获取健康报告失败', error: err.message });
-  }
+    const fmt = date => `${date.getMonth() + 1}/${date.getDate()}`;
+    const periodLabel = period === 'month' ? '本月记录汇总' : '本周记录汇总';
+    res.json({ success: true, data: {
+      period: periodLabel, periodLabel, dateRange: `${fmt(start)} - ${fmt(now)}`,
+      ...require('../utils/healthRecordSummary').summarizeHealthRecords(records),
+      taskCompletion: { total, completed, rate: total > 0 ? Math.round(completed / total * 100) : 0 },
+    } });
+  } catch (err) { res.status(500).json({ success: false, message: '获取记录汇总失败', error: err.message }); }
 });
 
 // ── 更换手机号 ───────────────────────────────────────────────────

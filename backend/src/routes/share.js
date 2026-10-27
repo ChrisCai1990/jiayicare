@@ -24,7 +24,7 @@ router.get('/:token', async (req, res) => {
     res.json({
       success: true,
       data: {
-        reportData: share.reportData,
+        reportData: require('../utils/healthRecordSummary').recordSummaryView(share.reportData),
         userName: share.userName,
         period: share.period,
         expiresAt: share.expiresAt,

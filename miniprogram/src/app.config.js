@@ -21,6 +21,7 @@ export default defineAppConfig({
     'pages/profile/edit/index',
     'pages/profile/location/index',
     'pages/profile/security/index',
+    'pages/account-deletion/receipt/index',
     'pages/profile/feedback/index',
     'pages/profile/notifications/index',
     'pages/orders/index',

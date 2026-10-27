@@ -481,3 +481,16 @@ export const aiDataConsentAPI = {
   list: () => request("/ai-data-consent"),
   update: (purpose, data) => request(`/ai-data-consent/${purpose}`, {method: "PUT", body: JSON.stringify(data)}),
 };
+
+// Account deletion requests are separate from ordinary help/feedback tickets.
+export const accountDeletionAPI = {
+  receipt: async (receiptToken) => {
+    // A receipt remains usable after account/session deletion; never attach login credentials.
+    const res = await Taro.request({ url: `${BASE_URL}/account-deletion/receipt`, method: 'POST',
+      header: { 'Content-Type': 'application/json' }, data: { receiptToken }, timeout: 15000 });
+    if (res.statusCode !== 200 || !res.data?.success) throw new Error(res.data?.message || '查询失败，请稍后重试');
+    return res.data;
+  },
+  get: () => request('/account-deletion'),
+  submit: (confirmationToken) => request('/account-deletion', { method: 'POST', body: JSON.stringify({ confirmation: 'DELETE_MY_ACCOUNT', confirmationToken }) }),
+};

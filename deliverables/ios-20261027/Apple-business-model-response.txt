@@ -1,0 +1,27 @@
+Business model response — draft, not yet submitted; record-summary correction deployed, account deletion incomplete
+Based on the operator's confirmations on 2026-10-27.
+
+Hello App Review Team,
+
+Regarding Guideline 2.1(b), please find our answers below:
+
+1. Who are the users that will use the paid content in the app?
+Our customers purchase offline, human-delivered health services and physical goods. These purchases are not purchases of paid digital content in the iOS app.
+
+2. Where can users purchase the content that can be accessed in the app?
+Customers purchase the physical goods and offline services through our WeChat Mini Program. The purchases described here are for those goods and services, rather than for unlocking digital content in the iOS app.
+
+3. What specific types of previously purchased content can a user access in the app?
+The app allows customers to view their existing, filed examination reports. These are the customer's stored examination documents, not separately sold premium reports or a paid digital content catalogue.
+
+4. What paid content, subscriptions, or features are unlocked within the app that do not use In-App Purchase?
+Our business model does not sell digital feature unlocks. AI analysis and risk assessment are not available features in the current app, and we do not sell special or exclusive digital reports. Viewing a customer's stored examination reports should not be understood as purchasing a premium digital report.
+
+5. Can users purchase physical goods or services together with digital content in your app?
+We sell physical goods and offline, human-delivered health services through the WeChat Mini Program. We do not bundle these purchases with separately sold digital content or digital feature unlocks.
+
+Regarding Guideline 5.1.1(v), we are working on the account deletion flow. We will provide the requested physical-device recording after the full flow has been implemented and verified. We are not claiming that account deletion is already complete.
+
+Regarding Guideline 1.4.1, we identified legacy automatic scoring and rule-based recommendations in the record-summary view and have updated it to display recorded values, counts, and numerical trends only. The original examination reports and their clinician-authored conclusions are preserved. This record-summary update was deployed on October 27, 2026 and its production web assets were verified. The account-deletion work and requested physical-device recording remain incomplete. If your finding concerns additional screens, please provide the navigation path, text, or screenshot so that we can address those accurately as well.
+
+Thank you for your assistance.

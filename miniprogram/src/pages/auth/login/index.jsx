@@ -289,6 +289,8 @@ export default function LoginPage() {
           可先浏览公开服务；购买或使用个人健康服务时再登录。
         </Text>
 
+        <Button style={{ color: colors.primary, backgroundColor: '#fff', marginTop: '12px' }} onClick={() => Taro.navigateTo({ url: '/pages/account-deletion/receipt/index' })}>查询注销进度／回执</Button>
+
         <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '6px', marginTop: `${spacing.md}px` }}>
           <View style={{ width: '15px', height: '15px', borderRadius: '3px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '13px', flexShrink: 0 }}>
             {agreed && <Text style={{ color: '#fff', fontSize: '11px' }}>✓</Text>}

@@ -37,3 +37,6 @@ miniprogram/preview-info.json
 miniprogram/preview-qrcode.png
 miniprogram/upload-*.json
 miniprogram/project.private.config.json
+
+# Isolated Apple account-deletion build (source overlay is tracked separately)
+release/apple-h5-build-20261027/
