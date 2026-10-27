@@ -21,6 +21,8 @@ function makePatterns({identifiers=[],textTokens=[]}) {
  return [...new Map(patterns.map(x=>[x.toString('hex'),x])).values()];
 }
 async function scanFile({file,patterns,maxExpandedBytes=2*1024*1024*1024}) {
+ if(!Array.isArray(patterns)||!patterns.length||patterns.length>50000||patterns.some(x=>!Buffer.isBuffer(x)||!x.length||x.length>4096))fail('BACKUP_PATTERNS_INVALID');
+ if(!Number.isSafeInteger(maxExpandedBytes)||maxExpandedBytes<1)fail('BACKUP_SCAN_LIMIT');
  const before=await fs.lstat(file);
  if(!before.isFile() || before.isSymbolicLink()) fail('BACKUP_FILE_TYPE_UNVERIFIED');
  const format=file.toLowerCase();
@@ -32,7 +34,6 @@ async function scanFile({file,patterns,maxExpandedBytes=2*1024*1024*1024}) {
  raw.on('data',chunk=>compressedHash.update(chunk));
  let stream=raw;
  if(gz){stream=raw.pipe(createGunzip());raw.on('error',e=>stream.destroy(e));}
- if(!Array.isArray(patterns)||!patterns.length||patterns.length>50000||patterns.some(x=>!Buffer.isBuffer(x)||!x.length||x.length>4096))fail('BACKUP_PATTERNS_INVALID');
  const longest=patterns.reduce((n,x)=>Math.max(n,x.length),0);
  let tail=Buffer.alloc(0),expandedBytes=0;const hits=new Set();
  try {
