@@ -51,6 +51,8 @@ const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjus
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
   if (!value || typeof value !== 'object' || value.constructor !== Object) return value;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !internalFields.has(key)).map(([key, child]) => [key, customerModuleData(child)]));
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key, child]) => !internalFields.has(key) && !(key === 'nutrition_assessment' && child?.enabled === false))
+    .map(([key, child]) => [key, customerModuleData(child)]));
 }
 module.exports = { buildAnnualPlanDisplayItems, normalizeItem, customerModuleData, internalDaily };
