@@ -19,6 +19,12 @@ test('内部备注不会进入客户展示结构', () => {
   assert.equal(Object.values(item).includes('内部沟通记录'), false);
 });
 
+test('已移除的年度营养评估不进入客户完整方案', () => {
+  const moduleData = { nutrition_assessment: { enabled: false, records: [{ items: '不再重复评估' }] } };
+  assert.deepEqual(buildAnnualPlanDisplayItems(moduleData), []);
+  assert.equal(customerModuleData(moduleData).nutrition_assessment.enabled, false);
+});
+
 test('家庭医生年度目标和完成标准进入客户年度方案', () => {
   const [item] = buildAnnualPlanDisplayItems({ medical_treatment: { records: [{
     reason: '需明确问题', purpose: '专科评估', goal: '明确后续管理方向',

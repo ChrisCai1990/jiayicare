@@ -2,6 +2,14 @@ const crypto = require('node:crypto');
 const mongoose = require('mongoose');
 const { selectedFromAnnualPlan } = require('../../../shared/nutritionComparisonMetrics.cjs');
 
+function draftModule(moduleData = {}) {
+  const current = moduleData.nutrition_assessment || {};
+  if (current.enabled === false) return { ...current, enabled: false };
+  return { ...current, enabled: true,
+    nutritionComparisonMetrics: current.nutritionComparisonMetrics
+      ?? require('../../../shared/nutritionComparisonMetrics.cjs').metricsFromTargets(moduleData.management_targets?.records) };
+}
+
 function taskId(planId, attempt = 1) {
   const hex = crypto.createHash('sha256').update(`annual-nutrition-assessment:${planId}:${attempt}`).digest('hex').slice(0, 24);
   return new mongoose.Types.ObjectId(hex);
@@ -52,4 +60,4 @@ async function dispatch(plan, patient, actor, FollowUp) {
   return { task: saved, reused: !inserted.upsertedCount };
 }
 
-module.exports = { taskId, buildTask, contentForPlan, nutritionGoalsForPlan, dispatch };
+module.exports = { taskId, buildTask, contentForPlan, nutritionGoalsForPlan, dispatch, draftModule };

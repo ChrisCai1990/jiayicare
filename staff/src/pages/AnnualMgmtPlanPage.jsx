@@ -698,7 +698,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
         const servicePlanCode = annualTemplateCode(planType, selectedTemplate)
-        const annualModuleData = { ...moduleData, nutrition_assessment: { ...(moduleData.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: nutritionMetricRules.selectedFromAnnualPlan({ moduleData }) } }
+        const nutritionAssessment = moduleData.nutrition_assessment || {}
+        const annualModuleData = { ...moduleData, nutrition_assessment: nutritionAssessment.enabled === false
+          ? { ...nutritionAssessment, enabled: false }
+          : { ...nutritionAssessment, enabled: true, nutritionComparisonMetrics: nutritionMetricRules.selectedFromAnnualPlan({ moduleData }) } }
         const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData: annualModuleData, phaseAssessmentFrequency, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         savedPlan = saved
@@ -1321,8 +1324,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </section>}
           <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
           {patientMode && <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
-            <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 营养评估与干预 · {nutritionSummary.metrics.length} 项对比指标{nutritionTask ? ' · 已派发营养师' : ' · 顾问推送时派发'}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment') && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</summary>
+            <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 营养评估与干预 · {moduleData.nutrition_assessment?.enabled === false ? '已从本次方案移除' : `${nutritionSummary.metrics.length} 项对比指标${nutritionTask ? ' · 已派发营养师' : ' · 顾问推送时派发'}`}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment') && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</summary>
+            {moduleData.nutrition_assessment?.enabled === false ? <div style={{ marginTop: 10, fontSize: 13, color: '#62776A' }}>本次方案不再重复派发营养评估。{canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => handleModuleChange('nutrition_assessment', 'enabled', true)}>恢复此项</button>}</div> : <>
             <div style={{ fontSize: 12, color: '#62776A', margin: '8px 0' }}>研判内容自动带入；顾问核对并推送方案时同步派发营养师。营养师评估后调整并形成方案。</div>
+            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" disabled={Boolean(nutritionTask)} onClick={() => {
+              if (!window.confirm('确认从本次年度方案移除营养评估与干预？已有的其他强化干预方案不会删除；本项将不再随年度方案派发。')) return
+              handleModuleChange('nutrition_assessment', 'enabled', false)
+            }}>移除本次营养评估与干预</button>}
+            {nutritionTask && !pushedAt && <div style={{ fontSize: 12, color: '#9A5B13', marginTop: 6 }}>营养师任务已派发，请先处理现有任务，再调整本次方案。</div>}
             <div style={{fontSize:13,marginBottom:8}}>相关问题：{nutritionSummary.problems.join('、') || '按研判相关问题评估膳食与生活方式'}</div>
             <div style={{fontSize:13,marginBottom:8}}>对比指标：{nutritionSummary.metrics.join('、') || '基础体成分评估'}；固定包含骨骼肌、体脂率、内脏脂肪。</div>
             <div style={{fontSize:13,marginBottom:8}}>研判参考目标：{nutritionSummary.references.join('；') || '研判未给出明确数值目标，由营养师结合原报告参考范围及实际情况制定。'}{nutritionSummary.references.length > 0 && '（沿用研判，供营养师评估调整）'}</div>
@@ -1331,7 +1340,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <div style={{ fontSize: 13, marginTop: 12, color: '#4A6558' }}>责任营养师：{patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name || '待分配'}</div>
             <details style={{marginTop:12}}><summary style={{cursor:'pointer'}}>调整营养对比指标</summary>
             <NutritionComparisonMetricPicker value={nutritionSummary.metrics} onChange={handleNutritionMetricChange} disabled={!canEdit} /></details>
-            {!!moduleData.nutrition_assessment?.records?.length && <div style={{marginTop:12}}><strong>专项评估重点</strong>{moduleData.nutrition_assessment.records.map((row,index)=><div key={index} style={{padding:'9px 0',borderBottom:'1px solid #E5ECE7'}}><div>{row.items}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment' && change.after?.title === row.items) && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</div><div style={{fontSize:12,color:'#62776A',whiteSpace:'pre-wrap'}}>依据：{row.basisSummary||row.reason||'待核对'}</div><div style={{fontSize:12,color:'#62776A',whiteSpace:'pre-wrap'}}>评估建议：{row.personalizedAdvice||'待确认'}</div></div>)}</div>}
+            {!!moduleData.nutrition_assessment?.records?.length && <div style={{ marginTop: 12 }}><strong>专项评估重点</strong>{moduleData.nutrition_assessment.records.map((row, index) => <div key={index} style={{ padding: '9px 0', borderBottom: '1px solid #E5ECE7' }}>
+              {canEdit && !pushedAt ? <>
+                <label style={{ display: 'block', fontSize: 12 }}>评估重点<input className="form-input" value={row.items || ''} onChange={e => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.map((item, i) => i === index ? { ...item, items: e.target.value } : item))} /></label>
+                <label style={{ display: 'block', fontSize: 12, marginTop: 6 }}>依据<textarea className="form-input" rows={2} value={row.basisSummary || ''} onChange={e => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.map((item, i) => i === index ? { ...item, basisSummary: e.target.value } : item))} /></label>
+                <label style={{ display: 'block', fontSize: 12, marginTop: 6 }}>评估建议<textarea className="form-input" rows={2} value={row.personalizedAdvice || ''} onChange={e => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.map((item, i) => i === index ? { ...item, personalizedAdvice: e.target.value } : item))} /></label>
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 6 }} onClick={() => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.filter((_, i) => i !== index))}>删除此重点</button>
+              </> : <><div>{row.items}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment' && change.after?.title === row.items) && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</div><div style={{ fontSize: 12, color: '#62776A', whiteSpace: 'pre-wrap' }}>依据：{row.basisSummary || row.reason || '待核对'}</div><div style={{ fontSize: 12, color: '#62776A', whiteSpace: 'pre-wrap' }}>评估建议：{row.personalizedAdvice || '待确认'}</div></>}
+            </div>)}</div>}
             {pendingExecutionChanges.filter(change => change.key === 'nutrition_assessment').map((change, index) => <details key={`nutrition-review-${index}`} style={{ marginTop: 8, color: '#9A5B13', fontSize: 12 }}><summary style={{ cursor: 'pointer' }}>{change.action}：{change.title} · 查看本项修订</summary><div style={{ whiteSpace: 'pre-wrap' }}>原方案：{change.before?.title || '无'} · {change.before?.date || '日期待确认'} · {change.before?.advice || ''}</div><div style={{ whiteSpace: 'pre-wrap' }}>当前方案：{change.after?.title || '无'} · {change.after?.datePending ? '日期待确认' : change.after?.date || '日期待确认'} · {change.after?.advice || ''}</div></details>)}
             {pushedAt && canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={!metricSelectionDirty || metricSelectionSaving} onClick={savePublishedNutritionMetrics}>{metricSelectionSaving ? '保存中…' : '保存指标调整（留痕）'}</button>}
             <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -1340,6 +1356,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               <span style={{ fontSize: 12, color: '#62776A' }}>{nutritionTask ? '已有任务不会因年度方案确认再次派发。' : !patient?.assignedNutritionist ? '请先为客户分配责任营养师。' : remotePlanChanged ? '方案已更新，请先加载最新方案。' : (pushedAt && (dirty || metricSelectionDirty)) ? '请先保存上方指标调整。' : dirty || !currentPlanId ? '将先保存当前草稿及评估日期，再派发营养师任务。' : '无需推送整个年度方案，可单独派发营养师任务。'}</span>
             </div>
             {!!plansByType[planType]?.nutritionMetricHistory?.length && <details style={{ marginTop: 10, fontSize: 12, color: '#52675D' }}><summary>指标调整记录（{plansByType[planType].nutritionMetricHistory.length}次）</summary>{plansByType[planType].nutritionMetricHistory.map((entry, index) => <div key={index} style={{ padding: '6px 0' }}>{new Date(entry.changedAt).toLocaleString('zh-CN')} · {entry.changedByName || '健康顾问'}：{(entry.before || []).join('、') || '未选'} → {(entry.after || []).join('、') || '未选'}</div>)}</details>}
+            </>}
           </details>}
           {sharedActions.length > 0 && <section style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: 16, marginBottom: 12 }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>其他年度安排 · {sharedActions.length} 项</div>

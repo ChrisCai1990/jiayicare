@@ -1,9 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
-const { buildTask, taskId, dispatch } = require('../src/utils/annualNutritionDispatch');
+const { buildTask, taskId, dispatch, draftModule } = require('../src/utils/annualNutritionDispatch');
 const { withoutSeparatelyDispatchedNutrition } = require('../src/utils/annualPlanFollowUps');
 const { isTask } = require('../../shared/annualNutrition.cjs');
+
+test('年度草稿保留顾问移除营养评估的选择，不重新启用或派发', () => {
+  const removed = draftModule({ nutrition_assessment: { enabled: false, records: [{ items: '已完成的强化干预' }] },
+    management_targets: { records: [{ goal: '体重管理', nutritionRelevant: true }] } });
+  assert.equal(removed.enabled, false);
+  assert.equal(removed.records.length, 1);
+  assert.equal(draftModule({}).enabled, true);
+});
 
 test('年度草稿可单独形成内部营养师任务，保留指标快照且重试使用相同任务 ID', () => {
   const planId = new mongoose.Types.ObjectId();

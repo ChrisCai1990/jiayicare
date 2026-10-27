@@ -9826,10 +9826,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const phaseAssessmentFrequency = req.body.phaseAssessmentFrequency || '';
     if (!['', 'biweekly', 'monthly', 'quarterly'].includes(phaseAssessmentFrequency)) return res.status(400).json({ success: false, message: '阶段评估周期无效' });
     let { moduleData } = req.body;
-    moduleData = { ...(moduleData || {}), nutrition_assessment: {
-      ...(moduleData?.nutrition_assessment || {}), enabled: true,
-      nutritionComparisonMetrics: moduleData?.nutrition_assessment?.nutritionComparisonMetrics ?? require('../../../shared/nutritionComparisonMetrics.cjs').metricsFromTargets(moduleData?.management_targets?.records),
-    } };
+    moduleData = { ...(moduleData || {}), nutrition_assessment: require('../utils/annualNutritionDispatch').draftModule(moduleData) };
     try {
       const { isRow } = require('../../../shared/annualNutrition.cjs');
       const { normalizeMetrics } = require('../../../shared/nutritionComparisonMetrics.cjs');
@@ -9906,6 +9903,9 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     catch (error) { return res.status(error.statusCode || 409).json({success:false,message:error.message}); }
     const frozen = closedLoop ? existingVersion : null;
     if (frozen?.confirmedAt || frozen?.frozenAt || frozen?.pushedAt) return res.status(409).json({ success: false, message: '已推送或已确认方案不可直接覆盖；请在补充依据入口保存修订草稿，执行任务保持不变' });
+    if (moduleData.nutrition_assessment.enabled === false && existingVersion?._id && await FollowUp.exists({
+      sourceAnnualPlanId: existingVersion._id, workflowKey: 'annual_nutrition_assessment', status: { $ne: 'cancelled' },
+    })) return res.status(409).json({ success: false, message: '营养师任务已派发，不能直接移除年度营养评估；请先处理现有任务' });
     const plan = await AnnualPlan.findOneAndUpdate(
       { ...selector, ...(existingVersion ? {updatedAt:existingVersion.updatedAt} : {}), ...(frozen ? {confirmedAt:null,frozenAt:null,pushedAt:null} : {}) },
       { planType: servicePlanCode, servicePlanCode, strategyType: version.strategyType, clientBrand: patient.clientBrand,
