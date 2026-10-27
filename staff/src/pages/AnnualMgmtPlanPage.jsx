@@ -1092,10 +1092,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </div>
 
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
-      {!generationError && generationCoverage.some(item => /^priority:\d+$/.test(item.sourceId) && item.status === 'deferred') && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF7ED', color: '#713F12', borderRadius: 10 }}>
-        <b>AI优先关注信息待顾问核对</b>：以下内容暂未形成独立年度行动，请核对后再保存、推送方案。
-        {generationCoverage.filter(item => /^priority:\d+$/.test(item.sourceId) && item.status === 'deferred').map(item => <div key={item.sourceId} style={{ marginTop: 6 }}>第{Number(item.sourceId.split(':')[1]) + 1}项：{item.reason}</div>)}
-      </div>}
       {patientMode && staleManagementSources.length > 0 && !pushedAt && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF7ED', border: '1px solid #F4C995', borderRadius: 10, color: '#713F12' }}>
         <b>管理来源待核对</b><div style={{ marginTop: 5, fontSize: 13 }}>{staleManagementSources.join('、')}</div>
         {staleLegacyDecisions.map(row => <div key={row._id} style={{ marginTop: 10, padding: 10, background: '#fff', borderRadius: 8 }}>
