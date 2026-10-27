@@ -101,6 +101,7 @@ app.use('/api/orders',        require('./routes/orders'));
 app.use('/api/feedback',      require('./routes/feedback'));
 app.use('/api/system',        require('./routes/system'));
 app.use('/api/share',         require('./routes/share'));
+app.use('/api/admin/account-deletion', require('./routes/accountDeletionAdmin'));
 app.use('/api/admin/nutrition-assessment-config', require('./routes/nutritionAssessmentConfig'));
 app.use('/api/admin',         require('./routes/admin'));
 app.use('/api/admin/inventory', require('./routes/inventory').adminRouter);
