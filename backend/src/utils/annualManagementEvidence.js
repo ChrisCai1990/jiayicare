@@ -55,10 +55,13 @@ async function load(patientId, year, dependencies = {}) {
       const groups = new Set((report.reportItems || []).map(item => item.screeningKey || item.screeningKeys?.[0]).filter(Boolean));
       if (groups.size > 1) { stale.push(`${decision.title}（旧版整份报告纳入，请在对应检查项重新归属）`); staleDecisionIds.push(String(decision._id)); continue; }
     }
+    const reviewRules = require('./annualReviewPlan');
+    const reviewPlan = decision.reviewPlan?.kind === 'recheck'
+      ? decision.reviewPlan : reviewRules.legacyReviewPlan(decision, report) || decision.reviewPlan || null;
     evidence.push({ id: `management_issue:${decision._id}`, content: {
       reportId: report._id, reportTitle: report.title, checkDate: report.checkDate,
       problem: decision.title, direction: decision.direction, advisorNote: decision.note,
-      reviewPlan: decision.reviewPlan || null, legacyReviewNote: decision.reviewPlan?.kind !== 'recheck' && require('./annualReviewPlan').legacyReviewNote(decision.note),
+      reviewPlan, legacyReviewNote: reviewPlan?.kind !== 'recheck' && reviewRules.legacyReviewNote(decision.note),
       source: decision.sourceSnapshot?.item || null, reviewedAt: decision.reviewedAt,
     } });
   }

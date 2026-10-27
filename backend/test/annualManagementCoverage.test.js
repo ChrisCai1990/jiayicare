@@ -70,6 +70,24 @@ test('报告其他内容更新后，已纳入的检查项内容未变仍可生�
   assert.deepEqual((await load('patient', 2026, dependencies)).stale, ['肺结节']);
 });
 
+test('已纳入管理的旧备注复查期限在生成依据中恢复为一次复查', async () => {
+  const item = { itemId: 'pg', name: '胃蛋白酶原', examDate: '2026-10-20' };
+  const decision = { _id: 'decision', title: '胃蛋白酶原异常', direction: 'ongoing_management',
+    note: '3个月复查', reviewedAt: '2026-10-26T10:00:00Z', reportId: 'report', itemId: 'pg', sourceKey: 'screening:report:pg',
+    sourceSnapshot: { checkDate: '2026-10-19', item } };
+  const report = { _id: 'report', title: '胃功能检查', checkDate: '2026-10-19', reportItems: [item] };
+  const Decision = { find: () => ({ sort: () => ({ lean: async () => [decision] }) }) };
+  const Report = { findOne: () => ({ select: () => ({ lean: async () => report }) }) };
+  const User = { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) };
+  const result = await load('patient', 2026, { Decision, Report, User });
+  assert.deepEqual(result.stale, []);
+  assert.equal(result.evidence[0].content.legacyReviewNote, false);
+  assert.deepEqual(result.evidence[0].content.reviewPlan, {
+    kind: 'recheck', intervalMonths: 3, anchorDate: '2026-10-26', items: ['胃蛋白酶原'],
+  });
+  assert.equal(require('../src/utils/annualReviewPlan').reviewGroups(result.evidence)[0].dueDate, '2027-01-26');
+});
+
 test('撤销旧版归属后不再阻止年度方案生成', async () => {
   let selector;
   const Decision = { find: query => { selector = query; return { sort: () => ({ lean: async () => [] }) }; } };
