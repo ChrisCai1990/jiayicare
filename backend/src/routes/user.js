@@ -1002,7 +1002,7 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
         plan.checkupPreparationAutoConfirmedAt = confirmed.checkupPreparationAutoConfirmedAt;
       }
     } else await confirmation.confirmPublishedAnnualPlan(plan);
-    // 客户确认是必要门槛；续年另需有效凭据及服务期生效，日扫描也可补同步。
+    // 兼容旧客户端的确认动作；新方案在顾问发布时已同步任务，重复同步须保持幂等。
     let taskSplit;
     try { taskSplit = await syncAnnualPlanTaskSplit(plan); }
     catch (error) { taskSplit = { warnings: ['方案已确认，随访同步待系统重试'] }; }
@@ -1012,16 +1012,16 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
   }
 });
 
-// 客户不同意或需要修改时退回顾问；未确认的版本不产生执行任务。
+// 客户提出局部修改意见；已发布方案和执行任务继续有效，顾问核对后修订。
 router.patch('/annual-mgmt-plans/:id/return', auth, async (req, res) => {
   try {
     const reason = String(req.body?.reason || '').trim();
     if (reason.length < 2 || reason.length > 500) return res.status(400).json({ success: false, message: '请填写需要调整的原因（2 至 500 字）' });
-    const plan = await AnnualPlan.findOne({ _id: req.params.id, patientId: req.user._id, pushedAt: { $ne: null }, confirmedAt: null }).select('pushedAt');
+    const plan = await AnnualPlan.findOne({ _id: req.params.id, patientId: req.user._id, pushedAt: { $ne: null } }).select('pushedAt');
     if (!plan) return res.status(409).json({ success: false, message: '方案已变化，请刷新后核对' });
     const at = new Date();
-    const returned = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.user._id, pushedAt: plan.pushedAt, confirmedAt: null }, {
-      $set: { returnedAt: at, returnReason: reason, reviewStatus: 'rejected', reviewNote: reason, pushedAt: null, pushedBy: null },
+    const returned = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.user._id, pushedAt: plan.pushedAt }, {
+      $set: { returnedAt: at, returnReason: reason },
       $push: { returnHistory: { at, reason, pushedAt: plan.pushedAt } },
     }, { new: true });
     if (!returned) return res.status(409).json({ success: false, message: '方案已变化，请刷新后核对' });

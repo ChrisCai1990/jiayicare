@@ -287,7 +287,7 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
     : (TYPE_META[plan.type] || DEFAULT_META);
   const sm   = STATUS_META[plan.status] || STATUS_META.draft;
   const isDraft = plan.status === 'draft';
-  const needsConfirm = !plan.confirmedAt && (plan.pushedAt || plan.status === 'active' || isDraft);
+  const needsConfirm = plan.type !== 'annual_mgmt' && !plan.confirmedAt && (plan.pushedAt || plan.status === 'active' || isDraft);
 
   const formatDate = (d) => d
     ? new Date(d).toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
@@ -473,7 +473,12 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
 
           {/* 底部按钮行 */}
           <View style={s.planFooter}>
-            {needsConfirm ? (
+            {plan.type === 'annual_mgmt' && !String(plan._id).startsWith('demo') ? (
+              <TouchableOpacity style={[s.consultBtn, { borderColor: colors.primary + '60', flex: 1 }]} onPress={() => onReturnPlan?.(plan)}>
+                <Ionicons name="create-outline" size={14} color={colors.primary} />
+                <Text style={[s.consultBtnText, { color: colors.primary }]}>提出修改意见</Text>
+              </TouchableOpacity>
+            ) : needsConfirm ? (
               <View style={{ flex: 1, gap: 8 }}><TouchableOpacity
                 style={[s.confirmBtn, confirming && { opacity: 0.6 }]}
                 onPress={() => onConfirmPlan && onConfirmPlan(plan)}
@@ -486,7 +491,6 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
                 }
                 <Text style={s.confirmBtnText}>{confirming ? '确认中…' : '确认方案'}</Text>
               </TouchableOpacity>
-              {plan.type === 'annual_mgmt' && !String(plan._id).startsWith('demo') && <TouchableOpacity style={s.confirmCancelBtn} onPress={() => onReturnPlan?.(plan)} disabled={confirming}><Text style={s.confirmCancelText}>需要调整，退回顾问</Text></TouchableOpacity>}
               </View>
             ) : plan.confirmedAt ? (
               <View style={{ flexDirection: 'row', flex: 1, gap: 8 }}>
@@ -524,7 +528,7 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
 export default function ServicePlansScreen({ navigation, route }) {
   const { isDemo } = useAuth();
   const direct = route?.params?.direct === true;
-  const requestedPlanId = String(route?.params?.planId || '');
+  const requestedPlanId = String(route?.params?.annualPlanId || route?.params?.planId || '');
   const requestedYear = Number(route?.params?.planYear || 0);
   const [plans, setPlans]           = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -622,6 +626,8 @@ export default function ServicePlansScreen({ navigation, route }) {
         item.problem && `当前问题：${item.problem}`, item.evidence && `设置依据：${item.evidence}`,
         item.goal && `管理目标：${item.goal}`, item.completionStandard && `完成标准：${item.completionStandard}`, item.schedule && `建议时间：${item.schedule}`,
         item.interventionFocus && `干预重点：${item.interventionFocus}`,
+        item.interventionPlan && `具体方案：${item.interventionPlan}`,
+        item.reviewItems?.length && `复查项目：${item.reviewItems.join('、')}`,
         item.frequency && `执行频率：${item.frequency}`,
         item.careTarget?.hospital && `建议机构：${item.careTarget.hospital}`,
         item.careTarget?.department && `建议科室：${item.careTarget.department}`,
@@ -663,7 +669,7 @@ export default function ServicePlansScreen({ navigation, route }) {
       if (direct) {
         const annualMatches = allPlans.filter(p => p.type === 'annual_mgmt' && Number(p.year) === requestedYear);
         const target = allPlans.find(p => String(p._id) === requestedPlanId)
-          || (!requestedPlanId && annualMatches.length === 1 ? annualMatches[0] : null);
+          || (annualMatches.length === 1 ? annualMatches[0] : null);
         setPlans(target ? [target] : []);
         setExpanded(target?._id || null);
         if (target && target.type !== 'annual_mgmt') plansAPI.view(target._id).catch(() => {});
@@ -729,9 +735,8 @@ export default function ServicePlansScreen({ navigation, route }) {
     setConfirmingPlanId(planReturnTarget._id);
     try {
       await plansAPI.returnAnnualMgmt(planReturnTarget._id, reason);
-      setPlans(prev => prev.filter(p => p._id !== planReturnTarget._id));
       setPlanReturnTarget(null); setReturnReason('');
-      Alert.alert('已退回', '健康顾问将按您的原因调整后重新推送。');
+      Alert.alert('已提交', '健康顾问将核对您的修改意见；当前方案仍可查看。');
     } catch (error) { Alert.alert('退回失败', error.message || '请稍后重试'); }
     finally { setConfirmingPlanId(null); }
   };
@@ -766,7 +771,7 @@ export default function ServicePlansScreen({ navigation, route }) {
   };
 
   const isCompleted = detailModal?.item?.status === 'completed';
-  const canComplete = detailModal?.item?._id && !isCompleted;
+  const canComplete = detailModal?.plan?.type !== 'annual_mgmt' && detailModal?.item?._id && !isCompleted;
 
   return (
     <SafeAreaView style={s.container}>
@@ -910,12 +915,12 @@ export default function ServicePlansScreen({ navigation, route }) {
       />
       <Modal visible={!!planReturnTarget} transparent animationType="fade" onRequestClose={() => setPlanReturnTarget(null)}>
         <View style={s.confirmOverlay}><View style={s.confirmBox}>
-          <Text style={s.confirmTitle}>退回年度方案</Text>
-          <Text style={s.confirmMessage}>请说明不同意或希望调整的内容，顾问修改后会重新推送。</Text>
+          <Text style={s.confirmTitle}>提出修改意见</Text>
+          <Text style={s.confirmMessage}>请说明希望调整的内容。顾问核对后会推送更新，当前方案仍可查看。</Text>
           <TextInput multiline maxLength={500} value={returnReason} onChangeText={setReturnReason} placeholder="填写调整原因" style={{ minHeight: 86, borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 8, padding: 10, textAlignVertical: 'top', marginBottom: 16 }} />
           <View style={s.confirmBtnRow}>
             <TouchableOpacity style={s.confirmCancelBtn} onPress={() => setPlanReturnTarget(null)}><Text style={s.confirmCancelText}>取消</Text></TouchableOpacity>
-            <TouchableOpacity style={s.confirmOkBtn} onPress={doReturnPlan} disabled={!!confirmingPlanId}><Text style={s.confirmOkText}>提交退回</Text></TouchableOpacity>
+            <TouchableOpacity style={s.confirmOkBtn} onPress={doReturnPlan} disabled={!!confirmingPlanId}><Text style={s.confirmOkText}>提交意见</Text></TouchableOpacity>
           </View>
         </View></View>
       </Modal>

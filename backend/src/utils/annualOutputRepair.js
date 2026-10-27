@@ -122,10 +122,28 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
     const remaining = (raw.annual_checkup.sourceIds || []).filter(id => !reviewIds.has(id));
     updated.annual_checkup = remaining.length ? { ...raw.annual_checkup, sourceIds: remaining } : {};
   }
+  // AI summary priorities are context until the advisor assigns a management
+  // direction. They cannot independently create an action beside confirmed ones.
+  if (management.length) {
+    const unconfirmedPriority = row => Array.isArray(row.sourceIds) && row.sourceIds.length > 0
+      && row.sourceIds.every(id => /^priority:\d+$/.test(id));
+    for (const key of ['templateNodes', 'medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine']) {
+      updated[key] = updated[key].filter(row => !unconfirmedPriority(row));
+    }
+    if (unconfirmedPriority(updated.annual_checkup || {})) updated.annual_checkup = {};
+  }
+  const retainedSources = new Set([...updated.templateNodes, ...updated.medical_treatment,
+    ...updated.checkup_completion, ...updated.abnormal_followup, ...updated.vaccine,
+    ...(updated.annual_checkup?.standardPlanId ? [updated.annual_checkup] : [])]
+    .flatMap(row => row.sourceIds || []));
   const linked = new Set(management.filter(item => !missingManagementActions({ ...updated,
     evidenceCoverage: [{ sourceId: item.id, status: 'included', reason: '已关联行动' }] }, [item], catalog).length).map(item => item.id));
-  updated.evidenceCoverage = raw.evidenceCoverage.map(item => linked.has(item.sourceId) && item.status !== 'included'
-    ? { ...item, status: 'included', reason: '顾问已确认纳入管理，已关联所选方向的行动' } : item);
+  updated.evidenceCoverage = raw.evidenceCoverage.map(item => {
+    if (management.length && /^priority:\d+$/.test(item.sourceId) && !retainedSources.has(item.sourceId))
+      return { ...item, status: 'deferred', reason: 'AI信息整理提示尚未由顾问选择管理方向，不能自动生成就医或检查行动；请顾问核对' };
+    return linked.has(item.sourceId) && item.status !== 'included'
+      ? { ...item, status: 'included', reason: '顾问已确认纳入管理，已关联所选方向的行动' } : item;
+  });
   return updated;
 }
 

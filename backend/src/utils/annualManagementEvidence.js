@@ -98,7 +98,7 @@ function managementTargets(evidence = []) {
     const directionLabel = DIRECTION_LABELS[direction] || '持续管理';
     return { issueId: item.id, goal: `${problem} · ${directionLabel}`,
       focus: [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
-      nutritionRelevant: false, sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
+      nutritionRelevant: direction === 'ongoing_management', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
   });
 }
 

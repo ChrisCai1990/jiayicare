@@ -5,12 +5,12 @@ const { syncAnnualPlanServiceTasks } = require('./annualPlanServiceTasks');
 
 const addDays = (date, days) => new Date(new Date(date).getTime() + days * 86400000);
 
-function buildAnnualPlanKickoffTasks(plan, patient, confirmedAt = plan.confirmedAt || new Date()) {
+function buildAnnualPlanKickoffTasks(plan, patient, confirmedAt = plan.followUpReleasedAt || plan.confirmedAt || new Date()) {
   const label = `${plan.year || new Date(confirmedAt).getFullYear()}年度健康管理方案`;
   return {
     client: {
       key: 'client_plan_execution', title: `开始执行${label}`,
-      description: '查看已确认方案及本人任务，按计划完成健康记录、检查或服务事项；具体日期以任务列表为准。',
+      description: '查看已发布的完整年度方案及本人任务，按计划完成健康记录、检查或服务事项；具体日期以任务列表为准。',
       dueDate: addDays(confirmedAt, 7).toISOString().slice(0, 10),
     },
     staff: [],
@@ -18,7 +18,8 @@ function buildAnnualPlanKickoffTasks(plan, patient, confirmedAt = plan.confirmed
 }
 
 async function syncAnnualPlanTaskSplit(plan) {
-  if (!plan.confirmedAt) return { clientTasks: 0, staffTasks: 0, scheduledFollowUps: 0, warnings: ['客户尚未确认方案'] };
+  if (!plan.confirmedAt && !(plan.followUpReleasedAt && plan.pushedAt && plan.reviewStatus === 'approved'))
+    return { clientTasks: 0, staffTasks: 0, scheduledFollowUps: 0, warnings: ['顾问尚未审核发布方案'] };
   const gate = await require('./annualServicePeriod').annualExecutionGate(plan);
   const tracker = require('./annualRenewalSyncState');
   const attemptId = gate.period ? await tracker.beginRenewalSync(gate.period) : null;
@@ -58,7 +59,7 @@ async function syncAnnualPlanTaskSplit(plan) {
   await require('./annualPlanSupplyPlans').syncAnnualPlanSupplyPlans(plan);
   await require('./annualPlanTreatmentSync').syncAnnualPlanTreatments(plan);
   const warnings = [];
-  if (!patient?.assignedHealthPlanner) warnings.push('客户尚未绑定健康规划师，请完善服务任务责任岗位');
+  if (gate.period && !patient?.assignedHealthPlanner) warnings.push('客户尚未绑定健康规划师，请完善服务任务责任岗位');
   if (gate.period && !patient?.assignedHealthManager) warnings.push('客户尚未绑定健管专员，请完善随访责任岗位');
   warnings.push(...(serviceTasks.warnings || []));
   if (gate.period) await tracker.finishRenewalSync(gate.period, attemptId, { issue: warnings.length ? { code: 'assignment', role: 'healthPlanner', message: warnings.join('；') } : null });

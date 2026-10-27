@@ -37,8 +37,9 @@ const annualPlanSchema = new mongoose.Schema({
   returnedAt: { type: Date, default: null },
   returnReason: { type: String, default: '' },
   returnHistory: { type: [mongoose.Schema.Types.Mixed], default: [], select: false },
-  followUpReleasedAt: { type: Date, default: null }, // 单客户例外：提前生成随访，不代表客户确认
-  serviceTaskReleasedAt: { type: Date, default: null }, // 单客户例外：内部服务任务提前启动，不代表客户确认
+  followUpReleasedAt: { type: Date, default: null }, // 顾问发布后生成随访，不代表客户确认
+  serviceTaskReleasedAt: { type: Date, default: null }, // 顾问发布后启动内部服务任务，不代表客户确认
+  distributionSyncedAt: { type: Date, default: null }, // 推送后任务同步完成，可识别中断并重试
   staffTaskReleasedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, select: false },
   staffTaskReleaseReason: { type: String, default: '', select: false },
   checkupPreparationVersion: { type: Number, default: 1 },

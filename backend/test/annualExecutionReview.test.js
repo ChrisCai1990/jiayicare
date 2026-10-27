@@ -1,9 +1,9 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const logic = require('../src/utils/annualExecutionReview');
 const change = { key: 'abnormal_followup', before: { items: '项目', personalizedAdvice: '原建议', time: '2026-11-01' }, after: { items: '项目', personalizedAdvice: '新建议', time: '2026-12-01' } };
-test('only confirmed/frozen plans with execution changes get review markers', () => {
+test('published, confirmed or frozen plans with execution changes get review markers', () => {
   assert.equal(logic.markForReview({}, [change]), null);
-  assert.equal(logic.markForReview({ pushedAt: new Date() }, [change]), null);
+  assert.equal(logic.markForReview({ pushedAt: new Date() }, [change]).status, 'pending');
   assert.equal(logic.markForReview({ confirmedAt: new Date() }, [change]).status, 'pending');
   assert.equal(logic.markForReview({ frozenAt: new Date() }, [change]).status, 'pending');
   assert.equal(logic.markForReview({ confirmedAt: new Date() }, [{ ...change, after: { ...change.before, reason: '仅补依据', reviewAmendmentSource: { topicId: 'new' } } }]), null);

@@ -17,13 +17,13 @@ test('actual annual page buttons preserve legacy availability and enforce pilot 
     const preparation = { checklist: { ready } };
     const preparationBlocked = vm.runInNewContext(expression, { closedLoopEnabled, preparation, preparationSelectionChanged, pushedAt: null });
     const buttons = vm.runInNewContext(compiled, { React, preparationBlocked, handleGenerateAIAnnualPlan() {}, handlePush() {},
-      patient: { aiHealthSummary: { sections: {} } }, aiPlanLoading: false, pushing: false, dirty: false, metricSelectionDirty: false, planType: 'legacy', pushedAt: null, confirmedAt: null });
+      patient: { aiHealthSummary: { sections: {} } }, aiPlanLoading: false, pushing: false, dirty: false, metricSelectionDirty: false, planType: 'legacy', plansByType: {}, pushedAt: null, confirmedAt: null });
     assert.equal(Boolean(buttons.props.children[0].props.disabled), disabled, JSON.stringify({ closedLoopEnabled, ready, preparationBlocked }));
     assert.equal(Boolean(buttons.props.children[1].props.disabled), disabled, JSON.stringify({ closedLoopEnabled, ready, preparationBlocked }));
   }
   const published = vm.runInNewContext(compiled, { React, preparationBlocked: false, handleGenerateAIAnnualPlan() {}, handlePush() {},
     patient: {}, aiPlanLoading: false, pushing: false, dirty: false, metricSelectionDirty: false, planType: 'legacy',
-    pushedAt: '2026-10-02T00:00:00Z', confirmedAt: null });
+    plansByType: {}, pushedAt: '2026-10-02T00:00:00Z', confirmedAt: null });
   assert.equal(published.props.children[0].props.disabled, true);
   assert.equal(published.props.children[1], false);
 });
@@ -52,20 +52,20 @@ test('selected customer readiness blocks annual AI before generation dependencie
   assert.equal(checklistReads, 1);
   assert.match(res.body.message, /准备清单/);
 });
-test('已推送或已确认的年度方案不再启动AI生成，客户退回后才允许重新准备', async () => {
+test('已推送或已确认的年度方案不再启动AI生成，修改走局部修订', async () => {
   const runFor = plan => handler('post', '/patients/:id/ai-annual-plan', {
     getVisiblePlanPatientIds: async () => [selected], User: { findById: async () => ({ _id: selected }) },
     AnnualPlan: { findOne: () => ({ select: () => ({ lean: async () => plan }) }) },
     require: () => assert.fail('正式方案不应再读取AI生成依赖'),
   });
-  for (const [plan, expected] of [[{ _id: 'p1', confirmedAt: null }, /等待客户确认/], [{ _id: 'p1', confirmedAt: new Date() }, /单项随访/]]) {
+  for (const [plan, expected] of [[{ _id: 'p1', confirmedAt: null }, /局部修订/], [{ _id: 'p1', confirmedAt: new Date() }, /单项随访/]]) {
     const res = response();
     await runFor(plan)({ staff: { role: 'familyDoctor' }, params: { id: selected }, body: { year: 2026 } }, res);
     assert.equal(res.code, 409);
     assert.match(res.body.message, expected);
   }
 });
-test('等待客户确认时重复推送不重新校验已经变化的来源', async () => {
+test('已完成分发的方案不能重复推送或重新校验已经变化的来源', async () => {
   const run = handler('patch', '/patients/:id/annual-plan/push', {
     getVisiblePlanPatientIds: async () => [selected],
     AnnualPlan: { findOne: async () => ({ _id: 'p1', pushedAt: new Date('2026-10-02T00:00:00Z') }) },
@@ -74,7 +74,30 @@ test('等待客户确认时重复推送不重新校验已经变化的来源', as
   const res = response();
   await run({ staff: { role: 'familyDoctor' }, params: { id: selected }, query: { year: '2026' } }, res);
   assert.equal(res.code, 409);
-  assert.match(res.body.message, /等待客户确认/);
+  assert.match(res.body.message, /方案已推送/);
+});
+test('顾问推送即生成随访和服务任务，客户确认时间保持空白', async () => {
+  const events = [];
+  const plan = { _id: 'p1', patientId: selected, year: 2026, moduleData: {}, confirmedAt: null,
+    markModified() {}, save: async function () { events.push('save'); } };
+  const run = handler('patch', '/patients/:id/annual-plan/push', {
+    getVisiblePlanPatientIds: async () => [selected], AnnualPlan: { findOne: async () => plan },
+    PushRecord: { findOne: async () => null, create: async () => { events.push('notify'); } },
+    require: name => {
+      if (name.endsWith('/healthManagementRollout')) return { enabledForPatient: () => false };
+      if (name.endsWith('/annualPlanPublishValidation')) return { validate: () => '' };
+      if (name.endsWith('/annualPlanTaskSplit')) return { syncAnnualPlanTaskSplit: async () => { events.push('dispatch'); return { clientTasks: 1, scheduledFollowUps: 1, serviceTasks: { created: 1 }, warnings: [] }; } };
+      if (name.endsWith('/annualPlanServiceVersions')) return { byCode: () => null };
+      if (name.endsWith('/annualNutrition.cjs')) return { isRow: () => false };
+      assert.fail('unexpected dependency ' + name);
+    },
+  });
+  const res = response();
+  await run({ staff: { role: 'familyDoctor', _id: 'advisor' }, params: { id: selected }, query: { year: '2026' } }, res);
+  assert.equal(res.code, 200, JSON.stringify(res.body));
+  assert.equal(plan.confirmedAt, null);
+  assert.ok(plan.followUpReleasedAt && plan.serviceTaskReleasedAt && plan.distributionSyncedAt);
+  assert.deepEqual(events, ['save', 'dispatch', 'save', 'notify']);
 });
 test('annual publishing reads readiness only for persisted selected owner', async () => {
   for (const patientId of [other, selected]) {

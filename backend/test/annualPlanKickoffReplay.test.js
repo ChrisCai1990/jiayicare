@@ -12,6 +12,19 @@ test.beforeEach(t => {
     t.mock.method(Model.collection, 'indexes', async () => [{ key: { annualDispatchKey: 1 }, unique: true, sparse: true }]);
   }
 });
+test('顾问发布后客户未在客户端确认，仍生成客户启动任务和员工排期', async t => {
+  let kickoff;
+  t.mock.method(require('../src/utils/annualServicePeriod'), 'annualExecutionGate', async () => ({ allowed: true, anchor: new Date('2026-10-27') }));
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: 'manager' }) }) }));
+  t.mock.method(Task, 'updateOne', async (filter, update) => { kickoff = { filter, update }; return { upsertedCount: 1 }; });
+  t.mock.method(require('../src/utils/annualPlanSupplyPlans'), 'syncAnnualPlanSupplyPlans', async () => ({}));
+  t.mock.method(require('../src/utils/annualPlanTreatmentSync'), 'syncAnnualPlanTreatments', async () => ({}));
+  const result = await syncAnnualPlanTaskSplit({ _id: 'plan', patientId: 'patient', year: 2026, confirmedAt: null,
+    pushedAt: new Date('2026-10-27'), followUpReleasedAt: new Date('2026-10-27'), reviewStatus: 'approved' });
+  assert.equal(result.clientTasks, 1);
+  assert.match(kickoff.update.$set.description, /已发布的完整年度方案/);
+  assert.equal(result.warnings.length, 0);
+});
 for (const status of ['completed', 'cancelled', 'in_progress', 'missed', 'planned', null]) {
   test(`重复同步不重开任务：${status || '首次创建'}`, async t => {
     const supplies = t.mock.method(require('../src/utils/annualPlanSupplyPlans'), 'syncAnnualPlanSupplyPlans', async () => ({}));
