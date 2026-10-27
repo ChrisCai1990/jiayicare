@@ -69,7 +69,7 @@ async function inventoryDeletion({ models, subject, storage, maxDocuments=100000
     executable:false};
 }
 async function findSharedFileReferences({ db, inventory, storage, maxDocuments=200000 }) {
-  const owned=new Set(inventory.documents.map(d=>d.collection+':'+d.id));
+  const owned=new Map(inventory.documents.map(d=>[d.collection+':'+d.id,d]));
   const candidates=new Set(inventory.files.filter(f=>['oss','local'].includes(f.storage)).map(f=>f.storage+':'+f.key));
   const shared=[];let scanned=0;
   if(!candidates.size) return {shared,scanned};
@@ -79,8 +79,11 @@ async function findSharedFileReferences({ db, inventory, storage, maxDocuments=2
     if(['accountdeletionjobs','accountdeletionrequests'].includes(name)) continue;
     for await(const document of db.collection(name).find({})) {
       if(++scanned>maxDocuments) throw new Error('REFERENCE_SCAN_LIMIT_REQUIRES_REVIEW');
-      if(owned.has(name+':'+String(document._id))) continue;
-      for(const file of fileReferences(document,storage)) {
+      const operation=owned.get(name+':'+String(document._id));
+      if(operation && operation.action!=='patch') continue;
+      // Patching a mixed backup must not hide its retained siblings' attachments.
+      const retained=operation?require('./accountDeletionLegacy').retainedLegacyDocument({document,item:operation,subject:inventory.subject}):document;
+      for(const file of fileReferences(retained,storage)) {
         if(candidates.has(file.storage+':'+file.key)) shared.push({storage:file.storage,key:file.key,collection:name,id:String(document._id)});
       }
     }

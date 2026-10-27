@@ -9,6 +9,7 @@ function database(fixtures) {
  collection:name=>({
   find:()=>({async *[Symbol.asyncIterator](){yield* rows[name];}}),
   findOne:async q=>rows[name].find(row=>row._id===q._id)||null,
+  replaceOne:async(q,replacement)=>{const i=rows[name].findIndex(row=>row._id===q._id);if(i<0)return {modifiedCount:0};rows[name][i]=structuredClone(replacement);return {modifiedCount:1};},
   deleteOne:async q=>{const i=rows[name].findIndex(row=>row._id===q._id);if(i<0)return {deletedCount:0};rows[name].splice(i,1);deleted.push(q._id);return {deletedCount:1};},
  })};
 }
@@ -42,4 +43,48 @@ test('failed writer fence and scan limit cannot produce success',async()=>{
  const plan=await inventoryLegacyCopies(options(db));
  await assert.rejects(eraseLegacyCopies({db,subject,plan,assertFrozen:async()=>false,objectId:x=>x}),{code:'LEGACY_FENCE_LOST'});
  await assert.rejects(inventoryLegacyCopies({...options(db),maxDocuments:0}),{code:'LEGACY_SCAN_LIMIT_REQUIRES_REVIEW'});assert.deepEqual(db.deleted,[]);
+});
+
+
+test('verified report-only maintenance snapshots erase; mixed financial or changed owner blocks',async()=>{
+ const db=database({maintenancebackups:[{_id:id(10),entity:'medicalreports',entityId:id(21),before:{_id:id(21),reportItems:[]}},
+  {_id:id(11),entity:'orders',entityId:id(21),before:{_id:id(21)}}],
+  maintenance_audits:[{_id:id(12),reportId:id(21),before:{user},after:{user}},
+   {_id:id(13),reportId:id(21),orders:[]},{_id:id(14),reportId:id(21),before:{user:other}}]});
+ const input={...options(db),inventory:{documents:[{model:'MedicalReport',id:id(21)}]}};
+ const plan=await inventoryLegacyCopies(input);
+ assert.equal(plan.documents.length,2);assert.equal(plan.blockers.length,3);
+ await assert.rejects(eraseLegacyCopies({db,subject,plan,assertFrozen:async()=>true,objectId:x=>x}),{code:'LEGACY_PLAN_NOT_VERIFIED'});
+ assert.equal(db.deleted.length,0);
+});
+
+test('mixed referral snapshot keeps every sibling byte and checks their shared attachment',async()=>{
+ const {findSharedFileReferences}=require('../src/utils/accountDeletionInventory');
+ const sibling={_id:id(31),patientId:other,content:'another person',attachedHealthInfo:{fileUrl:'https://owned.example/shared.pdf'}};
+ const db=database({codex_deletion_backups:[{_id:id(32),kind:'synthetic',createdAt:'unchanged',documents:[
+  {_id:id(30),patientId:user,content:'own private text',attachedHealthInfo:{fileUrl:'https://owned.example/shared.pdf'}},sibling]}]});
+ const plan=await inventoryLegacyCopies(options(db));assert.deepEqual(plan.blockers,[]);assert.equal(plan.documents[0].action,'patch');
+ assert.equal(JSON.stringify(plan).includes('private text'),false);assert.equal(plan.files.length,1);
+ const inventory={subject,documents:plan.documents,files:plan.files};
+ const shared=await findSharedFileReferences({db,inventory,storage:options(db).storage});
+ assert.equal(shared.shared.length,1);
+ await eraseLegacyCopies({db,subject,plan,assertFrozen:async()=>true,objectId:x=>x});
+ assert.deepEqual(db.rows.codex_deletion_backups[0].documents,[sibling]);
+ assert.equal(db.rows.codex_deletion_backups[0].createdAt,'unchanged');
+ assert.equal((await eraseLegacyCopies({db,subject,plan,assertFrozen:async()=>true,objectId:x=>x})).erased,0);
+ const remaining=await inventoryLegacyCopies({...options(db),inventory});assert.equal(remaining.blockers.length,0);assert.equal(remaining.documents.length,0);
+ assert.equal((await findSharedFileReferences({db,inventory,storage:options(db).storage})).shared.length,1);
+});
+
+test('unknown owner, sibling reference, foreign tenant and changed or missing shared backup refuse cleanup',async()=>{
+ for(const documents of [ [{patientId:user},{patientId:other,note:user}], [{patientId:user},{content:'owner unknown'}], [{patientId:user,tenantId:other}] ]) {
+  const db=database({codex_deletion_backups:[{_id:id(40),documents}]});
+  const plan=await inventoryLegacyCopies(options(db));assert.equal(plan.blockers.length,1);assert.equal(plan.documents.length,0);
+ }
+ const db=database({codex_deletion_backups:[{_id:id(41),documents:[{patientId:user},{patientId:other}]}]});
+ const plan=await inventoryLegacyCopies(options(db));
+ db.rows.codex_deletion_backups[0].documents[1].newValue=true;
+ await assert.rejects(eraseLegacyCopies({db,subject,plan,assertFrozen:async()=>true,objectId:x=>x}),{code:'LEGACY_COPY_CHANGED'});
+ db.rows.codex_deletion_backups=[];
+ await assert.rejects(eraseLegacyCopies({db,subject,plan,assertFrozen:async()=>true,objectId:x=>x}),{code:'LEGACY_SHARED_COPY_MISSING'});
 });

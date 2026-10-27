@@ -55,6 +55,11 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   {_id:legacyOwn,patientId:subject.userId,snapshot:{fileUrl:'https://app.example/api/uploads/own.txt'}},
   {_id:legacyChild,patientId:child,snapshot:{fileUrl:'https://external.example/child-original.pdf'}},
  ]);
+ const mixedId=oid(), reportBackupId=oid(), auditId=oid();
+ const retainedReferral={_id:oid(),patientId:child,content:'synthetic sibling',attachedHealthInfo:{fileUrl:'https://external.example/sibling.pdf'}};
+ await db.collection('codex_deletion_backups').insertOne({_id:mixedId,kind:'synthetic-only',documents:[{_id:oid(),patientId:subject.userId,content:'synthetic own'},retainedReferral]});
+ await db.collection('maintenancebackups').insertOne({_id:reportBackupId,entity:'medicalreports',entityId:ownReport,before:{_id:ownReport,reportItems:[]}});
+ await db.collection('maintenance_audits').insertOne({_id:auditId,reportId:ownReport,before:{user:subject.userId},after:{user:subject.userId}});
  const financeAdmin=oid(),financeOrder=oid(),financePayment=oid(),financeKey=randomBytes(32).toString('base64');
  await M.Admin.collection.insertOne({_id:financeAdmin,tenantId:subject.tenantId,role:'superadmin',staffStatus:'active'});
  await M.Order.collection.insertOne({_id:financeOrder,user:subject.userId,tenantId:subject.tenantId,status:'completed',tradeStatus:'completed',paymentStatus:'paid',refundStatus:'none',paidAmount:100});
@@ -84,7 +89,7 @@ test('real isolated execution deletes owned data/files and identity, preserving 
    for(const source of plan.documents) {
     const document=await db.collection(source.collection).findOne({_id:new mongoose.Types.ObjectId(source.id)});
     if(!document && !retry) throw Error('missing source before cleanup');
-    if(document) assert.equal(digest(document),source.sha256);
+    if(document) assert.ok(digest(document)===source.sha256 || (retry && source.action==='patch' && digest(document)===source.afterSha256));
    }
    return {verified:true};
   },
@@ -104,6 +109,9 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   async verifyExternalErasure(plan) {
    if(failExternal) throw Object.assign(new Error('injected storage verification failure'),{code:'STORAGE_VERIFICATION_FAILED'});
    for(const file of plan.files) await assert.rejects(fs.access(path.join(root,file.key)),{code:'ENOENT'});
+   assert.deepEqual((await db.collection('codex_deletion_backups').findOne({_id:mixedId})).documents,[retainedReferral]);
+   assert.equal(await db.collection('maintenancebackups').findOne({_id:reportBackupId}),null);
+   assert.equal(await db.collection('maintenance_audits').findOne({_id:auditId}),null);
    const legacy=await inventoryLegacyCopies({db,models:M,subject,inventory:plan,storage});
    assert.deepEqual(legacy.blockers,[]);assert.equal(legacy.documents.length,0);
    return {verified:true,scope:'isolated-test-only'};

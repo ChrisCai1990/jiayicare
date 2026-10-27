@@ -1,0 +1,21 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),net=require('node:net');
+const {spawn,execFile}=require('node:child_process'),{promisify}=require('node:util'),{randomUUID}=require('node:crypto');
+const {MongoClient,ObjectId}=require('mongodb');
+const {makePatterns,scanFile,scanBackupRoots}=require('../src/utils/accountDeletionBackupScan');
+test('actual mongodump gzip archive exposes target BSON id and preserves unrelated backup unchanged', {skip:!process.env.TEST_MONGOD||!process.env.TEST_MONGODUMP,timeout:60000},async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'deletion-dump-test-')),dbpath=path.join(root,'mongo'),backups=path.join(root,'backups');await fs.mkdir(dbpath);await fs.mkdir(backups);
+ const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
+ const databaseName='deletion_backup_'+randomUUID().replaceAll('-','');
+ const uri=`mongodb://127.0.0.1:${port}/${databaseName}`;
+ const server=spawn(process.env.TEST_MONGOD,['--dbpath',dbpath,'--bind_ip','127.0.0.1','--port',String(port)],{stdio:['ignore','pipe','pipe'],windowsHide:true});
+ const client=new MongoClient(uri);t.after(async()=>{await client.close();server.kill();});
+ await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('test Mongo startup timeout')),15000);server.once('error',e=>{clearTimeout(timeout);reject(e);});server.once('exit',()=>{clearTimeout(timeout);reject(Error('test Mongo exited'));});server.stdout.on('data',d=>{if(String(d).includes('Waiting for connections')){clearTimeout(timeout);resolve();}});server.stderr.resume();});
+ await client.connect();const db=client.db();const target=new ObjectId(),other=new ObjectId();
+ await db.collection('reports').insertMany([{_id:new ObjectId(),user:target,note:'synthetic own'},{_id:new ObjectId(),user:other,note:'synthetic other'}]);
+ const archive=path.join(backups,'actual.archive.gz');
+ await promisify(execFile)(process.env.TEST_MONGODUMP,['--uri',uri,'--archive='+archive,'--gzip'],{timeout:20000,windowsHide:true,maxBuffer:10000});
+ const bytes=await fs.readFile(archive);
+ const hit=await scanFile({file:archive,patterns:makePatterns({identifiers:[target.toHexString()]})});assert.equal(hit.clear,false);
+ const absent=await scanBackupRoots({roots:[backups],patterns:makePatterns({identifiers:[new ObjectId().toHexString()]}),assertFrozen:async()=>true});
+ assert.equal(absent.verified,true);assert.deepEqual(await fs.readFile(archive),bytes);
+});
