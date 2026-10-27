@@ -41,8 +41,11 @@ function reviewMetadataError(report) {
   const hasReportDate = validDate(report.checkDate || report.date);
   const namedItems = (report.reportItems || []).filter(item => String(item?.name || '').trim());
   // 多日合并资料不应硬塞一个报告级日期；这时每个有结果的项目必须有可追溯日期。
-  if (!hasReportDate && (!namedItems.length || namedItems.some(item => !validDate(effectiveItemDate(report, item))))) {
-    return '请填写报告统一检查日期；若为多日合并资料，请逐页填写有效检查日期后完成审核，可先保存草稿';
+  const undatedItems = hasReportDate ? [] : namedItems.filter(item => !validDate(effectiveItemDate(report, item)));
+  if (!hasReportDate && (!namedItems.length || undatedItems.length)) {
+    const pages = [...new Set(undatedItems.map(item => Number(item.sourcePage) || 1))].sort((a, b) => a - b);
+    const location = pages.length ? `第${pages.slice(0, 5).join('、')}页有${undatedItems.length}项缺少有效检查日期；` : '';
+    return `${location}若整份资料同日，请填写报告统一检查日期；若为多日合并资料，请按原件逐页填写有效检查日期，同页多日则逐项填写。可先保存草稿`;
   }
   if (!String(report.institution || report.hospital || '').trim() && report.institutionStatus !== 'unknown') {
     return '请填写来源机构，或核实后标记“来源机构不明”，可先保存草稿';
@@ -54,7 +57,7 @@ function reviewMetadataError(report) {
 function effectiveItemDate(report, item) {
   const pageDates = report.pageDates instanceof Map ? Object.fromEntries(report.pageDates) : (report.pageDates || {});
   const page = String(Number(item.sourcePage) || 1);
-  return Object.prototype.hasOwnProperty.call(pageDates, page) ? pageDates[page] : item.examDate;
+  return normalizeReportDate(pageDates[page]) || item.examDate;
 }
 
 function singleItemDate(report) {

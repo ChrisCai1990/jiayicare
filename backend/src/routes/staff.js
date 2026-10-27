@@ -5471,7 +5471,7 @@ router.patch('/medical-reports/:id/page-dates/:page', staffAuth, async (req, res
     const page = Number(req.params.page);
     const value = String(req.body?.date || '').trim();
     if (!Number.isInteger(page) || page < 1) return res.status(400).json({ success: false, message: '页码无效' });
-    if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) return res.status(400).json({ success: false, message: '请填写完整的 YYYY-MM-DD 日期' });
+    if (value && !isCalendarReportDate(value)) return res.status(400).json({ success: false, message: '请填写完整有效的 YYYY-MM-DD 日期' });
     const report = await MedicalReport.findByIdAndUpdate(
       req.params.id,
       { $set: { [`pageDates.${page}`]: value, updatedAt: new Date() } },

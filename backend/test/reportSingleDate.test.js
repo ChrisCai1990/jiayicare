@@ -19,7 +19,7 @@ test('one reviewed endoscopy date can restore the report date', () => {
 test('multiple or invalid item dates cannot become a report date', () => {
   assert.equal(singleItemDate({ reportItems: [{ name: 'A', examDate: '2024-04-03' }, { name: 'B', examDate: '2024-04-04' }] }), '');
   assert.equal(singleItemDate({ reportItems: [{ name: 'A', examDate: '2024-04-03' }, { name: 'B' }] }), '');
-  assert.equal(singleItemDate({ pageDates: { 1: '' }, reportItems: [{ name: '肠镜', sourcePage: 1, examDate: '2024-04-03' }] }), '');
+  assert.equal(singleItemDate({ pageDates: { 1: '' }, reportItems: [{ name: '肠镜', sourcePage: 1, examDate: '2024-04-03' }] }), '2024-04-03');
   assert.equal(singleItemDate({ reportItems: [{ name: '肠镜', examDate: '2024-04-31' }] }), '');
 });
 
@@ -45,12 +45,27 @@ test('review still requires a date on each page of a combined report', () => {
       { name: '其他检查', sourcePage: 41 },
     ],
   };
-  assert.match(reviewMetadataError(report), /逐页填写有效检查日期/);
+  assert.match(reviewMetadataError(report), /第41页有1项缺少有效检查日期/);
   assert.equal(singleItemDate(report), '');
   report.pageDates[41] = '2026-09-24';
   assert.equal(reviewMetadataError(report), '');
   assert.equal(singleItemDate(report), '');
   report.pageDates[41] = '';
   report.reportItems[1].examDate = '2026-09-24';
-  assert.match(reviewMetadataError(report), /逐页填写有效检查日期/);
+  assert.equal(reviewMetadataError(report), '');
+});
+
+test('combined report names the missing page even after other pages were dated', () => {
+  const report = {
+    institution: '体检中心',
+    pageDates: { 7: '2026-10-07', 9: '2026-10-07' },
+    reportItems: [
+      { name: '心电图', sourcePage: 8, examDate: '' },
+      { name: '呼气试验', sourcePage: 8, examDate: '2026-10-07' },
+      { name: '血常规', sourcePage: 9, examDate: '' },
+    ],
+  };
+  assert.match(reviewMetadataError(report), /第8页有1项缺少有效检查日期/);
+  report.reportItems[0].examDate = '2026-10-08';
+  assert.equal(reviewMetadataError(report), '');
 });

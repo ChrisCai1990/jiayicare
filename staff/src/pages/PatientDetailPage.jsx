@@ -4339,7 +4339,7 @@ export default function PatientDetailPage() {
     // 单页从 2025-01-01 改为 2025-01-02 时，会错误地留下两个日期。
     const itemDates = ocrEditItemsRef.current.filter(item => String(item.name || '').trim()).map(item => {
         const page = String(Number(item.sourcePage) || 1)
-        return calendarDate(pageHasExplicitDate(page) ? explicitPageDates[page] : item.examDate)
+        return calendarDate(pageHasExplicitDate(page) ? explicitPageDates[page] : '') || calendarDate(item.examDate)
       })
     const extraPageDates = Object.entries(explicitPageDates)
       .filter(([page]) => !ocrEditItemsRef.current.some(item => String(Number(item.sourcePage) || 1) === page))
@@ -13438,7 +13438,7 @@ export default function PatientDetailPage() {
                           <label style={{ display: 'block', marginTop: 8 }}>第 {activePage} 页{isPrescription ? '处方' : '检查'}日期
                             <input ref={ocrCurrentPageDateInputRef} data-report-page={activePage} type="text" inputMode="numeric" maxLength={10} placeholder="YYYY-MM-DD" style={{ ...inp, marginTop: 4 }} value={currentPageDate} onChange={e => updateCurrentPageDate(normalizePageDate(e.target.value))} onBlur={e => persistCurrentPageDate(e.target.value)} />
                           </label>
-                          <div style={{ fontSize: 11, color: '#6B7E75', lineHeight: 1.55, marginTop: 5 }}>通常只填写上方的报告日期。本页日期仅在原件确有不同日期时使用，只保存到当前页。</div>
+                          <div style={{ fontSize: 11, color: '#6B7E75', lineHeight: 1.55, marginTop: 5 }}>多日合并资料可将报告日期留空。若本页各项日期相同，填本页日期；同页有多个检查日期时，清空本页日期并在各项目填写日期。</div>
                         </details>
                       </div>
                       })()}
@@ -13554,9 +13554,9 @@ export default function PatientDetailPage() {
                                 </button>
                                 <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                               </div>
-                              {isPrescription && <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>处方开具日期（仅原件明确归属时填写）
+                              <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>{isPrescription ? '处方开具日期' : '本项检查日期'}（仅原件明确归属时填写）
                                 <DateField type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={calendarDate(it.examDate) || String(it.examDate || '')} onChange={e => updItem(i, { examDate: e.target.value })} />
-                              </label>}
+                              </label>
                               {isPrescription && <label style={{ display: 'block', fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 6 }}>匹配当前用药信息
                                 <select style={{ ...inp, width: '100%', marginTop: 4 }} value={it.medicationId || (it.medicationAction === 'keep' ? '__keep__' : '__create__')} onChange={e => {
                                   const matched = medications.find(med => String(med._id) === e.target.value)
