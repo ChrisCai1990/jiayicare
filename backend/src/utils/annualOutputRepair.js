@@ -7,7 +7,13 @@ function normalizeAnnualOutput(raw) {
 
 function bindConfiguredAnnualTemplate(raw, catalog = []) {
   const annual = raw?.annual_checkup;
-  if (!annual || Array.isArray(annual) || annual.standardPlanId || !require('./annualFocusRepair').hasFocus(annual)) return raw;
+  if (!annual || Array.isArray(annual)) return raw;
+  // An older failed snapshot may contain logistics copied onto an empty module.
+  // No clinical action or source was selected, so restore the empty module.
+  const logisticsOnly = Object.keys(annual).length > 0
+    && Object.keys(annual).every(key => ['hospital', 'institution', 'logisticsSourceReportId', 'expert'].includes(key));
+  if (logisticsOnly) return { ...raw, annual_checkup: {} };
+  if (annual.standardPlanId || !require('./annualFocusRepair').hasFocus(annual)) return raw;
   const configured = catalog.filter(item => item.category === 'annual_checkup');
   if (configured.length !== 1) return raw;
   return { ...raw, annual_checkup: { ...annual, standardPlanId: configured[0].id } };
