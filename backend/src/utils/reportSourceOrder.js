@@ -63,4 +63,21 @@ function stripReportSourceOrder(items) {
   return (items || []).map(({ _page, _order, ...rest }) => rest);
 }
 
-module.exports = { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder };
+// Each OCR crop numbers its sections from 1. Rebuild one page-wide sequence
+// after crop results have been combined, including punctuation variants of a
+// heading returned by the independent coverage pass.
+function resequenceSupplementSourceOrder(items) {
+  const normalized = value => String(value || '').trim()
+    .replace(/^[\s【\[『「]+|[\s】\]』」]+$/g, '').replace(/\s+/g, '');
+  const sectionOrders = new Map();
+  const rowOrders = new Map();
+  return (items || []).map(item => {
+    const key = normalized(item.sourceSection || item.orderName) || '未识别原件栏目';
+    if (!sectionOrders.has(key)) sectionOrders.set(key, sectionOrders.size + 1);
+    const row = (rowOrders.get(key) || 0) + 1;
+    rowOrders.set(key, row);
+    return { ...item, sourceSectionOrder: sectionOrders.get(key), sourceRowOrder: row };
+  });
+}
+
+module.exports = { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder, resequenceSupplementSourceOrder };

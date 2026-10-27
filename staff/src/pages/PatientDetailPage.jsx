@@ -95,7 +95,7 @@ import MedicationProxyStageForm, { medicationProxyStage } from '../components/Me
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
-import { insertReportItemBelow } from '../utils/reportItemOrder'
+import { insertReportItemBelow, orderReportItemsForReview, sameReviewSection } from '../utils/reportItemOrder'
 import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
 import { resolveScreeningCategory } from '../utils/screeningCategoryLabel.mjs'
 
@@ -13387,16 +13387,10 @@ export default function PatientDetailPage() {
                   const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
                   // 顺序是原件页码 → 栏目 → 栏目内行序；绝不按检查类型重新排序。
                   const indexedAll = ocrEditItems.map((it, i) => ({ it, i }))
-                  const indexed = indexedAll
+                  const indexed = orderReportItemsForReview(indexedAll
                     // 旧报告可能没有 sourcePage；这类项目只归到第一页，不能在每一页
                     // 都展示/修改，否则第 N 页录入日期会反向覆盖旧项目。
-                    .filter(({ it }) => Number(it.sourcePage) === activePage || (!it.sourcePage && activePage === 1))
-                    .sort((a, b) => {
-                      const section = (Number(a.it.sourceSectionOrder) || Number.MAX_SAFE_INTEGER) - (Number(b.it.sourceSectionOrder) || Number.MAX_SAFE_INTEGER)
-                      if (section) return section
-                      const row = (Number(a.it.sourceRowOrder) || Number.MAX_SAFE_INTEGER) - (Number(b.it.sourceRowOrder) || Number.MAX_SAFE_INTEGER)
-                      return row || a.i - b.i
-                    })
+                    .filter(({ it }) => Number(it.sourcePage) === activePage || (!it.sourcePage && activePage === 1)))
                   const reviewedCount = indexedAll.filter(({ it }) => it.manualReviewStatus === 'reviewed').length
                   const pageAllReviewed = indexed.length > 0 && indexed.every(({ it }) => it.manualReviewStatus === 'reviewed')
                   // 影像/描述判定：标了 imaging，或数值是长文本（>40字，基本是诊断描述而非检验值）
@@ -13501,7 +13495,7 @@ export default function PatientDetailPage() {
                           const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
                           const isFocusedItem = ocrFocusItemIndex === i
                           const previous = indexed[visibleIndex - 1]?.it
-                          const isNewSourceSection = !previous || String(previous.sourceSection || previous.orderName || '') !== String(it.sourceSection || it.orderName || '')
+                          const isNewSourceSection = !previous || !sameReviewSection(previous, it)
                           return (
                             <React.Fragment key={i}>
                             {isNewSourceSection && <div style={{ padding: '7px 10px', borderRadius: 6, background: '#EEF9F3', color: '#1E6B50', fontSize: 12, fontWeight: 700 }}>

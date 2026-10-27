@@ -115,7 +115,7 @@ const { mergeCoverageAuditItems, normalizeExplicitNormalStatus, coverageAuditHas
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
 const { rotateImageBuffer, reportRotationCandidates } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
-const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = require('../utils/reportSourceOrder');
+const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder, resequenceSupplementSourceOrder } = require('../utils/reportSourceOrder');
 const { findUnderExtractedPages } = require('../utils/reportPanelCount');
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
@@ -17895,7 +17895,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const alignedCandidates = parsedItems.map(item => alignSupplementCandidate(oldPageAtStart, item)).filter(Boolean);
   const missingCandidates = filterMissingReportItems(oldPageAtStart, alignedCandidates, { targetOrgans });
   const enrichmentCandidates = alignedCandidates.filter(item => supplementMatches(oldPageAtStart, item).length && hasReportItemEvidence(item));
-  let newPage = tagReportPageItems([...missingCandidates, ...enrichmentCandidates], pageNum);
+  let newPage = resequenceSupplementSourceOrder(tagReportPageItems([...missingCandidates, ...enrichmentCandidates], pageNum));
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
   }

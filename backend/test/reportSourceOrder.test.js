@@ -1,6 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = require('../src/utils/reportSourceOrder');
+const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder, resequenceSupplementSourceOrder } = require('../src/utils/reportSourceOrder');
+
+test('上下分区补提合并后重新编号，血常规和尿常规不交错', () => {
+  const raw = [
+    { name: '白细胞计数', sourceSection: '【检查科LAB检查】', sourceSectionOrder: 1, sourceRowOrder: 1 },
+    { name: '血红蛋白量', sourceSection: '【检查科LAB检查】', sourceSectionOrder: 1, sourceRowOrder: 2 },
+    { name: '尿液颜色', sourceSection: '『尿液干化学分析』', sourceSectionOrder: 2, sourceRowOrder: 1 },
+    { name: '葡萄糖', sourceSection: '尿液干化学分析', sourceSectionOrder: 1, sourceRowOrder: 7 },
+    { name: '酮体', sourceSection: '尿液干化学分析', sourceSectionOrder: 1, sourceRowOrder: 8 },
+  ];
+  const ordered = sortReportItemsBySource(resequenceSupplementSourceOrder(raw));
+  assert.deepEqual(ordered.map(item => item.name), raw.map(item => item.name));
+  assert.deepEqual(ordered.map(item => [item.sourceSectionOrder, item.sourceRowOrder]), [[1, 1], [1, 2], [2, 1], [2, 2], [2, 3]]);
+});
 
 test('按原件栏目及栏目内行序排列，不采信模型交错返回的数组位置', () => {
   const raw = [
