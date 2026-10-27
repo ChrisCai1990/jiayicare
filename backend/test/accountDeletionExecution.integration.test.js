@@ -7,6 +7,7 @@ const {inventoryDeletion,findSharedFileReferences}=require('../src/utils/account
 const {prepareJob,executeDeletion,digest}=require('../src/utils/accountDeletionExecutor');
 const {deleteLocalFileVerified}=require('../src/utils/accountDeletionFiles');
 const {inventoryLegacyCopies,eraseLegacyCopies}=require('../src/utils/accountDeletionLegacy');
+const {prepareFinancePlan,executeFinancePlan}=require('../src/utils/accountDeletionFinance');
 const {issueReceipt,readReceipt}=require('../src/utils/accountDeletionReceipt');
 const oid=()=>new mongoose.Types.ObjectId();
 test('real isolated execution deletes owned data/files and identity, preserving family; no production adapter claimed', {skip:!process.env.TEST_MONGOD,timeout:90000},async t=>{
@@ -50,6 +51,10 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   {_id:legacyOwn,patientId:subject.userId,snapshot:{fileUrl:'https://app.example/api/uploads/own.txt'}},
   {_id:legacyChild,patientId:child,snapshot:{fileUrl:'https://external.example/child-original.pdf'}},
  ]);
+ const financeAdmin=oid(),financeOrder=oid(),financePayment=oid(),financeKey=randomBytes(32).toString('base64');
+ await M.Admin.collection.insertOne({_id:financeAdmin,tenantId:subject.tenantId,role:'superadmin',staffStatus:'active'});
+ await M.Order.collection.insertOne({_id:financeOrder,user:subject.userId,tenantId:subject.tenantId,status:'completed',tradeStatus:'completed',paymentStatus:'paid',refundStatus:'none',paidAmount:100});
+ await M.Payment.collection.insertOne({_id:financePayment,order:financeOrder,user:subject.userId,status:'succeeded',amount:100,channel:'offline',outTradeNo:'synthetic-'+financePayment});
  const manifest=await inventoryDeletion({models:M,subject,storage});
  manifest.legacy=await inventoryLegacyCopies({db,models:M,subject,inventory:manifest,storage});
  assert.deepEqual(manifest.legacy.blockers,[]);
@@ -59,6 +64,9 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   if(existing)existing.sources.push(...file.sources);else manifest.files.push(file);
  }
  for(const file of manifest.files) if(file.storage==='local') Object.assign(file,{ownerId:String(subject.userId),tenantId:String(subject.tenantId),exclusive:true,disposition:'erase',sha256:fileHash});
+ manifest.finance=await prepareFinancePlan({models:M,subject,requestId:request._id,keyId:'test',encryptionKey:financeKey,
+  env:{ACCOUNT_DELETION_FINANCE_ADMIN_IDS:String(financeAdmin)},
+  classificationFor:async()=>({category:'tax_supporting_record',legalBasis:'synthetic test only',retainUntil:new Date('2037-01-01'),reviewedBy:financeAdmin,reviewedAt:new Date(),fieldsVerified:true,originalsVerified:true})});
  const job=await prepareJob({jobs,request,manifest});
  const secret=randomBytes(32).toString('hex'),receipt=issueReceipt(request,secret);
  let failExternal=true,failFinalWrite=false,blockManifest=null;
@@ -75,9 +83,8 @@ test('real isolated execution deletes owned data/files and identity, preserving 
    }
    return {verified:true};
   },
-  async archiveFinancialData(plan,{subject}) {
-   for(const name of ['Order','Payment','Refund']) assert.equal(await M[name].collection.countDocuments({$or:[{user:subject.userId},{payerUser:subject.userId}]}),0);
-   return {verified:true,financialRecords:0};
+  async archiveFinancialData(plan,{subject,fence}) {
+   return executeFinancePlan({models:M,subject,requestId:request._id,plan:plan.finance,encryptionKeys:{test:financeKey},assertFrozen:fence,objectId:id=>new mongoose.Types.ObjectId(id)});
   },
   async eraseFiles(plan,{subject,fence}) {
    for(const file of plan.files) await deleteLocalFileVerified({root,file,subject,assertFrozen:fence,assertExclusive:async()=>!(await findSharedFileReferences({db,inventory:plan,storage})).shared.length});
@@ -129,6 +136,9 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   assert.equal((await jobs.findOne({_id:job._id})).state,'completed');
   assert.equal((await executeDeletion(args)).evidence,result.evidence);
   assert.equal(await M.MedicalReport.collection.findOne({_id:ownReport}),null);
+  assert.equal(await M.Order.collection.findOne({_id:financeOrder}),null);
+  assert.equal(await M.Payment.collection.findOne({_id:financePayment}),null);
+  assert.equal(await M.AccountDeletionFinancialArchive.countDocuments({requestId:request._id}),2);
   assert.ok(await M.User.collection.findOne({_id:child}));
   assert.equal(await db.collection('medicalreportmaintenancearchives').findOne({_id:legacyOwn}),null);
   assert.ok(await db.collection('medicalreportmaintenancearchives').findOne({_id:legacyChild}));

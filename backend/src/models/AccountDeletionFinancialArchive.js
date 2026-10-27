@@ -10,6 +10,7 @@ const schema = new mongoose.Schema({
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   reviewedAt: { type: Date, required: true },
   keyId: { type: String, required: true },
+  sourceHash: { type: String, required: true },
   payloadHash: { type: String, required: true },
   iv: { type: String, required: true, select: false },
   tag: { type: String, required: true, select: false },

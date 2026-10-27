@@ -86,3 +86,15 @@ test('confirmed transaction records can be classified as tax support without pre
   assert.equal(openArchive(f.entry, f.encryptionKey).moneyUnit, 'CNY_yuan');
   assert.throws(() => fixture({ source: { ...source, currency: 'USD' } }));
 });
+
+
+test('nested allocation/fund fields cannot hide health data in financial archives', () => {
+  for (const allocations of [[{ order: { diagnosis: 'private' }, amount: 2 }], [{ order: 'order1', amount: { private: true } }], [{ order: 'order1', amount: -2 }], {}])
+    assert.throws(() => fixture({ source: { ...source, allocations } }));
+  assert.throws(() => fixture({ sourceType: 'Order', source: { ...order, healthFundBreakdown: { personal: { diagnosis: 'private' } } } }));
+});
+test('original-source fingerprint is bound to authenticated archive metadata', () => {
+  const f = fixture();
+  assert.match(f.entry.sourceHash, /^[a-f0-9]{64}$/);
+  assert.throws(() => openArchive({ ...f.entry, sourceHash: '0'.repeat(64) }, f.encryptionKey));
+});

@@ -28,7 +28,7 @@ function keyBytes(base64) {
 function identity(entry) {
   return { tenantId: String(entry.tenantId), requestId: String(entry.requestId), sourceType: entry.sourceType,
     sourceId: String(entry.sourceId), category: entry.category, legalBasis: entry.legalBasis,
-    retainUntil: entry.retainUntil, reviewedBy: String(entry.reviewedBy), reviewedAt: entry.reviewedAt, keyId: entry.keyId };
+    sourceHash: entry.sourceHash, retainUntil: entry.retainUntil, reviewedBy: String(entry.reviewedBy), reviewedAt: entry.reviewedAt, keyId: entry.keyId };
 }
 function financialSnapshot({ sourceType, source, order, subject, classification, now = new Date() }) {
   if (!FIELDS[sourceType] || !source?._id || !order?._id || !subject?.userId || !subject.tenantId) fail('Missing source or subject');
@@ -46,21 +46,34 @@ function financialSnapshot({ sourceType, source, order, subject, classification,
   for (const name of FIELDS[sourceType]) {
     if (source[name] === undefined) continue;
     // Do not let untyped/nested records smuggle unrelated health or account data into the archive.
-    if (name === 'allocations') fields[name] = (source[name] || []).map(row => ({ order: row.order, amount: row.amount }));
-    else if (name === 'healthFundBreakdown') fields[name] = Object.fromEntries(['personal', 'vitality', 'corporate'].filter(k => source[name]?.[k] !== undefined).map(k => [k, source[name][k]]));
+    if (name === 'allocations') {
+      if (!Array.isArray(source[name])) fail('Invalid payment allocations');
+      fields[name] = source[name].map(row => {
+        if (!row || !(typeof row.order === 'string' || row.order?.toHexString) || !String(row.order)
+          || typeof row.amount !== 'number' || !Number.isFinite(row.amount) || row.amount < 0) fail('Invalid allocation fields');
+        return { order: row.order, amount: row.amount };
+      });
+    }
+    else if (name === 'healthFundBreakdown') {
+      fields[name] = Object.fromEntries(['personal', 'vitality', 'corporate'].filter(k => source[name]?.[k] !== undefined).map(k => {
+        const value = source[name][k];
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) fail('Invalid fund amount');
+        return [k, value];
+      }));
+    }
     else {
       const value = source[name];
       if (value !== null && typeof value === 'object' && !(value instanceof Date) && typeof value.toHexString !== 'function') fail('Unexpected structured value in a financial field');
       fields[name] = value;
     }
   }
-  return { sourceType, sourceId: String(source._id), fields: canonical(fields),
+  return { sourceType, sourceId: String(source._id), sourceHash: hash(serialize(source)), fields: canonical(fields),
     classification: { category: classification.category, legalBasis: classification.legalBasis.trim(),
       retainUntil: until, reviewedBy: classification.reviewedBy, reviewedAt } };
 }
 function sealArchive({ snapshot, subject, requestId, keyId, encryptionKey }) {
   if (!requestId || !keyId || !subject?.tenantId) fail('Missing archive identity');
-  const entry = { tenantId: subject.tenantId, requestId, sourceType: snapshot.sourceType, sourceId: snapshot.sourceId,
+  const entry = { tenantId: subject.tenantId, requestId, sourceType: snapshot.sourceType, sourceId: snapshot.sourceId, sourceHash: snapshot.sourceHash,
     ...snapshot.classification, keyId };
   const aad = Buffer.from(serialize(identity(entry)));
   const plaintext = Buffer.from(serialize(snapshot.fields));
