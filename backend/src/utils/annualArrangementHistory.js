@@ -2,7 +2,8 @@
 function inheritArrangements(raw, reports = [], visits = []) {
   const result = structuredClone(raw);
   for (const key of ['medical_treatment','checkup_completion','abnormal_followup','annual_checkup']) {
-    const rows = Array.isArray(result[key]) ? result[key] : Array.isArray(result[key]?.records) ? result[key].records : result[key] && typeof result[key] === 'object' ? [result[key]] : [];
+    const rows = Array.isArray(result[key]) ? result[key] : Array.isArray(result[key]?.records) ? result[key].records
+      : result[key] && typeof result[key] === 'object' && Object.keys(result[key]).length ? [result[key]] : [];
     for (const row of rows) {
       if (row.hospital && (!require('./annualCareLogistics').usablePlace(row.hospital)
         || reports.some(report => String(report.title || '').trim() === String(row.hospital).trim()))) row.hospital = '';

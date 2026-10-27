@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { addMonths, reviewPlanFromInput, legacyReviewNote, reviewGroups } = require('../src/utils/annualReviewPlan');
+const { addMonths, reviewPlanFromInput, legacyReviewNote, legacyReviewPlan, reviewGroups } = require('../src/utils/annualReviewPlan');
 const { normalizeConfirmedManagement } = require('../src/utils/annualOutputRepair');
 const { validateAnnualRaw } = require('../src/utils/annualGenerationConsistency');
 const { validatePlanCoverage } = require('../src/utils/annualManagementEvidence');
@@ -17,13 +17,27 @@ const source = (id, item, months = 3, day = '2026-10-26') => ({
 const empty = evidence => ({ medical_treatment: [], checkup_completion: [], abnormal_followup: [], vaccine: [], annual_checkup: {}, templateNodes: [],
   evidenceCoverage: evidence.map(item => ({ sourceId: item.id, status: 'included', reason: '顾问确认' })) });
 
-test('复查间隔按自然月计算，旧自由文本不得静默当作完整计划', () => {
+test('复查间隔按自然月计算，新录入仍须明确项目和起算日期', () => {
   assert.equal(addMonths('2026-10-31', 3), '2027-01-31');
   assert.equal(addMonths('2026-11-30', 3), '2027-02-28');
   assert.equal(legacyReviewNote('3个月复查'), true);
   assert.throws(() => reviewPlanFromInput({ kind: 'recheck', intervalMonths: 3, anchorDate: '2026-10-26', items: '' }), /逐项填写/);
   assert.throws(() => reviewPlanFromInput({ kind: 'recheck', intervalMonths: 3, items: '肝超声' }), /起算日期/);
   assert.deepEqual(reviewPlanFromInput({ kind: 'recheck', intervalMonths: 3, anchorDate: '2026-10-26', items: '肝超声、ALT、肝超声' }).items, ['肝超声', 'ALT']);
+});
+
+test('旧顾问备注的单一复查期限使用来源项目及明确起算日期', () => {
+  const report = { checkDate: '2026-10-20', reportItems: [{ name: '胃蛋白酶原' }] };
+  const decision = { note: '3个月复查', reviewedAt: '2026-10-26T10:00:00Z',
+    sourceSnapshot: { item: { name: '胃蛋白酶原', examDate: '2026-10-21' } } };
+  assert.deepEqual(legacyReviewPlan(decision, report), {
+    kind: 'recheck', intervalMonths: 3, anchorDate: '2026-10-26', items: ['胃蛋白酶原'],
+  });
+  assert.equal(legacyReviewPlan({ ...decision, note: '三个月复查' }, report).intervalMonths, 3);
+  assert.equal(legacyReviewPlan({ ...decision, note: '检查后3个月复查' }, report).anchorDate, '2026-10-21');
+  assert.equal(legacyReviewPlan({ ...decision, note: '3个月及6个月复查' }, report), null);
+  assert.equal(legacyReviewPlan({ ...decision, sourceSnapshot: {} }, { ...report, reportItems: [{ name: '胃蛋白酶原' }, { name: '胃镜' }] }), null);
+  assert.equal(legacyReviewPlan({ ...decision, reviewPlan: { kind: 'recheck', intervalMonths: 6 } }, report), null);
 });
 
 test('同月多问题归为一条复查，来源、日期和全部项目进入客户可见安排', () => {

@@ -27,6 +27,32 @@ function legacyReviewNote(note) {
   return /(?:\d{1,2}|[一二三四五六七八九十两]+)\s*(?:个)?月.{0,12}复查|复查.{0,12}(?:\d{1,2}|[一二三四五六七八九十两]+)\s*(?:个)?月/.test(String(note || ''));
 }
 
+function legacyReviewPlan(decision, report) {
+  if (decision.reviewPlan?.kind === 'recheck' || !legacyReviewNote(decision.note)) return null;
+  const note = String(decision.note || '');
+  const chineseNumber = value => {
+    const digits = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    if (value === '十') return 10;
+    if (value.includes('十')) {
+      const [tens, ones] = value.split('十');
+      return (tens ? digits[tens] : 1) * 10 + (ones ? digits[ones] : 0);
+    }
+    return digits[value];
+  };
+  const intervals = [...note.matchAll(/(\d{1,2}|[一二三四五六七八九十两]{1,3})\s*(?:个)?月/g)]
+    .map(match => /^\d/.test(match[1]) ? Number(match[1]) : chineseNumber(match[1]));
+  if (intervals.length !== 1 || intervals[0] < 1 || intervals[0] > 24) return null;
+  const source = decision.sourceSnapshot?.item || ((report.reportItems || []).length === 1 ? report.reportItems[0] : null);
+  const item = String(source?.name || '').trim();
+  const sourceDate = String(source?.examDate || report.checkDate || '').slice(0, 10);
+  const reviewedAt = decision.reviewedAt && !Number.isNaN(Date.parse(decision.reviewedAt))
+    ? new Date(Date.parse(decision.reviewedAt) + 8 * 3600000).toISOString().slice(0, 10) : '';
+  const anchorDate = /(?:检查|报告|体检)后\s*(?:\d{1,2}|[一二三四五六七八九十两]+)\s*(?:个)?月/.test(note)
+    ? sourceDate : reviewedAt;
+  if (!item || !validDay(anchorDate)) return null;
+  return { kind: 'recheck', intervalMonths: intervals[0], anchorDate, items: [item] };
+}
+
 function reviewIntent(source) {
   const plan = source.content?.reviewPlan;
   if (plan?.kind !== 'recheck') return null;
@@ -51,4 +77,4 @@ function reviewGroups(evidence = []) {
   return [...grouped.values()].map(group => ({ ...group, items: [...new Set(group.items)], problems: [...new Set(group.problems)] }));
 }
 
-module.exports = { addMonths, reviewPlanFromInput, legacyReviewNote, reviewIntent, reviewGroups };
+module.exports = { addMonths, reviewPlanFromInput, legacyReviewNote, legacyReviewPlan, reviewIntent, reviewGroups };

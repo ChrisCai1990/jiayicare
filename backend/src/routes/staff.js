@@ -13766,7 +13766,8 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
           }, candidate => {
             const logistics = require('../utils/annualCareLogistics');
             const options = { reports, visits: previousVisits, dentalGift, today: todayText };
-            const aligned = repair.applyAnnualSchedule(repair.normalizeConfirmedManagement(candidate, evidence, availableAnnualFollowUpCatalog), reports);
+            const aligned = repair.applyAnnualSchedule(repair.normalizeConfirmedManagement(
+              repair.bindConfiguredAnnualTemplate(candidate, availableAnnualFollowUpCatalog), evidence, availableAnnualFollowUpCatalog), reports);
             const inherited = require('../utils/annualArrangementHistory').inheritArrangements(logistics.normalizeLogistics(aligned, options), reports, previousVisits);
             return clinicalRules.consolidateSameDayConsultations(logistics.normalizeLogistics(inherited, options));
           },
