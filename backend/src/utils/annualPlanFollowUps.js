@@ -187,7 +187,8 @@ async function buildAnnualPlanFollowUps(plan) {
         (rec.precautions || rec.notes) && `注意事项：${rec.precautions || rec.notes}`,
       ].filter(Boolean);
       const lines = [...details, executor && `执行人员：${staffName(executor)}`].filter(Boolean);
-      push(rec.appointmentSchedulingVersion === 1 ? appointmentDay(rec[mod.dateField]) : rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), executor,
+      const theme = mod.key === 'abnormal_followup' && rec.reviewGroupVersion === 1 ? '专科复查就医随访' : mod.theme;
+      push(rec.appointmentSchedulingVersion === 1 ? appointmentDay(rec[mod.dateField]) : rec[mod.dateField], `${theme} · ${label}`, lines.join('\n'), executor,
         `${mod.key}:${String(sourceDate(plan, mod.key, i, mod.dateField, rec[mod.dateField])).slice(0, 10)}:${String(label).trim()}`, rec);
     });
   }

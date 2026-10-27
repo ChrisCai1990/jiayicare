@@ -20,6 +20,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [title, setTitle] = useState(''), [direction, setDirection] = useState(''), [note, setNote] = useState('')
   const [reviewKind, setReviewKind] = useState('none'), [reviewMonths, setReviewMonths] = useState('3'), [reviewItems, setReviewItems] = useState('')
   const [reviewAnchorDate, setReviewAnchorDate] = useState('')
+  const [reviewDepartment, setReviewDepartment] = useState('')
   const [saved, setSaved] = useState(null), [legacy, setLegacy] = useState(null), [adoptLegacy, setAdoptLegacy] = useState(false), [error, setError] = useState('')
   const suggestions = specialtyIssueSuggestions(sourceText)
   const key = annualManagementSourceKey(source)
@@ -41,7 +42,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     setBusy(true); setError('')
     try {
       const result = await staffAPI.saveAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction, note: note.trim(),
-        reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems },
+        reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems, department: reviewDepartment },
         ...(adoptLegacy && legacy?._id ? { legacyDecisionId: legacy._id } : {}) })
       setSaved(result.data); if (adoptLegacy) setLegacy(null); setOpen(false)
       toast('已纳入管理，生成年度方案时将按此方向带入', 5000)
@@ -56,6 +57,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       setReviewMonths(String(saved?.reviewPlan?.intervalMonths || 3))
       setReviewItems((saved?.reviewPlan?.items || []).join('、'))
       setReviewAnchorDate(saved?.reviewPlan?.anchorDate || new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10))
+      setReviewDepartment(saved?.reviewPlan?.department || '')
     }}>{saved ? '✓ 已纳入管理' : '＋ 纳入管理'}</button>
     {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 520 }}>
       <div className="modal-header"><div className="modal-title">纳入年度管理</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
@@ -77,7 +79,9 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <DateField type="date" className="form-input" value={reviewAnchorDate} onChange={e => setReviewAnchorDate(e.target.value)} />
           <label className="form-label" style={{ marginTop: 8 }}>需复查项目（用顿号或换行分隔）</label>
           <textarea className="form-input" rows={2} value={reviewItems} onChange={e => setReviewItems(e.target.value)} placeholder="逐项填写具体检查名称，由顾问确认" />
-          <div style={{ fontSize: 12, color: '#65776F' }}>同一月份的复查项目会归入一次安排；请按医嘱或顾问判断确认起算日，生成后仍可审核调整。</div>
+          <label className="form-label" style={{ marginTop: 8 }}>先就诊的专科</label>
+          <input className="form-input" maxLength={100} value={reviewDepartment} onChange={e => setReviewDepartment(e.target.value)} placeholder="例如：消化内科；不同专科请分别归属" />
+          <div style={{ fontSize: 12, color: '#65776F' }}>同一月份、同一专科的项目归为一次就诊复查；先由专科医生评估并开单，再完成检查及结果回顾。</div>
         </div>}</>}
         {!saved && legacy && <label style={{ display: 'block', marginTop: 12, padding: 10, background: '#FFF9ED', borderRadius: 6, fontSize: 13 }}>
           <input type="checkbox" checked={adoptLegacy} onChange={e => {

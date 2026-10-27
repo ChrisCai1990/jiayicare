@@ -109,8 +109,9 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
     if (linked.length !== 1 || !group.sourceIds.every(id => linked[0].sourceIds.includes(id))
       || linked[0].items !== `复查${group.items.length}项检查`
       || linked[0].reviewItems?.length !== group.items.length
-      || !group.items.every(item => linked[0].reviewItems.includes(item))) {
-      return `约${group.intervalMonths}个月后的复查没有归为一次完整安排，请核对项目与来源`;
+      || !group.items.every(item => linked[0].reviewItems.includes(item))
+      || (group.department && linked[0].department !== group.department)) {
+      return `约${group.intervalMonths}个月后${group.department || '待确认专科'}的复查没有归为一次完整就诊安排，请核对项目与来源`;
     }
   }
   for (const source of evidence) {
