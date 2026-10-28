@@ -28,6 +28,7 @@ function keyBytes(base64) {
 function identity(entry) {
   return { tenantId: String(entry.tenantId), requestId: String(entry.requestId), sourceType: entry.sourceType,
     sourceId: String(entry.sourceId), category: entry.category, legalBasis: entry.legalBasis,
+    ...(entry.accountingYear === undefined ? {} : { accountingYear: entry.accountingYear }),
     sourceHash: entry.sourceHash, retainUntil: entry.retainUntil, reviewedBy: String(entry.reviewedBy), reviewedAt: entry.reviewedAt, keyId: entry.keyId };
 }
 function financialSnapshot({ sourceType, source, order, subject, classification, now = new Date() }) {
@@ -41,6 +42,7 @@ function financialSnapshot({ sourceType, source, order, subject, classification,
   const until = new Date(classification.retainUntil);
   const reviewedAt = new Date(classification.reviewedAt);
   if (!Number.isFinite(until.getTime()) || until <= now || !Number.isFinite(reviewedAt.getTime()) || reviewedAt > now) fail('Invalid retention or review date');
+  if (classification.category === 'accounting_voucher') require('./accountDeletionRetentionPolicy').validateVoucherRetention(classification, now);
   if (source.currency && source.currency !== 'CNY') fail('Unsupported financial currency');
   const fields = { archiveFormatVersion: 1, moneyUnit: 'CNY_yuan' };
   for (const name of FIELDS[sourceType]) {
@@ -68,7 +70,7 @@ function financialSnapshot({ sourceType, source, order, subject, classification,
     }
   }
   return { sourceType, sourceId: String(source._id), sourceHash: hash(serialize(source)), fields: canonical(fields),
-    classification: { category: classification.category, legalBasis: classification.legalBasis.trim(),
+    classification: { ...(classification.category === 'accounting_voucher' ? { accountingYear: classification.accountingYear } : {}), category: classification.category, legalBasis: classification.legalBasis.trim(),
       retainUntil: until, reviewedBy: classification.reviewedBy, reviewedAt } };
 }
 function sealArchive({ snapshot, subject, requestId, keyId, encryptionKey }) {

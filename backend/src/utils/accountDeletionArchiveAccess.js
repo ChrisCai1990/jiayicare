@@ -25,6 +25,6 @@ async function readFinancialArchive({actor,archiveId,purpose,reason,archives,aud
  if(!persisted || String(persisted.actorId)!==String(actor._id) || String(persisted.archiveId)!==String(record._id) || persisted.payloadHash!==record.payloadHash)
    fail(503,'查阅审计未确认，请稍后重试');
  const fields=openArchive(record,key);
- return {sourceType:record.sourceType,sourceId:String(record.sourceId),category:record.category,legalBasis:record.legalBasis,retainUntil:record.retainUntil,fields};
+ return {sourceType:record.sourceType,sourceId:String(record.sourceId),category:record.category,legalBasis:record.legalBasis,retainUntil:record.retainUntil,accountingYear:record.accountingYear??null,expiryAction:'appraisal_required',fields};
 }
 module.exports={authorize,readFinancialArchive};

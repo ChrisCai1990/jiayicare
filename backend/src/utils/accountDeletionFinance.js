@@ -43,6 +43,8 @@ async function prepareFinancePlan({ models, subject, requestId, classificationFo
   for (const row of flatten(sources)) {
     const order = sources.orders.find(o => String(o._id) === String(row.sourceType === 'Order' ? row.sourceId : row.source.order));
     const classification = await classificationFor(row.sourceType, row.source);
+    // Operator confirmed all three transaction sources are accounting vouchers.
+    if (classification?.category !== 'accounting_voucher') fail('FINANCE_CATEGORY_MISMATCH');
     // Review identity must be a real authorized institutional administrator, not a placeholder.
     const admin = await models.Admin.collection.findOne({ _id: classification?.reviewedBy, tenantId: subject.tenantId, role: 'superadmin' });
     if (!admin) fail('FINANCE_REVIEWER_UNVERIFIED');
@@ -60,6 +62,8 @@ async function executeFinancePlan({ models, subject, requestId, plan, encryption
   const repository = makeArchiveRepository(models.AccountDeletionFinancialArchive);
   const entries = new Map();
   for (const entry of plan.entries) {
+    if (entry.category !== 'accounting_voucher') fail('FINANCE_CATEGORY_MISMATCH');
+    require('./accountDeletionRetentionPolicy').validateVoucherRetention(entry, now);
     if (!['Order', 'Payment', 'Refund'].includes(entry.sourceType) || !/^[a-f0-9]{64}$/.test(entry.sourceHash || '')
       || String(entry.tenantId) !== String(subject.tenantId) || String(entry.requestId) !== String(requestId) || entries.has(keyOf(entry))) fail('FINANCE_PLAN_INVALID');
     const fields = openArchive(entry, encryptionKeys[entry.keyId]);

@@ -75,7 +75,7 @@ test('real isolated execution deletes owned data/files and identity, preserving 
  for(const file of manifest.files) if(file.storage==='local') Object.assign(file,{ownerId:String(subject.userId),tenantId:String(subject.tenantId),exclusive:true,disposition:'erase',sha256:fileHash});
  manifest.finance=await prepareFinancePlan({models:M,subject,requestId:request._id,keyId:'test',encryptionKey:financeKey,
   env:{ACCOUNT_DELETION_FINANCE_ADMIN_IDS:String(financeAdmin)},
-  classificationFor:async()=>({category:'tax_supporting_record',legalBasis:'synthetic test only',retainUntil:new Date('2037-01-01'),reviewedBy:financeAdmin,reviewedAt:new Date(),fieldsVerified:true,originalsVerified:true})});
+  classificationFor:async()=>({category:'accounting_voucher',accountingYear:2026,legalBasis:'synthetic test only',retainUntil:new Date('2057-01-01'),reviewedBy:financeAdmin,reviewedAt:new Date(),fieldsVerified:true,originalsVerified:true})});
  const job=await prepareJob({jobs,request,manifest});
  const secret=randomBytes(32).toString('hex'),receipt=issueReceipt(request,secret);
  let failExternal=true,failFinalWrite=false,blockManifest=null;

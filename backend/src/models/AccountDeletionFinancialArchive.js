@@ -7,6 +7,7 @@ const schema = new mongoose.Schema({
   category: { type: String, enum: ['tax_supporting_record', 'accounting_voucher', 'accounting_ledger', 'accounting_auxiliary'], required: true },
   legalBasis: { type: String, required: true },
   retainUntil: { type: Date, required: true },
+  accountingYear: { type: Number, required: function () { return this.category === 'accounting_voucher'; }, validate: Number.isInteger },
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   reviewedAt: { type: Date, required: true },
   keyId: { type: String, required: true },

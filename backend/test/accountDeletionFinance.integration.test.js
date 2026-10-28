@@ -35,7 +35,7 @@ test('finance stage with real isolated Mongo and synthetic transactions only', {
   await M.Order.collection.insertOne({_id:order,user:subject.userId,tenantId:subject.tenantId,status:'completed',tradeStatus:'completed',paymentStatus:'paid',refundStatus:'none',paidAmount:100,healthProfile:{diagnosis:'private'},serviceName:'synthetic item'});
   await M.Payment.collection.insertOne({_id:payment,order,user:subject.userId,status:'succeeded',amount:100,channel:'offline',outTradeNo:'synthetic-'+payment,notifySnapshot:{private:'exclude'}});
   await M.Refund.collection.insertOne({_id:refund,order,payment,user:subject.userId,status:'succeeded',amount:10,totalAmount:100,outRefundNo:'synthetic-'+refund,reason:'private reason'});
-  const classificationFor=async()=>({category:'tax_supporting_record',legalBasis:'synthetic test only',retainUntil:new Date('2037-01-01'),reviewedBy:admin,reviewedAt:now,fieldsVerified:true,originalsVerified:true});
+  const classificationFor=async()=>({category:'accounting_voucher',accountingYear:2026,legalBasis:'synthetic test only',retainUntil:new Date('2057-01-01'),reviewedBy:admin,reviewedAt:now,fieldsVerified:true,originalsVerified:true});
   const prepare=()=>prepareFinancePlan({models:M,subject,requestId,classificationFor,keyId:'test',encryptionKey,now,env:{ACCOUNT_DELETION_FINANCE_ADMIN_IDS:String(admin)}});
   const execute=plan=>executeFinancePlan({models:M,subject,requestId,plan,encryptionKeys:{test:encryptionKey},assertFrozen:ready,objectId:id=>new mongoose.Types.ObjectId(id),now});
   return {subject,requestId,order,payment,refund,admin,prepare,execute};
@@ -67,7 +67,7 @@ test('finance stage with real isolated Mongo and synthetic transactions only', {
   assert.equal(await M.Order.collection.findOne({_id:f.order}),null);
   assert.equal(await M.Payment.collection.findOne({_id:f.payment}),null);
   const archived=await M.AccountDeletionFinancialArchive.find({requestId:f.requestId}).select('+ciphertext +iv +tag').lean();
-  for(const entry of archived){assert.ok(entry.verifiedAt);const payload=openArchive(entry,encryptionKey);assert.equal(payload.healthProfile,undefined);assert.equal(payload.notifySnapshot,undefined);assert.equal(payload.reason,undefined);}
+  for(const entry of archived){assert.ok(entry.verifiedAt);assert.equal(entry.category,'accounting_voucher');assert.equal(entry.accountingYear,2026);const payload=openArchive(entry,encryptionKey);assert.equal(payload.healthProfile,undefined);assert.equal(payload.notifySnapshot,undefined);assert.equal(payload.reason,undefined);}
   assert.equal((await f.execute(plan)).verified,true);
  });
  await t.test('lost source without verified archive and missing write fence fail closed',async()=>{

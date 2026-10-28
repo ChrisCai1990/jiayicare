@@ -5,7 +5,7 @@ const { financialSnapshot, sealArchive, openArchive, persistVerifiedArchive } = 
 const now = new Date('2026-10-27T08:00:00Z');
 const subject = { userId: 'u1', tenantId: 't1' };
 const order = { _id: 'order1', user: 'u1', tenantId: 't1' };
-const classification = { category: 'accounting_voucher', legalBasis: 'Test fixture only', reviewedBy: 'admin1',
+const classification = { category: 'accounting_voucher', accountingYear: 2026, legalBasis: 'Test fixture only', reviewedBy: 'admin1',
   reviewedAt: new Date('2026-10-27T07:00:00Z'), retainUntil: new Date('2057-01-01T00:00:00Z'), fieldsVerified: true, originalsVerified: true };
 const source = { _id: 'pay1', order: 'order1', user: 'u1', amount: 100, channel: 'wechat_pay', status: 'succeeded',
   outTradeNo: 'synthetic-trade', payerOpenid: 'private-login-link', prepayId: 'temporary-credential',
@@ -97,4 +97,12 @@ test('original-source fingerprint is bound to authenticated archive metadata', (
   const f = fixture();
   assert.match(f.entry.sourceHash, /^[a-f0-9]{64}$/);
   assert.throws(() => openArchive({ ...f.entry, sourceHash: '0'.repeat(64) }, f.encryptionKey));
+});
+
+
+test('voucher retention cannot be shortened and the accounting year is authenticated', () => {
+  for (const change of [{accountingYear:undefined},{accountingYear:2027},{retainUntil:'2037-01-01'},{retainUntil:'2056-12-31T15:59:59.999Z'}])
+    assert.throws(()=>fixture({classification:{...classification,...change}}));
+  const f=fixture();assert.equal(f.entry.accountingYear,2026);
+  assert.throws(()=>openArchive({...f.entry,accountingYear:2025},f.encryptionKey));
 });
