@@ -15462,8 +15462,15 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       // 否则用当前角色对应的会员范围（myPatientIds 已按 role 算好）
       const sumFilter = { aiHealthSummary: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
       const sumUsers = await User.find(sumFilter)
-        .select('name aiHealthSummary').lean();
-      sumUsers.forEach(u => todos.push(...summaryTodos(u, can, now)));
+        .select('name aiHealthSummary assignedNutritionist servicePackage serviceStartDate serviceExpiry clientBrand isDeleted archiveReviewSnapshotAt').lean();
+      const { lifestyleGenerationEligible } = require('../utils/lifestyleHandoffEligibility');
+      const projected = sumUsers.flatMap(u => summaryTodos(u, can, now).map(todo => ({ user: u, todo })));
+      const checked = await Promise.all(projected.map(async ({ user, todo }) => {
+        if (todo.type !== 'lifestyle_generate') return todo;
+        try { return await lifestyleGenerationEligible(user, now.getFullYear()) ? todo : null; }
+        catch (error) { console.error('[lifestyle-handoff] eligibility check failed:', error); return null; }
+      }));
+      todos.push(...checked.filter(Boolean));
     }
 
     // ── 健康顾问：AI用药建议待审核 ──

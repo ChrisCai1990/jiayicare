@@ -37,13 +37,11 @@ function summaryTodos(user, can, now = new Date()) {
     const nutritionRecords = records.filter(record => record.sections?.lifestyle_assessment
       && (!record.scope || ['nutrition', 'all'].includes(record.scope)));
     const existingDraft = nutritionRecords.some(record => !record.nutritionApprovedAt && !record.approvedAt);
-    const completedAfterHandoff = nutritionRecords.some(record => {
-      const generatedTime = Date.parse(record.generatedAt);
-      const reviewedTime = Date.parse(record.nutritionApprovedAt || record.approvedAt);
-      return (Number.isFinite(generatedTime) && generatedTime >= approvedTime)
-        || (Number.isFinite(reviewedTime) && reviewedTime >= approvedTime);
-    });
-    if (existingDraft || completedAfterHandoff) continue;
+    // Doctor-only records can carry the previously approved nutrition section.
+    // A later doctor approval must not reopen that completed nutrition work.
+    const completedLifestyle = records.some(record => record.sections?.lifestyle_assessment
+      && (record.nutritionApprovedAt || (!record.scope && record.approvedAt)));
+    if (existingDraft || completedLifestyle) continue;
     todos.push({ id: `lifestyle_generate_${user._id}_${year}_${approvedTime}`, type: 'lifestyle_generate',
       label: '待生成生活方式分析', priority: 3, patientName: user.name || '未知', patientId: String(user._id),
       summary: `${year}年度 · 健康顾问已审核5维分析，请生成生活方式分析`,
