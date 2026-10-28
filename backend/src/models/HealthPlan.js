@@ -13,6 +13,10 @@ const planItemSchema = new mongoose.Schema({
   },
   completedAt: { type: Date, default: null },
   reportId:    { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
+  completionSource: { type: String, default: '' }, // screening_auto | screening_manual; older entries remain unchanged
+  completionNote: { type: String, default: '' },
+  completionReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  completionReviewedAt: { type: Date, default: null },
   // 关联检验检查库
   itemId:      { type: mongoose.Schema.Types.ObjectId, default: null },
   itemType:    { type: String, default: '' },  // 'labTest' | 'specialExam' | 'followUpPlan' | ''

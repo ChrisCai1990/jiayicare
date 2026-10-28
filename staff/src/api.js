@@ -247,6 +247,8 @@ export const staffAPI = {
   deletePlanDiscussion:   (id, index) => req(`/staff/plans/${id}/discussions/${index}`, { method: 'DELETE' }),
   generatePlanDiscussionReply: (id) => req(`/staff/plans/${id}/discussions/ai-reply`, { method: 'POST' }),
   updatePlanItem: (planId, itemId, d) => req(`/staff/plans/${planId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
+  getCheckupScreeningReconciliation: id => req(`/staff/plans/${id}/screening-reconciliation`),
+  reconcileCheckupScreening: id => req(`/staff/plans/${id}/screening-reconciliation`, { method: 'POST' }),
 
   // Medical Reports
   getReports:    (p = {}) => req('/staff/medical-reports?' + qs(p)),

@@ -1,10 +1,12 @@
 // Catalog linkage must not determine whether an unfinished plan remains visible.
 // A skipped item does not establish that the examination was completed.
-function summarizeCheckupItems(items = []) {
+function summarizeCheckupItems(items = [], auditedReports = null) {
   const rows = Array.isArray(items) ? items : [];
-  const completedCount = rows.filter(item => item?.status === 'completed').length;
+  const audited = auditedReports === null ? null : new Set(auditedReports.map(report => String(report._id)));
+  const complete = item => item?.status === 'completed' && (audited === null || (item.reportId && audited.has(String(item.reportId))));
+  const completedCount = rows.filter(complete).length;
   const skippedCount = rows.filter(item => item?.status === 'skipped').length;
-  const pendingItems = rows.filter(item => item?.status !== 'completed');
+  const pendingItems = rows.filter(item => !complete(item));
   return {
     totalItems: rows.length, completedCount, skippedCount,
     pendingCount: pendingItems.length,
@@ -14,12 +16,13 @@ function summarizeCheckupItems(items = []) {
   };
 }
 
-function buildCheckupWorkbenchRows(plans, patients, includeCompleted = false) {
+function buildCheckupWorkbenchRows(plans, patients, includeCompleted = false, auditedReports = null) {
   const patientMap = new Map(patients.map(patient => [String(patient._id), patient]));
   return plans.flatMap(plan => {
     if ((plan.type && plan.type !== 'annual_checkup') || plan.status === 'cancelled') return [];
     const patient = patientMap.get(String(plan.patientId));
-    const progress = summarizeCheckupItems(plan.items);
+    const ownReports = auditedReports === null ? null : auditedReports.filter(report => String(report.user) === String(plan.patientId));
+    const progress = summarizeCheckupItems(plan.items, ownReports);
     if (!patient || !progress.totalItems || (!includeCompleted && !progress.pendingCount)) return [];
     return [{
       patientId: plan.patientId, patientName: patient.name, patientPhone: patient.phone,

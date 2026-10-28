@@ -53,14 +53,17 @@ test('actual route keeps staff scope and defaults to unfinished while supporting
   const start = source.indexOf("router.get('/checkup-progress'");
   const end = source.indexOf('// ── GET /api/staff/patients/search-registered', start);
   let handler, userFilter, planFilter;
-  const current = { ...plan, items: [{ status: 'completed' }, { status: 'pending', itemType: '' }] };
-  const finished = { ...plan, _id: 'finished', items: [{ status: 'completed' }] };
+  const current = { ...plan, items: [{ status: 'completed', reportId: 'report-1' }, { status: 'pending', itemType: '' }] };
+  const finished = { ...plan, _id: 'finished', items: [{ status: 'completed', reportId: 'report-2' }] };
   vm.runInNewContext(source.slice(start, end), {
     router: { get: (_path, _auth, fn) => { handler = fn; } },
     staffAuth: () => {},
     getVisibleStaffIds: async () => ['staff'],
     User: { find: filter => { userFilter = filter; return { select: () => ({ lean: async () => patients }) }; } },
     HealthPlan: { find: filter => { planFilter = filter; return { select: () => ({ lean: async () => [current, finished] }) }; } },
+    MedicalReport: { find: () => ({ select: () => ({ lean: async () => [
+      { _id: 'report-1', user: 'patient' }, { _id: 'report-2', user: 'patient' },
+    ] }) }) },
     require: name => { assert.equal(name, '../utils/checkupWorkbenchProgress'); return { buildCheckupWorkbenchRows }; },
   });
   let response;
@@ -73,4 +76,11 @@ test('actual route keeps staff scope and defaults to unfinished while supporting
   assert.equal(response.data[0].progressStatus, 'in_progress');
   await handler({ staff: { _id: 'staff', role: 'healthManager' }, query: { includeCompleted: '1' } }, res);
   assert.equal(response.data.length, 2);
+});
+
+test('workbench counts only linked audited reports for the same patient', () => {
+  const completed = { ...plan, items: [{ name: '血常规', status: 'completed', reportId: 'r1' }] };
+  assert.equal(buildCheckupWorkbenchRows([completed], patients, true, [])[0].completedCount, 0);
+  assert.equal(buildCheckupWorkbenchRows([completed], patients, true, [{ _id: 'r1', user: 'other' }])[0].completedCount, 0);
+  assert.equal(buildCheckupWorkbenchRows([completed], patients, true, [{ _id: 'r1', user: 'patient' }])[0].completedCount, 1);
 });

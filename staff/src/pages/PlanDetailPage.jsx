@@ -229,6 +229,12 @@ export default function PlanDetailPage() {
   const [checkupTemplates, setCheckupTemplates] = useState([])
   const [syncTemplateId, setSyncTemplateId] = useState('')
   const [syncingTemplate, setSyncingTemplate] = useState(false)
+  const [screeningEvidence, setScreeningEvidence] = useState(null)
+  const [selectedReportIds, setSelectedReportIds] = useState({})
+  const [screeningBusy, setScreeningBusy] = useState(false)
+  const canReviewCheckup = plan?.type === 'annual_checkup' && canEditPlanType(plan, staff?.role)
+    && (plan.canManage || (staff?.role === 'familyDoctor'
+      && String(plan.patientId?.assignedFamilyDoctor?._id || plan.patientId?.assignedFamilyDoctor || '') === String(staff?._id || '')))
 
   const load = async () => {
     try { const r = await staffAPI.getPlan(id); setPlan(r.data) }
@@ -246,6 +252,24 @@ export default function PlanDetailPage() {
   useEffect(() => {
     if (plan?.type === 'annual_checkup') setSyncTemplateId(String(plan.content?.templateId || ''))
   }, [plan?._id, plan?.content?.templateId])
+  const loadScreeningEvidence = async () => {
+    try { const r = await staffAPI.getCheckupScreeningReconciliation(id); setScreeningEvidence(r.data) }
+    catch (err) { toast(err.message || '已审报告核对信息加载失败') }
+  }
+  useEffect(() => {
+    if (canReviewCheckup) loadScreeningEvidence()
+  }, [plan?._id, plan?.updatedAt, canReviewCheckup])
+
+  const reconcileScreening = async () => {
+    setScreeningBusy(true)
+    try {
+      const r = await staffAPI.reconcileCheckupScreening(id)
+      toast(`已自动核对 ${r.data?.applied?.length || 0} 项；其余请逐项选择已审核报告`)
+      await load()
+      await loadScreeningEvidence()
+    } catch (err) { toast(err.message || '核对失败') }
+    finally { setScreeningBusy(false) }
+  }
 
   const syncCheckupTemplate = async () => {
     const template = checkupTemplates.find(t => String(t._id) === syncTemplateId)
@@ -292,6 +316,22 @@ export default function PlanDetailPage() {
   const handleItemStatus = async (itemId, status) => {
     try { await staffAPI.updatePlanItem(id, itemId, { status }); load() }
     catch (err) { toast(err.message) }
+  }
+
+  const confirmCheckupItem = async item => {
+    const reportId = selectedReportIds[item._id]
+    if (!reportId) { toast('请先选择本年度已审核的报告'); return }
+    const reason = window.prompt(`请核对「${item.name}」与所选报告的对应关系，填写核对说明：`, '已对照原报告确认该方案项目已完成')
+    if (reason === null) return
+    if (!reason.trim()) { toast('请填写核对说明'); return }
+    setScreeningBusy(true)
+    try {
+      await staffAPI.updatePlanItem(id, item._id, { status: 'completed', reportId, reason: reason.trim() })
+      toast('项目已核对并关联已审核报告')
+      await load()
+      await loadScreeningEvidence()
+    } catch (err) { toast(err.message) }
+    finally { setScreeningBusy(false) }
   }
 
   const handleDeleteItem = async (itemId, name) => {
@@ -426,7 +466,8 @@ export default function PlanDetailPage() {
 
   const canEdit = canEditPlanType(plan, staff?.role) && !!plan.canManage
   const canDelete = !!plan.canDelete
-  const completedCount = plan.items?.filter(i => i.status === 'completed').length || 0
+  const completedCount = plan.type === 'annual_checkup' && screeningEvidence?.progress
+    ? screeningEvidence.progress.completed : plan.items?.filter(i => i.status === 'completed').length || 0
   const progress = plan.items?.length ? Math.round((completedCount / plan.items.length) * 100) : 0
   const assistMeta = plan.type === 'medical_assist' ? getAssistTemplateMeta(plan.content?.templateName) : null
 
@@ -669,6 +710,8 @@ export default function PlanDetailPage() {
       <div className="card">
         <div className="card-header">
           <div className="card-title">方案项目</div>
+          {canReviewCheckup && <button type="button" className="btn btn-secondary btn-sm"
+            disabled={screeningBusy} onClick={reconcileScreening}>{screeningBusy ? '核对中…' : '核对已审专项筛查'}</button>}
           {canEdit && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(!showAddItem)}>＋ 添加项目</button>}
         </div>
 
@@ -735,13 +778,27 @@ export default function PlanDetailPage() {
                         {plan.type !== 'annual_checkup' && <td style={{ fontSize: 13, color: '#666' }}>{item.scheduledDate ? new Date(item.scheduledDate).toLocaleDateString('zh-CN') : '-'}</td>}
                         <td style={{ maxWidth: 280, fontSize: 12, color: isImportantCheckupItem(item) ? '#92400E' : '#8AA89C', whiteSpace: 'pre-wrap', fontWeight: isImportantCheckupItem(item) ? 600 : 400 }}>{item.notes || (isImportantCheckupItem(item) ? '推送时自动补齐标准注意事项' : '-')}</td>
                         <td>
-                          <span style={{ color: ITEM_STATUS_COLOR[item.status], fontWeight: 500, fontSize: 13 }}>
-                            {ITEM_STATUS[item.status]}
+                          <span style={{ color: plan.type === 'annual_checkup' && screeningEvidence?.progress?.pending?.some(row => row.id === String(item._id))
+                            ? '#D97706' : ITEM_STATUS_COLOR[item.status], fontWeight: 500, fontSize: 13 }}>
+                            {plan.type === 'annual_checkup' && screeningEvidence?.progress?.pending?.some(row => row.id === String(item._id))
+                              ? '待核对' : ITEM_STATUS[item.status]}
                           </span>
+                          {item.completionSource === 'screening_auto' && <div style={{ fontSize: 11, color: '#527466' }}>自动核对记录</div>}
+                          {item.completionSource === 'screening_manual' && <div style={{ fontSize: 11, color: '#527466' }}>人工核对记录</div>}
                           {item.completedAt && <div style={{ fontSize: 11, color: '#aaa' }}>{new Date(item.completedAt).toLocaleDateString('zh-CN')}</div>}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
-                          {item.status === 'pending' && (
+                          {canReviewCheckup && screeningEvidence?.progress?.pending?.some(row => row.id === String(item._id)) && <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                            <select className="form-input" aria-label={`选择${item.name}对应的已审核报告`}
+                              value={selectedReportIds[item._id] || ''} onChange={event => setSelectedReportIds(previous => ({ ...previous, [item._id]: event.target.value }))}
+                              style={{ maxWidth: 210, fontSize: 12 }}>
+                              <option value="">选择已审核报告</option>
+                              {(screeningEvidence?.reports || []).map(report => <option key={report.id} value={report.id}>{report.checkDate} · {report.title}</option>)}
+                            </select>
+                            <button className="btn btn-secondary btn-sm" disabled={screeningBusy || !selectedReportIds[item._id]}
+                              onClick={() => confirmCheckupItem(item)}>确认核对</button>
+                          </span>}
+                          {plan.type !== 'annual_checkup' && item.status === 'pending' && (
                             <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => handleItemStatus(item._id, 'completed')}>✓ 完成</button>
                           )}
                           {item.status === 'completed' && (
