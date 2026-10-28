@@ -5,6 +5,7 @@ const {randomUUID,randomBytes,createHash}=require('node:crypto'),net=require('no
 for(const file of readdirSync(path.join(__dirname,'../src/models')).filter(f=>f.endsWith('.js'))) require(path.join(__dirname,'../src/models',file));
 const {inventoryDeletion,findSharedFileReferences}=require('../src/utils/accountDeletionInventory');
 const {prepareJob,executeDeletion,digest}=require('../src/utils/accountDeletionExecutor');
+const {verifyDeletionManifest}=require('../src/utils/accountDeletionManifest');
 const {deleteLocalFileVerified}=require('../src/utils/accountDeletionFiles');
 const {inventoryLegacyCopies,eraseLegacyCopies}=require('../src/utils/accountDeletionLegacy');
 const {prepareFinancePlan,executeFinancePlan}=require('../src/utils/accountDeletionFinance');
@@ -84,14 +85,7 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   recordCompletion:(entry,{fence})=>persistCompletionLedger({env:ledgerEnv,databaseName:dbName,entry,assertFrozen:fence}),
   async verifyManifest(plan,{retry,fence}) {
    await fence();if(blockManifest) await blockManifest;
-   const refs=await findSharedFileReferences({db,inventory:plan,storage});
-   if(refs.shared.length) throw Object.assign(new Error('shared object'),{code:'SHARED_FILES_REMAIN'});
-   for(const source of plan.documents) {
-    const document=await db.collection(source.collection).findOne({_id:new mongoose.Types.ObjectId(source.id)});
-    if(!document && !retry) throw Error('missing source before cleanup');
-    if(document) assert.ok(digest(document)===source.sha256 || (retry && source.action==='patch' && digest(document)===source.afterSha256));
-   }
-   return {verified:true};
+   return verifyDeletionManifest({db,models:M,subject,storage,plan,retry,assertFrozen:fence,objectId:id=>new mongoose.Types.ObjectId(id)});
   },
   async archiveFinancialData(plan,{subject,fence}) {
    return executeFinancePlan({models:M,subject,requestId:request._id,plan:plan.finance,encryptionKeys:{test:financeKey},assertFrozen:fence,objectId:id=>new mongoose.Types.ObjectId(id)});
@@ -125,6 +119,22 @@ test('real isolated execution deletes owned data/files and identity, preserving 
  });
  // Change only the independent synthetic child fixture to exercise the exclusive-file path.
  await M.MedicalReport.collection.updateOne({_id:childReport},{$set:{fileUrl:'https://external.example/child-original.pdf'}});
+ await t.test('new owned document after preparation blocks before finance or file deletion',async()=>{
+  const added=oid();
+  await M.HealthRecord.collection.insertOne({_id:added,user:subject.userId,tenantId:subject.tenantId,value:'synthetic late addition'});
+  await assert.rejects(executeDeletion(args),{code:'DELETION_MANIFEST_NEW_SOURCE'});
+  assert.ok(await M.Order.collection.findOne({_id:financeOrder}));
+  assert.ok(await M.User.collection.findOne({_id:subject.userId}));
+  await fs.access(path.join(root,'own.txt'));
+  await M.HealthRecord.collection.deleteOne({_id:added});
+ });
+ await t.test('omitted file and changed owned source are detected by the real inventory verifier',async()=>{
+  const verify=plan=>verifyDeletionManifest({db,models:M,subject,storage,plan,retry:true,assertFrozen:ready,objectId:id=>new mongoose.Types.ObjectId(id)});
+  await assert.rejects(verify({...job.manifest,files:[]}),{code:'DELETION_MANIFEST_FILE_MISSING'});
+  await M.MedicalReport.collection.updateOne({_id:ownReport},{$set:{reviewNote:'synthetic late edit'}});
+  await assert.rejects(verify(job.manifest),{code:'DELETION_MANIFEST_SOURCE_CHANGED'});
+  await M.MedicalReport.collection.updateOne({_id:ownReport},{$unset:{reviewNote:''}});
+ });
  await t.test('exclusive worker claim rejects another worker; partial failure remains incomplete',async()=>{
   let release;blockManifest=new Promise(resolve=>{release=resolve;});
   const first=executeDeletion(args);
