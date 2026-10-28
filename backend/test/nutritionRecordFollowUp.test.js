@@ -29,10 +29,20 @@ test('nutrition record date creates one owned task, reschedules it, and clearing
     assert.equal(String(task.sourceId), String(recordId));
     assert.equal(chinaDate(task.date), '2026-11-05');
     assert.equal(task.status, 'planned');
+    assert.equal(task.theme, '营养干预随访 · 月度随访');
+
+    record.title = '已完成的本次记录';
+    await sync(record);
+    assert.equal(task.theme, '营养干预随访 · 月度随访');
+
+    record.nextFollowUpTheme = '下周核对饮食执行情况';
+    await sync(record);
+    assert.equal(task.theme, '下周核对饮食执行情况');
 
     record.nextDate = new Date('2026-11-12');
     await sync(record);
     assert.equal(chinaDate(task.date), '2026-11-12');
+    assert.equal(task.theme, '下周核对饮食执行情况');
 
     record.nextDate = null;
     await sync(record);

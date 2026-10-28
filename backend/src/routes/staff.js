@@ -6905,7 +6905,7 @@ router.get('/service-records', staffAuth, checkPermission('service_records', 'vi
 // POST /api/staff/service-records
 router.post('/service-records', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
   if (req.body.type === 'rehab') return res.status(409).json({ success: false, message: '请在客户运动评估与复健模块填写记录' });
-  const { patientId, type, date, title, content, result, nextDate, diseaseName, medicalEscort, tcmRecord, specialistRecord, attachments } = req.body;
+  const { patientId, type, date, title, content, result, nextDate, nextFollowUpTheme, diseaseName, medicalEscort, tcmRecord, specialistRecord, attachments } = req.body;
   if (!patientId || !type) return res.status(400).json({ success: false, message: '会员和类型不能为空' });
   if (['routine', 'doctor_followup'].includes(type)) {
     return res.status(400).json({ success: false, message: '日常随访和健康顾问跟进已停用，请使用阶段性健康评估' });
@@ -6915,6 +6915,7 @@ router.post('/service-records', staffAuth, checkPermission('service_records', 'c
     date: date ? new Date(date) : new Date(),
     title: title || '', content: content || '', result: result || '',
     nextDate: nextDate ? new Date(nextDate) : null,
+    nextFollowUpTheme: type === 'nutrition' ? String(nextFollowUpTheme || '').trim().slice(0, 80) : '',
     diseaseName: diseaseName || '',
     medicalEscort: medicalEscort || {}, tcmRecord: tcmRecord || {}, specialistRecord: specialistRecord || {},
     attachments: Array.isArray(attachments) ? attachments : [],
@@ -6936,6 +6937,7 @@ router.put('/service-records/:id', staffAuth, checkPermission('service_records',
   }
   const allowed = ['date', 'title', 'content', 'result', 'nextDate', 'diseaseName', 'medicalEscort', 'tcmRecord', 'specialistRecord', 'attachments'];
   allowed.forEach(k => { if (req.body[k] !== undefined) record[k] = req.body[k]; });
+  if (record.type === 'nutrition' && req.body.nextFollowUpTheme !== undefined) record.nextFollowUpTheme = String(req.body.nextFollowUpTheme || '').trim().slice(0, 80);
   await record.save();
   if (record.type === 'nutrition') await require('../utils/nutritionRecordFollowUp').sync(record);
   res.json({ success: true, data: record });
@@ -7101,6 +7103,7 @@ router.patch('/service-records/:id/ai-review', staffAuth, checkPermission('servi
           const d = edits.nextDate ? new Date(edits.nextDate) : null;
           record.nextDate = d && !isNaN(d.getTime()) ? d : null;
         }
+        if (record.type === 'nutrition' && edits.nextFollowUpTheme !== undefined) record.nextFollowUpTheme = String(edits.nextFollowUpTheme || '').trim().slice(0, 80);
       }
       if (!record.staffId) record.staffId = req.staff._id; // 定时任务生成时未指定负责人，审核人即为负责人
       record.aiStatus = 'approved';

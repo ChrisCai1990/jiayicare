@@ -13770,6 +13770,7 @@ export default function PatientDetailPage() {
             title: reviewingDraft.title || '', content: reviewingDraft.content || '',
             result: reviewingDraft.result || '',
             nextDate: reviewingDraft.nextDate ? new Date(reviewingDraft.nextDate).toISOString().slice(0, 10) : '',
+            nextFollowUpTheme: reviewingDraft.nextFollowUpTheme || (reviewingDraft.nextDate ? `营养干预随访 · ${reviewingDraft.title || '营养干预'}` : ''),
           })
           const [saving, setSaving] = React.useState(false)
 
@@ -13827,6 +13828,10 @@ export default function PatientDetailPage() {
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>下次随访日期（可选）</label>
                     <DateField type="date" className="form-control" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />
                   </div>
+                  {reviewingDraft.type === 'nutrition' && form.nextDate && <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>下次随访主题</label>
+                    <input className="form-control" maxLength={80} placeholder={`营养干预随访 · ${form.title || '营养干预'}`} value={form.nextFollowUpTheme} onChange={e => setForm(f => ({ ...f, nextFollowUpTheme: e.target.value }))} />
+                  </div>}
                 </div>
                 <div className="modal-footer">
                   <button className="btn btn-secondary" disabled={saving} onClick={handleDiscard}>丢弃</button>
@@ -13843,7 +13848,7 @@ export default function PatientDetailPage() {
       {showSRDetail && (() => {
         const SRDetailModal = () => {
           const [mode, setMode] = React.useState('view') // view | edit | supplement
-          const [editForm, setEditForm] = React.useState({ title: showSRDetail.title || '', content: showSRDetail.content || '', result: showSRDetail.result || '', nextDate: showSRDetail.nextDate ? new Date(showSRDetail.nextDate).toISOString().slice(0,10) : '', diseaseName: showSRDetail.diseaseName || '' })
+          const [editForm, setEditForm] = React.useState({ title: showSRDetail.title || '', content: showSRDetail.content || '', result: showSRDetail.result || '', nextDate: showSRDetail.nextDate ? new Date(showSRDetail.nextDate).toISOString().slice(0,10) : '', nextFollowUpTheme: showSRDetail.nextFollowUpTheme || (showSRDetail.nextDate ? `营养干预随访 · ${showSRDetail.title || '营养干预'}` : ''), diseaseName: showSRDetail.diseaseName || '' })
           const [editAttachments, setEditAttachments] = React.useState(showSRDetail.attachments || [])
           const [attachUploading, setAttachUploading] = React.useState(false)
           const [suppContent, setSuppContent] = React.useState('')
@@ -13894,7 +13899,7 @@ export default function PatientDetailPage() {
           const handleEdit = async () => {
             setSaving(true)
             try {
-              await staffAPI.updateServiceRecord(showSRDetail._id, { title: editForm.title, content: editForm.content, result: editForm.result, nextDate: editForm.nextDate || null, diseaseName: editForm.diseaseName, attachments: editAttachments })
+              await staffAPI.updateServiceRecord(showSRDetail._id, { title: editForm.title, content: editForm.content, result: editForm.result, nextDate: editForm.nextDate || null, nextFollowUpTheme: editForm.nextFollowUpTheme || (editForm.nextDate ? `营养干预随访 · ${editForm.title || '营养干预'}` : ''), diseaseName: editForm.diseaseName, attachments: editAttachments })
               toast('记录已更新'); setShowSRDetail(null); loadServiceRecords()
             } catch (err) { toast(err.message || '保存失败') }
             finally { setSaving(false) }
@@ -13929,6 +13934,7 @@ export default function PatientDetailPage() {
                         ['负责人', showSRDetail.staffId?.name || '-'],
                         ['服务日期', showSRDetail.date ? new Date(showSRDetail.date).toLocaleDateString('zh-CN') : '-'],
                         ...(showSRDetail.type === 'nutrition' && showSRDetail.nextDate ? [['下次随访', new Date(showSRDetail.nextDate).toLocaleDateString('zh-CN')]] : []),
+                        ...(showSRDetail.type === 'nutrition' && showSRDetail.nextDate ? [['下次随访主题', showSRDetail.nextFollowUpTheme || `营养干预随访 · ${showSRDetail.title || '营养干预'}`]] : []),
                       ].map(([k, v]) => (
                         <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
                           <span style={{ width: 80, color: '#8AA89C', fontSize: 13 }}>{k}</span>
@@ -14012,6 +14018,7 @@ export default function PatientDetailPage() {
                       <div><label className="form-label">详细内容</label><textarea className="form-input" rows={4} value={editForm.content} onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))} /></div>
                       <div><label className="form-label">结果/建议</label><textarea className="form-input" rows={3} value={editForm.result} onChange={e => setEditForm(f => ({ ...f, result: e.target.value }))} /></div>
                       <div><label className="form-label">下次计划日期</label><DateField className="form-input" type="date" value={editForm.nextDate} onChange={e => setEditForm(f => ({ ...f, nextDate: e.target.value }))} /></div>
+                      {showSRDetail.type === 'nutrition' && editForm.nextDate && <div><label className="form-label">下次随访主题</label><input className="form-input" maxLength={80} placeholder={`营养干预随访 · ${editForm.title || '营养干预'}`} value={editForm.nextFollowUpTheme} onChange={e => setEditForm(f => ({ ...f, nextFollowUpTheme: e.target.value }))} /></div>}
                       {(showSRDetail.type === 'disease_mgmt' || showSRDetail.type === 'medical_visit') && (
                         <div>
                           <label className="form-label">附件 <span style={{ color: '#8AA89C', fontWeight: 400, fontSize: 12 }}>（就医病历/检查单，图片或PDF）</span></label>

@@ -558,6 +558,7 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
   const [patientId, setPatientId] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [nextDate, setNextDate] = useState('')
+  const [nextFollowUpTheme, setNextFollowUpTheme] = useState('')
   const [title, setTitle] = useState('')
   const [diseaseName, setDiseaseName] = useState('')  // 专病名称，仅 disease_mgmt 用于分组
   const [extras, setExtras] = useState({})  // type-specific fields
@@ -654,14 +655,16 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
     if (!patientId) { setError('请选择会员'); return }
     setSaving(true); setError('')
     try {
+      const recordTitle = title || (TYPE_LABEL[type] + ' · ' + new Date(date).toLocaleDateString('zh-CN'))
       await staffAPI.createServiceRecord({
         patientId,
         type,
         date,
-        title: title || (TYPE_LABEL[type] + ' · ' + new Date(date).toLocaleDateString('zh-CN')),
+        title: recordTitle,
         content: buildContent(),
         result: extras.result || '',
         nextDate: type === 'nutrition' ? nextDate || null : null,
+        nextFollowUpTheme: type === 'nutrition' && nextDate ? nextFollowUpTheme.trim() || `营养干预随访 · ${recordTitle}` : '',
         diseaseName: type === 'disease_mgmt' ? diseaseName : '',
         medicalEscort: { hospital: extras.hospital || '', department: extras.department || '', doctor: extras.doctor || '' },
         attachments,
@@ -797,6 +800,10 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
               <label className="form-label">标题（可选）</label>
               <input className="form-input" placeholder="自动生成" value={title} onChange={e => setTitle(e.target.value)} />
             </div>
+            {type === 'nutrition' && nextDate && <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">下次随访主题</label>
+              <input className="form-input" maxLength={80} placeholder={`营养干预随访 · ${title || '营养干预'}`} value={nextFollowUpTheme} onChange={e => setNextFollowUpTheme(e.target.value)} />
+            </div>}
           </div>
 
           {/* 类型选择 */}

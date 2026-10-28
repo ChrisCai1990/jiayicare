@@ -37,11 +37,12 @@ async function sync(record) {
   if (!patient || patient.isDeleted || !patient.assignedNutritionist) return null;
   const date = dueAt(record.nextDate);
   const title = String(record.title || '营养干预').trim().slice(0, 80);
+  const theme = String(record.nextFollowUpTheme || '').trim().slice(0, 80) || current?.theme || `营养干预随访 · ${title}`;
   const fields = { patientId: record.patientId, tenantId: patient.tenantId || null,
     staffId: patient.assignedNutritionist, assignedTo: patient.assignedNutritionist,
     sourceType: 'service_record', sourceId: record._id,
     date, nextFollowUpDate: date, remindAt: new Date(),
-    theme: `营养干预随访 · ${title}`, plannedContent: '按上次营养干预记录约定随访，核对执行情况、指标变化和下一步安排。',
+    theme, plannedContent: '按上次营养干预记录约定随访，核对执行情况、指标变化和下一步安排。',
     content: '按上次营养干预记录约定随访，核对执行情况、指标变化和下一步安排。',
     tags: ['人工跟进', '营养干预记录预约'], status: current?.status === 'in_progress' ? 'in_progress' : 'planned' };
   if (current) {
@@ -56,7 +57,7 @@ async function sync(record) {
 async function reconcileUpcoming() {
   const today = chinaDate(new Date());
   const records = ServiceRecord.find({ type: 'nutrition', nextDate: { $gte: new Date(`${today}T00:00:00+08:00`) },
-    aiStatus: { $ne: 'pending' } }).select('_id patientId type title nextDate aiStatus').sort({ nextDate: 1 }).limit(5000).cursor();
+    aiStatus: { $ne: 'pending' } }).select('_id patientId type title nextDate nextFollowUpTheme aiStatus').sort({ nextDate: 1 }).limit(5000).cursor();
   let count = 0;
   for await (const record of records) {
     await sync(record);
