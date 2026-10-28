@@ -5,3 +5,5 @@
 剩余工作：完整生产编排、备份实际处置、普通/审核环境验收、真实iPhone录屏及App Store重新提交。未完成，不得称已上线或已提审。
 官方依据：https://www.mof.gov.cn/zcsjtsgb/gztsgb/201512/t20151211_3578376.htm
 30年说明：https://tfs.mof.gov.cn/zhengcejiedu/201512/t20151214_1613341.htm
+
+接续：开发候选217ce616ab0a5456874a19c6a484ac19d09276e3已合并线上fc843df28，无冲突；合并后完整注销临时Mongo5项复验通过。仍未推送/部署注销候选。
