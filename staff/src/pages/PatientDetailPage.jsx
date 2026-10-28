@@ -625,6 +625,7 @@ function LsText({ label, value = '', editing, placeholder, multiline, onChange }
 
 // ── 简易 SVG 折线趋势图 ───────────────────────────────────────────
 function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
+  const [selectedPoint, setSelectedPoint] = useState(null);
   if (!data || data.length < 2) return null;
   const W = 260, H = 80, PAD = 8;
   const vals = data.map(d => d.y);
@@ -660,20 +661,29 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
         {xs.map((x, i) => {
           // 不同机构参考范围可能不同，悬停查看该次检查所在机构+当时的参考范围（原生SVG title，无需额外UI）
           const p = data[i]
-          const tip = [p.institution, p.ref ? `参考范围 ${p.ref}` : ''].filter(Boolean).join(' · ')
+          const tip = [p.date || p.x, p.institution, p.ref ? `参考范围 ${p.ref}` : ''].filter(Boolean).join(' · ')
           return (
-            <circle key={i} cx={x} cy={ys[i]} r="3" fill={color}>
+            <circle key={i} cx={x} cy={ys[i]} r="4" fill={color} style={{ cursor: 'pointer' }} onClick={() => setSelectedPoint(p)}>
               {tip && <title>{tip}</title>}
             </circle>
           )
         })}
         {/* 每个数据点都标注数值，不只是最后一个点，方便一眼看出历次具体读数 */}
         {xs.map((x, i) => (
-          <text key={`v-${i}`} x={x} y={Math.max(ys[i] - 6, 9)} textAnchor="middle" fontSize="9" fill={color}>{vals[i]}</text>
+          <text key={`v-${i}`} x={x} y={Math.max(ys[i] - 6, 9)} textAnchor="middle" fontSize="9" fill={color}
+            style={{ cursor: 'pointer' }} role="button" tabIndex="0" aria-label={`${label || '数据'} ${vals[i]}，日期 ${data[i].date || data[i].x}`}
+            onClick={() => setSelectedPoint(data[i])} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedPoint(data[i]) } }}>
+            {vals[i]}
+          </text>
         ))}
         <text x={PAD} y={H - 2} fontSize="9" fill="#aaa">{data[0].x}</text>
         <text x={W - PAD} y={H - 2} textAnchor="end" fontSize="9" fill="#aaa">{last.x}</text>
       </svg>
+      {selectedPoint && data.includes(selectedPoint) && (
+        <div aria-live="polite" style={{ fontSize: 11, color: '#4A6558', marginTop: 4 }}>
+          日期：{selectedPoint.date || selectedPoint.x}　数值：{selectedPoint.y}
+        </div>
+      )}
     </div>
   );
 }
@@ -8277,25 +8287,27 @@ export default function PatientDetailPage() {
           const buildCharts = (records) => {
             const byType = {};
             records.forEach(r => {
-              const dateStr = new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+              const recordedDate = new Date(r.recordedAt);
+              const dateStr = recordedDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+              const fullDate = recordedDate.toLocaleDateString('zh-CN');
               if (r.type === 'bloodPressure') {
                 const [valueSys, valueDia] = String(r.value || '').split('/').map(Number);
                 const systolic = Number(r.extra?.sys ?? r.sys ?? valueSys);
                 const diastolic = Number(r.extra?.dia ?? r.dia ?? valueDia);
                 if (systolic > 0) {
                   if (!byType.bloodPressureSystolic) byType.bloodPressureSystolic = [];
-                  byType.bloodPressureSystolic.push({ x: dateStr, y: systolic });
+                  byType.bloodPressureSystolic.push({ x: dateStr, date: fullDate, y: systolic });
                 }
                 if (diastolic > 0) {
                   if (!byType.bloodPressureDiastolic) byType.bloodPressureDiastolic = [];
-                  byType.bloodPressureDiastolic.push({ x: dateStr, y: diastolic });
+                  byType.bloodPressureDiastolic.push({ x: dateStr, date: fullDate, y: diastolic });
                 }
                 return;
               }
               const y = parseFloat(r.value) || 0;
               if (y > 0) {
                 if (!byType[r.type]) byType[r.type] = [];
-                byType[r.type].push({ x: dateStr, y });
+                byType[r.type].push({ x: dateStr, date: fullDate, y });
               }
             });
             return Object.entries(byType).filter(([, arr]) => arr.length >= 2).reverse();
