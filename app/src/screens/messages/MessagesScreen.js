@@ -445,7 +445,7 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
       return (
         <TouchableOpacity
           style={[styles.detailCloseBtn, { flex: 2, backgroundColor: '#D97706', borderWidth: 0 }]}
-          onPress={() => { onClose(); navigation.navigate('ServicePlans', { planId: msg.planId || msg.sourceAnnualPlanId || null, planYear: msg.planYear, direct: true }); }}
+          onPress={() => { onClose(); navigation.navigate('ServicePlans', { annualPlanId: msg.sourceAnnualPlanId || null, planId: msg.planId || null, planYear: msg.planYear, direct: true }); }}
           activeOpacity={0.85}
         >
           <Text style={[styles.detailCloseBtnText, { color: colors.white }]}>查看完整方案</Text>
@@ -844,7 +844,7 @@ export default function MessagesScreen({ navigation }) {
         onClose={() => setShowNotifModal(false)}
         onPress={(msg) => {
           setShowNotifModal(false);
-          if (msg.type === 'plan') navigation.navigate('ServicePlans', { planId: msg.planId || msg.sourceAnnualPlanId || null, planYear: msg.planYear, direct: true });
+          if (msg.type === 'plan') navigation.navigate('ServicePlans', { annualPlanId: msg.sourceAnnualPlanId || null, planId: msg.planId || null, planYear: msg.planYear, direct: true });
           else setSelectedMsg(msg);
         }}
         onMarkRead={async (msg) => {

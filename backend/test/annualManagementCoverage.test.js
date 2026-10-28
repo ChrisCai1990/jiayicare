@@ -19,6 +19,13 @@ test('日常跟进保留在员工方案中，客户方案项目和原始板块�
   assert.equal(source.personalized_followups.records.length, 2);
 });
 
+test('客户完整方案列出复查项目与具体干预内容', () => {
+  const items = buildAnnualPlanDisplayItems({ abnormal_followup: { records: [{ items: '复查2项检查', reviewItems: ['尿酸', '肝功能'], time: '2027-01-26', personalizedAdvice: '按计划完成复查' }] } });
+  assert.deepEqual(items[0].reviewItems, ['尿酸', '肝功能']);
+  assert.equal(items[0].interventionPlan, '按计划完成复查');
+  assert.equal(items[0].schedule, '2027-01-26');
+});
+
 test('持续管理仅由工作人员日常跟进模板承接，不以其他个性化模板代替', () => {
   const evidence = [{ id: 'management_issue:kidney', content: { problem: '肾结晶', direction: 'ongoing_management' } }];
   const record = standardPlanName => ({ sourceIds: ['management_issue:kidney'], standardPlanName });

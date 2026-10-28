@@ -105,10 +105,13 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
   const recheckTemplate = catalog.find(item => item.category === 'abnormal_followup');
   const rechecks = reviewGroups.map(group => ({
     standardPlanId: recheckTemplate?.id || '', items: `复查${group.items.length}项检查`,
-    reviewItems: group.items, reason: group.problems.join('、'),
-    basisSummary: `顾问已确认约${group.intervalMonths}个月后复查；项目：${group.items.join('、')}`,
-    time: group.dueDate, frequency: '单次', precautions: '按检查机构要求准备',
-    customerAction: `完成${group.items.join('、')}并上传报告`, ownerRole: '健管专员', sourceIds: group.sourceIds,
+    reviewItems: group.items, reason: group.problems.join('、'), department: group.department,
+    basisSummary: `顾问已确认约${group.intervalMonths}个月后复查；${group.department ? `先就诊${group.department}；` : ''}项目：${group.items.join('、')}`,
+    time: group.dueDate, frequency: '单次', precautions: '携带既往报告；检查准备以医生开单和检查机构要求为准',
+    customerAction: `按确认安排先到${group.department || '对应专科'}就诊，由医生评估并开具需要的复查检查单；完成检查后上传报告，供医生回顾结果`,
+    bookingRequired: true, serviceMode: 'single', serviceType: 'proxy_booking',
+    notes: group.department ? '' : '历史复查决定未记录就诊专科；请顾问核对后按专科安排，不应把不同专科合并为一次就诊。',
+    ownerRole: '健管专员', sourceIds: group.sourceIds,
     reviewGroupVersion: 1,
   }));
   const updated = { ...raw,
@@ -122,10 +125,28 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
     const remaining = (raw.annual_checkup.sourceIds || []).filter(id => !reviewIds.has(id));
     updated.annual_checkup = remaining.length ? { ...raw.annual_checkup, sourceIds: remaining } : {};
   }
+  // AI summary priorities are context until the advisor assigns a management
+  // direction. They cannot independently create an action beside confirmed ones.
+  if (management.length) {
+    const unconfirmedPriority = row => Array.isArray(row.sourceIds) && row.sourceIds.length > 0
+      && row.sourceIds.every(id => /^priority:\d+$/.test(id));
+    for (const key of ['templateNodes', 'medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine']) {
+      updated[key] = updated[key].filter(row => !unconfirmedPriority(row));
+    }
+    if (unconfirmedPriority(updated.annual_checkup || {})) updated.annual_checkup = {};
+  }
+  const retainedSources = new Set([...updated.templateNodes, ...updated.medical_treatment,
+    ...updated.checkup_completion, ...updated.abnormal_followup, ...updated.vaccine,
+    ...(updated.annual_checkup?.standardPlanId ? [updated.annual_checkup] : [])]
+    .flatMap(row => row.sourceIds || []));
   const linked = new Set(management.filter(item => !missingManagementActions({ ...updated,
     evidenceCoverage: [{ sourceId: item.id, status: 'included', reason: '已关联行动' }] }, [item], catalog).length).map(item => item.id));
-  updated.evidenceCoverage = raw.evidenceCoverage.map(item => linked.has(item.sourceId) && item.status !== 'included'
-    ? { ...item, status: 'included', reason: '顾问已确认纳入管理，已关联所选方向的行动' } : item);
+  updated.evidenceCoverage = raw.evidenceCoverage.map(item => {
+    if (management.length && /^priority:\d+$/.test(item.sourceId) && !retainedSources.has(item.sourceId))
+      return { ...item, status: 'deferred', reason: 'AI信息整理提示尚未由顾问选择管理方向，不能自动生成就医或检查行动；请顾问核对' };
+    return linked.has(item.sourceId) && item.status !== 'included'
+      ? { ...item, status: 'included', reason: '顾问已确认纳入管理，已关联所选方向的行动' } : item;
+  });
   return updated;
 }
 

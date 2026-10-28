@@ -69,13 +69,15 @@ async function confirmAnnualServicePeriod({ plan, patient, staff, input }, model
 }
 
 async function annualExecutionGate(plan, now = new Date(), models = {}) {
+  const approvedAt = plan.followUpReleasedAt && plan.pushedAt && plan.reviewStatus === 'approved' ? plan.pushedAt : null;
+  const executionAt = approvedAt || plan.confirmedAt;
   if (!require('./healthManagementRollout').enabledForPatient(plan.patientId)) {
     // No new renewal work may resume for a customer removed from the pilot.
     if (plan.continuitySource?.previousPlanId) return { allowed: false, reason: '该客户暂未开放新版健康管理闭环' };
-    return { allowed: !!plan.confirmedAt, anchor: plan.confirmedAt, reason: plan.confirmedAt ? '' : '等待客户确认方案' };
+    return { allowed: !!executionAt, anchor: executionAt, reason: executionAt ? '' : '等待顾问审核发布方案' };
   }
-  if (!plan.confirmedAt) return { allowed: false, reason: '等待客户确认方案' };
-  if (!plan.continuitySource?.previousPlanId) return { allowed: true, anchor: plan.confirmedAt }; // 保留首次/历史方案路径。
+  if (!executionAt) return { allowed: false, reason: '等待顾问审核发布方案' };
+  if (!plan.continuitySource?.previousPlanId) return { allowed: true, anchor: executionAt }; // 保留首次/历史方案路径。
   if (!plan.pushedAt || plan.reviewStatus !== 'approved') return { allowed: false, reason: '等待顾问审核发布' };
   const Period = models.Period || require('../models/AnnualServicePeriod');
   const Order = models.Order || require('../models/Order');
@@ -96,7 +98,7 @@ async function annualExecutionGate(plan, now = new Date(), models = {}) {
   catch (error) { return blocked(error.message, 'plan_dates', 'familyDoctor'); }
   if (today < period.startDate) return { allowed: false, period, reason: `等待服务期开始（${period.startDate}）` };
   if (today > period.endDate) return { allowed: false, period, reason: '该年度服务期已结束' };
-  const anchor = new Date(Math.max(new Date(plan.confirmedAt).getTime(), period.executionAnchor ? new Date(period.executionAnchor).getTime() : new Date(`${period.startDate}T00:00:00+08:00`).getTime()));
+  const anchor = new Date(Math.max(new Date(executionAt).getTime(), period.executionAnchor ? new Date(period.executionAnchor).getTime() : new Date(`${period.startDate}T00:00:00+08:00`).getTime()));
   if (!Number.isFinite(anchor.getTime())) return blocked('年度执行起点无效，请联系管理员核对', 'invalid_anchor');
   return { allowed: true, period, anchor, executionPlan };
 }

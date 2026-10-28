@@ -24,7 +24,9 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
     setServiceType(leader.row.serviceType || '')
     setDate(leader.date || '')
   }, [selected.join('|')])
-  if (!rows.length) return null
+  // A single visit has nothing to merge; its date and service are edited on
+  // the plan item itself.
+  if (rows.length < 2) return null
 
   const groups = [...new Set(rows.map(row => row.cluster))].map(cluster => rows.filter(row => row.cluster === cluster))
   const apply = () => {
@@ -36,7 +38,7 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
   }
   const inputStyle = { padding: '6px 8px', border: '1px solid #D6DED8', borderRadius: 6, maxWidth: '100%' }
   return <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-    <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>可选：合并同次就医与检查</summary>
+    <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>排期工具：合并多项同次就医与检查</summary>
     <p style={{ fontSize: 12, color: '#62776A' }}>下面是年度方案中已有的就医和检查事项，仅供核对是否能同次办理，不会另生成方案。相隔 14 天以内的日期相邻显示；核实医院、时限、准备要求后可统一日期和服务安排。</p>
     {groups.map((group, groupIndex) => <div key={group[0].cluster} style={{ borderTop: '1px solid #E5ECE7', paddingTop: 10, marginTop: 10 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 5 }}>排期段 {groupIndex + 1} · {group.length} 项{group.length > 1 ? '（相邻日期不代表必须同次就诊）' : ''}</div>

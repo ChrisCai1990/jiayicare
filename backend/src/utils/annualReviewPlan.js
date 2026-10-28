@@ -20,7 +20,10 @@ function reviewPlanFromInput(value) {
   if (!validDay(anchorDate)) throw Object.assign(new Error('请选择复查间隔的起算日期'), { statusCode: 400 });
   if (!items.length || items.length > 20 || items.some(item => item.length > 80))
     throw Object.assign(new Error('请逐项填写需要复查的检查项目'), { statusCode: 400 });
-  return { kind: 'recheck', intervalMonths, anchorDate, items };
+  const department = String(value.department || '').trim();
+  if (!department || department.length > 100)
+    throw Object.assign(new Error('请填写本次复查先就诊的专科；不同专科请分别归属管理问题'), { statusCode: 400 });
+  return { kind: 'recheck', intervalMonths, anchorDate, items, department };
 }
 
 function legacyReviewNote(note) {
@@ -58,7 +61,7 @@ function reviewIntent(source) {
   if (plan?.kind !== 'recheck') return null;
   const dueDate = addMonths(plan.anchorDate, plan.intervalMonths);
   return { sourceId: source.id, problem: source.content.problem, dueDate,
-    items: plan.items || [], intervalMonths: plan.intervalMonths };
+    items: plan.items || [], intervalMonths: plan.intervalMonths, department: String(plan.department || '').trim() };
 }
 
 function reviewGroups(evidence = []) {
@@ -66,8 +69,10 @@ function reviewGroups(evidence = []) {
   for (const source of evidence) {
     const intent = reviewIntent(source);
     if (!intent) continue;
-    const key = `${intent.dueDate.slice(0, 7)}:${intent.intervalMonths}`;
-    if (!grouped.has(key)) grouped.set(key, { dueDate: intent.dueDate, intervalMonths: intent.intervalMonths, sourceIds: [], items: [], problems: [] });
+    // A shared date is not enough to assume one specialist can order every test.
+    // Historical decisions without a specialty stay separate until reviewed.
+    const key = `${intent.dueDate.slice(0, 7)}:${intent.intervalMonths}:${intent.department || intent.sourceId}`;
+    if (!grouped.has(key)) grouped.set(key, { dueDate: intent.dueDate, intervalMonths: intent.intervalMonths, department: intent.department, sourceIds: [], items: [], problems: [] });
     const group = grouped.get(key);
     if (intent.dueDate && (!group.dueDate || intent.dueDate < group.dueDate)) group.dueDate = intent.dueDate;
     group.sourceIds.push(intent.sourceId);

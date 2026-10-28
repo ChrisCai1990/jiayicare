@@ -19,7 +19,7 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
     if (moduleKey === 'annual_checkup' && mode === 'reminder' && plan.checkupPreparationVersion === 2 && plan.checkupPreparationAutoConfirmedAt) return; // 体检准备已有同项目规划师督办，不重复派发。
     const supervisionOnly = plan.checkupPreparationVersion === 2 && ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'annual_checkup'].includes(moduleKey) && mode === 'reminder';
     if (!['single', 'managed'].includes(mode) && !supervisionOnly) return;
-    const executionDate = validDate(date) || new Date(plan.confirmedAt || Date.now());
+    const executionDate = validDate(date) || new Date(plan.pushedAt || plan.confirmedAt || Date.now());
     const identityDate = validDate(sourceDate(plan, moduleKey, index, FIELDS[moduleKey], date)) || executionDate;
     const label = labelOf(record, fallback);
     const visitItems = ['single', 'managed'].includes(mode) && record.visitGroupId ? sharedVisitItems(moduleData, record.visitGroupId) : [];
@@ -59,7 +59,7 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
 
 async function syncAnnualPlanServiceTasks(plan) {
   const internalRelease = require('./annualInternalTaskException').serviceReleased(plan);
-  if (!plan.confirmedAt && !internalRelease) return { created: 0, updated: 0, warnings: ['客户尚未确认方案'] };
+  if (!plan.confirmedAt && !internalRelease && !(plan.followUpReleasedAt && plan.pushedAt && plan.reviewStatus === 'approved')) return { created: 0, updated: 0, warnings: ['顾问尚未审核发布方案'] };
   const gate = internalRelease ? { allowed: true } : await require('./annualServicePeriod').annualExecutionGate(plan);
   if (!gate.allowed) return { created: 0, updated: 0, warnings: [gate.reason] };
   if (plan.continuitySource?.previousPlanId) plan = { ...(gate.executionPlan || (plan.toObject ? plan.toObject() : plan)), confirmedAt: gate.anchor };

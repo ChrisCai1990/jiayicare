@@ -24,6 +24,8 @@ function normalizeItem(moduleKey, record, index) {
       ? (record.nutritionComparisonMetrics?.length ? `前后对比：${record.nutritionComparisonMetrics.join('、')}` : '核实膳食与体成分情况')
       : first(record.goal, record.purpose, record.focus, record.personalization),
     completionStandard: record.completionStandard || '',
+    interventionPlan: first(record.personalizedAdvice, record.personalization, record.standardContent, record.plan),
+    reviewItems: Array.isArray(record.reviewItems) ? record.reviewItems : [],
     schedule, frequency: record.frequency || '',
     careTarget: { hospital: record.hospital || record.institution || '', department: record.department || record.order_dept || '', expert: record.expert || record.order_expert || '' },
     customerAction: record.customerAction || '', precautions: record.precautions || '',
@@ -49,6 +51,8 @@ const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjus
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
   if (!value || typeof value !== 'object' || value.constructor !== Object) return value;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !internalFields.has(key)).map(([key, child]) => [key, customerModuleData(child)]));
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key, child]) => !internalFields.has(key) && !(key === 'nutrition_assessment' && child?.enabled === false))
+    .map(([key, child]) => [key, customerModuleData(child)]));
 }
 module.exports = { buildAnnualPlanDisplayItems, normalizeItem, customerModuleData, internalDaily };

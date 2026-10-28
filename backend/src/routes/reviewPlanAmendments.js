@@ -61,5 +61,36 @@ module.exports=({getVisiblePlanPatientIds})=>{
       res.json({success:true,message:executionReview?'年度方案调整已保存，执行安排核对已进入健康顾问工作台；原执行任务保持原状态':'年度方案调整已保存；未创建、调整或删除执行任务',data:{planId,amendmentId}});
     }catch(e){res.status(400).json({success:false,message:e.message});}
   });
+  router.patch('/:patientId/annual-plan-revision',staffAuth,async(req,res)=>{
+    try {
+      if(!['familyDoctor','superadmin'].includes(req.staff.role)) return res.status(403).json({success:false,message:'仅健康顾问可修订年度方案'});
+      if(!mongoose.isValidObjectId(req.params.patientId)) return res.status(400).json({success:false,message:'客户标识无效'});
+      const visible=await getVisiblePlanPatientIds(req.staff);
+      if(visible && !visible.some(id=>String(id)===req.params.patientId)) return res.status(403).json({success:false,message:'无权访问该客户'});
+      req.amendmentPatientId=req.params.patientId;
+      const {planId,baseUpdatedAt}=req.body;
+      if(!mongoose.isValidObjectId(planId)) return res.status(400).json({success:false,message:'年度方案标识无效'});
+      const plan=await Plan.findOne({_id:planId,patientId:req.amendmentPatientId}).select('+supplementRevisions').lean();
+      if(!plan || !plan.pushedAt || plan.reviewStatus!=='approved') return res.status(409).json({success:false,message:'请先打开已发布的年度方案'});
+      if(String(plan.updatedAt?.toISOString())!==baseUpdatedAt) return res.status(409).json({success:false,message:'方案已变化，请刷新后重新核对'});
+      const reason=String(req.body.reason||'').trim();
+      if(reason.length<2 || reason.length>500) return res.status(400).json({success:false,message:'请填写2至500字的修订原因'});
+      const item=logic.clean([req.body.item])[0];
+      if(item.target<0 || !plan.moduleData?.[item.key]?.records?.[item.target]) return res.status(400).json({success:false,message:'请选择原方案中的具体事项'});
+      if(item.operation==='remove' || item.moveFrom) return res.status(400).json({success:false,message:'此入口仅修改原事项内容'});
+      const source={kind:'advisor_revision',reason,customerFeedback:plan.returnReason||'',customerFeedbackAt:plan.returnedAt||null};
+      const catalog=item.key==='personalized_followups'?await logic.templateCatalog():[];
+      const {moduleData,changes}=logic.apply(plan.moduleData,[item],source,catalog);
+      const revisionId=logic.hash({planId,baseUpdatedAt,item,reason});
+      const executionReview=require('../utils/annualExecutionReview').markForReview(plan,changes);
+      const revision={id:revisionId,status:'applied',createdAt:new Date(),createdBy:req.staff._id,source,baseUpdatedAt:plan.updatedAt,changes,taskStatus:'not_created',...(executionReview?{executionReview}:{})};
+      const saved=await Plan.findOneAndUpdate({_id:plan._id,patientId:req.amendmentPatientId,updatedAt:plan.updatedAt,'supplementRevisions.id':{$ne:revisionId}},
+        {$set:{moduleData,returnedAt:null,returnReason:''},$push:{supplementRevisions:revision}},{new:true}).select('+supplementRevisions');
+      if(!saved) return res.status(409).json({success:false,message:'方案已变化，请刷新后重新核对'});
+      await require('../models/PushRecord').create({staffId:req.staff._id,patientId:req.amendmentPatientId,type:'plan',sourceAnnualPlanId:plan._id,
+        title:`${plan.year}年度${plan.templateName||'健康管理方案'}已更新`,content:`您的年度方案中“${item.title}”已修订，点击通知查看完整方案。`});
+      res.json({success:true,data:saved,message:executionReview?'修订已推送客户；执行安排已进入顾问核对，原任务保留':'修订已推送客户；原执行任务保留'});
+    }catch(error){res.status(error.statusCode||400).json({success:false,message:error.message});}
+  });
   return router;
 };

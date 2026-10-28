@@ -295,7 +295,7 @@ test('misrouted confirmed issues are repaired with a bounded action patch', asyn
   { evidence: sources, catalog: templates }), /缺少有效方向/);
 });
 
-test('management action repair gets one subsequent source-link pass for included priorities', async () => {
+test('management action repair defers unconfirmed AI priorities without a second source-link pass', async () => {
   const management = { id: 'management_issue:review', content: { problem: '定期复查', direction: 'abnormal_followup' } };
   const priority = { id: 'priority:2', content: { title: '同项复查重点' } };
   const sources = [management, priority];
@@ -312,18 +312,23 @@ test('management action repair gets one subsequent source-link pass for included
     calls++;
     if (calls === 1) return JSON.stringify({ managementActionCorrections: [
       { sourceId: management.id, module: 'abnormal_followup', action }] });
-    assert.deepEqual(missing, [priority.id]);
-    assert.equal(candidate.abnormal_followup.length, 1);
-    return JSON.stringify({ sourceLinkCorrections: [{ module: 'abnormal_followup', index: 0, sourceIds: [priority.id] }] });
+    assert.fail('AI priority must not become a standalone management action');
   }, normalize, { evidence: sources, catalog: templates });
-  assert.equal(calls, 2);
-  assert.deepEqual(result.abnormal_followup[0].sourceIds, [management.id, priority.id]);
+  assert.equal(calls, 1);
+  assert.deepEqual(result.abnormal_followup[0].sourceIds, [management.id]);
+  assert.equal(result.evidenceCoverage.find(item => item.sourceId === priority.id).status, 'deferred');
   check(result);
-  let failedCalls = 0;
-  await assert.rejects(validateOrRepairAnnual(raw, check, async () => (++failedCalls === 1
-    ? JSON.stringify({ managementActionCorrections: [{ sourceId: management.id, module: 'abnormal_followup', action }] })
-    : JSON.stringify({ sourceLinkCorrections: [] })), normalize,
-  { evidence: sources, catalog: templates }), /优先关注问题第3项/);
+});
+
+test('AI priority cannot create a separate medical visit beside confirmed ongoing management', () => {
+  const management = { id: 'management_issue:uric-acid', content: { problem: '尿酸高', direction: 'ongoing_management' } };
+  const priority = { id: 'priority:0', content: { title: '尿酸高' } };
+  const candidate = rawPlan();
+  candidate.medical_treatment = [{ reason: 'AI建议立即就医', visit_time: '2026-10-28', sourceIds: [priority.id] }];
+  candidate.evidenceCoverage = [{ sourceId: management.id, status: 'deferred', reason: '待补' }, { sourceId: priority.id, status: 'included', reason: 'AI优先项' }];
+  const normalized = normalizeConfirmedManagement(candidate, [management, priority], []);
+  assert.equal(normalized.medical_treatment.length, 0);
+  assert.equal(normalized.evidenceCoverage.find(item => item.sourceId === priority.id).status, 'deferred');
 });
 
 test('priority deferral suggestion cannot hide an uncovered action, but valid links still apply', async () => {

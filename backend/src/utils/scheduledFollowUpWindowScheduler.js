@@ -36,7 +36,11 @@ async function scanAndSyncScheduledWindow() {
         const result = await require('./annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
         total += result.scheduledFollowUps || 0;
       } else {
-        total += await syncAnnualPlanFollowUps(plan);
+        if (recoveryEnabled && plan.followUpReleasedAt && plan.pushedAt && !plan.confirmedAt && !plan.distributionSyncedAt) {
+          const result = await require('./annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
+          total += result.scheduledFollowUps || 0;
+          if (!result.warnings?.length) await AnnualPlan.updateOne({ _id: plan._id, distributionSyncedAt: null }, { $set: { distributionSyncedAt: new Date() } });
+        } else total += await syncAnnualPlanFollowUps(plan);
         if (recoveryEnabled && require('./annualInternalTaskException').serviceReleased(plan)) await require('./annualPlanServiceTasks').syncAnnualPlanServiceTasks(plan);
         if (recoveryEnabled) await require('./annualCheckupDispatch').runtime().sync(plan);
       }

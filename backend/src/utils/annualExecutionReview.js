@@ -9,7 +9,7 @@ function changesForExecution(changes = []) {
   return changes.filter(change => labels[change.key] && JSON.stringify(comparable(change.before)) !== JSON.stringify(comparable(change.after)));
 }
 function markForReview(plan, changes) {
-  return (plan.confirmedAt || plan.frozenAt) && changesForExecution(changes).length
+  return (plan.pushedAt || plan.confirmedAt || plan.frozenAt) && changesForExecution(changes).length
     ? { status: 'pending', version: 1 } : null;
 }
 function reviews(plan) {

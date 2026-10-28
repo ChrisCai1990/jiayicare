@@ -2,6 +2,14 @@ const crypto = require('node:crypto');
 const mongoose = require('mongoose');
 const { selectedFromAnnualPlan } = require('../../../shared/nutritionComparisonMetrics.cjs');
 
+function draftModule(moduleData = {}) {
+  const current = moduleData.nutrition_assessment || {};
+  if (current.enabled === false) return { ...current, enabled: false };
+  return { ...current, enabled: true,
+    nutritionComparisonMetrics: current.nutritionComparisonMetrics
+      ?? require('../../../shared/nutritionComparisonMetrics.cjs').metricsFromTargets(moduleData.management_targets?.records) };
+}
+
 function taskId(planId, attempt = 1) {
   const hex = crypto.createHash('sha256').update(`annual-nutrition-assessment:${planId}:${attempt}`).digest('hex').slice(0, 24);
   return new mongoose.Types.ObjectId(hex);
@@ -12,7 +20,7 @@ function contentForPlan(plan) {
   const goals = nutritionGoalsForPlan(plan);
   const focus = plan?.moduleData?.nutrition_assessment?.records || [];
   const summary = require('../../../shared/nutritionComparisonMetrics.cjs').nutritionSummary(plan);
-  return `营养师评估膳食、生活方式及体成分，形成营养方案。相关问题：${summary.problems.join('、') || '研判中的营养相关问题'}。对比指标：${metrics.join('、') || '基础体成分指标'}。研判参考目标：${summary.references.join('；') || '未给出明确数值，由营养师结合原报告参考范围及实际情况制定'}。基线依据已有资料核实，阶段目标由营养师调整。${focus.length ? `专项重点：${focus.map(r=>r.personalizedAdvice || r.items || '').join('；')}。` : ''}医疗背景仅供参考，就医、检查及用药评估由对应医疗安排执行。`;
+  return `营养师评估膳食、生活方式及体成分，形成营养方案。相关问题：${summary.problems.join('、') || '研判中的营养相关问题'}。对比指标：${metrics.join('、') || '基础体成分指标'}。研判参考目标：${summary.references.join('；') || '未给出明确数值，由营养师结合原报告参考范围及实际情况制定'}。基线依据已有资料核实，阶段目标由营养师调整。${focus.length ? `专项重点：${focus.map(r=>[r.items, r.personalizedAdvice].filter(Boolean).join('：')).join('；')}。` : ''}医疗背景仅供参考，就医、检查及用药评估由对应医疗安排执行。`;
 
 }
 
@@ -52,4 +60,4 @@ async function dispatch(plan, patient, actor, FollowUp) {
   return { task: saved, reused: !inserted.upsertedCount };
 }
 
-module.exports = { taskId, buildTask, contentForPlan, nutritionGoalsForPlan, dispatch };
+module.exports = { taskId, buildTask, contentForPlan, nutritionGoalsForPlan, dispatch, draftModule };
