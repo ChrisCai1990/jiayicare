@@ -449,9 +449,14 @@ router.post('/:id/submit', auth, async (req, res) => {
       await HealthPlan.updateOne({ _id: assignment.sourceHealthPlanId, patientId: subjectId }, { $set: { 'content.checkupIntake': intake } });
     }
 
-    // 邀请人已在基础建档时落库；仅在客户成功提交问卷后，才按当前奖励开关赠送健康基金。
-    if (!childId) await require('../utils/referralQuestionnaireReward').grantReferralQuestionnaireReward(req.user._id)
-      .catch(error => console.error('[referral-questionnaire-reward] 发放失败', error.message));
+    // 邀请关系在登录时固定；首次使用和邀请赠金都要等客户成功提交问卷。
+    if (!childId) {
+      const { grantFirstQuestionnaireReward, grantReferralQuestionnaireReward } = require('../utils/referralQuestionnaireReward');
+      await grantFirstQuestionnaireReward(req.user._id)
+        .catch(error => console.error('[first-questionnaire-reward] 发放失败', error.message));
+      await grantReferralQuestionnaireReward(req.user._id)
+        .catch(error => console.error('[referral-questionnaire-reward] 发放失败', error.message));
+    }
 
     let scoreRange = null;
     if (questionnaire.scoringEnabled && questionnaire.scoreRanges?.length > 0) {

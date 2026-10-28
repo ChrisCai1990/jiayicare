@@ -23,14 +23,17 @@ test('identity merge preserves a previously granted invitation reward', () => {
   assert.match(questionnaireReward, /source: 'enterprise'/);
 });
 
-test('login locks both inviter id and code before onboarding', () => {
-  assert.match(authRoute, /pendingInviteCode: code, pendingInviter: inviter\._id/);
+test('login fixes inviter before onboarding and does not grant funds', () => {
+  assert.match(authRoute, /await bindInvitationAtLogin\(user, inviteCode\)/);
+  assert.match(authRoute, /invitedBy: inviter\._id/);
+  assert.doesNotMatch(authRoute, /firstLoginFundGrantedAt: now/);
   assert.match(userRoute, /applyOnboardingRewards\(user, pendingInviteCode, pendingInviterId\)/);
 });
 
-test('invitation is recorded at onboarding but its reward waits for questionnaire submission', () => {
-  assert.match(userRoute, /建档成功即固定邀请人，基金奖励改由首次问卷提交后统一发放/);
+test('fund grants wait for the first submitted questionnaire', () => {
+  assert.match(questionnaireRoute, /grantFirstQuestionnaireReward\(req\.user\._id\)/);
   assert.match(questionnaireRoute, /grantReferralQuestionnaireReward\(req\.user\._id\)/);
+  assert.match(questionnaireReward, /firstLoginFundGrantedAt: null/);
   assert.match(questionnaireReward, /onboardingCompleted: true/);
   assert.match(questionnaireReward, /referralRewardGrantedAt: null/);
 });

@@ -4,11 +4,8 @@ const https = require('https');
 const crypto = require('crypto');
 const User = require('../models/User');
 const { jiayihuiTenantId } = require('../utils/jiayihuiTenant');
-const Message = require('../models/Message');
 const LoginSession = require('../models/LoginSession');
-const HealthFundTransaction = require('../models/HealthFundTransaction');
 const VerificationCode = require('../models/VerificationCode');
-const SystemConfig = require('../models/SystemConfig');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
 const { reviewConfig, canAttempt, recordAttempt, validCredentials } = require('../utils/reviewExperience');
 const aliyunNumberAuth = require('../utils/aliyunNumberAuth');
@@ -66,53 +63,19 @@ async function beginLoginSession(req, user, method) {
   return sessionId;
 }
 
-async function grantPromotionFund(userId, amount, remark, source = 'promotion') {
-  const value = Math.max(0, Number(amount) || 0);
-  if (!value) return;
-  const updated = await User.findByIdAndUpdate(userId, { $inc: { healthFundBalance: value } }, { new: true });
-  await HealthFundTransaction.create({
-    userId, type: 'grant', source, amount: value,
-    balanceAfter: updated?.healthFundBalance || 0, remark,
-  });
-}
-
-async function applyFirstLoginRewards(user, inviteCode) {
-  const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
-  const cfg = cfgRow?.value || {};
+async function bindInvitationAtLogin(user, inviteCode) {
+  const code = String(inviteCode || user.pendingInviteCode || '').trim().toLowerCase();
+  if (user.invitedBy || (!code && !user.pendingInviter)) return;
+  let inviter = user.pendingInviter
+    ? await User.findOne({ _id: user.pendingInviter, tenantId: user.tenantId, isDeleted: { $ne: true } }).select('_id')
+    : null;
+  if (inviter && String(inviter._id) === String(user._id)) inviter = null;
+  if (!inviter && code) inviter = await User.findOne({ referralCode: code, tenantId: user.tenantId, isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
+  if (!inviter) return;
   const now = new Date();
-  if (cfg.firstLoginEnabled === true && Number(cfg.firstLoginAmount) > 0) {
-    const claimed = await User.findOneAndUpdate(
-      { _id: user._id, firstLoginFundGrantedAt: null },
-      { $set: { firstLoginFundGrantedAt: now } }, { new: true },
-    );
-    // 首次登录赠金属于企业健康基金，不是用户自有基金。
-    if (claimed) {
-      await grantPromotionFund(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励', 'enterprise');
-      await Message.create({
-        user: user._id, type: 'system', sender: '嘉医汇', title: '欢迎加入嘉医汇', unread: true,
-        content: '欢迎加入嘉医汇。健康可控，人生方可从容。\n\n愿你在认真照顾自己的每一天里，收获安心、活力与从容。',
-      }).catch(err => console.error('[first-login-reward] 到账消息发送失败', err.message));
-    }
-  }
-  if (!inviteCode || user.invitedBy) return;
-  const inviter = await User.findOne({ referralCode: String(inviteCode), tenantId: user.tenantId, isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
-  if (!inviter) return;
-  const claimed = await User.findOneAndUpdate(
+  await User.findOneAndUpdate(
     { _id: user._id, invitedBy: null },
-    { $set: { invitedAt: now, invitedBy: inviter._id } }, { new: true },
-  );
-  // 邀请关系用于归因和展示；基金奖励由首次问卷提交统一触发，不能在登录时提前到账。
-  if (!claimed) return;
-}
-
-async function rememberPendingInvitation(user, inviteCode) {
-  const code = String(inviteCode || '').trim().toLowerCase();
-  if (!code || user.invitedBy) return;
-  const inviter = await User.findOne({ referralCode: code, tenantId: user.tenantId, isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
-  if (!inviter) return;
-  await User.updateOne(
-    { _id: user._id, invitedBy: null },
-    { $set: { pendingInviteCode: code, pendingInviter: inviter._id } },
+    { $set: { invitedAt: now, invitedBy: inviter._id }, $unset: { pendingInviteCode: 1, pendingInviter: 1 } },
   );
 }
 
@@ -321,8 +284,7 @@ router.post('/login', async (req, res) => {
     user.referralCode = crypto.randomBytes(6).toString('hex');
     await user.save();
   }
-  if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
-  else await rememberPendingInvitation(user, inviteCode);
+  await bindInvitationAtLogin(user, inviteCode);
   user = await User.findById(user._id);
   await ensureAssignedHealthPlanner(user).catch(error => {
     console.error('[health-planner-assignment] 登录时自动分配失败', error.message);
@@ -380,8 +342,7 @@ router.post('/one-click/login', async (req, res) => {
       await user.save();
     }
     const inviteCode = req.body?.inviteCode;
-    if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
-    else await rememberPendingInvitation(user, inviteCode);
+    await bindInvitationAtLogin(user, inviteCode);
     user = await User.findById(user._id);
     await ensureAssignedHealthPlanner(user).catch(error => console.error('[health-planner-assignment] 一键登录自动分配失败', error.message));
     user = await User.findById(user._id);
@@ -522,8 +483,7 @@ router.post('/wechat-mp', async (req, res) => {
       user.referralCode = crypto.randomBytes(6).toString('hex');
       await user.save();
     }
-    if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
-    else await rememberPendingInvitation(user, inviteCode);
+    await bindInvitationAtLogin(user, inviteCode);
     user = await User.findById(user._id);
     await ensureAssignedHealthPlanner(user).catch(error => console.error('[health-planner-assignment] 微信登录时自动分配失败', error.message));
     user = await User.findById(user._id);
@@ -605,8 +565,7 @@ router.post('/wechat-mp/phone-login', async (req, res) => {
       user.referralCode = crypto.randomBytes(6).toString('hex');
       await user.save();
     }
-    if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
-    else await rememberPendingInvitation(user, inviteCode);
+    await bindInvitationAtLogin(user, inviteCode);
     user = await User.findById(user._id);
     await ensureAssignedHealthPlanner(user).catch(error => console.error('[health-planner-assignment] 小程序登录时自动分配失败', error.message));
     user = await User.findById(user._id);
