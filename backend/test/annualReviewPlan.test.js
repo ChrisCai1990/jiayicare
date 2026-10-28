@@ -94,3 +94,13 @@ test('同月不同专科分别就诊，未记录专科的旧决定不被擅自�
   assert.ok(result.abnormal_followup.every(row => row.bookingRequired));
   assert.equal(validatePlanCoverage({ abnormal_followup: { records: result.abnormal_followup } }, evidence), '');
 });
+
+test('旧草稿已完整合并同月复查时可推送，遗漏一项仍须拦截', () => {
+  const evidence = Array.from({ length: 8 }, (_, index) => source(index, `项目${index + 1}`, 3, '2026-10-26', ''));
+  const result = normalizeConfirmedManagement(empty(evidence), evidence, catalog);
+  const merged = { ...result.abnormal_followup[0], items: '复查8项检查',
+    reviewItems: evidence.map(item => item.content.reviewPlan.items[0]),
+    sourceIds: evidence.map(item => item.id) };
+  assert.equal(validatePlanCoverage({ abnormal_followup: { records: [merged] } }, evidence), '');
+  assert.match(validatePlanCoverage({ abnormal_followup: { records: [{ ...merged, reviewItems: merged.reviewItems.slice(1) }] } }, evidence), /一次完整就诊安排/);
+});

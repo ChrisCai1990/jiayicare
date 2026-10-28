@@ -103,14 +103,24 @@ function managementTargets(evidence = []) {
 }
 
 function validatePlanCoverage(moduleData = {}, evidence = []) {
-  for (const group of require('./annualReviewPlan').reviewGroups(evidence)) {
+  const reviewGroups = require('./annualReviewPlan').reviewGroups(evidence);
+  for (const group of reviewGroups) {
     const rows = moduleData.abnormal_followup?.records || [];
     const linked = rows.filter(row => row.sourceIds?.some(id => group.sourceIds.includes(id)));
-    if (linked.length !== 1 || !group.sourceIds.every(id => linked[0].sourceIds.includes(id))
-      || linked[0].items !== `复查${group.items.length}项检查`
-      || linked[0].reviewItems?.length !== group.items.length
-      || !group.items.every(item => linked[0].reviewItems.includes(item))
-      || (group.department && linked[0].department !== group.department)) {
+    const row = linked[0];
+    // Earlier plans grouped all same-month review sources before a specialist
+    // was recorded. Keep a complete existing group valid; do not force the
+    // advisor to delete and regenerate it merely because newer decisions split.
+    const combined = row ? reviewGroups.filter(other => other.sourceIds.some(id => row.sourceIds?.includes(id))) : [];
+    const legacyCombined = combined.length > 1 && combined.every(other => !other.department
+      && other.intervalMonths === group.intervalMonths && other.dueDate.slice(0, 7) === group.dueDate.slice(0, 7));
+    const expectedIds = legacyCombined ? [...new Set(combined.flatMap(other => other.sourceIds))] : group.sourceIds;
+    const expectedItems = legacyCombined ? [...new Set(combined.flatMap(other => other.items))] : group.items;
+    if (linked.length !== 1 || !expectedIds.every(id => row.sourceIds.includes(id))
+      || row.items !== `复查${expectedItems.length}项检查`
+      || row.reviewItems?.length !== expectedItems.length
+      || !expectedItems.every(item => row.reviewItems.includes(item))
+      || (group.department && row.department !== group.department)) {
       return `约${group.intervalMonths}个月后${group.department || '待确认专科'}的复查没有归为一次完整就诊安排，请核对项目与来源`;
     }
   }
