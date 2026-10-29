@@ -55,11 +55,11 @@ export default function NutritionAssessmentPanel({ patientId = '', source = 'nut
   return <section className={embedded ? '' : 'card'} style={embedded ? { borderTop: '1px solid #E3ECE7', marginTop: 12 } : { marginBottom: 18 }}>
     <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
       <div><div className="card-title">{embedded ? '营养评估' : config?.requestTitle || '营养评估'}{patientId ? '进度' : '服务事项'}</div><div style={{ color: '#718578', fontSize: 12, marginTop: 4 }}>{source === 'paid_order' ? '订单已到健康规划师工作台 → 健管预约 → 营养师评估' : '健康顾问发起 → 健管预约 → 营养师评估'}；可查看完整流转记录</div></div>
-      {canCreate && config?.enabled === true && (source === 'paid_order' ? ['healthPlanner', 'superadmin'] : ['familyDoctor', 'superadmin']).includes(staff?.role) && <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreateOpen(value => !value)}>{createOpen ? '收起需求单' : source === 'nutrition_plan' ? '发起营养复评' : source === 'paid_order' ? '转交单次营养评估' : '发起临时营养评估'}</button>}
+      {canCreate && config?.enabled === true && (source === 'paid_order' ? ['healthPlanner', 'superadmin'] : ['familyDoctor', 'superadmin']).includes(staff?.role) && <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreateOpen(value => !value)}>{createOpen ? '收起需求单' : source === 'nutrition_plan' ? '发起营养复评' : source === 'paid_order' ? '转交单次营养评估' : '发起单次营养评估'}</button>}
     </div>
     <div className="card-body" style={{ display: 'grid', gap: 12 }}>
       {createOpen && config?.enabled !== false && <div style={{ ...card, background: '#F7FBF8', display: 'grid', gap: 10 }}>
-        <strong>{config?.requestTitle || '营养评估需求单'} · {source === 'nutrition_plan' ? '干预方案复评' : source === 'paid_order' ? '已购单次评估' : '年度管理临时评估'}</strong>
+        <strong>{config?.requestTitle || '营养评估需求单'} · {source === 'nutrition_plan' ? '干预方案复评' : source === 'paid_order' ? '已购单次评估' : '单次营养评估'}</strong>
         <div style={{ fontSize: 12, color: '#718578' }}>{config?.requestInstructions}</div>
         {source === 'paid_order' && <label style={field}>关联单次营养评估订单 *<select className="form-control" value={form.sourceOrderId} onChange={e => patch('sourceOrderId', e.target.value)}><option value="">请选择已购买、未使用的订单</option>{eligibleOrders.map(order => <option key={order._id} value={order._id}>{order.serviceName} · {order.orderNo || String(order._id).slice(-8)}{order.specificationLabel ? ` · ${order.specificationLabel}` : ''}</option>)}</select>{!eligibleOrders.length && <span>暂无可用订单，请核对订单付款及使用状态。</span>}</label>}
         <label style={field}>评估原因 *<textarea className="form-control" rows={3} maxLength={2000} value={form.reason} onChange={e => patch('reason', e.target.value)} placeholder="说明会员当前问题、为什么需要营养师评估" /></label>
@@ -70,7 +70,8 @@ export default function NutritionAssessmentPanel({ patientId = '', source = 'nut
       {error && <div role="alert" style={{ color: '#B42318' }}>{error} <button type="button" onClick={load}>重试</button></div>}
       {!error && !visible.length && <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无营养评估需求</div>}
       {(compact ? visible.slice(0, 5) : visible).map(row => <article key={row._id} style={card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}><strong>{row.patientId?.name || '会员'} · {row.assessmentType === 'initial' ? '首次营养评估' : '营养复评'}</strong><span style={{ color: row.status === 'completed' ? '#1E6B50' : '#9A5B13', fontSize: 13 }}>{labels[row.status]}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}><strong>{row.patientId?.name || '会员'} · {row.assessmentType === 'reassessment' ? '营养复评' : '单次营养评估'}</strong><span style={{ color: row.status === 'completed' ? '#1E6B50' : '#9A5B13', fontSize: 13 }}>{labels[row.status]}</span></div>
+        <div style={{ fontSize: 12, color: '#718578', marginTop: 7 }}>发起时间：{dateTime(row.createdAt || row.events?.find(event => event.action === 'requested')?.at) || '未记录'}</div>
         <div style={{ fontSize: 13, marginTop: 7 }}>需求：{row.reason}</div>
         {row.sourceOrderId && <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>关联订单：{row.sourceOrderId.serviceName || '单次营养评估'} · {row.sourceOrderId.orderNo || String(row.sourceOrderId._id || row.sourceOrderId).slice(-8)} · {row.sourceOrderId.usedUnits ? '已核销' : '待完成评估后核销'}</div>}
         {row.orderSettlementStatus === 'needs_review' && <div role="alert" style={{ fontSize: 12, color: '#B42318', marginTop: 5 }}>评估已保存，订单核销待核对</div>}
