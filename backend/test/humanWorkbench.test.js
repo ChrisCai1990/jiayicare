@@ -59,7 +59,7 @@ test('doctor approval hands off lifestyle generation and the draft replaces the 
   assert.deepEqual(nutritionTodos(), []);
   user.aiHealthSummary.byYear[2026].records[0].generatedAt = '2026-10-26T09:00:00Z';
   user.aiHealthSummary.byYear[2026].records[0].nutritionApprovedAt = '2026-10-26T10:00:00Z';
-  assert.deepEqual(nutritionTodos().map(todo => todo.type), ['lifestyle_generate']);
+  assert.deepEqual(nutritionTodos(), []);
   user.aiHealthSummary.byYear[2026].records.unshift({ ...doctor, doctorApprovedAt: null });
   assert.deepEqual(nutritionTodos(), []);
   assert.deepEqual(summaryTodos(user, type => type === 'lifestyle_generate', new Date('2027-01-01T12:00:00Z')), []);

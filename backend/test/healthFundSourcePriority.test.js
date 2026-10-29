@@ -31,3 +31,26 @@ test('vitality remains available when old reward ledger exceeds the actual total
     HealthFundTransaction.aggregate = fundAggregate;
   }
 });
+
+test('questionnaire invitation grants are counted as reward fund, not personal fund', async () => {
+  const giftAggregate = GiftRecord.aggregate;
+  const fundAggregate = HealthFundTransaction.aggregate;
+  GiftRecord.aggregate = async () => [];
+  HealthFundTransaction.aggregate = async pipeline => {
+    const match = pipeline[0].$match;
+    if (match.remark?.$in) {
+      assert.ok(match.remark.$in.includes('邀请好友完成问卷奖励'));
+      assert.ok(match.remark.$in.includes('通过好友邀请完成问卷奖励'));
+      return [{ total: 50 }];
+    }
+    return [];
+  };
+  try {
+    const user = { _id: 'invitee', healthFundBalance: 50 };
+    assert.equal(await getCorporateFundAvailable(user), 50);
+    assert.equal(await getPersonalFundAvailable(user), 0);
+  } finally {
+    GiftRecord.aggregate = giftAggregate;
+    HealthFundTransaction.aggregate = fundAggregate;
+  }
+});

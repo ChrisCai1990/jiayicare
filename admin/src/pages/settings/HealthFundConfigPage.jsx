@@ -50,21 +50,21 @@ export default function HealthFundConfigPage(){
     <div className="form-group"><label className="form-label">购买客户奖励（元）</label><input className="form-input" type="number" min="0" value={form.recipientAmount} onChange={e=>set('recipientAmount',e.target.value)}/></div>
   </div>
   <p style={{color:'#718096'}}>奖励仅在被分享客户完成有效支付后发放；全额退款时自动冲销，分享人不能给自己产生奖励。</p>
-  <h3 style={{marginTop:28}}>邀请好友首次使用奖励</h3>
-  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.inviteEnabled} onChange={e=>set('inviteEnabled',e.target.checked)}/>启用 A 邀请 B 首次登录后双方健康基金奖励</label>
+  <h3 style={{marginTop:28}}>邀请好友完成问卷奖励</h3>
+  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.inviteEnabled} onChange={e=>set('inviteEnabled',e.target.checked)}/>启用邀请好友完成健康问卷后双方奖励基金</label>
   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
     <div className="form-group"><label className="form-label">邀请人奖励（元）</label><input className="form-input" type="number" min="0" value={form.inviterAmount} onChange={e=>set('inviterAmount',e.target.value)}/></div>
     <div className="form-group"><label className="form-label">受邀人奖励（元）</label><input className="form-input" type="number" min="0" value={form.inviteeAmount} onChange={e=>set('inviteeAmount',e.target.value)}/></div>
   </div>
-  <p style={{color:'#718096'}}>同一受邀客户仅奖励一次；自己不能邀请自己。奖励在受邀客户首次完成手机号登录后入账。</p>
+  <p style={{color:'#718096'}}>有效邀请人在登录时确定，无需等待问卷；双方奖励基金在受邀客户提交健康问卷后各发放一次。自己不能邀请自己。</p>
   <h3 style={{marginTop:28}}>首次使用奖励</h3>
-  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.firstLoginEnabled} onChange={e=>set('firstLoginEnabled',e.target.checked)}/>启用客户首次登录小程序健康基金奖励（含已有客户首次使用）</label>
-  <div className="form-group"><label className="form-label">首次登录赠送金额（元）</label><input className="form-input" type="number" min="0" value={form.firstLoginAmount} onChange={e=>set('firstLoginAmount',e.target.value)}/></div>
+  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.firstLoginEnabled} onChange={e=>set('firstLoginEnabled',e.target.checked)}/>启用客户首次提交健康问卷后的奖励基金（含已有客户首次使用）</label>
+  <div className="form-group"><label className="form-label">首次问卷赠送金额（元）</label><input className="form-input" type="number" min="0" value={form.firstLoginAmount} onChange={e=>set('firstLoginAmount',e.target.value)}/></div>
   <p style={{color:'#718096'}}>实际抵扣以商品规则和可用余额为准；会员资格及企业适用条件仍须满足。旧商品未单独配置时保留20%，新商品默认不支持，需逐个设置。</p>
   <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'保存中...':'保存并立即生效'}</button>
  </div></div>
  <div className="card" style={{marginTop:20}}><div className="card-body">
   <h3>邀请关系记录</h3><p style={{color:'#718096'}}>即使未启用自动奖励，也会保留邀请关系，便于运营审核和赠送健康基金。</p>
-  {referrals.length===0?<p style={{color:'#718096'}}>暂无邀请成功记录</p>:<div style={{overflowX:'auto'}}><table className="data-table"><thead><tr><th>邀请人</th><th>邀请人手机</th><th>受邀人</th><th>受邀人手机</th><th>建立关系</th><th>首次登录</th><th>奖励时间</th></tr></thead><tbody>{referrals.map(row=><tr key={row._id}><td>{row.inviter?.name||'-'}</td><td>{row.inviter?.phone||'-'}</td><td>{row.invitee?.name||'-'}</td><td>{row.invitee?.phone||'-'}</td><td>{row.invitedAt?new Date(row.invitedAt).toLocaleString('zh-CN'):'-'}</td><td>{row.firstLoginAt?new Date(row.firstLoginAt).toLocaleString('zh-CN'):'-'}</td><td>{row.rewardedAt?new Date(row.rewardedAt).toLocaleString('zh-CN'):'未自动奖励'}</td></tr>)}</tbody></table></div>}
+  {referrals.length===0?<p style={{color:'#718096'}}>暂无邀请成功记录</p>:<div style={{overflowX:'auto'}}><table className="data-table"><thead><tr><th>邀请人</th><th>邀请人手机</th><th>受邀人</th><th>受邀人手机</th><th>建立关系</th><th>最近登录</th><th>奖励时间</th></tr></thead><tbody>{referrals.map(row=><tr key={row._id}><td>{row.inviter?.name||'-'}</td><td>{row.inviter?.phone||'-'}</td><td>{row.invitee?.name||'-'}</td><td>{row.invitee?.phone||'-'}</td><td>{row.invitedAt?new Date(row.invitedAt).toLocaleString('zh-CN'):'-'}</td><td>{row.firstLoginAt?new Date(row.firstLoginAt).toLocaleString('zh-CN'):'-'}</td><td>{row.rewardedAt?new Date(row.rewardedAt).toLocaleString('zh-CN'):'待完成问卷'}</td></tr>)}</tbody></table></div>}
  </div></div></div>
 }

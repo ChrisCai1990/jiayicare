@@ -54,35 +54,14 @@ const router = express.Router();
 const wechatPay = require('../utils/wechatPay');
 
 async function applyOnboardingRewards(user, inviteCode, pendingInviterId) {
-  const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
-  const cfg = cfgRow?.value || {};
-  const grant = async (userId, amount, remark, source = 'promotion') => {
-    const value = Math.max(0, Number(amount) || 0);
-    if (!value) return;
-    const updated = await User.findByIdAndUpdate(userId, { $inc: { healthFundBalance: value } }, { new: true });
-    await HealthFundTransaction.create({ userId, type: 'grant', source, amount: value, balanceAfter: updated?.healthFundBalance || 0, remark });
-  };
-  const now = new Date();
-  if (cfg.firstLoginEnabled === true && Number(cfg.firstLoginAmount) > 0) {
-    const claimed = await User.findOneAndUpdate({ _id: user._id, firstLoginFundGrantedAt: null }, { $set: { firstLoginFundGrantedAt: now } }, { new: true });
-    if (claimed) {
-      await grant(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励', 'enterprise');
-      await Message.create({
-        user: user._id, type: 'system', sender: '嘉医汇', title: '欢迎加入嘉医汇', unread: true,
-        content: '欢迎加入嘉医汇。健康可控，人生方可从容。\n\n愿你在认真照顾自己的每一天里，收获安心、活力与从容。',
-      }).catch(err => console.error('[first-login-reward] 到账消息发送失败', err.message));
-    }
-  }
   if ((!inviteCode && !pendingInviterId) || user.invitedBy) return;
   let inviter = pendingInviterId
-    ? await User.findOne({ _id: pendingInviterId, isDeleted: { $ne: true } }).select('_id')
+    ? await User.findOne({ _id: pendingInviterId, tenantId: user.tenantId, isDeleted: { $ne: true } }).select('_id')
     : null;
   if (inviter?._id.equals(user._id)) inviter = null;
-  if (!inviter && inviteCode) inviter = await User.findOne({ referralCode: String(inviteCode).trim().toLowerCase(), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
+  if (!inviter && inviteCode) inviter = await User.findOne({ referralCode: String(inviteCode).trim().toLowerCase(), tenantId: user.tenantId, isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
   if (!inviter) return;
-  const claimed = await User.findOneAndUpdate({ _id: user._id, invitedBy: null }, { $set: { invitedAt: now, invitedBy: inviter._id } }, { new: true });
-  // 建档成功即固定邀请人，基金奖励改由首次问卷提交后统一发放。
-  if (!claimed) return;
+  await User.findOneAndUpdate({ _id: user._id, invitedBy: null }, { $set: { invitedAt: new Date(), invitedBy: inviter._id } });
 }
 
 router.get('/referrals', auth, async (req, res) => {

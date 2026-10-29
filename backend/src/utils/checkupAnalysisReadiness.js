@@ -22,7 +22,7 @@ async function checkupAnalysisReadiness(patientId, year) {
   const items = (plan.items || []).filter(item => String(item.name || '').trim());
   const reportIds = items.map(item => item.reportId).filter(Boolean);
   const reports = reportIds.length
-    ? await MedicalReport.find({ _id: { $in: reportIds }, user: patientId })
+    ? await MedicalReport.find({ _id: { $in: reportIds }, user: patientId, archiveOnly: { $ne: true } })
       .select('_id audit_status').lean()
     : [];
   return summarizeCheckupPlan(plan, reports);

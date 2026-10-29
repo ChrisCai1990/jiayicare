@@ -10,7 +10,24 @@ async function grant(userId, amount, remark) {
   await HealthFundTransaction.create({ userId, type: 'grant', source: 'enterprise', amount: value, balanceAfter: updated?.healthFundBalance || 0, remark });
 }
 
-// 邀请关系在建档时已固定；健康基金必须等受邀客户完成一份问卷后才允许领取。
+async function grantFirstQuestionnaireReward(userId) {
+  const cfg = (await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean())?.value || {};
+  if (cfg.firstLoginEnabled !== true || Number(cfg.firstLoginAmount) <= 0) return false;
+  const claimed = await User.findOneAndUpdate(
+    { _id: userId, onboardingCompleted: true, firstLoginFundGrantedAt: null },
+    { $set: { firstLoginFundGrantedAt: new Date() } },
+    { new: true },
+  );
+  if (!claimed) return false;
+  await grant(claimed._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励');
+  await Message.create({
+    user: claimed._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+    content: `您已完成健康问卷，¥${Number(cfg.firstLoginAmount)} 首次使用奖励基金已到账。`,
+  });
+  return true;
+}
+
+// 邀请关系在登录时已固定；奖励基金必须等受邀客户完成一份问卷后才允许领取。
 // referralRewardGrantedAt 是领取幂等锁，重复提交或并发提交都只会赠送一次。
 async function grantReferralQuestionnaireReward(userId) {
   const cfg = (await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean())?.value || {};
@@ -52,4 +69,4 @@ async function grantReferralQuestionnaireReward(userId) {
   return true;
 }
 
-module.exports = { grantReferralQuestionnaireReward };
+module.exports = { grantFirstQuestionnaireReward, grantReferralQuestionnaireReward };

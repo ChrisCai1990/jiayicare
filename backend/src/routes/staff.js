@@ -1003,8 +1003,12 @@ router.get('/checkup-progress', staffAuth, async (req, res) => {
       status: { $ne: 'cancelled' },
     }).select('patientId title items status createdAt').lean();
 
+    const reportIds = [...new Set(plans.flatMap(plan => (plan.items || []).map(item => String(item.reportId || '')).filter(Boolean)))];
+    const auditedReports = reportIds.length ? await MedicalReport.find({ _id: { $in: reportIds },
+      user: { $in: patientIds }, audit_status: 'audited', archiveOnly: { $ne: true } }).select('_id user').lean() : [];
+
     const result = require('../utils/checkupWorkbenchProgress').buildCheckupWorkbenchRows(
-      plans, patients, req.query.includeCompleted === '1'
+      plans, patients, req.query.includeCompleted === '1', auditedReports
     );
     res.json({ success: true, data: result });
   } catch (err) {
@@ -3819,6 +3823,9 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   if (req.body.giftId && req.body.reservedOrderId) return res.status(400).json({ success: false, message: '赠送权益与已有订单不能同时使用' });
   let planContent = content || {};
   if (type === 'annual_checkup') {
+    if (Array.isArray(items) && items.some(item => (item.status && item.status !== 'pending') || item.reportId || item.completedAt)) {
+      return res.status(400).json({ success: false, message: '新体检项目须先保持待完成，报告关联请在审核后逐项核对' });
+    }
     const templateId = planContent.templateId;
     if (!mongoose.Types.ObjectId.isValid(String(templateId || ''))) return res.status(400).json({ success: false, message: '请先选择体检中心的标准套餐模板' });
     const [template, patient] = await Promise.all([
@@ -4249,6 +4256,23 @@ async function canManagePlan(req, plan) {
   const patient = await User.findById(patientId).select('assignedHealthPlanner').lean();
   return String(patient?.assignedHealthPlanner || '') === String(req.staff._id);
 }
+async function canReviewAnnualCheckup(req, plan) {
+  if (plan.type !== 'annual_checkup' || !checkPlanTypeRole(plan, req.staff.role) || !(await planTypeAllowed(req, plan.type))) return false;
+  if (await canManagePlan(req, plan)) return true;
+  if (req.staff.role !== 'familyDoctor') return false;
+  const patient = await User.findById(plan.patientId?._id || plan.patientId).select('assignedFamilyDoctor').lean();
+  return String(patient?.assignedFamilyDoctor || '') === String(req.staff._id);
+}
+
+const checkupReconcileModels = () => ({ HealthPlan, MedicalReport, LabTestOrder, SpecialExam, FunctionalMedicineTest, ProjectCategory });
+async function reconcileAuditedCheckupReport(report) {
+  if (report.audit_status !== 'audited' || report.archiveOnly || !report.user || !/^\d{4}-\d{2}-\d{2}$/.test(String(report.checkDate || ''))) return;
+  if (require('../utils/checkupScreeningReconcile').NON_EXAM_CATEGORIES.includes(report.documentCategory)) return;
+  const year = Number(String(report.checkDate).slice(0, 4));
+  const plan = await HealthPlan.findOne({ patientId: report.user, type: 'annual_checkup', year, status: { $ne: 'cancelled' } })
+    .sort({ createdAt: -1 }).select('patientId year checkupDate items status').lean();
+  if (plan) await require('../utils/checkupScreeningReconcile').reconcile(plan, checkupReconcileModels());
+}
 
 // 自定义角色的「方案类型」授权校验（用于 edit/delete：plan 已查出、可拿 plan.type）。
 // 返回 true=放行，false=该角色被管理员关闭了此类方案的管理权。兼容逻辑与中间件 checkPlanType 一致。
@@ -4282,8 +4306,29 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
     return res.status(409).json({ success: false, message: '就医协助服务须在执行结束后由健康规划师通过确认结案入口关闭' });
   }
   if (plan.type === 'annual_checkup') {
+    if (req.body.year !== undefined && Number(req.body.year) !== Number(plan.year)
+      && plan.items.some(item => item.status === 'completed' || item.reportId)) {
+      return res.status(409).json({ success: false, message: '已有报告核对记录的体检方案不能直接改年度' });
+    }
     if (req.body.items !== undefined) {
       if (!Array.isArray(req.body.items)) return res.status(400).json({ success: false, message: '方案项目格式不正确' });
+      for (const original of plan.items) {
+        const submitted = req.body.items.find(item => String(item._id || '') === String(original._id));
+        if (submitted && (submitted.status !== original.status
+          || String(submitted.reportId || '') !== String(original.reportId || '')
+          || String(submitted.completionSource || '') !== String(original.completionSource || ''))) {
+          return res.status(409).json({ success: false, message: '项目完成及报告关联请通过逐项核对入口修改' });
+        }
+        if (submitted) Object.assign(submitted, {
+          status: original.status, reportId: original.reportId, completedAt: original.completedAt,
+          completionSource: original.completionSource, completionNote: original.completionNote,
+          completionReviewedBy: original.completionReviewedBy, completionReviewedAt: original.completionReviewedAt,
+        });
+      }
+      if (req.body.items.some(item => !plan.items.some(original => String(original._id) === String(item._id || ''))
+        && ((item.status && item.status !== 'pending') || item.reportId || item.completedAt))) {
+        return res.status(400).json({ success: false, message: '新增体检项目须先保持待完成，报告关联请在审核后逐项核对' });
+      }
       const originalBase = plan.items.filter(item => item.itemGroup === 'base');
       const submittedBase = req.body.items.filter(item => item.itemGroup === 'base');
       const unchanged = originalBase.length === submittedBase.length && originalBase.every((item, index) => {
@@ -4822,13 +4867,63 @@ router.patch('/plans/:id/workflow-modules/:moduleId/decision', staffAuth, async 
   res.json({ success: true, data: record, message: decision === 'needed' ? '已审核并生成对应任务' : decision === 'not_needed' ? '已审核并跳过该节点' : '已保留为待确认' });
 });
 
+// Explicitly recheck older audited reports; GET never changes customer records.
+router.get('/plans/:id/screening-reconciliation', staffAuth, async (req, res) => {
+  try {
+  const plan = await HealthPlan.findById(req.params.id).lean();
+  if (!plan || plan.type !== 'annual_checkup') return res.status(404).json({ success: false, message: '体检方案不存在' });
+  if (!(await canReviewAnnualCheckup(req, plan))) return res.status(403).json({ success: false, message: '无权核对该体检方案' });
+  const { loadEvidence, suggest } = require('../utils/checkupScreeningReconcile');
+  const { reports, catalog } = await loadEvidence(plan, checkupReconcileModels());
+  res.json({ success: true, data: { suggestions: suggest(plan, reports, catalog),
+    progress: require('../utils/checkupAnalysisReadiness').summarizeCheckupPlan(plan, reports),
+    reports: reports.map(report => ({ id: String(report._id), title: report.title, checkDate: report.checkDate })) } });
+  } catch (error) { res.status(500).json({ success: false, message: '体检报告核对信息加载失败' }); }
+});
+
+router.post('/plans/:id/screening-reconciliation', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
+  try {
+  const plan = await HealthPlan.findById(req.params.id).lean();
+  if (!plan || plan.type !== 'annual_checkup') return res.status(404).json({ success: false, message: '体检方案不存在' });
+  if (!(await canReviewAnnualCheckup(req, plan))) return res.status(403).json({ success: false, message: '无权核对该体检方案' });
+  const result = await require('../utils/checkupScreeningReconcile').reconcile(plan, checkupReconcileModels());
+  res.json({ success: true, data: result });
+  } catch (error) { res.status(500).json({ success: false, message: '体检报告核对失败，请稍后重试' }); }
+});
+
 // PATCH /api/staff/plans/:id/items/:itemId — 更新方案项目状态
-router.patch('/plans/:id/items/:itemId', staffAuth, async (req, res) => {
+router.patch('/plans/:id/items/:itemId', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  const allowed = plan.type === 'annual_checkup' ? await canReviewAnnualCheckup(req, plan)
+    : (await canManagePlan(req, plan)) && checkPlanTypeRole(plan, req.staff.role) && await planTypeAllowed(req, plan.type);
+  if (!allowed) return res.status(403).json({ success: false, message: '无权修改该方案' });
   const item = plan.items.id(req.params.itemId);
   if (!item) return res.status(404).json({ success: false, message: '项目不存在' });
   const { status, reportId, completedAt } = req.body;
+  if (plan.type === 'annual_checkup') {
+    if (!['completed', 'pending'].includes(status)) return res.status(400).json({ success: false, message: '项目状态无效' });
+    if (status === 'completed') {
+      if (!/^[a-f\d]{24}$/i.test(String(reportId || ''))) return res.status(400).json({ success: false, message: '请先选择对应的已审核报告' });
+      if (!String(req.body.reason || '').trim()) return res.status(400).json({ success: false, message: '请填写人工核对说明' });
+      const report = await MedicalReport.findOne({ _id: reportId, user: plan.patientId, audit_status: 'audited', archiveOnly: { $ne: true } })
+        .select('checkDate date documentCategory').lean();
+      const screening = require('../utils/checkupScreeningReconcile');
+      if (!report || screening.NON_EXAM_CATEGORIES.includes(report.documentCategory)
+        || screening.reportYear(report) !== Number(plan.year)) return res.status(409).json({ success: false, message: '请选择本客户、本年度已审核的检查报告' });
+    }
+    const originalReport = item.reportId || null;
+    const changed = await HealthPlan.updateOne({ _id: plan._id, status: { $ne: 'cancelled' },
+      items: { $elemMatch: { _id: item._id, status: item.status, reportId: originalReport } } },
+    { $set: { 'items.$.status': status, 'items.$.reportId': status === 'completed' ? reportId : null,
+      'items.$.completedAt': status === 'completed' ? new Date() : null,
+      'items.$.completionSource': status === 'completed' ? 'screening_manual' : '',
+      'items.$.completionNote': status === 'completed' ? String(req.body.reason || '').trim().slice(0, 1000) : '',
+      'items.$.completionReviewedBy': status === 'completed' ? req.staff._id : null,
+      'items.$.completionReviewedAt': status === 'completed' ? new Date() : null } });
+    if (!changed.modifiedCount) return res.status(409).json({ success: false, message: '项目状态已变化，请刷新后重新核对' });
+    return res.json({ success: true, data: await HealthPlan.findById(plan._id) });
+  }
   if (status) item.status = status;
   if (reportId) item.reportId = reportId;
   item.completedAt = status === 'completed' ? (completedAt ? new Date(completedAt) : new Date()) : item.completedAt;
@@ -5777,6 +5872,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if ((aiStatus === 'reviewed' || screeningReclassification) && report.user && report.documentCategory !== 'prescription_order') {
       await syncScreeningItems(report.user, report._id, report.reportItems, { reconcile: Boolean(screeningReclassification) });
       if (report.audit_status === 'audited') await syncBodyCompositionFromReport(report);
+      if (report.audit_status === 'audited') await reconcileAuditedCheckupReport(report)
+        .catch(error => console.error('[checkup-screening] reconciliation pending', report._id, error));
     }
     // 已审核报告后续若由医护修正提取项/归类并再次保存，也要用同一来源报告ID覆盖身体成分历史。
     // 此前只在“首次审核通过”瞬间同步，导致先审核、后补做人体成分归类时数据永远进不了健康档案。
@@ -6278,6 +6375,8 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
       return res.status(error.status || 500).json({ success: false, code: error.code, message: error.message });
     }
     await require('../utils/reportPlanItemQueue').runtime().safeReconcile(report._id, report.planItemSync?.token);
+    await reconcileAuditedCheckupReport(report)
+      .catch(error => console.error('[checkup-screening] reconciliation pending', report._id, error));
     await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
     await syncBodyCompositionFromReport(report);
     await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
@@ -6905,7 +7004,7 @@ router.get('/service-records', staffAuth, checkPermission('service_records', 'vi
 // POST /api/staff/service-records
 router.post('/service-records', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
   if (req.body.type === 'rehab') return res.status(409).json({ success: false, message: '请在客户运动评估与复健模块填写记录' });
-  const { patientId, type, date, title, content, result, nextDate, diseaseName, medicalEscort, tcmRecord, specialistRecord, attachments } = req.body;
+  const { patientId, type, date, title, content, result, nextDate, nextFollowUpTheme, diseaseName, medicalEscort, tcmRecord, specialistRecord, attachments } = req.body;
   if (!patientId || !type) return res.status(400).json({ success: false, message: '会员和类型不能为空' });
   if (['routine', 'doctor_followup'].includes(type)) {
     return res.status(400).json({ success: false, message: '日常随访和健康顾问跟进已停用，请使用阶段性健康评估' });
@@ -6915,6 +7014,7 @@ router.post('/service-records', staffAuth, checkPermission('service_records', 'c
     date: date ? new Date(date) : new Date(),
     title: title || '', content: content || '', result: result || '',
     nextDate: nextDate ? new Date(nextDate) : null,
+    nextFollowUpTheme: type === 'nutrition' ? String(nextFollowUpTheme || '').trim().slice(0, 80) : '',
     diseaseName: diseaseName || '',
     medicalEscort: medicalEscort || {}, tcmRecord: tcmRecord || {}, specialistRecord: specialistRecord || {},
     attachments: Array.isArray(attachments) ? attachments : [],
@@ -6936,6 +7036,7 @@ router.put('/service-records/:id', staffAuth, checkPermission('service_records',
   }
   const allowed = ['date', 'title', 'content', 'result', 'nextDate', 'diseaseName', 'medicalEscort', 'tcmRecord', 'specialistRecord', 'attachments'];
   allowed.forEach(k => { if (req.body[k] !== undefined) record[k] = req.body[k]; });
+  if (record.type === 'nutrition' && req.body.nextFollowUpTheme !== undefined) record.nextFollowUpTheme = String(req.body.nextFollowUpTheme || '').trim().slice(0, 80);
   await record.save();
   if (record.type === 'nutrition') await require('../utils/nutritionRecordFollowUp').sync(record);
   res.json({ success: true, data: record });
@@ -7101,6 +7202,7 @@ router.patch('/service-records/:id/ai-review', staffAuth, checkPermission('servi
           const d = edits.nextDate ? new Date(edits.nextDate) : null;
           record.nextDate = d && !isNaN(d.getTime()) ? d : null;
         }
+        if (record.type === 'nutrition' && edits.nextFollowUpTheme !== undefined) record.nextFollowUpTheme = String(edits.nextFollowUpTheme || '').trim().slice(0, 80);
       }
       if (!record.staffId) record.staffId = req.staff._id; // 定时任务生成时未指定负责人，审核人即为负责人
       record.aiStatus = 'approved';
@@ -15462,8 +15564,15 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       // 否则用当前角色对应的会员范围（myPatientIds 已按 role 算好）
       const sumFilter = { aiHealthSummary: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
       const sumUsers = await User.find(sumFilter)
-        .select('name aiHealthSummary').lean();
-      sumUsers.forEach(u => todos.push(...summaryTodos(u, can, now)));
+        .select('name aiHealthSummary assignedNutritionist servicePackage serviceStartDate serviceExpiry clientBrand isDeleted archiveReviewSnapshotAt').lean();
+      const { lifestyleGenerationEligible } = require('../utils/lifestyleHandoffEligibility');
+      const projected = sumUsers.flatMap(u => summaryTodos(u, can, now).map(todo => ({ user: u, todo })));
+      const checked = await Promise.all(projected.map(async ({ user, todo }) => {
+        if (todo.type !== 'lifestyle_generate') return todo;
+        try { return await lifestyleGenerationEligible(user, now.getFullYear()) ? todo : null; }
+        catch (error) { console.error('[lifestyle-handoff] eligibility check failed:', error); return null; }
+      }));
+      todos.push(...checked.filter(Boolean));
     }
 
     // ── 健康顾问：AI用药建议待审核 ──
