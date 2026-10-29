@@ -1,10 +1,11 @@
 import AI_PRIVACY from '../../../../shared/aiPrivacyDisclosure.json';
 import React from 'react';
-import { View, Text } from '@tarojs/components';
+import { View, Text, Button } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
+import { returnFromLegal } from '../../utils/legalNavigation';
 
 // 内容与 app/src/screens/legal/LegalScreen.js 完全一致（项目自有法律文本）
 const CONTENT = {
@@ -75,14 +76,14 @@ export default function LegalPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <Button aria-label="返回" onClick={() => returnFromLegal({ taro: Taro, from: router.params?.from, browser: typeof window === 'undefined' ? null : window })} style={{ padding: '0 8px', margin: 0, width: '72px', flexShrink: 0, lineHeight: 1, height: '44px', display: 'flex', alignItems: 'center', background: '#fff', color: colors.primary, fontSize: '15px', border: 0 }}>
+          <Icon name="chevron-left" size={20} color={colors.primary} /><Text>返回</Text>
+        </Button>
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{doc.title}</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px', flexShrink: 0 }} />
       </View>
       <View style={{ backgroundColor: '#fff', padding: `${spacing.md}px ${spacing.lg}px`, borderBottom: `1px solid ${colors.borderLight}` }}>
-        <Text style={{ fontSize: '12px', color: colors.textMuted }}>更新日期：2026年9月23日</Text>
+        <Text style={{ fontSize: '12px', color: colors.textMuted }}>更新日期：2026年10月29日</Text>
       </View>
       <View style={{ padding: `${spacing.lg}px` }}>
         {doc.sections.map((s, i) => (
@@ -97,7 +98,7 @@ export default function LegalPage() {
         }}>
           <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>嘉医汇 · 杭州嘉医汇健康管理有限公司</Text>
           <Text style={{ fontSize: '12px', color: colors.textMuted }}>客服电话：19106761448</Text>
-          <Text style={{ fontSize: '12px', color: colors.textMuted }}>地址：杭州市滨江区西兴街道智慧之门A塔602</Text>
+          <Text style={{ fontSize: '12px', color: colors.textMuted }}>地址：杭州市滨江区西兴街道智慧之门A塔602室</Text>
         </View>
       </View>
     </View>
