@@ -18,6 +18,7 @@ const schema = new mongoose.Schema({
   assessmentType: { type: String, enum: ['initial', 'reassessment'], required: true },
   reason: { type: String, required: true, maxlength: 2000 },
   focus: { type: String, default: '', maxlength: 2000 },
+  preferredAt: { type: Date, default: null },
   advisorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   plannerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },

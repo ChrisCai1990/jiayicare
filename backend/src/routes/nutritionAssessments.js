@@ -92,6 +92,9 @@ router.post('/', staffAuth, wrap(async (req, res) => {
   if (config?.enabled !== true) return bad(res, 409, '请先在管理端启用营养评估需求单');
   const reason = clean(req.body.reason), focus = clean(req.body.focus);
   if (reason.length < 5) return bad(res, 400, '请填写至少5字的评估原因');
+  const preferredAt = source === 'paid_order' ? null : new Date(req.body.preferredAt);
+  if (source !== 'paid_order' && (Number.isNaN(preferredAt.getTime()) || preferredAt <= new Date()))
+    return bad(res, 400, '请选择未来的期望评估日期和具体时间');
   const patient = await User.findOne({ _id: patientId, tenantId: staff.tenantId, isDeleted: { $ne: true } })
     .select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager assignedNutritionist servicePackage serviceExpiry').lean();
   if (!patient) return bad(res, 404, '会员不存在');
@@ -130,7 +133,7 @@ router.post('/', staffAuth, wrap(async (req, res) => {
   const row = await Request.create({
     tenantId: staff.tenantId, patientId, source, sourcePlanId: plan?._id || null,
     sourceOrderId: source === 'paid_order' ? sourceOrderId : null,
-    assessmentType: source === 'nutrition_plan' ? 'reassessment' : 'initial', reason, focus,
+    assessmentType: source === 'nutrition_plan' ? 'reassessment' : 'initial', reason, focus, preferredAt,
     advisorId: source === 'paid_order' ? null : patient.assignedFamilyDoctor || staff._id,
     plannerId: source === 'paid_order' ? patient.assignedHealthPlanner || staff._id : null,
     managerId: patient.assignedHealthManager,
