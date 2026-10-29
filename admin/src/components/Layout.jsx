@@ -13,6 +13,7 @@ const NAV_SECTIONS = [
       { label: '佣金审核', icon: 'money', path: '/commissions' },
       { label: '消息中心', icon: 'message', path: '/messages' },
       { label: '用户反馈', icon: 'feedback', path: '/feedback', badgeKey: 'feedback' },
+      { label: '账号注销', icon: 'users', path: '/account-deletion', superadminOnly: true },
     ],
   },
   {

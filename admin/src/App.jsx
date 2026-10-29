@@ -12,6 +12,7 @@ import OrdersPage from './pages/OrdersPage'
 import CommissionsPage from './pages/CommissionsPage'
 import MessagesPage from './pages/MessagesPage'
 import FeedbackPage from './pages/FeedbackPage'
+import AccountDeletionPage from './pages/AccountDeletionPage'
 import ServicesPage from './pages/ServicesPage'
 import QuestionnairePage from './pages/QuestionnairePage'
 import ChangeLogsPage from './pages/ChangeLogsPage'
@@ -154,6 +155,7 @@ export default function App() {
               <Route path="commissions" element={<CommissionsPage />} />
               <Route path="messages" element={<MessagesPage />} />
               <Route path="feedback" element={<FeedbackPage />} />
+              <Route path="account-deletion" element={<AccountDeletionPage />} />
               <Route path="services" element={<ServicesPage />} />
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />

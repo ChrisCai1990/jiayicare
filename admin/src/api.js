@@ -72,6 +72,7 @@ export const metabolicPilotAPI = {
   access: (id,action) => reqRoot(`/metabolic-pilot/admin/${id}`, {method:'PATCH',body:JSON.stringify({action})}),
 }
 export const adminAPI = {
+  accountDeletionList: (params = {}) => req('/account-deletion/requests?' + new URLSearchParams(params).toString()),
   inventory: () => req('/inventory'),
   createInventoryMaterial: data => req('/inventory/materials', { method: 'POST', body: JSON.stringify(data) }),
   inventoryPeople: () => req('/inventory/people'),
