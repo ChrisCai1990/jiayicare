@@ -3,9 +3,10 @@ const auth = require('../middleware/auth');
 const AccountDeletionRequest = require('../models/AccountDeletionRequest');
 const { createService } = require('../utils/accountDeletionRequest');
 const router = express.Router();
-// No production executor is registered yet. Configuration alone cannot open a
-// request queue that cannot actually complete deletion. Receipt lookup remains usable.
-const service = createService({ requests: AccountDeletionRequest });
+// Requests open only while the deployed worker is checking in successfully.
+// Stopping/misconfiguring the worker closes new intake, while receipts still work.
+const service = createService({ requests: AccountDeletionRequest,
+  isExecutionReady: () => require('../utils/accountDeletionReadiness').workerReady(require('mongoose').connection.db) });
 // Receipt lookup is deliberately before auth: the account may already be gone.
 // Use POST, not a URL/query token, so the capability is not written into access logs.
 const receiptAttempts = new Map();

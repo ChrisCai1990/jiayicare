@@ -45,6 +45,20 @@ function processIdentity(pid) {
   return {pid:Number(pid),parentPid:Number(fields[1]),startTime:fields[19]};
  }catch(error){if(['ENOENT','ESRCH'].includes(error.code))return null;throw error;}
 }
+function systemdConfiguration(name, run=execFileSync, readFile=fs.readFileSync) {
+ const fields=Object.fromEntries(run('systemctl',['show',name,'--property=MainPID,ActiveState,EnvironmentFiles,Environment','--no-pager'],{encoding:'utf8'}).trim().split('\n').map(line=>{
+  const at=line.indexOf('=');return [line.slice(0,at),line.slice(at+1)];
+ }));
+ // Read the persistent unit configuration even after its PID has exited.
+ // Relevant inline overrides are not supported: require the explicit env file,
+ // rather than guessing a shell/systemd escaping rule for connection secrets.
+ if (/(?:^|[\s"])\b(?:MONGODB_URI|ACCOUNT_DELETION_[A-Z_]+)=/.test(fields.Environment||'')) fail('DELETION_SYSTEMD_INLINE_CONFIGURATION');
+ const expression=/(\/[^\s;]+) \(ignore_errors=(?:yes|no)\)/g;
+ const filenames=[...(fields.EnvironmentFiles||'').matchAll(expression)].map(match=>match[1]);
+ if((fields.EnvironmentFiles||'').replace(expression,'').trim()) fail('DELETION_SYSTEMD_ENV_FILES_UNSUPPORTED');
+ const environment=Object.assign({},...filenames.map(filename=>require('dotenv').parse(readFile(filename))));
+ return {pid:Number(fields.MainPID),status:fields.ActiveState,environment};
+}
 function readHostState(writers,expectedHash,priorProcesses=[]) {
  if(process.platform!=='linux') fail('DELETION_HOST_UNSUPPORTED');
  const pm2=JSON.parse(execFileSync('pm2',['jlist'],{encoding:'utf8',maxBuffer:8*1024*1024}));
@@ -54,8 +68,8 @@ function readHostState(writers,expectedHash,priorProcesses=[]) {
    if(entries.length!==1 || entries[0].pm2_env.pm_exec_path!==writer.script) fail('DELETION_WRITER_CONFIGURATION_CHANGED');
    return {...writer,pid:entries[0].pid,status:entries[0].pm2_env.status,...deploymentMetadata(writer.script,entries[0].pid,entries[0].pm2_env)};
   }
-  const fields=Object.fromEntries(execFileSync('systemctl',['show',writer.name,'--property=MainPID,ActiveState','--no-pager'],{encoding:'utf8'}).trim().split('\n').map(line=>line.split('=')));
-  return {...writer,pid:Number(fields.MainPID),status:fields.ActiveState,...deploymentMetadata(writer.script,Number(fields.MainPID))};
+  const unit=systemdConfiguration(writer.name);
+  return {...writer,pid:unit.pid,status:unit.status,...deploymentMetadata(writer.script,unit.pid,unit.environment)};
  });
  // Track descendants as well as main PIDs: a PDF/OCR child can outlive its parent.
  const allProcesses=fs.readdirSync('/proc').filter(p=>/^\d+$/.test(p)).map(processIdentity).filter(Boolean);
@@ -84,8 +98,8 @@ function readHostState(writers,expectedHash,priorProcesses=[]) {
   if(deploymentMetadata(script,row.pid,row.pm2_env).databaseHash===expectedHash)undeclared.push(row.name);
  }
  if(!writers.some(w=>w.name==='jiayicare-review-api')){
-  const pid=Number(execFileSync('systemctl',['show','jiayicare-review-api','--property=MainPID','--value'],{encoding:'utf8'}).trim());
-  if(deploymentMetadata('/var/www/jiayicare-review/backend/src/index.js',pid).databaseHash===expectedHash)undeclared.push('jiayicare-review-api');
+  const unit=systemdConfiguration('jiayicare-review-api');
+  if(deploymentMetadata('/var/www/jiayicare-review/backend/src/index.js',unit.pid,unit.environment).databaseHash===expectedHash)undeclared.push('jiayicare-review-api');
  }
  return {states,direct,undeclared,processes,remaining};
 }
@@ -159,4 +173,4 @@ async function releaseOfflineFence({env=process.env,token,db,objectId,inspect=re
  for(const writer of lock.writers)startWriter(writer);
  return {released:true,writers:lock.writers.map(w=>w.name)};
 }
-module.exports={validateWriters,readHostState,assertOfflineFence,acquireOfflineFence,resumeStopping,releaseOfflineFence};
+module.exports={validateWriters,systemdConfiguration,readHostState,assertOfflineFence,acquireOfflineFence,resumeStopping,releaseOfflineFence};

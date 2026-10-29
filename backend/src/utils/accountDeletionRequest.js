@@ -47,7 +47,9 @@ function publicRequest(record) {
   const completed = record.status === 'completed' && record.completedAt && record.completionEvidence;
   return { id: String(record._id), status: record.status === 'completed' && !completed ? 'processing' : record.status,
     requestedAt: record.requestedAt, completedAt: completed ? record.completedAt : null,
-    completionDays: record.completionDays, notice: record.notice };
+    completionDays: record.completionDays, notice: record.notice,
+    completionScope: completed ? record.completionScope || 'account-and-active-data' : null,
+    secondaryCleanup: completed ? record.secondaryCleanup || [] : [] };
 }
 function createService({ requests, env = process.env, now = Date.now, isExecutionReady = async () => false }) {
   async function get(actor) {

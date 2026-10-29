@@ -6,7 +6,7 @@ for(const file of readdirSync(path.join(__dirname,'../src/models')).filter(f=>f.
 const {inventoryDeletion,findSharedFileReferences}=require('../src/utils/accountDeletionInventory');
 const {prepareJob,executeDeletion,digest}=require('../src/utils/accountDeletionExecutor');
 const {verifyDeletionManifest}=require('../src/utils/accountDeletionManifest');
-const {deleteLocalFileVerified}=require('../src/utils/accountDeletionFiles');
+const {prepareStorageManifest,createDeletionRuntime}=require('../src/utils/accountDeletionRuntime');
 const {inventoryLegacyCopies,eraseLegacyCopies}=require('../src/utils/accountDeletionLegacy');
 const {prepareFinancePlan,executeFinancePlan}=require('../src/utils/accountDeletionFinance');
 const {persistCompletionLedger}=require('../src/utils/accountDeletionLedger');
@@ -36,7 +36,7 @@ test('real isolated execution deletes owned data/files and identity, preserving 
  const subject={userId:oid(),tenantId:oid()},child=oid();
  const ready=async()=>isolated && mongoose.connection.name===dbName && mongoose.connection.host==='127.0.0.1';
  const root=await fs.mkdtemp(path.join(tmpdir(),'deletion-owned-files-'));
- const ledgerEnv={ACCOUNT_DELETION_GUARD_ENABLED:'true',ACCOUNT_DELETION_MAINTENANCE_FILE:path.join(root,'maintenance.lock'),ACCOUNT_DELETION_LEDGER_FILE:path.join(root,'ledger.json')};
+ const ledgerEnv={ACCOUNT_DELETION_POLICY_VERSION:'synthetic-v1',ACCOUNT_DELETION_GUARD_ENABLED:'true',ACCOUNT_DELETION_MAINTENANCE_FILE:path.join(root,'maintenance.lock'),ACCOUNT_DELETION_LEDGER_FILE:path.join(root,'ledger.json')};
  await fs.writeFile(ledgerEnv.ACCOUNT_DELETION_LEDGER_FILE,JSON.stringify({version:1,databaseName:dbName,entries:[]}));
  await fs.writeFile(path.join(root,'own.txt'),'synthetic own report');
  const fileHash=createHash('sha256').update('synthetic own report').digest('hex');
@@ -45,7 +45,7 @@ test('real isolated execution deletes owned data/files and identity, preserving 
  await M.User.collection.insertMany([{_id:subject.userId,tenantId:subject.tenantId,phone:'synthetic-parent'},{_id:child,tenantId:subject.tenantId,phone:'synthetic-child'}]);
  await M.MedicalReport.collection.insertMany([
   {_id:ownReport,user:subject.userId,tenantId:subject.tenantId,fileUrl:'https://app.example/api/uploads/own.txt',deletedAt:new Date()},
-  {_id:childReport,user:child,tenantId:subject.tenantId,fileUrl:'https://app.example/api/uploads/own.txt',submittedByUser:subject.userId},
+  {_id:childReport,user:child,tenantId:subject.tenantId,fileUrl:'https://external.example/child-original.pdf',submittedByUser:subject.userId},
  ]);
  await M.HealthRecord.collection.insertOne({_id:oid(),user:subject.userId,tenantId:subject.tenantId,value:'synthetic'});
  const request={_id:oid(),user:subject.userId,tenantId:subject.tenantId,status:'requested',policyVersion:'synthetic-v1',notice:'synthetic test only',completionDays:7,requestedAt:new Date(),receiptNonce:randomBytes(32).toString('hex'),receiptExpiresAt:new Date(Date.now()+86400000)};
@@ -65,51 +65,32 @@ test('real isolated execution deletes owned data/files and identity, preserving 
  await M.Admin.collection.insertOne({_id:financeAdmin,tenantId:subject.tenantId,role:'superadmin',staffStatus:'active'});
  await M.Order.collection.insertOne({_id:financeOrder,user:subject.userId,tenantId:subject.tenantId,status:'completed',tradeStatus:'completed',paymentStatus:'paid',refundStatus:'none',paidAmount:100});
  await M.Payment.collection.insertOne({_id:financePayment,order:financeOrder,user:subject.userId,status:'succeeded',amount:100,channel:'offline',outTradeNo:'synthetic-'+financePayment});
- const manifest=await inventoryDeletion({models:M,subject,storage});
- manifest.legacy=await inventoryLegacyCopies({db,models:M,subject,inventory:manifest,storage});
- assert.deepEqual(manifest.legacy.blockers,[]);
- manifest.documents.push(...manifest.legacy.documents);
- for(const file of manifest.legacy.files) {
-  const existing=manifest.files.find(f=>f.storage===file.storage && f.key===file.key);
-  if(existing)existing.sources.push(...file.sources);else manifest.files.push(file);
- }
- for(const file of manifest.files) if(file.storage==='local') Object.assign(file,{ownerId:String(subject.userId),tenantId:String(subject.tenantId),exclusive:true,disposition:'erase',sha256:fileHash});
+ const manifest=await prepareStorageManifest({db,models:M,subject,storage,localRoot:root,assertFrozen:ready});
  manifest.finance=await prepareFinancePlan({models:M,subject,requestId:request._id,keyId:'test',encryptionKey:financeKey,
   env:{ACCOUNT_DELETION_FINANCE_ADMIN_IDS:String(financeAdmin)},
   classificationFor:async()=>({category:'accounting_voucher',accountingYear:2026,legalBasis:'synthetic test only',retainUntil:new Date('2057-01-01'),reviewedBy:financeAdmin,reviewedAt:new Date(),fieldsVerified:true,originalsVerified:true})});
  const job=await prepareJob({jobs,request,manifest});
+ await M.MedicalReport.collection.updateOne({_id:childReport},{$set:{fileUrl:'https://app.example/api/uploads/own.txt'}});
  const secret=randomBytes(32).toString('hex'),receipt=issueReceipt(request,secret);
  let failExternal=true,failFinalWrite=false,blockManifest=null;
- const runtime={
-  assertFrozen:ready,
-  recordCompletion:(entry,{fence})=>persistCompletionLedger({env:ledgerEnv,databaseName:dbName,entry,assertFrozen:fence}),
-  async verifyManifest(plan,{retry,fence}) {
-   await fence();if(blockManifest) await blockManifest;
-   return verifyDeletionManifest({db,models:M,subject,storage,plan,retry,assertFrozen:fence,objectId:id=>new mongoose.Types.ObjectId(id)});
-  },
-  async archiveFinancialData(plan,{subject,fence}) {
-   return executeFinancePlan({models:M,subject,requestId:request._id,plan:plan.finance,encryptionKeys:{test:financeKey},assertFrozen:fence,objectId:id=>new mongoose.Types.ObjectId(id)});
-  },
-  async eraseFiles(plan,{subject,fence}) {
-   for(const file of plan.files) await deleteLocalFileVerified({root,file,subject,assertFrozen:fence,assertExclusive:async()=>!(await findSharedFileReferences({db,inventory:plan,storage})).shared.length});
-   return {verified:true,files:plan.files.length};
-  },
-  async eraseOtherCopies(plan,{subject,fence}) {
-   await eraseLegacyCopies({db,subject,plan:plan.legacy,assertFrozen:fence,objectId:id=>new mongoose.Types.ObjectId(id)});
-   // This random database and temporary upload root were created by this test;
-   // no external providers/backups/processes have ever received its synthetic data.
-   assert.equal(await ready(),true);return {verified:true,scope:'isolated-test-only-no-external-copies'};
-  },
-  async verifyExternalErasure(plan) {
+ const tracked=require('../src/utils/accountDeletionFollowup').createSecondaryCopyFollowup({
+  collection:db.collection('accountdeletionfollowups'),policyVersion:'synthetic-v1'});
+ await db.collection('accountdeletionfollowups').createIndex({requestId:1,policyVersion:1,kind:1},{unique:true});
+ const externalCopies={
+  preflight:(...args)=>tracked.preflight(...args),
+  erase:(...args)=>tracked.erase(...args),
+  async verify(...args) {
    if(failExternal) throw Object.assign(new Error('injected storage verification failure'),{code:'STORAGE_VERIFICATION_FAILED'});
-   for(const file of plan.files) await assert.rejects(fs.access(path.join(root,file.key)),{code:'ENOENT'});
-   assert.deepEqual((await db.collection('codex_deletion_backups').findOne({_id:mixedId})).documents,[retainedReferral]);
-   assert.equal(await db.collection('maintenancebackups').findOne({_id:reportBackupId}),null);
-   assert.equal(await db.collection('maintenance_audits').findOne({_id:auditId}),null);
-   const legacy=await inventoryLegacyCopies({db,models:M,subject,inventory:plan,storage});
-   assert.deepEqual(legacy.blockers,[]);assert.equal(legacy.documents.length,0);
-   return {verified:true,scope:'isolated-test-only'};
+   return tracked.verify(...args);
   },
+ };
+ // No production data or provider was ever accessed by this private test database.
+ const runtime=createDeletionRuntime({db,models:M,storage,localRoot:root,env:ledgerEnv,
+  encryptionKeys:{test:financeKey},assertFrozen:ready,objectId:id=>new mongoose.Types.ObjectId(id),externalCopies});
+ const verifyRuntimeManifest=runtime.verifyManifest;
+ runtime.verifyManifest=async(plan,context)=>{
+  await context.fence();if(blockManifest)await blockManifest;
+  return verifyRuntimeManifest(plan,context);
  };
  const args={jobs,requests,models:M,jobId:job._id,runtime};
  await t.test('shared family attachment blocks before any destructive stage',async()=>{
@@ -119,6 +100,37 @@ test('real isolated execution deletes owned data/files and identity, preserving 
  });
  // Change only the independent synthetic child fixture to exercise the exclusive-file path.
  await M.MedicalReport.collection.updateOne({_id:childReport},{$set:{fileUrl:'https://external.example/child-original.pdf'}});
+ await t.test('runtime inventories real local file bytes and mixed historical copies',async()=>{
+  const prepared=await prepareStorageManifest({db,models:M,subject,storage,localRoot:root,assertFrozen:ready});
+  assert.equal(prepared.files.length,1);
+  assert.equal(prepared.files[0].sha256,fileHash);
+  assert.equal(prepared.files[0].exclusive,true);
+  assert.ok(prepared.legacy.documents.some(row=>row.collection==='codex_deletion_backups'));
+ });
+ await t.test('a different empty upload root cannot falsely prove deletion on retry',async()=>{
+  const wrongRoot=await fs.mkdtemp(path.join(tmpdir(),'deletion-wrong-root-'));
+  const wrong=createDeletionRuntime({db,models:M,storage,localRoot:wrongRoot,env:ledgerEnv,
+   encryptionKeys:{test:financeKey},assertFrozen:ready,objectId:id=>new mongoose.Types.ObjectId(id),externalCopies});
+  await assert.rejects(executeDeletion({...args,runtime:wrong}),{code:'DELETION_STORAGE_SCOPE_CHANGED'});
+  assert.ok(await M.Order.collection.findOne({_id:financeOrder}));
+  await fs.access(path.join(root,'own.txt'));
+ });
+ await t.test('changed file blocks before archiving any financial original',async()=>{
+  await fs.writeFile(path.join(root,'own.txt'),'synthetic changed file');
+  await assert.rejects(executeDeletion(args),{code:'DELETION_STORAGE_CHANGED'});
+  assert.ok(await M.Order.collection.findOne({_id:financeOrder}));
+  assert.equal(await M.AccountDeletionFinancialArchive.countDocuments({requestId:request._id}),0);
+  await fs.writeFile(path.join(root,'own.txt'),'synthetic own report');
+ });
+ await t.test('external preflight failure leaves the originals and account intact',async()=>{
+  const preflight=externalCopies.preflight;
+  externalCopies.preflight=async()=>({verified:false});
+  try{await assert.rejects(executeDeletion(args),{code:'EXTERNAL_ERASURE_NOT_READY'});}
+  finally{externalCopies.preflight=preflight;}
+  assert.ok(await M.Order.collection.findOne({_id:financeOrder}));
+  assert.ok(await M.User.collection.findOne({_id:subject.userId}));
+  assert.equal(await M.AccountDeletionFinancialArchive.countDocuments({requestId:request._id}),0);
+ });
  await t.test('new owned document after preparation blocks before finance or file deletion',async()=>{
   const added=oid();
   await M.HealthRecord.collection.insertOne({_id:added,user:subject.userId,tenantId:subject.tenantId,value:'synthetic late addition'});
@@ -156,6 +168,12 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   const result=await executeDeletion(args);assert.equal(result.completed,true);
   const status=await readReceipt({token:receipt.token,secret,requests:{findOne:q=>requests.findOne(q),objectId:id=>new mongoose.Types.ObjectId(id)}});
   assert.equal(status.status,'completed');assert.ok(status.completedAt);
+  assert.equal(status.completionScope,'account-and-active-data');
+  assert.deepEqual(status.secondaryCleanup,['backup','security_log','provider']);
+  const followups=await db.collection('accountdeletionfollowups').find({requestId:String(request._id)}).toArray();
+  assert.equal(followups.length,3);assert.ok(followups.every(row=>row.status==='pending'));
+  // Account completion must never be represented as these secondary copies erased.
+  assert.equal((await tracked.verify(job.manifest,{fence:ready})).allExternalErased,false);
   assert.equal((await jobs.findOne({_id:job._id})).state,'completed');
   assert.equal((await verifyRestoredDatabase({db,env:ledgerEnv,objectId:id=>new mongoose.Types.ObjectId(id)})).verified,1);
   assert.equal((await executeDeletion(args)).evidence,result.evidence);
@@ -167,6 +185,9 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   assert.equal(await db.collection('medicalreportmaintenancearchives').findOne({_id:legacyOwn}),null);
   assert.ok(await db.collection('medicalreportmaintenancearchives').findOne({_id:legacyChild}));
   const kept=await M.MedicalReport.collection.findOne({_id:childReport});assert.ok(kept);assert.equal(kept.submittedByUser,undefined);
+  assert.deepEqual((await db.collection('codex_deletion_backups').findOne({_id:mixedId})).documents,[retainedReferral]);
+  assert.equal(await db.collection('maintenancebackups').findOne({_id:reportBackupId}),null);
+  assert.equal(await db.collection('maintenance_audits').findOne({_id:auditId}),null);
  });
  await t.test('restored old identity or missing receipt blocks application startup',async()=>{
   await M.User.collection.insertOne({_id:subject.userId,tenantId:subject.tenantId,phone:'synthetic-restored'});

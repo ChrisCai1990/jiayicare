@@ -24,7 +24,7 @@ export default function DeletionReceiptPage() {
     finally { setLoading(false); }
   };
   useDidShow(() => { lookup(); });
-  const labels = { requested: '已收到注销申请，尚未删除账号', processing: '正在处理注销', failed: '处理尚未完成，将继续核实', completed: '账号注销已完成' };
+  const labels = { requested: '已收到注销申请，尚未删除账号', processing: '正在处理注销', needs_review: '正在核实注销事项，无需重复提交', failed: '处理尚未完成，将继续核实', completed: '账号注销已完成' };
   return <View style={{ padding: '60px 20px 24px', minHeight: '100vh', background: '#f5f7f6' }}>
     <Text style={{ display: 'block', fontSize: '22px', fontWeight: 700 }}>注销进度与回执</Text>
     <Text style={{ display: 'block', margin: '16px 0' }}>本页无需登录。请保存查询凭证；请勿将凭证提供给他人。凭证自申请之日起有效180天。</Text>
@@ -34,6 +34,8 @@ export default function DeletionReceiptPage() {
     {!!error && <Text style={{ display: 'block', color: '#b42318' }}>{error}</Text>}
     {result && <View style={{ padding: '18px', background: '#fff', marginTop: '18px' }}>
       <Text style={{ display: 'block', fontWeight: 700 }}>{labels[result.status] || '状态待确认'}</Text>
+      {!!result.secondaryCleanup?.length && <Text style={{ display: 'block', marginTop: '10px' }}>账号已注销；备份、日志等后续处理尚未全部结束，将按注销说明继续处理。</Text>}
+      {!!result.notice && <Text style={{ display: 'block', marginTop: '10px' }}>{result.notice}</Text>}
       <Text style={{ display: 'block' }}>申请编号：{result.id}</Text>
       <Text style={{ display: 'block' }}>申请时间：{new Date(result.requestedAt).toLocaleString()}</Text>
       {result.completedAt ? <Text style={{ display: 'block' }}>完成时间：{new Date(result.completedAt).toLocaleString()}</Text>

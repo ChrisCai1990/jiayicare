@@ -46,7 +46,7 @@ export default function AccountDeletionPanel() {
   };
   const request = state?.request;
   const statusText = { requested: '注销申请已提交，尚未删除账号', processing: '正在处理注销申请',
-    failed: '注销处理未完成', completed: '注销处理已完成' };
+    needs_review: '正在核实注销事项，无需重复提交', failed: '注销处理未完成', completed: '注销处理已完成' };
   return <View style={{ marginTop: '28px', backgroundColor: '#fff', padding: '16px', borderRadius: `${radius.md}px` }}>
     <Button onClick={() => setOpen(value => !value)} disabled={submitting} style={{ color: colors.danger, backgroundColor: '#fff' }}>注销账号</Button>
     {open && <View style={{ marginTop: '12px' }}>

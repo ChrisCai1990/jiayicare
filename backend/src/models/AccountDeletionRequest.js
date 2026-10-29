@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 const schema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true },
-  status: { type: String, enum: ['requested', 'processing', 'failed', 'completed'], default: 'requested' },
+  status: { type: String, enum: ['requested', 'processing', 'needs_review', 'failed', 'completed'], default: 'requested' },
+  operatorFailure: { type: String, default: '', select: false },
   policyVersion: { type: String, required: true },
   notice: { type: String, required: true },
   completionDays: { type: Number, required: true },
@@ -12,6 +13,8 @@ const schema = new mongoose.Schema({
   completedAt: { type: Date, default: null },
   // Written only by the verified cleanup executor, never by the customer request route.
   completionEvidence: { type: String, default: '' },
+  completionScope: { type: String, default: '' },
+  secondaryCleanup: { type: [String], default: [] },
 }, { timestamps: true });
 schema.index({ tenantId: 1, user: 1 }, { unique: true });
 schema.plugin(require('../utils/tenantScope').tenantScopePlugin);

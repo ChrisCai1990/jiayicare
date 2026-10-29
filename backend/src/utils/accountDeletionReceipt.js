@@ -23,6 +23,7 @@ async function readReceipt({ token, requests, secret, now = Date.now() }) {
   if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(supplied))) fail();
   const result = publicRequest(record);
   return { id: result.id, status: result.status, requestedAt: result.requestedAt,
-    completedAt: result.completedAt, completionDays: result.completionDays, expiresAt: record.receiptExpiresAt };
+    completedAt: result.completedAt, completionDays: result.completionDays, expiresAt: record.receiptExpiresAt,
+    notice: result.notice, completionScope: result.completionScope, secondaryCleanup: result.secondaryCleanup };
 }
 module.exports = { issueReceipt, readReceipt };

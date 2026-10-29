@@ -4,13 +4,14 @@ const { issueReceipt, readReceipt } = require('../src/utils/accountDeletionRecei
 const secret = 'synthetic-independent-receipt-secret';
 const record = { _id: '012345678901234567890123', tenantId: 'tenant-a', user: 'user-a', receiptNonce: 'random-nonce',
   receiptExpiresAt: new Date(100000), status: 'requested', requestedAt: new Date(100), completionDays: 7,
-  notice: 'internal policy', sensitiveHealthData: 'must not leak' };
+  notice: 'public deletion notice', sensitiveHealthData: 'must not leak' };
 function setup(row = record) { return { secret, now: 5000, requests: { objectId: id => id, findOne: async q => q._id === row?._id ? row : null } }; }
 test('receipt works without an active account and returns only limited status', async () => {
   const { token } = issueReceipt(record, secret);
   const result = await readReceipt({ ...setup(), token });
   assert.equal(result.status, 'requested');
-  for (const field of ['user', 'tenantId', 'notice', 'receiptNonce', 'sensitiveHealthData']) assert.equal(result[field], undefined);
+  assert.equal(result.notice, record.notice);
+  for (const field of ['user', 'tenantId', 'receiptNonce', 'sensitiveHealthData']) assert.equal(result[field], undefined);
 });
 test('changed account, institution, nonce or expiry invalidates an old capability', async () => {
   const { token } = issueReceipt(record, secret);

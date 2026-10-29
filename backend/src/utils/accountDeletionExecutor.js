@@ -19,7 +19,7 @@ async function prepareJob({jobs,request,manifest}) {
 }
 async function executeDeletion({jobs,requests,models,jobId,runtime,now=()=>new Date()}) {
  // All production adapters must exist BEFORE claiming or changing any customer data.
- for(const method of ['assertFrozen','verifyManifest','archiveFinancialData','eraseFiles','eraseOtherCopies','verifyExternalErasure','recordCompletion'])
+ for(const method of ['assertFrozen','verifyManifest','archiveFinancialData','eraseFiles','eraseOtherCopies','verifyCompletionScope','recordCompletion'])
   if(typeof runtime?.[method]!=='function') fail('EXECUTOR_ADAPTER_MISSING');
  const original=await jobs.findOne({_id:jobId});
  if(!original || digest(original.manifest)!==original.manifestHash) fail('JOB_MANIFEST_INVALID');
@@ -66,7 +66,7 @@ async function executeDeletion({jobs,requests,models,jobId,runtime,now=()=>new D
   await fence();
   const residual=await auditResidualReferences({models,subject});
   if(!residual.clear) fail('PERSONAL_REFERENCES_REMAIN');
-  const external=await runtime.verifyExternalErasure(original.manifest,{subject,fence});
+  const external=await runtime.verifyCompletionScope(original.manifest,{subject,fence});
   if(external?.verified!==true) fail('EXTERNAL_ERASURE_UNVERIFIED');
   await checkpoint('externalVerification',external);
   await fence();
@@ -78,9 +78,11 @@ async function executeDeletion({jobs,requests,models,jobId,runtime,now=()=>new D
   // Verify again AFTER identity removal; a partial failure still must never show success.
   await fence();
   if(!(await auditResidualReferences({models,subject})).clear) fail('PERSONAL_REFERENCES_REMAIN');
-  if((await runtime.verifyExternalErasure(original.manifest,{subject,fence}))?.verified!==true) fail('EXTERNAL_ERASURE_UNVERIFIED');
+  if((await runtime.verifyCompletionScope(original.manifest,{subject,fence}))?.verified!==true) fail('EXTERNAL_ERASURE_UNVERIFIED');
   const stored=await jobs.findOne(lease);
-  const completionProof=original.completionProof || {jobId:String(jobId),requestId:String(request._id),manifestHash:original.manifestHash,checkpoints:stored.checkpoints,completedAt:now()};
+  const completionScope='account-and-active-data';
+  const secondaryCleanup=external.external?.scope==='secondary-copy-followup-recorded' ? external.external.pending : [];
+  const completionProof=original.completionProof || {jobId:String(jobId),requestId:String(request._id),manifestHash:original.manifestHash,checkpoints:stored.checkpoints,completionScope,secondaryCleanup,completedAt:now()};
   const completedAt=completionProof.completedAt;
   const evidence=digest(completionProof);
   if(original.completionEvidence && original.completionEvidence!==evidence) fail('COMPLETION_EVIDENCE_MISMATCH');
@@ -92,7 +94,7 @@ async function executeDeletion({jobs,requests,models,jobId,runtime,now=()=>new D
   const recorded=await runtime.recordCompletion({userId:subject.userId,tenantId:subject.tenantId,requestId:request._id,completionEvidence:evidence,completedAt},{fence});
   if(recorded?.verified!==true) fail('COMPLETION_LEDGER_UNVERIFIED');
   // Both writes are idempotent; do not delete the receipt identity with the account.
-  const done=await requests.updateOne({_id:request._id,user:subject.userId,tenantId:subject.tenantId,status:{$ne:'completed'}},{$set:{status:'completed',completedAt,completionEvidence:evidence}});
+  const done=await requests.updateOne({_id:request._id,user:subject.userId,tenantId:subject.tenantId,status:{$ne:'completed'}},{$set:{status:'completed',completedAt,completionEvidence:evidence,completionScope:completionProof.completionScope,secondaryCleanup:completionProof.secondaryCleanup}});
   if(done.matchedCount!==1) fail('COMPLETION_RECEIPT_WRITE_FAILED');
   const saved=await jobs.updateOne(lease,{$set:{state:'completed',completedAt,completionEvidence:evidence,leaseToken:''}});
   if(saved.matchedCount!==1) fail('JOB_COMPLETION_WRITE_FAILED');
