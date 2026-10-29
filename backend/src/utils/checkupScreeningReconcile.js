@@ -9,7 +9,8 @@ function reportYear(report) {
 function sameCheckupRound(plan, report) {
   const target = plan.checkupDate && new Date(plan.checkupDate);
   const actual = new Date(String(report.checkDate || '').slice(0, 10));
-  return target && !Number.isNaN(target.getTime()) && !Number.isNaN(actual.getTime())
+  return target && reportYear(report) === Number(plan.year)
+    && !Number.isNaN(target.getTime()) && !Number.isNaN(actual.getTime())
     && Math.abs(target.getTime() - actual.getTime()) <= 45 * 86400000;
 }
 const NON_EXAM_CATEGORIES = ['outpatient_record', 'inpatient_record', 'prescription_order', 'questionnaire', 'other_customer_material'];
@@ -49,7 +50,7 @@ function suggest(plan, reports, catalog = new Map()) {
     const category = catalog.get(id(item.itemId));
     const candidates = reports.filter(report => {
       if (report.audit_status !== 'audited' || report.archiveOnly || NON_EXAM_CATEGORIES.includes(report.documentCategory)
-        || reportYear(report) !== Number(plan.year) || !sameCheckupRound(plan, report)) return false;
+        || !sameCheckupRound(plan, report)) return false;
       return (report.reportItems || []).some(part => {
         if (!hasResult(part)) return false;
         const exact = name && names.get(name) === 1 && [part.name, part.orderName].some(raw => normalize(raw) === name);
@@ -67,9 +68,14 @@ function suggest(plan, reports, catalog = new Map()) {
 
 async function loadEvidence(plan, models) {
   const { MedicalReport, LabTestOrder, SpecialExam, FunctionalMedicineTest, ProjectCategory } = models;
+  const target = new Date(plan.checkupDate);
+  if (!plan.checkupDate || !Number.isFinite(target.getTime())) return { reports: [], catalog: new Map() };
+  const windowMs = 45 * 86400000;
+  const from = new Date(Math.max(target.getTime() - windowMs, Date.UTC(Number(plan.year), 0, 1))).toISOString().slice(0, 10);
+  const through = new Date(Math.min(target.getTime() + windowMs, Date.UTC(Number(plan.year) + 1, 0, 1) - 86400000)).toISOString().slice(0, 10);
   const reports = await MedicalReport.find({ user: plan.patientId, audit_status: 'audited', archiveOnly: { $ne: true },
     documentCategory: { $nin: NON_EXAM_CATEGORIES },
-    checkDate: { $gte: `${plan.year}-01-01`, $lte: `${plan.year}-12-31` } })
+    checkDate: { $gte: from, $lte: through } })
     .select('_id title checkDate audit_status archiveOnly documentCategory reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.classificationSource reportItems.classificationReviewedAt reportItems.matchConfidence reportItems.value reportItems.findings reportItems.diagnosis reportItems.conclusion').lean();
   const ids = (plan.items || []).map(item => item.itemId).filter(Boolean);
   const [orders, exams, functional, categoryRows] = await Promise.all([

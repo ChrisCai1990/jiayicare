@@ -1632,6 +1632,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [addons, setAddons] = useState([])            // { type, id, name, reason }
   const [selectedAddonKeys, setSelectedAddonKeys] = useState(new Set())
   const [year, setYear] = useState(new Date().getFullYear())
+  const [checkupDate, setCheckupDate] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -1705,7 +1706,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
       const items = [...baseItems, ...addonItems]
       await staffAPI.createPlan({
         patientId, type: 'annual_checkup', title: packageName,
-        description, year, items,
+        description, year, checkupDate: checkupDate || null, items,
         content: { packageName, packageDesc, checkItems, addons,
           templateId: selectedTpl?._id || null, templateUpdatedAt: selectedTpl?.updatedAt || null },
       })
@@ -1916,6 +1917,12 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">方案年度</label>
             <input className="form-input" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
+          </div>
+
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">体检日期（推送前必填）</label>
+            <DateField className="form-input" type="date" value={checkupDate}
+              onChange={e => { setCheckupDate(e.target.value); if (e.target.value) setYear(Number(e.target.value.slice(0, 4))) }} />
           </div>
 
           {/* 方案说明 */}

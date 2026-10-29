@@ -421,6 +421,7 @@ export default function PlanDetailPage() {
       title: plan.title,
       description: plan.description || '',
       notes: plan.notes || '',
+      ...(plan.type === 'annual_checkup' ? { year: plan.year } : {}),
       checkupDate: rawCheckupDate ? new Date(rawCheckupDate).toISOString().slice(0, 10) : '',
     }
     if (plan.type === 'medical_assist') {
@@ -617,11 +618,18 @@ export default function PlanDetailPage() {
                   <textarea className="form-input" rows={3} placeholder="方案整体说明..." value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
                 </div>
                 {plan.type === 'annual_checkup' && (
-                  <div className="form-group" style={{ marginBottom: 12 }}>
-                    <label className="form-label">统一体检日期（推送前必填，须与体检年度一致）</label>
-                    <DateField className="form-input" type="date" value={editForm.checkupDate || ''}
-                      onChange={e => setEditForm(f => ({ ...f, checkupDate: e.target.value }))} />
-                  </div>
+                  <>
+                    <div className="form-group" style={{ marginBottom: 12 }}>
+                      <label className="form-label">体检年度</label>
+                      <input className="form-input" type="number" value={editForm.year || ''}
+                        onChange={e => setEditForm(f => ({ ...f, year: Number(e.target.value) }))} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 12 }}>
+                      <label className="form-label">统一体检日期（推送前必填）</label>
+                      <DateField className="form-input" type="date" value={editForm.checkupDate || ''}
+                        onChange={e => setEditForm(f => ({ ...f, checkupDate: e.target.value, ...(e.target.value ? { year: Number(e.target.value.slice(0, 4)) } : {}) }))} />
+                    </div>
+                  </>
                 )}
                 {plan.type === 'medical_assist' && (
                   <>
@@ -676,6 +684,7 @@ export default function PlanDetailPage() {
                   ['状态', legacyCheckupCompletion ? checkupCompletionLabel : plan.confirmedAt ? '已确认' : STATUS_LABEL[plan.status]],
                   ['年度', plan.year + ' 年'],
                   ['制定人', plan.staffId?.name],
+                  ...(plan.type === 'annual_checkup' ? [['制定时间', plan.createdAt ? new Date(plan.createdAt).toLocaleString('zh-CN') : '未记录']] : []),
                   ...(plan.type === 'annual_checkup' ? [['体检时间', plan.checkupDate ? new Date(plan.checkupDate).toLocaleDateString('zh-CN') : '未设置']] : []),
                   ['推送时间', plan.pushedAt ? new Date(plan.pushedAt).toLocaleDateString('zh-CN') : '未推送'],
                   ...(plan.confirmedAt ? [['会员确认时间', new Date(plan.confirmedAt).toLocaleDateString('zh-CN')]] : []),
@@ -687,6 +696,17 @@ export default function PlanDetailPage() {
                     <span style={{ fontWeight: 500, maxWidth: '65%', textAlign: 'right', whiteSpace: 'pre-wrap' }}>{v}</span>
                   </div>
                 ))}
+                {plan.type === 'annual_checkup' && !!plan.checkupScheduleHistory?.length && (
+                  <details style={{ marginTop: 12, fontSize: 12, color: '#4A6558' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600 }}>年度与体检日期修改记录（{plan.checkupScheduleHistory.length}）</summary>
+                    {[...plan.checkupScheduleHistory].reverse().map((row, index) => (
+                      <div key={row._id || index} style={{ padding: '8px 0', borderBottom: '1px solid #f5f2ec', lineHeight: 1.7 }}>
+                        <div>{row.at ? new Date(row.at).toLocaleString('zh-CN') : '时间未记录'} · {row.byName || '工作人员'}</div>
+                        <div>年度：{row.fromYear} → {row.toYear}；体检日期：{row.fromCheckupDate ? String(row.fromCheckupDate).slice(0, 10) : '未设置'} → {row.toCheckupDate ? String(row.toCheckupDate).slice(0, 10) : '未设置'}</div>
+                      </div>
+                    ))}
+                  </details>
+                )}
                 {plan.type === 'medical_assist' && (
                   <>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginTop: 14, marginBottom: 4, paddingTop: 10, borderTop: '1px dashed #E0D9CE' }}>

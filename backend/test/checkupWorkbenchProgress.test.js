@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const { summarizeCheckupItems, buildCheckupWorkbenchRows } = require('../src/utils/checkupWorkbenchProgress');
 const patients = [{ _id: 'patient', name: '测试客户', phone: '000' }];
-const plan = { _id: 'plan', patientId: 'patient', type: 'annual_checkup', status: 'active', items: [
+const plan = { _id: 'plan', patientId: 'patient', type: 'annual_checkup', status: 'active', pushedAt: new Date('2026-10-01'), items: [
   { name: '已关联项目', itemType: 'labTest', status: 'pending' },
   { name: '未关联项目', itemType: '', status: 'pending' },
   { name: '其他项目', itemType: 'other', status: 'pending' },
@@ -38,12 +38,12 @@ test('missing statuses and skipped items never count as completed, and plan-leve
   assert.equal(summarizeCheckupItems([]).progressStatus, 'pending');
 });
 
-test('cancelled, empty and out-of-scope plans are excluded; more than five plans are retained', () => {
+test('unpublished, cancelled, empty and out-of-scope plans are excluded; more than five plans are retained', () => {
   const records = Array.from({ length: 7 }, (_, i) => ({ ...plan, _id: 'plan-' + i }));
   const before = JSON.stringify(records);
   assert.equal(buildCheckupWorkbenchRows(records, patients).length, 7);
   assert.equal(JSON.stringify(records), before);
-  for (const patch of [{ status: 'cancelled' }, { items: [] }, { patientId: 'other' }, { type: 'nutrition' }]) {
+  for (const patch of [{ status: 'draft' }, { pushedAt: null }, { status: 'cancelled' }, { items: [] }, { patientId: 'other' }, { type: 'nutrition' }]) {
     assert.deepEqual(buildCheckupWorkbenchRows([{ ...plan, ...patch }], patients, true), []);
   }
 });
@@ -71,7 +71,8 @@ test('actual route keeps staff scope and defaults to unfinished while supporting
   await handler({ staff: { _id: 'staff', role: 'healthManager' }, query: {} }, res);
   assert.equal(userFilter.assignedHealthManager.$in[0], 'staff');
   assert.equal(planFilter.patientId.$in[0], 'patient');
-  assert.equal(planFilter.status.$ne, 'cancelled');
+  assert.deepEqual(Array.from(planFilter.status.$in), ['active', 'completed']);
+  assert.equal(planFilter.pushedAt.$ne, null);
   assert.equal(response.data.length, 1);
   assert.equal(response.data[0].progressStatus, 'in_progress');
   await handler({ staff: { _id: 'staff', role: 'healthManager' }, query: { includeCompleted: '1' } }, res);

@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
 const { summarizeCheckupPlan } = require('../src/utils/checkupAnalysisReadiness');
 
 const plan = {
@@ -44,4 +46,25 @@ test('all items require completed status and audited linked reports', () => {
 test('no designed plan keeps the existing analysis path; an empty plan is incomplete', () => {
   assert.equal(summarizeCheckupPlan(null).ready, true);
   assert.equal(summarizeCheckupPlan({ ...plan, items: [] }).ready, false);
+});
+
+test('readiness selects only pushed plans, allowing an unpublished newer draft', async () => {
+  let filter;
+  const source = fs.readFileSync(require.resolve('../src/utils/checkupAnalysisReadiness'), 'utf8');
+  const context = {
+    module: { exports: {} },
+    require: name => name === '../models/HealthPlan'
+      ? { findOne: query => {
+        filter = query;
+        return { sort: () => ({ select: () => ({ lean: async () => null }) }) };
+      } }
+      : {},
+  };
+  vm.runInNewContext(source, context);
+  const result = await context.module.exports.checkupAnalysisReadiness('patient', 2026);
+  assert.equal(result.ready, true);
+  assert.deepEqual(Array.from(filter.status.$in), ['active', 'completed']);
+  assert.equal(filter.pushedAt.$ne, null);
+  assert.equal(filter.checkupDate.$gte.toISOString(), '2026-01-01T00:00:00.000Z');
+  assert.equal(filter.checkupDate.$lt.toISOString(), '2027-01-01T00:00:00.000Z');
 });

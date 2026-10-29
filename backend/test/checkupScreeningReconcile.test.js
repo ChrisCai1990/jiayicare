@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { suggest, categoryKeys } = require('../src/utils/checkupScreeningReconcile');
+const { suggest, categoryKeys, loadEvidence, sameCheckupRound } = require('../src/utils/checkupScreeningReconcile');
 
 const plan = { year: 2026, checkupDate: '2026-05-15', items: [
   { _id: 'p1', name: '血常规', status: 'pending' },
@@ -15,7 +15,7 @@ test('exact name and one confirmed category match audited same-year reports', ()
   assert.deepEqual(suggest(plan, reports, new Map([['exam', key]])).map(row => row.reportId), ['r1', 'r1']);
 });
 
-test('unreviewed, previous-year, duplicate reports and duplicate plan names remain manual', () => {
+test('unreviewed, previous-year, duplicate reports and duplicate plan names do not auto-link', () => {
   const reports = [
     { _id: 'r1', audit_status: 'unaudited', checkDate: '2026-05-01', reportItems: [{ name: '血常规', value: '已检' }] },
     { _id: 'r2', audit_status: 'audited', checkDate: '2025-05-01', reportItems: [{ name: '血常规', value: '已检' }] },
@@ -46,6 +46,30 @@ test('a prior exam in the same year cannot satisfy a later checkup round automat
   const rows = suggest({ ...plan, checkupDate: '2026-11-15' }, [{ _id: 'r1', audit_status: 'audited',
     checkDate: '2026-05-01', reportItems: [{ name: '血常规', value: '已检' }] }]);
   assert.equal(rows[0].reportId, null);
+});
+
+test('a nearby prior-year exam is not linked automatically to a January checkup', () => {
+  const nextYearPlan = { ...plan, year: 2027, checkupDate: '2027-01-15' };
+  const near = { _id: 'near', audit_status: 'audited', checkDate: '2026-12-20', reportItems: [{ name: '血常规', value: '已检' }] };
+  const far = { ...near, _id: 'far', checkDate: '2026-10-01' };
+  assert.equal(suggest(nextYearPlan, [near])[0].reportId, null);
+  assert.equal(suggest(nextYearPlan, [far])[0].reportId, null);
+  assert.equal(sameCheckupRound(nextYearPlan, near), false);
+});
+
+test('evidence lookup excludes reports outside the plan year even when dates are nearby', async () => {
+  let reportFilter;
+  const empty = { find: () => ({ select: () => ({ lean: async () => [] }) }) };
+  const models = { MedicalReport: { find: filter => {
+    reportFilter = filter;
+    return { select: () => ({ lean: async () => [] }) };
+  } }, LabTestOrder: empty, SpecialExam: empty, FunctionalMedicineTest: empty, ProjectCategory: empty };
+  await loadEvidence({ ...plan, patientId: 'patient', year: 2027, checkupDate: '2027-01-15' }, models);
+  assert.equal(reportFilter.checkDate.$gte, '2027-01-01');
+  assert.equal(reportFilter.checkDate.$lte, '2027-03-01');
+  reportFilter = null;
+  await loadEvidence({ ...plan, checkupDate: null }, models);
+  assert.equal(reportFilter, null);
 });
 
 test('a category key is based on the full active tree path', () => {

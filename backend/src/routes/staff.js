@@ -997,11 +997,13 @@ router.get('/checkup-progress', staffAuth, async (req, res) => {
     if (!patients.length) return res.json({ success: true, data: [] });
     const patientIds = patients.map(p => p._id);
 
+    // Execution progress begins when the plan is actually pushed to the member.
     const plans = await HealthPlan.find({
       patientId: { $in: patientIds },
       type: 'annual_checkup',
-      status: { $ne: 'cancelled' },
-    }).select('patientId title items status createdAt').lean();
+      status: { $in: ['active', 'completed'] },
+      pushedAt: { $ne: null },
+    }).select('patientId title items status pushedAt createdAt').lean();
 
     const reportIds = [...new Set(plans.flatMap(plan => (plan.items || []).map(item => String(item.reportId || '')).filter(Boolean)))];
     const auditedReports = reportIds.length ? await MedicalReport.find({ _id: { $in: reportIds },
@@ -3823,6 +3825,9 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   if (req.body.giftId && req.body.reservedOrderId) return res.status(400).json({ success: false, message: '赠送权益与已有订单不能同时使用' });
   let planContent = content || {};
   if (type === 'annual_checkup') {
+    if (checkupDate && new Date(checkupDate).getUTCFullYear() !== Number(year || new Date().getFullYear())) {
+      return res.status(400).json({ success: false, message: '体检年度须与明确的体检日期所在年份一致' });
+    }
     if (Array.isArray(items) && items.some(item => (item.status && item.status !== 'pending') || item.reportId || item.completedAt)) {
       return res.status(400).json({ success: false, message: '新体检项目须先保持待完成，报告关联请在审核后逐项核对' });
     }
@@ -4268,9 +4273,15 @@ const checkupReconcileModels = () => ({ HealthPlan, MedicalReport, LabTestOrder,
 async function reconcileAuditedCheckupReport(report) {
   if (report.audit_status !== 'audited' || report.archiveOnly || !report.user || !/^\d{4}-\d{2}-\d{2}$/.test(String(report.checkDate || ''))) return;
   if (require('../utils/checkupScreeningReconcile').NON_EXAM_CATEGORIES.includes(report.documentCategory)) return;
-  const year = Number(String(report.checkDate).slice(0, 4));
-  const plan = await HealthPlan.findOne({ patientId: report.user, type: 'annual_checkup', year, status: { $ne: 'cancelled' } })
-    .sort({ createdAt: -1 }).select('patientId year checkupDate items status').lean();
+  const reportDate = new Date(`${String(report.checkDate).slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(reportDate.getTime())) return;
+  const windowMs = 45 * 86400000;
+  const plans = await HealthPlan.find({ patientId: report.user, type: 'annual_checkup',
+    year: reportDate.getUTCFullYear(),
+    checkupDate: { $gte: new Date(reportDate.getTime() - windowMs), $lte: new Date(reportDate.getTime() + windowMs) },
+    status: { $in: ['active', 'completed'] }, pushedAt: { $ne: null } })
+    .select('patientId year checkupDate items status').lean();
+  const plan = plans.sort((a, b) => Math.abs(new Date(a.checkupDate) - reportDate) - Math.abs(new Date(b.checkupDate) - reportDate))[0];
   if (plan) await require('../utils/checkupScreeningReconcile').reconcile(plan, checkupReconcileModels());
 }
 
@@ -4309,6 +4320,13 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
     return res.status(409).json({ success: false, message: '年度体检工作台按已审核报告的逐项核对进度自动显示完成，无需手动标记方案完成' });
   }
   if (plan.type === 'annual_checkup') {
+    const checkupDate = req.body.checkupDate !== undefined ? req.body.checkupDate : plan.checkupDate;
+    const checkupYear = checkupDate ? new Date(checkupDate).getUTCFullYear() : null;
+    const nextYear = req.body.year !== undefined ? Number(req.body.year) : Number(plan.year);
+    if (checkupDate && (!Number.isInteger(checkupYear) || checkupYear !== nextYear)) {
+      return res.status(400).json({ success: false, message: '体检年度须与明确的体检日期所在年份一致' });
+    }
+    if (plan.pushedAt && !checkupDate) return res.status(400).json({ success: false, message: '已推送体检方案须保留明确的体检日期' });
     if (req.body.year !== undefined && Number(req.body.year) !== Number(plan.year)
       && plan.items.some(item => item.status === 'completed' || item.reportId)) {
       return res.status(409).json({ success: false, message: '已有报告核对记录的体检方案不能直接改年度' });
@@ -4362,6 +4380,14 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (plan.type === 'nutrition' && req.body.content) {
     const mealError = require('../../../shared/nutritionMealPlans.cjs').mealPlanError(req.body.content);
     if (mealError) return res.status(400).json({ success: false, message: mealError });
+  }
+  if (plan.type === 'annual_checkup') {
+    const revision = require('../utils/checkupScheduleRevision').makeCheckupScheduleRevision(
+      plan, req.body.year !== undefined ? req.body.year : plan.year,
+      req.body.checkupDate !== undefined ? req.body.checkupDate : plan.checkupDate,
+      req.staff
+    );
+    if (revision) plan.checkupScheduleHistory.push(revision);
   }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
@@ -4584,6 +4610,12 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   }
   if (plan.content?.aiStatus === 'pending') {
     return res.status(409).json({ success: false, message: 'AI方案尚未审核，不能推送给会员' });
+  }
+  if (plan.type === 'annual_checkup') {
+    const checkupYear = plan.checkupDate ? new Date(plan.checkupDate).getUTCFullYear() : null;
+    if (!Number.isInteger(checkupYear) || checkupYear !== Number(plan.year)) {
+      return res.status(409).json({ success: false, message: '请先设置明确的体检日期，并使体检年度与日期一致后再推送' });
+    }
   }
   // 重点检查在推送前自动补齐标准准备事项，保证客户收到的方案不是只有项目名。
   // 医学上可能涉及停药的内容统一要求向开单医生确认，避免系统替代医嘱。
@@ -4913,7 +4945,7 @@ router.patch('/plans/:id/items/:itemId', staffAuth, checkPermission('plans', 'ed
         .select('checkDate date documentCategory').lean();
       const screening = require('../utils/checkupScreeningReconcile');
       if (!report || screening.NON_EXAM_CATEGORIES.includes(report.documentCategory)
-        || screening.reportYear(report) !== Number(plan.year)) return res.status(409).json({ success: false, message: '请选择本客户、本年度已审核的检查报告' });
+        || !screening.sameCheckupRound(plan, report)) return res.status(409).json({ success: false, message: '请选择本客户、体检年度内且体检日期前后45天的已审核检查报告' });
     }
     const originalReport = item.reportId || null;
     const changed = await HealthPlan.updateOne({ _id: plan._id, status: { $ne: 'cancelled' },

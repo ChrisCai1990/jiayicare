@@ -14,8 +14,11 @@ function summarizeCheckupPlan(plan, reports = []) {
 async function checkupAnalysisReadiness(patientId, year) {
   const HealthPlan = require('../models/HealthPlan');
   const MedicalReport = require('../models/MedicalReport');
+  // Drafts are preparation material; only a pushed plan can gate analysis.
   const plan = await HealthPlan.findOne({
-    patientId, type: 'annual_checkup', year: Number(year), status: { $ne: 'cancelled' },
+    patientId, type: 'annual_checkup',
+    checkupDate: { $gte: new Date(Date.UTC(Number(year), 0, 1)), $lt: new Date(Date.UTC(Number(year) + 1, 0, 1)) },
+    status: { $in: ['active', 'completed'] }, pushedAt: { $ne: null },
   }).sort({ createdAt: -1 }).select('title items status').lean();
   if (!plan) return summarizeCheckupPlan(null);
 

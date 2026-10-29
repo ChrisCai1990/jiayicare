@@ -19,7 +19,7 @@ function summarizeCheckupItems(items = [], auditedReports = null) {
 function buildCheckupWorkbenchRows(plans, patients, includeCompleted = false, auditedReports = null) {
   const patientMap = new Map(patients.map(patient => [String(patient._id), patient]));
   return plans.flatMap(plan => {
-    if ((plan.type && plan.type !== 'annual_checkup') || plan.status === 'cancelled') return [];
+    if ((plan.type && plan.type !== 'annual_checkup') || !['active', 'completed'].includes(plan.status) || !plan.pushedAt) return [];
     const patient = patientMap.get(String(plan.patientId));
     const ownReports = auditedReports === null ? null : auditedReports.filter(report => String(report.user) === String(plan.patientId));
     const progress = summarizeCheckupItems(plan.items, ownReports);
