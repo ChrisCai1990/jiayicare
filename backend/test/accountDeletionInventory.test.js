@@ -18,3 +18,11 @@ test('traversal and encoded storage separators are rejected',()=>{
  for(const value of ['https://owned.example/reports/../a.pdf','https://owned.example/reports/%2e%2e/a.pdf','https://owned.example/reports%2fa.pdf']) assert.throws(()=>fileReferences({fileUrl:value},storage),/INVALID_STORAGE_REFERENCE/);
  assert.throws(()=>fileReferences({ossKey:'../customer.pdf'},storage),/INVALID_STORAGE_REFERENCE/);
 });
+test('isolated local adapter keys and signed review URLs resolve to one owned file',()=>{
+ const review={...storage,objectKeyStorage:'local',localReferencePrefixes:['/api/review-files/','/review-api/review-files/']};
+ const refs=fileReferences({ossKey:'reports/a.pdf',fileUrls:['/api/review-files/reports%2Fa.pdf?token=secret','https://app.example/review-api/review-files/reports%2Fa.pdf?token=secret']},review);
+ assert.deepEqual(refs,[{storage:'local',key:'reports/a.pdf'}]);
+ assert.equal(fileReferences({ossKey:'reports/a.pdf'},storage)[0].storage,'oss');
+ for(const fileUrl of ['/api/review-files/%2e%2e%2Fx','/api/review-files/reports%252Fx','https://app.example/review-api/review-files/reports/../x']) assert.throws(()=>fileReferences({fileUrl},review),/INVALID_STORAGE_REFERENCE/);
+ assert.equal(fileReferences({fileUrl:'https://other.example/api/review-files/reports/a.pdf'},review)[0].storage,'external-reference');
+});

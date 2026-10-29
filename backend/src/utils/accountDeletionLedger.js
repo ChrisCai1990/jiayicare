@@ -28,7 +28,17 @@ async function persistCompletionLedger({ env, databaseName, entry, assertFrozen 
     if (await assertFrozen() !== true) fail('DELETION_LEDGER_FENCE_LOST');
     temporary = filename + '.' + crypto.randomBytes(16).toString('hex') + '.tmp';
     const handle = await fs.open(temporary, 'wx', 0o600);
-    try { await handle.writeFile(JSON.stringify({ ...ledger, entries: [...ledger.entries, normalized] }) + '\n'); await handle.sync(); }
+    try {
+      // The review API runs as a restricted service user and reads a root-owned,
+      // group-readable ledger. Atomic replacement must retain that read access.
+      if (process.platform !== 'win32') {
+        const original = await fs.lstat(filename);
+        if (!original.isFile() || original.isSymbolicLink() || (original.mode & 0o007)) fail('DELETION_LEDGER_PERMISSIONS_INVALID');
+        await handle.chown(original.uid, original.gid);
+        await handle.chmod(original.mode & 0o660);
+      }
+      await handle.writeFile(JSON.stringify({ ...ledger, entries: [...ledger.entries, normalized] }) + '\n'); await handle.sync();
+    }
     finally { await handle.close(); }
     if (await assertFrozen() !== true) fail('DELETION_LEDGER_FENCE_LOST');
     await fs.rename(temporary, filename); temporary = undefined;

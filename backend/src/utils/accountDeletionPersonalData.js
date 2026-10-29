@@ -34,6 +34,12 @@ function buildOperations(models, subject) {
     if (!models[name]?.schema.path(path)) fail(`Ownership path changed: ${name}.${path}`);
     erase(name, { [path]: subject.userId });
   }
+  // This model exists only in the isolated review service. Remove the deleted
+  // account's actual credentials, without assuming a production review login.
+  if (models.ReviewCredential) {
+    if (!models.ReviewCredential.schema.path('user')) fail('Review credential ownership changed');
+    erase('ReviewCredential', {user: subject.userId});
+  }
   // Relations are removed, but children, adult relatives and the shared group stay intact.
   erase('ChildGuardianLink', { $or: [{ child: subject.userId }, { guardian: subject.userId }] });
   change('User', { 'familyLinks.linkedUser': subject.userId }, { $pull: { familyLinks: { linkedUser: subject.userId } } });

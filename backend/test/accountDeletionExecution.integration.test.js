@@ -33,6 +33,7 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   isolated = true;
 
  const M=mongoose.models, db=mongoose.connection.db;
+ mongoose.model('ReviewCredential',new mongoose.Schema({user:{type:mongoose.Schema.Types.ObjectId,ref:'User'},passwordHash:String}));
  const subject={userId:oid(),tenantId:oid()},child=oid();
  const ready=async()=>isolated && mongoose.connection.name===dbName && mongoose.connection.host==='127.0.0.1';
  const root=await fs.mkdtemp(path.join(tmpdir(),'deletion-owned-files-'));
@@ -43,6 +44,7 @@ test('real isolated execution deletes owned data/files and identity, preserving 
  const storage={uploadOrigins:['https://app.example'],ossOrigins:[]};
  const ownReport=oid(),childReport=oid();
  await M.User.collection.insertMany([{_id:subject.userId,tenantId:subject.tenantId,phone:'synthetic-parent'},{_id:child,tenantId:subject.tenantId,phone:'synthetic-child'}]);
+ await M.ReviewCredential.collection.insertMany([{user:subject.userId,passwordHash:'synthetic-parent-only'},{user:child,passwordHash:'synthetic-child-only'}]);
  await M.MedicalReport.collection.insertMany([
   {_id:ownReport,user:subject.userId,tenantId:subject.tenantId,fileUrl:'https://app.example/api/uploads/own.txt',deletedAt:new Date()},
   {_id:childReport,user:child,tenantId:subject.tenantId,fileUrl:'https://external.example/child-original.pdf',submittedByUser:subject.userId},
@@ -178,6 +180,8 @@ test('real isolated execution deletes owned data/files and identity, preserving 
   assert.equal((await verifyRestoredDatabase({db,env:ledgerEnv,objectId:id=>new mongoose.Types.ObjectId(id)})).verified,1);
   assert.equal((await executeDeletion(args)).evidence,result.evidence);
   assert.equal(await M.MedicalReport.collection.findOne({_id:ownReport}),null);
+  assert.equal(await M.ReviewCredential.collection.countDocuments({user:subject.userId}),0);
+  assert.equal(await M.ReviewCredential.collection.countDocuments({user:child}),1);
   assert.equal(await M.Order.collection.findOne({_id:financeOrder}),null);
   assert.equal(await M.Payment.collection.findOne({_id:financePayment}),null);
   assert.equal(await M.AccountDeletionFinancialArchive.countDocuments({requestId:request._id}),2);

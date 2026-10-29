@@ -18,11 +18,24 @@ function validKey(raw) {
 function resolveReference(value, field, storage) {
   if (typeof value !== 'string' || !value.trim() || value.startsWith('data:')) return null;
   const text=value.trim(), isFileField=fileFields.test(field);
-  if (/^ossKeys?$/i.test(field)) return { storage:'oss', key:validKey(text) };
+  if (/^ossKeys?$/i.test(field)) return { storage:storage.objectKeyStorage === 'local' ? 'local' : 'oss', key:validKey(text) };
+  // The isolated review adapter uses local files and signs an encoded key in
+  // /api/review-files/<key>. Only explicitly configured prefixes map to disk.
+  if (isFileField && text.startsWith('/') && !text.startsWith('//')) {
+    const prefix=(storage.localReferencePrefixes || []).find(p=>text.startsWith(p));
+    if(prefix) return {storage:'local',key:validKey(decodeURIComponent(text.slice(prefix.length).split('?')[0]))};
+  }
   if (text.startsWith('/api/uploads/') && isFileField) return { storage:'local', key:validKey(decodeURIComponent(text.slice('/api/uploads/'.length))) };
   let url;
   try { url=new URL(text); } catch { return isFileField ? { storage:'unclassified', fingerprint:hash(text) } : null; }
   if (!['https:','http:'].includes(url.protocol)) return isFileField ? { storage:'unclassified', fingerprint:hash(text) } : null;
+  if ((storage.uploadOrigins||[]).includes(url.origin)) {
+    const prefix=(storage.localReferencePrefixes || []).find(p=>url.pathname.startsWith(p));
+    if(prefix) {
+      if (/\/(?:\.|%2e){1,2}(?:\/|%2f)/i.test(text)) throw new Error('INVALID_STORAGE_REFERENCE');
+      return {storage:'local',key:validKey(decodeURIComponent(url.pathname.slice(prefix.length)))};
+    }
+  }
   // URL() normalizes traversal: reject it before trusting the normalized pathname.
   if (/\/(?:\.|%2e){1,2}(?:\/|%2f)/i.test(text) || /%2f|%5c/i.test(url.pathname)) throw new Error('INVALID_STORAGE_REFERENCE');
   if ((storage.ossOrigins||[]).includes(url.origin)) return { storage:'oss', key:validKey(decodeURIComponent(url.pathname.slice(1))) };

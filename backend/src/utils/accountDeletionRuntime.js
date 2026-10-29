@@ -21,6 +21,8 @@ async function storageScope({storage, localRoot, ossClient}) {
     oss: ossClient ? {bucket: ossClient.options?.bucket || '', region: ossClient.options?.region || '',
       endpoint: String(ossClient.options?.endpoint?.href || ossClient.options?.endpoint || '')} : null,
     uploadOrigins: [...(storage.uploadOrigins || [])].sort(), ossOrigins: [...(storage.ossOrigins || [])].sort(),
+    objectKeyStorage: storage.objectKeyStorage || 'oss',
+    localReferencePrefixes: [...(storage.localReferencePrefixes || [])].sort(),
   })));
 }
 
