@@ -11,7 +11,8 @@ rows=json.loads(run(['pm2','jlist']))
 def fileenv(base,filename):
  return json.loads(run(['node','-e',"console.log(JSON.stringify(require('dotenv').parse(require('fs').readFileSync(process.argv[1]))))",str(filename)],cwd=str(base)))
 def dbname(base,env):
- return run(['node','-e',"const c=new(require('mongoose').mongo.MongoClient)(process.env.MONGODB_URI);console.log(c.db().databaseName)"],cwd=str(base),env=env)
+ childenv={k:v for k,v in env.items() if k not in ['NODE_CHANNEL_FD','NODE_CHANNEL_SERIALIZATION_MODE']}
+ return run(['node','-e',"const c=new(require('mongoose').mongo.MongoClient)(process.env.MONGODB_URI);console.log(c.db().databaseName)"],cwd=str(base),env=childenv)
 def processenv(pid):return dict(x.split('=',1) for x in pathlib.Path('/proc/'+str(pid)+'/environ').read_text().split('\0') if '=' in x)
 def health(port):
  for _ in range(25):
@@ -24,7 +25,7 @@ def health(port):
 def writeprivate(p,data):
  tmp=p.with_suffix(p.suffix+'.deletion-new');tmp.write_bytes(data);tmp.chmod(0o600);os.replace(tmp,p)
 specs=[('production',prod,prod/'.env',3000),('review',review,pathlib.Path('/var/www/jiayicare-secrets/review-backend.env'),3108)]
-backup=pathlib.Path('/var/backups/jiayicare-deletion-config-20261029');backup.mkdir(mode=0o700)
+backup=pathlib.Path('/var/backups/jiayicare-deletion-config-'+str(int(time.time())));backup.mkdir(mode=0o700)
 changes=[];results=[]
 try:
  for name,base,filename,port in specs:
@@ -38,10 +39,11 @@ try:
    writers=[{'manager':'systemd','name':'jiayicare-review-api','script':str(review/'src/index.js')}]
   assert env.get('ACCOUNT_DELETION_ENABLED')!='true'
   assert not any(k.startswith('ACCOUNT_DELETION_') for k in env),'Existing deletion configuration must be reviewed, never replaced'
-  root=pathlib.Path('/var/lib/jiayicare-account-deletion')/name;root.mkdir(parents=True,mode=0o700);root.chmod(0o700)
-  ledger=root/'ledger.json';assert not ledger.exists()
+  root=pathlib.Path('/var/lib/jiayicare-account-deletion')/name;root.mkdir(parents=True,mode=0o700,exist_ok=True);root.chmod(0o700)
+  ledger=root/'ledger.json'
   db=dbname(base,env)
-  writeprivate(ledger,json.dumps({'version':1,'databaseName':db,'entries':[]}).encode())
+  if ledger.exists():assert json.loads(ledger.read_text())=={'version':1,'databaseName':db,'entries':[]},'Existing completion ledger cannot be reset'
+  else:writeprivate(ledger,json.dumps({'version':1,'databaseName':db,'entries':[]}).encode())
   if name=='review':
    service=pwd.getpwnam('jiayicare-review')
    os.chown(root,0,service.pw_gid);root.chmod(0o750)

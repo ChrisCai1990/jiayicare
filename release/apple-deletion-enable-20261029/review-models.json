@@ -1,0 +1,1 @@
+{"files": ["src/models/AIHealthCheckupReview.js", "src/models/AnnualManagementDecision.js", "src/models/MdtPacket.js", "src/models/NutritionAssessmentRequest.js", "src/models/ResearchCandidate.js", "src/models/WeightProgressPhoto.js"], "validation": {"operations": 81, "indexesVerified": true}, "health": true}

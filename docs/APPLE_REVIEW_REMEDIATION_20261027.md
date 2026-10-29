@@ -1,3 +1,25 @@
+# 2026-10-29 14:03 部署与运行核验（覆盖下方旧阶段记录）
+
+正式后端已部署5d4dd26dc6d27473ea8ac54cc01f8451d27a60e9，合并并保留远程4eab8cc77营养评估变更。普通/审核H5仍沿用本日已发布入口c8d8eb3d/d1b1cb7c；本轮没有重建H5。实际生产与审核健康HTTP200。
+
+本轮完成：
+- 两环境签名/归档密钥、独立台账、恢复保护、实际写入进程及存储范围已配置。密钥仅在服务器生成和存储，不写入Git或回执。配置备份/var/backups/jiayicare-deletion-config-1793253034。
+- 审核环境补齐本地文件签名URL/ossKeys映射；新演示账号的报告使用独立副本；删除账号同时清除ReviewCredential，保留家人凭证；台账原子替换保留受限组读取权限。生产正式部署，审核5文件独立同步；备份/var/backups/jiayicare-deletion-adapters-5d4dd26dc6d2。
+- 审核后端缺少六个实际预检依赖模型（AIHealthCheckupReview、AnnualManagementDecision、MdtPacket、NutritionAssessmentRequest、ResearchCandidate、WeightProgressPhoto），已从生产已部署版本补齐纯模型定义，未增加业务路由、开放AI功能或迁移客户记录。
+- 两环境请求/执行任务/财务归档/后续任务唯一索引核对通过；正式80项、审核81项数据操作规则均通过模型字段核验，队列/归档均0条。
+- 审核环境实际执行维护acquire→status→release，独立审核服务停止后正常恢复，保护锁解除，健康200；未停止正式服务，未删除任何账号或客户资料。
+- 本轮本地专项24项通过、0失败、0跳过；此前107项通过/1项mongodump缺失跳过仅代表上轮测试范围。不能称本次全量107项已重跑。
+
+**注销仍未开放，未重新提审。** ACCOUNT_DELETION_ENABLED=false；NOTICE/COMPLETION_DAYS及实际处理安排尚未落定，财务查阅白名单为空；poll只是就绪检查，不会执行注销，不可用定时poll冒充自动处理。当前执行器需要维护窗口操作。不得伪造workerReady或将受理写成删除完成。
+
+用户已回答商业模式、会计凭证归档和资料范围，不再重复询问。唯一待回答人员配置问题：现有superadmin是否负责受限会计归档查阅，或另有实际负责人；不能把jy_super“超管测试”当真实审查人，也不能伪造逐笔财务复核。该配置尚未授权扩大给具体账号。
+
+浏览器Apple审核详情仍1.0.0(3)已拒绝、消息8、三项2.1/5.1.1/1.4.1，无新回复、未提交。演示入口停在协议同意页，未代用户接受条款、未创建或注销演示账号；真实iPhone完整录屏仍缺。上线验收完成后再交用户录制，不让用户录不可用流程。
+
+证据：release/apple-deletion-enable-20261029/{configured.json,adapters-deployed.json,review-models.json,review-maintenance.json,runtime-check.json}；本轮脚本为configure_account_deletion.py、update_review_deletion_modules.py、complete_review_deletion_models.py、check_review_deletion_maintenance.py、check_deletion_runtime.py。变更脚本部分只能首次执行，不能反复运行或重置已存在台账/密钥。原远程隔离源码上传被审批拒绝的路径未执行或绕过，本轮为已部署应用的配置及维护验收。
+
+下一步：落实实际注销处理及必要人员配置；启用前跑完整本人申请→真实执行→回执/旧凭证失效验收；完成真实iPhone录屏；按事实更新Apple商业说明、注销及来源整改资料并提交。待补事项不能只靠修改说明宣称完成。
+
 # 2026-10-29 实际代码部署结果（优先于下方历史）
 
 用户明确授权“部署”。已推送origin/master并部署正式后端dd5ca900b84ce31b42822ed7b97038b36f05d607；标准脚本仅后端、跳过数据迁移，API健康检查通过，未注销真实账号。
