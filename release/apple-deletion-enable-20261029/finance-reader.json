@@ -1,0 +1,1 @@
+{"identity": {"id": "6a16c57e95a69ecc5beb57f2", "username": "superadmin", "role": "superadmin", "tenantId": "6abf07fb7e2d2db558e55acb"}, "verification": {"confirmedAdminAllowed": true, "testAdminDenied": true, "intakeEnabled": false}, "backup": "/var/backups/jiayicare-finance-reader-1793270695", "health": true}
