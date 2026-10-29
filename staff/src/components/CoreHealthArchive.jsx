@@ -49,11 +49,11 @@ export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit
     finally { setBusy(false) }
   }
   return <section className="card core-archive" id={`core-${section}`}>
-    <div className="card-header"><div><button type="button" className="core-section-toggle card-title" aria-expanded={expanded} aria-controls={`core-body-${section}`} onClick={() => setExpanded(v => !v)}>{CORE_LABELS[section]} <span>{expanded ? "收起 ⌃" : "展开 ⌄"}</span></button><span className="core-muted">{reviewedWithoutUpdate ? '原资料已复核，无新增记录' : presenceLabels[current.presence]}{user.initialArchiveReview && ` · ${reviewLabels[user.initialArchiveReview.sections?.[section]?.status || 'pending']}`}</span></div>
+    <div className="card-header core-section-header"><div><button type="button" className="core-section-toggle card-title" aria-expanded={expanded} aria-controls={`core-body-${section}`} onClick={() => setExpanded(v => !v)}>{CORE_LABELS[section]} <span>{expanded ? "收起 ⌃" : "查看详情 ⌄"}</span></button><span className="core-muted">{reviewedWithoutUpdate ? '原资料已复核，无新增记录' : `${presenceLabels[current.presence]}${records.length ? ` · ${records.length}条记录` : ''}`}{user.initialArchiveReview && !reviewedWithoutUpdate && ` · ${reviewLabels[user.initialArchiveReview.sections?.[section]?.status || 'pending']}`}</span></div>
       {canEdit && <button className="btn btn-secondary btn-sm" onClick={() => { setError(''); setForm(JSON.parse(JSON.stringify(current))) }}>补充／修改</button>}
     </div>
-    {section === 'symptom' && <p className="core-section-description">来源：健康档案与建档问卷，记录建档前近3个月或更长时间的主诉与症状。</p>}
-    {section === 'medication' && <p className="core-section-description">记录首次建档时的使用情况；后续服用中及已停用的记录在“用药与营养补充剂”维护。</p>}
+    {expanded && section === 'symptom' && <p className="core-section-description">来源：健康档案与建档问卷，记录建档前近3个月或更长时间的主诉与症状。</p>}
+    {expanded && section === 'medication' && <p className="core-section-description">记录首次建档时的使用情况；后续服用中及已停用的记录在“用药与营养补充剂”维护。</p>}
     <div className="card-body" id={`core-body-${section}`} hidden={!expanded}>
       <ArchiveSource user={user} section={section}/>
 
@@ -87,6 +87,7 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
   const [draft, setDraft] = useState(null)
   const [routineFields, setRoutineFields] = useState([])
   const [culturalConfirmed, setCulturalConfirmed] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const completed = review?.status === 'completed'
   if (!review) return null
   const count = Object.keys(CORE_LABELS).filter(key => review.sections?.[key]?.status === 'reviewed').length
@@ -166,12 +167,14 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
       } else setError(err.message || '复核失败')
     } finally { setBusy(false) }
   }
-  return <section className="card core-archive" id="initial-archive-review">
-    <div className="card-header"><div><div className="card-title">初次建档复核 · {count}/6</div><div className="core-muted">{review.questionnaireTitle} · 提交于 {when(review.submittedAt)} · {review.status === 'completed' ? '已完成' : '问卷已写入，待人工核实'}</div></div></div>
-    <div className="card-body core-review-grid">
+  return <section className="card core-archive core-review" id="initial-archive-review">
+    <div className="card-header core-review-header"><div><div className="card-title">初次建档复核 · {count}/6 <span className="core-review-state">{completed ? '已完成' : `待处理 ${6 - count} 项`}</span></div><div className="core-muted">{review.questionnaireTitle} · 提交于 {when(review.submittedAt)}</div></div>
+      {completed && <button type="button" className="btn btn-secondary btn-sm" aria-expanded={showHistory} aria-controls="initial-archive-review-list" onClick={() => setShowHistory(value => !value)}>{showHistory ? '收起复核记录' : '查看复核记录'}</button>}
+    </div>
+    <div className="card-body core-review-grid" id="initial-archive-review-list" hidden={completed && !showHistory}>
       {Object.entries(CORE_LABELS).map(([key, label]) => { const state = review.sections?.[key] || {}; return <div className="core-record" key={key}>
-        <strong>{label}</strong><p>{reviewLabels[state.status || 'pending']}</p>{state.note && <p>{state.note}</p>}{state.reviewedAt && <small className="core-muted">{state.reviewedByName} · {when(state.reviewedAt)}</small>}
-        <div className="core-actions"><button className="btn btn-secondary btn-sm" onClick={() => onNavigate(key === 'symptom' ? 'symptoms' : 'records', key)}>查看／完善</button>{canEdit && (review.status !== 'completed' || key === 'routine') && <button className="btn btn-primary btn-sm" onClick={() => { setSelected(key); setDraft(null); setNote(''); setError(''); setCulturalConfirmed(false) }}>{completed ? '修改资料' : '复核'}</button>}</div>
+        <div className="core-review-item-head"><strong>{label}</strong><span className={`core-review-badge ${state.status === 'reviewed' ? 'is-reviewed' : 'is-pending'}`}>{reviewLabels[state.status || 'pending']}</span></div>{state.note && <p className="core-review-note">{state.note}</p>}{state.reviewedAt && <small className="core-muted">{state.reviewedByName} · {when(state.reviewedAt)}</small>}
+        <div className="core-actions"><button className="btn btn-secondary btn-sm" onClick={() => onNavigate(key === 'symptom' ? 'symptoms' : 'records', key)}>查看档案</button>{canEdit && (review.status !== 'completed' || key === 'routine') && <button className="btn btn-primary btn-sm" onClick={() => { setSelected(key); setDraft(null); setNote(''); setError(''); setCulturalConfirmed(false) }}>{completed ? '修改资料' : '复核'}</button>}</div>
         {key === 'routine' && !!user.routineArchiveHistory?.length && <details className="core-source"><summary>查看修改记录（{user.routineArchiveHistory.length}）</summary>{user.routineArchiveHistory.slice().reverse().map((entry, index) => <div key={index} className="core-record"><b>{when(entry.at)} · {entry.byName || '工作人员'}</b><div>原因：{entry.reason}</div>{(entry.changes || []).map((change, i) => <div key={i}>{change.label || change.path}：{format(change.before) || '空'} → {format(change.after) || '空'}</div>)}</div>)}</details>}
       </div> })}
       {selected && <div className="modal-overlay"><div className="modal core-modal">

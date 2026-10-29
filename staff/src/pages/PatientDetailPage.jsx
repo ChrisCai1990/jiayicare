@@ -5210,7 +5210,7 @@ export default function PatientDetailPage() {
       {['ai', 'aiCase'].includes(tab) && <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
         {[['screening','筛查与评估结果'],['analysis','AI健康信息整理'],['specialty','专项研判']].map(([key,label]) => <button key={key} className={`btn btn-sm ${(tab === 'aiCase' ? key === 'specialty' : screeningWorkspaceView === key) ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setTab(key === 'specialty' ? 'aiCase' : 'ai'); if (key !== 'specialty') setScreeningWorkspaceView(key) }}>{label}</button>)}
       </div>}
-      {['records','symptoms','medications'].includes(tab) && <InitialArchiveReview user={user} onSaved={load} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} onNavigate={(target,section) => { setTab(target); if(target==='records') setHealthBaseView('profile'); requestAnimationFrame(() => document.getElementById(`core-${section}`)?.scrollIntoView({behavior:'smooth',block:'start'})) }} />}
+      {['records','symptoms','medications'].includes(tab) && <InitialArchiveReview user={user} onSaved={load} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} onNavigate={(target,section) => { setTab(target); if(target==='records') setHealthBaseView('profile'); requestAnimationFrame(() => document.getElementById(section === 'routine' ? 'basic-profile' : `core-${section}`)?.scrollIntoView({behavior:'smooth',block:'start'})) }} />}
 
       {tab === 'aiReview' && (user.phaseAssessmentEnabled === true
         ? <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />
@@ -6020,7 +6020,7 @@ export default function PatientDetailPage() {
         </>}
 
         {/* ── 基本档案 ── */}
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card" id="basic-profile" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title">基本档案</div>
             {!editingHealth

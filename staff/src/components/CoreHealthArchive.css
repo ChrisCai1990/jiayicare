@@ -3,3 +3,21 @@
 .core-section-toggle{background:none;border:0;padding:0;cursor:pointer;text-align:left;color:inherit;font:inherit;font-weight:700;display:flex;gap:12px;align-items:center}.core-section-description{padding:0 20px;color:#65776f;font-size:12px}.core-archive .card-body[hidden]{display:none}.core-record summary{list-style:none}.core-record summary::-webkit-details-marker{display:none}
 .core-archive-status{padding:12px;background:#f4f8f6;border:1px solid #dce5e0;border-radius:8px;margin:12px 0}.core-archive-status p{margin:8px 0}
 .core-review-editor{border:0;padding:12px 0;margin:0;min-width:0}.core-review-editor>label{display:block;margin-top:12px}
+
+/* Completed reviews stay available without occupying the patient overview. */
+.core-review .core-review-grid[hidden]{display:none}
+.core-review-header{gap:12px}
+.core-review-state{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;background:#eaf5ef;color:#1e6b50;font-size:12px;font-weight:600;vertical-align:middle}
+.core-review-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px 16px;gap:8px}
+.core-review-grid>.core-record{margin:0;padding:10px 12px}
+.core-review-item-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.core-review-badge{flex:none;border-radius:999px;padding:2px 8px;font-size:12px;background:#fff3e2;color:#9a5b00}
+.core-review-badge.is-reviewed{background:#eaf5ef;color:#1e6b50}
+.core-review-note{margin:4px 0;color:#51665b;font-size:13px;line-height:1.45}
+.core-review-grid .core-actions{margin-top:6px}
+.core-section-header{padding:10px 16px;gap:12px}
+.core-section-header .core-section-toggle{gap:8px}
+.core-section-header .core-section-toggle span{font-size:12px;font-weight:500;color:#1e6b50;white-space:nowrap}
+.core-section-header .core-muted{display:block;margin-top:3px}
+.core-section-header+.card-body{padding-top:12px}
+@media(max-width:760px){.core-review-grid{grid-template-columns:1fr}.core-review-header,.core-section-header{align-items:flex-start}.core-review-header .btn,.core-section-header>.btn{flex:none}}
