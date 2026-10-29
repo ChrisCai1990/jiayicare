@@ -242,19 +242,20 @@ test('image-only upper crop does not discard lower crop lab results', async () =
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
     isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', PAGE_COVERAGE_AUDIT_PROMPT: 'coverage',
     isManualOnlyReport: () => false, safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true,
-    mergeCoverageAuditItems: (left, right) => [...left, ...right], str: String, console,
+    mergeCoverageAuditItems: (left, right) => [...left, ...right], resequenceSupplementSourceOrder: items => items, str: String, console,
     tagReportPageItems: items => { assert.equal(JSON.stringify(items), JSON.stringify([lab])); throw new Error('lower-crop-retained'); },
   });
   await assert.rejects(run('fixture', 9), /lower-crop-retained/);
 });
 
-for (const mode of ['normal', 'budget-pause', 'page-budget', 'checkpoint']) for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR ${mode} preserves evidence and progress`, async () => {
+for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'checkpoint']) for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR ${mode} preserves evidence and progress`, async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
   const start = source.indexOf('async function runReportParse(');
   const end = source.indexOf('// 只补提指定PDF页', start);
   const report = { _id: 'fixture', user: 'synthetic', type: 'ultrasound', title: '测试超声', reportItems: [], reviewRevision: 0 };
+  if (mode === 'legacy') delete report.reviewRevision;
   if (mode === 'budget-pause') report.parseJob = { progress: { version: 2, nextPage: 1, allItems: [] } };
   if (mode === 'checkpoint') report.parseJob = pdf
     ? { firstPassPages: { 1: { items: [], skipPage: true, imageEvidence: { status: 'image_only', message: '影像资料页' } } }, progress: { version: 2, nextPage: 1, imagePageEvidence: { 1: { status: 'image_only', message: '影像资料页' } } } }
@@ -266,7 +267,7 @@ for (const mode of ['normal', 'budget-pause', 'page-budget', 'checkpoint']) for 
     findById: () => ({ then: resolve => resolve(report), select: () => ({ lean: async () => report }) }),
     findByIdAndUpdate: async (_, update) => writes.push(update),
     findOneAndUpdate: async (filter, update) => {
-      assert.equal(filter.reviewRevision, report.reviewRevision);
+      assert.deepEqual(JSON.parse(JSON.stringify(filter.reviewRevision)), { $in: [0, null] });
       writes.push(update); return report;
     },
   };
@@ -274,6 +275,8 @@ for (const mode of ['normal', 'budget-pause', 'page-budget', 'checkpoint']) for 
     '../utils/ai': { parseImage: async (_, prompt) => { calls++; if (mode === 'budget-pause') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('预算不足'); if (mode === 'page-budget') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('第1页调用次数不足', 'AI_PAGE_BUDGET_PAUSED'); return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
     '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
     '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
+    '../utils/reportReviewRevision': require('../src/utils/reportReviewRevision'),
+    '../utils/aiDataConsent': { withReportStaffService: (_report, run) => run() },
     '../models/MedicalReport': db,
     '../utils/pdf': { isPdfReport: () => pdf, fetchReportBuffer: async () => Buffer.from('synthetic-image'),
       getPdfPageCountFromBuffer: async () => 1,

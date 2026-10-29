@@ -40,6 +40,7 @@ const HealthRecord = require('../models/HealthRecord');
 const MetabolicPilot = require('../models/MetabolicPilot');
 const { calcStatus: calcHealthRecordStatus } = require('../utils/healthRecordStatus');
 const MedicalReport = require('../models/MedicalReport');
+const { reviewRevisionMatch } = require('../utils/reportReviewRevision');
 const { REPORT_LIST_PROJECTION, toReportListItem } = require('../utils/reportListPayload');
 const HealthPlan = require('../models/HealthPlan');
 const { checkupAnalysisReadiness } = require('../utils/checkupAnalysisReadiness');
@@ -5311,7 +5312,7 @@ router.patch('/medical-reports/:id/items/:itemId', staffAuth, async (req, res) =
     }
     if (!Object.keys(set).length) return res.status(400).json({ success: false, message: '没有可更新的项目字段' });
     const updated = await MedicalReport.findOneAndUpdate(
-      { _id: req.params.id, reviewRevision: expectedRevision, 'reportItems.itemId': req.params.itemId },
+      { _id: req.params.id, reviewRevision: reviewRevisionMatch(expectedRevision), 'reportItems.itemId': req.params.itemId },
       { $set: set, $inc: { reviewRevision: 1 } },
       { new: true, arrayFilters: [{ 'item.itemId': req.params.itemId }] },
     ).select('reportItems reviewRevision');
@@ -6259,7 +6260,7 @@ router.patch('/medical-reports/:id/duplicate', staffAuth, checkPermission('repor
     if (!report.duplicateOf) {
       const before = report.toObject();
       const original = Object.fromEntries(['audit_status', 'aiStatus', 'date', 'checkDate', 'reportYear', 'reportItems', 'keyFindings', 'aiSummary', 'examDescription', 'examConclusion', 'examMainConclusions'].map(key => [key, before[key]]));
-      const updated = await MedicalReport.updateOne({ _id: id, reviewRevision: report.reviewRevision, archiveOnly: { $ne: true } }, { $set: { archiveOnly: true, archiveSourceReportId: source._id, archiveOnlyAt: new Date(), archiveOnlyBy: req.staff._id, duplicateOf: source._id, duplicateReason: reason, duplicateMarkedAt: new Date(), duplicateMarkedBy: req.staff._id, duplicateOriginal: original, audit_status: 'unaudited', aiStatus: 'none', date: '', checkDate: '', reportYear: null, reportItems: [], keyFindings: [], aiSummary: '', examDescription: '', examConclusion: '', examMainConclusions: {} }, $inc: { reviewRevision: 1 } });
+      const updated = await MedicalReport.updateOne({ _id: id, reviewRevision: reviewRevisionMatch(report.reviewRevision), archiveOnly: { $ne: true } }, { $set: { archiveOnly: true, archiveSourceReportId: source._id, archiveOnlyAt: new Date(), archiveOnlyBy: req.staff._id, duplicateOf: source._id, duplicateReason: reason, duplicateMarkedAt: new Date(), duplicateMarkedBy: req.staff._id, duplicateOriginal: original, audit_status: 'unaudited', aiStatus: 'none', date: '', checkDate: '', reportYear: null, reportItems: [], keyFindings: [], aiSummary: '', examDescription: '', examConclusion: '', examMainConclusions: {} }, $inc: { reviewRevision: 1 } });
       if (!updated.modifiedCount) return res.status(409).json({ success: false, message: '报告状态已变化，请刷新后重试' });
     }
     await UserScreeningItem.deleteMany({ user: report.user, reportId: id });
@@ -6315,7 +6316,7 @@ router.patch('/medical-reports/:id/advisor-return', staffAuth, async (req, res) 
     const now = new Date();
     const history = Array.isArray(report.advisorCorrection?.history) ? report.advisorCorrection.history : [];
     const correction = { status: 'returned', reason, returnedAt: now, returnedBy: req.staff._id, returnedByName: req.staff.name, assignedTo: patient.assignedHealthManager || null, history: [...history, { reason, returnedAt: now, returnedBy: req.staff._id, returnedByName: req.staff.name }] };
-    const changed = await MedicalReport.updateOne({ _id: report._id, audit_status: 'audited', reviewRevision: report.reviewRevision, archiveOnly: { $ne: true } }, { $set: { audit_status: 'unaudited', aiStatus: 'pending', ...(report.status === 'analyzed' ? { status: 'pending' } : {}), advisorCorrection: correction, familyDoctorViewedAt: null, familyDoctorViewedBy: null }, $inc: { reviewRevision: 1 } });
+    const changed = await MedicalReport.updateOne({ _id: report._id, audit_status: 'audited', reviewRevision: reviewRevisionMatch(report.reviewRevision), archiveOnly: { $ne: true } }, { $set: { audit_status: 'unaudited', aiStatus: 'pending', ...(report.status === 'analyzed' ? { status: 'pending' } : {}), advisorCorrection: correction, familyDoctorViewedAt: null, familyDoctorViewedBy: null }, $inc: { reviewRevision: 1 } });
     if (!changed.modifiedCount) return res.status(409).json({ success: false, message: '报告已被修改，请刷新' });
     // 专项筛查项目由原报告派生；补正期间撤出，重审时原同步器按报告ID恢复。
     await UserScreeningItem.deleteMany({ user: report.user, reportId: report._id });
@@ -17120,7 +17121,7 @@ async function runOutpatientRecordParse(report, rawParseImage) {
     const { draft, reviewIssues, sourceCount, explicitExamReport } = await extractOutpatientRecordAttachment(report, rawParseImage);
     if (explicitExamReport) {
       const corrected = await MedicalReport.updateOne(
-        { _id: report._id, reviewRevision: revision, documentCategory: 'outpatient_record', audit_status: { $ne: 'audited' } },
+        { _id: report._id, reviewRevision: reviewRevisionMatch(revision), documentCategory: 'outpatient_record', audit_status: { $ne: 'audited' } },
         { $set: { documentCategory: 'exam_report', clinicalReview: null, reportItems: [], aiSummary: '原件标题表明这是检查报告，已纠正资料分类，正在按检查报告重新解析。',
           parseJob: { status: 'processing', message: '已从门诊病历纠正为检查报告，继续解析' } }, $inc: { reviewRevision: 1 } },
       );
@@ -17128,7 +17129,7 @@ async function runOutpatientRecordParse(report, rawParseImage) {
       throw new Error('分类纠正期间资料被人工修改，请刷新后核对');
     }
     const result = await MedicalReport.updateOne(
-      { _id: report._id, reviewRevision: revision, audit_status: { $ne: 'audited' } },
+      { _id: report._id, reviewRevision: reviewRevisionMatch(revision), audit_status: { $ne: 'audited' } },
       { $set: {
         clinicalReview: supplementOutpatientDraft(report.clinicalReview, draft), reportItems: [], aiStatus: 'pending',
         aiSummary: `门诊病历已按病历栏目提取待核对草稿。${reviewIssues.length ? `识别疑点：${reviewIssues.join('；')}` : '请对照原件逐项核对。'}`,
@@ -17141,7 +17142,7 @@ async function runOutpatientRecordParse(report, rawParseImage) {
     });
   } catch (error) {
     const paused = isAiControlError(error);
-    await MedicalReport.updateOne({ _id: report._id, reviewRevision: revision, audit_status: { $ne: 'audited' }, 'parseJob.status': 'processing' }, { $set: {
+    await MedicalReport.updateOne({ _id: report._id, reviewRevision: reviewRevisionMatch(revision), audit_status: { $ne: 'audited' }, 'parseJob.status': 'processing' }, { $set: {
       aiStatus: 'failed', 'parseJob.status': paused ? 'paused' : 'failed',
       'parseJob.message': error.message, 'parseJob.completedAt': new Date(),
     } });
@@ -17155,6 +17156,7 @@ async function runReportParseControlled(reportId) {
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { filterMissingReportItems, hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
+  const { reviewRevisionMatch } = require('../utils/reportReviewRevision');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
@@ -17691,7 +17693,7 @@ async function runReportParseControlled(reportId) {
         : failedPages > 0
           ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败${failedPageLabel}，请核对是否有遗漏项目${qualityWarning ? `\n${qualityWarning}` : ''}`
           : [summaryText, qualityWarning].filter(Boolean).join('\n');
-      const savedPdf = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: parseStartRevision }, {
+      const savedPdf = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(parseStartRevision) }, {
         $inc: { reviewRevision: 1 },
         reportItems: classified,
         imagePageEvidence,
@@ -17936,7 +17938,7 @@ async function runReportParseControlled(reportId) {
     };
     if (completion.shouldWriteItems) {
       const saved = await MedicalReport.findOneAndUpdate(
-        { _id: reportId, reviewRevision: Number(latestReport?.reviewRevision || 0) },
+        { _id: reportId, reviewRevision: reviewRevisionMatch(latestReport?.reviewRevision) },
         { $set: { ...imageUpdate, reportItems: resolvedImageItems }, $inc: { reviewRevision: 1 } },
       );
       if (!saved) {
@@ -18105,7 +18107,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const resultMessage = acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : `第${pageNum}页未找到有原文证据的遗漏项，已保留原${oldPage.length}项`;
-  const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: Number(latest.reviewRevision || 0) }, {
+  const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision) }, {
     $set: {
       reportItems: combined,
       ...(pageEvidence ? { [`imagePageEvidence.${pageNum}`]: pageEvidence } : {}),
@@ -18325,7 +18327,7 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
     pendingIndexes.forEach((originalIndex, pendingIndex) => {
       reclassified[originalIndex] = newlyClassified[pendingIndex];
     });
-    const updated = await MedicalReport.findOneAndUpdate({ _id: report._id, reviewRevision: Number(report.reviewRevision || 0) }, { $set: { reportItems: reclassified }, $inc: { reviewRevision: 1 } }, { new: true }).select('reviewRevision');
+    const updated = await MedicalReport.findOneAndUpdate({ _id: report._id, reviewRevision: reviewRevisionMatch(report.reviewRevision) }, { $set: { reportItems: reclassified }, $inc: { reviewRevision: 1 } }, { new: true }).select('reviewRevision');
     if (!updated) return res.status(409).json({ success: false, message: '审核内容已更新，请刷新后重新匹配，未覆盖人工修改' });
     const matchedCount = newlyClassified.filter(i => i.matchStatus === 'matched').length;
     res.json({ success: true, data: reclassified, matchedCount, reviewRevision: updated?.reviewRevision || 0 });
