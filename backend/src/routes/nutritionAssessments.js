@@ -117,7 +117,7 @@ router.post('/', staffAuth, wrap(async (req, res) => {
     if (!isAvailableNutritionAssessmentOrder(order)) return bad(res, 409, '评估订单未付款、已使用或不可用');
     if (await Request.exists({ sourceOrderId, status: { $ne: 'cancelled' } })) return bad(res, 409, '该订单已关联营养评估需求');
   } else {
-    if (sourcePlanId || sourceOrderId) return bad(res, 400, '年度管理临时评估不关联单次订单或营养方案');
+    if (sourcePlanId || sourceOrderId) return bad(res, 400, '单次营养评估不关联订单或营养方案');
     const chinaYear = new Date(Date.now() + 8 * 3600000).getUTCFullYear();
     const annualPlan = await AnnualPlan.exists({ patientId, year: chinaYear, confirmedAt: { $ne: null } });
     if (!annualPlan && !(patient.servicePackage && patient.serviceExpiry && new Date(patient.serviceExpiry) >= new Date()))
