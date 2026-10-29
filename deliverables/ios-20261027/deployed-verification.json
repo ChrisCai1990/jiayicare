@@ -1,0 +1,104 @@
+{
+  "backendVerification": "dd5ca900b84ce31b42822ed7b97038b36f05d607\n{\"success\":true,\"service\":\"jiayicare-backend\"}{\"success\":true,\"service\":\"jiayicare-backend\"}",
+  "error": "",
+  "publicFullScan": "incomplete: one response timed out; not 206 public files verified",
+  "readiness": {
+    "checkedAt": "2026-10-29T05:35:38.865Z",
+    "environments": [
+      {
+        "environment": "production",
+        "deletionEnabled": false,
+        "guardEnabled": false,
+        "financeKeyConfigured": false,
+        "financeReviewerConfigured": false,
+        "ossConfigured": true
+      },
+      {
+        "environment": "review",
+        "deletionEnabled": false,
+        "guardEnabled": false,
+        "financeKeyConfigured": false,
+        "financeReviewerConfigured": false,
+        "ossConfigured": false
+      }
+    ],
+    "backups": [
+      {
+        "root": "/var/backups/jiayicare",
+        "exists": true,
+        "count": 33,
+        "bytes": 424667135,
+        "symlinks": 0,
+        "types": {
+          ".json": 15,
+          ".env": 4,
+          ".log": 4,
+          ".bundle": 1,
+          ".archive.gz": 4,
+          ".gz": 1,
+          ".patch": 1,
+          ".ejson": 3
+        }
+      },
+      {
+        "root": "/var/backups/jiayicare-staging",
+        "exists": true,
+        "count": 3,
+        "bytes": 107862172,
+        "symlinks": 0,
+        "types": {
+          ".archive.gz": 3
+        }
+      },
+      {
+        "root": "/var/www/jiayicare/backups",
+        "exists": true,
+        "count": 5,
+        "bytes": 28707,
+        "symlinks": 0,
+        "types": {
+          ".json": 5
+        }
+      },
+      {
+        "root": "/var/www/jiayicare/backend/backups",
+        "exists": false,
+        "count": 0,
+        "bytes": 0,
+        "symlinks": 0,
+        "types": {}
+      },
+      {
+        "root": "/var/www/jiayicare-review/backups",
+        "exists": false,
+        "count": 0,
+        "bytes": 0,
+        "symlinks": 0,
+        "types": {}
+      },
+      {
+        "root": "/root/.pm2/logs",
+        "exists": true,
+        "count": 20,
+        "bytes": 97272464,
+        "symlinks": 0,
+        "types": {
+          ".log": 20
+        }
+      },
+      {
+        "root": "/var/log/nginx",
+        "exists": true,
+        "count": 30,
+        "bytes": 14606115,
+        "symlinks": 0,
+        "types": {
+          ".log": 2,
+          ".1": 2,
+          ".gz": 26
+        }
+      }
+    ],
+    "limitation": "File metadata and selected configuration only; not proof of deletion or exhaustive backup discovery."
+  }
+}

@@ -1,0 +1,202 @@
+require('dotenv').config();
+require('./utils/accountDeletionStartupGuard').assertStartupAllowed();
+require('express-async-errors'); // 让 Express 4 自动捕获 async 路由里的异常
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+const path = require('path');
+const fs = require('fs');
+const connectDB = require('./config/db');
+
+require('./utils/reviewEnvironment').assertReviewEnvironment();
+async function startApplication() {
+await connectDB();
+const app = express();
+
+// 中间件 — CORS 白名单（生产域名 + 本地开发端口）
+// 2026-07-07 修复：CORS 中间件此前挂载在静态文件服务(/api/uploads)之后，导致上传的图片/PDF等
+// 静态文件响应完全没有 Access-Control-Allow-Origin 头。三端各自跑在不同域名下(staff.jiaycare.com
+// 访问 jiaycare.com/api/uploads/...)，pdf.js等用fetch读取跨域静态文件时被浏览器CORS策略拦截，
+// 报"PDF预览失败"——医护端审核弹窗看不到原图的真正根因。CORS必须在静态文件服务之前挂载。
+const ALLOWED_ORIGINS = [
+  'https://jiaycare.com',
+  'https://app.joinwehealth.com',
+  'https://admin.jiaycare.com',
+  'https://staff.jiaycare.com',
+  // 本地开发
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://localhost:8081',
+  'http://localhost:8082',
+  'http://localhost:19006', // Expo web
+];
+app.use(cors((req, callback) => {
+  const origin = req.headers.origin;
+  const options = { credentials: true };
+  // origin 为空表示非浏览器请求（curl、移动端原生、服务器间调用）
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, { ...options, origin: true });
+  if (!req.path.startsWith('/api/visitor-assistant/')) return callback(new Error('CORS: origin not allowed for this API'));
+  require('./utils/websiteTenant').websiteOriginAllowed(origin)
+    .then(allowed => callback(allowed ? null : new Error('CORS: website origin not registered'), { ...options, origin: allowed }))
+    .catch(() => callback(new Error('CORS: website origin lookup failed')));
+}));
+
+// 静态文件（上传图片/PDF）
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use('/api/uploads', (_req,res)=>res.status(404).end());
+app.use('/api/review-files', require('./routes/reviewFiles'));
+app.use(express.json({
+  limit: '25mb',
+  verify: (req, res, buffer) => { req.rawBody = buffer.toString('utf8'); },
+}));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
+app.use(morgan('dev'));
+app.use((req, res, next) => require('./utils/aiBudget').withAiContext({ stage: 'request' }, next));
+
+// 健康检查
+app.get('/', (req, res) => {
+  res.json({ success: true, message: '嘉医汇 API 服务运行中 🏥', version: '1.0.2' });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ success: true, service: 'jiayicare-backend' });
+});
+
+// 路由
+app.use(require('./middleware/reviewBoundary'));
+app.use('/api/auth/review-account', require('./routes/reviewAccount'));
+app.use('/api/auth',    require('./routes/auth'));
+app.use('/api/account-deletion', require('./routes/accountDeletion'));
+app.use('/api/push-devices', require('./routes/pushDevices'));
+app.use('/api/metabolic-pilot', require('./routes/metabolicPilot'));
+app.use('/api/payments', require('./routes/payments'));
+
+// 用户端(app)专属路由：服务到期锁定统一在此挂载（默认锁+白名单放行，见 checkServiceActive.js 注释）。
+// auth 已把 req.user 挂好，checkServiceActive 统一核验可信续约期（历史客户兼容档案日期）。
+const { checkServiceActive } = require('./middleware/checkServiceActive');
+const auth = require('./middleware/auth');
+app.use('/api/user', auth, checkServiceActive, require('./routes/user'));
+app.use('/api/records', auth, checkServiceActive, require('./routes/healthRecords'));
+app.use('/api/medications', auth, checkServiceActive, require('./routes/medications'));
+app.use('/api/supplements', auth, checkServiceActive, require('./routes/supplements'));
+app.use('/api/tasks',   auth, checkServiceActive, require('./routes/tasks'));
+const messagesRouter = require('./routes/messages');
+app.use('/api/messages', auth, checkServiceActive, messagesRouter);
+app.locals.ssePublish = messagesRouter.ssePublish;
+app.use('/api/reminders', auth, checkServiceActive, require('./routes/reminders'));
+app.use('/api/reports',       auth, checkServiceActive, require('./routes/reports'));
+app.use('/api/chat',          auth, checkServiceActive, require('./routes/chat'));
+app.use('/api/questionnaire', auth, checkServiceActive, require('./routes/questionnaire'));
+// Catalogue must remain public so a recipient can preview a shared product before login.
+// Sensitive service routes enforce auth inside routes/services.js.
+app.use('/api/services',      require('./routes/services'));
+// 官网访客独立入口：不复用会员聊天和健康档案，避免未登录访客数据混入会员体系。
+app.use('/api/visitor-assistant', require('./routes/visitorAssistant'));
+app.use('/api/partner-benefits', require('./routes/partnerBenefits'));
+app.use('/api/enterprise-hr', require('./routes/enterpriseHr'));
+app.use('/api/ops-dashboard', require('./routes/opsDashboard'));
+app.use('/api/orders',        require('./routes/orders'));
+app.use('/api/feedback',      require('./routes/feedback'));
+app.use('/api/system',        require('./routes/system'));
+app.use('/api/share',         require('./routes/share'));
+app.use('/api/admin',         require('./routes/admin'));
+app.use('/api/admin/clinical-standards', require('./routes/clinicalStandardsAdmin'));
+app.use('/api/admin',         require('./routes/settings'));
+app.use('/api/admin/ai-control', require('./routes/aiControl'));
+const staffRouter = require('./routes/staff');
+app.use('/api/staff',         staffRouter);
+app.use('/api/staff/clinical-standards', require('./routes/clinicalStandardsStaff'));
+app.use('/api/staff',         require('./routes/aiCaseReviews'));
+app.use('/api/staff',         require('./routes/annualServicePeriods'));
+app.use('/api/staff/service-groups', require('./routes/serviceGroups'));
+app.use('/api/staff/care-flow', require('./routes/careFlow'));
+app.use('/api/admin/care-quality', require('./routes/careQuality'));
+app.use('/api/admin/research-care-journeys', require('./routes/researchCareJourneys'));
+app.use('/api/integrations/service-groups', require('./routes/serviceGroupBridge'));
+app.use('/api/integrations/wecom-app', require('./routes/wecomAppCallback'));
+// 微信客服为外部客户独立通道；不与员工应用回调或客户群会话存档混用。
+app.use('/api/integrations/wecom-kf', require('./routes/wecomKfCallback'));
+app.use('/api/integrations/insurance', require('./routes/insuranceIntegrations'));
+app.use('/api/screening',     require('./routes/screening'));
+app.use('/api/tts',           require('./routes/tts'));
+app.use('/api/ai-data-consent', require('./routes/aiDataConsent'));
+
+// 404
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: '接口不存在' });
+});
+
+// 全局错误处理
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ success: false, message: '服务器内部错误', error: process.env.NODE_ENV === 'development' ? err.message : undefined });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '127.0.0.1', () => {
+  require('./utils/nativePush').startNativePush();
+  // Stops only the workers/initializers registered below, not HTTP writes or
+  // module-import side effects. Existing deployments retain their defaults.
+  if (process.env.STARTUP_BACKGROUND_JOBS_ENABLED === 'false') {
+    console.log(`[startup] background startup disabled; API listening on ${PORT}`);
+    return;
+  }
+  require('./utils/serviceGroupCleanup').startServiceGroupCleanup();
+  require('./utils/clinicalStandardMonitor').startClinicalStandardMonitor();
+  require('./utils/wecomEmployeeReminders').start();
+  console.log(`🚀 服务启动成功，端口：${PORT}`);
+  // 报告 OCR 是可恢复后台任务：进程重启后继续跑，不能把 processing 误改为待审核。
+  setTimeout(() => staffRouter.resumeReportParseJobs?.().catch(error => {
+    console.error('[startup] 恢复报告解析任务失败:', error.message);
+  }), 1500);
+
+  // 首次登录用户第二批问卷（生活方式+心理健康）延迟自动推送，每天扫描一次
+  require('./utils/onboardingPush').startBatch2Scheduler();
+
+  require('./utils/commissionMaturity').startCommissionScheduler();
+
+  // AI每日健康关怀
+  require('./utils/dailyCareScheduler').startDailyCareScheduler();
+  require('./utils/monitoringReminderScheduler').startMonitoringReminderScheduler();
+
+  // 已确认管理方案会员的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
+  require('./utils/monthlyFollowUpScheduler').startMonthlyReviewScheduler();
+  require('./utils/phaseAssessmentScheduler').startPhaseAssessmentScheduler();
+  require('./utils/packageServiceRedemption').startPackageServiceRedemptionScheduler();
+  require('./utils/phaseAssessmentTemplates').ensurePhaseAssessmentTemplateDrafts().catch(error => console.error('[phase-assessment] template drafts failed', error.message));
+
+  // AI自主随访跟进试点：血压监测该测未测自动提醒会员，每天扫描一次
+  require('./utils/bpMonitorScheduler').startBPMonitorScheduler();
+  require('./utils/healthRiskReconciler').startHealthRiskReconciler();
+
+  // 已确认个性化随访：独立开关控制隔日三次未回应转健管专员，不改现有提醒调度。
+  require('./utils/aiNoResponseFollowUp').start();
+
+  // 首页「健康团队今日动态」：每天凌晨批量生成健康顾问/营养师/健康管理师/AI健康分析反馈，次日首页直接读现成结果
+  require('./utils/dailyTeamInsightScheduler').startDailyTeamInsightScheduler();
+
+  // 营养聊天草稿：持久化半月周期、限流与异常待办；已停用频道不参与
+  require('./utils/chatFollowupScheduler').startChatFollowupScheduler();
+
+  // 年度管理方案的"日常监测/季度评估"随访占位滚动窗口补生成，每天扫描一次
+  // （此前一次性预生成未来365天导致单个客户堆积几百条占位，2026-07-13 改为滚动窗口）
+  require('./utils/scheduledFollowUpWindowScheduler').startScheduledFollowUpWindowScheduler();
+  if (process.env.HEALTH_MANAGEMENT_RECOVERY_ENABLED !== 'false') {
+    require('./utils/assessmentFollowUpAutomation').startAssessmentDraftWorker();
+    require('./utils/reportFollowUpAutomation').startReportDraftWorker();
+  }
+  require('./utils/groupMaterialSchedule').startMaterialSchedule();
+
+  // 年度管理方案"药物管理/营养素管理"模块的定期配药/配营养素计划到期扫描，每天一次
+  require('./utils/recurringSupplyPlanScheduler').startRecurringSupplyPlanScheduler();
+  require('./utils/medicationLifecycleScheduler').startMedicationLifecycleScheduler();
+  require('./utils/combinedMedicationReminder').startMedicationReminderScheduler();
+  require('./utils/appointmentReminderScheduler').startAppointmentReminderScheduler();
+  require('./utils/checkupAppointmentReminderScheduler').startCheckupAppointmentReminderScheduler();
+});
+
+}
+startApplication().catch(error => { console.error('[startup] failed', error.code || error.message); process.exitCode = 1; });

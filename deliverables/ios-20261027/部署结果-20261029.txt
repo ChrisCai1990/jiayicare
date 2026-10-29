@@ -1,0 +1,9 @@
+# 2026-10-29 实际代码部署结果（优先于下方历史）
+
+用户明确授权“部署”。已推送origin/master并部署正式后端dd5ca900b84ce31b42822ed7b97038b36f05d607；标准脚本仅后端、跳过数据迁移，API健康检查通过，未注销真实账号。
+普通/审核H5共206文件已发布并逐文件核对服务器哈希；入口分别c8d8eb3d/d1b1cb7c。备份/var/backups/jiayicare-account-deletion-dd5ca900b84c。浏览器已实见“我的→账号安全→注销账号”，未登录正确提示重新登录；不是iPhone真机证据。
+隔离审核后端29个文件已同步；保留reviewBoundary及独立数据库，健康200，未认证注销接口401。备份/var/backups/jiayicare-deletion-review-20261029。已关闭过期的REVIEW_EXTERNAL_SERVICES_ENABLED/REVIEW_AI_ENABLED/REVIEW_ASR_ENABLED，未续期、重置预算或调用模型。
+本机107项通过、0失败、1项因缺mongodump跳过。远程隔离源码上传测试曾被自动审批拒绝，未执行；已改用工作区现有MongoDB7.0.34测试。标准代码部署已获审批执行，两者范围不同。
+**代码部署完成，但注销服务尚未启用**：两环境ACCOUNT_DELETION_ENABLED仍关闭；尚缺签名/归档密钥、维护保护与独立台账配置、真实财务查阅白名单及处理队列的运行验收。不能伪造workerReady，不得将前端按钮可见说成完整注销可用。用户的交易归档分类及业务说明已明确，不再重复询问。
+尚未有iPhone完整注销录屏，未重新提审；不要让用户现在录制不可用的注销流程。下一步应完成既有执行器配置与实际验收，再提供真机录制步骤。
+干净发布副本D:/CodexData/workspace-projects-20261020/apple-release-20261029；之前apple-deploy-clean-20261029共享对象过深未用于发布，原mdt-deploy-clean-20261024有其他未提交业务改动，均未重置。
