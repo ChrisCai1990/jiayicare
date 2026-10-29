@@ -1,3 +1,15 @@
+# 2026-10-29 19:29 独立演示账号真实注销通过（最新）
+
+用户本人进入演示，又在最终步骤明确确认“确认删除这个演示账号并继续验收”。已收到真实申请6ae32cb537fa4f95e5b8cc5f（19:23:33），对审核库唯一合成demo机构/账号核验后执行已部署worker；无订单、支付、退款，未读取或删除生产客户资料，也未使用Apple共用审核账号。
+
+实际结果：19:25:46完成。User、ReviewCredential、LoginSession、4条HealthRecord、MedicalReport和Message中该账号资料均0条；独占演示报告文件不存在；独立完成台账和回执证据已落地；维护锁解除、审核API恢复健康。浏览器查询显示“账号注销已完成”，原登录再请求本人注销信息得到“登录已过期，请重新登录”。这是浏览器及服务器真实验收，不能标为iPhone真机录屏。
+
+审核验收窗口已关闭，正式环境从未开启本轮受理；两环境仍非长期开放。后续不能只重放poll保持ready冒充实际处理队列。正式环境的日常处理安排、上线验收及真实iPhone完整录屏仍待完成，尚未重新提审。备份/日志/供应商后续任务仍pending，不能称全部副本已清除。
+
+证据release/apple-deletion-enable-20261029/demo-execution-6ae32cb537fa4f95e5b8cc5f.json及review-window-open.json/review-window-close.json。截图在本聊天visualizations目录demo-deletion-completed-20261029.png（仅截回执结果区，避开查询凭证）和demo-deletion-old-login-rejected-20261029.png。完整查询凭证不存Git、不写提审说明。截图中为合成账号，不包含客户资料。
+
+浏览器tab17当前是该已注销演示账号的账号安全页，不可用作下一次录屏账号；需新建独立演示账号。此前tab16仍为演示入口；Apple tab6已跳登录，下一次真实提审时可能需要用户登录。没有发送Apple回复、上传附件或点击重新提交。
+
 # 2026-10-29 superadmin 已获用户确认并配置（最新）
 
 用户对“保留的会计凭证是否由现有superadmin负责查阅”回答“可以”。已核验生产既有superadmin身份、机构和角色，将其加入唯一财务归档查阅白名单；原jy_super测试管理员仍被拒绝。配置备份/var/backups/jiayicare-finance-reader-1793270695，正式API重启后健康通过。没有复制生产管理员到审核环境，没有读取任何会计凭证明文，也没有删除账号。

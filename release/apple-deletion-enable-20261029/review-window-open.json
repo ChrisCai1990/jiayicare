@@ -1,0 +1,1 @@
+{"environment": "review", "action": "open", "health": true, "readiness": {"ready": true, "pending": 0, "execution": "operator-maintenance"}, "newIntakeCheckExpiresAfterMinutes": 15, "backup": "/var/backups/jiayicare-review-deletion-window-1793272906", "productionChanged": false, "requestsExecuted": false}
