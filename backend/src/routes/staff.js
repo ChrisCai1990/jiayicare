@@ -4305,6 +4305,9 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (plan.type === 'medical_assist' && req.body.status === 'completed') {
     return res.status(409).json({ success: false, message: '就医协助服务须在执行结束后由健康规划师通过确认结案入口关闭' });
   }
+  if (plan.type === 'annual_checkup' && req.body.status === 'completed') {
+    return res.status(409).json({ success: false, message: '年度体检工作台按已审核报告的逐项核对进度自动显示完成，无需手动标记方案完成' });
+  }
   if (plan.type === 'annual_checkup') {
     if (req.body.year !== undefined && Number(req.body.year) !== Number(plan.year)
       && plan.items.some(item => item.status === 'completed' || item.reportId)) {

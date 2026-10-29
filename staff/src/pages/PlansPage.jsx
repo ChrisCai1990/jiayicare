@@ -255,7 +255,9 @@ export default function PlansPage() {
                       <td><span className="badge badge-info">{TYPE_LABEL[p.type]}</span></td>
                       <td>{p.patientId?.name || '-'} <span style={{ color: '#aaa', fontSize: 12 }}>{p.patientId?.phone}</span></td>
                       <td>
-                        <span style={{ color: STATUS_COLOR[getPlanStatus(p)], fontWeight: 500 }}>{STATUS_LABEL[getPlanStatus(p)]}</span>
+                        <span style={{ color: p.type === 'annual_checkup' && p.status === 'completed' ? '#B45309' : STATUS_COLOR[getPlanStatus(p)], fontWeight: 500 }}>
+                          {p.type === 'annual_checkup' && p.status === 'completed' ? '历史手动完成 · 以项目进度为准' : STATUS_LABEL[getPlanStatus(p)]}
+                        </span>
                       </td>
                       <td>{p.items?.length || 0} 项</td>
                       <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>

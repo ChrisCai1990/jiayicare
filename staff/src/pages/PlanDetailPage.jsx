@@ -287,6 +287,7 @@ export default function PlanDetailPage() {
   }
 
   const handlePush = async () => {
+    if (plan?.type === 'annual_checkup' && !plan.checkupDate) { toast('请先编辑方案，设置明确的体检日期后再推送'); return }
     const importantNames = plan?.type === 'annual_checkup' ? (plan.items || []).filter(isImportantCheckupItem).map(item => item.name) : []
     const prompt = importantNames.length
       ? `检测到 ${importantNames.length} 项需重点准备：${importantNames.join('、')}。系统将在推送时自动补齐醒目的检查前注意事项，确认推送？`
@@ -404,6 +405,15 @@ export default function PlanDetailPage() {
     } catch (err) { toast(err.message) }
   }
 
+  const undoLegacyCheckupCompletion = async () => {
+    if (!window.confirm('撤销旧的手动完成标记并恢复为已推送？会员端将重新显示方案，已有项目核对记录保持不变。')) return
+    try {
+      await staffAPI.updatePlan(id, { status: 'active' })
+      toast('已恢复为已推送，请继续逐项核对')
+      load()
+    } catch (err) { toast(err.message) }
+  }
+
   const startEdit = () => {
     const legacyCheckupDate = plan.items?.find(item => item.scheduledDate)?.scheduledDate
     const rawCheckupDate = plan.checkupDate || legacyCheckupDate
@@ -469,6 +479,10 @@ export default function PlanDetailPage() {
   const completedCount = plan.type === 'annual_checkup' && screeningEvidence?.progress
     ? screeningEvidence.progress.completed : plan.items?.filter(i => i.status === 'completed').length || 0
   const progress = plan.items?.length ? Math.round((completedCount / plan.items.length) * 100) : 0
+  const legacyCheckupCompletion = plan.type === 'annual_checkup' && plan.status === 'completed'
+  const checkupCompletionLabel = screeningEvidence?.progress
+    ? screeningEvidence.progress.ready ? '项目已全部核对' : '项目待核对（曾手动标记完成）'
+    : '项目核对状态加载中'
   const assistMeta = plan.type === 'medical_assist' ? getAssistTemplateMeta(plan.content?.templateName) : null
 
   // 按分类分组显示
@@ -526,11 +540,16 @@ export default function PlanDetailPage() {
           {canEdit && plan.status === 'active' && (
             <button className="btn btn-primary" onClick={handlePush}>📤 重新推送</button>
           )}
-          {canEdit && plan.status === 'active' && (
+          {canEdit && plan.status === 'active' && plan.type !== 'annual_checkup' && (
             <button className="btn btn-primary" style={{ background: '#22A06B', borderColor: '#22A06B' }} onClick={handleComplete}>✔️ 标记完成</button>
           )}
           {plan.status === 'completed' && (
-            <span style={{ fontSize: 12, color: '#22A06B', alignSelf: 'center', background: '#E8F5EF', border: '1px solid #22A06B', padding: '3px 10px', borderRadius: 6 }}>✔️ 服务已完成</span>
+            <span style={{ fontSize: 12, color: legacyCheckupCompletion && !screeningEvidence?.progress?.ready ? '#B45309' : '#22A06B', alignSelf: 'center', background: legacyCheckupCompletion && !screeningEvidence?.progress?.ready ? '#FFF8ED' : '#E8F5EF', border: '1px solid currentColor', padding: '3px 10px', borderRadius: 6 }}>
+              {legacyCheckupCompletion ? checkupCompletionLabel : '✔️ 服务已完成'}
+            </span>
+          )}
+          {canEdit && legacyCheckupCompletion && screeningEvidence?.progress && !screeningEvidence.progress.ready && (
+            <button className="btn btn-secondary" onClick={undoLegacyCheckupCompletion}>撤销旧完成标记</button>
           )}
           {canDelete && <button className="btn btn-secondary" onClick={handleDelete}>删除</button>}
         </div>
@@ -599,7 +618,7 @@ export default function PlanDetailPage() {
                 </div>
                 {plan.type === 'annual_checkup' && (
                   <div className="form-group" style={{ marginBottom: 12 }}>
-                    <label className="form-label">统一体检时间</label>
+                    <label className="form-label">统一体检日期（推送前必填，须与体检年度一致）</label>
                     <DateField className="form-input" type="date" value={editForm.checkupDate || ''}
                       onChange={e => setEditForm(f => ({ ...f, checkupDate: e.target.value }))} />
                   </div>
@@ -654,7 +673,7 @@ export default function PlanDetailPage() {
                 {[
                   ['会员', plan.patientId?.name + ' · ' + plan.patientId?.phone],
                   ['类型', TYPE_LABEL[plan.type]],
-                  ['状态', plan.confirmedAt ? '已确认' : STATUS_LABEL[plan.status]],
+                  ['状态', legacyCheckupCompletion ? checkupCompletionLabel : plan.confirmedAt ? '已确认' : STATUS_LABEL[plan.status]],
                   ['年度', plan.year + ' 年'],
                   ['制定人', plan.staffId?.name],
                   ...(plan.type === 'annual_checkup' ? [['体检时间', plan.checkupDate ? new Date(plan.checkupDate).toLocaleDateString('zh-CN') : '未设置']] : []),
@@ -701,6 +720,7 @@ export default function PlanDetailPage() {
               <div style={{ width: `${progress}%`, height: '100%', background: '#1E6B50', borderRadius: 4, transition: 'width 0.3s' }} />
             </div>
             <div style={{ fontSize: 14, color: '#666' }}>{completedCount} / {plan.items?.length || 0} 项已完成</div>
+            {plan.type === 'annual_checkup' && <p style={{ marginTop: 8, fontSize: 12, color: '#6B7F75' }}>项目关联已审核报告并全部核对后，工作台会自动显示为已完成。</p>}
             {plan.description && <p style={{ marginTop: 12, fontSize: 13, color: '#4A6558', lineHeight: 1.6 }}>{plan.description}</p>}
           </div>
         </div>
