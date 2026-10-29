@@ -7,6 +7,7 @@ import { useStaff } from '../App'
 import Pagination from './Pagination'
 import SupplyWorkflowModal from './SupplyWorkflowModal'
 import CheckupHandoffTodoModal from './CheckupHandoffTodoModal'
+import HealthRiskTodoModal from './HealthRiskTodoModal'
 
 const TYPE_CONFIG = {
   package_history_review: { icon: '🎫', label: '服务包历史次数待核对', color: '#B45309', priority: 2 },
@@ -98,6 +99,7 @@ export default function AiTodosPanel({ hideGeo = false }) {
   const [sort, setSort] = useState('priority')
   const [supplyTodo, setSupplyTodo] = useState(null)
   const [checkupTodo, setCheckupTodo] = useState(null)
+  const [healthRiskTodo, setHealthRiskTodo] = useState(null)
 
   const [chatBusy, setChatBusy] = useState(null)
   const handleChatFailure = async (e, todo, retry) => {
@@ -255,7 +257,7 @@ export default function AiTodosPanel({ hideGeo = false }) {
           return (
             <div
               key={todo.id}
-              onClick={() => ['checkup_handoff_attention', 'checkup_handoff_pending'].includes(todo.type) ? setCheckupTodo(todo) : SUPPLY_TYPES.has(todo.type) ? setSupplyTodo(todo) : nav(todo.link, { state: { sourceTodo: todo } })}
+              onClick={() => todo.type === 'risk_event_review' ? setHealthRiskTodo(todo) : ['checkup_handoff_attention', 'checkup_handoff_pending'].includes(todo.type) ? setCheckupTodo(todo) : SUPPLY_TYPES.has(todo.type) ? setSupplyTodo(todo) : nav(todo.link, { state: { sourceTodo: todo } })}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 12,
                 borderBottom: i < pageTodos.length - 1 ? '1px solid #f0ede8' : 'none',
@@ -308,7 +310,7 @@ export default function AiTodosPanel({ hideGeo = false }) {
                       style={{ fontSize: 11, color: '#8AA89C', background: 'none', border: '1px solid #8AA89C', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>已处理</button>
                   </div>
                 ) : todo.type === 'risk_event_review' ? (
-                  <button onClick={e => { e.stopPropagation(); nav(todo.link) }}
+                  <button onClick={e => { e.stopPropagation(); setHealthRiskTodo(todo) }}
                     style={{ fontSize: 11, color: '#B45309', background: 'none', border: '1px solid #B45309', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>核实并记录结果</button>
                 ) : todo.type === 'bp_alert_review' ? (
                   <button
@@ -355,6 +357,7 @@ export default function AiTodosPanel({ hideGeo = false }) {
       </div>
       {supplyTodo && <SupplyWorkflowModal todo={supplyTodo} onClose={() => setSupplyTodo(null)} onDone={(todoId) => { setTodos(ts => ts.filter(t => t.id !== todoId)); setSupplyTodo(null) }} />}
       {checkupTodo && <CheckupHandoffTodoModal todo={checkupTodo} staff={staff} onClose={() => { setCheckupTodo(null); refreshTodos({ silent: true }) }} />}
+      {healthRiskTodo && <HealthRiskTodoModal todo={healthRiskTodo} onClose={() => setHealthRiskTodo(null)} onViewSource={() => { nav(healthRiskTodo.link); setHealthRiskTodo(null) }} onDone={() => { setHealthRiskTodo(null); refreshTodos({ silent: true }) }} />}
     </div>
   )
 }
