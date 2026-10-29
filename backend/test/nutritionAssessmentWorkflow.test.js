@@ -137,13 +137,16 @@ test('nutrition assessment: paid order goes to planner, annual ad hoc goes to ad
   assert.equal(plannerView.status, 200)
   assert.equal(plannerView.body.data[0].assessment.summary, '饮食结构需要调整，建议逐步增加蔬菜和蛋白质')
   assert.deepEqual(plannerView.body.data[0].events.map(item => item.action), ['requested', 'booked', 'rescheduled', 'completed'])
-  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', reason: '年度管理期间临时需要营养评估' })).status, 409)
+  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', preferredAt: '2099-01-03T10:00:00Z', reason: '年度管理期间临时需要营养评估' })).status, 409)
   assert.equal((await call('planner', '/', { patientId: ids.patient, source: 'nutrition_management', reason: '年度管理期间临时需要营养评估' })).status, 403)
   annualActive = true
-  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', reason: '年度管理期间临时需要营养评估' })).status, 201)
+  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', reason: '年度管理期间临时需要营养评估' })).status, 400)
+  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', preferredAt: '2020-01-01T10:00:00Z', reason: '年度管理期间临时需要营养评估' })).status, 400)
+  assert.equal((await call('advisor', '/', { patientId: ids.patient, source: 'nutrition_management', preferredAt: '2099-01-03T10:00:00Z', reason: '年度管理期间临时需要营养评估' })).status, 201)
+  assert.equal(new Date(row.preferredAt).toISOString(), '2099-01-03T10:00:00.000Z')
   assert.equal(row.sourceOrderId, null)
   assert.equal(row.advisorId, ids.advisor)
-  const reassessment = { patientId: ids.patient, source: 'nutrition_plan', sourcePlanId: ids.plan, reason: '干预方案执行后需要复评' }
+  const reassessment = { patientId: ids.patient, source: 'nutrition_plan', sourcePlanId: ids.plan, preferredAt: '2099-01-04T10:00:00Z', reason: '干预方案执行后需要复评' }
   assert.equal((await call('advisor', '/', reassessment)).status, 409)
   planStatus = 'active'
   assert.equal((await call('advisor', '/', reassessment)).status, 201)
