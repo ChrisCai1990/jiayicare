@@ -46,6 +46,7 @@ import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
 import FollowUpModal from '../components/FollowUpModal'
+import MonitoringFollowUpFields, { isStaffMonitoringFollowUp, initialMonitoringMeasurement, monitoringSubmission } from '../components/MonitoringFollowUpFields'
 import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
 import AnnualNutritionTaskWorkspace from '../components/AnnualNutritionTaskWorkspace'
 import WeightProgressPhotos from '../components/WeightProgressPhotos'
@@ -2941,7 +2942,7 @@ export default function PatientDetailPage() {
           insuranceOutcome: f.formData?.insuranceOutcome || inferredInsuranceOutcome,
         }
       : (f.formData || {})
-    setExecForm({ type: f.type || 'phone', content: f.sourceType === 'insurance_service' ? (f.executedContent || '') : '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: ibdStage(f) ? ibdFormDataFromTask(f) : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : isCheckupManagerReviewTask(f) ? checkupManagerReviewFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    setExecForm({ type: f.type || 'phone', content: f.sourceType === 'insurance_service' ? (f.executedContent || '') : '', status: 'completed', monitoring: initialMonitoringMeasurement(), serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: ibdStage(f) ? ibdFormDataFromTask(f) : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : isCheckupManagerReviewTask(f) ? checkupManagerReviewFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f, f.formData) : emptyOutpatientAssessment(f.formData) })
   }
   const handleSaveInsuranceDraft = async () => {
     if (execItem?.sourceType !== 'insurance_service' || execItem.taskRole !== 'executor') return
@@ -2960,6 +2961,20 @@ export default function PatientDetailPage() {
     finally { setExecSaving(false) }
   }
   const handleExec = async () => {
+    if (isStaffMonitoringFollowUp(execItem) && execForm.status === 'completed') {
+      let payload
+      try { payload = monitoringSubmission(execItem, execForm) } catch (error) { toast(error.message); return }
+      setExecSaving(true)
+      try {
+        await staffAPI.completeMonitoringFollowUp(execItem._id, payload)
+        toast('监测数据已写入健康档案，本次随访已完成并生成下一次')
+        setExecItem(null)
+        loadFollowUps()
+        staffAPI.getPatientHealthRecords(id).then(result => setHealthRecords(result.data || [])).catch(() => {})
+      } catch (error) { toast(error.message || '保存监测随访失败') }
+      finally { setExecSaving(false) }
+      return
+    }
     if (medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) && execForm.formData?.bookingOutcome === 'customer_not_needed') {
       const note = execForm.formData.customerDeclineNote?.trim()
       if (!note) { toast('请记录客户暂不需要代配药的沟通情况'); return }
@@ -11937,6 +11952,7 @@ export default function PatientDetailPage() {
                   value={execForm.content}
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
               </div>}
+              <MonitoringFollowUpFields task={execItem} value={execForm.monitoring} onChange={monitoring => setExecForm(form => ({ ...form, monitoring }))} />
               {!ibdStage(execItem) && <FollowUpProgressFields item={execItem} form={execForm} setForm={setExecForm} />}
               {!execItem.taskRole && !canRecordProgress(execItem) && <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>{ibdStage(execItem) ? '本环节办理状态' : execItem.taskRole ? '事务状态' : '随访结果状态'}</label>

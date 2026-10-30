@@ -6,14 +6,14 @@ test('35岁及以上客户获得每周血压提醒和每周体重提醒', () => 
   const specs = buildMonitoringReminderSpecs({ age: 35, chronicDiseases: [] });
   const bp = specs.find(item => item.sourceKey === 'blood_pressure');
   const weight = specs.find(item => item.sourceKey === 'weight');
-  assert.deepEqual(bp.daysOfWeek, ['Mon']);
-  assert.deepEqual(weight.daysOfWeek, ['Mon']);
+  assert.equal(bp.rollingWeekly, true);
+  assert.equal(weight.rollingWeekly, true);
 });
 
 test('未加入年度管理的年轻客户也获得每周血压和体重基础提醒', () => {
   const specs = buildMonitoringReminderSpecs({ age: 24, chronicDiseases: [] });
-  assert.deepEqual(specs.find(item => item.sourceKey === 'blood_pressure').daysOfWeek, ['Mon']);
-  assert.deepEqual(specs.find(item => item.sourceKey === 'weight').daysOfWeek, ['Mon']);
+  assert.equal(specs.find(item => item.sourceKey === 'blood_pressure').rollingWeekly, true);
+  assert.equal(specs.find(item => item.sourceKey === 'weight').rollingWeekly, true);
 });
 
 test('高血压客户获得每周两次血压提醒，不受年龄限制', () => {
@@ -31,7 +31,7 @@ test('近30天出现140/90及以上读数时自动提升为每日血压提醒', 
 
 test('体重提醒覆盖所有年度管理客户，超重客户每周两次', () => {
   const normal = buildMonitoringReminderSpecs({ age: 20, height: 170, weight: 60 });
-  assert.deepEqual(normal.find(item => item.sourceKey === 'weight').daysOfWeek, ['Mon']);
+  assert.equal(normal.find(item => item.sourceKey === 'weight').rollingWeekly, true);
   const overweight = buildMonitoringReminderSpecs({ age: 20, height: 170, weight: 75 });
   assert.deepEqual(overweight.find(item => item.sourceKey === 'weight').daysOfWeek, ['Mon', 'Thu']);
 });
@@ -52,4 +52,10 @@ test('系统监测只在设定星期进入通知，不进入每日任务', () =>
   const reminder = { enabled: true, scheduleType: 'recurring', daysOfWeek: ['Fri'], startDate: '2026-09-01', endDate: '2026-12-31' };
   assert.equal(activeToday(reminder, new Date('2026-09-18T08:00:00')), true);
   assert.equal(activeToday(reminder, new Date('2026-09-19T08:00:00')), false);
+});
+
+test('单次周提醒到期后持续显示，直到该项目录入并顺延七天', () => {
+  const reminder = { enabled: true, rollingWeekly: true, nextDueDate: '2026-10-26T00:00:00+08:00' };
+  assert.equal(activeToday(reminder, new Date('2026-10-27T04:00:00Z')), true);
+  assert.equal(activeToday({ ...reminder, nextDueDate: '2026-11-04T00:00:00+08:00' }, new Date('2026-10-28T04:00:00Z')), false);
 });

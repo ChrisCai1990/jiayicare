@@ -1166,7 +1166,8 @@ router.get('/followup-tasks', auth, async (req, res) => {
       .populate({ path: 'followUpSchemeId', populate: { path: 'formId' } });
     const carePlans=await require('../utils/careFlowClientPlans').clientPlans(req.user);
     const arrangedFlows=new Set(carePlans.map(t=>t.careFlowId));
-    const data = followups.filter(f=>!f.careFlowId||!arrangedFlows.has(String(f.careFlowId))).map(followUp => ({
+    const data = followups.filter(f=>(!f.careFlowId||!arrangedFlows.has(String(f.careFlowId)))
+      && !require('../utils/staffOnlyFollowUp').isStaffOnlyFollowUp(f)).map(followUp => ({
       ...followUp.toObject(),
       taskRequirements: followUpTaskRequirements(followUp),
     })).sort((a, b) => {
@@ -1190,6 +1191,7 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id, clientVisible: { $ne: false } });
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
+    if (await require('../utils/staffOnlyFollowUp').isStaffOnlyFollowUpWithScheme(followup)) return res.status(404).json({ success: false, message: '随访任务不存在' });
     if (followup.formData?.autoEndedAt) return res.status(409).json({ success: false, message: '当天提醒已结束，执行情况未确认；请查看今天的提醒' });
     if (require('../../../shared/annualNutrition.cjs').isTask(followup)) return res.status(403).json({success:false,message:'营养评估由营养师提交结果、健康顾问审核后完成'});
     if (followup.formData?.healthDataPlan?.enabled || followup.workflowKey === 'medication:staff-followup') return res.status(403).json({ success: false, message: '该事项由健管专员持续跟进' });
@@ -1218,6 +1220,10 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     }
     const done = req.body.done !== false; // 默认 true，传 false 则取消
     const needFollowUp = req.body.needFollowUp === true;
+    if (done && !needFollowUp && followup.repeatWeekly
+      && (followup.checkInItems || []).some(item => ['bloodPressure', 'weight'].includes(item))) {
+      return res.status(409).json({ success: false, message: '请先记录相应的血压或体重，系统会按实际测量日期自动完成并安排下一次' });
+    }
     if (!done && followup.repeatWeekly && await FollowUp.exists({ _id: require('../utils/rollingWeeklyFollowUp').weeklySuccessorId(followup._id) })) {
       return res.status(409).json({ success: false, message: '下一次每周随访已生成，如需调整请联系健管专员' });
     }
@@ -1257,7 +1263,12 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     // document.save() 会重新校验整条旧记录，导致用户点击“完成”时报 validation failed。
     const updated = await FollowUp.findByIdAndUpdate(followup._id, { $set: changes }, { new: true });
     if (updated.status === 'completed' && updated.repeatWeekly) {
-      await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(updated);
+      const remainingItem = (updated.checkInItems || []).length === 1 && (updated.weeklyCompletedItems || []).length
+        ? updated.checkInItems[0] : '';
+      await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(updated, remainingItem);
+    }
+    if (updated.repeatWeekly && (updated.checkInItems || []).some(item => ['bloodPressure', 'weight'].includes(item))) {
+      require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(updated.patientId).catch(() => {});
     }
     if (done && !needFollowUp && followup.workflowKey === 'medical_reminder:followup') {
       await require('../utils/medicalReminderWorkflow').markVisitCompleted(updated);
@@ -1276,6 +1287,7 @@ router.post('/followup-tasks/:id/form', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id, clientVisible: { $ne: false } });
     if (!followup) return res.status(404).json({ success: false, message: '随访记录不存在' });
+    if (await require('../utils/staffOnlyFollowUp').isStaffOnlyFollowUpWithScheme(followup)) return res.status(404).json({ success: false, message: '随访记录不存在' });
     if (followup.sourceType === 'annual_service') return res.status(403).json({ message: '不能提交内部派单任务的表单' });
     if (['professional_assessment', 'report_followup'].includes(followup.sourceType) && ['executor', 'supervisor'].includes(followup.taskRole)) return res.status(403).json({ success: false, message: '不能提交医护内部任务的表单' });
     followup.formData = req.body.formData;

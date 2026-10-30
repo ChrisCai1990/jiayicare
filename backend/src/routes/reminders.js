@@ -7,6 +7,7 @@ const router = express.Router();
 // 判断某提醒今天是否激活
 function isActiveToday(r) {
   if (!r.enabled) return false;
+  if (r.sourceKey?.startsWith('service-cycle:')) return require('../utils/annualPlanMonitoringReminders').activeToday(r);
   if (r.sourceKey?.startsWith('health-data:')) return require('../utils/annualPlanMonitoringReminders').activeToday(r);
   if (r.sourceKey === 'medication:combined') return !!r.nextMedicationAt && require('../../../shared/medicationReminder.cjs').beijingDate(new Date(r.nextMedicationAt)) === require('../../../shared/medicationReminder.cjs').beijingDate();
   const today = new Date();

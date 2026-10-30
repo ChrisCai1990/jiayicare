@@ -38,11 +38,13 @@ const reminderSchema = new mongoose.Schema({
   lastMedicationAt: { type: Date, default: null },
   daysOfWeek:         [{ type: String }],                   // [] = 每天，['Mon','Wed',...] = 指定星期
   customEveryNDays:   { type: Number },                     // 每 N 天一次（与 daysOfWeek 互斥）
+  rollingWeekly: { type: Boolean, default: false },
+  nextDueDate: { type: Date, default: null },
   startDate:          { type: Date },                        // 开始日期（可选）
   endDate:            { type: Date },                        // 结束日期（可选，null=长期）
 
   streak: { type: Number, default: 0 },
-  // 年度方案自动生成的监测提醒。它只进入提醒列表，不生成聊天消息或随访任务。
+  // 年度方案及基础监测提醒。独立的每周随访任务存在时，暂停同项目的基础提醒。
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceKey:          { type: String, default: '' },
   systemManaged:      { type: Boolean, default: false },

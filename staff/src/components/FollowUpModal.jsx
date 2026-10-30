@@ -321,6 +321,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
 
   // ── 计划模式状态 ──
   const [planName, setPlanName] = useState('')
+  const [staffOnly, setStaffOnly] = useState(false)
   const [visitTypeForm, setVisitTypeForm] = useState(true)       // 表单随访
   const [visitTypeRevisit, setVisitTypeRevisit] = useState(false) // 复诊随访
   const [planFormId, setPlanFormId] = useState('')
@@ -335,7 +336,10 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [selectedSchemeId, setSelectedSchemeId] = useState('')
   const [schemeFormData, setSchemeFormData] = useState({}) // 预设内容（可编辑）
   const repeatWeekly = visitTypeForm && String(schemeFormData['监测频率'] || '').trim() === '每周1次'
+  const dailySchemeName = followupPlans.find(p => p._id === selectedSchemeId)?.name || ''
+  const isDailyFollowUp = [dailySchemeName, planName].some(name => /^【?日常跟进(?:与动态调整)?】?$/.test(String(name || '').trim()))
   const isAdHocMedicalReminder = followupPlans.find(p => p._id === selectedSchemeId)?.workflowStageKey === 'ad_hoc_medical_reminder'
+  const internalStaffOnly = !isAdHocMedicalReminder && (staffOnly || isDailyFollowUp)
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
@@ -430,7 +434,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     if (!visitTypeForm && !visitTypeRevisit) { setError('请至少选择一种随访类型'); return }
     const validRows = planRows.filter(r => r.daysAfter || r.date)
     if (validRows.length === 0) { setError('请至少填写一行随访时间'); return }
-    if (repeatWeekly && validRows.length !== 1) { setError('每周1次只需填写一条计划，完成后会自动生成下一条'); return }
+    if (repeatWeekly && validRows.length !== 1) { setError('每周1次只需填写一个首次测量日期，各项目完成后分别生成下一次'); return }
     if (isAdHocMedicalReminder && validRows.length !== 1) { setError('事项提醒只需一条任务，后续联系统一记录在本任务中'); return }
     const rowWithoutAssignee = validRows.find(r => !r.assignedTo)
     if (rowWithoutAssignee) { setError('每一条随访计划都必须选择随访人员'); return }
@@ -450,25 +454,28 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
         throw new Error('请为每一条随访计划填写具体事项或要求')
       }
 
-      await Promise.all(validRows.map(row => {
+      await Promise.all(validRows.flatMap(row => {
         const resolvedDate = row.date
           ? row.date
           : row.daysAfter ? addDays(parseInt(row.daysAfter, 10)) : today()
-        return staffAPI.createFollowUp({
+        const items = repeatWeekly && checkInItems.length > 1 ? checkInItems.map(item => [item]) : [checkInItems]
+        const labels = { bloodPressure: '血压', weight: '体重' }
+        return items.map(item => staffAPI.createFollowUp({
           patientId: pid,
           date: resolvedDate,
           type: planType,
           status: 'planned',
-          theme: planName,
+          theme: repeatWeekly && checkInItems.length > 1 ? `${planName} · ${labels[item[0]] || item[0]}` : planName,
           content: [revisitContent, row.notes].filter(Boolean).join('\n'),
           assignedTo: row.assignedTo || null,
+          clientVisible: !internalStaffOnly,
           formId: visitTypeForm ? (planFormId || null) : null,
           followUpSchemeId: selectedSchemeId || null,
           formData: isAdHocMedicalReminder ? { ...schemeFormData, reminderKind } : Object.keys(schemeFormData).length > 0 ? schemeFormData : null,
-          checkInItems: checkInItems.length > 0 ? checkInItems : undefined,
+          checkInItems: item.length > 0 ? item : undefined,
           repeatDaily: checkInItems.length > 0 && !repeatWeekly ? repeatDaily : false,
           repeatWeekly,
-        })
+        }))
       }))
       onSaved()
     } catch (err) {
@@ -658,6 +665,12 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                 placeholder="如：高血压月度随访"
               />
             </div>
+            {!isAdHocMedicalReminder && <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1E6B50', cursor: isDailyFollowUp ? 'default' : 'pointer' }}>
+              <input type="checkbox" checked={internalStaffOnly} disabled={isDailyFollowUp}
+                onChange={e => setStaffOnly(e.target.checked)} />
+              仅工作人员工作台跟进，不向客户展示任务
+            </label>}
+            {isDailyFollowUp && <div style={{ fontSize: 12, color: '#5F6B65' }}>“日常跟进”默认仅供健管专员执行；客户的自动健康监测提醒独立运行。</div>}
 
             {/* 联系方式 */}
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -700,7 +713,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
             {/* 复诊随访详情（仅复诊随访显示） */}
             {visitTypeRevisit && (
               <div style={{ background: '#FFF5F5', border: '1px solid #FECACA', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', marginBottom: 2 }}>🔴 {isAdHocMedicalReminder ? '提醒详情（会员可见）' : '复查详情（会员可见）'}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', marginBottom: 2 }}>🔴 {internalStaffOnly ? '内部跟进详情' : isAdHocMedicalReminder ? '提醒详情（会员可见）' : '复查详情（会员可见）'}</div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label" style={{ fontSize: 12 }}>{isAdHocMedicalReminder ? '提醒原因 *' : '复查原因'}</label>
                   <input className="form-input" placeholder={isAdHocMedicalReminder ? '请写明本次需要提醒客户办理什么' : '如：CA125升高，需复查排除异常'} value={revisitReason} onChange={e => setRevisitReason(e.target.value)} />
@@ -764,7 +777,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               {checkInItems.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 11, color: '#1E6B50' }}>
-                    已选 {checkInItems.length} 项，将出现在会员首页今日记录
+                    已选 {checkInItems.length} 项，{internalStaffOnly ? '仅供工作人员跟进参考' : '将出现在会员首页今日记录'}
                   </div>
                   {!repeatWeekly && <RepeatDailyToggle value={repeatDaily} onChange={setRepeatDaily} />}
                 </div>
@@ -957,11 +970,11 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                   {/* 计划说明（会员可见） */}
                   <input
                     className="form-input"
-                    placeholder="计划说明（用户可见）"
+                    placeholder={internalStaffOnly ? '内部跟进事项' : '计划说明（用户可见）'}
                     value={row.notes}
                     onChange={e => updateRow(row.id, 'notes', e.target.value)}
                     style={{ fontSize: 13, flex: 1, minWidth: 0, borderColor: '#1E6B50' }}
-                    title="此内容会显示给用户，请填写本次随访的目的或说明"
+                    title={internalStaffOnly ? '仅工作人员可见，请填写具体跟进事项' : '此内容会显示给用户，请填写本次随访的目的或说明'}
                   />
 
                   {/* ± 按钮 */}
@@ -982,7 +995,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
 
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
                 💡 填天数将从今天起计算随访日期；或直接选择具体日期，两者互斥
-                {repeatWeekly && <div>每周1次只创建一条待随访计划；完成本条后，按完成日期顺延7天生成下一条。</div>}
+                {repeatWeekly && <div>{internalStaffOnly ? '每个项目各建一条内部任务；专员完成哪项，哪项从完成日期顺延7天。' : '每个记录项目各创建一条待随访计划；哪项完成，哪项从实际测量日期顺延7天。未记录的项目保留在当前周期。'}</div>}
               </div>
             </div>
           </div>

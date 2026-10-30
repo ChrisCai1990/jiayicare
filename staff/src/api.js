@@ -192,6 +192,7 @@ export const staffAPI = {
   getPatientFollowUps: (id, p={})=> req(`/staff/patients/${id}/followups?` + qs(p)),
   createFollowUp:      (data)   => req('/staff/followups', { method: 'POST', body: JSON.stringify(data) }),
   updateFollowUp:      (id, d)  => req(`/staff/followups/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  completeMonitoringFollowUp: (id, d) => req(`/staff/followups/${id}/monitoring-result`, { method: 'POST', body: JSON.stringify(d) }),
   getDecisionReferralTask: id => req(`/staff/decision-referral/tasks/${id}`),
   getDecisionReferralCoordinators: () => req('/staff/decision-referral/coordinators'),
   advanceDecisionReferral: (id, data) => req(`/staff/decision-referral/tasks/${id}/advance`, { method: 'POST', body: JSON.stringify(data) }),
