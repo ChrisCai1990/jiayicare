@@ -9,6 +9,21 @@ const DEFAULT_POLICY = Object.freeze({
   dailyCalls: 2000, failureThreshold: 8, warningPercent: 80,
   dailyYuan: 0, monthlyYuan: 0, prices: {},
 });
+const TENANT_LIMIT_KEYS = Object.freeze(['dailyTokens', 'monthlyTokens', 'ocrDailyTokens', 'otherDailyTokens', 'dailyCalls', 'dailyYuan', 'monthlyYuan']);
+const DEFAULT_TENANT_POLICY = Object.freeze(Object.fromEntries(TENANT_LIMIT_KEYS.map(key => [key, DEFAULT_POLICY[key]])));
+
+function validateTenantPolicy(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      Object.keys(input).some(key => !TENANT_LIMIT_KEYS.includes(key))) throw new Error('机构额度格式无效');
+  const policy = {};
+  for (const key of TENANT_LIMIT_KEYS) {
+    const value = input[key];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < (key.endsWith('Yuan') ? 0 : 1) ||
+        value > 1000000000 || (!key.endsWith('Yuan') && !Number.isSafeInteger(value))) throw new Error(`${key} 必须为有效额度`);
+    policy[key] = value;
+  }
+  return policy;
+}
 
 class AiControlError extends Error {
   constructor(message, code = 'AI_BUDGET_PAUSED') { super(message); this.code = code; this.aiControl = true; }
@@ -77,6 +92,16 @@ function budgetScopes(policy, context, now) {
   }
   return scopes;
 }
+function tenantBudgetScopes(policy, context, now) {
+  if (!/^[a-f\d]{24}$/i.test(String(context.tenantId || ''))) return [];
+  const tenantId = String(context.tenantId).toLowerCase();
+  const { day, month } = periodKeys(now);
+  return [
+    { id: `tenant:${tenantId}:day:${day}`, label: '本机构今日额度', tokens: policy.dailyTokens, calls: policy.dailyCalls, micros: Math.round(policy.dailyYuan * 1000000) || null },
+    { id: `tenant:${tenantId}:month:${month}`, label: '本机构本月额度', tokens: policy.monthlyTokens, micros: Math.round(policy.monthlyYuan * 1000000) || null },
+    { id: `tenant:${tenantId}:${context.business === 'ocr' ? 'ocr' : 'other'}:${day}`, label: context.business === 'ocr' ? '本机构 OCR 今日额度' : '本机构其他 AI 今日额度', tokens: context.business === 'ocr' ? policy.ocrDailyTokens : policy.otherDailyTokens },
+  ];
+}
 function budgetRefusalReason(scope, counter = {}, tokens = 0, micros = 0, calls = 1) {
   const usedCalls = Number(counter.calls || 0), callLimit = Number(scope.calls || 0) + Number(counter.extraCalls || 0);
   if (scope.calls && usedCalls + calls > callLimit) return `${scope.label}调用次数不足（已用 ${usedCalls}/${callLimit} 次，本次需要 ${calls} 次），请管理员追加该范围的调用次数后继续`;
@@ -85,4 +110,4 @@ function budgetRefusalReason(scope, counter = {}, tokens = 0, micros = 0, calls 
   if (scope.micros && Number(counter.micros || 0) + micros > scope.micros) return `${scope.label}金额不足，请管理员调整金额额度后继续`;
   return '';
 }
-module.exports = { DEFAULT_POLICY, AiControlError, isAiControlError, rethrowAiControl, periodKeys, validatePolicy, estimateTokens, actualUsage, costMicros, budgetScopes, budgetRefusalReason };
+module.exports = { DEFAULT_POLICY, DEFAULT_TENANT_POLICY, TENANT_LIMIT_KEYS, AiControlError, isAiControlError, rethrowAiControl, periodKeys, validatePolicy, validateTenantPolicy, estimateTokens, actualUsage, costMicros, budgetScopes, tenantBudgetScopes, budgetRefusalReason };

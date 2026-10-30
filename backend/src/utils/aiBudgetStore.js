@@ -24,6 +24,7 @@ async function prepareUsageIndexes() {
 const store = {
   async counter(id) { return (await collection('ai_budget_counters').findOne({ _id: id })) || {}; },
   async policy() { return { ...DEFAULT_POLICY, ...(await collection('ai_control').findOne({ _id: 'policy' })) }; },
+  async tenantPolicy(tenantId) { return collection('ai_control').findOne({ _id: `tenant:${String(tenantId).toLowerCase()}` }); },
   async reserve(scope, tokens, micros) {
     await ensure('ai_budget_counters', scope.id, { tokens: 0, calls: 0, micros: 0, extraTokens: 0, extraCalls: 0 });
     const checks = [{ $lte: [{ $add: ['$tokens', tokens] }, { $add: [scope.tokens, '$extraTokens'] }] }];

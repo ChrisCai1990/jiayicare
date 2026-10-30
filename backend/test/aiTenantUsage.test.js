@@ -8,7 +8,7 @@ test('institution AI usage separates tenants and keeps unattributed calls visibl
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/aiControl.js'), 'utf8');
   const prefix = source.slice(0, source.indexOf('router.use(adminAuth,'));
   const handlers = new Map();
-  const router = { get: (route, ...parts) => handlers.set(route, parts.at(-1)) };
+  const router = { get: (route, ...parts) => handlers.set(route, parts.at(-1)), put: (route, ...parts) => handlers.set(`PUT ${route}`, parts.at(-1)) };
   const own = '111111111111111111111111', other = '222222222222222222222222';
   const tenants = [
     { _id: own, name: '机构甲', code: 'a', status: 'active' },

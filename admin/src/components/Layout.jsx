@@ -49,7 +49,7 @@ const NAV_SECTIONS = [
       { label: '临床标准管理', icon: 'medical', path: '/clinical-standards', superadminOnly: true },
       { label: 'AI 每日关怀', icon: 'care', path: '/settings/daily-care' },
       { label: '健康助手配置', icon: 'settings', path: '/settings/health-assistant' },
-      { label: '本机构 AI 用量', icon: 'chart', path: '/settings/ai-usage', superadminOnly: true },
+      { label: '本机构 AI 额度与用量', icon: 'chart', path: '/settings/ai-usage', superadminOnly: true },
       { label: '平台合作协议', icon: 'form', path: '/agreements', superadminOnly: true },
       { label: '本机构套餐', icon: 'money', path: '/saas-plan', superadminOnly: true },
       { label: '服务流程管理', icon: 'settings', path: '/settings/supply-workflow' },

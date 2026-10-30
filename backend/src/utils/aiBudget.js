@@ -1,7 +1,7 @@
 const { AsyncLocalStorage } = require('async_hooks');
 const { randomUUID } = require('crypto');
 const { store } = require('./aiBudgetStore');
-const { AiControlError, isAiControlError, estimateTokens, actualUsage, costMicros, budgetScopes, budgetRefusalReason } = require('./aiBudgetPolicy');
+const { AiControlError, isAiControlError, estimateTokens, actualUsage, costMicros, budgetScopes, tenantBudgetScopes, budgetRefusalReason } = require('./aiBudgetPolicy');
 const contextStorage = new AsyncLocalStorage();
 function withAiContext(context, fn) { return contextStorage.run({ ...contextStorage.getStore(), ...context }, fn); }
 
@@ -34,7 +34,9 @@ function createBudgetRunner(db = store, now = () => new Date()) {
       rate = policy.prices?.[model];
       if ((policy.dailyYuan || policy.monthlyYuan) && !rate) throw new AiControlError(`模型 ${model} 未配置单价，金额预算启用后禁止调用`);
       estimatedMicros = costMicros(estimate, rate);
-      for (const scope of budgetScopes(policy, ctx, started)) {
+      const tenantPolicy = ctx.tenantId && db.tenantPolicy ? await db.tenantPolicy(ctx.tenantId) : null;
+      if (tenantPolicy && (tenantPolicy.dailyYuan || tenantPolicy.monthlyYuan) && !rate) throw new AiControlError(`模型 ${model} 未配置单价，金额预算启用后禁止调用`);
+      for (const scope of [...budgetScopes(policy, ctx, started), ...(tenantPolicy ? tenantBudgetScopes(tenantPolicy, ctx, started) : [])]) {
         if (!await db.reserve(scope, estimate.total, estimatedMicros || 0)) {
           const reason = db.counter ? budgetRefusalReason(scope, await db.counter(scope.id), estimate.total, estimatedMicros || 0) : '';
           throw new AiControlError(reason || `${scope.label}不足，已暂停。请管理员调整额度后继续`, scope.id.startsWith('page:') ? 'AI_PAGE_BUDGET_PAUSED' : 'AI_BUDGET_PAUSED');
@@ -119,7 +121,8 @@ const controlledCall = createConsentCheckedCall(createBudgetRunner());
 // Per-call atomic reservations remain authoritative; this does not grant or reset any quota.
 async function assertSupplementCallCapacity(context, db = store, requiredCalls = 3) {
   const policy = await db.policy();
-  for (const scope of budgetScopes(policy, { ...context, business: 'ocr' }, new Date())) {
+  const tenantPolicy = context.tenantId && db.tenantPolicy ? await db.tenantPolicy(context.tenantId) : null;
+  for (const scope of [...budgetScopes(policy, { ...context, business: 'ocr' }, new Date()), ...(tenantPolicy ? tenantBudgetScopes(tenantPolicy, { ...context, business: 'ocr' }, new Date()) : [])]) {
     if (!scope.calls) continue;
     const reason = budgetRefusalReason(scope, await db.counter(scope.id), 0, 0, requiredCalls);
     if (reason) throw new AiControlError(reason, scope.id.startsWith('page:') ? 'AI_PAGE_BUDGET_PAUSED' : 'AI_BUDGET_PAUSED');

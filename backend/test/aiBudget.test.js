@@ -1,6 +1,48 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { DEFAULT_POLICY, validatePolicy, periodKeys, estimateTokens, actualUsage, budgetScopes } = require('../src/utils/aiBudgetPolicy');
+const { DEFAULT_POLICY, DEFAULT_TENANT_POLICY, validatePolicy, validateTenantPolicy, periodKeys, estimateTokens, actualUsage, budgetScopes, tenantBudgetScopes } = require('../src/utils/aiBudgetPolicy');
+
+test('institution limits are isolated and accept only their own quota fields', () => {
+  const own = '111111111111111111111111', other = '222222222222222222222222';
+  assert.deepEqual(validateTenantPolicy(DEFAULT_TENANT_POLICY), DEFAULT_TENANT_POLICY);
+  assert.throws(() => validateTenantPolicy({ ...DEFAULT_TENANT_POLICY, prices: {} }));
+  assert.throws(() => validateTenantPolicy({ ...DEFAULT_TENANT_POLICY, dailyCalls: 0 }));
+  const first = tenantBudgetScopes(DEFAULT_TENANT_POLICY, { tenantId: own, business: 'ocr' }, new Date('2026-10-30T01:00:00Z'));
+  const second = tenantBudgetScopes(DEFAULT_TENANT_POLICY, { tenantId: other, business: 'ocr' }, new Date('2026-10-30T01:00:00Z'));
+  assert.equal(first.length, 3);
+  assert.ok(first.every(scope => scope.id.startsWith(`tenant:${own}:`)));
+  assert.ok(second.every(scope => scope.id.startsWith(`tenant:${other}:`)));
+  assert.deepEqual(tenantBudgetScopes(DEFAULT_TENANT_POLICY, { business: 'ocr' }, new Date()), []);
+});
+
+test('institution call ceiling stops the provider before send without spending another institution quota', async () => {
+  const own = '111111111111111111111111', other = '222222222222222222222222';
+  const counts = new Map();
+  const db = {
+    policy: async () => DEFAULT_POLICY,
+    tenantPolicy: async () => ({ ...DEFAULT_TENANT_POLICY, dailyCalls: 1 }),
+    circuit: async () => null,
+    reserve: async scope => {
+      const count = counts.get(scope.id) || 0;
+      if (scope.calls && count >= scope.calls) return false;
+      counts.set(scope.id, count + 1);
+      return true;
+    },
+    counter: async id => ({ calls: counts.get(id) || 0 }),
+    adjust: async (id, _tokens, _micros, calls) => { if (calls) counts.set(id, (counts.get(id) || 0) + calls); },
+    insert: async () => {}, outcome: async () => {}, finish: async () => {},
+  };
+  const run = createBudgetRunner(db, () => new Date('2026-10-30T01:00:00Z'));
+  let sent = 0;
+  const call = tenantId => run({ provider: 'test', model: 'qwen-plus', messages: [{ content: 'synthetic' }], maxTokens: 10, context: { tenantId } }, async () => {
+    sent++;
+    return { choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } };
+  });
+  await call(own);
+  await assert.rejects(call(own), /本机构今日额度/);
+  await call(other);
+  assert.equal(sent, 2);
+});
 const { createBudgetRunner, withAiContext } = require('../src/utils/aiBudget');
 
 test('provider error code is retained without copying a sensitive message', async () => {

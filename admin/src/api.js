@@ -127,6 +127,8 @@ export const adminAPI = {
   reviewCareQuality: (id,data) => req(`/care-quality/${id}/review`,{method:'POST',body:JSON.stringify(data)}),
   getAiControl: (params = {}) => req(`/ai-control?${new URLSearchParams(params)}`),
   getAiTenantUsage: () => req('/ai-control/tenant-usage'),
+  getAiTenantPolicy: () => req('/ai-control/tenant-policy'),
+  saveAiTenantPolicy: (policy, revision) => req('/ai-control/tenant-policy', { method: 'PUT', body: JSON.stringify({ policy, revision }) }),
   searchAiReports: (q) => req(`/ai-control/reports?${new URLSearchParams({ q })}`),
   getAiUsage: (params = {}) => req(`/ai-control/usage?${new URLSearchParams(params)}`),
   saveAiPolicy: (policy, revision) => req('/ai-control/policy', { method: 'PUT', body: JSON.stringify({ policy, revision }) }),

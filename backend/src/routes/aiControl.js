@@ -3,7 +3,7 @@ const { randomUUID } = require('crypto');
 const { ObjectId } = require('mongoose').Types;
 const adminAuth = require('../middleware/adminAuth');
 const { collection, ensure, store } = require('../utils/aiBudgetStore');
-const { DEFAULT_POLICY, validatePolicy, periodKeys } = require('../utils/aiBudgetPolicy');
+const { DEFAULT_POLICY, DEFAULT_TENANT_POLICY, validatePolicy, validateTenantPolicy, periodKeys } = require('../utils/aiBudgetPolicy');
 
 function canManageAi(admin) {
   // Shared supplier keys and total budgets belong to the platform operator.
@@ -49,6 +49,34 @@ router.get('/tenant-usage', adminAuth, async (req, res) => {
     for (const field of fields) target[field] += Number(aggregate[field] || 0);
   }
   res.json({ success: true, data: { day, month, rows, ...(platform ? { unattributed } : {}) } });
+});
+router.get('/tenant-policy', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅机构超管可管理本机构额度' });
+  const tenantId = String(req.admin.tenantId).toLowerCase();
+  const { day, month } = periodKeys();
+  const ids = [`tenant:${tenantId}:day:${day}`, `tenant:${tenantId}:month:${month}`, `tenant:${tenantId}:ocr:${day}`, `tenant:${tenantId}:other:${day}`];
+  const [saved, counters] = await Promise.all([
+    store.tenantPolicy(tenantId),
+    collection('ai_budget_counters').find({ _id: { $in: ids } }, { projection: { _id: 1, tokens: 1, calls: 1, micros: 1 } }).toArray(),
+  ]);
+  res.json({ success: true, data: { policy: saved ? { ...DEFAULT_TENANT_POLICY, ...saved } : null, defaults: DEFAULT_TENANT_POLICY, counters, day, month } });
+});
+router.put('/tenant-policy', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅机构超管可管理本机构额度' });
+  let policy;
+  try { policy = validateTenantPolicy(req.body.policy); }
+  catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+  if (!Number.isSafeInteger(req.body.revision) || req.body.revision < 0) return res.status(400).json({ success: false, message: '配置版本无效' });
+  const tenantId = String(req.admin.tenantId).toLowerCase();
+  const key = `tenant:${tenantId}`;
+  await ensure('ai_control', key, { ...DEFAULT_TENANT_POLICY, revision: 0, tenantId });
+  const previous = await store.tenantPolicy(tenantId);
+  const auditId = randomUUID();
+  await collection('ai_control_audit').insertOne({ _id: auditId, action: 'tenant_policy', status: 'pending', at: new Date(), actorId: String(req.admin._id), tenantId, before: previous, after: policy });
+  const result = await collection('ai_control').updateOne({ _id: key, revision: req.body.revision }, { $set: { ...policy, updatedAt: new Date(), updatedBy: String(req.admin._id) }, $inc: { revision: 1 } });
+  await collection('ai_control_audit').updateOne({ _id: auditId }, { $set: { status: result.modifiedCount ? 'applied' : 'conflict' } });
+  if (!result.modifiedCount) return res.status(409).json({ success: false, message: '机构额度已被其他管理员更新，请刷新后重试' });
+  res.json({ success: true, data: await store.tenantPolicy(tenantId) });
 });
 router.use(adminAuth, (req, res, next) => canManageAi(req.admin) ? next() : res.status(403).json({ success: false, message: '仅平台管理员可管理 AI 总预算' }));
 
