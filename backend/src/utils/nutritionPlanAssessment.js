@@ -3,7 +3,7 @@ const { isUsableFoodAllergy } = require('../../../shared/foodAllergy.cjs');
 const { FIXED_METRICS, canonicalMetric } = require('../../../shared/nutritionTargets.cjs');
 const { validateNutritionEnergy } = require('../../../shared/nutritionEnergy.cjs');
 
-function prepareNutritionAssessment(input = {}, user = {}, { requireTemplate = true, allowSpecialist = false } = {}) {
+function prepareNutritionAssessment(input = {}, user = {}) {
   const targetInput = input.nutritionTargets === undefined
     ? [{ metric: input.metric, baseline: input.baseline, target: input.target }]
     : input.nutritionTargets;
@@ -75,8 +75,8 @@ function prepareNutritionAssessment(input = {}, user = {}, { requireTemplate = t
   if (assessment.allergyStatus === 'confirmed_present' && !assessment.allergyDetails) missing.push('食物过敏详情');
   if (assessment.allergyStatus === 'confirmed_present' && assessment.allergyDetails && !isUsableFoodAllergy(assessment.allergyDetails)) missing.push('具体过敏食物及反应，不能填写无过敏');
   if (!['standard', 'specialist'].includes(assessment.riskStatus)) missing.push('专业风险分流结果');
-  if (assessment.riskStatus === 'specialist' && !allowSpecialist) missing.push('需专业评估的客户不能自动生成个体化餐单');
-  if (requireTemplate && !assessment.templateCompatibilityConfirmed) missing.push('模板适用性及过敏禁忌核对');
+  if (assessment.riskStatus === 'specialist') missing.push('需专业评估的客户不能自动生成个体化餐单');
+  if (!assessment.templateCompatibilityConfirmed) missing.push('模板适用性及过敏禁忌核对');
   const date = assessment.reviewDate;
   const parsed = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00+08:00`) : null;
   if (!parsed || !Number.isFinite(parsed.getTime()) || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed) !== date || date < new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())) missing.push('有效的未来阶段复盘日期');

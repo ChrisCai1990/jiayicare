@@ -39,6 +39,9 @@ const wrap = fn => async (req, res) => {
   }
 };
 
+router.get('/:id/lifestyle-interview', staffAuth, require('../utils/requestLifestyleInterview').handle);
+router.post('/:id/lifestyle-interview', staffAuth, require('../utils/requestLifestyleInterview').handle);
+
 router.get('/config', staffAuth, wrap(async (req, res) => {
   const row = await Config.findOne({ tenantId: req.staff.tenantId }).lean();
   res.json({ success: true, data: row || { enabled: false, requestTitle: '营养评估需求单', requestInstructions: '请说明评估原因及重点关注问题', bookingInstructions: '与客户确认日期、具体时间及线上腾讯会议室或线下门店', assessmentInstructions: '形成评估结论及后续建议', onlineEnabled: true, offlineEnabled: true } });
@@ -190,19 +193,10 @@ router.post('/:id/complete', staffAuth, wrap(async (req, res) => {
     const order = await Order.findById(row.sourceOrderId).lean();
     if (!isAvailableNutritionAssessmentOrder(order)) return bad(res, 409, '关联订单已退款、取消或核销，请先核对订单');
   }
-  const patient = req.body?.nutritionAssessment
-    ? await User.findOne({ _id: row.patientId, tenantId: row.tenantId, isDeleted: { $ne: true } })
-      .select('age gender height weight lifestyle_data healthProfile').lean() : null;
-  if (req.body?.nutritionAssessment && !patient) return bad(res, 404, '会员资料未找到');
-  let structured = null;
-  if (patient) {
-    try { structured = require('../utils/assignedNutritionAssessment').prepareAssignedNutritionAssessment(req.body, patient); }
-    catch (error) { return bad(res, error.statusCode || 500, error.message); }
-  }
-  const summary = structured?.summary || clean(req.body?.summary, 10000), recommendations = structured?.recommendations || clean(req.body?.recommendations, 10000);
+  const summary = clean(req.body?.summary, 10000), recommendations = clean(req.body?.recommendations, 10000);
   if (summary.length < 10 || recommendations.length < 5) return bad(res, 400, '请填写评估结论和后续建议');
   const updated = await Request.findOneAndUpdate({ _id: row._id, status: 'booked' },
-    { $set: { status: 'completed', assessment: { summary, recommendations, details: structured?.details || null, completedAt: new Date() } },
+    { $set: { status: 'completed', assessment: { summary, recommendations, completedAt: new Date() } },
       $push: { events: event(req.staff, 'completed', summary.slice(0, 200)) } }, { new: true });
   if (!updated) return bad(res, 409, '需求单已被其他人更新，请刷新');
   if (updated.sourceOrderId) {

@@ -37,6 +37,7 @@ const schema = new mongoose.Schema({
     details: { type: mongoose.Schema.Types.Mixed, default: null },
     completedAt: Date,
   },
+  formData: { type: mongoose.Schema.Types.Mixed, default: null },
   events: { type: [eventSchema], default: [] },
 }, { timestamps: true });
 

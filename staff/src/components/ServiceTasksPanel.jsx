@@ -250,7 +250,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
       return
     }
     if (annualNutrition.isTask(task) && task.workflowKey === 'annual_nutrition_assessment' && ['nutritionist', 'superadmin'].includes(staff?.role)) {
-      nav(`/patients/${task.patientId?._id || task.patientId}?tab=plans&serviceView=nutrition&annualTaskId=${task._id}`)
+      nav(`/patients/${task.patientId?._id || task.patientId}?tab=records&recordView=lifestyle&annualTaskId=${task._id}`)
       return
     }
     nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })

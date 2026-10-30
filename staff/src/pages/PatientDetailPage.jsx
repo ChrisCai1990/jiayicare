@@ -48,7 +48,6 @@ import PatientInventoryConsumption from '../components/PatientInventoryConsumpti
 import FollowUpModal from '../components/FollowUpModal'
 import MonitoringFollowUpFields, { isStaffMonitoringFollowUp, initialMonitoringMeasurement, monitoringSubmission } from '../components/MonitoringFollowUpFields'
 import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
-import AnnualNutritionTaskWorkspace from '../components/AnnualNutritionTaskWorkspace'
 import WeightProgressPhotos from '../components/WeightProgressPhotos'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
@@ -2165,7 +2164,13 @@ export default function PatientDetailPage() {
   const initialTab = new URLSearchParams(location.search).has('healthRecordId') && requestedTab === 'portrait' ? 'symptoms' : ['monitoring', 'archive'].includes(requestedTab) ? 'records' : requestedTab
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
   const openSpecialtyReview = topicId => { setTab('aiCase'); nav(`/patients/${id}?tab=aiCase&caseReviewId=${topicId}`) }
-  const [healthBaseView, setHealthBaseView] = useState(requestedTab === 'monitoring' ? 'monitoring' : 'profile')
+  const [healthBaseView, setHealthBaseView] = useState(new URLSearchParams(location.search).get('recordView') === 'lifestyle' ? 'lifestyle' : requestedTab === 'monitoring' ? 'monitoring' : 'profile')
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('recordView') === 'lifestyle' && requestedTab === 'records') {
+      setTab('records')
+      setHealthBaseView('lifestyle')
+    }
+  }, [location.search, requestedTab])
   const [screeningWorkspaceView, setScreeningWorkspaceView] = useState('screening')
   const [lifestyleDetailsOpen, setLifestyleDetailsOpen] = useState(false)
   const archiveSectionsRef = useRef(null)
@@ -2889,8 +2894,8 @@ export default function PatientDetailPage() {
         if (cancelled) return
         const target = res.data?.followUps?.[0]
         if (target?.workflowKey === 'annual_nutrition_assessment' && target.sourceAnnualPlanId && ['nutritionist', 'superadmin'].includes(staff?.role)) {
-          setTab('plans'); setServiceManagementView('nutrition')
-          nav(`/patients/${id}?tab=plans&serviceView=nutrition&annualTaskId=${target._id}`, { replace: true })
+          setTab('records'); setHealthBaseView('lifestyle')
+          nav(`/patients/${id}?tab=records&recordView=lifestyle&annualTaskId=${target._id}`, { replace: true })
           return
         }
         if (ibdStage(target) && ['planned', 'in_progress', 'missed'].includes(target.status)) openExec(target)
@@ -2906,8 +2911,8 @@ export default function PatientDetailPage() {
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
     if (f.workflowKey === 'annual_nutrition_assessment' && f.sourceAnnualPlanId && ['nutritionist', 'superadmin'].includes(staff?.role)) {
-      setTab('plans'); setServiceManagementView('nutrition')
-      nav(`/patients/${id}?tab=plans&serviceView=nutrition&annualTaskId=${f._id}`)
+      setTab('records'); setHealthBaseView('lifestyle')
+      nav(`/patients/${id}?tab=records&recordView=lifestyle&annualTaskId=${f._id}`)
       return
     }
     if (annualNutrition.isTask(f)) { setFollowUpDetail(f); return }
@@ -3611,8 +3616,8 @@ export default function PatientDetailPage() {
     if (tab === 'followups' && location.state?.openFollowUp) {
       const f = location.state.openFollowUp
       if (f.workflowKey === 'annual_nutrition_assessment' && f.sourceAnnualPlanId && ['nutritionist', 'superadmin'].includes(staff?.role)) {
-        setTab('plans'); setServiceManagementView('nutrition')
-        nav(`/patients/${id}?tab=plans&serviceView=nutrition&annualTaskId=${f._id}`, { replace: true, state: {} })
+        setTab('records'); setHealthBaseView('lifestyle')
+        nav(`/patients/${id}?tab=records&recordView=lifestyle&annualTaskId=${f._id}`, { replace: true, state: {} })
         return
       }
       if (isCheckupAdvisorReviewTask(f)) {
@@ -6191,6 +6196,12 @@ export default function PatientDetailPage() {
 
         {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，健康数据记录在下方 */}
         {tab === 'records' && healthBaseView === 'lifestyle' && <>
+          {['nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel patientId={id} embedded hideWhenEmpty lifestyleMode />}
+          {(() => {
+            const selectedId = new URLSearchParams(location.search).get('annualTaskId')
+            const task = selectedId && followUps.find(item => String(item._id) === selectedId && annualNutrition.isTask(item))
+            return task && ['nutritionist', 'superadmin'].includes(staff?.role) ? <div className="card" style={{ padding: 16 }}><AnnualNutritionAssessmentForm key={`${task._id}:${task.updatedAt}`} task={task} staff={staff} onSaved={updated => { setFollowUps(current => current.map(item => item._id === updated._id ? updated : item)); loadFollowUps(); load(); toast(updated.status === 'completed' ? '已写入生活方式档案并完成评估' : '访谈草稿已保存') }} /></div> : null
+          })()}
         {(() => {
           const ld = editingLifestyle ? (lifestyleForm.lifestyle_data || {}) : (user.lifestyle_data || {})
           const setLd = (patch) => setLifestyleForm(p => ({ ...p, lifestyle_data: { ...(p.lifestyle_data || {}), ...patch } }))
@@ -6214,7 +6225,7 @@ export default function PatientDetailPage() {
                 <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天健康数据记录形成变化分析，营养师可在工作台审核</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
-                      {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>f.workflowKey === 'annual_nutrition_assessment' && ['nutritionist', 'superadmin'].includes(staff?.role) ? openExec(f) : setFollowUpDetail(f)}>{f.workflowKey === 'annual_nutrition_assessment' && ['nutritionist', 'superadmin'].includes(staff?.role) ? '年度营养评估' : '生活方式访谈'} · {f.status==='completed'?'查看记录':'开始办理'}</button>)}
+                      {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>['nutritionist', 'superadmin'].includes(staff?.role) && f.workflowKey === 'annual_nutrition_assessment' ? openExec(f) : setFollowUpDetail(f)}>生活方式访谈 · {f.status==='completed'?'查看记录':'代填 / 核实问卷'}</button>)}
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
                       <button className="btn btn-secondary btn-sm" disabled={lifestyleAiGenerating} onClick={handleGenerateLifestyleDraft}>{lifestyleAiGenerating ? 'AI整理中…' : 'AI整理健康数据变化'}</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setLifestyleDetailsOpen(v => !v)}>{lifestyleDetailsOpen ? '收起详细档案' : '展开详细档案'}</button>
@@ -10237,7 +10248,6 @@ export default function PatientDetailPage() {
           </div>
           <ServiceManagementCategories plans={plans} active={serviceManagementView} onChange={setServiceManagementView} />
           {serviceManagementView === 'nutrition' && <div style={{ padding: '14px 20px', borderTop: '1px solid #EDF2EE' }}><NutritionAssessmentPanel patientId={id} source={staff?.role === 'healthPlanner' ? 'paid_order' : 'nutrition_management'} canCreate={staff?.role === 'superadmin' || (staff?.role === 'healthPlanner' && String(user.assignedHealthPlanner?._id || user.assignedHealthPlanner || '') === String(staff._id)) || (staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff._id))} embedded /></div>}
-          {serviceManagementView === 'nutrition' && ['nutritionist', 'superadmin'].includes(staff?.role) && <AnnualNutritionTaskWorkspace patientId={id} tasks={followUps} selectedTaskId={new URLSearchParams(location.search).get('annualTaskId') || ''} onSaved={() => { loadFollowUps(); load(); toast('年度营养评估已完成') }} />}
           {serviceManagementView === 'nutrition' && <WeightProgressPhotos patientId={id} plans={plans} records={recentRecords} bodyCompHistory={user.bodyCompHistory || []} canEdit={['nutritionist', 'healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role)} />}
           {serviceManagementView === 'rehab' && <RehabWorkspace patientId={id} staff={staff} view="plans" onSaved={loadPlans} />}
           {serviceManagementView === 'annual' && monthlyReviewEnabled && (
