@@ -37,7 +37,7 @@ test('年度输入按草稿用途显示年度方案审核，旧随访主题不�
   assert.equal(todo.summary, '体检报告 · 请审核报告问题及建议，确认后用于年度方案制定');
   assert.doesNotMatch(todo.summary, /派发|随访/);
   assert.equal(todo.overdue, true);
-  assert.equal(todo.link, '/patients/patient/annual-health#report-followup-drafts');
+  assert.equal(todo.link, '/patients/patient/annual-health?reviewDraftId=draft#report-followup-drafts');
 });
 
 test('真正随访和缺失来源不冒充年度方案，保留客户范围过滤', async () => {

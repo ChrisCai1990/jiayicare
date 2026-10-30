@@ -10,7 +10,7 @@ import InventoryDispatchPanel from '../components/InventoryDispatchPanel'
 import orderShipping from '../../../shared/orderShipping.cjs'
 import { useNotificationSummary } from '../components/NotificationSummary'
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
 import AiTodosPanel from '../components/AiTodosPanel'
@@ -42,6 +42,7 @@ const DISEASE_COLOR = {
 export default function HomePage() {
   const { staff } = useStaff()
   const nav = useNavigate()
+  const location = useLocation()
   const [reports, setReports] = useState(null)
   const [loading, setLoading] = useState(true)
   const notification = useNotificationSummary()
@@ -64,10 +65,22 @@ export default function HomePage() {
   const [orderHistoryPage, setOrderHistoryPage] = useState(1)
   const [serviceTasks, setServiceTasks] = useState([])
   const [advisorArea, setAdvisorArea] = useState('todo')
-  const [advisorTodoView, setAdvisorTodoView] = useState('review')
+  const [advisorTodoView, setAdvisorTodoView] = useState(() => {
+    const target = new URLSearchParams(location.search).get('todo')
+    return ['followup', 'service'].includes(target) ? target : 'review'
+  })
   const [roleTodoView, setRoleTodoView] = useState('all')
   const [geoCount, setGeoCount] = useState('加载中')
   const [advisorProgressView, setAdvisorProgressView] = useState('overview')
+
+  useEffect(() => {
+    const target = new URLSearchParams(location.search).get('todo')
+    if (['followup', 'service'].includes(target)) {
+      setAdvisorArea('todo')
+      setAdvisorTodoView(target)
+      setRoleTodoView(target)
+    }
+  }, [location.search])
 
   useEffect(() => {
     staffAPI.getReports2()
@@ -84,16 +97,6 @@ export default function HomePage() {
   if (loading) return <div className="page-loading">加载中...</div>
 
   const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
-  const dateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-  const now = new Date()
-  const todayKey = dateKey(now)
-  const monthStartKey = dateKey(new Date(now.getFullYear(), now.getMonth(), 1))
-  const monthEndKey = dateKey(new Date(now.getFullYear(), now.getMonth() + 1, 0))
-  const yesterdayKey = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
-  const followUpUrl = ({ status, dateFrom = '', dateTo = '', dateField = 'date' }) => {
-    const query = new URLSearchParams({ status, dateFrom, dateTo, dateField })
-    return `/followups?${query}`
-  }
   const orderRows = plannerOrderRows(pendingOrders, serviceTasks)
   const completedServiceOrders = (ordersResource.data.completedServices || []).filter(item => item.key?.startsWith('order:'))
   const orderHistoryRows = [...new Map(completedOrders
@@ -131,13 +134,9 @@ export default function HomePage() {
 
       {/* 数据卡片 */}
       <div className="stats-grid home-stats">
-        <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today}
-          onPending={() => nav(followUpUrl({ status: 'active', dateFrom: todayKey, dateTo: todayKey }))}
-          onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: todayKey, dateTo: todayKey, dateField: 'completedAt' }))} /> : '-'} color="#0077B6" compact />
-        <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month}
-          onPending={() => nav(followUpUrl({ status: 'active', dateFrom: monthStartKey, dateTo: monthEndKey }))}
-          onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: monthStartKey, dateTo: monthEndKey, dateField: 'completedAt' }))} /> : '-'} color="#22A06B" compact />
-        <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav(followUpUrl({ status: 'active', dateTo: yesterdayKey }))} />
+        <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today} /> : '-'} color="#0077B6" compact />
+        <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month} /> : '-'} color="#22A06B" compact />
+        <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
         <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications', { state: { tab: notification.data?.summary?.metabolicHelpCount > 0 ? 'pilotHelp' : 'referrals' } })} />
         {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
@@ -389,18 +388,18 @@ export default function HomePage() {
   )
 }
 
-function FollowUpStatValue({ pending, completed, onPending, onCompleted }) {
+function FollowUpStatValue({ pending, completed }) {
   return (
     <span className="followup-stat-value">
-      <button type="button" className="followup-stat-link" onClick={onPending} title="查看待随访计划">
+      <span className="followup-stat-link" title="待随访数量">
         <span className="followup-stat-label">待</span>
         <strong>{pending}</strong>
-      </button>
+      </span>
       <span className="followup-stat-separator">·</span>
-      <button type="button" className="followup-stat-link" onClick={onCompleted} title="查看已完成随访">
+      <span className="followup-stat-link" title="已完成随访数量">
         <span className="followup-stat-label">已</span>
         <strong>{completed}</strong>
-      </button>
+      </span>
     </span>
   )
 }

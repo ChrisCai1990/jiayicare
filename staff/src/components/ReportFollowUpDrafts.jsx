@@ -74,6 +74,8 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit }) {
     } catch (e) { if (activePatient.current === requestedPatient) setError(e.message) } finally { if (activePatient.current === requestedPatient) setBusy(false) }
   }
   const reference = screening.patientId === patientId ? approvedScreeningReference(screening.rows, year) : null
+  const reviewDraftId = new URLSearchParams(window.location.search).get('reviewDraftId')
+  const visibleRows = reviewDraftId ? rows.filter(row => String(row._id) === reviewDraftId) : rows
   return <section id="report-followup-drafts" className="report-issues">
     <header className="report-issues-heading"><div><h3>年度管理重点 · 问题、分析与建议</h3><p>先参考年度筛查小结定位重点，再逐项确认问题分析和处理建议，纳入年度管理方案。</p></div><button disabled={busy} onClick={() => { if (!dirty || window.confirm('刷新会替换未保存编辑，是否继续？')) load() }}>刷新状态</button></header>
     <div className="report-screening-reference"><h4>{year}年度筛查小结 · 定位参考</h4>
@@ -84,7 +86,8 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit }) {
     </div>
     {error && <p role="alert" className="report-issues-error">{error}</p>}
     {!rows.length && <p>暂无问题整理记录。新报告审核后生成；历史资料不会自动批量重跑。</p>}
-    {rows.map(row => {
+    {reviewDraftId && !busy && rows.length > 0 && !visibleRows.length && <p role="alert">这条审核任务已处理或不属于当前客户，请返回工作台刷新任务。</p>}
+    {visibleRows.map(row => {
       const annual = row.purpose === PURPOSE, status = row.followUpAutomation?.status
       const historical = row.status === 'approved' && !annual
       const available = canEdit && ['advisor_review', 'no_action', 'excluded'].includes(row.status)

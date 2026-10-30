@@ -288,7 +288,7 @@ function MedicalTreatmentFields({ data, set, nav, patientId }) {
           <div style={{ flex: 1 }}>
             <SelectInput value={data.time} onChange={v => set('time', v)} options={TIME_OPTIONS} placeholder="请选择频率" />
           </div>
-          <ActionLink label="新建随访" onClick={() => nav(`/followups`)} />
+          <ActionLink label="新建随访" onClick={() => nav('/home?todo=followup&create=1')} />
         </div>
       </FieldRow>
       <FieldRow label="就诊医院">
@@ -322,7 +322,7 @@ function SpecialistCollabFields({ data, set, nav, patientId }) {
           <div style={{ flex: 1 }}>
             <DateInput value={data.date} onChange={v => set('date', v)} />
           </div>
-          <ActionLink label="新建随访" onClick={() => nav(`/followups`)} />
+          <ActionLink label="新建随访" onClick={() => nav('/home?todo=followup&create=1')} />
         </div>
       </FieldRow>
       <FieldRow label="会诊医院">
@@ -360,7 +360,7 @@ function DailyMonitoringFields({ data, set, nav, patientId }) {
             />
             <span style={{ fontSize: 12, color: '#8AA89C', flex: 1 }}>{item.desc}</span>
             {item.key === 'bp_weight' && !!data[item.key] && (
-              <ActionLink label="新建随访" onClick={() => nav(`/followups`)} />
+              <ActionLink label="新建随访" onClick={() => nav('/home?todo=followup&create=1')} />
             )}
           </div>
         </FieldRow>

@@ -1,8 +1,10 @@
 import useWorkbenchResource from '../hooks/useWorkbenchResource'
 import { getToken } from '../api'
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
+import { can, useStaff } from '../App'
+import FollowUpModal from './FollowUpModal'
 import Pagination from './Pagination'
 import { formatChineseDate } from '../utils/date'
 
@@ -16,6 +18,12 @@ function formatDate(date) {
 
 export default function FollowUpsPanel() {
   const nav = useNavigate()
+  const location = useLocation()
+  const { staff } = useStaff()
+  const [showCreate, setShowCreate] = useState(() => new URLSearchParams(location.search).get('create') === '1')
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('create') === '1') setShowCreate(true)
+  }, [location.search])
   const [page, setPage] = useState(0)
   const [searchName, setSearchName] = useState('')
   const [timeGroup, setTimeGroup] = useState('all')
@@ -43,7 +51,8 @@ export default function FollowUpsPanel() {
   const curPage = (data.page || 1) - 1
   const pageItems = items
 
-  if (!loading && !error && !total && !data.workbenchSummary?.waiting && !searchName && timeGroup === 'all') return <section className="workbench-compact"><span>待随访任务 · 暂无待办</span><button className="btn btn-secondary btn-sm" onClick={() => nav('/followups')}>查看全部</button></section>
+  const createModal = showCreate && can(staff, 'followups', 'create') && <FollowUpModal onClose={() => setShowCreate(false)} onSaved={() => { setShowCreate(false); refresh() }} />
+  if (!loading && !error && !total && !data.workbenchSummary?.waiting && !searchName && timeGroup === 'all') return <><section className="workbench-compact"><span>待随访任务 · 暂无待办</span>{can(staff, 'followups', 'create') && <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>新增随访</button>}</section>{createModal}</>
 
   return (
     <div className="card" style={{ marginBottom: 20, border: overdueCount > 0 ? '1.5px solid #DC354540' : undefined }}>
@@ -63,7 +72,7 @@ export default function FollowUpsPanel() {
             </span>
           )}
         </div>
-        <button className="btn btn-secondary btn-sm" onClick={() => nav('/followups')}>查看全部</button>
+        {can(staff, 'followups', 'create') && <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>新增随访</button>}
       </div>
       <div className="card-body" style={{ padding: '4px 20px 12px' }}>
         {loading && <div role="status">正在加载随访任务…</div>}
@@ -149,6 +158,7 @@ export default function FollowUpsPanel() {
           <Pagination compact page={curPage + 1} totalPages={pageCount} onChange={next => setPage(next - 1)} />
         )}
       </div>
+      {createModal}
     </div>
   )
 }

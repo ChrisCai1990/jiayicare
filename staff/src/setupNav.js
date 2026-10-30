@@ -4,7 +4,6 @@ export const SETUP_NAV = [
   { label: '工作台', icon: 'home', path: '/home' },
   { label: '家庭服务助手', icon: 'services', path: '/service-assistant', moduleKey: 'service_assistant' },
   { label: '我的会员', icon: 'patients', path: '/patients', moduleKey: 'patients' },
-  { label: '随访管理', icon: 'followups', path: '/followups', moduleKey: 'followups' },
   { label: '服务方案', icon: 'plans', path: '/plans', moduleKey: 'plans' },
   { label: '就医资源', icon: 'knowledge', path: '/medical-resource-knowledge', moduleKey: 'medical_resources' },
   { label: '报告管理', icon: 'reports', path: '/reports', moduleKey: 'reports' },

@@ -87,7 +87,6 @@ import OutpatientEscortVisitForm, { emptyOutpatientEscortVisit, isOutpatientEsco
 import OutpatientPostVisitReviewForm, { emptyOutpatientPostVisitReview, isOutpatientPostVisitReviewTask, validateOutpatientPostVisitReview } from '../components/OutpatientPostVisitReviewForm'
 import MedicalProxyStageForm, { medicalProxyStage, validateMedicalProxyStage } from '../components/MedicalProxyStageForm'
 import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
-import { buildExecutionRows, executionRowCategory, executionRowStatus, executionServiceCurrentTask } from '../utils/executionTaskRows.mjs'
 import ExpertAppointmentRescheduleForm, { ExpertAppointmentHistory } from '../components/ExpertAppointmentRescheduleForm'
 import AdHocConsultationForm from '../components/AdHocConsultationForm'
 import MedicationProxyStageForm, { medicationProxyStage } from '../components/MedicationProxyStageForm'
@@ -2355,8 +2354,6 @@ export default function PatientDetailPage() {
   }
   const [stoppingSup, setStoppingSup] = useState(null) // 待确认停用的营养素记录
   const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
-  const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
-  const [executionCategory, setExecutionCategory] = useState('all')
   const [expandedMonitorGroups, setExpandedMonitorGroups] = useState({}) // 随访记录表格里日常监测折叠组的展开状态，key: theme+status
   // 执行随访（填写随访结果、标记完成/随访中），逻辑与 FollowUpsPage.jsx 的 execItem/execForm 一致
   const [execItem, setExecItem] = useState(null)
@@ -2874,7 +2871,7 @@ export default function PatientDetailPage() {
   const openPostCheckupReview = async (followUpId) => {
     const res = await staffAPI.getPatientFollowUps(id, { followUpId })
     const target = res.data?.followUps?.[0]
-    if (!target) throw new Error('AI随访计划未找到，请刷新后在服务执行任务中查看')
+    if (!target) throw new Error('AI随访计划未找到，请刷新后在工作台查看')
     setFollowUps(current => [target, ...current.filter(item => item._id !== target._id)])
     setTab('followups')
     setFollowUpDetail(target)
@@ -5160,7 +5157,7 @@ export default function PatientDetailPage() {
 
       </details>
 
-      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={user.phaseAssessmentEnabled === true} />
+      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={target => target === 'followups' ? nav('/home?todo=service') : setTab(target)} stageAssessmentEnabled={user.phaseAssessmentEnabled === true} />
 
       {user.initialArchiveImportPending && <div className="card" style={{padding:16,marginBottom:16}}>初次问卷已保存，档案写入待重试。<button className="btn btn-primary btn-sm" disabled={archiveBusy} onClick={async () => {setArchiveBusy(true);try{await staffAPI.retryInitialArchive(id);await load()}catch(err){toast(err.message)}finally{setArchiveBusy(false)}}}>重新写入初次档案</button></div>}
       {/* Tabs */}
@@ -5180,7 +5177,6 @@ export default function PatientDetailPage() {
             { key: 'plans', label: '服务方案' },
             ...(user.phaseAssessmentEnabled === true ? [{ key: 'aiReview', label: '阶段性评估与复盘' }] : []),
           ] },
-          { key: 'serviceExecution', label: '服务执行', tabs: [{ key: 'followups', label: '执行任务' }] },
           { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }] },
           { key: 'referrals', label: '转介记录', tabs: [{ key: 'referrals', label: '转介记录' }] },
           { key: 'consumption', label: '消费记录', tabs: [{ key: 'consumption', label: '消费记录' }] },
@@ -10195,7 +10191,7 @@ export default function PatientDetailPage() {
                 </button>
               )}
               {['healthPlanner', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => { setExecutionCategory('medical'); setTab('followups') }}>查看就医协助执行与督办</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => nav('/home?todo=service')}>前往工作台查看就医协助</button>
               )}
               {['healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" onClick={() => nav(`/products?medicalProxy=1&patientId=${id}`, { state: { initialPatient: { _id: id, name: data?.user?.name || '' } } })}>推送医疗代诊产品</button>
@@ -10302,305 +10298,12 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* ── Follow-ups Tab ── */}
+      {/* Tasks open directly from the workbench; customer records stay in the service archive. */}
       {tab === 'followups' && (
-        <>
-        <div className="card">
-          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div><div className="card-title">服务执行任务</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>承接方案生成的营养、监测、体检复查、就医协助、专病管理及沟通任务；随访只是执行方式之一</div></div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('followup')}>✨ AI随访建议</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('coach')}>✨ AI教练消息</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('content')}>✨ AI内容推荐</button>
-            </div>
-          </div>
-          {(() => {
-            // tab 划分与随访记录状态文案，均与随访管理列表页（FollowUpsPage.jsx STATUS_TABS/STATUS_MAP）保持一致：
-            // 全部/待随访(planned)/随访中(in_progress+missed)/已随访(completed)/已取消(cancelled)，
-            // 此前这里把"待随访"和"随访中"合并成一个"未随访"、状态文案也用的是"计划中/进行中"等另一套措辞，
-            // 与随访管理页tab结构和文案不一致（2026-07-13 反馈）。
-            const FOLLOWUP_LIST_STATUS_MAP = { planned: '待执行', in_progress: '执行中', missed: '执行中', completed: '已完成', cancelled: '已取消' }
-            const FOLLOWUP_LIST_STATUS_COLOR = { planned: '#D97706', in_progress: '#0077B6', missed: '#0077B6', completed: '#22A06B', cancelled: '#8AA89C' }
-            const PLANNED_STATUSES = ['planned']
-            const IN_PROGRESS_STATUSES = ['in_progress', 'missed']
-            const DONE_STATUSES = ['completed']
-            const CANCELLED_STATUSES = ['cancelled']
-            // 同一订单下的预约、人员安排、执行、资料审核和督办是一次服务的内部岗位流转，
-            // 客户档案只计作一条综合服务。AI 生成的后续随访计划 workflowKey 为空，仍单独展示便于审核。
-            const supplyReminderOrderMap = new Map(followUps
-              .filter(task => task.sourceType === 'order' && task.sourceOrderId?.medicalProxyPlan?.sourceSupplyReminderTaskId)
-              .map(task => [String(task.sourceOrderId.medicalProxyPlan.sourceSupplyReminderTaskId), String(task.sourceOrderId._id)]))
-            const isInsuranceCaseTask = task => ['insurance_case', 'insurance_service', 'scheduled'].includes(task.sourceType)
-              && task.sourceId && /高端医疗险/.test(`${task.theme || ''} ${(task.tags || []).join(' ')}`)
-            const serviceGroupKey = task => String(
-              (isInsuranceCaseTask(task) && `insurance:${task.sourceId?._id || task.sourceId}`)
-              || task.formData?.medicalProxyOrderId
-              || (task.sourceType === 'supply_reminder' && supplyReminderOrderMap.get(String(task._id)))
-              || task.sourceOrderId?._id || task.sourceOrderId
-              || task.sourceHealthPlanId?._id || task.sourceHealthPlanId
-              || task.coordinationGroupId || task._id
-            )
-            const medicalWorkflowKey = key => /^(medical_proxy|medication_proxy|medical_reminder|checkup_appointment):/.test(String(key || ''))
-              || /^system:(outpatient_|medical_document_collection)/.test(String(key || ''))
-            const isOrderServiceWorkflowTask = task => isInsuranceCaseTask(task) || (task.sourceType === 'order'
-              && (medicalWorkflowKey(task.workflowKey) || /代配药|代取药|代配营养素|医疗代诊|专家约诊|陪同就医|陪诊|门诊一站式|代约检|约检/.test(task.sourceOrderId?.serviceName || '')))
-              || (task.sourceType === 'health_plan' && task.sourceHealthPlanId?.type === 'medical_assist')
-              || (task.sourceType === 'supply_reminder' && (task.formData?.medicalProxyOrderId || supplyReminderOrderMap.has(String(task._id))))
-            const isSupersededDuplicateServiceTask = task => task.sourceType === 'order'
-              && task.status === 'cancelled'
-              && task.sourceOrderId?.status === 'cancelled'
-              && /重复.*服务|后台取消/.test(task.cancelReason || '')
-              && followUps.some(candidate => candidate.sourceType === 'order'
-                && candidate.sourceOrderId?.status === 'completed'
-                && candidate.sourceOrderId?.serviceName === task.sourceOrderId?.serviceName
-                && Math.abs(new Date(candidate.sourceOrderId.createdAt) - new Date(task.sourceOrderId.createdAt)) <= 7 * 24 * 60 * 60 * 1000)
-            const isCancelledStageOfCompletedService = task => isOrderServiceWorkflowTask(task)
-              && task.status === 'cancelled'
-              && followUps.some(candidate => isOrderServiceWorkflowTask(candidate)
-                && serviceGroupKey(candidate) === serviceGroupKey(task)
-                && candidate.status === 'completed'
-                && (candidate.sourceOrderId?.status === 'completed' || candidate.sourceHealthPlanId?.status === 'completed'))
-            const visibleFollowUps = followUps.filter(task => !isSupersededDuplicateServiceTask(task) && !isCancelledStageOfCompletedService(task))
-            const EXECUTION_CATEGORIES = [
-              ['all', '全部任务'], ['nutrition', '营养干预'], ['monitoring', '健康监测'],
-              ['checkup', '体检与复查'], ['medical', '就医协助'], ['insurance', '保险服务'], ['supply', '配药与营养补充'], ['disease', '专病管理'], ['communication', '客户沟通'],
-            ]
-            // 日常监测随访（sourceType=scheduled，theme形如"日常监测随访 · xxx"）按频率每天/每周生成一条占位，
-            // 同一客户能连续攒出十几二十条同主题记录，把就医随访/体检提醒/订单预约等真正有意义的记录
-            // 挤到分页很后面（2026-07-13 反馈：客户详情页只看到7/25之后的，7/14的记录翻不到）。
-            // 这里按"主题+状态"分组折叠成一行，组内明细可展开查看，折叠行取组内最新日期用于排序，
-            // 保证真实记录不再被同质占位淹没。
-            const allRows = buildExecutionRows(visibleFollowUps, isOrderServiceWorkflowTask, serviceGroupKey)
-            const categoryRows = executionCategory === 'all' ? allRows : allRows.filter(row => executionRowCategory(row) === executionCategory)
-            const rows = categoryRows.filter(row => followUpFilter === 'all'
-              || (followUpFilter === 'planned' && PLANNED_STATUSES.includes(executionRowStatus(row)))
-              || (followUpFilter === 'in_progress' && IN_PROGRESS_STATUSES.includes(executionRowStatus(row)))
-              || (followUpFilter === 'done' && DONE_STATUSES.includes(executionRowStatus(row)))
-              || (followUpFilter === 'cancelled' && CANCELLED_STATUSES.includes(executionRowStatus(row))))
-            // 排序方向：待随访/随访中是还没发生的未来计划，按日期从近到远（离今天最近的先处理）；
-            // 已随访/已取消是历史事件，按最近发生的在前。"全部"tab混合两类，按每行自身状态各自判断方向。
-            const isFutureStatus = (status) => PLANNED_STATUSES.includes(status) || IN_PROGRESS_STATUSES.includes(status)
-            const serviceCurrentTask = executionServiceCurrentTask
-            const rowStatus = executionRowStatus
-            const rowDate = (row) => row.type === 'group'
-              ? (isFutureStatus(row.status) ? Math.min(...row.items.map(i => new Date(i.date).getTime())) : Math.max(...row.items.map(i => new Date(i.date).getTime())))
-              : row.type === 'order_service' ? new Date(serviceCurrentTask(row).date).getTime()
-              : new Date(row.item.date).getTime()
-            rows.sort((a, b) => {
-              const aFuture = isFutureStatus(rowStatus(a))
-              const bFuture = isFutureStatus(rowStatus(b))
-              const da = rowDate(a), db = rowDate(b)
-              if (aFuture && bFuture) return da - db // 待随访/随访中：从近到远
-              if (!aFuture && !bFuture) return db - da // 已随访/已取消：最近发生在前
-              return aFuture ? -1 : 1 // 混合时（"全部"tab）：未来计划排在历史记录前面
-            })
-
-            return (
-            <>
-            <div style={{ display: 'flex', gap: 7, padding: '12px 16px 2px', flexWrap: 'wrap', borderBottom: '1px solid #EDF1EF' }}>
-              {EXECUTION_CATEGORIES.map(([key, label]) => {
-                const count = key === 'all' ? allRows.length : allRows.filter(row => executionRowCategory(row) === key).length
-                return <button key={key} type="button" className={executionCategory === key ? 'btn btn-sm' : 'btn btn-secondary btn-sm'} style={executionCategory === key ? { background: '#1E6B50', color: '#fff' } : {}} onClick={() => setExecutionCategory(key)}>{label} {count}</button>
-              })}
-            </div>
-            <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
-              {[
-                { k: 'all', label: `全部 ${categoryRows.length}` },
-                { k: 'planned', label: `待执行 ${categoryRows.filter(row => PLANNED_STATUSES.includes(rowStatus(row))).length}` },
-                { k: 'in_progress', label: `执行中 ${categoryRows.filter(row => IN_PROGRESS_STATUSES.includes(rowStatus(row))).length}` },
-                { k: 'done', label: `已完成 ${categoryRows.filter(row => DONE_STATUSES.includes(rowStatus(row))).length}` },
-                { k: 'cancelled', label: `已取消 ${categoryRows.filter(row => CANCELLED_STATUSES.includes(rowStatus(row))).length}` },
-              ].map(t => (
-                <button key={t.k} className={followUpFilter === t.k ? 'btn btn-sm' : 'btn btn-secondary btn-sm'}
-                  style={followUpFilter === t.k ? { background: '#1E6B50', color: '#fff' } : {}}
-                  onClick={() => setFollowUpFilter(t.k)}>{t.label}</button>
-              ))}
-            </div>
-            {rows.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>当前分类和状态下暂无执行任务</div>
-            ) : (
-            <table className="table">
-              <thead>
-                <tr><th>计划日期</th><th>建立时间</th><th>执行时间</th><th>任务类型</th><th>状态</th><th>负责人</th><th>执行内容</th><th>下一节点</th><th>操作</th></tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const reviewRoleLabel = role => ({ familyDoctor: '健康顾问', nutritionist: '营养师', healthPlanner: '健康规划师' })[role || 'familyDoctor'] || '指定专员'
-                  const canReview = f => followUpReview.canReview(f, staff, user)
-                  const renderRow = (f) => (
-                    <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => ((ibdStage(f) && ['planned', 'in_progress', 'missed'].includes(f.status)) || isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f) || isCheckupManagerReviewTask(f)) ? openExec(f) : isCheckupAdvisorReviewTask(f) ? setCheckupAdvisorReview(f) : setFollowUpDetail(f)}>
-                      <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
-                      <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                      <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{f.completedAt ? new Date(f.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                      <td><span className="badge badge-info">{f.sourceType === 'supply_reminder' ? ((f.tags || []).includes('我方代配') ? '我方代配' : '配取提醒') : (TYPE_MAP[f.type] || f.type)}</span></td>
-                      <td>
-                        <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
-                          {FOLLOWUP_LIST_STATUS_MAP[f.status] || f.status}
-                        </span>
-                        {f.aiStatus === 'pending' && (
-                          <span style={{ marginLeft: 6, fontSize: 11, color: '#D97706', background: '#D9770615', padding: '1px 6px', borderRadius: 4 }}>
-                            待{reviewRoleLabel(f.reviewRole)}审核{f.sourceType === 'ai_review' ? '·AI月度回顾' : f.sourceType === 'scheduled' ? '·方案排期' : ''}
-                          </span>
-                        )}
-                        {f.status === 'completed' && f.completedBy && (
-                          <span style={{ marginLeft: 6, fontSize: 11, color: f.completedBy === 'user' ? '#0077B6' : '#22A06B', background: f.completedBy === 'user' ? '#0077B615' : '#22A06B15', padding: '1px 6px', borderRadius: 4 }}>
-                            {f.completedBy === 'user' ? '客户自主标记' : '健管专员执行'}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ fontSize: 13, color: '#666' }}>{f.aiStatus === 'pending' ? `${f.assignedTo?.name || f.staffId?.name || '待分配'}（${reviewRoleLabel(f.reviewRole)}审核）` : (f.assignedTo?.name || f.staffId?.name || '-')}</td>
-                      <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 200 }}>
-                        {f.sourceType === 'order' && (
-                          <div style={{ marginBottom: 2 }}>
-                            <span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>服务预约</span>
-                            <span style={{ fontWeight: 600 }}>{serviceTaskTitle(f)}</span>
-                          </div>
-                        )}
-                        {(() => {
-                          // 旧任务会把注意事项（如“空腹”）放在 content，而计划主体保存在
-                          // theme / taskRequirements / plannedContent。不能用第一个非空字段遮住其余内容。
-                          const content = [...new Set([serviceTaskTitle(f), f.taskRequirements, f.plannedContent, f.content]
-                            .map(value => String(value || '').trim()).filter(Boolean))].join('；')
-                          return content ? (content.length > 60 ? content.slice(0, 60) + '…' : content) : '-'
-                        })()}
-                      </td>
-                      <td style={{ fontSize: 12, color: '#8AA89C' }}>
-                        {f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}
-                      </td>
-                      <td onClick={e => e.stopPropagation()}>
-                        {isCheckupAdvisorReviewTask(f) ? (
-                          <button className="btn btn-primary btn-sm" onClick={() => setCheckupAdvisorReview(f)}>审核随访计划</button>
-                        ) : canReview(f) ? (
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn btn-sm" style={{ background: '#22A06B', color: '#fff' }}
-                              onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'approve' }); loadFollowUps() }}>通过</button>
-                            <button className="btn btn-secondary btn-sm"
-                              onClick={async () => {
-                                const rejectReason = window.prompt('请填写驳回原因：', '')
-                                if (rejectReason === null) return
-                                if (!rejectReason.trim()) { toast('请填写驳回原因'); return }
-                                await staffAPI.reviewFollowUp(f._id, { action: 'reject', rejectReason: rejectReason.trim() }); loadFollowUps()
-                              }}>驳回</button>
-                          </div>
-                        ) : f.aiStatus === 'pending' ? (
-                          <span style={{ fontSize: 12, color: '#8AA89C' }}>等待{reviewRoleLabel(f.reviewRole)}审核</span>
-                        ) : medicalProxyStage(f) === 'supervise' ? (
-                          <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看督办进度</button>
-                        ) : (ibdStage(f) || medicalProxyStage(f) || medicationProxyStage(f)) && ['planned', 'in_progress', 'missed'].includes(f.status) ? (
-                          <button className="btn btn-sm" onClick={() => openExec(f)}>办理本环节</button>
-                        ) : isCheckupAppointmentBookingTask(f) ? (
-                          <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>填写三号预约</button>
-                        ) : isCheckupManagerReviewTask(f) ? (
-                          <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>收集资料并审核</button>
-                        ) : f.sourceType === 'order' ? (
-                          // 商城服务订单：核心动作是"选执行人转派"，不是自己执行，主按钮走详情→编辑(assignedTo)
-                          <button className="btn btn-sm" onClick={() => setFollowUpDetail(f)}>查看/转派</button>
-                        ) : ['planned', 'in_progress', 'missed'].includes(f.status) ? (
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn btn-sm" onClick={() => openExec(f)}>执行任务</button>
-                            <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>详情</button>
-                          </div>
-                        ) : (
-                          <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                  return rows.map(row => {
-                    if (row.type === 'single') return renderRow(row.item)
-                    if (row.type === 'order_service') {
-                      const current = serviceCurrentTask(row)
-                      const orderTask = row.items.find(item => item.sourceType === 'order' && item.sourceOrderId)
-                      const serviceName = orderTask?.sourceOrderId?.serviceName || current.sourceOrderId?.serviceName || current.sourceHealthPlanId?.title || (isInsuranceCaseTask(current) ? current.theme : isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '就医协助服务')
-                      const completed = rowStatus(row) === 'completed'
-                      const completedAt = row.items.map(item => item.completedAt).filter(Boolean).sort().at(-1)
-                      const serviceStageRank = item => item.sourceType === 'supply_reminder' ? 99 : ({ booking: 10, planner: 20, execute: 30, resolution: 40, supervise: 50 })[String(item.workflowKey || '').replace('medical_proxy:', '')] || 0
-                      const serviceDetail = { ...current, completedAt: completedAt || current.completedAt, sourceOrderId: orderTask?.sourceOrderId || current.sourceOrderId, _serviceItems: [...row.items].sort((a, b) => {
-                        const timeDifference = new Date(a.completedAt || a.createdAt || a.date) - new Date(b.completedAt || b.createdAt || b.date)
-                        return timeDifference || serviceStageRank(a) - serviceStageRank(b)
-                      }) }
-                      const stageText = completed
-                        ? (isMedicalEscortTask(current) ? '就医专员已完成陪同，健管专员已审核资料并归档' : '服务各岗位已完成流转并闭环')
-                        : current.workflowKey === 'medical_proxy:supervise'
-                          ? (current.formData?.executionFailed && current.formData?.currentStage === 'booking' ? `执行未成功，健管专员重新处理：${current.formData?.lastExecutionFailure || '待确认后续安排'}` : ({ booking: '健管专员确认预约', planner: '健康规划师安排执行人员', execute: '就医专员正在执行服务', post_visit_audit: '健管专员审核归档资料', completed: '服务已完成' }[current.formData?.currentStage] || current.content || '处理中'))
-                          : String(current.content || current.plannedContent || current.theme || '').replace(/^[^：:]+[：:]\s*/, '')
-                      return <tr key={row.key} style={{ cursor: 'pointer', background: '#F2FAF6' }} onClick={() => setFollowUpDetail(serviceDetail)}>
-                        <td style={{ fontSize: 13, color: '#666' }}>{new Date(current.date).toLocaleDateString('zh-CN')}</td>
-                        <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{current.createdAt ? new Date(current.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                        <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{completedAt ? new Date(completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                        <td><span className="badge badge-info">综合服务</span></td>
-                        <td><span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[rowStatus(row)] || '#666' }}>{FOLLOWUP_LIST_STATUS_MAP[rowStatus(row)] || rowStatus(row)}</span></td>
-                        <td style={{ fontSize: 13, color: '#666' }}>{current.assignedTo?.name || current.staffId?.name || '-'}</td>
-                        <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 300 }}><div><span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>一次服务</span><b>{serviceName}</b></div><div style={{ marginTop: 4, color: '#65776F' }}>{completed ? '服务结果' : '当前进度'}：{stageText || '处理中'}</div></td>
-                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{current.nextFollowUpDate ? new Date(current.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}</td>
-                        <td onClick={e => e.stopPropagation()}><button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(serviceDetail)}>查看服务</button></td>
-                      </tr>
-                    }
-                    const expanded = !!expandedMonitorGroups[row.key]
-                    const sortedItems = [...row.items].sort((a, b) =>
-                      isFutureStatus(row.status) ? new Date(a.date) - new Date(b.date) : new Date(b.date) - new Date(a.date))
-                    const nearest = sortedItems[0]
-                    return (
-                      <React.Fragment key={row.key}>
-                        <tr style={{ cursor: 'pointer', background: '#F7F5F0' }}
-                          onClick={() => setExpandedMonitorGroups(s => ({ ...s, [row.key]: !s[row.key] }))}>
-                          <td style={{ fontSize: 13, color: '#666' }}>{new Date(nearest.date).toLocaleDateString('zh-CN')}{row.items.length > 1 ? ' 起' : ''}</td>
-                            <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{nearest.createdAt ? new Date(nearest.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                            <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{nearest.completedAt ? new Date(nearest.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                          <td><span className="badge badge-info">{TYPE_MAP[nearest.type] || nearest.type}</span></td>
-                          <td>
-                            <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[row.status] || '#666' }}>
-                              {FOLLOWUP_LIST_STATUS_MAP[row.status] || row.status}
-                            </span>
-                          </td>
-                          <td style={{ fontSize: 13, color: '#666' }}>{nearest.staffId?.name || '-'}</td>
-                          <td style={{ fontSize: 13, color: '#1A2B24' }} colSpan={2}>
-                            <span style={{ fontWeight: 600 }}>{row.theme.replace(MONITOR_PREFIX, '')}</span>
-                            <span style={{ marginLeft: 6, fontSize: 12, color: '#8AA89C' }}>× {row.items.length}条{expanded ? ' ▲' : ' ▼'}</span>
-                          </td>
-                          <td />
-                        </tr>
-                        {expanded && sortedItems.map(f => (
-                          <tr key={f._id} style={{ cursor: 'pointer', background: '#FCFBF8' }} onClick={() => setFollowUpDetail(f)}>
-                            <td style={{ fontSize: 12, color: '#999', paddingLeft: 28 }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
-                            <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                            <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{f.completedAt ? new Date(f.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                            <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
-                            <td>
-                              <span style={{ fontSize: 12, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
-                                {FOLLOWUP_LIST_STATUS_MAP[f.status] || f.status}
-                              </span>
-                            </td>
-                            <td style={{ fontSize: 12, color: '#666' }}>{f.staffId?.name || '-'}</td>
-                            <td style={{ fontSize: 12, color: '#8AA89C', maxWidth: 200 }}>{(() => {
-                              const content = f.content || f.taskRequirements || f.plannedContent || ''
-                              return content ? (content.length > 40 ? content.slice(0, 40) + '…' : content) : '-'
-                            })()}</td>
-                            <td style={{ fontSize: 12, color: '#8AA89C' }}>{f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}</td>
-                            <td onClick={e => e.stopPropagation()}>
-                              {['planned', 'in_progress', 'missed'].includes(f.status) ? (
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                  <button className="btn btn-sm" onClick={() => openExec(f)}>执行任务</button>
-                                  <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>详情</button>
-                                </div>
-                              ) : (
-                                <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </React.Fragment>
-                    )
-                  })
-                })()}
-              </tbody>
-            </table>
-            )}
-            </>
-            )
-          })()}
+        <div className="card" style={{ padding: 20 }}>
+          <p style={{ margin: 0 }}>请从工作台选择具体任务。</p>
+          <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={() => nav('/home')}>返回工作台</button>
         </div>
-        </>
       )}
 
       {aiSourceGroup && (
