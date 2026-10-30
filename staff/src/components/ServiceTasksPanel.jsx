@@ -9,7 +9,6 @@ import annualDispatch from '../../../shared/annualDispatch.cjs'
 import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 import { isCustomerOrder, serviceTaskGroupKey } from '../utils/plannerOrderProgress.mjs'
 import MedicalAssistClosureAction from './MedicalAssistClosureAction'
-import NutritionAssessmentPanel from './NutritionAssessmentPanel'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 
 const TASKS_PER_PAGE = 5
@@ -118,11 +117,11 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
 
   // Customer purchases have one progress card in the order section above.
   // Staff-originated services (including zero-price internal orders) stay here.
-  const visibleItems = staff?.role === 'healthPlanner'
+  const visibleItems = ['healthPlanner', 'healthManager'].includes(staff?.role)
     ? items.filter(task => !(task.sourceType === 'order' && isCustomerOrder(task.sourceOrderId, task)))
     : items
   const historyGroups = Object.values(historyItems
-    .filter(task => staff?.role !== 'healthPlanner' || !(task.sourceType === 'order' && isCustomerOrder(task.sourceOrderId, task)))
+    .filter(task => !['healthPlanner', 'healthManager'].includes(staff?.role) || !(task.sourceType === 'order' && isCustomerOrder(task.sourceOrderId, task)))
     .reduce((result, task) => {
       const key = serviceTaskGroupKey(task)
       if (!result[key]) result[key] = { key, tasks: [], lastAt: task.completedAt || task.updatedAt }
@@ -257,7 +256,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })
   }
 
-  if (!loading && !loadError && !serviceGroups.length && !historyOpen) return <section id="service-tasks-panel" className="workbench-compact"><span>服务流程任务（执行/督办） · 暂无待办</span><button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>查看已处理</button>{staff?.role !== 'familyDoctor' && <NutritionAssessmentPanel compact embedded workbench />}</section>
+  if (!loading && !loadError && !serviceGroups.length && !historyOpen) return <section id="service-tasks-panel" className="workbench-compact"><span>服务流程任务（执行/督办） · 暂无待办</span>{staff?.role !== 'healthManager' && <button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>查看已处理</button>}</section>
 
   return (
     <div id="service-tasks-panel" className="card" style={{ marginBottom: 20, border: '1.5px solid #1E6B5035' }}>
@@ -269,7 +268,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
           </div>
           <div style={{ marginTop: 3, fontSize: 12, color: '#667085' }}>已进入服务流程的岗位任务；与下方 AI 审核任务不是同一项。</div>
         </div>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>{historyOpen ? '收起已处理' : '查看已处理'}</button>
+        {staff?.role !== 'healthManager' && <button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>{historyOpen ? '收起已处理' : '查看已处理'}</button>}
       </div>
       {loading && <div role="status" style={{ padding: 16 }}>正在加载服务任务…</div>}
       {loadError && <div role="alert" style={{ padding: '10px 20px', color: '#B42318' }}>{loadError}；当前列表可能不是最新结果。</div>}
@@ -289,7 +288,6 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         })}
       </div>
       <div className="card-body" style={{ padding: '8px 20px' }}>
-        {staff?.role !== 'familyDoctor' && <NutritionAssessmentPanel compact embedded workbench />}
         {!loading && !loadError && !pagedServices.length && <div style={{ padding: '12px 0', color: '#667085', fontSize: 13 }}>没有找到匹配的服务任务</div>}
         {pagedServices.map((service, index) => {
           const task = service.task

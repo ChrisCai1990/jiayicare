@@ -64,3 +64,21 @@ test('real component supports pagination, completed history, counts, opening pla
     delete global.window; delete global.document; delete global.IS_REACT_ACT_ENVIRONMENT;
   }
 });
+
+test('execution task view does not retain a completed checkup plan', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' });
+  global.window = dom.window; global.document = dom.window.document;
+  global.IS_REACT_ACT_ENVIRONMENT = true;
+  const root = createRoot(document.getElementById('root'));
+  try {
+    await act(async () => root.render(React.createElement(CheckupProgressList, { taskMode: true, rows: [row('pending')] })));
+    assert.match(document.body.textContent, /体检方案核对任务/);
+    assert.doesNotMatch(document.body.textContent, /已完成 0/);
+    await act(async () => root.render(React.createElement(CheckupProgressList, { taskMode: true, rows: [] })));
+    assert.equal(document.body.textContent, '');
+  } finally {
+    await act(async () => root.unmount());
+    dom.window.close();
+    delete global.window; delete global.document; delete global.IS_REACT_ACT_ENVIRONMENT;
+  }
+});
