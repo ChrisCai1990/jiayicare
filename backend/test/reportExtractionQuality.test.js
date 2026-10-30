@@ -105,7 +105,17 @@ test('OCR failures are isolated to one report page; truncation never trips servi
   for (let i = 0; i < 4; i++) await assert.rejects(run(request('truncated'), async () => ({ ...response(), choices: [{ message: { content: '{' }, finish_reason: 'length' }] })));
   await run(request('truncated'), async () => response());
   for (let i = 0; i < 2; i++) await assert.rejects(run(request('failed'), async () => { throw new Error('timeout'); }));
-  await assert.rejects(run(request('failed'), async () => response()), error => error.code === 'AI_CIRCUIT_PAUSED');
+  const stoppedPage = request('failed');
+  await assert.rejects(run(stoppedPage, async () => response()), error => {
+    assert.equal(error.code, 'AI_PAGE_CIRCUIT_PAUSED');
+    assert.doesNotThrow(() => rethrowAiControl(error));
+    return true;
+  });
+  assert.equal(stoppedPage.context.stopState.error, undefined);
+  db.circuits.set('qwen:test:report:global', { failures: 2, paused: true });
+  const stoppedReport = request('global', null);
+  await assert.rejects(run(stoppedReport, async () => response()), error => error.code === 'AI_CIRCUIT_PAUSED');
+  assert.equal(stoppedReport.context.stopState.error?.code, 'AI_CIRCUIT_PAUSED');
   await run(request('failed', 2), async () => response());
   await run(request('other'), async () => response());
   assert.equal(db.circuits.has('qwen:test:report:failed:page:1'), true);
