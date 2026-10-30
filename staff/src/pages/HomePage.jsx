@@ -31,8 +31,7 @@ import { planningAdviceFromTask, hasPlanningAdvice } from '../utils/medicalPlann
 const ORDERS_PER_PAGE = 5
 const WORKBENCH_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'psychologist', 'rehabSpecialist', 'tcmDoctor', 'specialist', 'superadmin'])
 const ORDER_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'medicalAssistant', 'superadmin'])
-const CHECKUP_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'superadmin'])
-const SERVICE_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'superadmin'])
+const SERVICE_PROGRESS_ROLES = new Set(['familyDoctor'])
 
 const DISEASE_COLOR = {
   '高血压': '#e74c3c', '糖尿病': '#e67e22', '高血脂': '#f39c12',
@@ -117,7 +116,7 @@ export default function HomePage() {
   const showWorkbenchView = (area, view) => !hasWorkbenchNav || (advisorArea === area && (!view || (area === 'todo' ? selectedTodoView === 'all' || selectedTodoView === view : advisorProgressView === view || !isAdvisor && advisorProgressView === 'overview')))
   const progressTabs = isAdvisor
     ? [['overview', '全部进度'], ['orders', '订单预约'], ['medical', '就医协助'], ['checkup', '体检方案']]
-    : [['overview', '全部进度'], ...(ORDER_PROGRESS_ROLES.has(staff?.role) ? [['orders', '订单预约']] : []), ...(CHECKUP_PROGRESS_ROLES.has(staff?.role) ? [['checkup', '体检方案']] : [])]
+    : []
 
   return (
     <div className="page">
@@ -161,9 +160,12 @@ export default function HomePage() {
       <GeoReviewPanel compact={hasWorkbenchNav && !showWorkbenchView('todo', 'geo')} onCountChange={setGeoCount} onOpen={() => { setAdvisorArea('todo'); setAdvisorTodoView('geo') }} />
       <AiWorkbenchProvider>
       <div style={{ display: showWorkbenchView('todo', 'review') ? undefined : 'none' }}><SymptomTodosPanel /></div>
-      <div style={{ display: showWorkbenchView(SERVICE_PROGRESS_ROLES.has(staff?.role) ? 'progress' : 'todo', SERVICE_PROGRESS_ROLES.has(staff?.role) ? 'overview' : 'review') ? undefined : 'none' }}><ServiceSupervisionPanel />{!isAdvisor && ['healthPlanner', 'healthManager', 'nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel compact hideWhenEmpty />}</div>
+      {isAdvisor && <div style={{ display: showWorkbenchView('progress', 'overview') ? undefined : 'none' }}><ServiceSupervisionPanel /></div>}
       <div style={{ display: showWorkbenchView('todo', 'service') ? undefined : 'none' }}>
+        {!isAdvisor && <ServiceSupervisionPanel />}
+        {['healthPlanner', 'healthManager', 'nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel compact hideWhenEmpty />}
         {staff?.role === 'healthManager' && <CheckupProgressPanel taskMode />}
+        {staff?.role === 'superadmin' && <CheckupProgressPanel taskMode />}
         {['healthManager', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
         {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
         {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
@@ -350,7 +352,7 @@ export default function HomePage() {
 
       </div>
 
-      {CHECKUP_PROGRESS_ROLES.has(staff?.role) && <div style={{ display: showWorkbenchView('progress', 'checkup') ? undefined : 'none' }}><CheckupProgressPanel /></div>}
+      {isAdvisor && <div style={{ display: showWorkbenchView('progress', 'checkup') ? undefined : 'none' }}><CheckupProgressPanel /></div>}
 
       {/* 慢病分布 */}
       <div style={{ display: showWorkbenchView('data') ? undefined : 'none' }}>

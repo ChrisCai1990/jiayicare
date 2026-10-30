@@ -93,7 +93,7 @@ test('health consultant can switch between tasks, service progress, and data wit
 })
 
 for (const role of ['healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'specialist', 'psychologist', 'rehabSpecialist', 'tcmDoctor', 'superadmin']) {
-  test(`${role} starts with all work visible and can focus on tasks or progress`, async () => {
+  test(`${role} starts with assigned work and keeps service progress in its task area`, async () => {
     const view = await mount(role)
     try {
       assert.ok(view.box.querySelector('nav[aria-label="岗位工作台"]'))
@@ -105,17 +105,13 @@ for (const role of ['healthPlanner', 'healthManager', 'nutritionist', 'medicalAs
       assert.equal(view.visible('ServiceTasksPanel'), false)
       await view.click('服务事项')
       assert.equal(view.visible('ServiceTasksPanel'), true)
+      assert.equal(view.visible('ServiceSupervisionPanel'), true)
       assert.equal(view.visible('FollowUpsPanel'), false)
-      if (role === 'healthManager') {
+      if (role === 'healthManager' || role === 'superadmin') {
         assert.equal(view.visible('CheckupProgressPanel'), true)
         assert.equal(view.box.querySelector('[data-panel="CheckupProgressPanel"]').dataset.taskMode, 'true')
       }
-      if (['healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'superadmin'].includes(role)) {
-        await view.click('我关注的服务')
-        assert.equal(view.visible('ServiceSupervisionPanel'), true)
-        assert.equal(view.visible('ServiceTasksPanel'), false)
-        if (role === 'healthManager') assert.equal(view.visible('CheckupProgressPanel'), false)
-      } else assert.equal([...view.box.querySelectorAll('button')].some(button => button.textContent === '我关注的服务'), false)
+      assert.equal([...view.box.querySelectorAll('button')].some(button => button.textContent === '我关注的服务'), false)
       await view.click('数据概览')
       assert.match(view.box.textContent, /今日健康数据记录/)
       assert.equal(view.visible('ServiceTasksPanel'), false)
