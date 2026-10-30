@@ -248,7 +248,7 @@ test('image-only upper crop does not discard lower crop lab results', async () =
   await assert.rejects(run('fixture', 9), /lower-crop-retained/);
 });
 
-for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'checkpoint']) for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR ${mode} preserves evidence and progress`, async () => {
+for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'page-circuit', 'checkpoint']) for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR ${mode} preserves evidence and progress`, async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -260,6 +260,7 @@ for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'checkpoi
   if (mode === 'checkpoint') report.parseJob = pdf
     ? { firstPassPages: { 1: { items: [], skipPage: true, imageEvidence: { status: 'image_only', message: '影像资料页' } } }, progress: { version: 2, nextPage: 1, imagePageEvidence: { 1: { status: 'image_only', message: '影像资料页' } } } }
     : { imagePages: { 1: { items: [], evidence: { status: 'image_only', message: '影像资料页' } } } };
+  if (mode === 'page-circuit' && pdf) report.parseJob = { firstPassPages: { 2: { items: [], skipPage: true, imageEvidence: { status: 'image_only', message: '影像资料页' } } } };
   const writes = [];
   const errors = [];
   let calls = 0;
@@ -272,15 +273,15 @@ for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'checkpoi
     },
   };
   const modules = {
-    '../utils/ai': { parseImage: async (_, prompt) => { calls++; if (mode === 'budget-pause') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('预算不足'); if (mode === 'page-budget') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('第1页调用次数不足', 'AI_PAGE_BUDGET_PAUSED'); return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
+    '../utils/ai': { parseImage: async (_, prompt) => { calls++; if (mode === 'budget-pause') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('预算不足'); if (mode === 'page-budget') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('第1页调用次数不足', 'AI_PAGE_BUDGET_PAUSED'); if (mode === 'page-circuit') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('本报告第 1 页连续调用异常', 'AI_PAGE_CIRCUIT_PAUSED'); return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
     '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
     '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
     '../utils/reportReviewRevision': require('../src/utils/reportReviewRevision'),
     '../utils/aiDataConsent': { withReportStaffService: (_report, run) => run() },
     '../models/MedicalReport': db,
     '../utils/pdf': { isPdfReport: () => pdf, fetchReportBuffer: async () => Buffer.from('synthetic-image'),
-      getPdfPageCountFromBuffer: async () => 1,
-      pdfBufferToImages: async (_, options) => options.onBatch(['synthetic-image'], 0),
+      getPdfPageCountFromBuffer: async () => mode === 'page-circuit' && pdf ? 2 : 1,
+      pdfBufferToImages: async (_, options) => options.onBatch(mode === 'page-circuit' && pdf ? ['synthetic-image', 'synthetic-image'] : ['synthetic-image'], 0),
       renderSinglePage: () => { throw new Error('Pure image page must not enter a coverage retry'); } },
     '../utils/screeningMatch': { classifyItemsAsync: async items => items },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
@@ -326,7 +327,14 @@ for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'checkpoi
     assert.equal(final.aiStatus, 'failed');
     assert.equal(final.parseJob.status, 'failed');
     if (!pdf) assert.match(final.parseJob.message, /调用次数不足/);
-    assert.equal(calls, pdf ? 2 : 1);
+    assert.equal(calls, 1);
+    return;
+  }
+  if (mode === 'page-circuit') {
+    assert.equal(final.aiStatus, pdf ? 'pending' : 'failed');
+    assert.equal(final.parseJob.status, pdf ? 'completed' : 'failed');
+    if (pdf) assert.match(final.parseJob.message, /识别失败1页/);
+    assert.equal(calls, 1); // A paused page is not retried or allowed to stop other pages.
     return;
   }
   assert.equal(final.aiStatus, pdf ? 'pending' : 'failed');

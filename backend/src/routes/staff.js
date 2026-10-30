@@ -17294,7 +17294,11 @@ async function runReportParseControlled(reportId) {
                     break;
                   }
                   if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${pageNum}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
-                } catch (e) { rethrowAiControl(e); if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${pageNum}异常: ${e.message}`); }
+                } catch (e) {
+                  rethrowAiControl(e);
+                  if (['AI_PAGE_BUDGET_PAUSED', 'AI_PAGE_CIRCUIT_PAUSED'].includes(e.code)) break;
+                  if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${pageNum}异常: ${e.message}`);
+                }
               }
             }
           };

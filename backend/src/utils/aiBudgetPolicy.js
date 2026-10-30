@@ -15,7 +15,7 @@ class AiControlError extends Error {
 }
 const isAiControlError = error => error?.aiControl === true;
 // A page refusal stops only that page's provider calls; the outer report may keep its results.
-function rethrowAiControl(error) { if (isAiControlError(error) && error.code !== 'AI_PAGE_BUDGET_PAUSED') throw error; }
+function rethrowAiControl(error) { if (isAiControlError(error) && !['AI_PAGE_BUDGET_PAUSED', 'AI_PAGE_CIRCUIT_PAUSED'].includes(error.code)) throw error; }
 function periodKeys(now = new Date()) {
   const day = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
   return { day, month: day.slice(0, 7) };

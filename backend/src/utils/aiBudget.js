@@ -19,17 +19,18 @@ function createBudgetRunner(db = store, now = () => new Date()) {
     // collectively trip the circuit and stop an otherwise healthy job.
     const page = Number(ctx.page);
     const pageKey = Number.isInteger(page) && page > 0;
+    const reportPageKey = ctx.business === 'ocr' && Boolean(ctx.reportId) && pageKey;
     const key = ctx.business === 'ocr' && ctx.reportId
-      ? `${provider}:${model}:report:${ctx.reportId}${pageKey ? `:page:${page}` : ''}`
+      ? `${provider}:${model}:report:${ctx.reportId}${reportPageKey ? `:page:${page}` : ''}`
       : `${provider}:${model}`;
-    const circuitLabel = pageKey ? `本报告第 ${page} 页` : '本报告';
+    const circuitLabel = reportPageKey ? `本报告第 ${page} 页` : '本报告';
     let policy, rate, estimatedMicros;
     try {
       if (ctx.stopState?.error) throw ctx.stopState.error;
       policy = await db.policy();
       if (policy.paused || (ctx.business === 'ocr' && policy.ocrPaused)) throw new AiControlError('AI 调用已由管理员暂停');
       if (ctx.deadline && started.getTime() >= ctx.deadline) throw new AiControlError('本次 OCR 已到运行时限，已暂停');
-      if ((await db.circuit(key))?.paused) throw new AiControlError(ctx.reportId ? `${circuitLabel}连续调用异常，已暂停，请管理员检查后恢复；其他页面和报告可继续` : '模型连续异常，已自动暂停，请管理员检查后恢复', 'AI_CIRCUIT_PAUSED');
+      if ((await db.circuit(key))?.paused) throw new AiControlError(ctx.reportId ? `${circuitLabel}连续调用异常，已暂停，请管理员检查后恢复；其他页面和报告可继续` : '模型连续异常，已自动暂停，请管理员检查后恢复', reportPageKey ? 'AI_PAGE_CIRCUIT_PAUSED' : 'AI_CIRCUIT_PAUSED');
       rate = policy.prices?.[model];
       if ((policy.dailyYuan || policy.monthlyYuan) && !rate) throw new AiControlError(`模型 ${model} 未配置单价，金额预算启用后禁止调用`);
       estimatedMicros = costMicros(estimate, rate);
@@ -50,7 +51,7 @@ function createBudgetRunner(db = store, now = () => new Date()) {
       // Only a known preflight refusal is rolled back. An ambiguous DB write failure stays
       // reserved conservatively; crucially, no provider request is made in either case.
       if (isAiControlError(error)) {
-        if (ctx.stopState && error.code !== 'AI_PAGE_BUDGET_PAUSED') ctx.stopState.error = error;
+        if (ctx.stopState && !['AI_PAGE_BUDGET_PAUSED', 'AI_PAGE_CIRCUIT_PAUSED'].includes(error.code)) ctx.stopState.error = error;
         for (const scope of reserved) await db.adjust(scope, -estimate.total, -(estimatedMicros || 0), -1);
         throw error;
       }
