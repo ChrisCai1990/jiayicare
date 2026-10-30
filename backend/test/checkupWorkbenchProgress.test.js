@@ -38,6 +38,22 @@ test('missing statuses and skipped items never count as completed, and plan-leve
   assert.equal(summarizeCheckupItems([]).progressStatus, 'pending');
 });
 
+test('appointment and post-checkup review come from workflow evidence, not a zero item count', () => {
+  assert.equal(buildCheckupWorkbenchRows([plan], patients, true)[0].workStage, 'unknown');
+  const tasks = new Map([['plan', [{ followUpSchemeId: 'booking', status: 'completed' },
+    { followUpSchemeId: 'onsite', status: 'planned', isBlocked: false },
+    { followUpSchemeId: 'reports', status: 'planned', isBlocked: true }]]]);
+  const schemes = [{ _id: 'booking', workflowStageKey: 'booking' }, { _id: 'onsite', workflowStageKey: 'onsite' }, { _id: 'reports', workflowStageKey: 'report_collection' }];
+  tasks.get('plan')[0].status = 'in_progress';
+  assert.equal(buildCheckupWorkbenchRows([plan], patients, true, null, tasks, schemes)[0].workStage, 'booking');
+  tasks.get('plan')[0].status = 'completed';
+  assert.equal(buildCheckupWorkbenchRows([plan], patients, true, null, tasks, schemes)[0].workStage, 'waiting_exam');
+  tasks.get('plan')[1].status = 'completed';
+  tasks.get('plan')[2].isBlocked = false;
+  assert.equal(buildCheckupWorkbenchRows([plan], patients, true, null, tasks, schemes)[0].workStage, 'review');
+  assert.equal(buildCheckupWorkbenchRows([{ ...plan, items: [{ status: 'completed', reportId: 'r1' }] }], patients, true)[0].workStage, 'review');
+});
+
 test('unpublished, cancelled, empty and out-of-scope plans are excluded; more than five plans are retained', () => {
   const records = Array.from({ length: 7 }, (_, i) => ({ ...plan, _id: 'plan-' + i }));
   const before = JSON.stringify(records);
@@ -61,6 +77,8 @@ test('actual route keeps staff scope and defaults to unfinished while supporting
     getVisibleStaffIds: async () => ['staff'],
     User: { find: filter => { userFilter = filter; return { select: () => ({ lean: async () => patients }) }; } },
     HealthPlan: { find: filter => { planFilter = filter; return { select: () => ({ lean: async () => [current, finished] }) }; } },
+    FollowUp: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
+    FollowUpPlan: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
     MedicalReport: { find: () => ({ select: () => ({ lean: async () => [
       { _id: 'report-1', user: 'patient' }, { _id: 'report-2', user: 'patient' },
     ] }) }) },
