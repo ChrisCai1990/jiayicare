@@ -74,6 +74,7 @@ test('budget periods use Shanghai time and report/page budgets survive day and j
   const a = budgetScopes(DEFAULT_POLICY, ctx, new Date('2026-09-01'));
   const b = budgetScopes(DEFAULT_POLICY, { ...ctx, attemptId: 'new' }, new Date('2026-10-01'));
   assert.deepEqual(a.slice(-2), b.slice(-2));
+  assert.ok(a.slice(-2).every(scope => scope.tokens == null && scope.calls > 0));
   assert.ok(estimateTokens([{ content: [{ type: 'image_url' }, { type: 'text', text: '中文' }] }], 100).total > 16384);
 });
 

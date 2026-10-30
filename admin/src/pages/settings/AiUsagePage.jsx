@@ -7,7 +7,6 @@ const number = value => Number(value || 0).toLocaleString('zh-CN')
 const fields = [
   ['dailyTokens', '每日总 Token'], ['monthlyTokens', '每月总 Token'],
   ['ocrDailyTokens', 'OCR 每日 Token'], ['otherDailyTokens', '其他 AI 每日 Token'],
-  ['reportTokens', '每份报告累计 Token'], ['pageTokens', '每页累计 Token'],
   ['dailyCalls', '每日总调用次数'], ['reportCalls', '每份报告累计调用次数'],
   ['pageCalls', '每页累计调用次数'], ['failureThreshold', '模型连续失败暂停阈值'],
   ['warningPercent', '预算预警比例（%）'], ['dailyYuan', '每日费用上限（元，0 表示不启用）'],

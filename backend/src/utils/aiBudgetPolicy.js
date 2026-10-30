@@ -87,8 +87,10 @@ function budgetScopes(policy, context, now) {
     { id: `business:${context.business}:${day}`, label: context.business === 'ocr' ? 'OCR 今日预算' : '其他 AI 今日预算', tokens: context.business === 'ocr' ? policy.ocrDailyTokens : policy.otherDailyTokens },
   ];
   if (context.reportId) {
-    scopes.push({ id: `report:${context.reportId}`, label: '报告累计预算', tokens: policy.reportTokens, calls: policy.reportCalls });
-    if (context.page) scopes.push({ id: `page:${context.reportId}:${context.page}`, label: `第 ${context.page} 页累计预算`, tokens: policy.pageTokens, calls: policy.pageCalls });
+    // Large legitimate reports may exceed a fixed token ceiling. Keep call-count
+    // guards against repeated parsing; daily/monthly scopes bound total spend.
+    scopes.push({ id: `report:${context.reportId}`, label: '报告累计调用保护', calls: policy.reportCalls });
+    if (context.page) scopes.push({ id: `page:${context.reportId}:${context.page}`, label: `第 ${context.page} 页调用保护`, calls: policy.pageCalls });
   }
   return scopes;
 }
@@ -106,7 +108,7 @@ function budgetRefusalReason(scope, counter = {}, tokens = 0, micros = 0, calls 
   const usedCalls = Number(counter.calls || 0), callLimit = Number(scope.calls || 0) + Number(counter.extraCalls || 0);
   if (scope.calls && usedCalls + calls > callLimit) return `${scope.label}调用次数不足（已用 ${usedCalls}/${callLimit} 次，本次需要 ${calls} 次），请管理员追加该范围的调用次数后继续`;
   const usedTokens = Number(counter.tokens || 0), tokenLimit = Number(scope.tokens || 0) + Number(counter.extraTokens || 0);
-  if (usedTokens + tokens > tokenLimit) return `${scope.label}Token 不足（已用 ${usedTokens}/${tokenLimit}，本次预留 ${tokens}），请管理员调整额度后继续`;
+  if (scope.tokens != null && usedTokens + tokens > tokenLimit) return `${scope.label}Token 不足（已用 ${usedTokens}/${tokenLimit}，本次预留 ${tokens}），请管理员调整额度后继续`;
   if (scope.micros && Number(counter.micros || 0) + micros > scope.micros) return `${scope.label}金额不足，请管理员调整金额额度后继续`;
   return '';
 }

@@ -4,10 +4,10 @@ const { DEFAULT_POLICY, budgetRefusalReason } = require('../src/utils/aiBudgetPo
 const { assertSupplementCallCapacity } = require('../src/utils/aiBudget');
 const { mergeSupplementItems } = require('../src/utils/reportPageSupplement');
 
-test('page call limit is distinguished from token limit', () => {
-  const scope = { label: '第 1 页累计预算', calls: 8, tokens: 160000 };
+test('page call limit remains while large page tokens do not trigger a separate ceiling', () => {
+  const scope = { label: '第 1 页调用保护', calls: 8 };
   assert.match(budgetRefusalReason(scope, { calls: 8, tokens: 24922 }, 27912), /调用次数不足.*8\/8/);
-  assert.match(budgetRefusalReason(scope, { calls: 1, tokens: 159000 }, 27912), /Token 不足/);
+  assert.equal(budgetRefusalReason(scope, { calls: 1, tokens: 159000 }, 27912), '');
   assert.equal(budgetRefusalReason(scope, { calls: 8, extraCalls: 3, tokens: 24922 }, 27912, 0, 3), '');
 });
 
