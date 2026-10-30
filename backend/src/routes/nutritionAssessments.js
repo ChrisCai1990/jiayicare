@@ -27,6 +27,7 @@ const load = async (req, res) => {
   return row;
 };
 const populate = query => query.populate('patientId', 'name phone')
+  .populate('initiatorId', 'name role')
   .populate('advisorId', 'name role').populate('plannerId', 'name role').populate('managerId', 'name role')
   .populate('nutritionistId', 'name role').populate('sourcePlanId', 'title type status')
   .populate('sourceOrderId', 'orderNo serviceName specificationLabel status paymentStatus usedUnits totalUnits');
@@ -99,11 +100,13 @@ router.get('/eligible-orders', staffAuth, wrap(async (req, res) => {
 
 router.post('/', staffAuth, wrap(async (req, res) => {
   const staff = req.staff;
-  if (!['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff.role)) return bad(res, 403, '当前岗位不可发起营养评估');
+  if (!['familyDoctor', 'healthPlanner', 'nutritionist', 'superadmin'].includes(staff.role)) return bad(res, 403, '当前岗位不可发起营养评估');
   const { patientId, source, sourcePlanId, sourceOrderId } = req.body || {};
   if (!isId(patientId) || !['followup', 'nutrition_management', 'nutrition_plan', 'paid_order'].includes(source)) return bad(res, 400, '请选择会员和发起入口');
   if (source === 'paid_order' && staff.role !== 'healthPlanner' && staff.role !== 'superadmin') return bad(res, 403, '已购评估由健康规划师办理');
-  if (source !== 'paid_order' && staff.role !== 'familyDoctor' && staff.role !== 'superadmin') return bad(res, 403, '年度管理评估由健康顾问发起');
+  if (source !== 'paid_order' && !['familyDoctor', 'nutritionist', 'superadmin'].includes(staff.role)) return bad(res, 403, '年度管理评估由健康顾问或营养师发起');
+  if (staff.role === 'nutritionist' && !['followup', 'nutrition_management'].includes(source))
+    return bad(res, 403, '营养师仅可从营养管理发起单次评估');
   const config = await Config.findOne({ tenantId: staff.tenantId }).lean();
   if (config?.enabled !== true) return bad(res, 409, '请先在管理端启用营养评估需求单');
   const reason = clean(req.body.reason), focus = clean(req.body.focus);
@@ -114,8 +117,10 @@ router.post('/', staffAuth, wrap(async (req, res) => {
   const patient = await User.findOne({ _id: patientId, tenantId: staff.tenantId, isDeleted: { $ne: true } })
     .select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager assignedNutritionist servicePackage serviceExpiry').lean();
   if (!patient) return bad(res, 404, '会员不存在');
-  if (staff.role !== 'superadmin' && !same(source === 'paid_order' ? patient.assignedHealthPlanner : patient.assignedFamilyDoctor, staff._id))
-    return bad(res, 403, source === 'paid_order' ? '仅该会员所属健康规划师可办理' : '仅该会员所属健康顾问可发起');
+  const ownerId = source === 'paid_order' ? patient.assignedHealthPlanner
+    : staff.role === 'nutritionist' ? patient.assignedNutritionist : patient.assignedFamilyDoctor;
+  if (staff.role !== 'superadmin' && !same(ownerId, staff._id))
+    return bad(res, 403, source === 'paid_order' ? '仅该会员所属健康规划师可办理' : '仅该会员所属健康顾问或营养师可发起');
   if (!patient.assignedHealthManager || !patient.assignedNutritionist) return bad(res, 409, '请先分配健管专员和营养师');
   const assignees = await Admin.find({ _id: { $in: [patient.assignedHealthManager, patient.assignedNutritionist] },
     tenantId: staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id role').lean();
@@ -150,7 +155,8 @@ router.post('/', staffAuth, wrap(async (req, res) => {
     tenantId: staff.tenantId, patientId, source, sourcePlanId: plan?._id || null,
     sourceOrderId: source === 'paid_order' ? sourceOrderId : null,
     assessmentType: source === 'nutrition_plan' ? 'reassessment' : 'initial', reason, focus, preferredAt,
-    advisorId: source === 'paid_order' ? null : patient.assignedFamilyDoctor || staff._id,
+    initiatorId: staff._id, initiatorRole: staff.role,
+    advisorId: source === 'paid_order' ? null : patient.assignedFamilyDoctor || null,
     plannerId: source === 'paid_order' ? patient.assignedHealthPlanner || staff._id : null,
     managerId: patient.assignedHealthManager,
     nutritionistId: patient.assignedNutritionist, events: [event(staff, 'requested', reason)],
@@ -208,8 +214,10 @@ router.post('/:id/complete', staffAuth, wrap(async (req, res) => {
 
 router.post('/:id/cancel', staffAuth, wrap(async (req, res) => {
   const row = await load(req, res); if (!row) return;
-  if (req.staff.role !== 'superadmin' && !same(row.source === 'paid_order' ? row.plannerId : row.advisorId, req.staff._id))
-    return bad(res, 403, '仅发起顾问可取消需求');
+  const initiatorId = row.initiatorId || row.events?.find(item => item.action === 'requested')?.actorId
+    || (row.source === 'paid_order' ? row.plannerId : row.advisorId);
+  if (req.staff.role !== 'superadmin' && !same(initiatorId, req.staff._id))
+    return bad(res, 403, '仅发起人可取消需求');
   if (!active.includes(row.status)) return bad(res, 409, '该需求单已结束');
   const reason = clean(req.body?.reason, 1000);
   if (reason.length < 5) return bad(res, 400, '请填写取消原因');

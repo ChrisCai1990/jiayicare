@@ -19,6 +19,8 @@ const schema = new mongoose.Schema({
   reason: { type: String, required: true, maxlength: 2000 },
   focus: { type: String, default: '', maxlength: 2000 },
   preferredAt: { type: Date, default: null },
+  initiatorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  initiatorRole: { type: String, enum: ['familyDoctor', 'healthPlanner', 'nutritionist', 'superadmin', null], default: null },
   advisorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   plannerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
