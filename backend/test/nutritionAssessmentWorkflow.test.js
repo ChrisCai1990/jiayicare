@@ -124,8 +124,10 @@ test('nutrition assessment: paid order goes to planner, annual ad hoc goes to ad
   order.refundStatus = 'none'
   assert.equal((await call('manager', `/${ids.request}/booking`, { at: '2099-01-02T10:30:00Z', mode: 'offline', store: '中心门店' })).status, 200)
   assert.match(row.events.at(-1).note, /原预约.*腾讯会议 123.*中心门店/)
-  assert.equal((await call('nutritionist', `/${ids.request}/complete`, { summary: '饮食结构需要调整，建议逐步增加蔬菜和蛋白质', recommendations: '两周后复评' })).status, 200)
-  assert.equal(row.status, 'completed')
+  assert.equal((await call('nutritionist', `/${ids.request}/complete`, { summary: '饮食结构需要调整，建议逐步增加蔬菜和蛋白质', recommendations: '两周后复评' })).status, 409)
+  row = { ...row, status: 'completed', assessment: { summary: '饮食结构需要调整，建议逐步增加蔬菜和蛋白质', recommendations: '两周后复评', completedAt: new Date() },
+    events: [...row.events, { action: 'completed', actorName: '营养师' }] }
+  assert.equal((await call('nutritionist', `/${ids.request}/complete`, {})).status, 200)
   assert.equal(row.orderSettlementStatus, 'completed')
   assert.equal(order.status, 'completed')
   assert.equal(order.usedUnits, 1)

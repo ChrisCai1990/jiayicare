@@ -46,6 +46,8 @@ async function handle(req,res) {
   const template=await DynamicQuestionnaire.findById(QUESTIONNAIRE_ID).lean();
   if(!template||template.deletedAt)throw fail('膳食调查问卷不可用，请联系管理员',400);
   if(req.method==='GET') {
+   const requestSettlement=task.workflowKey==='nutrition_lifestyle_assessment'&&task.status==='completed'
+    ?await require('./nutritionLifestyleTask').syncRequestFromInterview(task):null;
    const response=await QuestionnaireResponse.findOne({user:user._id,questionnaire:QUESTIONNAIRE_ID}).sort({submittedAt:-1}).lean();
    const answers={...(response?.answers||{})},archive={};
    for(const q of template.questions||[]) {
@@ -53,10 +55,16 @@ async function handle(req,res) {
     if(present(value))archive[q.id]=value;
     if(!present(answers[q.id])&&present(value))answers[q.id]=q.type==='multi'?(Array.isArray(value)?value:[value]):value;
    }
-   return res.json({success:true,data:{task,template,initialAnswers:answers,archive,sourceResponseId:response?._id,patientVersion:fingerprint(user),gender:user.gender}});
+   return res.json({success:true,data:{task,template,initialAnswers:answers,archive,sourceResponseId:response?._id,patientVersion:fingerprint(user),gender:user.gender,requestSettlement}});
   }
   const body=req.body,old=task.formData?.lifestyleInterview;
-  if(task.status==='completed')throw fail('评估已完成，请刷新');
+  if(task.status==='completed') {
+   if(task.workflowKey==='nutrition_lifestyle_assessment') {
+    const requestSettlement=await require('./nutritionLifestyleTask').syncRequestFromInterview(task);
+    return res.json({success:true,data:task,requestSettlement});
+   }
+   throw fail('评估已完成，请刷新');
+  }
   if(!['planned','in_progress','missed'].includes(task.status))throw fail('任务已结束');
   if(!['draft','submit'].includes(body.action))throw fail('操作无效',400);
   if(old?.phase!=='applying') {
@@ -94,13 +102,15 @@ async function handle(req,res) {
   const event={action:'completed',result,by:interview.by,at:new Date(),sourceResponseId:interview.submissionId};
   const saved=await FollowUp.findOneAndUpdate({_id:task._id,status:task.status,aiStatus:task.aiStatus,assignedTo:task.assignedTo,'formData.lifestyleInterview.phase':'applying','formData.lifestyleInterview.submissionId':interview.submissionId},{$set:{'formData.lifestyleInterview.phase':'submitted',content:result,executedContent:result,status:'completed',completedAt:new Date(),completedBy:'staff',aiStatus:'approved',reviewRole:null,reviewAssignedTo:null,isBlocked:false,'formData.nutritionResultReview':event},$push:{'formData.nutritionResultHistory':event}},{new:true});
   if(!saved)throw fail('任务已变化，请刷新核对提交状态');
+  const requestSettlement=saved.workflowKey==='nutrition_lifestyle_assessment'
+   ?await require('./nutritionLifestyleTask').syncRequestFromInterview(saved):null;
   let entitlementRedemption = null;
   if (saved.sourceAnnualPlanId && saved.workflowKey === 'annual_nutrition_assessment') {
    try { entitlementRedemption = await require('./packageServiceRedemption').recordCompletedService({
     patientId: saved.patientId, sourceType: 'follow_up', sourceId: saved._id, workflowKey: 'nutrition_intervention',
    }); } catch (error) { console.error('[package-service-redemption] nutrition deferred', saved._id, error.message); entitlementRedemption = { status: 'needs_review' }; }
   }
-  res.json({success:true,data:saved,entitlementRedemption});
+  res.json({success:true,data:saved,entitlementRedemption,requestSettlement});
  }catch(e){res.status(e.statusCode||500).json({success:false,message:e.message});}
 }
 module.exports={handle,prepare,fingerprint};

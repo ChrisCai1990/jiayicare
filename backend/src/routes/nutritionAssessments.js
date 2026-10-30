@@ -34,13 +34,26 @@ const wrap = fn => async (req, res) => {
   try { await fn(req, res); }
   catch (error) {
     if (error.code === 11000) return bad(res, 409, '该会员已有进行中的同类营养评估，请先处理原需求单');
+    if (error.statusCode) return bad(res, error.statusCode, error.message);
     console.error('[nutrition-assessment]', error);
     bad(res, 500, '营养评估处理失败，请稍后重试');
   }
 };
 
-router.get('/:id/lifestyle-interview', staffAuth, require('../utils/requestLifestyleInterview').handle);
-router.post('/:id/lifestyle-interview', staffAuth, require('../utils/requestLifestyleInterview').handle);
+router.post('/self-lifestyle-interview', staffAuth, wrap(async (req, res) => {
+  if (!await require('../utils/staffRoleCapabilities').isNutritionistStaff(req.staff))
+    return bad(res, 403, '仅营养师可发起生活方式访谈');
+  const task = await require('../utils/nutritionLifestyleTask').startForNutritionist(req.body?.patientId, req.staff);
+  res.status(201).json({ success: true, data: task });
+}));
+
+router.post('/:id/execution-task', staffAuth, wrap(async (req, res) => {
+  const row = await load(req, res); if (!row) return;
+  if (req.staff.role !== 'superadmin' && (!await require('../utils/staffRoleCapabilities').isNutritionistStaff(req.staff)
+    || !same(row.nutritionistId, req.staff._id))) return bad(res, 403, '仅责任营养师可打开访谈任务');
+  const task = await require('../utils/nutritionLifestyleTask').ensureForRequest(row);
+  res.json({ success: true, data: task });
+}));
 
 router.get('/config', staffAuth, wrap(async (req, res) => {
   const row = await Config.findOne({ tenantId: req.staff.tenantId }).lean();
@@ -174,6 +187,8 @@ router.post('/:id/booking', staffAuth, wrap(async (req, res) => {
     { $set: { status: 'booked', appointment }, $inc: { __v: 1 }, $push: { events: event(req.staff, row.status === 'booked' ? 'rescheduled' : 'booked', `${previous}${at.toISOString()} · ${place}`) } },
     { new: true });
   if (!updated) return bad(res, 409, '需求单已被其他人更新，请刷新');
+  if (updated.executionFollowUpId) await require('../models/FollowUp').updateOne({ _id: updated.executionFollowUpId,
+    status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: { date: at } });
   res.json({ success: true, data: await populate(Request.findById(updated._id)) });
 }));
 
@@ -188,24 +203,7 @@ router.post('/:id/complete', staffAuth, wrap(async (req, res) => {
       return bad(res, 503, `评估已保存，订单核销待核对：${error.message}`); }
     return res.json({ success: true, data: await populate(Request.findById(row._id)) });
   }
-  if (row.status !== 'booked') return bad(res, 409, '请先由健管专员完成预约');
-  if (row.sourceOrderId) {
-    const order = await Order.findById(row.sourceOrderId).lean();
-    if (!isAvailableNutritionAssessmentOrder(order)) return bad(res, 409, '关联订单已退款、取消或核销，请先核对订单');
-  }
-  const summary = clean(req.body?.summary, 10000), recommendations = clean(req.body?.recommendations, 10000);
-  if (summary.length < 10 || recommendations.length < 5) return bad(res, 400, '请填写评估结论和后续建议');
-  const updated = await Request.findOneAndUpdate({ _id: row._id, status: 'booked' },
-    { $set: { status: 'completed', assessment: { summary, recommendations, completedAt: new Date() } },
-      $push: { events: event(req.staff, 'completed', summary.slice(0, 200)) } }, { new: true });
-  if (!updated) return bad(res, 409, '需求单已被其他人更新，请刷新');
-  if (updated.sourceOrderId) {
-    try { await settleNutritionAssessmentOrder(updated, req.staff, Order);
-      await Request.updateOne({ _id: updated._id }, { $set: { orderSettlementStatus: 'completed' } }); }
-    catch (error) { await Request.updateOne({ _id: updated._id }, { $set: { orderSettlementStatus: 'needs_review' } });
-      return bad(res, 503, `评估已保存，订单核销待核对：${error.message}`); }
-  }
-  res.json({ success: true, data: await populate(Request.findById(updated._id)) });
+  return bad(res, 409, '请打开生活方式访谈完成营养评估');
 }));
 
 router.post('/:id/cancel', staffAuth, wrap(async (req, res) => {
@@ -215,9 +213,16 @@ router.post('/:id/cancel', staffAuth, wrap(async (req, res) => {
   if (!active.includes(row.status)) return bad(res, 409, '该需求单已结束');
   const reason = clean(req.body?.reason, 1000);
   if (reason.length < 5) return bad(res, 400, '请填写取消原因');
+  if (row.executionFollowUpId) {
+    const task = await require('../models/FollowUp').findById(row.executionFollowUpId).lean();
+    if (task?.status === 'completed' || ['applying', 'submitted'].includes(task?.formData?.lifestyleInterview?.phase))
+      return bad(res, 409, '营养师已开始提交访谈，请先核对任务状态');
+  }
   const updated = await Request.findOneAndUpdate({ _id: row._id, status: row.status },
     { $set: { status: 'cancelled' }, $push: { events: event(req.staff, 'cancelled', reason) } }, { new: true });
   if (!updated) return bad(res, 409, '需求单已被其他人更新，请刷新');
+  if (updated.executionFollowUpId) await require('../models/FollowUp').updateOne({ _id: updated.executionFollowUpId,
+    status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: { status: 'cancelled', cancelReason: reason } });
   res.json({ success: true, data: await populate(Request.findById(updated._id)) });
 }));
 

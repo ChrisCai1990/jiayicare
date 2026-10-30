@@ -16,17 +16,17 @@ function Answer({q,value,onChange,disabled}) {
  if(q.type==='date')return <DateField className="form-input" type="date" disabled={disabled} value={value||''} onChange={e=>onChange(e.target.value)}/>
  return <input className="form-input" type={['number','scale'].includes(q.type)?'number':'text'} min={q.min} max={q.max} disabled={disabled} placeholder={q.placeholder||'未问清请留空'} value={value??''} onChange={e=>onChange(e.target.value)}/>
 }
-export default function AnnualNutritionAssessmentForm({task,staff,onSaved,kind='annual'}) {
+export default function AnnualNutritionAssessmentForm({task,staff,onSaved}) {
  const [data,setData]=useState(null),[answers,setAnswers]=useState({}),[confirmed,setConfirmed]=useState([]),[notes,setNotes]=useState(''),[method,setMethod]=useState('电话访谈'),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[conflicts,setConflicts]=useState(false),[filter,setFilter]=useState('all')
- useEffect(()=>{let alive=true;(kind==='request'?staffAPI.getNutritionAssessmentLifestyleInterview(task._id):staffAPI.getLifestyleInterview(task._id)).then(r=>{if(!alive)return;const d=r.data,i=d.task.formData?.lifestyleInterview;setData(d);setAnswers(i?.answers||d.initialAnswers);setConfirmed(i?.confirmed||[]);setNotes(i?.notes||'');setMethod(i?.method||'电话访谈')}).catch(e=>{if(alive)setMessage(e.message)});return()=>{alive=false}},[task._id,task.updatedAt,kind])
+ useEffect(()=>{let alive=true;staffAPI.getLifestyleInterview(task._id).then(r=>{if(!alive)return;const d=r.data,i=d.task.formData?.lifestyleInterview;setData(d);setAnswers(i?.answers||d.initialAnswers);setConfirmed(i?.confirmed||[]);setNotes(i?.notes||'');setMethod(i?.method||'电话访谈')}).catch(e=>{if(alive)setMessage(e.message)});return()=>{alive=false}},[task._id,task.updatedAt])
  if(!data)return <p role="status">{message||'正在读取膳食问卷与生活方式档案…'}</p>
- const current=data.task,editable=(kind==='request'?current.status==='booked':['planned','in_progress','missed'].includes(current.status))&&(staff.role==='superadmin'||(staff.role==='nutritionist'&&String((kind==='request'?current.nutritionistId:current.assignedTo)?._id||(kind==='request'?current.nutritionistId:current.assignedTo))===String(staff._id)))
+ const current=data.task,editable=['planned','in_progress','missed'].includes(current.status)&&(staff.role==='superadmin'||(staff.role==='nutritionist'&&String(current.assignedTo?._id||current.assignedTo)===String(staff._id)))
  const applying=current.formData?.lifestyleInterview?.phase==='applying',disabled=!editable||busy||applying
  const questions=interviewTools.visibleQuestions(data.template.questions,answers,data.gender)
- async function save(action){setBusy(true);setMessage('');try{const payload={action,answers,confirmed,notes,method,patientVersion:data.patientVersion,templateVersion:data.template.updatedAt,baseUpdatedAt:current.updatedAt,confirmConflicts:conflicts};const r=await (kind==='request'?staffAPI.saveNutritionAssessmentLifestyleInterview(task._id,payload):staffAPI.saveLifestyleInterview(task._id,payload));onSaved(r.data)}catch(e){setMessage(e.message)}finally{setBusy(false)}}
+ async function save(action){setBusy(true);setMessage('');try{const r=await staffAPI.saveLifestyleInterview(task._id,{action,answers,confirmed,notes,method,patientVersion:data.patientVersion,templateVersion:data.template.updatedAt,baseUpdatedAt:current.updatedAt,confirmConflicts:conflicts});onSaved(r.data)}catch(e){setMessage(e.message)}finally{setBusy(false)}}
  return <section>
   <h3>生活方式访谈与核实</h3><p>复用「{data.template.title}」。逐项核实后勾选；未问清保持待确认。提交后已核实的生活方式字段写入档案，营养师确认后即完成本次任务，无需健康顾问审核。</p>
-  <details><summary>本次评估依据及要求</summary><p style={{whiteSpace:'pre-wrap'}}>{kind==='request'?[current.reason,current.focus].filter(Boolean).join('\n'):current.plannedContent||current.content}</p></details>
+  <details><summary>本次评估依据及要求</summary><p style={{whiteSpace:'pre-wrap'}}>{current.plannedContent||current.content}</p></details>
   <p>{data.sourceResponseId?'已带入最近答卷；请结合当前档案核实。':'尚无答卷，可通过访谈代填。'} 已核实 {confirmed.length}/{questions.length} 项</p>
   <label>访谈方式<select className="form-input" disabled={disabled} value={method} onChange={e=>setMethod(e.target.value)}>{['电话访谈','视频访谈','当面访谈','客户问卷核实'].map(v=><option key={v}>{v}</option>)}</select></label>
   <label>显示<select className="form-input" value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">全部问题</option><option value="pending">待核实问题</option></select></label>

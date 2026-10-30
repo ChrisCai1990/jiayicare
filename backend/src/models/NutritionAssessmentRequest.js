@@ -38,6 +38,7 @@ const schema = new mongoose.Schema({
     completedAt: Date,
   },
   formData: { type: mongoose.Schema.Types.Mixed, default: null },
+  executionFollowUpId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
   events: { type: [eventSchema], default: [] },
 }, { timestamps: true });
 
