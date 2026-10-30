@@ -22,6 +22,7 @@ import HomePage from './pages/HomePage'
 import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
 import NewPatientPage from './pages/NewPatientPage'
+import FollowUpsPage from './pages/FollowUpsPage'
 import PlansPage from './pages/PlansPage'
 import PlanDetailPage from './pages/PlanDetailPage'
 import ReportsPage from './pages/ReportsPage'
@@ -222,7 +223,7 @@ export default function App() {
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<ErrorBoundary><PatientDetailPage /></ErrorBoundary>} />
               <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />
-              <Route path="followups" element={<Navigate to="/home?todo=followup" replace />} />
+              <Route path="followups" element={<FollowUpsPage />} />
               <Route path="plans" element={<PlansPage />} />
               <Route path="medical-resource-knowledge" element={<MedicalResourceKnowledgePage />} />
               <Route path="specialty-library" element={<SpecialtyLibraryPage />} />
