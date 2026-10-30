@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { suggest, categoryKeys, loadEvidence, sameCheckupRound } = require('../src/utils/checkupScreeningReconcile');
+const { suggest, categoryKeys, loadEvidence, sameCheckupRound, reconcile } = require('../src/utils/checkupScreeningReconcile');
 
 const plan = { year: 2026, checkupDate: '2026-05-15', items: [
   { _id: 'p1', name: '血常规', status: 'pending' },
@@ -13,6 +13,18 @@ test('exact name and one confirmed category match audited same-year reports', ()
     { name: '血常规检查', orderName: '血常规', value: '已检' }, { name: '肝彩超', screeningKey: key, classificationSource: 'manual', findings: '原件所见' },
   ] }];
   assert.deepEqual(suggest(plan, reports, new Map([['exam', key]])).map(row => row.reportId), ['r1', 'r1']);
+});
+
+test('legacy completed item without report can gain strict evidence without changing its completion time', async () => {
+  const legacy = { ...plan, patientId: 'patient', items: [{ _id: 'p1', name: '血常规', status: 'completed', completedAt: '2026-05-02', reportId: null }] };
+  const reports = [{ _id: 'r1', audit_status: 'audited', checkDate: '2026-05-01', reportItems: [{ name: '血常规', value: '已检' }] }];
+  const empty = { find: () => ({ select: () => ({ lean: async () => [] }) }) };
+  let update;
+  await reconcile(legacy, { HealthPlan: { updateOne: async (_filter, change) => { update = change; return { modifiedCount: 1 }; } },
+    MedicalReport: { find: () => ({ select: () => ({ lean: async () => reports }) }) },
+    LabTestOrder: empty, SpecialExam: empty, FunctionalMedicineTest: empty, ProjectCategory: empty });
+  assert.equal(update.$set['items.$.reportId'], 'r1');
+  assert.equal(update.$set['items.$.completedAt'], undefined);
 });
 
 test('unreviewed, previous-year, duplicate reports and duplicate plan names do not auto-link', () => {

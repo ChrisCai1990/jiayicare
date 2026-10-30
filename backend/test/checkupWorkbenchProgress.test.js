@@ -81,7 +81,10 @@ test('actual route keeps staff scope and defaults to unfinished while supporting
 
 test('workbench counts only linked audited reports for the same patient', () => {
   const completed = { ...plan, items: [{ name: '血常规', status: 'completed', reportId: 'r1' }] };
-  assert.equal(buildCheckupWorkbenchRows([completed], patients, true, [])[0].completedCount, 0);
+  const missing = buildCheckupWorkbenchRows([completed], patients, true, [])[0];
+  assert.equal(missing.completedCount, 0);
+  assert.equal(missing.unapprovedReportCount, 1);
   assert.equal(buildCheckupWorkbenchRows([completed], patients, true, [{ _id: 'r1', user: 'other' }])[0].completedCount, 0);
   assert.equal(buildCheckupWorkbenchRows([completed], patients, true, [{ _id: 'r1', user: 'patient' }])[0].completedCount, 1);
+  assert.equal(buildCheckupWorkbenchRows([{ ...completed, items: [{ name: '血常规', status: 'completed' }] }], patients, true, [])[0].missingReportCount, 1);
 });

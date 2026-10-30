@@ -7,9 +7,12 @@ function summarizeCheckupItems(items = [], auditedReports = null) {
   const completedCount = rows.filter(complete).length;
   const skippedCount = rows.filter(item => item?.status === 'skipped').length;
   const pendingItems = rows.filter(item => !complete(item));
+  const missingReportCount = pendingItems.filter(item => item?.status === 'completed' && !item.reportId).length;
+  const unapprovedReportCount = pendingItems.filter(item => item?.status === 'completed' && item.reportId).length;
   return {
     totalItems: rows.length, completedCount, skippedCount,
     pendingCount: pendingItems.length,
+    missingReportCount, unapprovedReportCount,
     pendingNames: pendingItems.map(item => item?.name || ''),
     progressStatus: rows.length > 0 && completedCount === rows.length ? 'completed'
       : completedCount > 0 || skippedCount > 0 ? 'in_progress' : 'pending',

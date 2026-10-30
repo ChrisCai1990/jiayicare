@@ -15,12 +15,12 @@ global.document = dom.window.document
 global.IS_REACT_ACT_ENVIRONMENT = true
 
 function panel(name) {
-  return () => React.createElement('div', { 'data-panel': name }, name)
+  return props => React.createElement('div', { 'data-panel': name, 'data-task-mode': String(!!props.taskMode) }, name)
 }
 
 async function mount(role) {
   const mocks = {
-    'react-router-dom': { useNavigate: () => () => {} },
+    'react-router-dom': { useNavigate: () => () => {}, useLocation: () => ({ search: '' }) },
     '../App': { useStaff: () => ({ staff: { role, name: '测试人员' } }) },
     '../api': { getToken: () => 'test', staffAPI: {
       getReports2: async () => ({ data: {} }),
@@ -45,7 +45,7 @@ async function mount(role) {
   const filename = path.resolve(__dirname, '../src/pages/HomePage.jsx')
   const module = { exports: {} }
   vm.runInNewContext(transformSync(fs.readFileSync(filename, 'utf8'), { loader: 'jsx', format: 'cjs' }).code, {
-    module, exports: module.exports, console, window, document,
+    module, exports: module.exports, console, window, document, URLSearchParams,
     require: name => name in mocks ? mocks[name] : require(name),
   })
   const box = document.createElement('div')
@@ -106,10 +106,15 @@ for (const role of ['healthPlanner', 'healthManager', 'nutritionist', 'medicalAs
       await view.click('服务事项')
       assert.equal(view.visible('ServiceTasksPanel'), true)
       assert.equal(view.visible('FollowUpsPanel'), false)
+      if (role === 'healthManager') {
+        assert.equal(view.visible('CheckupProgressPanel'), true)
+        assert.equal(view.box.querySelector('[data-panel="CheckupProgressPanel"]').dataset.taskMode, 'true')
+      }
       if (['healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'superadmin'].includes(role)) {
         await view.click('我关注的服务')
         assert.equal(view.visible('ServiceSupervisionPanel'), true)
         assert.equal(view.visible('ServiceTasksPanel'), false)
+        if (role === 'healthManager') assert.equal(view.visible('CheckupProgressPanel'), false)
       } else assert.equal([...view.box.querySelectorAll('button')].some(button => button.textContent === '我关注的服务'), false)
       await view.click('数据概览')
       assert.match(view.box.textContent, /今日健康数据记录/)

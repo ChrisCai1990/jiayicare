@@ -3,7 +3,10 @@ function summarizeCheckupPlan(plan, reports = []) {
   const items = (plan.items || []).filter(item => String(item.name || '').trim());
   const audited = new Set(reports.filter(report => report.audit_status === 'audited').map(report => String(report._id)));
   const pending = items.filter(item => item.status !== 'completed' || !item.reportId || !audited.has(String(item.reportId)))
-    .map(item => ({ id: String(item._id), name: item.name }));
+    .map(item => ({ id: String(item._id), name: item.name,
+      reason: item.status !== 'completed' ? '项目尚未核对完成'
+        : !item.reportId ? '已标记完成，但未关联报告'
+          : '关联报告未通过当前审核' }));
   return {
     applicable: true, ready: items.length > 0 && pending.length === 0,
     planId: String(plan._id), planTitle: plan.title,

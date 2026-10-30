@@ -4263,11 +4263,27 @@ async function canManagePlan(req, plan) {
   return String(patient?.assignedHealthPlanner || '') === String(req.staff._id);
 }
 async function canReviewAnnualCheckup(req, plan) {
-  if (plan.type !== 'annual_checkup' || !checkPlanTypeRole(plan, req.staff.role) || !(await planTypeAllowed(req, plan.type))) return false;
+  if (plan.type !== 'annual_checkup') return false;
+  if (req.staff.role === 'healthManager') {
+    if (!(await planTypeAllowed(req, plan.type))) return false;
+    const patient = await User.findById(plan.patientId?._id || plan.patientId).select('assignedHealthManager').lean();
+    return String(patient?.assignedHealthManager || '') === String(req.staff._id);
+  }
+  if (!checkPlanTypeRole(plan, req.staff.role) || !(await planTypeAllowed(req, plan.type))) return false;
   if (await canManagePlan(req, plan)) return true;
   if (req.staff.role !== 'familyDoctor') return false;
   const patient = await User.findById(plan.patientId?._id || plan.patientId).select('assignedFamilyDoctor').lean();
   return String(patient?.assignedFamilyDoctor || '') === String(req.staff._id);
+}
+
+// 逐项检查核对是所属健管的执行动作，不要求其拥有整份方案的编辑权限。
+// 其他角色与其他方案仍沿用原 plans.edit 权限。
+async function checkupReviewOrPlanEdit(req, res, next) {
+  if (req.staff.role === 'healthManager') {
+    const plan = await HealthPlan.findById(req.params.id).select('type patientId').lean();
+    if (plan?.type === 'annual_checkup' && await canReviewAnnualCheckup(req, plan)) return next();
+  }
+  return checkPermission('plans', 'edit')(req, res, next);
 }
 
 const checkupReconcileModels = () => ({ HealthPlan, MedicalReport, LabTestOrder, SpecialExam, FunctionalMedicineTest, ProjectCategory });
@@ -4917,7 +4933,7 @@ router.get('/plans/:id/screening-reconciliation', staffAuth, async (req, res) =>
   } catch (error) { res.status(500).json({ success: false, message: '体检报告核对信息加载失败' }); }
 });
 
-router.post('/plans/:id/screening-reconciliation', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
+router.post('/plans/:id/screening-reconciliation', staffAuth, checkupReviewOrPlanEdit, async (req, res) => {
   try {
   const plan = await HealthPlan.findById(req.params.id).lean();
   if (!plan || plan.type !== 'annual_checkup') return res.status(404).json({ success: false, message: '体检方案不存在' });
@@ -4928,7 +4944,7 @@ router.post('/plans/:id/screening-reconciliation', staffAuth, checkPermission('p
 });
 
 // PATCH /api/staff/plans/:id/items/:itemId — 更新方案项目状态
-router.patch('/plans/:id/items/:itemId', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
+router.patch('/plans/:id/items/:itemId', staffAuth, checkupReviewOrPlanEdit, async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const allowed = plan.type === 'annual_checkup' ? await canReviewAnnualCheckup(req, plan)

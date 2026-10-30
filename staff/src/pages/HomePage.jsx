@@ -31,7 +31,7 @@ import { planningAdviceFromTask, hasPlanningAdvice } from '../utils/medicalPlann
 const ORDERS_PER_PAGE = 5
 const WORKBENCH_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'psychologist', 'rehabSpecialist', 'tcmDoctor', 'specialist', 'superadmin'])
 const ORDER_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'medicalAssistant', 'superadmin'])
-const CHECKUP_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'superadmin'])
+const CHECKUP_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'superadmin'])
 const SERVICE_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'superadmin'])
 
 const DISEASE_COLOR = {
@@ -163,6 +163,7 @@ export default function HomePage() {
       <div style={{ display: showWorkbenchView('todo', 'review') ? undefined : 'none' }}><SymptomTodosPanel /></div>
       <div style={{ display: showWorkbenchView(SERVICE_PROGRESS_ROLES.has(staff?.role) ? 'progress' : 'todo', SERVICE_PROGRESS_ROLES.has(staff?.role) ? 'overview' : 'review') ? undefined : 'none' }}><ServiceSupervisionPanel />{!isAdvisor && ['healthPlanner', 'healthManager', 'nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel compact hideWhenEmpty />}</div>
       <div style={{ display: showWorkbenchView('todo', 'service') ? undefined : 'none' }}>
+        {staff?.role === 'healthManager' && <CheckupProgressPanel taskMode />}
         {['healthManager', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
         {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
         {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}

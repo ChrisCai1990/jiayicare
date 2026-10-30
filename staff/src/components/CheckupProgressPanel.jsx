@@ -11,7 +11,7 @@ const STATUS = {
   completed: { label: '已完成', color: '#1E6B50', background: '#E8F5ED' },
 }
 
-export function CheckupProgressList({ rows = [], loading = false, error = '', onRetry, onOpen }) {
+export function CheckupProgressList({ rows = [], loading = false, error = '', onRetry, onOpen, taskMode = false }) {
   const [filter, setFilter] = useState('pending')
   const [page, setPage] = useState(1)
   const pending = rows.filter(row => row.pendingCount > 0)
@@ -23,9 +23,9 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
   const patients = new Set(filtered.map(row => String(row.patientId))).size
   if (!loading && !error && rows.length === 0) return null
 
-  return <section className="card" style={{ marginBottom: 20 }} aria-label="体检方案进度">
+  return <section className="card" style={{ marginBottom: 20 }} aria-label={taskMode ? '体检方案核对任务' : '体检方案进度'}>
     <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-      <div className="card-title">体检方案进度（{patients}位客户 · {filtered.length}份方案）</div>
+      <div className="card-title">{taskMode ? '体检方案核对任务' : '体检方案进度'}（{patients}位客户 · {filtered.length}份方案）</div>
       <div role="group" aria-label="体检方案状态筛选" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {[['pending', '待完成', pending.length], ['completed', '已完成', completed.length], ['all', '全部', rows.length]].map(([key, label, count]) =>
           <button key={key} type="button" className={filter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
@@ -54,7 +54,10 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
           <span style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 12 }}>
             <span style={{ color: status.color, background: status.background, padding: '2px 8px', borderRadius: 99 }}>{status.label}</span>
             <span style={{ color: '#52685D' }}>已完成 {row.completedCount}/{row.totalItems} 项{row.pendingCount > 0 ? ` · 未完成 ${row.pendingCount} 项` : ''}</span>
+            {row.missingReportCount > 0 && <span style={{ color: '#B45309' }}>{row.missingReportCount} 项虽标记完成，但未关联报告</span>}
+            {row.unapprovedReportCount > 0 && <span style={{ color: '#B45309' }}>{row.unapprovedReportCount} 项关联报告未通过当前审核</span>}
             {row.skippedCount > 0 && <span style={{ color: '#92610F' }}>其中 {row.skippedCount} 项已跳过，仍需核对</span>}
+            {taskMode && <strong style={{ color: '#1E6B50' }}>进入逐项核对 →</strong>}
           </span>
         </button>
       })}
@@ -65,12 +68,13 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
   </section>
 }
 
-export default function CheckupProgressPanel() {
+export default function CheckupProgressPanel({ taskMode = false, patientId = '' }) {
   const nav = useNavigate()
   const resource = useWorkbenchResource(async () => {
     const response = await staffAPI.getCheckupProgress({ includeCompleted: '1' })
     return response.data || []
   }, getToken(), [])
-  return <CheckupProgressList rows={resource.data} loading={resource.loading} error={resource.error}
+  const rows = patientId ? resource.data.filter(row => String(row.patientId) === String(patientId)) : resource.data
+  return <CheckupProgressList rows={rows} loading={resource.loading} error={resource.error} taskMode={taskMode}
     onRetry={resource.refresh} onOpen={id => nav(`/plans/${id}`)} />
 }

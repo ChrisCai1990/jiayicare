@@ -36,7 +36,7 @@ function categoryKeys(categories) {
 }
 
 function suggest(plan, reports, catalog = new Map()) {
-  const pending = (plan.items || []).filter(item => item.status === 'pending' && !item.reportId);
+  const pending = (plan.items || []).filter(item => ['pending', 'completed'].includes(item.status) && !item.reportId);
   const names = new Map();
   const categories = new Map();
   for (const item of pending) {
@@ -95,10 +95,12 @@ async function reconcile(plan, models) {
   const suggestions = suggest(plan, reports, catalog);
   const applied = [];
   for (const entry of suggestions.filter(row => row.reportId)) {
+    const original = (plan.items || []).find(item => id(item) === entry.itemId);
     const changed = await models.HealthPlan.updateOne({ _id: plan._id, patientId: plan.patientId,
-      status: { $ne: 'cancelled' }, items: { $elemMatch: { _id: entry.itemId, status: 'pending', reportId: null } } },
+      status: { $ne: 'cancelled' }, items: { $elemMatch: { _id: entry.itemId, status: original?.status, reportId: null } } },
     { $set: { 'items.$.status': 'completed', 'items.$.reportId': entry.reportId,
-      'items.$.completedAt': new Date(), 'items.$.completionSource': 'screening_auto' } });
+      'items.$.completionSource': 'screening_auto',
+      ...(original?.status === 'pending' ? { 'items.$.completedAt': new Date() } : {}) } });
     if (changed.modifiedCount) applied.push(entry);
   }
   return { applied, pending: suggestions.filter(row => !applied.some(done => done.itemId === row.itemId)),

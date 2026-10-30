@@ -16,7 +16,7 @@ test('a designed plan remains incomplete while any item lacks an audited report'
   const result = summarizeCheckupPlan(plan, [{ _id: 'report-1', audit_status: 'audited' }]);
   assert.equal(result.ready, false);
   assert.equal(result.completed, 1);
-  assert.deepEqual(result.pending, [{ id: 'item-2', name: '心电图' }]);
+  assert.deepEqual(result.pending, [{ id: 'item-2', name: '心电图', reason: '项目尚未核对完成' }]);
 });
 
 test('a completed item with a withdrawn or missing report is not complete evidence', () => {
@@ -24,6 +24,9 @@ test('a completed item with a withdrawn or missing report is not complete eviden
   const result = summarizeCheckupPlan({ ...plan, items: [item] }, [{ _id: 'report-1', audit_status: 'pending' }]);
   assert.equal(result.ready, false);
   assert.equal(result.completed, 0);
+  assert.equal(result.pending[0].reason, '关联报告未通过当前审核');
+  assert.equal(summarizeCheckupPlan({ ...plan, items: [{ ...item, reportId: null }] }, []).pending[0].reason,
+    '已标记完成，但未关联报告');
 });
 
 test('a skipped scheme item does not count as collected material', () => {

@@ -34,6 +34,7 @@ import customerNumber from '../../../shared/customerNumber.cjs'
 import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
+import CheckupProgressPanel from '../components/CheckupProgressPanel'
 import { orderConversationMessages } from '../utils/orderConversation'
 import { expertAppointmentBenefits } from '../utils/expertAppointmentBenefits.mjs'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
@@ -10300,10 +10301,13 @@ export default function PatientDetailPage() {
 
       {/* Tasks open directly from the workbench; customer records stay in the service archive. */}
       {tab === 'followups' && (
-        <div className="card" style={{ padding: 20 }}>
-          <p style={{ margin: 0 }}>请从工作台选择具体任务。</p>
-          <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={() => nav('/home')}>返回工作台</button>
-        </div>
+        <>
+          {staff?.role === 'healthManager' && <CheckupProgressPanel taskMode patientId={id} />}
+          <div className="card" style={{ padding: 20 }}>
+            <p style={{ margin: 0 }}>请从工作台选择具体任务。</p>
+            <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={() => nav('/home')}>返回工作台</button>
+          </div>
+        </>
       )}
 
       {aiSourceGroup && (

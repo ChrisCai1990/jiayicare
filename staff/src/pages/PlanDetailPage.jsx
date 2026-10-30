@@ -232,9 +232,11 @@ export default function PlanDetailPage() {
   const [screeningEvidence, setScreeningEvidence] = useState(null)
   const [selectedReportIds, setSelectedReportIds] = useState({})
   const [screeningBusy, setScreeningBusy] = useState(false)
-  const canReviewCheckup = plan?.type === 'annual_checkup' && canEditPlanType(plan, staff?.role)
-    && (plan.canManage || (staff?.role === 'familyDoctor'
-      && String(plan.patientId?.assignedFamilyDoctor?._id || plan.patientId?.assignedFamilyDoctor || '') === String(staff?._id || '')))
+  const canReviewCheckup = plan?.type === 'annual_checkup' && (
+    (staff?.role === 'healthManager' && String(plan.patientId?.assignedHealthManager?._id || plan.patientId?.assignedHealthManager || '') === String(staff?._id || ''))
+    || (canEditPlanType(plan, staff?.role) && (plan.canManage || (staff?.role === 'familyDoctor'
+      && String(plan.patientId?.assignedFamilyDoctor?._id || plan.patientId?.assignedFamilyDoctor || '') === String(staff?._id || ''))))
+  )
 
   const load = async () => {
     try { const r = await staffAPI.getPlan(id); setPlan(r.data) }
@@ -825,6 +827,8 @@ export default function PlanDetailPage() {
                           </span>
                           {item.completionSource === 'screening_auto' && <div style={{ fontSize: 11, color: '#527466' }}>自动核对记录</div>}
                           {item.completionSource === 'screening_manual' && <div style={{ fontSize: 11, color: '#527466' }}>人工核对记录</div>}
+                          {plan.type === 'annual_checkup' && screeningEvidence?.progress?.pending?.find(row => row.id === String(item._id))?.reason &&
+                            <div style={{ fontSize: 11, color: '#B45309' }}>{screeningEvidence.progress.pending.find(row => row.id === String(item._id)).reason}</div>}
                           {item.completedAt && <div style={{ fontSize: 11, color: '#aaa' }}>{new Date(item.completedAt).toLocaleDateString('zh-CN')}</div>}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
