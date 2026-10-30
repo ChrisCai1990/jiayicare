@@ -107,7 +107,17 @@ for (const role of ['healthPlanner', 'healthManager', 'nutritionist', 'medicalAs
       assert.equal(view.visible('ServiceTasksPanel'), true)
       assert.equal(view.visible('ServiceSupervisionPanel'), true)
       assert.equal(view.visible('FollowUpsPanel'), false)
-      if (role === 'healthManager' || role === 'superadmin') {
+      if (role === 'healthManager') {
+        assert.equal(view.visible('CheckupProgressPanel'), false)
+        assert.equal(view.visible('NutritionAssessmentPanel'), false)
+        await view.click('体检服务')
+        assert.equal(view.visible('CheckupProgressPanel'), true)
+        assert.equal(view.box.querySelector('[data-panel="CheckupProgressPanel"]').dataset.taskMode, 'true')
+        await view.click('预约服务')
+        assert.equal(view.visible('NutritionAssessmentPanel'), true)
+        assert.equal(view.visible('CheckupProgressPanel'), false)
+      }
+      if (role === 'superadmin') {
         assert.equal(view.visible('CheckupProgressPanel'), true)
         assert.equal(view.box.querySelector('[data-panel="CheckupProgressPanel"]').dataset.taskMode, 'true')
       }

@@ -98,7 +98,7 @@ export default function HomePage() {
   const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
   const orderRows = plannerOrderRows(pendingOrders, serviceTasks)
   const completedServiceOrders = (ordersResource.data.completedServices || []).filter(item => item.key?.startsWith('order:'))
-  const orderHistoryRows = [...new Map(completedOrders
+  const orderHistoryRows = staff?.role === 'healthManager' ? [] : [...new Map(completedOrders
     .filter(item => isCustomerOrder(item.sourceOrderId, item))
     .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0))
     .map(item => [String(item.sourceOrderId?._id || item._id), item])).values()]
@@ -149,7 +149,9 @@ export default function HomePage() {
       {hasWorkbenchNav && advisorArea === 'todo' && <div className="advisor-workbench-filter" role="group" aria-label="待我处理筛选">
         {[
           ...(!isAdvisor ? [['all', '全部待办']] : []),
-          ['review', '审核与异常'], ['service', '服务事项'], ['followup', '随访'],
+          ['review', '审核与异常'],
+          ...(staff?.role === 'healthManager' ? [['checkup', '体检服务'], ['appointment', '预约服务']] : []),
+          ['service', '服务事项'], ['followup', '随访'],
           ...(canShowGeoReview(staff) ? [['geo', `GEO 审核 · ${geoCount}`]] : []),
         ].map(([key, label]) => <button key={key} type="button" className={selectedTodoView === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={selectedTodoView === key} onClick={() => isAdvisor ? setAdvisorTodoView(key) : setRoleTodoView(key)}>{label}</button>)}
       </div>}
@@ -163,16 +165,17 @@ export default function HomePage() {
       {isAdvisor && <div style={{ display: showWorkbenchView('progress', 'overview') ? undefined : 'none' }}><ServiceSupervisionPanel /></div>}
       <div style={{ display: showWorkbenchView('todo', 'service') ? undefined : 'none' }}>
         {!isAdvisor && <ServiceSupervisionPanel />}
-        {['healthPlanner', 'healthManager', 'nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel compact hideWhenEmpty />}
-        {staff?.role === 'healthManager' && <CheckupProgressPanel taskMode />}
+        {['healthPlanner', 'nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel compact workbench hideWhenEmpty />}
         {staff?.role === 'superadmin' && <CheckupProgressPanel taskMode />}
         {['healthManager', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
         {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
         {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
       </div>
+      {staff?.role === 'healthManager' && <div style={{ display: showWorkbenchView('todo', 'checkup') ? undefined : 'none' }}><CheckupProgressPanel taskMode /></div>}
+      {staff?.role === 'healthManager' && <div style={{ display: showWorkbenchView('todo', 'appointment') ? undefined : 'none' }}><NutritionAssessmentPanel compact workbench hideWhenEmpty /></div>}
 
       {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}
-      <div style={{ display: showWorkbenchView('progress', 'orders') || (!isAdvisor && ORDER_PROGRESS_ROLES.has(staff?.role) && showWorkbenchView('todo', 'service')) ? undefined : 'none' }}>
+      <div style={{ display: showWorkbenchView('progress', 'orders') || (!isAdvisor && ORDER_PROGRESS_ROLES.has(staff?.role) && showWorkbenchView('todo', staff?.role === 'healthManager' ? 'appointment' : 'service')) ? undefined : 'none' }}>
       {(ordersResource.loading || ordersResource.error || orderRows.length > 0 || orderHistoryRows.length > 0 || completedServiceOrders.length > 0) && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -180,7 +183,7 @@ export default function HomePage() {
               <span>🛍 用户下单服务进程</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>{orderRows.length}</span>
             </div>
-            {hasWorkbenchNav && <div role="group" aria-label="用户下单服务状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', orderRows.length], ['completed', '已完成', completedServiceOrders.length], ['all', '全部', orderRows.length + completedServiceOrders.length]].map(([key, label, count]) => <button key={key} type="button" className={orderStatusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={orderStatusFilter === key} onClick={() => { setOrderStatusFilter(key); setOrderPage(1) }}>{label} {count}</button>)}</div>}
+            {hasWorkbenchNav && staff?.role !== 'healthManager' && <div role="group" aria-label="用户下单服务状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', orderRows.length], ['completed', '已完成', completedServiceOrders.length], ['all', '全部', orderRows.length + completedServiceOrders.length]].map(([key, label, count]) => <button key={key} type="button" className={orderStatusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={orderStatusFilter === key} onClick={() => { setOrderStatusFilter(key); setOrderPage(1) }}>{label} {count}</button>)}</div>}
             {orderHistoryRows.length > 0 && orderStatusFilter !== 'completed' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOrderHistoryOpen(value => !value)}>{orderHistoryOpen ? '收起已处理预约' : `查看已处理预约 ${orderHistoryRows.length}`}</button>}
           </div>
           <div className="card-body" style={{ padding: '8px 20px' }}>

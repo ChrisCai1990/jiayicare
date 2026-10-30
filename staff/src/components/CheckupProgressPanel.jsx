@@ -26,11 +26,11 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
   return <section className="card" style={{ marginBottom: 20 }} aria-label={taskMode ? '体检方案核对任务' : '体检方案进度'}>
     <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
       <div className="card-title">{taskMode ? '体检方案核对任务' : '体检方案进度'}（{patients}位客户 · {filtered.length}份方案）</div>
-      <div role="group" aria-label="体检方案状态筛选" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {!taskMode && <div role="group" aria-label="体检方案状态筛选" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {[['pending', '待完成', pending.length], ['completed', '已完成', completed.length], ['all', '全部', rows.length]].map(([key, label, count]) =>
           <button key={key} type="button" className={filter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
             aria-pressed={filter === key} onClick={() => { setFilter(key); setPage(1) }}>{label} {count}</button>)}
-      </div>
+      </div>}
     </div>
     <div className="card-body" style={{ padding: '8px 20px' }}>
       {loading && <div role="status" style={{ padding: '12px 0' }}>正在加载体检方案…</div>}
@@ -71,7 +71,7 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
 export default function CheckupProgressPanel({ taskMode = false, patientId = '' }) {
   const nav = useNavigate()
   const resource = useWorkbenchResource(async () => {
-    const response = await staffAPI.getCheckupProgress({ includeCompleted: '1' })
+    const response = await staffAPI.getCheckupProgress({ includeCompleted: taskMode ? '0' : '1' })
     return response.data || []
   }, getToken(), [])
   const rows = patientId ? resource.data.filter(row => String(row.patientId) === String(patientId)) : resource.data
