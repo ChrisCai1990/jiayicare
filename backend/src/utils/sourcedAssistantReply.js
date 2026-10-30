@@ -34,8 +34,12 @@ function formatReply(raw, options = {}) {
   return { content, references: [] };
 }
 async function generate(messages, systemPrompt, chat) {
-  const hasHealthTopic = messages.some(row => row.role === 'user' && HEALTH_TOPIC.test(String(row.content || '')));
-  const allowedSourceIds = allowedEducationSourceIds(messages);
+  // History helps the model understand follow-ups, but an earlier health question
+  // must not force every later greeting or service message into the fixed referral.
+  const latestUserMessage = [...messages].reverse().find(row => row.role === 'user');
+  const currentTurn = latestUserMessage ? [latestUserMessage] : [];
+  const hasHealthTopic = HEALTH_TOPIC.test(String(latestUserMessage?.content || ''));
+  const allowedSourceIds = allowedEducationSourceIds(currentTurn);
   // Personalized or unsupported health questions are routed to a professional.
   // Only narrowly matched general questions can receive a fixed, cited WHO passage.
   if (hasHealthTopic && !allowedSourceIds.length) return { content: REFER, references: [] };
