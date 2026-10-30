@@ -18,6 +18,14 @@ export default function WeightProgressPhotos({ patientId, plans = [], records = 
   const [rightId, setRightId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [previewError, setPreviewError] = useState('')
+  useEffect(() => {
+    if (!preview) return
+    const closeOnEscape = event => { if (event.key === 'Escape') setPreview(null) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [preview])
   const nutritionPlans = useMemo(() => plans.filter(plan => plan.type === 'nutrition'), [plans])
   const load = async () => {
     try { const result = await staffAPI.getWeightProgressPhotos(patientId); setRows(result.data || []); setError('') }
@@ -45,6 +53,18 @@ export default function WeightProgressPhotos({ patientId, plans = [], records = 
     catch (err) { setError(err.message || '移除失败') }
     finally { setBusy(false) }
   }
+  const openPhoto = async row => {
+    setPreviewError('')
+    try {
+      // Signed photo links expire. Fetch a new one when the user opens the original.
+      const result = await staffAPI.getWeightProgressPhotos(patientId)
+      const freshRows = result.data || []
+      setRows(freshRows)
+      const fresh = freshRows.find(item => String(item.id) === String(row.id))
+      if (!fresh?.url) throw new Error('照片已移除或暂时无法访问')
+      setPreview(fresh)
+    } catch (err) { setPreviewError(err.message || '照片打开失败，请重试') }
+  }
   const measuresFor = row => {
     if (!row) return ''
     const sameDay = records.filter(record => dayOf(record.recordedAt) === row.takenOn)
@@ -57,7 +77,7 @@ export default function WeightProgressPhotos({ patientId, plans = [], records = 
   }
   const compare = (row, label) => <div style={{ flex: '1 1 250px', minWidth: 0, background: '#F7FAF8', padding: 12, borderRadius: 10 }}>
     <strong>{label}</strong>
-    {row ? <><img src={row.url} alt={`${stages[row.stage]}${views[row.view]}`} style={{ display: 'block', width: '100%', maxHeight: 350, objectFit: 'contain', marginTop: 8 }} />
+    {row ? <><button type="button" onClick={() => openPhoto(row)} aria-label={`打开${row.takenOn}的${stages[row.stage]}${views[row.view]}照片`} style={{ display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'zoom-in' }}><img src={row.url} alt={`${stages[row.stage]}${views[row.view]}`} style={{ display: 'block', width: '100%', maxHeight: 350, objectFit: 'contain', marginTop: 8 }} /></button>
       <small>{row.takenOn} · {stages[row.stage]} · {views[row.view]}</small>
       <p style={{ fontSize: 12, color: '#52675D' }}>同日记录：{measuresFor(row) || '暂无可核对数据'}</p></> : <p style={{ color: '#789087' }}>请选择照片</p>}
   </div>
@@ -80,7 +100,7 @@ export default function WeightProgressPhotos({ patientId, plans = [], records = 
     </form>}
     {shown.length ? <>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '14px 0' }}>{shown.map(row => <div key={row.id} style={{ width: 115, fontSize: 12 }}>
-        <img src={row.url} alt={`${stages[row.stage]}${views[row.view]}`} style={{ width: 110, height: 120, objectFit: 'cover', borderRadius: 7 }} />
+        <button type="button" onClick={() => openPhoto(row)} aria-label={`打开${row.takenOn}的${stages[row.stage]}${views[row.view]}照片`} style={{ padding: 0, border: 0, background: 'transparent', cursor: 'zoom-in' }}><img src={row.url} alt={`${stages[row.stage]}${views[row.view]}`} style={{ display: 'block', width: 110, height: 120, objectFit: 'cover', borderRadius: 7 }} /></button>
         <div>{row.takenOn}<br />{stages[row.stage]} · {views[row.view]}<br />{nutritionPlans.find(plan => plan._id === String(row.planId || ''))?.title || '未关联方案'}</div>
         {canEdit && <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => remove(row)}>移除</button>}
       </div>)}</div>
@@ -90,5 +110,10 @@ export default function WeightProgressPhotos({ patientId, plans = [], records = 
       </div>
       {(left || right) && <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>{compare(left, '左侧')}{compare(right, '右侧')}</div>}
     </> : <p style={{ color: '#789087', fontSize: 13 }}>本周期尚无体型照片。</p>}
+    {previewError && <p role="alert" style={{ color: '#B42318' }}>{previewError}</p>}
+    {preview && <div role="dialog" aria-modal="true" aria-label="查看体型照片" onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,.8)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <button type="button" onClick={() => setPreview(null)} style={{ alignSelf: 'flex-end', marginBottom: 12, padding: '6px 12px', cursor: 'pointer' }}>关闭</button>
+      <img src={preview.url} alt={`${preview.takenOn} ${stages[preview.stage]} ${views[preview.view]}`} onClick={event => event.stopPropagation()} onError={() => { setPreview(null); setPreviewError('照片加载失败，请重试') }} style={{ maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain' }} />
+    </div>}
   </section>
 }
