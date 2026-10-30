@@ -27,10 +27,10 @@ function scheduleFromFrequency(frequency, daily) {
   const text = String(frequency || '').replace(/\s+/g, '');
   if (/每日|每天|一天/.test(text)) return { daysOfWeek: [], customEveryNDays: 1 };
   if (/每周2次|每周两次|一周2次|一周两次/.test(text)) return { daysOfWeek: ['Mon', 'Thu'] };
-  if (/每周|一周/.test(text)) return { daysOfWeek: ['Mon'] };
+  if (/每周|一周/.test(text)) return { daysOfWeek: [], rollingWeekly: true };
   const days = text.match(/每(\d+)天/);
   if (days) return { daysOfWeek: [], customEveryNDays: Math.max(1, Number(days[1])) };
-  return daily ? { daysOfWeek: [], customEveryNDays: 1 } : { daysOfWeek: ['Mon'] };
+  return daily ? { daysOfWeek: [], customEveryNDays: 1 } : { daysOfWeek: [], rollingWeekly: true };
 }
 
 function reminderTime(value, fallback = '08:00') {
@@ -60,16 +60,16 @@ function buildMonitoringReminderSpecs(patient, moduleData = {}, recentBloodPress
     const bpSchedule = explicitBp
       ? scheduleFromFrequency(explicitBp.frequency, false)
       : (hasHighReading ? { daysOfWeek: [], customEveryNDays: 1 }
-        : ((hasHypertension || hasElevatedReading) ? { daysOfWeek: ['Mon', 'Thu'] } : { daysOfWeek: ['Mon'] }));
+        : ((hasHypertension || hasElevatedReading) ? { daysOfWeek: ['Mon', 'Thu'] } : { daysOfWeek: [], rollingWeekly: true }));
     specs.push({
       sourceKey: 'blood_pressure', category: 'monitoring', title: '测量血压',
-      description: explicitBp?.precautions || explicitBp?.notes || (hasHypertension ? '按固定时段测量并记录；如有不适或读数异常，请及时联系专业人员。' : '建议每周固定一天、同一时段测量并记录。'),
+      description: explicitBp?.precautions || explicitBp?.notes || (hasHypertension ? '按固定时段测量并记录；如有不适或读数异常，请及时联系专业人员。' : '建议在上次测量约一周后再次测量并记录。'),
       reminderTime: reminderTime(explicitBp?.time), ...bpSchedule,
     });
   }
   const weightSchedule = explicitWeight
     ? scheduleFromFrequency(explicitWeight.frequency, false)
-    : (needsWeightFocus ? { daysOfWeek: ['Mon', 'Thu'] } : { daysOfWeek: ['Mon'] });
+    : (needsWeightFocus ? { daysOfWeek: ['Mon', 'Thu'] } : { daysOfWeek: [], rollingWeekly: true });
   specs.push({
     sourceKey: 'weight', category: 'weight_checkin', title: '记录体重',
     description: explicitWeight?.precautions || explicitWeight?.notes || '建议晨起、空腹、穿着相近衣物测量并记录，用于观察长期趋势。',
@@ -92,6 +92,9 @@ async function syncServiceCycleMonitoringReminders(userId) {
   const HealthRecord = require('../models/HealthRecord');
   const recentBloodPressure = await HealthRecord.find({ user: patient._id, type: 'bloodPressure', recordedAt: { $gte: new Date(Date.now() - 30 * 86400000) } })
     .sort({ recordedAt: -1 }).limit(14).select('value extra recordedAt').lean();
+  const latestRows = await Promise.all(['bloodPressure', 'weight'].map(type =>
+    HealthRecord.findOne({ user: patient._id, type, deletedAt: null }).sort({ recordedAt: -1 }).select('recordedAt').lean()));
+  const latestByType = { bloodPressure: latestRows[0]?.recordedAt || null, weight: latestRows[1]?.recordedAt || null };
   const specs = buildMonitoringReminderSpecs(patient, annualPlan?.moduleData || {}, recentBloodPressure);
   const activeKeys = specs.map(item => item.sourceKey);
   const startDate = patient.onboardingCompletedAt || patient.createdAt || new Date();
@@ -99,12 +102,19 @@ async function syncServiceCycleMonitoringReminders(userId) {
   let created = 0; let updated = 0;
   for (const spec of specs) {
     const sourceKey = `service-cycle:${spec.sourceKey}`;
+    const latest = latestByType[spec.sourceKey === 'blood_pressure' ? 'bloodPressure' : 'weight'];
+    const anchor = latest && new Date(latest) >= new Date(startDate) ? latest : startDate;
+    const anchorDay = new Date(new Date(anchor).getTime() + 8 * 3600000).toISOString().slice(0, 10);
+    const nextDueDate = new Date(`${anchorDay}T00:00:00+08:00`);
+    if (latest && new Date(latest) >= new Date(startDate)) nextDueDate.setUTCDate(nextDueDate.getUTCDate() + 7);
     const existing = await Reminder.findOne({ user: patient._id, sourceKey, systemManaged: true }).select('userDisabled').lean();
     const result = await Reminder.updateOne(
       { user: patient._id, sourceKey, systemManaged: true },
       { $set: { category: spec.category, title: spec.title, description: spec.description,
         scheduleType: 'recurring', reminderTime: spec.reminderTime, daysOfWeek: spec.daysOfWeek || [],
-        customEveryNDays: spec.customEveryNDays, startDate, endDate, enabled: !existing?.userDisabled, systemManaged: true,
+        customEveryNDays: spec.customEveryNDays, rollingWeekly: !!spec.rollingWeekly,
+        nextDueDate: spec.rollingWeekly ? nextDueDate : null,
+        startDate, endDate, enabled: !existing?.userDisabled, systemManaged: true,
         sourceAnnualPlanId: annualPlan?._id || null },
         $setOnInsert: { user: patient._id, sourceKey } },
       { upsert: true },
@@ -127,6 +137,7 @@ function activeToday(reminder, now = new Date()) {
   const end = dayOf(reminder.endDate);
   if (start && start > today) return false;
   if (end && end < today) return false;
+  if (reminder.rollingWeekly) return !!reminder.nextDueDate && dayOf(reminder.nextDueDate) <= today;
   if (reminder.customEveryNDays && start) {
     return Math.floor((new Date(today) - new Date(start)) / 86400000) % reminder.customEveryNDays === 0;
   }

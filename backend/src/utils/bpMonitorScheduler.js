@@ -18,11 +18,17 @@ async function scanAndRemindMissingBP() {
 
   const dueFollowUps = await FollowUp.find({
     status: { $in: ['planned', 'in_progress'] },
+    clientVisible: { $ne: false },
+    theme: { $not: /^【?日常跟进(?:与动态调整)?】?$/ },
     date: { $gte: todayStart, $lte: todayEnd },
     checkInItems: 'bloodPressure',
-  }).select('patientId').lean();
+  }).select('patientId theme followUpSchemeId clientVisible checkInItems repeatWeekly').lean();
 
-  const patientIds = [...new Set(dueFollowUps.map(f => String(f.patientId)))];
+  const visibleFollowUps = [];
+  for (const task of dueFollowUps) {
+    if (!await require('./staffOnlyFollowUp').isStaffOnlyFollowUpWithScheme(task)) visibleFollowUps.push(task);
+  }
+  const patientIds = [...new Set(visibleFollowUps.map(f => String(f.patientId)))];
   let remindedCount = 0;
 
   for (const patientId of patientIds) {

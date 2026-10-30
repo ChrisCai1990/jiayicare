@@ -2409,11 +2409,26 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
     if (!patient.assignedHealthManager || String(plannedAssignee) !== String(patient.assignedHealthManager)) return res.status(400).json({ success: false, message: '事项提醒须交由该客户的健管专员跟进' });
   }
   const safeFormData = formData && typeof formData === 'object' && !Array.isArray(formData) ? { ...formData } : {};
+  const internalDailyFollowUp = [selectedScheme?.name, theme, safeFormData.standardPlanName]
+    .some(name => require('../utils/annualPlanPresentation').internalDaily({ standardPlanName: name }));
+  const staffOnly = !adHocMedicalReminder && (internalDailyFollowUp || req.body.clientVisible === false);
+  if (internalDailyFollowUp && (!patient.assignedHealthManager || String(plannedAssignee) !== String(patient.assignedHealthManager))) {
+    return res.status(400).json({ success: false, message: '日常跟进须指派给该客户的健管专员' });
+  }
   delete safeFormData.adHocMedicalReminder;
   delete safeFormData.reminderKind;
   if (adHocMedicalReminder) { safeFormData.adHocMedicalReminder = true; safeFormData.reminderKind = reminderKind; safeFormData.category = reminderKind === 'medication' ? 'medication' : reminderKind === 'review' ? 'review' : 'medical_visit'; }
   if (repeatWeekly && (status !== 'planned' || repeatDaily || String(safeFormData['监测频率'] || '').trim() !== '每周1次')) {
     return res.status(400).json({ success: false, message: '每周滚动随访仅适用于监测频率为每周1次的单独计划' });
+  }
+  if (repeatWeekly && (checkInItems || []).length > 1) {
+    return res.status(400).json({ success: false, message: '每周记录项目须分别建立计划，才能按各自实测日期滚动' });
+  }
+  if (repeatWeekly && (checkInItems || []).length === 1) {
+    const activeWeekly = await FollowUp.exists({ patientId, repeatWeekly: true,
+      status: { $in: ['planned', 'in_progress', 'missed'] }, checkInItems: checkInItems[0],
+      clientVisible: staffOnly ? false : { $ne: false } });
+    if (activeWeekly) return res.status(409).json({ success: false, message: '该客户已有这项待完成的每周记录计划' });
   }
 
   if (status === 'cancelled' && !cancelReason) {
@@ -2436,6 +2451,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   const followUp = await FollowUp.create({
     staffId: req.staff._id,
     patientId,
+    clientVisible: !staffOnly,
     date: date ? new Date(date) : new Date(),
     type: type || 'phone',
     status: finalStatus,
@@ -2465,6 +2481,9 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   });
 
   await followUp.populate('patientId', 'name phone');
+  if (followUp.repeatWeekly && (followUp.checkInItems || []).some(item => ['bloodPressure', 'weight'].includes(item))) {
+    require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(patientId).catch(() => {});
+  }
   res.json({ success: true, data: followUp });
 });
 
@@ -2688,12 +2707,80 @@ router.post('/followups/:id/medication-defer', staffAuth, checkPermission('follo
   } catch (error) { return res.status(500).json({ success: false, message: error.message || '结束代配药需求失败' }); }
 });
 
+// 健管专员在内部每周随访中记录实测数据：同一提交写入健康档案、结束本次任务并滚动下一次。
+router.post('/followups/:id/monitoring-result', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健管专员可提交日常监测随访结果' });
+    const task = await FollowUp.findById(req.params.id);
+    if (!task || !task.repeatWeekly || !task.weeklyTemplate || task.clientVisible !== false || task.taskRole || task.isBlocked
+      || !Array.isArray(task.checkInItems) || task.checkInItems.length !== 1
+      || !['bloodPressure', 'weight'].includes(task.checkInItems[0])) {
+      return res.status(404).json({ success: false, message: '未找到可录入监测数据的内部每周随访任务' });
+    }
+    const patient = await User.findById(task.patientId).select('assignedHealthManager isDeleted tenantId').lean();
+    if (!patient || patient.isDeleted) return res.status(404).json({ success: false, message: '客户档案不存在' });
+    if (req.staff.role !== 'superadmin' && (String(task.assignedTo || '') !== String(req.staff._id)
+      || String(patient.assignedHealthManager || '') !== String(req.staff._id))) {
+      return res.status(403).json({ success: false, message: '仅该客户的责任健管专员可提交本次随访' });
+    }
+    const { monitoringRecordId, monitoringMeasurement } = require('../utils/staffMonitoringFollowUp');
+    const recordId = monitoringRecordId(task._id);
+    if (task.status === 'completed' && String(task.monitoringResult?.recordId || '') === String(recordId)) {
+      const existing = await HealthRecord.findById(recordId);
+      await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(task);
+      return res.json({ success: true, data: { followUp: task, record: existing }, repeated: true });
+    }
+    if (!['planned', 'in_progress', 'missed'].includes(task.status)) return res.status(409).json({ success: false, message: '本次随访已结束，请刷新任务' });
+    if (!req.body.recordedAt) return res.status(400).json({ success: false, message: '请填写实际测量时间' });
+    let measurement;
+    try { measurement = monitoringMeasurement(req.body, task.checkInItems[0]); }
+    catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+    const content = String(req.body.content || '').trim();
+    if (!content || content.length > 2000) return res.status(400).json({ success: false, message: '请填写本次人工跟进结果（最多2000字）' });
+    const existing = await HealthRecord.findById(recordId);
+    if (existing && (existing.type !== measurement.type || String(existing.user) !== String(task.patientId)
+      || existing.recordedAt.getTime() !== measurement.recordedAt.getTime() || existing.value !== measurement.value)) {
+      return res.status(409).json({ success: false, message: '本次随访已有不同的测量记录，请刷新后核对，勿重复录入' });
+    }
+    const record = existing || await HealthRecord.findOneAndUpdate({ _id: recordId }, { $setOnInsert: {
+      _id: recordId, user: task.patientId, tenantId: patient.tenantId || null, sourceFollowUpId: task._id,
+      category: measurement.category, type: measurement.type, label: measurement.label,
+      value: measurement.value, unit: measurement.unit, extra: measurement.extra,
+      status: calcHealthRecordStatus(measurement.type, measurement.value, measurement.extra),
+      aiAlertStatus: measurement.type === 'bloodPressure' && calcHealthRecordStatus(measurement.type, measurement.value, measurement.extra) === 'danger' ? 'pending' : null,
+      note: measurement.note, recordedAt: measurement.recordedAt,
+      recordedBy: { source: 'staff', staffId: req.staff._id, staffName: req.staff.name || req.staff.username || '', staffRole: req.staff.role },
+    } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    const completed = await FollowUp.findOneAndUpdate({ _id: task._id, status: { $in: ['planned', 'in_progress', 'missed'] },
+      assignedTo: task.assignedTo, clientVisible: false, repeatWeekly: true },
+    { $set: { status: 'completed', completedAt: measurement.recordedAt, completedBy: 'staff',
+      executedContent: content, executedType: ['phone', 'wechat', 'visit', 'video', 'other'].includes(req.body.followUpType) ? req.body.followUpType : task.type,
+      vitals: { ...(task.vitals?.toObject?.() || task.vitals || {}), ...measurement.vitals },
+      monitoringResult: { recordId: record._id, type: record.type, recordedAt: record.recordedAt, submittedBy: req.staff._id, submittedAt: new Date() } } },
+    { new: true });
+    if (!completed) return res.status(409).json({ success: false, message: '监测数据已写入档案，但随访状态已变化；请刷新并核对任务' });
+    await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(completed);
+    if (record.type === 'bloodPressure') await require('../utils/healthRiskEvents').syncRecordRisk(record)
+      .catch(error => console.error('[health-risk] staff follow-up record sync failed', record._id, error));
+    require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(task.patientId).catch(() => {});
+    res.json({ success: true, data: { followUp: completed, record } });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ success: false, message: '本次随访测量记录已存在，请刷新后核对' });
+    res.status(500).json({ success: false, message: '提交监测随访失败', error: error.message });
+  }
+});
+
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   // 历史任务的 staffId/assignedTo 可能以字符串保存，而当前账号 _id 是 ObjectId。
   // 先按任务 ID 读取，再统一转成字符串校验；否则负责人明明正确也会被 Mongoose
   // 查询强制转换后误报“随访记录不存在”。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (followUp.repeatWeekly && followUp.weeklyTemplate && followUp.clientVisible === false
+    && (followUp.checkInItems || []).some(item => ['bloodPressure', 'weight'].includes(item))
+    && req.body.status === 'completed' && !followUp.monitoringResult) {
+    return res.status(409).json({ success: false, message: '请在本任务的测量结果入口录入数据并完成随访' });
+  }
   if (followUp.sourceType === 'service_record') {
     if (['date', 'nextFollowUpDate', 'assignedTo', 'staffId', 'theme', 'remindAt'].some(key => req.body[key] !== undefined)
       || req.body.status === 'cancelled' || (followUp.status === 'completed' && req.body.status && req.body.status !== 'completed')) {
@@ -3024,7 +3111,12 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     await require('../utils/insuranceServiceTasks').retireInsuranceSupervisionTasks(FollowUp, { sourceId: followUp.sourceId });
   }
   if (followUp.status === 'completed' && followUp.repeatWeekly) {
-    await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(followUp);
+    const remainingItem = (followUp.checkInItems || []).length === 1 && (followUp.weeklyCompletedItems || []).length
+      ? followUp.checkInItems[0] : '';
+    await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp(followUp, remainingItem);
+  }
+  if (followUp.repeatWeekly && (followUp.checkInItems || []).some(item => ['bloodPressure', 'weight'].includes(item))) {
+    require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(followUp.patientId).catch(() => {});
   }
   if (followUp.status === 'completed' && previousStatus !== 'completed' && followUp.sourceType === 'supply_reminder') {
     await require('../utils/rollingSupplyReminder').generateNextSupplyReminder(followUp);

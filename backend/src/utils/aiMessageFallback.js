@@ -88,13 +88,20 @@ async function buildHealthContext(userId) {
   const [user, reports, followUps] = await Promise.all([
     User.findById(userId).select('healthProfile bodyComposition').lean(),
     MedicalReport.find({ user: userId, audit_status: 'audited' }).sort({ date: -1, createdAt: -1 }).limit(5).select('title date checkDate').lean(),
-    FollowUp.find({ patientId: userId, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } }).sort({ date: 1 }).limit(5).select('date theme plannedContent tags').lean(),
+    FollowUp.find({ patientId: userId, clientVisible: { $ne: false },
+      theme: { $not: /^【?日常跟进(?:与动态调整)?】?$/ },
+      status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } })
+      .sort({ date: 1 }).limit(5).select('date theme plannedContent tags followUpSchemeId clientVisible checkInItems repeatWeekly').lean(),
   ]);
+  const customerFollowUps = [];
+  for (const task of followUps) {
+    if (!await require('./staffOnlyFollowUp').isStaffOnlyFollowUpWithScheme(task)) customerFollowUps.push(task);
+  }
   const lines = [];
   if (user?.healthProfile && Object.keys(user.healthProfile).length) lines.push(`健康档案：${JSON.stringify(user.healthProfile)}`);
   if (user?.bodyComposition && Object.keys(user.bodyComposition).length) lines.push(`身体成分记录：${JSON.stringify(user.bodyComposition)}`);
   if (reports.length) lines.push(`已审核报告：${reports.map(r => `${r.title}（${r.checkDate || r.date || '日期未记录'}）`).join('；')}`);
-  if (followUps.length) lines.push(`待办/复查提醒：${followUps.map(f => `${f.theme || f.plannedContent || f.tags?.join('、') || '随访'}（${new Date(f.date).toISOString().slice(0, 10)}）`).join('；')}`);
+  if (customerFollowUps.length) lines.push(`待办/复查提醒：${customerFollowUps.map(f => `${f.theme || f.plannedContent || f.tags?.join('、') || '随访'}（${new Date(f.date).toISOString().slice(0, 10)}）`).join('；')}`);
   return lines.join('\n').slice(0, 4000);
 }
 

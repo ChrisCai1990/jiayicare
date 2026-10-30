@@ -297,18 +297,27 @@ router.post('/', auth, async (req, res) => {
       // 今日 00:00 ~ 23:59:59 (CST) 转为 UTC 存入 MongoDB
       const todayStart = new Date(dateStr + 'T00:00:00+08:00');
       const todayEnd   = new Date(dateStr + 'T23:59:59.999+08:00');
+      if (type === 'bloodPressure' || type === 'weight') {
+        await require('../utils/rollingWeeklyFollowUp').completeWeeklyCheckIn(req.user._id, type, record.recordedAt);
+      }
       const matched = await FollowUp.find({
         patientId: req.user._id,
         status: { $in: ['planned', 'in_progress'] },
         date: { $gte: todayStart, $lte: todayEnd },
         checkInItems: type,
+        repeatWeekly: { $ne: true },
+        clientVisible: { $ne: false },
         'formData.healthDataPlan.enabled': { $ne: true },
       });
-      if (matched.length > 0) {
-        const ids = matched.map(f => f._id);
+      const selfServiceMatched = [];
+      for (const task of matched) {
+        if (!await require('../utils/staffOnlyFollowUp').isStaffOnlyFollowUpWithScheme(task)) selfServiceMatched.push(task);
+      }
+      if (selfServiceMatched.length > 0) {
+        const ids = selfServiceMatched.map(f => f._id);
         const completedAt = new Date();
         await FollowUp.updateMany({ _id: { $in: ids } }, { $set: { status: 'completed', completedAt } });
-        for (const fu of matched.filter(f => f.repeatWeekly)) {
+        for (const fu of selfServiceMatched.filter(f => f.repeatWeekly)) {
           await require('../utils/rollingWeeklyFollowUp').generateNextWeeklyFollowUp({
             ...fu.toObject(), status: 'completed', completedAt,
           });
@@ -317,7 +326,7 @@ router.post('/', auth, async (req, res) => {
         // 若有 repeatDaily=true 的随访，为明天自动创建 planned 记录
         const tomorrowStr = new Date(Date.now() + CST_OFFSET + 86400000).toISOString().split('T')[0];
         const tomorrowDate = new Date(tomorrowStr + 'T08:00:00+08:00');
-        for (const fu of matched.filter(f => f.repeatDaily)) {
+        for (const fu of selfServiceMatched.filter(f => f.repeatDaily)) {
           // 检查明天是否已存在同一会员同一 checkInItems 的 planned 记录
           const exists = await FollowUp.findOne({
             patientId: fu.patientId,
@@ -331,6 +340,7 @@ router.post('/', auth, async (req, res) => {
               patientId: fu.patientId,
               staffId:   fu.staffId,
               assignedTo:fu.assignedTo,
+              clientVisible: fu.clientVisible !== false,
               date: tomorrowDate,
               type: fu.type,
               status: 'planned',
@@ -341,7 +351,7 @@ router.post('/', auth, async (req, res) => {
           }
         }
       }
-    } catch { /* 不阻断主流程 */ }
+    } catch (error) { console.error('[health-records] 随访自动完成或续期失败', record._id, error); }
 
     // 异步重算健康评分（不阻断响应）
     recalcHealthScore(req.user._id).catch(() => {});
@@ -404,6 +414,9 @@ router.delete('/:id', auth, async (req, res) => {
       user: req.user._id,
     });
     if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (record.type === 'bloodPressure' || record.type === 'weight') {
+      require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.user._id).catch(() => {});
+    }
     res.json({ success: true, message: '删除成功' });
   } catch (err) {
     res.status(500).json({ success: false, message: '删除失败', error: err.message });

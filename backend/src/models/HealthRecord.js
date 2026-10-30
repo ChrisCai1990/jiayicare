@@ -24,6 +24,7 @@ const healthRecordSchema = new mongoose.Schema({
   recordedAt: { type: Date, default: Date.now },
   importBatchId: { type: String, default: '', index: true },
   importFileName: { type: String, default: '' },
+  sourceFollowUpId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
   // 医疗数据采用可追溯软删除：正常查询自动排除，保留删除人、时间和原因供审计。
   deletedAt: { type: Date, default: null },
   deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },

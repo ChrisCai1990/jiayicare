@@ -8,6 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import MonitoringFollowUpFields, { isStaffMonitoringFollowUp, initialMonitoringMeasurement, monitoringSubmission } from '../components/MonitoringFollowUpFields'
 import annualBookingPlan from '../../../shared/annualBookingPlan.cjs'
 import annualDispatch from '../../../shared/annualDispatch.cjs'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
@@ -277,7 +278,7 @@ export default function FollowUpsPage() {
     const priorResults = f.dependsOnTaskId?.formData?.nutritionStageAssessment?.targetResults || []
     const targetResults = (f.formData?.nutritionIntervention?.nutritionTargets || []).map((_, index) =>
       f.formData?.nutritionStageAssessment?.targetResults?.[index] || priorResults[index] || { actual: '', outcome: '' })
-    setExecForm({ type: f.type || 'phone', content: f.sourceType === 'insurance_service' ? (f.executedContent || '') : '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: f.formData?.nutritionIntervention ? { ...f.formData, nutritionStageAssessment: { result: '', reason: '', decision: '', ...f.formData.nutritionStageAssessment, targetResults } } : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f, f.formData) : emptyOutpatientAssessment(f.formData) })
+    setExecForm({ type: f.type || 'phone', content: f.sourceType === 'insurance_service' ? (f.executedContent || '') : '', status: 'completed', monitoring: initialMonitoringMeasurement(), serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: f.formData?.nutritionIntervention ? { ...f.formData, nutritionStageAssessment: { result: '', reason: '', decision: '', ...f.formData.nutritionStageAssessment, targetResults } } : isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f, f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f, f.formData) : emptyOutpatientAssessment(f.formData) })
   }
 
   const handleSaveInsuranceDraft = async () => {
@@ -298,6 +299,19 @@ export default function FollowUpsPage() {
   }
 
   const handleExec = async () => {
+    if (isStaffMonitoringFollowUp(execItem) && execForm.status === 'completed') {
+      let payload
+      try { payload = monitoringSubmission(execItem, execForm) } catch (error) { toast(error.message); return }
+      setExecSaving(true)
+      try {
+        await staffAPI.completeMonitoringFollowUp(execItem._id, payload)
+        toast('监测数据已写入健康档案，本次随访已完成并生成下一次')
+        setExecItem(null)
+        load()
+      } catch (error) { toast(error.message || '保存监测随访失败') }
+      finally { setExecSaving(false) }
+      return
+    }
     if (canRecordProgress(execItem) && execForm.status === 'in_progress') {
       if (!execForm.content.trim()) { toast('请填写本次沟通情况'); return }
       setExecSaving(true)
@@ -689,6 +703,7 @@ export default function FollowUpsPage() {
                     onChange={e => setExecForm(form => ({ ...form, formData: { ...form.formData, nutritionStageAssessment: { ...form.formData?.nutritionStageAssessment, [key]: e.target.value } } }))} />
                 </div>)}
               </div>}
+              <MonitoringFollowUpFields task={execItem} value={execForm.monitoring} onChange={monitoring => setExecForm(form => ({ ...form, monitoring }))} />
               {!nutritionStageType && <FollowUpProgressFields item={execItem} form={execForm} setForm={setExecForm} />}
               {(nutritionStageType || (!execItem.taskRole && !canRecordProgress(execItem))) && <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>{execItem.taskRole ? '事务状态' : '随访结果状态'}</label>

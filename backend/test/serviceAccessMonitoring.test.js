@@ -4,6 +4,7 @@ const User = require('../src/models/User');
 const Reminder = require('../src/models/Reminder');
 const Message = require('../src/models/Message');
 const HealthRecord = require('../src/models/HealthRecord');
+const FollowUp = require('../src/models/FollowUp');
 const resolver = require('../src/utils/serviceAccess');
 const { syncServiceCycleMonitoringReminders, activeToday } = require('../src/utils/annualPlanMonitoringReminders');
 test('未同意健康提醒时暂停系统监测并收起通知，不清除用户关闭偏好', async t => {
@@ -17,6 +18,8 @@ test('免费监测不依赖服务期，保留用户主动关闭', async t => {
   t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ _id: 'patient', age: 40, serviceExpiry: '2020-01-01', onboardingCompleted: true, healthMonitoringConsentAt: new Date('2026-09-01'), onboardingCompletedAt: new Date('2026-09-01') }) }) }));
   t.mock.method(resolver, 'resolveServiceAccess', async () => ({ active: false }));
   t.mock.method(HealthRecord, 'find', () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) }));
+  t.mock.method(HealthRecord, 'findOne', q => ({ sort: () => ({ select: () => ({ lean: async () => ({ recordedAt: new Date(q.type === 'bloodPressure' ? '2026-10-28T02:00:00Z' : '2026-10-26T02:00:00Z') }) }) }) }));
+  t.mock.method(FollowUp, 'find', () => ({ select: () => ({ lean: async () => [] }) }));
   t.mock.method(Reminder, 'findOne', q => ({ select: () => ({ lean: async () => ({ userDisabled: q.sourceKey.endsWith('weight') }) }) }));
   t.mock.method(Reminder, 'updateOne', async (q, u) => { writes.push(u.$set); assert.match(q.sourceKey, /^service-cycle:/); return { modifiedCount: 1 }; });
   t.mock.method(Reminder, 'updateMany', async () => ({}));
@@ -26,6 +29,8 @@ test('免费监测不依赖服务期，保留用户主动关闭', async t => {
   assert.equal(result.created, 0); assert.equal(result.updated, 2);
   assert.equal(writes[0].enabled, true); assert.equal(writes[1].enabled, false);
   assert.equal(writes[0].endDate, null);
+  assert.equal(writes[0].nextDueDate.toISOString(), '2026-11-03T16:00:00.000Z');
+  assert.equal(writes[1].nextDueDate.toISOString(), '2026-11-01T16:00:00.000Z');
 });
 test('监测启停按北京时间跨午夜，与服务器时区无关', () => {
   const reminder = { enabled: true, startDate: '2027-01-01', endDate: '2027-12-31', daysOfWeek: [] };
