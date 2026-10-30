@@ -34,6 +34,7 @@ const schema = new mongoose.Schema({
   assessment: {
     summary: { type: String, default: '' },
     recommendations: { type: String, default: '' },
+    details: { type: mongoose.Schema.Types.Mixed, default: null },
     completedAt: Date,
   },
   events: { type: [eventSchema], default: [] },

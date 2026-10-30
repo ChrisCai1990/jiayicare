@@ -47,6 +47,7 @@ import { useToast, useStaff } from '../App'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
 import FollowUpModal from '../components/FollowUpModal'
 import NutritionAssessmentPanel from '../components/NutritionAssessmentPanel'
+import AnnualNutritionTaskWorkspace from '../components/AnnualNutritionTaskWorkspace'
 import WeightProgressPhotos from '../components/WeightProgressPhotos'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
@@ -2886,6 +2887,11 @@ export default function PatientDetailPage() {
       .then(res => {
         if (cancelled) return
         const target = res.data?.followUps?.[0]
+        if (target?.workflowKey === 'annual_nutrition_assessment' && target.sourceAnnualPlanId && ['nutritionist', 'superadmin'].includes(staff?.role)) {
+          setTab('plans'); setServiceManagementView('nutrition')
+          nav(`/patients/${id}?tab=plans&serviceView=nutrition&annualTaskId=${target._id}`, { replace: true })
+          return
+        }
         if (ibdStage(target) && ['planned', 'in_progress', 'missed'].includes(target.status)) openExec(target)
         else if (isDecisionReferralTask(target) || annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
         else if (isCheckupAdvisorReviewTask(target)) setCheckupAdvisorReview(target)
@@ -2898,6 +2904,11 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
+    if (f.workflowKey === 'annual_nutrition_assessment' && f.sourceAnnualPlanId && ['nutritionist', 'superadmin'].includes(staff?.role)) {
+      setTab('plans'); setServiceManagementView('nutrition')
+      nav(`/patients/${id}?tab=plans&serviceView=nutrition&annualTaskId=${f._id}`)
+      return
+    }
     if (annualNutrition.isTask(f)) { setFollowUpDetail(f); return }
     if (medicalProxyStage(f) === 'post_visit_audit') { loadServiceRecords(); loadReports() }
     // Workbench appointment projection is not an execution checklist. Keep the
@@ -3584,6 +3595,11 @@ export default function PatientDetailPage() {
   useEffect(() => {
     if (tab === 'followups' && location.state?.openFollowUp) {
       const f = location.state.openFollowUp
+      if (f.workflowKey === 'annual_nutrition_assessment' && f.sourceAnnualPlanId && ['nutritionist', 'superadmin'].includes(staff?.role)) {
+        setTab('plans'); setServiceManagementView('nutrition')
+        nav(`/patients/${id}?tab=plans&serviceView=nutrition&annualTaskId=${f._id}`, { replace: true, state: {} })
+        return
+      }
       if (isCheckupAdvisorReviewTask(f)) {
         setCheckupAdvisorReview(f)
         nav(location.pathname + location.search, { replace: true, state: {} })
@@ -6183,7 +6199,7 @@ export default function PatientDetailPage() {
                 <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天健康数据记录形成变化分析，营养师可在工作台审核</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
-                      {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>setFollowUpDetail(f)}>生活方式访谈 · {f.status==='completed'?'查看记录':'代填 / 核实问卷'}</button>)}
+                      {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>f.workflowKey === 'annual_nutrition_assessment' && ['nutritionist', 'superadmin'].includes(staff?.role) ? openExec(f) : setFollowUpDetail(f)}>{f.workflowKey === 'annual_nutrition_assessment' && ['nutritionist', 'superadmin'].includes(staff?.role) ? '年度营养评估' : '生活方式访谈'} · {f.status==='completed'?'查看记录':'开始办理'}</button>)}
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
                       <button className="btn btn-secondary btn-sm" disabled={lifestyleAiGenerating} onClick={handleGenerateLifestyleDraft}>{lifestyleAiGenerating ? 'AI整理中…' : 'AI整理健康数据变化'}</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setLifestyleDetailsOpen(v => !v)}>{lifestyleDetailsOpen ? '收起详细档案' : '展开详细档案'}</button>
@@ -10206,6 +10222,7 @@ export default function PatientDetailPage() {
           </div>
           <ServiceManagementCategories plans={plans} active={serviceManagementView} onChange={setServiceManagementView} />
           {serviceManagementView === 'nutrition' && <div style={{ padding: '14px 20px', borderTop: '1px solid #EDF2EE' }}><NutritionAssessmentPanel patientId={id} source={staff?.role === 'healthPlanner' ? 'paid_order' : 'nutrition_management'} canCreate={staff?.role === 'superadmin' || (staff?.role === 'healthPlanner' && String(user.assignedHealthPlanner?._id || user.assignedHealthPlanner || '') === String(staff._id)) || (staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff._id))} embedded /></div>}
+          {serviceManagementView === 'nutrition' && ['nutritionist', 'superadmin'].includes(staff?.role) && <AnnualNutritionTaskWorkspace patientId={id} tasks={followUps} selectedTaskId={new URLSearchParams(location.search).get('annualTaskId') || ''} onSaved={() => { loadFollowUps(); load(); toast('年度营养评估已完成') }} />}
           {serviceManagementView === 'nutrition' && <WeightProgressPhotos patientId={id} plans={plans} records={recentRecords} bodyCompHistory={user.bodyCompHistory || []} canEdit={['nutritionist', 'healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role)} />}
           {serviceManagementView === 'rehab' && <RehabWorkspace patientId={id} staff={staff} view="plans" onSaved={loadPlans} />}
           {serviceManagementView === 'annual' && monthlyReviewEnabled && (

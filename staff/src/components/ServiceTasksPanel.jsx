@@ -10,6 +10,7 @@ import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 import { isCustomerOrder, serviceTaskGroupKey } from '../utils/plannerOrderProgress.mjs'
 import MedicalAssistClosureAction from './MedicalAssistClosureAction'
 import NutritionAssessmentPanel from './NutritionAssessmentPanel'
+import annualNutrition from '../../../shared/annualNutrition.cjs'
 
 const TASKS_PER_PAGE = 5
 
@@ -247,6 +248,10 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
       nav(`/patients/${task.patientId?._id}?tab=plans&serviceView=checkup`, {
         state: { openAiCheckupDesign: true },
       })
+      return
+    }
+    if (annualNutrition.isTask(task) && task.workflowKey === 'annual_nutrition_assessment' && ['nutritionist', 'superadmin'].includes(staff?.role)) {
+      nav(`/patients/${task.patientId?._id || task.patientId}?tab=plans&serviceView=nutrition&annualTaskId=${task._id}`)
       return
     }
     nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })

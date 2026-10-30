@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff, useToast } from '../App'
 import DateField from '../../../shared/DateField.jsx'
+import AssignedNutritionAssessmentForm from './AssignedNutritionAssessmentForm'
 
 const labels = { awaiting_booking: '待预约', booked: '已预约 · 待营养师评估', completed: '已完成', cancelled: '已取消' }
 const actionLabels = { requested: '顾问发起需求', booked: '健管确认预约', rescheduled: '健管调整预约', completed: '营养师完成评估', cancelled: '顾问取消需求' }
@@ -12,6 +14,8 @@ const card = { border: '1px solid #DCE9E1', borderRadius: 12, padding: 14, backg
 const field = { display: 'grid', gap: 5, fontSize: 13, color: '#52685D' }
 
 export default function NutritionAssessmentPanel({ patientId = '', source = 'nutrition_management', sourcePlanId = '', canCreate = false, compact = false, embedded = false, workbench = false, hideWhenEmpty = false }) {
+  const nav = useNavigate()
+  const location = useLocation()
   const { staff } = useStaff()
   const toast = useToast()
   const [rows, setRows] = useState([])
@@ -25,6 +29,9 @@ export default function NutritionAssessmentPanel({ patientId = '', source = 'nut
   const [cancelReason, setCancelReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  useEffect(() => {
+    if (patientId) setEditingId(new URLSearchParams(location.search).get('assessmentId') || '')
+  }, [patientId, location.search])
   const load = useCallback(async () => {
     try {
       const result = await staffAPI.getNutritionAssessments({ ...(patientId ? { patientId } : {}) })
@@ -84,13 +91,20 @@ export default function NutritionAssessmentPanel({ patientId = '', source = 'nut
         {row.assessment?.summary && <div style={{ fontSize: 13, marginTop: 7, whiteSpace: 'pre-wrap' }}>评估结论：{row.assessment.summary}<br />后续建议：{row.assessment.recommendations}</div>}
         <details style={{ marginTop: 9 }}><summary style={{ cursor: 'pointer', color: '#1E6B50', fontSize: 13 }}>查看流转记录（{row.events?.length || 0}）</summary><ol style={{ margin: '8px 0 0', paddingLeft: 22, fontSize: 12, color: '#52685D' }}>{(row.events || []).map((event, index) => <li key={index} style={{ margin: '5px 0' }}>{dateTime(event.at)} · {event.actorName} · {actionLabels[event.action] || event.action}{event.note ? ` · ${event.note}` : ''}</li>)}</ol></details>
         {row.status === 'completed' && row.orderSettlementStatus === 'needs_review' && (staff?.role === 'nutritionist' || staff?.role === 'superadmin') && <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 10 }} disabled={busy} onClick={() => run(() => staffAPI.completeNutritionAssessment(row._id, {}), '订单核销已完成')}>重试订单核销</button>}
-        {['awaiting_booking', 'booked'].includes(row.status) && actionable(row) && <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 10 }} onClick={() => { setEditingId(editingId === row._id ? '' : row._id); setForm({ ...defaultForm, at: row.status === 'awaiting_booking' && row.preferredAt ? localInput(row.preferredAt) : '', mode: config?.onlineEnabled === false ? 'offline' : 'online' }) }}>{editingId === row._id ? '收起办理' : row.status === 'awaiting_booking' ? '办理预约' : '提交评估'}</button>}
+        {['awaiting_booking', 'booked'].includes(row.status) && actionable(row) && <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 10 }} onClick={() => {
+          if (row.status === 'booked' && (staff?.role === 'nutritionist' || staff?.role === 'superadmin') && !patientId) {
+            nav(`/patients/${row.patientId?._id || row.patientId}?tab=plans&serviceView=nutrition&assessmentId=${row._id}`)
+            return
+          }
+          setEditingId(editingId === row._id ? '' : row._id)
+          setForm({ ...defaultForm, at: row.status === 'awaiting_booking' && row.preferredAt ? localInput(row.preferredAt) : '', mode: config?.onlineEnabled === false ? 'offline' : 'online' })
+        }}>{editingId === row._id ? '收起办理' : row.status === 'awaiting_booking' ? '办理预约' : '进入营养管理评估'}</button>}
         {row.status === 'booked' && (staff?.role === 'healthManager' || staff?.role === 'superadmin') && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10, marginLeft: 8 }} onClick={() => { setEditingId(editingId === row._id ? '' : row._id); setForm({ ...defaultForm, at: row.appointment?.at ? localInput(row.appointment.at) : '', mode: row.appointment?.mode || 'online', meetingRoom: row.appointment?.meetingRoom || '', store: row.appointment?.store || '', note: row.appointment?.note || '' }) }}>调整预约</button>}
         {['awaiting_booking', 'booked'].includes(row.status) && (staff?.role === 'superadmin' || (row.source === 'paid_order' ? staff?.role === 'healthPlanner' : staff?.role === 'familyDoctor')) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10, marginLeft: 8 }} onClick={() => setCancelId(cancelId === row._id ? '' : row._id)}>取消需求</button>}
         {cancelId === row._id && <div style={{ ...card, background: '#FFF8F4', display: 'grid', gap: 8, marginTop: 10 }}><label style={field}>取消原因 *<textarea className="form-control" rows={2} value={cancelReason} onChange={e => setCancelReason(e.target.value)} /></label><div><button type="button" className="btn btn-secondary btn-sm" disabled={busy || cancelReason.trim().length < 5} onClick={() => run(() => staffAPI.cancelNutritionAssessment(row._id, { reason: cancelReason }), '需求单已取消')}>确认取消</button></div></div>}
         {editingId === row._id && (staff?.role === 'healthManager' || staff?.role === 'nutritionist' || staff?.role === 'superadmin') && <div style={{ ...card, background: '#F7FBF8', display: 'grid', gap: 9, marginTop: 10 }}>
           {((staff?.role === 'healthManager' || staff?.role === 'superadmin') && (row.status === 'awaiting_booking' || staff?.role === 'healthManager' || !!form.at)) && <><div style={{ fontSize: 12, color: '#718578' }}>{config?.bookingInstructions}</div><label style={field}>预约日期和具体时间 *<input className="form-control" type="datetime-local" value={form.at} onChange={e => patch('at', e.target.value)} /></label><label style={field}>预约方式 *<select className="form-control" value={form.mode} onChange={e => patch('mode', e.target.value)}>{config?.onlineEnabled !== false && <option value="online">线上 · 腾讯会议</option>}{config?.offlineEnabled !== false && <option value="offline">线下门店</option>}</select></label><label style={field}>{form.mode === 'online' ? '腾讯会议室/会议链接 *' : '线下门店 *'}<input className="form-control" value={form.mode === 'online' ? form.meetingRoom : form.store} onChange={e => patch(form.mode === 'online' ? 'meetingRoom' : 'store', e.target.value)} /></label><label style={field}>预约备注<input className="form-control" value={form.note} onChange={e => patch('note', e.target.value)} /></label><button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => run(() => staffAPI.bookNutritionAssessment(row._id, { ...form, at: form.at ? new Date(form.at).toISOString() : '' }), '预约已确认，已转营养师工作台')}>确认预约</button></>}
-          {row.status === 'booked' && ((staff?.role === 'nutritionist' || staff?.role === 'superadmin') && !form.at) && <><div style={{ fontSize: 12, color: '#718578' }}>{config?.assessmentInstructions}</div><label style={field}>评估结论 *<textarea className="form-control" rows={4} value={form.summary} onChange={e => patch('summary', e.target.value)} /></label><label style={field}>后续建议 *<textarea className="form-control" rows={3} value={form.recommendations} onChange={e => patch('recommendations', e.target.value)} /></label><button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => run(() => staffAPI.completeNutritionAssessment(row._id, form), '营养评估已完成，健康顾问可查看结果')}>提交评估</button></>}
+          {row.status === 'booked' && ((staff?.role === 'nutritionist' || staff?.role === 'superadmin') && !form.at) && <AssignedNutritionAssessmentForm patientId={row.patientId?._id || row.patientId} task={row} kind="request" onSaved={() => { setEditingId(''); load(); toast('营养评估已完成，发起人可查看结果') }} />}
         </div>}
       </article>)}
     </div>

@@ -2648,6 +2648,8 @@ router.post('/followups/:id/outcome-review', staffAuth, async (req, res) => {
 router.get('/annual-plans/:id/lifestyle-interview-preview', staffAuth, require('../utils/lifestyleInterview').preview);
 router.get('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
 router.post('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
+router.get('/followups/:id/nutrition-assessment', staffAuth, require('../utils/annualNutritionAssessmentExecution').handle);
+router.post('/followups/:id/nutrition-assessment', staffAuth, require('../utils/annualNutritionAssessmentExecution').handle);
 
 router.post('/medical-assist-closures/:id/confirm', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   try {

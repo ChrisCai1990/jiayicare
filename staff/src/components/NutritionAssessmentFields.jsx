@@ -14,7 +14,7 @@ const { OBJECTIVE_METRICS, SUBJECTIVE_METRICS } = nutritionComparisonMetrics
 
 export const initialNutritionAssessment = (patient = {}, previous = null) => nutritionAssessmentPrefill(patient, previous).assessment
 
-export function missingNutritionAssessment(value = {}, goal = '', patient = {}) {
+export function missingNutritionAssessment(value = {}, goal = '', patient = {}, { requireTemplate = true } = {}) {
   const required = [
     ['height', '身高'], ['weight', '体重'], ['currentDiet', '近期实际饮食'],
     ['reviewDate', '复盘日期'],
@@ -28,11 +28,11 @@ export function missingNutritionAssessment(value = {}, goal = '', patient = {}) 
   if (!String(goal || '').trim()) missing.unshift('本次营养目标')
   if (value.allergyStatus === 'confirmed_present' && !String(value.allergyDetails || '').trim()) missing.push('食物过敏详情')
   if (value.allergyStatus === 'confirmed_present' && value.allergyDetails && !isUsableFoodAllergy(value.allergyDetails)) missing.push('请填写具体过敏食物及反应，不能填写无过敏')
-  if (!value.templateCompatibilityConfirmed) missing.push('模板适用性及禁忌核对')
+  if (requireTemplate && !value.templateCompatibilityConfirmed) missing.push('模板适用性及禁忌核对')
   return missing
 }
 
-export default function NutritionAssessmentFields({ patient, value, onChange, previousAssessmentAt = '' }) {
+export default function NutritionAssessmentFields({ patient, value, onChange, previousAssessmentAt = '', requireTemplate = true }) {
   const set = (key, fieldValue) => onChange(current => updateEnergyAssessment(patient, current, key, fieldValue))
   const recordedAllergy = foodAllergyEvidence(patient)
   const questionnaireAllergy = questionnaireFoodAllergyEvidence(patient)
@@ -42,8 +42,8 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
     allergyDetails: status === 'confirmed_none' ? '' : isUsableFoodAllergy(current.allergyDetails)
       ? current.allergyDetails : recordedAllergy }))
   return <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
-    <div style={{ fontWeight: 700 }}>生成前营养评估 · 由营养师核实</div>
-    <div style={{ color: '#66776E', fontSize: 12 }}>已带入客户档案{previousAssessmentAt ? `及 ${new Date(previousAssessmentAt).toLocaleDateString('zh-CN')} 的上次营养评估` : '中可用的信息'}。请按本次情况核对、修订；上次基线和目标不能直接当作当前测量结果。本次记录将与方案一同保存。</div>
+    <div style={{ fontWeight: 700 }}>{requireTemplate ? '生成前营养评估' : '本次营养评估'} · 由营养师核实</div>
+    <div style={{ color: '#66776E', fontSize: 12 }}>已带入客户档案{previousAssessmentAt ? `及 ${new Date(previousAssessmentAt).toLocaleDateString('zh-CN')} 的上次营养评估` : '中可用的信息'}。请按本次情况核对、修订；上次基线和目标不能直接当作当前测量结果。{requireTemplate ? '本次记录将与方案一同保存。' : '本次记录将保存到原营养评估任务。'}</div>
     <div style={{ color: '#52675D', fontSize: 12 }}>档案年龄：{patient?.age || '未录入（请先在客户基本信息中补齐）'}；档案食物过敏：{recordedAllergy || '未见具体食物过敏记录'}{!recordedAllergy && questionnaireAllergy && `；问卷待核对：${questionnaireAllergy}`}</div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
       {[['height', '身高（cm）'], ['weight', '体重（kg）']].map(([key, label]) => <label key={key} className="form-label">{label} *<input className="form-input" value={value[key]} onChange={e => set(key, e.target.value)} /></label>)}
@@ -51,7 +51,7 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
     </div>
     <div style={{ fontWeight: 700 }}>固定体成分指标：骨骼肌、体脂率、内脏脂肪</div>
     <div style={{ color: '#66776E', fontSize: 12 }}>除三项固定体成分外，默认仅带入最新结果明确标记异常的指标。正常或待判断项目不自动加入，可按需手动选择。基线按实际测量／检查日期取最新值；请核实来源、日期及本次阶段目标，缺少可靠结果时补录或删除可选指标。</div>
-    {value.annualNutritionSource && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7 }}>{value.annualNutritionMetrics?.length ? `参考 ${value.annualNutritionSource.year} 年健康顾问年度方案所选的 ${value.annualNutritionMetrics.length} 项对比指标` : `${value.annualNutritionSource.year} 年健康顾问年度方案未选对比指标`}{value.annualNutritionSource.pushed ? '' : '（年度方案尚未推送，请核对）'}；年度方案仅提供追踪项目参考，不作为当前测量值。营养师可按本次沟通修改。生成草稿后，核实的主观描述将追加到健康档案历史。</div>}
+    {value.annualNutritionSource && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7 }}>{value.annualNutritionMetrics?.length ? `参考 ${value.annualNutritionSource.year} 年健康顾问年度方案所选的 ${value.annualNutritionMetrics.length} 项对比指标` : `${value.annualNutritionSource.year} 年健康顾问年度方案未选对比指标`}{value.annualNutritionSource.pushed ? '' : '（年度方案尚未推送，请核对）'}；年度方案仅提供追踪项目参考，不作为当前测量值。营养师可按本次沟通修改。{requireTemplate ? '生成草稿后，核实的主观描述将追加到健康档案历史。' : '完成评估后，核实的内容会保存在任务记录中。'}</div>}
     {!!value.annualNutritionGoals?.length && <div style={{ color: '#355E4F', fontSize: 12, padding: '7px 10px', background: '#EFF8F2', borderRadius: 7, marginTop: 6 }}>已带入年度方案中 {value.annualNutritionGoals.length} 条营养相关管理目标与干预重点；请核实后确定本次营养方案的具体目标。</div>}
     <label className="form-label">沟通后增加对比指标<select className="form-input" value="" onChange={e => {
       const metric = e.target.value
@@ -96,12 +96,12 @@ export default function NutritionAssessmentFields({ patient, value, onChange, pr
     <label className="form-label">食物过敏核对 *<select className="form-input" value={value.allergyStatus} onChange={e => setAllergyStatus(e.target.value)}><option value="">请选择已核实结果</option><option value="confirmed_none">已核实，无已知食物过敏</option><option value="confirmed_present">已核实，有食物过敏</option></select></label>
     {value.allergyStatus === 'confirmed_present' && <label className="form-label">过敏食物及反应 *<textarea className="form-input" rows={2} value={value.allergyDetails} onChange={e => set('allergyDetails', e.target.value)} placeholder="请核对档案记录，补充具体食物及反应" /></label>}
     {value.allergyStatus === 'confirmed_present' && !formalRecordedAllergy && <div role="alert" style={{ padding: 10, background: '#FFF4DC', color: '#79551A', borderRadius: 6 }}>
-      本次核实有食物过敏，过敏史档案未见具体记录。若已有调查记录，上方已带入供核对；若没有，请在上方填写一次具体食物及反应。成功生成草稿时系统会自动追加到档案并保留历史。
+      本次核实有食物过敏，过敏史档案未见具体记录。若已有调查记录，上方已带入供核对；若没有，请在上方填写一次具体食物及反应。{requireTemplate ? '成功生成草稿时系统会自动追加到档案并保留历史。' : '提交评估后，请同步核对并更新过敏史档案。'}
     </div>}
     {value.allergyStatus === 'confirmed_none' && hasFoodAllergyRecord(patient) && <div role="alert" style={{ padding: 10, background: '#FFF4DC', color: '#79551A', borderRadius: 6 }}>
       本次选择无过敏，但档案记录为“{recordedAllergy || '有食物过敏，具体食物待核对'}”。请先核对并在过敏史档案中修订；当前不能按无过敏生成方案。
     </div>}
-    <label className="form-label">专业风险分流 *<select className="form-input" value={value.riskStatus} onChange={e => set('riskStatus', e.target.value)}><option value="">请选择</option><option value="standard">已核对，适用所选营养方案模板</option><option value="specialist">需专业评估或特殊疾病营养路径</option></select></label>
-    <label className="form-label"><input type="checkbox" checked={value.templateCompatibilityConfirmed} onChange={e => set('templateCompatibilityConfirmed', e.target.checked)} /> 已逐项核对本次带入的评估资料，并确认所选模板与过敏、疾病要求及本次目标不冲突 *</label>
+    <label className="form-label">专业风险分流 *<select className="form-input" value={value.riskStatus} onChange={e => set('riskStatus', e.target.value)}><option value="">请选择</option><option value="standard">{requireTemplate ? '已核对，适用所选营养方案模板' : '已核对，可按常规营养管理'}</option><option value="specialist">需专业评估或特殊疾病营养路径</option></select></label>
+    {requireTemplate && <label className="form-label"><input type="checkbox" checked={value.templateCompatibilityConfirmed} onChange={e => set('templateCompatibilityConfirmed', e.target.checked)} /> 已逐项核对本次带入的评估资料，并确认所选模板与过敏、疾病要求及本次目标不冲突 *</label>}
   </div>
 }
