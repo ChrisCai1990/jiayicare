@@ -20,31 +20,16 @@ export default function ExpertInvitationPage({ reusable = false }) {
   const [form, setForm] = useState(blank)
   const [error, setError] = useState('')
   const [shareMessage, setShareMessage] = useState('')
-  const [showManualLink, setShowManualLink] = useState(false)
   const set = key => e => setForm(current => ({ ...current, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
-  useEffect(() => {
-    if (!reusable) return
-    const previousTitle = document.title
-    document.title = '嘉医汇专家合作意向问卷'
-    return () => { document.title = previousTitle }
-  }, [reusable])
-  const shareQuestionnaire = async () => {
-    setShareMessage('')
-    setShowManualLink(false)
-    if (/MicroMessenger/i.test(navigator.userAgent)) {
-      setShareMessage('请点微信右上角「···」，选择「发送给朋友」。')
-      return
+  const copyQuestionnaireLink = async () => {
+    const url = window.location.href
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
+      await navigator.clipboard.writeText(url)
+      setShareMessage('链接已复制，请在微信聊天中粘贴发送。')
+    } catch {
+      setShareMessage('复制失败，请选中下方链接手动复制。')
     }
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: '嘉医汇专家合作意向问卷', url: window.location.href })
-        return
-      } catch (error) {
-        if (error.name === 'AbortError') return
-      }
-    }
-    setShowManualLink(true)
-    setShareMessage('当前浏览器不能直接打开微信转发。请在微信中打开下方链接，再点右上角「···」发送给朋友。')
   }
   useEffect(() => {
     fetch(`${apiBase}/expert-recruitment/${publicPath}/${encodeURIComponent(token)}`).then(async r => {
@@ -75,10 +60,10 @@ export default function ExpertInvitationPage({ reusable = false }) {
       <h1 style={{ margin: '0 0 9px', fontSize: 25 }}>嘉医汇专家合作意向问卷</h1>
       <p style={{ lineHeight: 1.7, color: '#4C655B' }}>本问卷用于了解您的专业方向、合作意向、预期报酬和可安排时间。提交后，我们会进一步核验资质并商谈合作条件。</p>
       {reusable && ['ready', 'saving', 'completed'].includes(state) && <div style={{ background: '#EFF7F2', borderRadius: 10, padding: 14, marginBottom: 18 }}>
-        <button type="button" onClick={shareQuestionnaire} style={{ border: 0, borderRadius: 8, background: '#246B4D', color: 'white', fontSize: 15, padding: '10px 18px', cursor: 'pointer' }}>微信转发问卷</button>
-        <p style={{ margin: '9px 0 0', fontSize: 13, color: '#4C655B' }}>同一链接可供多位专家分别填写。</p>
+        <p style={{ margin: '0 0 7px', fontSize: 13, color: '#4C655B' }}>同一链接可供多位专家分别填写。复制后在微信聊天中粘贴发送，显示网址是正常的。</p>
+        <input aria-label="问卷链接" readOnly value={typeof window === 'undefined' ? '' : window.location.href} onFocus={e => e.target.select()} style={{ ...inputStyle, fontSize: 13, background: 'white' }}/>
+        <button type="button" onClick={copyQuestionnaireLink} style={{ border: 0, borderRadius: 8, background: '#246B4D', color: 'white', fontSize: 15, padding: '10px 18px', marginTop: 8, cursor: 'pointer' }}>复制问卷链接</button>
         {shareMessage && <p role="status" style={{ margin: '8px 0 0', fontSize: 13 }}>{shareMessage}</p>}
-        {showManualLink && <input aria-label="问卷链接" readOnly value={typeof window === 'undefined' ? '' : window.location.href} onFocus={e => e.target.select()} style={{ ...inputStyle, fontSize: 13, background: 'white', marginTop: 8 }}/>}
       </div>}
       {state === 'loading' && <p>正在核对邀请链接…</p>}
       {state === 'completed' && <p role="status">问卷已提交。嘉医汇会通过专科合伙人或约定联系方式与您沟通。</p>}

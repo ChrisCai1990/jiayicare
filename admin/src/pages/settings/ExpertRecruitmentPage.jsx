@@ -58,7 +58,7 @@ export default function ExpertRecruitmentPage() {
       const response = await adminAPI.createExpertRecruitmentLink(invite)
       setInvitationUrl(`${window.location.origin}/expert-questionnaire/${response.data.token}`)
       setInvite({ partnerName: '', specialtyTeam: '' })
-      await load(); toast('可转发问卷链接已建立')
+      await load(); toast('问卷链接已生成')
     } catch (e) { setError(e.message) }
     finally { setBusy(false) }
   }
@@ -72,14 +72,14 @@ export default function ExpertRecruitmentPage() {
     <div className="page-header"><div><div className="page-title">专家招募与问卷</div><div className="page-subtitle">专科合伙人初筛意向；专家本人填写报价和空档；审核通过后进入可派单专家库。</div></div></div>
     {error && <div role="alert" style={{ color: '#B42318', marginBottom: 14 }}>{error}</div>}
     <div className="card" style={{ padding: 20, marginBottom: 18 }}>
-      <h3 style={{ marginTop: 0 }}>生成可转发问卷链接</h3>
-      <p style={{ color: '#60786D' }}>按专科团队生成链接，由合伙人转发给多位专家。每位专家分别填写，后台逐份查收；链接可随时复制或停用。</p>
+      <h3 style={{ marginTop: 0 }}>生成问卷链接</h3>
+      <p style={{ color: '#60786D' }}>按专科团队生成链接，合伙人复制后发给专家。每位专家分别填写，后台逐份查收；链接可随时复制或停用。</p>
       <form onSubmit={createInvite} style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
         <Field label="专科合伙人 *"><input className="form-input" required value={invite.partnerName} onChange={e => setInvite({ ...invite, partnerName: e.target.value })}/></Field>
         <Field label="专科团队 *"><input className="form-input" required value={invite.specialtyTeam} onChange={e => setInvite({ ...invite, specialtyTeam: e.target.value })}/></Field>
-        <button className="btn btn-primary" disabled={busy}>生成转发链接</button>
+        <button className="btn btn-primary" disabled={busy}>生成问卷链接</button>
       </form>
-      {invitationUrl && <div style={{ marginTop: 14, padding: 12, background: '#EFF8F3', borderRadius: 8 }}><div>新链接已生成，可转发给同一专科团队的多位专家。</div><div style={{ display: 'flex', gap: 8, marginTop: 8 }}><input className="form-input" readOnly value={invitationUrl} aria-label="问卷转发链接" style={{ flex: 1 }}/><button className="btn btn-secondary" onClick={() => copy(invitationUrl)}>复制链接</button></div></div>}
+      {invitationUrl && <div style={{ marginTop: 14, padding: 12, background: '#EFF8F3', borderRadius: 8 }}><div>新链接已生成，复制后可发给同一专科团队的多位专家。</div><div style={{ display: 'flex', gap: 8, marginTop: 8 }}><input className="form-input" readOnly value={invitationUrl} aria-label="问卷链接" style={{ flex: 1 }}/><button className="btn btn-secondary" onClick={() => copy(invitationUrl)}>复制链接</button></div></div>}
       <h4>已生成的团队链接</h4>
       {links.length === 0 && <p>暂无团队链接</p>}
       {links.map(link => <div key={id(link)} style={{ borderTop: '1px solid #E6EEE9', padding: '10px 0' }}><strong>{link.specialtyTeam}</strong> · 合伙人 {link.partnerName} · {link.status === 'active' ? '可填写' : '已停用'}{link.status === 'active' && <div style={{ display: 'flex', gap: 8, marginTop: 7, flexWrap: 'wrap' }}><input className="form-input" style={{ flex: 1, minWidth: 260 }} readOnly value={`${window.location.origin}/expert-questionnaire/${link.token}`}/><button className="btn btn-secondary" onClick={() => copy(`${window.location.origin}/expert-questionnaire/${link.token}`)}>复制链接</button><button className="btn btn-secondary" disabled={busy} onClick={() => { if (window.confirm('停用后，已转发的链接将不能再提交。确定停用？')) run(() => adminAPI.revokeExpertRecruitmentLink(id(link)), '链接已停用') }}>停用</button></div>}</div>)}
