@@ -34,6 +34,8 @@ import OperationsPage from './pages/OperationsPage'
 import ProductPushPage from './pages/ProductPushPage'
 import InventoryPage from './pages/InventoryPage'
 import TeamPage from './pages/TeamPage'
+import AvailabilityPage from './pages/AvailabilityPage'
+import ExpertConsultationsPage from './pages/ExpertConsultationsPage'
 import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
 import MarketingPage from './pages/MarketingPage'
@@ -241,6 +243,8 @@ export default function App() {
               <Route path="products" element={<ProductPushPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="team" element={<TeamPage />} />
+              <Route path="availability" element={<AvailabilityPage />} />
+              <Route path="expert-consultations" element={<ExpertConsultationsPage />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="marketing" element={<MarketingPage />} />

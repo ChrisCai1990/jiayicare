@@ -389,6 +389,14 @@ export const ordersAPI = {
   requestRefund: (id, reason) => request(`/orders/${id}/refund-request`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
 
+export const expertConsultationsAPI = {
+  mine: () => request('/expert-consultations/mine'),
+  experts: type => request(`/expert-consultations/mine/experts?type=${type === 'mdt' ? 'mdt' : 'single'}`),
+  submit: (orderId, requestText, desiredExpertId) => request('/expert-consultations/mine', {
+    method: 'POST', body: JSON.stringify({ orderId, request: requestText, desiredExpertId: desiredExpertId || null }),
+  }),
+};
+
 // ── Feedback ──────────────────────────────────────────────────────
 export const feedbackAPI = {
   submit: (type, content) => request('/feedback', { method: 'POST', body: JSON.stringify({ type, content }) }),

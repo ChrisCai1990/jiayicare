@@ -25,6 +25,7 @@ export default defineAppConfig({
     'pages/profile/feedback/index',
     'pages/profile/notifications/index',
     'pages/orders/index',
+    'pages/orders/consultation/index',
     'pages/legal/index',
     'pages/common/coming-soon/index',
 

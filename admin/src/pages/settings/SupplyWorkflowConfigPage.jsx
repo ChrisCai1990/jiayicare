@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
-const FLOW_OPTIONS = [['', '尚未关联'], ['annual_management', '年度健康管理'], ['health_record_management', '健康档案管理'], ['health_assessment', '健康评估与复查'], ['nutrition_intervention', '营养干预'], ['checkup', '体检／检查管理'], ['medical_assist', '就医协助'], ['medical_proxy', '医疗代诊服务'], ['rehab', '运动复健'], ['tcm', '中医调理'], ['psychology', '心理支持'], ['medication_supply', '药品定期配取'], ['supplement_supply', '营养素定期补充'], ['generic_followup', '通用随访'], ['fulfillment_only', '单次履约／核销']]
+const FLOW_OPTIONS = [['', '尚未关联'], ['annual_management', '年度健康管理'], ['health_record_management', '健康档案管理'], ['health_assessment', '健康评估与复查'], ['nutrition_intervention', '营养干预'], ['checkup', '体检／检查管理'], ['medical_assist', '就医协助'], ['medical_proxy', '医疗代诊服务'], ['expert_consultation', '单次专家咨询分析'], ['mdt_consultation', 'MDT 多学科咨询分析'], ['rehab', '运动复健'], ['tcm', '中医调理'], ['psychology', '心理支持'], ['medication_supply', '药品定期配取'], ['supplement_supply', '营养素定期补充'], ['generic_followup', '通用随访'], ['fulfillment_only', '单次履约／核销']]
 const FLOW_CARDS = [
   ['年度健康管理', '评估建档 → 方案制定 → 周期服务 → 阶段复盘 → 年度总结', '/health-plan-templates', '管理方案模板'],
   ['健康档案管理', '资料收集 → 归档核验 → 持续更新 → 异常提示 → 授权输出', '/health-plan-templates', '管理方案模板'],

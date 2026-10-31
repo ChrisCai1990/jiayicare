@@ -92,6 +92,14 @@ export const serviceGroupAPI = {
 }
 
 export const staffAPI = {
+  expertConsultationCases: () => req('/expert-consultations/staff'),
+  expertConsultationExperts: () => req('/expert-consultations/staff/experts'),
+  expertConsultationMaterials: id => req(`/expert-consultations/staff/${id}/materials`),
+  expertConsultationAction: (id, action, data) => req(`/expert-consultations/staff/${id}/${action}`, { method: 'POST', body: JSON.stringify(data) }),
+  availability: params => req('/staff/availability?' + qs(params)),
+  teamAvailability: params => req('/staff/availability/team?' + qs(params)),
+  createAvailability: data => req('/staff/availability', { method: 'POST', body: JSON.stringify(data) }),
+  deleteAvailability: id => req('/staff/availability/' + encodeURIComponent(id), { method: 'DELETE' }),
   inventory: () => req('/staff/inventory'),
   inventoryPeople: () => req('/staff/inventory/people'),
   inventoryUsers: q => req(`/staff/inventory/users?q=${encodeURIComponent(q)}`),

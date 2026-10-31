@@ -25,6 +25,8 @@ const ALL_NAV = [
   { label: '会员营销',     icon: 'marketing', path: '/marketing',   roles: ['superadmin','manager','healthManager','familyDoctor'],                              moduleKey: 'marketing' },
   { label: '官网线索',     icon: 'marketing', path: '/visitor-leads', roles: ['superadmin','healthPlanner'],                                                     moduleKey: 'leads' },
   { label: '团队管理',     icon: 'team', path: '/team',             roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'],      moduleKey: 'team' },
+  { label: '我的排班',     icon: 'team', path: '/availability',     roles: [] },
+  { label: '专家咨询',     icon: 'services', path: '/expert-consultations', roles: ['healthManager','familyDoctor','healthPlanner','specialist','nutritionist','rehabSpecialist','psychologist','tcmDoctor','superadmin'] },
   { label: '运营看板',     icon: 'operations', path: '/operations', roles: ['superadmin','manager'],                                                            moduleKey: 'operations' },
   { label: '日常健康数据', icon: 'checkin', path: '/daily-checkin', roles: [], moduleKey: 'daily_checkin' },
   { label: '消息通知',     icon: 'notifications', path: '/notifications', roles: [] },
@@ -91,7 +93,7 @@ function LayoutContent() {
           <div className="sidebar-section-label">功能菜单</div>
           {(setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
             // 无 moduleKey 的项（工作台/消息/个人中心）始终显示
-            if (!item.moduleKey) return true
+            if (!item.moduleKey) return item.roles.length === 0 || item.roles.includes(staff?.role)
             // 有 customPermissions（管理后台为该账号配置了自定义角色权限）时，按权限决定显隐
             if (staff?.customPermissions) {
               return !!staff.customPermissions[item.moduleKey]?.view

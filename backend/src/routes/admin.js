@@ -2903,7 +2903,7 @@ router.put('/system-config/health-assistant', adminAuth, async (req, res) => {
 });
 
 router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
-  const allowedKeys = ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'medical_proxy', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'];
+  const allowedKeys = ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'medical_proxy', 'expert_consultation', 'mdt_consultation', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'];
   if (!allowedKeys.includes(req.body?.key)) return res.status(400).json({ success: false, message: '请选择有效的服务流程' });
   const key = req.body.key;
   const workflowProduct = await Product.findById(req.params.id).select('name').lean();

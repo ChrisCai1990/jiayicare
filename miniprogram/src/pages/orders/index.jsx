@@ -174,6 +174,12 @@ export default function OrdersPage() {
                   服务进度：{FULFILLMENT_LABELS[o.fulfillmentId.status] || o.fulfillmentId.status}
                 </Text>
               )}
+              {['expert_consultation', 'mdt_consultation'].includes(o.serviceWorkflowSnapshot?.key) && o.paymentStatus === 'paid' && (
+                <View onClick={() => Taro.navigateTo({ url: `/pages/orders/consultation/index?orderId=${o._id}&type=${o.serviceWorkflowSnapshot.key === 'mdt_consultation' ? 'mdt' : 'single'}` })}
+                  style={{ marginTop: '10px', display: 'inline-block', padding: '8px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }}>
+                  <Text style={{ fontSize: '12px', color: '#fff' }}>查看咨询与会诊进度</Text>
+                </View>
+              )}
               {o.status === 'pending' && !['paid', 'fulfilling', 'refund_pending', 'refunded'].includes(o.tradeStatus) && (
                 <View
                   onClick={() => cancel(o._id)}
