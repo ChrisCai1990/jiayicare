@@ -91,7 +91,7 @@ const NAV_GROUPS = {
   },
   '基础设置': {
     '组织与人员': ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees'],
-    '会员与医疗资源': ['/settings/medical-resource-knowledge', '/settings/medical-delivery-resources', '/settings/medical-resources', '/settings/members', '/settings/scoring', '/clinical-standards'],
+    '会员与医疗资源': ['/settings/medical-resource-knowledge', '/settings/medical-delivery-resources', '/settings/medical-resources', '/settings/expert-recruitment', '/settings/members', '/settings/scoring', '/clinical-standards'],
     '智能与服务流程': ['/settings/daily-care', '/settings/health-assistant', '/settings/ai-usage', '/settings/supply-workflow', '/settings/service-workflow-alignment', '/settings/review-experience'],
   },
   '项目设置': {
