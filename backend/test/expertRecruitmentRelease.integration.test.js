@@ -8,6 +8,7 @@ const net = require('node:net');
 const crypto = require('node:crypto');
 const mongoose = require('mongoose');
 const Recruitment = require('../src/models/ExpertRecruitment');
+const RecruitmentLink = require('../src/models/ExpertRecruitmentLink');
 const MedicalInstitution = require('../src/models/MedicalInstitution');
 const MedicalDepartment = require('../src/models/MedicalDepartment');
 const MedicalExpert = require('../src/models/MedicalExpert');
@@ -37,7 +38,7 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       mongod.stdout.on('data', chunk => { if (String(chunk).includes('Waiting for connections')) { clearTimeout(timer); resolve(); } });
       mongod.stderr.resume();
     });
-    await mongoose.connect(`mongodb://127.0.0.1:${port}/expert_recruitment_${crypto.randomBytes(6).toString('hex')}`);
+    await mongoose.connect(`mongodb://127.0.0.1:${port}/expert_recruitment_${crypto.randomBytes(6).toString('hex')}`, { autoIndex: false });
     const firstTenant = oid(), secondTenant = oid();
     const token = crypto.randomBytes(24).toString('base64url');
     const sha = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -84,5 +85,41 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       assert.equal(profile.singleConsultationFee, 180);
       const saved = await Recruitment.findById(row._id);
       assert.equal(saved.status, 'approved');
+    });
+    let reusableToken, linkId;
+    await asTenant(firstTenant, async () => {
+      const createLink = handler('post', '/admin/links');
+      const res = response();
+      await createLink({ admin: { _id: oid(), role: 'superadmin' }, body: { partnerName: '甲', specialtyTeam: '消化专科' } }, res);
+      assert.equal(res.statusCode, 201);
+      reusableToken = res.body.data.token;
+      linkId = res.body.data.id;
+      const listLinks = handler('get', '/admin/links');
+      const listed = response(); await listLinks({ admin: { role: 'superadmin' } }, listed);
+      assert.equal(listed.body.data[0].token, reusableToken);
+    });
+    const openLink = handler('get', '/public-link/:token');
+    const available = response(); await openLink({ params: { token: reusableToken } }, available);
+    assert.equal(available.body.data.status, 'open');
+    const submitLink = handler('post', '/public-link/:token');
+    for (const [name, phone] of [['甲医生', '13900000001'], ['乙医生', '13900000002']]) {
+      const res = response();
+      await submitLink({ params: { token: reusableToken }, body: { name, phone, mdt: true, mdtExpectedFee: 190, privacyAcknowledged: true } }, res);
+      assert.equal(res.statusCode, 201);
+    }
+    const duplicate = response();
+    await submitLink({ params: { token: reusableToken }, body: { name: '甲医生', phone: '13900000001', mdt: true, mdtExpectedFee: 190, privacyAcknowledged: true } }, duplicate);
+    assert.equal(duplicate.statusCode, 409);
+    await asTenant(firstTenant, async () => {
+      assert.equal(await Recruitment.countDocuments({ linkId }), 2);
+      const revoke = handler('post', '/admin/links/:id/revoke');
+      const res = response(); await revoke({ params: { id: String(linkId) }, admin: { _id: oid(), role: 'superadmin' } }, res);
+      assert.equal(res.body.data.status, 'revoked');
+    });
+    const revoked = response(); await openLink({ params: { token: reusableToken } }, revoked);
+    assert.equal(revoked.statusCode, 404);
+    await asTenant(secondTenant, async () => {
+      assert.equal(await RecruitmentLink.countDocuments(), 0);
+      assert.equal(await Recruitment.countDocuments({ linkId }), 0);
     });
   });

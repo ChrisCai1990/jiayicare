@@ -11,9 +11,10 @@ const id = item => String(item?._id || item || '')
 export default function ExpertRecruitmentPage() {
   const toast = useToast()
   const [rows, setRows] = useState([])
+  const [links, setLinks] = useState([])
   const [resources, setResources] = useState({ institutions: [], departments: [] })
   const [staff, setStaff] = useState([])
-  const [invite, setInvite] = useState({ partnerName: '', specialtyTeam: '', candidateName: '' })
+  const [invite, setInvite] = useState({ partnerName: '', specialtyTeam: '' })
   const [invitationUrl, setInvitationUrl] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [screening, setScreening] = useState(emptyScreen)
@@ -25,10 +26,11 @@ export default function ExpertRecruitmentPage() {
   const expertStaff = staff.filter(row => ['specialist', 'familyDoctor', 'nutritionist', 'rehabSpecialist', 'psychologist', 'tcmDoctor'].includes(row.role) && row.staffStatus !== 'inactive')
 
   async function load() {
-    const [recruitments, medical, employees] = await Promise.all([
-      adminAPI.expertRecruitments(), adminAPI.medicalResources(), adminAPI.employees({ limit: 500 }),
+    const [recruitments, activeLinks, medical, employees] = await Promise.all([
+      adminAPI.expertRecruitments(), adminAPI.expertRecruitmentLinks(), adminAPI.medicalResources(), adminAPI.employees({ limit: 500 }),
     ])
     setRows(recruitments.data || [])
+    setLinks(activeLinks.data || [])
     setResources(medical.data || { institutions: [], departments: [] })
     setStaff(employees.data || [])
   }
@@ -53,15 +55,15 @@ export default function ExpertRecruitmentPage() {
     e.preventDefault()
     setBusy(true); setError('')
     try {
-      const response = await adminAPI.createExpertRecruitment(invite)
-      setInvitationUrl(`${window.location.origin}/expert-invitation/${response.data.token}`)
-      setInvite({ partnerName: '', specialtyTeam: '', candidateName: '' })
-      await load(); toast('邀请已建立')
+      const response = await adminAPI.createExpertRecruitmentLink(invite)
+      setInvitationUrl(`${window.location.origin}/expert-questionnaire/${response.data.token}`)
+      setInvite({ partnerName: '', specialtyTeam: '' })
+      await load(); toast('可转发问卷链接已建立')
     } catch (e) { setError(e.message) }
     finally { setBusy(false) }
   }
-  async function copy() {
-    try { await navigator.clipboard.writeText(invitationUrl); toast('链接已复制') }
+  async function copy(url) {
+    try { await navigator.clipboard.writeText(url); toast('链接已复制，可转发给专家') }
     catch { setError('复制失败，请手动复制链接') }
   }
   const setScreen = key => e => setScreening(current => ({ ...current, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
@@ -70,14 +72,17 @@ export default function ExpertRecruitmentPage() {
     <div className="page-header"><div><div className="page-title">专家招募与问卷</div><div className="page-subtitle">专科合伙人初筛意向；专家本人填写报价和空档；审核通过后进入可派单专家库。</div></div></div>
     {error && <div role="alert" style={{ color: '#B42318', marginBottom: 14 }}>{error}</div>}
     <div className="card" style={{ padding: 20, marginBottom: 18 }}>
-      <h3 style={{ marginTop: 0 }}>发起线上邀请</h3>
+      <h3 style={{ marginTop: 0 }}>生成可转发问卷链接</h3>
+      <p style={{ color: '#60786D' }}>按专科团队生成链接，由合伙人转发给多位专家。每位专家分别填写，后台逐份查收；链接可随时复制或停用。</p>
       <form onSubmit={createInvite} style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
         <Field label="专科合伙人 *"><input className="form-input" required value={invite.partnerName} onChange={e => setInvite({ ...invite, partnerName: e.target.value })}/></Field>
         <Field label="专科团队 *"><input className="form-input" required value={invite.specialtyTeam} onChange={e => setInvite({ ...invite, specialtyTeam: e.target.value })}/></Field>
-        <Field label="拟邀专家姓名"><input className="form-input" value={invite.candidateName} onChange={e => setInvite({ ...invite, candidateName: e.target.value })}/></Field>
-        <button className="btn btn-primary" disabled={busy}>生成邀请链接</button>
+        <button className="btn btn-primary" disabled={busy}>生成转发链接</button>
       </form>
-      {invitationUrl && <div style={{ marginTop: 14, padding: 12, background: '#EFF8F3', borderRadius: 8 }}><div>链接仅显示一次，14 天内可填写一次。请通过已核实的联系方式发给专家本人。</div><div style={{ display: 'flex', gap: 8, marginTop: 8 }}><input className="form-input" readOnly value={invitationUrl} aria-label="邀请链接" style={{ flex: 1 }}/><button className="btn btn-secondary" onClick={copy}>复制</button></div></div>}
+      {invitationUrl && <div style={{ marginTop: 14, padding: 12, background: '#EFF8F3', borderRadius: 8 }}><div>新链接已生成，可转发给同一专科团队的多位专家。</div><div style={{ display: 'flex', gap: 8, marginTop: 8 }}><input className="form-input" readOnly value={invitationUrl} aria-label="问卷转发链接" style={{ flex: 1 }}/><button className="btn btn-secondary" onClick={() => copy(invitationUrl)}>复制链接</button></div></div>}
+      <h4>已生成的团队链接</h4>
+      {links.length === 0 && <p>暂无团队链接</p>}
+      {links.map(link => <div key={id(link)} style={{ borderTop: '1px solid #E6EEE9', padding: '10px 0' }}><strong>{link.specialtyTeam}</strong> · 合伙人 {link.partnerName} · {link.status === 'active' ? '可填写' : '已停用'}{link.status === 'active' && <div style={{ display: 'flex', gap: 8, marginTop: 7, flexWrap: 'wrap' }}><input className="form-input" style={{ flex: 1, minWidth: 260 }} readOnly value={`${window.location.origin}/expert-questionnaire/${link.token}`}/><button className="btn btn-secondary" onClick={() => copy(`${window.location.origin}/expert-questionnaire/${link.token}`)}>复制链接</button><button className="btn btn-secondary" disabled={busy} onClick={() => { if (window.confirm('停用后，已转发的链接将不能再提交。确定停用？')) run(() => adminAPI.revokeExpertRecruitmentLink(id(link)), '链接已停用') }}>停用</button></div>}</div>)}
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(420px, 2fr)', gap: 16, alignItems: 'start' }}>
       <div className="card" style={{ padding: 15 }}><h3 style={{ marginTop: 0 }}>邀请与提交记录</h3>
@@ -95,9 +100,10 @@ export default function ExpertRecruitmentPage() {
             <Info label="专业 / 职称 / 年限" value={`${selected.response?.profession || '—'} / ${selected.response?.title || '—'} / ${selected.response?.experienceYears ?? '—'} 年`}/>
             <Info label="执业范围" value={selected.response?.registrationScope}/><Info label="擅长" value={selected.response?.expertise?.join('、')}/><Info label="不适合承接" value={selected.response?.unsuitableTopics}/>
             <Info label="合作意向" value={[selected.response?.singleConsultation && '单次咨询', selected.response?.mdt && 'MDT', selected.response?.mdtLead && 'MDT 牵头'].filter(Boolean).join('、')}/>
-            <Info label="预期报酬" value={`单次 ${selected.response?.singleExpectedFee ?? '—'} 元；MDT ${selected.response?.mdtExpectedFee ?? '—'} 元；${selected.response?.feeTaxBasis || '待商谈'}`}/>
-            <Info label="报价包含" value={selected.response?.feeIncludes?.join('、')}/><Info label="额外收费规则" value={selected.response?.extraFeeRule}/>
-            <Info label="阅资料 / 书面回复" value={`${selected.response?.preparationMinutes ?? '—'} 分钟 / ${selected.response?.replyHours ?? '—'} 小时`}/>
+            <Info label="单次咨询预期报酬" value={selected.response?.singleConsultation ? `${selected.response.singleExpectedFee} 元/次` : '不参与'}/>
+            <Info label="MDT 预期报酬" value={selected.response?.mdt ? `${selected.response.mdtExpectedFee} 元/次` : '不参与'}/>
+            <Info label="报价口径" value={{ pre_tax: '税前', after_tax: '税后', undecided: '待商谈' }[selected.response?.feeTaxBasis] || '待商谈'}/>
+            <Info label="额外收费说明" value={selected.response?.extraFeeRule}/>
             <Info label="可安排时间" value={selected.response?.weeklyAvailability}/><Info label="周容量 / 提前派单" value={`${selected.response?.weeklyCapacity ?? '—'} 单 / ${selected.response?.minimumNoticeHours ?? '—'} 小时`}/>
             <Info label="排班维护 / 录制意向" value={`${selected.response?.scheduleMaintenance || '—'} / ${selected.response?.recordingPreference || '—'}`}/>
             <Info label="其他条件" value={selected.response?.cooperationNotes}/>

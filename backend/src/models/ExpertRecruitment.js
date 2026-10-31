@@ -8,6 +8,7 @@ const schema = new mongoose.Schema({
   partnerName: { type: String, default: '' },
   specialtyTeam: { type: String, default: '' },
   candidateName: { type: String, default: '' },
+  linkId: { type: mongoose.Schema.Types.ObjectId, ref: 'ExpertRecruitmentLink', default: null, index: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   submittedAt: { type: Date, default: null },
   response: {

@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const { runWithoutTenantScope } = require('../utils/tenantScope');
 const ExpertRecruitment = require('../models/ExpertRecruitment');
+const ExpertRecruitmentLink = require('../models/ExpertRecruitmentLink');
 const MedicalExpert = require('../models/MedicalExpert');
 const MedicalDepartment = require('../models/MedicalDepartment');
 const MedicalInstitution = require('../models/MedicalInstitution');
@@ -18,29 +19,21 @@ const tokenHash = token => crypto.createHash('sha256').update(String(token)).dig
 const adminAllowed = req => ['superadmin', 'manager'].includes(req.admin?.role);
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
 
-// The public link is a single-use capability. A lookup never returns the invited person's details.
-router.get('/public/:token', async (req, res) => {
-  const record = await runWithoutTenantScope(() => ExpertRecruitment.findOne({ tokenHash: tokenHash(req.params.token) }).select('status expiresAt').lean());
-  if (!record || record.status === 'revoked' || record.expiresAt <= new Date()) return fail(res, 404, '问卷链接已失效');
-  res.json({ success: true, data: { status: record.status, expiresAt: record.expiresAt } });
-});
-
-router.post('/public/:token', async (req, res) => {
-  const body = req.body || {};
+function submissionFromBody(body = {}) {
   const name = text(body.name, 80), phone = text(body.phone, 30);
   const singleConsultation = body.singleConsultation === true, mdt = body.mdt === true;
   if (!name || !/^1\d{10}$/.test(phone) || (!singleConsultation && !mdt))
-    return fail(res, 400, '请填写姓名、有效手机号和至少一种合作服务');
-  if (body.privacyAcknowledged !== true) return fail(res, 400, '请先阅读并确认问卷资料使用说明');
+    return { error: '请填写姓名、有效手机号和至少一种合作服务' };
+  if (body.privacyAcknowledged !== true) return { error: '请先阅读并确认问卷资料使用说明' };
   const singleExpectedFee = money(body.singleExpectedFee), mdtExpectedFee = money(body.mdtExpectedFee);
   if (![singleExpectedFee, mdtExpectedFee].every(nonnegative) || (singleConsultation && singleExpectedFee === null) || (mdt && mdtExpectedFee === null))
-    return fail(res, 400, '请填写所选服务的每单预期报酬');
-  const response = {
+    return { error: '请填写所选服务的每单预期报酬' };
+  return { response: {
     name, phone, institutionName: text(body.institutionName, 150), departmentName: text(body.departmentName, 150),
     title: text(body.title, 100), profession: text(body.profession, 60), registrationScope: text(body.registrationScope, 500),
     experienceYears: Math.max(0, Math.min(80, Number(body.experienceYears) || 0)),
     expertise: list(body.expertise), unsuitableTopics: text(body.unsuitableTopics, 1000),
-    singleConsultation, mdt, mdtLead: body.mdtLead === true,
+    singleConsultation, mdt, mdtLead: mdt && body.mdtLead === true,
     singleExpectedFee, mdtExpectedFee, feeTaxBasis: ['pre_tax', 'after_tax', 'undecided'].includes(body.feeTaxBasis) ? body.feeTaxBasis : 'undecided',
     feeIncludes: list(body.feeIncludes, 6), extraFeeRule: text(body.extraFeeRule, 500),
     preparationMinutes: Math.max(0, Math.min(240, Number(body.preparationMinutes) || 0)), materialLimit: text(body.materialLimit, 200),
@@ -50,14 +43,76 @@ router.post('/public/:token', async (req, res) => {
     scheduleMaintenance: ['self', 'assistant', 'undecided'].includes(body.scheduleMaintenance) ? body.scheduleMaintenance : 'undecided',
     recordingPreference: ['recording', 'transcript_only', 'neither', 'discuss'].includes(body.recordingPreference) ? body.recordingPreference : 'discuss',
     cooperationNotes: text(body.cooperationNotes, 1000), privacyAcknowledged: true,
-  };
+  } };
+}
+
+// The public link is a single-use capability. A lookup never returns the invited person's details.
+router.get('/public/:token', async (req, res) => {
+  const record = await runWithoutTenantScope(() => ExpertRecruitment.findOne({ tokenHash: tokenHash(req.params.token) }).select('status expiresAt').lean());
+  if (!record || record.status === 'revoked' || record.expiresAt <= new Date()) return fail(res, 404, '问卷链接已失效');
+  res.json({ success: true, data: { status: record.status, expiresAt: record.expiresAt } });
+});
+
+router.post('/public/:token', async (req, res) => {
+  const { error, response } = submissionFromBody(req.body);
+  if (error) return fail(res, 400, error);
   const updated = await runWithoutTenantScope(() => ExpertRecruitment.findOneAndUpdate(
     { tokenHash: tokenHash(req.params.token), status: 'invited', expiresAt: { $gt: new Date() },
-      $or: [{ candidateName: '' }, { candidateName: name }] },
+      $or: [{ candidateName: '' }, { candidateName: response.name }] },
     { $set: { response, status: 'submitted', submittedAt: new Date() } }, { new: true },
   ).select('_id'));
   if (!updated) return fail(res, 409, '问卷链接已提交、失效或填写人姓名与邀请不符');
   res.status(201).json({ success: true, data: { submitted: true } });
+});
+
+// Reusable partner link: many experts may respond; each phone can submit once per link.
+router.get('/public-link/:token', async (req, res) => {
+  const link = await runWithoutTenantScope(() => ExpertRecruitmentLink.findOne({ tokenHash: tokenHash(req.params.token), status: 'active' }).select('_id').lean());
+  if (!link) return fail(res, 404, '问卷链接已失效');
+  res.json({ success: true, data: { status: 'open' } });
+});
+
+router.post('/public-link/:token', async (req, res) => {
+  const { error, response } = submissionFromBody(req.body);
+  if (error) return fail(res, 400, error);
+  const link = await runWithoutTenantScope(() => ExpertRecruitmentLink.findOne({ tokenHash: tokenHash(req.params.token), status: 'active' }).select('_id tenantId partnerName specialtyTeam createdBy').lean());
+  if (!link) return fail(res, 404, '问卷链接已失效');
+  try {
+    const submissionId = new mongoose.Types.ObjectId(crypto.createHash('sha256').update(`expert-recruitment:${link._id}:${response.phone}`).digest('hex').slice(0, 24));
+    await runWithoutTenantScope(() => ExpertRecruitment.create({
+      _id: submissionId, tenantId: link.tenantId, linkId: link._id, tokenHash: tokenHash(crypto.randomBytes(32).toString('hex')),
+      expiresAt: new Date(), status: 'submitted', partnerName: link.partnerName, specialtyTeam: link.specialtyTeam,
+      candidateName: response.name, createdBy: link.createdBy, submittedAt: new Date(), response,
+    }));
+  } catch (err) {
+    if (err.code === 11000) return fail(res, 409, '该手机号已通过此链接提交，请勿重复填写');
+    throw err;
+  }
+  res.status(201).json({ success: true, data: { submitted: true } });
+});
+
+router.get('/admin/links', adminAuth, async (req, res) => {
+  if (!adminAllowed(req)) return fail(res, 403, '无专家招募操作权限');
+  const rows = await ExpertRecruitmentLink.find().select('+token').sort({ createdAt: -1 }).limit(100).lean();
+  res.json({ success: true, data: rows });
+});
+
+router.post('/admin/links', adminAuth, async (req, res) => {
+  if (!adminAllowed(req)) return fail(res, 403, '无专家招募操作权限');
+  const partnerName = text(req.body?.partnerName, 80), specialtyTeam = text(req.body?.specialtyTeam, 100);
+  if (!partnerName || !specialtyTeam) return fail(res, 400, '请填写专科合伙人与专科团队');
+  const token = crypto.randomBytes(24).toString('base64url');
+  const row = await ExpertRecruitmentLink.create({ token, tokenHash: tokenHash(token), partnerName, specialtyTeam, createdBy: req.admin._id });
+  res.status(201).json({ success: true, data: { id: row._id, token } });
+});
+
+router.post('/admin/links/:id/revoke', adminAuth, async (req, res) => {
+  if (!adminAllowed(req)) return fail(res, 403, '无专家招募操作权限');
+  if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '链接编号无效');
+  const row = await ExpertRecruitmentLink.findOneAndUpdate({ _id: req.params.id, status: 'active' },
+    { $set: { status: 'revoked', revokedBy: req.admin._id, revokedAt: new Date() } }, { new: true });
+  if (!row) return fail(res, 409, '链接不存在或已停用');
+  res.json({ success: true, data: { id: row._id, status: row.status } });
 });
 
 router.get('/admin', adminAuth, async (req, res) => {

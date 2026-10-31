@@ -144,6 +144,7 @@ export default function App() {
             <Route path="/hr/*" element={<HrApp />} />
             <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
             <Route path="/expert-invitation/:token" element={<ExpertInvitationPage />} />
+            <Route path="/expert-questionnaire/:token" element={<ExpertInvitationPage reusable />} />
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<HomeRoute />} />
               <Route path="setup" element={<InstitutionSetupPage />} />

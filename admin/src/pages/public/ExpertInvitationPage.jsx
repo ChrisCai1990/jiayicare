@@ -6,32 +6,37 @@ const blank = {
   name: '', phone: '', institutionName: '', departmentName: '', title: '', profession: '临床医师',
   registrationScope: '', experienceYears: '', expertise: '', unsuitableTopics: '',
   singleConsultation: false, mdt: false, mdtLead: false, singleExpectedFee: '', mdtExpectedFee: '',
-  feeTaxBasis: 'undecided', feeIncludes: [], extraFeeRule: '', preparationMinutes: '', materialLimit: '', replyHours: 24,
+  feeTaxBasis: 'undecided', feeIncludes: [], extraFeeRule: '', preparationMinutes: '', materialLimit: '', replyHours: '',
   weeklyAvailability: '', weeklyCapacity: '', minimumNoticeHours: 48, scheduleMaintenance: 'self',
   recordingPreference: 'discuss', cooperationNotes: '', privacyAcknowledged: false,
 }
 const inputStyle = { width: '100%', padding: '10px 11px', border: '1px solid #C9D8D2', borderRadius: 8, fontSize: 15, boxSizing: 'border-box' }
 const section = { marginTop: 22, borderTop: '1px solid #E1EAE6', paddingTop: 14 }
 
-export default function ExpertInvitationPage() {
+export default function ExpertInvitationPage({ reusable = false }) {
   const { token } = useParams()
+  const publicPath = reusable ? 'public-link' : 'public'
   const [state, setState] = useState('loading')
   const [form, setForm] = useState(blank)
   const [error, setError] = useState('')
   const set = key => e => setForm(current => ({ ...current, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   useEffect(() => {
-    fetch(`${apiBase}/expert-recruitment/public/${encodeURIComponent(token)}`).then(async r => {
+    fetch(`${apiBase}/expert-recruitment/${publicPath}/${encodeURIComponent(token)}`).then(async r => {
       const data = await r.json()
       if (!r.ok) throw new Error(data.message || '链接无法使用')
-      setState(data.data.status === 'invited' ? 'ready' : 'completed')
+      setState(reusable || data.data.status === 'invited' ? 'ready' : 'completed')
     }).catch(e => { setError(e.message); setState('error') })
-  }, [token])
+  }, [token, publicPath, reusable])
   const submit = async e => {
     e.preventDefault()
     setError(''); setState('saving')
     try {
-      const payload = { ...form, expertise: form.expertise.split(/[、,，;；\n]+/).map(s => s.trim()).filter(Boolean) }
-      const res = await fetch(`${apiBase}/expert-recruitment/public/${encodeURIComponent(token)}`, {
+      const payload = { ...form,
+        singleExpectedFee: form.singleConsultation ? form.singleExpectedFee : '',
+        mdtExpectedFee: form.mdt ? form.mdtExpectedFee : '',
+        expertise: form.expertise.split(/[、,，;；\n]+/).map(s => s.trim()).filter(Boolean),
+      }
+      const res = await fetch(`${apiBase}/expert-recruitment/${publicPath}/${encodeURIComponent(token)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       const data = await res.json()
@@ -42,7 +47,7 @@ export default function ExpertInvitationPage() {
   return <main style={{ minHeight: '100vh', background: '#F5F8F6', padding: '28px 12px', color: '#203B32' }}>
     <div style={{ maxWidth: 720, margin: '0 auto', background: 'white', borderRadius: 14, padding: '26px 24px', boxShadow: '0 8px 32px #1b4b3520' }}>
       <h1 style={{ margin: '0 0 9px', fontSize: 25 }}>嘉医汇专家合作意向问卷</h1>
-      <p style={{ lineHeight: 1.7, color: '#4C655B' }}>本问卷用于了解您的专业方向、合作意向、预期报酬和可安排时间。提交不代表通过准入或形成派单承诺；资质及具体合作条件由嘉医汇另行核验。请勿在问卷中填写客户资料或上传身份证件。</p>
+      <p style={{ lineHeight: 1.7, color: '#4C655B' }}>本问卷用于了解您的专业方向、合作意向、预期报酬和可安排时间。提交后，我们会进一步核验资质并商谈合作条件。</p>
       {state === 'loading' && <p>正在核对邀请链接…</p>}
       {state === 'completed' && <p role="status">问卷已提交。嘉医汇会通过专科合伙人或约定联系方式与您沟通。</p>}
       {state === 'error' && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
@@ -62,16 +67,13 @@ export default function ExpertInvitationPage() {
         <Check label="愿意参与单次专家咨询分析" checked={form.singleConsultation} onChange={set('singleConsultation')}/>
         <Check label="愿意参与多学科咨询分析 MDT" checked={form.mdt} onChange={set('mdt')}/>
         <Check label="愿意担任 MDT 牵头专家" checked={form.mdtLead} onChange={set('mdtLead')}/>
-        <p style={{ fontSize: 13, color: '#60786D' }}>每位专家实时参与约 15 至 20 分钟。服务还需按约定提前阅读资料，并在会后书面回复本人专业问题；资料不足或没有更优方案时应如实说明依据和下一步。</p>
-        <Field label="通常需要的会前阅资料时间  分钟"><input style={inputStyle} type="number" min="0" max="240" value={form.preparationMinutes} onChange={set('preparationMinutes')}/></Field>
-        <Field label="建议的资料量上限"><input style={inputStyle} value={form.materialLimit} onChange={set('materialLimit')} placeholder="例如 3 份报告或 20 页"/></Field>
-        <Field label="会后书面回复时限  小时"><input style={inputStyle} type="number" min="0" max="168" value={form.replyHours} onChange={set('replyHours')}/></Field>
-        <h2 style={section}>预期报酬</h2>
-        {form.singleConsultation && <Field label="单次咨询每单预期报酬  元 *"><input style={inputStyle} type="number" min="0" step="1" required value={form.singleExpectedFee} onChange={set('singleExpectedFee')}/></Field>}
-        {form.mdt && <Field label="MDT 每人每单预期报酬  元 *"><input style={inputStyle} type="number" min="0" step="1" required value={form.mdtExpectedFee} onChange={set('mdtExpectedFee')}/></Field>}
+        <p style={{ fontSize: 13, color: '#60786D' }}>咨询分析以约 15–20 分钟的线上交流为基础，通常还包括会前阅读必要资料、会后书面回复。没有更合适的方案时，请如实说明依据和建议的下一步。</p>
+        <h2 style={section}>您希望获得的每次服务报酬</h2>
+        <p style={{ fontSize: 13, color: '#60786D' }}>请先填写预期金额，便于商谈；最终合作价格以双方确认的条件为准。勾选的服务类型须填写对应报价。</p>
+        <Field label="单次专家咨询分析：每次预期报酬（元）"><input style={inputStyle} type="number" min="0" step="1" required={form.singleConsultation} value={form.singleExpectedFee} onChange={e => setForm(current => ({ ...current, singleExpectedFee: e.target.value, singleConsultation: current.singleConsultation || e.target.value !== '' }))} placeholder="例如 200；不参与可留空"/></Field>
+        <Field label="MDT 多学科咨询分析：每次参与预期报酬（元）"><input style={inputStyle} type="number" min="0" step="1" required={form.mdt} value={form.mdtExpectedFee} onChange={e => setForm(current => ({ ...current, mdtExpectedFee: e.target.value, mdt: current.mdt || e.target.value !== '' }))} placeholder="例如 200；不参与可留空"/></Field>
         <Field label="报价口径"><select style={inputStyle} value={form.feeTaxBasis} onChange={set('feeTaxBasis')}><option value="undecided">待商谈</option><option value="pre_tax">税前</option><option value="after_tax">税后</option></select></Field>
-        <Field label="报价包含的工作  可多选"><div>{[['preparation','会前阅资料'],['live','实时参与'],['written','会后书面回复'],['clarification','一次补充答疑']].map(([value,label]) => <label key={value} style={{ display:'inline-flex', gap:5, margin:'4px 13px 4px 0' }}><input type="checkbox" checked={form.feeIncludes.includes(value)} onChange={e => setForm(current => ({...current,feeIncludes:e.target.checked?[...current.feeIncludes,value]:current.feeIncludes.filter(x => x !== value)}))}/>{label}</label>)}</div></Field>
-        <Field label="资料量增加、延长时间或再次讨论的报价规则"><input style={inputStyle} value={form.extraFeeRule} onChange={set('extraFeeRule')}/></Field>
+        <Field label="如需额外收费，请说明情形和金额（选填）"><input style={inputStyle} value={form.extraFeeRule} onChange={set('extraFeeRule')} placeholder="例如超过约定时长时，每增加 10 分钟希望增加多少元"/></Field>
         <h2 style={section}>排班与接单</h2>
         <Field label="通常每周可安排的具体时段"><textarea style={inputStyle} rows={3} value={form.weeklyAvailability} onChange={set('weeklyAvailability')} placeholder="例如 周二 14:00 至 17:00；周六 9:00 至 12:00"/></Field>
         <Field label="每周最多承接单数"><input style={inputStyle} type="number" min="0" max="100" value={form.weeklyCapacity} onChange={set('weeklyCapacity')}/></Field>
