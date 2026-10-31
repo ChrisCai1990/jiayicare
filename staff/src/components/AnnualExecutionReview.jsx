@@ -41,12 +41,11 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
   if (!data && !error) return null
   if (!data?.reviews?.length && !error) return null
   return <section ref={section} id="annual-execution-review" className="card" style={{ marginBottom: 16, padding: 16, border: pending.length ? '1px solid #E4BE75' : undefined }}>
-    <h3 style={{ margin: '0 0 8px' }}>方案修订后的执行核对{pending.length ? ` · ${pending.length}次待核对` : ''}</h3>
+    <h3 style={{ margin: '0 0 8px' }}>执行安排核对{pending.length ? ` · ${pending.length}次方案修订` : ''}</h3>
     {error && <div role="alert">{error} <button className="btn btn-secondary btn-sm" disabled={busy} onClick={reload}>刷新核对</button></div>}
     {message && <p role="status">{message}</p>}
     {pending.length > 0 && <>
-      <p>有 {pending.reduce((count, review) => count + review.changes.length, 0)} 项方案变更待核对。变更已标在对应方案事项中；请先核对原服务流程中的执行安排，再记录结果。</p>
-      <p><a href="#annual-plan-content">查看对应方案事项</a></p>
+      <p>涉及 {pending.reduce((count, review) => count + review.changes.length, 0)} 项变更。请对照<a href="#annual-plan-content">方案中标记的事项</a>与<a href={`/patients/${patientId}?tab=followups`}>原执行事项</a>，确认是否需要调整。</p>
       <details style={{ margin: '12px 0' }}>
         <summary>本方案直接关联的执行安排：{data.totals.followUps}条医护事项、{data.totals.tasks}条会员任务</summary>
         <p>以下为核对时的参考。就医、订单等其他关联服务请在会员原流程核对。</p>
@@ -57,7 +56,6 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
         {(data.totals.followUps > data.followUps.length || data.totals.tasks > data.tasks.length) && <p>每类最多展示100条，请到原流程核对其余事项。</p>}
         {!data.totals.followUps && !data.totals.tasks && <p>没有直接关联记录，不代表其他服务流程中没有安排。</p>}
       </details>
-      <p><a href={`/patients/${patientId}?tab=followups`}>打开会员执行事项</a></p>
       {canEdit ? <div style={{ display: 'grid', gap: 8 }}>
         <label>核对结论 <select className="form-input" value={outcome} disabled={busy} onChange={e => setOutcome(e.target.value)}>
           <option value="unchanged">现有执行安排无需调整</option><option value="arranged">已在原流程完成调整或衔接</option>
