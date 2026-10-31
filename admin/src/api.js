@@ -359,6 +359,7 @@ export const adminAPI = {
   toggleEmployee:    (id)       => req(`/employees/${id}/toggle`, { method: 'PATCH' }),
   resetEmpPassword:  (id, password) => req(`/employees/${id}/reset-password`, { method: 'PATCH', body: JSON.stringify({ password }) }),
   deleteEmployee:    (id)       => req(`/employees/${id}`, { method: 'DELETE' }),
+  unbindEmployeeWecom: (id, userId) => req(`/employees/${id}/wecom-unbind`, { method: 'POST', body: JSON.stringify({ userId }) }),
 
   medicalResources:  ()         => req('/medical-resources'),
   expertRecruitments: () => reqRoot('/expert-recruitment/admin'),

@@ -151,6 +151,14 @@ router.get('/app-link',wrap(async(req,res)=>{
   }).select('userId').lean();
   res.json({success:true,data:{configured,linked:!!link?.userId,userId:link?.userId || ''}});
 }));
+router.post('/app-link/unbind',wrap(async(req,res)=>{
+  const ok=await require('../utils/wecomAppBinding').unbind({
+    staffId:req.staff._id,tenantId:req.staff.tenantId,corpId:process.env.WECOM_CORP_ID,
+    expectedUserId:req.body?.userId,actorId:req.staff._id,actorRole:'staff',
+  });
+  if(!ok)fail('绑定已变化，请刷新后重试',409);
+  res.json({success:true,message:'企业微信绑定已解除'});
+}));
 router.post('/app-pair-code',wrap(async(req,res)=>{
   if(req.staff.staffStatus==='inactive')fail('员工账号已停用',403);
   if(process.env.WECOM_APP_CALLBACK_ENABLED !== 'true' || !process.env.WECOM_CORP_ID) fail('应用消息回调尚未配置，暂不能绑定',409);

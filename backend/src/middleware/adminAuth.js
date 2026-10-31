@@ -32,7 +32,7 @@ module.exports = async (req, res, next) => {
       if (!hasTenantChannel(tenant, 'admin')) return res.status(403).json({ success: false, message: '本机构尚未开通管理后台' });
       if (tenant.status === 'setup') {
         const path = String(req.originalUrl).split('?')[0];
-        const allowed = /^\/api\/admin\/(me\/password|saas-plan(?:\/admins)?|company-info|departments(?:\/[^/]+)?|roles(?:\/[^/]+)?|employees(?:\/[^/]+)?|teams(?:\/[^/]+)?)$/.test(path);
+        const allowed = /^\/api\/admin\/(me\/password|saas-plan(?:\/admins)?|company-info|departments(?:\/[^/]+)?|roles(?:\/[^/]+)?|employees(?:\/[^/]+(?:\/wecom-unbind)?)?|teams(?:\/[^/]+)?)$/.test(path);
         if (!allowed) return res.status(403).json({ success: false, message: '机构仍在配置阶段，客户业务尚未开放' });
       }
     }

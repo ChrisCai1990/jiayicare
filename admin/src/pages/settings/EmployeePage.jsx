@@ -185,6 +185,15 @@ export default function EmployeePage() {
     } catch (e) { toast(e.message) }
   }
 
+  const handleUnbindWecom = async emp => {
+    if (!emp.wecomUserId || !window.confirm(`确定解除「${emp.name}」与企业微信账号 ${emp.wecomUserId} 的绑定？解除后，该企微账号不再收到此员工负责客户的新消息提醒。`)) return
+    try {
+      await adminAPI.unbindEmployeeWecom(emp._id, emp.wecomUserId)
+      toast('企业微信绑定已解除')
+      loadAll()
+    } catch (e) { toast(e.message); loadAll() }
+  }
+
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   return (
@@ -222,7 +231,7 @@ export default function EmployeePage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {(ownRoles ? ['姓名', '用户名', '本机构岗位', '所属团队', '部门', '联系方式', '状态', '操作'] : ['姓名', '用户名', '系统角色', '自定义角色', '所属团队', '部门', '联系方式', '状态', '操作']).map(h => (
+                {(ownRoles ? ['姓名', '用户名', '本机构岗位', '所属团队', '部门', '联系方式', '状态', '企业微信', '操作'] : ['姓名', '用户名', '系统角色', '自定义角色', '所属团队', '部门', '联系方式', '状态', '企业微信', '操作']).map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
                 ))}
               </tr>
@@ -260,6 +269,13 @@ export default function EmployeePage() {
                     }}>
                       {emp.staffStatus === 'active' ? '启用' : '停用'}
                     </span>
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: 12 }}>
+                    {emp.wecomUserId ? <>
+                      <div style={{ color: '#1E6B50', fontWeight: 600 }}>已绑定</div>
+                      <div style={{ color: '#6B7280', wordBreak: 'break-all' }}>{emp.wecomUserId}</div>
+                      {isSuperAdmin && <button className="btn btn-secondary btn-sm" onClick={() => handleUnbindWecom(emp)} style={{ marginTop: 4 }}>解除绑定</button>}
+                    </> : <span style={{ color: '#9CA3AF' }}>未绑定</span>}
                   </td>
                   <td style={{ padding: '12px 14px' }}>
                     {isSuperAdmin && (

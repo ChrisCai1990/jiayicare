@@ -59,6 +59,21 @@ export default function ProfilePage() {
     } catch (err) { setWecomError(err.message) }
     finally { setWecomBusy(false) }
   }
+  const unbindWecom = async () => {
+    const userId = wecomLink?.userId
+    if (!userId || !window.confirm(`确定解除企业微信账号 ${userId} 的绑定？解除后，该账号不再收到您负责客户的新消息提醒。`)) return
+    setWecomBusy(true)
+    setWecomError('')
+    try {
+      await serviceGroupAPI.post('/app-link/unbind', { userId })
+      setPairCode('')
+      await refreshWecomLink()
+      toast('企业微信绑定已解除')
+    } catch (err) {
+      await refreshWecomLink()
+      setWecomError(err.message)
+    } finally { setWecomBusy(false) }
+  }
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const handleSave = async () => {
@@ -187,7 +202,10 @@ export default function ProfilePage() {
           <div className="card-body">
             {wecomError && <div className="login-err" style={{ marginBottom: 12 }}>⚠️ {wecomError}</div>}
             {wecomLink?.linked ? (
-              <p>已绑定企业微信账号：<strong>{wecomLink.userId}</strong>。负责客户的新消息可发送至该账号。</p>
+              <>
+                <p>已绑定企业微信账号：<strong>{wecomLink.userId}</strong>。负责客户的新消息可发送至该账号。</p>
+                <button className="btn btn-secondary" onClick={unbindWecom} disabled={wecomBusy}>解除绑定</button>
+              </>
             ) : wecomLink?.configured ? (
               <>
                 <p>绑定本人企业微信账号后，即使没有登录医护网页，也可接收负责客户的新消息提醒。</p>

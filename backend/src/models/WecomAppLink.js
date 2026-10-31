@@ -7,6 +7,9 @@ const schema=new mongoose.Schema({
   pairHash:{type:String,select:false},
   pairExpires:Date,
   remindersEnabled:{type:Boolean,default:false},
+  lastUnboundAt:Date,
+  lastUnboundBy:{type:mongoose.Schema.Types.ObjectId,ref:'Admin',default:null},
+  lastUnboundByRole:{type:String,enum:['staff','superadmin']},
 },{timestamps:true});
 schema.index({corpId:1,userId:1},{unique:true,partialFilterExpression:{userId:{$type:'string'}}});
 module.exports=mongoose.model('WecomAppLink',schema);

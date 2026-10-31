@@ -8,6 +8,7 @@ const CompanyInfo    = require('../models/CompanyInfo');
 const Department     = require('../models/Department');
 const StaffRole      = require('../models/StaffRole');
 const Admin          = require('../models/Admin');
+const WecomAppLink   = require('../models/WecomAppLink');
 const Tenant         = require('../models/Tenant');
 const { canAddSeat } = require('../utils/saasPlan');
 const Team           = require('../models/Team');
@@ -205,7 +206,24 @@ router.get('/employees', adminAuth, async (req, res) => {
       .limit(parseInt(limit)),
     Admin.countDocuments(filter),
   ]);
-  res.json({ success: true, data: list, total });
+  const links = process.env.WECOM_CORP_ID && list.length
+    ? await WecomAppLink.find({ staffId: { $in: list.map(emp => emp._id) }, tenantId: req.admin.tenantId, corpId: process.env.WECOM_CORP_ID }).select('staffId userId').lean()
+    : [];
+  const userIdByStaff = new Map(links.map(link => [String(link.staffId), link.userId || '']));
+  res.json({ success: true, data: list.map(emp => ({ ...emp.toObject(), wecomUserId: userIdByStaff.get(String(emp._id)) || '' })), total });
+});
+
+router.post('/employees/:id/wecom-unbind', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅机构超级管理员可解除员工企微绑定' });
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '员工标识无效' });
+  const emp = await Admin.findById(req.params.id).select('_id role').lean();
+  if (!emp || !SYSTEM_ROLES.includes(emp.role)) return res.status(404).json({ success: false, message: '本机构员工不存在' });
+  const ok = await require('../utils/wecomAppBinding').unbind({
+    staffId: emp._id, tenantId: req.admin.tenantId, corpId: process.env.WECOM_CORP_ID,
+    expectedUserId: req.body?.userId, actorId: req.admin._id, actorRole: 'superadmin',
+  });
+  if (!ok) return res.status(409).json({ success: false, message: '绑定已变化，请刷新后重试' });
+  res.json({ success: true, message: '企业微信绑定已解除' });
 });
 
 router.post('/employees', adminAuth, async (req, res) => {
