@@ -19,7 +19,30 @@ export default function ExpertInvitationPage({ reusable = false }) {
   const [state, setState] = useState('loading')
   const [form, setForm] = useState(blank)
   const [error, setError] = useState('')
+  const [shareMessage, setShareMessage] = useState('')
   const set = key => e => setForm(current => ({ ...current, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
+  const copyQuestionnaireLink = async () => {
+    const url = window.location.href
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
+      await navigator.clipboard.writeText(url)
+      setShareMessage('链接已复制，可以粘贴给其他专家。')
+    } catch {
+      setShareMessage('请长按下方链接复制，再转发给其他专家。')
+    }
+  }
+  const shareQuestionnaire = async () => {
+    setShareMessage('')
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: '嘉医汇专家合作意向问卷', url: window.location.href })
+        return
+      } catch (error) {
+        if (error.name === 'AbortError') return
+      }
+    }
+    await copyQuestionnaireLink()
+  }
   useEffect(() => {
     fetch(`${apiBase}/expert-recruitment/${publicPath}/${encodeURIComponent(token)}`).then(async r => {
       const data = await r.json()
@@ -48,6 +71,13 @@ export default function ExpertInvitationPage({ reusable = false }) {
     <div style={{ maxWidth: 720, margin: '0 auto', background: 'white', borderRadius: 14, padding: '26px 24px', boxShadow: '0 8px 32px #1b4b3520' }}>
       <h1 style={{ margin: '0 0 9px', fontSize: 25 }}>嘉医汇专家合作意向问卷</h1>
       <p style={{ lineHeight: 1.7, color: '#4C655B' }}>本问卷用于了解您的专业方向、合作意向、预期报酬和可安排时间。提交后，我们会进一步核验资质并商谈合作条件。</p>
+      {reusable && ['ready', 'saving', 'completed'].includes(state) && <div style={{ background: '#EFF7F2', borderRadius: 10, padding: 14, marginBottom: 18 }}>
+        <button type="button" onClick={shareQuestionnaire} style={{ border: 0, borderRadius: 8, background: '#246B4D', color: 'white', fontSize: 15, padding: '10px 18px', cursor: 'pointer' }}>转发问卷</button>
+        <p style={{ margin: '9px 0 7px', fontSize: 13, color: '#4C655B' }}>此链接可供多位专家分别填写。也可以复制链接转发。</p>
+        <input aria-label="问卷链接" readOnly value={typeof window === 'undefined' ? '' : window.location.href} onFocus={e => e.target.select()} style={{ ...inputStyle, fontSize: 13, background: 'white' }}/>
+        <button type="button" onClick={copyQuestionnaireLink} style={{ border: '1px solid #246B4D', borderRadius: 8, background: 'white', color: '#246B4D', fontSize: 13, padding: '7px 12px', marginTop: 8, cursor: 'pointer' }}>复制链接</button>
+        {shareMessage && <p role="status" style={{ margin: '8px 0 0', fontSize: 13 }}>{shareMessage}</p>}
+      </div>}
       {state === 'loading' && <p>正在核对邀请链接…</p>}
       {state === 'completed' && <p role="status">问卷已提交。嘉医汇会通过专科合伙人或约定联系方式与您沟通。</p>}
       {state === 'error' && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
