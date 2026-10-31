@@ -12,6 +12,7 @@ const Admin = require('../models/Admin');
 
 const router = express.Router();
 const text = (value, max = 500) => String(value || '').trim().slice(0, max);
+const same = (left, right) => Boolean(text(left)) && text(left).replace(/\s+/g, '') === text(right).replace(/\s+/g, '');
 const list = (value, max = 10) => [...new Set((Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]/)).map(x => text(x, 100)).filter(Boolean))].slice(0, max);
 const money = value => value === '' || value === null || value === undefined ? null : Number(value);
 const nonnegative = value => value === null || (Number.isFinite(value) && value >= 0 && value <= 100000);
@@ -159,22 +160,37 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
   const screening = row.screening || {};
   if (!screening.qualificationVerified || ['professional', 'communication', 'ethics'].some(k => screening[k] !== 'pass'))
     return fail(res, 409, '资格核验与专业、沟通、品德三项均通过后才可入库');
+  if (row.response.registrationScope && !same(row.response.registrationScope, row.response.departmentName))
+    return fail(res, 409, '问卷的执业范围与填写科室不一致，请先核实');
   const institutionId = req.body?.institutionId, departmentId = req.body?.departmentId;
-  if (!mongoose.isValidObjectId(institutionId) || !mongoose.isValidObjectId(departmentId)) return fail(res, 400, '请选择已核验的医院和科室');
+  if (!mongoose.isValidObjectId(institutionId) || !mongoose.isValidObjectId(departmentId)) return fail(res, 400, '问卷医院或科室未能与医疗资源库唯一匹配');
   const [institution, department] = await Promise.all([
-    MedicalInstitution.findOne({ _id: institutionId, status: 'active' }).select('_id').lean(),
-    MedicalDepartment.findOne({ _id: departmentId, institutionId, status: 'active' }).select('_id').lean(),
+    MedicalInstitution.findOne({ _id: institutionId, status: 'active' }).select('_id name aliases').lean(),
+    MedicalDepartment.findOne({ _id: departmentId, institutionId, status: 'active' }).select('_id name').lean(),
   ]);
-  if (!institution || !department) return fail(res, 400, '请选择本机构启用的医院和所属科室');
+  if (!institution || !department || ![institution.name, ...(institution.aliases || [])].some(name => same(name, row.response.institutionName)) || !same(department.name, row.response.departmentName))
+    return fail(res, 409, '关联医院、科室与问卷填写信息不一致，请先核实');
+  const [institutionChoices, departmentChoices] = await Promise.all([
+    MedicalInstitution.find({ status: 'active' }).select('_id name aliases').lean(),
+    MedicalDepartment.find({ institutionId, status: 'active' }).select('_id name').lean(),
+  ]);
+  if (institutionChoices.filter(item => [item.name, ...(item.aliases || [])].some(name => same(name, row.response.institutionName))).length !== 1 ||
+      departmentChoices.filter(item => same(item.name, row.response.departmentName)).length !== 1)
+    return fail(res, 409, '问卷医院或科室匹配到多条资源，请先核实');
   const singleFee = money(req.body?.singleFee), mdtFee = money(req.body?.mdtFee);
   if (![singleFee, mdtFee].every(nonnegative) || (row.response.singleConsultation && singleFee === null) || (row.response.mdt && mdtFee === null))
     return fail(res, 400, '请填写已谈妥的服务报酬');
   const linkedStaffId = req.body?.linkedStaffId || null;
-  if (!mongoose.isValidObjectId(linkedStaffId)) return fail(res, 400, '请关联专家医护端账号，以便本人排班和接收派单');
+  if (!mongoose.isValidObjectId(linkedStaffId)) return fail(res, 400, '问卷姓名和手机号未能与医护端账号唯一匹配');
   const staff = await Admin.findOne({ _id: linkedStaffId, staffStatus: { $ne: 'inactive' },
-    role: { $in: ['specialist', 'familyDoctor', 'nutritionist', 'rehabSpecialist', 'psychologist', 'tcmDoctor'] } }).select('_id tenantId name').lean();
+    role: { $in: ['specialist', 'familyDoctor', 'nutritionist', 'rehabSpecialist', 'psychologist', 'tcmDoctor'] } }).select('_id tenantId name phone').lean();
   if (!staff || String(staff.tenantId) !== String(req.admin.tenantId)) return fail(res, 400, '专家账号无效或不属于本机构');
-  if (staff.name && staff.name.trim() !== row.response.name) return fail(res, 400, '专家账号姓名与问卷姓名不一致，请先核实');
+  if (!same(staff.name, row.response.name) || !staff.phone || staff.phone !== row.response.phone)
+    return fail(res, 409, '专家账号姓名或手机号与问卷不一致，请先核实');
+  const staffChoices = await Admin.find({ phone: row.response.phone, staffStatus: { $ne: 'inactive' },
+    role: { $in: ['specialist', 'familyDoctor', 'nutritionist', 'rehabSpecialist', 'psychologist', 'tcmDoctor'] } }).select('_id name').lean();
+  if (staffChoices.filter(item => same(item.name, row.response.name)).length !== 1)
+    return fail(res, 409, '问卷身份匹配到多位医护端人员，请先核实');
   const existingLink = await MedicalExpert.findOne({ linkedStaffId, _id: { $ne: row.expertProfileId || row._id } }).select('_id').lean();
   if (existingLink) return fail(res, 409, '该医护端账号已关联另一位专家');
   const profile = await MedicalExpert.findOneAndUpdate({ recruitmentId: row._id }, { $setOnInsert: {

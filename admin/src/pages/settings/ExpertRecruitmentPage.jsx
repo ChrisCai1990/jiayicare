@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
@@ -7,6 +7,17 @@ const verdictText = { pass: '通过', pending: '待核实', fail: '不通过' }
 const emptyScreen = { qualificationVerified: false, professional: 'pending', communication: 'pending', ethics: 'pending', evidence: '' }
 const emptyApproval = { institutionId: '', departmentId: '', linkedStaffId: '', singleFee: '', mdtFee: '', note: '' }
 const id = item => String(item?._id || item || '')
+const same = (left, right) => String(left || '').replace(/\s+/g, '') === String(right || '').replace(/\s+/g, '') && Boolean(String(left || '').trim())
+function autoMatch(row, resources, staff) {
+  const response = row.response || {}
+  const institutions = (resources.institutions || []).filter(x => x.status === 'active' && [x.name, ...(x.aliases || [])].some(name => same(name, response.institutionName)))
+  const institution = institutions.length === 1 ? institutions[0] : null
+  const departments = (resources.departments || []).filter(x => x.status === 'active' && id(x.institutionId) === id(institution) && same(x.name, response.departmentName))
+  const department = departments.length === 1 ? departments[0] : null
+  const accounts = staff.filter(x => ['specialist', 'familyDoctor', 'nutritionist', 'rehabSpecialist', 'psychologist', 'tcmDoctor'].includes(x.role) && x.staffStatus !== 'inactive' && same(x.name, response.name) && x.phone === response.phone)
+  const account = accounts.length === 1 ? accounts[0] : null
+  return { institutionId: id(institution), departmentId: id(department), linkedStaffId: id(account) }
+}
 
 export default function ExpertRecruitmentPage() {
   const toast = useToast()
@@ -22,8 +33,10 @@ export default function ExpertRecruitmentPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const selected = rows.find(row => id(row) === selectedId)
-  const departments = useMemo(() => (resources.departments || []).filter(row => id(row.institutionId) === approval.institutionId), [resources, approval.institutionId])
-  const expertStaff = staff.filter(row => ['specialist', 'familyDoctor', 'nutritionist', 'rehabSpecialist', 'psychologist', 'tcmDoctor'].includes(row.role) && row.staffStatus !== 'inactive')
+  const screeningSaved = Boolean(selected?.screening?.reviewedAt) && ['qualificationVerified', 'professional', 'communication', 'ethics', 'evidence'].every(key => String(selected.screening[key] ?? '').trim() === String(screening[key] ?? '').trim())
+  const screeningPassed = screeningSaved && screening.qualificationVerified && ['professional', 'communication', 'ethics'].every(key => screening[key] === 'pass')
+  const scopeMatches = !selected?.response?.registrationScope || same(selected.response.registrationScope, selected.response.departmentName)
+  const matchingComplete = Boolean(approval.institutionId && approval.departmentId && approval.linkedStaffId && scopeMatches)
 
   async function load() {
     const [recruitments, activeLinks, medical, employees] = await Promise.all([
@@ -41,14 +54,14 @@ export default function ExpertRecruitmentPage() {
     setApproval({ ...emptyApproval,
       singleFee: row.agreement?.singleFee ?? row.response?.singleExpectedFee ?? '',
       mdtFee: row.agreement?.mdtFee ?? row.response?.mdtExpectedFee ?? '',
-      institutionId: id(row.agreement?.institutionId), departmentId: id(row.agreement?.departmentId),
+      ...autoMatch(row, resources, staff),
     })
     setError('')
   }
   async function run(action, success) {
     setBusy(true); setError('')
     try { await action(); await load(); toast(success) }
-    catch (e) { setError(e.message) }
+    catch (e) { setError(e.message); toast(e.message, 5000) }
     finally { setBusy(false) }
   }
   async function createInvite(e) {
@@ -66,8 +79,8 @@ export default function ExpertRecruitmentPage() {
     try { await navigator.clipboard.writeText(url); toast('链接已复制，可转发给专家') }
     catch { setError('复制失败，请手动复制链接') }
   }
-  const setScreen = key => e => setScreening(current => ({ ...current, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
-  const setApprove = key => e => setApproval(current => ({ ...current, [key]: e.target.value, ...(key === 'institutionId' ? { departmentId: '' } : {}) }))
+  const setScreen = key => e => { setError(''); setScreening(current => ({ ...current, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })) }
+  const setApprove = key => e => { setError(''); setApproval(current => ({ ...current, [key]: e.target.value })) }
   return <div>
     <div className="page-header"><div><div className="page-title">专家招募与问卷</div><div className="page-subtitle">专科合伙人初筛意向；专家本人填写报价和空档；审核通过后进入可派单专家库。</div></div></div>
     {error && <div role="alert" style={{ color: '#B42318', marginBottom: 14 }}>{error}</div>}
@@ -111,17 +124,21 @@ export default function ExpertRecruitmentPage() {
             {selected.status === 'submitted' ? <>
               <label style={{ display: 'block', marginBottom: 10 }}><input type="checkbox" checked={screening.qualificationVerified} onChange={setScreen('qualificationVerified')}/> 已核验执业资格、机构与服务范围</label>
               {['professional', 'communication', 'ethics'].map((key, i) => <Field key={key} label={['专业能力', '沟通能力', '品德与边界'][i]}><select className="form-input" value={screening[key]} onChange={setScreen(key)}>{['pending', 'pass', 'fail'].map(value => <option value={value} key={value}>{verdictText[value]}</option>)}</select></Field>)}
-              <Field label="核验依据与备注"><textarea className="form-input" rows={3} value={screening.evidence} onChange={setScreen('evidence')}/></Field>
-              <button className="btn btn-secondary" disabled={busy} onClick={() => run(() => adminAPI.screenExpertRecruitment(selectedId, screening), '准入核验已保存')}>保存核验</button>
+              <Field label="核验依据与备注"><textarea className="form-input" rows={3} maxLength={2000} value={screening.evidence} onChange={setScreen('evidence')}/></Field>
+              <button className="btn btn-primary" disabled={busy || screeningSaved} onClick={() => run(() => adminAPI.screenExpertRecruitment(selectedId, screening), '准入核验已保存')}>{busy ? '处理中…' : screeningSaved ? '核验已保存' : '保存核验'}</button>
+              <p role="status" style={{ color: screeningSaved ? '#246B4D' : '#9A6700', marginTop: 8 }}>{screeningSaved ? '核验已保存。' : '当前核验尚未保存，请先点击上方按钮。'}</p>
               <h4>合作条件与入库</h4>
-              <p style={{ color: '#60786D' }}>须先保存并通过三项核验。入库时确认医院、科室、专家医护端账号和谈妥的每单报酬。</p>
-              <Field label="医院"><select className="form-input" value={approval.institutionId} onChange={setApprove('institutionId')}><option value="">请选择</option>{(resources.institutions || []).filter(x => x.status === 'active').map(x => <option key={id(x)} value={id(x)}>{x.name}</option>)}</select></Field>
-              <Field label="科室"><select className="form-input" value={approval.departmentId} onChange={setApprove('departmentId')}><option value="">请选择</option>{departments.filter(x => x.status === 'active').map(x => <option key={id(x)} value={id(x)}>{x.name}</option>)}</select></Field>
-              <Field label="关联医护端专家账号"><select className="form-input" value={approval.linkedStaffId} onChange={setApprove('linkedStaffId')}><option value="">请选择</option>{expertStaff.map(x => <option key={id(x)} value={id(x)}>{x.name || x.realName || x.username} · {x.role}</option>)}</select></Field>
+              <p style={{ color: '#60786D' }}>医院、科室按问卷填写的名称与资源库匹配；医护端账号按姓名和手机号匹配。匹配成功后直接确认，无需逐项筛选。</p>
+              <Info label="医院自动匹配" value={approval.institutionId ? (resources.institutions || []).find(x => id(x) === approval.institutionId)?.name : '未匹配，请核实问卷中的机构名称及医疗资源库'}/>
+              <Info label="科室自动匹配" value={approval.departmentId ? (resources.departments || []).find(x => id(x) === approval.departmentId)?.name : '未匹配，请核实问卷中的科室及医院下的科室库'}/>
+              <Info label="专家账号自动匹配" value={approval.linkedStaffId ? staff.find(x => id(x) === approval.linkedStaffId)?.name : '未匹配，请核实医护端账号的姓名和手机号'}/>
+              {!scopeMatches && <p role="alert" style={{ color: '#B42318', marginTop: 8 }}>问卷的执业范围与填写科室不一致，请先核实，不能自动入库。</p>}
+              {!matchingComplete && <p style={{ color: '#9A6700' }}>资料或资源不匹配时，请先核实原始问卷及基础设置中的机构、科室、人员资料，再刷新本页。系统不会代选其他医院或科室。</p>}
               <Field label="单次咨询每单报酬  元"><input className="form-input" type="number" min="0" value={approval.singleFee} onChange={setApprove('singleFee')}/></Field>
               <Field label="MDT 每单报酬  元"><input className="form-input" type="number" min="0" value={approval.mdtFee} onChange={setApprove('mdtFee')}/></Field>
               <Field label="谈妥条件备注"><textarea className="form-input" rows={2} value={approval.note} onChange={setApprove('note')}/></Field>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}><button className="btn btn-primary" disabled={busy} onClick={() => run(() => adminAPI.approveExpertRecruitment(selectedId, approval), '专家已入库')}>确认入库</button><button className="btn btn-secondary" disabled={busy} onClick={() => { const reason = window.prompt('请填写未通过的原因'); if (reason?.trim()) run(() => adminAPI.rejectExpertRecruitment(selectedId, reason), '已记录未通过') }}>未通过</button></div>
+              {error && <p role="alert" style={{ color: '#B42318', marginTop: 10 }}>{error}</p>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}><button className="btn btn-primary" disabled={busy || !screeningPassed || !matchingComplete} onClick={() => run(() => adminAPI.approveExpertRecruitment(selectedId, approval), '专家已入库')}>确认入库</button><button className="btn btn-secondary" disabled={busy} onClick={() => { const reason = window.prompt('请填写未通过的原因'); if (reason?.trim()) run(() => adminAPI.rejectExpertRecruitment(selectedId, reason), '已记录未通过') }}>未通过</button></div>
             </> : <><Info label="资格核验" value={selected.screening?.qualificationVerified ? '已核验' : '未核验'}/>{['professional', 'communication', 'ethics'].map((key, i) => <Info key={key} label={['专业', '沟通', '品德'][i]} value={verdictText[selected.screening?.[key]] || '—'}/>)}<Info label="审核依据" value={selected.screening?.evidence}/>{selected.expertProfileId && <Info label="专家库编号" value={id(selected.expertProfileId)}/>}</>}
           </>}
         </>}

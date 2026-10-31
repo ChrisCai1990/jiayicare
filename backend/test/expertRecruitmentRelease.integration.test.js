@@ -47,7 +47,7 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       { tenantId: secondTenant, tokenHash: sha('second'), expiresAt: new Date(Date.now() + 86400000), status: 'submitted', partnerName: '乙', specialtyTeam: '乙团队', candidateName: '李医生', createdBy: oid() },
     ]));
     const submit = handler('post', '/public/:token');
-    const request = { params: { token }, body: { name: '张医生', phone: '13800000000', singleConsultation: true, singleExpectedFee: 200, privacyAcknowledged: true } };
+    const request = { params: { token }, body: { name: '张医生', phone: '13800000000', institutionName: '合成医院', departmentName: '合成科室', registrationScope: '合成科室', singleConsultation: true, singleExpectedFee: 200, privacyAcknowledged: true } };
     const first = response(); await submit(request, first); assert.equal(first.statusCode, 201);
     const second = response(); await submit(request, second); assert.equal(second.statusCode, 409);
     const adminList = handler('get', '/admin');
@@ -61,10 +61,11 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       assert.equal(res.body.data.length, 1);
       assert.equal(res.body.data[0].candidateName, '李医生');
     });
-    const institutionId = oid(), departmentId = oid(), staffId = oid();
+    const institutionId = oid(), departmentId = oid(), wrongDepartmentId = oid(), staffId = oid();
     await MedicalInstitution.collection.insertOne({ _id: institutionId, tenantId: firstTenant, name: '合成医院', status: 'active' });
     await MedicalDepartment.collection.insertOne({ _id: departmentId, tenantId: firstTenant, institutionId, name: '合成科室', status: 'active' });
-    await Admin.collection.insertOne({ _id: staffId, tenantId: firstTenant, name: '张医生', role: 'specialist', staffStatus: 'active' });
+    await MedicalDepartment.collection.insertOne({ _id: wrongDepartmentId, tenantId: firstTenant, institutionId, name: '神经内科', status: 'active' });
+    await Admin.collection.insertOne({ _id: staffId, tenantId: firstTenant, name: '张医生', phone: '13800000000', role: 'specialist', staffStatus: 'active' });
     await asTenant(firstTenant, async () => {
       const row = await Recruitment.findOne({ tokenHash: sha(token) });
       const actor = { _id: oid(), tenantId: firstTenant, role: 'superadmin' };
@@ -76,9 +77,20 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       await screen({ params: { id: String(row._id) }, admin: actor, body: { qualificationVerified: true, professional: 'pass', communication: 'pass', ethics: 'pass', evidence: '合成核验记录' } }, screeningResponse);
       assert.equal(screeningResponse.statusCode, 200);
       const approve = handler('post', '/admin/:id/approve');
+      const screenedRow = await Recruitment.findById(row._id);
+      screenedRow.response.departmentName = '神经内科';
+      await screenedRow.save();
+      const mismatched = response();
+      await approve({ params: { id: String(row._id) }, admin: actor, body: { institutionId: String(institutionId), departmentId: String(departmentId), linkedStaffId: String(staffId), singleFee: 180 } }, mismatched);
+      assert.equal(mismatched.statusCode, 409);
+      screenedRow.response.departmentName = '合成科室';
+      await screenedRow.save();
+      const wrongDepartment = response();
+      await approve({ params: { id: String(row._id) }, admin: actor, body: { institutionId: String(institutionId), departmentId: String(wrongDepartmentId), linkedStaffId: String(staffId), singleFee: 180 } }, wrongDepartment);
+      assert.equal(wrongDepartment.statusCode, 409);
       const approved = response();
       await approve({ params: { id: String(row._id) }, admin: actor, body: { institutionId: String(institutionId), departmentId: String(departmentId), linkedStaffId: String(staffId), singleFee: 180 } }, approved);
-      assert.equal(approved.statusCode, 200);
+      assert.equal(approved.statusCode, 200, JSON.stringify(approved.body));
       const profile = await MedicalExpert.findById(approved.body.data.expertProfileId);
       assert.equal(String(profile.tenantId), String(firstTenant));
       assert.equal(profile.teamEligible, true);

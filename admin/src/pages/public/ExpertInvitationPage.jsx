@@ -72,8 +72,8 @@ export default function ExpertInvitationPage({ reusable = false }) {
         <h2 style={section}>基本资料与专业范围</h2>
         <Field label="姓名 *"><input style={inputStyle} required value={form.name} onChange={set('name')} maxLength={80}/></Field>
         <Field label="手机号 *"><input style={inputStyle} required inputMode="tel" pattern="1[0-9]{10}" value={form.phone} onChange={set('phone')} maxLength={11}/></Field>
-        <Field label="所在机构"><input style={inputStyle} value={form.institutionName} onChange={set('institutionName')}/></Field>
-        <Field label="科室或团队"><input style={inputStyle} value={form.departmentName} onChange={set('departmentName')}/></Field>
+        <Field label="所在机构（医院请填写全称）"><input style={inputStyle} value={form.institutionName} onChange={set('institutionName')}/></Field>
+        <Field label="实际科室或团队"><input style={inputStyle} value={form.departmentName} onChange={set('departmentName')}/></Field>
         <Field label="专业类别"><select style={inputStyle} value={form.profession} onChange={set('profession')}>{['临床医师','护理','营养','康复','心理','药学','其他'].map(x => <option key={x}>{x}</option>)}</select></Field>
         <Field label="职称或专业等级"><input style={inputStyle} value={form.title} onChange={set('title')}/></Field>
         <Field label="执业或服务范围"><input style={inputStyle} value={form.registrationScope} onChange={set('registrationScope')}/></Field>
