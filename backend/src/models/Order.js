@@ -152,6 +152,7 @@ const orderSchema = new mongoose.Schema({
   couponSettledAt: { type: Date, default: null },
   transactionId: { type: String, default: '' },  // 支付流水号（人工标记时可留空，接入网关后由回调写入）
   paidAt:        { type: Date, default: null },
+  wecomOrderAlertQueuedAt: { type: Date }, // 新订单企微提醒已入队；仅启用时间后的订单
   paidBy:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 人工标记已支付的操作人（网关自动确认时为 null）
 
   // ── 到店核销 ──
@@ -173,6 +174,7 @@ const orderSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ paymentStatus: 1, wecomOrderAlertQueuedAt: 1, paidAt: 1 });
 
 // 用户取消、Admin取消和支付退款共用订单状态联动；重复通知可安全重试。
 orderSchema.post('save', async function (doc) {
