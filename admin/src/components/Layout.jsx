@@ -44,6 +44,7 @@ const NAV_SECTIONS = [
       { label: '就医协助知识库', icon: 'medical', path: '/settings/medical-resource-knowledge' },
       { label: '就医服务资源', icon: 'medical', path: '/settings/medical-delivery-resources' },
       { label: '医院 / 科室 / 专家档案', icon: 'medical', path: '/settings/medical-resources' },
+      { label: '专家招募与问卷', icon: 'form', path: '/settings/expert-recruitment', allowedRoles: ['superadmin', 'manager'] },
       { label: '会员设置', icon: 'member', path: '/settings/members' },
       { label: '健康评分配置', icon: 'score', path: '/settings/scoring' },
       { label: '临床标准管理', icon: 'medical', path: '/clinical-standards', superadminOnly: true },
@@ -152,6 +153,7 @@ export default function Layout() {
         ...section,
         items: section.items.filter(item =>
           (!item.superadminOnly || admin?.role === 'superadmin')
+          && (!item.allowedRoles || item.allowedRoles.includes(admin?.role))
           && (!item.aiControlOnly || admin?.role === 'platformSuper')
           && (admin?.tenantStatus !== 'setup' || ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees', '/saas-plan'].includes(item.path))),
       })).filter(section => section.items.length),

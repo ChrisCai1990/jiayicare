@@ -361,6 +361,11 @@ export const adminAPI = {
   deleteEmployee:    (id)       => req(`/employees/${id}`, { method: 'DELETE' }),
 
   medicalResources:  ()         => req('/medical-resources'),
+  expertRecruitments: () => reqRoot('/expert-recruitment/admin'),
+  createExpertRecruitment: data => reqRoot('/expert-recruitment/admin', { method: 'POST', body: JSON.stringify(data) }),
+  screenExpertRecruitment: (id, data) => reqRoot(`/expert-recruitment/admin/${id}/screening`, { method: 'PATCH', body: JSON.stringify(data) }),
+  approveExpertRecruitment: (id, data) => reqRoot(`/expert-recruitment/admin/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  rejectExpertRecruitment: (id, reason) => reqRoot(`/expert-recruitment/admin/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
   createMedicalInstitution: (data) => req('/medical-institutions', { method: 'POST', body: JSON.stringify(data) }),
   updateMedicalInstitution: (id, data) => req(`/medical-institutions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   toggleMedicalInstitution: (id) => req(`/medical-institutions/${id}/toggle`, { method: 'PATCH' }),

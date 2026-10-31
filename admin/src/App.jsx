@@ -5,6 +5,8 @@ import { getToken, clearToken } from './api'
 import LoginPage from './pages/LoginPage'
 import HrApp from './pages/hr/HrApp'
 import PublicOpsDashboardPage from './pages/public/PublicOpsDashboardPage'
+import ExpertInvitationPage from './pages/public/ExpertInvitationPage'
+import ExpertRecruitmentPage from './pages/settings/ExpertRecruitmentPage'
 import DashboardPage from './pages/DashboardPage'
 import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
@@ -141,6 +143,7 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/hr/*" element={<HrApp />} />
             <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
+            <Route path="/expert-invitation/:token" element={<ExpertInvitationPage />} />
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<HomeRoute />} />
               <Route path="setup" element={<InstitutionSetupPage />} />
@@ -180,6 +183,7 @@ export default function App() {
               <Route path="settings/roles"       element={<RolePage />} />
               <Route path="settings/employees"   element={<EmployeePage />} />
               <Route path="settings/medical-resources" element={<MedicalResourcesPage />} />
+              <Route path="settings/expert-recruitment" element={<ExpertRecruitmentPage />} />
               <Route path="settings/medical-resource-knowledge" element={<MedicalResourceKnowledgePage />} />
               <Route path="settings/medical-delivery-resources" element={<MedicalDeliveryResourcesPage />} />
               <Route path="settings/members"  element={<MemberSettingsPage />} />

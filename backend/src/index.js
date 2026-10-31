@@ -109,6 +109,7 @@ app.use('/api/admin/inventory', require('./routes/inventory').adminRouter);
 app.use('/api/admin',         require('./routes/enterpriseServiceRecords').adminRouter);
 app.use('/api/admin/clinical-standards', require('./routes/clinicalStandardsAdmin'));
 app.use('/api/admin',         require('./routes/settings'));
+app.use('/api/expert-recruitment', require('./routes/expertRecruitment'));
 app.use('/api/admin/specialty-library', require('./routes/specialtyLibrary').adminRouter);
 app.use('/api/admin/ai-control', require('./routes/aiControl'));
 const staffRouter = require('./routes/staff');
