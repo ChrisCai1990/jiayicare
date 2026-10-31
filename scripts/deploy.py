@@ -205,7 +205,7 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
                     # index.html itself is served no-cache.
                     code, _ = remote(
                         f"cd {REPO_DIR}/admin/dist && sed -i -E "
-                        f"'s#(src|href)=\"(/assets/[^\"?]+)(\\?[^\"]*)?\"#\\1=\"\\2?v={revision}\"#g' index.html",
+                        f"'s#(src|href)=\"(/assets/[^\"?]+)(\\?[^\"]*)?\"#\\1=\"\\2?v={revision}\"#g' index.html expert-questionnaire.html",
                         timeout=15,
                         label="为管理端静态资源写入发布版本号",
                     )

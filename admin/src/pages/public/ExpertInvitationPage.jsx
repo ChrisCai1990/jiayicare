@@ -22,6 +22,12 @@ export default function ExpertInvitationPage({ reusable = false }) {
   const [shareMessage, setShareMessage] = useState('')
   const [showManualLink, setShowManualLink] = useState(false)
   const set = key => e => setForm(current => ({ ...current, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
+  useEffect(() => {
+    if (!reusable) return
+    const previousTitle = document.title
+    document.title = '嘉医汇专家合作意向问卷'
+    return () => { document.title = previousTitle }
+  }, [reusable])
   const shareQuestionnaire = async () => {
     setShareMessage('')
     setShowManualLink(false)
