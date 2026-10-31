@@ -186,10 +186,10 @@ export default function EmployeePage() {
   }
 
   const handleUnbindWecom = async emp => {
-    if (!emp.wecomUserId || !window.confirm(`确定解除「${emp.name}」与企业微信账号 ${emp.wecomUserId} 的绑定？解除后，该企微账号不再收到此员工负责客户的新消息提醒。`)) return
+    if (!emp.wecomUserId || !emp.wecomUnbindPending || !window.confirm(`确认「${emp.name}」申请解除与企业微信账号 ${emp.wecomUserId} 的绑定？确认后，该账号不再收到此员工负责客户的新消息提醒。`)) return
     try {
       await adminAPI.unbindEmployeeWecom(emp._id, emp.wecomUserId)
-      toast('企业微信绑定已解除')
+      toast('解绑已确认，企业微信绑定已解除')
       loadAll()
     } catch (e) { toast(e.message); loadAll() }
   }
@@ -274,7 +274,8 @@ export default function EmployeePage() {
                     {emp.wecomUserId ? <>
                       <div style={{ color: '#1E6B50', fontWeight: 600 }}>已绑定</div>
                       <div style={{ color: '#6B7280', wordBreak: 'break-all' }}>{emp.wecomUserId}</div>
-                      {isSuperAdmin && <button className="btn btn-secondary btn-sm" onClick={() => handleUnbindWecom(emp)} style={{ marginTop: 4 }}>解除绑定</button>}
+                      {emp.wecomUnbindPending && <div style={{ color: '#92400E', marginTop: 4 }}>待确认解绑</div>}
+                      {isSuperAdmin && emp.wecomUnbindPending && <button className="btn btn-secondary btn-sm" onClick={() => handleUnbindWecom(emp)} style={{ marginTop: 4 }}>确认解除</button>}
                     </> : <span style={{ color: '#9CA3AF' }}>未绑定</span>}
                   </td>
                   <td style={{ padding: '12px 14px' }}>

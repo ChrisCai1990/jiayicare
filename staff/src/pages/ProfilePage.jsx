@@ -59,16 +59,16 @@ export default function ProfilePage() {
     } catch (err) { setWecomError(err.message) }
     finally { setWecomBusy(false) }
   }
-  const unbindWecom = async () => {
+  const requestUnbindWecom = async () => {
     const userId = wecomLink?.userId
-    if (!userId || !window.confirm(`确定解除企业微信账号 ${userId} 的绑定？解除后，该账号不再收到您负责客户的新消息提醒。`)) return
+    if (!userId || !window.confirm(`申请解除企业微信账号 ${userId} 的绑定？机构管理员确认后才会生效。`)) return
     setWecomBusy(true)
     setWecomError('')
     try {
-      await serviceGroupAPI.post('/app-link/unbind', { userId })
+      await serviceGroupAPI.post('/app-link/unbind-request', { userId })
       setPairCode('')
       await refreshWecomLink()
-      toast('企业微信绑定已解除')
+      toast('解绑申请已提交，等待机构管理员确认')
     } catch (err) {
       await refreshWecomLink()
       setWecomError(err.message)
@@ -204,7 +204,9 @@ export default function ProfilePage() {
             {wecomLink?.linked ? (
               <>
                 <p>已绑定企业微信账号：<strong>{wecomLink.userId}</strong>。负责客户的新消息可发送至该账号。</p>
-                <button className="btn btn-secondary" onClick={unbindWecom} disabled={wecomBusy}>解除绑定</button>
+                {wecomLink.unbindPending
+                  ? <p style={{ color: '#92400E' }}>解绑申请待机构管理员确认；确认前仍会向该企业微信账号发送提醒。</p>
+                  : <button className="btn btn-secondary" onClick={requestUnbindWecom} disabled={wecomBusy}>申请解除绑定</button>}
               </>
             ) : wecomLink?.configured ? (
               <>

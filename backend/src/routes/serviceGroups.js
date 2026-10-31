@@ -148,16 +148,16 @@ router.get('/app-link',wrap(async(req,res)=>{
   const configured=process.env.WECOM_APP_CALLBACK_ENABLED==='true' && !!process.env.WECOM_CORP_ID;
   const link=configured && await require('../models/WecomAppLink').findOne({
     staffId:req.staff._id,tenantId:req.staff.tenantId || null,corpId:process.env.WECOM_CORP_ID,
-  }).select('userId').lean();
-  res.json({success:true,data:{configured,linked:!!link?.userId,userId:link?.userId || ''}});
+  }).select('userId unbindRequestedAt unbindRequestedUserId').lean();
+  res.json({success:true,data:{configured,linked:!!link?.userId,userId:link?.userId || '',unbindPending:!!link?.unbindRequestedAt && link.unbindRequestedUserId === link.userId}});
 }));
-router.post('/app-link/unbind',wrap(async(req,res)=>{
-  const ok=await require('../utils/wecomAppBinding').unbind({
+router.post('/app-link/unbind-request',wrap(async(req,res)=>{
+  const ok=await require('../utils/wecomAppBinding').requestUnbind({
     staffId:req.staff._id,tenantId:req.staff.tenantId,corpId:process.env.WECOM_CORP_ID,
-    expectedUserId:req.body?.userId,actorId:req.staff._id,actorRole:'staff',
+    expectedUserId:req.body?.userId,
   });
-  if(!ok)fail('绑定已变化，请刷新后重试',409);
-  res.json({success:true,message:'企业微信绑定已解除'});
+  if(!ok)fail('绑定已变化或已提交申请，请刷新后核对',409);
+  res.json({success:true,message:'解绑申请已提交，等待机构管理员确认'});
 }));
 router.post('/app-pair-code',wrap(async(req,res)=>{
   if(req.staff.staffStatus==='inactive')fail('员工账号已停用',403);

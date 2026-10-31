@@ -207,10 +207,13 @@ router.get('/employees', adminAuth, async (req, res) => {
     Admin.countDocuments(filter),
   ]);
   const links = process.env.WECOM_CORP_ID && list.length
-    ? await WecomAppLink.find({ staffId: { $in: list.map(emp => emp._id) }, tenantId: req.admin.tenantId, corpId: process.env.WECOM_CORP_ID }).select('staffId userId').lean()
+    ? await WecomAppLink.find({ staffId: { $in: list.map(emp => emp._id) }, tenantId: req.admin.tenantId, corpId: process.env.WECOM_CORP_ID }).select('staffId userId unbindRequestedAt unbindRequestedUserId').lean()
     : [];
-  const userIdByStaff = new Map(links.map(link => [String(link.staffId), link.userId || '']));
-  res.json({ success: true, data: list.map(emp => ({ ...emp.toObject(), wecomUserId: userIdByStaff.get(String(emp._id)) || '' })), total });
+  const linkByStaff = new Map(links.map(link => [String(link.staffId), link]));
+  res.json({ success: true, data: list.map(emp => {
+    const link = linkByStaff.get(String(emp._id));
+    return { ...emp.toObject(), wecomUserId: link?.userId || '', wecomUnbindPending: !!link?.unbindRequestedAt && link.unbindRequestedUserId === link.userId };
+  }), total });
 });
 
 router.post('/employees/:id/wecom-unbind', adminAuth, async (req, res) => {
@@ -218,11 +221,11 @@ router.post('/employees/:id/wecom-unbind', adminAuth, async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '员工标识无效' });
   const emp = await Admin.findById(req.params.id).select('_id role').lean();
   if (!emp || !SYSTEM_ROLES.includes(emp.role)) return res.status(404).json({ success: false, message: '本机构员工不存在' });
-  const ok = await require('../utils/wecomAppBinding').unbind({
+  const ok = await require('../utils/wecomAppBinding').confirmUnbind({
     staffId: emp._id, tenantId: req.admin.tenantId, corpId: process.env.WECOM_CORP_ID,
-    expectedUserId: req.body?.userId, actorId: req.admin._id, actorRole: 'superadmin',
+    expectedUserId: req.body?.userId, actorId: req.admin._id,
   });
-  if (!ok) return res.status(409).json({ success: false, message: '绑定已变化，请刷新后重试' });
+  if (!ok) return res.status(409).json({ success: false, message: '解绑申请或绑定已变化，请刷新后重试' });
   res.json({ success: true, message: '企业微信绑定已解除' });
 });
 
