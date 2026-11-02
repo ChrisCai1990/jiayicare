@@ -3,6 +3,18 @@ const assert = require('node:assert/strict');
 const storage = require('../src/utils/expertCertificates');
 const oss = require('../src/utils/oss');
 const { normalizeLanguages } = require('../../shared/expertQualifications.cjs');
+const { appendCertificateFiles } = require('../../shared/expertCertificateQueue.cjs');
+test('repeated file selection appends files and preserves the category selected for each batch', () => {
+  const first = { name: '证书.jpg', size: 123, lastModified: 1 };
+  const second = { name: '证书背面.jpg', size: 124, lastModified: 2 };
+  const original = appendCertificateFiles([], [first], 'qualification');
+  const appended = appendCertificateFiles(original, [second], 'practice');
+  assert.equal(original.length, 1);
+  assert.deepEqual(appended.map(x => x.category), ['qualification', 'practice']);
+  assert.equal(appendCertificateFiles(appended, [], 'degree').length, 2);
+  assert.equal(appendCertificateFiles(appended, [first], 'qualification').length, 2);
+  assert.equal(appendCertificateFiles(appended, [first], 'degree').length, 3);
+});
 test('certificate objects explicitly use private ACL without exposing an object URL', async t => {
   const original = oss.getClient;
   let captured;

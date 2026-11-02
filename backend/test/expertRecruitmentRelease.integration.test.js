@@ -213,6 +213,11 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
     assert.equal(uploaded.data.certificates[0].reviewStatus, 'pending');
     assert.equal(uploaded.data.certificates[0].key, undefined);
     const fileId = uploaded.data.certificates[0]._id;
+    assert.equal((await fetch(`${url}/certificates`, { method: 'POST', body: multipart('%PDF-1.4\nsecond certificate') })).status, 201);
+    const appendedCertificates = await (await fetch(url)).json();
+    assert.equal(appendedCertificates.data.certificates.length, 2, '同名同类别再次上传保留原附件');
+    assert.equal(appendedCertificates.data.certificates[0]._id, fileId);
+    assert.notEqual(appendedCertificates.data.certificates[1]._id, fileId);
     assert.equal((await fetch(`${origin}/supplement/${otherSupplementTokens[0]}/certificates/${fileId}`)).status, 404, '同一共用链接下其他专家不能读取附件');
     assert.equal(await (await fetch(`${url}/certificates/${fileId}`)).text(), pdf);
     assert.equal((await fetch(`${url}/certificates/${oid()}`)).status, 404);

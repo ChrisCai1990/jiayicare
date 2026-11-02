@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { getToken } from '../api'
 import ExpertLanguageFields from './ExpertLanguageFields'
 import qualifications from '../../../shared/expertQualifications.cjs'
+import certificateQueue from '../../../shared/expertCertificateQueue.cjs'
 const base = import.meta.env.VITE_API_URL || '/api'
 const style = { width: '100%', boxSizing: 'border-box', padding: 10, marginBottom: 10, fontSize: 16 }
 export default function ExpertQualificationsEditor({ token, recruitmentId, onUpdated }) {
@@ -54,17 +55,27 @@ export default function ExpertQualificationsEditor({ token, recruitmentId, onUpd
       <h3>资质附件</h3>
       <p>支持 JPG、PNG、WebP 图片和 PDF，单个不超过10MB，最多20份。仅本人及授权审核人员可查看，上传后等待核验。</p>
       <label>证书类别<select style={style} value={category} disabled={busy} onChange={e => setCategory(e.target.value)}>{Object.entries(qualifications.certificateTypes).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
-      <input type="file" aria-label="选择证书附件" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={busy} onChange={e => setSelectedFiles(Array.from(e.target.files || []))} style={style}/>
+      <p>先选证书类别，再添加文件。可分多次选择，文件会累加；已上传的证件也会保留。</p>
+      <input type="file" aria-label="添加证书附件" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={busy} onChange={e => {
+        const files = Array.from(e.target.files || [])
+        setSelectedFiles(current => certificateQueue.appendCertificateFiles(current, files, category))
+        e.target.value = ''
+      }} style={style}/>
+      {selectedFiles.length > 0 && <div><h4>待上传（{selectedFiles.length}份）</h4>{selectedFiles.map((item, index) => <div key={index} style={{ padding: '8px 0', overflowWrap: 'anywhere' }}>
+        {qualifications.certificateTypes[item.category]} · {item.file.name}
+        <button type="button" disabled={busy} style={{ marginLeft: 10 }} onClick={() => setSelectedFiles(current => current.filter(entry => entry !== item))}>移除</button>
+      </div>)}</div>}
       <button type="button" className="btn btn-primary" disabled={busy || !selectedFiles.length} onClick={() => run(async () => {
-        if (selectedFiles.some(file => file.size > 10 * 1024 * 1024)) throw new Error('单个文件不能超过10MB')
+        if (selectedFiles.some(item => item.file.size > 10 * 1024 * 1024)) throw new Error('单个文件不能超过10MB')
         if (data.certificates.length + selectedFiles.length > 20) throw new Error('附件总数不能超过20份')
-        for (const file of selectedFiles) {
-          const body = new FormData(); body.append('category', category); body.append('file', file)
+        for (const item of selectedFiles) {
+          const body = new FormData(); body.append('category', item.category); body.append('file', item.file)
           await request('/certificates', { method: 'POST', body })
-          setSelectedFiles(current => current.filter(item => item !== file))
+          setSelectedFiles(current => current.filter(entry => entry !== item))
         }
       }, '附件已上传，等待核验')}>{busy ? '处理中…' : '上传所选附件'}</button>
       {data.certificates.length === 0 && <p>暂未上传附件，可稍后通过此链接继续补充。</p>}
+      {data.certificates.length > 0 && <h4>已上传（{data.certificates.length}份）</h4>}
       {data.certificates.map(file => <div key={file._id} style={{ padding: '12px 0', borderBottom: '1px solid #DCE7E1' }}>
         <strong>{qualifications.certificateTypes[file.category]}</strong> · {file.name} · {{ pending: '待核验', pass: '通过', fail: '不通过' }[file.reviewStatus]}
         <button type="button" disabled={busy} style={{ marginLeft: 10 }} onClick={() => download(file)}>下载查看</button>
