@@ -28,6 +28,8 @@ export default function ExpertRecruitmentPage() {
   const [invite, setInvite] = useState({ partnerName: '', specialtyTeam: '' })
   const [invitationUrl, setInvitationUrl] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  const [education, setEducation] = useState('')
+  const [editingEducation, setEditingEducation] = useState(false)
   const [screening, setScreening] = useState(emptyScreen)
   const [approval, setApproval] = useState(emptyApproval)
   const [busy, setBusy] = useState(false)
@@ -49,6 +51,8 @@ export default function ExpertRecruitmentPage() {
   useEffect(() => { load().catch(e => setError(e.message)) }, [])
   function choose(row) {
     setSelectedId(id(row))
+    setEducation(row.response?.education || '')
+    setEditingEducation(false)
     setScreening({ ...emptyScreen, ...(row.screening || {}) })
     setApproval({ ...emptyApproval,
       singleFee: row.agreement?.singleFee ?? row.response?.singleExpectedFee ?? '',
@@ -110,7 +114,15 @@ export default function ExpertRecruitmentPage() {
             <h4>专家提交的信息</h4>
             <Info label="联系方式" value={selected.response?.phone}/><Info label="机构 / 科室" value={`${selected.response?.institutionName || '—'} / ${selected.response?.departmentName || '—'}`}/>
             <Info label="专业 / 职称 / 年限" value={`${selected.response?.profession || '—'} / ${selected.response?.title || '—'} / ${selected.response?.experienceYears ?? '—'} 年`}/>
-            <Info label="最高学历" value={selected.response?.education || '未填写'}/>
+            <Info label="最高学历" value={<>
+              {editingEducation ? <>
+                <select aria-label="最高学历" className="form-input" style={{ width: 200, marginRight: 8 }} value={education} onChange={e => setEducation(e.target.value)} disabled={busy}>
+                  <option value="">请选择学历</option>{['博士研究生', '硕士研究生', '本科', '大专', '中专及以下', '其他'].map(x => <option key={x} value={x}>{x}</option>)}
+                </select>
+                <button className="btn btn-primary" disabled={busy || !education} onClick={() => run(async () => { await adminAPI.updateExpertRecruitmentEducation(id(selected), education); setEditingEducation(false) }, '学历已保存')}>保存学历</button>
+                <button className="btn" disabled={busy} onClick={() => setEditingEducation(false)}>取消</button>
+              </> : <>{selected.response?.education || '未填写'}{['submitted', 'approved', 'rejected'].includes(selected.status) && <button className="btn" disabled={busy} style={{ marginLeft: 12 }} onClick={() => { setEducation(selected.response?.education || ''); setEditingEducation(true) }}>{selected.response?.education ? '修改' : '补填'}</button>}</>}
+            </>}/>
             <Info label="擅长" value={selected.response?.registrationScope?.trim() || selected.response?.expertise?.join('、')}/>
             <Info label="合作意向" value={[selected.response?.singleConsultation && '单次咨询', selected.response?.mdt && 'MDT', selected.response?.mdtLead && 'MDT 牵头'].filter(Boolean).join('、')}/>
             <Info label="单次咨询预期报酬" value={selected.response?.singleConsultation ? `${selected.response.singleExpectedFee} 元/次` : '不参与'}/>

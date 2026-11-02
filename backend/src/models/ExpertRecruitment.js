@@ -23,6 +23,11 @@ const schema = new mongoose.Schema({
     scheduleMaintenance: String, recordingPreference: String,
     cooperationNotes: String, privacyAcknowledged: Boolean,
   },
+  educationChanges: [{
+    before: String, after: String,
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    updatedAt: Date,
+  }],
   screening: {
     qualificationVerified: { type: Boolean, default: false },
     professional: { type: String, enum: ['', 'pass', 'pending', 'fail'], default: '' },

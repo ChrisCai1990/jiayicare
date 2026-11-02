@@ -134,6 +134,24 @@ router.post('/admin', adminAuth, async (req, res) => {
   res.status(201).json({ success: true, data: { id: row._id, token, expiresAt: row.expiresAt } });
 });
 
+router.patch('/admin/:id/education', adminAuth, async (req, res) => {
+  if (!adminAllowed(req)) return fail(res, 403, '无专家资料修改权限');
+  if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '记录编号无效');
+  const education = req.body?.education;
+  if (!['博士研究生', '硕士研究生', '本科', '大专', '中专及以下', '其他'].includes(education))
+    return fail(res, 400, '请选择最高学历');
+  const row = await ExpertRecruitment.findOne({ _id: req.params.id, status: { $in: ['submitted', 'approved', 'rejected'] } });
+  if (!row) return fail(res, 409, '仅已提交的问卷可补填学历');
+  if (row.response?.education === education) return res.json({ success: true, data: row });
+  const updated = await ExpertRecruitment.findOneAndUpdate({ _id: row._id, status: row.status,
+    'response.education': row.response?.education ?? null,
+  }, { $set: { 'response.education': education }, $push: { educationChanges: {
+    before: row.response?.education || '', after: education, updatedBy: req.admin._id, updatedAt: new Date(),
+  } } }, { new: true, runValidators: true });
+  if (!updated) return fail(res, 409, '资料已更新，请刷新后重试');
+  res.json({ success: true, data: updated });
+});
+
 router.patch('/admin/:id/screening', adminAuth, async (req, res) => {
   if (!adminAllowed(req)) return fail(res, 403, '无专家招募审核权限');
   if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '记录编号无效');

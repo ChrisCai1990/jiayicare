@@ -114,6 +114,33 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       assert.equal(await MedicalExpert.countDocuments({ linkedStaffId: staffId }), 1);
       const saved = await Recruitment.findById(row._id);
       assert.equal(saved.status, 'approved');
+      const updateEducation = handler('patch', '/admin/:id/education');
+      const educationRequest = { params: { id: String(row._id) }, admin: actor, body: { education: '硕士研究生' } };
+      // 模拟上线前没有学历字段的历史问卷，已入库后仍可补填。
+      await Recruitment.updateOne({ _id: row._id }, { $unset: { 'response.education': 1 } });
+      const forbidden = response();
+      await updateEducation({ ...educationRequest, admin: { ...actor, role: 'specialist' } }, forbidden);
+      assert.equal(forbidden.statusCode, 403);
+      const invalid = response();
+      await updateEducation({ ...educationRequest, body: { education: '' } }, invalid);
+      assert.equal(invalid.statusCode, 400);
+      await asTenant(secondTenant, async () => {
+        const foreign = response();
+        await updateEducation({ ...educationRequest, admin: { ...actor, tenantId: secondTenant } }, foreign);
+        assert.equal(foreign.statusCode, 409);
+      });
+      const filled = response(); await updateEducation(educationRequest, filled);
+      assert.equal(filled.statusCode, 200);
+      const edited = response(); await updateEducation({ ...educationRequest, body: { education: '博士研究生', status: 'submitted' } }, edited);
+      assert.equal(edited.statusCode, 200);
+      const checked = await Recruitment.findById(row._id);
+      assert.equal(checked.response.education, '博士研究生');
+      assert.equal(checked.status, 'approved');
+      assert.equal(checked.educationChanges.length, 2);
+      assert.equal(checked.educationChanges[0].before, '');
+      assert.equal(checked.educationChanges[1].before, '硕士研究生');
+      assert.equal(String(checked.educationChanges[1].updatedBy), String(actor._id));
+      assert.equal(String(checked.expertProfileId), String(profile._id));
     });
     let reusableToken, linkId;
     await asTenant(firstTenant, async () => {
