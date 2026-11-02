@@ -200,7 +200,10 @@ router.post('/reports/:id/resume', async (req, res) => {
   const id = req.params.id;
   const auditId = randomUUID();
   await collection('ai_control_audit').insertOne({ _id: auditId, action: 'resume_report', target: id, status: 'pending', at: new Date(), actorId: String(req.admin._id) });
-  const result = await MedicalReport.findOneAndUpdate({ _id: id, 'parseJob.status': 'paused', aiStatus: 'failed' }, { $set: { aiStatus: 'processing', 'parseJob.status': 'processing', 'parseJob.message': '管理员已恢复，等待继续识别', 'parseJob.resumedAt': new Date(), 'parseJob.resumedBy': String(req.admin._id) } });
+  // A page-scoped circuit can pause a report while earlier pages have already
+  // yielded reviewable items, leaving aiStatus=pending. The parse job is the
+  // authoritative pause marker; preserve its checkpoint when resuming.
+  const result = await MedicalReport.findOneAndUpdate({ _id: id, 'parseJob.status': 'paused', aiStatus: { $in: ['failed', 'pending'] } }, { $set: { aiStatus: 'processing', 'parseJob.status': 'processing', 'parseJob.message': '管理员已恢复，等待继续识别', 'parseJob.resumedAt': new Date(), 'parseJob.resumedBy': String(req.admin._id) } });
   await collection('ai_control_audit').updateOne({ _id: auditId }, { $set: { status: result ? 'applied' : 'conflict' } });
   if (!result) return res.status(409).json({ success: false, message: '报告已不在暂停状态，请刷新' });
   require('./staff').scheduleReportParse(id);

@@ -17225,7 +17225,7 @@ async function runOutpatientRecordParse(report, rawParseImage) {
 async function runReportParseControlled(reportId) {
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
-  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage, renderSinglePageRegions } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { filterMissingReportItems, hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
   const { reviewRevisionMatch } = require('../utils/reportReviewRevision');
@@ -17469,11 +17469,23 @@ async function runReportParseControlled(reportId) {
             const incompleteNames = firstRows.filter(it => ['lab', 'data'].includes(it.itemType) && !str(it.value))
               .map(it => str(it.name)).filter(Boolean);
             const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}\n结果为空、需要重读同一行的项目：${incompleteNames.length ? incompleteNames.join('、') : '无'}。这些项目若有原文结果，请以相同项目名输出结果值；文字检查还须核对已有非空所见后续的全部编号段落。看不清则不要猜。`;
-            const text = await parseImage(img, auditPrompt, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
-            const p = safeParseJSON(text);
-            if (!p || !Array.isArray(p.items)) continue;
+            // A dense scanned page may repeatedly time out as one 180 DPI
+            // image. Reuse the overlapping top/bottom crops already used by
+            // single-page supplement, keeping each table row intact.
+            const auditImages = img.length > 800000 ? await renderSinglePageRegions(pdfBuf, pageNum, 160) : [img];
+            if (auditImages.length !== (img.length > 800000 ? 2 : 1) || auditImages.some(image => !image)) throw new Error('覆盖复核分区渲染不完整');
+            let auditedItems = [];
+            let auditValid = true;
+            for (let regionIndex = 0; regionIndex < auditImages.length; regionIndex++) {
+              const regionHint = auditImages.length > 1 ? `\n这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；只读取本图可见内容。` : '';
+              const text = await parseImage(auditImages[regionIndex], auditPrompt + regionHint, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: auditImages.length > 1 ? 5000 : (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: auditImages.length > 1 ? 180000 : (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
+              const parsedRegion = safeParseJSON(text);
+              if (!parsedRegion || !Array.isArray(parsedRegion.items)) { auditValid = false; break; }
+              auditedItems = mergeCoverageAuditItems(auditedItems, tagReportPageItems(parsedRegion.items, pageNum));
+            }
+            if (!auditValid) continue;
             const oldPage = allItems.filter(it => it._page === pageNum);
-            const auditedPage = tagReportPageItems(p.items, pageNum);
+            const auditedPage = auditedItems;
             const useAuditedPage = useShaoyifuTemplate
               && shaoyifuTemplate.needsCoverageAudit(pageNum, oldPage)
               && !shaoyifuTemplate.needsCoverageAudit(pageNum, auditedPage);
