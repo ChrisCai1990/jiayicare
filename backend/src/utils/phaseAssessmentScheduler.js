@@ -7,6 +7,7 @@ const PhaseAssessmentGeneration = require('../models/PhaseAssessmentGeneration')
 const { buildStageAssessmentContext } = require('./aiCaseReviewContext');
 const { chat } = require('./ai');
 const { routingFor, ROLE_FIELDS, ROLE_LABELS } = require('./phaseAssessmentRouting');
+const { PHASE_ASSESSMENT_EVIDENCE_RULES } = require('./phaseAssessmentEvidenceRules');
 
 const INTENSIVE_NUTRITION_WEEKS = [1, 2, 3, 4, 6, 8, 10, 12];
 const intensiveNutritionCheckpoint = elapsedWeek => [...INTENSIVE_NUTRITION_WEEKS].reverse().find(week => week <= elapsedWeek) || null;
@@ -103,11 +104,12 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
 【模板关注重点】${focus}
 【模板额外要求】${instructions}
 【最低数据要求】${minimumData}
+【日常管理的证据解释规则】${PHASE_ASSESSMENT_EVIDENCE_RULES}
 【阶段资料快照】${JSON.stringify(context).slice(0, 45000)}
 
 请严格按以下四个栏目输出中文：
 一、${outputSections[0]}；二、${outputSections[1]}；三、${outputSections[2]}；四、${outputSections[3]}。
-第一部分只写${windowDays}天窗口内的监测变化和覆盖情况；第二部分只分析阶段变化与饮食、运动、睡眠、饮酒、情绪、依从性的时间关联，证据不足写“可能相关/待验证”，不得写成因果；第三部分写可能风险及数据缺口，体检只作基线背景；第四部分写下一周期可执行计划，注明事项、频次、责任角色和复评时间。每栏最多6条，每条先写简短判断标签，再用冒号补充依据。`;
+第一部分只写${windowDays}天窗口内已记录的监测事实和日期；第二部分按证据解释规则分析生活方式关联，不能关联时明确写无法分析；第三部分写已记录的异常或需要核实的资料，体检只作基线背景；第四部分写下一周期需要人工核对的事项、责任角色和复评时间。每栏最多6条，每条先写客观主题，再用冒号补充依据。`;
   const content = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 3500, temperature: 0.05, timeoutMs: 90000 }));
   if (!await PhaseAssessmentGeneration.exists({ _id: generationId, token, status: 'generating' })) return null;
   const teamRoles = assessmentMode === 'routine'
