@@ -91,14 +91,15 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
   try {
   const templateWindowDays = [7, 14, 30, 90, 365].includes(template.content?.windowDays) ? template.content.windowDays : frequency === 'yearly' ? 365 : frequency === 'quarterly' ? 90 : 30;
   const windowDays = contextWindow ? Math.max(1, Math.ceil((new Date(contextWindow.end) - new Date(contextWindow.start)) / 86400000)) : templateWindowDays;
-  const context = await buildStageAssessmentContext(user, windowDays, contextWindow);
+  const monthlyReview = assessmentMode === 'routine' && frequency === 'monthly';
+  const localDraft = monthlyReview ? await require('./monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft(user, contextWindow || { start: new Date(Date.now() - windowDays * 86400000), end: new Date() }) : null;
+  const context = monthlyReview ? { sources: localDraft.sources } : await buildStageAssessmentContext(user, windowDays, contextWindow);
   // 月度综合复盘独立于年度方案；专项/年度来源才附上已确认方案。
   if (assessmentMode === 'routine' && frequency === 'monthly') {
     delete context.confirmedAnnualPlan;
     context.sources = (context.sources || []).filter(source => !String(source).includes('年度管理方案'));
   }
   if ((assessmentMode !== 'routine' || frequency === 'yearly') && plan?.confirmedAt) context.confirmedAnnualPlan = { _id: plan._id, year: plan.year, planType: plan.planType, templateName: plan.templateName, moduleData: plan.moduleData, notes: plan.notes, confirmedAt: plan.confirmedAt };
-  const monthlyReview = assessmentMode === 'routine' && frequency === 'monthly';
   const focus = monthlyReview ? '本月已记录的健康变化、生活方式、就医与检查情况，以及需要人工核实的问题' : template.content?.focus || '阶段数据变化、生活方式关联、潜在风险和下一步计划';
   const instructions = monthlyReview ? '这是独立月度复盘，不以年度方案目标或确认状态作为判断依据。只能分析实际提供的资料，未提供的就医详情须提示健康顾问查看原始服务档案。' : template.content?.instructions || '仅提出待审核建议，不得将推测写为事实；缺少数据时必须明确说明。';
   const minimumData = monthlyReview ? '有多少记录就分析多少记录；缺少某项资料只说明该问题无法判断，不评价客户记录频率。' : template.content?.minimumData || '资料不足时必须明确列为数据缺口。';
@@ -115,7 +116,7 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
 请严格按以下四个栏目输出中文：
 一、${outputSections[0]}；二、${outputSections[1]}；三、${outputSections[2]}；四、${outputSections[3]}。
 第一部分写${windowDays}天窗口内已有记录的事实和变化；第二部分按证据解释规则分析生活方式关联，不能关联时明确写无法分析；第三部分整理已提供的检查与就医线索、待核实问题，不只看异常，也不得把未提供的就医或正常指标编造出来。若就医次数、原因或复查结果在资料快照中不完整，明确提示健康顾问核对原始报告和服务档案；若实际就医较频繁，由顾问核对每次就医目的、是否为计划内复查、是否重复或有未解决问题，不推断医学原因。第四部分说明针对性补充记录、营养师需核对的问题和下月待人工确认的行动。每栏最多10条，每条先写客观主题，再用冒号补充依据。`;
-  const content = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 3500, temperature: 0.05, timeoutMs: 90000 }));
+  const content = monthlyReview ? localDraft.content : await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 3500, temperature: 0.05, timeoutMs: 90000 }));
   if (!await PhaseAssessmentGeneration.exists({ _id: generationId, token, status: 'generating' })) return null;
   const teamRoles = assessmentMode === 'routine'
     ? advisorNutritionReview ? ['nutritionist', 'familyDoctor'] : [routing.primaryReviewRole]
@@ -125,7 +126,7 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
     assessmentMode, sourceNutritionPlanId, interventionWeek, ...routing,
     ...(assessmentMode === 'routine' ? { status: 'team_review', reviewWorkflow: advisorNutritionReview ? 'advisor_nutrition' : 'single_owner', teamRoles, teamReviews: {} } : {}),
     periodKey: period.key, periodLabel: period.label, content,
-    evidenceSources: context.sources || [], templateSnapshot: { name: template.name, frequency, windowDays, focus, instructions, minimumData, outputSections, triggerRule: template.content?.triggerRule || '' },
+    evidenceSources: context.sources || [], templateSnapshot: { name: template.name, frequency, windowDays, focus, instructions, minimumData, outputSections, triggerRule: template.content?.triggerRule || '', source: monthlyReview ? 'local_manual' : 'ai' },
   });
   await PhaseAssessmentGeneration.updateOne({ _id: generationId, token }, { $set: { status: 'completed', assessmentId: item._id || null } });
   return item;
@@ -140,7 +141,6 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
 }
 
 async function scanAndCreatePhaseAssessments() {
-  if (!process.env.QWEN_API_KEY) return 0;
   // The broad rollout is explicit. Without it, retain the exact pilot allowlist.
   const allEligible = process.env.PHASE_ASSESSMENT_AUTO_SCOPE === 'eligible';
   const ids = String(process.env.PHASE_ASSESSMENT_AUTO_PATIENT_IDS || '').split(',').map(id => id.trim().toLowerCase()).filter(Boolean);

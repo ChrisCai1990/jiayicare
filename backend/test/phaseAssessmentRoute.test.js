@@ -10,6 +10,7 @@ const PlanTemplate = require('../src/models/PlanTemplate');
 let aiCalls = 0;
 require('../src/utils/ai').chat = async () => { aiCalls++; return '年度总评草稿'; };
 require('../src/utils/aiCaseReviewContext').buildStageAssessmentContext = async () => ({ sources: [] });
+require('../src/utils/monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft = async () => ({ content: '一、本月记录与变化\n- 待人工核对\n\n二、生活方式与指标关联\n- 待营养师核对\n\n三、就医、检查与待核实问题\n- 待顾问核对\n\n四、下月跟进事项\n- 待确认', sources: [] });
 const ids = { patient: '000000000000000000000001', reviewer: '000000000000000000000002', assessment: '000000000000000000000003', plan: '000000000000000000000004', template: '000000000000000000000005', nutrition: '000000000000000000000006' };
 let actor;
 const auth = require.resolve('../src/middleware/staffAuth'); require(auth);
@@ -238,14 +239,14 @@ test('可信续约有效时档案旧到期日不阻断手动评估', async t => 
   t.mock.method(User, 'findById', async () => ({ _id: ids.patient, membershipTier: 'annual', assignedFamilyDoctor: ids.reviewer, assignedNutritionist: ids.nutrition, serviceExpiry: '2020-01-01', aiPilotFeatures: { stageAssessment: true } }));
   t.mock.method(periodic, 'annualPeriodicGate', actualPeriodicGate);
   t.mock.method(require('../src/utils/annualServicePeriod'), 'annualExecutionGate', async () => ({ allowed: true, anchor: '2020-01-01' }));
-  const result = await request(t, {}, 'POST'); assert.equal(result.status, 201, JSON.stringify(result.body)); assert.equal(aiCalls, 1);
+  const result = await request(t, {}, 'POST'); assert.equal(result.status, 201, JSON.stringify(result.body)); assert.equal(aiCalls, 0);
 });
 test('月度复盘按当前有效服务期生成，不受旧年度方案约束', async t => {
   generation(t); actor.role = 'superadmin';
   t.mock.method(periodic, 'annualPeriodicGate', actualPeriodicGate);
   serviceAccess.resolveServiceAccess.mock.restore();
   t.mock.method(serviceAccess, 'resolveServiceAccess', async () => ({ active: true, source: 'verified_renewal' }));
-  const res = await request(t, {}, 'POST'); assert.equal(res.status, 201, JSON.stringify(res.body)); assert.equal(res.body.data.annualPlanId, null); assert.equal(aiCalls, 1);
+  const res = await request(t, {}, 'POST'); assert.equal(res.status, 201, JSON.stringify(res.body)); assert.equal(res.body.data.annualPlanId, null); assert.equal(aiCalls, 0);
 });
 test('服务期查询故障不默认放行，不产生AI调用', async t => {
   generation(t);
