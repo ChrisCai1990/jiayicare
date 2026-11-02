@@ -12293,7 +12293,9 @@ router.get('/patients/:id/chat-images', staffAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: '会话图片读取失败' }); }
 });
 
-router.post('/patients/:id/chat-images/:messageId/archive-report', staffAuth, checkPermission('reports', 'create'), async (req, res) => {
+// Keep the same upload authorization as POST /medical-reports. The specific
+// role, tenant and patient assignment checks below still apply.
+router.post('/patients/:id/chat-images/:messageId/archive-report', staffAuth, async (req, res) => {
   if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅所属健管专员可归档资料' });
   const patient = await chatMaterialPatient(req.staff, req.params.id);
   if (!patient) return res.status(403).json({ success: false, message: '无权归档该客户资料' });

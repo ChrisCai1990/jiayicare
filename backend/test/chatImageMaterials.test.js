@@ -13,6 +13,7 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const snippet = source.split('async function chatMaterialPatient')[1].split('// ── 获取某用户的对话线程')[0];
   const handlers = {};
+  let postMiddlewareCount = 0;
   const copied = [];
   const deleted = [];
   let created;
@@ -26,7 +27,7 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
   const context = {
     router: {
       get: (route, _auth, handler) => { handlers.get = handler; },
-      post: (route, _auth, _permission, handler) => { handlers.post = handler; },
+      post: (...args) => { postMiddlewareCount = args.length - 2; handlers.post = args.at(-1); },
     },
     staffAuth: () => {}, checkPermission: () => () => {},
     mongoose: { isValidObjectId: value => /^[a-f0-9]{24}$/.test(String(value)) },
@@ -50,8 +51,12 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
     await handlers[method](req, res);
     return res;
   };
-  return { call, copied, deleted, get created() { return created; } };
+  return { call, copied, deleted, postMiddlewareCount, get created() { return created; } };
 }
+
+test('chat image archive follows existing report upload authorization', () => {
+  assert.equal(fixture().postMiddlewareCount, 1);
+});
 
 test('assigned staff sees signed customer chat images as source material', async () => {
   const result = await fixture().call('get');
