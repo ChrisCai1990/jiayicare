@@ -19,7 +19,9 @@ const paid = order => order?.paymentStatus === 'paid' && ['paid', 'fulfilling', 
 const serviceType = order => ({ expert_consultation: 'single', mdt_consultation: 'mdt' })[order?.serviceWorkflowSnapshot?.key];
 const activeOrder = order => paid(order) && order?.status !== 'cancelled' && !['requested', 'processing', 'refunded'].includes(order?.refundStatus);
 const event = (row, action, actorId, note = '') => row.history.push({ action, actorId, at: new Date(), note: text(note, 500) });
-const staffCanRead = (row, staff) => staff.role === 'superadmin' || [row.managerId, row.advisorId, row.plannerId, ...row.members.map(x => x.staffId)].some(x => id(x) === id(staff._id));
+const staffCanRead = (row, staff) => staff.role === 'superadmin'
+  || (staff.role === 'healthPlanner' && row.status === 'team_assignment' && !row.plannerId)
+  || [row.managerId, row.advisorId, row.plannerId, ...row.members.map(x => x.staffId)].some(x => id(x) === id(staff._id));
 const assigned = (row, staff, field) => staff.role === 'superadmin' || id(row[field]) === id(staff._id);
 
 router.post('/mine', userAuth, async (req, res) => {
@@ -75,7 +77,10 @@ router.get('/mine', userAuth, async (req, res) => {
 });
 
 router.get('/staff', staffAuth, async (req, res) => {
-  const filter = req.staff.role === 'superadmin' ? {} : { $or: [{ managerId: req.staff._id }, { advisorId: req.staff._id }, { plannerId: req.staff._id }, { 'members.staffId': req.staff._id }] };
+  const filter = req.staff.role === 'superadmin' ? {} : { $or: [
+    { managerId: req.staff._id }, { advisorId: req.staff._id }, { plannerId: req.staff._id }, { 'members.staffId': req.staff._id },
+    ...(req.staff.role === 'healthPlanner' ? [{ status: 'team_assignment', plannerId: null }] : []),
+  ] };
   const rows = await Case.find(filter).sort({ createdAt: -1 }).limit(200).lean();
   res.json({ success: true, data: rows });
 });
@@ -102,7 +107,8 @@ router.get('/staff/:id/materials', staffAuth, async (req, res) => {
 router.post('/staff/:id/team', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
-  if (req.staff.role !== 'superadmin' && id(row.plannerId) !== id(req.staff._id)) return fail(res, 403, '仅负责人可分配服务团队');
+  if (req.staff.role !== 'superadmin' && id(row.plannerId) !== id(req.staff._id)
+    && !(req.staff.role === 'healthPlanner' && !row.plannerId)) return fail(res, 403, '仅负责人可分配服务团队');
   if (row.status !== 'team_assignment') return fail(res, 409, '当前阶段不能分配团队');
   const roles = [['managerId', 'healthManager'], ['advisorId', 'familyDoctor'], ['plannerId', 'healthPlanner']];
   for (const [field, role] of roles) {

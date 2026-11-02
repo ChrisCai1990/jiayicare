@@ -22,7 +22,8 @@ export default function ExpertConsultationsPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const selected = rows.find(row => id(row) === selectedId)
-  const planner = selected && (id(selected.plannerId) === self || staff?.role === 'superadmin')
+  const planner = selected && (id(selected.plannerId) === self || staff?.role === 'superadmin'
+    || (selected.status === 'team_assignment' && !selected.plannerId && staff?.role === 'healthPlanner'))
   const advisor = selected && (id(selected.advisorId) === self || staff?.role === 'superadmin')
   const manager = selected && (id(selected.managerId) === self || staff?.role === 'superadmin')
   const assignedExpert = selected?.members?.some(member => id(member.staffId) === self)
@@ -33,7 +34,7 @@ export default function ExpertConsultationsPage() {
   }
   useEffect(() => { load().catch(e => setError(e.message)) }, [])
   async function choose(row) {
-    setSelectedId(id(row)); setError(''); setForm({})
+    setSelectedId(id(row)); setError(''); setForm(row.status === 'team_assignment' && !row.plannerId ? { plannerId: self } : {})
     try { const result = await staffAPI.expertConsultationMaterials(id(row)); setReports(result.data || []) }
     catch (e) { setError(e.message); setReports([]) }
     setMembers(Array.from({ length: row.type === 'mdt' ? Number(/^([2-8])位专家/.exec(row.specificationLabel || '')?.[1] || 2) : 1 }, () => ({ expertId: '', slotId: '' })))

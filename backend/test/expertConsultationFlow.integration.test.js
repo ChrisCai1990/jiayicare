@@ -117,7 +117,31 @@ test('paid single consultation runs from customer request through booked schedul
     const hidden = response();
     await withTenant(wrongTenant, { staff: { _id: plannerId, role: 'healthPlanner' } }, () => staffList({ staff: { _id: plannerId, role: 'healthPlanner' } }, hidden));
     assert.equal(hidden.body.data.length, 0);
+    const unassignedPatientId = oid(), unassignedOrderId = oid();
+    await mongoose.connection.db.collection('users').insertOne({ _id: unassignedPatientId, tenantId });
+    await mongoose.connection.db.collection('orders').insertOne({ _id: unassignedOrderId, tenantId, user: unassignedPatientId,
+      serviceId: String(oid()), serviceName: '单次专家咨询分析', paymentStatus: 'paid', tradeStatus: 'paid', status: 'pending',
+      refundStatus: 'none', totalUnits: 1, serviceWorkflowSnapshot: { key: 'expert_consultation' } });
+    const unassigned = await call('post', '/mine', { user: { _id: unassignedPatientId, tenantId },
+      body: { orderId: String(unassignedOrderId), request: '请协助安排咨询' } });
+    assert.equal(unassigned.body.data.status, 'team_assignment');
+    const pending = await call('get', '/staff', { staff: { _id: plannerId, role: 'healthPlanner' } });
+    assert.ok(pending.body.data.some(row => String(row._id) === String(unassigned.body.data.id)));
+    const pendingMaterials = await call('get', '/staff/:id/materials', { params: { id: String(unassigned.body.data.id) },
+      staff: { _id: plannerId, role: 'healthPlanner' } });
+    assert.equal(pendingMaterials.statusCode, 200);
+    const wrongTenantPending = await withTenant(wrongTenant, { staff: { _id: plannerId, role: 'healthPlanner' } },
+      async () => { const result = response(); await staffList({ staff: { _id: plannerId, role: 'healthPlanner' } }, result); return result; });
+    assert.equal(wrongTenantPending.body.data.length, 0);
+    const cannotAssign = await call('post', '/staff/:id/team', { params: { id: String(unassigned.body.data.id) },
+      staff: { _id: managerId, role: 'healthManager' }, body: { managerId, advisorId, plannerId } });
+    assert.equal(cannotAssign.statusCode, 403);
+    const claimed = await call('post', '/staff/:id/team', { params: { id: String(unassigned.body.data.id) },
+      staff: { _id: plannerId, role: 'healthPlanner' }, body: { managerId, advisorId, plannerId } });
+    assert.equal(claimed.statusCode, 200, JSON.stringify(claimed.body));
+    assert.equal(String((await Case.findById(unassigned.body.data.id)).plannerId), String(plannerId));
     const bookedDeletion = response();
-    await withTenant(tenantId, { staff: { _id: managerId, role: 'healthManager' } }, () => handler(scheduleRouter, 'delete', '/:id')({ params: { id: String(managerSlot) }, staff: { _id: managerId, role: 'healthManager' } }, bookedDeletion));
+    const deletionRequest = { params: { id: String(managerSlot) }, staff: { _id: managerId, tenantId, role: 'healthManager' } };
+    await withTenant(tenantId, deletionRequest, () => handler(scheduleRouter, 'delete', '/:id')(deletionRequest, bookedDeletion));
     assert.equal(bookedDeletion.statusCode, 409);
   });
