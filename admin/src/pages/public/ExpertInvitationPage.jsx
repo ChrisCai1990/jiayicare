@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom'
 const apiBase = import.meta.env.VITE_API_URL || '/api'
 const blank = {
   name: '', phone: '', institutionName: '', departmentName: '', title: '', profession: '临床医师',
-  experienceYears: '', expertise: '', unsuitableTopics: '',
+  experienceYears: '', expertise: '',
   singleConsultation: false, mdt: false, mdtLead: false, singleExpectedFee: '', mdtExpectedFee: '',
   feeTaxBasis: 'undecided', feeIncludes: [], extraFeeRule: '', preparationMinutes: '', materialLimit: '', replyHours: '',
   weeklyAvailability: '', weeklyCapacity: '', minimumNoticeHours: 48, scheduleMaintenance: 'self',
@@ -78,7 +78,6 @@ export default function ExpertInvitationPage({ reusable = false }) {
         <Field label="职称或专业等级"><input style={inputStyle} value={form.title} onChange={set('title')}/></Field>
         <Field label="相关工作年限"><input style={inputStyle} type="number" min="0" max="80" value={form.experienceYears} onChange={set('experienceYears')}/></Field>
         <Field label="擅长"><textarea style={inputStyle} rows={3} placeholder="请填写擅长的专业方向、疾病或咨询人群，多项用顿号分隔" value={form.expertise} onChange={set('expertise')}/></Field>
-        <Field label="不适合承接的主题或专业边界"><textarea style={inputStyle} rows={2} value={form.unsuitableTopics} onChange={set('unsuitableTopics')}/></Field>
         <h2 style={section}>合作方式与交付</h2>
         <Check label="愿意参与单次专家咨询分析" checked={form.singleConsultation} onChange={set('singleConsultation')}/>
         <Check label="愿意参与多学科咨询分析 MDT" checked={form.mdt} onChange={set('mdt')}/>
