@@ -125,7 +125,8 @@ router.get('/staff', staffAuth, async (req, res) => {
     ...(req.staff.role === 'healthPlanner' ? [{ status: 'team_assignment', plannerId: null }] : []),
   ] };
   const rows = await Case.find(filter).sort({ createdAt: -1 }).limit(200)
-    .populate('patientId', 'name phone').populate('referralId', referralFields).lean();
+    .populate('patientId', 'name phone').populate('referralId', referralFields)
+    .populate('members.expertId', 'name title').lean();
   res.json({ success: true, data: rows });
 });
 
@@ -152,10 +153,26 @@ router.get('/staff/:id/referrals', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
   if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可选择转介');
-  if (row.status !== 'advisor') return fail(res, 409, '当前阶段不能关联转介');
+  if (!['advisor', 'planner'].includes(row.status)) return fail(res, 409, '当前阶段不能关联转介');
   const eligibleIds = await eligibleReferralExperts(row);
   const referrals = await Referral.find(availableReferral(row)).select(referralFields).sort({ createdAt: -1 }).limit(100).lean();
-  res.json({ success: true, data: referrals.filter(item => !item.expertConsultationCaseId && eligibleIds.has(id(item.medicalExpertId))) });
+  res.json({ success: true, data: referrals.filter(item =>
+    (!item.expertConsultationCaseId || id(item.expertConsultationCaseId) === id(row._id)) && eligibleIds.has(id(item.medicalExpertId))) });
+});
+
+router.post('/staff/:id/edit', staffAuth, async (req, res) => {
+  const row = valid(req.params.id) && await Case.findById(req.params.id);
+  if (!row) return fail(res, 404, '咨询服务不存在');
+  if (!staffCanRead(row, req.staff)) return fail(res, 403, '无权修改该咨询');
+  if (!['team_assignment', 'intake', 'advisor', 'planner'].includes(row.status)) return fail(res, 409, '专家已派发，不能直接修改客户需求');
+  const request = text(req.body?.request, 1500);
+  if (!request) return fail(res, 400, '请填写本次咨询问题');
+  if (request !== row.clientRequest) {
+    event(row, 'request_updated', req.staff._id, `原需求：${text(row.clientRequest, 220)}；新需求：${text(request, 220)}`);
+    row.clientRequest = request;
+    await row.save();
+  }
+  res.json({ success: true, data: row });
 });
 
 router.post('/staff/:id/team', staffAuth, async (req, res) => {
@@ -196,8 +213,9 @@ router.post('/staff/:id/referral', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
   if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可关联转介信');
-  if (row.status !== 'advisor') return fail(res, 409, '当前阶段不能关联转介信');
+  if (!['advisor', 'planner'].includes(row.status)) return fail(res, 409, '专家派发后不能更换转介信');
   if (!valid(req.body?.referralId)) return fail(res, 400, '请先在客户档案中发起转介，再选择该转介记录');
+  if (id(row.referralId) === id(req.body.referralId)) return res.json({ success: true, data: row });
   const eligibleIds = await eligibleReferralExperts(row);
   const candidate = await Referral.findOne({ _id: req.body.referralId, ...availableReferral(row), expertConsultationCaseId: null }).select('medicalExpertId').lean();
   if (!candidate) return fail(res, 409, '转介记录不存在、已结束、已关联其他咨询或不属于本次客户与健康顾问');
@@ -205,10 +223,16 @@ router.post('/staff/:id/referral', staffAuth, async (req, res) => {
   const referral = await Referral.findOneAndUpdate({ _id: req.body.referralId, ...availableReferral(row), expertConsultationCaseId: null },
     { $set: { expertConsultationCaseId: row._id } }, { new: true });
   if (!referral) return fail(res, 409, '转介记录不存在、已结束、已关联其他咨询或不属于本次客户与健康顾问');
+  const previousReferralId = row.referralId;
   row.referralId = referral._id;
-  row.referralPreparedAt = new Date(); row.status = 'planner'; event(row, 'referral_prepared', req.staff._id);
+  row.referralPreparedAt = new Date(); row.status = 'planner'; event(row, previousReferralId ? 'referral_replaced' : 'referral_prepared', req.staff._id);
   try { await row.save(); }
   catch (error) { await Referral.updateOne({ _id: referral._id, expertConsultationCaseId: row._id }, { $set: { expertConsultationCaseId: null } }); throw error; }
+  if (previousReferralId) {
+    await Referral.updateOne({ _id: previousReferralId, expertConsultationCaseId: row._id }, { $set: { expertConsultationCaseId: null } });
+    const previous = await Referral.findById(previousReferralId);
+    if (previous) await require('../utils/referralAssessmentWorkflow').createReferralWorkbenchTask(previous);
+  }
   await require('../models/FollowUp').updateMany({ sourceType: 'professional_assessment', sourceId: referral._id,
     workflowKey: 'professional_assessment:professional_review', status: { $in: ['planned', 'in_progress', 'missed'] } },
   { $set: { status: 'cancelled', cancelReason: '已转入专家咨询服务处理' } });

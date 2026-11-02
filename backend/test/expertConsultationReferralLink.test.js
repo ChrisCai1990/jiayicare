@@ -17,7 +17,7 @@ test('consultation links one existing patient referral and rejects duplicate fre
     findOne: Referral.findOne, updateOne: Referral.updateOne, updateMany: FollowUp.updateMany,
     expertsFind: MedicalExpert.find, adminsFind: Admin.find };
   const caseId = oid(), tenantId = oid(), patientId = oid(), advisorId = oid(), plannerId = oid(), referralId = oid(), expertId = oid(), expertStaffId = oid(), otherExpertId = oid();
-  const row = { _id: caseId, tenantId, patientId, advisorId, plannerId, type: 'single', status: 'advisor', history: [],
+  const row = { _id: caseId, tenantId, patientId, advisorId, plannerId, type: 'single', status: 'advisor', clientRequest: '原问题', members: [], history: [],
     async save() { this.saved = true; } };
   let claimFilter;
   Case.findById = async () => row;
@@ -36,6 +36,9 @@ test('consultation links one existing patient referral and rejects duplicate fre
     const freeText = await call('referral', advisorId, { purpose: '另写一份', questions: '重复问题' });
     assert.equal(freeText.statusCode, 400);
     assert.equal(row.saved, undefined);
+    const edited = await call('edit', advisorId, { request: '核实后的咨询问题' });
+    assert.equal(edited.statusCode, 200);
+    assert.equal(row.clientRequest, '核实后的咨询问题');
     const linked = await call('referral', advisorId, { referralId: String(referralId) });
     assert.equal(linked.statusCode, 200);
     assert.equal(String(claimFilter.patientId), String(patientId));

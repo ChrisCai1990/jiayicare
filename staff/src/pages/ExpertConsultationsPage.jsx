@@ -20,6 +20,9 @@ export default function ExpertConsultationsPage({ embedded = false }) {
   const [slots, setSlots] = useState([])
   const [team, setTeam] = useState([])
   const [form, setForm] = useState({})
+  const [editingRequest, setEditingRequest] = useState(false)
+  const [requestDraft, setRequestDraft] = useState('')
+  const [showReferralChange, setShowReferralChange] = useState(false)
   const [members, setMembers] = useState([{ expertId: '', slotId: '' }])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -51,7 +54,8 @@ export default function ExpertConsultationsPage({ embedded = false }) {
     }).catch(e => setError(e.message))
   }, [])
   async function choose(row) {
-    setSelectedId(id(row)); setError(''); setForm(row.status === 'team_assignment' && !row.plannerId ? { plannerId: self } : {})
+    setSelectedId(id(row)); setError(''); setEditingRequest(false); setRequestDraft(row.clientRequest || ''); setShowReferralChange(false)
+    setForm(row.status === 'team_assignment' && !row.plannerId ? { plannerId: self } : row.referralId ? { referralId: id(row.referralId) } : {})
     setReferrals([])
     try { const result = await staffAPI.expertConsultationMaterials(id(row)); setReports(result.data || []) }
     catch (e) { setError(e.message); setReports([]) }
@@ -61,11 +65,11 @@ export default function ExpertConsultationsPage({ embedded = false }) {
       catch (e) { setError(e.message) }
       return
     }
-    if (row.status === 'advisor' && (id(row.advisorId) === self || staff?.role === 'superadmin')) {
+    if (['advisor', 'planner'].includes(row.status) && (id(row.advisorId) === self || staff?.role === 'superadmin')) {
       try { const result = await staffAPI.expertConsultationReferrals(id(row)); setReferrals(result.data || []) }
       catch (e) { setError(e.message) }
     }
-    if (row.status !== 'planner') return
+    if (row.status !== 'planner' || !(id(row.plannerId) === self || staff?.role === 'superadmin')) return
     try {
       const first = new Date()
       const [expertResult, slotsResult] = await Promise.all([
@@ -85,6 +89,14 @@ export default function ExpertConsultationsPage({ embedded = false }) {
   const set = key => value => setForm(current => ({ ...current, [key]: value }))
   const updateMember = (index, key, value) => setMembers(current => current.map((member, i) => i === index ? { ...member, [key]: value, ...(key === 'expertId' ? { slotId: '' } : {}) } : member))
   const slotOptions = staffId => slots.filter(slot => id(slot.staffId) === id(staffId) && (+new Date(slot.endAt) - +new Date(slot.startAt)) >= 15 * 60000 && (+new Date(slot.endAt) - +new Date(slot.startAt)) <= 30 * 60000)
+  const referralPicker = <div style={{ padding: 12, border: '1px solid #DDE8E1', borderRadius: 8, margin: '12px 0' }}>
+    <p>在客户档案的“转介”入口维护原转介信，这里只关联记录。所选专家须已开通本咨询类型、有效医护账号和报价。</p>
+    <p><a href={`/patients/${id(selected?.patientId)}?tab=referrals`}>打开客户转介记录</a></p>
+    <label>本次转介<select className="form-input" value={form.referralId || ''} onChange={e => set('referralId')(e.target.value)}><option value="">请选择可履约的外部医疗转介</option>{referrals.map(referral => <option key={id(referral)} value={id(referral)}>{referral.reason} · {referral.medicalExpertSnapshot?.name || '专家'} · {new Date(referral.createdAt).toLocaleDateString('zh-CN')}</option>)}</select></label>
+    {!referrals.length && <p>暂无可关联的转介。创建后返回这里，重新打开本咨询事项即可刷新列表。</p>}
+    {form.referralId && (() => { const referral = referrals.find(item => id(item) === form.referralId); return referral && <div style={{ padding: 10, background: '#F5F8F6', whiteSpace: 'pre-wrap' }}>目的：{referral.referralPurpose || '未单独填写'}<br/>问题：{referral.questionList || '见转介说明'}<br/>{referral.content}</div> })()}
+    <button className="btn btn-primary" disabled={busy || !form.referralId || (selected?.status === 'planner' && form.referralId === id(selected.referralId))} onClick={() => action('referral', { referralId: form.referralId })}>{selected?.status === 'planner' ? '确认更换转介' : '关联转介并提交规划师'}</button>
+  </div>
   return <div className="page-container" style={{ maxWidth: 1100 }}>
     {!embedded && <h1>专家咨询与 MDT</h1>}
     <p>健管收集资料 → 顾问关联客户已有转介 → 规划师按专家库和空档派发 → 专家书面回复 → 顾问协调 → 随访审核。</p>
@@ -111,7 +123,13 @@ export default function ExpertConsultationsPage({ embedded = false }) {
       <div className="card" style={{ padding: 18 }}>
         {!selected ? <p>选择一笔服务查看进度。</p> : <>
           <h3>{selected.type === 'mdt' ? 'MDT 多学科' : '单次专家'}咨询 · {stages[selected.status]}</h3>
-          <p>客户需求：{selected.clientRequest}</p>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}><p style={{ flex: 1 }}>客户需求：{selected.clientRequest}</p>{['team_assignment', 'intake', 'advisor', 'planner'].includes(selected.status) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setRequestDraft(selected.clientRequest || ''); setEditingRequest(value => !value) }}>修改需求</button>}</div>
+          {editingRequest && <div style={{ padding: 12, border: '1px solid #DDE8E1', borderRadius: 8, marginBottom: 12 }}>{textField('本次咨询问题', requestDraft, setRequestDraft)}<button type="button" className="btn btn-primary btn-sm" disabled={busy || !requestDraft.trim()} onClick={async () => { setBusy(true); setError(''); try { await staffAPI.expertConsultationAction(selectedId, 'edit', { request: requestDraft }); setEditingRequest(false); await load() } catch (e) { setError(e.message) } finally { setBusy(false) } }}>保存修改</button></div>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 10, margin: '12px 0 16px' }}>
+            <div style={{ padding: 12, border: '1px solid #DDE8E1', borderRadius: 8, background: selected.referralId ? '#F0F8F4' : '#FAFBFA' }}><b>转介信关联</b><div style={{ fontSize: 13, color: '#60776C', marginTop: 5 }}>{selected.referralId ? `已关联：${selected.referralId.reason}` : selected.status === 'intake' ? '待健管专员提交资料后，由健康顾问关联' : selected.status === 'team_assignment' ? '待服务团队分配和资料核实后关联' : '待健康顾问关联原转介记录'}</div></div>
+            <div style={{ padding: 12, border: '1px solid #DDE8E1', borderRadius: 8, background: selected.members?.length ? '#F0F8F4' : '#FAFBFA' }}><b>专家关联与排班</b><div style={{ fontSize: 13, color: '#60776C', marginTop: 5 }}>{selected.members?.length ? selected.members.map(member => member.expertId?.name || '已安排专家').join('、') : selected.status === 'planner' ? '当前由健康规划师选择专家和空档' : '转介关联后，由健康规划师选择专家和空档'}</div></div>
+          </div>
+          {selected.status === 'intake' && !manager && <p style={{ color: '#60776C', fontSize: 13 }}>当前由负责健管专员核实资料并提交；之后健康顾问可关联转介信。</p>}
           <p><a href={`/patients/${id(selected.patientId)}`}>查看客户档案与已上传报告</a></p>
           {selected.desiredExpertId && <p>客户指定专家编号：{id(selected.desiredExpertId)}</p>}
           {selected.materialSummary && <p>资料摘要：{selected.materialSummary}</p>}
@@ -129,7 +147,8 @@ export default function ExpertConsultationsPage({ embedded = false }) {
 
           {selected.status === 'intake' && manager && <div><h4>收集资料</h4>{textField('已核实资料及待补事项', form.summary || '', set('summary'))}<b>关联客户已有报告</b>{reports.map(report => <label key={id(report)} style={{ display: 'block', margin: '6px 0' }}><input type="checkbox" checked={(form.reportIds || []).includes(id(report))} onChange={e => set('reportIds')(e.target.checked ? [...(form.reportIds || []), id(report)] : (form.reportIds || []).filter(value => value !== id(report)))} /> {report.title || '未命名报告'} {report.checkDate ? time(report.checkDate) : ''}</label>)}<button className="btn btn-primary" disabled={busy} onClick={() => action('intake', { summary: form.summary, reportIds: form.reportIds || [] })}>提交给健康顾问</button></div>}
           {!!selected.materialReportIds?.length && <p>本次关联报告：{reports.filter(report => selected.materialReportIds.some(value => id(value) === id(report))).map(report => report.title || '未命名报告').join('、')}</p>}
-          {selected.status === 'advisor' && advisor && <div><h4>关联已有转介信</h4><p>请在客户档案的“转介”入口撰写正式转介信。这里直接引用原记录，不再另写一份。转介所选专家须已开通本咨询类型、有效医护账号和报价。</p><p><a href={`/patients/${id(selected.patientId)}?tab=referrals`}>打开客户转介记录并发起转介</a></p><label>选择本次转介<select className="form-input" value={form.referralId || ''} onChange={e => set('referralId')(e.target.value)}><option value="">请选择可履约的外部医疗转介</option>{referrals.map(referral => <option key={id(referral)} value={id(referral)}>{referral.reason} · {referral.medicalExpertSnapshot?.name || '专家'} · {new Date(referral.createdAt).toLocaleDateString('zh-CN')}</option>)}</select></label>{!referrals.length && <p>暂无可关联的转介。创建后返回这里，重新打开本咨询事项即可刷新列表。</p>}{form.referralId && (() => { const referral = referrals.find(item => id(item) === form.referralId); return referral && <div style={{ padding: 10, background: '#F5F8F6', whiteSpace: 'pre-wrap' }}>目的：{referral.referralPurpose || '未单独填写'}<br/>问题：{referral.questionList || '见转介说明'}<br/>{referral.content}</div> })()}<button className="btn btn-primary" disabled={busy || !form.referralId} onClick={() => action('referral', { referralId: form.referralId })}>关联转介并提交规划师</button></div>}
+          {selected.status === 'advisor' && advisor && <div><h4>关联已有转介信</h4>{referralPicker}</div>}
+          {selected.status === 'planner' && advisor && <div><button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowReferralChange(value => !value)}>{showReferralChange ? '收起' : '更换关联转介信'}</button>{showReferralChange && referralPicker}</div>}
           {selected.status === 'planner' && planner && <div><h4>根据专家库与排班确认人员</h4><p>每位专家本次占用约 15–20 分钟；单次咨询须安排健管专员，MDT 须安排健康顾问覆盖会诊时段。没有空档请先到“我的排班”维护。</p>
             {members.map((member, index) => { const expert = experts.find(x => id(x) === member.expertId); return <div key={index} style={{ padding: 10, border: '1px solid #E1EAE6', borderRadius: 8, marginBottom: 8 }}>
               <label>专家 {index + 1} <select className="form-input" value={member.expertId} onChange={e => updateMember(index, 'expertId', e.target.value)}><option value="">请选择专家库人员</option>{experts.filter(x => { const fee = x[selected.type === 'mdt' ? 'mdtFee' : 'singleConsultationFee']; return x.serviceModes?.includes(selected.type === 'mdt' ? 'mdt' : 'single_consultation') && fee != null && Number(fee) <= 200 }).map(x => <option key={id(x)} value={id(x)}>{x.name} · {x.title}</option>)}</select></label>
