@@ -76,6 +76,63 @@ router.post('/batch', async (req, res) => {
   res.status(201).json({ success: true, data: { count: rows.length, skipped, firstStartAt: rows[0].startAt } });
 });
 
+router.post('/day-plan', async (req, res) => {
+  const date = String(req.body?.date || '');
+  const windows = req.body?.windows;
+  const mode = req.body?.segmentMinutes;
+  const status = req.body?.status === 'unavailable' ? 'unavailable' : 'available';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Array.isArray(windows) || windows.length < 1 || windows.length > 3 ||
+      !['whole', 20, 30].includes(mode) || (status === 'unavailable' && mode !== 'whole'))
+    return fail(res, 400, '请选择当天的上午、下午或晚上时间，并确认分段方式');
+  const staffId = req.body?.staffId || req.staff._id;
+  if (!mongoose.isValidObjectId(staffId)) return fail(res, 400, '人员编号无效');
+  if (String(staffId) !== String(req.staff._id) && !canViewTeam(req.staff)) return fail(res, 403, '无权维护其他人员排班');
+  const staff = await Admin.findOne({ _id: staffId, tenantId: req.staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
+  if (!staff) return fail(res, 404, '人员不存在或已停用');
+  const localDay = value => value.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+  const selected = [], seen = new Set();
+  const step = mode === 'whole' ? 0 : mode * 60000;
+  const now = Date.now();
+  for (const window of windows) {
+    const period = window?.period;
+    const startAt = new Date(window?.startAt), endAt = new Date(window?.endAt);
+    const duration = +endAt - +startAt;
+    if (!['morning', 'afternoon', 'evening'].includes(period) || seen.has(period) || !Number.isFinite(+startAt) || !Number.isFinite(+endAt) ||
+        localDay(startAt) !== date || localDay(endAt) !== date || duration < 15 * 60000 || duration > 12 * 3600000 ||
+        +startAt > now + 180 * 86400000 || (step && duration % step !== 0))
+      return fail(res, 400, '请检查同一天各时段的起止时间；分段时间须能被20或30分钟整除');
+    seen.add(period);
+    selected.push({ period, startAt, endAt, duration });
+  }
+  selected.sort((a, b) => a.startAt - b.startAt);
+  if (selected.some((item, index) => index && item.startAt < selected[index - 1].endAt))
+    return fail(res, 400, '上午、下午、晚上时间不能互相重叠');
+  const rows = [];
+  let skippedPast = 0;
+  for (const window of selected) {
+    if (mode === 'whole') {
+      if (+window.startAt < now) { skippedPast += 1; continue; }
+      rows.push({ startAt: window.startAt, endAt: window.endAt });
+      continue;
+    }
+    const total = window.duration / step;
+    const skipped = Math.min(total, Math.max(0, Math.ceil((now - +window.startAt) / step)));
+    skippedPast += skipped;
+    for (let index = skipped; index < total; index++) {
+      rows.push({ startAt: new Date(+window.startAt + index * step), endAt: new Date(+window.startAt + (index + 1) * step) });
+    }
+  }
+  if (!rows.length) return fail(res, 400, '所选时间都已过去，请选择未来的空档');
+  const existing = await StaffAvailability.find({ tenantId: req.staff.tenantId, staffId,
+    startAt: { $lt: rows.at(-1).endAt }, endAt: { $gt: rows[0].startAt } }).select('startAt endAt').lean();
+  const available = rows.filter(row => !existing.some(slot => slot.startAt < row.endAt && slot.endAt > row.startAt));
+  if (!available.length) return fail(res, 409, '所选时间均与现有排班或预约重叠，未新增空档');
+  const records = available.map(row => ({ ...row, tenantId: req.staff.tenantId, staffId, status,
+    source: String(staffId) === String(req.staff._id) ? 'self' : 'planner', updatedBy: req.staff._id }));
+  await StaffAvailability.insertMany(records);
+  res.status(201).json({ success: true, data: { count: records.length, skippedPast, skippedExisting: rows.length - available.length } });
+});
+
 router.post('/copy-week', async (req, res) => {
   const targetStart = new Date(req.body?.targetWeekStart);
   if (!Number.isFinite(+targetStart)) return fail(res, 400, '请选择要复制到的周');

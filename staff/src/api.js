@@ -100,6 +100,7 @@ export const staffAPI = {
   teamAvailability: params => req('/staff/availability/team?' + qs(params)),
   createAvailability: data => req('/staff/availability', { method: 'POST', body: JSON.stringify(data) }),
   createAvailabilityBatch: data => req('/staff/availability/batch', { method: 'POST', body: JSON.stringify(data) }),
+  createAvailabilityDayPlan: data => req('/staff/availability/day-plan', { method: 'POST', body: JSON.stringify(data) }),
   copyPreviousWeekAvailability: data => req('/staff/availability/copy-week', { method: 'POST', body: JSON.stringify(data) }),
   deleteAvailability: id => req('/staff/availability/' + encodeURIComponent(id), { method: 'DELETE' }),
   inventory: () => req('/staff/inventory'),

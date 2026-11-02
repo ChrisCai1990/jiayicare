@@ -15,6 +15,11 @@ const localDateTime = (date, time) => new Date(`${date}T${time}:00`)
 const clock = value => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 const labels = { available: '可预约', booked: '已预约', unavailable: '不可预约' }
 const weekDays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+const dayPeriods = [
+  { key: 'morning', label: '上午', startTime: '09:00', endTime: '12:00', enabled: true },
+  { key: 'afternoon', label: '下午', startTime: '13:00', endTime: '17:00', enabled: true },
+  { key: 'evening', label: '晚上', startTime: '18:00', endTime: '21:00', enabled: false },
+]
 const roleNames = { specialist: '专科专家', familyDoctor: '健康顾问', healthManager: '健管专员', healthPlanner: '健康规划师',
   nutritionist: '营养师', rehabSpecialist: '运动复健师', psychologist: '心理咨询师', tcmDoctor: '中医师', medicalAssistant: '就医专员',
   superadmin: '管理员', manager: '管理员' }
@@ -29,7 +34,7 @@ export default function AvailabilityPage() {
   const [target, setTarget] = useState('')
   const [team, setTeam] = useState({ staff: [], slots: [] })
   const [ownSlots, setOwnSlots] = useState([])
-  const [form, setForm] = useState({ date: initialDate(), startTime: '09:00', endTime: '10:00', status: 'available', segmentMinutes: '20' })
+  const [form, setForm] = useState({ date: initialDate(), periods: dayPeriods, status: 'available', segmentMinutes: '20' })
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -59,14 +64,24 @@ export default function AvailabilityPage() {
   const slots = view === 'team' ? team.slots.filter(slot => String(slot.staffId) === target) : ownSlots
   const slotsOn = date => slots.filter(slot => dateKey(slot.startAt) === date).sort((a, b) => new Date(a.startAt) - new Date(b.startAt))
   const selectedDates = Array.from({ length: 7 }, (_, i) => addDays(week, i))
-  const previewStart = localDateTime(form.date, form.startTime)
-  const previewEnd = localDateTime(form.date, form.endTime)
-  const previewStep = Number(form.segmentMinutes) * 60000
-  const previewTotal = previewStep && form.status === 'available' && (+previewEnd - +previewStart) > 0 && (+previewEnd - +previewStart) % previewStep === 0
-    ? (+previewEnd - +previewStart) / previewStep : 0
-  const previewSkipped = previewTotal ? Math.max(0, Math.ceil((nowMs - +previewStart) / previewStep)) : 0
-  const previewCount = Math.max(0, previewTotal - previewSkipped)
-  const effectivePreviewStart = new Date(+previewStart + previewSkipped * previewStep)
+  const whole = form.segmentMinutes === 'whole' || form.status === 'unavailable'
+  const preview = form.periods.filter(period => period.enabled).map(period => {
+    const startAt = localDateTime(form.date, period.startTime)
+    const endAt = localDateTime(form.date, period.endTime)
+    const duration = +endAt - +startAt
+    const step = Number(form.segmentMinutes) * 60000
+    const valid = Number.isFinite(duration) && duration >= 15 * 60000 && duration <= 12 * 3600000 &&
+      (whole || duration % step === 0)
+    const total = valid ? whole ? 1 : duration / step : 0
+    const skipped = valid ? whole ? (startAt < nowMs ? 1 : 0) : Math.min(total, Math.max(0, Math.ceil((nowMs - +startAt) / step))) : 0
+    return { ...period, startAt, endAt, valid, count: total - skipped, skipped }
+  })
+  const previewCount = preview.reduce((sum, period) => sum + period.count, 0)
+  const previewSkipped = preview.reduce((sum, period) => sum + period.skipped, 0)
+
+  function updatePeriod(key, field, value) {
+    setForm(current => ({ ...current, periods: current.periods.map(period => period.key === key ? { ...period, [field]: value } : period) }))
+  }
 
   function chooseWeek(date) {
     setWeek(date)
@@ -83,32 +98,21 @@ export default function AvailabilityPage() {
   async function save(event) {
     event.preventDefault(); setError(''); setNotice('')
     if (view === 'team' && !target) { setError('请先选择要排班的人员'); return }
-    const startAt = localDateTime(form.date, form.startTime)
-    const endAt = localDateTime(form.date, form.endTime)
-    const minutes = (+endAt - +startAt) / 60000
-    if (!Number.isFinite(minutes) || minutes < 15 || minutes > 720) {
-      setError('请选择同一天的时间，每段至少15分钟、最多12小时。例如 09:00 到 09:30。')
-      return
-    }
-    const whole = form.segmentMinutes === 'whole' || form.status === 'unavailable'
-    if (whole && startAt < new Date()) { setError('整段时间须从未来开始；若是分段排班，系统可以自动跳过今天已经开始的空档。'); return }
-    if (!whole) {
-      const step = Number(form.segmentMinutes) * 60000
-      if ((+endAt - +startAt) % step !== 0) { setError('起止时间要能完整分成20分钟或30分钟，例如 09:00 到 10:00 可以分成3个20分钟空档。'); return }
-      if (+endAt <= Date.now()) { setError('这段时间已全部过去，请选择未来的空档'); return }
-    }
+    if (!preview.length) { setError('请至少勾选上午、下午或晚上中的一段'); return }
+    if (preview.some(period => !period.valid)) { setError('请检查各时段起止时间：每段至少15分钟、最多12小时，分段时间须能被20或30分钟整除'); return }
+    const ordered = [...preview].sort((a, b) => a.startAt - b.startAt)
+    if (ordered.some((period, index) => index && period.startAt < ordered[index - 1].endAt)) { setError('上午、下午、晚上时间不能互相重叠'); return }
+    if (!previewCount) { setError('勾选的时间都已过去，请选择未来的空档'); return }
     setBusy(true)
     try {
-      const payload = { startAt: startAt.toISOString(), endAt: endAt.toISOString(), status: form.status,
+      const payload = { date: form.date, status: form.status, segmentMinutes: whole ? 'whole' : Number(form.segmentMinutes),
+        windows: ordered.map(period => ({ period: period.key, startAt: period.startAt.toISOString(), endAt: period.endAt.toISOString() })),
         ...(view === 'team' ? { staffId: target } : {}) }
-      if (whole) {
-        await staffAPI.createAvailability(payload)
-        setNotice('已添加1个整段时间')
-      } else {
-        const result = await staffAPI.createAvailabilityBatch({ ...payload, segmentMinutes: Number(form.segmentMinutes) })
-        const saved = result.data || {}
-        setNotice(`已添加 ${saved.count} 个${form.segmentMinutes}分钟空档${saved.skipped ? `，自动跳过 ${saved.skipped} 个已开始的时段，实际从 ${clock(saved.firstStartAt)} 开始` : ''}`)
-      }
+      const result = await staffAPI.createAvailabilityDayPlan(payload)
+      const saved = result.data || {}
+      setNotice(`已添加 ${saved.count} 个${whole ? '整段' : `${form.segmentMinutes}分钟`}空档` +
+        `${saved.skippedPast ? `，跳过 ${saved.skippedPast} 个已开始的时段` : ''}` +
+        `${saved.skippedExisting ? `，保留 ${saved.skippedExisting} 个已有排班或预约` : ''}`)
       await load()
     } catch (e) { setError(e.message) }
     finally { setBusy(false) }
@@ -134,7 +138,8 @@ export default function AvailabilityPage() {
 
   return <div className="page-container" style={{ maxWidth: 1100 }}>
     <h1>岗位排班</h1>
-    <p>按周安排时间，在月历中查看整月。专家可以自己填写，健管专员和健康规划师也可以为同机构人员代排。已预约时间不能直接删除。</p>
+    <p>按周安排时间，在月历中查看整月。专家可以自己填写，健管专员和健康规划师也可以为同机构人员代排。</p>
+    <p>这里填写的是<strong>可预约空档</strong>，并非客户预约。专家咨询或 MDT 订单完成转介后，健康规划师在“专家咨询”工作台选定人员和时间并派单，空档才会显示为“已预约”。目前其他服务的预约尚未统一写入此排班。</p>
     {error && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
     {notice && <p role="status" style={{ color: '#176348' }}>{notice}</p>}
     {canTeam && <div className="card" style={{ padding: 18, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 16 }}>
@@ -162,18 +167,26 @@ export default function AvailabilityPage() {
     </div>
     <div className="card" style={{ padding: 18 }}>
       <h3>{week} 至 {addDays(week, 6)} 的安排</h3>
-      <p>先选当天可用于咨询的起止时间，再选每20分钟、每30分钟或整段保存。专家会诊通常选20或30分钟；健康顾问需要覆盖全程时可选整段。</p>
-      <form onSubmit={save} style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'end', marginBottom: 16 }}>
-        <label>星期／日期 <select className="form-input" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}>{selectedDates.map((date, i) => <option key={date} value={date}>{weekDays[i]} {date}</option>)}</select></label>
-        <label>开始 <input className="form-input" required type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} /></label>
-        <label>结束 <input className="form-input" required type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} /></label>
-        <label>分段方式 <select className="form-input" value={form.segmentMinutes} disabled={form.status === 'unavailable'} onChange={e => setForm({ ...form, segmentMinutes: e.target.value })}><option value="20">每20分钟一段</option><option value="30">每30分钟一段</option><option value="whole">整段时间</option></select></label>
-        <label>状态 <select className="form-input" value={form.status} onChange={e => setForm({ ...form, status: e.target.value, segmentMinutes: e.target.value === 'unavailable' ? 'whole' : form.segmentMinutes })}><option value="available">可预约</option><option value="unavailable">不可预约</option></select></label>
-        <button className="btn btn-primary" disabled={busy || (view === 'team' && !target)}>{busy ? '处理中…' : '添加到本周'}</button>
+      <p>选择一天，分别填写上午、下午、晚上可安排的时间。休息时段留空；三段可一次保存。专家通常按20或30分钟分段，健康顾问覆盖全程可选整段。</p>
+      <form onSubmit={save} style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'end', marginBottom: 12 }}>
+          <label>星期／日期 <select className="form-input" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}>{selectedDates.map((date, i) => <option key={date} value={date}>{weekDays[i]} {date}</option>)}</select></label>
+          <label>分段方式 <select className="form-input" value={form.segmentMinutes} disabled={form.status === 'unavailable'} onChange={e => setForm({ ...form, segmentMinutes: e.target.value })}><option value="20">每20分钟一段</option><option value="30">每30分钟一段</option><option value="whole">整段时间</option></select></label>
+          <label>状态 <select className="form-input" value={form.status} onChange={e => setForm({ ...form, status: e.target.value, segmentMinutes: e.target.value === 'unavailable' ? 'whole' : form.segmentMinutes })}><option value="available">可预约</option><option value="unavailable">不可预约</option></select></label>
+        </div>
+        {form.periods.map(period => {
+          const result = preview.find(item => item.key === period.key)
+          return <div key={period.key} style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', padding: '12px 0', borderTop: '1px solid #E1EAE6' }}>
+            <label style={{ minWidth: 90 }}><input type="checkbox" checked={period.enabled} onChange={e => updatePeriod(period.key, 'enabled', e.target.checked)} /> {period.label}</label>
+            <label>开始 <input className="form-input" type="time" required={period.enabled} disabled={!period.enabled} value={period.startTime} onChange={e => updatePeriod(period.key, 'startTime', e.target.value)} /></label>
+            <label>结束 <input className="form-input" type="time" required={period.enabled} disabled={!period.enabled} value={period.endTime} onChange={e => updatePeriod(period.key, 'endTime', e.target.value)} /></label>
+            {period.enabled && <span style={{ color: result?.valid && result.count ? '#176348' : '#B42318' }}>{!result?.valid ? '请检查时间或分段方式' : result.count
+              ? `预计新增 ${result.count} 段${result.skipped ? `，跳过已开始的 ${result.skipped} 段` : ''}` : '此时段已过去'}</span>}
+          </div>
+        })}
+        <button className="btn btn-primary" disabled={busy || (view === 'team' && !target)}>{busy ? '处理中…' : '一次保存当天安排'}</button>
       </form>
-      {form.status === 'available' && form.segmentMinutes !== 'whole' && <p style={{ color: previewCount ? '#176348' : '#B42318' }}>{previewCount
-        ? `将生成 ${previewCount} 个${form.segmentMinutes}分钟空档${previewSkipped ? `，跳过 ${previewSkipped} 个已开始的时段` : ''}，从 ${clock(effectivePreviewStart)} 到 ${clock(previewEnd)}。`
-        : previewTotal ? '这段时间已全部过去，请选择未来的空档。' : '当前起止时间无法按所选时长完整分段，请调整结束时间。'}</p>}
+      {!!preview.length && <p style={{ color: previewCount ? '#176348' : '#B42318' }}>本次预计新增 {previewCount} 个空档{previewSkipped ? `，跳过已开始的 ${previewSkipped} 个时段` : ''}。已有相同时间的排班或预约会保留，不会重复添加。</p>}
       <button className="btn btn-secondary" type="button" disabled={busy || (view === 'team' && !target)} onClick={copyPreviousWeek}>复制上一周到本周</button>
       <p style={{ color: '#5A6B63' }}>复制前请选中目标周。若本周已有重叠时间，系统会提示冲突，不覆盖原排班。</p>
       {selectedDates.flatMap(date => slotsOn(date).map(slot => <div key={slot._id} style={{ borderTop: '1px solid #E1EAE6', padding: '10px 0', display: 'flex', justifyContent: 'space-between', gap: 12 }}>

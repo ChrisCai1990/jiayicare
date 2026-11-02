@@ -134,3 +134,49 @@ test('today’s batch skips elapsed slots and saves only future segments', async
   assert.equal(+saved[0].startAt, +startAt + 90 * 60000);
   assert.equal(+overlapFilter.endAt.$gt, +saved[0].startAt);
 });
+
+test('one day plan creates morning, afternoon and evening slots with meal breaks', async t => {
+  const originals = { findOne: Admin.findOne, find: StaffAvailability.find, insertMany: StaffAvailability.insertMany };
+  t.after(() => { Admin.findOne = originals.findOne; StaffAvailability.find = originals.find; StaffAvailability.insertMany = originals.insertMany; });
+  const tenantId = oid(), managerId = oid(), expertId = oid();
+  const date = new Date(Date.now() + 3 * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+  const window = (period, start, end) => ({ period, startAt: `${date}T${start}:00+08:00`, endAt: `${date}T${end}:00+08:00` });
+  let saved, existingFilter;
+  Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: expertId }) }) });
+  StaffAvailability.find = filter => { existingFilter = filter; return { select: () => ({ lean: async () => [] }) }; };
+  StaffAvailability.insertMany = async rows => { saved = rows; };
+  const res = response();
+  await handler('post', '/day-plan')({ staff: { _id: managerId, tenantId, role: 'healthManager' }, body: {
+    staffId: String(expertId), date, segmentMinutes: 20, status: 'available',
+    windows: [window('morning', '09:00', '12:00'), window('afternoon', '13:00', '17:00'), window('evening', '18:00', '21:00')],
+  } }, res);
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.data.count, 30);
+  assert.equal(saved.length, 30);
+  assert.equal(saved[8].endAt.toISOString(), new Date(`${date}T12:00:00+08:00`).toISOString());
+  assert.equal(saved[9].startAt.toISOString(), new Date(`${date}T13:00:00+08:00`).toISOString());
+  assert.equal(String(existingFilter.tenantId), String(tenantId));
+});
+
+test('day plan preserves existing afternoon appointments and fills the morning', async t => {
+  const originals = { findOne: Admin.findOne, find: StaffAvailability.find, insertMany: StaffAvailability.insertMany };
+  t.after(() => { Admin.findOne = originals.findOne; StaffAvailability.find = originals.find; StaffAvailability.insertMany = originals.insertMany; });
+  const tenantId = oid(), staffId = oid();
+  const date = new Date(Date.now() + 3 * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+  const instant = time => new Date(`${date}T${time}:00+08:00`);
+  let saved;
+  Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: staffId }) }) });
+  StaffAvailability.find = () => ({ select: () => ({ lean: async () => [{ startAt: instant('13:00'), endAt: instant('17:00') }] }) });
+  StaffAvailability.insertMany = async rows => { saved = rows; };
+  const res = response();
+  await handler('post', '/day-plan')({ staff: { _id: staffId, tenantId, role: 'specialist' }, body: {
+    date, segmentMinutes: 30, status: 'available', windows: [
+      { period: 'morning', startAt: instant('09:00').toISOString(), endAt: instant('12:00').toISOString() },
+      { period: 'afternoon', startAt: instant('13:00').toISOString(), endAt: instant('17:00').toISOString() },
+    ],
+  } }, res);
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.data.count, 6);
+  assert.equal(res.body.data.skippedExisting, 8);
+  assert.equal(saved.every(row => row.endAt <= instant('12:00')), true);
+});
