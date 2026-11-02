@@ -891,6 +891,9 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
       }
       const res = await messagesAPI.send(role, text || '图片记录', extra);
       if (!res?.success) throw new Error(res?.message || '消息未发送成功');
+      if (foodImages.length && (res.data?.imageUrls?.length || 0) !== foodImages.length) {
+        throw new Error('服务端未确认全部照片，请勿认为已发送成功');
+      }
       pollRef.current?.invalidate();
       if (res?.data) setMsgs((prev) => (prev.some((m) => m._id === res.data._id) ? prev : [...prev, res.data]));
       setUnreadAnchorId('');
