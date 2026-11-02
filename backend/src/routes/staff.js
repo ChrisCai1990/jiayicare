@@ -63,6 +63,7 @@ const MedicalInstitution = require('../models/MedicalInstitution');
 const MedicalDepartment = require('../models/MedicalDepartment');
 const MedicalExpert = require('../models/MedicalExpert');
 const MedicalResourceKnowledge = require('../models/MedicalResourceKnowledge');
+const { knowledgeKindFilter } = require('../utils/medicalResourcePaths');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const Message        = require('../models/Message');
 const MemberLevel    = require('../models/MemberLevel');
@@ -3717,14 +3718,27 @@ router.get('/medical-resources', staffAuth, async (req, res) => {
 router.get('/medical-resource-knowledge', staffAuth, checkPermission('medical_resources', 'view'), async (req, res) => {
   const q = String(req.query.q || '').trim();
   const kind = String(req.query.kind || '').trim();
+  const path = String(req.query.path || '').trim();
+  const selectedKind = knowledgeKindFilter(path, kind);
   const filter = {
     status: 'published',
-    ...(kind ? { kind } : {}),
+    ...(selectedKind ? { kind: selectedKind } : {}),
     $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
   };
   if (q) {
     const keyword = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     filter.$and = [{ $or: [{ title: keyword }, { tags: keyword }, { applicableScenarios: keyword }, { summary: keyword }] }];
+    if (path === 'contact') {
+      const hospitals = await MedicalInstitution.find({ name: keyword }).select('_id').lean();
+      filter.$and[0].$or.push({ institutionId: { $in: hospitals.map(item => item._id) } }, { 'appointmentInfo.campus': keyword }, { 'appointmentInfo.officialPlatform': keyword }, { 'appointmentInfo.hospitalPhone': keyword }, { 'appointmentInfo.internalContactPhone': keyword });
+    } else if (path === 'problem') {
+      const [hospitals, departments, experts] = await Promise.all([
+        MedicalInstitution.find({ name: keyword }).select('_id').lean(),
+        MedicalDepartment.find({ name: keyword }).select('_id').lean(),
+        MedicalExpert.find({ name: keyword }).select('_id').lean(),
+      ]);
+      filter.$and[0].$or.push({ institutionId: { $in: hospitals.map(item => item._id) } }, { departmentId: { $in: departments.map(item => item._id) } }, { expertId: { $in: experts.map(item => item._id) } });
+    }
   }
   const rows = await MedicalResourceKnowledge.find(filter)
     .select('kind title institutionId departmentId expertId tags applicableScenarios summary recommendationBasis appointmentInfo precautions serviceBoundary riskNotice version updatedAt expiresAt')

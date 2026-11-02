@@ -357,6 +357,7 @@ const pickFields = (body, fields) => Object.fromEntries(fields.filter(key => Obj
 const institutionFields = ['name','aliases','level','nature','region','address','contactName','contactTitle','phone','cooperationStatus','status'];
 const departmentFields = ['institutionId','campus','name','specialties','introduction','status'];
 const KNOWLEDGE_KINDS = new Set(['department_advantage', 'expert_recommendation', 'appointment_rule', 'visit_guidance', 'service_case']);
+const { validateAppointmentContact, knowledgeKindFilter } = require('../utils/medicalResourcePaths');
 const cleanText = (value, max = 4000) => String(value || '').trim().slice(0, max);
 const cleanKnowledgePayload = body => ({
   kind: cleanText(body.kind, 50),
@@ -369,6 +370,14 @@ const cleanKnowledgePayload = body => ({
   summary: cleanText(body.summary, 600),
   recommendationBasis: cleanText(body.recommendationBasis, 4000),
   appointmentInfo: {
+    serviceType: cleanText(body.appointmentInfo?.serviceType, 50),
+    campus: cleanText(body.appointmentInfo?.campus, 100),
+    officialPlatform: cleanText(body.appointmentInfo?.officialPlatform, 500),
+    hospitalPhone: cleanText(body.appointmentInfo?.hospitalPhone, 100),
+    internalContactName: cleanText(body.appointmentInfo?.internalContactName, 100),
+    internalContactPhone: cleanText(body.appointmentInfo?.internalContactPhone, 100),
+    bookingSteps: cleanText(body.appointmentInfo?.bookingSteps, 2000),
+    verifiedAt: body.appointmentInfo?.verifiedAt ? new Date(body.appointmentInfo.verifiedAt) : null,
     channels: cleanList(body.appointmentInfo?.channels),
     advanceDays: cleanText(body.appointmentInfo?.advanceDays, 100),
     materials: cleanList(body.appointmentInfo?.materials),
@@ -384,6 +393,7 @@ const cleanKnowledgePayload = body => ({
 async function validateKnowledgeLinks(payload) {
   if (!payload.kind || !KNOWLEDGE_KINDS.has(payload.kind) || !payload.title) throw new Error('请填写有效的资源类型和标题');
   if (payload.expiresAt && Number.isNaN(payload.expiresAt.getTime())) throw new Error('复核截止日期格式无效');
+  validateAppointmentContact(payload);
   const [institution, department, expert] = await Promise.all([
     payload.institutionId ? MedicalInstitution.findById(payload.institutionId).select('_id').lean() : null,
     payload.departmentId ? MedicalDepartment.findById(payload.departmentId).select('_id institutionId').lean() : null,
@@ -475,12 +485,30 @@ router.patch('/medical-experts/:id/toggle', adminAuth, async (req, res) => {
 
 // ── 就医资源知识条目：与医院/科室/专家基础档案分离，供团队引用和 AI 检索 ──
 router.get('/medical-resource-knowledge', adminAuth, async (req, res) => {
-  const { status = '', kind = '', q = '' } = req.query;
-  const filter = { ...(status ? { status } : {}), ...(kind ? { kind } : {}) };
+  const { status = '', kind = '', path = '', q = '' } = req.query;
+  const selectedKind = knowledgeKindFilter(path, kind);
+  const filter = { ...(status ? { status } : {}), ...(selectedKind ? { kind: selectedKind } : {}) };
   const keywordText = String(q || '').trim();
   if (keywordText) {
     const keyword = new RegExp(keywordText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     filter.$or = [{ title: keyword }, { tags: keyword }, { applicableScenarios: keyword }, { summary: keyword }];
+    if (path === 'contact') {
+      const hospitals = await MedicalInstitution.find({ name: keyword }).select('_id').lean();
+      filter.$or.push(
+        { institutionId: { $in: hospitals.map(item => item._id) } },
+        { 'appointmentInfo.campus': keyword },
+        { 'appointmentInfo.officialPlatform': keyword },
+        { 'appointmentInfo.hospitalPhone': keyword },
+        { 'appointmentInfo.internalContactPhone': keyword },
+      );
+    } else if (path === 'problem') {
+      const [hospitals, departments, experts] = await Promise.all([
+        MedicalInstitution.find({ name: keyword }).select('_id').lean(),
+        MedicalDepartment.find({ name: keyword }).select('_id').lean(),
+        MedicalExpert.find({ name: keyword }).select('_id').lean(),
+      ]);
+      filter.$or.push({ institutionId: { $in: hospitals.map(item => item._id) } }, { departmentId: { $in: departments.map(item => item._id) } }, { expertId: { $in: experts.map(item => item._id) } });
+    }
   }
   const rows = await MedicalResourceKnowledge.find(filter).populate('institutionId', 'name').populate('departmentId', 'name campus').populate('expertId', 'name title').populate('ownerId', 'name title').populate('reviewedBy', 'name title').sort({ updatedAt: -1 }).limit(500).lean();
   res.json({ success: true, data: rows });
@@ -515,6 +543,14 @@ router.patch('/medical-resource-knowledge/:id/submit', adminAuth, async (req, re
   const item = await MedicalResourceKnowledge.findById(req.params.id);
   if (!item) return res.status(404).json({ success: false, message: '资源知识条目不存在' });
   if (!['draft', 'returned'].includes(item.status)) return res.status(409).json({ success: false, message: '当前状态不能送审' });
+  if (item.kind === 'appointment_rule') {
+    try {
+      const payload = cleanKnowledgePayload(item.toObject());
+      await validateKnowledgeLinks(payload);
+      validateAppointmentContact(payload, { forPublication: true });
+    }
+    catch (err) { return res.status(400).json({ success: false, message: err.message }); }
+  }
   item.status = 'pending_review'; item.submittedAt = new Date(); item.reviewNote = '';
   item.auditLog.push({ action: 'submitted', note: cleanText(req.body?.note, 1000), actorId: req.admin._id, version: item.version });
   await item.save();
@@ -527,6 +563,13 @@ router.patch('/medical-resource-knowledge/:id/review', adminAuth, async (req, re
   if (!item) return res.status(404).json({ success: false, message: '资源知识条目不存在' });
   if (item.status !== 'pending_review') return res.status(409).json({ success: false, message: '当前条目不在待审核状态' });
   if (!['publish', 'return'].includes(action)) return res.status(400).json({ success: false, message: '审核动作无效' });
+  if (action === 'publish' && item.kind === 'appointment_rule') {
+    try {
+      const payload = cleanKnowledgePayload(item.toObject());
+      await validateKnowledgeLinks(payload);
+      validateAppointmentContact(payload, { forPublication: true });
+    } catch (err) { return res.status(400).json({ success: false, message: err.message }); }
+  }
   item.status = action === 'publish' ? 'published' : 'returned';
   item.reviewedAt = new Date(); item.reviewedBy = req.admin._id; item.reviewNote = cleanText(req.body?.note, 1000);
   if (action === 'publish') item.publishedAt = new Date();
@@ -550,7 +593,7 @@ router.post('/medical-resource-knowledge/:id/revise', adminAuth, async (req, res
     if (!source) return res.status(404).json({ success: false, message: '资源知识条目不存在' });
     if (source.status !== 'archived') return res.status(409).json({ success: false, message: '仅已归档条目可新建修订版本' });
     const payload = cleanKnowledgePayload(source.toObject());
-    await validateKnowledgeLinks(payload);
+    if (source.kind !== 'appointment_rule') await validateKnowledgeLinks(payload);
     const item = await MedicalResourceKnowledge.create({
       ...payload,
       ownerId: req.admin._id,
