@@ -34,6 +34,15 @@ const ALL_NAV = [
   { label: '个人中心',     icon: 'profile', path: '/profile',       roles: [] },
 ]
 
+const PRIMARY_NAV_PATHS = ['/home', '/service-assistant', '/patients', '/notifications', '/profile']
+const NAV_GROUPS = [
+  { id: 'care', label: '会员服务', paths: ['/followups', '/plans', '/reports', '/service-records', '/expert-consultations', '/daily-checkin'] },
+  { id: 'resources', label: '资源与推送', paths: ['/medical-resource-knowledge', '/specialty-library', '/knowledge', '/questionnaires', '/products', '/inventory'] },
+  { id: 'operations', label: '运营协作', paths: ['/commission', '/marketing', '/visitor-leads', '/team', '/availability', '/operations'] },
+]
+
+const isCurrentPath = (currentPath, path) => currentPath === path || currentPath.startsWith(path + '/')
+
 export default function Layout() {
   const { staff } = useStaff()
   return <NotificationSummaryProvider key={staff?._id || staff?.id || staff?.username} disabled={staff?.tenantStatus === 'setup'}><LayoutContent /></NotificationSummaryProvider>
@@ -47,6 +56,25 @@ function LayoutContent() {
   const setupView = setup ? new URLSearchParams(loc.search).get('view') || '/home' : loc.pathname
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { count: notifBadge } = useNotificationSummary()
+  const visibleNav = setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
+    if (!item.moduleKey) return item.roles.length === 0 || item.roles.includes(staff?.role)
+    if (staff?.customPermissions) return hasModulePermission(staff, item.moduleKey, 'view')
+    return item.roles.length === 0 || item.roles.includes(staff?.role)
+  })
+  const primaryNav = visibleNav.filter(item => PRIMARY_NAV_PATHS.includes(item.path))
+  const groupedNav = NAV_GROUPS.map(group => ({
+    ...group,
+    items: group.paths.map(path => visibleNav.find(item => item.path === path)).filter(Boolean),
+  })).filter(group => group.items.length > 0)
+  const knownPaths = new Set([...PRIMARY_NAV_PATHS, ...NAV_GROUPS.flatMap(group => group.paths)])
+  const otherNav = visibleNav.filter(item => !knownPaths.has(item.path))
+  if (otherNav.length) groupedNav.push({ id: 'other', label: '其他功能', items: otherNav })
+  const activeGroup = groupedNav.find(group => group.items.some(item => isCurrentPath(setupView, item.path)))?.id || null
+  const [openGroup, setOpenGroup] = useState(activeGroup)
+
+  useEffect(() => {
+    if (activeGroup) setOpenGroup(activeGroup)
+  }, [activeGroup])
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -61,6 +89,25 @@ function LayoutContent() {
   }
 
   const initials = staff?.name?.slice(0, 1) || 'S'
+
+  const renderNavItem = (item) => {
+    const isActive = isCurrentPath(setupView, item.path)
+    return (
+      <button
+        type="button"
+        key={item.path}
+        className={`sidebar-item ${isActive ? 'active' : ''}`}
+        aria-current={isActive ? 'page' : undefined}
+        onClick={() => handleNavClick(item.path)}
+      >
+        <span className="sidebar-item-icon"><AppIcon name={item.icon} /></span>
+        <span className="sidebar-item-label">{item.label}</span>
+        {item.path === '/notifications' && notifBadge > 0 && (
+          <span className="sidebar-notification-badge">{notifBadge}</span>
+        )}
+      </button>
+    )
+  }
 
   // Chat sidebar pages use their full width instead of nesting the staff navigation.
   if (loc.pathname === '/service-assistant' && new URLSearchParams(loc.search).get('embedded') === '1') {
@@ -91,36 +138,27 @@ function LayoutContent() {
         </div>
 
         <nav className="sidebar-nav">
-          <div className="sidebar-section-label">功能菜单</div>
-          {(setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
-            // 无 moduleKey 的项（工作台/消息/个人中心）始终显示
-            if (!item.moduleKey) return item.roles.length === 0 || item.roles.includes(staff?.role)
-            // 有 customPermissions（管理后台为该账号配置了自定义角色权限）时，按权限决定显隐
-            if (staff?.customPermissions) {
-              return hasModulePermission(staff, item.moduleKey, 'view')
-            }
-            // 否则按内置角色过滤（空数组=全部可见）
-            return item.roles.length === 0 || item.roles.includes(staff?.role)
-          })).map(item => {
-            const isOnPlansPage = setupView === item.path || setupView.startsWith(item.path + '/')
-            const isActive = isOnPlansPage && !item.children
-
-            return (
-              <div
-                key={item.path}
-                className={`sidebar-item ${isActive ? 'active' : ''}`}
-                onClick={() => handleNavClick(item.path)}
+          <div className="sidebar-section-label">常用入口</div>
+          {primaryNav.map(renderNavItem)}
+          <div className="sidebar-section-label sidebar-section-label-groups">全部功能</div>
+          {groupedNav.map(group => (
+            <div className="sidebar-group" key={group.id}>
+              <button
+                type="button"
+                className={`sidebar-group-toggle ${openGroup === group.id ? 'expanded' : ''} ${activeGroup === group.id ? 'contains-active' : ''}`}
+                aria-expanded={openGroup === group.id}
+                aria-controls={`sidebar-group-${group.id}`}
+                onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}
               >
-                <span className="sidebar-item-icon"><AppIcon name={item.icon} /></span>
-                <span style={{ flex: 1 }}>{item.label}</span>
-                {item.path === '/notifications' && notifBadge > 0 && (
-                  <span style={{ background: '#DC3545', color: '#fff', borderRadius: 99, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 20, textAlign: 'center' }}>
-                    {notifBadge}
-                  </span>
-                )}
+                <span>{group.label}</span>
+                <span className="sidebar-group-count">{group.items.length}</span>
+                <span className="sidebar-group-chevron" aria-hidden="true">⌄</span>
+              </button>
+              <div id={`sidebar-group-${group.id}`} className="sidebar-group-items" hidden={openGroup !== group.id}>
+                {group.items.map(renderNavItem)}
               </div>
-            )
-          })}
+            </div>
+          ))}
         </nav>
 
         <div className="sidebar-footer">
