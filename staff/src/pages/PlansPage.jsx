@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, usePermission, useStaff } from '../App'
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
+import ScheduleBookingDialog from '../components/ScheduleBookingDialog'
 import noReportMedicalProxyPilot from '../../../shared/noReportMedicalProxyPilot.cjs'
 
 const { isNoReportMedicalProxyPilot } = noReportMedicalProxyPilot
@@ -75,6 +76,7 @@ export default function PlansPage() {
   const [showMedicalServicePicker, setShowMedicalServicePicker] = useState(false)
   const [showNutritionModal, setShowNutritionModal] = useState(false)
   const [showAhModal, setShowAhModal]           = useState(false)
+  const [scheduleBookingContext, setScheduleBookingContext] = useState(null)
 
   const loadPlans = useCallback(async () => {
     setLoading(true)
@@ -263,6 +265,7 @@ export default function PlansPage() {
                       <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                       <td>
                         <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(['nutrition', 'medical_assist'].includes(p.type) ? `/plans/${p._id}/modules` : `/plans/${p._id}`) }}>编辑</button>
+                        <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 6 }} onClick={e => { e.stopPropagation(); setScheduleBookingContext({ relatedType: 'health_plan', relatedId: p._id, patientId: p.patientId?._id || p.patientId, label: `${p.patientId?.name || '会员'} · ${p.title}`, title: p.title, category: 'service' }) }}>预约时间</button>
                         {p.type === 'medical_assist' && p.patientId?._id && ['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                           <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} onClick={e => { e.stopPropagation(); nav(`/patients/${p.patientId._id}?tab=consumption&serviceFilter=medical`) }}>选择服务与权益</button>
                         )}
@@ -276,6 +279,7 @@ export default function PlansPage() {
           {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} reservedOrderId={reservedOrderId} reservedProductName={reservedProductName} giftId={giftId} giftServiceName={giftServiceName} annualExpert={annualExpert} onClose={() => { closePlanModal(setShowMedicalModal); if (reservedOrderId || giftId || annualExpert) nav(`/patients/${initialPatientId}?tab=membership`) }} onSaved={result => { closePlanModal(setShowMedicalModal); loadPlans(); toast(result?.warning || (annualExpert ? '已按年度会员不限次权益发起专家约诊' : giftId ? '已使用赠送权益发起就医协助' : reservedOrderId ? '原服务订单已进入就医协助流程' : '就医协助方案已创建')); if (reservedOrderId || giftId || annualExpert) nav(result?.warning && result?.planId ? `/plans/${result.planId}/modules` : `/patients/${initialPatientId}?tab=followups`) }} />}
           {showNutritionModal && <NutritionAIDraftModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowNutritionModal)} onSaved={plan => { closePlanModal(setShowNutritionModal); loadPlans(); toast('AI营养草稿已生成，请核对后推送'); nav(`/plans/${plan._id}/modules`) }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
+          {scheduleBookingContext && <ScheduleBookingDialog context={scheduleBookingContext} onClose={() => setScheduleBookingContext(null)} onSaved={() => toast('已预约时间，可在排班与预约中查看')} />}
         </>
       )}
     </div>

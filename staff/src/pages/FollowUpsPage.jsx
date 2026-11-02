@@ -8,6 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import ScheduleBookingDialog from '../components/ScheduleBookingDialog'
 import MonitoringFollowUpFields, { isStaffMonitoringFollowUp, initialMonitoringMeasurement, monitoringSubmission } from '../components/MonitoringFollowUpFields'
 import annualBookingPlan from '../../../shared/annualBookingPlan.cjs'
 import annualDispatch from '../../../shared/annualDispatch.cjs'
@@ -202,6 +203,7 @@ export default function FollowUpsPage() {
   const [loading,      setLoading]      = useState(true)
   const [loadError, setLoadError] = useState('')
   const [showModal,    setShowModal]    = useState(false)  // 保留状态但不再使用新建入口
+  const [scheduleBookingContext, setScheduleBookingContext] = useState(null)
   // 默认包含逾期任务；从工作台跳转时保留显式日期范围。
 
   // 执行随访 modal
@@ -591,6 +593,7 @@ export default function FollowUpsPage() {
 
                   {/* 右侧：操作按钮 */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
+                    {isPendingExec(f) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setScheduleBookingContext({ relatedType: 'follow_up', relatedId: f._id, patientId: f.patientId?._id || f.patientId, label: `${f.patientId?.name || '会员'} · ${serviceTaskTitle(f) || '随访任务'}`, title: serviceTaskTitle(f) || '随访任务', category: 'task' })}>预约时间</button>}
                     {isPendingExec(f) && (
                       <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>{f.taskRole === 'supervisor' ? '处理督办' : f.taskRole ? '处理事务' : '执行随访'}</button>
                     )}
@@ -613,6 +616,7 @@ export default function FollowUpsPage() {
       {/* 分页 */}
       <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage}
         pageSize={limit} onPageSizeChange={size => { setLimit(size); setPage(1) }} />
+      {scheduleBookingContext && <ScheduleBookingDialog context={scheduleBookingContext} onClose={() => setScheduleBookingContext(null)} onSaved={() => toast('已预约时间，可在排班与预约中查看')} />}
 
       {/* 随访详情弹窗 */}
       <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />

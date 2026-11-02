@@ -5,6 +5,7 @@ import { liverMarkerTrends, liverKeyChanges } from '../utils/liverMarkerTrends.m
 import { reviewConflictField, changedReviewConflictSection, removedReviewConflictClaim } from '../utils/aiReviewConflictField.mjs'
 import { aiReviewConflictGuidance } from '../utils/aiReviewConflictGuidance.mjs'
 import RehabWorkspace from '../components/RehabWorkspace'
+import ScheduleBookingDialog from '../components/ScheduleBookingDialog'
 import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
@@ -2207,6 +2208,7 @@ export default function PatientDetailPage() {
   const [reportPage, setReportPage] = useState(1)
   const [openReportActionId, setOpenReportActionId] = useState(null)
   const [patientOrders, setPatientOrders] = useState([])
+  const [scheduleBookingContext, setScheduleBookingContext] = useState(null)
   const [patientOrdersLoading, setPatientOrdersLoading] = useState(false)
   const [patientOrdersError, setPatientOrdersError] = useState('')
   const [medicalLaunchRequested, setMedicalLaunchRequested] = useState(new URLSearchParams(location.search).get('medicalLaunch') === '1')
@@ -5027,10 +5029,13 @@ export default function PatientDetailPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => setScheduleBookingContext({ relatedType: 'patient', relatedId: id, patientId: id, label: user.name, title: `${user.name} · 服务安排`, category: 'service' })}>📅 预约时间</button>
           <button className="btn btn-secondary btn-sm" onClick={() => setShowReferralModal(true)}>🔀 转介</button>
           <button className="btn btn-secondary btn-sm" onClick={() => setShowMessageModal(true)}>💬 发消息</button>
         </div>
       </div>
+
+      {scheduleBookingContext && <ScheduleBookingDialog context={scheduleBookingContext} onClose={() => setScheduleBookingContext(null)} onSaved={() => toast('已预约时间，可在排班与预约中查看')} />}
 
       {location.state?.sourceTodo && (
         <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 10, background: '#FFF8E8', border: '1px solid #F4D58D', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -11808,6 +11813,7 @@ export default function PatientDetailPage() {
                           {CHECKUP_STAGE_LABEL[order.currentStage] && <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>{CHECKUP_STAGE_LABEL[order.currentStage]}</div>}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
+                          {order.orderType !== 'package' && !['cancelled', 'refunded', 'completed'].includes(order.status) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginRight: 6 }} onClick={() => setScheduleBookingContext({ relatedType: 'order', relatedId: order._id, patientId: id, label: `${user.name} · ${order.serviceName || '服务订单'}`, title: order.serviceName || '服务安排', category: 'service' })}>预约时间</button>}
                           {order.orderType === 'service' && /^\s*(?:单次)?营养评估(?:服务)?\s*$/.test(order.serviceName || '') && Number(order.totalUnits || 1) === 1
                             ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setTab('plans'); setServiceManagementView('nutrition') }}>到营养管理查看评估与核销</button>
                             : <>

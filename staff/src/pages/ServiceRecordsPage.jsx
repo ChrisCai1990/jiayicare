@@ -5,6 +5,7 @@ import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import Pagination from '../components/Pagination'
+import ScheduleBookingDialog from '../components/ScheduleBookingDialog'
 
 function PatientSearchInput({ value, onChange }) {
   const [keyword, setKeyword] = useState('')
@@ -89,6 +90,7 @@ export default function ServiceRecordsPage() {
   const [showModal, setShowModal] = useState(false)
   const [followUpTarget, setFollowUpTarget] = useState(null) // { patientId, patientName, theme }
   const [detailRecord, setDetailRecord] = useState(null)
+  const [bookingContext, setBookingContext] = useState(null)
   const [patients, setPatients] = useState([])
   const [limit, setLimit] = useState(20)
 
@@ -174,6 +176,7 @@ export default function ServiceRecordsPage() {
                       onClick={() => setFollowUpTarget({ patientId: r.patientId?._id || r.patientId, patientName: r.patientId?.name || '', theme: r.subject || TYPE_LABEL[r.type] || '' })}>
                       新建随访
                     </button>
+                    <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }} onClick={() => setBookingContext({ relatedType: 'service_record', relatedId: r._id, patientId: r.patientId?._id || r.patientId, label: `${r.patientId?.name || '会员'} · ${r.title || TYPE_LABEL[r.type] || '服务记录'}`, title: r.title || TYPE_LABEL[r.type] || '服务安排', category: 'service' })}>预约时间</button>
                     <button className="btn btn-danger btn-sm" onClick={() => handleDelete(r._id)}>删除</button>
                   </td>
                 </tr>
@@ -249,6 +252,7 @@ export default function ServiceRecordsPage() {
           onSaved={() => { setFollowUpTarget(null); toast('随访计划已创建') }}
         />
       )}
+      {bookingContext && <ScheduleBookingDialog context={bookingContext} onClose={() => setBookingContext(null)} onSaved={() => toast('已预约时间，可在排班与预约中查看')} />}
     </div>
   )
 }

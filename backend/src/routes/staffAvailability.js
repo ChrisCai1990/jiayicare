@@ -4,6 +4,12 @@ const staffAuth = require('../middleware/staffAuth');
 const StaffAvailability = require('../models/StaffAvailability');
 const StaffScheduleBooking = require('../models/StaffScheduleBooking');
 const Admin = require('../models/Admin');
+const User = require('../models/User');
+const Product = require('../models/Product');
+const Order = require('../models/Order');
+const ServiceRecord = require('../models/ServiceRecord');
+const FollowUp = require('../models/FollowUp');
+const HealthPlan = require('../models/HealthPlan');
 
 router.use(staffAuth);
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
@@ -47,11 +53,26 @@ router.post('/bookings', async (req, res) => {
   const ids = req.body?.slotIds;
   const category = req.body?.category;
   const title = String(req.body?.title || '').trim();
+  const reason = String(req.body?.reason || '').trim();
   const note = String(req.body?.note || '').trim();
+  const relatedType = req.body?.relatedType || null;
+  const relatedId = req.body?.relatedId || null;
+  const patientId = req.body?.patientId || null;
   if (!Array.isArray(ids) || ids.length < 1 || ids.length > 36 || new Set(ids.map(String)).size !== ids.length ||
       ids.some(id => !mongoose.isValidObjectId(id)) || !['service', 'communication', 'task', 'other'].includes(category) ||
-      !title || title.length > 120 || note.length > 1000)
-    return fail(res, 400, '请选择1至36个空档，并填写预约类型和120字以内的事项名称');
+      !title || title.length > 120 || !reason || reason.length > 300 || note.length > 1000 ||
+      (patientId && !mongoose.isValidObjectId(patientId)) || Boolean(relatedType) !== Boolean(relatedId) ||
+      (relatedType && (!['patient', 'product', 'order', 'service_record', 'follow_up', 'health_plan'].includes(relatedType) || !mongoose.isValidObjectId(relatedId))))
+    return fail(res, 400, '请选择1至36个空档，填写事项名称和300字以内的预约缘由');
+  if (patientId && !await User.exists({ _id: patientId, tenantId: req.staff.tenantId })) return fail(res, 404, '关联会员不存在');
+  if (relatedType) {
+    const models = { patient: User, product: Product, order: Order, service_record: ServiceRecord, follow_up: FollowUp, health_plan: HealthPlan };
+    const related = await models[relatedType].findOne(relatedType === 'health_plan' ? { _id: relatedId } : { _id: relatedId, tenantId: req.staff.tenantId }).select('_id patientId user').lean();
+    if (!related) return fail(res, 404, '关联的服务或产品不存在');
+    const ownerId = relatedType === 'patient' ? related._id : relatedType === 'order' ? related.user : ['service_record', 'follow_up', 'health_plan'].includes(relatedType) ? related.patientId : null;
+    if (relatedType === 'health_plan' && (!ownerId || !await User.exists({ _id: ownerId, tenantId: req.staff.tenantId }))) return fail(res, 404, '关联方案不存在');
+    if (patientId && ownerId && String(patientId) !== String(ownerId)) return fail(res, 400, '预约会员与关联记录不一致');
+  }
   const slots = await StaffAvailability.find({ _id: { $in: ids }, tenantId: req.staff.tenantId }).sort({ startAt: 1 }).lean();
   if (slots.length !== ids.length || slots.some(slot => slot.status !== 'available' || String(slot.staffId) !== String(slots[0].staffId)))
     return fail(res, 409, '所选空档已变化，请刷新后重选');
@@ -62,7 +83,7 @@ router.post('/bookings', async (req, res) => {
   if (!target) return fail(res, 404, '预约人员不存在或已停用');
   const booking = await StaffScheduleBooking.create({ tenantId: req.staff.tenantId, staffId: slots[0].staffId,
     createdBy: req.staff._id, slotIds: slots.map(slot => slot._id), originalSources: slots.map(slot => slot.source),
-    startAt: slots[0].startAt, endAt: slots.at(-1).endAt, category, title, note, status: 'pending' });
+    startAt: slots[0].startAt, endAt: slots.at(-1).endAt, category, title, reason, note, patientId, relatedType, relatedId, status: 'pending' });
   const reserved = [];
   try {
     for (const slot of slots) {

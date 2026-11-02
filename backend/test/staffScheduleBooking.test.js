@@ -5,6 +5,8 @@ const router = require('../src/routes/staffAvailability');
 const Admin = require('../src/models/Admin');
 const StaffAvailability = require('../src/models/StaffAvailability');
 const StaffScheduleBooking = require('../src/models/StaffScheduleBooking');
+const User = require('../src/models/User');
+const Order = require('../src/models/Order');
 
 const oid = () => new mongoose.Types.ObjectId();
 const handler = (method, path) => router.stack.find(layer => layer.route?.path === path && layer.route.methods[method]).route.stack.at(-1).handle;
@@ -28,11 +30,12 @@ test('staff can reserve adjacent free slots for a general appointment', async t 
   StaffScheduleBooking.updateOne = async () => ({ modifiedCount: 1 });
   const res = response();
   await handler('post', '/bookings')({ staff: { _id: creatorId, tenantId, role: 'nutritionist' }, body: {
-    slotIds: slots.map(slot => String(slot._id)), category: 'communication', title: '团队沟通', note: '' } }, res);
+    slotIds: slots.map(slot => String(slot._id)), category: 'communication', title: '团队沟通', reason: '讨论服务方案', note: '' } }, res);
   assert.equal(res.statusCode, 201);
   assert.equal(String(readFilter.tenantId), String(tenantId));
   assert.equal(String(created.staffId), String(staffId));
   assert.equal(created.title, '团队沟通');
+  assert.equal(created.reason, '讨论服务方案');
   assert.equal(reserved.length, 2);
   assert.ok(reserved.every(item => item.filter.status === 'available' && item.update.$set.source === 'general_booking'));
 });
@@ -53,7 +56,7 @@ test('a conflict rolls back only slots reserved by this booking', async t => {
   StaffScheduleBooking.updateOne = async () => ({ modifiedCount: 1 });
   const res = response();
   await handler('post', '/bookings')({ staff: { _id: creatorId, tenantId, role: 'nutritionist' }, body: {
-    slotIds: slots.map(slot => String(slot._id)), category: 'task', title: '内部事务' } }, res);
+    slotIds: slots.map(slot => String(slot._id)), category: 'task', title: '内部事务', reason: '核对客户资料' } }, res);
   assert.equal(res.statusCode, 409);
   assert.equal(writes.length, 3);
   assert.equal(String(writes[2].filter.bookingId), String(bookingId));
@@ -98,4 +101,21 @@ test('colleagues can see occupied times but booking details stay participant sco
   assert.equal(String(filter.tenantId), String(tenantId));
   assert.equal(String(filter.staffId), String(targetId));
   assert.equal(String(filter.$or[1].createdBy), String(viewerId));
+});
+
+test('a booking needs a specific reason and cannot attach another member’s order', async t => {
+  const original = { userExists: User.exists, orderFind: Order.findOne };
+  t.after(() => { User.exists = original.userExists; Order.findOne = original.orderFind; });
+  const tenantId = oid(), patientId = oid(), otherId = oid(), orderId = oid();
+  const base = { slotIds: [String(oid())], category: 'service', title: '报告解读' };
+  const noReason = response();
+  await handler('post', '/bookings')({ staff: { _id: oid(), tenantId, role: 'familyDoctor' }, body: base }, noReason);
+  assert.equal(noReason.statusCode, 400);
+  User.exists = async () => true;
+  Order.findOne = () => ({ select: () => ({ lean: async () => ({ _id: orderId, user: otherId }) }) });
+  const wrongOwner = response();
+  await handler('post', '/bookings')({ staff: { _id: oid(), tenantId, role: 'familyDoctor' }, body: {
+    ...base, reason: '向会员解读检查报告', patientId: String(patientId), relatedType: 'order', relatedId: String(orderId),
+  } }, wrongOwner);
+  assert.equal(wrongOwner.statusCode, 400);
 });

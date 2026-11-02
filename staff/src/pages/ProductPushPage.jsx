@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
+import ScheduleBookingDialog from '../components/ScheduleBookingDialog'
 
 // 分类颜色：已知分类给固定色，其余按名称稳定哈希分配一个色板色
 const CAT_COLOR = { '检测套餐':'#0077B6', '专家咨询':'#1E6B50', '上门服务':'#22A06B', '健康课程':'#8e44ad', '服务包':'#D97706' }
@@ -24,6 +25,7 @@ export default function ProductPushPage() {
   const [selectedPrices, setSelectedPrices] = useState({})  // { productId: price }
   const [pushRecords, setPushRecords] = useState([])
   const [showPatientModal, setShowPatientModal] = useState(false)
+  const [bookingContext, setBookingContext] = useState(null)
 
   useEffect(() => {
     Promise.all([
@@ -178,6 +180,7 @@ export default function ProductPushPage() {
                       })()}
                     </div>
                   </div>
+                  <div style={{ padding: '0 16px 12px', textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={event => { event.stopPropagation(); setBookingContext({ relatedType: 'product', relatedId: p.id, patientId: requestedPatientId || undefined, label: p.name, title: p.name, category: 'service' }) }}>预约时间</button></div>
                 </div>
               )
             })}
@@ -304,6 +307,7 @@ export default function ProductPushPage() {
           }}
         />
       )}
+      {bookingContext && <ScheduleBookingDialog context={bookingContext} onClose={() => setBookingContext(null)} onSaved={() => toast('已预约时间，可在排班与预约中查看')} />}
     </div>
   )
 }
