@@ -115,18 +115,21 @@ test('新常规复盘固定单岗，不追加其他岗位待办', async t => {
 });
 
 test('常规综合复盘先由营养师核对，再由健康顾问总确认', async t => {
-  const row = setup(t, 'familyDoctor', { status: 'team_review', reviewWorkflow: 'advisor_nutrition', teamRoles: ['nutritionist', 'familyDoctor'], teamReviews: {}, markModified: () => {} });
-  t.mock.method(ServiceRecord, 'findOneAndUpdate', async () => ({ _id: 'archive' }));
+  const row = setup(t, 'familyDoctor', { status: 'team_review', reviewWorkflow: 'advisor_nutrition', teamRoles: ['nutritionist', 'familyDoctor'], teamReviews: {}, templateSnapshot: { outputSections: ['阶段数据变化', '生活方式关联分析'] }, markModified: () => {} }); let archived;
+  t.mock.method(ServiceRecord, 'findOneAndUpdate', async (_filter, update) => { archived = update.$setOnInsert; return { _id: 'archive' }; });
   const early = await request(t, { action: 'approve', revision: 0, reviewNote: '总复盘' });
   assert.equal(early.status, 409);
   actor = { _id: ids.nutrition, role: 'nutritionist' };
-  const nutrition = await request(t, { action: 'approve', revision: 0, reviewNote: '饮食与运动记录已核对' });
+  const nutrition = await request(t, { action: 'approve', revision: 0, content: '一、阶段数据变化\n- 已记录3次体重\n\n二、生活方式关联分析\n- 现有记录无法分析两者关联' });
   assert.equal(nutrition.status, 200, JSON.stringify(nutrition.body));
   assert.equal(row.teamReviews.nutritionist.status, 'approved');
+  assert.match(row.teamReviews.nutritionist.content, /现有记录无法分析两者关联/);
+  assert.equal(row.content, row.teamReviews.nutritionist.content);
   actor = { _id: ids.reviewer, role: 'familyDoctor' };
-  const advisor = await request(t, { action: 'approve', revision: 0, reviewNote: '总复盘已确认' });
+  const advisor = await request(t, { action: 'approve', revision: 0 });
   assert.equal(advisor.status, 200, JSON.stringify(advisor.body));
   assert.equal(row.status, 'finalized');
+  assert.match(archived.content, /现有记录无法分析两者关联/);
 });
 
 test('常规综合复盘仅允许顾问按需转交运动复健师', async t => {

@@ -77,15 +77,12 @@ async function loadAssignmentAttention(staff, models = {}) {
   // Keep exactly the same actionable states as the original workbench queues.
   const now = new Date();
   const reminders = require('../../../shared/annualServiceReminder.cjs');
-  const [changedPlans, recommendations, failedChatJobs] = await Promise.all([
+  const [changedPlans, recommendations] = await Promise.all([
     model('AnnualPlan').find({ patientId: { $in: ids }, supplementRevisions: { $elemMatch: {
       status: 'applied', 'executionReview.version': 1, 'executionReview.status': 'pending',
     } } }).select('patientId').lean(),
     model('AnnualServiceRecommendation').find({ ...reminders.query(now), patientId: { $in: ids } })
       .select('patientId planId status response handledAt followUpReminderEnabled plannedFollowUpDate').lean(),
-    model('ChatFollowupJob').find({ patientId: { $in: ids }, $or: [
-      { status: 'failed' }, { status: { $in: ['running', 'committing'] }, leaseUntil: { $lt: now } },
-    ] }).select('patientId').lean(),
   ]);
   for (const plan of changedPlans) add(plan.patientId, 'familyDoctor', '方案修订后的执行安排待核对');
   // An orphaned or cross-member recommendation has no original workbench action.
@@ -97,7 +94,6 @@ async function loadAssignmentAttention(staff, models = {}) {
   for (const row of activeRecommendations) {
     if (planOwners.get(String(row.planId)) === String(row.patientId)) add(row.patientId, 'familyDoctor', '年度服务建议待联系');
   }
-  for (const job of failedChatJobs) add(job.patientId, 'nutritionist', '营养聊天草稿异常待处理');
 
   return [...issues.values()].map(({ reasons, roleLabel, count, ...todo }) => ({ ...todo,
     summary: `${roleLabel}未分配、已停用或岗位不匹配；${[...reasons].join('、')}（${count}项）。请核对人员归属和原任务指派。` }));

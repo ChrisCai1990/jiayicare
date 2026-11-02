@@ -2151,6 +2151,18 @@ function buildCheckupQuestionnaireGoal(questionnaireResponses = [], plans = []) 
     .join('\n')
 }
 
+function readableDietaryAnswer(value) {
+  if (value == null || value === '') return '未作答'
+  if (Array.isArray(value)) return value.map(readableDietaryAnswer).join('、')
+  if (typeof value === 'object') {
+    const selected = readableDietaryAnswer(value.values ?? value.value ?? '')
+    const inputs = Object.entries(value.inputs || {}).map(([label, text]) => `${label}：${readableDietaryAnswer(text)}`).join('；')
+    if (selected !== '未作答' || inputs) return [selected === '未作答' ? '' : selected, inputs].filter(Boolean).join('；')
+    return Object.entries(value).map(([label, answer]) => `${label}：${readableDietaryAnswer(answer)}`).join('；') || '未作答'
+  }
+  return String(value)
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -2727,7 +2739,14 @@ export default function PatientDetailPage() {
   const [archiveDraftItems, setArchiveDraftItems] = useState([])
   const [archiveBusy, setArchiveBusy] = useState(false)
   const [qResponses, setQResponses] = useState([])
+  const [openDietaryResponseId, setOpenDietaryResponseId] = useState('')
   useEffect(() => { staffAPI.getQuestionnaireResponses(id).then(r => setQResponses(r.data || [])).catch(() => {}) }, [id])
+  useEffect(() => {
+    const responseId = new URLSearchParams(location.search).get('responseId')
+    if (!responseId || !qResponses.some(row => row.isDietarySurvey && String(row.responseId) === responseId)) return
+    setOpenDietaryResponseId(responseId)
+    requestAnimationFrame(() => document.getElementById(`dietary-response-${responseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  }, [location.search, qResponses])
 
   const openArchiveDraft = (draft) => {
     setArchiveDraftItems((draft?.items || []).map(it => ({
@@ -5180,17 +5199,22 @@ export default function PatientDetailPage() {
 
       {/* 膳食调查问卷只由营养师在营养流程复核。 */}
       {['nutritionist', 'superadmin'].includes(staff?.role) && qResponses.filter(r => r.isDietarySurvey && r.nutritionistReview?.status !== 'reviewed').map(r => (
-        <div key={r.responseId} style={{ marginBottom: 12, padding: '10px 16px', background: '#F0FDF4', borderRadius: 8, border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div key={r.responseId} id={`dietary-response-${r.responseId}`} style={{ marginBottom: 12, padding: '10px 16px', background: '#F0FDF4', borderRadius: 8, border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 18 }}>🥗</span>
           <div style={{ flex: 1, minWidth: 180 }}>
             <span style={{ color: '#166534', fontWeight: 600, fontSize: 14 }}>膳食调查问卷待营养师复核</span>
             <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>提交于 {new Date(r.submittedAt).toLocaleDateString('zh-CN')}</span>
           </div>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpenDietaryResponseId(value => value === String(r.responseId) ? '' : String(r.responseId))}>{openDietaryResponseId === String(r.responseId) ? '收起问卷' : '查看问卷内容'}</button>
           {(staff?.role === 'nutritionist' || staff?.role === 'superadmin') && (
-            <button className="btn btn-primary btn-sm" disabled={dietaryReviewBusy} onClick={() => handleNutritionistReview(r.responseId)}>
+            <button className="btn btn-primary btn-sm" disabled={dietaryReviewBusy || openDietaryResponseId !== String(r.responseId) || !r.answers?.length} onClick={() => handleNutritionistReview(r.responseId)}>
               {dietaryReviewBusy ? '提交中…' : '复核确认'}
             </button>
           )}
+          {openDietaryResponseId === String(r.responseId) && <div style={{ flexBasis: '100%', borderTop: '1px solid #BBF7D0', paddingTop: 12, marginTop: 3 }}>
+            <div style={{ color: '#166534', fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{r.title || '膳食调查问卷'} · 客户原始回答（{r.answers?.length || 0}项）</div>
+            {(r.answers || []).length ? (r.answers || []).map((answer, index) => <div key={`${answer.questionId}-${index}`} style={{ padding: '9px 11px', marginBottom: 7, border: '1px solid #DCF0E4', borderRadius: 8, background: '#fff' }}><div style={{ fontSize: 12, color: '#65776F' }}>{index + 1}. {answer.questionText || '题目'}</div><div style={{ fontSize: 13, color: '#173B2E', marginTop: 4, whiteSpace: 'pre-wrap' }}>{readableDietaryAnswer(answer.answer)}</div></div>) : <div style={{ color: '#B45309', fontSize: 13 }}>这份答卷没有可显示的题目与回答，请先核对问卷原始记录，不要直接确认。</div>}
+          </div>}
         </div>
       ))}
 
