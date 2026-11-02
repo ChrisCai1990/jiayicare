@@ -37,9 +37,9 @@ async function main() {
   if (apply && (!Number.isInteger(expected) || expected < 0)) throw new Error('写入必须指定 --expected=N');
   await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/jiayicare');
   try {
-    const reports = await MedicalReport.find({ documentCategory: 'prescription_order', audit_status: 'audited', clinicalReview: null,
+    const reports = await MedicalReport.find({ documentCategory: 'prescription_order', audit_status: 'audited',
       reportItems: { $elemMatch: { itemType: 'medication', medicationAction: 'create' } } })
-      .select('_id user checkDate fileUrls reportItems').lean();
+      .select('_id user checkDate fileUrls reportItems clinicalReview').lean();
     const userIds = [...new Set(reports.map(report => String(report.user)))];
     const existing = await Medication.find({ user: { $in: userIds } })
       .select('user name stopped aiStatus sourceRecordKey').lean();
@@ -49,13 +49,14 @@ async function main() {
       if (!byUser.has(user)) byUser.set(user, []);
       byUser.get(user).push(medication);
     }
-    const stats = { auditedReportsWithCreate: reports.length, explicitRows: 0, incompleteRows: 0,
+    const stats = { auditedReportsWithCreate: reports.length, legacyCreateRows: 0, incompleteRows: 0,
       alreadyLinked: 0, possibleDuplicate: 0, candidates: 0, inserted: 0 };
     const candidates = [];
     for (const report of reports) {
+      if (report.clinicalReview?.medicationDecision) continue;
       for (const [index, item] of (report.reportItems || []).entries()) {
         if (item?.itemType !== 'medication' || item?.medicationAction !== 'create') continue;
-        stats.explicitRows++;
+        stats.legacyCreateRows++;
         const candidate = candidateFor(report, item, index);
         if (candidate.incomplete) { stats.incompleteRows++; continue; }
         const medications = byUser.get(String(report.user)) || [];
@@ -88,4 +89,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
-module.exports = { candidateFor };
+module.exports = { candidateFor, main };
