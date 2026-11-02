@@ -11,6 +11,7 @@ const scheduleRouter = require('../src/routes/staffAvailability');
 const Case = require('../src/models/ExpertConsultationCase');
 const Order = require('../src/models/Order');
 const StaffAvailability = require('../src/models/StaffAvailability');
+const Referral = require('../src/models/Referral');
 const { tenantContext } = require('../src/utils/tenantScope');
 
 const oid = () => new mongoose.Types.ObjectId();
@@ -57,8 +58,16 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(created.statusCode, 201, JSON.stringify(created.body));
     let caseId = created.body.data.id;
     const step = async (action, staffId, body) => call('post', `/staff/:id/${action}`, { params: { id: String(caseId) }, staff: { _id: staffId, role: 'healthPlanner' }, body });
+    const createReferral = (reason, medicalExpertId = expertId) => Referral.create({ patientId, fromStaffId: advisorId,
+      referralType: 'external_medical', medicalExpertId, reason, referralPurpose: reason,
+      questionList: '下一步如何安排？', content: '已核实相关资料', status: 'pending' });
     assert.equal((await step('intake', managerId, { summary: '已核实既往资料' })).statusCode, 200);
-    assert.equal((await step('referral', advisorId, { purpose: '分析管理方向', questions: '下一步做什么？' })).statusCode, 200);
+    assert.equal((await step('referral', advisorId, { purpose: '分析管理方向', questions: '下一步做什么？' })).statusCode, 400);
+    const firstReferral = await createReferral('分析管理方向');
+    const available = await call('get', '/staff/:id/referrals', { params: { id: String(caseId) }, staff: { _id: advisorId } });
+    assert.equal(available.body.data.length, 1);
+    assert.equal((await step('referral', advisorId, { referralId: String(firstReferral._id) })).statusCode, 200);
+    assert.equal(String((await Referral.findById(firstReferral._id)).expertConsultationCaseId), String(caseId));
     const missingManager = await step('assign', plannerId, { members: [{ expertId, slotId: expertSlot }] });
     assert.equal(missingManager.statusCode, 409);
     const assigned = await step('assign', plannerId, { members: [{ expertId, slotId: expertSlot }], managerSlotId: managerSlot });
@@ -97,7 +106,9 @@ test('paid single consultation runs from customer request through booked schedul
     const teamAssigned = await call('post', '/staff/:id/team', { params: { id: String(caseId) }, staff: { _id: plannerId, role: 'healthPlanner' }, body: { advisorId } });
     assert.equal(teamAssigned.statusCode, 200, JSON.stringify(teamAssigned.body));
     await step('intake', managerId, { summary: '两科病历和检查结果' });
-    await step('referral', advisorId, { purpose: '协调意见', questions: '如何选择下一步？' });
+    const mdtReferral = await createReferral('协调多学科意见');
+    assert.equal((await step('referral', advisorId, { referralId: String(firstReferral._id) })).statusCode, 409);
+    assert.equal((await step('referral', advisorId, { referralId: String(mdtReferral._id) })).statusCode, 200);
     const mdtAssigned = await step('assign', plannerId, { members: [{ expertId, slotId: mdtSlotOne }, { expertId: secondExpertId, slotId: mdtSlotTwo }], advisorSlotId: advisorSlot });
     assert.equal(mdtAssigned.statusCode, 200, JSON.stringify(mdtAssigned.body));
     await step('reply', expertStaffId, { opinion: '先复查', nextStep: '一月后复查' });
@@ -158,7 +169,8 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(denied.statusCode, 403);
     caseId = internalSingle.body.data.id;
     await step('intake', managerId, { summary: '资料已核实' });
-    await step('referral', advisorId, { purpose: '咨询分析', questions: '下一步安排' });
+    const staffReferral = await createReferral('医护端咨询分析');
+    assert.equal((await step('referral', advisorId, { referralId: String(staffReferral._id) })).statusCode, 200);
     const internalExpertSlot = oid(), internalManagerSlot = oid();
     const internalStart = new Date(Date.now() + 5 * 86400000), internalEnd = new Date(+internalStart + 20 * 60000);
     await mongoose.connection.db.collection('staffavailabilities').insertMany([

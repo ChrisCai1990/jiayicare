@@ -11541,7 +11541,7 @@ export default function PatientDetailPage() {
                             <span style={{ fontSize: 11, background: '#DC3545', color: '#fff', padding: '1px 8px', borderRadius: 99, fontWeight: 600 }}>紧急</span>
                           )}
                           <span style={{ fontWeight: 600, fontSize: 14 }}>{r.reason}</span>
-                          <span style={{ fontSize: 12, color: STATUS_COLOR[r.status], fontWeight: 600 }}>· {STATUS_LABEL[r.status]}</span>
+                          <span style={{ fontSize: 12, color: r.expertConsultationCaseId ? (r.expertConsultationCaseId.status === 'completed' ? '#22A06B' : '#0077B6') : STATUS_COLOR[r.status], fontWeight: 600 }}>· {r.expertConsultationCaseId ? (r.expertConsultationCaseId.status === 'completed' ? '专家咨询已完成' : '专家咨询处理中') : STATUS_LABEL[r.status]}</span>
                         </div>
                         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-end', fontSize: 12 }}>
                           <span style={{ color: '#65776F' }}>转介时间：<strong style={{ color: '#33473E' }}>{formatReferralTime(r.createdAt)}</strong></span>
@@ -11556,6 +11556,7 @@ export default function PatientDetailPage() {
                       {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>{r.content}</div>}
                       <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
                       {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:6 }}>需解决问题：{r.questionList}</div>}
+                      {r.expertConsultationCaseId && <div style={{ fontSize:12, marginBottom:6 }}><a href={`/expert-consultations?caseId=${r.expertConsultationCaseId?._id || r.expertConsultationCaseId}`} style={{ color:'#176B4D', fontWeight:700 }}>在专家咨询中查看派发、回复与随访进度 →</a></div>}
                       {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                       {r.respondedAt && !(r.responseAnalysis || r.responseOpinion || r.response) && (
                         <div style={{ marginTop: 8, padding: '8px 11px', background: '#F6F9F7', borderRadius: 6, color: '#65776F', fontSize: 12 }}>

@@ -8404,12 +8404,14 @@ router.get('/referrals', staffAuth, async (req, res) => {
       : { toStaffId: req.staff._id };
   }
   if (status) filter.status = status;
+  if (!patientId && direction === 'received') filter.expertConsultationCaseId = null;
   const skip = (Number(page) - 1) * Number(limit);
   const [referrals, total] = await Promise.all([
     Referral.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
       .populate('fromStaffId', 'name role title')
       .populate('toStaffId', 'name role title')
-      .populate('patientId', 'name phone chronicDiseases assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner'),
+      .populate('patientId', 'name phone chronicDiseases assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner')
+      .populate('expertConsultationCaseId', 'status'),
     Referral.countDocuments(filter),
   ]);
   const visibleIds = req.staff.role === 'superadmin' ? null : (await getVisibleStaffIds(req.staff)).map(String);
@@ -8565,6 +8567,7 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   const { status, response, responseAnalysis, responseOpinion, consultation } = req.body;
   const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id });
   if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权操作' });
+  if (referral.expertConsultationCaseId) return res.status(409).json({ success: false, message: '该转介已由专家咨询服务承接，请在专家咨询事项中回复' });
   const originalFeedbackDigest = require('../utils/referralAssessmentWorkflow').referralAssessmentSource(referral).digest;
   const wasCompleted = referral.status === 'completed';
   const allowedTransitions = {
@@ -8735,7 +8738,7 @@ router.get('/notifications', staffAuth, async (req, res) => {
       .sort({ createdAt: -1 }).limit(30)
       .populate('patientId', 'name'),
     // 待处理转介（发给我的、pending状态）
-    Referral.find({ toStaffId: staff._id, status: 'pending' })
+    Referral.find({ toStaffId: staff._id, status: 'pending', expertConsultationCaseId: null })
       .sort({ createdAt: -1 }).limit(20)
       .populate('fromStaffId', 'name role')
       .populate('patientId', 'name phone'),
@@ -8744,7 +8747,7 @@ router.get('/notifications', staffAuth, async (req, res) => {
       .select('name phone servicePackage serviceExpiry')
       .sort({ serviceExpiry: 1 }).limit(20),
     // 收到的待处理转介数量
-    Referral.countDocuments({ toStaffId: staff._id, status: 'pending' }),
+    Referral.countDocuments({ toStaffId: staff._id, status: 'pending', expertConsultationCaseId: null }),
     // 我发出的转介、对方已回复但我未查看
     Referral.countDocuments({ fromStaffId: staff._id, fromStaffUnread: true }),
     // 我负责的会员（用于统计未读留言）

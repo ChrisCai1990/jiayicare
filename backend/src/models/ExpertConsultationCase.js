@@ -30,6 +30,8 @@ const schema = new Schema({
   desiredExpertId: { type: Schema.Types.ObjectId, ref: 'MedicalExpert', default: null },
   materialSummary: { type: String, default: '' },
   materialReportIds: [{ type: Schema.Types.ObjectId, ref: 'MedicalReport' }],
+  referralId: { type: Schema.Types.ObjectId, ref: 'Referral', default: null, index: true },
+  // Historical cases retain these fields; new cases use the linked Referral.
   referralPurpose: { type: String, default: '' },
   referralQuestions: { type: String, default: '' },
   referralContext: { type: String, default: '' },
