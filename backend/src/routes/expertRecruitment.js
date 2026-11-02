@@ -31,7 +31,7 @@ function submissionFromBody(body = {}) {
     return { error: '请填写所选服务的每单预期报酬' };
   return { response: {
     name, phone, institutionName: text(body.institutionName, 150), departmentName: text(body.departmentName, 150),
-    title: text(body.title, 100), profession: text(body.profession, 60), registrationScope: text(body.registrationScope, 500),
+    title: text(body.title, 100), profession: text(body.profession, 60), education: text(body.education, 60), registrationScope: text(body.registrationScope, 500),
     experienceYears: Math.max(0, Math.min(80, Number(body.experienceYears) || 0)),
     expertise: list(body.expertise), unsuitableTopics: text(body.unsuitableTopics, 1000),
     singleConsultation, mdt, mdtLead: mdt && body.mdtLead === true,

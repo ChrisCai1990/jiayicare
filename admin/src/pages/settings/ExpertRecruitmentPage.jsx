@@ -110,6 +110,7 @@ export default function ExpertRecruitmentPage() {
             <h4>专家提交的信息</h4>
             <Info label="联系方式" value={selected.response?.phone}/><Info label="机构 / 科室" value={`${selected.response?.institutionName || '—'} / ${selected.response?.departmentName || '—'}`}/>
             <Info label="专业 / 职称 / 年限" value={`${selected.response?.profession || '—'} / ${selected.response?.title || '—'} / ${selected.response?.experienceYears ?? '—'} 年`}/>
+            <Info label="最高学历" value={selected.response?.education || '未填写'}/>
             <Info label="擅长" value={selected.response?.registrationScope?.trim() || selected.response?.expertise?.join('、')}/>
             <Info label="合作意向" value={[selected.response?.singleConsultation && '单次咨询', selected.response?.mdt && 'MDT', selected.response?.mdtLead && 'MDT 牵头'].filter(Boolean).join('、')}/>
             <Info label="单次咨询预期报酬" value={selected.response?.singleConsultation ? `${selected.response.singleExpectedFee} 元/次` : '不参与'}/>

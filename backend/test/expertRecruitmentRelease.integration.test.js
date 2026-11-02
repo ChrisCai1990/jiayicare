@@ -48,6 +48,7 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
     ]));
     const submit = handler('post', '/public/:token');
     const request = { params: { token }, body: { name: '张医生', phone: '13800000000', institutionName: '合成医院', departmentName: '内分泌代谢科', registrationScope: '内分泌代谢相关疾病，如糖尿病、肥胖、甲状腺疾病、内分泌相关性骨质疏松等疾病的诊治。', singleConsultation: true, singleExpectedFee: 200, privacyAcknowledged: true } };
+    request.body.education = '博士研究生';
     const first = response(); await submit(request, first); assert.equal(first.statusCode, 201);
     const second = response(); await submit(request, second); assert.equal(second.statusCode, 409);
     const adminList = handler('get', '/admin');
@@ -55,6 +56,7 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       const res = response(); await adminList({ admin: { role: 'superadmin' } }, res);
       assert.equal(res.body.data.length, 1);
       assert.equal(res.body.data[0].response.name, '张医生');
+      assert.equal(res.body.data[0].response.education, '博士研究生');
     });
     await asTenant(secondTenant, async () => {
       const res = response(); await adminList({ admin: { role: 'superadmin' } }, res);

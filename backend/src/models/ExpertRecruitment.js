@@ -13,7 +13,7 @@ const schema = new mongoose.Schema({
   submittedAt: { type: Date, default: null },
   response: {
     name: String, phone: String, institutionName: String, departmentName: String,
-    title: String, profession: String, registrationScope: String, experienceYears: Number,
+    title: String, profession: String, education: String, registrationScope: String, experienceYears: Number,
     expertise: [String], unsuitableTopics: String,
     singleConsultation: Boolean, mdt: Boolean, mdtLead: Boolean,
     singleExpectedFee: Number, mdtExpectedFee: Number, feeTaxBasis: String,
