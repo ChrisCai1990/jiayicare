@@ -27,13 +27,16 @@ const initialDate = () => addDays(dateKey(new Date()), 1)
 
 export default function AvailabilityPage() {
   const { staff } = useStaff()
-  const canTeam = ['healthPlanner', 'healthManager', 'superadmin', 'manager'].includes(staff?.role)
+  const canManageTeam = ['healthPlanner', 'healthManager', 'superadmin', 'manager'].includes(staff?.role)
   const [month, setMonth] = useState(initialDate().slice(0, 7))
   const [week, setWeek] = useState(monday(initialDate()))
   const [view, setView] = useState('mine')
   const [target, setTarget] = useState('')
   const [team, setTeam] = useState({ staff: [], slots: [] })
   const [ownSlots, setOwnSlots] = useState([])
+  const [bookings, setBookings] = useState([])
+  const [selectedSlotIds, setSelectedSlotIds] = useState([])
+  const [bookingForm, setBookingForm] = useState({ category: 'service', title: '', note: '' })
   const [form, setForm] = useState({ date: initialDate(), periods: dayPeriods, status: 'available', segmentMinutes: '20' })
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -51,18 +54,21 @@ export default function AvailabilityPage() {
 
   async function load() {
     const params = { start: localDateTime(first, '00:00').toISOString(), end: localDateTime(addDays(weeks.at(-1), 7), '00:00').toISOString() }
-    if (view === 'team' && canTeam) {
+    if (view === 'team') {
       const result = await staffAPI.teamAvailability(params)
       setTeam(result.data || { staff: [], slots: [] })
     } else {
       const result = await staffAPI.availability(params)
       setOwnSlots(result.data || [])
     }
+    const bookingResult = await staffAPI.scheduleBookings({ ...params, ...(view === 'team' ? { staffId: target || staff._id } : {}) })
+    setBookings(bookingResult.data || [])
   }
-  useEffect(() => { load().catch(e => setError(e.message)) }, [month, view])
+  useEffect(() => { load().catch(e => setError(e.message)) }, [month, view, target])
 
   const slots = view === 'team' ? team.slots.filter(slot => String(slot.staffId) === target) : ownSlots
   const slotsOn = date => slots.filter(slot => dateKey(slot.startAt) === date).sort((a, b) => new Date(a.startAt) - new Date(b.startAt))
+  const bookingFor = slot => bookings.find(item => item.slotIds.some(id => String(id) === String(slot._id)))
   const selectedDates = Array.from({ length: 7 }, (_, i) => addDays(week, i))
   const whole = form.segmentMinutes === 'whole' || form.status === 'unavailable'
   const preview = form.periods.filter(period => period.enabled).map(period => {
@@ -85,6 +91,7 @@ export default function AvailabilityPage() {
 
   function chooseWeek(date) {
     setWeek(date)
+    setSelectedSlotIds([])
     const firstFuture = Array.from({ length: 7 }, (_, i) => addDays(date, i)).find(day => day >= dateKey(new Date()))
     setForm(current => ({ ...current, date: firstFuture || date }))
     setError(''); setNotice('')
@@ -135,16 +142,38 @@ export default function AvailabilityPage() {
     catch (e) { setError(e.message) }
     finally { setBusy(false) }
   }
+  function toggleSlot(id) {
+    setSelectedSlotIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id])
+  }
+  async function createBooking(event) {
+    event.preventDefault(); setError(''); setNotice('')
+    if (!selectedSlotIds.length) { setError('请先选择可预约时间'); return }
+    setBusy(true)
+    try {
+      await staffAPI.createScheduleBooking({ ...bookingForm, slotIds: selectedSlotIds })
+      setSelectedSlotIds([])
+      setBookingForm({ category: 'service', title: '', note: '' })
+      setNotice('预约已创建，所选时间已标记为已预约')
+      await load()
+    } catch (e) { setError(e.message); await load().catch(() => {}) }
+    finally { setBusy(false) }
+  }
+  async function cancelBooking(id) {
+    setError(''); setNotice(''); setBusy(true)
+    try { await staffAPI.cancelScheduleBooking(id); setNotice('预约已取消，时间恢复为可预约'); await load() }
+    catch (e) { setError(e.message) }
+    finally { setBusy(false) }
+  }
 
   return <div className="page-container" style={{ maxWidth: 1100 }}>
     <h1>岗位排班</h1>
-    <p>按周安排时间，在月历中查看整月。专家可以自己填写，健管专员和健康规划师也可以为同机构人员代排。</p>
-    <p>这里填写的是<strong>可预约空档</strong>，并非客户预约。专家咨询或 MDT 订单完成转介后，健康规划师在“专家咨询”工作台选定人员和时间并派单，空档才会显示为“已预约”。目前其他服务的预约尚未统一写入此排班。</p>
+    <p>各岗位共用排班表。本人可填写空档，健管专员和健康规划师可代同机构人员排班；医护人员均可查看同事空档并发起服务、沟通或事务预约。</p>
+    <p>专家咨询与 MDT 派单也会占用这里的时间。预约后显示“已预约”；系统会检查时间冲突。</p>
     {error && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
     {notice && <p role="status" style={{ color: '#176348' }}>{notice}</p>}
-    {canTeam && <div className="card" style={{ padding: 18, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-      <label>排班对象 <select className="form-input" value={view} onChange={e => { setView(e.target.value); setTarget(''); setError(''); setNotice('') }}><option value="mine">我自己</option><option value="team">代同事排班</option></select></label>
-      {view === 'team' && <label>选择人员 <select className="form-input" value={target} onChange={e => setTarget(e.target.value)}><option value="">请选择专家或其他岗位人员</option>{team.staff.map(person => <option key={person._id} value={person._id}>{person.name} · {roleNames[person.role] || person.role}</option>)}</select></label>}
+    {<div className="card" style={{ padding: 18, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+      <label>查看谁的排班 <select className="form-input" value={view} onChange={e => { setView(e.target.value); setTarget(''); setSelectedSlotIds([]); setError(''); setNotice('') }}><option value="mine">我自己</option><option value="team">同事</option></select></label>
+      {view === 'team' && <label>选择人员 <select className="form-input" value={target} onChange={e => { setTarget(e.target.value); setSelectedSlotIds([]) }}><option value="">请选择岗位人员</option>{team.staff.filter(person => String(person._id) !== String(staff?._id)).map(person => <option key={person._id} value={person._id}>{person.name} · {roleNames[person.role] || person.role}</option>)}</select></label>}
     </div>}
     <div className="card" style={{ padding: 18, marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -167,7 +196,7 @@ export default function AvailabilityPage() {
     </div>
     <div className="card" style={{ padding: 18 }}>
       <h3>{week} 至 {addDays(week, 6)} 的安排</h3>
-      <p>选择一天，分别填写上午、下午、晚上可安排的时间。休息时段留空；三段可一次保存。专家通常按20或30分钟分段，健康顾问覆盖全程可选整段。</p>
+      {(view === 'mine' || canManageTeam) && <><p>选择一天，分别填写上午、下午、晚上可安排的时间。休息时段留空；三段可一次保存。专家通常按20或30分钟分段，健康顾问覆盖全程可选整段。</p>
       <form onSubmit={save} style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'end', marginBottom: 12 }}>
           <label>星期／日期 <select className="form-input" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}>{selectedDates.map((date, i) => <option key={date} value={date}>{weekDays[i]} {date}</option>)}</select></label>
@@ -188,10 +217,21 @@ export default function AvailabilityPage() {
       </form>
       {!!preview.length && <p style={{ color: previewCount ? '#176348' : '#B42318' }}>本次预计新增 {previewCount} 个空档{previewSkipped ? `，跳过已开始的 ${previewSkipped} 个时段` : ''}。已有相同时间的排班或预约会保留，不会重复添加。</p>}
       <button className="btn btn-secondary" type="button" disabled={busy || (view === 'team' && !target)} onClick={copyPreviousWeek}>复制上一周到本周</button>
-      <p style={{ color: '#5A6B63' }}>复制前请选中目标周。若本周已有重叠时间，系统会提示冲突，不覆盖原排班。</p>
+      <p style={{ color: '#5A6B63' }}>复制前请选中目标周。若本周已有重叠时间，系统会提示冲突，不覆盖原排班。</p></>}
+      {(view === 'mine' || target) && <form onSubmit={createBooking} style={{ borderTop: '1px solid #E1EAE6', padding: '16px 0' }}>
+        <h3>发起预约</h3>
+        <p>在下方勾选一个或多个相邻空档。可用于服务、沟通、任务或其他事务；同事的预约事项仅参与人和管理人员可查看。</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 10 }}>
+          <label>类型 <select className="form-input" value={bookingForm.category} onChange={e => setBookingForm({ ...bookingForm, category: e.target.value })}><option value="service">服务</option><option value="communication">沟通交流</option><option value="task">任务事务</option><option value="other">其他</option></select></label>
+          <label>事项名称 <input className="form-input" required maxLength={120} value={bookingForm.title} onChange={e => setBookingForm({ ...bookingForm, title: e.target.value })} placeholder="例如：客户服务沟通" /></label>
+        </div>
+        <label>备注（选填） <textarea className="form-input" maxLength={1000} value={bookingForm.note} onChange={e => setBookingForm({ ...bookingForm, note: e.target.value })} /></label>
+        <p>已选 {selectedSlotIds.length} 个空档</p>
+        <button className="btn btn-primary" disabled={busy || !selectedSlotIds.length}>确认预约</button>
+      </form>}
       {selectedDates.flatMap(date => slotsOn(date).map(slot => <div key={slot._id} style={{ borderTop: '1px solid #E1EAE6', padding: '10px 0', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-        <span>{date} {clock(slot.startAt)}–{clock(slot.endAt)} · {labels[slot.status] || slot.status}</span>
-        {slot.status !== 'booked' && <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => remove(slot._id)}>删除</button>}
+        <span>{slot.status === 'available' && +new Date(slot.startAt) > nowMs && <input type="checkbox" aria-label={`选择 ${date} ${clock(slot.startAt)} 空档`} checked={selectedSlotIds.includes(String(slot._id))} onChange={() => toggleSlot(String(slot._id))} /> } {date} {clock(slot.startAt)}–{clock(slot.endAt)} · {labels[slot.status] || slot.status}{bookingFor(slot)?.title ? ` · ${bookingFor(slot).title}` : ''}</span>
+        <span>{slot.status !== 'booked' && (view === 'mine' || canManageTeam) && <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => remove(slot._id)}>删除</button>}{String(bookingFor(slot)?.slotIds?.[0]) === String(slot._id) && <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => cancelBooking(bookingFor(slot)._id)}>取消预约</button>}</span>
       </div>))}
     </div>
   </div>

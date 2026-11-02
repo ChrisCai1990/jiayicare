@@ -1,0 +1,22 @@
+const mongoose = require('mongoose');
+
+const schema = new mongoose.Schema({
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
+  staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true, index: true },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
+  slotIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StaffAvailability', required: true }],
+  originalSources: [{ type: String, enum: ['self', 'planner'] }],
+  startAt: { type: Date, required: true },
+  endAt: { type: Date, required: true },
+  category: { type: String, enum: ['service', 'communication', 'task', 'other'], required: true },
+  title: { type: String, required: true, trim: true, maxlength: 120 },
+  note: { type: String, default: '', maxlength: 1000 },
+  status: { type: String, enum: ['pending', 'scheduled', 'cancelling', 'cancelled'], default: 'pending' },
+  cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  cancelledAt: { type: Date, default: null },
+}, { timestamps: true });
+
+schema.index({ tenantId: 1, staffId: 1, startAt: 1, status: 1 });
+schema.plugin(require('../utils/tenantScope').tenantScopePlugin);
+
+module.exports = mongoose.model('StaffScheduleBooking', schema);

@@ -6,7 +6,7 @@ const schema = new mongoose.Schema({
   startAt: { type: Date, required: true },
   endAt: { type: Date, required: true },
   status: { type: String, enum: ['available', 'booked', 'unavailable'], default: 'available' },
-  source: { type: String, enum: ['self', 'planner', 'consultation'], default: 'self' },
+  source: { type: String, enum: ['self', 'planner', 'consultation', 'general_booking'], default: 'self' },
   bookingId: { type: mongoose.Schema.Types.ObjectId, default: null },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
 }, { timestamps: true });

@@ -2,11 +2,12 @@ const router = require('express').Router();
 const mongoose = require('mongoose');
 const staffAuth = require('../middleware/staffAuth');
 const StaffAvailability = require('../models/StaffAvailability');
+const StaffScheduleBooking = require('../models/StaffScheduleBooking');
 const Admin = require('../models/Admin');
 
 router.use(staffAuth);
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
-const canViewTeam = staff => ['healthPlanner', 'healthManager', 'superadmin', 'manager'].includes(staff.role);
+const canManageOthers = staff => ['healthPlanner', 'healthManager', 'superadmin', 'manager'].includes(staff.role);
 const range = req => {
   const start = new Date(req.query.start), end = new Date(req.query.end);
   return Number.isFinite(+start) && Number.isFinite(+end) && end > start && end - start <= 45 * 86400000 ? { start, end } : null;
@@ -17,13 +18,11 @@ router.get('/', async (req, res) => {
   if (!period) return fail(res, 400, '请选择不超过45天的有效时间范围');
   const targetId = req.query.staffId || String(req.staff._id);
   if (!mongoose.isValidObjectId(targetId)) return fail(res, 400, '人员编号无效');
-  if (String(targetId) !== String(req.staff._id) && !canViewTeam(req.staff)) return fail(res, 403, '无权查看其他人员排班');
   const slots = await StaffAvailability.find({ tenantId: req.staff.tenantId, staffId: targetId, startAt: { $lt: period.end }, endAt: { $gt: period.start } }).sort({ startAt: 1 }).lean();
   res.json({ success: true, data: slots });
 });
 
 router.get('/team', async (req, res) => {
-  if (!canViewTeam(req.staff)) return fail(res, 403, '无权查看团队排班');
   const period = range(req);
   if (!period) return fail(res, 400, '请选择不超过45天的有效时间范围');
   const staff = await Admin.find({ tenantId: req.staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id name role').sort({ name: 1 }).lean();
@@ -32,13 +31,84 @@ router.get('/team', async (req, res) => {
   res.json({ success: true, data: { staff, slots } });
 });
 
+router.get('/bookings', async (req, res) => {
+  const period = range(req);
+  if (!period) return fail(res, 400, '请选择不超过45天的有效时间范围');
+  const targetId = req.query.staffId || String(req.staff._id);
+  if (!mongoose.isValidObjectId(targetId)) return fail(res, 400, '人员编号无效');
+  const filter = { tenantId: req.staff.tenantId, staffId: targetId, status: 'scheduled',
+    startAt: { $lt: period.end }, endAt: { $gt: period.start } };
+  if (!canManageOthers(req.staff)) filter.$or = [{ staffId: req.staff._id }, { createdBy: req.staff._id }];
+  const bookings = await StaffScheduleBooking.find(filter).sort({ startAt: 1 }).lean();
+  res.json({ success: true, data: bookings });
+});
+
+router.post('/bookings', async (req, res) => {
+  const ids = req.body?.slotIds;
+  const category = req.body?.category;
+  const title = String(req.body?.title || '').trim();
+  const note = String(req.body?.note || '').trim();
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 36 || new Set(ids.map(String)).size !== ids.length ||
+      ids.some(id => !mongoose.isValidObjectId(id)) || !['service', 'communication', 'task', 'other'].includes(category) ||
+      !title || title.length > 120 || note.length > 1000)
+    return fail(res, 400, '请选择1至36个空档，并填写预约类型和120字以内的事项名称');
+  const slots = await StaffAvailability.find({ _id: { $in: ids }, tenantId: req.staff.tenantId }).sort({ startAt: 1 }).lean();
+  if (slots.length !== ids.length || slots.some(slot => slot.status !== 'available' || String(slot.staffId) !== String(slots[0].staffId)))
+    return fail(res, 409, '所选空档已变化，请刷新后重选');
+  if (+slots[0].startAt < Date.now() || +slots.at(-1).endAt - +slots[0].startAt > 12 * 3600000 ||
+      slots.some((slot, index) => index && +slot.startAt !== +slots[index - 1].endAt))
+    return fail(res, 400, '只能预约未来连续且不超过12小时的空档');
+  const target = await Admin.findOne({ _id: slots[0].staffId, tenantId: req.staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
+  if (!target) return fail(res, 404, '预约人员不存在或已停用');
+  const booking = await StaffScheduleBooking.create({ tenantId: req.staff.tenantId, staffId: slots[0].staffId,
+    createdBy: req.staff._id, slotIds: slots.map(slot => slot._id), originalSources: slots.map(slot => slot.source),
+    startAt: slots[0].startAt, endAt: slots.at(-1).endAt, category, title, note, status: 'pending' });
+  const reserved = [];
+  try {
+    for (const slot of slots) {
+      const result = await StaffAvailability.updateOne({ _id: slot._id, tenantId: req.staff.tenantId, status: 'available' },
+        { $set: { status: 'booked', bookingId: booking._id, source: 'general_booking', updatedBy: req.staff._id } });
+      if (result.modifiedCount !== 1) throw new Error('slot_conflict');
+      reserved.push(slot);
+    }
+    const activated = await StaffScheduleBooking.updateOne({ _id: booking._id, tenantId: req.staff.tenantId, status: 'pending' }, { $set: { status: 'scheduled' } });
+    if (activated.modifiedCount !== 1) throw new Error('booking_activation_failed');
+  } catch (error) {
+    for (const slot of reserved) await StaffAvailability.updateOne({ _id: slot._id, tenantId: req.staff.tenantId,
+      bookingId: booking._id, source: 'general_booking' }, { $set: { status: 'available', bookingId: null, source: slot.source, updatedBy: req.staff._id } });
+    await StaffScheduleBooking.updateOne({ _id: booking._id, tenantId: req.staff.tenantId }, { $set: { status: 'cancelled', cancelledBy: req.staff._id, cancelledAt: new Date() } });
+    if (error.message === 'slot_conflict') return fail(res, 409, '部分时间刚被预约，请刷新后重选');
+    throw error;
+  }
+  res.status(201).json({ success: true, data: booking });
+});
+
+router.post('/bookings/:id/cancel', async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '预约编号无效');
+  const booking = await StaffScheduleBooking.findOne({ _id: req.params.id, tenantId: req.staff.tenantId, status: 'scheduled' }).lean();
+  if (!booking) return fail(res, 404, '预约不存在或已取消');
+  if (![booking.staffId, booking.createdBy].some(id => String(id) === String(req.staff._id)) && !canManageOthers(req.staff))
+    return fail(res, 403, '无权取消此预约');
+  const claimed = await StaffScheduleBooking.updateOne({ _id: booking._id, tenantId: req.staff.tenantId, status: 'scheduled' },
+    { $set: { status: 'cancelling' } });
+  if (claimed.modifiedCount !== 1) return fail(res, 409, '预约状态已变化，请刷新');
+  for (let index = 0; index < booking.slotIds.length; index++) {
+    await StaffAvailability.updateOne({ _id: booking.slotIds[index], tenantId: req.staff.tenantId,
+      bookingId: booking._id, source: 'general_booking' },
+    { $set: { status: 'available', bookingId: null, source: booking.originalSources[index] || 'self', updatedBy: req.staff._id } });
+  }
+  await StaffScheduleBooking.updateOne({ _id: booking._id, tenantId: req.staff.tenantId, status: 'cancelling' },
+    { $set: { status: 'cancelled', cancelledBy: req.staff._id, cancelledAt: new Date() } });
+  res.json({ success: true });
+});
+
 router.post('/', async (req, res) => {
   const startAt = new Date(req.body?.startAt), endAt = new Date(req.body?.endAt);
   if (!Number.isFinite(+startAt) || !Number.isFinite(+endAt) || startAt < new Date() || endAt - startAt < 15 * 60000 || endAt - startAt > 12 * 3600000 || startAt > new Date(Date.now() + 180 * 86400000))
     return fail(res, 400, '请选择未来180天内、15分钟至12小时的时间段');
   const staffId = req.body?.staffId || req.staff._id;
   if (!mongoose.isValidObjectId(staffId)) return fail(res, 400, '人员编号无效');
-  if (String(staffId) !== String(req.staff._id) && !canViewTeam(req.staff)) return fail(res, 403, '无权维护其他人员排班');
+  if (String(staffId) !== String(req.staff._id) && !canManageOthers(req.staff)) return fail(res, 403, '无权维护其他人员排班');
   const staff = await Admin.findOne({ _id: staffId, tenantId: req.staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
   if (!staff) return fail(res, 404, '人员不存在或已停用');
   if (await StaffAvailability.exists({ tenantId: req.staff.tenantId, staffId, startAt: { $lt: endAt }, endAt: { $gt: startAt } })) return fail(res, 409, '该时间与现有排班或预约冲突');
@@ -62,7 +132,7 @@ router.post('/batch', async (req, res) => {
   const effectiveStart = new Date(+startAt + skipped * step);
   const staffId = req.body?.staffId || req.staff._id;
   if (!mongoose.isValidObjectId(staffId)) return fail(res, 400, '人员编号无效');
-  if (String(staffId) !== String(req.staff._id) && !canViewTeam(req.staff)) return fail(res, 403, '无权维护其他人员排班');
+  if (String(staffId) !== String(req.staff._id) && !canManageOthers(req.staff)) return fail(res, 403, '无权维护其他人员排班');
   const staff = await Admin.findOne({ _id: staffId, tenantId: req.staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
   if (!staff) return fail(res, 404, '人员不存在或已停用');
   if (await StaffAvailability.exists({ tenantId: req.staff.tenantId, staffId, startAt: { $lt: endAt }, endAt: { $gt: effectiveStart } }))
@@ -86,7 +156,7 @@ router.post('/day-plan', async (req, res) => {
     return fail(res, 400, '请选择当天的上午、下午或晚上时间，并确认分段方式');
   const staffId = req.body?.staffId || req.staff._id;
   if (!mongoose.isValidObjectId(staffId)) return fail(res, 400, '人员编号无效');
-  if (String(staffId) !== String(req.staff._id) && !canViewTeam(req.staff)) return fail(res, 403, '无权维护其他人员排班');
+  if (String(staffId) !== String(req.staff._id) && !canManageOthers(req.staff)) return fail(res, 403, '无权维护其他人员排班');
   const staff = await Admin.findOne({ _id: staffId, tenantId: req.staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
   if (!staff) return fail(res, 404, '人员不存在或已停用');
   const localDay = value => value.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
@@ -138,7 +208,7 @@ router.post('/copy-week', async (req, res) => {
   if (!Number.isFinite(+targetStart)) return fail(res, 400, '请选择要复制到的周');
   const staffId = req.body?.staffId || req.staff._id;
   if (!mongoose.isValidObjectId(staffId)) return fail(res, 400, '人员编号无效');
-  if (String(staffId) !== String(req.staff._id) && !canViewTeam(req.staff)) return fail(res, 403, '无权维护其他人员排班');
+  if (String(staffId) !== String(req.staff._id) && !canManageOthers(req.staff)) return fail(res, 403, '无权维护其他人员排班');
   const staff = await Admin.findOne({ _id: staffId, tenantId: req.staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
   if (!staff) return fail(res, 404, '人员不存在或已停用');
   const weekMs = 7 * 86400000;
@@ -165,7 +235,7 @@ router.delete('/:id', async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '排班编号无效');
   const slot = await StaffAvailability.findById(req.params.id);
   if (!slot || String(slot.tenantId) !== String(req.staff.tenantId)) return fail(res, 404, '排班不存在');
-  if (String(slot.staffId) !== String(req.staff._id) && !canViewTeam(req.staff)) return fail(res, 403, '无权修改其他人员排班');
+  if (String(slot.staffId) !== String(req.staff._id) && !canManageOthers(req.staff)) return fail(res, 403, '无权修改其他人员排班');
   if (slot.status === 'booked') return fail(res, 409, '已预约时间不能直接删除，请先处理预约');
   await slot.deleteOne();
   res.json({ success: true });

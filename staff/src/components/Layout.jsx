@@ -25,7 +25,7 @@ const ALL_NAV = [
   { label: '会员营销',     icon: 'marketing', path: '/marketing',   roles: ['superadmin','manager','healthManager','familyDoctor'],                              moduleKey: 'marketing' },
   { label: '官网线索',     icon: 'marketing', path: '/visitor-leads', roles: ['superadmin','healthPlanner'],                                                     moduleKey: 'leads' },
   { label: '团队管理',     icon: 'team', path: '/team',             roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'],      moduleKey: 'team' },
-  { label: '我的排班',     icon: 'team', path: '/availability',     roles: [] },
+  { label: '排班与预约',   icon: 'team', path: '/availability',     roles: [] },
   { label: '专家咨询',     icon: 'services', path: '/expert-consultations', roles: ['healthManager','familyDoctor','healthPlanner','specialist','nutritionist','rehabSpecialist','psychologist','tcmDoctor','superadmin'] },
   { label: '运营看板',     icon: 'operations', path: '/operations', roles: ['superadmin','manager'],                                                            moduleKey: 'operations' },
   { label: '日常健康数据', icon: 'checkin', path: '/daily-checkin', roles: [], moduleKey: 'daily_checkin' },
