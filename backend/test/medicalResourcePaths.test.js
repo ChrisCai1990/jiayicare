@@ -15,6 +15,8 @@ test('a contact needs a hospital, a service type and a usable booking route', ()
   assert.throws(() => validateAppointmentContact({ ...contact, institutionId: null }), /必须关联医院/);
   assert.throws(() => validateAppointmentContact({ ...contact, appointmentInfo: { ...contact.appointmentInfo, serviceType: '' } }), /服务类型/);
   assert.throws(() => validateAppointmentContact({ ...contact, appointmentInfo: { serviceType: 'checkup', channels: [] } }), /预约渠道/);
+  assert.doesNotThrow(() => validateAppointmentContact({ ...contact, appointmentInfo: { serviceType: 'checkup', hospitalEmail: 'xsmztj@163.com' } }));
+  assert.throws(() => validateAppointmentContact({ ...contact, appointmentInfo: { serviceType: 'checkup', hospitalEmail: 'invalid' } }), /邮箱格式/);
   assert.throws(() => validateAppointmentContact(contact, { forPublication: true }), /核实日期/);
   assert.doesNotThrow(() => validateAppointmentContact({ ...contact, sourceNote: '医院官网，张三核实', expiresAt: new Date('2099-12-31'), appointmentInfo: { ...contact.appointmentInfo, verifiedAt: new Date('2026-11-01') } }, { forPublication: true }));
   assert.doesNotThrow(() => validateAppointmentContact({ kind: 'department_advantage' }));

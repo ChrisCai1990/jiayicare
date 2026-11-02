@@ -374,6 +374,7 @@ const cleanKnowledgePayload = body => ({
     campus: cleanText(body.appointmentInfo?.campus, 100),
     officialPlatform: cleanText(body.appointmentInfo?.officialPlatform, 500),
     hospitalPhone: cleanText(body.appointmentInfo?.hospitalPhone, 100),
+    hospitalEmail: cleanText(body.appointmentInfo?.hospitalEmail, 254),
     internalContactName: cleanText(body.appointmentInfo?.internalContactName, 100),
     internalContactPhone: cleanText(body.appointmentInfo?.internalContactPhone, 100),
     bookingSteps: cleanText(body.appointmentInfo?.bookingSteps, 2000),
@@ -499,6 +500,7 @@ router.get('/medical-resource-knowledge', adminAuth, async (req, res) => {
         { 'appointmentInfo.campus': keyword },
         { 'appointmentInfo.officialPlatform': keyword },
         { 'appointmentInfo.hospitalPhone': keyword },
+        { 'appointmentInfo.hospitalEmail': keyword },
         { 'appointmentInfo.internalContactPhone': keyword },
       );
     } else if (path === 'problem') {

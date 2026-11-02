@@ -3730,7 +3730,7 @@ router.get('/medical-resource-knowledge', staffAuth, checkPermission('medical_re
     filter.$and = [{ $or: [{ title: keyword }, { tags: keyword }, { applicableScenarios: keyword }, { summary: keyword }] }];
     if (path === 'contact') {
       const hospitals = await MedicalInstitution.find({ name: keyword }).select('_id').lean();
-      filter.$and[0].$or.push({ institutionId: { $in: hospitals.map(item => item._id) } }, { 'appointmentInfo.campus': keyword }, { 'appointmentInfo.officialPlatform': keyword }, { 'appointmentInfo.hospitalPhone': keyword }, { 'appointmentInfo.internalContactPhone': keyword });
+      filter.$and[0].$or.push({ institutionId: { $in: hospitals.map(item => item._id) } }, { 'appointmentInfo.campus': keyword }, { 'appointmentInfo.officialPlatform': keyword }, { 'appointmentInfo.hospitalPhone': keyword }, { 'appointmentInfo.hospitalEmail': keyword }, { 'appointmentInfo.internalContactPhone': keyword });
     } else if (path === 'problem') {
       const [hospitals, departments, experts] = await Promise.all([
         MedicalInstitution.find({ name: keyword }).select('_id').lean(),
