@@ -7,15 +7,15 @@ const HealthRecord = require('../src/models/HealthRecord');
 const FollowUp = require('../src/models/FollowUp');
 const resolver = require('../src/utils/serviceAccess');
 const { syncServiceCycleMonitoringReminders, activeToday } = require('../src/utils/annualPlanMonitoringReminders');
-test('未同意健康提醒时暂停系统监测并收起通知，不清除用户关闭偏好', async t => {
-  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ _id: 'patient', onboardingCompleted: true, healthMonitoringConsentAt: null }) }) }));
+test('已关闭健康提醒时暂停系统监测并收起通知，不清除用户关闭偏好', async t => {
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ _id: 'patient', onboardingCompleted: true, healthMonitoringPreference: 'disabled' }) }) }));
   t.mock.method(Reminder, 'updateMany', async (q, u) => { assert.equal(q.systemManaged, true); assert.equal(String(q.sourceKey), '/^service-cycle:/'); assert.deepEqual(u.$set, { enabled: false }); });
   t.mock.method(Message, 'updateOne', async (q, u) => { assert.equal(q.dedupeKey, 'health-monitoring:patient'); assert.equal(u.$set.unread, false); });
   assert.equal((await syncServiceCycleMonitoringReminders('patient')).paused, true);
 });
 test('免费监测不依赖服务期，保留用户主动关闭', async t => {
   const writes = [];
-  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ _id: 'patient', age: 40, serviceExpiry: '2020-01-01', onboardingCompleted: true, healthMonitoringConsentAt: new Date('2026-09-01'), onboardingCompletedAt: new Date('2026-09-01') }) }) }));
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ _id: 'patient', age: 40, serviceExpiry: '2020-01-01', onboardingCompleted: true, healthMonitoringPreference: 'enabled', onboardingCompletedAt: new Date('2026-09-01') }) }) }));
   t.mock.method(resolver, 'resolveServiceAccess', async () => ({ active: false }));
   t.mock.method(HealthRecord, 'find', () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) }));
   t.mock.method(HealthRecord, 'findOne', q => ({ sort: () => ({ select: () => ({ lean: async () => ({ recordedAt: new Date(q.type === 'bloodPressure' ? '2026-10-28T02:00:00Z' : '2026-10-26T02:00:00Z') }) }) }) }));

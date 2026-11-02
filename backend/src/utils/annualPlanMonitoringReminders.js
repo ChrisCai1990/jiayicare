@@ -80,9 +80,9 @@ function buildMonitoringReminderSpecs(patient, moduleData = {}, recentBloodPress
 
 async function syncServiceCycleMonitoringReminders(userId) {
   const patient = await User.findById(userId)
-    .select('age birthDate birthday dateOfBirth height weight chronicDiseases medicalHistory healthProfile.medicalHistory healthConcern serviceStartDate serviceExpiry createdAt onboardingCompleted onboardingCompletedAt healthMonitoringConsentAt isDeleted').lean();
+    .select('age birthDate birthday dateOfBirth height weight chronicDiseases medicalHistory healthProfile.medicalHistory healthConcern serviceStartDate serviceExpiry createdAt onboardingCompleted onboardingCompletedAt healthMonitoringConsentAt healthMonitoringPreference isDeleted').lean();
   if (!patient) return { created: 0, updated: 0 };
-  if (patient.isDeleted || !patient.onboardingCompleted || !patient.healthMonitoringConsentAt) {
+  if (!await require('./monitoringPreference').monitoringEnabled(patient)) {
     await Reminder.updateMany({ user: patient._id, systemManaged: true, sourceKey: /^service-cycle:/ }, { $set: { enabled: false } });
     await clearMonitoringSystemMessage(patient._id);
     return { created: 0, updated: 0, paused: true };
@@ -153,8 +153,8 @@ async function clearMonitoringSystemMessage(userId) {
 async function syncMonitoringSystemMessage(userId, now = new Date()) {
   const Message = require('../models/Message');
   const HealthRecord = require('../models/HealthRecord');
-  const patient = await User.findById(userId).select('onboardingCompleted healthMonitoringConsentAt isDeleted').lean();
-  if (!patient?.onboardingCompleted || !patient.healthMonitoringConsentAt || patient.isDeleted) { await clearMonitoringSystemMessage(userId); return null; }
+  const patient = await User.findById(userId).select('onboardingCompleted healthMonitoringConsentAt healthMonitoringPreference isDeleted').lean();
+  if (!await require('./monitoringPreference').monitoringEnabled(patient)) { await clearMonitoringSystemMessage(userId); return null; }
   const reminders = await Reminder.find({ user: userId, systemManaged: true, sourceKey: /^service-cycle:/, enabled: true }).lean();
   const due = reminders.filter(item => activeToday(item, now));
   if (!due.length) { await clearMonitoringSystemMessage(userId); return null; }

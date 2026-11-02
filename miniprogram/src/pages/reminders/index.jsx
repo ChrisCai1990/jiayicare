@@ -82,7 +82,7 @@ export default function RemindersPage() {
 
       <View style={{ padding: `${spacing.lg}px` }}>
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: `${spacing.md}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px` }}>
-        <View style={{ flex: 1 }}><Text style={{ display: 'block', fontSize: '14px', fontWeight: 600 }}>免费血压、体重提醒</Text><Text style={{ fontSize: '12px', color: colors.textMuted }}>无需年度方案；开启后按健康情况提醒，可随时关闭</Text></View>
+        <View style={{ flex: 1 }}><Text style={{ display: 'block', fontSize: '14px', fontWeight: 600 }}>免费血压、体重提醒</Text><Text style={{ fontSize: '12px', color: colors.textMuted }}>默认开启，无需年度方案；可随时关闭</Text></View>
         <Switch checked={monitoringConsent} onChange={e => toggleMonitoringConsent(e.detail.value)} color={colors.primary} />
       </View>
       <View style={{ whiteSpace: 'nowrap', overflowX: 'auto', marginBottom: `${spacing.md}px` }}>
