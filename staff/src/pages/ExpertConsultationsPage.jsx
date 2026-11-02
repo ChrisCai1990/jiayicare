@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
+import PatientPicker from '../components/PatientPicker'
 
 const id = value => String(value?._id || value || '')
 const time = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '待安排'
@@ -8,7 +9,7 @@ const stages = { team_assignment: '分配服务团队', intake: '健管收集资
 const input = { width: '100%', boxSizing: 'border-box' }
 const textField = (label, value, onChange, rows = 3) => <label style={{ display: 'block', margin: '10px 0' }}><b>{label}</b><textarea className="form-input" style={input} rows={rows} value={value} onChange={e => onChange(e.target.value)}/></label>
 
-export default function ExpertConsultationsPage() {
+export default function ExpertConsultationsPage({ embedded = false }) {
   const { staff } = useStaff()
   const self = id(staff)
   const [rows, setRows] = useState([])
@@ -21,6 +22,14 @@ export default function ExpertConsultationsPage() {
   const [members, setMembers] = useState([{ expertId: '', slotId: '' }])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [draft, setDraft] = useState({ patientId: '', type: 'single', expertCount: 2, request: '' })
+  const [filter, setFilter] = useState('')
+  async function create(event) {
+    event.preventDefault(); setBusy(true); setError('')
+    try { await staffAPI.createExpertConsultation(draft); setCreating(false); setDraft({ patientId: '', type: 'single', expertCount: 2, request: '' }); await load() }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
   const selected = rows.find(row => id(row) === selectedId)
   const planner = selected && (id(selected.plannerId) === self || staff?.role === 'superadmin'
     || (selected.status === 'team_assignment' && !selected.plannerId && staff?.role === 'healthPlanner'))
@@ -64,14 +73,26 @@ export default function ExpertConsultationsPage() {
   const updateMember = (index, key, value) => setMembers(current => current.map((member, i) => i === index ? { ...member, [key]: value, ...(key === 'expertId' ? { slotId: '' } : {}) } : member))
   const slotOptions = staffId => slots.filter(slot => id(slot.staffId) === id(staffId) && (+new Date(slot.endAt) - +new Date(slot.startAt)) >= 15 * 60000 && (+new Date(slot.endAt) - +new Date(slot.startAt)) <= 30 * 60000)
   return <div className="page-container" style={{ maxWidth: 1100 }}>
-    <h1>专家咨询与 MDT</h1>
+    {!embedded && <h1>专家咨询与 MDT</h1>}
     <p>健管收集资料 → 顾问写转介信 → 规划师按专家库和空档派发 → 专家书面回复 → 顾问协调 → 随访审核。</p>
     {error && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
+    <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+      <select className="form-input" aria-label="咨询类型" value={filter} onChange={e => setFilter(e.target.value)}><option value="">全部咨询</option><option value="single">专家咨询</option><option value="mdt">MDT</option></select>
+      {['healthManager', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary" onClick={() => setCreating(!creating)}>＋ 医护端发起</button>}
+    </div>
+    {creating && <form className="card" style={{ padding: 20, marginBottom: 20 }} onSubmit={create}>
+      <h3>发起专家咨询 / MDT</h3><PatientPicker value={draft.patientId} onChange={patientId => setDraft({ ...draft, patientId })} />
+      <label>咨询类型<select className="form-input" value={draft.type} onChange={e => setDraft({ ...draft, type: e.target.value })}><option value="single">单次专家咨询</option><option value="mdt">MDT 多学科咨询</option></select></label>
+      {draft.type === 'mdt' && <label>专家人数<select className="form-input" value={draft.expertCount} onChange={e => setDraft({ ...draft, expertCount: Number(e.target.value) })}><option value={2}>2 位</option><option value={3}>3 位</option></select></label>}
+      {textField('本次咨询问题', draft.request, request => setDraft({ ...draft, request }))}
+      <p>医护端发起会登记为独立服务事项，不自动产生收费订单。</p>
+      <button className="btn btn-primary" disabled={busy || !draft.patientId || !draft.request.trim()}>提交发起</button>
+    </form>}
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(230px,1fr) minmax(420px,2fr)', gap: 16 }}>
-      <div className="card" style={{ padding: 16 }}><h3>服务订单</h3>
+      <div className="card" style={{ padding: 16 }}><h3>咨询事项</h3>
         {rows.length === 0 && <p>暂无待处理咨询</p>}
-        {rows.map(row => <button key={id(row)} onClick={() => choose(row)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: 10, marginBottom: 8, background: id(row) === selectedId ? '#EFF7F2' : 'white', border: '1px solid #DDE8E1', borderRadius: 8, cursor: 'pointer' }}>
-          <b>{row.type === 'mdt' ? 'MDT 多学科' : '单次专家'}咨询</b> · {stages[row.status]}<br/><small>订单 {id(row.orderId).slice(-8)}</small>
+        {rows.filter(row => !filter || row.type === filter).map(row => <button key={id(row)} onClick={() => choose(row)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: 10, marginBottom: 8, background: id(row) === selectedId ? '#EFF7F2' : 'white', border: '1px solid #DDE8E1', borderRadius: 8, cursor: 'pointer' }}>
+          <b>{row.patientId?.name || '客户'} · {row.type === 'mdt' ? 'MDT 多学科' : '单次专家'}咨询</b> · {stages[row.status]}<br/><small>{row.initiationSource === 'staff' ? '医护端发起' : `线上订单 ${id(row.orderId).slice(-8)}`}</small>
         </button>)}
       </div>
       <div className="card" style={{ padding: 18 }}>

@@ -8,6 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import ExpertConsultationsPage from './ExpertConsultationsPage'
 import ScheduleBookingDialog from '../components/ScheduleBookingDialog'
 import MonitoringFollowUpFields, { isStaffMonitoringFollowUp, initialMonitoringMeasurement, monitoringSubmission } from '../components/MonitoringFollowUpFields'
 import annualBookingPlan from '../../../shared/annualBookingPlan.cjs'
@@ -203,6 +204,7 @@ export default function FollowUpsPage() {
   const [loading,      setLoading]      = useState(true)
   const [loadError, setLoadError] = useState('')
   const [showModal,    setShowModal]    = useState(false)  // 保留状态但不再使用新建入口
+  const [section, setSection] = useState('followups')
   const [scheduleBookingContext, setScheduleBookingContext] = useState(null)
   // 默认包含逾期任务；从工作台跳转时保留显式日期范围。
 
@@ -470,8 +472,14 @@ export default function FollowUpsPage() {
           <h1 className="page-title">随访管理</h1>
           <p className="page-subtitle">共 {total} 条记录</p>
         </div>
-        {can(staff, 'followups', 'create') && <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新增随访</button>}
+        {section === 'followups' && can(staff, 'followups', 'create') && <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新增随访</button>}
       </div>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>
+        <button className={`btn ${section === 'followups' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSection('followups')}>日常随访</button>
+        <button className={`btn ${section === 'consultations' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSection('consultations')}>专家咨询与 MDT</button>
+      </div>
+      {section === 'consultations' && <ExpertConsultationsPage embedded />}
+      <div style={{ display: section === 'followups' ? undefined : 'none' }}>
 
       {/* 状态标签 */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -616,6 +624,7 @@ export default function FollowUpsPage() {
       {/* 分页 */}
       <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage}
         pageSize={limit} onPageSizeChange={size => { setLimit(size); setPage(1) }} />
+      </div>
       {scheduleBookingContext && <ScheduleBookingDialog context={scheduleBookingContext} onClose={() => setScheduleBookingContext(null)} onSaved={() => toast('已预约时间，可在排班与预约中查看')} />}
 
       {/* 随访详情弹窗 */}

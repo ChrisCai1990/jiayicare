@@ -141,6 +141,36 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(claimed.statusCode, 200, JSON.stringify(claimed.body));
     assert.equal(String((await Case.findById(unassigned.body.data.id)).plannerId), String(plannerId));
     const bookedDeletion = response();
+    const collection = mongoose.connection.db.collection('expertconsultationcases');
+    await collection.createIndex({ tenantId: 1, orderId: 1 }, { unique: true, name: 'tenant_order_unique' });
+    const migration = require('../scripts/migrateExpertConsultationSourceIndex');
+    assert.equal((await migration.migrate(collection, true)).migrated, true);
+    await mongoose.connection.db.collection('users').updateOne({ _id: patientId }, { $set: { assignedFamilyDoctor: advisorId } });
+    const staffRequest = type => call('post', '/staff', { staff: { _id: managerId, tenantId, role: 'healthManager' },
+      body: { patientId: String(patientId), type, expertCount: 2, request: '医护端发起咨询' } });
+    const internalSingle = await staffRequest('single');
+    const internalMdt = await staffRequest('mdt');
+    assert.equal(internalSingle.statusCode, 201, JSON.stringify(internalSingle.body));
+    assert.equal(internalMdt.statusCode, 201, JSON.stringify(internalMdt.body));
+    assert.equal((await Case.findById(internalSingle.body.data.id)).orderId, null);
+    const denied = await call('post', '/staff', { staff: { _id: oid(), tenantId, role: 'healthManager' },
+      body: { patientId: String(patientId), type: 'single', request: '不应允许' } });
+    assert.equal(denied.statusCode, 403);
+    caseId = internalSingle.body.data.id;
+    await step('intake', managerId, { summary: '资料已核实' });
+    await step('referral', advisorId, { purpose: '咨询分析', questions: '下一步安排' });
+    const internalExpertSlot = oid(), internalManagerSlot = oid();
+    const internalStart = new Date(Date.now() + 5 * 86400000), internalEnd = new Date(+internalStart + 20 * 60000);
+    await mongoose.connection.db.collection('staffavailabilities').insertMany([
+      { _id: internalExpertSlot, tenantId, staffId: expertStaffId, startAt: internalStart, endAt: internalEnd, status: 'available' },
+      { _id: internalManagerSlot, tenantId, staffId: managerId, startAt: internalStart, endAt: internalEnd, status: 'available' },
+    ]);
+    assert.equal((await step('assign', plannerId, { members: [{ expertId, slotId: internalExpertSlot }], managerSlotId: internalManagerSlot })).statusCode, 200);
+    await step('reply', expertStaffId, { opinion: '维持管理', nextStep: '按计划随访' });
+    await step('reconcile', advisorId, { note: '按计划随访' });
+    await step('followup', managerId, { plan: '每月随访', selfManaged: false });
+    assert.equal((await step('complete', advisorId, {})).statusCode, 200);
+    assert.equal((await Case.findById(caseId)).status, 'completed');
     const deletionRequest = { params: { id: String(managerSlot) }, staff: { _id: managerId, tenantId, role: 'healthManager' } };
     await withTenant(tenantId, deletionRequest, () => handler(scheduleRouter, 'delete', '/:id')(deletionRequest, bookedDeletion));
     assert.equal(bookedDeletion.statusCode, 409);
