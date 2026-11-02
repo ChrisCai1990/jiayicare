@@ -33,6 +33,11 @@ export default function AvailabilityPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [nowMs, setNowMs] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   const first = monday(`${month}-01`)
   const last = dateKey(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0))
@@ -57,8 +62,11 @@ export default function AvailabilityPage() {
   const previewStart = localDateTime(form.date, form.startTime)
   const previewEnd = localDateTime(form.date, form.endTime)
   const previewStep = Number(form.segmentMinutes) * 60000
-  const previewCount = previewStep && form.status === 'available' && (+previewEnd - +previewStart) > 0 && (+previewEnd - +previewStart) % previewStep === 0
+  const previewTotal = previewStep && form.status === 'available' && (+previewEnd - +previewStart) > 0 && (+previewEnd - +previewStart) % previewStep === 0
     ? (+previewEnd - +previewStart) / previewStep : 0
+  const previewSkipped = previewTotal ? Math.max(0, Math.ceil((nowMs - +previewStart) / previewStep)) : 0
+  const previewCount = Math.max(0, previewTotal - previewSkipped)
+  const effectivePreviewStart = new Date(+previewStart + previewSkipped * previewStep)
 
   function chooseWeek(date) {
     setWeek(date)
@@ -82,21 +90,24 @@ export default function AvailabilityPage() {
       setError('请选择同一天的时间，每段至少15分钟、最多12小时。例如 09:00 到 09:30。')
       return
     }
-    if (startAt < new Date()) { setError('请选择未来的日期和时间'); return }
-    if (form.segmentMinutes !== 'whole' && (!previewCount || previewCount > 36)) {
-      setError('起止时间要能完整分成20分钟或30分钟。例如 09:00 到 10:00 可分成3个20分钟空档。')
-      return
+    const whole = form.segmentMinutes === 'whole' || form.status === 'unavailable'
+    if (whole && startAt < new Date()) { setError('整段时间须从未来开始；若是分段排班，系统可以自动跳过今天已经开始的空档。'); return }
+    if (!whole) {
+      const step = Number(form.segmentMinutes) * 60000
+      if ((+endAt - +startAt) % step !== 0) { setError('起止时间要能完整分成20分钟或30分钟，例如 09:00 到 10:00 可以分成3个20分钟空档。'); return }
+      if (+endAt <= Date.now()) { setError('这段时间已全部过去，请选择未来的空档'); return }
     }
     setBusy(true)
     try {
       const payload = { startAt: startAt.toISOString(), endAt: endAt.toISOString(), status: form.status,
         ...(view === 'team' ? { staffId: target } : {}) }
-      if (form.segmentMinutes === 'whole' || form.status === 'unavailable') {
+      if (whole) {
         await staffAPI.createAvailability(payload)
         setNotice('已添加1个整段时间')
       } else {
         const result = await staffAPI.createAvailabilityBatch({ ...payload, segmentMinutes: Number(form.segmentMinutes) })
-        setNotice(`已添加 ${result.data?.count || previewCount} 个${form.segmentMinutes}分钟空档`)
+        const saved = result.data || {}
+        setNotice(`已添加 ${saved.count} 个${form.segmentMinutes}分钟空档${saved.skipped ? `，自动跳过 ${saved.skipped} 个已开始的时段，实际从 ${clock(saved.firstStartAt)} 开始` : ''}`)
       }
       await load()
     } catch (e) { setError(e.message) }
@@ -161,8 +172,8 @@ export default function AvailabilityPage() {
         <button className="btn btn-primary" disabled={busy || (view === 'team' && !target)}>{busy ? '处理中…' : '添加到本周'}</button>
       </form>
       {form.status === 'available' && form.segmentMinutes !== 'whole' && <p style={{ color: previewCount ? '#176348' : '#B42318' }}>{previewCount
-        ? `将生成 ${previewCount} 个${form.segmentMinutes}分钟空档，例如 ${clock(previewStart)}–${clock(new Date(+previewStart + previewStep))}。`
-        : '当前起止时间无法按所选时长完整分段，请调整结束时间。'}</p>}
+        ? `将生成 ${previewCount} 个${form.segmentMinutes}分钟空档${previewSkipped ? `，跳过 ${previewSkipped} 个已开始的时段` : ''}，从 ${clock(effectivePreviewStart)} 到 ${clock(previewEnd)}。`
+        : previewTotal ? '这段时间已全部过去，请选择未来的空档。' : '当前起止时间无法按所选时长完整分段，请调整结束时间。'}</p>}
       <button className="btn btn-secondary" type="button" disabled={busy || (view === 'team' && !target)} onClick={copyPreviousWeek}>复制上一周到本周</button>
       <p style={{ color: '#5A6B63' }}>复制前请选中目标周。若本周已有重叠时间，系统会提示冲突，不覆盖原排班。</p>
       {selectedDates.flatMap(date => slotsOn(date).map(slot => <div key={slot._id} style={{ borderTop: '1px solid #E1EAE6', padding: '10px 0', display: 'flex', justifyContent: 'space-between', gap: 12 }}>

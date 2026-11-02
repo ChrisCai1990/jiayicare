@@ -51,24 +51,29 @@ router.post('/batch', async (req, res) => {
   const minutes = Number(req.body?.segmentMinutes);
   const step = minutes * 60000;
   const duration = +endAt - +startAt;
-  if (!Number.isFinite(+startAt) || !Number.isFinite(+endAt) || +startAt < Date.now() || +startAt > Date.now() + 180 * 86400000 ||
+  const now = Date.now();
+  if (!Number.isFinite(+startAt) || !Number.isFinite(+endAt) || +startAt > now + 180 * 86400000 ||
       duration < 15 * 60000 || duration > 12 * 3600000 || ![20, 30].includes(minutes) || duration % step !== 0)
     return fail(res, 400, '请选择未来180天内的时间，起止时间须能完整分成20分钟或30分钟的空档');
   if (req.body?.status !== 'available') return fail(res, 400, '分段排班仅用于可预约时间');
+  const skipped = Math.max(0, Math.ceil((now - +startAt) / step));
+  const count = duration / step - skipped;
+  if (count <= 0) return fail(res, 400, '这段时间已全部过去，请选择未来的空档');
+  const effectiveStart = new Date(+startAt + skipped * step);
   const staffId = req.body?.staffId || req.staff._id;
   if (!mongoose.isValidObjectId(staffId)) return fail(res, 400, '人员编号无效');
   if (String(staffId) !== String(req.staff._id) && !canViewTeam(req.staff)) return fail(res, 403, '无权维护其他人员排班');
   const staff = await Admin.findOne({ _id: staffId, tenantId: req.staff.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
   if (!staff) return fail(res, 404, '人员不存在或已停用');
-  if (await StaffAvailability.exists({ tenantId: req.staff.tenantId, staffId, startAt: { $lt: endAt }, endAt: { $gt: startAt } }))
+  if (await StaffAvailability.exists({ tenantId: req.staff.tenantId, staffId, startAt: { $lt: endAt }, endAt: { $gt: effectiveStart } }))
     return fail(res, 409, '这段时间已有排班或预约，未新增任何空档');
-  const rows = Array.from({ length: duration / step }, (_, index) => ({
+  const rows = Array.from({ length: count }, (_, index) => ({
     tenantId: req.staff.tenantId, staffId,
-    startAt: new Date(+startAt + index * step), endAt: new Date(+startAt + (index + 1) * step),
+    startAt: new Date(+effectiveStart + index * step), endAt: new Date(+effectiveStart + (index + 1) * step),
     status: 'available', source: String(staffId) === String(req.staff._id) ? 'self' : 'planner', updatedBy: req.staff._id,
   }));
   await StaffAvailability.insertMany(rows);
-  res.status(201).json({ success: true, data: { count: rows.length } });
+  res.status(201).json({ success: true, data: { count: rows.length, skipped, firstStartAt: rows[0].startAt } });
 });
 
 router.post('/copy-week', async (req, res) => {

@@ -113,3 +113,24 @@ test('segmented scheduling rejects a leftover interval and existing appointments
   assert.equal(overlap.statusCode, 409);
   assert.equal(inserted, false);
 });
+
+test('today’s batch skips elapsed slots and saves only future segments', async t => {
+  const originals = { findOne: Admin.findOne, exists: StaffAvailability.exists, insertMany: StaffAvailability.insertMany };
+  t.after(() => { Admin.findOne = originals.findOne; StaffAvailability.exists = originals.exists; StaffAvailability.insertMany = originals.insertMany; });
+  const tenantId = oid(), staffId = oid(), startAt = new Date(Date.now() - 70 * 60000);
+  const endAt = new Date(+startAt + 120 * 60000);
+  let overlapFilter, saved;
+  Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: staffId }) }) });
+  StaffAvailability.exists = async filter => { overlapFilter = filter; return false; };
+  StaffAvailability.insertMany = async rows => { saved = rows; };
+  const res = response();
+  await handler('post', '/batch')({ staff: { _id: staffId, tenantId, role: 'specialist' }, body: {
+    startAt: startAt.toISOString(), endAt: endAt.toISOString(), segmentMinutes: 30, status: 'available',
+  } }, res);
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.data.skipped, 3);
+  assert.equal(res.body.data.count, 1);
+  assert.equal(saved.length, 1);
+  assert.equal(+saved[0].startAt, +startAt + 90 * 60000);
+  assert.equal(+overlapFilter.endAt.$gt, +saved[0].startAt);
+});
