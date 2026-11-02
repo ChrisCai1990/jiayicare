@@ -9,8 +9,11 @@ const MedicalExpert = require('../models/MedicalExpert');
 const MedicalDepartment = require('../models/MedicalDepartment');
 const MedicalInstitution = require('../models/MedicalInstitution');
 const Admin = require('../models/Admin');
+const supplements = require('./expertRecruitmentSupplement');
+const { normalizeLanguages } = require('../../../shared/expertQualifications.cjs');
 
 const router = express.Router();
+router.use(supplements.router);
 const text = (value, max = 500) => String(value || '').trim().slice(0, max);
 const same = (left, right) => Boolean(text(left)) && text(left).replace(/\s+/g, '') === text(right).replace(/\s+/g, '');
 const list = (value, max = 10) => [...new Set((Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]/)).map(x => text(x, 100)).filter(Boolean))].slice(0, max);
@@ -21,6 +24,8 @@ const adminAllowed = req => ['superadmin', 'manager'].includes(req.admin?.role);
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
 
 function submissionFromBody(body = {}) {
+  let languages;
+  try { languages = normalizeLanguages(body.languages); } catch (e) { return { error: e.message }; }
   const name = text(body.name, 80), phone = text(body.phone, 30);
   const singleConsultation = body.singleConsultation === true, mdt = body.mdt === true;
   if (!name || !/^1\d{10}$/.test(phone) || (!singleConsultation && !mdt))
@@ -33,7 +38,7 @@ function submissionFromBody(body = {}) {
     name, phone, institutionName: text(body.institutionName, 150), departmentName: text(body.departmentName, 150),
     title: text(body.title, 100), profession: text(body.profession, 60), education: text(body.education, 60), registrationScope: text(body.registrationScope, 500),
     experienceYears: Math.max(0, Math.min(80, Number(body.experienceYears) || 0)),
-    expertise: list(body.expertise), unsuitableTopics: text(body.unsuitableTopics, 1000),
+    expertise: list(body.expertise), unsuitableTopics: text(body.unsuitableTopics, 1000), languages,
     singleConsultation, mdt, mdtLead: mdt && body.mdtLead === true,
     singleExpectedFee, mdtExpectedFee, feeTaxBasis: ['pre_tax', 'after_tax', 'undecided'].includes(body.feeTaxBasis) ? body.feeTaxBasis : 'undecided',
     feeIncludes: list(body.feeIncludes, 6), extraFeeRule: text(body.extraFeeRule, 500),
@@ -57,13 +62,14 @@ router.get('/public/:token', async (req, res) => {
 router.post('/public/:token', async (req, res) => {
   const { error, response } = submissionFromBody(req.body);
   if (error) return fail(res, 400, error);
+  const supplement = supplements.newAccess();
   const updated = await runWithoutTenantScope(() => ExpertRecruitment.findOneAndUpdate(
     { tokenHash: tokenHash(req.params.token), status: 'invited', expiresAt: { $gt: new Date() },
       $or: [{ candidateName: '' }, { candidateName: response.name }] },
-    { $set: { response, status: 'submitted', submittedAt: new Date() } }, { new: true },
+    { $set: { response, status: 'submitted', submittedAt: new Date(), ...supplement.fields } }, { new: true },
   ).select('_id'));
   if (!updated) return fail(res, 409, '问卷链接已提交、失效或填写人姓名与邀请不符');
-  res.status(201).json({ success: true, data: { submitted: true } });
+  res.status(201).json({ success: true, data: { submitted: true, supplementToken: supplement.token } });
 });
 
 // Reusable partner link: many experts may respond; each phone can submit once per link.
@@ -78,18 +84,19 @@ router.post('/public-link/:token', async (req, res) => {
   if (error) return fail(res, 400, error);
   const link = await runWithoutTenantScope(() => ExpertRecruitmentLink.findOne({ tokenHash: tokenHash(req.params.token), status: 'active' }).select('_id tenantId partnerName specialtyTeam createdBy').lean());
   if (!link) return fail(res, 404, '问卷链接已失效');
+  const supplement = supplements.newAccess();
   try {
     const submissionId = new mongoose.Types.ObjectId(crypto.createHash('sha256').update(`expert-recruitment:${link._id}:${response.phone}`).digest('hex').slice(0, 24));
     await runWithoutTenantScope(() => ExpertRecruitment.create({
       _id: submissionId, tenantId: link.tenantId, linkId: link._id, tokenHash: tokenHash(crypto.randomBytes(32).toString('hex')),
       expiresAt: new Date(), status: 'submitted', partnerName: link.partnerName, specialtyTeam: link.specialtyTeam,
-      candidateName: response.name, createdBy: link.createdBy, submittedAt: new Date(), response,
+      candidateName: response.name, createdBy: link.createdBy, submittedAt: new Date(), response, ...supplement.fields,
     }));
   } catch (err) {
     if (err.code === 11000) return fail(res, 409, '该手机号已通过此链接提交，请勿重复填写');
     throw err;
   }
-  res.status(201).json({ success: true, data: { submitted: true } });
+  res.status(201).json({ success: true, data: { submitted: true, supplementToken: supplement.token } });
 });
 
 router.get('/admin/links', adminAuth, async (req, res) => {

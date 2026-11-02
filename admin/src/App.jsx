@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage'
 import HrApp from './pages/hr/HrApp'
 import PublicOpsDashboardPage from './pages/public/PublicOpsDashboardPage'
 import ExpertInvitationPage from './pages/public/ExpertInvitationPage'
+import ExpertSupplementPage from './pages/public/ExpertSupplementPage'
 import ExpertRecruitmentPage from './pages/settings/ExpertRecruitmentPage'
 import DashboardPage from './pages/DashboardPage'
 import PatientsPage from './pages/PatientsPage'
@@ -145,6 +146,7 @@ export default function App() {
             <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
             <Route path="/expert-invitation/:token" element={<ExpertInvitationPage />} />
             <Route path="/expert-questionnaire/:token" element={<ExpertInvitationPage reusable />} />
+            <Route path="/expert-supplement/:token" element={<ExpertSupplementPage />} />
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<HomeRoute />} />
               <Route path="setup" element={<InstitutionSetupPage />} />

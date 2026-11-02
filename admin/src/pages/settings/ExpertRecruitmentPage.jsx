@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
+import ExpertQualificationsEditor from '../../components/ExpertQualificationsEditor'
 
 const statusText = { invited: '待填写', submitted: '待审核', approved: '已入库', rejected: '未通过', revoked: '已撤销' }
 const verdictText = { pass: '通过', pending: '待核实', fail: '不通过' }
@@ -30,6 +31,8 @@ export default function ExpertRecruitmentPage() {
   const [selectedId, setSelectedId] = useState('')
   const [education, setEducation] = useState('')
   const [editingEducation, setEditingEducation] = useState(false)
+  const [showQualifications, setShowQualifications] = useState(false)
+  const [supplementUrl, setSupplementUrl] = useState('')
   const [screening, setScreening] = useState(emptyScreen)
   const [approval, setApproval] = useState(emptyApproval)
   const [busy, setBusy] = useState(false)
@@ -53,6 +56,8 @@ export default function ExpertRecruitmentPage() {
     setSelectedId(id(row))
     setEducation(row.response?.education || '')
     setEditingEducation(false)
+    setShowQualifications(false)
+    setSupplementUrl('')
     setScreening({ ...emptyScreen, ...(row.screening || {}) })
     setApproval({ ...emptyApproval,
       singleFee: row.agreement?.singleFee ?? row.response?.singleExpectedFee ?? '',
@@ -124,6 +129,12 @@ export default function ExpertRecruitmentPage() {
               </> : <>{selected.response?.education || '未填写'}{['submitted', 'approved', 'rejected'].includes(selected.status) && <button className="btn" disabled={busy} style={{ marginLeft: 12 }} onClick={() => { setEducation(selected.response?.education || ''); setEditingEducation(true) }}>{selected.response?.education ? '修改' : '补填'}</button>}</>}
             </>}/>
             <Info label="擅长" value={selected.response?.registrationScope?.trim() || selected.response?.expertise?.join('、')}/>
+            {['submitted', 'approved'].includes(selected.status) && <div style={{ margin: '14px 0' }}>
+              <button className="btn" onClick={() => setShowQualifications(value => !value)}>{showQualifications ? '收起' : '查看／补充资质附件与语言'}</button>
+              <button className="btn" disabled={busy} onClick={() => run(async () => { const result = await adminAPI.createExpertSupplementLink(id(selected)); setSupplementUrl(`${window.location.origin}/expert-supplement/${result.data.token}`) }, '个人补充链接已生成，旧链接已失效')}>生成个人补充链接</button>
+              {supplementUrl && <div><p>仅发送给专家本人，30天有效；再次生成会使旧链接失效。</p><input className="form-input" aria-label="个人补充链接" readOnly value={supplementUrl}/><button className="btn" onClick={() => copy(supplementUrl)}>复制链接</button></div>}
+              {showQualifications && <ExpertQualificationsEditor key={selectedId} recruitmentId={selectedId} onUpdated={load}/>}
+            </div>}
             <Info label="合作意向" value={[selected.response?.singleConsultation && '单次咨询', selected.response?.mdt && 'MDT', selected.response?.mdtLead && 'MDT 牵头'].filter(Boolean).join('、')}/>
             <Info label="单次咨询预期报酬" value={selected.response?.singleConsultation ? `${selected.response.singleExpectedFee} 元/次` : '不参与'}/>
             <Info label="MDT 预期报酬" value={selected.response?.mdt ? `${selected.response.mdtExpectedFee} 元/次` : '不参与'}/>

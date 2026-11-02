@@ -363,6 +363,7 @@ export const adminAPI = {
 
   medicalResources:  ()         => req('/medical-resources'),
   expertRecruitments: () => reqRoot('/expert-recruitment/admin'),
+  createExpertSupplementLink: id => reqRoot(`/expert-recruitment/admin/${id}/supplement-link`, { method: 'POST' }),
   updateExpertRecruitmentEducation: (id, education) => reqRoot(`/expert-recruitment/admin/${id}/education`, { method: 'PATCH', body: JSON.stringify({ education }) }),
   expertRecruitmentLinks: () => reqRoot('/expert-recruitment/admin/links'),
   createExpertRecruitmentLink: data => reqRoot('/expert-recruitment/admin/links', { method: 'POST', body: JSON.stringify(data) }),

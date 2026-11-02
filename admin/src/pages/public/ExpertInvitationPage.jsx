@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
+import ExpertLanguageFields from '../../components/ExpertLanguageFields'
 
 const apiBase = import.meta.env.VITE_API_URL || '/api'
 const blank = {
   name: '', phone: '', institutionName: '', departmentName: '', title: '', profession: '临床医师',
-  education: '', experienceYears: '', expertise: '',
+  education: '', experienceYears: '', expertise: '', languages: [],
   singleConsultation: false, mdt: false, mdtLead: false, singleExpectedFee: '', mdtExpectedFee: '',
   feeTaxBasis: 'undecided', feeIncludes: [], extraFeeRule: '', preparationMinutes: '', materialLimit: '', replyHours: '',
   weeklyAvailability: '', weeklyCapacity: '', minimumNoticeHours: 48, scheduleMaintenance: 'self',
@@ -15,6 +16,7 @@ const section = { marginTop: 22, borderTop: '1px solid #E1EAE6', paddingTop: 14 
 
 export default function ExpertInvitationPage({ reusable = false }) {
   const { token } = useParams()
+  const navigate = useNavigate()
   const publicPath = reusable ? 'public-link' : 'public'
   const [state, setState] = useState('loading')
   const [form, setForm] = useState(blank)
@@ -53,6 +55,7 @@ export default function ExpertInvitationPage({ reusable = false }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.message || '提交失败')
       setState('completed')
+      if (data.data?.supplementToken) navigate(`/expert-supplement/${data.data.supplementToken}`, { replace: true })
     } catch (e) { setError(e.message); setState('ready') }
   }
   return <main style={{ minHeight: '100vh', background: '#F5F8F6', padding: '28px 12px', color: '#203B32' }}>
@@ -79,6 +82,10 @@ export default function ExpertInvitationPage({ reusable = false }) {
         <Field label="职称或专业等级"><input style={inputStyle} value={form.title} onChange={set('title')}/></Field>
         <Field label="相关工作年限"><input style={inputStyle} type="number" min="0" max="80" value={form.experienceYears} onChange={set('experienceYears')}/></Field>
         <Field label="擅长"><textarea style={inputStyle} rows={3} placeholder="请填写擅长的专业方向、疾病或咨询人群，多项用顿号分隔" value={form.expertise} onChange={set('expertise')}/></Field>
+        <h2 style={section}>服务语言</h2>
+        <ExpertLanguageFields value={form.languages} onChange={languages => setForm(current => ({ ...current, languages }))} disabled={state === 'saving'}/>
+        <h2 style={section}>资质附件</h2>
+        <p>提交本页后即可上传医师资格证、医师执业证、职称证、学历／毕业证、学位证或其他专业资质。可保存个人补充链接，稍后分次完善。</p>
         <h2 style={section}>合作方式与交付</h2>
         <Check label="愿意参与单次专家咨询分析" checked={form.singleConsultation} onChange={set('singleConsultation')}/>
         <Check label="愿意参与多学科咨询分析 MDT" checked={form.mdt} onChange={set('mdt')}/>

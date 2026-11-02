@@ -19,6 +19,7 @@ const { tenantContext, runWithoutTenantScope } = require('../src/utils/tenantSco
 const oid = () => new mongoose.Types.ObjectId();
 const handler = (method, route) => router.stack.find(layer => layer.route?.path === route && layer.route.methods[method]).route.stack.at(-1).handle;
 const response = () => ({ statusCode: 200, body: null,
+  set() { return this; },
   status(code) { this.statusCode = code; return this; },
   json(body) { this.body = body; return this; },
 });
@@ -158,10 +159,12 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
     const available = response(); await openLink({ params: { token: reusableToken } }, available);
     assert.equal(available.body.data.status, 'open');
     const submitLink = handler('post', '/public-link/:token');
+    const otherSupplementTokens = [];
     for (const [name, phone] of [['甲医生', '13900000001'], ['乙医生', '13900000002']]) {
       const res = response();
       await submitLink({ params: { token: reusableToken }, body: { name, phone, mdt: true, mdtExpectedFee: 190, privacyAcknowledged: true } }, res);
       assert.equal(res.statusCode, 201);
+      otherSupplementTokens.push(res.body.data.supplementToken);
     }
     const duplicate = response();
     await submitLink({ params: { token: reusableToken }, body: { name: '甲医生', phone: '13900000001', mdt: true, mdtExpectedFee: 190, privacyAcknowledged: true } }, duplicate);
@@ -174,6 +177,77 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
     });
     const revoked = response(); await openLink({ params: { token: reusableToken } }, revoked);
     assert.equal(revoked.statusCode, 404);
+    // Exercise real multipart HTTP routes; private storage is replaced by an in-memory adapter.
+    const express = require('express');
+    const { Readable } = require('node:stream');
+    const supplements = require('../src/routes/expertRecruitmentSupplement').router;
+    const storage = require('../src/utils/expertCertificates');
+    const originals = { store: storage.store, stream: storage.stream, remove: storage.remove };
+    const objects = new Map();
+    storage.store = async file => { const key = crypto.randomUUID(); objects.set(key, file.buffer); return { key, mimeType: 'application/pdf', size: file.buffer.length }; };
+    storage.stream = async key => ({ stream: Readable.from(objects.get(key)) });
+    storage.remove = async key => objects.delete(key);
+    t.after(() => Object.assign(storage, originals));
+    const app = express(); app.use(express.json()); app.use(supplements);
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise(resolve => server.once('listening', resolve));
+    t.after(() => { server.closeAllConnections(); server.close(); });
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const supplementToken = first.body.data.supplementToken;
+    const url = `${origin}/supplement/${supplementToken}`;
+    assert.equal((await fetch(`${origin}/supplement/${token}`)).status, 404, '原邀请链接不能读取个人资料');
+    const initialSupplement = await (await fetch(url)).json();
+    assert.equal(initialSupplement.data.education, '博士研究生');
+    assert.equal(initialSupplement.data.phone, undefined);
+    const putLanguages = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ education: '博士研究生', languages: [{ language: '英语', level: 'consultation' }, { language: '日语', level: 'interpreter' }] }) });
+    assert.equal(putLanguages.status, 200);
+    const invalidLanguages = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ education: '博士研究生', languages: [{ language: '英语', level: 'invalid' }] }) });
+    assert.equal(invalidLanguages.status, 400);
+    function multipart(content, filename = 'certificate.pdf') { const form = new FormData(); form.append('category', 'qualification'); form.append('file', new Blob([content], { type: 'application/pdf' }), filename); return form; }
+    const invalidFile = await fetch(`${url}/certificates`, { method: 'POST', body: multipart('<script>bad</script>') });
+    assert.equal(invalidFile.status, 400);
+    const pdf = '%PDF-1.4\nsynthetic certificate';
+    assert.equal((await fetch(`${url}/certificates`, { method: 'POST', body: multipart(pdf) })).status, 201);
+    const uploaded = await (await fetch(url)).json();
+    assert.equal(uploaded.data.languages.length, 2);
+    assert.equal(uploaded.data.certificates[0].reviewStatus, 'pending');
+    assert.equal(uploaded.data.certificates[0].key, undefined);
+    const fileId = uploaded.data.certificates[0]._id;
+    assert.equal((await fetch(`${origin}/supplement/${otherSupplementTokens[0]}/certificates/${fileId}`)).status, 404, '同一共用链接下其他专家不能读取附件');
+    assert.equal(await (await fetch(`${url}/certificates/${fileId}`)).text(), pdf);
+    assert.equal((await fetch(`${url}/certificates/${oid()}`)).status, 404);
+    assert.equal((await fetch(`${url}/certificates/not-an-id`)).status, 400);
+    assert.equal((await fetch(`${url}/certificates`, { method: 'POST', body: multipart(Buffer.alloc(10 * 1024 * 1024 + 1)) })).status, 400);
+    async function adminSupplement(method, route, req) {
+      const layer = supplements.stack.find(layer => layer.route?.path === route && layer.route.methods[method]);
+      const res = response(); let allowed = false;
+      await layer.route.stack.find(s => s.handle.name === 'access').handle(req, res, () => { allowed = true; });
+      if (allowed) await layer.route.stack.at(-1).handle(req, res);
+      return res;
+    }
+    let rowId, rotated;
+    await asTenant(firstTenant, async () => {
+      const row = await Recruitment.findOne({ tokenHash: sha(token) }); rowId = String(row._id);
+      const admin = { _id: oid(), role: 'superadmin', tenantId: firstTenant };
+      const denied = await adminSupplement('post', '/admin/:id/supplement-link', { params: { id: rowId }, admin: { ...admin, role: 'specialist' } });
+      assert.equal(denied.statusCode, 403);
+      const reviewed = await adminSupplement('patch', '/admin/:id/certificates/:fileId', { params: { id: rowId, fileId }, admin, body: { status: 'pass', note: '已核验合成证书' } });
+      assert.equal(reviewed.statusCode, 200);
+      const result = await adminSupplement('post', '/admin/:id/supplement-link', { params: { id: rowId }, admin });
+      rotated = result.body.data.token;
+      const stored = await Recruitment.findById(rowId).lean();
+      assert.equal(stored.supplementTokenHash, undefined);
+      assert.equal(stored.certificates[0].key, undefined);
+    });
+    await asTenant(secondTenant, async () => {
+      const foreign = await adminSupplement('get', '/admin/:id/qualifications', { params: { id: rowId }, admin: { role: 'superadmin', tenantId: secondTenant } });
+      assert.equal(foreign.statusCode, 404);
+    });
+    assert.equal((await fetch(url)).status, 404, '重新生成后旧个人链接失效');
+    const renewed = await (await fetch(`${origin}/supplement/${rotated}`)).json();
+    assert.equal(renewed.data.certificates[0].reviewStatus, 'pass');
+    await asTenant(firstTenant, () => Recruitment.updateOne({ _id: rowId }, { $set: { supplementExpiresAt: new Date(0) } }));
+    assert.equal((await fetch(`${origin}/supplement/${rotated}`)).status, 404);
     await asTenant(secondTenant, async () => {
       assert.equal(await RecruitmentLink.countDocuments(), 0);
       assert.equal(await Recruitment.countDocuments({ linkId }), 0);
