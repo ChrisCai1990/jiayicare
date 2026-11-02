@@ -7294,10 +7294,7 @@ router.delete('/service-records/:id', staffAuth, checkPermission('service_record
   res.json({ success: true, message: '已删除' });
 });
 
-// POST /api/staff/patients/:id/chat-followup/ai-draft — AI从与会员的聊天记录提炼生成随访草稿
-// body.role: nutritionist；已停用角色继续返回410，其余未知角色拒绝。
-// body.range: today(当日，默认) / 3d(近3天) / week(近1周) —— 仅在该会员该角色从未生成过草稿时，决定首次回看多久；
-//   此后自动从上一次草稿的截止时间接续取到现在，无论中间隔了多久都不会漏掉聊天内容
+// Historical AI chat drafts may still need human review; new chat-derived drafts are retired.
 async function canManageChatDraft(staff, patientId) {
   if (!['nutritionist', 'superadmin'].includes(staff.role)) return false;
   const query = { _id: patientId, isDeleted: { $ne: true } };
@@ -7307,35 +7304,11 @@ async function canManageChatDraft(staff, patientId) {
 }
 
 router.post('/patients/:id/chat-followup/resolve', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
-  try {
-    if (!await canManageChatDraft(req.staff, req.params.id)) return res.status(403).json({ success: false, message: '无权处理此会员的营养草稿' });
-    if (typeof req.body.token !== 'string' || !req.body.token || req.body.token.length > 128) return res.status(400).json({ success: false, message: '任务版本无效，请刷新后重试' });
-    const note = typeof req.body.note === 'string' ? req.body.note.trim() : '';
-    if (!note || note.length > 500) return res.status(400).json({ success: false, message: '请填写实际处理说明（500字内）' });
-    const Job = require('../models/ChatFollowupJob');
-    const handled = await Job.findOneAndUpdate({ _id: `${req.params.id}_nutritionist`, token: req.body.token,
-      $or: [{ status: 'failed' }, { status: 'running', leaseUntil: { $lt: new Date() } }],
-    }, { $set: { status: 'done', handledAt: new Date(), handledBy: req.staff._id, handlingNote: note, error: '' } }, { new: true });
-    if (!handled) return res.status(409).json({ success: false, message: '状态已变化；保存结果不明的任务需管理员核对，不可直接关闭' });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  return res.status(410).json({ success: false, message: '营养聊天草稿已停用' });
 });
 
 router.post('/patients/:id/chat-followup/ai-draft', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
-  try {
-    if (['manager', 'doctor'].includes(req.body?.role || 'manager')) {
-      return res.status(410).json({ success: false, message: '日常随访和健康顾问跟进草稿已停用' });
-    }
-    if (req.body?.jobToken !== undefined && (typeof req.body.jobToken !== 'string' || !req.body.jobToken || req.body.jobToken.length > 128)) return res.status(400).json({ success: false, message: '任务版本无效，请刷新后重试' });
-    if (req.body?.role !== 'nutritionist') return res.status(400).json({ success: false, message: '仅支持营养聊天草稿' });
-    if (!await canManageChatDraft(req.staff, req.params.id)) return res.status(403).json({ success: false, message: '无权处理此会员的营养草稿' });
-    const { generateChatFollowupDraft } = require('../utils/chatFollowupDraft');
-    const result = await generateChatFollowupDraft({
-      patientId: req.params.id, role: req.body?.role, range: req.body?.range, staffId: req.staff._id, expectedJobToken: req.body?.jobToken,
-    });
-    if (['skip', 'failed'].includes(result.status)) return res.status(result.message === '会员不存在' ? 404 : 400).json({ success: false, message: result.message });
-    res.json({ success: true, data: result.record, reused: result.status === 'reused' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  return res.status(410).json({ success: false, message: '营养聊天草稿已停用' });
 });
 
 // PATCH /api/staff/service-records/:id/ai-review — 确认/编辑或丢弃AI生成的随访草稿
@@ -16030,27 +16003,6 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // Exceptions share the existing workbench; no empty panel or extra normal-path confirmation.
-    if (isSuper || role === 'nutritionist') {
-      const Job = require('../models/ChatFollowupJob');
-      const patients = await User.find({ isDeleted: { $ne: true },
-        ...(req.staff.tenantId ? { tenantId: req.staff.tenantId } : {}),
-        ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}),
-      }).select('_id name').lean();
-      const names = new Map(patients.map(p => [String(p._id), p.name]));
-      const failures = await Job.find({ patientId: { $in: patients.map(p => p._id) }, $or: [
-        { status: 'failed' }, { status: { $in: ['running', 'committing'] }, leaseUntil: { $lt: now } },
-      ] }).lean();
-      failures.forEach(j => todos.push({
-        id: `chat_failure_${j._id}`, type: 'chat_followup_failed', label: '营养聊天草稿需处理', priority: 2,
-        patientId: String(j.patientId), patientName: names.get(String(j.patientId)) || '未知',
-        summary: j.status === 'committing' ? '保存结果待管理员核对，请勿重复生成' : (j.error || '生成中断，请核对聊天后重试或人工记录'),
-        jobToken: j.token, canResolve: j.status !== 'committing',
-        createdAt: j.updatedAt, overdue: now - new Date(j.updatedAt) > DAY,
-        link: `/patients/${j.patientId}?tab=serviceRecords`,
-      }));
-    }
-
     // ── 健康规划师：AI聊天转人工待办（会员在小嘉里点了"转人工"）──
     if (can('transfer_human')) {
       const transferFilter = { transferred: true, resolved: false, ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
@@ -18474,11 +18426,12 @@ router.get('/patients/:id/questionnaire-responses', staffAuth, async (req, res) 
     const confirmedChanges = new Set((archiveUser?.archiveVersionHistory || []).map(item =>
       `${String(item.sourceResponseId || '')}:${item.path}:${String(item.to ?? '')}`));
     const data = responses
-      .filter(r => r.questionnaire && (r.questionnaire.questions || []).some(q => q.archiveField))
+      .filter(r => r.questionnaire && (String(r.questionnaire._id) === DIETARY_SURVEY_QUESTIONNAIRE_ID || (r.questionnaire.questions || []).some(q => q.archiveField)))
       .map(r => {
         const draft = buildArchiveDraft(r.proxyEntry ? {...archiveUser,lifestyle_data:require('../utils/effectiveLifestyle').effectiveLifestyle(archiveUser||{})} : archiveUser || {}, r.questionnaire, r);
         const draftByQuestionId = new Map((draft.items || []).map(item => [String(item.questionId), item]));
-        const answers = (r.questionnaire.questions || []).flatMap(question => {
+        const questions = r.questionnaireSnapshot?.questions?.length ? r.questionnaireSnapshot.questions : r.questionnaire.questions || [];
+        const answers = questions.flatMap(question => {
           const answer = r.answers?.[question.id];
           const hasAnswer = answer !== undefined && answer !== null && answer !== '' && (!Array.isArray(answer) || answer.length > 0);
           if (!hasAnswer) return [];

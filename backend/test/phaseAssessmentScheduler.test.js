@@ -27,6 +27,9 @@ test('常规综合评估生成营养师和顾问关联待办并使用季度资�
   assert.match(requestedPrompt, /现有记录无法分析两者关联/);
   assert.match(requestedPrompt, /记录日期少不等于没有执行/);
   assert.match(requestedPrompt, /不得从一次饮食描述推断整月膳食结构发生变化/);
+  assert.match(requestedPrompt, /暂无增加记录的必要/);
+  assert.match(requestedPrompt, /不能仅凭零散数据推断客户存在误区/);
+  assert.match(requestedPrompt, /补充记录建议须经营养师或健康顾问确认/);
 });
 test('历史周期及同领域周期去重发生在AI调用之前', async t => {
   calls = 0;

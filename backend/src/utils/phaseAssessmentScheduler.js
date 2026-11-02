@@ -109,7 +109,7 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
 
 请严格按以下四个栏目输出中文：
 一、${outputSections[0]}；二、${outputSections[1]}；三、${outputSections[2]}；四、${outputSections[3]}。
-第一部分只写${windowDays}天窗口内已记录的监测事实和日期；第二部分按证据解释规则分析生活方式关联，不能关联时明确写无法分析；第三部分写已记录的异常或需要核实的资料，体检只作基线背景；第四部分写下一周期需要人工核对的事项、责任角色和复评时间。每栏最多6条，每条先写客观主题，再用冒号补充依据。`;
+第一部分只写${windowDays}天窗口内已记录的监测事实和日期；第二部分按证据解释规则分析生活方式关联，不能关联时明确写无法分析；第三部分写已记录的异常或需要核实的资料，体检只作基线背景；第四部分说明是否需要针对性补充记录、需要营养师核对的具体问题及下一周期待人工确认的行动，不要机械增加打卡任务。每栏最多6条，每条先写客观主题，再用冒号补充依据。`;
   const content = await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 3500, temperature: 0.05, timeoutMs: 90000 }));
   if (!await PhaseAssessmentGeneration.exists({ _id: generationId, token, status: 'generating' })) return null;
   const teamRoles = assessmentMode === 'routine'

@@ -301,9 +301,12 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
       if (item.teamReviews?.[reviewerRole]?.status === 'approved') return res.status(409).json({ success: false, message: '本岗位已核对，请刷新查看最新进度' });
       if (reviewerRole === 'familyDoctor' && (item.teamRoles || []).some(value => value !== 'familyDoctor' && item.teamReviews?.[value]?.status !== 'approved')) return res.status(409).json({ success: false, message: item.reviewWorkflow === 'advisor_nutrition' ? '请先等待营养师及受邀运动复健师完成核对' : '请先等待其他参与岗位完成各自核对' });
       const note = String(req.body.reviewNote || '').trim();
-      if (!note) return res.status(400).json({ success: false, message: '请填写本岗位的情况与问题；没有问题请填写“没有问题”' });
+      if (!note && item.reviewWorkflow !== 'advisor_nutrition') return res.status(400).json({ success: false, message: '请填写本岗位的情况与问题；没有问题请填写“没有问题”' });
+      const reviewedContent = String(req.body.content ?? item.content).trim();
+      if (!reviewedContent || reviewedContent.length > 20000) return res.status(400).json({ success: false, message: '请核对评估内容，正文不能空白或超过20000字' });
       const now = new Date();
-      item.teamReviews = { ...(item.teamReviews || {}), [reviewerRole]: { status: 'approved', note: note.slice(0, 5000), reviewedBy: req.staff._id, reviewedByName: req.staff.name || '', reviewedAt: now } };
+      item.content = reviewedContent;
+      item.teamReviews = { ...(item.teamReviews || {}), [reviewerRole]: { status: 'approved', note: note.slice(0, 5000), ...(item.reviewWorkflow === 'advisor_nutrition' ? { content: reviewedContent } : {}), reviewedBy: req.staff._id, reviewedByName: req.staff.name || '', reviewedAt: now } };
       item.markModified('teamReviews');
       const complete = (item.teamRoles || []).every(value => item.teamReviews[value]?.status === 'approved');
       if (complete) {

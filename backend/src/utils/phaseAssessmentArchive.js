@@ -12,7 +12,7 @@ async function completePhaseAssessmentArchive(item, user, actor, models = {}) {
     const version = templateAssessmentFromContent(item.content, item);
     const teamNotes = (item.teamRoles || []).map(role => {
       const review = item.teamReviews?.[role];
-      return review?.status === 'approved' ? `${{ healthManager: '健管专员', nutritionist: '营养师', familyDoctor: '健康顾问', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师' }[role] || role}（${review.reviewedByName || '已核对'}）：${review.note}` : '';
+      return review?.status === 'approved' && review.note ? `${{ healthManager: '健管专员', nutritionist: '营养师', familyDoctor: '健康顾问', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师' }[role] || role}（${review.reviewedByName || '已核对'}）：${review.note}` : '';
     }).filter(Boolean);
     const reviewer = { _id: item.finalizedBy, name: item.finalizedByName, role: item.finalizedByRole };
     const recordFilter = { sourcePhaseAssessmentId: item._id };

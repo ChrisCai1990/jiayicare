@@ -39,7 +39,7 @@ test('new handoff sources: real Mongo owner exception projection', { skip: proce
   await t.test('tenant-scoped patients protect models without tenantId; foreign and deleted patients stay hidden', async () => {
     await reset();
     for (const extra of [{}, { tenantId: foreignTenant }, { isDeleted: true }]) { const p = await patient(extra); await plan(p); await job(p); }
-    const rows = await loadAssignmentAttention(actor); assert.equal(rows.length, 2);
+    const rows = await loadAssignmentAttention(actor); assert.equal(rows.length, 1);
     assert.equal(new Set(rows.map(r => r.patientId)).size, 1);
     const legacy = await patient({ tenantId: null }); await plan(legacy);
     assert.equal((await loadAssignmentAttention({ ...actor, tenantId: null })).length, 1);
@@ -60,10 +60,10 @@ test('new handoff sources: real Mongo owner exception projection', { skip: proce
     await Plan.updateOne({ _id: active }, { $set: { 'supplementRevisions.0.executionReview.status': 'reviewed' } });
     assert.equal((await loadAssignmentAttention(actor)).length, 0);
   });
-  await t.test('only failed or expired chat jobs require owner correction', async () => {
+  await t.test('retired chat jobs no longer create owner correction tasks', async () => {
     await reset();
     for (const extra of [{ status: 'failed' }, { status: 'running', leaseUntil: new Date(0) }, { status: 'committing', leaseUntil: new Date(0) }, { status: 'running', leaseUntil: new Date(Date.now() + 3600000) }, { status: 'done' }]) await job(await patient(), extra);
-    const rows = await loadAssignmentAttention(actor); assert.equal(rows.length, 3); rows.forEach(r => assert.match(r.summary, /营养聊天草稿异常待处理/));
+    const rows = await loadAssignmentAttention(actor); assert.equal(rows.length, 0);
     const assignedNutritionist = await owner('nutritionist'); await User.updateMany({}, { $set: { assignedNutritionist } });
     assert.equal((await loadAssignmentAttention(actor)).length, 0);
   });

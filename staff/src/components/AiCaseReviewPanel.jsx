@@ -412,12 +412,14 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const submitTeamReview = async (assessment, action, role = '') => {
-    const reviewNote = action === 'include_role' ? '' : window.prompt(`${PHASE_ROLES[staff?.role] || '本岗位'}核对：请写本阶段工作情况及问题；没有问题请填写“没有问题”`, '')
-    if (action !== 'include_role' && !reviewNote?.trim()) return
+    const inlineReview = assessment.reviewWorkflow === 'advisor_nutrition'
+    const reviewNote = action === 'include_role' || inlineReview ? '' : window.prompt(`${PHASE_ROLES[staff?.role] || '本岗位'}核对：请写本阶段工作情况及问题；没有问题请填写“没有问题”`, '')
+    if (action !== 'include_role' && !inlineReview && !reviewNote?.trim()) return
     setBusy(true)
     try {
-      const res = await staffAPI.reviewPhaseAssessment(patientId, assessment._id, { action, revision: assessment.__v, reviewNote, role })
+      const res = await staffAPI.reviewPhaseAssessment(patientId, assessment._id, { action, revision: assessment.__v, reviewNote, role, content: assessmentEdits[assessment._id] ?? assessment.content })
       setAssessments(list => list.map(item => item._id === assessment._id ? res.data : item))
+      setAssessmentEdits(values => ({ ...values, [assessment._id]: res.data.content || '' }))
       toast(action === 'include_role' ? '已邀请团队成员参与本次复盘' : res.data.status === 'finalized' ? '评估与复盘已写入服务档案' : '本岗位核对已保存')
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
@@ -440,6 +442,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           const canRegenerate = [primary, 'superadmin'].includes(staff?.role) && status === 'rejected'
           const canRetryArchive = [item.finalReviewRole, 'superadmin'].includes(staff?.role) && status === 'archive_pending'
           const canDoctorReview = ['familyDoctor', 'superadmin'].includes(staff?.role) && status === 'doctor_review'
+          const pendingTeamRole = staff?.role === 'superadmin' ? (item.teamRoles || []).find(role => item.teamReviews?.[role]?.status !== 'approved') : staff?.role
+          const canTeamEdit = status === 'team_review' && item.reviewWorkflow === 'advisor_nutrition' && (item.teamRoles || []).includes(pendingTeamRole) && item.teamReviews?.[pendingTeamRole]?.status !== 'approved' && (pendingTeamRole !== 'familyDoctor' || (item.teamRoles || []).every(role => role === 'familyDoctor' || item.teamReviews?.[role]?.status === 'approved'))
           const expanded = expandedAssessments[item._id] === true
           const evidenceCount = (item.evidenceSources || []).length
           const stageSections = splitStageAssessment(assessmentEdits[item._id] ?? item.content)
@@ -451,9 +455,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
             {['finalized', 'approved'].includes(status) && onNavigate && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 9 }} onClick={() => onNavigate('serviceRecords')}>查看服务档案中的评估记录</button>}
             {status === 'archive_pending' && <div style={{ marginTop: 9, color: '#92400E', fontSize: 13 }}>审核结果已保存，无需重复审核。{canRetryArchive && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'retry_archive')}>重试归档</button>}</div>}
             {!!item.teamRoles?.length && <div style={{ marginTop: 12, padding: 12, background: '#F4F8F5', borderRadius: 9 }}>
-              <strong>{item.reviewWorkflow === 'single_owner' ? '负责岗位复盘核对' : item.reviewWorkflow === 'advisor_nutrition' ? '营养师生活方式评估与顾问总复盘' : '各岗位复盘核对'}</strong><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>{item.reviewWorkflow === 'single_owner' ? '由本次负责岗位统一核对阶段数据、服务执行、问题和下一步行动。没有问题请填写“没有问题”。' : item.reviewWorkflow === 'advisor_nutrition' ? '营养师先核对饮食、运动、睡眠及烟酒等生活方式；健康顾问总督办并最终确认。需要运动复健师时由健康顾问转交。' : '健管专员核对日常随访与问题；营养师核对饮食、运动、睡眠及烟酒干预；健康顾问核对医疗问题和整体进度。没有问题请填写“没有问题”。'}</div>
-              {(item.teamRoles || []).map(role => <div key={role} style={{ borderTop: '1px solid #DCE8E1', paddingTop: 8, marginTop: 8, fontSize: 13 }}><b>{PHASE_ROLES[role]}</b> · {item.teamReviews?.[role]?.status === 'approved' ? `${item.teamReviews[role].reviewedByName || '已核对'}：${item.teamReviews[role].note}` : '待核对'}
-                {status === 'team_review' && item.teamReviews?.[role]?.status !== 'approved' && (staff?.role === role || staff?.role === 'superadmin') && <button className="btn btn-primary btn-sm" disabled={busy || (role === 'familyDoctor' && item.teamRoles.some(value => value !== 'familyDoctor' && item.teamReviews?.[value]?.status !== 'approved'))} style={{ marginLeft: 8 }} onClick={() => submitTeamReview(item, 'approve', role)}>填写并确认本岗位</button>}
+              <strong>{item.reviewWorkflow === 'single_owner' ? '负责岗位复盘核对' : item.reviewWorkflow === 'advisor_nutrition' ? '营养师生活方式评估与顾问总复盘' : '各岗位复盘核对'}</strong><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>{item.reviewWorkflow === 'single_owner' ? '由本次负责岗位统一核对阶段数据、服务执行、问题和下一步行动。没有问题请填写“没有问题”。' : item.reviewWorkflow === 'advisor_nutrition' ? '营养师先核对已记录的饮食与日常习惯、需要澄清的认识和是否有必要补充记录；记录不足时写明无法判断的具体问题，不要求默认每日打卡。健康顾问总督办并最终确认；需要运动复健师时由顾问转交。' : '健管专员核对日常随访与问题；营养师核对饮食、运动、睡眠及烟酒干预；健康顾问核对医疗问题和整体进度。没有问题请填写“没有问题”。'}</div>
+              {(item.teamRoles || []).map(role => <div key={role} style={{ borderTop: '1px solid #DCE8E1', paddingTop: 8, marginTop: 8, fontSize: 13 }}><b>{PHASE_ROLES[role]}</b> · {item.teamReviews?.[role]?.status === 'approved' ? `${item.teamReviews[role].reviewedByName || '已核对'}${item.teamReviews[role].note ? `：${item.teamReviews[role].note}` : ' · 评估内容已保存'}` : '待核对'}
+                {role === 'nutritionist' && item.teamReviews?.nutritionist?.content && <details style={{ marginTop: 7 }}><summary style={{ cursor: 'pointer', color: '#176347' }}>查看营养师确认的评估内容</summary><div style={{ marginTop: 7, padding: 10, background: '#fff', borderRadius: 8 }}><CleanText>{item.teamReviews.nutritionist.content}</CleanText></div></details>}
+                {status === 'team_review' && item.teamReviews?.[role]?.status !== 'approved' && (staff?.role === role || staff?.role === 'superadmin') && <button className="btn btn-primary btn-sm" disabled={busy || (role === 'familyDoctor' && item.teamRoles.some(value => value !== 'familyDoctor' && item.teamReviews?.[value]?.status !== 'approved'))} style={{ marginLeft: 8 }} onClick={() => item.reviewWorkflow === 'advisor_nutrition' ? (setExpandedAssessments(values => ({ ...values, [item._id]: true })), setActiveAssessmentSections(values => ({ ...values, [item._id]: 0 }))) : submitTeamReview(item, 'approve', role)}>{item.reviewWorkflow === 'advisor_nutrition' ? '查看并修改评估' : '填写并确认本岗位'}</button>}
               </div>)}
               {status === 'team_review' && item.reviewWorkflow !== 'single_owner' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>{(item.reviewWorkflow === 'advisor_nutrition' ? [['rehabSpecialist', '转交运动复健师']] : [['psychologist', '邀请心理咨询师'], ['rehabSpecialist', '邀请运动复健师'], ['tcmDoctor', '邀请中医师']]).filter(([role]) => !item.teamRoles.includes(role)).map(([role, label]) => <button key={role} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => submitTeamReview(item, 'include_role', role)}>{label}</button>)}</div>}
             </div>}
@@ -468,7 +473,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
               <div style={{ fontWeight: 800, color: activeSection.color, marginBottom: 7 }}>{activeSection.title}</div>
               {activeSection.lines.length ? activeSection.lines.map((line, index) => <AssessmentLine key={index} line={line} color={activeSection.color} />) : <div style={{ color: '#7A8C83', fontSize: 13 }}>本板块暂无内容</div>}
             </div>}
-            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => { if (!expanded && !Number.isInteger(activeSectionIndex)) setActiveAssessmentSections(values => ({ ...values, [item._id]: 0 })); setExpandedAssessments(values => ({ ...values, [item._id]: !expanded })) }}>{expanded ? '退出编辑' : (canNutritionReview || canDoctorReview ? '编辑当前板块并审核' : '查看原文')}</button>
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => { if (!expanded && !Number.isInteger(activeSectionIndex)) setActiveAssessmentSections(values => ({ ...values, [item._id]: 0 })); setExpandedAssessments(values => ({ ...values, [item._id]: !expanded })) }}>{expanded ? '收起正文' : (canNutritionReview || canDoctorReview || canTeamEdit ? '查看并修改四个板块' : '查看原文')}</button>
             {expanded && <>
               {item.clinicalReview?.reasons?.length > 0 && <div style={{ marginTop: 8, padding: 8, borderRadius: 7, background: '#FFF8ED', color: '#92400E', fontSize: 12 }}>综合复核原因：{item.clinicalReview.reasons.join('；')}</div>}
               {(() => {
@@ -479,12 +484,13 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
                 return <div style={{ marginTop: 10, padding: 12, borderRadius: 9, background: editSection.background, border: `1px solid ${editSection.color}55` }}>
                   <div style={{ fontWeight: 800, color: editSection.color }}>正在编辑：{editSection.label}</div>
                   <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>每行一个要点；切换上方图标可编辑其他板块。</div>
-                  <textarea className="form-input" rows={9} style={{ marginTop: 9, background: '#fff' }} disabled={!canNutritionReview && !canDoctorReview} value={editSection.lines.join('\n')} onChange={event => setAssessmentEdits(values => ({ ...values, [item._id]: replaceStageSection(draftContent, editIndex, event.target.value) }))} />
+                  <textarea className="form-input" rows={9} style={{ marginTop: 9, background: '#fff' }} disabled={!canNutritionReview && !canDoctorReview && !canTeamEdit} value={editSection.lines.join('\n')} onChange={event => setAssessmentEdits(values => ({ ...values, [item._id]: replaceStageSection(draftContent, editIndex, event.target.value) }))} />
                 </div>
               })()}
               {item.nutritionReview?.reviewedAt && <div style={{ marginTop: 7, fontSize: 12, color: '#65776F' }}>营养师初审：{item.nutritionReview.reviewedByName || '-'} · {item.nutritionReview.note || '无补充备注'}</div>}
               {item.professionalReview?.reviewedAt && <div style={{ marginTop: 7, fontSize: 12, color: '#65776F' }}>{PHASE_ROLES[primary]}：{item.professionalReview.reviewedByName || '-'} · {item.professionalReview.note || '无补充备注'}</div>}
               {item.doctorReview?.reviewedAt && <div style={{ marginTop: 5, fontSize: 12, color: '#65776F' }}>健康顾问复审：{item.doctorReview.reviewedByName || '-'} · {item.doctorReview.note || '无补充备注'}</div>}
+              {canTeamEdit && <div style={{ marginTop: 10 }}><button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => submitTeamReview(item, 'approve', pendingTeamRole)}>{pendingTeamRole === 'nutritionist' ? '保存营养师评估并交健康顾问' : pendingTeamRole === 'familyDoctor' ? '确认总复盘并归档' : '保存本岗位评估'}</button></div>}
               {canNutritionReview && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>专业审核通过</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'escalate')}>转健康顾问复审</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'reject')}>退回AI调整</button></div>}
               {canRegenerate && <div style={{ marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'regenerate')}>按退回意见由AI重新生成</button></div>}
               {canDoctorReview && <div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>审核通过并入档</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'return')}>{primary === 'familyDoctor' ? '退回AI调整' : `退回${PHASE_ROLES[primary]}`}</button></div>}
