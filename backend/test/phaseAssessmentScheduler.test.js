@@ -6,8 +6,8 @@ const ai = require('../src/utils/ai');
 const context = require('../src/utils/aiCaseReviewContext');
 let calls = 0, days, requestedMaxTokens, requestedPrompt;
 ai.chat = async (messages, options) => { calls++; requestedMaxTokens = options.maxTokens; requestedPrompt = messages[0].content; return '阶段评估草稿'; };
-context.buildStageAssessmentContext = async (user, windowDays) => { days = windowDays; return { sources: [] }; };
-const { createAssessment } = require('../src/utils/phaseAssessmentScheduler');
+context.buildStageAssessmentContext = async (user, windowDays) => { days = windowDays; return { sources: ['已确认年度管理方案'], confirmedAnnualPlan: { notes: 'PLAN_ONLY_TEST' } }; };
+const { createAssessment, scanAndCreatePhaseAssessments } = require('../src/utils/phaseAssessmentScheduler');
 const input = () => ({ plan: { _id: 'plan', confirmedAt: '2025-01-01' }, user: { _id: 'user', membershipTier: 'annual', assignedFamilyDoctor: 'advisor', assignedNutritionist: 'nutritionist', assignedRehabSpecialist: 'exercise' }, template: { _id: 'template', content: { frequency: 'quarterly' } }, periodOverride: { key: '2026-Q3', label: '2026第三季度' } });
 test.beforeEach(t => {
   t.mock.method(Generation, 'findOneAndUpdate', async () => ({}));
@@ -61,6 +61,39 @@ test('已有评估权益的存量会员无需档案分层也能生成顾问督�
   const row = await createAssessment({ ...input(), user: { ...input().user, membershipTier: undefined } });
   assert.equal(row.reviewWorkflow, 'advisor_nutrition');
   assert.deepEqual(row.teamRoles, ['nutritionist', 'familyDoctor']);
+});
+test('月度综合评估不依赖年度方案，按客户和月份去重', async t => {
+  t.mock.method(PhaseAssessment, 'exists', async filter => {
+    assert.equal(filter.patientId, 'user');
+    assert.equal(filter.annualPlanId, undefined);
+    return false;
+  });
+  t.mock.method(PhaseAssessment, 'create', async row => row);
+  const row = await createAssessment({ ...input(), plan: null, template: { _id: 'template', content: { frequency: 'monthly' } }, periodOverride: { key: '2026-10', label: '2026年10月' } });
+  assert.equal(row.annualPlanId, null);
+  assert.equal(row.reviewWorkflow, 'advisor_nutrition');
+  assert.deepEqual(row.teamRoles, ['nutritionist', 'familyDoctor']);
+  assert.match(requestedPrompt, /独立月度复盘/);
+  assert.match(requestedPrompt, /就医次数/);
+  assert.doesNotMatch(requestedPrompt, /PLAN_ONLY_TEST/);
+});
+test('自动月度扫描直接遍历有效客户，无需已确认年度方案', async t => {
+  const User = require('../src/models/User');
+  const PlanTemplate = require('../src/models/PlanTemplate');
+  const AnnualPlan = require('../src/models/AnnualPlan');
+  const access = require('../src/utils/serviceAccess');
+  const rights = require('../src/utils/packageFeatureEntitlements');
+  const oldKey = process.env.QWEN_API_KEY, oldScope = process.env.PHASE_ASSESSMENT_AUTO_SCOPE;
+  process.env.QWEN_API_KEY = 'synthetic'; process.env.PHASE_ASSESSMENT_AUTO_SCOPE = 'eligible';
+  t.after(() => { if (oldKey === undefined) delete process.env.QWEN_API_KEY; else process.env.QWEN_API_KEY = oldKey; if (oldScope === undefined) delete process.env.PHASE_ASSESSMENT_AUTO_SCOPE; else process.env.PHASE_ASSESSMENT_AUTO_SCOPE = oldScope; });
+  t.mock.method(AnnualPlan, 'find', () => assert.fail('月度扫描不应查询年度方案'));
+  t.mock.method(User, 'find', () => ({ select: () => ({ limit: async () => [input().user] }) }));
+  t.mock.method(PlanTemplate, 'find', () => ({ lean: async () => [{ _id: 'template', content: { frequency: 'monthly' } }] }));
+  t.mock.method(access, 'resolveServiceAccess', async () => ({ active: true, startDate: '2020-01-01', endDate: '2030-01-01' }));
+  t.mock.method(rights, 'getAiEntitlements', async () => ({ phaseAssessment: true }));
+  t.mock.method(PhaseAssessment, 'exists', async () => false);
+  t.mock.method(PhaseAssessment, 'create', async row => row);
+  assert.equal(await scanAndCreatePhaseAssessments(), 1);
 });
 test('运动专项评估只进入对应专业岗位', async t => {
   t.mock.method(PhaseAssessment, 'exists', async () => false);

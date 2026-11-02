@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 // 模板驱动的阶段性评估只保存待审核建议，不会直接变更方案或向客户发布。
 const phaseAssessmentSchema = new mongoose.Schema({
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  annualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', required: true, index: true },
+  annualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null, index: true }, // 历史/年度来源；月度综合复盘不依赖年度方案
   templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanTemplate', required: true },
   assessmentMode: { type: String, enum: ['routine', 'intensive_nutrition'], default: 'routine', index: true },
   assessmentDomain: { type: String, enum: ['comprehensive', 'multidisciplinary', 'nutrition', 'exercise', 'tcm'] },
@@ -54,6 +54,7 @@ const phaseAssessmentSchema = new mongoose.Schema({
   auditLog: [{ action: String, fromStatus: String, toStatus: String, note: String, staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, staffName: String, staffRole: String, at: { type: Date, default: Date.now } }],
 }, { timestamps: true, optimisticConcurrency: true });
 
-phaseAssessmentSchema.index({ annualPlanId: 1, templateId: 1, periodKey: 1 }, { unique: true });
+phaseAssessmentSchema.index({ patientId: 1, periodKey: 1 }, { name: 'monthly_patient_period_unique', unique: true, partialFilterExpression: { annualPlanId: { $type: 'null' } } });
+phaseAssessmentSchema.index({ annualPlanId: 1, templateId: 1, periodKey: 1 }, { name: 'annual_plan_template_period_unique_v2', unique: true, partialFilterExpression: { annualPlanId: { $type: 'objectId' } } });
 
 module.exports = mongoose.model('PhaseAssessment', phaseAssessmentSchema);

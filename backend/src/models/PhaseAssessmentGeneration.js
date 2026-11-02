@@ -1,12 +1,12 @@
 const mongoose = require('mongoose');
 
-// The deterministic _id is the durable lock for one plan/period/domain,
+// The deterministic _id is the durable lock for one patient/period/domain,
 // even if the selected template changes before a retry.
 // MongoDB always enforces _id uniqueness, including when autoIndex is disabled.
 const schema = new mongoose.Schema({
   _id: { type: String },
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  annualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', required: true },
+  annualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanTemplate', required: true },
   periodKey: { type: String, required: true },
   status: { type: String, enum: ['generating', 'failed', 'completed'], required: true },

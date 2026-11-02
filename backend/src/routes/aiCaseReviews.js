@@ -225,23 +225,24 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
     if (req.staff.role !== 'superadmin' && !isAssignedReviewer(user, req.staff, req.staff.role)) return res.status(403).json({ success: false, message: '仅该客户当前绑定的专业人员或健康顾问可发起评估' });
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(user._id);
     if (!closedLoop && !['nutritionist', 'familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师或健康顾问可发起阶段性评估' });
-    const plan = await AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).lean();
-    if (!plan) return res.status(409).json({ success: false, message: '客户尚无已确认年度管理方案，暂不能生成阶段性评估' });
     const assessmentMode = req.body.mode === 'intensive_nutrition' ? 'intensive_nutrition' : 'routine';
     const isAnnualReview = closedLoop && assessmentMode === 'routine' && req.body.frequency === 'yearly';
-    const assessmentDomain = !closedLoop || assessmentMode === 'intensive_nutrition' ? 'nutrition' : isAnnualReview ? 'comprehensive' : (req.body.domain || 'comprehensive');
+    const plan = isAnnualReview || assessmentMode === 'intensive_nutrition'
+      ? await AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).lean() : null;
+    if ((isAnnualReview || assessmentMode === 'intensive_nutrition') && !plan) return res.status(409).json({ success: false, message: '该专项评估尚无已确认的来源方案' });
+    const assessmentDomain = assessmentMode === 'intensive_nutrition' ? 'nutrition' : 'comprehensive';
     if (!DOMAIN_ROLES[assessmentDomain]) return res.status(400).json({ success: false, message: '评估领域无效' });
     if (!['superadmin', 'familyDoctor', DOMAIN_ROLES[assessmentDomain]].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由对应专业人员或健康顾问发起该领域评估' });
     if (isAnnualReview && !['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '年度总评由健康顾问负责' });
     // 手动新周期与自动扫描使用同一可信服务期；审核/归档旧记录不加此门槛。
-    const gate = closedLoop ? await require('../utils/annualPeriodicGate').annualPeriodicGate(plan, user) : { allowed: true, anchor: plan.confirmedAt };
-    if (!gate.allowed) return res.status(409).json({ success: false, message: gate.reason || '当前年度服务期未生效，不能启动新评估' });
-    const packageRights = await require('../utils/packageFeatureEntitlements').getAiEntitlements(
-      user, await require('../utils/serviceAccess').resolveServiceAccess(user)
-    );
-    const configuredFrequency = ['biweekly', 'monthly', 'quarterly'].includes(packageRights.phaseAssessmentFrequency)
-      ? packageRights.phaseAssessmentFrequency : 'quarterly';
-    const frequency = !closedLoop || assessmentMode === 'intensive_nutrition' ? 'monthly' : isAnnualReview ? 'yearly' : configuredFrequency;
+    const access = await require('../utils/serviceAccess').resolveServiceAccess(user);
+    const gate = isAnnualReview || assessmentMode === 'intensive_nutrition' && closedLoop
+      ? await require('../utils/annualPeriodicGate').annualPeriodicGate(plan, user)
+      : { allowed: access.active, anchor: access.startDate || user.serviceStartDate, access, reason: access.reason };
+    if (!gate.allowed) return res.status(409).json({ success: false, message: gate.reason || '当前服务期未生效，不能启动新评估' });
+    const packageRights = await require('../utils/packageFeatureEntitlements').getAiEntitlements(user, access);
+    if (!packageRights.phaseAssessment) return res.status(403).json({ success: false, message: '当前服务权益不含阶段性评估' });
+    const frequency = isAnnualReview ? 'yearly' : 'monthly';
     if (isAnnualReview && !periodFor('yearly', new Date(), gate.anchor)) return res.status(409).json({ success: false, message: '尚未进入本年度有效执行起点后的第11个月' });
     const templateFrequencies = frequency === 'biweekly' ? ['biweekly', 'monthly', 'quarterly'] : [frequency];
     const template = await PlanTemplate.findOne({ type: 'phase_assessment', status: 'active', 'content.frequency': { $in: templateFrequencies }, $and: [
@@ -264,9 +265,15 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
       sourceNutritionPlanId = nutritionPlan._id;
       template.content = { ...template.content, windowDays: interventionWeek <= 4 ? 7 : 14 };
     }
-    const item = await createAssessment({ plan, user, template, periodOverride, assessmentMode, assessmentDomain, sourceNutritionPlanId, interventionWeek, assessmentAnchor: gate.anchor, frequencyOverride: assessmentMode === 'routine' && !isAnnualReview && closedLoop ? configuredFrequency : '' });
+    if (assessmentMode === 'routine' && !isAnnualReview) {
+      const completed = require('../utils/phaseAssessmentScheduler').completedCalendarPeriod('monthly', new Date(), gate.anchor);
+      if (!completed) return res.status(409).json({ success: false, message: '尚无已完成的服务月份可供评估' });
+      periodOverride = { key: completed.key, label: completed.label };
+    }
+    const item = await createAssessment({ plan, user, template, periodOverride, assessmentMode, assessmentDomain, sourceNutritionPlanId, interventionWeek, assessmentAnchor: gate.anchor, frequencyOverride: frequency,
+      contextWindow: assessmentMode === 'routine' && !isAnnualReview ? (() => { const completed = require('../utils/phaseAssessmentScheduler').completedCalendarPeriod('monthly', new Date(), gate.anchor); return { start: completed.start, end: completed.end }; })() : null });
     if (!item) {
-      const existing = await PhaseAssessment.findOne({ annualPlanId: plan._id, templateId: template._id, assessmentMode, $or: [{ assessmentDomain }, { assessmentDomain: { $exists: false } }] }).sort({ createdAt: -1 }).lean();
+      const existing = await PhaseAssessment.findOne({ ...(isAnnualReview ? { annualPlanId: plan._id } : { patientId: user._id }), periodKey: periodOverride?.key || periodFor(frequency, new Date(), gate.anchor)?.key, assessmentMode }).sort({ createdAt: -1 }).lean();
       return res.status(409).json({ success: false, message: '本周期已经生成阶段性评估', data: existing });
     }
     res.status(201).json({ success: true, data: item });

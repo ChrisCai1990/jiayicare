@@ -216,10 +216,12 @@ function generation(t, patch = {}) {
   return plan;
 }
 
-test('常规、年度总评和强化营养新评估均先核验可信服务期，不通过不调用AI', async t => {
+test('月度复盘核验服务权益，年度总评和强化营养仍核验来源服务期', async t => {
   generation(t);
   t.mock.method(periodic, 'annualPeriodicGate', async () => ({ allowed: false, reason: '当前没有已生效且有效的续约服务期' }));
   t.mock.method(PlanTemplate, 'findOne', () => assert.fail('门槛前不得查模板或启动评估'));
+  serviceAccess.resolveServiceAccess.mock.restore();
+  t.mock.method(serviceAccess, 'resolveServiceAccess', async () => ({ active: false, reason: '当前没有已生效且有效的续约服务期' }));
   for (const body of [{}, { frequency: 'yearly' }, { mode: 'intensive_nutrition' }]) {
     const res = await request(t, body, 'POST'); assert.equal(res.status, 409); assert.match(res.body.message, /续约服务期/);
   }
@@ -238,17 +240,27 @@ test('可信续约有效时档案旧到期日不阻断手动评估', async t => 
   t.mock.method(require('../src/utils/annualServicePeriod'), 'annualExecutionGate', async () => ({ allowed: true, anchor: '2020-01-01' }));
   const result = await request(t, {}, 'POST'); assert.equal(result.status, 201, JSON.stringify(result.body)); assert.equal(aiCalls, 1);
 });
-test('旧年度不能借已生效下一年度权益生成新评估，超级管理员也不绕过', async t => {
+test('月度复盘按当前有效服务期生成，不受旧年度方案约束', async t => {
   generation(t); actor.role = 'superadmin';
   t.mock.method(periodic, 'annualPeriodicGate', actualPeriodicGate);
   serviceAccess.resolveServiceAccess.mock.restore();
   t.mock.method(serviceAccess, 'resolveServiceAccess', async () => ({ active: true, source: 'verified_renewal' }));
-  const res = await request(t, {}, 'POST'); assert.equal(res.status, 409); assert.match(res.body.message, /旧年度/); assert.equal(aiCalls, 0);
+  const res = await request(t, {}, 'POST'); assert.equal(res.status, 201, JSON.stringify(res.body)); assert.equal(res.body.data.annualPlanId, null); assert.equal(aiCalls, 1);
 });
 test('服务期查询故障不默认放行，不产生AI调用', async t => {
   generation(t);
-  t.mock.method(periodic, 'annualPeriodicGate', async () => { throw Error('服务期暂不可核验'); });
+  serviceAccess.resolveServiceAccess.mock.restore();
+  t.mock.method(serviceAccess, 'resolveServiceAccess', async () => { throw Error('服务期暂不可核验'); });
   assert.equal((await request(t, {}, 'POST')).status, 500); assert.equal(aiCalls, 0);
+});
+test('未确认年度方案也能生成月度复盘', async t => {
+  generation(t);
+  t.mock.method(AnnualPlan, 'findOne', () => assert.fail('月度复盘不应查询年度方案'));
+  t.mock.method(PhaseAssessment, 'exists', async () => false);
+  const res = await request(t, {}, 'POST');
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal(res.body.data.templateSnapshot.frequency, 'monthly');
+  assert.equal(res.body.data.annualPlanId, null);
 });
 test('过期后的已有评估仍可审核归档，不因新周期门槛卡住已启动服务', async t => {
   const row = setup(t, 'familyDoctor');

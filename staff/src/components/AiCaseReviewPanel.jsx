@@ -64,7 +64,7 @@ function AnnualReviewAnalysis({ content, onReframe, busy }) {
 const STAGE_SECTION_META = [
   { icon: '📈', label: '阶段变化', color: '#2563EB', background: '#EFF6FF' },
   { icon: '🔗', label: '生活关联', color: '#16845B', background: '#EEF8F3' },
-  { icon: '⚠️', label: '潜在风险', color: '#B45309', background: '#FFF8ED' },
+  { icon: '📋', label: '问题与就医', color: '#B45309', background: '#FFF8ED' },
   { icon: '🧭', label: '下一步规划', color: '#7C3AED', background: '#F5F3FF' },
 ]
 
@@ -467,7 +467,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}{item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
-            <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>资料范围：本周期健康记录与随访、已确认年度方案，以及最近已审核体检报告中的异常或附结论项目。复查指标尚未按方案项目逐项对照报告，请人工核对原始报告。</div>
+            <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>AI草稿仅参考当前可用的健康记录、随访及部分已审核报告项目；未覆盖全部就医和检查资料。健康顾问请结合原始报告与服务档案，核对本月所有需要跟进的问题、就医次数及原因。</div>
+            {onNavigate && <div style={{ display: 'flex', gap: 8, marginTop: 8 }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('reports')}>核对原始报告与复查指标</button><button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('serviceRecords')}>核对就医与服务记录</button></div>}
             {['finalized', 'approved'].includes(status) && onNavigate && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 9 }} onClick={() => onNavigate('serviceRecords')}>查看服务档案中的评估记录</button>}
             {status === 'archive_pending' && <div style={{ marginTop: 9, color: '#92400E', fontSize: 13 }}>审核结果已保存，无需重复审核。{canRetryArchive && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'retry_archive')}>重试归档</button>}</div>}
             {!!item.teamRoles?.length && <div style={{ marginTop: 12, padding: 12, background: '#F4F8F5', borderRadius: 9 }}>
