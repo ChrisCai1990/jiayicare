@@ -15,6 +15,7 @@ const monday = value => {
 const localDateTime = (date, time) => new Date(`${date}T${time}:00`)
 const clock = value => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 const labels = { available: '可预约', booked: '已预约', unavailable: '不可预约' }
+const bookingTypes = { customer_service: '客户服务', partner_exchange: '合作伙伴交流', other_affairs: '其他事务', service: '客户服务', communication: '交流', task: '事务', other: '其他事务' }
 const weekDays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const dayPeriods = [
   { key: 'morning', label: '上午', startTime: '09:00', endTime: '12:00', enabled: true },
@@ -208,7 +209,7 @@ export default function AvailabilityPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(225px, 1fr))', gap: 10 }}>
         {slotsOn(form.date).map(slot => <div key={slot._id} style={{ border: '1px solid #DCE8E1', borderRadius: 9, padding: 10, background: slot.status === 'booked' ? '#F3F5F4' : '#fff' }}>
           <div style={{ fontWeight: 600 }}>{clock(slot.startAt)}–{clock(slot.endAt)}</div>
-          <div style={{ color: '#60776C', fontSize: 13 }}>{labels[slot.status] || slot.status}{bookingFor(slot)?.title ? ` · ${bookingFor(slot).title}` : ''}{bookingFor(slot)?.reason ? ` · 缘由：${bookingFor(slot).reason}` : ''}</div>
+          <div style={{ color: '#60776C', fontSize: 13 }}>{labels[slot.status] || slot.status}{bookingFor(slot)?.category ? ` · ${bookingTypes[bookingFor(slot).category] || bookingFor(slot).category}` : ''}{bookingFor(slot)?.reason || bookingFor(slot)?.title ? ` · ${bookingFor(slot).reason || bookingFor(slot).title}` : ''}</div>
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>{slot.status === 'available' && +new Date(slot.startAt) > nowMs && <button className="btn btn-primary btn-sm" type="button" onClick={() => setBookingOpen({ slotId: slot._id })}>预约</button>}
             {slot.status !== 'booked' && (view === 'mine' || canManageTeam) && <button className="btn btn-secondary btn-sm" type="button" disabled={busy} onClick={() => remove(slot._id)}>删除</button>}
             {String(bookingFor(slot)?.slotIds?.[0]) === String(slot._id) && <button className="btn btn-secondary btn-sm" type="button" disabled={busy} onClick={() => cancelBooking(bookingFor(slot)._id)}>取消预约</button>}

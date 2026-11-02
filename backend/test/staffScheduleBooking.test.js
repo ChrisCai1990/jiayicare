@@ -30,12 +30,13 @@ test('staff can reserve adjacent free slots for a general appointment', async t 
   StaffScheduleBooking.updateOne = async () => ({ modifiedCount: 1 });
   const res = response();
   await handler('post', '/bookings')({ staff: { _id: creatorId, tenantId, role: 'nutritionist' }, body: {
-    slotIds: slots.map(slot => String(slot._id)), category: 'communication', title: '团队沟通', reason: '讨论服务方案', note: '' } }, res);
+    slotIds: slots.map(slot => String(slot._id)), category: 'partner_exchange', content: '讨论服务方案', note: '' } }, res);
   assert.equal(res.statusCode, 201);
   assert.equal(String(readFilter.tenantId), String(tenantId));
   assert.equal(String(created.staffId), String(staffId));
-  assert.equal(created.title, '团队沟通');
+  assert.equal(created.title, '讨论服务方案');
   assert.equal(created.reason, '讨论服务方案');
+  assert.equal(created.category, 'partner_exchange');
   assert.equal(reserved.length, 2);
   assert.ok(reserved.every(item => item.filter.status === 'available' && item.update.$set.source === 'general_booking'));
 });

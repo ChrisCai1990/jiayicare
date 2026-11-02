@@ -8,7 +8,7 @@ const schema = new mongoose.Schema({
   originalSources: [{ type: String, enum: ['self', 'planner'] }],
   startAt: { type: Date, required: true },
   endAt: { type: Date, required: true },
-  category: { type: String, enum: ['service', 'communication', 'task', 'other'], required: true },
+  category: { type: String, enum: ['customer_service', 'partner_exchange', 'other_affairs', 'service', 'communication', 'task', 'other'], required: true },
   title: { type: String, required: true, trim: true, maxlength: 120 },
   reason: { type: String, default: '', trim: true, maxlength: 300 },
   note: { type: String, default: '', maxlength: 1000 },

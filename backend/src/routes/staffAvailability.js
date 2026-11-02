@@ -51,19 +51,20 @@ router.get('/bookings', async (req, res) => {
 
 router.post('/bookings', async (req, res) => {
   const ids = req.body?.slotIds;
-  const category = req.body?.category;
-  const title = String(req.body?.title || '').trim();
-  const reason = String(req.body?.reason || '').trim();
+  const category = ({ service: 'customer_service', communication: 'other_affairs', task: 'other_affairs', other: 'other_affairs' })[req.body?.category] || req.body?.category;
+  const content = String(req.body?.content || '').trim();
+  const title = content ? content.slice(0, 120) : String(req.body?.title || '').trim();
+  const reason = content || String(req.body?.reason || '').trim();
   const note = String(req.body?.note || '').trim();
   const relatedType = req.body?.relatedType || null;
   const relatedId = req.body?.relatedId || null;
   const patientId = req.body?.patientId || null;
   if (!Array.isArray(ids) || ids.length < 1 || ids.length > 36 || new Set(ids.map(String)).size !== ids.length ||
-      ids.some(id => !mongoose.isValidObjectId(id)) || !['service', 'communication', 'task', 'other'].includes(category) ||
+      ids.some(id => !mongoose.isValidObjectId(id)) || !['customer_service', 'partner_exchange', 'other_affairs'].includes(category) ||
       !title || title.length > 120 || !reason || reason.length > 300 || note.length > 1000 ||
       (patientId && !mongoose.isValidObjectId(patientId)) || Boolean(relatedType) !== Boolean(relatedId) ||
       (relatedType && (!['patient', 'product', 'order', 'service_record', 'follow_up', 'health_plan'].includes(relatedType) || !mongoose.isValidObjectId(relatedId))))
-    return fail(res, 400, '请选择1至36个空档，填写事项名称和300字以内的预约缘由');
+    return fail(res, 400, '请选择1至36个空档，并填写300字以内的具体内容');
   if (patientId && !await User.exists({ _id: patientId, tenantId: req.staff.tenantId })) return fail(res, 404, '关联会员不存在');
   if (relatedType) {
     const models = { patient: User, product: Product, order: Order, service_record: ServiceRecord, follow_up: FollowUp, health_plan: HealthPlan };

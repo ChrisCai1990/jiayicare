@@ -16,10 +16,8 @@ export default function ScheduleBookingDialog({ onClose, onSaved, context = {}, 
   const [target, setTarget] = useState(initialStaffId || staff?._id || '')
   const [date, setDate] = useState(initialDate || dateKey(new Date(Date.now() + 86400000)))
   const [selected, setSelected] = useState(initialSlotId ? [String(initialSlotId)] : [])
-  const [category, setCategory] = useState(context.category || 'service')
-  const [title, setTitle] = useState(context.title || '')
-  const [reason, setReason] = useState('')
-  const [note, setNote] = useState('')
+  const [category, setCategory] = useState(['customer_service', 'partner_exchange', 'other_affairs'].includes(context.category) ? context.category : 'customer_service')
+  const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -51,7 +49,7 @@ export default function ScheduleBookingDialog({ onClose, onSaved, context = {}, 
     if (!ordered.length || !contiguous) { setError('请选择同一天内连续的可预约时间'); return }
     setBusy(true); setError('')
     try {
-      await staffAPI.createScheduleBooking({ slotIds: ordered.map(slot => slot._id), category, title: title.trim(), reason: reason.trim(), note: note.trim(),
+      await staffAPI.createScheduleBooking({ slotIds: ordered.map(slot => slot._id), category, content: content.trim(),
         patientId: context.patientId || undefined, relatedType: context.relatedType || undefined, relatedId: context.relatedId || undefined })
       onSaved?.()
       onClose()
@@ -89,12 +87,8 @@ export default function ScheduleBookingDialog({ onClose, onSaved, context = {}, 
           </div>
           <p style={{ color: contiguous ? '#176348' : '#B42318', marginBottom: 0 }}>已选 {ordered.length} 段{ordered.length ? ` · ${timeLabel(ordered[0].startAt)}–${timeLabel(ordered.at(-1).endAt)}` : ''}{!contiguous ? '；请选择连续时段' : ''}</p>
         </section>
-        <div style={{ display: 'grid', gridTemplateColumns: '180px minmax(0, 1fr)', gap: 16 }}>
-          <label>预约类型<select className="form-input" style={{ width: '100%', marginTop: 8 }} value={category} onChange={event => setCategory(event.target.value)}><option value="service">服务</option><option value="communication">沟通交流</option><option value="task">任务事务</option><option value="other">其他</option></select></label>
-          <label>事项名称<input className="form-input" style={{ width: '100%', marginTop: 8 }} value={title} onChange={event => setTitle(event.target.value)} maxLength={120} required placeholder="填写具体服务或沟通事项" /></label>
-        </div>
-        <label>本次预约缘由 *<textarea className="form-input" style={{ width: '100%', minHeight: 100, marginTop: 8, resize: 'vertical' }} value={reason} onChange={event => setReason(event.target.value)} maxLength={300} required placeholder="例如：健管专员陪诊；健康顾问解读检查报告。请写清此人在该时段要做什么" /></label>
-        <label>准备事项（选填）<textarea className="form-input" style={{ width: '100%', minHeight: 90, marginTop: 8, resize: 'vertical' }} value={note} onChange={event => setNote(event.target.value)} maxLength={1000} placeholder="例如：会前查看报告、准备客户资料或确认陪诊地点" /></label>
+        <label>预约类型<select className="form-input" style={{ width: '100%', marginTop: 8 }} value={category} onChange={event => setCategory(event.target.value)}><option value="customer_service">客户服务</option><option value="partner_exchange">合作伙伴交流</option><option value="other_affairs">其他事务</option></select></label>
+        <label>具体内容 *<textarea className="form-input" style={{ width: '100%', minHeight: 130, marginTop: 8, resize: 'vertical' }} value={content} onChange={event => setContent(event.target.value)} maxLength={300} required placeholder="例如：健管专员陪诊；健康顾问解读检查报告" /></label>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}><button type="button" className="btn btn-secondary" onClick={onClose}>取消</button><button type="submit" className="btn btn-primary" disabled={busy || !ordered.length || !contiguous}>{busy ? '保存中…' : '确认预约'}</button></div>
       </form>
     </div>
