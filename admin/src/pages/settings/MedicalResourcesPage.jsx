@@ -9,6 +9,11 @@ const blanks = {
 }
 const labels = { institution:'医院', department:'医院科室', expert:'专家' }
 const displayList = value => Array.isArray(value) ? value.join('、') : value || ''
+const editableFields = {
+  institution: ['name','aliases','level','nature','region','address','contactName','contactTitle','phone','campusDetails','cooperationStatus','status'],
+  department: ['institutionId','campus','name','specialties','introduction','status'],
+  expert: ['name','title','institutionId','departmentId','campus','expertise','diseaseTags','introduction','licenseNumber','serviceModes','outpatientSchedule','contactNote','linkedStaffId','status'],
+}
 
 export default function MedicalResourcesPage() {
   const toast = useToast()
@@ -59,8 +64,7 @@ export default function MedicalResourcesPage() {
     setBusy(true)
     try {
       const api = tab === 'institution' ? ['createMedicalInstitution','updateMedicalInstitution'] : tab === 'department' ? ['createMedicalDepartment','updateMedicalDepartment'] : ['createMedicalExpert','updateMedicalExpert']
-      const expertFields = ['name','title','institutionId','departmentId','campus','expertise','diseaseTags','introduction','licenseNumber','serviceModes','outpatientSchedule','contactNote','linkedStaffId','status']
-      const payload = tab === 'expert' ? Object.fromEntries(expertFields.map(key => [key, form[key]])) : form
+      const payload = Object.fromEntries(editableFields[tab].map(key => [key, form[key]]))
       editing ? await adminAPI[api[1]](editing._id, payload) : await adminAPI[api[0]](payload)
       toast(`${labels[tab]}已保存`); setEditing(null); setForm(null); await load()
     } catch(e) { setSaveError(e.message) } finally { setBusy(false) }

@@ -1,3 +1,5 @@
+import { hasModulePermission } from './modulePermission'
+
 // 配置阶段的机构菜单以 Admin 岗位权限为唯一来源。
 // 不包含嘉医汇专用入口；未配置或未授予 view 的模块不展示。
 export const SETUP_NAV = [
@@ -23,5 +25,7 @@ export const SETUP_NAV = [
 ]
 
 export function getSetupNav(staff) {
-  return SETUP_NAV.filter(item => !item.moduleKey || !!staff?.customPermissions?.[item.moduleKey]?.view)
+  return SETUP_NAV.filter(item => !item.moduleKey || (item.moduleKey === 'medical_resources'
+    ? hasModulePermission(staff, item.moduleKey, 'view')
+    : !!staff?.customPermissions?.[item.moduleKey]?.view))
 }

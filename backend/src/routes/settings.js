@@ -353,6 +353,9 @@ const cleanCampuses = value => (Array.isArray(value) ? value : []).map(item => (
   contactTitle: String(item?.contactTitle || '').trim().slice(0, 100),
   phone: String(item?.phone || '').trim().slice(0, 100),
 })).filter(item => item.name);
+const pickFields = (body, fields) => Object.fromEntries(fields.filter(key => Object.prototype.hasOwnProperty.call(body, key)).map(key => [key, body[key]]));
+const institutionFields = ['name','aliases','level','nature','region','address','contactName','contactTitle','phone','cooperationStatus','status'];
+const departmentFields = ['institutionId','campus','name','specialties','introduction','status'];
 const KNOWLEDGE_KINDS = new Set(['department_advantage', 'expert_recommendation', 'appointment_rule', 'visit_guidance', 'service_case']);
 const cleanText = (value, max = 4000) => String(value || '').trim().slice(0, max);
 const cleanKnowledgePayload = body => ({
@@ -406,12 +409,12 @@ router.get('/medical-resources', adminAuth, async (req, res) => {
 router.post('/medical-institutions', adminAuth, async (req, res) => {
   if (!req.body.name?.trim()) return res.status(400).json({ success: false, message: '请填写医院名称' });
   const campusDetails = cleanCampuses(req.body.campusDetails);
-  const item = await MedicalInstitution.create({ ...req.body, name: req.body.name.trim(), aliases: cleanList(req.body.aliases), campusDetails, campuses: campusDetails.map(item => item.name) });
+  const item = await MedicalInstitution.create({ ...pickFields(req.body, institutionFields), name: req.body.name.trim(), aliases: cleanList(req.body.aliases), campusDetails, campuses: campusDetails.map(item => item.name) });
   res.status(201).json({ success: true, data: item });
 });
 router.put('/medical-institutions/:id', adminAuth, async (req, res) => {
   const campusDetails = cleanCampuses(req.body.campusDetails);
-  const item = await MedicalInstitution.findByIdAndUpdate(req.params.id, { ...req.body, aliases: cleanList(req.body.aliases), campusDetails, campuses: campusDetails.map(item => item.name) }, { new: true, runValidators: true });
+  const item = await MedicalInstitution.findByIdAndUpdate(req.params.id, { ...pickFields(req.body, institutionFields), aliases: cleanList(req.body.aliases), campusDetails, campuses: campusDetails.map(item => item.name) }, { new: true, runValidators: true });
   if (!item) return res.status(404).json({ success: false, message: '医院不存在' });
   res.json({ success: true, data: item });
 });
@@ -423,12 +426,12 @@ router.patch('/medical-institutions/:id/toggle', adminAuth, async (req, res) => 
 router.post('/medical-departments', adminAuth, async (req, res) => {
   if (!req.body.institutionId || !req.body.name?.trim()) return res.status(400).json({ success: false, message: '请选择医院并填写科室名称' });
   if (!await MedicalInstitution.exists({ _id: req.body.institutionId })) return res.status(400).json({ success: false, message: '所选医院不存在' });
-  const item = await MedicalDepartment.create({ ...req.body, name: req.body.name.trim(), specialties: cleanList(req.body.specialties) });
+  const item = await MedicalDepartment.create({ ...pickFields(req.body, departmentFields), name: req.body.name.trim(), specialties: cleanList(req.body.specialties) });
   res.status(201).json({ success: true, data: item });
 });
 router.put('/medical-departments/:id', adminAuth, async (req, res) => {
   if (!await MedicalInstitution.exists({ _id: req.body.institutionId })) return res.status(400).json({ success: false, message: '所选医院不存在' });
-  const item = await MedicalDepartment.findByIdAndUpdate(req.params.id, { ...req.body, specialties: cleanList(req.body.specialties) }, { new: true, runValidators: true });
+  const item = await MedicalDepartment.findByIdAndUpdate(req.params.id, { ...pickFields(req.body, departmentFields), specialties: cleanList(req.body.specialties) }, { new: true, runValidators: true });
   if (!item) return res.status(404).json({ success: false, message: '医院科室不存在' }); res.json({ success: true, data: item });
 });
 router.patch('/medical-departments/:id/toggle', adminAuth, async (req, res) => {
