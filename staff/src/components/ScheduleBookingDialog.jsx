@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
+import SearchableStaffSelect from './SearchableStaffSelect'
 
 const dateKey = value => new Date(value).toLocaleDateString('sv-SE')
 const timeLabel = value => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -65,9 +66,7 @@ export default function ScheduleBookingDialog({ onClose, onSaved, context = {}, 
         {context.label && <div style={{ padding: '12px 16px', borderRadius: 10, background: '#EDF7F1' }}>关联：{context.label}</div>}
         {error && <div role="alert" style={{ color: '#B42318' }}>{error}</div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
-          <label>预约人员<select className="form-input" style={{ width: '100%', marginTop: 8 }} value={target} onChange={event => { setTarget(event.target.value); setSelected([]) }} required>
-            <option value="">请选择人员</option>{people.map(person => <option key={person._id} value={person._id}>{person.name} · {person.role}</option>)}
-          </select></label>
+          <SearchableStaffSelect people={people} value={target} onChange={id => { setTarget(id); setSelected([]) }} label="预约人员" required />
           <label>日期<input className="form-input" style={{ width: '100%', marginTop: 8 }} type="date" value={date} min={dateKey(new Date())} max={dateKey(new Date(Date.now() + 180 * 86400000))} onChange={event => { setDate(event.target.value); setSelected([]); setError('') }} required /></label>
         </div>
         <section><b>选择时间</b><p style={{ color: '#60776C', margin: '6px 0 10px' }}>可选多个相邻时段。已占用的时间仅供查看。</p>

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
 import ScheduleBookingDialog from '../components/ScheduleBookingDialog'
+import SearchableStaffSelect from '../components/SearchableStaffSelect'
 
 const dateKey = value => new Date(value).toLocaleDateString('sv-SE')
 const addDays = (value, count) => {
@@ -22,9 +23,6 @@ const dayPeriods = [
   { key: 'afternoon', label: '下午', startTime: '13:00', endTime: '17:00', enabled: true },
   { key: 'evening', label: '晚上', startTime: '18:00', endTime: '21:00', enabled: false },
 ]
-const roleNames = { specialist: '专科专家', familyDoctor: '健康顾问', healthManager: '健管专员', healthPlanner: '健康规划师',
-  nutritionist: '营养师', rehabSpecialist: '运动复健师', psychologist: '心理咨询师', tcmDoctor: '中医师', medicalAssistant: '就医专员',
-  superadmin: '管理员', manager: '管理员' }
 const initialDate = () => addDays(dateKey(new Date()), 1)
 
 export default function AvailabilityPage() {
@@ -157,7 +155,7 @@ export default function AvailabilityPage() {
     {notice && <p role="status" style={{ color: '#176348' }}>{notice}</p>}
     {<div className="card" style={{ padding: 18, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 16 }}>
       <label>查看谁的排班 <select className="form-input" value={view} onChange={e => { setView(e.target.value); setTarget(''); setError(''); setNotice('') }}><option value="mine">我自己</option><option value="team">同事</option></select></label>
-      {view === 'team' && <label>选择人员 <select className="form-input" value={target} onChange={e => setTarget(e.target.value)}><option value="">请选择岗位人员</option>{team.staff.filter(person => String(person._id) !== String(staff?._id)).map(person => <option key={person._id} value={person._id}>{person.name} · {roleNames[person.role] || person.role}</option>)}</select></label>}
+      {view === 'team' && <SearchableStaffSelect people={team.staff} value={target} onChange={setTarget} excludeId={staff?._id} />}
     </div>}
     <div className="card" style={{ padding: 18, marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
