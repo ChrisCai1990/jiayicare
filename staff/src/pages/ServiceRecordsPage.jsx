@@ -158,6 +158,7 @@ export default function ServiceRecordsPage() {
                   <td style={{ fontSize: 13, color: '#4A6558' }}>{new Date(r.date).toLocaleDateString('zh-CN')}</td>
                   <td style={{ fontWeight: 500 }}>
                     {r.title || '-'}
+                    {r.periodClassification === 'premature_legacy_quarter' && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#8A5700', background: '#FFF1D6', borderRadius: 4, padding: '1px 5px' }}>历史提前生成，不计入月度复盘</span>}
                     {r.sourceHealthPlanId && !r.result && (
                       <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#D97706', background: '#FEF3E2', border: '1px solid #F6D860', borderRadius: 4, padding: '1px 5px' }}>
                         待补录
@@ -208,6 +209,7 @@ export default function ServiceRecordsPage() {
                 <div><span style={{ fontSize: 12, color: '#8AA89C' }}>日期</span><div style={{ marginTop: 2 }}>{new Date(detailRecord.date).toLocaleDateString('zh-CN')}</div></div>
                 <div><span style={{ fontSize: 12, color: '#8AA89C' }}>主题</span><div style={{ fontWeight: 500, marginTop: 2 }}>{detailRecord.title || '-'}</div></div>
               </div>
+              {detailRecord.periodClarification && <div style={{ padding: 10, background: '#FFF9ED', color: '#8A5700', borderRadius: 8, fontSize: 13 }}>{detailRecord.periodClarification}</div>}
               {detailRecord.content && (
                 <div>
                   <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>完整内容</div>

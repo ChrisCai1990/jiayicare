@@ -822,7 +822,7 @@ function ServiceJourneyPanel({ reports, plans, followUps, serviceRecords, onNavi
   const progress = taskProgress(followUps)
   const finishedTasks = progress.completed
   const activeTasks = progress.remaining
-  const assessments = serviceRecords.filter(item => ['stage_assessment', 'phase_assessment'].includes(item.type))
+  const assessments = serviceRecords.filter(item => ['stage_assessment', 'phase_assessment'].includes(item.type) && item.periodClassification !== 'premature_legacy_quarter')
   const deliveryRecords = serviceRecords.filter(item => !['stage_assessment', 'phase_assessment'].includes(item.type))
   const steps = [
     { label: '资料归集', detail: reports.length ? `${reports.length}份原始资料` : '尚无原始资料', tab: 'reports', reached: reports.length > 0, state: reports.length ? '已有资料' : '待归集' },
@@ -865,7 +865,7 @@ const SR_CATEGORY = {
   doctor_followup: '健康顾问跟进',
   stage_assessment: '阶段性健康评估', phase_assessment: '阶段性健康评估',
 }
-const SR_CATEGORY_COLOR = { '运动评估与复健':'#16836B', '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7' }
+const SR_CATEGORY_COLOR = { '运动评估与复健':'#16836B', '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7', '历史季度稿':'#8A5700' }
 const combinedHealthChange = entry => [entry?.content, entry?.symptoms]
   .map(value => String(value || '').trim())
   .filter((value, index, values) => value && values.indexOf(value) === index)
@@ -11405,11 +11405,11 @@ export default function PatientDetailPage() {
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
         // 评估入口负责生成和审核；服务档案保留审核后的正式结果，两者通过来源 ID 互通。
-        const CATS = ['营养干预', '运动评估与复健', '专病管理', '医院就医', '阶段性健康评估']
+        const CATS = ['营养干预', '运动评估与复健', '专病管理', '医院就医', '阶段性健康评估', '历史季度稿']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
-          const cat = SR_CATEGORY[r.type]
+          const cat = r.periodClassification === 'premature_legacy_quarter' ? '历史季度稿' : SR_CATEGORY[r.type]
           // routine / doctor_followup 等已取消的旧类型不再出现在服务档案页面。
           if (!cat || !grouped[cat]) return
           grouped[cat].push(r)
@@ -11423,6 +11423,7 @@ export default function PatientDetailPage() {
                   <td>
                     <span className="badge badge-success" style={{ background: SR_CATEGORY_COLOR[serviceRecordCategory] + '20', color: SR_CATEGORY_COLOR[serviceRecordCategory] }}>{SR_TYPE_LABEL[r.type] || r.type}</span>
                     {r.aiStatus === 'pending' && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 999, background: '#7C3AED20', color: '#7C3AED', fontWeight: 600 }}>AI待审</span>}
+                    {r.periodClassification === 'premature_legacy_quarter' && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 999, background: '#FFF1D6', color: '#8A5700', fontWeight: 600 }}>历史提前生成</span>}
                   </td>
                   <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title || '-'}</td>
                   <td style={{ fontSize: 13, color: '#666', maxWidth: 260, whiteSpace: 'pre-line' }}>
@@ -14084,6 +14085,7 @@ export default function PatientDetailPage() {
                   <button className="modal-close" onClick={() => setShowSRDetail(null)}>✕</button>
                 </div>
                 <div className="modal-body">
+                  {showSRDetail.periodClarification && <div style={{ padding: 10, background: '#FFF9ED', color: '#8A5700', borderRadius: 8, fontSize: 13 }}>{showSRDetail.periodClarification}</div>}
                   {mode === 'view' && (
                     <>
                       {[

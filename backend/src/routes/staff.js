@@ -7045,6 +7045,24 @@ function withSignedServiceRecord(record) {
   return obj;
 }
 
+async function withPhasePeriodAnnotations(records) {
+  const ids = records.filter(record => record.sourcePhaseAssessmentId).map(record => record.sourcePhaseAssessmentId);
+  const phases = ids.length ? await PhaseAssessment.find({ _id: { $in: ids } }).select('_id periodKey createdAt status templateSnapshot.frequency').lean() : [];
+  const { prematureCalendarQuarter } = require('../utils/phaseAssessmentPeriodDisplay');
+  const display = new Map(phases.map(row => [String(row._id), prematureCalendarQuarter(row)]));
+  return records.map(record => {
+    const item = withSignedServiceRecord(record);
+    const historical = display.get(String(item.sourcePhaseAssessmentId || ''));
+    if (historical) {
+      item.originalTitle = item.title;
+      item.title = historical.displayLabel;
+      item.periodClarification = historical.notice;
+      item.periodClassification = historical.periodClassification;
+    }
+    return item;
+  });
+}
+
 // 附件是私有 OSS 对象。用短时、仅绑定这条记录与文件序号的令牌由后端转发，
 // 不让浏览器直接访问 OSS（部分浏览器/存储策略会对签名 URL 返回 AccessDenied）。
 router.get('/service-records/:id/preview/:source/:index', async (req, res) => {
@@ -7165,7 +7183,7 @@ router.get('/service-records', staffAuth, checkPermission('service_records', 'vi
       .populate('patientId', 'name phone gender age').populate('staffId', 'name role'),
     ServiceRecord.countDocuments(filter),
   ]);
-  res.json({ success: true, data: { records: records.map(withSignedServiceRecord), total } });
+  res.json({ success: true, data: { records: await withPhasePeriodAnnotations(records), total } });
 });
 
 // POST /api/staff/service-records
@@ -8128,19 +8146,9 @@ router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
     tasksByPlan.get(key).push(task);
   });
   const { summarizeMedicalVisitTasks } = require('../utils/medicalVisitRecordResult');
-  const phaseIds = records.filter(record => record.sourcePhaseAssessmentId).map(record => record.sourcePhaseAssessmentId);
-  const phaseRows = phaseIds.length ? await PhaseAssessment.find({ _id: { $in: phaseIds }, patientId: req.params.id }).select('_id periodKey createdAt templateSnapshot.frequency').lean() : [];
-  const { prematureCalendarQuarter } = require('../utils/phaseAssessmentPeriodDisplay');
-  const phaseDisplay = new Map(phaseRows.map(row => [String(row._id), prematureCalendarQuarter(row)]));
   // 早期测试版曾把通用AI研判伪装成正式阶段评估；仅展示真正由PhaseAssessment模板任务产生并审核的记录。
-  res.json({ success: true, data: records.filter(record => record.type !== 'phase_assessment' || record.sourcePhaseAssessmentId).map(record => {
-    const item = withSignedServiceRecord(record);
-    const historicalQuarter = phaseDisplay.get(String(item.sourcePhaseAssessmentId || ''));
-    if (historicalQuarter) {
-      item.originalTitle = item.title;
-      item.title = historicalQuarter.displayLabel;
-      item.periodClarification = historicalQuarter.notice;
-    }
+  const annotated = await withPhasePeriodAnnotations(records.filter(record => record.type !== 'phase_assessment' || record.sourcePhaseAssessmentId));
+  res.json({ success: true, data: annotated.map(item => {
     const tasks = tasksByPlan.get(String(item.sourceHealthPlanId)) || [];
     const generated = summarizeMedicalVisitTasks(tasks);
     if (item.type === 'medical_visit' && generated && (!item.result || tasks.some(task => item.result === task.executedContent || item.result === task.content))) {

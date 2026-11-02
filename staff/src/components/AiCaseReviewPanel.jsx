@@ -441,7 +441,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
 
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
   const isMonthlyAssessment = item => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(item.periodKey || ''))
-  const visibleAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode)
+  const historicalAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode && item.periodClassification === 'premature_legacy_quarter')
+  const visibleAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode && item.periodClassification !== 'premature_legacy_quarter')
     .sort((a, b) => Number(isMonthlyAssessment(b)) - Number(isMonthlyAssessment(a)) || new Date(b.createdAt) - new Date(a.createdAt))
   const currentAssessment = visibleAssessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
   return <div style={{ display: 'grid', gridTemplateColumns: mode === 'assessment' ? '1fr' : '230px minmax(0, 1fr)', gap: 14, minHeight: mode === 'assessment' ? 0 : 760 }}>
@@ -524,6 +525,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
             </>}
           </section>
         })}
+        {!!historicalAssessments.length && <details style={{ border: '1px solid #EADBC2', borderRadius: 9, padding: 12, background: '#FFF9ED' }}><summary style={{ cursor: 'pointer', fontWeight: 700, color: '#8A5700' }}>历史提前生成的季度稿（{historicalAssessments.length}份，不计入月度复盘）</summary>{historicalAssessments.map(item => <div key={item._id} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #EADBC2', fontSize: 13 }}><strong>{item.displayLabel}</strong><div style={{ marginTop: 5 }}>{item.notice}</div><details style={{ marginTop: 7 }}><summary style={{ cursor: 'pointer' }}>查看原文与审核记录</summary><div style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}><CleanText>{item.content}</CleanText></div>{(item.teamRoles || []).map(role => item.teamReviews?.[role]?.status === 'approved' && <div key={role} style={{ marginTop: 5 }}>{PHASE_ROLES[role]}：{item.teamReviews[role].reviewedByName || '已核对'} · {item.teamReviews[role].note || '无补充备注'}</div>)}</details></div>)}</details>}
       </div>
     </div>}
     {mode !== 'assessment' && <>
