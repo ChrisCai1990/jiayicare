@@ -6232,7 +6232,6 @@ export default function PatientDetailPage() {
 
         {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，健康数据记录在下方 */}
         {tab === 'records' && healthBaseView === 'lifestyle' && <>
-          {staff?.role === 'nutritionist' && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}><button type="button" className="btn btn-primary btn-sm" onClick={async () => { try { const result = await staffAPI.startNutritionLifestyleInterview(id); nav(`/patients/${id}?tab=records&recordView=lifestyle&interviewTaskId=${result.data._id}`); loadFollowUps() } catch (err) { toast(err.message || '访谈任务发起失败') } }}>发起生活方式访谈</button></div>}
           {['nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel patientId={id} embedded hideWhenEmpty />}
           {(() => {
             const selectedId = new URLSearchParams(location.search).get('interviewTaskId') || new URLSearchParams(location.search).get('annualTaskId')

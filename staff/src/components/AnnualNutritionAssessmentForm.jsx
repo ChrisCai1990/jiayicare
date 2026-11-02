@@ -23,7 +23,15 @@ export default function AnnualNutritionAssessmentForm({task,staff,onSaved}) {
  const current=data.task,editable=['planned','in_progress','missed'].includes(current.status)&&(staff.role==='superadmin'||(staff.role==='nutritionist'&&String(current.assignedTo?._id||current.assignedTo)===String(staff._id)))
  const applying=current.formData?.lifestyleInterview?.phase==='applying',disabled=!editable||busy||applying
  const questions=interviewTools.visibleQuestions(data.template.questions,answers,data.gender)
- async function save(action){setBusy(true);setMessage('');try{const r=await staffAPI.saveLifestyleInterview(task._id,{action,answers,confirmed,notes,method,patientVersion:data.patientVersion,templateVersion:data.template.updatedAt,baseUpdatedAt:current.updatedAt,confirmConflicts:conflicts});onSaved(r.data)}catch(e){setMessage(e.message)}finally{setBusy(false)}}
+ async function save(action){
+  setMessage('')
+  if(action==='submit'&&!applying){
+   if(!confirmed.length){setMessage('请先勾选至少一项“已核实”，再完成评估');return}
+   if(!notes.trim()){setMessage('请填写“营养师评估意见 / 待补信息”，再完成评估');document.getElementById(`nutrition-interview-notes-${task._id}`)?.focus();return}
+  }
+  setBusy(true)
+  try{const r=await staffAPI.saveLifestyleInterview(task._id,{action,answers,confirmed,notes,method,patientVersion:data.patientVersion,templateVersion:data.template.updatedAt,baseUpdatedAt:current.updatedAt,confirmConflicts:conflicts});onSaved(r.data)}catch(e){setMessage(e.message)}finally{setBusy(false)}
+ }
  return <section>
   <h3>生活方式访谈与核实</h3><p>复用「{data.template.title}」。逐项核实后勾选；未问清保持待确认。提交后已核实的生活方式字段写入档案，营养师确认后即完成本次任务，无需健康顾问审核。</p>
   <details><summary>本次评估依据及要求</summary><p style={{whiteSpace:'pre-wrap'}}>{current.plannedContent||current.content}</p></details>
@@ -38,10 +46,10 @@ export default function AnnualNutritionAssessmentForm({task,staff,onSaved}) {
    {editable&&<button className="btn btn-secondary btn-sm" disabled={disabled} onClick={()=>{setAnswers(a=>({...a,[q.id]:''}));setConfirmed(c=>c.filter(id=>id!==q.id));setConflicts(false)}}>清空 / 待确认</button>}
    <label><input type="checkbox" disabled={disabled||answers[q.id]===undefined||answers[q.id]===''} checked={confirmed.includes(q.id)} onChange={e=>setConfirmed(c=>e.target.checked?[...c,q.id]:c.filter(id=>id!==q.id))}/>已核实</label>
   </div>)}
-  <label style={{display:'block',marginTop:16}}>营养师评估意见 / 待补信息<textarea className="form-input" rows={4} disabled={disabled} value={notes} onChange={e=>setNotes(e.target.value)}/></label>
+  <label style={{display:'block',marginTop:16}}>营养师评估意见 / 待补信息（完成评估时必填）<textarea id={`nutrition-interview-notes-${task._id}`} className="form-input" rows={4} disabled={disabled} value={notes} onChange={e=>setNotes(e.target.value)}/></label>
   {current.formData?.nutritionResultReview?.action==='returned'&&<p>退回意见：{current.formData.nutritionResultReview.note}</p>}
-  {editable&&<><label><input type="checkbox" disabled={disabled} checked={conflicts} onChange={e=>setConflicts(e.target.checked)}/>已核对勾选内容与原档案的差异，确认更新</label><div style={{display:'flex',gap:8,marginTop:12,position:'sticky',bottom:0,background:'white',padding:12}}>{!applying&&<button className="btn btn-secondary" disabled={busy} onClick={()=>save('draft')}>暂存访谈</button>}<button className="btn btn-primary" disabled={busy} onClick={()=>save('submit')}>{applying?'继续完成提交':'确认写入档案并完成评估'}</button></div></>}
+  {editable&&<><label><input type="checkbox" disabled={disabled} checked={conflicts} onChange={e=>setConflicts(e.target.checked)}/>已核对勾选内容与原档案的差异，确认更新</label><div style={{marginTop:12,position:'sticky',bottom:0,background:'white',padding:12,boxShadow:'0 -2px 8px #00000012'}}>{message&&<p role="alert" style={{color:'#B42318',margin:'0 0 8px'}}>{message}</p>}<div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>{!applying&&<button className="btn btn-secondary" disabled={busy} onClick={()=>save('draft')}>暂存访谈</button>}<button className="btn btn-primary" disabled={busy} onClick={()=>save('submit')}>{applying?'继续完成提交':'确认写入档案并完成评估'}</button></div></div></>}
   {!editable&&<p>{'评估已完成，记录只读。'}</p>}
-  {message&&<p role="alert">{message}</p>}
+  {!editable&&message&&<p role="alert">{message}</p>}
  </section>
 }

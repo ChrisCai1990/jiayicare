@@ -41,12 +41,9 @@ const wrap = fn => async (req, res) => {
   }
 };
 
-router.post('/self-lifestyle-interview', staffAuth, wrap(async (req, res) => {
-  if (!await require('../utils/staffRoleCapabilities').isNutritionistStaff(req.staff))
-    return bad(res, 403, '仅营养师可发起生活方式访谈');
-  const task = await require('../utils/nutritionLifestyleTask').startForNutritionist(req.body?.patientId, req.staff);
-  res.status(201).json({ success: true, data: task });
-}));
+// Older cached staff pages may still show the retired direct-start button.
+router.post('/self-lifestyle-interview', staffAuth, (_req, res) =>
+  bad(res, 410, '该快捷入口已停用，请从营养管理发起单次营养评估'));
 
 router.post('/:id/execution-task', staffAuth, wrap(async (req, res) => {
   const row = await load(req, res); if (!row) return;

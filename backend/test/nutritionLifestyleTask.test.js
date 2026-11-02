@@ -2,9 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 const annualNutrition = require('../../shared/annualNutrition.cjs');
-const { WORKFLOW_KEY, ensureForRequest, startForNutritionist, syncRequestFromInterview } = require('../src/utils/nutritionLifestyleTask');
+const { WORKFLOW_KEY, ensureForRequest, syncRequestFromInterview } = require('../src/utils/nutritionLifestyleTask');
 
-test('年度、单次需求和营养师主动发起都归入生活方式访谈任务', async t => {
+test('年度与单次需求归入生活方式访谈任务，历史自主发起任务仍可识别', async t => {
   const FollowUp = require('../src/models/FollowUp');
   const Request = require('../src/models/NutritionAssessmentRequest');
   const User = require('../src/models/User');
@@ -13,7 +13,7 @@ test('年度、单次需求和营养师主动发起都归入生活方式访谈�
     nutritionistId: ids.nutritionist, status: 'booked', assessmentType: 'initial',
     reason: '核实膳食与生活方式', appointment: { at: new Date('2099-01-01T10:00:00Z') }, formData: {} };
   const user = { _id: ids.patient, tenantId: ids.tenant, assignedNutritionist: ids.nutritionist };
-  let linkedTask = null, requestLink = null, selfTask = null;
+  let linkedTask = null, requestLink = null;
   const chain = value => ({ select() { return this }, sort() { return this }, lean: async () => value });
   t.mock.method(User, 'findOne', () => chain(user));
   t.mock.method(FollowUp, 'findById', () => chain(linkedTask));
@@ -24,23 +24,15 @@ test('年度、单次需求和营养师主动发起都归入生活方式访谈�
   t.mock.method(Request, 'updateOne', async (_filter, update) => {
     requestLink = update.$set.executionFollowUpId; return { modifiedCount: 1 };
   });
-  t.mock.method(FollowUp, 'findOne', () => chain(selfTask));
-  t.mock.method(FollowUp, 'create', async data => {
-    selfTask = { _id: new mongoose.Types.ObjectId(), ...data }; return selfTask;
-  });
 
   const fromRequest = await ensureForRequest(row);
   assert.equal(fromRequest.workflowKey, WORKFLOW_KEY);
   assert.equal(String(fromRequest.sourceId), String(ids.request));
   assert.equal(String(requestLink), String(fromRequest._id));
   assert.equal(String((await ensureForRequest(row))._id), String(fromRequest._id));
-  const own = await startForNutritionist(String(ids.patient), { _id: ids.nutritionist, tenantId: ids.tenant });
-  assert.equal(own.workflowKey, WORKFLOW_KEY);
-  assert.equal(own.sourceId, undefined);
-  assert.equal(String((await startForNutritionist(String(ids.patient), { _id: ids.nutritionist, tenantId: ids.tenant }))._id), String(own._id));
   assert(annualNutrition.isTask({ sourceType: 'scheduled', workflowKey: 'annual_nutrition_assessment', sourceAnnualPlanId: ids.request }));
   assert(annualNutrition.isTask(fromRequest));
-  assert(annualNutrition.isTask(own));
+  assert(annualNutrition.isTask({ sourceType: 'professional_assessment', workflowKey: WORKFLOW_KEY, sourceId: null }));
 });
 
 test('访谈完成后回写关联需求单，保留访谈结果和来源', async t => {

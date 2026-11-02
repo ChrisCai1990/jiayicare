@@ -197,7 +197,6 @@ export const staffAPI = {
   bookNutritionAssessment: (id, d) => req('/staff/nutrition-assessments/' + id + '/booking', { method: 'POST', body: JSON.stringify(d) }),
   completeNutritionAssessment: (id, d) => req('/staff/nutrition-assessments/' + id + '/complete', { method: 'POST', body: JSON.stringify(d) }),
   ensureNutritionAssessmentExecutionTask: id => req(`/staff/nutrition-assessments/${id}/execution-task`, { method: 'POST' }),
-  startNutritionLifestyleInterview: patientId => req('/staff/nutrition-assessments/self-lifestyle-interview', { method: 'POST', body: JSON.stringify({ patientId }) }),
   cancelNutritionAssessment: (id, d) => req('/staff/nutrition-assessments/' + id + '/cancel', { method: 'POST', body: JSON.stringify(d) }),
     confirmMedicalAssistClosure: (id, conclusion) => req(`/staff/medical-assist-closures/${id}/confirm`, { method: 'POST', body: JSON.stringify({ conclusion }) }),
   getMedicalAssistProgress: (p = {}) => req('/staff/medical-assist-progress?' + qs(p)),

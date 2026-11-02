@@ -42,26 +42,6 @@ async function ensureForRequest(row) {
   return FollowUp.findById(id).lean();
 }
 
-async function startForNutritionist(patientId, staff) {
-  if (!mongoose.isValidObjectId(patientId)) throw fail('会员ID无效', 400);
-  const patient = await User.findOne({ _id: patientId, tenantId: staff.tenantId,
-    isDeleted: { $ne: true } }).select('assignedNutritionist').lean();
-  if (!patient || !same(patient.assignedNutritionist, staff._id))
-    throw fail('仅该会员的责任营养师可发起访谈', 403);
-  const existing = await FollowUp.findOne({ patientId, assignedTo: staff._id,
-    sourceType: 'professional_assessment', workflowKey: WORKFLOW_KEY, sourceId: null,
-    status: { $in: ['planned', 'in_progress', 'missed'] } }).sort({ createdAt: -1 }).lean();
-  if (existing) return existing;
-  return FollowUp.create({ tenantId: staff.tenantId, staffId: staff._id, patientId,
-    assignedTo: staff._id, date: new Date(), type: 'phone', status: 'planned',
-    theme: '营养师自主发起 · 生活方式访谈', content: '核实膳食与生活方式，形成营养师评估意见',
-    plannedContent: '核实膳食与生活方式，形成营养师评估意见',
-    sourceType: 'professional_assessment', workflowKey: WORKFLOW_KEY,
-    deliveryMode: 'single', deliveryType: 'nutrition_assessment', clientVisible: false,
-    aiStatus: 'approved', reviewRole: null, reviewAssignedTo: null, formData: { selfInitiated: true },
-  });
-}
-
 async function syncRequestFromInterview(task) {
   if (task.workflowKey !== WORKFLOW_KEY || !task.sourceId || task.status !== 'completed')
     return { status: 'not_applicable' };
@@ -95,4 +75,4 @@ async function syncRequestFromInterview(task) {
   }
 }
 
-module.exports = { WORKFLOW_KEY, requestTaskId, ensureForRequest, startForNutritionist, syncRequestFromInterview };
+module.exports = { WORKFLOW_KEY, requestTaskId, ensureForRequest, syncRequestFromInterview };
