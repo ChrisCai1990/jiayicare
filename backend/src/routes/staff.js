@@ -8128,9 +8128,19 @@ router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
     tasksByPlan.get(key).push(task);
   });
   const { summarizeMedicalVisitTasks } = require('../utils/medicalVisitRecordResult');
+  const phaseIds = records.filter(record => record.sourcePhaseAssessmentId).map(record => record.sourcePhaseAssessmentId);
+  const phaseRows = phaseIds.length ? await PhaseAssessment.find({ _id: { $in: phaseIds }, patientId: req.params.id }).select('_id periodKey createdAt templateSnapshot.frequency').lean() : [];
+  const { prematureCalendarQuarter } = require('../utils/phaseAssessmentPeriodDisplay');
+  const phaseDisplay = new Map(phaseRows.map(row => [String(row._id), prematureCalendarQuarter(row)]));
   // 早期测试版曾把通用AI研判伪装成正式阶段评估；仅展示真正由PhaseAssessment模板任务产生并审核的记录。
   res.json({ success: true, data: records.filter(record => record.type !== 'phase_assessment' || record.sourcePhaseAssessmentId).map(record => {
     const item = withSignedServiceRecord(record);
+    const historicalQuarter = phaseDisplay.get(String(item.sourcePhaseAssessmentId || ''));
+    if (historicalQuarter) {
+      item.originalTitle = item.title;
+      item.title = historicalQuarter.displayLabel;
+      item.periodClarification = historicalQuarter.notice;
+    }
     const tasks = tasksByPlan.get(String(item.sourceHealthPlanId)) || [];
     const generated = summarizeMedicalVisitTasks(tasks);
     if (item.type === 'medical_visit' && generated && (!item.result || tasks.some(task => item.result === task.executedContent || item.result === task.content))) {

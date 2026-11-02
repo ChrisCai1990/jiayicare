@@ -210,7 +210,8 @@ router.get('/patients/:patientId/phase-assessments', staffAuth, async (req, res)
         if (target) data.unshift(target);
       }
     }
-    res.json({ success: true, data, healthManagementEnabled: require('../utils/healthManagementRollout').enabledForPatient(user._id) });
+    const { prematureCalendarQuarter } = require('../utils/phaseAssessmentPeriodDisplay');
+    res.json({ success: true, data: data.map(item => ({ ...item, ...(prematureCalendarQuarter(item) || {}) })), healthManagementEnabled: require('../utils/healthManagementRollout').enabledForPatient(user._id) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

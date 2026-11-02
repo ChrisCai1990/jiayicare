@@ -440,7 +440,9 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   }
 
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
+  const isMonthlyAssessment = item => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(item.periodKey || ''))
   const visibleAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode)
+    .sort((a, b) => Number(isMonthlyAssessment(b)) - Number(isMonthlyAssessment(a)) || new Date(b.createdAt) - new Date(a.createdAt))
   const currentAssessment = visibleAssessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
   return <div style={{ display: 'grid', gridTemplateColumns: mode === 'assessment' ? '1fr' : '230px minmax(0, 1fr)', gap: 14, minHeight: mode === 'assessment' ? 0 : 760 }}>
     {mode !== 'specialty' && <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
@@ -465,7 +467,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           const activeSectionIndex = activeAssessmentSections[item._id]
           const activeSection = Number.isInteger(activeSectionIndex) ? stageSections[activeSectionIndex] : null
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}{item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.displayLabel || `${item.periodLabel}${item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}`}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
+            {item.notice && <div style={{ marginTop: 7, padding: '8px 10px', borderRadius: 8, background: '#FFF7E7', color: '#8A5700', fontSize: 12 }}>{item.notice}</div>}
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
             <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>{item.templateSnapshot?.source === 'local_manual' ? '本底稿在系统内汇总已有健康记录、服务随访、就医服务记录及已审核报告名称和项目；营养师与健康顾问需查看原始资料，填写分析与结论。' : 'AI草稿仅参考当前可用的健康记录、随访及部分已审核报告项目；未覆盖全部就医和检查资料。'}健康顾问请核对本月所有需要跟进的问题、就医次数及原因。</div>
             {onNavigate && <div style={{ display: 'flex', gap: 8, marginTop: 8 }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('reports')}>核对原始报告与复查指标</button><button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('serviceRecords')}>核对就医与服务记录</button></div>}
