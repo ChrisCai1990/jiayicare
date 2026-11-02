@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom'
 const apiBase = import.meta.env.VITE_API_URL || '/api'
 const blank = {
   name: '', phone: '', institutionName: '', departmentName: '', title: '', profession: '临床医师',
-  registrationScope: '', experienceYears: '', expertise: '', unsuitableTopics: '',
+  experienceYears: '', expertise: '', unsuitableTopics: '',
   singleConsultation: false, mdt: false, mdtLead: false, singleExpectedFee: '', mdtExpectedFee: '',
   feeTaxBasis: 'undecided', feeIncludes: [], extraFeeRule: '', preparationMinutes: '', materialLimit: '', replyHours: '',
   weeklyAvailability: '', weeklyCapacity: '', minimumNoticeHours: 48, scheduleMaintenance: 'self',
@@ -76,9 +76,8 @@ export default function ExpertInvitationPage({ reusable = false }) {
         <Field label="实际科室或团队"><input style={inputStyle} value={form.departmentName} onChange={set('departmentName')}/></Field>
         <Field label="专业类别"><select style={inputStyle} value={form.profession} onChange={set('profession')}>{['临床医师','护理','营养','康复','心理','药学','其他'].map(x => <option key={x}>{x}</option>)}</select></Field>
         <Field label="职称或专业等级"><input style={inputStyle} value={form.title} onChange={set('title')}/></Field>
-        <Field label="执业或服务范围"><input style={inputStyle} value={form.registrationScope} onChange={set('registrationScope')}/></Field>
         <Field label="相关工作年限"><input style={inputStyle} type="number" min="0" max="80" value={form.experienceYears} onChange={set('experienceYears')}/></Field>
-        <Field label="最擅长的咨询主题或人群  多项用顿号分隔"><textarea style={inputStyle} rows={2} value={form.expertise} onChange={set('expertise')}/></Field>
+        <Field label="擅长"><textarea style={inputStyle} rows={3} placeholder="请填写擅长的专业方向、疾病或咨询人群，多项用顿号分隔" value={form.expertise} onChange={set('expertise')}/></Field>
         <Field label="不适合承接的主题或专业边界"><textarea style={inputStyle} rows={2} value={form.unsuitableTopics} onChange={set('unsuitableTopics')}/></Field>
         <h2 style={section}>合作方式与交付</h2>
         <Check label="愿意参与单次专家咨询分析" checked={form.singleConsultation} onChange={set('singleConsultation')}/>

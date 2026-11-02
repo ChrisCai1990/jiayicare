@@ -35,8 +35,7 @@ export default function ExpertRecruitmentPage() {
   const selected = rows.find(row => id(row) === selectedId)
   const screeningSaved = Boolean(selected?.screening?.reviewedAt) && ['qualificationVerified', 'professional', 'communication', 'ethics', 'evidence'].every(key => String(selected.screening[key] ?? '').trim() === String(screening[key] ?? '').trim())
   const screeningPassed = screeningSaved && screening.qualificationVerified && ['professional', 'communication', 'ethics'].every(key => screening[key] === 'pass')
-  const scopeMatches = !selected?.response?.registrationScope || same(selected.response.registrationScope, selected.response.departmentName)
-  const matchingComplete = Boolean(approval.institutionId && approval.departmentId && approval.linkedStaffId && scopeMatches)
+  const matchingComplete = Boolean(approval.institutionId && approval.departmentId && approval.linkedStaffId)
 
   async function load() {
     const [recruitments, activeLinks, medical, employees] = await Promise.all([
@@ -111,7 +110,7 @@ export default function ExpertRecruitmentPage() {
             <h4>专家提交的信息</h4>
             <Info label="联系方式" value={selected.response?.phone}/><Info label="机构 / 科室" value={`${selected.response?.institutionName || '—'} / ${selected.response?.departmentName || '—'}`}/>
             <Info label="专业 / 职称 / 年限" value={`${selected.response?.profession || '—'} / ${selected.response?.title || '—'} / ${selected.response?.experienceYears ?? '—'} 年`}/>
-            <Info label="执业范围" value={selected.response?.registrationScope}/><Info label="擅长" value={selected.response?.expertise?.join('、')}/><Info label="不适合承接" value={selected.response?.unsuitableTopics}/>
+            <Info label="擅长" value={[...new Set([selected.response?.registrationScope, selected.response?.expertise?.join('、')].filter(Boolean))].join('；')}/><Info label="不适合承接" value={selected.response?.unsuitableTopics}/>
             <Info label="合作意向" value={[selected.response?.singleConsultation && '单次咨询', selected.response?.mdt && 'MDT', selected.response?.mdtLead && 'MDT 牵头'].filter(Boolean).join('、')}/>
             <Info label="单次咨询预期报酬" value={selected.response?.singleConsultation ? `${selected.response.singleExpectedFee} 元/次` : '不参与'}/>
             <Info label="MDT 预期报酬" value={selected.response?.mdt ? `${selected.response.mdtExpectedFee} 元/次` : '不参与'}/>
@@ -132,7 +131,7 @@ export default function ExpertRecruitmentPage() {
               <Info label="医院自动匹配" value={approval.institutionId ? (resources.institutions || []).find(x => id(x) === approval.institutionId)?.name : '未匹配，请核实问卷中的机构名称及医疗资源库'}/>
               <Info label="科室自动匹配" value={approval.departmentId ? (resources.departments || []).find(x => id(x) === approval.departmentId)?.name : '未匹配，请核实问卷中的科室及医院下的科室库'}/>
               <Info label="专家账号自动匹配" value={approval.linkedStaffId ? staff.find(x => id(x) === approval.linkedStaffId)?.name : '未匹配，请核实医护端账号的姓名和手机号'}/>
-              {!scopeMatches && <p role="alert" style={{ color: '#B42318', marginTop: 8 }}>问卷的执业范围与填写科室不一致，请先核实，不能自动入库。</p>}
+              <p style={{ color: '#637B76', marginTop: 8 }}>擅长内容无需与科室名称逐字相同；是否符合拟开展服务，由上方准入核验确认。</p>
               {!matchingComplete && <p style={{ color: '#9A6700' }}>资料或资源不匹配时，请先核实原始问卷及基础设置中的机构、科室、人员资料，再刷新本页。系统不会代选其他医院或科室。</p>}
               <Field label="单次咨询每单报酬  元"><input className="form-input" type="number" min="0" value={approval.singleFee} onChange={setApprove('singleFee')}/></Field>
               <Field label="MDT 每单报酬  元"><input className="form-input" type="number" min="0" value={approval.mdtFee} onChange={setApprove('mdtFee')}/></Field>

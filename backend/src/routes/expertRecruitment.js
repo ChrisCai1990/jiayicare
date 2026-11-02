@@ -160,8 +160,7 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
   const screening = row.screening || {};
   if (!screening.qualificationVerified || ['professional', 'communication', 'ethics'].some(k => screening[k] !== 'pass'))
     return fail(res, 409, '资格核验与专业、沟通、品德三项均通过后才可入库');
-  if (row.response.registrationScope && !same(row.response.registrationScope, row.response.departmentName))
-    return fail(res, 409, '问卷的执业范围与填写科室不一致，请先核实');
+  // 执业范围是专业描述，不是科室名称；适配性由上方人工资格与专业核验确认。
   const institutionId = req.body?.institutionId, departmentId = req.body?.departmentId;
   if (!mongoose.isValidObjectId(institutionId) || !mongoose.isValidObjectId(departmentId)) return fail(res, 400, '问卷医院或科室未能与医疗资源库唯一匹配');
   const [institution, department] = await Promise.all([
