@@ -16,6 +16,7 @@ class ErrorBoundary extends Component {
 }
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { getToken, setToken, clearToken, staffAPI } from './api'
+import { hasModulePermission } from './modulePermission'
 import LoginPage from './pages/LoginPage'
 import Layout from './components/Layout'
 import HomePage from './pages/HomePage'
@@ -90,9 +91,7 @@ export function canViewModule(staff, moduleKey) {
 // 通用按钮级权限判断：staff 是否有某模块的某操作(view/create/edit/delete/send/audit)权限。
 // 未配置自定义角色权限的老员工一律放行（与菜单/路由守卫策略一致）。
 export function can(staff, moduleKey, action) {
-  if (!moduleKey) return true
-  if (!staff?.customPermissions) return true
-  return !!staff.customPermissions[moduleKey]?.[action]
+  return hasModulePermission(staff, moduleKey, action)
 }
 
 // hook 形式，页面里用：const can = usePermission(); ... can('patients','create')
