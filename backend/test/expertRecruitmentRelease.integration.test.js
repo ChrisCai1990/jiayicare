@@ -91,6 +91,13 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       const wrongDepartment = response();
       await approve({ params: { id: String(row._id) }, admin: actor, body: { institutionId: String(institutionId), departmentId: String(wrongDepartmentId), linkedStaffId: String(staffId), singleFee: 180 } }, wrongDepartment);
       assert.equal(wrongDepartment.statusCode, 409);
+      const existingProfile = await MedicalExpert.create({ name: '其他医生', institutionId, departmentId,
+        linkedStaffId: staffId, introduction: '保留原档案介绍', serviceModes: ['outpatient'], status: 'active' });
+      const otherPerson = response();
+      await approve({ params: { id: String(row._id) }, admin: actor, body: { institutionId: String(institutionId), departmentId: String(departmentId), linkedStaffId: String(staffId), singleFee: 180 } }, otherPerson);
+      assert.equal(otherPerson.statusCode, 409);
+      existingProfile.name = '张医生';
+      await existingProfile.save();
       const approved = response();
       await approve({ params: { id: String(row._id) }, admin: actor, body: { institutionId: String(institutionId), departmentId: String(departmentId), linkedStaffId: String(staffId), singleFee: 180 } }, approved);
       assert.equal(approved.statusCode, 200, JSON.stringify(approved.body));
@@ -98,6 +105,11 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       assert.equal(String(profile.tenantId), String(firstTenant));
       assert.equal(profile.teamEligible, true);
       assert.equal(profile.singleConsultationFee, 180);
+      assert.equal(String(profile._id), String(existingProfile._id), '沿用同一专家的原档案');
+      assert.equal(profile.introduction, '保留原档案介绍');
+      assert.ok(profile.serviceModes.includes('outpatient'));
+      assert.ok(profile.serviceModes.includes('single_consultation'));
+      assert.equal(await MedicalExpert.countDocuments({ linkedStaffId: staffId }), 1);
       const saved = await Recruitment.findById(row._id);
       assert.equal(saved.status, 'approved');
     });

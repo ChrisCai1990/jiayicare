@@ -190,15 +190,33 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
     role: { $in: ['specialist', 'familyDoctor', 'nutritionist', 'rehabSpecialist', 'psychologist', 'tcmDoctor'] } }).select('_id name').lean();
   if (staffChoices.filter(item => same(item.name, row.response.name)).length !== 1)
     return fail(res, 409, '问卷身份匹配到多位医护端人员，请先核实');
-  const existingLink = await MedicalExpert.findOne({ linkedStaffId, _id: { $ne: row.expertProfileId || row._id } }).select('_id').lean();
-  if (existingLink) return fail(res, 409, '该医护端账号已关联另一位专家');
-  const profile = await MedicalExpert.findOneAndUpdate({ recruitmentId: row._id }, { $setOnInsert: {
+  const linkedProfiles = await MedicalExpert.find({ linkedStaffId }).lean();
+  if (linkedProfiles.length > 1) return fail(res, 409, '该医护端账号关联了多份专家档案，请先核实');
+  const existingLink = linkedProfiles[0];
+  if (existingLink && (!same(existingLink.name, row.response.name) ||
+      String(existingLink.institutionId) !== String(institutionId) || String(existingLink.departmentId) !== String(departmentId)))
+    return fail(res, 409, '账号已关联的专家姓名、医院或科室与问卷不一致，请先核实');
+  if (existingLink && (existingLink.status !== 'active' ||
+      (existingLink.recruitmentId && String(existingLink.recruitmentId) !== String(row._id))))
+    return fail(res, 409, '原专家档案已停用或已关联其他准入问卷，请先核实');
+  const cooperation = {
+    serviceModes: [...new Set([...(existingLink?.serviceModes || []),
+      ...(row.response.singleConsultation ? ['single_consultation'] : []), ...(row.response.mdt ? ['mdt'] : []),
+    ])], teamEligible: true, singleConsultationFee: singleFee, mdtFee, recruitmentId: row._id,
+  };
+  const profile = existingLink
+    ? await MedicalExpert.findOneAndUpdate({ _id: existingLink._id, linkedStaffId,
+      name: existingLink.name, institutionId, departmentId, status: 'active',
+      recruitmentId: existingLink.recruitmentId || null,
+    }, { $set: cooperation }, { new: true, runValidators: true })
+    : await MedicalExpert.findOneAndUpdate({ recruitmentId: row._id }, { $setOnInsert: {
     name: row.response.name, title: row.response.title, institutionId, departmentId,
     expertise: row.response.expertise, introduction: '', serviceModes: [
       ...(row.response.singleConsultation ? ['single_consultation'] : []), ...(row.response.mdt ? ['mdt'] : []),
     ], linkedStaffId, teamEligible: true, singleConsultationFee: singleFee, mdtFee,
     recruitmentId: row._id, status: 'active',
   } }, { upsert: true, new: true, runValidators: true });
+  if (!profile) return fail(res, 409, '专家档案已更新，请刷新后重新核实');
   row.agreement = { institutionId, departmentId, singleFee, mdtFee, note: text(req.body?.note, 1000) };
   row.expertProfileId = profile._id;
   row.status = 'approved';
