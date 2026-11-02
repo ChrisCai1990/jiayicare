@@ -4,8 +4,8 @@ const PhaseAssessment = require('../src/models/PhaseAssessment');
 const Generation = require('../src/models/PhaseAssessmentGeneration');
 const ai = require('../src/utils/ai');
 const context = require('../src/utils/aiCaseReviewContext');
-let calls = 0, days, requestedMaxTokens;
-ai.chat = async (_messages, options) => { calls++; requestedMaxTokens = options.maxTokens; return '阶段评估草稿'; };
+let calls = 0, days, requestedMaxTokens, requestedPrompt;
+ai.chat = async (messages, options) => { calls++; requestedMaxTokens = options.maxTokens; requestedPrompt = messages[0].content; return '阶段评估草稿'; };
 context.buildStageAssessmentContext = async (user, windowDays) => { days = windowDays; return { sources: [] }; };
 const { createAssessment } = require('../src/utils/phaseAssessmentScheduler');
 const input = () => ({ plan: { _id: 'plan', confirmedAt: '2025-01-01' }, user: { _id: 'user', membershipTier: 'annual', assignedFamilyDoctor: 'advisor', assignedNutritionist: 'nutritionist', assignedRehabSpecialist: 'exercise' }, template: { _id: 'template', content: { frequency: 'quarterly' } }, periodOverride: { key: '2026-Q3', label: '2026第三季度' } });
@@ -24,6 +24,9 @@ test('常规综合评估生成营养师和顾问关联待办并使用季度资�
   assert.deepEqual(row.teamRoles, ['nutritionist', 'familyDoctor']);
   assert.equal(row.periodKey, '2026-Q3'); assert.equal(days, 90); assert.equal(calls, 1);
   assert.ok(requestedMaxTokens >= 3000);
+  assert.match(requestedPrompt, /现有记录无法分析两者关联/);
+  assert.match(requestedPrompt, /记录日期少不等于没有执行/);
+  assert.match(requestedPrompt, /不得从一次饮食描述推断整月膳食结构发生变化/);
 });
 test('历史周期及同领域周期去重发生在AI调用之前', async t => {
   calls = 0;
