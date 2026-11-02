@@ -472,7 +472,7 @@ router.post('/onboarding', auth, async (req, res) => {
       contactPhone: normalizedContactPhone,
       onboardingCompleted: true,
       onboardingCompletedAt: new Date(),
-      healthMonitoringConsentAt: healthMonitoringConsent === true ? new Date() : null,
+      healthMonitoringPreference: healthMonitoringConsent === false ? 'disabled' : 'enabled',
     };
     const entrySourceLabels = {
       official_site: '官网服务入口',
@@ -508,7 +508,8 @@ router.post('/onboarding', auth, async (req, res) => {
         lastLoginAt: current.lastLoginAt || new Date(),
         lastLoginMethod: current.lastLoginMethod || idOwner.lastLoginMethod,
       };
-      if (healthMonitoringConsent === true) setData.healthMonitoringConsentAt = new Date();
+      const existingMonitoringEnabled = await require('../utils/monitoringPreference').monitoringEnabled(idOwner);
+      setData.healthMonitoringPreference = healthMonitoringConsent === false || !existingMonitoringEnabled ? 'disabled' : 'enabled';
       if (residence?.province && residence?.city) setData.residence = updateData.residence;
       if (current.wechatOpenid) setData.wechatOpenid = current.wechatOpenid;
       if (current.wechatMpOpenid) setData.wechatMpOpenid = current.wechatMpOpenid;

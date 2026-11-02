@@ -22,7 +22,7 @@ export default function OnboardingScreen({ navigation }) {
   const [codeSending, setCodeSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [healthMonitoringConsent, setHealthMonitoringConsent] = useState(false);
+  const [healthMonitoringConsent, setHealthMonitoringConsent] = useState(true);
 
   const canSubmit = name.trim() && contactPhone.trim() && !submitting;
   const needsPhoneVerification = contactPhone.trim() !== (user?.phone || '').trim();
@@ -174,7 +174,7 @@ export default function OnboardingScreen({ navigation }) {
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.lg }}>
-          <Text style={{ flex: 1, fontSize: 13, color: colors.textSecondary }}>同意开启免费血压、体重监测提醒（可随时关闭）</Text>
+          <Text style={{ flex: 1, fontSize: 13, color: colors.textSecondary }}>免费血压、体重提醒默认开启，可在提醒管理中随时关闭</Text>
           <Switch value={healthMonitoringConsent} onValueChange={setHealthMonitoringConsent} trackColor={{ true: colors.primary }} />
         </View>
 

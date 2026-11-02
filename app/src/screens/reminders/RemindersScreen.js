@@ -560,7 +560,7 @@ export default function RemindersScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
       >
         <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <View style={{ flex: 1 }}><Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>免费血压、体重提醒</Text><Text style={{ fontSize: 12, color: colors.textMuted }}>无需年度方案，可随时关闭</Text></View>
+          <View style={{ flex: 1 }}><Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>免费血压、体重提醒</Text><Text style={{ fontSize: 12, color: colors.textMuted }}>默认开启，无需年度方案，可随时关闭</Text></View>
           <Switch value={monitoringConsent} onValueChange={handleMonitoringConsent} trackColor={{ true: colors.primary }} />
         </View>
         {/* 统计 */}

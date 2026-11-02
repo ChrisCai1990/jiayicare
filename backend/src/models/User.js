@@ -39,7 +39,8 @@ const userSchema = new mongoose.Schema({
   onboardingCompleted: { type: Boolean, default: false },
   onboardingCompletedAt: { type: Date, default: null }, // 完成首次登录建档的时间，用于分批推送问卷计时
   reviewExperience: { enabled: { type: Boolean, default: false } }, // 专用、无真实资料的微信审核账号
-  healthMonitoringConsentAt: { type: Date, default: null }, // 客户主动同意免费血压/体重监测提醒；未同意不自动发送
+  healthMonitoringConsentAt: { type: Date, default: null }, // 旧版主动开启时间，保留历史记录
+  healthMonitoringPreference: { type: String, enum: ['enabled', 'disabled'] }, // 默认开启；明确关闭后持久保留
   lastLoginAt: { type: Date, default: null },
   lastLoginMethod: { type: String, enum: ['phone_wechat', 'phone', 'wechat', 'review', ''], default: '' },
   loginCount: { type: Number, default: 0 },

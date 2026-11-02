@@ -33,8 +33,8 @@ async function scanAndRemindMissingBP() {
 
   for (const patientId of patientIds) {
     try {
-      const patient = await User.findById(patientId).select('onboardingCompleted healthMonitoringConsentAt isDeleted').lean();
-      if (!patient?.onboardingCompleted || !patient.healthMonitoringConsentAt || patient.isDeleted) continue;
+      const patient = await User.findById(patientId).select('onboardingCompleted healthMonitoringConsentAt healthMonitoringPreference isDeleted').lean();
+      if (!await require('./monitoringPreference').monitoringEnabled(patient)) continue;
       const title = '血压监测提醒';
       const exists = await Message.findOne({
         user: patientId, type: 'system', title, createdAt: { $gt: oneDayAgo },
