@@ -16,7 +16,9 @@ const member = new Schema({
 
 const schema = new Schema({
   tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
-  orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
+  orderId: { type: Schema.Types.ObjectId, ref: 'Order', default: null },
+  initiationSource: { type: String, enum: ['customer_order', 'staff'], default: 'customer_order' },
+  initiatedByStaff: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
   patientId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   type: { type: String, enum: ['single', 'mdt'], required: true },
   specificationLabel: { type: String, default: '' },
@@ -44,6 +46,7 @@ const schema = new Schema({
   history: [{ action: String, actorId: Schema.Types.ObjectId, at: Date, note: String }],
 }, { timestamps: true, optimisticConcurrency: true });
 
-schema.index({ tenantId: 1, orderId: 1 }, { unique: true });
+schema.index({ tenantId: 1, orderId: 1 }, { name: 'tenant_order_unique_objectId', unique: true,
+  partialFilterExpression: { orderId: { $type: 'objectId' } } });
 schema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 module.exports = mongoose.model('ExpertConsultationCase', schema);

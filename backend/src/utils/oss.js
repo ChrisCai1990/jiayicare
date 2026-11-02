@@ -149,6 +149,18 @@ async function copyStoredFile(key) {
   return { key: newKey, url: `https://${process.env.OSS_BUCKET}.${endpoint.replace('https://', '')}/${newKey}` };
 }
 
+// A chat original must get its own report object: deleting a report must not
+// delete the image still referenced by the conversation.
+async function copyMessageImageToReport(key) {
+  if (!/^messages\/[A-Za-z0-9._/-]+$/.test(key || '') || key.includes('..')) throw new Error('会话图片路径无效');
+  const ext = path.extname(key).toLowerCase();
+  if (!['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'].includes(ext)) throw new Error('会话图片格式不支持');
+  const newKey = `reports/${uuidv4()}${ext}`;
+  await getClient().copy(newKey, key);
+  const endpoint = process.env.OSS_ENDPOINT || 'https://oss-cn-beijing.aliyuncs.com';
+  return { key: newKey, url: `https://${process.env.OSS_BUCKET}.${endpoint.replace('https://', '')}/${newKey}` };
+}
+
 // 从 OSS URL 提取 key
 function urlToKey(url) {
   const bucket = process.env.OSS_BUCKET;
@@ -160,4 +172,4 @@ function urlToKey(url) {
   } catch { return null; }
 }
 
-module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, copyStoredFile, getClient, urlToKey, convertHeicBase64IfNeeded };
+module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, copyStoredFile, copyMessageImageToReport, getClient, urlToKey, convertHeicBase64IfNeeded };

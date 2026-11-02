@@ -348,6 +348,14 @@ router.post('/:id/submit', auth, async (req, res) => {
     });
 
     if (String(questionnaire._id) === require('../utils/legacyLifestyleInterview').QUESTIONNAIRE_ID) {
+      try {
+        await require('../utils/dietarySurveyBaseline').importBaseline(User, subjectId, questionnaire, response);
+      } catch (error) {
+        console.error('[dietary-survey-baseline] initial import failed', response._id, error);
+        await User.collection.updateOne({ _id: subjectId },
+          { $set: { dietaryBaselineImportPending: { responseId: response._id, createdAt: new Date() } } })
+          .catch(pendingError => console.error('[dietary-survey-baseline] pending marker failed', response._id, pendingError));
+      }
       await require('../utils/legacyLifestyleInterview').reconcileLegacyLifestyleInterviews(subjectId)
         .catch(error => console.error('[legacy-lifestyle-interview] reconcile failed:', error));
     }

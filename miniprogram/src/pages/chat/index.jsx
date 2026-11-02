@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { View, Text } from '@tarojs/components';
 import { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing } from '../../theme';
@@ -12,10 +12,15 @@ export default function ChatPage() {
   const { statusBarHeight } = useNavBar();
   const archive = useArchiveSubject();
   const [visible, setVisible] = useState(true);
+  const archiveLoadedRef = useRef(false);
+  if (!archive.loading) archiveLoadedRef.current = true;
   useDidShow(() => setVisible(true));
   useDidHide(() => setVisible(false));
 
-  if (archive.loading || archive.error || archive.subject) {
+  // The native image picker may briefly hide/show this tab. The archive hook
+  // refreshes on show; replacing MessagesPage during that refresh unmounts an
+  // open conversation and discards its pending photo selection.
+  if ((archive.loading && !archiveLoadedRef.current) || archive.error || archive.subject) {
     return <FamilySubjectView archive={archive} section="manager" statusBarHeight={statusBarHeight} />;
   }
 

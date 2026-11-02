@@ -982,6 +982,7 @@ function ReplyModal({ userId, userName, onClose, onSent }) {
 // ── 对话线程弹窗 ──
 function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate }) {
   const toast = useToast()
+  const [previewImageUrl, setPreviewImageUrl] = useState('')
   const [messages, setMessages] = useState([])
   const [proxyOrders, setProxyOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1121,7 +1122,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {proxyOrders.map(order => onNavigate && <button key={order._id} className="btn btn-primary btn-sm" onClick={() => { onNavigate(`/patients/${userId}?openChat=1`, { state: { serviceBooking: { sourceOrderId: order } } }); onClose() }}>确认代诊订单{proxyOrders.length > 1 ? ` ${order.orderNo || String(order._id).slice(-6)}` : ''}</button>)}
-            {onNavigate && <button className="btn btn-secondary btn-sm" onClick={() => { onNavigate(`/patients/${userId}`); onClose() }}>查看档案</button>}
+            {onNavigate && <button className="btn btn-secondary btn-sm" onClick={() => { onNavigate(`/patients/${userId}?tab=reports`); onClose() }}>查看原始资料</button>}
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
@@ -1153,7 +1154,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                     fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                   }}>
-                    {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map(url => <img key={url} src={url} alt="沟通图片" style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 6 }} />)}
+                    {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map(url => <img key={url} src={url} alt="沟通图片" onClick={() => setPreviewImageUrl(url)} style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 6, cursor: 'zoom-in' }} />)}
                     {m.audioUrl && <div style={{ fontSize: 12, marginBottom: 4 }}>语音{m.audioDuration ? ` ${Math.round(m.audioDuration)}″` : ''}</div>}
                     {m.audioUrl && <audio controls preload="metadata" src={m.audioUrl.startsWith('/') ? `${API_ORIGIN}${m.audioUrl}` : m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
                     {m.audioUrl && m.audioTranscript && <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #E0D9CE', fontSize: 12 }}>转写：{m.audioTranscript}</div>}
@@ -1189,6 +1190,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           {err && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{err}</div>}
         </div>
       </div>
+      {previewImageUrl && <div role="dialog" aria-label="查看会话图片" onClick={() => setPreviewImageUrl('')} style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}><img src={previewImageUrl} alt="会话原图" onClick={event => event.stopPropagation()} style={{ maxWidth: '94vw', maxHeight: '88vh', objectFit: 'contain' }} /><button type="button" onClick={() => setPreviewImageUrl('')} aria-label="关闭图片" style={{ position: 'absolute', top: 16, right: 20, fontSize: 28, color: '#fff', background: 'none', border: 0, cursor: 'pointer' }}>×</button></div>}
     </div>
   )
 }

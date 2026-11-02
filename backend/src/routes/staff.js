@@ -63,6 +63,7 @@ const MedicalInstitution = require('../models/MedicalInstitution');
 const MedicalDepartment = require('../models/MedicalDepartment');
 const MedicalExpert = require('../models/MedicalExpert');
 const MedicalResourceKnowledge = require('../models/MedicalResourceKnowledge');
+const { knowledgeKindFilter } = require('../utils/medicalResourcePaths');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const Message        = require('../models/Message');
 const MemberLevel    = require('../models/MemberLevel');
@@ -3717,14 +3718,27 @@ router.get('/medical-resources', staffAuth, async (req, res) => {
 router.get('/medical-resource-knowledge', staffAuth, checkPermission('medical_resources', 'view'), async (req, res) => {
   const q = String(req.query.q || '').trim();
   const kind = String(req.query.kind || '').trim();
+  const path = String(req.query.path || '').trim();
+  const selectedKind = knowledgeKindFilter(path, kind);
   const filter = {
     status: 'published',
-    ...(kind ? { kind } : {}),
+    ...(selectedKind ? { kind: selectedKind } : {}),
     $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
   };
   if (q) {
     const keyword = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     filter.$and = [{ $or: [{ title: keyword }, { tags: keyword }, { applicableScenarios: keyword }, { summary: keyword }] }];
+    if (path === 'contact') {
+      const hospitals = await MedicalInstitution.find({ name: keyword }).select('_id').lean();
+      filter.$and[0].$or.push({ institutionId: { $in: hospitals.map(item => item._id) } }, { 'appointmentInfo.campus': keyword }, { 'appointmentInfo.officialPlatform': keyword }, { 'appointmentInfo.hospitalPhone': keyword }, { 'appointmentInfo.hospitalEmail': keyword }, { 'appointmentInfo.internalContactPhone': keyword });
+    } else if (path === 'problem') {
+      const [hospitals, departments, experts] = await Promise.all([
+        MedicalInstitution.find({ name: keyword }).select('_id').lean(),
+        MedicalDepartment.find({ name: keyword }).select('_id').lean(),
+        MedicalExpert.find({ name: keyword }).select('_id').lean(),
+      ]);
+      filter.$and[0].$or.push({ institutionId: { $in: hospitals.map(item => item._id) } }, { departmentId: { $in: departments.map(item => item._id) } }, { expertId: { $in: experts.map(item => item._id) } });
+    }
   }
   const rows = await MedicalResourceKnowledge.find(filter)
     .select('kind title institutionId departmentId expertId tags applicableScenarios summary recommendationBasis appointmentInfo precautions serviceBoundary riskNotice version updatedAt expiresAt')
@@ -12250,6 +12264,100 @@ router.get('/user-messages', staffAuth, async (req, res) => {
 function assertRoleMatchesChannel(staffRole, channelRole) {
   return require('../utils/conversationRoles').staffCanAccessConversation(staffRole, channelRole);
 }
+
+// Customer chat photos are already stored in the private bucket. Expose them
+// as unclassified source material without asserting that they are reports.
+async function chatMaterialPatient(staff, patientId) {
+  if (!mongoose.isValidObjectId(patientId)) return null;
+  const patient = await User.findOne({ _id: patientId, tenantId: staff.tenantId, isDeleted: { $ne: true } })
+    .select('_id tenantId assignedHealthManager assignedFamilyDoctor assignedHealthPlanner assignedNutritionist assignedMedicalAssistant').lean();
+  if (!patient) return null;
+  if (staff.role === 'superadmin') return patient;
+  const field = { healthManager: 'assignedHealthManager', familyDoctor: 'assignedFamilyDoctor', healthPlanner: 'assignedHealthPlanner', nutritionist: 'assignedNutritionist', medicalAssistant: 'assignedMedicalAssistant' }[staff.role];
+  return field && String(patient[field] || '') === String(staff._id) ? patient : null;
+}
+
+router.get('/patients/:id/chat-images', staffAuth, async (req, res) => {
+  try {
+    const patient = await chatMaterialPatient(req.staff, req.params.id);
+    if (!patient) return res.status(403).json({ success: false, message: '无权查看该客户资料' });
+    const page = Math.max(1, Math.min(1000, Number.parseInt(req.query.page, 10) || 1));
+    const limit = 30;
+    const filter = { user: patient._id, type: 'user', recalled: { $ne: true }, $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }] };
+    const rows = await Message.find(filter).select('_id content createdAt recipient imageUrl imageUrls materialDisposition materialDispositionAt').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit + 1).lean();
+    const { signStoredUrl } = require('../utils/oss');
+    res.json({ success: true, data: rows.slice(0, limit).map(row => ({
+      _id: row._id, content: row.content, createdAt: row.createdAt, recipient: row.recipient,
+      materialDisposition: row.materialDisposition || '', materialDispositionAt: row.materialDispositionAt || null,
+      imageUrls: [...new Set(row.imageUrls?.length ? row.imageUrls : (row.imageUrl ? [row.imageUrl] : []))].map(url => signStoredUrl(url)),
+    })), hasMore: rows.length > limit });
+  } catch (error) { res.status(500).json({ success: false, message: '会话图片读取失败' }); }
+});
+
+router.patch('/patients/:id/chat-images/:messageId/disposition', staffAuth, async (req, res) => {
+  try {
+  if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅所属健管专员可处理会话图片' });
+  const patient = await chatMaterialPatient(req.staff, req.params.id);
+  if (!patient) return res.status(403).json({ success: false, message: '无权处理该客户资料' });
+  if (!mongoose.isValidObjectId(req.params.messageId) || !['exclude', 'restore'].includes(req.body?.action))
+    return res.status(400).json({ success: false, message: '处理操作无效' });
+  const sourceChatMessageId = String(req.params.messageId);
+  const report = await MedicalReport.exists({ user: patient._id, sourceChatMessageId });
+  if (report) return res.status(409).json({ success: false, message: '图片已归入报告，不能标记为不纳入' });
+  const now = new Date();
+  const disposition = req.body.action === 'exclude' ? 'excluded' : '';
+  const updated = await Message.findOneAndUpdate({ _id: sourceChatMessageId, user: patient._id, type: 'user', recalled: { $ne: true },
+    $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }] },
+  { $set: { materialDisposition: disposition, materialDispositionAt: now, materialDispositionBy: req.staff._id },
+    $push: { materialDispositionHistory: { action: req.body.action, at: now, by: req.staff._id } } }, { new: true }).select('_id materialDisposition materialDispositionAt');
+  if (!updated) return res.status(404).json({ success: false, message: '会话图片不存在' });
+  res.json({ success: true, data: { _id: updated._id, materialDisposition: updated.materialDisposition, materialDispositionAt: updated.materialDispositionAt } });
+  } catch (error) {
+    console.error('处理会话图片失败:', error);
+    res.status(500).json({ success: false, message: '处理会话图片失败，请稍后重试' });
+  }
+});
+
+// Keep the same upload authorization as POST /medical-reports. The specific
+// role, tenant and patient assignment checks below still apply.
+router.post('/patients/:id/chat-images/:messageId/archive-report', staffAuth, async (req, res) => {
+  if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅所属健管专员可归档资料' });
+  const patient = await chatMaterialPatient(req.staff, req.params.id);
+  if (!patient) return res.status(403).json({ success: false, message: '无权归档该客户资料' });
+  if (!mongoose.isValidObjectId(req.params.messageId)) return res.status(400).json({ success: false, message: '会话消息无效' });
+  const sourceChatMessageId = String(req.params.messageId);
+  const existing = await MedicalReport.findOne({ user: patient._id, sourceChatMessageId });
+  if (existing) return res.json({ success: true, data: withSignedReportFiles(existing), duplicate: true });
+  const message = await Message.findOne({ _id: sourceChatMessageId, user: patient._id, type: 'user', recalled: { $ne: true } }).select('imageUrl imageUrls createdAt materialDisposition').lean();
+  if (message?.materialDisposition === 'excluded') return res.status(409).json({ success: false, message: '该图片已标记暂不纳入，请先恢复待处理' });
+  const urls = [...new Set(message?.imageUrls?.length ? message.imageUrls : (message?.imageUrl ? [message.imageUrl] : []))];
+  if (!urls.length || urls.length > 9) return res.status(400).json({ success: false, message: '该消息没有可归档图片' });
+  const { urlToKey, copyMessageImageToReport, deleteFile } = require('../utils/oss');
+  const keys = urls.map(urlToKey);
+  if (keys.some(key => !key || !/^messages\//.test(key))) return res.status(400).json({ success: false, message: '会话图片来源无效' });
+  const copies = [];
+  try {
+    for (const key of keys) copies.push(await copyMessageImageToReport(key));
+    const date = new Date(message.createdAt);
+    const report = await MedicalReport.create({
+      user: patient._id, tenantId: patient.tenantId, title: `客户会话图片 · ${date.toLocaleDateString('zh-CN')}`,
+      type: 'other', documentCategory: 'other_customer_material', sourceType: 'customer_upload',
+      sourceChatMessageId, submittedByUser: patient._id, date: '', checkDate: '', reportYear: null,
+      fileUrl: copies[0].url, fileUrls: copies.map(file => file.url), ossKey: copies[0].key, ossKeys: copies.map(file => file.key),
+      audit_status: 'unaudited', aiStatus: 'none', note: '由客户会话图片归档；资料类型和检查日期待人工核对。',
+      uploadedBy: req.staff._id, uploadedByRole: req.staff.role,
+    });
+    return res.json({ success: true, data: withSignedReportFiles(report) });
+  } catch (error) {
+    await Promise.all(copies.map(file => deleteFile(file.key)));
+    if (error.code === 11000) {
+      const report = await MedicalReport.findOne({ user: patient._id, sourceChatMessageId });
+      if (report) return res.json({ success: true, data: withSignedReportFiles(report), duplicate: true });
+    }
+    console.error('会话图片归档失败:', error);
+    return res.status(500).json({ success: false, message: '归档失败，请稍后重试' });
+  }
+});
 
 // ── 获取某用户的对话线程（按 roleKey 区分）────────────────────────
 // GET /api/staff/user-messages/:userId/thread?role=manager

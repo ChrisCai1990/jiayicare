@@ -2202,6 +2202,13 @@ export default function PatientDetailPage() {
     return () => { active = false }
   }, [id, tab, serviceManagementView])
   const [reports, setReports] = useState([])
+  const [chatImages, setChatImages] = useState([])
+  const [chatImagesPage, setChatImagesPage] = useState(1)
+  const [chatImagesHasMore, setChatImagesHasMore] = useState(false)
+  const [chatImagesLoading, setChatImagesLoading] = useState(false)
+  const [chatImagesError, setChatImagesError] = useState('')
+  const [archivingChatImageId, setArchivingChatImageId] = useState('')
+  const [reviewingChatImageId, setReviewingChatImageId] = useState('')
   const [standardReportLoadState, setStandardReportLoadState] = useState('loading')
   const [serviceRecords, setServiceRecords] = useState([])
   const [serviceRecordCategory, setServiceRecordCategory] = useState('营养干预')
@@ -3190,6 +3197,37 @@ export default function PatientDetailPage() {
     setStandardReportLoadState('loading')
     try { const res = await staffAPI.getPatientReports(id); setReports(res.data); setStandardReportLoadState('ready') }
     catch { setStandardReportLoadState('error') }
+  }
+  const loadChatImages = async (page = 1) => {
+    setChatImagesLoading(true)
+    setChatImagesError('')
+    try {
+      const result = await staffAPI.getPatientChatImages(id, page)
+      setChatImages(previous => page === 1 ? result.data : [...previous, ...result.data])
+      setChatImagesPage(page)
+      setChatImagesHasMore(!!result.hasMore)
+    } catch (error) { setChatImagesError(error.message || '会话图片读取失败') }
+    finally { setChatImagesLoading(false) }
+  }
+  useEffect(() => { if (tab === 'reports') loadChatImages(1) }, [id, tab])
+  const archiveChatImage = async messageId => {
+    setArchivingChatImageId(String(messageId))
+    try {
+      const result = await staffAPI.archiveChatImageReport(id, messageId)
+      await loadReports()
+      toast(result.duplicate ? '这组图片已在原始资料中' : '已归入原始资料，请核对资料类型与日期')
+    } catch (error) { toast('归档失败：' + (error.message || '请稍后重试')) }
+    finally { setArchivingChatImageId('') }
+  }
+  const reviewChatImage = async (messageId, action) => {
+    setReviewingChatImageId(String(messageId))
+    try {
+      const result = await staffAPI.setChatImageDisposition(id, messageId, action)
+      setChatImages(previous => previous.map(item => String(item._id) === String(messageId)
+        ? { ...item, ...result.data } : item))
+      toast(action === 'exclude' ? '已标记暂不纳入，原会话图片仍保留' : '已恢复待处理')
+    } catch (error) { toast('处理失败：' + (error.message || '请稍后重试')) }
+    finally { setReviewingChatImageId('') }
   }
 
   useEffect(() => {
@@ -6258,7 +6296,7 @@ export default function PatientDetailPage() {
           return (
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="card-header">
-                <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天健康数据记录形成变化分析，营养师可在工作台审核</div></div>
+                <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>客户膳食问卷先补齐空白项目；访谈核实后的修订更新当前档案并保留原答卷。详细档案默认收起。</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
                       {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>['nutritionist', 'superadmin'].includes(staff?.role) ? openExec(f) : setFollowUpDetail(f)}>生活方式访谈 · {f.status==='completed'?'查看记录':'代填 / 核实问卷'}</button>)}
@@ -11171,6 +11209,26 @@ export default function PatientDetailPage() {
             </div>
             {reportFocusId && <div role="status" style={{ padding:'9px 12px', marginBottom:12, borderRadius:8, background:'#EAF5F0', color:'#245343', fontSize:13, display:'flex', justifyContent:'space-between', gap:10, alignItems:'center' }}><span>正在查看工作台指定资料：{reports.find(report => String(report._id) === String(reportFocusId))?.title || '资料加载中'}。请以“处理状态”区分待审核、已审核和待确认专病归属。</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => { setReportFocusId(''); setReportTaskFilter('all'); setReportPage(1); nav(location.pathname + '?tab=reports', { replace:true, state:{} }) }}>查看全部资料</button></div>}
             {pendingReportJobId && <div role="status" style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#EAF5F0', color: '#245343', fontSize: 13 }}>文件已由服务器接收，正在后台存储并建档。可以离开此页；返回后会继续查询结果，请勿重复上传。</div>}
+            <div className="card" style={{ marginBottom: 16, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div><strong>客户会话图片</strong><span style={{ color: '#789287', fontSize: 12, marginLeft: 8 }}>客户发送后自动关联到这里；归为报告前请核对内容</span></div>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadChatImages(1)} disabled={chatImagesLoading}>刷新</button>
+              </div>
+              {chatImagesError && <div role="alert" style={{ color: '#B42318', marginTop: 10 }}>{chatImagesError}</div>}
+              {!chatImagesLoading && !chatImages.length && !chatImagesError && <div style={{ color: '#789287', marginTop: 12 }}>暂无客户会话图片</div>}
+              {chatImages.map(message => {
+                const archived = reports.some(report => String(report.sourceChatMessageId || '') === String(message._id))
+                return <div key={message._id} style={{ borderTop: '1px solid #E6EEE9', paddingTop: 12, marginTop: 12 }}>
+                  <div style={{ fontSize: 12, color: '#789287', marginBottom: 8 }}>{new Date(message.createdAt).toLocaleString('zh-CN')} · 客户发送至{({ manager: '健管专员', doctor: '健康顾问', nutritionist: '营养师', planner: '健康规划师', medicalAssistant: '就医专员' })[message.recipient] || '医护端'}</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{message.imageUrls.map((url, index) => <button type="button" key={`${message._id}-${index}`} onClick={() => setPreviewImageUrl(url)} style={{ border: 0, padding: 0, background: 'none', cursor: 'zoom-in' }} aria-label={`查看会话图片 ${index + 1}`}><img src={url} alt={`客户会话图片 ${index + 1}`} style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8 }} /></button>)}</div>
+                  {message.content && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 6 }}>{message.content}</div>}
+                  {['healthManager', 'superadmin'].includes(staff?.role) && <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                    {archived ? <span style={{ color: '#1E6B50', fontSize: 12 }}>已归入报告</span> : message.materialDisposition === 'excluded' ? <><span style={{ color: '#789287', fontSize: 12 }}>暂不纳入</span><button type="button" className="btn btn-secondary btn-sm" disabled={reviewingChatImageId === String(message._id)} onClick={() => reviewChatImage(message._id, 'restore')}>恢复待处理</button></> : <><button type="button" className="btn btn-secondary btn-sm" disabled={archivingChatImageId === String(message._id) || reviewingChatImageId === String(message._id)} onClick={() => archiveChatImage(message._id)}>{archivingChatImageId === String(message._id) ? '归档中…' : '归入报告审核'}</button><button type="button" className="btn btn-secondary btn-sm" disabled={archivingChatImageId === String(message._id) || reviewingChatImageId === String(message._id)} onClick={() => reviewChatImage(message._id, 'exclude')}>暂不纳入</button></>}
+                  </div>}
+                </div>
+              })}
+              {chatImagesHasMore && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} disabled={chatImagesLoading} onClick={() => loadChatImages(chatImagesPage + 1)}>{chatImagesLoading ? '读取中…' : '查看更多会话图片'}</button>}
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 8, marginBottom: 12 }}>
               <button type="button" onClick={() => { setReportDocumentCategory('all'); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === 'all' ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === 'all' ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>全部资料</strong><span style={{ float: 'right', color: '#789287' }}>{reportsInBaseScope.length}</span></button>
               {DOCUMENT_CATEGORIES.map(item => <button key={item.key} type="button" onClick={() => { setReportDocumentCategory(item.key); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === item.key ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === item.key ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>{item.label}</strong><span style={{ float: 'right', color: '#789287' }}>{categoryCount(item.key)}</span></button>)}
@@ -14571,6 +14629,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [checkinRecordId, setCheckinRecordId] = useState(initialCheckinRecord?._id || '')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [chatPreviewUrl, setChatPreviewUrl] = useState('')
   const [planningActionBusy, setPlanningActionBusy] = useState(false)
   const [planningProducts, setPlanningProducts] = useState([])
   const [planningProductsOpen, setPlanningProductsOpen] = useState(false)
@@ -15124,7 +15183,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                       {m.audioUrl && <div style={{ fontSize: 12, marginBottom: 4 }}>语音{m.audioDuration ? ` ${Math.round(m.audioDuration)}″` : ''}</div>}
                       {m.audioUrl && <audio controls preload="metadata" src={m.audioUrl.startsWith('/') ? `${API_ORIGIN}${m.audioUrl}` : m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
                       {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url, imageIndex) => (
-                        <img key={`${url}-${imageIndex}`} src={url} alt="对话图片" onClick={() => window.open(url, '_blank')} style={{ display: 'block', width: 220, maxWidth: '100%', maxHeight: 260, objectFit: 'cover', borderRadius: 8, marginBottom: 6, cursor: 'zoom-in' }} />
+                        <img key={`${url}-${imageIndex}`} src={url} alt="对话图片" onClick={() => setChatPreviewUrl(url)} style={{ display: 'block', width: 220, maxWidth: '100%', maxHeight: 260, objectFit: 'cover', borderRadius: 8, marginBottom: 6, cursor: 'zoom-in' }} />
                       ))}
                       {m.audioUrl && m.audioTranscript && <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #E0D9CE', fontSize: 12 }}>转写：{m.audioTranscript}</div>}
                       {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
@@ -15200,6 +15259,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
           </div>
         </div>
       </div>
+      {chatPreviewUrl && <div role="dialog" aria-label="查看会话图片" onClick={() => setChatPreviewUrl('')} style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}><img src={chatPreviewUrl} alt="会话原图" onClick={event => event.stopPropagation()} style={{ maxWidth: '94vw', maxHeight: '88vh', objectFit: 'contain' }} /><button type="button" onClick={() => setChatPreviewUrl('')} aria-label="关闭图片" style={{ position: 'absolute', top: 16, right: 20, fontSize: 28, color: '#fff', background: 'none', border: 0, cursor: 'pointer' }}>×</button></div>}
     </div>
   )
 }
