@@ -68,6 +68,10 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(available.body.data.length, 1);
     assert.equal((await step('referral', advisorId, { referralId: String(firstReferral._id) })).statusCode, 200);
     assert.equal(String((await Referral.findById(firstReferral._id)).expertConsultationCaseId), String(caseId));
+    const replacementReferral = await createReferral('修订后的咨询转介');
+    assert.equal((await step('referral', advisorId, { referralId: String(replacementReferral._id) })).statusCode, 200);
+    assert.equal((await Referral.findById(firstReferral._id)).expertConsultationCaseId, null);
+    assert.equal(String((await Referral.findById(replacementReferral._id)).expertConsultationCaseId), String(caseId));
     const missingManager = await step('assign', plannerId, { members: [{ expertId, slotId: expertSlot }] });
     assert.equal(missingManager.statusCode, 409);
     const assigned = await step('assign', plannerId, { members: [{ expertId, slotId: expertSlot }], managerSlotId: managerSlot });
@@ -107,7 +111,7 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(teamAssigned.statusCode, 200, JSON.stringify(teamAssigned.body));
     await step('intake', managerId, { summary: '两科病历和检查结果' });
     const mdtReferral = await createReferral('协调多学科意见');
-    assert.equal((await step('referral', advisorId, { referralId: String(firstReferral._id) })).statusCode, 409);
+    assert.equal((await step('referral', advisorId, { referralId: String(replacementReferral._id) })).statusCode, 409);
     assert.equal((await step('referral', advisorId, { referralId: String(mdtReferral._id) })).statusCode, 200);
     const mdtAssigned = await step('assign', plannerId, { members: [{ expertId, slotId: mdtSlotOne }, { expertId: secondExpertId, slotId: mdtSlotTwo }], advisorSlotId: advisorSlot });
     assert.equal(mdtAssigned.statusCode, 200, JSON.stringify(mdtAssigned.body));
