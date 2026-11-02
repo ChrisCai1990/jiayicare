@@ -6259,7 +6259,7 @@ export default function PatientDetailPage() {
           return (
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="card-header">
-                <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天健康数据记录形成变化分析，营养师可在工作台审核</div></div>
+                <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>客户膳食问卷先补齐空白项目；访谈核实后的修订更新当前档案并保留原答卷。详细档案默认收起。</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
                       {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>['nutritionist', 'superadmin'].includes(staff?.role) ? openExec(f) : setFollowUpDetail(f)}>生活方式访谈 · {f.status==='completed'?'查看记录':'代填 / 核实问卷'}</button>)}
