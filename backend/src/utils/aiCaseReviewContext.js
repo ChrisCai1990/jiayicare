@@ -4,6 +4,7 @@ const Medication = require('../models/Medication');
 const Supplement = require('../models/Supplement');
 const FollowUp = require('../models/FollowUp');
 const AnnualPlan = require('../models/AnnualPlan');
+const { comparableWeightChange } = require('./phaseAssessmentWeightEvidence');
 
 const clean = value => JSON.parse(JSON.stringify(value == null ? null : value));
 
@@ -84,17 +85,19 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
   }));
   const daysCovered = new Set(records.map(item => new Date(item.recordedAt).toISOString().slice(0, 10)));
   const types = [...new Set(records.map(item => item.type))];
+  const weightChange = comparableWeightChange(records);
   return clean({
     capturedAt: end,
     period: { days, start, end },
     monitoringCoverage: { recordCount: records.length, distinctDays: daysCovered.size, types },
-    recentHealthRecords: records,
-    periodFollowups: followups,
+    comparableChanges: { weight: weightChange },
     currentLifestyle: { lifestyle: user.lifestyle, lifestyle_data: user.lifestyle_data, preferences: user.preferences },
     confirmedAnnualPlan: plan,
+    periodFollowups: followups,
     examBaseline: reportBaselines,
     historicalTrendSummary: { aiHealthSummary: user.aiHealthSummary, aiRiskAssessment: user.aiRiskAssessment },
     basic: { age: user.age, gender: user.gender, height: user.height, weight: user.weight, chronicDiseases: user.chronicDiseases },
+    recentHealthRecords: records,
     sources: [
       `近${days}天健康监测：${records.length}条，覆盖${daysCovered.size}天`,
       `本周期随访与执行记录：${followups.length}条`,

@@ -115,7 +115,7 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
 
 请严格按以下四个栏目输出中文：
 一、${outputSections[0]}；二、${outputSections[1]}；三、${outputSections[2]}；四、${outputSections[3]}。
-第一部分写${windowDays}天窗口内已有记录的事实和变化；第二部分按证据解释规则分析生活方式关联，不能关联时明确写无法分析；第三部分整理已提供的检查与就医线索、待核实问题，不只看异常，也不得把未提供的就医或正常指标编造出来。若就医次数、原因或复查结果在资料快照中不完整，明确提示健康顾问核对原始报告和服务档案；若实际就医较频繁，由顾问核对每次就医目的、是否为计划内复查、是否重复或有未解决问题，不推断医学原因。第四部分说明针对性补充记录、营养师需核对的问题和下月待人工确认的行动。每栏最多10条，每条先写客观主题，再用冒号补充依据。`;
+第一部分优先写${windowDays}天窗口内同一指标的首末记录及变化幅度，特别核对comparableChanges.weight；不要用记录条数、覆盖天数代替指标变化。第二部分逐项对照已有生活方式记录与指标的日期，能关联才说明观察到的时间关联，不能关联时写明缺少的同期证据。第三部分整理已提供的检查与就医线索、待核实问题，不只看异常，也不得把未提供的就医或正常指标编造出来。若就医次数、原因或复查结果在资料快照中不完整，明确提示健康顾问核对原始报告和服务档案；若实际就医较频繁，由顾问核对每次就医目的、是否为计划内复查、是否重复或有未解决问题，不推断医学原因。第四部分围绕具体变化与问题，写清营养师或健康顾问要核对什么、何时复评；资料不足时说明针对性补哪类记录及原因，不机械增加打卡任务。每栏最多10条，每条先写客观主题，再用冒号补充依据。`;
   const content = monthlyReview ? localDraft.content : await require('./aiDataConsent').withPersonalData(user._id, 'health', () => chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 3500, temperature: 0.05, timeoutMs: 90000 }));
   if (!await PhaseAssessmentGeneration.exists({ _id: generationId, token, status: 'generating' })) return null;
   const teamRoles = assessmentMode === 'routine'
