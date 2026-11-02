@@ -87,6 +87,21 @@ function replaceStageSection(content, sectionIndex, nextText) {
   return sections.map((section, index) => `${numerals[index]}、${section.title}\n${section.lines.map(line => `- ${line}`).join('\n')}`).join('\n\n')
 }
 
+function updateStageLine(content, sectionIndex, lineIndex, nextLine) {
+  const sections = splitStageAssessment(content)
+  const lines = [...sections[sectionIndex].lines]
+  if (lineIndex === lines.length) lines.push(nextLine)
+  else if (nextLine === null) lines.splice(lineIndex, 1)
+  else lines[lineIndex] = nextLine
+  return replaceStageSection(content, sectionIndex, lines.join('\n'))
+}
+
+function AssessmentPointEditor({ id, line, disabled, onCommit }) {
+  const [value, setValue] = useState(line)
+  useEffect(() => setValue(line), [line])
+  return <textarea id={id} className="form-input" rows={3} style={{ width: '100%', background: '#fff', lineHeight: 1.6 }} disabled={disabled} value={value} onChange={event => setValue(event.target.value)} onBlur={() => { if (value !== line) onCommit(value) }} />
+}
+
 function AssessmentLine({ line, color }) {
   const divider = line.indexOf('：')
   if (divider > 0 && divider < 28) return <div style={{ padding: '9px 11px', borderRadius: 8, background: '#fff', marginTop: 7, fontSize: 13, lineHeight: 1.65 }}><strong style={{ color }}>{line.slice(0, divider)}</strong><span style={{ color: '#33473E' }}>：{line.slice(divider + 1)}</span></div>
@@ -452,6 +467,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}{item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
+            <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>资料范围：本周期健康记录与随访、已确认年度方案，以及最近已审核体检报告中的异常或附结论项目。复查指标尚未按方案项目逐项对照报告，请人工核对原始报告。</div>
             {['finalized', 'approved'].includes(status) && onNavigate && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 9 }} onClick={() => onNavigate('serviceRecords')}>查看服务档案中的评估记录</button>}
             {status === 'archive_pending' && <div style={{ marginTop: 9, color: '#92400E', fontSize: 13 }}>审核结果已保存，无需重复审核。{canRetryArchive && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'retry_archive')}>重试归档</button>}</div>}
             {!!item.teamRoles?.length && <div style={{ marginTop: 12, padding: 12, background: '#F4F8F5', borderRadius: 9 }}>
@@ -483,8 +499,15 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
                 const editSection = editSections[editIndex]
                 return <div style={{ marginTop: 10, padding: 12, borderRadius: 9, background: editSection.background, border: `1px solid ${editSection.color}55` }}>
                   <div style={{ fontWeight: 800, color: editSection.color }}>正在编辑：{editSection.label}</div>
-                  <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>每行一个要点；切换上方图标可编辑其他板块。</div>
-                  <textarea className="form-input" rows={9} style={{ marginTop: 9, background: '#fff' }} disabled={!canNutritionReview && !canDoctorReview && !canTeamEdit} value={editSection.lines.join('\n')} onChange={event => setAssessmentEdits(values => ({ ...values, [item._id]: replaceStageSection(draftContent, editIndex, event.target.value) }))} />
+                  <div style={{ fontSize: 12, color: '#52685D', marginTop: 4 }}>逐条核对下方要点；点上方板块切换内容。修改后点击页面下方的保存或审核按钮提交。</div>
+                  <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+                    {editSection.lines.map((line, lineIndex) => <div key={`${editIndex}-${lineIndex}`} style={{ padding: 10, background: '#fff', border: '1px solid #DCE8E1', borderRadius: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}><label htmlFor={`assessment-${item._id}-${editIndex}-${lineIndex}`} style={{ fontWeight: 700, fontSize: 13, color: editSection.color }}>要点 {lineIndex + 1}</label>{(canNutritionReview || canDoctorReview || canTeamEdit) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAssessmentEdits(values => ({ ...values, [item._id]: updateStageLine(draftContent, editIndex, lineIndex, null) }))}>删除</button>}</div>
+                      <AssessmentPointEditor id={`assessment-${item._id}-${editIndex}-${lineIndex}`} line={line} disabled={!canNutritionReview && !canDoctorReview && !canTeamEdit} onCommit={value => setAssessmentEdits(values => ({ ...values, [item._id]: updateStageLine(values[item._id] ?? item.content, editIndex, lineIndex, value) }))} />
+                    </div>)}
+                    {!editSection.lines.length && <div style={{ fontSize: 13, color: '#65776F' }}>本板块暂无要点。</div>}
+                  </div>
+                  {(canNutritionReview || canDoctorReview || canTeamEdit) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => setAssessmentEdits(values => ({ ...values, [item._id]: updateStageLine(draftContent, editIndex, editSection.lines.length, '新增要点：请填写记录依据') }))}>添加要点</button>}
                 </div>
               })()}
               {item.nutritionReview?.reviewedAt && <div style={{ marginTop: 7, fontSize: 12, color: '#65776F' }}>营养师初审：{item.nutritionReview.reviewedByName || '-'} · {item.nutritionReview.note || '无补充备注'}</div>}
