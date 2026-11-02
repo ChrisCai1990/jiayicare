@@ -4,7 +4,7 @@ const MedicalReport = require('../models/MedicalReport');
 const ServiceRecord = require('../models/ServiceRecord');
 const { comparableWeightChange } = require('./phaseAssessmentWeightEvidence');
 
-const day = value => value ? new Date(value).toISOString().slice(0, 10) : '';
+const day = value => value ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value)) : '';
 const text = value => String(value || '').replace(/\s+/g, ' ').trim();
 
 // This worksheet stays inside Jiayicare. It never calls an external AI provider.

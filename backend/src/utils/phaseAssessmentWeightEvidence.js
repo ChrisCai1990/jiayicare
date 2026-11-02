@@ -1,7 +1,9 @@
+const shanghaiDay = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
+
 function comparableWeightChange(records = []) {
   const weights = records.filter(row => row.type === 'weight' && Number.isFinite(Number(row.value))
     && String(row.value).trim() !== '' && Number(row.value) > 0 && Number.isFinite(new Date(row.recordedAt).getTime()))
-    .map(row => ({ date: new Date(row.recordedAt).toISOString().slice(0, 10), value: Number(row.value), unit: row.unit || 'kg' }))
+    .map(row => ({ date: shanghaiDay(row.recordedAt), value: Number(row.value), unit: row.unit || 'kg' }))
     .filter(row => row.unit === 'kg');
   if (weights.length < 2 || weights[0].date === weights.at(-1).date) return null;
   const first = weights[0], last = weights.at(-1);
