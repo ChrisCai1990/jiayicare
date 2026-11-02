@@ -17586,8 +17586,9 @@ async function runReportParseControlled(reportId) {
             // A dense scanned page may repeatedly time out as one 180 DPI
             // image. Reuse the overlapping top/bottom crops already used by
             // single-page supplement, keeping each table row intact.
-            const auditImages = img.length > 800000 ? await renderSinglePageRegions(pdfBuf, pageNum, 160) : [img];
-            if (auditImages.length !== (img.length > 800000 ? 2 : 1) || auditImages.some(image => !image)) throw new Error('覆盖复核分区渲染不完整');
+            const splitDensePage = img.length > 500000;
+            const auditImages = splitDensePage ? await renderSinglePageRegions(pdfBuf, pageNum, 160) : [img];
+            if (auditImages.length !== (splitDensePage ? 2 : 1) || auditImages.some(image => !image)) throw new Error('覆盖复核分区渲染不完整');
             let auditedItems = [];
             let auditValid = true;
             for (let regionIndex = 0; regionIndex < auditImages.length; regionIndex++) {
@@ -18212,7 +18213,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
     // Large, dense pages can repeatedly hit the model's 180-second limit as a
     // whole image. Split top/bottom with overlap while retaining each table row's
     // left/right relationship. The independent evidence check still runs per crop.
-    const densePageBase64Threshold = 800000; // 约 600 KB JPEG；分区可缩短单次视觉调用。
+    // 约 375 KB JPEG 起分区：线上 648K 字符整页在 180 秒内连续超时，
+    // 同页 160 DPI 上下分区分别仅约 296K / 226K 字符。
+    const densePageBase64Threshold = 500000;
     if (images[0]?.length > densePageBase64Threshold) {
       images = await renderSinglePageRegions(pdfBuf, pageNum, 160);
       if (images.length !== 2 || images.some(image => !image)) throw new Error(`第${pageNum}页分区渲染不完整`);

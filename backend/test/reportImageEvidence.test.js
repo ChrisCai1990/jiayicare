@@ -184,7 +184,8 @@ test('dense PDF supplement splits vertically and checks six calls before model u
     '../models/MedicalReport': { findById: async () => report },
     '../utils/pdf': {
       isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      renderSinglePage: async () => 'x'.repeat(800001),
+      // Production page 10 was 648,096 base64 characters and still timed out whole.
+      renderSinglePage: async () => 'x'.repeat(648096),
       renderSinglePageRegions: async () => { regions++; return ['top', 'bottom']; },
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('No model result'); } },
