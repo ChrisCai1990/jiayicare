@@ -12265,6 +12265,72 @@ function assertRoleMatchesChannel(staffRole, channelRole) {
   return require('../utils/conversationRoles').staffCanAccessConversation(staffRole, channelRole);
 }
 
+// Customer chat photos are already stored in the private bucket. Expose them
+// as unclassified source material without asserting that they are reports.
+async function chatMaterialPatient(staff, patientId) {
+  if (!mongoose.isValidObjectId(patientId)) return null;
+  const patient = await User.findOne({ _id: patientId, tenantId: staff.tenantId, isDeleted: { $ne: true } })
+    .select('_id tenantId assignedHealthManager assignedFamilyDoctor assignedHealthPlanner assignedNutritionist assignedMedicalAssistant').lean();
+  if (!patient) return null;
+  if (staff.role === 'superadmin') return patient;
+  const field = { healthManager: 'assignedHealthManager', familyDoctor: 'assignedFamilyDoctor', healthPlanner: 'assignedHealthPlanner', nutritionist: 'assignedNutritionist', medicalAssistant: 'assignedMedicalAssistant' }[staff.role];
+  return field && String(patient[field] || '') === String(staff._id) ? patient : null;
+}
+
+router.get('/patients/:id/chat-images', staffAuth, async (req, res) => {
+  try {
+    const patient = await chatMaterialPatient(req.staff, req.params.id);
+    if (!patient) return res.status(403).json({ success: false, message: '无权查看该客户资料' });
+    const page = Math.max(1, Math.min(1000, Number.parseInt(req.query.page, 10) || 1));
+    const limit = 30;
+    const filter = { user: patient._id, type: 'user', recalled: { $ne: true }, $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }] };
+    const rows = await Message.find(filter).select('_id content createdAt recipient imageUrl imageUrls').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit + 1).lean();
+    const { signStoredUrl } = require('../utils/oss');
+    res.json({ success: true, data: rows.slice(0, limit).map(row => ({
+      _id: row._id, content: row.content, createdAt: row.createdAt, recipient: row.recipient,
+      imageUrls: [...new Set(row.imageUrls?.length ? row.imageUrls : (row.imageUrl ? [row.imageUrl] : []))].map(url => signStoredUrl(url)),
+    })), hasMore: rows.length > limit });
+  } catch (error) { res.status(500).json({ success: false, message: '会话图片读取失败' }); }
+});
+
+router.post('/patients/:id/chat-images/:messageId/archive-report', staffAuth, checkPermission('reports', 'create'), async (req, res) => {
+  if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅所属健管专员可归档资料' });
+  const patient = await chatMaterialPatient(req.staff, req.params.id);
+  if (!patient) return res.status(403).json({ success: false, message: '无权归档该客户资料' });
+  if (!mongoose.isValidObjectId(req.params.messageId)) return res.status(400).json({ success: false, message: '会话消息无效' });
+  const sourceChatMessageId = String(req.params.messageId);
+  const existing = await MedicalReport.findOne({ user: patient._id, sourceChatMessageId });
+  if (existing) return res.json({ success: true, data: withSignedReportFiles(existing), duplicate: true });
+  const message = await Message.findOne({ _id: sourceChatMessageId, user: patient._id, type: 'user', recalled: { $ne: true } }).select('imageUrl imageUrls createdAt').lean();
+  const urls = [...new Set(message?.imageUrls?.length ? message.imageUrls : (message?.imageUrl ? [message.imageUrl] : []))];
+  if (!urls.length || urls.length > 9) return res.status(400).json({ success: false, message: '该消息没有可归档图片' });
+  const { urlToKey, copyMessageImageToReport, deleteFile } = require('../utils/oss');
+  const keys = urls.map(urlToKey);
+  if (keys.some(key => !key || !/^messages\//.test(key))) return res.status(400).json({ success: false, message: '会话图片来源无效' });
+  const copies = [];
+  try {
+    for (const key of keys) copies.push(await copyMessageImageToReport(key));
+    const date = new Date(message.createdAt);
+    const report = await MedicalReport.create({
+      user: patient._id, tenantId: patient.tenantId, title: `客户会话图片 · ${date.toLocaleDateString('zh-CN')}`,
+      type: 'other', documentCategory: 'other_customer_material', sourceType: 'customer_upload',
+      sourceChatMessageId, submittedByUser: patient._id, date: '', checkDate: '', reportYear: null,
+      fileUrl: copies[0].url, fileUrls: copies.map(file => file.url), ossKey: copies[0].key, ossKeys: copies.map(file => file.key),
+      audit_status: 'unaudited', aiStatus: 'none', note: '由客户会话图片归档；资料类型和检查日期待人工核对。',
+      uploadedBy: req.staff._id, uploadedByRole: req.staff.role,
+    });
+    return res.json({ success: true, data: withSignedReportFiles(report) });
+  } catch (error) {
+    await Promise.all(copies.map(file => deleteFile(file.key)));
+    if (error.code === 11000) {
+      const report = await MedicalReport.findOne({ user: patient._id, sourceChatMessageId });
+      if (report) return res.json({ success: true, data: withSignedReportFiles(report), duplicate: true });
+    }
+    console.error('会话图片归档失败:', error);
+    return res.status(500).json({ success: false, message: '归档失败，请稍后重试' });
+  }
+});
+
 // ── 获取某用户的对话线程（按 roleKey 区分）────────────────────────
 // GET /api/staff/user-messages/:userId/thread?role=manager
 router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {

@@ -1137,7 +1137,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
                     maxWidth: '78%', minWidth: 0, padding: '10px 14px', borderRadius: `${radius.md}px`, boxSizing: 'border-box', overflow: 'hidden',
                     backgroundColor: isMine ? colors.primary : '#fff', border: isMine ? 'none' : `1px solid ${colors.border}`,
                   }}>
-                    {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url) => <Image key={url} src={url} mode="aspectFill" style={{ width: '190px', height: '140px', borderRadius: '8px', marginBottom: '6px', display: 'block' }} />)}
+                    {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url) => <Image key={url} src={url} mode="aspectFill" onClick={() => Taro.previewImage({ current: url, urls: m.imageUrls?.length ? m.imageUrls : [url] }).catch(() => Taro.showToast({ title: '图片暂时无法查看', icon: 'none' }))} style={{ width: '190px', height: '140px', borderRadius: '8px', marginBottom: '6px', display: 'block' }} />)}
                     {!isMine && (
                       <Text style={{ fontSize: '11px', fontWeight: 700, color: meta.color, display: 'block', marginBottom: '4px' }}>
                         {m.isAI ? aiAssistantName : (normalizeRoleSender(m.sender) || meta.label)}
