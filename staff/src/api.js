@@ -447,6 +447,8 @@ export const staffAPI = {
   getPatientPlans:          (id) => req(`/staff/patients/${id}/plans`),
   getNutritionAssessmentPrefill: (id) => req(`/staff/patients/${id}/nutrition-assessment-prefill`),
   getPatientReports:        (id) => req(`/staff/patients/${id}/reports`),
+  getPatientChatImages:     (id, page = 1) => req(`/staff/patients/${id}/chat-images?page=${page}`),
+  archiveChatImageReport:   (id, messageId) => req(`/staff/patients/${id}/chat-images/${messageId}/archive-report`, { method: 'POST' }),
   startStaffMedicalProxy: (id, data) => req(`/staff/patients/${id}/medical-proxy/start`, { method: 'POST', body: JSON.stringify(data) }),
   quoteStaffFundOrder: (id, data) => req(`/staff/patients/${id}/fund-orders/quote`, { method: 'POST', body: JSON.stringify(data) }),
   createStaffFundOrder: (id, data) => req(`/staff/patients/${id}/fund-orders`, { method: 'POST', body: JSON.stringify(data) }),

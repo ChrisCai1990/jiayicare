@@ -23,6 +23,7 @@ const schema = new mongoose.Schema({
     campus: { type: String, default: '', maxlength: 100 },
     officialPlatform: { type: String, default: '', maxlength: 500 },
     hospitalPhone: { type: String, default: '', maxlength: 100 },
+    hospitalEmail: { type: String, default: '', maxlength: 254 },
     internalContactName: { type: String, default: '', maxlength: 100 },
     internalContactPhone: { type: String, default: '', maxlength: 100 },
     bookingSteps: { type: String, default: '', maxlength: 2000 },

@@ -75,6 +75,7 @@ const medicalReportSchema = new mongoose.Schema({
   title: { type: String, required: true },
   sourceSha256: { type: String, default: undefined },
   sourceGroupMessageId: {type:String, default:undefined},
+  sourceChatMessageId: { type: String, default: undefined },
   sourceServiceGroup: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceGroup', default: null },
 
   // ── 年度/类目结构（需求23）───────────────────────────────────────
@@ -281,6 +282,7 @@ medicalReportSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 medicalReportSchema.plugin(require('../utils/reportWriteFence').reportWriteFence);
 medicalReportSchema.plugin(require('../utils/outcomeEvidenceFence').outcomeEvidenceFence);
 medicalReportSchema.index({ user: 1, sourceSha256: 1 }, { unique: true, partialFilterExpression: { sourceSha256: { $type: 'string' } } });
+medicalReportSchema.index({ user: 1, sourceChatMessageId: 1 }, { unique: true, partialFilterExpression: { sourceChatMessageId: { $type: 'string' } } });
 medicalReportSchema.index({ 'followUpSourceEvent.status': 1, 'followUpSourceEvent.queuedAt': 1 });
 
 module.exports = mongoose.model('MedicalReport', medicalReportSchema);
