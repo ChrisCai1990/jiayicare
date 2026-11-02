@@ -206,6 +206,46 @@ test('dense PDF supplement splits vertically and checks six calls before model u
   assert.equal(modelCalls, 1);
 });
 
+test('extra dense template lab page uses four bands and reserves twelve calls', async () => {
+  const fs = require('fs');
+  const vm = require('vm');
+  const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
+  const start = source.indexOf('async function runReportPageParse(');
+  const end = source.indexOf('// POST /api/staff/medical-reports/:id/parse-ai', start);
+  let bands = 0, requiredCalls = 0, modelCalls = 0;
+  const modules = {
+    '../utils/aiBudget': { assertSupplementCallCapacity: async (_, __, calls) => { requiredCalls = calls; } },
+    '../utils/ai': { parseImage: async (_, prompt) => {
+      modelCalls++;
+      assert.match(prompt, /第1\/4分区/);
+      throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('stopped', 'AI_CIRCUIT_PAUSED');
+    } },
+    '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
+    '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
+    '../models/MedicalReport': { findById: async () => ({ _id: 'fixture', user: 'synthetic', type: 'annual', title: '测试体检', reportItems: [] }) },
+    '../utils/pdf': {
+      isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
+      renderSinglePage: async () => 'x'.repeat(648096),
+      renderSinglePageBands: async () => { bands++; return ['a', 'b', 'c', 'd']; },
+    },
+    '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('No model result'); } },
+    '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
+    '../utils/zheyiReportTemplate': { isZheyiReport: () => true, promptForPage: () => '' },
+  };
+  const run = vm.runInNewContext(`${source.slice(start, end)};runReportPageParse`, {
+    withAiContext: require('../src/utils/aiBudget').withAiContext,
+    ...require('../src/utils/aiBudgetPolicy'),
+    require: name => { assert.ok(modules[name], name); return modules[name]; },
+    User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
+    isManualOnlyReport: () => false, console,
+  });
+  await assert.rejects(run('fixture', 10), /stopped/);
+  assert.equal(bands, 1);
+  assert.equal(requiredCalls, 12);
+  assert.equal(modelCalls, 1);
+});
+
 test('image-only upper crop does not discard lower crop lab results', async () => {
   const fs = require('fs');
   const vm = require('vm');

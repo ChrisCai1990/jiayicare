@@ -256,6 +256,31 @@ async function renderSinglePageRegions(pdfBuffer, pageNum, dpi = 160) {
   }
 }
 
+// Very dense result tables can exhaust the model output limit even after a
+// top/bottom split. Narrow horizontal bands keep each table row intact.
+async function renderSinglePageBands(pdfBuffer, pageNum, dpi = 160) {
+  const tmpPdf = path.join(os.tmpdir(), `pdf-bands-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  fs.writeFileSync(tmpPdf, pdfBuffer);
+  try {
+    const width = Math.round(8.27 * dpi);
+    const height = Math.round(11.69 * dpi);
+    const band = Math.ceil(height / 4);
+    const overlap = Math.round(height * 0.025);
+    const images = [];
+    for (let index = 0; index < 4; index++) {
+      const y = Math.max(0, index * band - (index ? overlap : 0));
+      const bottom = Math.min(height, (index + 1) * band + (index < 3 ? overlap : 0));
+      const rendered = await convertPdfRange(tmpPdf, pageNum, pageNum, dpi,
+        { x: 0, y, width, height: bottom - y });
+      if (!rendered[0]) throw new Error(`第${pageNum}页第${index + 1}分区渲染不完整`);
+      images.push(rendered[0]);
+    }
+    return images;
+  } finally {
+    try { fs.unlinkSync(tmpPdf); } catch {}
+  }
+}
+
 // 双栏检验单按左右半幅物理切图；整图提示无法保证视觉模型真正移动到右栏。
 async function renderSinglePageColumns(pdfBuffer, pageNum, dpi = 180) {
   const tmpPdf = path.join(os.tmpdir(), `pdf-columns-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
@@ -300,4 +325,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, getPdfPageCountFromBuffer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };
+module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, getPdfPageCountFromBuffer, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns };

@@ -18175,7 +18175,7 @@ async function runReportPageParse(reportId, pageNum) {
 async function runReportPageParseControlled(reportId, pageNum) {
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
-  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
@@ -18217,8 +18217,13 @@ async function runReportPageParseControlled(reportId, pageNum) {
     // 同页 160 DPI 上下分区分别仅约 296K / 226K 字符。
     const densePageBase64Threshold = 500000;
     if (images[0]?.length > densePageBase64Threshold) {
-      images = await renderSinglePageRegions(pdfBuf, pageNum, 160);
-      if (images.length !== 2 || images.some(image => !image)) throw new Error(`第${pageNum}页分区渲染不完整`);
+      // The largest Shaoyifu/Zheyi lab tables may still exceed the model's
+      // output limit in two halves. Use four horizontal bands for these pages.
+      const useBands = images[0].length > 600000 && (useShaoyifuTemplate || useZheyiTemplate);
+      images = useBands
+        ? await renderSinglePageBands(pdfBuf, pageNum, 160)
+        : await renderSinglePageRegions(pdfBuf, pageNum, 160);
+      if (images.length !== (useBands ? 4 : 2) || images.some(image => !image)) throw new Error(`第${pageNum}页分区渲染不完整`);
     }
   } else {
     const buffers = report.fileUrls?.length
@@ -18235,7 +18240,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
+      const regionHint = images.length === 4
+        ? `这是第${pageNum}页自上而下的第${regionIndex + 1}/4分区，边界有重叠；`
+        : images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
