@@ -6554,11 +6554,8 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
 // POST /patients/:id/archive-review。
 router.get('/patients/:id/reports/pending-doctor-audit', staffAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('archiveReviewStatus archiveReviewSnapshotAt');
-    const filter = { user: req.params.id, archiveOnly: { $ne: true }, audit_status: 'audited' };
-    if (user?.archiveReviewStatus === 'reviewed' && user.archiveReviewSnapshotAt) {
-      filter.$or = [{ createdAt: { $gt: user.archiveReviewSnapshotAt } }, { 'advisorCorrection.resubmittedAt': { $gt: user.archiveReviewSnapshotAt } }];
-    }
+    const user = await User.findById(req.params.id).select('archiveReviewSnapshotAt');
+    const filter = require('../utils/reportAuditGate').pendingDoctorAuditFilter(req.params.id, user?.archiveReviewSnapshotAt);
     const reports = await MedicalReport.find(filter)
       .select('title screeningL1 screeningL2 checkDate hospital institution audited_by audited_at familyDoctorViewedAt').sort({ checkDate: -1 }).lean();
     res.json({ success: true, data: reports, count: reports.length });
@@ -11668,6 +11665,10 @@ router.patch('/health-risk-events/:id/resolve', staffAuth, async (req, res) => {
       { $set: { aiAlertStatus: stillPending ? 'pending' : 'resolved', alertDisposition: disposition, alertDecisionNote: note,
         alertDecidedBy: req.staff._id, alertDecidedByName: req.staff.name || '', alertDecidedAt: now } },
     );
+    if (!stillPending && updated.sourceType === 'medical_report') await MedicalReport.updateOne(
+      { _id: updated.sourceId, user: updated.patientId, audit_status: 'audited' },
+      { $set: { familyDoctorViewedAt: now, familyDoctorViewedBy: req.staff._id } },
+    );
     res.json({ success: true, data: updated });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -15495,7 +15496,11 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       };
       const reportsToInterpret = await MedicalReport.find(interpretationFilter)
         .populate('user', 'name phone').sort({ audited_at: -1, updatedAt: -1 }).lean();
+      const reportRiskIds = new Set((await require('../models/HealthRiskEvent').find({
+        sourceType: 'medical_report', status: 'pending', sourceId: { $in: reportsToInterpret.map(report => report._id) },
+      }).select('sourceId').lean()).map(event => String(event.sourceId)));
       reportsToInterpret.forEach(r => {
+        if (reportRiskIds.has(String(r._id))) return;
         const createdAt = r.audited_at || r.updatedAt || r.createdAt;
         todos.push({
           id: 'reportinterpret_' + r._id, type: 'report_interpretation', label: '体检报告待解读', priority: 2,

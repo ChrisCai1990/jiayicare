@@ -25,12 +25,12 @@ async function checkReportAuditGate(userId, { throughYear } = {}) {
   if (throughYear) {
     const { reportsThroughYear } = require('./historicalAIHealthContext');
     const reports = reportsThroughYear(await MedicalReport.find({ user: userId, archiveOnly: { $ne: true } })
-      .select('reportYear checkDate date audit_status createdAt advisorCorrection.resubmittedAt').lean(), throughYear);
+      .select('reportYear checkDate date documentCategory audit_status createdAt familyDoctorViewedAt advisorCorrection.resubmittedAt').lean(), throughYear);
     if (!reports.length) return '请先上传目标年度及此前的体检报告后再生成历史AI健康信息整理';
     const notStaffAudited = reports.filter(report => report.audit_status !== 'audited').length;
     if (notStaffAudited) return `截至${throughYear}年度还有 ${notStaffAudited} 份体检报告健管专员未审核，请先完成审核后再生成`;
     const snapshotAt = user.archiveReviewSnapshotAt ? new Date(user.archiveReviewSnapshotAt).getTime() : 0;
-    if (!snapshotAt || reports.some(report => (report.createdAt && new Date(report.createdAt).getTime() > snapshotAt) || (report.advisorCorrection?.resubmittedAt && new Date(report.advisorCorrection.resubmittedAt).getTime() > snapshotAt))) {
+    if (reports.some(report => report.documentCategory !== 'prescription_order' && reportNeedsAdvisorView(report, snapshotAt))) {
       return '历史体检报告有新增内容，健康顾问需先查看确认后再生成';
     }
     return null;
@@ -73,6 +73,13 @@ function hasUnreviewedNewContent(user) {
   return !!getLatestArchiveUpdate(user, user.archiveReviewSnapshotAt);
 }
 
+function reportNeedsAdvisorView(report, snapshotAt = 0) {
+  const viewedAt = report.familyDoctorViewedAt ? new Date(report.familyDoctorViewedAt).getTime() : 0;
+  const createdAt = report.createdAt ? new Date(report.createdAt).getTime() : 0;
+  const resubmittedAt = report.advisorCorrection?.resubmittedAt ? new Date(report.advisorCorrection.resubmittedAt).getTime() : 0;
+  return Math.max(viewedAt, snapshotAt) < Math.max(createdAt, resubmittedAt);
+}
+
 function getLatestArchiveUpdate(user, snapshotValue) {
   const snapshotAt = snapshotValue ? new Date(snapshotValue).getTime() : 0;
   const candidates = [];
@@ -87,9 +94,13 @@ function getLatestArchiveUpdate(user, snapshotValue) {
 // 待办面板/前置校验共用的查询条件：健管已审，且晚于健康顾问上次确认快照的新增报告
 // （这是增量查询——只返回"新增部分"，已确认过的历史报告不会再出现在这个列表里）
 function pendingDoctorAuditFilter(userId, snapshotAt) {
-  const filter = { user: userId, archiveOnly: { $ne: true }, audit_status: 'audited' };
-  if (snapshotAt) filter.$or = [{ createdAt: { $gt: snapshotAt } }, { 'advisorCorrection.resubmittedAt': { $gt: snapshotAt } }];
+  const filter = { user: userId, archiveOnly: { $ne: true }, audit_status: 'audited', documentCategory: { $ne: 'prescription_order' } };
+  const lastReview = snapshotAt || new Date(0);
+  filter.$and = [
+    { $or: [{ createdAt: { $gt: lastReview } }, { 'advisorCorrection.resubmittedAt': { $gt: lastReview } }] },
+    { $or: [{ familyDoctorViewedAt: null }, { $expr: { $lt: ['$familyDoctorViewedAt', { $ifNull: ['$advisorCorrection.resubmittedAt', '$createdAt'] }] } }] },
+  ];
   return filter;
 }
 
-module.exports = { checkReportAuditGate, checkScreeningYearSummaryGate, pendingDoctorAuditFilter, hasUnreviewedNewContent, getLatestArchiveUpdate };
+module.exports = { checkReportAuditGate, checkScreeningYearSummaryGate, pendingDoctorAuditFilter, reportNeedsAdvisorView, hasUnreviewedNewContent, getLatestArchiveUpdate };

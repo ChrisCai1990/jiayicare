@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const MedicalReport = require('../src/models/MedicalReport');
-const { checkScreeningYearSummaryGate, pendingDoctorAuditFilter } = require('../src/utils/reportAuditGate');
+const { checkScreeningYearSummaryGate, pendingDoctorAuditFilter, reportNeedsAdvisorView } = require('../src/utils/reportAuditGate');
 
 test('screening yearly summary is blocked while same-year reports remain unaudited', async t => {
   const original = MedicalReport.countDocuments;
@@ -25,10 +25,19 @@ test('resubmitted report is visible to advisor again after the previous archive 
   const date = new Date('2026-10-14T08:00:00Z');
   const filter = pendingDoctorAuditFilter('patient-id', date);
   assert.deepEqual(filter.archiveOnly, { $ne: true });
-  assert.deepEqual(filter.$or, [
+  assert.deepEqual(filter.$and[0].$or, [
     { createdAt: { $gt: date } },
     { 'advisorCorrection.resubmittedAt': { $gt: date } },
   ]);
+  assert.ok(filter.$and[1].$or.some(condition => Object.hasOwn(condition, '$expr')));
+});
+
+test('a report already viewed in the advisor task does not require another confirmation before AI summary', () => {
+  const createdAt = new Date('2026-10-13T08:00:00Z');
+  const familyDoctorViewedAt = new Date('2026-10-14T08:00:00Z');
+  assert.equal(reportNeedsAdvisorView({ createdAt, familyDoctorViewedAt }), false);
+  assert.equal(reportNeedsAdvisorView({ createdAt }), true);
+  assert.equal(reportNeedsAdvisorView({ createdAt, familyDoctorViewedAt, advisorCorrection: { resubmittedAt: new Date('2026-10-15T08:00:00Z') } }), true);
 });
 
 test('screening yearly summary is allowed after all same-year reports are audited', async t => {

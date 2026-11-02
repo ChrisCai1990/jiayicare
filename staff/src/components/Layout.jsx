@@ -4,6 +4,7 @@ import { useStaff } from '../App'
 import { NotificationSummaryProvider, useNotificationSummary } from './NotificationSummary'
 import AppIcon from './AppIcon'
 import { getSetupNav } from '../setupNav'
+import { hasModulePermission } from '../modulePermission'
 
 // moduleKey: 对应 StaffRole 里的权限模块 key，无 key 表示所有人可见
 // roles: 无 customRoleId 时按内置角色过滤（空数组=全部可见）
@@ -96,7 +97,7 @@ function LayoutContent() {
             if (!item.moduleKey) return item.roles.length === 0 || item.roles.includes(staff?.role)
             // 有 customPermissions（管理后台为该账号配置了自定义角色权限）时，按权限决定显隐
             if (staff?.customPermissions) {
-              return !!staff.customPermissions[item.moduleKey]?.view
+              return hasModulePermission(staff, item.moduleKey, 'view')
             }
             // 否则按内置角色过滤（空数组=全部可见）
             return item.roles.length === 0 || item.roles.includes(staff?.role)

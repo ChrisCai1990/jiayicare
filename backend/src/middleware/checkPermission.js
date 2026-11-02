@@ -19,7 +19,9 @@ function checkPermission(moduleKey, action) {
       const role = await StaffRole.findById(req.staff.customRoleId).select('permissions').lean();
       if (!role) return next(); // 角色被删了，不因数据不一致挡住正常使用
 
-      const allowed = !!role.permissions?.[moduleKey]?.[action];
+      const setting = role.permissions?.[moduleKey]?.[action];
+      const allowed = moduleKey === 'medical_resources' && action === 'view' && setting === undefined
+        ? true : !!setting;
       if (!allowed) {
         return res.status(403).json({ success: false, message: '当前角色无此操作权限' });
       }
