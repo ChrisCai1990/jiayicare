@@ -901,7 +901,11 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
       refreshAfterSend();
     } catch (error) {
       setInput(text);
-      setSendError(error.message || '发送失败，内容已保留，请重试');
+      const message = foodImages.length
+        ? `照片未发送成功，已保留待发送图片。${error.message || '请稍后重试'}`
+        : (error.message || '发送失败，内容已保留，请重试');
+      setSendError(message);
+      if (foodImages.length) Taro.showToast({ title: '照片发送失败，请重试', icon: 'none' });
     } finally {
       setSending(false);
     }
@@ -1176,7 +1180,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
           <View onClick={() => { setVoiceMode(v=>!v); setEmojiOpen(false); setMoreOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name={voiceMode ? 'keyboard' : 'audio-lines'} size={28} color={colors.textPrimary} /></View>
           {voiceMode ? <View onTouchStart={startRecording} onTouchMove={moveRecording} onTouchEnd={() => stopRecording(recordingCancelledRef.current)} onTouchCancel={() => stopRecording(true)} style={{ flex:1,height:'40px',borderRadius:'6px',backgroundColor:recording ? (recordingCancelling ? '#FDECEC' : '#E8F3EE') : '#fff',display:'flex',alignItems:'center',justifyContent:'center',border:`1px solid ${recording ? (recordingCancelling ? colors.danger : colors.primary) : colors.border}` }}><Text style={{fontWeight:700,color:recording?colors.danger:colors.textPrimary}}>{recording?(recordingCancelling?'松开取消':'松开发送'):'按住说话'}</Text></View> : <Input value={input} onInput={(e)=>setInput(e.detail.value)} placeholder={`发消息给${meta.label}`} confirmType="send" onConfirm={send} adjustPosition cursorSpacing={12} maxlength={500} style={{flex:1,height:'40px',minWidth:0,boxSizing:'border-box',backgroundColor:'#fff',borderRadius:'6px',padding:'0 10px',fontSize:'15px'}} />}
           <View onClick={() => { setEmojiOpen(v=>!v); setMoreOpen(false); setVoiceMode(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="smile" size={28} color={colors.textPrimary} /></View>
-          {(input.trim() || foodImages.length) ? <Text onClick={send} style={{padding:'7px 10px',borderRadius:'5px',backgroundColor:colors.primary,color:'#fff',fontWeight:700}}>发送</Text> : <View onClick={() => { setMoreOpen(v=>!v); setEmojiOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="circle-plus" size={28} color={colors.textPrimary} /></View>}
+          {(input.trim() || foodImages.length || sending) ? <Text onClick={send} style={{padding:'7px 10px',borderRadius:'5px',backgroundColor:colors.primary,color:'#fff',fontWeight:700}}>{sending ? (foodImages.length ? '照片上传中…' : '发送中…') : '发送'}</Text> : <View onClick={() => { setMoreOpen(v=>!v); setEmojiOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="circle-plus" size={28} color={colors.textPrimary} /></View>}
         </View>
         {emojiOpen && <View style={{display:'flex',flexWrap:'wrap',gap:'12px',padding:'12px 4px 4px'}}>{['😊','👍','🌙','❤️','谢谢','收到'].map(e=><Text key={e} onClick={()=>setInput(v=>`${v}${e}`)} style={{fontSize:'21px'}}>{e}</Text>)}</View>}
         {moreOpen && <View style={{display:'flex',padding:'12px 4px 4px'}}><View onClick={chooseFoodImage} style={{textAlign:'center'}}><View style={{width:'48px',height:'48px',borderRadius:'9px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:'23px'}}>🖼️</Text></View><Text style={{fontSize:'11px',color:colors.textMuted}}>图片</Text></View></View>}
