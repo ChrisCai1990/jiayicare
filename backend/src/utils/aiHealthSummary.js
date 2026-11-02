@@ -119,7 +119,7 @@ async function generateHealthSummarySections(user, {
   if (retrospective) user = historicalUserSnapshot(user, targetYear);
 
   const [activeMeds, activeSupplements, recentCheckins] = await Promise.all([
-    retrospective ? [] : Medication.find({ user: user._id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
+    retrospective ? [] : Medication.find({ user: user._id, stopped: false, active: { $ne: false }, aiStatus: { $ne: 'pending' } }).select('name dosage frequency purpose startDate').lean(),
     retrospective ? [] : Supplement.find({ user: user._id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
     // 近30天健康数据记录（体重/血压/血糖/睡眠/运动/情绪等），2026-07-11新增：此前AI健康分析完全没读健康数据记录，
     // 只看体检报告和手动录入的档案字段，导致日常健康数据趋势(如体重变化/运动频率/睡眠时长)无法体现在分析里
