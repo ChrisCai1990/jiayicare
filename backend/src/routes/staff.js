@@ -12284,13 +12284,38 @@ router.get('/patients/:id/chat-images', staffAuth, async (req, res) => {
     const page = Math.max(1, Math.min(1000, Number.parseInt(req.query.page, 10) || 1));
     const limit = 30;
     const filter = { user: patient._id, type: 'user', recalled: { $ne: true }, $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }] };
-    const rows = await Message.find(filter).select('_id content createdAt recipient imageUrl imageUrls').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit + 1).lean();
+    const rows = await Message.find(filter).select('_id content createdAt recipient imageUrl imageUrls materialDisposition materialDispositionAt').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit + 1).lean();
     const { signStoredUrl } = require('../utils/oss');
     res.json({ success: true, data: rows.slice(0, limit).map(row => ({
       _id: row._id, content: row.content, createdAt: row.createdAt, recipient: row.recipient,
+      materialDisposition: row.materialDisposition || '', materialDispositionAt: row.materialDispositionAt || null,
       imageUrls: [...new Set(row.imageUrls?.length ? row.imageUrls : (row.imageUrl ? [row.imageUrl] : []))].map(url => signStoredUrl(url)),
     })), hasMore: rows.length > limit });
   } catch (error) { res.status(500).json({ success: false, message: '会话图片读取失败' }); }
+});
+
+router.patch('/patients/:id/chat-images/:messageId/disposition', staffAuth, async (req, res) => {
+  try {
+  if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅所属健管专员可处理会话图片' });
+  const patient = await chatMaterialPatient(req.staff, req.params.id);
+  if (!patient) return res.status(403).json({ success: false, message: '无权处理该客户资料' });
+  if (!mongoose.isValidObjectId(req.params.messageId) || !['exclude', 'restore'].includes(req.body?.action))
+    return res.status(400).json({ success: false, message: '处理操作无效' });
+  const sourceChatMessageId = String(req.params.messageId);
+  const report = await MedicalReport.exists({ user: patient._id, sourceChatMessageId });
+  if (report) return res.status(409).json({ success: false, message: '图片已归入报告，不能标记为不纳入' });
+  const now = new Date();
+  const disposition = req.body.action === 'exclude' ? 'excluded' : '';
+  const updated = await Message.findOneAndUpdate({ _id: sourceChatMessageId, user: patient._id, type: 'user', recalled: { $ne: true },
+    $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }] },
+  { $set: { materialDisposition: disposition, materialDispositionAt: now, materialDispositionBy: req.staff._id },
+    $push: { materialDispositionHistory: { action: req.body.action, at: now, by: req.staff._id } } }, { new: true }).select('_id materialDisposition materialDispositionAt');
+  if (!updated) return res.status(404).json({ success: false, message: '会话图片不存在' });
+  res.json({ success: true, data: { _id: updated._id, materialDisposition: updated.materialDisposition, materialDispositionAt: updated.materialDispositionAt } });
+  } catch (error) {
+    console.error('处理会话图片失败:', error);
+    res.status(500).json({ success: false, message: '处理会话图片失败，请稍后重试' });
+  }
 });
 
 // Keep the same upload authorization as POST /medical-reports. The specific
@@ -12303,7 +12328,8 @@ router.post('/patients/:id/chat-images/:messageId/archive-report', staffAuth, as
   const sourceChatMessageId = String(req.params.messageId);
   const existing = await MedicalReport.findOne({ user: patient._id, sourceChatMessageId });
   if (existing) return res.json({ success: true, data: withSignedReportFiles(existing), duplicate: true });
-  const message = await Message.findOne({ _id: sourceChatMessageId, user: patient._id, type: 'user', recalled: { $ne: true } }).select('imageUrl imageUrls createdAt').lean();
+  const message = await Message.findOne({ _id: sourceChatMessageId, user: patient._id, type: 'user', recalled: { $ne: true } }).select('imageUrl imageUrls createdAt materialDisposition').lean();
+  if (message?.materialDisposition === 'excluded') return res.status(409).json({ success: false, message: '该图片已标记暂不纳入，请先恢复待处理' });
   const urls = [...new Set(message?.imageUrls?.length ? message.imageUrls : (message?.imageUrl ? [message.imageUrl] : []))];
   if (!urls.length || urls.length > 9) return res.status(400).json({ success: false, message: '该消息没有可归档图片' });
   const { urlToKey, copyMessageImageToReport, deleteFile } = require('../utils/oss');

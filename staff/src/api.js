@@ -449,6 +449,7 @@ export const staffAPI = {
   getPatientReports:        (id) => req(`/staff/patients/${id}/reports`),
   getPatientChatImages:     (id, page = 1) => req(`/staff/patients/${id}/chat-images?page=${page}`),
   archiveChatImageReport:   (id, messageId) => req(`/staff/patients/${id}/chat-images/${messageId}/archive-report`, { method: 'POST' }),
+  setChatImageDisposition: (id, messageId, action) => req(`/staff/patients/${id}/chat-images/${messageId}/disposition`, { method: 'PATCH', body: JSON.stringify({ action }) }),
   startStaffMedicalProxy: (id, data) => req(`/staff/patients/${id}/medical-proxy/start`, { method: 'POST', body: JSON.stringify(data) }),
   quoteStaffFundOrder: (id, data) => req(`/staff/patients/${id}/fund-orders/quote`, { method: 'POST', body: JSON.stringify(data) }),
   createStaffFundOrder: (id, data) => req(`/staff/patients/${id}/fund-orders`, { method: 'POST', body: JSON.stringify(data) }),

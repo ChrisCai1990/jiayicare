@@ -1122,7 +1122,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {proxyOrders.map(order => onNavigate && <button key={order._id} className="btn btn-primary btn-sm" onClick={() => { onNavigate(`/patients/${userId}?openChat=1`, { state: { serviceBooking: { sourceOrderId: order } } }); onClose() }}>确认代诊订单{proxyOrders.length > 1 ? ` ${order.orderNo || String(order._id).slice(-6)}` : ''}</button>)}
-            {onNavigate && <button className="btn btn-secondary btn-sm" onClick={() => { onNavigate(`/patients/${userId}`); onClose() }}>查看档案</button>}
+            {onNavigate && <button className="btn btn-secondary btn-sm" onClick={() => { onNavigate(`/patients/${userId}?tab=reports`); onClose() }}>查看原始资料</button>}
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>

@@ -9,7 +9,7 @@ const staffId = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const tenantId = 'cccccccccccccccccccccccc';
 const messageId = 'dddddddddddddddddddddddd';
 
-function fixture({ assigned = true, messageUser = patientId, existing = null, createFails = false } = {}) {
+function fixture({ assigned = true, messageUser = patientId, existing = null, createFails = false, disposition = '' } = {}) {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const snippet = source.split('async function chatMaterialPatient')[1].split('// ── 获取某用户的对话线程')[0];
   const handlers = {};
@@ -17,6 +17,7 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
   const copied = [];
   const deleted = [];
   let created;
+  let reviewUpdate;
   const urls = ['https://private/messages/one.jpg', 'https://private/messages/two.png'];
   const oss = {
     signStoredUrl: url => `${url}?signed=1`,
@@ -27,6 +28,7 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
   const context = {
     router: {
       get: (route, _auth, handler) => { handlers.get = handler; },
+      patch: (route, _auth, handler) => { handlers.patch = handler; },
       post: (...args) => { postMiddlewareCount = args.length - 2; handlers.post = args.at(-1); },
     },
     staffAuth: () => {}, checkPermission: () => () => {},
@@ -34,10 +36,15 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
     User: { findOne: () => ({ select: () => ({ lean: async () => ({ _id: patientId, tenantId, assignedHealthManager: assigned ? staffId : 'eeeeeeeeeeeeeeeeeeeeeeee' }) }) }) },
     Message: {
       find: () => ({ select: () => ({ sort: () => ({ skip: () => ({ limit: () => ({ lean: async () => [{ _id: messageId, imageUrls: urls, createdAt: new Date(), recipient: 'manager' }] }) }) }) }) }),
-      findOne: () => ({ select: () => ({ lean: async () => messageUser === patientId ? { imageUrls: urls, createdAt: new Date() } : null }) }),
+      findOne: () => ({ select: () => ({ lean: async () => messageUser === patientId ? { imageUrls: urls, createdAt: new Date(), materialDisposition: disposition } : null }) }),
+      findOneAndUpdate: (filter, update) => {
+        reviewUpdate = { filter, update };
+        return { select: async () => messageUser === patientId ? { _id: messageId, materialDisposition: update.$set.materialDisposition, materialDispositionAt: update.$set.materialDispositionAt } : null };
+      },
     },
     MedicalReport: {
       findOne: async () => existing,
+      exists: async () => !!existing,
       create: async value => { if (createFails) throw new Error('database unavailable'); created = value; return { _id: 'ffffffffffffffffffffffff', ...value }; },
     },
     require: name => { assert.equal(name, '../utils/oss'); return oss; },
@@ -46,12 +53,12 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
   };
   vm.runInNewContext(`async function chatMaterialPatient${snippet}`, context);
   const call = async (method, overrides = {}) => {
-    const req = { staff: { _id: staffId, tenantId, role: 'healthManager' }, params: { id: patientId, messageId }, query: {}, ...overrides };
+    const req = { staff: { _id: staffId, tenantId, role: 'healthManager' }, params: { id: patientId, messageId }, query: {}, body: {}, ...overrides };
     const res = { code: 200, status(code) { this.code = code; return this; }, json(payload) { this.payload = payload; return this; } };
     await handlers[method](req, res);
     return res;
   };
-  return { call, copied, deleted, postMiddlewareCount, get created() { return created; } };
+  return { call, copied, deleted, postMiddlewareCount, get created() { return created; }, get reviewUpdate() { return reviewUpdate; } };
 }
 
 test('chat image archive follows existing report upload authorization', () => {
@@ -95,4 +102,29 @@ test('a message without this customer cannot be archived', async () => {
   const f = fixture({ messageUser: 'eeeeeeeeeeeeeeeeeeeeeeee' });
   assert.equal((await f.call('post')).code, 400);
   assert.equal(f.copied.length, 0);
+});
+
+test('assigned manager may exclude and restore a customer chat image with an audit entry', async () => {
+  const f = fixture();
+  const excluded = await f.call('patch', { body: { action: 'exclude' } });
+  assert.equal(excluded.code, 200);
+  assert.equal(excluded.payload.data.materialDisposition, 'excluded');
+  assert.equal(f.reviewUpdate.update.$push.materialDispositionHistory.action, 'exclude');
+  const restored = await f.call('patch', { body: { action: 'restore' } });
+  assert.equal(restored.payload.data.materialDisposition, '');
+  assert.equal(f.reviewUpdate.update.$push.materialDispositionHistory.action, 'restore');
+});
+
+test('excluded images cannot be archived until restored, and archived reports cannot be excluded', async () => {
+  const excluded = fixture({ disposition: 'excluded' });
+  assert.equal((await excluded.call('post')).code, 409);
+  assert.equal(excluded.copied.length, 0);
+  const archived = fixture({ existing: { _id: 'ffffffffffffffffffffffff' } });
+  assert.equal((await archived.call('patch', { body: { action: 'exclude' } })).code, 409);
+});
+
+test('another staff member cannot mark an image excluded', async () => {
+  const f = fixture({ assigned: false });
+  assert.equal((await f.call('patch', { body: { action: 'exclude' } })).code, 403);
+  assert.equal(f.reviewUpdate, undefined);
 });
