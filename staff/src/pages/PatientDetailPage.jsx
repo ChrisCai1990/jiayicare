@@ -3715,7 +3715,7 @@ export default function PatientDetailPage() {
       }
     }
     else if (tab === 'referrals') loadPatientReferrals()
-    else if (tab === 'medications') { loadMedications(); loadSupplements() }
+    else if (tab === 'medications') { loadMedications(); loadSupplements(); loadReports() }
     else if (tab === 'mdt') { loadMedications(); loadReports() }
     else if (tab === 'portrait' || tab === 'symptoms') {
       loadScreening()
@@ -9827,8 +9827,20 @@ export default function PatientDetailPage() {
             const activeMeds = medications.filter(m => m.aiStatus !== 'pending')
             const visibleMeds = activeMeds.filter(m => medHistoryTab === 'stopped' ? m.stopped : !m.stopped)
             const canApproveMed = staff?.role === 'familyDoctor' || staff?.role === 'superadmin'
+            const prescriptionReports = reports.filter(report => report.documentCategory === 'prescription_order' && report.audit_status === 'audited')
             return (
             <>
+            {prescriptionReports.length > 0 && <div className="card" style={{ marginBottom: 12 }}>
+              <div className="card-header"><span className="card-title">已审核处方与医嘱</span></div>
+              <div className="card-body" style={{ display: 'grid', gap: 10 }}>
+                <div style={{ fontSize: 12, color: '#60756B' }}>这里保留原处方记录；只有明确核对为当前服用的药物才进入下方用药清单。</div>
+                {prescriptionReports.map(report => <div key={report._id} style={{ borderTop: '1px solid #E5EEE9', paddingTop: 8 }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setTab('reports'); openReportDetail(report) }}>{report.title || '处方与医嘱'} · {report.clinicalReview?.issuedDate || report.checkDate || '日期未记录'}</button>
+                  {report.clinicalReview?.medicationDecision === 'has_medications' && <div style={{ fontSize: 12, marginTop: 5 }}>{(report.clinicalReview.medications || []).map(row => `${row.name || '未命名药物'}${row.includeInCurrentMedication ? '（拟纳入当前用药）' : '（仅处方记录）'}`).join('、')}</div>}
+                  {!report.clinicalReview && <div style={{ fontSize: 12, marginTop: 5 }}>{(report.reportItems || []).filter(item => item.itemType === 'medication').map(item => item.genericName || item.name).filter(Boolean).join('、') || '药物明细请查看原处方'}</div>}
+                </div>)}
+              </div>
+            </div>}
             {pendingMeds.length > 0 && (
               <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
                 <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', gap: 8 }}>
