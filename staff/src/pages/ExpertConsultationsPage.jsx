@@ -1,3 +1,4 @@
+import ConsultationCorrespondence from '../components/ConsultationCorrespondence'
 import ConsultationReadStatus from '../components/ConsultationReadStatus'
 import ConsultationReferralDetail from '../components/ConsultationReferralDetail'
 import React, { useEffect, useState } from 'react'
@@ -40,6 +41,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
     if (['intake', 'followup'].includes(row.status)) return id(row.managerId) === self
     if (row.status === 'planner') return row.expertsConfirmedAt ? id(row.managerId) === self : id(row.advisorId) === self
     if (['advisor', 'reconcile', 'final_review'].includes(row.status)) return id(row.advisorId) === self
+    if (row.status === 'expert' && id(row.advisorId) === self && row.correspondence?.some(item => !item.answers?.length)) return true
     return row.status === 'expert' && row.members?.some(member => id(member.staffId) === self && !member.repliedAt)
   }
   async function create(event) {
@@ -211,6 +213,8 @@ export default function ExpertConsultationsPage({ embedded = false }) {
           </div>}
           {selected.expertChangeReason && <p>预约调整反馈：{selected.expertChangeReason}</p>}
           {selected.status === 'planner' && manager && <details style={{ marginTop: 16 }}><summary style={{ cursor: 'pointer' }}>无法安排当前专家？反馈健康顾问</summary>{!selected.expertsConfirmedAt && <p>请先由健康顾问确认专家名单。</p>}{textField('调整原因及建议', form.changeReason || '', set('changeReason'))}<button className="btn btn-secondary" disabled={busy || !form.changeReason?.trim()} onClick={() => action('request-expert-change', { reason: form.changeReason })}>退回健康顾问重新确认</button></details>}
+          <ConsultationCorrespondence consultation={selected} advisor={advisor} busy={busy} drafts={form.supplementAnswers || {}} onDraft={(key, value) => set('supplementAnswers')({ ...form.supplementAnswers, [key]: value })} onReply={(requestId, content) => action('correspondence', { requestId, content })} />
+          {selected.status === 'expert' && assignedExpert && selected.members?.some(member => id(member.staffId) === self && !member.repliedAt) && <div style={{ margin: '20px 0' }}><h4>会前意见／要求补充资料</h4>{textField('需要补充或确认的具体内容', form.supplementQuestion || '', set('supplementQuestion'))}<button className="btn btn-secondary" disabled={busy || !form.supplementQuestion?.trim()} onClick={() => action('correspondence', { content: form.supplementQuestion })}>提交健康顾问并留档</button><p>健康顾问收到待办，回复后可在上方查看。此处不会代替正式转介回复。</p></div>}
           {selected.status === 'expert' && assignedExpert && <div><h4>回复转介信</h4>{textField('分析依据与专业意见', form.opinion || '', set('opinion'))}{textField('明确的下一步或无更好方案的说明', form.nextStep || '', set('nextStep'))}<label><input type="checkbox" checked={!!form.noBetterOption} onChange={e => set('noBetterOption')(e.target.checked)}/> 暂无更合适方案</label><br/><button className="btn btn-primary" disabled={busy} onClick={() => action('reply', form)}>提交书面回复</button></div>}
           {selected.status === 'reconcile' && advisor && <div><h4>协调多专科意见</h4>{textField('一致点、矛盾和明确管理路径', form.note || '', set('note'))}<button className="btn btn-secondary" disabled={busy} onClick={() => action('reconcile', { note: form.note, requestChanges: true })}>存在矛盾，退回专家补充</button> <button className="btn btn-primary" disabled={busy} onClick={() => action('reconcile', { note: form.note })}>确认协调结论</button></div>}
           {selected.status === 'followup' && manager && <div><h4>拟定随访计划</h4>{textField('管理路径和随访安排', form.plan || '', set('plan'))}<label><input type="checkbox" checked={!!form.selfManaged} onChange={e => set('selfManaged')(e.target.checked)}/> 客户自行管理</label><br/><button className="btn btn-primary" disabled={busy} onClick={() => action('followup', form)}>提交健康顾问审核</button></div>}

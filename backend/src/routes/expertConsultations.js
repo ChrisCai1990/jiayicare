@@ -444,12 +444,42 @@ router.post('/staff/:id/meeting', staffAuth, async (req, res) => {
   await row.save(); res.json({ success: true, data: row });
 });
 
+// Append-only correspondence belongs to the case and is displayed in the patient's linked referral archive.
+router.post('/staff/:id/correspondence', staffAuth, async (req, res) => {
+  const row = valid(req.params.id) && await Case.findById(req.params.id);
+  if (!row) return fail(res, 404, '咨询服务不存在');
+  if (row.status !== 'expert') return fail(res, 409, '当前阶段不能发起或回复补充资料要求');
+  const content = text(req.body?.content);
+  if (!content) return fail(res, 400, '请填写具体内容');
+  const requestId = req.body?.requestId;
+  if (requestId) {
+    if (!valid(requestId)) return fail(res, 400, '补充资料要求编号无效');
+    if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可回复');
+    const item = row.correspondence.id(requestId);
+    if (!item) return fail(res, 404, '补充资料要求不存在');
+    const referral = await Referral.findOne({ _id: row.referralId, patientId: row.patientId }).select('contentVersion');
+    item.answers.push({ actorId: req.staff._id, actorName: req.staff.name || '健康顾问', content, at: new Date(), referralVersion: referral?.contentVersion || 0 });
+    event(row, 'supplement_answered', req.staff._id);
+  } else {
+    const member = row.members.find(x => id(x.staffId) === id(req.staff._id));
+    if (!member || member.repliedAt) return fail(res, 403, '仅尚未提交正式回复的获派发专家可提出补充要求');
+    row.correspondence.push({ expertStaffId: req.staff._id, expertName: req.staff.name || '参会专家', question: content, requestedAt: new Date(), answers: [] });
+    event(row, 'supplement_requested', req.staff._id);
+  }
+  try { await row.save(); } catch (err) {
+    if (err.name === 'VersionError') return fail(res, 409, '资料已更新，请刷新后重新提交');
+    throw err;
+  }
+  res.json({ success: true, data: row });
+});
+
 router.post('/staff/:id/reply', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
   if (row.status !== 'expert') return fail(res, 409, '当前阶段不能回复转介信');
   const member = row.members.find(x => id(x.staffId) === id(req.staff._id));
   if (!member) return fail(res, 403, '仅获派发专家本人可回复');
+  if (row.correspondence.some(item => !item.answers.length)) return fail(res, 409, '尚有补充资料要求未回复，请先由健康顾问说明资料情况');
   const opinion = text(req.body?.opinion), nextStep = text(req.body?.nextStep), noBetterOption = req.body?.noBetterOption === true;
   if (!opinion || !nextStep) return fail(res, 400, '即使没有更合适方案，也需写明分析依据和下一步');
   if (member.repliedAt) member.revisions.push({ opinion: member.opinion, nextStep: member.nextStep, noBetterOption: member.noBetterOption, repliedAt: member.repliedAt });

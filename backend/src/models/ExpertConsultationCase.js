@@ -47,6 +47,11 @@ const schema = new Schema({
   advisorSlotId: { type: Schema.Types.ObjectId, ref: 'StaffAvailability', default: null },
   managerSlotId: { type: Schema.Types.ObjectId, ref: 'StaffAvailability', default: null },
   members: { type: [member], default: [] },
+  correspondence: [{
+    expertStaffId: { type: Schema.Types.ObjectId, ref: 'Admin', required: true },
+    expertName: String, question: String, requestedAt: Date,
+    answers: [{ actorId: Schema.Types.ObjectId, actorName: String, content: String, at: Date, referralVersion: Number }],
+  }],
   meetingUrl: { type: String, default: '' },
   reconciliation: { type: String, default: '' },
   reconciliationAt: { type: Date, default: null },
