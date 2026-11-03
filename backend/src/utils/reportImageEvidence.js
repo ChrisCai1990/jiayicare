@@ -9,6 +9,7 @@ clinicalText 只能是这些文字原文，保持原字、数字、单位、左�
 不转录姓名等个人信息、医院和检查项目标题、图像内的机器参数/距离数值/测量标记、人体位置示意图。仅有这些内容时 clinicalText=""。
 纯医学影像页没有文字所见时，hasMedicalImages=true，readability="clear"，clinicalText=""；文字模糊或被裁切无法确认时 readability="unreadable"，禁止猜测。
 图文混排页必须保留图外真实的全部检查文字；纯文字报告即使标题为超声也不算包含医学影像。
+超声报告图外的“超声描述”和“超声诊断/医师意见”要分别转录；尤其核对页面下方的小字诊断栏。诊断栏下方印刷的分级解释、概率和参考文献与本次患者诊断分开转录，不得混为一句。
 严格返回 JSON：{"hasMedicalImages":true,"readability":"clear","clinicalText":"逐字原文或空字符串"}`;
 
 function parseJSON(raw) {
@@ -86,7 +87,7 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
   const cache = new Map();
   const imageOnlyPages = new Map();
   const imageReport = /ultrasound|radiology|mri|endoscopy|ecg|imaging/i.test(report.type || '')
-    || /超声|彩超|B超|内镜|胃镜|肠镜|磁共振|心电|CT|MRI/i.test(report.title || '');
+    || /超声|彩超|B超|内镜|胃镜|肠镜|磁共振|心电|CT|MRI|FibroScan|肝脏弹性纤维|肝脏弹性成像/i.test(report.title || '');
   return async (source, prompt, options = {}) => {
     const { sourcePage } = options;
     const modelOptions = { ...options, ...(report._id ? { reportId: String(report._id) } : {}) };

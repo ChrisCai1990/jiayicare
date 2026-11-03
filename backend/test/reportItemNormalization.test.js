@@ -38,6 +38,32 @@ test('全科单项报告逐项保留，便于按原报告逐行核对', () => {
   assert.equal(output[2].findings, '甲状腺结节');
 });
 
+test('FibroScan仅保留实测中值和医师意见为一项超声检查', () => {
+  const output = normalizeSingleExamReportItems([
+    { name: 'CAP值与组织病理学分期', value: '238, 259, 292', itemType: 'lab', sourceSection: '对照参考标准' },
+    { name: '肝脏硬度值与组织病理学分期', value: '7.3, 9.7, 12.4, 17.5', itemType: 'lab' },
+    { name: 'CAP中值', value: '296', unit: 'dB/m', itemType: 'lab' },
+    { name: 'E中值', value: '5.3', unit: 'kPa', itemType: 'lab' },
+    { name: '医师意见', findings: '提示脂肪变≥67%，肝纤维化 F0F1期，请结合临床。', itemType: 'imaging' },
+  ], { title: '肝脏弹性纤维' });
+  assert.equal(output.length, 1);
+  assert.equal(output[0].name, '肝纤维弹性超声');
+  assert.equal(output[0].itemType, 'imaging');
+  assert.equal(output[0].findings, 'CAP中值：296 dB/m；肝脏硬度E中值：5.3 kPa');
+  assert.equal(output[0].diagnosis, '提示脂肪变≥67%，肝纤维化 F0F1期，请结合临床。');
+  assert.equal(output[0].value, '');
+});
+
+test('FibroScan仅有参考阈值时不充作患者实测结果', () => {
+  const output = normalizeSingleExamReportItems([
+    { name: 'CAP值与组织病理学分期', value: '238, 259, 292', itemType: 'lab' },
+    { name: '医师意见', findings: '请结合临床。', itemType: 'imaging' },
+  ], { title: 'FibroScan' });
+  assert.equal(output.length, 1);
+  assert.equal(output[0].findings, '');
+  assert.equal(output[0].diagnosis, '请结合临床。');
+});
+
 test('耳鼻喉科保留每个器官细行，不合并成科室摘要', () => {
   const items = ['耳部检查', '鼻部检查', '咽部检查'].map((name, index) => ({
     name, findings: '未见明显异常', sourceSection: '耳鼻喉科体检', itemType: 'imaging', _page: 1, _order: index,
