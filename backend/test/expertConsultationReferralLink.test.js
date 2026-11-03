@@ -45,7 +45,8 @@ test('consultation links one existing patient referral and rejects duplicate fre
     assert.equal(String(claimFilter.fromStaffId), String(advisorId));
     assert.equal(claimFilter.expertConsultationCaseId, null);
     assert.equal(String(row.referralId), String(referralId));
-    assert.equal(row.status, 'planner');
+    assert.equal(row.status, 'advisor');
+    row.status = 'planner';
     Referral.findOne = async () => ({ medicalExpertId: expertId });
     const mismatch = await call('assign', plannerId, { members: [{ expertId: otherExpertId, slotId: oid() }] });
     assert.equal(mismatch.statusCode, 409);

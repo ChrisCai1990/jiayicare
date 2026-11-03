@@ -95,6 +95,7 @@ export const staffAPI = {
   expertConsultationCases: () => req('/expert-consultations/staff'),
   createExpertConsultation: data => req('/expert-consultations/staff', { method: 'POST', body: JSON.stringify(data) }),
   expertConsultationExperts: () => req('/expert-consultations/staff/experts'),
+  expertConsultationCaseExperts: id => req(`/expert-consultations/staff/${id}/experts`),
   expertConsultationMaterials: id => req(`/expert-consultations/staff/${id}/materials`),
   expertConsultationReferrals: id => req(`/expert-consultations/staff/${id}/referrals`),
   expertConsultationAction: (id, action, data) => req(`/expert-consultations/staff/${id}/${action}`, { method: 'POST', body: JSON.stringify(data) }),

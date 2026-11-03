@@ -68,10 +68,19 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(available.body.data.length, 1);
     assert.equal((await step('referral', advisorId, { referralId: String(firstReferral._id) })).statusCode, 200);
     assert.equal(String((await Referral.findById(firstReferral._id)).expertConsultationCaseId), String(caseId));
+    assert.equal((await Case.findById(caseId)).status, 'advisor');
+    assert.equal((await step('expert-selection', plannerId, { expertIds: [String(expertId)] })).statusCode, 403);
+    assert.equal((await step('expert-selection', advisorId, { expertIds: [String(expertId)] })).statusCode, 200);
+    assert.equal((await step('advisor-submit', advisorId, {})).statusCode, 200);
     const replacementReferral = await createReferral('修订后的咨询转介');
     assert.equal((await step('referral', advisorId, { referralId: String(replacementReferral._id) })).statusCode, 200);
+    assert.equal((await Case.findById(caseId)).status, 'advisor');
+    assert.equal((await Case.findById(caseId)).plannedExpertIds.length, 0);
     assert.equal((await Referral.findById(firstReferral._id)).expertConsultationCaseId, null);
     assert.equal(String((await Referral.findById(replacementReferral._id)).expertConsultationCaseId), String(caseId));
+    assert.equal((await step('advisor-submit', advisorId, {})).statusCode, 409);
+    assert.equal((await step('expert-selection', advisorId, { expertIds: [String(expertId)] })).statusCode, 200);
+    assert.equal((await step('advisor-submit', advisorId, {})).statusCode, 200);
     const missingManager = await step('assign', plannerId, { members: [{ expertId, slotId: expertSlot }] });
     assert.equal(missingManager.statusCode, 409);
     const assigned = await step('assign', plannerId, { members: [{ expertId, slotId: expertSlot }], managerSlotId: managerSlot });
@@ -113,6 +122,8 @@ test('paid single consultation runs from customer request through booked schedul
     const mdtReferral = await createReferral('协调多学科意见');
     assert.equal((await step('referral', advisorId, { referralId: String(replacementReferral._id) })).statusCode, 409);
     assert.equal((await step('referral', advisorId, { referralId: String(mdtReferral._id) })).statusCode, 200);
+    assert.equal((await step('expert-selection', advisorId, { expertIds: [String(expertId), String(secondExpertId)] })).statusCode, 200);
+    assert.equal((await step('advisor-submit', advisorId, {})).statusCode, 200);
     const mdtAssigned = await step('assign', plannerId, { members: [{ expertId, slotId: mdtSlotOne }, { expertId: secondExpertId, slotId: mdtSlotTwo }], advisorSlotId: advisorSlot });
     assert.equal(mdtAssigned.statusCode, 200, JSON.stringify(mdtAssigned.body));
     await step('reply', expertStaffId, { opinion: '先复查', nextStep: '一月后复查' });
@@ -175,6 +186,8 @@ test('paid single consultation runs from customer request through booked schedul
     await step('intake', managerId, { summary: '资料已核实' });
     const staffReferral = await createReferral('医护端咨询分析');
     assert.equal((await step('referral', advisorId, { referralId: String(staffReferral._id) })).statusCode, 200);
+    assert.equal((await step('expert-selection', advisorId, { expertIds: [String(expertId)] })).statusCode, 200);
+    assert.equal((await step('advisor-submit', advisorId, {})).statusCode, 200);
     const internalExpertSlot = oid(), internalManagerSlot = oid();
     const internalStart = new Date(Date.now() + 5 * 86400000), internalEnd = new Date(+internalStart + 20 * 60000);
     await mongoose.connection.db.collection('staffavailabilities').insertMany([

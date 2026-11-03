@@ -36,6 +36,7 @@ const schema = new Schema({
   referralQuestions: { type: String, default: '' },
   referralContext: { type: String, default: '' },
   referralPreparedAt: { type: Date, default: null },
+  plannedExpertIds: [{ type: Schema.Types.ObjectId, ref: 'MedicalExpert' }],
   advisorSlotId: { type: Schema.Types.ObjectId, ref: 'StaffAvailability', default: null },
   managerSlotId: { type: Schema.Types.ObjectId, ref: 'StaffAvailability', default: null },
   members: { type: [member], default: [] },
