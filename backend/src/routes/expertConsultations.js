@@ -206,9 +206,10 @@ router.post('/staff/:id/advisor-submit', staffAuth, async (req, res) => {
   if (!row.referralId) return fail(res, 409, '请先关联客户已有转介信');
   const expertIds = (row.plannedExpertIds || []).map(id);
   const required = row.type === 'mdt' ? Number(/^([2-8])位专家/.exec(row.specificationLabel || '')?.[1] || 2) : 1;
-  if (expertIds.length !== required) return fail(res, 409, `请先关联 ${required} 位专家`);
+  if (expertIds.length !== required || new Set(expertIds).size !== required) return fail(res, 409, `请先关联 ${required} 位不同的专家`);
   const eligible = new Set((await eligibleExpertRows(row)).map(item => id(item._id)));
   if (expertIds.some(value => !eligible.has(value))) return fail(res, 409, '已选专家资格或报价发生变更，请重新选择');
+  if (row.desiredExpertId && !expertIds.includes(id(row.desiredExpertId))) return fail(res, 409, '须包含客户指定专家，请先与客户确认变更');
   const referral = await Referral.findOne({ _id: row.referralId, ...availableReferral(row), expertConsultationCaseId: row._id })
     .select('medicalExpertId').lean();
   if (!referral) return fail(res, 409, '关联转介信已结束或发生变更，请重新关联');
