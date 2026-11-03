@@ -101,10 +101,10 @@ export default function ExpertConsultationsPage({ embedded = false }) {
   const slotOptions = staffId => slots.filter(slot => id(slot.staffId) === id(staffId) && (+new Date(slot.endAt) - +new Date(slot.startAt)) >= 15 * 60000 && (+new Date(slot.endAt) - +new Date(slot.startAt)) <= 30 * 60000)
   const referralPicker = <div style={{ padding: 12, border: '1px solid #DDE8E1', borderRadius: 8, margin: '12px 0' }}>
     <p>在客户档案的“转介”入口维护原转介信，这里只关联记录。所选专家须已开通本咨询类型、有效医护账号和报价。</p>
-    <p><a href={`/patients/${id(selected?.patientId)}?tab=referrals`}>打开客户转介记录</a></p>
+    <p><a href={`/patients/${id(selected?.patientId)}?tab=referrals&compose=referral`}>填写转介信</a></p>
     <label>本次转介<select className="form-input" value={form.referralId || ''} onChange={e => set('referralId')(e.target.value)}><option value="">请选择可履约的外部医疗转介</option>{referrals.map(referral => <option key={id(referral)} value={id(referral)}>{referral.reason} · {referral.medicalExpertSnapshot?.name || '专家'} · {new Date(referral.createdAt).toLocaleDateString('zh-CN')}</option>)}</select></label>
     {!referrals.length && <p>暂无可关联的转介。创建后返回这里，重新打开本咨询事项即可刷新列表。</p>}
-    {form.referralId && (() => { const referral = referrals.find(item => id(item) === form.referralId); return referral && <div style={{ padding: 10, background: '#F5F8F6', whiteSpace: 'pre-wrap' }}>目的：{referral.referralPurpose || '未单独填写'}<br/>问题：{referral.questionList || '见转介说明'}<br/>{referral.content}</div> })()}
+    {form.referralId && (() => { const referral = referrals.find(item => id(item) === form.referralId); return referral && <div style={{ padding: 10, background: '#F5F8F6', whiteSpace: 'pre-wrap' }}>原因：{referral.reason}<br/>问题：{referral.questionList || '见转介说明'}<br/>{referral.content}</div> })()}
     <button className="btn btn-primary" disabled={busy || !form.referralId || (selected?.status === 'planner' && form.referralId === id(selected.referralId))} onClick={() => action('referral', { referralId: form.referralId })}>{selected?.status === 'planner' ? '确认更换转介' : '保存转介关联'}</button>
   </div>
   return <div className="page-container" style={{ maxWidth: 1100 }}>
@@ -142,7 +142,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
           {activeStatusCard === 'referral' && <div id="consultation-referral-status" style={{ padding: 12, marginBottom: 14, border: '1px solid #DDE8E1', borderRadius: 8, background: '#F5F8F6' }}>
             <b>{selected.referralId ? '本次已关联原转介信' : '本次尚未关联转介信'}</b>
             <p>{selected.status === 'team_assignment' ? '商城订单先由规划师派给健管专员，再由健管专员提交资料。' : selected.status === 'intake' ? '先由负责健管专员提交已核实资料，再由健康顾问关联客户已有转介信。' : selected.status === 'advisor' ? '由负责健康顾问在下方选择客户已有转介信。' : selected.status === 'planner' ? '已进入健管专员预约阶段；健康顾问更换转介后需要重新确认专家。' : '可查看本次关联的原转介记录。'}</p>
-            <a href={`/patients/${id(selected.patientId)}?tab=referrals`}>打开客户转介记录 →</a>
+            <a href={`/patients/${id(selected.patientId)}?tab=referrals&compose=referral`}>填写转介信 →</a>
             {selected.status === 'team_assignment' && planner && <a href="#consultation-team-actions" style={{ marginLeft: 16 }}>首次派单 →</a>}
             {selected.status === 'intake' && manager && <a href="#consultation-intake-actions" style={{ marginLeft: 16 }}>提交资料 →</a>}
             {['advisor', 'planner'].includes(selected.status) && advisor && <a href="#consultation-referral-actions" style={{ marginLeft: 16 }}>办理关联 →</a>}
@@ -160,7 +160,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
           <p><a href={`/patients/${id(selected.patientId)}?tab=reports`}>查看客户已上传报告</a>　<a href={`/patients/${id(selected.patientId)}`}>查看客户档案</a></p>
           {selected.desiredExpertId && <p>客户指定专家编号：{id(selected.desiredExpertId)}</p>}
           {selected.materialSummary && <p>资料摘要：{selected.materialSummary}</p>}
-          {selected.referralId ? <div style={{ background: '#F5F8F6', padding: 12, borderRadius: 8 }}><b>关联的转介信</b><p>原因：{selected.referralId.reason}</p><p>目的：{selected.referralId.referralPurpose || '未单独填写'}</p><p>问题：{selected.referralId.questionList || '见转介说明'}</p><p style={{ whiteSpace: 'pre-wrap' }}>{selected.referralId.content}</p><a href={`/patients/${id(selected.patientId)}?tab=referrals`}>查看原转介记录</a></div> : selected.referralPurpose && <div style={{ background: '#F5F8F6', padding: 12, borderRadius: 8 }}><b>历史咨询转介内容</b><p>目的：{selected.referralPurpose}</p><p>问题：{selected.referralQuestions}</p><p>背景：{selected.referralContext}</p></div>}
+          {selected.referralId ? <div style={{ background: '#F5F8F6', padding: 12, borderRadius: 8 }}><b>关联的转介信</b><p>原因：{selected.referralId.reason}</p><p>问题：{selected.referralId.questionList || '见转介说明'}</p><p style={{ whiteSpace: 'pre-wrap' }}>{selected.referralId.content}</p><a href={`/patients/${id(selected.patientId)}?tab=referrals`}>查看原转介记录</a></div> : selected.referralPurpose && <div style={{ background: '#F5F8F6', padding: 12, borderRadius: 8 }}><b>历史咨询转介内容</b><p>目的：{selected.referralPurpose}</p><p>问题：{selected.referralQuestions}</p><p>背景：{selected.referralContext}</p></div>}
           {selected.members?.map((member, index) => <div key={index} id={index === 0 ? 'consultation-assigned-experts' : undefined} style={{ borderTop: '1px solid #E1EAE6', marginTop: 12, paddingTop: 8 }}>
             <b>专家 {index + 1}</b> · {time(member.startAt)} 至 {time(member.endAt)} · {member.repliedAt ? '已回复' : '待回复'}
             {member.opinion && <p>分析：{member.opinion}<br/>下一步：{member.nextStep}{member.noBetterOption && '（暂无更好方案）'}</p>}

@@ -2274,7 +2274,7 @@ export default function PatientDetailPage() {
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
-  const [showReferralModal, setShowReferralModal] = useState(() => !!location.state?.editReferral)
+  const [showReferralModal, setShowReferralModal] = useState(() => !!location.state?.editReferral || new URLSearchParams(location.search).get('compose') === 'referral')
   const [editingReferral, setEditingReferral] = useState(() => location.state?.editReferral || null)
   const [showReportDetail, setShowReportDetail] = useState(null)
   const [archiveSourceReportId, setArchiveSourceReportId] = useState('')
@@ -14243,6 +14243,7 @@ export default function PatientDetailPage() {
           patientUser={user}
           staffList={staffList}
           initialReferral={editingReferral}
+          defaultReferralType={new URLSearchParams(location.search).get('compose') === 'referral' ? 'external_medical' : 'internal_collaboration'}
           onClose={() => { setShowReferralModal(false); setEditingReferral(null); if (location.state?.editReferral) nav(location.pathname + location.search, { replace:true, state:{} }) }}
           onSaved={() => { setShowReferralModal(false); setEditingReferral(null); toast(location.state?.editReferral ? '转介已修订并重新发送' : '转介已发送'); if (location.state?.editReferral) nav(location.pathname + location.search, { replace:true, state:{} }) }}
         />
@@ -15722,10 +15723,10 @@ const ROLE_LABEL_MAP = {
   tcmDoctor:'中医师', specialist:'专科医师', healthPlanner:'健康规划师', superadmin:'超级管理员',
 }
 
-function ReferralModal({ patientId, patientName, patientUser, staffList, initialReferral, onClose, onSaved }) {
+function ReferralModal({ patientId, patientName, patientUser, staffList, initialReferral, defaultReferralType = 'internal_collaboration', onClose, onSaved }) {
   const toast = useToast()
   const diseaseOptions = Array.isArray(patientUser?.diseaseRecords) ? patientUser.diseaseRecords : []
-  const [form, setForm] = useState(() => ({ referralType:initialReferral?.referralType || 'internal_collaboration', toStaffId:initialReferral?.toStaffId?._id || initialReferral?.toStaffId || '', medicalExpertId:initialReferral?.medicalExpertId?._id || initialReferral?.medicalExpertId || '', reason:initialReferral?.reason || '', content:initialReferral?.content || '', urgency:initialReferral?.urgency || 'normal', linkedDiseaseRecordId:initialReferral?.linkedDiseaseRecordId || '', linkedDiseaseName:initialReferral?.linkedDiseaseName || '', referralPurpose:initialReferral?.referralPurpose || '', questionList:initialReferral?.questionList || '', requiresConclusion:initialReferral?.requiresConclusion !== false }))
+  const [form, setForm] = useState(() => ({ referralType:initialReferral?.referralType || defaultReferralType, toStaffId:initialReferral?.toStaffId?._id || initialReferral?.toStaffId || '', medicalExpertId:initialReferral?.medicalExpertId?._id || initialReferral?.medicalExpertId || '', reason:initialReferral?.reason || '', content:initialReferral?.content || '', urgency:initialReferral?.urgency || 'normal', linkedDiseaseRecordId:initialReferral?.linkedDiseaseRecordId || '', linkedDiseaseName:initialReferral?.linkedDiseaseName || '', referralPurpose:initialReferral?.referralPurpose || '', questionList:initialReferral?.questionList || '', requiresConclusion:initialReferral?.requiresConclusion !== false }))
   const [medicalResources, setMedicalResources] = useState({ institutions:[], departments:[], experts:[] })
   const [selectedHealthSections, setSelectedHealthSections] = useState(() => initialReferral?.attachedHealthInfo
     ? [...new Set(Object.keys(initialReferral.attachedHealthInfo).map(key => key === 'longTermMeds' ? 'medicationRecords' : key === 'longTermSups' ? 'supplementRecords' : key))]
@@ -16029,8 +16030,6 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
               {selectedExpert.linkedStaffId ? '已关联医护端账号，可在线接收' : '外部专家未关联账号，由团队线下联系'}
             </div>}
           </div>}
-          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">转介目的</label><select className="form-input" value={form.referralPurpose} onChange={set('referralPurpose')}><option value="">请选择</option>{['协助安排就医','回收医疗机构诊疗信息','健康资料解读与整理','康复支持评估','营养支持评估','心理支持评估','健康管理方案协作','其他'].map(item => <option key={item}>{item}</option>)}</select></div>
-          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">需要接收方解决的问题</label><textarea className="form-input" rows={2} value={form.questionList} onChange={set('questionList')} placeholder="请列出希望会诊明确的问题" /></div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">转介原因 *</label>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -16042,6 +16041,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
             </div>
             <input className="form-input" placeholder="或手动输入原因..." value={form.reason} onChange={set('reason')} />
           </div>
+          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">需要接收方解决的问题</label><textarea className="form-input" rows={2} value={form.questionList} onChange={set('questionList')} placeholder="请列出希望会诊明确的问题" /></div>
           <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={form.requiresConclusion} onChange={e => setForm(f => ({...f, requiresConclusion:e.target.checked}))} />要求接收方提交正式协作反馈</label>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
