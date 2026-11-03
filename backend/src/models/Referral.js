@@ -6,6 +6,7 @@ const referralSchema = new Schema({
   toStaffId:   { type: Schema.Types.ObjectId, ref: 'Admin', default: null }, // 外部专家不登录系统时可为空
   patientId:   { type: Schema.Types.ObjectId, ref: 'User',  required: true },
   sourceOrderId: { type: Schema.Types.ObjectId, ref: 'Order', default: null, index: true },
+  expertConsultationCaseId: { type: Schema.Types.ObjectId, ref: 'ExpertConsultationCase', default: null },
   sourceReports: { type: [Schema.Types.Mixed], default: [] }, // 顾问明确授权给接收专科的本次报告快照
   reason:      { type: String, required: true },  // 转介原因（简述）
   content:     { type: String, default: '' },     // 详细说明

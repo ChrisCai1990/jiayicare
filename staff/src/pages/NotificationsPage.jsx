@@ -441,8 +441,8 @@ export default function NotificationsPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                     <span style={{ fontWeight: 600, fontSize: 15 }}>{r.reason}</span>
-                    <span style={{ fontSize: 12, color: REFERRAL_STATUS_COLOR[r.status], fontWeight: 600 }}>
-                      · {REFERRAL_STATUS_LABEL[r.status]}
+                    <span style={{ fontSize: 12, color: r.expertConsultationCaseId ? (r.expertConsultationCaseId.status === 'completed' ? '#22A06B' : '#0077B6') : REFERRAL_STATUS_COLOR[r.status], fontWeight: 600 }}>
+                      · {r.expertConsultationCaseId ? (r.expertConsultationCaseId.status === 'completed' ? '专家咨询已完成' : '专家咨询处理中') : REFERRAL_STATUS_LABEL[r.status]}
                     </span>
                   </div>
                   <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
@@ -460,6 +460,7 @@ export default function NotificationsPage() {
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     接收方：{r.toStaffId?.name || r.medicalExpertSnapshot?.name || '外部医疗机构'} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
                   </div>
+                  {r.expertConsultationCaseId && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => nav(`/expert-consultations?caseId=${r.expertConsultationCaseId?._id || r.expertConsultationCaseId}`)}>查看专家咨询进度</button>}
                   {(r.responseAnalysis || r.responseOpinion || r.response) ? (
                     <div style={{ marginTop: 8, padding: '10px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: '3px solid #22A06B', display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <div style={{ fontSize: 11, color: '#8AA89C' }}>对方回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}{r.responseSubmittedBy?.name ? ` · 录入人：${r.responseSubmittedBy.name}` : ''}</div>
@@ -479,7 +480,7 @@ export default function NotificationsPage() {
                         <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
                       )}
                     </div>
-                  ) : r.status === 'completed' ? (
+                  ) : r.expertConsultationCaseId ? null : r.status === 'completed' ? (
                     <div style={{ marginTop: 6, fontSize: 12, color: '#22A06B' }}>✓ 已完成，对方未填写回复说明</div>
                   ) : r.status === 'accepted' ? (
                     <div style={{ marginTop: 6, fontSize: 12, color: '#0077B6' }}>已接受，等待完成...</div>
