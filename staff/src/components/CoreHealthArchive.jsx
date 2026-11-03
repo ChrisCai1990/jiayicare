@@ -32,12 +32,13 @@ export function ArchiveSource({ user, section }) {
   </details>
 }
 
-export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit }) {
+export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit, canImport = false }) {
   const current = user.coreHealthArchive?.[section] || { revision: 0, records: [], presence: 'uncollected' }
   const [form, setForm] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState(false)
+  const [importMessage, setImportMessage] = useState('')
   const fields = definitions[section]
   const records = current.records || []
   const visible = records
@@ -53,7 +54,20 @@ export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit
       {canEdit && <button className="btn btn-secondary btn-sm" onClick={() => { setError(''); setForm(JSON.parse(JSON.stringify(current))) }}>补充／修改</button>}
     </div>
     {expanded && section === 'symptom' && <p className="core-section-description">来源：健康档案与建档问卷，记录建档前近3个月或更长时间的主诉与症状。</p>}
-    {expanded && section === 'medication' && <p className="core-section-description">记录首次建档时的使用情况；后续服用中及已停用的记录在“用药与营养补充剂”维护。</p>}
+    {expanded && section === 'medication' && <div className="core-section-description">
+      <p>健管专员复核后，完整的药物条目自动进入用药记录，待健康顾问核对后生效。营养补充剂仍走营养师审核。</p>
+      {canImport && user.initialArchiveReview?.sections?.medication?.status === 'reviewed' && current.presence === 'present' && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={async () => {
+        setBusy(true); setImportMessage('')
+        try {
+          const result = await staffAPI.importArchiveMedications(user._id)
+          const summary = result.medicationImport
+          setImportMessage(`已带入 ${summary.created} 条待健康顾问核对；已有 ${summary.existing} 条未重复添加${summary.incomplete.length ? `；${summary.incomplete.length} 条缺少名称、剂量或频次，请先补全` : ''}`)
+          await onSaved()
+        } catch (err) { setImportMessage(err.message || '带入失败，请重试') }
+        finally { setBusy(false) }
+      }}>带入已复核的建档用药</button>}
+      {importMessage && <p role="status">{importMessage}</p>}
+    </div>}
     <div className="card-body" id={`core-body-${section}`} hidden={!expanded}>
       <ArchiveSource user={user} section={section}/>
 
@@ -152,13 +166,15 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
         }
         archiveSaved = true
       }
-      await staffAPI.reviewInitialArchive(user._id, selected, {
+      const reviewResult = await staffAPI.reviewInitialArchive(user._id, selected, {
         revision: review.revision, status,
         note: note.trim() || (draft ? `已核对并更新${CORE_LABELS[selected]}档案` : `已核对原问卷及既有档案，${CORE_LABELS[selected]}无更新`),
         checkedQuestionIds: status === 'reviewed' ? items.map(item => item.questionId) : [],
         sectionRevision, noChange: status === 'reviewed' && !draft,
       })
       setSelected(null); setDraft(null); await onSaved()
+      if (reviewResult.medicationImportError) window.alert(reviewResult.medicationImportError)
+      else if (reviewResult.medicationImport?.incomplete?.length) window.alert(`${reviewResult.medicationImport.incomplete.length} 条建档用药缺少名称、剂量或频次，请补全后在建档用药板块带入。`)
     } catch (err) {
       if (archiveSaved) {
         setDraft(null)
@@ -185,7 +201,7 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
             {records.map((row, index) => <div key={row.id || index}>{fields.filter(([key]) => row[key]).map(([key, label]) => `${label}：${row[key]}`).join('；')}</div>)}
             {!records.length && (selected === 'routine' ? items.length ? items.map((item, index) => <div key={index}>{item.label}：{format(valueAt(user, item.path)) || '尚未填写'}</div>) : <div>暂无记录，可直接填写更新信息。</div> : <div>{current.presence !== 'uncollected' ? presenceLabels[current.presence] : legacy.join('；') || '暂无新增记录，请核对问卷原始回答。'}</div>)}
           </div>
-          {selected === 'medication' && <p className="core-muted">这里核实首次建档时的使用情况；当前用药仍在“用药与营养补充剂”中维护及专业审核。</p>}
+          {selected === 'medication' && <p className="core-muted">请核实药物名称、剂量和频次。健管专员复核后自动带入用药记录，健康顾问再核对资料一致性；营养补充剂由营养师审核。</p>}
           <div className="core-actions">{!completed && <button type="button" className={!draft ? 'btn btn-primary' : 'btn btn-secondary'} disabled={busy} onClick={() => { setDraft(null); setError('') }}>无更新</button>}<button type="button" className={draft ? 'btn btn-primary' : 'btn btn-secondary'} disabled={busy} onClick={startUpdate}>{completed ? '填写修改内容' : '有更新，填写信息'}</button></div>
           {draft && <fieldset disabled={busy} className="core-review-editor">
             {selected === 'routine' ? <>
