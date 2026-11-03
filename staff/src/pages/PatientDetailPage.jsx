@@ -1,3 +1,4 @@
+import { currentRecords, screeningAttachments } from '../utils/referralAttachments.mjs'
 import checkupKeyMetrics from '../../../shared/checkupKeyMetrics.cjs'
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
 import LiverMarkerTrends from '../components/LiverMarkerTrends'
@@ -15731,7 +15732,10 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
   const [selectedHealthSections, setSelectedHealthSections] = useState(() => initialReferral?.attachedHealthInfo
     ? [...new Set(Object.keys(initialReferral.attachedHealthInfo).map(key => key === 'longTermMeds' ? 'medicationRecords' : key === 'longTermSups' ? 'supplementRecords' : key))]
     : ['basicInfo'])
-  const [extraData, setExtraData] = useState({ medications: [], supplements: [], healthRecords: [] })
+  const [extraData, setExtraData] = useState({ medications: [], supplements: [], healthRecords: [], screening: [] })
+  const [attachmentLoading, setAttachmentLoading] = useState(true)
+  const [attachmentError, setAttachmentError] = useState('')
+  const [selectedScreening, setSelectedScreening] = useState([])
   const [saving, setSaving] = useState(false)
   const [aiDraftLoading, setAiDraftLoading] = useState(false)
   const [error, setError] = useState('')
@@ -15778,17 +15782,22 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
       staffAPI.getPatientMedications(patientId),
       staffAPI.getPatientSupplements(patientId),
       staffAPI.getPatientHealthRecords(patientId, { limit: 20 }),
-    ]).then(([medsR, supsR, recsR]) => {
+      staffAPI.getPatientScreening(patientId),
+      staffAPI.getScreeningReports(patientId),
+    ]).then(([medsR, supsR, recsR, screeningR, reportsR]) => {
+      setAttachmentError([medsR, supsR, recsR, screeningR, reportsR].some(r => r.status === 'rejected') ? '部分附带资料加载失败，请关闭后重试，避免漏发。' : '')
+      setAttachmentLoading(false)
       setExtraData({
         medications:   medsR.status === 'fulfilled' ? (medsR.value.data || []) : [],
         supplements:   supsR.status === 'fulfilled' ? (supsR.value.data || []) : [],
         healthRecords: recsR.status === 'fulfilled' ? (recsR.value.data || []) : [],
+        screening: screeningAttachments(screeningR.status === 'fulfilled' ? screeningR.value.data || [] : [], reportsR.status === 'fulfilled' ? reportsR.value.data || [] : []),
       })
     })
   }, [patientId])
   useEffect(() => { staffAPI.getMedicalResources().then(r=>setMedicalResources(r.data || { institutions:[],departments:[],experts:[] })).catch(()=>{}) }, [])
 
-  const REASON_PRESETS = ['需要就医协助', '营养干预评估', '心理咨询介入', '运动康复指导', '中医体质评估', '专科会诊', '健康方案制定', '体检报告解读']
+  const REASON_PRESETS = ['需要就医协助', '营养干预评估', '心理咨询介入', '运动康复指导', '中医体质评估', '专科会诊', '专项筛查评估', '健康方案制定', '体检报告解读']
 
   // 计算年龄
   const calcAge = (birthDate) => {
@@ -15850,9 +15859,12 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         开始时间: s.startDate || '未记录',
         结束或停用时间: s.stopDate || s.endDate || (s.stopped ? '未记录' : '—'),
       })) : null },
+      { key: 'currentMedications', label: '当前用药', val: currentRecords(ed.medications).map(m => ({ 药品: m.name, 剂量: m.dosage, 频次: m.frequency, 用法: [m.method, m.timing].filter(Boolean).join('、'), 开始日期: m.startDate || '未记录' })) },
+      { key: 'currentSupplements', label: '当前营养素补充', val: currentRecords(ed.supplements).map(m => ({ 名称: m.name, 剂量: m.dosage, 频次: m.frequency, 用法: m.method || '', 开始日期: m.startDate || '未记录' })) },
+      { key: 'screeningRecords', label: '专项筛查', val: ed.screening.filter(item => selectedScreening.includes(item.key)).map(({ key, ...item }) => item) },
       { key: 'dietSummary',      label: '膳食调查概述', val: dietSummary },
       { key: 'latestVitals',     label: '近期健康数据记录', val: latestVitals },
-    ].filter(s => s.val !== null && s.val !== '' && !(Array.isArray(s.val) && s.val.length === 0))
+    ].filter(s => ['currentMedications', 'currentSupplements', 'screeningRecords'].includes(s.key) || (s.val !== null && s.val !== '' && !(Array.isArray(s.val) && s.val.length === 0)))
   }
 
   const HEALTH_SECTIONS = buildSections()
@@ -15867,7 +15879,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     if (selectedHealthSections.length === 0) return null
     const result = {}
     HEALTH_SECTIONS.forEach(s => {
-      if (selectedHealthSections.includes(s.key)) result[s.key] = s.val
+      if (selectedHealthSections.includes(s.key)) result[s.key] = s.key === 'screeningRecords' && !selectedScreening.length && initialReferral?.attachedHealthInfo?.screeningRecords ? initialReferral.attachedHealthInfo.screeningRecords : s.val
     })
     return Object.keys(result).length ? result : null
   }
@@ -15879,6 +15891,8 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
   }
 
   const handleSubmit = async () => {
+    if (attachmentLoading || attachmentError) { setError(attachmentError || '附带资料正在加载，请稍候'); return }
+    if (selectedHealthSections.includes('screeningRecords') && !selectedScreening.length && !initialReferral?.attachedHealthInfo?.screeningRecords) { setError('请勾选需要附带的专项筛查项目'); return }
     if (!form.reason || (form.referralType === 'internal_collaboration' ? !form.toStaffId : !form.medicalExpertId)) { setError(form.referralType === 'external_medical' ? '外部专家和转介原因不能为空' : '接收人和转介原因不能为空'); return }
     setSaving(true); setError('')
     try {
@@ -16069,6 +16083,8 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
           {HEALTH_SECTIONS.length > 0 && (
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">附带健康档案（供接收方参考）</label>
+              {attachmentLoading && <p>正在读取用药、营养素及专项筛查资料…</p>}
+              {attachmentError && <p role="alert" style={{ color: '#B42318' }}>{attachmentError}</p>}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {HEALTH_SECTIONS.map(s => {
                   const selected = selectedHealthSections.includes(s.key)
@@ -16084,6 +16100,11 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
                   )
                 })}
               </div>
+              {selectedHealthSections.includes('screeningRecords') && <div style={{ maxHeight: 260, overflowY: 'auto', marginTop: 10 }}>
+                {!extraData.screening.length && <p>暂无专项筛查记录，请先在客户档案维护。</p>}
+                {extraData.screening.map(item => <label key={item.key} style={{ display: 'block', padding: 8 }}><input type="checkbox" checked={selectedScreening.includes(item.key)} onChange={e => setSelectedScreening(prev => e.target.checked ? [...prev, item.key] : prev.filter(key => key !== item.key))} /> {item.项目} · {String(item.日期).slice(0, 10)}<div style={{ whiteSpace: 'pre-wrap', marginLeft: 20 }}>{item.报告}　{item.结果}</div></label>)}
+              </div>}
+              {HEALTH_SECTIONS.filter(s => ['currentMedications', 'currentSupplements'].includes(s.key) && selectedHealthSections.includes(s.key)).map(s => <div key={s.key} style={{ padding: 8 }}><b>{s.label}</b><div>{s.val.length ? formatReferralHealthValue(s.val) : '暂无符合条件的当前记录，请核对客户档案。'}</div></div>)}
               {selectedHealthSections.length > 0 && (
                 <div style={{ marginTop: 8, fontSize: 12, color: '#8AA89C' }}>
                   已选 {selectedHealthSections.length} 项，接收方可在转介信中查看
@@ -16478,6 +16499,9 @@ const REFERRAL_HEALTH_LABELS = {
   medications:     '当前用药',
   surgeries:       '手术史',
   recentSymptoms:  '近期症状',
+  currentMedications: '当前用药',
+  currentSupplements: '当前营养素补充',
+  screeningRecords: '专项筛查项目与结果',
   medicationRecords: '用药记录（含状态与时间）',
   supplementRecords: '营养补充记录（含状态与时间）',
 }
