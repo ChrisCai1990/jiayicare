@@ -12307,16 +12307,18 @@ router.get('/patients/:id/chat-images', staffAuth, async (req, res) => {
   try {
     const patient = await chatMaterialPatient(req.staff, req.params.id);
     if (!patient) return res.status(403).json({ success: false, message: '无权查看该客户资料' });
+    const focusId = req.query.messageId ? String(req.query.messageId) : '';
+    if (focusId && !mongoose.isValidObjectId(focusId)) return res.status(400).json({ success: false, message: '会话消息无效' });
     const page = Math.max(1, Math.min(1000, Number.parseInt(req.query.page, 10) || 1));
     const limit = 30;
-    const filter = { user: patient._id, type: 'user', recalled: { $ne: true }, $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }] };
+    const filter = { user: patient._id, type: 'user', recalled: { $ne: true }, materialDisposition: { $ne: 'excluded' }, ...(focusId ? { _id: focusId } : {}), $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }] };
     const rows = await Message.find(filter).select('_id content createdAt recipient imageUrl imageUrls materialDisposition materialDispositionAt').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit + 1).lean();
     const { signStoredUrl } = require('../utils/oss');
     res.json({ success: true, data: rows.slice(0, limit).map(row => ({
       _id: row._id, content: row.content, createdAt: row.createdAt, recipient: row.recipient,
       materialDisposition: row.materialDisposition || '', materialDispositionAt: row.materialDispositionAt || null,
       imageUrls: [...new Set(row.imageUrls?.length ? row.imageUrls : (row.imageUrl ? [row.imageUrl] : []))].map(url => signStoredUrl(url)),
-    })), hasMore: rows.length > limit });
+    })), hasMore: !focusId && rows.length > limit });
   } catch (error) { res.status(500).json({ success: false, message: '会话图片读取失败' }); }
 });
 
@@ -15299,6 +15301,7 @@ const DIETARY_SURVEY_QUESTIONNAIRE_ID = '6a49eab9fc1595013da70645';
 
 const TODO_REVIEW_ROLE = {
   report_plan_conflict: 'healthManager',
+  chat_image_review:   'healthManager',
   report_parse:         'healthManager',
   report_review:        'healthManager',
   outpatient_target_review: 'healthManager',
@@ -15463,6 +15466,32 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
     const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
     const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
+
+    // A chat image remains actionable until the assigned manager explicitly
+    // archives it as a report or marks it as not included. Reading the chat
+    // message must not silently close this task.
+    if (can('chat_image_review')) {
+      const chatImageFilter = {
+        type: 'user', recalled: { $ne: true }, materialDisposition: { $ne: 'excluded' },
+        $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }],
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+      };
+      const chatImages = await Message.find(chatImageFilter).select('_id user content createdAt').populate('user', 'name isDeleted').lean();
+      const sourceIds = chatImages.map(message => String(message._id));
+      const archived = sourceIds.length ? await MedicalReport.find({ sourceChatMessageId: { $in: sourceIds } }).select('sourceChatMessageId').lean() : [];
+      const archivedIds = new Set(archived.map(report => String(report.sourceChatMessageId)));
+      chatImages.forEach(message => {
+        if (!message.user?._id || message.user.isDeleted || archivedIds.has(String(message._id))) return;
+        const createdAt = message.createdAt;
+        todos.push({
+          id: `chatimage_${message._id}`, type: 'chat_image_review', label: '客户会话图片待处理', priority: 2,
+          patientName: message.user.name || '未知', patientId: String(message.user._id),
+          summary: `${(message.content || '').slice(0, 45) || '客户发送了图片'} · 请核对后归入报告审核或标记暂不纳入`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${message.user._id}?tab=reports&chatImageId=${message._id}`,
+        });
+      });
+    }
 
     if (can('annual_plan_customer_response')) {
       const waitingPlans = await AnnualPlan.find({ confirmedAt: null,

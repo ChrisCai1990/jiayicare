@@ -3199,18 +3199,24 @@ export default function PatientDetailPage() {
     try { const res = await staffAPI.getPatientReports(id); setReports(res.data); setStandardReportLoadState('ready') }
     catch { setStandardReportLoadState('error') }
   }
-  const loadChatImages = async (page = 1) => {
+  const loadChatImages = async (page = 1, messageId = '') => {
     setChatImagesLoading(true)
     setChatImagesError('')
     try {
-      const result = await staffAPI.getPatientChatImages(id, page)
+      const result = await staffAPI.getPatientChatImages(id, page, messageId)
       setChatImages(previous => page === 1 ? result.data : [...previous, ...result.data])
       setChatImagesPage(page)
       setChatImagesHasMore(!!result.hasMore)
     } catch (error) { setChatImagesError(error.message || '会话图片读取失败') }
     finally { setChatImagesLoading(false) }
   }
-  useEffect(() => { if (tab === 'reports') loadChatImages(1) }, [id, tab])
+  const focusedChatImageId = new URLSearchParams(location.search).get('chatImageId') || ''
+  useEffect(() => { if (tab === 'reports') loadChatImages(1, focusedChatImageId) }, [id, tab, focusedChatImageId])
+  useEffect(() => {
+    if (tab === 'reports' && focusedChatImageId && !chatImagesLoading) {
+      document.getElementById('customer-chat-images')?.scrollIntoView({ block: 'start' })
+    }
+  }, [tab, focusedChatImageId, chatImagesLoading])
   const archiveChatImage = async messageId => {
     setArchivingChatImageId(String(messageId))
     try {
@@ -3224,9 +3230,10 @@ export default function PatientDetailPage() {
     setReviewingChatImageId(String(messageId))
     try {
       const result = await staffAPI.setChatImageDisposition(id, messageId, action)
-      setChatImages(previous => previous.map(item => String(item._id) === String(messageId)
-        ? { ...item, ...result.data } : item))
-      toast(action === 'exclude' ? '已标记暂不纳入，原会话图片仍保留' : '已恢复待处理')
+      setChatImages(previous => action === 'exclude' ? previous.filter(item => String(item._id) !== String(messageId))
+        : previous.map(item => String(item._id) === String(messageId) ? { ...item, ...result.data } : item))
+      if (action === 'exclude' && focusedChatImageId === String(messageId)) nav(`/patients/${id}?tab=reports`, { replace: true, state: {} })
+      toast(action === 'exclude' ? '已从原始资料区域移除，图片仍保留在客户对话中' : '已恢复待处理')
     } catch (error) { toast('处理失败：' + (error.message || '请稍后重试')) }
     finally { setReviewingChatImageId('') }
   }
@@ -11210,13 +11217,14 @@ export default function PatientDetailPage() {
             </div>
             {reportFocusId && <div role="status" style={{ padding:'9px 12px', marginBottom:12, borderRadius:8, background:'#EAF5F0', color:'#245343', fontSize:13, display:'flex', justifyContent:'space-between', gap:10, alignItems:'center' }}><span>正在查看工作台指定资料：{reports.find(report => String(report._id) === String(reportFocusId))?.title || '资料加载中'}。请以“处理状态”区分待审核、已审核和待确认专病归属。</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => { setReportFocusId(''); setReportTaskFilter('all'); setReportPage(1); nav(location.pathname + '?tab=reports', { replace:true, state:{} }) }}>查看全部资料</button></div>}
             {pendingReportJobId && <div role="status" style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#EAF5F0', color: '#245343', fontSize: 13 }}>文件已由服务器接收，正在后台存储并建档。可以离开此页；返回后会继续查询结果，请勿重复上传。</div>}
-            <div className="card" style={{ marginBottom: 16, padding: 16 }}>
+            <div className="card" id="customer-chat-images" style={{ marginBottom: 16, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <div><strong>客户会话图片</strong><span style={{ color: '#789287', fontSize: 12, marginLeft: 8 }}>客户发送后自动关联到这里；归为报告前请核对内容</span></div>
+                <div><strong>待核对会话图片</strong><span style={{ color: '#789287', fontSize: 12, marginLeft: 8 }}>核对后归入报告审核，或选择暂不纳入；后者仅保留在原对话中</span></div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadChatImages(1)} disabled={chatImagesLoading}>刷新</button>
               </div>
               {chatImagesError && <div role="alert" style={{ color: '#B42318', marginTop: 10 }}>{chatImagesError}</div>}
-              {!chatImagesLoading && !chatImages.length && !chatImagesError && <div style={{ color: '#789287', marginTop: 12 }}>暂无客户会话图片</div>}
+              {focusedChatImageId && <div style={{ marginTop: 10, fontSize: 12, color: '#4A6558' }}>正在查看工作台指定图片。<button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=reports`, { replace: true, state: {} })}>查看全部会话图片</button></div>}
+              {!chatImagesLoading && !chatImages.length && !chatImagesError && <div style={{ color: '#789287', marginTop: 12 }}>{focusedChatImageId ? '指定的会话图片不存在或已撤回' : '暂无客户会话图片'}</div>}
               {chatImages.map(message => {
                 const archived = reports.some(report => String(report.sourceChatMessageId || '') === String(message._id))
                 return <div key={message._id} style={{ borderTop: '1px solid #E6EEE9', paddingTop: 12, marginTop: 12 }}>
@@ -11224,7 +11232,7 @@ export default function PatientDetailPage() {
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{message.imageUrls.map((url, index) => <button type="button" key={`${message._id}-${index}`} onClick={() => setPreviewImageUrl(url)} style={{ border: 0, padding: 0, background: 'none', cursor: 'zoom-in' }} aria-label={`查看会话图片 ${index + 1}`}><img src={url} alt={`客户会话图片 ${index + 1}`} style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8 }} /></button>)}</div>
                   {message.content && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 6 }}>{message.content}</div>}
                   {['healthManager', 'superadmin'].includes(staff?.role) && <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
-                    {archived ? <span style={{ color: '#1E6B50', fontSize: 12 }}>已归入报告</span> : message.materialDisposition === 'excluded' ? <><span style={{ color: '#789287', fontSize: 12 }}>暂不纳入</span><button type="button" className="btn btn-secondary btn-sm" disabled={reviewingChatImageId === String(message._id)} onClick={() => reviewChatImage(message._id, 'restore')}>恢复待处理</button></> : <><button type="button" className="btn btn-secondary btn-sm" disabled={archivingChatImageId === String(message._id) || reviewingChatImageId === String(message._id)} onClick={() => archiveChatImage(message._id)}>{archivingChatImageId === String(message._id) ? '归档中…' : '归入报告审核'}</button><button type="button" className="btn btn-secondary btn-sm" disabled={archivingChatImageId === String(message._id) || reviewingChatImageId === String(message._id)} onClick={() => reviewChatImage(message._id, 'exclude')}>暂不纳入</button></>}
+                    {archived ? <span style={{ color: '#1E6B50', fontSize: 12 }}>已归入报告</span> : <><button type="button" className="btn btn-secondary btn-sm" disabled={archivingChatImageId === String(message._id) || reviewingChatImageId === String(message._id)} onClick={() => archiveChatImage(message._id)}>{archivingChatImageId === String(message._id) ? '归档中…' : '归入报告审核'}</button><button type="button" className="btn btn-secondary btn-sm" disabled={archivingChatImageId === String(message._id) || reviewingChatImageId === String(message._id)} onClick={() => reviewChatImage(message._id, 'exclude')}>暂不纳入</button></>}
                   </div>}
                 </div>
               })}
