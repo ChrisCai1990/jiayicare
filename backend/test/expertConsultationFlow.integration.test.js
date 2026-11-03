@@ -262,4 +262,22 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(todos.length,1);assert.equal(todos[0].label,'专家时间待预约');
     assert.equal((await step('referral',advisorId,payload)).statusCode,200,'repeat submission does not create another case');
     assert.equal(await Case.countDocuments({_id:caseId}),1);
+
+    // Advisor can finalize confirmed expert/time directly, without a manager slot or booking todo.
+    const directSlot = oid();
+    await mongoose.connection.db.collection('staffavailabilities').insertOne({ _id: directSlot, tenantId, staffId: expertStaffId, startAt: new Date(Date.now()+7*86400000), endAt: new Date(Date.now()+7*86400000+30*60000), status: 'available' });
+    const directBody = { directConfirmed: true, partiesConfirmed: true, materialsReviewed: true, members: [{ expertId, slotId: directSlot }] };
+    assert.equal((await step('assign', managerId, directBody)).statusCode,403);
+    assert.equal((await step('assign', advisorId, {...directBody, partiesConfirmed:false})).statusCode,400);
+    const directResult = await step('assign', advisorId, directBody);
+    assert.equal(directResult.statusCode,200,JSON.stringify(directResult.body));
+    assert.equal((await Case.findById(caseId)).status,'expert');
+    assert.equal((await StaffAvailability.findById(directSlot)).status,'booked');
+    const directAfter = await Case.findById(caseId).populate('patientId','name').lean();
+    assert.equal(require('../src/utils/consultationTodos').consultationTodos([directAfter],{_id:managerId,role:'healthManager'}).length,0);
+    assert.equal((await step('assign', advisorId, directBody)).statusCode,409,'cannot dispatch twice');
+    const collision = await Case.create({tenantId,patientId,type:'single',initiationSource:'staff',status:'advisor',managerId,advisorId,plannerId,referralId:prepared._id});
+    caseId=collision._id;
+    assert.equal((await step('assign', advisorId,directBody)).statusCode,409,'booked expert slot cannot be reused');
+    assert.equal((await Case.findById(caseId)).status,'advisor','failed direct booking creates no manager task');
   });

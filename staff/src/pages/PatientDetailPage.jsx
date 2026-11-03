@@ -15948,7 +15948,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         if (draft) { const revised = await staffAPI.resubmitReferral(draft._id, {...payload,expectedUpdatedAt:draft.updatedAt}); draft=revised.data; }
         else { const created = await staffAPI.createReferral(payload); draft=created.data; }
         setSavedConsultationDraft(draft)
-        if (consultationType !== 'mdt') await staffAPI.expertConsultationAction(consultationCaseId,'referral',{referralId:draft._id,submitToManager:true,materialsReviewed})
+        await staffAPI.expertConsultationAction(consultationCaseId,'referral',{referralId:draft._id})
         window.dispatchEvent(new Event('notif-refresh'))
         window.location.assign(`/expert-consultations?caseId=${consultationCaseId}`)
         return
@@ -16186,7 +16186,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           {consultationCaseId && consultationType !== 'mdt' && <label><input type="checkbox" checked={materialsReviewed} onChange={e=>setMaterialsReviewed(e.target.checked)} /> 已审核资料及会诊诉求</label>}
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : initialReferral ? '保存修改并提交' : consultationCaseId ? (consultationType === 'mdt' ? '保存草稿并确认会诊专家' : '提交健管专员安排') : '发送转介'}</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : initialReferral ? '保存修改并提交' : consultationCaseId ? '保存转介信并确认预约安排' : '发送转介'}</button>
         </div>
       </div>
     </div>

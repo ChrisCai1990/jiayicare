@@ -266,7 +266,7 @@ router.post('/staff/:id/referral', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
   if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可关联转介信');
-  if (!(req.body.submitToManager ? ['intake', 'advisor', 'planner'] : ['advisor', 'planner']).includes(effectiveStatus(row))) return fail(res, 409, '专家派发后不能更换转介信');
+  if (!(req.body.submitToManager ? ['intake', 'advisor', 'planner'] : ['intake', 'advisor', 'planner']).includes(effectiveStatus(row))) return fail(res, 409, '专家派发后不能更换转介信');
   if (!valid(req.body?.referralId)) return fail(res, 400, '请先在客户档案中发起转介，再选择该转介记录');
   if (!req.body.submitToManager && id(row.referralId) === id(req.body.referralId)) return res.json({ success: true, data: row });
   const eligibleIds = await eligibleReferralExperts(row);
@@ -342,12 +342,23 @@ router.post('/staff/:id/request-expert-change', staffAuth, async (req, res) => {
 router.post('/staff/:id/assign', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
-  if (!assigned(row, req.staff, 'managerId')) return fail(res, 403, '仅负责健管专员可安排预约并推送转介信');
-  if (row.status !== 'planner') return fail(res, 409, '当前阶段不能派发转介信');
-  if (!row.expertsConfirmedAt || !row.confirmedExpertIds?.length) return fail(res, 409, '请先由健康顾问确认专家名单');
+  const direct = req.body.directConfirmed === true;
+  if (direct) {
+    if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可直接确认预约');
+    if (!['intake', 'advisor', 'planner'].includes(effectiveStatus(row))) return fail(res, 409, '当前阶段不能重复预约或推送');
+    if (req.body.materialsReviewed !== true || req.body.partiesConfirmed !== true) return fail(res, 400, '请确认已审核资料，并已与客户及专家确认具体时间');
+    if (!Array.isArray(req.body.members) || req.body.members.some(x => !x || !valid(x.expertId))) return fail(res, 400, '请选择有效的专家和时间');
+    row.confirmedExpertIds = req.body.members.map(x => x.expertId);
+    row.expertsConfirmedAt = new Date();
+  } else {
+    if (!assigned(row, req.staff, 'managerId')) return fail(res, 403, '仅负责健管专员可安排预约并推送转介信');
+    if (row.status !== 'planner') return fail(res, 409, '当前阶段不能派发转介信');
+    if (!row.expertsConfirmedAt || !row.confirmedExpertIds?.length) return fail(res, 409, '请先由健康顾问确认专家名单');
+  }
   if (row.referralId) {
     const referral = await Referral.findOne({ _id: row.referralId, ...availableReferral(row) });
     if (!referral) return fail(res, 409, '关联转介已结束或变更，请由健康顾问核对');
+    if (direct && (!referral.reason?.trim() || !referral.questionList?.trim())) return fail(res, 400, '请补齐转介原因和需要解决的问题');
     if (referral.medicalExpertId && !req.body?.members?.some(member => id(member.expertId) === id(referral.medicalExpertId)))
       return fail(res, 409, '派发专家须包含现有转介信所选专家');
   } else if (!row.referralPurpose || !row.referralQuestions) {
@@ -386,7 +397,7 @@ router.post('/staff/:id/assign', staffAuth, async (req, res) => {
     const start = new Date(Math.min(...selected.map(x => +x.startAt))), end = new Date(Math.max(...selected.map(x => +x.endAt)));
     if (!advisorSlot || advisorSlot.startAt > start || advisorSlot.endAt < end) return fail(res, 409, 'MDT 须安排健康顾问覆盖全部专家时段');
     row.advisorSlotId = advisorSlot._id;
-  } else {
+  } else if (!direct) {
     const managerSlot = valid(req.body?.managerSlotId) && await StaffAvailability.findOne({ _id: req.body.managerSlotId, staffId: row.managerId, status: 'available' }).lean();
     if (!managerSlot || managerSlot.startAt > selected[0].startAt || managerSlot.endAt < selected[0].endAt)
       return fail(res, 409, '单次咨询须安排健管专员覆盖专家时段');
@@ -405,7 +416,7 @@ router.post('/staff/:id/assign', staffAuth, async (req, res) => {
       reserved.push(slotId);
     }
     row.members = selected.map(member => ({ ...member, dispatchedAt: new Date() })); row.meetingUrl = meetingUrl;
-    row.status = 'expert'; event(row, 'experts_dispatched', req.staff._id);
+    row.status = 'expert'; event(row, direct ? 'advisor_direct_dispatch' : 'experts_dispatched', req.staff._id);
     await row.save();
     caseSaved = true;
     if (order) {

@@ -24,6 +24,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
   const [form, setForm] = useState({})
   const [editingRequest, setEditingRequest] = useState(false)
   const [requestDraft, setRequestDraft] = useState('')
+  const [bookingMode, setBookingMode] = useState('coordinate')
   const [showReferralChange, setShowReferralChange] = useState(false)
   const [members, setMembers] = useState([{ expertId: '', slotId: '' }])
   const [error, setError] = useState('')
@@ -78,7 +79,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
     }).catch(e => setError(e.message))
   }, [])
   async function choose(row) {
-    setSelectedId(id(row)); setError(''); setEditingRequest(false); setRequestDraft(row.clientRequest || ''); setShowReferralChange(false)
+    setSelectedId(id(row)); setBookingMode('coordinate'); setError(''); setEditingRequest(false); setRequestDraft(row.clientRequest || ''); setShowReferralChange(false)
     setForm(row.status === 'team_assignment' && !row.plannerId ? { plannerId: self } : row.referralId ? { referralId: id(row.referralId) } : {})
     setReferrals([]); setExperts([]); setSlots([])
     try { const result = await staffAPI.expertConsultationMaterials(id(row)); setReports(result.data || []) }
@@ -114,15 +115,41 @@ export default function ExpertConsultationsPage({ embedded = false }) {
   const updateMember = (index, key, value) => setMembers(current => current.map((member, i) => i === index ? { ...member, [key]: value, ...(key === 'expertId' ? { slotId: '' } : {}) } : member))
   const slotOptions = staffId => slots.filter(slot => id(slot.staffId) === id(staffId) && (+new Date(slot.endAt) - +new Date(slot.startAt)) >= 15 * 60000 && (+new Date(slot.endAt) - +new Date(slot.startAt)) <= 30 * 60000)
   const referralPicker = <div style={{ padding: 12, border: '1px solid #DDE8E1', borderRadius: 8, margin: '12px 0' }}>
-    <p>选择已写好的转介信，确认资料和专家后，一次提交给健管专员预约。也可直接填写新转介信。</p>
+    <p>选择转介信，确认专家和预约安排。专家及时间已与双方确认的，可直接预约推送。</p>
     <p><a href={`/patients/${id(selected?.patientId)}?tab=referrals&compose=referral&consultationCaseId=${id(selected)}&consultationType=${selected?.type}`}>填写转介信</a></p>
     <label>本次转介<select className="form-input" value={form.referralId || ''} onChange={e => set('referralId')(e.target.value)}><option value="">请选择可履约的外部医疗转介</option>{referrals.map(referral => <option key={id(referral)} value={id(referral)}>{referral.reason} · {referral.medicalExpertSnapshot?.name || '专家'} · {new Date(referral.createdAt).toLocaleDateString('zh-CN')}</option>)}</select></label>
     {!referrals.length && <p>暂无可关联的转介。创建后返回这里，重新打开本咨询事项即可刷新列表。</p>}
     {form.referralId && (() => { const referral = referrals.find(item => id(item) === form.referralId); return referral && <div style={{ padding: 10, background: '#F5F8F6', whiteSpace: 'pre-wrap' }}>原因：{referral.reason}<br/>问题：{referral.questionList || '见转介说明'}<br/>{referral.content}</div> })()}
     {selected?.type === 'mdt' && members.map((member,index)=><label key={index} style={{display:'block'}}>专家 {index+1}<select className="form-input" value={member.expertId} onChange={e=>updateMember(index,'expertId',e.target.value)}><option value="">请选择专家</option>{experts.map(x=><option key={id(x)} value={id(x)}>{x.name}</option>)}</select></label>)}
-    <label style={{display:'block',margin:'12px 0'}}><input type="checkbox" checked={!!form.materialsReviewed} onChange={e=>set('materialsReviewed')(e.target.checked)} /> 已审核本次资料、转介原因和会诊诉求，确认交专员预约</label>
+    <label style={{display:'block',margin:'12px 0'}}><input type="checkbox" checked={!!form.materialsReviewed} onChange={e=>set('materialsReviewed')(e.target.checked)} /> 已审核本次资料、转介原因和会诊诉求</label>
     <p><a href={`/patients/${id(selected?.patientId)}?tab=reports`}>查看／审核来源报告</a></p>
-    <button className="btn btn-primary" disabled={busy || !form.referralId || !form.materialsReviewed} onClick={() => action('referral', { referralId:form.referralId, submitToManager:true, materialsReviewed:form.materialsReviewed, ...(selected?.type === 'mdt' ? {expertIds:members.map(x=>x.expertId)} : {}) })}>提交健管专员安排</button>
+    <label>预约安排<select className="form-input" value={bookingMode} onChange={e => setBookingMode(e.target.value)}><option value="coordinate">尚需协调，交健管专员安排</option><option value="direct">专家和时间均已确认，直接预约</option></select></label>
+    {bookingMode === 'direct' && <>
+      {selected?.type === 'single' && <div style={{ margin: '12px 0' }}><b>已确认时间（北京时间）</b><label style={{ display: 'block' }}>开始<input type="datetime-local" className="form-input" value={form.confirmedStart || ''} onChange={e => { set('confirmedStart')(e.target.value); set('partiesConfirmed')(false); setMembers(current => current.map(m => ({ ...m, slotId: '' }))) }} /></label><label style={{ display: 'block' }}>结束<input type="datetime-local" className="form-input" value={form.confirmedEnd || ''} onChange={e => { set('confirmedEnd')(e.target.value); set('partiesConfirmed')(false); setMembers(current => current.map(m => ({ ...m, slotId: '' }))) }} /></label><button className="btn btn-secondary" onClick={() => {
+        const expertId = id(referrals.find(r => id(r) === form.referralId)?.medicalExpertId || selected.referralId?.medicalExpertId)
+        const person = experts.find(x => id(x) === expertId)
+        const start = new Date(`${form.confirmedStart}:00+08:00`), end = new Date(`${form.confirmedEnd}:00+08:00`)
+        const slot = slotOptions(person?.linkedStaffId).find(s => +new Date(s.startAt) === +start && +new Date(s.endAt) === +end)
+        if (!slot) { setError('该时间没有匹配的可预约排班，可能尚未排班或已被占用。请先维护岗位排班或交专员协调。'); return }
+        setMembers([{ expertId, slotId: id(slot) }]); setError('')
+      }}>匹配已确认时间</button></div>}
+      {(selected?.type === 'mdt' ? members : [{ expertId: id(referrals.find(r => id(r) === form.referralId)?.medicalExpertId || selected?.referralId?.medicalExpertId), slotId: members[0]?.slotId || '' }]).map((member, index) => <label key={index} style={{ display: 'block', margin: '10px 0' }}>已确认专家：{experts.find(x => id(x) === member.expertId)?.name || '请先选择转介信及专家'}<select className="form-input" value={member.slotId} onChange={e => setMembers(current => current.map((m,i) => i === index ? { ...m, expertId: member.expertId, slotId: e.target.value } : m))}><option value="">选择已确认的排班时间（显示日期、开始和结束）</option>{slotOptions(experts.find(x => id(x) === member.expertId)?.linkedStaffId).map(slot => <option key={id(slot)} value={id(slot)}>{time(slot.startAt)} 至 {time(slot.endAt)}</option>)}</select></label>)}
+      <p>系统将占用所选空档；如没有已确认的时间，请先在岗位排班中设置该时段，或交专员协调。</p>
+      {selected?.type === 'mdt' && <label>健康顾问全程参与时间<select className="form-input" value={form.advisorSlotId || ''} onChange={e => set('advisorSlotId')(e.target.value)}><option value="">请选择覆盖全部专家的时段</option>{slots.filter(s => id(s.staffId) === id(selected.advisorId)).map(s => <option key={id(s)} value={id(s)}>{time(s.startAt)} 至 {time(s.endAt)}</option>)}</select></label>}
+      <label><input type="checkbox" checked={!!form.partiesConfirmed} onChange={e => set('partiesConfirmed')(e.target.checked)} /> 已与客户及专家确认上述时间</label>
+    </>}
+    <button className="btn btn-primary" disabled={busy || !form.referralId || !form.materialsReviewed || (bookingMode === 'direct' && (!form.partiesConfirmed || members.some(m => !m.slotId)))} onClick={async () => {
+      if (bookingMode !== 'direct') return action('referral', { referralId:form.referralId, submitToManager:true, materialsReviewed:form.materialsReviewed, ...(selected?.type === 'mdt' ? {expertIds:members.map(x=>x.expertId)} : {}) })
+      setBusy(true); setError('')
+      try {
+        if (id(selected.referralId) !== form.referralId) await staffAPI.expertConsultationAction(selectedId, 'referral', { referralId: form.referralId })
+        const selectedMembers = selected.type === 'mdt' ? members : [{ ...members[0], expertId: id(referrals.find(r => id(r) === form.referralId)?.medicalExpertId || selected.referralId?.medicalExpertId) }]
+        await staffAPI.expertConsultationAction(selectedId, 'assign', { members: selectedMembers, advisorSlotId: form.advisorSlotId, directConfirmed: true, partiesConfirmed: true, materialsReviewed: true })
+        window.dispatchEvent(new Event('notif-refresh'))
+        const items = await load(); const updated = items.find(r => id(r) === selectedId); if (updated) await choose(updated)
+      } catch (e) { setError(e.message) } finally { setBusy(false) }
+    }}>{bookingMode === 'direct' ? '确认时间并直接推送专家' : '提交健管专员协调安排'}</button>
+
   </div>
   return <div className="page-container" style={{ maxWidth: 1100 }}>
     {!embedded && <h1>专家咨询与 MDT</h1>}
@@ -165,8 +192,8 @@ export default function ExpertConsultationsPage({ embedded = false }) {
 
           {selected.status === 'intake' && manager && <div id="consultation-intake-actions"><h4>收集资料</h4>{textField('已核实资料及待补事项', form.summary || '', set('summary'))}<b>关联客户已有报告</b>{reports.map(report => <label key={id(report)} style={{ display: 'block', margin: '6px 0' }}><input type="checkbox" checked={(form.reportIds || []).includes(id(report))} onChange={e => set('reportIds')(e.target.checked ? [...(form.reportIds || []), id(report)] : (form.reportIds || []).filter(value => value !== id(report)))} /> {report.title || '未命名报告'} {report.checkDate ? time(report.checkDate) : ''}</label>)}<button className="btn btn-primary" disabled={busy} onClick={() => action('intake', { summary: form.summary, reportIds: form.reportIds || [] })}>提交给健康顾问</button></div>}
           {!!selected.materialReportIds?.length && <p>本次关联报告：{reports.filter(report => selected.materialReportIds.some(value => id(value) === id(report))).map(report => report.title || '未命名报告').join('、')}</p>}
-          {['intake','advisor'].includes(selected.status) && advisor && <div id="consultation-referral-actions"><h4>审核转介并提交专员预约</h4>{referralPicker}</div>}
-          {selected.status === 'planner' && advisor && <div id="consultation-referral-actions"><button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowReferralChange(value => !value)}>{showReferralChange ? '收起' : '更换关联转介信'}</button>{showReferralChange && referralPicker}</div>}
+          {['intake','advisor'].includes(selected.status) && advisor && <div id="consultation-referral-actions"><h4>审核转介并确认预约安排</h4>{referralPicker}</div>}
+          {selected.status === 'planner' && advisor && <div id="consultation-referral-actions"><button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowReferralChange(value => !value)}>{showReferralChange ? '收起' : '确认时间直接推送／调整转介信'}</button>{showReferralChange && referralPicker}</div>}
           {selected.status === 'planner' && manager && selected.expertsConfirmedAt && <div id="consultation-expert-actions"><h4>安排已确认专家的时间</h4><p>每位专家本次占用约 15–20 分钟；单次咨询须安排健管专员，MDT 须安排健康顾问覆盖会诊时段。没有空档请先到“我的排班”维护。</p>
             {members.map((member, index) => { const expert = experts.find(x => id(x) === member.expertId); return <div key={index} style={{ padding: 10, border: '1px solid #E1EAE6', borderRadius: 8, marginBottom: 8 }}>
               <label>专家 {index + 1} <select className="form-input" value={member.expertId} onChange={e => updateMember(index, 'expertId', e.target.value)}><option value="">请选择专家库人员</option>{experts.filter(x => { if (!selected.confirmedExpertIds?.some(value => id(value) === id(x))) return false; const fee = x[selected.type === 'mdt' ? 'mdtFee' : 'singleConsultationFee']; return x.serviceModes?.includes(selected.type === 'mdt' ? 'mdt' : 'single_consultation') && fee != null && Number(fee) <= 200 }).map(x => <option key={id(x)} value={id(x)}>{x.name} · {x.title}</option>)}</select></label>
