@@ -1,3 +1,4 @@
+import ReferralScreeningList, { ScreeningResult } from '../components/ReferralScreeningList'
 import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -256,7 +257,7 @@ export default function NotificationsPage() {
             {(r, i, group) => (
             <div key={r._id} style={{ padding: '16px', borderBottom: i < group.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                     {r.urgency === 'urgent' && (
                       <span style={{ fontSize: 11, background: '#DC3545', color: '#fff', padding: '1px 8px', borderRadius: 99, fontWeight: 600 }}>紧急</span>
@@ -441,7 +442,7 @@ export default function NotificationsPage() {
             {(r, i, group) => (
             <div key={r._id} style={{ padding: '16px', borderBottom: i < group.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                     <span style={{ fontWeight: 600, fontSize: 15 }}>{r.reason}</span>
                     <span style={{ fontSize: 12, color: r.expertConsultationCaseId ? (r.expertConsultationCaseId.status === 'completed' ? '#22A06B' : '#0077B6') : REFERRAL_STATUS_COLOR[r.status], fontWeight: 600 }}>
@@ -1303,6 +1304,7 @@ function AttachedHealthInfoView({ info }) {
       {expanded && <div style={{ marginTop:9 }}>{sections.map(k => {
         const v = info[k]
         const label = HEALTH_SECTION_LABELS[k] || k
+        if (k === 'screeningRecords' && Array.isArray(v)) return <ReferralScreeningList key={k} records={v} />
         if ((k === 'medicationRecords' || k === 'supplementRecords') && Array.isArray(v)) {
           return <div key={k} style={{ padding: '9px 10px', background: '#EDF5F1', borderRadius: 8, marginBottom: 8 }}><div style={{ color:'#355E4F', fontSize:12, fontWeight:700 }}>{label}</div><HealthRecordList records={v} supplement={k === 'supplementRecords'} /></div>
         }

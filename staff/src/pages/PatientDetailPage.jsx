@@ -1,3 +1,4 @@
+import ReferralScreeningList, { ScreeningResult } from '../components/ReferralScreeningList'
 import { currentRecords, screeningAttachments, diseaseHistoryAttachments } from '../utils/referralAttachments.mjs'
 import checkupKeyMetrics from '../../../shared/checkupKeyMetrics.cjs'
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
@@ -15745,7 +15746,9 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
   const [extraData, setExtraData] = useState({ medications: [], supplements: [], healthRecords: [], screening: [] })
   const [attachmentLoading, setAttachmentLoading] = useState(true)
   const [attachmentError, setAttachmentError] = useState('')
-  const [selectedScreening, setSelectedScreening] = useState([])
+  const savedScreening = (initialReferral?.attachedHealthInfo?.screeningRecords || []).map((item,index) => ({ ...item, key:`saved:${index}` }))
+  const screeningChoices = [...savedScreening, ...extraData.screening.filter(item => !savedScreening.some(saved => saved.项目 === item.项目 && saved.日期 === item.日期 && saved.报告 === item.报告 && saved.结果 === item.结果))]
+  const [selectedScreening, setSelectedScreening] = useState(() => savedScreening.map(item => item.key))
   const [selectedDiseaseHistory, setSelectedDiseaseHistory] = useState([])
   const diseaseHistory = diseaseHistoryAttachments(patientUser)
   const [saving, setSaving] = useState(false)
@@ -15874,7 +15877,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
       { key: 'diseaseHistory', label: '疾病史与当前状态', val: diseaseHistory.filter((_, index) => selectedDiseaseHistory.includes(index)) },
       { key: 'currentMedications', label: '当前用药', val: currentRecords(ed.medications).map(m => ({ 药品: m.name, 剂量: m.dosage, 频次: m.frequency, 用法: [m.method, m.timing].filter(Boolean).join('、'), 开始日期: m.startDate || '未记录' })) },
       { key: 'currentSupplements', label: '当前营养素补充', val: currentRecords(ed.supplements).map(m => ({ 名称: m.name, 剂量: m.dosage, 频次: m.frequency, 用法: m.method || '', 开始日期: m.startDate || '未记录' })) },
-      { key: 'screeningRecords', label: '专项筛查', val: ed.screening.filter(item => selectedScreening.includes(item.key)).map(({ key, ...item }) => item) },
+      { key: 'screeningRecords', label: '专项筛查', val: screeningChoices.filter(item => selectedScreening.includes(item.key)).map(({ key, ...item }) => item) },
       { key: 'dietSummary',      label: '膳食调查概述', val: dietSummary },
       { key: 'latestVitals',     label: '近期健康数据记录', val: latestVitals },
     ].filter(s => ['medicalHistory', 'specialDiseases', 'diseaseHistory', 'currentMedications', 'currentSupplements', 'screeningRecords'].includes(s.key) || (s.val !== null && s.val !== '' && !(Array.isArray(s.val) && s.val.length === 0)))
@@ -15892,7 +15895,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     if (selectedHealthSections.length === 0) return null
     const result = Object.fromEntries(Object.entries(initialReferral?.attachedHealthInfo || {}).filter(([key]) => selectedHealthSections.includes(key)))
     HEALTH_SECTIONS.forEach(s => {
-      if (selectedHealthSections.includes(s.key)) result[s.key] = s.key === 'diseaseHistory' && !selectedDiseaseHistory.length && initialReferral?.attachedHealthInfo?.diseaseHistory ? initialReferral.attachedHealthInfo.diseaseHistory : s.key === 'screeningRecords' && !selectedScreening.length && initialReferral?.attachedHealthInfo?.screeningRecords ? initialReferral.attachedHealthInfo.screeningRecords : s.val
+      if (selectedHealthSections.includes(s.key)) result[s.key] = s.key === 'diseaseHistory' && !selectedDiseaseHistory.length && initialReferral?.attachedHealthInfo?.diseaseHistory ? initialReferral.attachedHealthInfo.diseaseHistory : s.val
     })
     return Object.keys(result).length ? result : null
   }
@@ -15906,7 +15909,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
   const handleSubmit = async () => {
     if (selectedHealthSections.includes('diseaseHistory') && !selectedDiseaseHistory.length && !initialReferral?.attachedHealthInfo?.diseaseHistory) { setError('请选择需要附带的疾病史条目；暂无资料时可取消该项'); return }
     if (attachmentLoading || attachmentError) { setError(attachmentError || '附带资料正在加载，请稍候'); return }
-    if (selectedHealthSections.includes('screeningRecords') && !selectedScreening.length && !initialReferral?.attachedHealthInfo?.screeningRecords) { setError('请勾选需要附带的专项筛查项目'); return }
+    if (selectedHealthSections.includes('screeningRecords') && !selectedScreening.length) { setError('请勾选需要附带的专项筛查项目'); return }
     if (!form.reason || (form.referralType === 'internal_collaboration' ? !form.toStaffId : !form.medicalExpertId)) { setError(form.referralType === 'external_medical' ? '外部专家和转介原因不能为空' : '接收人和转介原因不能为空'); return }
     setSaving(true); setError('')
     try {
@@ -16120,8 +16123,8 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
               </div>}
               {HEALTH_SECTIONS.filter(s => ['medicalHistory', 'specialDiseases'].includes(s.key) && selectedHealthSections.includes(s.key)).map(s => <div key={s.key} style={{ padding: 8 }}><b>{s.label}</b><div>{s.val ? formatReferralHealthValue(s.val) : '暂无历史记录，不代表没有相关病史。'}</div></div>)}
               {selectedHealthSections.includes('screeningRecords') && <div style={{ maxHeight: 260, overflowY: 'auto', marginTop: 10 }}>
-                {!extraData.screening.length && <p>暂无专项筛查记录，请先在客户档案维护。</p>}
-                {extraData.screening.map(item => <label key={item.key} style={{ display: 'block', padding: 8 }}><input type="checkbox" checked={selectedScreening.includes(item.key)} onChange={e => setSelectedScreening(prev => e.target.checked ? [...prev, item.key] : prev.filter(key => key !== item.key))} /> {item.项目} · {String(item.日期).slice(0, 10)}<div style={{ whiteSpace: 'pre-wrap', marginLeft: 20 }}>{item.报告}　{item.结果}</div></label>)}
+                {!screeningChoices.length && <p>暂无专项筛查记录，请先在客户档案维护。</p>}
+                {screeningChoices.map(item => <div key={item.key} style={{ padding:10, borderBottom:'1px solid #DCE8E3', overflowWrap:'anywhere' }}><label><input type="checkbox" checked={selectedScreening.includes(item.key)} onChange={e => setSelectedScreening(prev => e.target.checked ? [...prev, item.key] : prev.filter(key => key !== item.key))} /> {item.项目} · {String(item.日期).slice(0, 10)}{item.key.startsWith('saved:') ? '（原已提交）' : ''}</label><ScreeningResult item={item} /></div>)}
               </div>}
               {HEALTH_SECTIONS.filter(s => ['currentMedications', 'currentSupplements'].includes(s.key) && selectedHealthSections.includes(s.key)).map(s => <div key={s.key} style={{ padding: 8 }}><b>{s.label}</b><div>{s.val.length ? formatReferralHealthValue(s.val) : '暂无符合条件的当前记录，请核对客户档案。'}</div></div>)}
               {selectedHealthSections.length > 0 && (
@@ -16596,6 +16599,7 @@ function AttachedHealthInfoView({ info }) {
       {expanded && <div style={{ marginTop:9 }}>{sections.map(k => {
         const v = info[k]
         const label = REFERRAL_HEALTH_LABELS[k] || k
+        if (k === 'screeningRecords' && Array.isArray(v)) return <ReferralScreeningList key={k} records={v} />
         if ((k === 'medicationRecords' || k === 'supplementRecords') && Array.isArray(v)) {
           return <div key={k} style={{ padding:'9px 10px', background:'#EDF5F1', borderRadius:8, marginBottom:8 }}><div style={{ color:'#355E4F', fontSize:12, fontWeight:700 }}>{label}</div><ReferralHealthRecordList records={v} supplement={k === 'supplementRecords'} /></div>
         }
