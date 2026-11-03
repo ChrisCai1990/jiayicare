@@ -1,3 +1,4 @@
+import ExpertConsultationTasksPanel from '../components/ExpertConsultationTasksPanel'
 import { isServiceActionable } from '../utils/workbenchReminder.mjs'
 import CheckupProgressPanel from '../components/CheckupProgressPanel'
 import GeoReviewPanel, { canShowGeoReview } from '../components/GeoReviewPanel'
@@ -68,7 +69,7 @@ export default function HomePage() {
   const [advisorArea, setAdvisorArea] = useState('todo')
   const [advisorTodoView, setAdvisorTodoView] = useState(() => {
     const target = new URLSearchParams(location.search).get('todo')
-    return ['all', 'followup', 'service'].includes(target) ? target : 'all'
+    return ['all', 'followup', 'service', 'expert'].includes(target) ? target : 'all'
   })
   const [roleTodoView, setRoleTodoView] = useState('all')
   const [geoCount, setGeoCount] = useState('加载中')
@@ -76,7 +77,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const target = new URLSearchParams(location.search).get('todo')
-    if (['all', 'followup', 'service'].includes(target)) {
+    if (['all', 'followup', 'service', 'expert'].includes(target)) {
       setAdvisorArea('todo')
       setAdvisorTodoView(target)
       setRoleTodoView(target)
@@ -137,7 +138,7 @@ export default function HomePage() {
         </button>
       </div>
 
-      {workbenchReminder.error && <div role="alert" className="workbench-reminder-error">部分待办更新失败，提醒保留上次结果，不代表没有任务。<button className="btn btn-secondary btn-sm" onClick={workbenchReminder.refresh}>重新检查</button></div>}
+      {workbenchReminder.error && <div role="alert" className="workbench-reminder-error">部分待办未能刷新{workbenchReminder.failedSources?.length ? `（${workbenchReminder.failedSources.join('、')}）` : ''}，已保留上次结果。<button className="btn btn-secondary btn-sm" onClick={workbenchReminder.refresh}>刷新待办</button></div>}
       {/* 数据卡片 */}
       <div className="stats-grid home-stats">
         <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today} /> : '-'} color="#0077B6" compact />
@@ -156,7 +157,7 @@ export default function HomePage() {
       {hasWorkbenchNav && advisorArea === 'todo' && <div className="advisor-workbench-filter" role="group" aria-label="待我处理筛选">
         {[
           ['all', '全部待办'],
-          ['review', '审核与异常'],
+          ['review', '审核与异常'], ['expert', '专家咨询与 MDT'],
           ...(staff?.role === 'healthManager' ? [['checkup', '体检服务'], ['appointment', '预约服务']] : []),
           ['service', '服务事项'], ['followup', '随访'],
           ...(canShowGeoReview(staff) ? [['geo', `GEO 审核 · ${geoCount}`]] : []),
@@ -256,7 +257,8 @@ export default function HomePage() {
       {staff?.role === 'familyDoctor' && <div style={{ display: showWorkbenchView('progress', 'medical') ? undefined : 'none' }}><MedicalAssistProgressPanel /></div>}
 
       {/* AI 待审核任务面板 */}
-      <div style={{ display: showWorkbenchView('todo', 'review') ? undefined : 'none' }}><AiTodosPanel hideGeo={hasWorkbenchNav && canShowGeoReview(staff)} /></div>
+      <div style={{ display: showWorkbenchView('todo', 'expert') ? undefined : 'none' }}><ExpertConsultationTasksPanel /></div>
+      <div style={{ display: showWorkbenchView('todo', 'review') ? undefined : 'none' }}><AiTodosPanel hideConsultations hideGeo={hasWorkbenchNav && canShowGeoReview(staff)} /></div>
 
       {/* 待随访任务面板 */}
       <div style={{ display: showWorkbenchView('todo', 'followup') ? undefined : 'none' }}><FollowUpsPanel /></div>

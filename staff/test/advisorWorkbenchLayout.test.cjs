@@ -37,7 +37,7 @@ async function mount(role) {
     '../../../shared/orderShipping.cjs': { shippingProgress: () => '' },
   }
   for (const name of [
-    'GeoReviewPanel', 'CheckupProgressPanel', 'ConsultationTodosPanel', 'OrderShipmentsPanel', 'InventoryDispatchPanel',
+    'ExpertConsultationTasksPanel', 'GeoReviewPanel', 'CheckupProgressPanel', 'ConsultationTodosPanel', 'OrderShipmentsPanel', 'InventoryDispatchPanel',
     'AiTodosPanel', 'ClinicalStandardReviewPanel', 'SymptomTodosPanel', 'FollowUpsPanel',
     'ServiceTasksPanel', 'MedicalAssistClosureAction', 'ServiceSupervisionPanel',
     'MedicalAssistProgressPanel', 'MonthlyReviewWorkbench', 'NutritionAssessmentPanel', 'Pagination',
@@ -101,7 +101,12 @@ for (const role of ['healthPlanner', 'healthManager', 'nutritionist', 'medicalAs
       assert.equal(view.visible('ServiceTasksPanel'), true)
       assert.equal(view.visible('AiTodosPanel'), true)
       assert.equal(view.visible('FollowUpsPanel'), true)
+      await view.click('专家咨询与 MDT')
+      assert.equal(view.visible('ExpertConsultationTasksPanel'), true)
+      assert.equal(view.visible('AiTodosPanel'), false)
+      assert.equal(view.visible('FollowUpsPanel'), false)
       await view.click('审核与异常')
+      assert.equal(view.visible('ExpertConsultationTasksPanel'), false)
       assert.equal(view.visible('AiTodosPanel'), true)
       assert.equal(view.visible('ServiceTasksPanel'), false)
       await view.click('服务事项')

@@ -1,6 +1,6 @@
 // Old snapshots retain their original text; only unambiguous numeric rows become columns.
 export function screeningView(item) {
-  if (Array.isArray(item.结果明细)) return { rows:item.结果明细, notes:[], findings:item.检查所见 || '', conclusion:item.报告结论 || '' }
+  if (Array.isArray(item.结果明细)) return { rows:item.结果明细, notes:item.原文补充 || [], findings:item.检查所见 || '', conclusion:item.报告结论 || '' }
   const rows = [], notes = []
   for (const line of String(item.结果 ?? '').split(/[；\n]+/).filter(s => s.trim())) {
     const parts = line.split(/参考范围[：:]/)
@@ -49,4 +49,38 @@ export function screeningStatus(row) {
     return { abnormal:!valid, label:valid ? '' : ['<','<=','≤'].includes(op) ? '↑ 偏高' : '↓ 偏低', source:'与本报告参考范围比较' }
   }
   return unknown
+}
+
+// Classify presentation only; original snapshots and report values remain unchanged.
+const examinationName = value => /超声|彩超|B超|心电图|胃镜|肠镜|内镜|磁共振|骨密度|肺功能|眼底|[Xx]线|(?:^|[^a-z])(?:CT|MRI|DXA|ECG)(?:$|[^a-z])/i.test(String(value || ''))
+function rowCategory(row, item) {
+  if (row.itemType === 'imaging' || row.itemType === 'data') return 'exam'
+  if (row.itemType === 'lab') return 'lab'
+  if (row.itemType === 'medication') return 'other'
+  if (row.findings || examinationName(row.name) || examinationName(item.项目)) return 'exam'
+  if (row.referenceRange && row.value !== '' && row.value != null) return 'lab'
+  if (row.conclusion) return 'exam'
+  return 'other'
+}
+export function groupScreenings(records = []) {
+  const groups = [{ key:'lab', label:'检验', items:[] }, { key:'exam', label:'检查', items:[] }, { key:'other', label:'其他资料', items:[] }]
+  for (const item of records) {
+    const view = screeningView(item)
+    const buckets = { lab:[], exam:[], other:[] }
+    view.rows.forEach(row => buckets[rowCategory(row,item)].push(row))
+    const narrative = !!(view.findings || view.conclusion)
+    const noteCategory = narrative || examinationName(item.项目) || examinationName(item.报告) ? 'exam' : 'other'
+    // No structured evidence: keep the entire original record visible.
+    if (!view.rows.length) {
+      groups.find(group => group.key === noteCategory).items.push(item)
+      continue
+    }
+    for (const group of groups) {
+      const notes = group.key === noteCategory ? view.notes : []
+      if (!buckets[group.key].length && !(group.key === 'exam' && narrative) && !notes.length) continue
+      group.items.push({ ...item, 结果明细:buckets[group.key], 原文补充:notes,
+        检查所见:group.key === 'exam' ? view.findings : '', 报告结论:group.key === 'exam' ? view.conclusion : '' })
+    }
+  }
+  return groups.filter(group => group.items.length)
 }

@@ -59,7 +59,10 @@ export default function WorkbenchReminder({ children, disabled = false }) {
     return previous.current
   }, getToken(), {}, !disabled)
   useEffect(() => { if (!disabled) { resource.refresh(); ai.refresh() } }, [location.pathname, location.search, disabled])
+  const sourceLabels = { followup:'随访', service:'服务事项', monthly:'阶段复盘', coordination:'服务督办', orders:'订单', standards:'临床标准', inventory:'物资', checkup:'体检', consultation:'官网咨询', shipments:'寄送', nutrition:'营养评估', geo:'内容审核' }
+  const failedSources = Object.entries(resource.data).filter(([, value]) => value.error).map(([key]) => sourceLabels[key] || '其他待办')
+  if (ai.error) failedSources.push('审核及专家咨询')
   const state = reminderState(resource.data)
   const pending = state.pending || ai.data.some(row => (staff?.role === 'superadmin' || row.type !== 'assignment_attention') && !(canShowGeoReview(staff) && row.type === 'geo_content_review'))
-  return <Context.Provider value={{ pending: !disabled && pending, error: !disabled && (state.error || !!resource.error || !!ai.error), loading: !disabled && (resource.loading || ai.loading), refresh: () => { resource.refresh(); ai.refresh() } }}>{children}</Context.Provider>
+  return <Context.Provider value={{ failedSources, pending: !disabled && pending, error: !disabled && (state.error || !!resource.error || !!ai.error), loading: !disabled && (resource.loading || ai.loading), refresh: () => { resource.refresh(); ai.refresh() } }}>{children}</Context.Provider>
 }

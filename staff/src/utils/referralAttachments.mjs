@@ -18,12 +18,12 @@ export function screeningAttachments(items = [], reports = []) {
     机构: item.institution || '',
     报告: item.reportTitle || '',
     结果: (item.matchedItems?.length ? item.matchedItems : [item]).map(resultText).filter(Boolean).join('；') || '暂无结果',
-    结果明细: (item.matchedItems?.length ? item.matchedItems : [item]).map(r => ({ name:r.name || item.itemLabel || '', value:r.value ?? '', unit:r.unit || '', referenceRange:r.referenceRange || '', status:r.status || 'unknown', findings:r.findings || '', conclusion:r.conclusion || r.diagnosis || '' })),
+    结果明细: (item.matchedItems?.length ? item.matchedItems : [item]).map(r => ({ name:r.name || item.itemLabel || '', itemType:r.itemType || '', value:r.value ?? '', unit:r.unit || '', referenceRange:r.referenceRange || '', status:r.status || 'unknown', findings:r.findings || '', conclusion:r.conclusion || r.diagnosis || '' })),
     备注: item.note || '',
   }));
   reports.filter(r => !covered.has(String(r._id)) && (r.screeningL1 || r.screeningCategory || r.screeningL2 || r.screeningL3))
     .forEach(r => result.push({ key: `report:${r._id}`, 来源报告编号: String(r._id), 来源审核状态:r.audit_status || '', 项目: r.screeningL3 || r.title || '专项筛查',
-      结果明细: (r.reportItems || []).map(i => ({ name:i.name || '', value:i.value ?? '', unit:i.unit || '', referenceRange:i.referenceRange || '', status:i.status || 'unknown', findings:i.findings || '', conclusion:i.conclusion || i.diagnosis || '' })), 检查所见:r.examDescription || '', 报告结论:r.examConclusion || '',
+      结果明细: (r.reportItems || []).map(i => ({ name:i.name || '', itemType:i.itemType || '', value:i.value ?? '', unit:i.unit || '', referenceRange:i.referenceRange || '', status:i.status || 'unknown', findings:i.findings || '', conclusion:i.conclusion || i.diagnosis || '' })), 检查所见:r.examDescription || '', 报告结论:r.examConclusion || '',
       日期: r.checkDate || '未记录', 机构: r.institution || r.hospital || '', 报告: r.title || '',
       结果: [r.examDescription, r.examConclusion, ...(r.reportItems || []).map(resultText)].filter(Boolean).join('；') || '暂无结果' }));
   return result;
