@@ -50,6 +50,23 @@ test('coverage audit fills a missing ultrasound diagnosis on the existing exam',
   assert.equal(reviewed[0].diagnosis, '');
 });
 
+test('high-resolution retry enriches a page without replacing existing clinical text', () => {
+  const first = [
+    { name: '甲状腺超声', sourcePage: 1, itemType: 'imaging', findings: '右叶见低回声结节。', diagnosis: '拟 C-TIRADS 3类', conclusion: '拟 C-TIRADS 3类' },
+    { name: '颈动脉超声', sourcePage: 1, itemType: 'imaging', findings: '', diagnosis: '' },
+  ];
+  const retry = [
+    { name: '甲状腺超声', sourcePage: 1, itemType: 'imaging', findings: '右叶见结节。', diagnosis: '' },
+    { name: '颈动脉超声', sourcePage: 1, itemType: 'imaging', findings: '双侧颈动脉内膜光滑。', diagnosis: '' },
+  ];
+  const merged = mergeCoverageAuditItems(first, retry);
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].findings, first[0].findings);
+  assert.equal(merged[0].diagnosis, first[0].diagnosis);
+  assert.equal(merged[1].findings, retry[1].findings);
+  assert.equal(first[1].findings, '');
+});
+
 test('explicit normal wording changes unknown only without conflicting evidence', () => {
   assert.equal(normalizeExplicitNormalStatus({ status: 'unknown', diagnosis: '未见异常' }).status, 'normal');
   assert.equal(normalizeExplicitNormalStatus({ status: 'unknown', findings: '巩膜黄染', diagnosis: '未见异常' }).status, 'unknown');
