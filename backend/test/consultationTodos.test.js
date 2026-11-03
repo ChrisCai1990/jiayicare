@@ -16,3 +16,12 @@ test('confirmed referral reaches only assigned manager; booking removes pending 
   assert.equal(consultationTodos([{...row,expertsConfirmedAt:null}],manager).length,0);
   assert.equal(consultationTodos([{...row,expertsConfirmedAt:null}],{_id:'advisor',role:'familyDoctor'}).length,1);
 });
+
+test('dispatched experts each get a scoped reply task, removed only after their own reply',()=>{
+ const row={_id:'c',status:'expert',patientId:{_id:'p',name:'测试'},members:[{staffId:'a'},{staffId:'b',repliedAt:new Date()}]};
+ const staff={_id:'a',role:'specialist'};
+ const todos=consultationTodos([row],staff);
+ assert.equal(todos.length,1);assert.equal(visibleTodo(todos[0],staff,()=>false),true);
+ assert.equal(consultationTodos([row],{_id:'b',role:'specialist'}).length,0);
+ assert.equal(consultationTodos([row],{_id:'other',role:'specialist'}).length,0);
+});
