@@ -78,6 +78,7 @@ function formatTime(date) {
 const PAGE_SIZE = 5
 const TODO_GROUPS = [
   { key: 'all', label: '全部' },
+  { key: 'consultation', label: '专家咨询预约', types: ['expert_consultation_task'] },
   { key: 'report', label: '报告与资料', types: ['chat_image_review','report_parse','report_review','outpatient_target_review','report_interpretation','report_followup_review','health_course_review','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['annual_execution_review','annual_plan_input_review','annual_plan_customer_response','lifestyle_generate','trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
   { key: 'risk', label: '风险与异常', types: ['package_history_review','assignment_attention','risk_review','risk_event_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },

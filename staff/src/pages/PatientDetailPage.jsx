@@ -14275,6 +14275,8 @@ export default function PatientDetailPage() {
           patientName={user.name}
           patientUser={user}
           staffList={staffList}
+          consultationCaseId={new URLSearchParams(location.search).get('consultationCaseId') || ''}
+          consultationType={new URLSearchParams(location.search).get('consultationType') || ''}
           initialReferral={editingReferral}
           defaultReferralType={new URLSearchParams(location.search).get('compose') === 'referral' ? 'external_medical' : 'internal_collaboration'}
           onClose={() => { setShowReferralModal(false); setEditingReferral(null); if (location.state?.editReferral) nav(location.pathname + location.search, { replace:true, state:{} }) }}
@@ -15562,7 +15564,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
           )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button className="btn btn-secondary" onClick={onClose} disabled={saving && !serverAccepted}>{serverAccepted ? '关闭弹窗' : '取消'}</button>
-            <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
               {saving ? (uploadProgress < 100 ? `上传中 ${uploadProgress}%` : '处理中...') : '确认上传'}
             </button>
           </div>
@@ -15756,8 +15758,10 @@ const ROLE_LABEL_MAP = {
   tcmDoctor:'中医师', specialist:'专科医师', healthPlanner:'健康规划师', superadmin:'超级管理员',
 }
 
-function ReferralModal({ patientId, patientName, patientUser, staffList, initialReferral, defaultReferralType = 'internal_collaboration', onClose, onSaved }) {
+function ReferralModal({ patientId, patientName, patientUser, staffList, initialReferral, consultationCaseId = '', consultationType = '', defaultReferralType = 'internal_collaboration', onClose, onSaved }) {
   const toast = useToast()
+  const [savedConsultationDraft,setSavedConsultationDraft] = useState(null)
+  const [materialsReviewed,setMaterialsReviewed] = useState(false)
   const diseaseOptions = Array.isArray(patientUser?.diseaseRecords) ? patientUser.diseaseRecords : []
   const [form, setForm] = useState(() => ({ referralType:initialReferral?.referralType || defaultReferralType, toStaffId:initialReferral?.toStaffId?._id || initialReferral?.toStaffId || '', medicalExpertId:initialReferral?.medicalExpertId?._id || initialReferral?.medicalExpertId || '', reason:initialReferral?.reason || '', content:initialReferral?.content || '', urgency:initialReferral?.urgency || 'normal', linkedDiseaseRecordIds: initialReferral?.linkedDiseaseRecordIds?.length ? initialReferral.linkedDiseaseRecordIds : initialReferral?.linkedDiseaseRecordId ? [initialReferral.linkedDiseaseRecordId] : [], linkedDiseaseRecordId:initialReferral?.linkedDiseaseRecordId || '', linkedDiseaseName:initialReferral?.linkedDiseaseName || '', referralPurpose:initialReferral?.referralPurpose || '', questionList:initialReferral?.questionList || '', requiresConclusion:initialReferral?.requiresConclusion !== false }))
   const [medicalResources, setMedicalResources] = useState({ institutions:[], departments:[], experts:[] })
@@ -15928,14 +15932,25 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
   }
 
   const handleSubmit = async () => {
+    if (consultationCaseId && consultationType !== 'mdt' && !materialsReviewed) { setError('请确认已审核本次转介资料与会诊诉求'); return }
     if (selectedHealthSections.includes('diseaseHistory') && !selectedDiseaseHistory.length && !initialReferral?.attachedHealthInfo?.diseaseHistory) { setError('请选择需要附带的疾病史条目；暂无资料时可取消该项'); return }
     if (attachmentLoading || attachmentError) { setError(attachmentError || '附带资料正在加载，请稍候'); return }
     if (selectedHealthSections.includes('screeningRecords') && !selectedScreening.length) { setError('请勾选需要附带的专项筛查项目'); return }
     if (!form.reason || (form.referralType === 'internal_collaboration' ? !form.toStaffId : !form.medicalExpertId)) { setError(form.referralType === 'external_medical' ? '外部专家和转介原因不能为空' : '接收人和转介原因不能为空'); return }
     setSaving(true); setError('')
     try {
-      const payload = { patientId, ...form, expectedUpdatedAt: initialReferral?.updatedAt, attachedHealthInfo: buildAttachedHealthInfo() }
+      const payload = { patientId, ...form, consultationCaseId, expectedUpdatedAt: initialReferral?.updatedAt, attachedHealthInfo: buildAttachedHealthInfo() }
       if (initialReferral) await staffAPI.resubmitReferral(initialReferral._id, payload)
+      else if (consultationCaseId) {
+        let draft = savedConsultationDraft
+        if (draft) { const revised = await staffAPI.resubmitReferral(draft._id, {...payload,expectedUpdatedAt:draft.updatedAt}); draft=revised.data; }
+        else { const created = await staffAPI.createReferral(payload); draft=created.data; }
+        setSavedConsultationDraft(draft)
+        if (consultationType !== 'mdt') await staffAPI.expertConsultationAction(consultationCaseId,'referral',{referralId:draft._id,submitToManager:true,materialsReviewed})
+        window.dispatchEvent(new Event('notif-refresh'))
+        window.location.assign(`/expert-consultations?caseId=${consultationCaseId}`)
+        return
+      }
       else await staffAPI.createReferral(payload)
       onSaved()
     } catch (err) { setError(err.message) }
@@ -16145,7 +16160,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
               {HEALTH_SECTIONS.filter(s => ['medicalHistory', 'specialDiseases'].includes(s.key) && selectedHealthSections.includes(s.key)).map(s => <div key={s.key} style={{ padding: 8 }}><b>{s.label}</b><div>{s.val ? formatReferralHealthValue(s.val) : '暂无历史记录，不代表没有相关病史。'}</div></div>)}
               {selectedHealthSections.includes('screeningRecords') && <div style={{ maxHeight: 260, overflowY: 'auto', marginTop: 10 }}>
                 {!screeningChoices.length && <p>暂无专项筛查记录，请先在客户档案维护。</p>}
-                {screeningChoices.map(item => <div key={item.key} style={{ padding:10, borderBottom:'1px solid #DCE8E3', overflowWrap:'anywhere' }}><label><input type="checkbox" checked={selectedScreening.includes(item.key)} onChange={e => setSelectedScreening(prev => e.target.checked ? [...prev, item.key] : prev.filter(key => key !== item.key))} /> {item.项目} · {String(item.日期).slice(0, 10)}{item.key.startsWith('saved:') ? '（原已提交）' : ''}</label><ScreeningResult item={item} /></div>)}
+                {screeningChoices.map(item => <div key={item.key} style={{ padding:10, borderBottom:'1px solid #DCE8E3', overflowWrap:'anywhere' }}><label><input type="checkbox" checked={selectedScreening.includes(item.key)} onChange={e => setSelectedScreening(prev => e.target.checked ? [...prev, item.key] : prev.filter(key => key !== item.key))} /> {item.项目} · {String(item.日期).slice(0, 10)}{item.key.startsWith('saved:') ? '（原已提交）' : ''}</label>{item.来源审核状态 && item.来源审核状态 !== 'audited' && <div style={{color:'#B42318'}}>来源报告未审核通过 · <a href={`/patients/${patientId}?tab=reports&reportId=${item.来源报告编号}`} target="_blank" rel="noreferrer">打开报告审核</a></div>}<ScreeningResult item={item} /></div>)}
               </div>}
               {HEALTH_SECTIONS.filter(s => ['currentMedications', 'currentSupplements'].includes(s.key) && selectedHealthSections.includes(s.key)).map(s => <div key={s.key} style={{ padding: 8 }}><b>{s.label}</b><div>{s.val.length ? formatReferralHealthValue(s.val) : '暂无符合条件的当前记录，请核对客户档案。'}</div></div>)}
               {selectedHealthSections.length > 0 && (
@@ -16168,7 +16183,8 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : initialReferral ? '保存修改并提交' : '发送转介'}</button>
+          {consultationCaseId && consultationType !== 'mdt' && <label><input type="checkbox" checked={materialsReviewed} onChange={e=>setMaterialsReviewed(e.target.checked)} /> 已审核资料及会诊诉求</label>}
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : initialReferral ? '保存修改并提交' : consultationCaseId ? (consultationType === 'mdt' ? '保存草稿并确认会诊专家' : '提交健管专员安排') : '发送转介'}</button>
         </div>
       </div>
     </div>

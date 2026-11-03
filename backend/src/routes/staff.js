@@ -8358,9 +8358,20 @@ router.post('/referrals', staffAuth, async (req, res) => {
     expert = await MedicalExpert.findOne({ _id: medicalExpertId, status: 'active' }).populate('institutionId', 'name level region').populate('departmentId', 'name campus').lean();
     if (!expert) return res.status(400).json({ success: false, message: '所选专家不存在或已停用' });
   }
+  let consultationDraft = null;
+  if (req.body.consultationCaseId) {
+    consultationDraft = await require('../models/ExpertConsultationCase').findOne({ _id:req.body.consultationCaseId, patientId });
+    if (!consultationDraft || (req.staff.role !== 'superadmin' && String(consultationDraft.advisorId) !== String(req.staff._id))) return res.status(403).json({ success:false, message:'仅本次健康顾问可准备咨询转介信' });
+    if (!['intake','advisor','planner'].includes(consultationDraft.status) || referralType !== 'external_medical') return res.status(409).json({ success:false,message:'当前咨询阶段不可准备转介信' });
+  }
+  if (!consultationDraft && referralType === 'external_medical') {
+    const issue = await require('../utils/consultationMaterialGate')({ patientId }, { attachedHealthInfo });
+    if (issue) return res.status(409).json({success:false,message:issue});
+  }
   const resolvedToStaffId = referralType === 'external_medical' ? (expert?.linkedStaffId || null) : toStaffId;
   const referral = await Referral.create({
-    fromStaffId: req.staff._id, toStaffId: resolvedToStaffId, patientId,
+    fromStaffId: req.staff._id, toStaffId: consultationDraft ? null : resolvedToStaffId, patientId,
+    expertConsultationCaseId: consultationDraft?._id || null,
     reason, content: content || '', urgency: urgency || 'normal',
     attachedHealthInfo: attachedHealthInfo || null,
     linkedDiseaseRecordIds: linkedDiseases.map(d => d._id),
@@ -8386,7 +8397,7 @@ router.post('/referrals', staffAuth, async (req, res) => {
     medicalExpertId: expert?._id || null,
     medicalExpertSnapshot: expert ? { name: expert.name, title: expert.title, institutionName: expert.institutionId?.name || '', institutionLevel: expert.institutionId?.level || '', departmentName: expert.departmentId?.name || '', campus: expert.campus || expert.departmentId?.campus || '', expertise: expert.expertise || [], diseaseTags: expert.diseaseTags || [], capturedAt: new Date() } : null,
   });
-  await require('../utils/referralAssessmentWorkflow').createReferralWorkbenchTask(referral).catch(() => {});
+  if (!consultationDraft) await require('../utils/referralAssessmentWorkflow').createReferralWorkbenchTask(referral).catch(() => {});
   await referral.populate([
     { path: 'fromStaffId', select: 'name role' },
     { path: 'toStaffId', select: 'name role' },
@@ -11568,7 +11579,7 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
   try {
     const items = await UserScreeningItem.find({ user: req.params.id })
       .sort({ updatedAt: -1 })
-      .populate('reportId', 'checkDate institution title pageDates reportItems');
+      .populate('reportId', 'checkDate institution title pageDates reportItems audit_status');
 
     // 把 reportItem 的实际检查内容附加到每条 screeningItem
     // 2026-07-02修复：此前用 .find() 只取第一条匹配的 reportItem，但一个 itemId(如"肝功能")
@@ -11583,6 +11594,7 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
       const report = obj.reportId;
       if (report) {
         obj.reportTitle = report.title || '';
+        obj.reportAuditStatus = report.audit_status || 'unaudited';
         // 在该报告的 reportItems 里找所有 screeningKey 匹配的条目（一个itemId可能对应多个子项）
         // 2026-07-09：单值 screeningKey 是医护审核确认后的权威归类，screeningKeys 数组可能残留审核前
         // AI 二次匹配的过期值。两者都参与反查(itemId 命中任一即算该子项属于此节点)，保证人工改过的归类

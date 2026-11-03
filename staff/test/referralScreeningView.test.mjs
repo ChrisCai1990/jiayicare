@@ -17,7 +17,14 @@ test('abnormal display respects recorded status and exact range boundaries',()=>
  assert.equal(screeningStatus({value:3,referenceRange:'≤3'}).abnormal,false);
  assert.equal(screeningStatus({value:0,referenceRange:'1-3'}).label,'↓ 偏低');
  assert.equal(screeningStatus({value:'3↑'}).abnormal,true);
- assert.equal(screeningStatus({value:3,referenceRange:'男 1-2&女 2-4'}).label,'需核对');
- assert.equal(screeningStatus({value:'<3',referenceRange:'0-2'}).label,'需核对');
+ assert.equal(screeningStatus({value:3,referenceRange:'男 1-2&女 2-4'}).label,'');
+ assert.equal(screeningStatus({value:'<3',referenceRange:'0-2'}).label,'');
  assert.equal(screeningStatus({value:3,referenceRange:''}).abnormal,false);
+});
+
+test('bounded results flag only certain out-of-range values without inventing review tasks',()=>{
+ assert.equal(screeningStatus({value:'>41.00',referenceRange:'0-1.75'}).label,'↑ 偏高');
+ assert.equal(screeningStatus({value:'<0.1',referenceRange:'1-2'}).label,'↓ 偏低');
+ assert.equal(screeningStatus({value:'<3',referenceRange:'0-2'}).abnormal,false);
+ assert.equal(screeningStatus({value:'≥2',referenceRange:'0-2'}).abnormal,false);
 });

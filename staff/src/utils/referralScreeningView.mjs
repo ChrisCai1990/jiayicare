@@ -21,7 +21,19 @@ export function screeningStatus(row) {
   if (row.status === 'normal') return { abnormal:false, label:'', source:'报告记录标记' }
   const raw = String(row.value ?? '').trim()
   if (/[↑↓]/.test(raw)) return { abnormal:true, label:raw.includes('↑') ? '↑ 偏高' : '↓ 偏低', source:'结果原文标记' }
-  const unknown = { abnormal:false, attention:true, label:'需核对', source:'参考范围或结果无法直接比较' }
+  const unknown = { abnormal:false, label:'', source:'按原报告展示，未自动判定异常' }
+  const bound = raw.match(/^(>=|<=|>|<|≥|≤)\s*(-?\d+(?:\.\d+)?)$/)
+  if (bound) {
+    const ref = String(row.referenceRange || '').replace(/\s/g,'')
+    const range = ref.match(/^(-?\d+(?:\.\d+)?)[~～—–-](-?\d+(?:\.\d+)?)$/)
+    const limit = ref.match(/^(<=|>=|<|>|≤|≥)(-?\d+(?:\.\d+)?)$/)
+    const above = ['>','>=','≥'].includes(bound[1]), n = Number(bound[2])
+    const upper = range ? Number(range[2]) : limit && ['<','<=','≤'].includes(limit[1]) ? Number(limit[2]) : null
+    const lower = range ? Number(range[1]) : limit && ['>','>=','≥'].includes(limit[1]) ? Number(limit[2]) : null
+    if (above && upper !== null && (n > upper || (n === upper && (bound[1] === '>' || limit?.[1] === '<')))) return { abnormal:true, label:'↑ 偏高', source:'结果下限已超出本报告参考范围' }
+    if (!above && lower !== null && (n < lower || (n === lower && (bound[1] === '<' || limit?.[1] === '>')))) return { abnormal:true, label:'↓ 偏低', source:'结果上限已低于本报告参考范围' }
+    return unknown
+  }
   if (!/^-?\d+(?:\.\d+)?$/.test(raw)) return unknown
   const value = Number(raw), reference = String(row.referenceRange || '').replace(/\s/g,'')
   const range = reference.match(/^(-?\d+(?:\.\d+)?)[~～—–-](-?\d+(?:\.\d+)?)$/)

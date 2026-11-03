@@ -28,12 +28,14 @@ export default function useWorkbenchResource(loader, key, initialData, enabled =
     refreshRef.current = refresh
     refresh()
     const visibleRefresh = () => { if (document.visibilityState === 'visible') refresh() }
+    window.addEventListener('notif-refresh', visibleRefresh)
     window.addEventListener('focus', visibleRefresh)
     document.addEventListener('visibilitychange', visibleRefresh)
     const timer = window.setInterval(visibleRefresh, 30000)
     return () => {
       active = false
       window.clearInterval(timer)
+      window.removeEventListener('notif-refresh', visibleRefresh)
       window.removeEventListener('focus', visibleRefresh)
       document.removeEventListener('visibilitychange', visibleRefresh)
     }

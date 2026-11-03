@@ -210,4 +210,32 @@ test('paid single consultation runs from customer request through booked schedul
     const deletionRequest = { params: { id: String(managerSlot) }, staff: { _id: managerId, tenantId, role: 'healthManager' } };
     await withTenant(tenantId, deletionRequest, () => handler(scheduleRouter, 'delete', '/:id')(deletionRequest, bookedDeletion));
     assert.equal(bookedDeletion.statusCode, 409);
+
+    // Prepared historical intake: one advisor submission must reach the manager directly.
+    const ready = await Case.create({tenantId,patientId,type:'single',initiationSource:'staff',status:'intake',managerId,advisorId,plannerId});
+    caseId=ready._id;
+    const draftRequest={staff:{_id:advisorId,tenantId,role:'familyDoctor'},body:{patientId:String(patientId),consultationCaseId:String(caseId),referralType:'external_medical',medicalExpertId:String(expertId),reason:'已完成顾问审核',questionList:'下一步安排'}};
+    const draftResponse=response();
+    await withTenant(tenantId,draftRequest,()=>handler(require('../src/routes/staff'),'post','/referrals')(draftRequest,draftResponse));
+    assert.equal(draftResponse.statusCode,200,JSON.stringify(draftResponse.body));
+    const prepared=await Referral.findById(draftResponse.body.data._id);
+    assert.equal(prepared.toStaffId,null,'内部草稿不提前发送给专家');
+    assert.equal(String(prepared.expertConsultationCaseId),String(caseId));
+    const payload={referralId:String(prepared._id),submitToManager:true,materialsReviewed:true};
+    assert.equal((await step('referral',managerId,payload)).statusCode,403);
+    assert.equal((await step('referral',advisorId,{...payload,materialsReviewed:false})).statusCode,400);
+    const reportId=oid();
+    await mongoose.connection.db.collection('medicalreports').insertOne({_id:reportId,tenantId,user:patientId,title:'待审来源',audit_status:'unaudited'});
+    prepared.attachedHealthInfo={screeningRecords:[{来源报告编号:String(reportId)}]}; await prepared.save();
+    assert.equal((await step('referral',advisorId,payload)).statusCode,409);
+    assert.equal((await Case.findById(caseId)).status,'intake');
+    await mongoose.connection.db.collection('medicalreports').updateOne({_id:reportId},{$set:{audit_status:'audited'}});
+    const submitted=await step('referral',advisorId,payload);
+    assert.equal(submitted.statusCode,200,JSON.stringify(submitted.body));
+    const after=await Case.findById(caseId).populate('patientId','name').lean();
+    assert.equal(after.status,'planner');assert.ok(after.expertsConfirmedAt);
+    const todos=require('../src/utils/consultationTodos').consultationTodos([after],{_id:managerId,role:'healthManager'});
+    assert.equal(todos.length,1);assert.equal(todos[0].label,'专家时间待预约');
+    assert.equal((await step('referral',advisorId,payload)).statusCode,200,'repeat submission does not create another case');
+    assert.equal(await Case.countDocuments({_id:caseId}),1);
   });
