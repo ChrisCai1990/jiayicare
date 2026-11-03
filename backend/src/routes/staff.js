@@ -17612,13 +17612,20 @@ async function runReportParseControlled(reportId) {
             if (!retryPage || shouldSkipParsedReportPage(retryPage) || !Array.isArray(retryPage.items)) continue;
             const oldPage = allItems.filter(item => item._page === pageNum);
             const retryItems = tagReportPageItems(retryPage.items, pageNum).filter(hasReportItemEvidence);
-            if (retryItems.length && reportPageEvidenceScore(retryItems) >= reportPageEvidenceScore(oldPage)) {
-              allItems = allItems.filter(item => item._page !== pageNum).concat(retryItems);
-              qualityRetryPages.delete(pageNum);
-              failedPageNumbers.delete(pageNum);
-              detailPages.add(pageNum);
-              okPages++;
-              console.log(`[parse-ai] 页${pageNum}高分辨率质量回退生效：${oldPage.length}项→${retryItems.length}项`);
+            if (retryItems.length) {
+              // 高分辨率重读只能补充原页，不能因为项目数相同就整页覆盖已核实的所见/诊断。
+              const mergedPage = mergeCoverageAuditItems(oldPage, retryItems);
+              if (coverageAuditHasChanges(oldPage, mergedPage)) {
+                allItems = allItems.filter(item => item._page !== pageNum).concat(mergedPage);
+                console.log(`[parse-ai] 页${pageNum}高分辨率质量回退补全：${oldPage.length}项→${mergedPage.length}项`);
+              }
+              // 仍有空值时保留页级提示，避免把部分补全误报为整页完成。
+              if (!hasIncompleteReportEvidence(mergedPage)) {
+                qualityRetryPages.delete(pageNum);
+                failedPageNumbers.delete(pageNum);
+                detailPages.add(pageNum);
+                okPages++;
+              }
             }
           } catch (error) { rethrowAiControl(error);
             console.log(`[parse-ai] 页${pageNum}高分辨率质量回退异常: ${error.message}`);
