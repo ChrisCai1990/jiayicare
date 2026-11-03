@@ -114,7 +114,7 @@ function normalizeFibroscanItems(items) {
   const cap = measured('CAP', 'dB/m');
   const stiffness = measured('E', 'kPa');
   const opinion = actualRows.map(item => text(item.diagnosis) || text(item.conclusion)
-    || (/医师意见|医生意见/.test(`${text(item.name)} ${text(item.sourceSection)}`) ? text(item.findings) || text(item.value) : '')
+    || (/医师意见|医生意见/.test(`${text(item.name)} ${text(item.sourceSection)} ${text(item.orderName)}`) ? text(item.findings) || text(item.value) : '')
     || text(item.findings).match(/(?:医师意见|医生意见)\s*[：:]\s*(.+)$/)?.[1] || '').find(Boolean) || '';
   const imaging = actualRows.find(item => item.itemType === 'imaging') || actualRows[0];
   const originalFinding = text(imaging.findings);

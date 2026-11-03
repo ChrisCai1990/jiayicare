@@ -64,6 +64,14 @@ test('FibroScan仅有参考阈值时不充作患者实测结果', () => {
   assert.equal(output[0].diagnosis, '请结合临床。');
 });
 
+test('FibroScan医师意见作为医嘱组名时仍归入结论', () => {
+  const output = normalizeSingleExamReportItems([{ name: '肝脏弹性纤维', itemType: 'imaging', orderName: '医师意见',
+    findings: '提示脂肪变≥67%，肝纤维化 F0F1期，请结合临床。' }], { title: '肝脏弹性纤维' });
+  assert.equal(output.length, 1);
+  assert.equal(output[0].findings, '');
+  assert.equal(output[0].diagnosis, '提示脂肪变≥67%，肝纤维化 F0F1期，请结合临床。');
+});
+
 test('耳鼻喉科保留每个器官细行，不合并成科室摘要', () => {
   const items = ['耳部检查', '鼻部检查', '咽部检查'].map((name, index) => ({
     name, findings: '未见明显异常', sourceSection: '耳鼻喉科体检', itemType: 'imaging', _page: 1, _order: index,
