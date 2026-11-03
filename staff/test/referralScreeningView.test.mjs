@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { screeningView, referenceLines, screeningStatus, groupScreenings } from '../src/utils/referralScreeningView.mjs';
+import { screeningView, referenceLines, screeningStatus, groupScreenings, screeningProjects } from '../src/utils/referralScreeningView.mjs';
 test('old laboratory snapshots separate columns without dropping unmatched text',()=>{
  const v=screeningView({结果:'骨钙素 (N-MID) 23.54 参考范围：男 24-68&女 13-45；β-CTx 0.642 参考范围：女 ≤1.108；超声 原始所见'});
  assert.equal(v.rows.length,2);assert.equal(v.rows[0].value,'23.54');assert.equal(v.rows[0].unit,'');assert.deepEqual(v.notes,['超声 原始所见']);assert.deepEqual(referenceLines(v.rows[0].referenceRange),['男 24-68','女 13-45']);
@@ -61,4 +61,16 @@ test('legacy urinalysis and vitamin D remain laboratory records without numerica
  assert.equal(groups[0].items[1].结果明细[0].value,'阴性');
  assert.equal(groups[0].items[3].结果明细[0].unit,'ng/mL');
  assert.equal(groupScreenings([{项目:'25-羟基维生素D',结果明细:[{name:'补充药品',itemType:'medication',value:'1粒'}]}])[0].key,'other');
+});
+
+test('same project groups all dates newest first without merging fasting and postprandial tests', () => {
+ const records = [{项目:'血常规',日期:'2026-10-01',结果:'旧结果'}, {项目:'血 常规',日期:'2026/11/03',结果:'新结果'}, {项目:'空腹血糖',日期:'2026-10-02'}, {项目:'餐后血糖',日期:'2026-10-02'}, {项目:'血常规',日期:'未记录'}, {项目:'血常规',日期:'2026/11/03',机构:'另一医院'}];
+ const groups = screeningProjects(records);
+ assert.equal(groups.length,3);
+ assert.equal(groups[0].items.length,4);
+ assert.equal(groups[0].items[0].结果,'新结果');
+ assert.equal(groups[0].items[1].机构,'另一医院');
+ assert.equal(groups[0].items[3].日期,'未记录');
+ assert.equal(records[0].结果,'旧结果');
+ assert.equal(screeningProjects([{结果:'甲'},{结果:'乙'}]).length,2);
 });

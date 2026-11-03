@@ -89,3 +89,19 @@ export function groupScreenings(records = []) {
   }
   return groups.filter(group => group.items.length)
 }
+
+// Group only equal project names after typographic normalization. Do not merge clinical variants.
+export function screeningProjects(records = []) {
+  const groups = new Map()
+  records.forEach((item, index) => {
+    const name = String(item.项目 || '').trim()
+    const key = name ? name.normalize('NFKC').replace(/\s+/g, '').toLowerCase() : `unnamed:${index}`
+    if (!groups.has(key)) groups.set(key, { key, name: name || '未命名项目', items: [] })
+    groups.get(key).items.push(item)
+  })
+  const dateKey = item => {
+    const match = String(item.日期 || '').match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})/)
+    return match ? `${match[1]}${match[2].padStart(2,'0')}${match[3].padStart(2,'0')}` : ''
+  }
+  return [...groups.values()].map(group => ({ ...group, items: [...group.items].sort((a,b) => dateKey(b).localeCompare(dateKey(a))) }))
+}
