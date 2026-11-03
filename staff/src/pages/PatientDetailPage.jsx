@@ -14184,11 +14184,11 @@ export default function PatientDetailPage() {
                       {showSRDetail.type === 'disease_mgmt' && (
                         <div><label className="form-label">专病名称</label><input className="form-input" placeholder="如：巧克力囊肿" value={editForm.diseaseName} onChange={e => setEditForm(f => ({ ...f, diseaseName: e.target.value }))} /></div>
                       )}
-                      <div><label className="form-label">标题</label><input className="form-input" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
+                      <div><label className="form-label">{showSRDetail.type === 'nutrition' ? '本次记录标题' : '标题'}</label><input className="form-input" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
+                      {showSRDetail.type === 'nutrition' && <div><label className="form-label">下次随访标题（与本次记录独立）</label><input className="form-input" maxLength={80} placeholder={`营养干预随访 · ${editForm.title || '营养干预'}`} value={editForm.nextFollowUpTheme} onChange={e => setEditForm(f => ({ ...f, nextFollowUpTheme: e.target.value }))} /><div style={{ fontSize: 12, color: '#8AA89C', marginTop: 4 }}>修改这里不会更改本次记录标题；填写下次计划日期后生成随访。</div></div>}
                       <div><label className="form-label">详细内容</label><textarea className="form-input" rows={4} value={editForm.content} onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))} /></div>
                       <div><label className="form-label">结果/建议</label><textarea className="form-input" rows={3} value={editForm.result} onChange={e => setEditForm(f => ({ ...f, result: e.target.value }))} /></div>
                       <div><label className="form-label">下次计划日期</label><DateField className="form-input" type="date" value={editForm.nextDate} onChange={e => setEditForm(f => ({ ...f, nextDate: e.target.value }))} /></div>
-                      {showSRDetail.type === 'nutrition' && editForm.nextDate && <div><label className="form-label">下次随访主题</label><input className="form-input" maxLength={80} placeholder={`营养干预随访 · ${editForm.title || '营养干预'}`} value={editForm.nextFollowUpTheme} onChange={e => setEditForm(f => ({ ...f, nextFollowUpTheme: e.target.value }))} /></div>}
                       {(showSRDetail.type === 'disease_mgmt' || showSRDetail.type === 'medical_visit') && (
                         <div>
                           <label className="form-label">附件 <span style={{ color: '#8AA89C', fontWeight: 400, fontSize: 12 }}>（就医病历/检查单，图片或PDF）</span></label>
