@@ -10,6 +10,7 @@ import CheckupHandoffTodoModal from './CheckupHandoffTodoModal'
 import HealthRiskTodoModal from './HealthRiskTodoModal'
 
 const TYPE_CONFIG = {
+  expert_consultation_task: { icon: '📅', label: '专家咨询与 MDT 待办', color: '#0077B6', priority: 2 },
   package_history_review: { icon: '🎫', label: '服务包历史次数待核对', color: '#B45309', priority: 2 },
   annual_execution_review: { icon: '📋', label: '方案修订·执行安排待核对', color: '#D97706', priority: 2 },
   annual_service_interest: { icon: '📅', label: '年度服务建议跟进', color: '#1E6B50', priority: 2 },

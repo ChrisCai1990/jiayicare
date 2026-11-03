@@ -1215,6 +1215,7 @@ const HEALTH_SECTION_LABELS = {
   currentMedications: '当前用药',
   currentSupplements: '当前营养素补充',
   screeningRecords: '专项筛查项目与结果',
+  diseaseHistory: '疾病史与当前状态',
   medicationRecords: '用药记录（含状态与时间）',
   supplementRecords: '营养补充记录（含状态与时间）',
   diseaseSummary: '首次健康信息摘要',

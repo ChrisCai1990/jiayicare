@@ -56,6 +56,7 @@ function visibleTodo(todo, staff, inMyScope) {
   if (staff.role === 'superadmin') return true;
   if (todo.type === 'geo_content_review') return true;
   if (todo.type === 'wecom_kf_handoff') return String(todo.assignedTo) === String(staff._id);
+  if (todo.type === 'expert_consultation_task') return String(todo.assignedTo) === String(staff._id);
   return inMyScope(todo.patientId);
 }
 

@@ -25,3 +25,15 @@ export function screeningAttachments(items = [], reports = []) {
       结果: [r.examDescription, r.examConclusion, ...(r.reportItems || []).map(resultText)].filter(Boolean).join('；') || '暂无结果' }));
   return result;
 }
+
+export function diseaseHistoryAttachments(user = {}) {
+  const section = user.coreHealthArchive?.disease;
+  if (section?.records?.length) return section.records.map(r => ({
+    疾病: r.disease || '未命名疾病', 确诊时间: r.diagnosedAt || '未记录', 诊断机构: r.institution || '',
+    当前状态: r.status || '未记录', 状态变化时间: r.statusAt || '', 判断依据: r.evidence || '',
+    治疗经过: r.treatment || '', 治疗效果: r.effect || '', 来源: r.source || '', 备注: r.note || '',
+  }));
+  if (section?.presence === 'none') return [{记录:'未报告已知相关疾病情况'}];
+  if (section?.presence === 'unknown') return [{记录:'疾病史不详，需进一步核实'}];
+  return [];
+}

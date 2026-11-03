@@ -16223,6 +16223,11 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 统一归属闸门：非超管的所有工作台任务最终都必须属于本人可见客户范围。
     // 各任务查询仍尽量提前按归属过滤以控制数据量；这里负责兜底，防止新增任务类型漏加条件。
     // GEO 稿件按指定审核人、客服接管按实际指派人校验；其余按本人会员范围过滤。
+    const consultationRows = await require('../models/ExpertConsultationCase').find({
+      status: { $nin: ['completed', 'cancelled', 'expert'] },
+      ...(isSuper ? {} : { $or: [{ managerId: req.staff._id }, { advisorId: req.staff._id }, { plannerId: req.staff._id }] }),
+    }).populate('patientId', 'name isDeleted').lean();
+    todos.push(...require('../utils/consultationTodos').consultationTodos(consultationRows, req.staff));
     todos.push(...await require('../utils/workbenchAssignmentAttention').loadAssignmentAttention(req.staff));
     const scopedTodos = todos.filter(todo => visibleTodo(todo, req.staff, inMyScope));
 

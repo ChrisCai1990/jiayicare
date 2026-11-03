@@ -1,4 +1,4 @@
-import { currentRecords, screeningAttachments } from '../utils/referralAttachments.mjs'
+import { currentRecords, screeningAttachments, diseaseHistoryAttachments } from '../utils/referralAttachments.mjs'
 import checkupKeyMetrics from '../../../shared/checkupKeyMetrics.cjs'
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
 import LiverMarkerTrends from '../components/LiverMarkerTrends'
@@ -15744,6 +15744,8 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
   const [attachmentLoading, setAttachmentLoading] = useState(true)
   const [attachmentError, setAttachmentError] = useState('')
   const [selectedScreening, setSelectedScreening] = useState([])
+  const [selectedDiseaseHistory, setSelectedDiseaseHistory] = useState([])
+  const diseaseHistory = diseaseHistoryAttachments(patientUser)
   const [saving, setSaving] = useState(false)
   const [aiDraftLoading, setAiDraftLoading] = useState(false)
   const [error, setError] = useState('')
@@ -15867,12 +15869,13 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         开始时间: s.startDate || '未记录',
         结束或停用时间: s.stopDate || s.endDate || (s.stopped ? '未记录' : '—'),
       })) : null },
+      { key: 'diseaseHistory', label: '疾病史与当前状态', val: diseaseHistory.filter((_, index) => selectedDiseaseHistory.includes(index)) },
       { key: 'currentMedications', label: '当前用药', val: currentRecords(ed.medications).map(m => ({ 药品: m.name, 剂量: m.dosage, 频次: m.frequency, 用法: [m.method, m.timing].filter(Boolean).join('、'), 开始日期: m.startDate || '未记录' })) },
       { key: 'currentSupplements', label: '当前营养素补充', val: currentRecords(ed.supplements).map(m => ({ 名称: m.name, 剂量: m.dosage, 频次: m.frequency, 用法: m.method || '', 开始日期: m.startDate || '未记录' })) },
       { key: 'screeningRecords', label: '专项筛查', val: ed.screening.filter(item => selectedScreening.includes(item.key)).map(({ key, ...item }) => item) },
       { key: 'dietSummary',      label: '膳食调查概述', val: dietSummary },
       { key: 'latestVitals',     label: '近期健康数据记录', val: latestVitals },
-    ].filter(s => ['currentMedications', 'currentSupplements', 'screeningRecords'].includes(s.key) || (s.val !== null && s.val !== '' && !(Array.isArray(s.val) && s.val.length === 0)))
+    ].filter(s => ['medicalHistory', 'specialDiseases', 'diseaseHistory', 'currentMedications', 'currentSupplements', 'screeningRecords'].includes(s.key) || (s.val !== null && s.val !== '' && !(Array.isArray(s.val) && s.val.length === 0)))
   }
 
   const HEALTH_SECTIONS = buildSections()
@@ -15887,7 +15890,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     if (selectedHealthSections.length === 0) return null
     const result = {}
     HEALTH_SECTIONS.forEach(s => {
-      if (selectedHealthSections.includes(s.key)) result[s.key] = s.key === 'screeningRecords' && !selectedScreening.length && initialReferral?.attachedHealthInfo?.screeningRecords ? initialReferral.attachedHealthInfo.screeningRecords : s.val
+      if (selectedHealthSections.includes(s.key)) result[s.key] = s.key === 'diseaseHistory' && !selectedDiseaseHistory.length && initialReferral?.attachedHealthInfo?.diseaseHistory ? initialReferral.attachedHealthInfo.diseaseHistory : s.key === 'screeningRecords' && !selectedScreening.length && initialReferral?.attachedHealthInfo?.screeningRecords ? initialReferral.attachedHealthInfo.screeningRecords : s.val
     })
     return Object.keys(result).length ? result : null
   }
@@ -15899,6 +15902,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
   }
 
   const handleSubmit = async () => {
+    if (selectedHealthSections.includes('diseaseHistory') && !selectedDiseaseHistory.length && !initialReferral?.attachedHealthInfo?.diseaseHistory) { setError('请选择需要附带的疾病史条目；暂无资料时可取消该项'); return }
     if (attachmentLoading || attachmentError) { setError(attachmentError || '附带资料正在加载，请稍候'); return }
     if (selectedHealthSections.includes('screeningRecords') && !selectedScreening.length && !initialReferral?.attachedHealthInfo?.screeningRecords) { setError('请勾选需要附带的专项筛查项目'); return }
     if (!form.reason || (form.referralType === 'internal_collaboration' ? !form.toStaffId : !form.medicalExpertId)) { setError(form.referralType === 'external_medical' ? '外部专家和转介原因不能为空' : '接收人和转介原因不能为空'); return }
@@ -16090,7 +16094,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
           {/* 健康档案附件选择 */}
           {HEALTH_SECTIONS.length > 0 && (
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">附带健康档案（供接收方参考）</label>
+              <label className="form-label">选择相关资料（供接收方参考）</label><p style={{ fontSize: 12 }}>可选择既往史、疾病史、专项筛查及当前用药等资料；仅发送勾选的内容。</p>
               {attachmentLoading && <p>正在读取用药、营养素及专项筛查资料…</p>}
               {attachmentError && <p role="alert" style={{ color: '#B42318' }}>{attachmentError}</p>}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -16108,6 +16112,11 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
                   )
                 })}
               </div>
+              {selectedHealthSections.includes('diseaseHistory') && <div style={{ maxHeight: 260, overflowY: 'auto', marginTop: 10 }}>
+                {!diseaseHistory.length && <p>暂无新版疾病史记录，可核对下方既往史或先补充客户档案。</p>}
+                {diseaseHistory.map((item, index) => <label key={index} style={{ display: 'block', padding: 8 }}><input type="checkbox" checked={selectedDiseaseHistory.includes(index)} onChange={e => setSelectedDiseaseHistory(prev => e.target.checked ? [...prev, index] : prev.filter(value => value !== index))} /> {formatReferralHealthValue(item)}</label>)}
+              </div>}
+              {HEALTH_SECTIONS.filter(s => ['medicalHistory', 'specialDiseases'].includes(s.key) && selectedHealthSections.includes(s.key)).map(s => <div key={s.key} style={{ padding: 8 }}><b>{s.label}</b><div>{s.val ? formatReferralHealthValue(s.val) : '暂无历史记录，不代表没有相关病史。'}</div></div>)}
               {selectedHealthSections.includes('screeningRecords') && <div style={{ maxHeight: 260, overflowY: 'auto', marginTop: 10 }}>
                 {!extraData.screening.length && <p>暂无专项筛查记录，请先在客户档案维护。</p>}
                 {extraData.screening.map(item => <label key={item.key} style={{ display: 'block', padding: 8 }}><input type="checkbox" checked={selectedScreening.includes(item.key)} onChange={e => setSelectedScreening(prev => e.target.checked ? [...prev, item.key] : prev.filter(key => key !== item.key))} /> {item.项目} · {String(item.日期).slice(0, 10)}<div style={{ whiteSpace: 'pre-wrap', marginLeft: 20 }}>{item.报告}　{item.结果}</div></label>)}
@@ -16510,6 +16519,7 @@ const REFERRAL_HEALTH_LABELS = {
   currentMedications: '当前用药',
   currentSupplements: '当前营养素补充',
   screeningRecords: '专项筛查项目与结果',
+  diseaseHistory: '疾病史与当前状态',
   medicationRecords: '用药记录（含状态与时间）',
   supplementRecords: '营养补充记录（含状态与时间）',
 }
