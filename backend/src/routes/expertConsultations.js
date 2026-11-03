@@ -20,8 +20,9 @@ const paid = order => order?.paymentStatus === 'paid' && ['paid', 'fulfilling', 
 const serviceType = order => ({ expert_consultation: 'single', mdt_consultation: 'mdt' })[order?.serviceWorkflowSnapshot?.key];
 const activeOrder = order => paid(order) && order?.status !== 'cancelled' && !['requested', 'processing', 'refunded'].includes(order?.refundStatus);
 const event = (row, action, actorId, note = '') => row.history.push({ action, actorId, at: new Date(), note: text(note, 500) });
+const effectiveStatus = row => row.initiationSource === 'staff' && row.status === 'team_assignment' && row.managerId ? 'intake' : row.status;
 const staffCanRead = (row, staff) => staff.role === 'superadmin'
-  || (staff.role === 'healthPlanner' && row.status === 'team_assignment' && !row.plannerId)
+  || (staff.role === 'healthPlanner' && row.initiationSource !== 'staff' && row.status === 'team_assignment' && !row.plannerId)
   || [row.initiatedByStaff, row.managerId, row.advisorId, row.plannerId, ...row.members.map(x => x.staffId)].some(x => id(x) === id(staff._id));
 const assigned = (row, staff, field) => staff.role === 'superadmin' || id(row[field]) === id(staff._id);
 const availableReferral = row => ({ patientId: row.patientId, fromStaffId: row.advisorId,
@@ -64,7 +65,7 @@ router.post('/mine', userAuth, async (req, res) => {
     row = await Case.create({ tenantId: req.user.tenantId, orderId: order._id, patientId: order.user, type,
       specificationLabel: order.specificationLabel || '',
       managerId: user?.assignedHealthManager, advisorId: user?.assignedFamilyDoctor, plannerId: user?.assignedHealthPlanner,
-      status: user?.assignedHealthManager && user.assignedFamilyDoctor && user.assignedHealthPlanner ? 'intake' : 'team_assignment',
+      status: 'team_assignment',
       clientRequest: request, desiredExpertId, history: [{ action: 'requested', actorId: req.user._id, at: new Date(), note: '' }] });
   } catch (error) {
     if (error.code !== 11000) throw error;
@@ -89,13 +90,15 @@ router.post('/staff', staffAuth, async (req, res) => {
   if (req.staff.role !== 'superadmin' && ![patient.assignedHealthManager, patient.assignedFamilyDoctor,
     patient.assignedHealthPlanner].some(staffId => id(staffId) === id(req.staff._id)))
     return fail(res, 403, '只能为本人负责的客户发起咨询');
-  const managerId = patient.assignedHealthManager || (req.staff.role === 'healthManager' ? req.staff._id : null);
-  const advisorId = patient.assignedFamilyDoctor || (req.staff.role === 'familyDoctor' ? req.staff._id : null);
-  const plannerId = patient.assignedHealthPlanner || (req.staff.role === 'healthPlanner' ? req.staff._id : null);
+  const managerId = patient.assignedHealthManager;
+  if (!managerId || !await Admin.exists({ _id: managerId, tenantId: req.staff.tenantId, role: 'healthManager', staffStatus: 'active' }))
+    return fail(res, 409, '客户所属健管专员资料异常，请先修正客户归属后发起');
+  const advisorId = patient.assignedFamilyDoctor;
+  const plannerId = patient.assignedHealthPlanner;
   const row = await Case.create({ tenantId: req.staff.tenantId, patientId: patient._id, type,
     initiationSource: 'staff', initiatedByStaff: req.staff._id,
     specificationLabel: type === 'mdt' ? `${expertCount}位专家` : '', managerId, advisorId, plannerId,
-    status: managerId && advisorId && plannerId ? 'intake' : 'team_assignment', clientRequest: request,
+    status: 'intake', clientRequest: request,
     history: [{ action: 'staff_requested', actorId: req.staff._id, at: new Date(), note: '' }] });
   res.status(201).json({ success: true, data: { id: row._id, status: row.status } });
 });
@@ -113,7 +116,7 @@ router.get('/mine/experts', userAuth, async (req, res) => {
 
 router.get('/mine', userAuth, async (req, res) => {
   const rows = await Case.find({ patientId: req.user._id }).sort({ createdAt: -1 }).limit(100).lean();
-  res.json({ success: true, data: rows.map(row => ({ id: row._id, orderId: row.orderId, type: row.type, status: row.status,
+  res.json({ success: true, data: rows.map(row => ({ id: row._id, orderId: row.orderId, type: row.type, status: effectiveStatus(row),
     clientRequest: row.clientRequest, meetingUrl: row.meetingUrl, scheduledAt: row.members[0]?.startAt || null,
     managementPath: row.status === 'completed' ? row.reconciliation : '', followupPlan: row.status === 'completed' ? row.followupPlan : '' })) });
 });
@@ -122,16 +125,16 @@ router.get('/staff', staffAuth, async (req, res) => {
   const filter = req.staff.role === 'superadmin' ? {} : { $or: [
     { initiatedByStaff: req.staff._id }, { managerId: req.staff._id }, { advisorId: req.staff._id },
     { plannerId: req.staff._id }, { 'members.staffId': req.staff._id },
-    ...(req.staff.role === 'healthPlanner' ? [{ status: 'team_assignment', plannerId: null }] : []),
+    ...(req.staff.role === 'healthPlanner' ? [{ status: 'team_assignment', plannerId: null, initiationSource: { $ne: 'staff' } }] : []),
   ] };
   const rows = await Case.find(filter).sort({ createdAt: -1 }).limit(200)
     .populate('patientId', 'name phone').populate('referralId', referralFields)
     .populate('members.expertId', 'name title').lean();
-  res.json({ success: true, data: rows });
+  res.json({ success: true, data: rows.map(row => ({ ...row, status: effectiveStatus(row) })) });
 });
 
 router.get('/staff/experts', staffAuth, async (req, res) => {
-  if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return fail(res, 403, '仅健康规划师可选择专家');
+  if (!['healthManager', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(req.staff.role)) return fail(res, 403, '无权查看咨询专家库');
   const rows = await MedicalExpert.find({ status: 'active', teamEligible: true, linkedStaffId: { $ne: null } })
     .select('_id name title institutionId departmentId linkedStaffId serviceModes singleConsultationFee mdtFee').lean();
   const active = await Admin.find({ _id: { $in: rows.map(x => x.linkedStaffId) }, staffStatus: 'active' }).select('_id').lean();
@@ -163,13 +166,16 @@ router.get('/staff/:id/referrals', staffAuth, async (req, res) => {
 router.post('/staff/:id/edit', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
-  if (!staffCanRead(row, req.staff)) return fail(res, 403, '无权修改该咨询');
+  if (!assigned(row, req.staff, 'managerId') && !assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健管专员或健康顾问可修改咨询需求');
   if (!['team_assignment', 'intake', 'advisor', 'planner'].includes(row.status)) return fail(res, 409, '专家已派发，不能直接修改客户需求');
   const request = text(req.body?.request, 1500);
   if (!request) return fail(res, 400, '请填写本次咨询问题');
   if (request !== row.clientRequest) {
     event(row, 'request_updated', req.staff._id, `原需求：${text(row.clientRequest, 220)}；新需求：${text(request, 220)}`);
     row.clientRequest = request;
+    if (['advisor', 'planner'].includes(row.status)) {
+      row.confirmedExpertIds = []; row.expertsConfirmedAt = null; row.status = 'advisor';
+    }
     await row.save();
   }
   res.json({ success: true, data: row });
@@ -181,13 +187,14 @@ router.post('/staff/:id/team', staffAuth, async (req, res) => {
   if (req.staff.role !== 'superadmin' && id(row.plannerId) !== id(req.staff._id)
     && !(req.staff.role === 'healthPlanner' && !row.plannerId)) return fail(res, 403, '仅负责人可分配服务团队');
   if (row.status !== 'team_assignment') return fail(res, 409, '当前阶段不能分配团队');
-  const roles = [['managerId', 'healthManager'], ['advisorId', 'familyDoctor'], ['plannerId', 'healthPlanner']];
-  for (const [field, role] of roles) {
-    const candidateId = req.body?.[field] || row[field];
-    if (!valid(candidateId) || !await Admin.exists({ _id: candidateId, tenantId: row.tenantId, role, staffStatus: 'active' }))
-      return fail(res, 400, `请选择有效的${role}岗位人员`);
-    row[field] = candidateId;
-  }
+  if (row.initiationSource === 'staff') return fail(res, 409, '医护端发起由客户所属健管专员直接承接，无需首次派单');
+  const candidateId = req.body?.managerId || row.managerId;
+  if (!valid(candidateId) || !await Admin.exists({ _id: candidateId, tenantId: row.tenantId, role: 'healthManager', staffStatus: 'active' }))
+    return fail(res, 400, '请选择有效的健管专员');
+  row.managerId = candidateId;
+  const patient = await User.findById(row.patientId).select('assignedFamilyDoctor');
+  row.advisorId = patient?.assignedFamilyDoctor || row.advisorId;
+  if (!row.plannerId) row.plannerId = req.staff._id;
   row.status = 'intake'; event(row, 'team_assigned', req.staff._id);
   await row.save(); res.json({ success: true, data: row });
 });
@@ -196,7 +203,12 @@ router.post('/staff/:id/intake', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
   if (!assigned(row, req.staff, 'managerId')) return fail(res, 403, '仅负责健管专员可整理资料');
-  if (row.status !== 'intake') return fail(res, 409, '当前阶段不能提交资料');
+  if (effectiveStatus(row) !== 'intake') return fail(res, 409, '当前阶段不能提交资料');
+  const patient = await User.findById(row.patientId).select('assignedFamilyDoctor');
+  const advisorId = patient?.assignedFamilyDoctor || row.advisorId;
+  if (!advisorId || !await Admin.exists({ _id: advisorId, tenantId: row.tenantId, role: 'familyDoctor', staffStatus: 'active' }))
+    return fail(res, 409, '请先在客户档案确认有效的所属健康顾问，再提交资料');
+  row.advisorId = advisorId;
   const summary = text(req.body?.summary);
   if (!summary) return fail(res, 400, '请填写已核实的资料摘要和待补资料');
   const reportIds = Array.isArray(req.body?.reportIds) ? [...new Set(req.body.reportIds.map(id))] : [];
@@ -225,7 +237,9 @@ router.post('/staff/:id/referral', staffAuth, async (req, res) => {
   if (!referral) return fail(res, 409, '转介记录不存在、已结束、已关联其他咨询或不属于本次客户与健康顾问');
   const previousReferralId = row.referralId;
   row.referralId = referral._id;
-  row.referralPreparedAt = new Date(); row.status = 'planner'; event(row, previousReferralId ? 'referral_replaced' : 'referral_prepared', req.staff._id);
+  row.referralPreparedAt = new Date(); row.status = 'advisor';
+  row.confirmedExpertIds = []; row.expertsConfirmedAt = null;
+  event(row, previousReferralId ? 'referral_replaced' : 'referral_prepared', req.staff._id);
   try { await row.save(); }
   catch (error) { await Referral.updateOne({ _id: referral._id, expertConsultationCaseId: row._id }, { $set: { expertConsultationCaseId: null } }); throw error; }
   if (previousReferralId) {
@@ -239,11 +253,44 @@ router.post('/staff/:id/referral', staffAuth, async (req, res) => {
   res.json({ success: true, data: row });
 });
 
+router.post('/staff/:id/confirm-experts', staffAuth, async (req, res) => {
+  const row = valid(req.params.id) && await Case.findById(req.params.id);
+  if (!row) return fail(res, 404, '咨询服务不存在');
+  if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可确认专家');
+  if (!['advisor', 'planner'].includes(row.status)) return fail(res, 409, '当前阶段不能确认专家');
+  const ids = Array.isArray(req.body?.expertIds) ? req.body.expertIds.map(id) : [];
+  const count = row.type === 'mdt' ? Number(/^([2-8])位专家/.exec(row.specificationLabel || '')?.[1] || 2) : 1;
+  if (ids.length !== count || new Set(ids).size !== count || ids.some(x => !valid(x))) return fail(res, 400, '请按咨询人数选择不同的专家');
+  const eligible = await eligibleReferralExperts(row);
+  if (ids.some(x => !eligible.has(x))) return fail(res, 409, '部分专家不符合本次服务类型、账号或报价要求');
+  if (row.desiredExpertId && !ids.includes(id(row.desiredExpertId))) return fail(res, 409, '须包含客户指定的专家');
+  if (row.referralId) {
+    const referral = await Referral.findOne({ _id: row.referralId, ...availableReferral(row) });
+    if (!referral || (referral.medicalExpertId && !ids.includes(id(referral.medicalExpertId)))) return fail(res, 409, '请核实转介信，并包含转介信所选专家');
+  } else if (!row.referralPurpose || !row.referralQuestions) return fail(res, 409, '请先关联转介信');
+  row.confirmedExpertIds = ids; row.expertsConfirmedAt = new Date(); row.expertChangeReason = '';
+  row.status = 'planner'; event(row, 'advisor_confirmed_experts', req.staff._id);
+  await row.save(); res.json({ success: true, data: row });
+});
+
+router.post('/staff/:id/request-expert-change', staffAuth, async (req, res) => {
+  const row = valid(req.params.id) && await Case.findById(req.params.id);
+  if (!row) return fail(res, 404, '咨询服务不存在');
+  if (!assigned(row, req.staff, 'managerId')) return fail(res, 403, '仅负责健管专员可反馈预约问题');
+  if (row.status !== 'planner') return fail(res, 409, '仅预约前可申请调整专家');
+  const reason = text(req.body?.reason, 1000);
+  if (!reason) return fail(res, 400, '请填写调整原因及建议');
+  row.expertChangeReason = reason; row.confirmedExpertIds = []; row.expertsConfirmedAt = null;
+  row.status = 'advisor'; event(row, 'expert_change_requested', req.staff._id, reason);
+  await row.save(); res.json({ success: true, data: row });
+});
+
 router.post('/staff/:id/assign', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
-  if (!assigned(row, req.staff, 'plannerId')) return fail(res, 403, '仅负责健康规划师可确认专家');
+  if (!assigned(row, req.staff, 'managerId')) return fail(res, 403, '仅负责健管专员可安排预约并推送转介信');
   if (row.status !== 'planner') return fail(res, 409, '当前阶段不能派发转介信');
+  if (!row.expertsConfirmedAt || !row.confirmedExpertIds?.length) return fail(res, 409, '请先由健康顾问确认专家名单');
   if (row.referralId) {
     const referral = await Referral.findOne({ _id: row.referralId, ...availableReferral(row) });
     if (!referral) return fail(res, 409, '关联转介已结束或变更，请由健康顾问核对');
@@ -255,6 +302,8 @@ router.post('/staff/:id/assign', staffAuth, async (req, res) => {
   const order = row.initiationSource === 'staff' ? null : await Order.findById(row.orderId);
   if (row.initiationSource !== 'staff' && !activeOrder(order)) return fail(res, 409, '订单已进入退款或取消流程，不能派单');
   const choices = Array.isArray(req.body?.members) ? req.body.members : [];
+  if (choices.length !== row.confirmedExpertIds.length || choices.some(x => !row.confirmedExpertIds.some(confirmed => id(confirmed) === id(x.expertId))))
+    return fail(res, 409, '只能预约健康顾问已确认的专家，需要更换时请退回顾问确认');
   const requestedExpertCount = row.type === 'mdt' ? Number(/^([2-8])位专家/.exec(row.specificationLabel || order?.specificationLabel || '')?.[1] || 2) : 1;
   if (choices.length !== requestedExpertCount)
     return fail(res, 400, '请按咨询类型选择专家人数');
@@ -320,7 +369,7 @@ router.post('/staff/:id/assign', staffAuth, async (req, res) => {
 router.post('/staff/:id/meeting', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
-  if (!assigned(row, req.staff, 'plannerId')) return fail(res, 403, '仅健康规划师可维护会议链接');
+  if (!assigned(row, req.staff, 'managerId')) return fail(res, 403, '仅负责健管专员可维护会议链接');
   if (!['expert', 'reconcile'].includes(row.status)) return fail(res, 409, '当前阶段不能更新会议链接');
   const meetingUrl = text(req.body?.meetingUrl, 500);
   if (!/^https:\/\/[^\s]+$/i.test(meetingUrl)) return fail(res, 400, '会议链接须为有效的 HTTPS 地址');

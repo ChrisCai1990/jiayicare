@@ -4,7 +4,7 @@ import Taro, { useDidShow, useRouter } from '@tarojs/taro';
 import { expertConsultationsAPI } from '../../../services/api';
 
 const green = '#246B50';
-const stages = { team_assignment: '正在分配服务团队', intake: '健管专员整理资料', advisor: '健康顾问准备转介信', planner: '健康规划师安排专家', expert: '等待专家咨询及书面回复', reconcile: '健康顾问协调专家意见', followup: '健管专员拟随访计划', final_review: '健康顾问审核计划', completed: '服务完成', cancelled: '已取消' };
+const stages = { team_assignment: '健康规划师首次派单', intake: '健管专员整理资料', advisor: '健康顾问审核并确认专家', planner: '健管专员安排预约', expert: '等待专家咨询及书面回复', reconcile: '健康顾问协调专家意见', followup: '健管专员拟随访计划', final_review: '健康顾问审核计划', completed: '服务完成', cancelled: '已取消' };
 const line = { marginTop: '12px', lineHeight: 1.6, color: '#344E44', fontSize: '14px' };
 
 export default function ConsultationOrderPage() {
@@ -44,7 +44,7 @@ export default function ConsultationOrderPage() {
         placeholder="例如：希望专家重点分析哪些检查结果、治疗选择或后续管理问题"
         style={{ width: '100%', minHeight: '110px', boxSizing: 'border-box', marginTop: '12px', border: '1px solid #CADBD2', borderRadius: '8px', padding: '10px' }}/>
       <Text style={{ ...line, display: 'block' }}>指定专家（可不选）</Text>
-      <View onClick={() => setExpertId('')} style={{ ...line, padding: '8px', border: expertId ? '1px solid #D8E4DC' : `2px solid ${green}`, borderRadius: '8px' }}>由健康规划师匹配</View>
+      <View onClick={() => setExpertId('')} style={{ ...line, padding: '8px', border: expertId ? '1px solid #D8E4DC' : `2px solid ${green}`, borderRadius: '8px' }}>由健康顾问匹配专家</View>
       {experts.map(expert => <View key={expert._id} onClick={() => setExpertId(expert._id)} style={{ ...line, padding: '8px', border: expertId === expert._id ? `2px solid ${green}` : '1px solid #D8E4DC', borderRadius: '8px' }}>{expert.name} · {expert.title}</View>)}
       <View onClick={busy ? undefined : submit} style={{ marginTop: '20px', background: green, color: '#fff', textAlign: 'center', padding: '12px', borderRadius: '8px', opacity: busy ? 0.5 : 1 }}>提交咨询需求</View>
     </View> : <View style={{ background: '#fff', borderRadius: '12px', padding: '16px', marginTop: '20px' }}>

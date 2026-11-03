@@ -61,6 +61,9 @@ test('paid single consultation runs from customer request through booked schedul
     const createReferral = (reason, medicalExpertId = expertId) => Referral.create({ patientId, fromStaffId: advisorId,
       referralType: 'external_medical', medicalExpertId, reason, referralPurpose: reason,
       questionList: '下一步如何安排？', content: '已核实相关资料', status: 'pending' });
+    assert.equal(created.body.data.status, 'team_assignment', '商城订单必须先由规划师派单');
+    assert.equal((await step('intake', managerId, { summary: '不能绕过首次派单' })).statusCode, 409);
+    assert.equal((await step('team', plannerId, { managerId })).statusCode, 200);
     assert.equal((await step('intake', managerId, { summary: '已核实既往资料' })).statusCode, 200);
     assert.equal((await step('referral', advisorId, { purpose: '分析管理方向', questions: '下一步做什么？' })).statusCode, 400);
     const firstReferral = await createReferral('分析管理方向');
@@ -72,13 +75,17 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal((await step('referral', advisorId, { referralId: String(replacementReferral._id) })).statusCode, 200);
     assert.equal((await Referral.findById(firstReferral._id)).expertConsultationCaseId, null);
     assert.equal(String((await Referral.findById(replacementReferral._id)).expertConsultationCaseId), String(caseId));
-    const missingManager = await step('assign', plannerId, { members: [{ expertId, slotId: expertSlot }] });
+    assert.equal((await step('assign', plannerId, { members: [{ expertId, slotId: expertSlot }] })).statusCode, 403, '规划师不能代为预约');
+    assert.equal((await step('confirm-experts', managerId, { expertIds: [expertId] })).statusCode, 403, '专员不能代顾问确认专家');
+    assert.equal((await step('assign', managerId, { members: [{ expertId, slotId: expertSlot }], managerSlotId: managerSlot })).statusCode, 409);
+    assert.equal((await step('confirm-experts', advisorId, { expertIds: [expertId] })).statusCode, 200);
+    const missingManager = await step('assign', managerId, { members: [{ expertId, slotId: expertSlot }] });
     assert.equal(missingManager.statusCode, 409);
-    const assigned = await step('assign', plannerId, { members: [{ expertId, slotId: expertSlot }], managerSlotId: managerSlot });
+    const assigned = await step('assign', managerId, { members: [{ expertId, slotId: expertSlot }], managerSlotId: managerSlot });
     assert.equal(assigned.statusCode, 200, JSON.stringify(assigned.body));
     assert.equal((await StaffAvailability.findById(expertSlot)).status, 'booked');
     assert.equal((await StaffAvailability.findById(managerSlot)).status, 'booked');
-    assert.equal((await step('meeting', plannerId, { meetingUrl: 'https://meeting.example.test/room' })).statusCode, 200);
+    assert.equal((await step('meeting', managerId, { meetingUrl: 'https://meeting.example.test/room' })).statusCode, 200);
     const customerView = await call('get', '/mine', { user: { _id: patientId, tenantId } });
     assert.equal(customerView.body.data[0].meetingUrl, 'https://meeting.example.test/room');
     assert.equal((await step('reply', expertStaffId, { opinion: '现有资料不足以支持进一步改变方案', nextStep: '维持现有管理并复查', noBetterOption: true })).statusCode, 200);
@@ -109,11 +116,17 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(mdtCreated.body.data.status, 'team_assignment');
     const teamAssigned = await call('post', '/staff/:id/team', { params: { id: String(caseId) }, staff: { _id: plannerId, role: 'healthPlanner' }, body: { advisorId } });
     assert.equal(teamAssigned.statusCode, 200, JSON.stringify(teamAssigned.body));
-    await step('intake', managerId, { summary: '两科病历和检查结果' });
+    assert.equal((await step('intake', managerId, { summary: '两科病历和检查结果' })).statusCode, 409);
+    await mongoose.connection.db.collection('users').updateOne({ _id: patientId }, { $set: { assignedFamilyDoctor: advisorId } });
+    assert.equal((await step('intake', managerId, { summary: '两科病历和检查结果' })).statusCode, 200);
     const mdtReferral = await createReferral('协调多学科意见');
     assert.equal((await step('referral', advisorId, { referralId: String(replacementReferral._id) })).statusCode, 409);
     assert.equal((await step('referral', advisorId, { referralId: String(mdtReferral._id) })).statusCode, 200);
-    const mdtAssigned = await step('assign', plannerId, { members: [{ expertId, slotId: mdtSlotOne }, { expertId: secondExpertId, slotId: mdtSlotTwo }], advisorSlotId: advisorSlot });
+    assert.equal((await step('confirm-experts', advisorId, { expertIds: [expertId, secondExpertId] })).statusCode, 200);
+    assert.equal((await step('request-expert-change', managerId, { reason: '建议协调下午时段' })).statusCode, 200);
+    assert.equal((await Case.findById(caseId)).status, 'advisor');
+    assert.equal((await step('confirm-experts', advisorId, { expertIds: [expertId, secondExpertId] })).statusCode, 200);
+    const mdtAssigned = await step('assign', managerId, { members: [{ expertId, slotId: mdtSlotOne }, { expertId: secondExpertId, slotId: mdtSlotTwo }], advisorSlotId: advisorSlot });
     assert.equal(mdtAssigned.statusCode, 200, JSON.stringify(mdtAssigned.body));
     await step('reply', expertStaffId, { opinion: '先复查', nextStep: '一月后复查' });
     await step('reply', secondExpertStaffId, { opinion: '尽快线下就诊', nextStep: '一周内就诊' });
@@ -161,6 +174,7 @@ test('paid single consultation runs from customer request through booked schedul
     const migration = require('../scripts/migrateExpertConsultationSourceIndex');
     assert.equal((await migration.migrate(collection, true)).migrated, true);
     await mongoose.connection.db.collection('users').updateOne({ _id: patientId }, { $set: { assignedFamilyDoctor: advisorId } });
+    await mongoose.connection.db.collection('users').updateOne({ _id: patientId }, { $set: { assignedHealthPlanner: null } });
     const staffRequest = type => call('post', '/staff', { staff: { _id: managerId, tenantId, role: 'healthManager' },
       body: { patientId: String(patientId), type, expertCount: 2, request: '医护端发起咨询' } });
     const internalSingle = await staffRequest('single');
@@ -168,20 +182,26 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(internalSingle.statusCode, 201, JSON.stringify(internalSingle.body));
     assert.equal(internalMdt.statusCode, 201, JSON.stringify(internalMdt.body));
     assert.equal((await Case.findById(internalSingle.body.data.id)).orderId, null);
+    assert.equal(internalSingle.body.data.status, 'intake', '医护端直接由所属专员承接，不因缺少规划师而阻塞');
+    assert.equal(String((await Case.findById(internalSingle.body.data.id)).managerId), String(managerId));
     const denied = await call('post', '/staff', { staff: { _id: oid(), tenantId, role: 'healthManager' },
       body: { patientId: String(patientId), type: 'single', request: '不应允许' } });
     assert.equal(denied.statusCode, 403);
     caseId = internalSingle.body.data.id;
-    await step('intake', managerId, { summary: '资料已核实' });
+    await Case.updateOne({ _id: caseId }, { $set: { status: 'team_assignment' } });
+    const legacyList = await call('get', '/staff', { staff: { _id: managerId, tenantId, role: 'healthManager' } });
+    assert.equal(legacyList.body.data.find(row => String(row._id) === String(caseId)).status, 'intake');
+    assert.equal((await step('intake', managerId, { summary: '资料已核实' })).statusCode, 200);
     const staffReferral = await createReferral('医护端咨询分析');
     assert.equal((await step('referral', advisorId, { referralId: String(staffReferral._id) })).statusCode, 200);
+    assert.equal((await step('confirm-experts', advisorId, { expertIds: [expertId] })).statusCode, 200);
     const internalExpertSlot = oid(), internalManagerSlot = oid();
     const internalStart = new Date(Date.now() + 5 * 86400000), internalEnd = new Date(+internalStart + 20 * 60000);
     await mongoose.connection.db.collection('staffavailabilities').insertMany([
       { _id: internalExpertSlot, tenantId, staffId: expertStaffId, startAt: internalStart, endAt: internalEnd, status: 'available' },
       { _id: internalManagerSlot, tenantId, staffId: managerId, startAt: internalStart, endAt: internalEnd, status: 'available' },
     ]);
-    assert.equal((await step('assign', plannerId, { members: [{ expertId, slotId: internalExpertSlot }], managerSlotId: internalManagerSlot })).statusCode, 200);
+    assert.equal((await step('assign', managerId, { members: [{ expertId, slotId: internalExpertSlot }], managerSlotId: internalManagerSlot })).statusCode, 200);
     await step('reply', expertStaffId, { opinion: '维持管理', nextStep: '按计划随访' });
     await step('reconcile', advisorId, { note: '按计划随访' });
     await step('followup', managerId, { plan: '每月随访', selfManaged: false });
