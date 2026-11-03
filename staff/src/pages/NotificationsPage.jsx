@@ -268,6 +268,9 @@ export default function NotificationsPage() {
                     会员：<strong style={{ cursor: r.canViewPatient ? 'pointer' : 'default', color: '#1E6B50' }} onClick={() => r.canViewPatient && nav(`/patients/${r.patientId?._id}`)}>{r.patientId?.name}</strong>
                     <span style={{ color: '#aaa', marginLeft: 6 }}>{r.patientId?.phone}</span>
                   </div>
+                  <div style={{ whiteSpace:'pre-wrap', marginBottom:8 }}><b>转介原因：</b>{r.reason || '未填写'}<br /><b>需要解决的问题：</b>{r.questionList || '未填写'}</div>
+                  <div style={{ marginBottom:8 }}><b>关联专病档案：</b>{r.linkedDiseaseName || '本次未关联专病档案'}</div>
+                  {(r.linkedDiseaseSnapshots?.length ? r.linkedDiseaseSnapshots : r.linkedDiseaseSnapshot ? [r.linkedDiseaseSnapshot] : []).map((disease, index) => <div key={index}><b>{disease.name}</b><AttachedHealthInfoView info={{ diseaseSummary: disease.summary, diseaseCourse: disease.recentCourseEntries }} /></div>)}
                   {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
                   {r.consultationType === 'multidisciplinary' && <div style={{ fontSize: 12, color: '#315C4D', background: '#F0F8F4', padding: 9, borderRadius: 6, marginBottom: 6 }}>
                     <b>一份多学科会诊转介 · {r.consultationMembers.length} 位专家</b><br />
@@ -449,6 +452,9 @@ export default function NotificationsPage() {
                     会员：<strong style={{ cursor: 'pointer', color: '#1E6B50' }} onClick={() => nav(`/patients/${r.patientId?._id}`)}>{r.patientId?.name}</strong>
                     <span style={{ color: '#aaa', marginLeft: 6 }}>{r.patientId?.phone}</span>
                   </div>
+                  <div style={{ whiteSpace:'pre-wrap', marginBottom:8 }}><b>转介原因：</b>{r.reason || '未填写'}<br /><b>需要解决的问题：</b>{r.questionList || '未填写'}</div>
+                  <div style={{ marginBottom:8 }}><b>关联专病档案：</b>{r.linkedDiseaseName || '本次未关联专病档案'}</div>
+                  {(r.linkedDiseaseSnapshots?.length ? r.linkedDiseaseSnapshots : r.linkedDiseaseSnapshot ? [r.linkedDiseaseSnapshot] : []).map((disease, index) => <div key={index}><b>{disease.name}</b><AttachedHealthInfoView info={{ diseaseSummary: disease.summary, diseaseCourse: disease.recentCourseEntries }} /></div>)}
                   {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
                   {r.consultationType === 'multidisciplinary' && <div style={{ fontSize: 12, color: '#315C4D', background: '#F0F8F4', padding: 9, borderRadius: 6, marginBottom: 6 }}>
                     <b>一份多学科会诊转介 · {r.consultationMembers.length} 位专家</b><br />
@@ -490,7 +496,7 @@ export default function NotificationsPage() {
                     <div style={{ marginTop: 6, fontSize: 12, color: '#aaa' }}>等待对方回复...</div>
                   )}
                 </div>
-                {r.status === 'rejected' && <button className="btn btn-primary btn-sm" style={{ marginLeft: 12 }} onClick={() => nav(`/patients/${r.patientId?._id}`, { state: { editReferral: r } })}>编辑并重新发送</button>}
+                {['pending', 'rejected'].includes(r.status) && <button className="btn btn-primary btn-sm" style={{ marginLeft: 12 }} onClick={() => nav(`/patients/${r.patientId?._id}`, { state: { editReferral: r } })}>{r.status === 'pending' ? '修改／补充资料' : '编辑并重新发送'}</button>}
               </div>
             </div>
           )}
@@ -784,6 +790,7 @@ function RespondModal({ referral, onClose, onRespond }) {
           <div style={{ padding: '12px', background: '#f9f7f3', borderRadius: 8 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>{referral.reason}</div>
             <div style={{ fontSize: 13, color: '#666' }}>会员：{referral.patientId?.name}</div>
+            <div style={{ whiteSpace:'pre-wrap', marginTop:8 }}><b>需要解决的问题：</b>{referral.questionList || '未填写'}</div>
             {referral.content && <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{referral.content}</div>}
             {referral.consultationType === 'multidisciplinary' && <div style={{ fontSize: 12, color: '#315C4D', marginTop: 8 }}>
               <b>牵头科室：{referral.consultationMembers[0].hospital} · {referral.consultationMembers[0].department}</b>
@@ -1202,7 +1209,7 @@ const HEALTH_SECTION_LABELS = {
   foodAllergy:     '食物过敏',
   drugAllergy:     '药物过敏',
   medicalHistory:  '既往病史',
-  specialDiseases: '特殊疾病史',
+  specialDiseases: '既往病史／慢病记录（非专病档案）',
   familyHistory:   '家族史',
   longTermMeds:    '长期用药',
   longTermSups:    '长期营养补剂',

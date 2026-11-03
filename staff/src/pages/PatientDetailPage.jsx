@@ -11566,6 +11566,8 @@ export default function PatientDetailPage() {
                       <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
                       {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:6 }}>需解决问题：{r.questionList}</div>}
                       {r.expertConsultationCaseId && <div style={{ fontSize:12, marginBottom:6 }}><a href={`/expert-consultations?caseId=${r.expertConsultationCaseId?._id || r.expertConsultationCaseId}`} style={{ color:'#176B4D', fontWeight:700 }}>在专家咨询中查看派发、回复与随访进度 →</a></div>}
+                      {['pending', 'rejected'].includes(r.status) && String(r.fromStaffId?._id || r.fromStaffId) === String(staff?._id) && <button className="btn btn-secondary btn-sm" style={{ marginBottom:8 }} onClick={() => { setEditingReferral(r); setShowReferralModal(true) }}>修改／补充资料</button>}
+                      {(r.linkedDiseaseSnapshots?.length ? r.linkedDiseaseSnapshots : r.linkedDiseaseSnapshot ? [r.linkedDiseaseSnapshot] : []).map((disease, index) => <div key={index}><b>专病档案：{disease.name}</b><AttachedHealthInfoView info={{ diseaseSummary:disease.summary, diseaseCourse:disease.recentCourseEntries }} /></div>)}
                       {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                       {r.respondedAt && !(r.responseAnalysis || r.responseOpinion || r.response) && (
                         <div style={{ marginTop: 8, padding: '8px 11px', background: '#F6F9F7', borderRadius: 6, color: '#65776F', fontSize: 12 }}>
@@ -15854,7 +15856,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
       { key: 'foodAllergy',      label: '食物过敏',     val: u?.healthProfile?.foodAllergy || null },
       { key: 'drugAllergy',      label: '药物过敏',     val: u?.healthProfile?.drugAllergy || null },
       { key: 'medicalHistory',   label: '既往病史',     val: (() => { const v = u?.healthProfile?.medicalHistory; return Array.isArray(v) && v.length ? v : (v || null) })() },
-      { key: 'specialDiseases',  label: '特殊疾病史',   val: u?.healthProfile?.pastHistory || (u?.chronicDiseases?.length ? u.chronicDiseases.join('；') : null) },
+      { key: 'specialDiseases',  label: '既往病史／慢病记录（非专病档案）',   val: u?.healthProfile?.pastHistory || (u?.chronicDiseases?.length ? u.chronicDiseases.join('；') : null) },
       { key: 'familyHistory',    label: '家族史',       val: (() => { const v = u?.healthProfile?.familyHistory; return Array.isArray(v) && v.length ? v : (v || null) })() },
       { key: 'medicationRecords', label: '用药记录（含状态与时间）', val: ed.medications.length ? ed.medications.map(m => ({
         药品: [m.name, m.dosage, m.frequency].filter(Boolean).join(' '),
@@ -15888,7 +15890,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
 
   const buildAttachedHealthInfo = () => {
     if (selectedHealthSections.length === 0) return null
-    const result = {}
+    const result = Object.fromEntries(Object.entries(initialReferral?.attachedHealthInfo || {}).filter(([key]) => selectedHealthSections.includes(key)))
     HEALTH_SECTIONS.forEach(s => {
       if (selectedHealthSections.includes(s.key)) result[s.key] = s.key === 'diseaseHistory' && !selectedDiseaseHistory.length && initialReferral?.attachedHealthInfo?.diseaseHistory ? initialReferral.attachedHealthInfo.diseaseHistory : s.key === 'screeningRecords' && !selectedScreening.length && initialReferral?.attachedHealthInfo?.screeningRecords ? initialReferral.attachedHealthInfo.screeningRecords : s.val
     })
@@ -15908,7 +15910,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     if (!form.reason || (form.referralType === 'internal_collaboration' ? !form.toStaffId : !form.medicalExpertId)) { setError(form.referralType === 'external_medical' ? '外部专家和转介原因不能为空' : '接收人和转介原因不能为空'); return }
     setSaving(true); setError('')
     try {
-      const payload = { patientId, ...form, attachedHealthInfo: buildAttachedHealthInfo() }
+      const payload = { patientId, ...form, expectedUpdatedAt: initialReferral?.updatedAt, attachedHealthInfo: buildAttachedHealthInfo() }
       if (initialReferral) await staffAPI.resubmitReferral(initialReferral._id, payload)
       else await staffAPI.createReferral(payload)
       onSaved()
@@ -15920,7 +15922,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
-          <h3 className="modal-title">🔀 {initialReferral ? '编辑并重新发送转介' : '转介'} — {patientName}</h3>
+          <h3 className="modal-title">🔀 {initialReferral ? '修改／补充转介资料' : '转介'} — {patientName}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
@@ -16142,7 +16144,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : initialReferral ? '保存并重新发送' : '发送转介'}</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : initialReferral ? '保存修改并提交' : '发送转介'}</button>
         </div>
       </div>
     </div>
@@ -16506,7 +16508,7 @@ const REFERRAL_HEALTH_LABELS = {
   foodAllergy:     '食物过敏',
   drugAllergy:     '药物过敏',
   medicalHistory:  '既往病史',
-  specialDiseases: '特殊疾病史',
+  specialDiseases: '既往病史／慢病记录（非专病档案）',
   familyHistory:   '家族史',
   longTermMeds:    '长期用药',
   longTermSups:    '长期营养补剂',
@@ -16520,9 +16522,20 @@ const REFERRAL_HEALTH_LABELS = {
   currentSupplements: '当前营养素补充',
   screeningRecords: '专项筛查项目与结果',
   diseaseHistory: '疾病史与当前状态',
+  diseaseSummary: '专病档案摘要',
+  diseaseCourse: '专病病程记录',
   medicationRecords: '用药记录（含状态与时间）',
   supplementRecords: '营养补充记录（含状态与时间）',
 }
+
+const DISEASE_FIELD_LABELS = {
+  chiefComplaint:'主诉／主要健康诉求', presentIllness:'首次发病与既往经过', physicalExam:'医疗机构检查信息',
+  epidemiologicalHistory:'相关接触／流行病学信息', initialDiagnosis:'医疗机构诊断归档', currentMedication:'医疗机构治疗及用药信息',
+  content:'健康及症状变化', examination:'医疗机构检查信息', diagnosis:'医疗机构诊断归档', medicationChange:'用药医嘱变化',
+  treatmentResponse:'治疗后反馈', nextPlan:'后续安排', sourceInstitution:'来源医疗机构',
+}
+
+const formatReferralDiseaseDate = value => value ? new Date(value).toLocaleDateString('zh-CN') : '日期未记录'
 
 const REFERRAL_HEALTH_SECTION_ORDER = [
   'basicInfo', 'allergies', 'foodAllergy', 'drugAllergy', 'medicalHistory', 'specialDiseases',
@@ -16585,6 +16598,13 @@ function AttachedHealthInfoView({ info }) {
         const label = REFERRAL_HEALTH_LABELS[k] || k
         if ((k === 'medicationRecords' || k === 'supplementRecords') && Array.isArray(v)) {
           return <div key={k} style={{ padding:'9px 10px', background:'#EDF5F1', borderRadius:8, marginBottom:8 }}><div style={{ color:'#355E4F', fontSize:12, fontWeight:700 }}>{label}</div><ReferralHealthRecordList records={v} supplement={k === 'supplementRecords'} /></div>
+        }
+        if (k === 'diseaseSummary' && typeof v === 'object') {
+          const rows = Object.entries(v).filter(([key, value]) => DISEASE_FIELD_LABELS[key] && String(value || '').trim())
+          return <div key={k} style={{ padding:'9px 10px', background:'#FFFFFF', border:'1px solid #DCE8E3', borderRadius:8, marginBottom:8 }}><div style={{ color:'#355E4F', fontSize:12, fontWeight:700, marginBottom:6 }}>{label}</div>{rows.map(([key,value]) => <div key={key} style={{ fontSize:12, color:'#1A2B24', lineHeight:1.65, marginBottom:4 }}><span style={{ color:'#60756B', fontWeight:600 }}>{DISEASE_FIELD_LABELS[key]}：</span>{String(value)}</div>)}</div>
+        }
+        if (k === 'diseaseCourse' && Array.isArray(v)) {
+          return <div key={k} style={{ padding:'9px 10px', background:'#FFFFFF', border:'1px solid #DCE8E3', borderRadius:8, marginBottom:8 }}><div style={{ color:'#355E4F', fontSize:12, fontWeight:700, marginBottom:4 }}>{label}</div>{v.map((entry,index) => <div key={index} style={{ padding:'7px 0', borderTop:index ? '1px solid #DCE8E3':'none', fontSize:12, lineHeight:1.65 }}><div style={{ color:'#60756B', fontWeight:600, marginBottom:3 }}>{formatReferralDiseaseDate(entry.occurredAt)}{entry.sourceInstitution ? ` · ${entry.sourceInstitution}` : ''}</div>{Object.entries(entry).filter(([key,value]) => DISEASE_FIELD_LABELS[key] && String(value || '').trim()).map(([key,value]) => <div key={key}><span style={{ color:'#60756B' }}>{DISEASE_FIELD_LABELS[key]}：</span>{String(value)}</div>)}</div>)}</div>
         }
         return (
           <div key={k} style={{ padding:'7px 9px', background:'#FFFFFF', border:'1px solid #E1EAE6', borderRadius:7, fontSize:12, color:'#1A2B24', lineHeight:1.65, marginBottom:6 }}>

@@ -8441,7 +8441,11 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
   try {
     const referral = await Referral.findOne({ _id: req.params.id, fromStaffId: req.staff._id });
     if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权修改' });
-    if (referral.status !== 'rejected') return res.status(409).json({ success: false, message: '仅已退回的转介可以编辑后重新发送' });
+    if (!['pending', 'rejected'].includes(referral.status)) return res.status(409).json({ success: false, message: '仅待处理或已退回的转介可以修改；已接收的转介请联系接收方退回后修订' });
+    if (req.body.expectedUpdatedAt && new Date(req.body.expectedUpdatedAt).getTime() !== new Date(referral.updatedAt).getTime()) return res.status(409).json({ success:false, message:'转介信已更新，请刷新后重新修改' });
+    const editingPending = referral.status === 'pending';
+    if (editingPending && ((req.body.referralType && req.body.referralType !== referral.referralType) || (req.body.medicalExpertId && String(req.body.medicalExpertId) !== String(referral.medicalExpertId)) || (req.body.toStaffId && String(req.body.toStaffId) !== String(referral.toStaffId))))
+      return res.status(409).json({ success:false, message:'修改资料不能更换接收专家或接收人，请另行调整服务安排' });
     const reason = cleanMedicalText(req.body.reason, 500);
     if (!reason) return res.status(400).json({ success: false, message: '请填写转介原因' });
     const patient = await User.findById(referral.patientId).select('diseaseRecords medicalRecord');
@@ -8462,6 +8466,7 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
       if (!expert) return res.status(400).json({ success:false, message:'请选择有效的外部专家' });
     } else if (!req.body.toStaffId) return res.status(400).json({ success:false, message:'请选择接收人' });
     referral.revisionHistory.push({
+      attachedHealthInfo: referral.attachedHealthInfo, linkedDiseaseRecordIds: referral.linkedDiseaseRecordIds, linkedDiseaseSnapshots: referral.linkedDiseaseSnapshots, linkedDiseaseRecordId: referral.linkedDiseaseRecordId, linkedDiseaseSnapshot: referral.linkedDiseaseSnapshot, linkedDiseaseName: referral.linkedDiseaseName, status: referral.status,
       reason: referral.reason, content: referral.content, questionList: referral.questionList, urgency: referral.urgency,
       response: referral.response, responseAnalysis: referral.responseAnalysis, responseOpinion: referral.responseOpinion,
       returnedAt: referral.respondedAt, revisedAt: new Date(), revisedById: req.staff._id, revisedByName: req.staff.name || req.staff.username || '',
@@ -8492,7 +8497,7 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
     referral.fromStaffUnread = false;
     await referral.save();
     res.json({ success: true, data: referral, message: '已修订并重新发送，对方将在消息通知中看到' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(err.name === 'VersionError' ? 409 : 500).json({ success: false, message: err.message }); }
 });
 
 // POST /api/staff/referrals/:id/ai-response-draft — AI仅整理授权信息和协作反馈，人工审核后提交
