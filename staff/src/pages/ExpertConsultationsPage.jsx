@@ -66,10 +66,10 @@ export default function ExpertConsultationsPage({ embedded = false }) {
   async function choose(row) {
     setSelectedId(id(row)); setError(''); setEditingRequest(false); setRequestDraft(row.clientRequest || ''); setShowReferralChange(false); setActiveStatusCard('')
     setForm(row.status === 'team_assignment' && !row.plannerId ? { plannerId: self } : row.referralId ? { referralId: id(row.referralId) } : {})
-    setReferrals([])
+    setReferrals([]); setExperts([]); setSlots([])
     try { const result = await staffAPI.expertConsultationMaterials(id(row)); setReports(result.data || []) }
     catch (e) { setError(e.message); setReports([]) }
-    setMembers(Array.from({ length: row.type === 'mdt' ? Number(/^([2-8])位专家/.exec(row.specificationLabel || '')?.[1] || 2) : 1 }, (_, index) => ({ expertId: id(row.confirmedExpertIds?.[index]) || (index === 0 ? id(row.referralId?.medicalExpertId) : ''), slotId: '' })))
+    setMembers(Array.from({ length: row.type === 'mdt' ? Number(/^([2-8])位专家/.exec(row.specificationLabel || '')?.[1] || 2) : 1 }, (_, index) => ({ expertId: id(row.confirmedExpertIds?.[index]) || id(row.plannedExpertIds?.[index]) || (index === 0 ? id(row.referralId?.medicalExpertId) : ''), slotId: '' })))
     if (row.status === 'team_assignment') {
       try { const now = new Date(); const result = await staffAPI.teamAvailability({ start: now.toISOString(), end: new Date(+now + 7 * 86400000).toISOString() }); setTeam(result.data?.staff || []) }
       catch (e) { setError(e.message) }
@@ -83,7 +83,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
     try {
       const first = new Date()
       const [expertResult, slotsResult] = await Promise.all([
-        staffAPI.expertConsultationExperts(),
+        staffAPI.expertConsultationCaseExperts(id(row)),
         staffAPI.teamAvailability({ start: first.toISOString(), end: new Date(+first + 30 * 86400000).toISOString() }),
       ])
       setExperts(expertResult.data || [])

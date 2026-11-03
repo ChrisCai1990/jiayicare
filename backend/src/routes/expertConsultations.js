@@ -29,16 +29,17 @@ const availableReferral = row => ({ patientId: row.patientId, fromStaffId: row.a
   referralType: 'external_medical', status: { $in: ['pending', 'accepted'] },
   $or: [{ sourceOrderId: null }, ...(row.orderId ? [{ sourceOrderId: row.orderId }] : [])] });
 const referralFields = 'reason content referralPurpose questionList medicalExpertId medicalExpertSnapshot expertConsultationCaseId status createdAt';
-async function eligibleReferralExperts(row) {
+async function eligibleExpertRows(row) {
   const fee = row.type === 'mdt' ? 'mdtFee' : 'singleConsultationFee';
   const mode = row.type === 'mdt' ? 'mdt' : 'single_consultation';
   const experts = await MedicalExpert.find({ status: 'active', teamEligible: true, linkedStaffId: { $ne: null },
-    serviceModes: mode, [fee]: { $lte: 200 } }).select('_id linkedStaffId').lean();
+    serviceModes: mode, [fee]: { $lte: 200 } }).select('_id name title linkedStaffId serviceModes singleConsultationFee mdtFee').lean();
   const active = await Admin.find({ _id: { $in: experts.map(item => item.linkedStaffId) },
     tenantId: row.tenantId, staffStatus: 'active' }).select('_id').lean();
   const activeIds = new Set(active.map(item => id(item._id)));
-  return new Set(experts.filter(item => activeIds.has(id(item.linkedStaffId))).map(item => id(item._id)));
+  return experts.filter(item => activeIds.has(id(item.linkedStaffId)));
 }
+async function eligibleReferralExperts(row) { return new Set((await eligibleExpertRows(row)).map(item => id(item._id))); }
 
 router.post('/mine', userAuth, async (req, res) => {
   if (!valid(req.body?.orderId)) return fail(res, 400, '订单编号无效');
@@ -129,6 +130,8 @@ router.get('/staff', staffAuth, async (req, res) => {
   ] };
   const rows = await Case.find(filter).sort({ createdAt: -1 }).limit(200)
     .populate('patientId', 'name phone').populate('referralId', referralFields)
+    .populate('managerId advisorId plannerId', 'name role')
+    .populate('confirmedExpertIds plannedExpertIds', 'name title')
     .populate('members.expertId', 'name title').lean();
   res.json({ success: true, data: rows.map(row => ({ ...row, status: effectiveStatus(row) })) });
 });
@@ -140,6 +143,15 @@ router.get('/staff/experts', staffAuth, async (req, res) => {
   const active = await Admin.find({ _id: { $in: rows.map(x => x.linkedStaffId) }, staffStatus: 'active' }).select('_id').lean();
   const activeIds = new Set(active.map(x => id(x)));
   res.json({ success: true, data: rows.filter(x => activeIds.has(id(x.linkedStaffId))) });
+});
+
+router.get('/staff/:id/experts', staffAuth, async (req, res) => {
+  const row = valid(req.params.id) && await Case.findById(req.params.id);
+  if (!row) return fail(res, 404, '咨询服务不存在');
+  if (!['advisorId', 'managerId', 'plannerId'].some(field => assigned(row, req.staff, field)))
+    return fail(res, 403, '仅本次负责人员可查看可选专家');
+  if (!['advisor', 'planner'].includes(row.status)) return fail(res, 409, '当前阶段不能选择专家');
+  res.json({ success: true, data: await eligibleExpertRows(row) });
 });
 
 router.get('/staff/:id/materials', staffAuth, async (req, res) => {
