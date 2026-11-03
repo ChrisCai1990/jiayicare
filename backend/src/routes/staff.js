@@ -11233,12 +11233,14 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     if (institutionType === 'pharmacy' && !String(req.body.pharmacyName || '').trim()) return res.status(400).json({ success: false, message: '请填写线下药房名称' });
     const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor assignedHealthPlanner assignedHealthManager');
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    if (mode === 'proxy' && (!patient.assignedHealthPlanner || !patient.assignedHealthManager)) {
+    if (!patient.assignedHealthManager) {
+      return res.status(409).json({ success: false, message: '请先为会员分配健管专员，才能生成配取随访' });
+    }
+    if (mode === 'proxy' && !patient.assignedHealthPlanner) {
       return res.status(409).json({ success: false, message: '请先为会员分配健康规划师和健管专员，才能自动生成正式代配药任务' });
     }
-    // 一键生成后先归当前点击人负责，确保两种模式都立即出现在其“我的随访”中；
-    // 如需由其他岗位代办，可在随访列表中再明确转派负责人。
-    const assignee = req.staff._id;
+    // 创建人仅用于留痕；配取随访由客户所属健管专员执行。
+    const assignee = patient.assignedHealthManager;
     const itemType = kind === 'medication' ? '药物' : '营养素';
     const task = mode === 'proxy' ? '我方代配' : '提醒客户配取';
     const row = {
