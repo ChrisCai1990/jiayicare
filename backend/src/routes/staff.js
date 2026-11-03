@@ -16318,7 +16318,7 @@ const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手�
 输出首轮遗漏的真实检查项目，以及首轮已有项目中检查结果为空、只有横线或明显不完整的项目的完整原文。数值项目已有完整结果时不要重复；文字检查即使已有非空所见，仍须从结果栏首行读到末行，核对其全部编号段落，缺后段时以同一项目名输出完整findings。报告内“检查结果/所见/提示”栏的编号段落属于该检查，不因出现“建议”字样而跳过；独立的汇总页、目录、科普、会员信息和无结果标题不输出。
 血液/尿液/粪便检验每个有结果的子项单独输出；内科、外科、全科、眼科、耳鼻喉、妇科、牙科或口腔科等体格检查也要按报告印刷明细逐项输出，禁止按科室合并；心电图、碳13/碳14呼气试验、头颅MRI不得漏；组合超声按器官拆开。
 眼科须逐行核对左右裸眼视力、矫正视力和眼部检查；带文字的结果不可只写横线。明确“未见异常”应标normal。
-超声页须单独核对下方“超声诊断/诊断/结论”栏：已有检查描述但诊断为空时，以同一检查项目名补出原文diagnosis和conclusion；诊断下方的C-TIRADS等分级释义、风险概率、参考文献不得并入患者诊断。手写内容无法辨认时留空，不猜。
+超声页须单独核对下方“超声诊断/诊断/结论”栏：已有检查描述但诊断为空时，以同一检查项目名补出可辨认的印刷诊断diagnosis和conclusion；诊断下方的C-TIRADS等分级释义、风险概率、参考文献不得并入患者诊断。忽略手写批注，不因手写缺失重试；需要采用时由人工录入。
 严格返回JSON，不要解释：
 {"items":[{"name":"项目名","itemType":"lab | imaging | data","value":"","unit":"","referenceRange":"","status":"normal | abnormal | attention | unknown","orderName":"","sourceSection":"原栏目标题","sourceSectionOrder":1,"sourceRowOrder":1,"bodyPart":"","findings":"","diagnosis":"","conclusion":"","pathologyFindings":"","pathologyDiagnosis":""}]}`;
 
@@ -17617,13 +17617,20 @@ async function runReportParseControlled(reportId) {
             if (!retryPage || shouldSkipParsedReportPage(retryPage) || !Array.isArray(retryPage.items)) continue;
             const oldPage = allItems.filter(item => item._page === pageNum);
             const retryItems = tagReportPageItems(retryPage.items, pageNum).filter(hasReportItemEvidence);
-            if (retryItems.length && reportPageEvidenceScore(retryItems) >= reportPageEvidenceScore(oldPage)) {
-              allItems = allItems.filter(item => item._page !== pageNum).concat(retryItems);
-              qualityRetryPages.delete(pageNum);
-              failedPageNumbers.delete(pageNum);
-              detailPages.add(pageNum);
-              okPages++;
-              console.log(`[parse-ai] 页${pageNum}高分辨率质量回退生效：${oldPage.length}项→${retryItems.length}项`);
+            if (retryItems.length) {
+              // 高分辨率重读只能补充原页，不能因为项目数相同就整页覆盖已核实的所见/诊断。
+              const mergedPage = mergeCoverageAuditItems(oldPage, retryItems);
+              if (coverageAuditHasChanges(oldPage, mergedPage)) {
+                allItems = allItems.filter(item => item._page !== pageNum).concat(mergedPage);
+                console.log(`[parse-ai] 页${pageNum}高分辨率质量回退补全：${oldPage.length}项→${mergedPage.length}项`);
+              }
+              // 仍有空值时保留页级提示，避免把部分补全误报为整页完成。
+              if (!hasIncompleteReportEvidence(mergedPage)) {
+                qualityRetryPages.delete(pageNum);
+                failedPageNumbers.delete(pageNum);
+                detailPages.add(pageNum);
+                okPages++;
+              }
             }
           } catch (error) { rethrowAiControl(error);
             console.log(`[parse-ai] 页${pageNum}高分辨率质量回退异常: ${error.message}`);
