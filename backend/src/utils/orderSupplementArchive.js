@@ -1,5 +1,6 @@
 const Product = require('../models/Product');
 const Supplement = require('../models/Supplement');
+const Order = require('../models/Order');
 
 function isSupplementOrder(order = {}, product = {}) {
   const workflowKey = order.serviceWorkflowSnapshot?.key || product.serviceWorkflow?.key || '';
@@ -41,6 +42,8 @@ function buildSupplementDraft(order, product = {}) {
 
 async function ensureOrderSupplementDraft(order) {
   if (!order?._id || !order.user || order.paymentStatus !== 'paid') return null;
+  // Keep a corrected patient archive removed when payment callbacks are retried.
+  if (order.supplementArchiveDeletedAt || await Order.exists({ _id: order._id, supplementArchiveDeletedAt: { $ne: null } })) return null;
   const product = await Product.findById(order.serviceId).select('name category images serviceWorkflow').lean().catch(() => null);
   if (!isSupplementOrder(order, product || {})) return null;
   try {

@@ -31,4 +31,12 @@ function canNutritionistEditOrderSupplement(record, role) {
     && isOrderArchive;
 }
 
-module.exports = { validateApprovedSupplement, reviewedSupplementFields, canNutritionistEditOrderSupplement };
+function canNutritionistDeleteOrderSupplement(record, role) {
+  return role === 'nutritionist' && !record?.staffId && (
+    record?.sourceType === 'order'
+    || Boolean(record?.sourceOrderId)
+    || record?.createdByName === '商城订单自动写入'
+    || record?.aiGeneratedBy === '商城营养素订单'
+  );
+}
+module.exports = { validateApprovedSupplement, reviewedSupplementFields, canNutritionistEditOrderSupplement, canNutritionistDeleteOrderSupplement };
