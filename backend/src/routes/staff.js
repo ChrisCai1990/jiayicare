@@ -8426,7 +8426,7 @@ router.get('/referrals', staffAuth, async (req, res) => {
       .populate('fromStaffId', 'name role title')
       .populate('toStaffId', 'name role title')
       .populate('patientId', 'name phone chronicDiseases assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner')
-      .populate({ path: 'expertConsultationCaseId', select: 'status referralId correspondence reconciliation followupPlan members.opinion members.nextStep members.noBetterOption members.revisions members.expertId members.dispatchedAt members.viewedAt members.viewedReferralId members.viewedVersion members.repliedAt', populate: { path: 'members.expertId', select: 'name' } }),
+      .populate({ path: 'expertConsultationCaseId', select: 'status referralId correspondence reconciliation followupPlan followupItems followupReviewedAt members.changeRequests members.staffId members.reviewMode members.reviewNote members.reviewRecommendations members.opinion members.nextStep members.noBetterOption members.revisions members.expertId members.dispatchedAt members.viewedAt members.viewedReferralId members.viewedVersion members.repliedAt', populate: { path: 'members.expertId', select: 'name' } }),
     Referral.countDocuments(filter),
   ]);
   const visibleIds = req.staff.role === 'superadmin' ? null : (await getVisibleStaffIds(req.staff)).map(String);

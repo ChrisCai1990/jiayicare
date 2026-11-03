@@ -1,3 +1,5 @@
+import ExpertReplyForm from '../components/ExpertReplyForm'
+import ConsultationFollowupReview from '../components/ConsultationFollowupReview'
 import ConsultationCorrespondence from '../components/ConsultationCorrespondence'
 import ConsultationReadStatus from '../components/ConsultationReadStatus'
 import ConsultationReferralDetail from '../components/ConsultationReferralDetail'
@@ -8,7 +10,7 @@ import PatientPicker from '../components/PatientPicker'
 
 const id = value => String(value?._id || value || '')
 const time = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '待安排'
-const stages = { team_assignment: '规划师首次派单', intake: '健管收集资料', advisor: '顾问审核并确认专家', planner: '健管专员安排预约', expert: '专家咨询及书面回复', reconcile: '顾问协调意见', followup: '健管拟随访计划', final_review: '顾问审核随访', completed: '已完成', cancelled: '已取消' }
+const stages = { team_assignment: '规划师首次派单', intake: '健管收集资料', advisor: '顾问审核并确认专家', planner: '健管专员安排预约', expert: '专家咨询及书面回复', reconcile: '顾问审核意见与随访', followup: '健管拟随访计划', final_review: '顾问审核随访', completed: '已完成', cancelled: '已取消' }
 const input = { width: '100%', boxSizing: 'border-box' }
 const textField = (label, value, onChange, rows = 3) => <label style={{ display: 'block', margin: '10px 0' }}><b>{label}</b><textarea className="form-input" style={input} rows={rows} value={value} onChange={e => onChange(e.target.value)}/></label>
 
@@ -61,7 +63,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
     advisor: ['健康顾问', selected.advisorId, '审核资料、转介信和专家名单，提交健管专员安排。'],
     planner: selected.expertsConfirmedAt ? ['健管专员', selected.managerId, '与客户及专家确认时间，选择空档后确认预约并推送转介信。'] : ['健康顾问', selected.advisorId, '确认转介信及专家名单后，提交健管专员安排。'],
     expert: ['参会专家', null, '按预约时间参与咨询，并提交明确的书面意见和下一步建议。'],
-    reconcile: ['健康顾问', selected.advisorId, '查看专家回复，协调不同意见并确认管理路径。'],
+    reconcile: ['健康顾问', selected.advisorId, '审核专家回复及自动生成的随访草稿，确认复查日期和项目后发布。'],
     followup: ['健管专员', selected.managerId, '根据专家回复和顾问结论拟定随访计划。'],
     final_review: ['健康顾问', selected.advisorId, '审核随访计划，确认后结束本次服务。'],
     completed: ['服务已完成', null, '可在下方查看转介资料、专家回复及随访计划。'],
@@ -213,10 +215,10 @@ export default function ExpertConsultationsPage({ embedded = false }) {
           </div>}
           {selected.expertChangeReason && <p>预约调整反馈：{selected.expertChangeReason}</p>}
           {selected.status === 'planner' && manager && <details style={{ marginTop: 16 }}><summary style={{ cursor: 'pointer' }}>无法安排当前专家？反馈健康顾问</summary>{!selected.expertsConfirmedAt && <p>请先由健康顾问确认专家名单。</p>}{textField('调整原因及建议', form.changeReason || '', set('changeReason'))}<button className="btn btn-secondary" disabled={busy || !form.changeReason?.trim()} onClick={() => action('request-expert-change', { reason: form.changeReason })}>退回健康顾问重新确认</button></details>}
-          <ConsultationCorrespondence consultation={selected} advisor={advisor} busy={busy} drafts={form.supplementAnswers || {}} onDraft={(key, value) => set('supplementAnswers')({ ...form.supplementAnswers, [key]: value })} onReply={(requestId, content) => action('correspondence', { requestId, content })} />
+          <ConsultationCorrespondence consultation={selected} advisor={advisor} returnDrafts={form.returnReasons || {}} onReturnDraft={(key,value)=>set('returnReasons')({...form.returnReasons,[key]:value})} onReturn={(staffId,reason)=>action('return-reply',{staffId,reason})} busy={busy} drafts={form.supplementAnswers || {}} onDraft={(key, value) => set('supplementAnswers')({ ...form.supplementAnswers, [key]: value })} onReply={(requestId, content) => action('correspondence', { requestId, content })} />
           {selected.status === 'expert' && assignedExpert && selected.members?.some(member => id(member.staffId) === self && !member.repliedAt) && <div style={{ margin: '20px 0' }}><h4>会前意见／要求补充资料</h4>{textField('需要补充或确认的具体内容', form.supplementQuestion || '', set('supplementQuestion'))}<button className="btn btn-secondary" disabled={busy || !form.supplementQuestion?.trim()} onClick={() => action('correspondence', { content: form.supplementQuestion })}>提交健康顾问并留档</button><p>健康顾问收到待办，回复后可在上方查看。此处不会代替正式转介回复。</p></div>}
-          {selected.status === 'expert' && assignedExpert && <div><h4>回复转介信</h4>{textField('分析依据与专业意见', form.opinion || '', set('opinion'))}{textField('明确的下一步或无更好方案的说明', form.nextStep || '', set('nextStep'))}<label><input type="checkbox" checked={!!form.noBetterOption} onChange={e => set('noBetterOption')(e.target.checked)}/> 暂无更合适方案</label><br/><button className="btn btn-primary" disabled={busy} onClick={() => action('reply', form)}>提交书面回复</button></div>}
-          {selected.status === 'reconcile' && advisor && <div><h4>协调多专科意见</h4>{textField('一致点、矛盾和明确管理路径', form.note || '', set('note'))}<button className="btn btn-secondary" disabled={busy} onClick={() => action('reconcile', { note: form.note, requestChanges: true })}>存在矛盾，退回专家补充</button> <button className="btn btn-primary" disabled={busy} onClick={() => action('reconcile', { note: form.note })}>确认协调结论</button></div>}
+          {selected.status === 'expert' && assignedExpert && <ExpertReplyForm key={`${selectedId}-${selected.members.find(m=>id(m.staffId)===self)?.changeRequests?.length || 0}`} member={selected.members.find(m=>id(m.staffId)===self)} busy={busy} onSubmit={payload=>action('reply',payload)} />}
+          {selected.status === 'reconcile' && advisor && <ConsultationFollowupReview key={`${selectedId}-${selected.followupDraft?.generatedAt || ''}`} consultation={selected} busy={busy} onGenerate={()=>action('generate-followup',{})} onSubmit={payload=>action('complete',payload)} />}
           {selected.status === 'followup' && manager && <div><h4>拟定随访计划</h4>{textField('管理路径和随访安排', form.plan || '', set('plan'))}<label><input type="checkbox" checked={!!form.selfManaged} onChange={e => set('selfManaged')(e.target.checked)}/> 客户自行管理</label><br/><button className="btn btn-primary" disabled={busy} onClick={() => action('followup', form)}>提交健康顾问审核</button></div>}
           {selected.status === 'final_review' && advisor && <button className="btn btn-primary" disabled={busy} onClick={() => action('complete', {})}>审核随访计划并结束服务</button>}
           <details key={`materials-${selectedId}`} style={{ marginTop: 24, borderTop: '1px solid #DDE8E1', paddingTop: 16 }}>

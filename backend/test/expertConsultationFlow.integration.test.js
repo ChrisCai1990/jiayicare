@@ -129,6 +129,46 @@ test('paid single consultation runs from customer request through booked schedul
     const archived = await Referral.findById(replacementReferral._id).populate('expertConsultationCaseId');
     assert.equal(archived.expertConsultationCaseId.correspondence[0].answers.length, 2, '客户转介档案可读取完整往来');
     assert.equal((await step('reply', expertStaffId, { opinion: '现有资料不足以支持进一步改变方案', nextStep: '维持现有管理并复查', noBetterOption: true })).statusCode, 200);
+    {
+    // New flow: expert reply -> automatic draft -> advisor approval -> shared follow-up.
+    const originalCaseId = caseId;
+    const sourceCase = (await Case.findById(caseId)).toObject();
+    const autoCase = await Case.create({ tenantId, patientId, managerId, advisorId, initiationSource:'staff', type:'single', status:'expert', members:sourceCase.members.map(m=>({...m,repliedAt:null,reviewMode:'',revisions:[],changeRequests:[]})) });
+    caseId=autoCase._id;
+    const FollowUp=require('../src/models/FollowUp');
+    const draftUtils=require('../src/utils/consultationFollowupDraft');
+    const reviewDate=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+    const reply={opinion:'按原始资料分析',nextStep:'按安排复查',reviewMode:'needed',reviewRecommendations:[{time:'一周后',items:'血常规'}]};
+    assert.equal((await step('reply',expertStaffId,reply)).statusCode,200);
+    let auto=await Case.findById(caseId);
+    assert.equal(auto.status,'reconcile'); assert.equal(auto.followupDraft.status,'ready');
+    assert.equal(auto.followupDraft.items[0].date,'','relative time must await advisor confirmation');
+    assert.equal(await FollowUp.countDocuments({sourceId:caseId}),0,'draft never creates live tasks');
+    const {consultationTodos}=require('../src/utils/consultationTodos');
+    const tasks=consultationTodos([{...auto.toObject(),patientId:{_id:patientId,name:'合成客户'}}],{_id:advisorId});
+    assert.equal(tasks[0].label,'专家意见与随访计划待审核');
+    assert.equal((await step('return-reply',managerId,{staffId:expertStaffId,reason:'补充'})).statusCode,403);
+    assert.equal((await step('return-reply',advisorId,{staffId:expertStaffId,reason:'请明确复查项目'})).statusCode,200);
+    auto=await Case.findById(caseId); assert.equal(auto.status,'expert'); assert.equal(auto.followupDraft,null); assert.equal(auto.members[0].revisions.length,1);
+    assert.equal((await step('reply',expertStaffId,reply)).statusCode,200);
+    auto=await Case.findById(caseId); assert.ok(auto.members[0].changeRequests[0].resolvedAt);
+    assert.equal((await step('complete',managerId,{})).statusCode,403);
+    const approval={plan:'按专家意见复查并回收结果',confirmed:true,reviewItems:[{date:'',items:'血常规'}]};
+    assert.equal((await step('complete',advisorId,approval)).statusCode,400);
+    approval.reviewItems[0].date=reviewDate;
+    assert.equal((await step('complete',advisorId,approval)).statusCode,200);
+    assert.equal((await step('complete',advisorId,approval)).statusCode,200,'retry is idempotent');
+    const live=await FollowUp.find({sourceId:caseId}); assert.equal(live.length,1);
+    assert.equal(live[0].clientVisible,true); assert.equal(live[0].isBlocked,false); assert.equal(live[0].aiStatus,'approved');
+    assert.equal(String(live[0].assignedTo),String(managerId)); assert.equal(live[0].sourceType,'expert_consultation');
+    assert.equal(live[0].content,'血常规');
+    assert.equal((await step('return-reply',advisorId,{staffId:expertStaffId,reason:'不能改已发布'})).statusCode,409);
+    assert.equal((await step('generate-followup',advisorId,{})).statusCode,409);
+    const parsed=draftUtils.parse(JSON.stringify({items:[{items:'血常规',timeText:'一周后',evidence:'一周后复查血常规'}]}),'建议一周后复查血常规');
+    assert.equal(parsed[0].date,'');
+    assert.throws(()=>draftUtils.parse(JSON.stringify({items:[{items:'额外检查',timeText:'',evidence:'一周后复查血常规'}]}),'一周后复查血常规'));
+    caseId=originalCaseId;
+    }
     assert.equal((await step('reconcile', advisorId, { note: '暂无矛盾；维持现有管理并复查' })).statusCode, 200);
     assert.equal((await step('followup', managerId, { plan: '客户自行管理，每月复查', selfManaged: true })).statusCode, 200);
     assert.equal((await step('complete', advisorId, {})).statusCode, 200);

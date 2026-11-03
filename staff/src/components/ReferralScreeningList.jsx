@@ -37,7 +37,7 @@ export default function ReferralScreeningList({ records }) {
   const categories = groupScreenings(records).map(group => ({ ...group, projects:screeningProjects(group.items) }))
   const matches = project => project.items.some(r => [r.项目,r.报告,r.日期,r.机构].some(v => String(v || '').toLowerCase().includes(search.trim().toLowerCase())))
   const visible = categories.filter(group => category === 'all' || category === group.key).map(group => ({ ...group, projects:group.projects.filter(matches) })).filter(group => group.projects.length)
-  return <section style={{ marginBottom:10, minWidth:0 }}>
+  return <section className="consultation-disclosures" style={{ marginBottom:10, minWidth:0 }}>
     <div style={{ fontWeight:700, color:'#355E4F', marginBottom:8 }}>专项筛查 · {screeningProjects(records).length} 个项目 · {records.length} 条记录</div>
     {records.length > 5 && <input className="form-input" aria-label="搜索筛查项目" placeholder="搜索项目、日期或报告名称" value={search} onChange={e=>setSearch(e.target.value)} style={{ marginBottom:10 }} />}
     <div role="group" aria-label="资料分类" style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:12 }}>{[{ key:'all', label:'全部', projects:screeningProjects(records) }, ...categories].map(group => <button key={group.key} type="button" className={`btn ${category === group.key ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={category === group.key} onClick={() => setCategory(group.key)}>{group.label}（{group.projects.length}）</button>)}</div>

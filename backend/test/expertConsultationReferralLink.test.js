@@ -22,7 +22,7 @@ test('consultation links one existing patient referral and rejects duplicate fre
   let claimFilter;
   Case.findById = async () => row;
   Referral.findOneAndUpdate = async filter => { claimFilter = filter; return { _id: referralId }; };
-  Referral.findOne = () => ({ select: () => ({ lean: async () => ({ medicalExpertId: expertId }) }) });
+  Referral.findOne = () => ({ lean:async()=>({medicalExpertId:expertId}), select: () => ({ lean: async () => ({ medicalExpertId: expertId }) }) });
   MedicalExpert.find = () => ({ select: () => ({ lean: async () => [{ _id: expertId, linkedStaffId: expertStaffId }] }) });
   Admin.find = () => ({ select: () => ({ lean: async () => [{ _id: expertStaffId }] }) });
   Referral.updateOne = async () => ({ modifiedCount: 1 });
@@ -43,7 +43,7 @@ test('consultation links one existing patient referral and rejects duplicate fre
     assert.equal(linked.statusCode, 200);
     assert.equal(String(claimFilter.patientId), String(patientId));
     assert.equal(String(claimFilter.fromStaffId), String(advisorId));
-    assert.equal(claimFilter.expertConsultationCaseId, null);
+    assert.deepEqual(claimFilter.expertConsultationCaseId.$in.map(x=>x && String(x)), [null,String(caseId)]);
     assert.equal(String(row.referralId), String(referralId));
     assert.equal(row.status, 'advisor');
     Referral.findOne = async () => ({ medicalExpertId: expertId });

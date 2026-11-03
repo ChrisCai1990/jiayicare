@@ -437,6 +437,7 @@ router.post('/staff/:id/meeting', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
   if (!assigned(row, req.staff, 'managerId')) return fail(res, 403, '仅负责健管专员可维护会议链接');
+  if (row.followupReviewedAt) return fail(res, 409, '随访已审核，正在发布或已发布，不能再修改专家意见');
   if (!['expert', 'reconcile'].includes(row.status)) return fail(res, 409, '当前阶段不能更新会议链接');
   const meetingUrl = text(req.body?.meetingUrl, 500);
   if (!/^https:\/\/[^\s]+$/i.test(meetingUrl)) return fail(res, 400, '会议链接须为有效的 HTTPS 地址');
@@ -473,6 +474,30 @@ router.post('/staff/:id/correspondence', staffAuth, async (req, res) => {
   res.json({ success: true, data: row });
 });
 
+function returnExpertReply(member, reason, actorId) {
+  member.revisions.push({ opinion: member.opinion, nextStep: member.nextStep, noBetterOption: member.noBetterOption, repliedAt: member.repliedAt, reviewMode: member.reviewMode, reviewNote: member.reviewNote, reviewRecommendations: member.reviewRecommendations.toObject() });
+  member.changeRequests.push({ reason, actorId, at: new Date() });
+  member.repliedAt = null;
+}
+router.post('/staff/:id/return-reply', staffAuth, async (req, res) => {
+  const row = valid(req.params.id) && await Case.findById(req.params.id);
+  if (!row) return fail(res, 404, '咨询服务不存在');
+  if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可退回专家回复');
+  if (row.followupReviewedAt) return fail(res, 409, '随访已审核，正在发布或已发布，不能再修改专家意见');
+  if (!['expert', 'reconcile'].includes(row.status)) return fail(res, 409, '仅可退回尚未确认协调结论的回复');
+  const member = row.members.find(x => id(x.staffId) === id(req.body?.staffId));
+  if (!member?.repliedAt) return fail(res, 409, '该专家尚无可退回的正式回复');
+  const reason = text(req.body?.reason);
+  if (!reason) return fail(res, 400, '请填写退回原因与需要补充的内容');
+  returnExpertReply(member, reason, req.staff._id);
+  row.followupDraft = null; row.status = 'expert'; event(row, 'expert_reply_returned', req.staff._id, reason);
+  try { await row.save(); } catch (err) {
+    if (err.name === 'VersionError') return fail(res, 409, '回复已变化，请刷新后重试');
+    throw err;
+  }
+  res.json({ success: true, data: row });
+});
+
 router.post('/staff/:id/reply', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
@@ -482,23 +507,34 @@ router.post('/staff/:id/reply', staffAuth, async (req, res) => {
   if (row.correspondence.some(item => !item.answers.length)) return fail(res, 409, '尚有补充资料要求未回复，请先由健康顾问说明资料情况');
   const opinion = text(req.body?.opinion), nextStep = text(req.body?.nextStep), noBetterOption = req.body?.noBetterOption === true;
   if (!opinion || !nextStep) return fail(res, 400, '即使没有更合适方案，也需写明分析依据和下一步');
-  if (member.repliedAt) member.revisions.push({ opinion: member.opinion, nextStep: member.nextStep, noBetterOption: member.noBetterOption, repliedAt: member.repliedAt });
+  const reviewMode = req.body?.reviewMode;
+  const reviewNote = text(req.body?.reviewNote);
+  const recommendations = Array.isArray(req.body?.reviewRecommendations) ? req.body.reviewRecommendations.map(item => ({ time: text(item?.time, 200), items: text(item?.items, 1000) })) : [];
+  if (reviewMode !== undefined && !['needed', 'not_needed', 'to_confirm'].includes(reviewMode)) return fail(res, 400, '请选择复查安排');
+  if (recommendations.length > 20 || (reviewMode === 'needed' && (!recommendations.length || recommendations.some(item => !item.time || !item.items)))) return fail(res, 400, '请逐条填写复查时间和项目，最多20条');
+  if (['not_needed', 'to_confirm'].includes(reviewMode) && !reviewNote) return fail(res, 400, '请说明暂不复查或待确认的原因');
+  if (member.repliedAt) member.revisions.push({ opinion: member.opinion, nextStep: member.nextStep, noBetterOption: member.noBetterOption, repliedAt: member.repliedAt, reviewMode: member.reviewMode, reviewNote: member.reviewNote, reviewRecommendations: member.reviewRecommendations.toObject() });
   member.opinion = opinion; member.nextStep = nextStep; member.noBetterOption = noBetterOption; member.repliedAt = new Date();
+  if (reviewMode !== undefined) { member.reviewMode = reviewMode; member.reviewNote = reviewNote; member.reviewRecommendations = reviewMode === 'needed' ? recommendations : []; }
+  member.changeRequests.forEach(request => { if (!request.resolvedAt) request.resolvedAt = new Date(); });
   event(row, 'expert_replied', req.staff._id);
   if (row.members.every(x => x.repliedAt)) row.status = 'reconcile';
-  await row.save(); res.json({ success: true, data: row });
+  await row.save();
+  if (row.status === 'reconcile') await require('../utils/consultationFollowupDraft').generate(row, req.staff);
+  res.json({ success: true, data: row });
 });
 
 router.post('/staff/:id/reconcile', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
   if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可协调专家意见');
+  if (row.followupReviewedAt) return fail(res, 409, '随访已审核，正在发布或已发布，不能再修改专家意见');
   if (row.status !== 'reconcile') return fail(res, 409, '请等待所有专家书面回复');
   const note = text(req.body?.note);
   if (!note) return fail(res, 400, '请写明各专科意见的一致点、矛盾及明确的下一步');
   if (req.body?.requestChanges === true) {
-    row.members.forEach(x => { x.revisions.push({ opinion: x.opinion, nextStep: x.nextStep, noBetterOption: x.noBetterOption, repliedAt: x.repliedAt }); x.repliedAt = null; });
-    row.status = 'expert'; event(row, 'conflict_returned', req.staff._id, note);
+    row.members.forEach(x => returnExpertReply(x, note, req.staff._id));
+    row.followupDraft = null; row.status = 'expert'; event(row, 'conflict_returned', req.staff._id, note);
   } else {
     row.reconciliation = note; row.reconciliationAt = new Date(); row.status = 'followup'; event(row, 'opinions_reconciled', req.staff._id);
   }
@@ -516,15 +552,46 @@ router.post('/staff/:id/followup', staffAuth, async (req, res) => {
   await row.save(); res.json({ success: true, data: row });
 });
 
+router.post('/staff/:id/generate-followup', staffAuth, async (req, res) => {
+  const row = valid(req.params.id) && await Case.findById(req.params.id);
+  if (!row) return fail(res, 404, '咨询不存在');
+  if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可重新生成');
+  if (row.followupReviewedAt) return fail(res, 409, '随访已审核，正在发布或已发布，不能再修改专家意见');
+  if (row.status !== 'reconcile') return fail(res, 409, '请等待专家回复齐全');
+  await require('../utils/consultationFollowupDraft').generate(row, req.staff);
+  res.json({ success:true });
+});
+
 router.post('/staff/:id/complete', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
   if (!assigned(row, req.staff, 'advisorId')) return fail(res, 403, '仅负责健康顾问可审核随访计划');
-  if (row.status !== 'final_review') return fail(res, 409, '请等待健管专员提交随访计划');
+  if (!['reconcile', 'final_review', 'completed'].includes(row.status)) return fail(res, 409, '请等待全部专家提交回复');
+  if (row.status === 'completed') return res.json({ success:true, data:row });
+  if (row.status === 'reconcile' && !row.followupReviewedAt) {
+    if (!text(req.body?.plan) || req.body?.confirmed !== true) return fail(res, 400, '请确认专家意见与随访安排后审核发布');
+    const entries = req.body?.reviewItems;
+    if (!Array.isArray(entries) || entries.length > 20) return fail(res, 400, '请确认复查项目');
+    if (!entries.length && !text(req.body?.noReviewReason)) return fail(res, 400, '无复查项目时请说明原因');
+    const normalized=[];
+    for (const entry of entries) {
+      const date = String(entry?.date || '');
+      const at = new Date(date + 'T09:00:00+08:00');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(+at) || new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date || !text(entry.items)) return fail(res, 400, '请补齐每条复查的具体日期和项目');
+      normalized.push({ date:at, items:text(entry.items), sourceText:text(entry.sourceText) });
+    }
+    row.followupItems=normalized; row.followupPlan=text(req.body.plan); row.reconciliation=text(req.body.plan); row.reconciliationAt=new Date();
+    if (!entries.length) row.followupPlan += '\n无需建立复查任务：'+text(req.body.noReviewReason);
+  }
+  if (!row.managerId) return fail(res, 409, '客户尚未关联负责健管专员，不能发布随访');
   const order = row.initiationSource === 'staff' ? null : await Order.findById(row.orderId);
   if (row.initiationSource !== 'staff' && !activeOrder(order)) return fail(res, 409, '订单已进入退款或取消流程，不能结单');
-  row.followupReviewedAt = new Date(); row.status = 'completed'; event(row, 'completed', req.staff._id);
-  await row.save();
+  if (!row.followupReviewedAt) { row.followupReviewedAt = new Date(); event(row, 'followup_approved', req.staff._id); await row.save(); }
+  const FollowUp = require('../models/FollowUp');
+  for (const item of row.followupItems) {
+    await FollowUp.updateOne({ _id:item.followupId }, { $setOnInsert:{ tenantId:row.tenantId, patientId:row.patientId, staffId:row.managerId, assignedTo:row.managerId, clientVisible:true, date:item.date, status:'planned', type:'wechat', theme:'专家咨询复查随访', content:item.items, plannedContent:item.items, sourceType:'expert_consultation', sourceId:row._id, aiStatus:'approved', isBlocked:true } }, { upsert:true });
+  }
+  await FollowUp.updateMany({ _id:{ $in:row.followupItems.map(item=>item.followupId) }, sourceId:row._id }, { $set:{ isBlocked:false } });
   if (order) {
     order.status = 'completed'; order.tradeStatus = 'completed'; order.fulfillmentStatus = 'completed';
     order.usedUnits = 1; order.completedAt = row.followupReviewedAt;
@@ -533,6 +600,7 @@ router.post('/staff/:id/complete', staffAuth, async (req, res) => {
     await Fulfillment.findOneAndUpdate({ order: order._id }, { $set: { status: 'completed', completedAt: order.completedAt },
       $setOnInsert: { order: order._id, user: order.user, type: order.fulfillmentType || 'remote_service' } }, { upsert: true });
   }
+  row.status='completed'; event(row, 'completed', req.staff._id); await row.save();
   res.json({ success: true, data: row });
 });
 

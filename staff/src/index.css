@@ -620,3 +620,9 @@ textarea.form-control { resize: vertical; }
   .consultation-workspace h1 { font-size: 24px; }
   .consultation-toolbar > select { flex: 1; min-width: 140px; }
 }
+
+/* Clear, keyboard-visible disclosure controls for long referral documents. */
+.consultation-workspace summary, .consultation-disclosures summary { cursor:pointer; border:1px solid #BDD5CA; border-radius:8px; background:#EFF7F3; padding:12px 14px; margin:8px 0; min-height:44px; box-sizing:border-box; font-size:16px !important; color:#176B4D; }
+.consultation-workspace summary::after, .consultation-disclosures summary::after { content:'展开 ▾'; display:inline-block; margin-left:16px; font-weight:700; color:#176B4D; }
+.consultation-workspace details[open] > summary::after, .consultation-disclosures details[open] > summary::after { content:'收起 ▴'; }
+.consultation-workspace summary:focus-visible, .consultation-disclosures summary:focus-visible { outline:3px solid #176B4D; outline-offset:3px; }
