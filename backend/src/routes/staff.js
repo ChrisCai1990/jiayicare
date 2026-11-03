@@ -11378,6 +11378,27 @@ router.put('/patients/:id/medications/:medId/reminder', staffAuth, async (req, r
   } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 
+// 已停用用药只允许订正历史字段，保留停用状态与每次修改的前后值。
+router.patch('/patients/:id/medications/:medId/correct-stopped', staffAuth, async (req, res) => {
+  try {
+    const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
+    if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
+    const isOwner = String(med.staffId) === String(req.staff._id);
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role) && !isOwner) {
+      return res.status(403).json({ success: false, message: '仅记录创建人、健康顾问或超管可订正用药记录' });
+    }
+    if (!med.stopped) return res.status(409).json({ success: false, message: '该记录尚未停用，请使用普通编辑' });
+    const body = { ...req.body };
+    if (body.imageUrls !== undefined) body.imageUrls = await require('../utils/medicationAttachmentStorage')
+      .normalizeMedicationAttachments(body.imageUrls, req.params.id, Medication);
+    const { filter, update } = require('../utils/stoppedMedicationCorrection')
+      .buildStoppedMedicationCorrection(med, body, req.staff);
+    const corrected = await Medication.findOneAndUpdate(filter, update, { new: true, runValidators: true });
+    if (!corrected) return res.status(409).json({ success: false, message: '记录已变化，请刷新后重新订正' });
+    res.json({ success: true, data: corrected, message: '已订正历史信息，停用状态不变' });
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
+});
+
 // 健康顾问负责用药核对，因此可编辑和停用用药记录；编辑不等于审核通过。
 router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => {
   try {
