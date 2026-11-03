@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { validateApprovedSupplement, reviewedSupplementFields, canNutritionistEditOrderSupplement } = require('../src/utils/supplementReview');
+const { validateApprovedSupplement, reviewedSupplementFields, canNutritionistEditOrderSupplement, canNutritionistDeleteOrderSupplement } = require('../src/utils/supplementReview');
 
 test('order draft cannot be approved with unconfirmed use instructions', () => {
   const draft = { name: '维生素D', dosage: '待营养师确认', frequency: '待营养师确认' };
@@ -21,4 +21,12 @@ test('nutritionist can save an order-created supplement, including legacy record
   assert.equal(canNutritionistEditOrderSupplement({ note: '商城购买：维生素D；订单号：JY001' }, 'nutritionist'), true);
   assert.equal(canNutritionistEditOrderSupplement({ sourceType: 'order' }, 'healthManager'), false);
   assert.equal(canNutritionistEditOrderSupplement({ sourceType: 'manual' }, 'nutritionist'), false);
+});
+
+test('nutritionist can delete only system-created order supplements', () => {
+  assert.equal(canNutritionistDeleteOrderSupplement({ sourceOrderId: 'order-1' }, 'nutritionist'), true);
+  assert.equal(canNutritionistDeleteOrderSupplement({ createdByName: '商城订单自动写入' }, 'nutritionist'), true);
+  assert.equal(canNutritionistDeleteOrderSupplement({ sourceOrderId: 'order-1', staffId: 'staff-1' }, 'nutritionist'), false);
+  assert.equal(canNutritionistDeleteOrderSupplement({ note: '商城购买：维生素D' }, 'nutritionist'), false);
+  assert.equal(canNutritionistDeleteOrderSupplement({ sourceOrderId: 'order-1' }, 'healthManager'), false);
 });

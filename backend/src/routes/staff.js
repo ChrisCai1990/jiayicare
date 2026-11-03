@@ -11514,8 +11514,13 @@ router.delete('/patients/:id/supplements/:supId', staffAuth, async (req, res) =>
   try {
     const sup = await Supplement.findOne({ _id: req.params.supId, user: req.params.id });
     if (!sup) return res.status(404).json({ success: false, message: '记录不存在' });
-    if (req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
+    const isOrderArchive = require('../utils/supplementReview').canNutritionistDeleteOrderSupplement(sup, req.staff.role);
+    if (!isOrderArchive && req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
       return res.status(403).json({ success: false, message: '仅记录创建人可删除' });
+    }
+    if (sup.sourceOrderId) {
+      const Order = require('../models/Order');
+      await Order.updateOne({ _id: sup.sourceOrderId, user: sup.user }, { $set: { supplementArchiveDeletedAt: new Date() } });
     }
     await sup.deleteOne();
     await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: sup._id, status: { $in: ['planned', 'in_progress'] } });
