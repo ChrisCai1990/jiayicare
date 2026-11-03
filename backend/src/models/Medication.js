@@ -35,6 +35,7 @@ const medicationSchema = new mongoose.Schema({
   sourceType: { type: String, enum: ['manual', 'annual_plan', 'ai', ''], default: 'manual' },
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceRecordKey: { type: String, default: '' },
+  archiveRecordId: { type: String }, // 首次建档结构化记录 ID；用于重复提交保护
   annualDispatchKey: { type: String },
   reminder: {
     enabled:      { type: Boolean, default: false },

@@ -130,6 +130,7 @@ export const staffAPI = {
   initialArchiveReviewFields: () => req('/staff/patients/initial-archive-review-fields'),
   saveCoreArchive: (id, section, data) => req(`/staff/patients/${id}/core-health-archive/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
   reviewInitialArchive: (id, section, data) => req(`/staff/patients/${id}/initial-archive-review/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
+  importArchiveMedications: id => req(`/staff/patients/${id}/initial-archive-review/medication/import`, { method: 'POST', body: '{}' }),
   reviewChildArchive: (id, responseId, data) => req(`/staff/patients/${id}/child-archive/${responseId}/review`, { method: 'PUT', body: JSON.stringify(data) }),
   updateChildArchive: (id, data) => req(`/staff/patients/${id}/child-archive/manual`, { method: 'PUT', body: JSON.stringify(data) }),
   retryChildArchive: id => req(`/staff/patients/${id}/child-archive/retry`, { method: 'POST', body: '{}' }),

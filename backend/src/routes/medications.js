@@ -8,7 +8,7 @@ const router = express.Router();
 // "含全生命周期"的意图矛盾——一旦 active 被设置过反而会把已停用记录筛掉。改为只按 stopped 过滤。
 router.get('/', auth, async (req, res) => {
   const { status } = req.query; // 'active' | 'stopped' | all
-  const filter = { user: req.user._id };
+  const filter = { user: req.user._id, aiStatus: { $ne: 'pending' } };
   if (status === 'active')  filter.stopped = false;
   if (status === 'stopped') filter.stopped = true;
   const meds = await Medication.find(filter).sort({ createdByStaff: -1, createdAt: -1 });
@@ -32,7 +32,7 @@ router.post('/', auth, async (req, res) => {
 router.patch('/:id/stop', auth, async (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const med = await Medication.findOneAndUpdate(
-    { _id: req.params.id, user: req.user._id },
+    { _id: req.params.id, user: req.user._id, aiStatus: { $ne: 'pending' } },
     { stopped: true, stopDate: req.body.stopDate || today, stopReason: req.body.stopReason || '' },
     { new: true }
   );
@@ -44,7 +44,7 @@ router.patch('/:id/stop', auth, async (req, res) => {
 // 今日记录健康数据（标记已服药）
 router.post('/:id/checkin', auth, async (req, res) => {
   const today = new Date().toISOString().split('T')[0];
-  const med = await Medication.findOne({ _id: req.params.id, user: req.user._id });
+  const med = await Medication.findOne({ _id: req.params.id, user: req.user._id, aiStatus: { $ne: 'pending' } });
   if (!med) return res.status(404).json({ success: false, message: '药品不存在' });
 
   const existing = med.checkIns.find(c => c.date === today);
@@ -65,7 +65,7 @@ router.post('/:id/checkin', auth, async (req, res) => {
 // 删除用药
 router.delete('/:id', auth, async (req, res) => {
   await Medication.findOneAndUpdate(
-    { _id: req.params.id, user: req.user._id },
+    { _id: req.params.id, user: req.user._id, aiStatus: { $ne: 'pending' } },
     { active: false }
   );
   await require('../utils/combinedMedicationReminder').refreshExistingPlan(req.user._id);

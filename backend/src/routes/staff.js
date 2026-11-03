@@ -11170,7 +11170,7 @@ router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, r
       return res.json({ success: true, message: '已驳回并删除' });
     }
     med.aiStatus = 'approved';
-    if (med.active === false && String(med.sourceRecordKey || '').startsWith('prescription_report_review:')) med.active = true;
+    if (med.active === false && (String(med.sourceRecordKey || '').startsWith('prescription_report_review:') || med.archiveRecordId)) med.active = true;
     med.reviewedByName = req.staff.name || '';
     med.reviewedAt = new Date();
     await med.save();

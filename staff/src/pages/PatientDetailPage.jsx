@@ -6258,7 +6258,7 @@ export default function PatientDetailPage() {
         </div>
 
         {['family','disease','allergy'].map(section => <CoreArchiveSection key={section} user={user} section={section} onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>)}
-        <CoreArchiveSection user={user} section="medication" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>
+        <CoreArchiveSection user={user} section="medication" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} canImport={['healthManager','superadmin','platformSuper'].includes(staff?.role)}/>
 
         {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，会员自填自动写入）── */}
         <PsychAssessmentPanel user={user} />
@@ -9891,12 +9891,12 @@ export default function PatientDetailPage() {
                     const evidenceUrl = medicationEvidencePreview[m._id] || evidenceUrls[0]
                     return <div key={m._id} style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, .9fr) minmax(360px, 1.35fr)', border: '1px solid #CFE7F5', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
                       <div style={{ padding: 14, background: '#F5FBFF', borderRight: '1px solid #CFE7F5' }}>
-                        <div style={{ fontWeight: 700, color: '#0077B6', marginBottom: 8 }}>处方依据</div>
-                        <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 10 }}>原始处方附件（在左栏内查看，不会打开全屏）</div>
+                        <div style={{ fontWeight: 700, color: '#0077B6', marginBottom: 8 }}>{m.archiveRecordId ? '建档依据' : '处方依据'}</div>
+                        <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 10 }}>{m.archiveRecordId ? '健管专员已复核的首次建档记录，药物信息仍需健康顾问核对。' : '原始处方附件（在左栏内查看，不会打开全屏）'}</div>
                         {evidenceUrl ? <img src={resolveAttachmentUrl(evidenceUrl)} alt="处方原件" style={{ display: 'block', width: '100%', maxHeight: 440, objectFit: 'contain', objectPosition: 'top left', background: '#fff', border: '1px solid #D4E4EF', borderRadius: 6 }} /> : <div style={{ color: '#8AA89C', fontSize: 12, padding: '24px 0' }}>未上传处方附件</div>}
                         {evidenceUrls.length > 1 && <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>{evidenceUrls.map((url, index) => <button type="button" key={`${url}-${index}`} title={`查看第${index + 1}页`} onClick={() => setMedicationEvidencePreview(current => ({ ...current, [m._id]: url }))} style={{ padding: 0, border: medicationEvidencePreview[m._id] === url || (!medicationEvidencePreview[m._id] && index === 0) ? '2px solid #0077B6' : '1px solid #D4E4EF', borderRadius: 5, background: '#fff', cursor: 'pointer' }}><img src={resolveAttachmentUrl(url)} alt={`处方第${index + 1}页`} style={{ display: 'block', width: 48, height: 48, objectFit: 'cover', borderRadius: 3 }} /></button>)}</div>}
                         <div style={{ fontSize: 12, color: '#6F8D80', marginTop: 12 }}>录入来源：{m.createdByName || m.aiGeneratedBy || '处方审核'}</div>
-                        {m.note && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 6 }}>处方说明：{m.note}</div>}
+                        {m.note && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 6 }}>{m.archiveRecordId ? '建档备注' : '处方说明'}：{m.note}</div>}
                       </div>
                       <div style={{ padding: 14 }}>
                         <div style={{ fontWeight: 700, color: '#176B52', marginBottom: 10 }}>拟入当前用药</div>

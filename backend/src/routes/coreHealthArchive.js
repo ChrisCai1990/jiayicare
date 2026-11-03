@@ -21,6 +21,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     router.put(`/:id/${path}/:section`, staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
       try {
         if (!['healthManager', 'familyDoctor', 'medicalAssistant', 'superadmin', 'platformSuper'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由负责此客户的健管专员或健康顾问核实' });
+        if (path === 'initial-archive-review' && req.params.section === 'medication' && !['healthManager', 'superadmin', 'platformSuper'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由健管专员先复核建档用药' });
         if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '客户编号无效' });
         const scope = await getVisiblePlanPatientIds(req.staff);
         if (scope && !scope.some(id => String(id) === req.params.id)) return res.status(403).json({ success: false, message: '无此客户权限' });
@@ -29,10 +30,30 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
         const mutation = build(patient, req.params.section, req.body, req.staff);
         const result = await User.collection.updateOne(mutation.filter, mutation.update);
         if (!result.matchedCount) return res.status(409).json({ success: false, message: '档案已更新，请刷新后重试' });
-        res.json({ success: true });
+        let medicationImport, medicationImportError;
+        if (path === 'initial-archive-review' && req.params.section === 'medication' && req.body.status === 'reviewed'
+          && ['healthManager', 'superadmin', 'platformSuper'].includes(req.staff.role)) {
+          try { medicationImport = await require('../utils/archiveMedicationImport').importArchiveMedications(patient, req.staff); }
+          catch (error) { medicationImportError = '建档复核已保存，用药带入失败；请在建档用药板块重试'; console.error('[archive-medication-import]', error); }
+        }
+        res.json({ success: true, ...(medicationImport ? { medicationImport } : {}), ...(medicationImportError ? { medicationImportError } : {}) });
       } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
     });
   }
+  // Existing completed archives can be linked once without re-entering the medication fields.
+  router.post('/:id/initial-archive-review/medication/import', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+    try {
+      if (!['healthManager', 'superadmin', 'platformSuper'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由健管专员核实建档用药' });
+      if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '客户编号无效' });
+      const scope = await getVisiblePlanPatientIds(req.staff);
+      if (scope && !scope.some(id => String(id) === req.params.id)) return res.status(403).json({ success: false, message: '无此客户权限' });
+      const patient = await User.findById(req.params.id).select('coreHealthArchive initialArchiveReview isDeleted').lean();
+      if (!patient || patient.isDeleted) return res.status(404).json({ success: false, message: '客户不存在' });
+      if (patient.initialArchiveReview?.sections?.medication?.status !== 'reviewed') return res.status(409).json({ success: false, message: '请先复核建档用药资料' });
+      const medicationImport = await require('../utils/archiveMedicationImport').importArchiveMedications(patient, req.staff);
+      res.json({ success: true, medicationImport });
+    } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
+  });
   router.post('/:id/initial-archive-review/retry', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
     try {
       if (!['healthManager','familyDoctor','superadmin','platformSuper'].includes(req.staff.role)) return res.status(403).json({success:false,message:'请由健管专员处理'});

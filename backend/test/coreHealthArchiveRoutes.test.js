@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const utility=require('../src/utils/initialArchiveReview');
 function harness({scope=['patient'],matched=1}={}) {
-  const handlers={},writes=[],permission=[];
+  const handlers={},writes=[],permission=[],imports=[];
   const user={_id:'patient',coreHealthArchive:{},healthProfile:{}};
   const chain={select(){return this},lean:async()=>user};
   const mod={exports:{}};
@@ -14,6 +14,7 @@ function harness({scope=['patient'],matched=1}={}) {
     if(name.endsWith('/ChildGuardianLink'))return {};
     if(name.endsWith('/childAgeStage'))return require('../src/utils/childAgeStage');
     if(name.endsWith('/initialArchiveReview'))return utility;
+    if(name.endsWith('/archiveMedicationImport'))return {importArchiveMedications:async(...args)=>{imports.push(args);return {created:1,existing:0,incomplete:[]}}};
     if(name.endsWith('/archiveFields'))return require('../src/config/archiveFields');
     throw Error(name);
   }});
@@ -23,14 +24,14 @@ function harness({scope=['patient'],matched=1}={}) {
     await handlers['/:id/core-health-archive/:section']({params:{id,section:'family'},staff:{role,_id:'staff'},body},res);
     return res;
   }
-  async function review(body,section='family') {
+  async function review(body,section='family',role='healthManager') {
     user.initialArchiveReview={revision:0,status:'pending',sections:{},items:[{questionId:section,section,answer:'以上均无'}]};
     const res={code:200,status(c){this.code=c;return this},json(body){this.body=body}};
-    await handlers['/:id/initial-archive-review/:section']({params:{id:'patient',section},staff:{role:'healthManager',_id:'staff'},body},res);
+    await handlers['/:id/initial-archive-review/:section']({params:{id:'patient',section},staff:{role,_id:'staff'},body},res);
     return res;
   }
   function fields() { let result; handlers['/initial-archive-review-fields']({}, {json(body){result=body.data}}); return result; }
-  return {call,review,writes,permission,fields};
+  return {call,review,writes,permission,fields,imports};
 }
 test('route rejects unrelated clients, unsupported roles and invalid identifiers without writing',async()=>{
   const denied=harness({scope:[]});assert.equal((await denied.call()).code,403);assert.equal(denied.writes.length,0);
@@ -64,4 +65,15 @@ test('family no-update review reaches persistence without inventing an empty fam
   const denied=harness({scope:[]});
   assert.equal((await denied.review(body)).code,403);
   assert.equal(denied.writes.length,0);
+});
+test('medication import follows manager review and cannot be initiated by advisor',async()=>{
+  const body={revision:0,sectionRevision:0,status:'reviewed',note:'已核对',checkedQuestionIds:['medication'],noChange:true};
+  const h=harness();
+  const result=await h.review(body,'medication');
+  assert.equal(result.code,200);
+  assert.equal(result.body.medicationImport.created,1);
+  assert.equal(h.imports.length,1);
+  const denied=harness();
+  assert.equal((await denied.review(body,'medication','familyDoctor')).code,403);
+  assert.equal(denied.imports.length,0);
 });
