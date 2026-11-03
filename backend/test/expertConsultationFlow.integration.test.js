@@ -83,6 +83,30 @@ test('paid single consultation runs from customer request through booked schedul
     assert.equal(missingManager.statusCode, 409);
     const assigned = await step('assign', managerId, { members: [{ expertId, slotId: expertSlot }], managerSlotId: managerSlot });
     assert.equal(assigned.statusCode, 200, JSON.stringify(assigned.body));
+    // Read receipt is explicit, recipient-only, versioned and idempotent.
+    assert.equal((await step('referral-viewed', managerId, { referralId: String(replacementReferral._id), contentVersion: 0 })).statusCode, 403);
+    const detail = await call('get', '/staff/:id/referral-detail', { params: { id: String(caseId) }, staff: { _id: expertStaffId } });
+    assert.equal(detail.statusCode, 200);
+    assert.equal(detail.body.data.contentVersion, 0);
+    assert.equal((await Case.findById(caseId)).members[0].viewedAt, null, 'loading details alone does not record a view');
+    const receipt = await step('referral-viewed', expertStaffId, { referralId: String(replacementReferral._id), contentVersion: 0 });
+    assert.equal(receipt.statusCode, 200);
+    const again = await step('referral-viewed', expertStaffId, { referralId: String(replacementReferral._id), contentVersion: 0 });
+    assert.equal(+new Date(again.body.data.viewedAt), +new Date(receipt.body.data.viewedAt));
+    await Referral.updateOne({ _id: replacementReferral._id }, { $inc: { contentVersion: 1 } });
+    assert.equal((await step('referral-viewed', expertStaffId, { referralId: String(replacementReferral._id), contentVersion: 0 })).statusCode, 409);
+    assert.equal((await Case.findById(caseId)).members[0].viewedVersion, 0);
+    assert.equal((await step('referral-viewed', expertStaffId, { referralId: String(replacementReferral._id), contentVersion: 1 })).statusCode, 200);
+    assert.equal((await Case.findById(caseId)).members[0].viewedVersion, 1);
+    const secondExpert = oid();
+    await Case.updateOne({ _id: caseId }, { $push: { members: { expertId: oid(), staffId: secondExpert, slotId: oid(), startAt, endAt } } });
+    assert.equal((await Case.findById(caseId)).members[1].viewedAt, null);
+    assert.equal((await step('referral-viewed', secondExpert, { referralId: String(replacementReferral._id), contentVersion: 1 })).statusCode, 200);
+    assert.equal((await Case.findById(caseId)).members[0].viewedVersion, 1);
+    assert.ok((await Case.findById(caseId)).members[1].viewedAt);
+    await Case.updateOne({ _id: caseId }, { $pull: { members: { staffId: secondExpert } } });
+
+    assert.equal((await call('get', '/staff/:id/referral-detail', { params: { id: String(caseId) }, staff: { _id: oid() } })).statusCode, 403);
     assert.equal((await StaffAvailability.findById(expertSlot)).status, 'booked');
     assert.equal((await StaffAvailability.findById(managerSlot)).status, 'booked');
     assert.equal((await step('meeting', managerId, { meetingUrl: 'https://meeting.example.test/room' })).statusCode, 200);

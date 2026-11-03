@@ -28,7 +28,7 @@ const assigned = (row, staff, field) => staff.role === 'superadmin' || id(row[fi
 const availableReferral = row => ({ patientId: row.patientId, fromStaffId: row.advisorId,
   referralType: 'external_medical', status: { $in: ['pending', 'accepted'] },
   $or: [{ sourceOrderId: null }, ...(row.orderId ? [{ sourceOrderId: row.orderId }] : [])] });
-const referralFields = 'reason content referralPurpose questionList medicalExpertId medicalExpertSnapshot expertConsultationCaseId status createdAt';
+const referralFields = 'reason content referralPurpose questionList medicalExpertId medicalExpertSnapshot expertConsultationCaseId status createdAt contentVersion';
 async function eligibleExpertRows(row) {
   const fee = row.type === 'mdt' ? 'mdtFee' : 'singleConsultationFee';
   const mode = row.type === 'mdt' ? 'mdt' : 'single_consultation';
@@ -152,6 +152,35 @@ router.get('/staff/:id/experts', staffAuth, async (req, res) => {
     return fail(res, 403, '仅本次负责人员可查看可选专家');
   if (!['intake', 'advisor', 'planner'].includes(effectiveStatus(row))) return fail(res, 409, '当前阶段不能选择专家');
   res.json({ success: true, data: await eligibleExpertRows(row) });
+});
+
+// Loading the task list never marks a referral as viewed.
+router.get('/staff/:id/referral-detail', staffAuth, async (req, res) => {
+  const row = valid(req.params.id) && await Case.findById(req.params.id);
+  if (!row || !staffCanRead(row, req.staff)) return fail(res, 403, '无权查看本次转介信');
+  const referral = await Referral.findOne({ _id: row.referralId, patientId: row.patientId })
+    .select('reason questionList content urgency contentVersion attachedHealthInfo linkedDiseaseSnapshots linkedDiseaseSnapshot sourceReports').lean();
+  if (!referral) return fail(res, 404, '尚未关联转介信');
+  res.json({ success: true, data: { ...referral, contentVersion: referral.contentVersion || 0 } });
+});
+
+router.post('/staff/:id/referral-viewed', staffAuth, async (req, res) => {
+  const row = valid(req.params.id) && await Case.findById(req.params.id);
+  if (!row || !row.members.some(member => id(member.staffId) === id(req.staff._id)))
+    return fail(res, 403, '仅本次已派发专家本人可记录查看');
+  const referral = await Referral.findOne({ _id: row.referralId, patientId: row.patientId }).select('contentVersion').lean();
+  if (!referral || id(referral) !== req.body.referralId || (referral.contentVersion || 0) !== req.body.contentVersion)
+    return fail(res, 409, '转介资料已更新，请重新打开查看');
+  const member = row.members.find(member => id(member.staffId) === id(req.staff._id));
+  if (id(member.viewedReferralId) === id(referral) && member.viewedVersion === (referral.contentVersion || 0) && member.viewedAt)
+    return res.json({ success: true, data: { viewedAt: member.viewedAt } });
+  const viewedAt = new Date();
+  const recorded = await Case.updateOne({ _id: row._id, __v: row.__v, referralId: referral._id, 'members.staffId': req.staff._id }, { $set: {
+    'members.$.viewedAt': viewedAt, 'members.$.viewedReferralId': referral._id,
+    'members.$.viewedVersion': referral.contentVersion || 0,
+  }, $inc: { __v: 1 } });
+  if (!recorded.modifiedCount) return fail(res, 409, '服务状态已更新，请重新打开转介信');
+  res.json({ success: true, data: { viewedAt } });
 });
 
 router.get('/staff/:id/materials', staffAuth, async (req, res) => {
@@ -375,7 +404,7 @@ router.post('/staff/:id/assign', staffAuth, async (req, res) => {
       if (!updated) throw new Error('预约时段已被占用');
       reserved.push(slotId);
     }
-    row.members = selected; row.meetingUrl = meetingUrl;
+    row.members = selected.map(member => ({ ...member, dispatchedAt: new Date() })); row.meetingUrl = meetingUrl;
     row.status = 'expert'; event(row, 'experts_dispatched', req.staff._id);
     await row.save();
     caseSaved = true;

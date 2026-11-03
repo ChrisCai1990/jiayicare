@@ -1,3 +1,5 @@
+import ConsultationReadStatus from '../components/ConsultationReadStatus'
+import ConsultationReferralDetail from '../components/ConsultationReferralDetail'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
@@ -155,6 +157,8 @@ export default function ExpertConsultationsPage({ embedded = false }) {
             {!needsMe(selected) && !['completed', 'cancelled'].includes(selected.status) && <p style={{ margin: '8px 0', color: '#60776C' }}>当前由上述人员办理，您可在此查看进度和相关资料。</p>}
           </section>
 
+          <ConsultationReadStatus consultation={selected} referral={selected.referralId} />
+          {selected.referralId && <ConsultationReferralDetail key={selectedId} caseId={selectedId} isExpert={!!assignedExpert} onViewed={() => load().catch(e => setError(e.message))} />}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}><p style={{ flex: 1 }}>客户需求：{selected.clientRequest}</p>{(manager || advisor) && ['team_assignment', 'intake', 'advisor', 'planner'].includes(selected.status) && <button type="button" className="btn btn-secondary btn-sm" aria-expanded={editingRequest} aria-controls="consultation-request-editor" onClick={() => { setRequestDraft(selected.clientRequest || ''); setEditingRequest(value => !value) }}>{editingRequest ? '收起修改' : '修改需求'}</button>}</div>
           {editingRequest && <div id="consultation-request-editor" style={{ padding: 12, border: '1px solid #DDE8E1', borderRadius: 8, marginBottom: 12, background: '#F5F8F6' }}><b>修改本次咨询问题</b>{textField('本次咨询问题', requestDraft, setRequestDraft)}<button type="button" className="btn btn-primary btn-sm" disabled={busy || !requestDraft.trim()} onClick={async () => { setBusy(true); setError(''); try { await staffAPI.expertConsultationAction(selectedId, 'edit', { request: requestDraft }); setEditingRequest(false); const items = await load(); const updated = items.find(row => id(row) === selectedId); if (updated) await choose(updated) } catch (e) { setError(e.message) } finally { setBusy(false) } }}>保存修改</button></div>}
           {selected.status === 'team_assignment' && planner && <div id="consultation-team-actions"><h4>首次派单给健管专员</h4>{[['managerId', 'healthManager', '健管专员']].map(([field, role, label]) => <label key={field} style={{ display: 'block', margin: '10px 0' }}>{label}<select className="form-input" value={form[field] || id(selected[field])} onChange={e => set(field)(e.target.value)}><option value="">请选择</option>{team.filter(person => person.role === role).map(person => <option key={id(person)} value={id(person)}>{person.name}</option>)}</select></label>)}<button className="btn btn-primary" disabled={busy} onClick={() => action('team', form)}>确认派单，由专员开始收集资料</button></div>}

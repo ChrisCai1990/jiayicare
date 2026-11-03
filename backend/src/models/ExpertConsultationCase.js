@@ -10,6 +10,10 @@ const member = new Schema({
   opinion: { type: String, default: '' },
   nextStep: { type: String, default: '' },
   noBetterOption: { type: Boolean, default: false },
+  viewedAt: { type: Date, default: null },
+  viewedReferralId: { type: Schema.Types.ObjectId, default: null },
+  viewedVersion: { type: Number, default: null },
+  dispatchedAt: { type: Date, default: null },
   repliedAt: { type: Date, default: null },
   revisions: { type: [Schema.Types.Mixed], default: [] },
 }, { _id: false });

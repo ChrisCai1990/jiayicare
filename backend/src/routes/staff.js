@@ -8426,7 +8426,7 @@ router.get('/referrals', staffAuth, async (req, res) => {
       .populate('fromStaffId', 'name role title')
       .populate('toStaffId', 'name role title')
       .populate('patientId', 'name phone chronicDiseases assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner')
-      .populate('expertConsultationCaseId', 'status'),
+      .populate({ path: 'expertConsultationCaseId', select: 'status referralId members.expertId members.dispatchedAt members.viewedAt members.viewedReferralId members.viewedVersion members.repliedAt', populate: { path: 'members.expertId', select: 'name' } }),
     Referral.countDocuments(filter),
   ]);
   const visibleIds = req.staff.role === 'superadmin' ? null : (await getVisibleStaffIds(req.staff)).map(String);
@@ -8476,6 +8476,7 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
       expert = await MedicalExpert.findOne({ _id:medicalExpertId, status:'active' }).populate('institutionId', 'name level region').populate('departmentId', 'name campus').lean();
       if (!expert) return res.status(400).json({ success:false, message:'请选择有效的外部专家' });
     } else if (!req.body.toStaffId) return res.status(400).json({ success:false, message:'请选择接收人' });
+    referral.contentVersion = (referral.contentVersion || 0) + 1;
     referral.revisionHistory.push({
       attachedHealthInfo: referral.attachedHealthInfo, linkedDiseaseRecordIds: referral.linkedDiseaseRecordIds, linkedDiseaseSnapshots: referral.linkedDiseaseSnapshots, linkedDiseaseRecordId: referral.linkedDiseaseRecordId, linkedDiseaseSnapshot: referral.linkedDiseaseSnapshot, linkedDiseaseName: referral.linkedDiseaseName, status: referral.status,
       reason: referral.reason, content: referral.content, questionList: referral.questionList, urgency: referral.urgency,

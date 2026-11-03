@@ -1,3 +1,4 @@
+import ConsultationReadStatus from '../components/ConsultationReadStatus'
 import ReferralScreeningList, { ScreeningResult } from '../components/ReferralScreeningList'
 import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useRef } from 'react'
@@ -289,7 +290,7 @@ export default function NotificationsPage() {
                   {r.feedbackRevisionRequest?.pending && <div style={{ fontSize:12, color:'#9A5B13', background:'#FFF9ED', padding:'7px 10px', borderRadius:6, marginBottom:6 }}>健康顾问请补充反馈：{r.feedbackRevisionRequest.note}</div>}
                   {!r.canViewPatient && <div style={{ fontSize:12, color:'#8A5A00', background:'#FFF8E8', padding:'6px 9px', borderRadius:6, marginBottom:6 }}>有限授权视图：仅展示发起方在本次转介中提供的信息。</div>}
                   {(r.linkedDiseaseSnapshots?.length ? r.linkedDiseaseSnapshots : r.linkedDiseaseSnapshot ? [r.linkedDiseaseSnapshot] : []).map((disease, index) => <div key={index}><b>{disease.name}</b><AttachedHealthInfoView info={{ diseaseSummary: disease.summary, diseaseCourse: disease.recentCourseEntries }} /></div>)}
-                  {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
+                  {r.expertConsultationCaseId && <ConsultationReadStatus consultation={r.expertConsultationCaseId} referral={r} />}{r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   {!!r.sourceReports?.length && <div style={{ margin: '8px 0', padding: 10, background: '#F5F9FC', borderRadius: 8 }}>
                     <b>本次转介报告</b>
                     {r.sourceReports.map(report => <div key={report.reportId} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -463,7 +464,7 @@ export default function NotificationsPage() {
                     {r.consultationSchedule?.at && <div>统一会诊：{new Date(r.consultationSchedule.at).toLocaleString('zh-CN')} · {r.consultationSchedule.leadCampus || '院区待确认'}</div>}
                     {r.consultationMembers.map((member, index) => <div key={index}>{index + 1}. {member.hospital} · {member.department} · {member.expert}{member.focusQuestion && `；重点：${member.focusQuestion}`}</div>)}
                   </div>}
-                  {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
+                  {r.expertConsultationCaseId && <ConsultationReadStatus consultation={r.expertConsultationCaseId} referral={r} />}{r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     接收方：{r.toStaffId?.name || r.medicalExpertSnapshot?.name || '外部医疗机构'} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
                   </div>

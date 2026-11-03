@@ -1,3 +1,4 @@
+import ConsultationReadStatus from '../components/ConsultationReadStatus'
 import ReferralScreeningList, { ScreeningResult } from '../components/ReferralScreeningList'
 import { currentRecords, screeningAttachments, diseaseHistoryAttachments } from '../utils/referralAttachments.mjs'
 import checkupKeyMetrics from '../../../shared/checkupKeyMetrics.cjs'
@@ -11587,6 +11588,7 @@ export default function PatientDetailPage() {
                       {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>{r.content}</div>}
                       <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
                       {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:6 }}>需解决问题：{r.questionList}</div>}
+                      {r.expertConsultationCaseId && <ConsultationReadStatus consultation={r.expertConsultationCaseId} referral={r} />}
                       {r.expertConsultationCaseId && <div style={{ fontSize:12, marginBottom:6 }}><a href={`/expert-consultations?caseId=${r.expertConsultationCaseId?._id || r.expertConsultationCaseId}`} style={{ color:'#176B4D', fontWeight:700 }}>在专家咨询中查看派发、回复与随访进度 →</a></div>}
                       {['pending', 'rejected'].includes(r.status) && String(r.fromStaffId?._id || r.fromStaffId) === String(staff?._id) && <button className="btn btn-secondary btn-sm" style={{ marginBottom:8 }} onClick={() => { setEditingReferral(r); setShowReferralModal(true) }}>修改／补充资料</button>}
                       {(r.linkedDiseaseSnapshots?.length ? r.linkedDiseaseSnapshots : r.linkedDiseaseSnapshot ? [r.linkedDiseaseSnapshot] : []).map((disease, index) => <div key={index}><b>专病档案：{disease.name}</b><AttachedHealthInfoView info={{ diseaseSummary:disease.summary, diseaseCourse:disease.recentCourseEntries }} /></div>)}

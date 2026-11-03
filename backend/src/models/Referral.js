@@ -8,6 +8,7 @@ const referralSchema = new Schema({
   sourceOrderId: { type: Schema.Types.ObjectId, ref: 'Order', default: null, index: true },
   expertConsultationCaseId: { type: Schema.Types.ObjectId, ref: 'ExpertConsultationCase', default: null },
   sourceReports: { type: [Schema.Types.Mixed], default: [] }, // 顾问明确授权给接收专科的本次报告快照
+  contentVersion: { type: Number, default: 0 },
   reason:      { type: String, required: true },  // 转介原因（简述）
   content:     { type: String, default: '' },     // 详细说明
   urgency:     { type: String, enum: ['normal', 'urgent'], default: 'normal' },
