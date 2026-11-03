@@ -110,6 +110,16 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       assert.equal(profile.singleConsultationFee, 180);
       assert.equal(String(profile._id), String(existingProfile._id), '沿用同一专家的原档案');
       assert.equal(profile.introduction, '保留原档案介绍');
+      assert.deepEqual([...profile.expertise], [request.body.registrationScope]);
+      const sync = handler('post', '/admin/:id/sync-profile');
+      const deniedSync = response();
+      await sync({ params: { id: String(row._id) }, admin: { ...actor, role: 'specialist' } }, deniedSync);
+      assert.equal(deniedSync.statusCode, 403);
+      await MedicalExpert.updateOne({ _id: profile._id }, { $set: { expertise: [] } });
+      const synced = response();
+      await sync({ params: { id: String(row._id) }, admin: actor }, synced);
+      assert.equal(synced.statusCode, 200);
+      assert.deepEqual([...(await MedicalExpert.findById(profile._id)).expertise], [request.body.registrationScope]);
       assert.ok(profile.serviceModes.includes('outpatient'));
       assert.ok(profile.serviceModes.includes('single_consultation'));
       assert.equal(await MedicalExpert.countDocuments({ linkedStaffId: staffId }), 1);

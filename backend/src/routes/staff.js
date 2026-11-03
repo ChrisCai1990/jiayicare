@@ -1,3 +1,4 @@
+const { selectReferralDiseases, diseaseSnapshot } = require('../utils/referralDiseases');
 const followUpReview = require('../../../shared/followUpReview.cjs');
 const { reviewToken, withReviewTokens, resolveReviewRecord } = require('../utils/summaryReviewVersion');
 const { withAiContext } = require('../utils/aiBudget');
@@ -8350,7 +8351,8 @@ router.post('/referrals', staffAuth, async (req, res) => {
   const patient = await User.findById(patientId).select('diseaseRecords medicalRecord');
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
   const diseaseRecords = normalizedDiseaseRecords(patient.toObject());
-  const linkedDisease = diseaseRecords.find(item => linkedDiseaseRecordId && String(item._id) === String(linkedDiseaseRecordId)) || diseaseRecords.find(item => item.name === linkedDiseaseName);
+  const linkedDiseases = selectReferralDiseases(req.body, diseaseRecords);
+  const linkedDisease = linkedDiseases[0];
   let expert = null;
   if (referralType === 'external_medical') {
     expert = await MedicalExpert.findOne({ _id: medicalExpertId, status: 'active' }).populate('institutionId', 'name level region').populate('departmentId', 'name campus').lean();
@@ -8361,8 +8363,10 @@ router.post('/referrals', staffAuth, async (req, res) => {
     fromStaffId: req.staff._id, toStaffId: resolvedToStaffId, patientId,
     reason, content: content || '', urgency: urgency || 'normal',
     attachedHealthInfo: attachedHealthInfo || null,
+    linkedDiseaseRecordIds: linkedDiseases.map(d => d._id),
+    linkedDiseaseSnapshots: linkedDiseases.map(diseaseSnapshot),
     linkedDiseaseRecordId: linkedDisease?._id || null,
-    linkedDiseaseName: linkedDisease?.name || cleanMedicalText(linkedDiseaseName, 100),
+    linkedDiseaseName: linkedDiseases.map(d => d.name).join('、') || cleanMedicalText(linkedDiseaseName, 100),
     linkedDiseaseSnapshot: linkedDisease ? {
       name: linkedDisease.name,
       summary: linkedDisease.summary || {},
@@ -8443,7 +8447,8 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
     const patient = await User.findById(referral.patientId).select('diseaseRecords medicalRecord');
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     const diseaseRecords = normalizedDiseaseRecords(patient.toObject());
-    const linkedDisease = diseaseRecords.find(item => req.body.linkedDiseaseRecordId && String(item._id) === String(req.body.linkedDiseaseRecordId)) || diseaseRecords.find(item => item.name === req.body.linkedDiseaseName);
+    const linkedDiseases = selectReferralDiseases(req.body, diseaseRecords);
+    const linkedDisease = linkedDiseases[0];
     const referralType = ['external_medical', 'internal_collaboration'].includes(req.body.referralType)
       ? req.body.referralType : referral.referralType;
     if (referral.sourceOrderId && referralType !== 'external_medical')
@@ -8474,8 +8479,10 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
     referral.medicalExpertId = expert?._id || null;
     if (!(referral.sourceOrderId && referral.consultationType === 'multidisciplinary'))
       referral.medicalExpertSnapshot = expert ? { name:expert.name, title:expert.title, institutionName:expert.institutionId?.name || '', institutionLevel:expert.institutionId?.level || '', departmentName:expert.departmentId?.name || '', campus:expert.campus || expert.departmentId?.campus || '', expertise:expert.expertise || [], diseaseTags:expert.diseaseTags || [], capturedAt:new Date() } : null;
+    referral.linkedDiseaseRecordIds = linkedDiseases.map(d => d._id);
+    referral.linkedDiseaseSnapshots = linkedDiseases.map(diseaseSnapshot);
     referral.linkedDiseaseRecordId = linkedDisease?._id || null;
-    referral.linkedDiseaseName = linkedDisease?.name || cleanMedicalText(req.body.linkedDiseaseName,100);
+    referral.linkedDiseaseName = linkedDiseases.map(d => d.name).join('、') || cleanMedicalText(req.body.linkedDiseaseName,100);
     referral.linkedDiseaseSnapshot = linkedDisease ? { name:linkedDisease.name, summary:linkedDisease.summary || {}, recentCourseEntries:[...(linkedDisease.courseEntries || [])].sort((a,b)=>new Date(b.occurredAt || b.recordedAt || 0)-new Date(a.occurredAt || a.recordedAt || 0)).slice(0,10).map(entry => ({ occurredAt:entry.occurredAt || entry.recordedAt || null, content:entry.content || entry.symptoms || '', examination:entry.examination || '', diagnosis:entry.diagnosis || '', medicationChange:entry.medicationChange || '', treatmentResponse:entry.treatmentResponse || '', nextPlan:entry.nextPlan || '', sourceType:entry.sourceType || '', sourceInstitution:entry.sourceInstitution || '', verificationStatus:entry.verificationStatus || '' })), capturedAt:new Date() } : null;
     referral.referralPurpose = cleanMedicalText(req.body.referralPurpose,100);
     referral.requiresConclusion = req.body.requiresConclusion !== false;
@@ -8509,7 +8516,7 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
 
 【会员】${user.name}
 【关联专病】${referral.linkedDiseaseName || '待明确'}
-【发起方授权的专病摘要】${JSON.stringify(referral.linkedDiseaseSnapshot?.summary || {})}
+【发起方授权的专病摘要】${JSON.stringify(referral.linkedDiseaseSnapshots?.length ? referral.linkedDiseaseSnapshots : referral.linkedDiseaseSnapshot?.summary || {})}
 【发起方授权的健康信息】${JSON.stringify(referral.attachedHealthInfo || {})}
 【发起方】${referral.fromStaffId?.name || ''}（${referral.fromStaffId?.role || ''}）
 【转介原因】${referral.reason}
@@ -8668,7 +8675,9 @@ router.post('/referrals/:id/course-draft/review', staffAuth, async (req, res) =>
     let disease = records.find(item => referral.linkedDiseaseRecordId && String(item._id) === String(referral.linkedDiseaseRecordId)) || records.find(item => item.name === referral.linkedDiseaseName);
     if (!disease) { disease = { _id: new mongoose.Types.ObjectId(), name: referral.linkedDiseaseName || '待明确专病', summary: {}, summaryHistory: [], courseEntries: [] }; records.push(disease); }
     const entry = { ...referral.courseDraft, _id: new mongoose.Types.ObjectId(), reviewedAt: new Date(), reviewedById: req.staff._id, reviewedByName: req.staff.name || req.staff.username || '' };
-    disease.courseEntries = [entry, ...(disease.courseEntries || [])].slice(0, 500);
+    const targets = referral.linkedDiseaseRecordIds?.length ? records.filter(r => referral.linkedDiseaseRecordIds.some(id => String(id) === String(r._id))) : [disease];
+    if (referral.linkedDiseaseRecordIds?.length && targets.length !== referral.linkedDiseaseRecordIds.length) return res.status(409).json({ success: false, message: '关联专病已变更，请先核对后再归档' });
+    targets.forEach(target => { target.courseEntries = [entry, ...(target.courseEntries || [])].slice(0, 500); });
     await User.collection.updateOne({ _id: patient._id }, { $set: { diseaseRecords: records } });
     referral.courseDraftStatus = 'approved'; referral.linkedCourseEntryId = entry._id;
     await referral.save();

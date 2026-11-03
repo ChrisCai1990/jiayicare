@@ -19,7 +19,7 @@ test('转介反馈经人工审核后才写入专病健康变化时间轴', () =>
   assert.match(model, /courseDraftStatus/);
   assert.match(route, /course-draft\/review/);
   assert.match(route, /仅发起方、健康顾问或超级管理员可审核病程草稿/);
-  assert.match(route, /disease\.courseEntries = \[entry/);
+  assert.match(route, /target\.courseEntries = \[entry/);
   assert.match(route, /诊断、检查、治疗或用药信息只能作为外部医疗机构信息归档/);
   assert.match(route, /请填写来源医疗机构/);
 });

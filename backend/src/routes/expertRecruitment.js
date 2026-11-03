@@ -1,3 +1,4 @@
+const { recruitmentProfile } = require('../utils/recruitmentProfile');
 const express = require('express');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
@@ -225,6 +226,7 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
       (existingLink.recruitmentId && String(existingLink.recruitmentId) !== String(row._id))))
     return fail(res, 409, '原专家档案已停用或已关联其他准入问卷，请先核实');
   const cooperation = {
+    ...recruitmentProfile(row.response),
     serviceModes: [...new Set([...(existingLink?.serviceModes || []),
       ...(row.response.singleConsultation ? ['single_consultation'] : []), ...(row.response.mdt ? ['mdt'] : []),
     ])], teamEligible: true, singleConsultationFee: singleFee, mdtFee, recruitmentId: row._id,
@@ -236,7 +238,7 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
     }, { $set: cooperation }, { new: true, runValidators: true })
     : await MedicalExpert.findOneAndUpdate({ recruitmentId: row._id }, { $setOnInsert: {
     name: row.response.name, title: row.response.title, institutionId, departmentId,
-    expertise: row.response.expertise, introduction: '', serviceModes: [
+    ...recruitmentProfile(row.response), introduction: '', serviceModes: [
       ...(row.response.singleConsultation ? ['single_consultation'] : []), ...(row.response.mdt ? ['mdt'] : []),
     ], linkedStaffId, teamEligible: true, singleConsultationFee: singleFee, mdtFee,
     recruitmentId: row._id, status: 'active',
@@ -248,6 +250,18 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
   await row.save();
   await Admin.updateOne({ _id: linkedStaffId }, { $set: { expertProfileId: profile._id } });
   res.json({ success: true, data: { id: row._id, expertProfileId: profile._id } });
+});
+
+router.post('/admin/:id/sync-profile', adminAuth, async (req, res) => {
+  if (!adminAllowed(req)) return fail(res, 403, '无专家资料同步权限');
+  if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '记录编号无效');
+  const row = await ExpertRecruitment.findOne({ _id: req.params.id, status: 'approved' });
+  if (!row?.expertProfileId || !row.screening?.qualificationVerified || ['professional', 'communication', 'ethics'].some(k => row.screening[k] !== 'pass'))
+    return fail(res, 409, '仅通过核验且已入库的资料可同步');
+  const profile = await MedicalExpert.findOneAndUpdate({ _id: row.expertProfileId, recruitmentId: row._id },
+    { $set: recruitmentProfile(row.response) }, { new: true, runValidators: true });
+  if (!profile) return fail(res, 409, '关联专家档案已变更，请核对');
+  res.json({ success: true, data: { expertProfileId: profile._id } });
 });
 
 router.post('/admin/:id/reject', adminAuth, async (req, res) => {

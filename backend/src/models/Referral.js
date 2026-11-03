@@ -19,6 +19,8 @@ const referralSchema = new Schema({
   fromStaffUnread:  { type: Boolean, default: false }, // B回复后置true，A查看后清除
   attachedHealthInfo: { type: mongoose.Schema.Types.Mixed, default: null }, // A附带的健康档案摘要
   linkedDiseaseRecordId: { type: Schema.Types.ObjectId, default: null },
+  linkedDiseaseRecordIds: { type: [Schema.Types.ObjectId], default: [] },
+  linkedDiseaseSnapshots: { type: [Schema.Types.Mixed], default: [] },
   linkedDiseaseName: { type: String, default: '' },
   linkedDiseaseSnapshot: { type: Schema.Types.Mixed, default: null }, // 发起时冻结；接收方只能看发起方授权的信息
   referralPurpose: { type: String, default: '' },

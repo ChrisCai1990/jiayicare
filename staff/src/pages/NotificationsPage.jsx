@@ -284,7 +284,7 @@ export default function NotificationsPage() {
                   {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>需解决问题：{r.questionList}</div>}
                   {r.feedbackRevisionRequest?.pending && <div style={{ fontSize:12, color:'#9A5B13', background:'#FFF9ED', padding:'7px 10px', borderRadius:6, marginBottom:6 }}>健康顾问请补充反馈：{r.feedbackRevisionRequest.note}</div>}
                   {!r.canViewPatient && <div style={{ fontSize:12, color:'#8A5A00', background:'#FFF8E8', padding:'6px 9px', borderRadius:6, marginBottom:6 }}>有限授权视图：仅展示发起方在本次转介中提供的信息。</div>}
-                  {r.linkedDiseaseSnapshot && <AttachedHealthInfoView info={{ diseaseSummary: r.linkedDiseaseSnapshot.summary, diseaseCourse: r.linkedDiseaseSnapshot.recentCourseEntries }} />}
+                  {(r.linkedDiseaseSnapshots?.length ? r.linkedDiseaseSnapshots : r.linkedDiseaseSnapshot ? [r.linkedDiseaseSnapshot] : []).map((disease, index) => <div key={index}><b>{disease.name}</b><AttachedHealthInfoView info={{ diseaseSummary: disease.summary, diseaseCourse: disease.recentCourseEntries }} /></div>)}
                   {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   {!!r.sourceReports?.length && <div style={{ margin: '8px 0', padding: 10, background: '#F5F9FC', borderRadius: 8 }}>
                     <b>本次转介报告</b>
@@ -795,7 +795,7 @@ function RespondModal({ referral, onClose, onRespond }) {
               <b>健管确认的安排</b>{referral.bookingSnapshot.slots.map((slot, index) => <div key={index}>{slot.department} · {slot.expert}：{slot.actualAt ? new Date(slot.actualAt).toLocaleString('zh-CN') : '牵头科室接入，待协调统一时间'} · {slot.appointmentNote}</div>)}
             </div>}
             {referral.attachedHealthInfo && <AttachedHealthInfoView info={referral.attachedHealthInfo} />}
-            {referral.linkedDiseaseSnapshot && <AttachedHealthInfoView info={{ diseaseSummary: referral.linkedDiseaseSnapshot.summary, diseaseCourse: referral.linkedDiseaseSnapshot.recentCourseEntries }} />}
+            {(referral.linkedDiseaseSnapshots?.length ? referral.linkedDiseaseSnapshots : referral.linkedDiseaseSnapshot ? [referral.linkedDiseaseSnapshot] : []).map((disease, index) => <div key={index}><b>{disease.name}</b><AttachedHealthInfoView info={{ diseaseSummary: disease.summary, diseaseCourse: disease.recentCourseEntries }} /></div>)}
           </div>
           {isReject ? (
             <div className="form-group" style={{ marginBottom: 0 }}>

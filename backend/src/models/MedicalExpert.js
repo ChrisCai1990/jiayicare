@@ -3,6 +3,10 @@ const mongoose = require('mongoose');
 const schema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   title: { type: String, default: '' },
+  profession: { type: String, default: '' },
+  education: { type: String, default: '' },
+  experienceYears: { type: Number, default: null },
+  languages: { type: [mongoose.Schema.Types.Mixed], default: [] },
   institutionId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalInstitution', required: true, index: true },
   departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalDepartment', required: true, index: true },
   campus: { type: String, default: '' },
