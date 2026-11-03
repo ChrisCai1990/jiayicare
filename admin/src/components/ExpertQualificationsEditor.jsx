@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { getToken } from '../api'
 import ExpertLanguageFields from './ExpertLanguageFields'
 import qualifications from '../../../shared/expertQualifications.cjs'
@@ -17,6 +17,18 @@ export default function ExpertQualificationsEditor({ token, recruitmentId, onUpd
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [notes, setNotes] = useState({})
+  const [preview, setPreview] = useState(null)
+  const previewRequest = useRef(null)
+  const dialog = useRef(null)
+  useEffect(() => {
+    setPreview(null)
+    return () => previewRequest.current?.abort()
+  }, [endpoint])
+  useEffect(() => {
+    if (!preview) return
+    dialog.current?.showModal()
+    return () => URL.revokeObjectURL(preview.url)
+  }, [preview])
   async function request(path = '', options = {}) {
     const headers = isAdmin ? { Authorization: `Bearer ${getToken()}` } : {}
     if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json'
@@ -34,15 +46,27 @@ export default function ExpertQualificationsEditor({ token, recruitmentId, onUpd
     setBusy(true); setError(''); setMessage('')
     try { await work(); await load(); await onUpdated?.(); setMessage(success) } catch (e) { setError(e.message); await load().catch(() => {}) } finally { setBusy(false) }
   }
-  async function download(file) {
-    await run(async () => {
-      const res = await request(`/certificates/${file._id}`)
-      const url = URL.createObjectURL(await res.blob())
-      const link = document.createElement('a'); link.href = url; link.download = file.name; link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
-    }, '附件已下载')
+  async function openPreview(file) {
+    previewRequest.current?.abort()
+    const controller = new AbortController()
+    previewRequest.current = controller
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const res = await request(`/certificates/${file._id}`, { signal: controller.signal })
+      const blob = await res.blob()
+      if (controller.signal.aborted) return
+      if (!['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(blob.type)) throw new Error('此附件暂不支持预览')
+      setPreview({ url: URL.createObjectURL(blob), type: blob.type, name: file.name })
+    } catch (e) { if (e.name !== 'AbortError') setError(e.message) }
+    finally { if (!controller.signal.aborted) setBusy(false) }
   }
   return <section style={{ borderTop: '1px solid #DCE7E1', paddingTop: 18, marginTop: 18 }}>
+    {preview && <dialog ref={dialog} aria-label="证件预览" onCancel={() => setPreview(null)} onClose={() => setPreview(null)} style={{ width: '94vw', maxWidth: 1200, height: '90vh', maxHeight: '90vh', padding: 16, border: '1px solid #C9D8D2', borderRadius: 12, boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}><strong style={{ flex: 1, overflowWrap: 'anywhere' }}>{preview.name}</strong><button type="button" autoFocus onClick={() => setPreview(null)}>关闭预览</button></div>
+      {preview.type === 'application/pdf'
+        ? <iframe title={preview.name} src={preview.url} style={{ width: '100%', height: 'calc(100% - 60px)', border: 0 }} />
+        : <div style={{ height: 'calc(100% - 60px)', overflow: 'auto', textAlign: 'center' }}><img src={preview.url} alt={preview.name} style={{ maxWidth: '100%', height: 'auto' }}/></div>}
+    </dialog>}
     {error && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
     {message && <p role="status" style={{ color: '#246B4D' }}>{message}</p>}
     {!data ? <p>正在读取补充资料…</p> : <>
@@ -78,7 +102,7 @@ export default function ExpertQualificationsEditor({ token, recruitmentId, onUpd
       {data.certificates.length > 0 && <h4>已上传（{data.certificates.length}份）</h4>}
       {data.certificates.map(file => <div key={file._id} style={{ padding: '12px 0', borderBottom: '1px solid #DCE7E1' }}>
         <strong>{qualifications.certificateTypes[file.category]}</strong> · {file.name} · {{ pending: '待核验', pass: '通过', fail: '不通过' }[file.reviewStatus]}
-        <button type="button" disabled={busy} style={{ marginLeft: 10 }} onClick={() => download(file)}>下载查看</button>
+        <button type="button" disabled={busy} style={{ marginLeft: 10 }} onClick={() => openPreview(file)}>打开查看</button>
         {file.reviewNote && <p>核验备注：{file.reviewNote}</p>}
         {isAdmin && <div style={{ marginTop: 8 }}>
           <input aria-label={`${file.name}核验备注`} style={style} placeholder="核验备注（选填）" maxLength={500} value={notes[file._id] ?? file.reviewNote ?? ''} onChange={e => setNotes(current => ({ ...current, [file._id]: e.target.value }))}/>
