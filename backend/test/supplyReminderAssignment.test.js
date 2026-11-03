@@ -39,11 +39,11 @@ async function generate(mode) {
   return { res, row: inserted[0], record };
 }
 
-test('就医配取提醒归当前操作人并立即出现在其随访列表', async () => {
+test('就医配取提醒由所属健管专员执行，创建人保留为操作人', async () => {
   const { res, row, record } = await generate('visit');
   assert.equal(res.code, 200);
   assert.equal(row.staffId, 'operator-1');
-  assert.equal(row.assignedTo, 'operator-1');
+  assert.equal(row.assignedTo, 'health-manager');
   assert.equal(row.sourceType, 'supply_reminder');
   assert.equal(record.supplyReminder.followUpTaskId, 'follow-up-1');
   assert.match(row.theme, /提醒客户配取/);
@@ -52,11 +52,11 @@ test('就医配取提醒归当前操作人并立即出现在其随访列表', as
   assert.equal(row.formData.quantity, '2盒');
 });
 
-test('代配待办也归当前操作人，可在其随访列表中查看', async () => {
+test('代配待办归所属健管专员', async () => {
   const { res, row, record } = await generate('proxy');
   assert.equal(res.code, 200);
   assert.equal(row.staffId, 'operator-1');
-  assert.equal(row.assignedTo, 'operator-1');
+  assert.equal(row.assignedTo, 'health-manager');
   assert.equal(row.sourceType, 'supply_reminder');
   assert.equal(record.supplyReminder.followUpTaskId, 'follow-up-1');
   assert.match(row.theme, /我方代配/);
@@ -74,7 +74,7 @@ test('切换为客户自配会复用已有计划并解除旧代配订单关联',
   vm.runInNewContext(source.slice(start, end), {
     router: { put: (_path, _auth, _permission, callback) => { handler = callback; } }, staffAuth: () => {}, checkPermission: () => () => {},
     Medication: { findOne: async () => record }, Supplement: { findOne: async () => record },
-    User: { findById: () => ({ select: async () => ({ _id: 'patient-1' }) }) },
+    User: { findById: () => ({ select: async () => ({ _id: 'patient-1', assignedHealthManager: 'health-manager' }) }) },
     FollowUp: { findOneAndUpdate: async () => existing, updateMany: async () => {}, create: async () => { throw new Error('不应新建重复计划'); } },
   });
   const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };

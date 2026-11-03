@@ -1,6 +1,7 @@
 const FollowUp = require('../models/FollowUp');
 const Medication = require('../models/Medication');
 const Supplement = require('../models/Supplement');
+const User = require('../models/User');
 
 function addDays(date, days) {
   const next = new Date(date);
@@ -8,11 +9,11 @@ function addDays(date, days) {
   return next;
 }
 
-function nextReminderData(completed, config) {
+function nextReminderData(completed, config, managerId) {
   return {
     patientId: completed.patientId,
     staffId: completed.staffId,
-    assignedTo: completed.assignedTo || completed.staffId,
+    assignedTo: managerId,
     date: addDays(completed.completedAt || new Date(), config.intervalDays),
     type: config.mode === 'proxy' ? 'other' : 'wechat',
     status: 'planned',
@@ -40,7 +41,9 @@ async function generateNextSupplyReminder(completed) {
   });
   if (existingOpen) return existingOpen;
 
-  const data = nextReminderData(completed, record.supplyReminder);
+  const patient = await User.findById(completed.patientId).select('assignedHealthManager').lean();
+  if (!patient?.assignedHealthManager) return null;
+  const data = nextReminderData(completed, record.supplyReminder, patient.assignedHealthManager);
   return FollowUp.findOneAndUpdate(
     { sourceType: 'supply_reminder', sourceScheduleKey: data.sourceScheduleKey },
     { $setOnInsert: data },
