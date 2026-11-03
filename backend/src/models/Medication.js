@@ -20,6 +20,7 @@ const medicationSchema = new mongoose.Schema({
   stopMode:     { type: String, enum: ['manual', 'automatic', 'plan_adjustment', ''], default: '' },
   stoppedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   stoppedByName:{ type: String, default: '' },
+  correctionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] }, // 已停用记录的订正留痕
   note:         { type: String, default: '' },
   imageUrls:    [{ type: String }],              // 药盒、处方等核对图片
   active:       { type: Boolean, default: true },

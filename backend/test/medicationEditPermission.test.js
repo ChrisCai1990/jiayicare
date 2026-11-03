@@ -20,6 +20,9 @@ async function update(role, body, owner = 'creator', stopped = false) {
     staffAuth: () => {},
     Medication: { findOne: async () => med },
     FollowUp: { deleteMany: async () => { deletes++; } },
+    require: name => name.endsWith('/combinedMedicationReminder') ? { refreshExistingPlan: async () => {} }
+      : name.endsWith('/medicationAttachmentStorage') ? { normalizeMedicationAttachments: async urls => urls }
+        : null,
   });
   const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
   await handler({ params: { id: 'patient', medId: 'med' }, staff: { role, _id: 'editor' }, body }, res);
@@ -28,7 +31,7 @@ async function update(role, body, owner = 'creator', stopped = false) {
 
 test('health advisor can edit another staff member medication without approving it', async () => {
   const { res, med, saves } = await update('familyDoctor', { name: 'Corrected', aiStatus: 'approved' });
-  assert.equal(res.code, 200);
+  assert.equal(res.code, 200, res.data?.message);
   assert.equal(med.name, 'Corrected');
   assert.equal(med.aiStatus, 'pending');
   assert.equal(saves, 1);
@@ -61,4 +64,30 @@ test('stopped historical records remain immutable', async () => {
   const { res, saves } = await update('familyDoctor', { name: 'Changed' }, 'creator', true);
   assert.equal(res.code, 400);
   assert.equal(saves, 0);
+});
+
+test('stopped correction requires an authorized editor and keeps status unchanged', async () => {
+  const begin = source.indexOf("router.patch('/patients/:id/medications/:medId/correct-stopped',");
+  const finish = source.indexOf('\n});', begin) + 4;
+  let handler, writes = 0;
+  const med = { _id: 'med', user: 'patient', staffId: 'creator', stopped: true, active: true,
+    name: '药物', dosage: '1粒', frequency: '每日1次', stopReason: '已停用', startDate: '2016-11-03',
+    updatedAt: new Date('2026-11-03T02:00:00Z') };
+  vm.runInNewContext(source.slice(begin, finish), {
+    router: { patch: (_path, _auth, callback) => { handler = callback; } }, staffAuth: () => {},
+    Medication: { findOne: async () => med, findOneAndUpdate: async (filter, mutation) => {
+      writes++; assert.equal(filter.stopped, true); assert.equal(mutation.$set.stopped, undefined); return { ...med, ...mutation.$set };
+    } },
+    require: name => name.endsWith('/stoppedMedicationCorrection') ? require('../src/utils/stoppedMedicationCorrection') : null,
+  });
+  async function call(role) {
+    const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
+    await handler({ params: { id: 'patient', medId: 'med' }, staff: { role, _id: 'advisor', name: '顾问' },
+      body: { updatedAt: med.updatedAt.toISOString(), correctionReason: '核对原资料', startDate: '2026-11-03' } }, res);
+    return res;
+  }
+  assert.equal((await call('nutritionist')).code, 403);
+  assert.equal(writes, 0);
+  assert.equal((await call('familyDoctor')).code, 200);
+  assert.equal(writes, 1);
 });

@@ -2367,6 +2367,7 @@ export default function PatientDetailPage() {
   const [showMedModal, setShowMedModal] = useState(false)
   const [showSupModal, setShowSupModal] = useState(false)
   const [editingMed, setEditingMed] = useState(null)
+  const [medCorrectionReason, setMedCorrectionReason] = useState('')
   const [editingSup, setEditingSup] = useState(null)
   const [stoppingMed, setStoppingMed] = useState(null) // 待确认停用的用药记录
   const [reminderMed, setReminderMed] = useState(null)
@@ -2396,6 +2397,7 @@ export default function PatientDetailPage() {
   const [execDraftLoading, setExecDraftLoading] = useState(false)
   const [medForm, setMedForm] = useState({})
   const [medError, setMedError] = useState('')
+  const editingStoppedMed = Boolean(editingMed && medications.find(med => med._id === editingMed)?.stopped)
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
   const [medImageUploading, setMedImageUploading] = useState(false)
@@ -9950,7 +9952,14 @@ export default function PatientDetailPage() {
                   <tbody>
                     {visibleMeds.map(m => (
                       <tr key={m._id}>
-                        <td style={{ fontWeight: 600 }}>{m.name}{activeMeds.filter(other => other.name.trim() === m.name.trim()).length > 1 && <div style={{ fontSize: 11, color: '#7C3AED' }}>同名历史 {activeMeds.filter(other => other.name.trim() === m.name.trim()).length} 段</div>}</td>
+                        <td style={{ fontWeight: 600 }}>{m.name}{activeMeds.filter(other => other.name.trim() === m.name.trim()).length > 1 && <div style={{ fontSize: 11, color: '#7C3AED' }}>同名历史 {activeMeds.filter(other => other.name.trim() === m.name.trim()).length} 段</div>}
+                          {!!m.correctionHistory?.length && <details style={{ fontSize: 11, fontWeight: 400, marginTop: 5 }}><summary>历史订正（{m.correctionHistory.length}）</summary>
+                            {m.correctionHistory.map((entry, index) => <div key={index} style={{ padding: '5px 0', borderTop: '1px solid #E5EEE9' }}>
+                              <div>{entry.byName || '医护人员'} · {entry.at ? new Date(entry.at).toLocaleString('zh-CN') : ''} · {entry.reason}</div>
+                              {Object.entries(entry.changes || {}).map(([field, values]) => <div key={field}>{({ name: '药名', brandName: '商品名', specification: '规格', dosage: '剂量', method: '用药方式', frequency: '频次', timing: '服药时机', startDate: '开始日期', endDate: '计划结束日期', purpose: '用药目的', note: '备注', imageUrls: '附件', stopDate: '停用日期', stopReason: '停用原因' })[field] || field}：{field === 'imageUrls' ? `${values.before?.length || 0}张 → ${values.after?.length || 0}张` : `${values.before || '空'} → ${values.after || '空'}`}</div>)}
+                            </div>)}
+                          </details>}
+                        </td>
                         <td style={{ color: '#666' }}>{m.brandName || '-'}</td>
                         <td>{m.specification || '-'}</td>
                         <td>{m.dosage}</td>
@@ -9974,9 +9983,13 @@ export default function PatientDetailPage() {
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
                             {!m.stopped && (canApproveMed || (staff?._id && String(m.staffId) === String(staff._id))) && <button className="btn btn-secondary btn-sm" onClick={() => {
-                              setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '', imageUrls: m.imageUrls || [] })
+                              setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '', imageUrls: m.imageUrls || [], updatedAt: m.updatedAt })
                               setEditingMed(m._id); setShowMedModal(true)
                             }}>编辑</button>}
+                            {m.stopped && (canApproveMed || (staff?._id && String(m.staffId) === String(staff._id))) && <button className="btn btn-secondary btn-sm" onClick={() => {
+                              setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '', imageUrls: m.imageUrls || [], stopDate: m.stopDate || '', stopReason: m.stopReason || '', updatedAt: m.updatedAt })
+                              setMedCorrectionReason(''); setEditingMed(m._id); setMedError(''); setShowMedModal(true)
+                            }}>订正信息</button>}
                             {m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: m.purpose || '', note: '', imageUrls: m.imageUrls || [] }); setEditingMed(null); setShowMedModal(true) }}>再次使用</button>}
                             {!m.stopped && !m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm(supplyFormFor(m)) }}>定期配药</button>}
                             {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm(supplyFormFor(m, shanghaiDateInput())) }}>调整配药方式</button>}
@@ -10168,10 +10181,11 @@ export default function PatientDetailPage() {
             <div className="modal-overlay">
               <div className="modal" style={{ maxWidth: 560 }}>
                 <div className="modal-header">
-                  <h3 className="modal-title">{editingMed ? '编辑药物' : '新增药物'}</h3>
+                  <h3 className="modal-title">{editingStoppedMed ? '订正已停用药物信息' : editingMed ? '编辑药物' : '新增药物'}</h3>
                   <button className="modal-close" onClick={() => { setShowMedModal(false); setMedError('') }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  {editingStoppedMed && <div style={{ gridColumn: '1/-1', fontSize: 12, color: '#8A5A44' }}>只订正历史记录；保存后仍为“已停用”，不会恢复用药提醒。</div>}
                   {[
                     { k: 'name', label: '药品化学名 *', full: false, placeholder: '如：苯磺酸氨氯地平' },
                     { k: 'brandName', label: '商品名', full: false, placeholder: '如：络活喜' },
@@ -10191,6 +10205,11 @@ export default function PatientDetailPage() {
                         onChange={e => setMedForm(f => ({ ...f, [k]: e.target.value }))} />
                     </div>
                   ))}
+                  {editingStoppedMed && <>
+                    <div className="form-group"><label className="form-label">实际停用日期</label><DateField className="form-input" type="date" value={medForm.stopDate || ''} onChange={e => setMedForm(f => ({ ...f, stopDate: e.target.value }))}/></div>
+                    <div className="form-group"><label className="form-label">停用原因 *</label><input className="form-input" value={medForm.stopReason || ''} onChange={e => setMedForm(f => ({ ...f, stopReason: e.target.value }))}/></div>
+                    <div className="form-group" style={{ gridColumn: '1/-1' }}><label className="form-label">本次订正理由 *</label><textarea className="form-input" rows={2} maxLength={1000} value={medCorrectionReason} onChange={e => setMedCorrectionReason(e.target.value)} placeholder="说明原信息哪里不准确及核实依据"/></div>
+                  </>}
                   <RecordImageUploader imageUrls={medForm.imageUrls || []} onChange={imageUrls => setMedForm(form => ({ ...form, imageUrls }))}
                     uploading={medImageUploading} setUploading={setMedImageUploading} onError={setMedError} />
                 </div>
@@ -10200,13 +10219,15 @@ export default function PatientDetailPage() {
                   <button className="btn btn-primary" disabled={medSaving || medImageUploading} onClick={async () => {
                     setMedError('')
                     if (!medForm.name?.trim() || !medForm.dosage?.trim() || !medForm.frequency?.trim()) { setMedError('请填写药品化学名、剂量和频次'); return }
+                    if (editingStoppedMed && (!medForm.stopReason?.trim() || !medCorrectionReason.trim())) { setMedError('请填写停用原因和本次订正理由'); return }
                     setMedSaving(true)
                     try {
                       const needReview = !editingMed && (staff?.role === 'healthManager' || staff?.role === 'medicalAssistant')
-                      if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
+                      if (editingStoppedMed) await staffAPI.correctStoppedMedication(id, editingMed, { ...medForm, correctionReason: medCorrectionReason })
+                      else if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
                       else await staffAPI.createPatientMedication(id, medForm)
                       setShowMedModal(false); loadMedications()
-                      toast(editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
+                      toast(editingStoppedMed ? '历史信息已订正，仍为已停用' : editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
                     } catch (err) { setMedError(err.message || '保存失败，请稍后重试') }
                     finally { setMedSaving(false) }
                   }}>{medImageUploading ? '图片上传中...' : medSaving ? '保存中...' : '保存'}</button>
