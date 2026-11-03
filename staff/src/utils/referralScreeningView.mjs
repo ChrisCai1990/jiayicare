@@ -13,3 +13,28 @@ export function screeningView(item) {
 export function referenceLines(value) {
   return String(value || '').split(/(?:&|\n)+/).map(s=>s.trim()).filter(Boolean)
 }
+
+// Compare only a single explicit numerical range from this report, never demographic ranges.
+export function screeningStatus(row) {
+  if (row.status === 'abnormal') return { abnormal:true, label:'异常', source:'报告记录标记' }
+  if (row.status === 'attention') return { abnormal:false, attention:true, label:'关注', source:'报告记录标记' }
+  if (row.status === 'normal') return { abnormal:false, label:'', source:'报告记录标记' }
+  const raw = String(row.value ?? '').trim()
+  if (/[↑↓]/.test(raw)) return { abnormal:true, label:raw.includes('↑') ? '↑ 偏高' : '↓ 偏低', source:'结果原文标记' }
+  const unknown = { abnormal:false, attention:true, label:'需核对', source:'参考范围或结果无法直接比较' }
+  if (!/^-?\d+(?:\.\d+)?$/.test(raw)) return unknown
+  const value = Number(raw), reference = String(row.referenceRange || '').replace(/\s/g,'')
+  const range = reference.match(/^(-?\d+(?:\.\d+)?)[~～—–-](-?\d+(?:\.\d+)?)$/)
+  if (range && Number(range[1]) <= Number(range[2])) {
+    if (value < Number(range[1])) return { abnormal:true, label:'↓ 偏低', source:'低于本报告参考范围' }
+    if (value > Number(range[2])) return { abnormal:true, label:'↑ 偏高', source:'高于本报告参考范围' }
+    return { abnormal:false, label:'', source:'本报告参考范围内' }
+  }
+  const limit = reference.match(/^(<=|>=|<|>|≤|≥)(-?\d+(?:\.\d+)?)$/)
+  if (limit) {
+    const op=limit[1], n=Number(limit[2]);
+    const valid=op==='<' ? value<n : ['<=','≤'].includes(op) ? value<=n : op==='>' ? value>n : value>=n
+    return { abnormal:!valid, label:valid ? '' : ['<','<=','≤'].includes(op) ? '↑ 偏高' : '↓ 偏低', source:'与本报告参考范围比较' }
+  }
+  return unknown
+}
