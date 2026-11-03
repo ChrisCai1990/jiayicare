@@ -584,3 +584,10 @@ textarea.form-control { resize: vertical; }
   .advisor-workbench-nav { flex-wrap: nowrap; overflow-x: auto; }
   .advisor-workbench-filter { flex-wrap: nowrap; overflow-x: auto; }
 }
+
+/* Pending work is independent from unread notifications. */
+.sidebar-workbench-dot { display: inline-block; flex: 0 0 10px; width: 10px; height: 10px; border-radius: 50%; background: #F04452; box-shadow: 0 0 0 2px rgba(255,255,255,.15); margin-left: auto; }
+.sidebar-workbench-dot.is-unknown { background: #D99B23; }
+.mobile-menu-btn { position: relative; }
+.mobile-menu-btn > .sidebar-workbench-dot { position: absolute; right: -3px; top: -3px; }
+.workbench-reminder-error { padding: 12px 16px; margin-bottom: 16px; color: #9A5B00; background: #FFF8E8; border-radius: 10px; }

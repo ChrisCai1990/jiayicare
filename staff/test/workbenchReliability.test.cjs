@@ -10,7 +10,7 @@ const act = React.act || require('react-dom/test-utils').act
 function load(file, mocks = {}) {
   const filename = path.resolve(__dirname, '../src', file), module = { exports: {} }
   vm.runInNewContext(transformSync(fs.readFileSync(filename, 'utf8'), { loader: 'jsx', format: 'cjs' }).code, {
-    module, exports: module.exports, console, window, document,
+    module, exports: module.exports, console, window, document, URLSearchParams,
     require: name => name in mocks ? mocks[name] : name.startsWith('.') ? load(path.relative(path.resolve(__dirname, '../src'), path.resolve(path.dirname(filename), name + (path.extname(name) ? '' : '.js'))), mocks) : require(name),
   })
   return module.exports
@@ -69,6 +69,9 @@ test('follow-up component pages server results and shows active state labels', a
   } })
   mocks['../utils/date'] = { formatChineseDate: v => v }
   mocks['./Pagination'] = load('components/Pagination.jsx')
+  mocks['./FollowUpModal'] = () => null
+  mocks['../App'].can = () => false
+  mocks['react-router-dom'].useLocation = () => ({ search: '' })
   const Component = load('components/FollowUpsPanel.jsx', mocks).default
   const view = await mount(React.createElement(Component))
   try { assert.match(view.box.textContent, /214/); assert.match(view.box.textContent, /已错过，待跟进/); await click(view.box, '下一页'); assert.equal(calls.at(-1).page, 2); assert.match(view.box.textContent, /第2页/) }

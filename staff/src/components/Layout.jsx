@@ -1,3 +1,5 @@
+import AiWorkbenchProvider from './AiWorkbenchProvider'
+import WorkbenchReminder, { useWorkbenchReminder } from './WorkbenchReminder'
 import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
@@ -45,7 +47,7 @@ const isCurrentPath = (currentPath, path) => currentPath === path || currentPath
 
 export default function Layout() {
   const { staff } = useStaff()
-  return <NotificationSummaryProvider key={staff?._id || staff?.id || staff?.username} disabled={staff?.tenantStatus === 'setup'}><LayoutContent /></NotificationSummaryProvider>
+  return <NotificationSummaryProvider key={`${staff?._id || staff?.id || staff?.username}:${staff?.role}`} disabled={staff?.tenantStatus === 'setup'}><AiWorkbenchProvider disabled={staff?.tenantStatus === 'setup'}><WorkbenchReminder disabled={staff?.tenantStatus === 'setup'}><LayoutContent /></WorkbenchReminder></AiWorkbenchProvider></NotificationSummaryProvider>
 }
 
 function LayoutContent() {
@@ -56,6 +58,7 @@ function LayoutContent() {
   const setupView = setup ? new URLSearchParams(loc.search).get('view') || '/home' : loc.pathname
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { count: notifBadge } = useNotificationSummary()
+  const workbench = useWorkbenchReminder()
   const visibleNav = setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
     if (!item.moduleKey) return item.roles.length === 0 || item.roles.includes(staff?.role)
     if (staff?.customPermissions) return hasModulePermission(staff, item.moduleKey, 'view')
@@ -84,7 +87,7 @@ function LayoutContent() {
   }
 
   const handleNavClick = (path) => {
-    nav(setup ? `/setup?view=${encodeURIComponent(path)}` : path)
+    nav(setup ? `/setup?view=${encodeURIComponent(path)}` : path === '/home' ? '/home?todo=all' : path)
     setSidebarOpen(false)
   }
 
@@ -102,7 +105,8 @@ function LayoutContent() {
       >
         <span className="sidebar-item-icon"><AppIcon name={item.icon} /></span>
         <span className="sidebar-item-label">{item.label}</span>
-        {item.path === '/notifications' && notifBadge > 0 && (
+        {item.path === '/home' && (workbench.pending || workbench.error) && <span className={`sidebar-workbench-dot${workbench.pending ? '' : ' is-unknown'}`} role="status" aria-label={workbench.pending ? '有待处理任务' : '待办更新失败，请进入工作台重试'} title={workbench.error ? '待办更新失败，保留上次提醒；请进入工作台重试' : '有待处理任务；完成或转交后更新'} />}
+        {item.path === '/notifications'  && notifBadge > 0 && (
           <span className="sidebar-notification-badge">{notifBadge}</span>
         )}
       </button>
@@ -118,8 +122,9 @@ function LayoutContent() {
     <div className="app-layout">
       {/* 移动端顶部栏 */}
       <header className="mobile-header">
-        <button className="mobile-menu-btn" onClick={() => setSidebarOpen(true)}>
+        <button aria-label={workbench.pending ? "打开菜单，有待处理任务" : "打开菜单"} className="mobile-menu-btn" onClick={() => setSidebarOpen(true)}>
           <span /><span /><span />
+          {(workbench.pending || workbench.error) && <i className={`sidebar-workbench-dot${workbench.pending ? '' : ' is-unknown'}`} aria-hidden="true" />}
         </button>
         <div className="mobile-header-title">{staff?.tenantName || '机构医护端'}</div>
         <div className="mobile-header-avatar">{initials}</div>

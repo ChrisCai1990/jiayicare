@@ -8,7 +8,7 @@ import NutritionAssessmentPanel from './NutritionAssessmentPanel'
 
 const date = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '未设定'
 const decisionActions = { intake: '确认客户需求并转交顾问', advisor: '确认方案并发起转介', booking: '完成预约和客户沟通', specialist: '整理专家并回复转介', advisor_review: '审核专科回复并归档', planner_final: '确认服务并完成验收' }
-export default function ServiceSupervisionPanel() {
+export default function ServiceSupervisionPanel({ pendingOnly = false }) {
   const { staff } = useStaff()
   const nav = useNavigate()
   const resource = useWorkbenchResource(async () => (await staffAPI.getServiceSupervision({ includeCompleted: '1' })).data, getToken(), { services: [], completed: [], inbox: [] })
@@ -31,7 +31,7 @@ export default function ServiceSupervisionPanel() {
   }
   const { services = [], completed = [], inbox = [] } = resource.data
   const attention = services.filter(s => s.attention)
-  const rows = statusFilter === 'pending' ? services : statusFilter === 'completed' ? completed : [...services, ...completed]
+  const rows = pendingOnly ? services.filter(row => row.actionTaskId) : statusFilter === 'pending' ? services : statusFilter === 'completed' ? completed : [...services, ...completed]
   const currentPage = Math.min(page, Math.max(1, Math.ceil(rows.length / 5)))
   const currentInboxPage = Math.min(inboxPage, Math.max(1, Math.ceil(inbox.length / 5)))
   const start = value => { setForm(value); setNote(''); setError(''); setNotice('') }
@@ -46,16 +46,16 @@ export default function ServiceSupervisionPanel() {
     } catch (e) { setError(e.message) }
     finally { setBusy(false) }
   }
-  if (!resource.loading && !resource.error && staff?.role !== 'familyDoctor' && !services.length && !inbox.length && !notice) return null
+  if (!resource.loading && !resource.error && (pendingOnly || staff?.role !== 'familyDoctor') && !rows.length && !inbox.length && !notice) return null
   const history = service => <details style={{ marginTop: 8 }}><summary>督办记录 {service.history.length}</summary>{service.history.map(r => <div key={r._id} style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
     <div>{r.kind === 'coordinate' ? '请求协调' : '提醒处理'} · {r.senderName} → {r.recipientName} · {date(r.createdAt)}</div>
     <div>{r.note}</div><div style={{ color: '#667085' }}>{r.handledAt ? `处理反馈（${date(r.handledAt)}）：${r.response}` : '尚无处理反馈（实际进度以原服务为准）'}</div>
   </div>)}</details>
   return <section className="card" style={{ marginBottom: 20 }} aria-label="服务督办">
-    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}><div className="card-title">{staff?.role === 'familyDoctor' ? '服务进度总览' : '需协调的服务'}{attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div>{staff?.role === 'familyDoctor' && <div role="group" aria-label="服务进度状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', services.length], ['completed', '已完成', completed.length], ['all', '全部', services.length + completed.length]].map(([key, label, count]) => <button key={key} type="button" className={statusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={statusFilter === key} onClick={() => { setStatusFilter(key); setPage(1) }}>{label} {count}</button>)}</div>}</div>
+    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}><div className="card-title">{pendingOnly ? '待我协调与处理' : staff?.role === 'familyDoctor' ? '服务进度总览' : '需协调的服务'}{attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div>{staff?.role === 'familyDoctor' && !pendingOnly && <div role="group" aria-label="服务进度状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', services.length], ['completed', '已完成', completed.length], ['all', '全部', services.length + completed.length]].map(([key, label, count]) => <button key={key} type="button" className={statusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={statusFilter === key} onClick={() => { setStatusFilter(key); setPage(1) }}>{label} {count}</button>)}</div>}</div>
     <div className="card-body">
-      {staff?.role === 'familyDoctor' && <details style={{ marginBottom: 14, borderBottom: '1px solid #E3ECE7', paddingBottom: 12 }}><summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>营养评估进度</summary><NutritionAssessmentPanel compact embedded /></details>}
-      {staff?.role === 'familyDoctor' && <p style={{ marginTop: 0, fontSize: 13, color: '#667085' }}>查看所属客户的完整服务进度。随访由健管专员督导，就医协助由健康规划师督导；需要整体健康判断时在本人专业待办中处理。</p>}
+      {staff?.role === 'familyDoctor' && !pendingOnly && <details style={{ marginBottom: 14, borderBottom: '1px solid #E3ECE7', paddingBottom: 12 }}><summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>营养评估进度</summary><NutritionAssessmentPanel compact embedded /></details>}
+      {staff?.role === 'familyDoctor' && !pendingOnly && <p style={{ marginTop: 0, fontSize: 13, color: '#667085' }}>查看所属客户的完整服务进度。随访由健管专员督导，就医协助由健康规划师督导；需要整体健康判断时在本人专业待办中处理。</p>}
       {resource.loading && <div role="status">正在读取服务进度…</div>}
       {resource.error && <div role="alert">进度更新失败：{resource.error} <button onClick={resource.refresh}>重试</button></div>}
       {notice && <p role="status">{notice}</p>}

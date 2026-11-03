@@ -1,9 +1,10 @@
+import { isServiceActionable } from '../utils/workbenchReminder.mjs'
 import CheckupProgressPanel from '../components/CheckupProgressPanel'
 import GeoReviewPanel, { canShowGeoReview } from '../components/GeoReviewPanel'
 import useWorkbenchResource from '../hooks/useWorkbenchResource'
 import { getToken } from '../api'
 import { loadFollowUpPages } from '../utils/loadFollowUpPages.mjs'
-import AiWorkbenchProvider from '../components/AiWorkbenchProvider'
+import { useWorkbenchReminder } from '../components/WorkbenchReminder'
 import ConsultationTodosPanel from '../components/ConsultationTodosPanel'
 import OrderShipmentsPanel from '../components/OrderShipmentsPanel'
 import InventoryDispatchPanel from '../components/InventoryDispatchPanel'
@@ -45,6 +46,7 @@ export default function HomePage() {
   const [reports, setReports] = useState(null)
   const [loading, setLoading] = useState(true)
   const notification = useNotificationSummary()
+  const workbenchReminder = useWorkbenchReminder()
   const unreadMsgCount = notification.count ?? '—'
   const [checkinRecords, setCheckinRecords] = useState([])
   const expiringPatients = notification.data?.expiringPatients || []
@@ -66,7 +68,7 @@ export default function HomePage() {
   const [advisorArea, setAdvisorArea] = useState('todo')
   const [advisorTodoView, setAdvisorTodoView] = useState(() => {
     const target = new URLSearchParams(location.search).get('todo')
-    return ['followup', 'service'].includes(target) ? target : 'review'
+    return ['all', 'followup', 'service'].includes(target) ? target : 'all'
   })
   const [roleTodoView, setRoleTodoView] = useState('all')
   const [geoCount, setGeoCount] = useState('加载中')
@@ -74,12 +76,14 @@ export default function HomePage() {
 
   useEffect(() => {
     const target = new URLSearchParams(location.search).get('todo')
-    if (['followup', 'service'].includes(target)) {
+    if (['all', 'followup', 'service'].includes(target)) {
       setAdvisorArea('todo')
       setAdvisorTodoView(target)
       setRoleTodoView(target)
     }
-  }, [location.search])
+  }, [location.search, location.key])
+
+  useEffect(() => { if (advisorArea === 'todo') { setOrderStatusFilter('pending'); setOrderPage(1) } }, [advisorArea])
 
   useEffect(() => {
     staffAPI.getReports2()
@@ -96,7 +100,9 @@ export default function HomePage() {
   if (loading) return <div className="page-loading">加载中...</div>
 
   const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
-  const orderRows = plannerOrderRows(pendingOrders, serviceTasks)
+  const allOrderRows = plannerOrderRows(pendingOrders, serviceTasks)
+  const advisorTasksOnly = staff?.role === 'familyDoctor' && advisorArea === 'todo'
+  const orderRows = advisorTasksOnly ? allOrderRows.filter(row => row.pending || (row.action && isServiceActionable({ task: row.action })) || (row.supervisor && isServiceActionable({ task: row.supervisor }))) : allOrderRows
   const completedServiceOrders = (ordersResource.data.completedServices || []).filter(item => item.key?.startsWith('order:'))
   const orderHistoryRows = staff?.role === 'healthManager' ? [] : [...new Map(completedOrders
     .filter(item => isCustomerOrder(item.sourceOrderId, item))
@@ -131,6 +137,7 @@ export default function HomePage() {
         </button>
       </div>
 
+      {workbenchReminder.error && <div role="alert" className="workbench-reminder-error">部分待办更新失败，提醒保留上次结果，不代表没有任务。<button className="btn btn-secondary btn-sm" onClick={workbenchReminder.refresh}>重新检查</button></div>}
       {/* 数据卡片 */}
       <div className="stats-grid home-stats">
         <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today} /> : '-'} color="#0077B6" compact />
@@ -148,7 +155,7 @@ export default function HomePage() {
       </nav>}
       {hasWorkbenchNav && advisorArea === 'todo' && <div className="advisor-workbench-filter" role="group" aria-label="待我处理筛选">
         {[
-          ...(!isAdvisor ? [['all', '全部待办']] : []),
+          ['all', '全部待办'],
           ['review', '审核与异常'],
           ...(staff?.role === 'healthManager' ? [['checkup', '体检服务'], ['appointment', '预约服务']] : []),
           ['service', '服务事项'], ['followup', '随访'],
@@ -160,11 +167,11 @@ export default function HomePage() {
       </div>}
 
       <GeoReviewPanel compact={hasWorkbenchNav && !showWorkbenchView('todo', 'geo')} onCountChange={setGeoCount} onOpen={() => { setAdvisorArea('todo'); setAdvisorTodoView('geo') }} />
-      <AiWorkbenchProvider>
+
       <div style={{ display: showWorkbenchView('todo', 'review') ? undefined : 'none' }}><SymptomTodosPanel /></div>
       {isAdvisor && <div style={{ display: showWorkbenchView('progress', 'overview') ? undefined : 'none' }}><ServiceSupervisionPanel /></div>}
       <div style={{ display: showWorkbenchView('todo', 'service') ? undefined : 'none' }}>
-        {!isAdvisor && <ServiceSupervisionPanel />}
+        <ServiceSupervisionPanel pendingOnly={isAdvisor} />
         {['healthPlanner', 'nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel compact workbench hideWhenEmpty />}
         {staff?.role === 'superadmin' && <CheckupProgressPanel taskMode />}
         {['healthManager', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
@@ -175,16 +182,16 @@ export default function HomePage() {
       {staff?.role === 'healthManager' && <div style={{ display: showWorkbenchView('todo', 'appointment') ? undefined : 'none' }}><NutritionAssessmentPanel compact workbench hideWhenEmpty /></div>}
 
       {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}
-      <div style={{ display: showWorkbenchView('progress', 'orders') || (!isAdvisor && ORDER_PROGRESS_ROLES.has(staff?.role) && showWorkbenchView('todo', staff?.role === 'healthManager' ? 'appointment' : 'service')) ? undefined : 'none' }}>
-      {(ordersResource.loading || ordersResource.error || orderRows.length > 0 || orderHistoryRows.length > 0 || completedServiceOrders.length > 0) && (
+      <div style={{ display: showWorkbenchView('progress', 'orders') || (ORDER_PROGRESS_ROLES.has(staff?.role) && showWorkbenchView('todo', staff?.role === 'healthManager' ? 'appointment' : 'service')) ? undefined : 'none' }}>
+      {(ordersResource.loading || ordersResource.error || orderRows.length > 0 || (!advisorTasksOnly && (orderHistoryRows.length > 0 || completedServiceOrders.length > 0))) && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>🛍 用户下单服务进程</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>{orderRows.length}</span>
             </div>
-            {hasWorkbenchNav && staff?.role !== 'healthManager' && <div role="group" aria-label="用户下单服务状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', orderRows.length], ['completed', '已完成', completedServiceOrders.length], ['all', '全部', orderRows.length + completedServiceOrders.length]].map(([key, label, count]) => <button key={key} type="button" className={orderStatusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={orderStatusFilter === key} onClick={() => { setOrderStatusFilter(key); setOrderPage(1) }}>{label} {count}</button>)}</div>}
-            {orderHistoryRows.length > 0 && orderStatusFilter !== 'completed' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOrderHistoryOpen(value => !value)}>{orderHistoryOpen ? '收起已处理预约' : `查看已处理预约 ${orderHistoryRows.length}`}</button>}
+            {hasWorkbenchNav && !advisorTasksOnly && staff?.role !== 'healthManager' && <div role="group" aria-label="用户下单服务状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', orderRows.length], ['completed', '已完成', completedServiceOrders.length], ['all', '全部', orderRows.length + completedServiceOrders.length]].map(([key, label, count]) => <button key={key} type="button" className={orderStatusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={orderStatusFilter === key} onClick={() => { setOrderStatusFilter(key); setOrderPage(1) }}>{label} {count}</button>)}</div>}
+            {!advisorTasksOnly && orderHistoryRows.length > 0 && orderStatusFilter !== 'completed' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOrderHistoryOpen(value => !value)}>{orderHistoryOpen ? '收起已处理预约' : `查看已处理预约 ${orderHistoryRows.length}`}</button>}
           </div>
           <div className="card-body" style={{ padding: '8px 20px' }}>
             {ordersResource.loading && <div role="status">正在加载服务预约…</div>}
@@ -253,7 +260,7 @@ export default function HomePage() {
 
       {/* 待随访任务面板 */}
       <div style={{ display: showWorkbenchView('todo', 'followup') ? undefined : 'none' }}><FollowUpsPanel /></div>
-      </AiWorkbenchProvider>
+
 
       {/* 即将到期客户（30天内，提前一月提醒续约） */}
       <div style={{ display: showWorkbenchView('todo', 'service') ? undefined : 'none' }}>

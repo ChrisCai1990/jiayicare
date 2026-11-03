@@ -1,3 +1,4 @@
+import { groupServiceTasks, isServiceActionable } from '../utils/workbenchReminder.mjs'
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -128,22 +129,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
       result[key].tasks.push(task)
       return result
     }, {})).sort((a, b) => new Date(b.lastAt || 0) - new Date(a.lastAt || 0))
-  const serviceGroups = Object.values(visibleItems.reduce((result, task) => {
-    const key = serviceTaskGroupKey(task)
-    if (!result[key]) result[key] = { key, tasks: [] }
-    result[key].tasks.push(task)
-    return result
-  }, {})).map(service => {
-    const workflowModules = service.tasks[0]?.sourceHealthPlanId?.content?.workflowModules || []
-    const sequenceByKey = new Map(workflowModules.map((item, sequence) => [String(item.id || item._id || ''), item.sequence ?? sequence]))
-    service.tasks.sort((a, b) => (sequenceByKey.get(String(a.workflowKey || '')) ?? 999) - (sequenceByKey.get(String(b.workflowKey || '')) ?? 999))
-    const orderService = service.tasks[0]?.sourceType === 'order'
-    const supervisor = service.tasks.find(task => (orderService ? task.taskRole === 'supervisor' : task.workflowKey === 'medical_proxy:supervise') && ['planned', 'in_progress', 'missed'].includes(task.status))
-    // The API returns this staff member's tasks. A read-only supervisor card must
-    // not hide their actionable assignment for the same service.
-    const proxyAction = service.tasks.find(task => (orderService ? task.taskRole === 'executor' && task.workflowKey !== 'medication_proxy:progress' : String(task.workflowKey || '').startsWith('medical_proxy:') && task.workflowKey !== 'medical_proxy:supervise') && !task.isBlocked && ['planned', 'in_progress', 'missed'].includes(task.status))
-    return { ...service, task: service.tasks.find(task => task.workflowKey === 'medical_assist:closure') || service.tasks.find(task => task.feedbackReview) || proxyAction || supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
-  })
+  const serviceGroups = groupServiceTasks(visibleItems)
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1)
@@ -157,16 +143,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     if (date < monthEnd) return 'month'
     return 'later'
   }
-  const isActionableNow = service => {
-    const task = service.task
-    if (task.workflowKey === 'medical_assist:closure') return true
-    if(task.feedbackReview)return task.taskRole==='executor'&&!task.isBlocked;
-    // 规划师的督办卡平时只是进度视图；一旦逾期，就需要进入当前待办，
-    // 以便及时催办和处理异常，而不是只能从“全部计划”里翻找。
-    if (task.taskRole === 'supervisor') return bucketOf(task.date) === 'overdue'
-    return task.taskRole === 'executor' && !task.isBlocked && bucketOf(task.date) !== 'week'
-      && bucketOf(task.date) !== 'month' && bucketOf(task.date) !== 'later'
-  }
+  const isActionableNow = service => isServiceActionable(service, now)
   const actionableCount = serviceGroups.filter(isActionableNow).length
   const roleServices = group === 'all' ? serviceGroups
     : group === 'actionable' ? serviceGroups.filter(isActionableNow)

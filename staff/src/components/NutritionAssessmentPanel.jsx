@@ -1,3 +1,4 @@
+import { isNutritionActionable } from '../utils/workbenchReminder.mjs'
 import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -56,9 +57,7 @@ export default function NutritionAssessmentPanel({ patientId = '', source = 'nut
     catch (err) { toast(err.message || '操作失败'); await load() }
     finally { setBusy(false) }
   }
-  const actionable = row => row.status === 'awaiting_booking' && (staff?.role === 'healthManager' || staff?.role === 'superadmin')
-    || row.status === 'booked' && (staff?.role === 'nutritionist' || staff?.role === 'superadmin')
-    || row.status === 'completed' && row.orderSettlementStatus === 'needs_review' && (staff?.role === 'nutritionist' || staff?.role === 'superadmin')
+  const actionable = row => isNutritionActionable(row, staff?.role)
   const scopedRows = (sourcePlanId ? rows.filter(row => String(row.sourcePlanId?._id || row.sourcePlanId || '') === String(sourcePlanId)) : rows)
     .filter(row => !workbench || (actionable(row) && !(row.status === 'booked' && row.executionFollowUpId)))
   const visible = scopedRows.filter(row => filter === 'all' || (filter === 'active' ? !['completed', 'cancelled'].includes(row.status) || row.orderSettlementStatus === 'needs_review' : row.status === 'completed' && row.orderSettlementStatus !== 'needs_review'))

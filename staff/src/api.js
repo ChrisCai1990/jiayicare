@@ -26,6 +26,8 @@ async function waitForReportUpload(jobId) {
   throw new Error('报告存储超时，请检查资料列表后重试')
 }
 
+let workbenchRefreshTimer
+
 async function req(path, options = {}) {
   const token = getToken()
   const isFormData = options.body instanceof FormData
@@ -63,6 +65,10 @@ async function req(path, options = {}) {
     if (data.checkupReadiness) err.checkupReadiness = data.checkupReadiness
     if (data.needConfirm) { err.needConfirm = true; err.approvedBy = data.approvedBy }
     throw err
+  }
+  if (!['GET', 'HEAD'].includes((options.method || 'GET').toUpperCase()) && getToken() === token) {
+    window.clearTimeout(workbenchRefreshTimer)
+    workbenchRefreshTimer = window.setTimeout(() => window.dispatchEvent(new Event('notif-refresh')), 250)
   }
   return data
 }

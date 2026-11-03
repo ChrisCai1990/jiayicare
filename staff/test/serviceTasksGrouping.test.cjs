@@ -1,15 +1,15 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+const test = require('node:test')
+const assert = require('node:assert/strict')
 
-test('service workbench groups workflow tasks into one current-stage card', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../src/components/ServiceTasksPanel.jsx'), 'utf8');
-  assert.match(source, /serviceTaskGroupKey\(task\)/);
-  assert.match(source, /sequenceByKey/);
-  assert.match(source, /task: service\.tasks\.find\(task => task\.feedbackReview\) \|\| proxyAction \|\| supervisor \|\| service\.tasks\[0\]/);
-  assert.match(source, /当前环节 · 共\{service\.totalSteps\}环节/);
-  assert.match(source, /\{serviceGroups\.length\}/);
-  assert.doesNotMatch(source, /前序：/);
-  assert.doesNotMatch(source, /visibleItems\.slice/);
-});
+test('one service card retains closure and feedback actions instead of hiding them behind supervision', async () => {
+  const { groupServiceTasks } = await import('../src/utils/workbenchReminder.mjs')
+  const base = { sourceType: 'order', sourceOrderId: 'order', status: 'planned' }
+  const supervisor = { ...base, _id: 'supervisor', taskRole: 'supervisor' }
+  const execution = { ...base, _id: 'execution', taskRole: 'executor' }
+  const feedback = { ...execution, _id: 'feedback', feedbackReview: true }
+  const closure = { ...execution, _id: 'closure', workflowKey: 'medical_assist:closure' }
+  assert.equal(groupServiceTasks([supervisor, execution])[0].task._id, 'execution')
+  assert.equal(groupServiceTasks([supervisor, execution, feedback])[0].task._id, 'feedback')
+  assert.equal(groupServiceTasks([supervisor, execution, feedback, closure])[0].task._id, 'closure')
+  assert.equal(groupServiceTasks([supervisor, execution, { ...execution, sourceOrderId: 'another' }]).length, 2)
+})

@@ -29,7 +29,8 @@ async function mount(role) {
     '../hooks/useWorkbenchResource': () => ({ data: { pending: [], completed: [] }, loading: false, error: '', refresh() {} }),
     '../utils/loadFollowUpPages.mjs': { loadFollowUpPages: async () => [] },
     '../components/NotificationSummary': { useNotificationSummary: () => ({ count: 0, data: {} }) },
-    '../components/AiWorkbenchProvider': { __esModule: true, default: ({ children }) => children },
+    '../components/WorkbenchReminder': { useWorkbenchReminder: () => ({ error: false }) },
+    '../utils/workbenchReminder.mjs': { isServiceActionable: () => false },
     '../utils/plannerOrderProgress.mjs': { plannerOrderRows: () => [], isCustomerOrder: () => false, decisionReferralProgress: () => '' },
     '../utils/serviceTaskTitle.mjs': { serviceTaskTitle: () => '' },
     '../utils/medicalPlanningAdvice': { planningAdviceFromTask: () => null, hasPlanningAdvice: () => false },
@@ -67,9 +68,9 @@ test('health consultant can switch between tasks, service progress, and data wit
   try {
     assert.ok(view.box.querySelector('nav[aria-label="健康顾问工作台"]'))
     assert.equal(view.visible('AiTodosPanel'), true)
-    assert.equal(view.visible('ServiceTasksPanel'), false)
-    assert.equal(view.visible('FollowUpsPanel'), false)
-    assert.equal(view.box.querySelector('[data-panel="GeoReviewPanel"]').dataset.compact, 'true')
+    assert.equal(view.visible('ServiceTasksPanel'), true)
+    assert.equal(view.visible('FollowUpsPanel'), true)
+    assert.equal(view.box.querySelector('[data-panel="GeoReviewPanel"]').dataset.compact, 'false')
     await view.click('进入 GEO 审核')
     assert.equal(view.box.querySelector('[data-panel="GeoReviewPanel"]').dataset.compact, 'false')
     assert.equal(view.visible('AiTodosPanel'), false)
