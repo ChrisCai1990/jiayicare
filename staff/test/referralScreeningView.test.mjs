@@ -44,3 +44,21 @@ test('legacy imaging and unknown records remain visible, numerical imaging is no
  assert.equal(groups.find(g=>g.key==='exam').items[0].项目,'骨密度');
  assert.ok(groupScreenings([{项目:'超声',结果:'所见原文'}]).some(g=>g.key==='exam'));
 });
+
+test('legacy urinalysis and vitamin D remain laboratory records without numerical reference ranges', () => {
+ const records = [
+  {项目:'尿常规',结果:'尿蛋白 阴性；尿糖 阴性'},
+  {项目:'尿常规',结果明细:[{name:'尿蛋白',value:'阴性'},{name:'尿糖',value:'阴性',conclusion:'正常'}],报告结论:'尿液检验结论'},
+  {项目:'25-羟基维生素D',结果:'25-羟基维生素D 20.8 ng/mL'},
+  {项目:'25（OH）D',结果明细:[{name:'维生素D',value:'20.8',unit:'ng/mL'}]},
+  {项目:'尿液分析',结果明细:[{name:'尿蛋白',itemType:'lab',value:'阴性'}]},
+ ];
+ const groups = groupScreenings(records);
+ assert.deepEqual(groups.map(g=>g.key),['lab']);
+ assert.equal(groups[0].items.length,5);
+ assert.equal(groups[0].items[0].结果,records[0].结果);
+ assert.equal(groups[0].items[1].报告结论,'尿液检验结论');
+ assert.equal(groups[0].items[1].结果明细[0].value,'阴性');
+ assert.equal(groups[0].items[3].结果明细[0].unit,'ng/mL');
+ assert.equal(groupScreenings([{项目:'25-羟基维生素D',结果明细:[{name:'补充药品',itemType:'medication',value:'1粒'}]}])[0].key,'other');
+});

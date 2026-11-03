@@ -53,11 +53,15 @@ export function screeningStatus(row) {
 
 // Classify presentation only; original snapshots and report values remain unchanged.
 const examinationName = value => /超声|彩超|B超|心电图|胃镜|肠镜|内镜|磁共振|骨密度|肺功能|眼底|[Xx]线|(?:^|[^a-z])(?:CT|MRI|DXA|ECG)(?:$|[^a-z])/i.test(String(value || ''))
+// Legacy snapshots may omit itemType, numeric values or reference ranges (e.g. urine qualitative results).
+const laboratoryName = value => /尿常规|尿液分析|尿液常规|(?:25(?:羟基|羟|oh)?维生素d|25ohd|25hydroxyvitamind|维生素d测定)/i.test(String(value || '').replace(/[\s\-－—（）()［\]\[·.]/g, ''))
 function rowCategory(row, item) {
   if (row.itemType === 'imaging' || row.itemType === 'data') return 'exam'
   if (row.itemType === 'lab') return 'lab'
   if (row.itemType === 'medication') return 'other'
-  if (row.findings || examinationName(row.name) || examinationName(item.项目)) return 'exam'
+  if (examinationName(row.name) || examinationName(item.项目)) return 'exam'
+  if (laboratoryName(row.name) || laboratoryName(item.项目) || laboratoryName(item.报告)) return 'lab'
+  if (row.findings) return 'exam'
   if (row.referenceRange && row.value !== '' && row.value != null) return 'lab'
   if (row.conclusion) return 'exam'
   return 'other'
@@ -69,7 +73,8 @@ export function groupScreenings(records = []) {
     const buckets = { lab:[], exam:[], other:[] }
     view.rows.forEach(row => buckets[rowCategory(row,item)].push(row))
     const narrative = !!(view.findings || view.conclusion)
-    const noteCategory = narrative || examinationName(item.项目) || examinationName(item.报告) ? 'exam' : 'other'
+    const noteCategory = examinationName(item.项目) || examinationName(item.报告) ? 'exam'
+      : laboratoryName(item.项目) || laboratoryName(item.报告) ? 'lab' : narrative ? 'exam' : 'other'
     // No structured evidence: keep the entire original record visible.
     if (!view.rows.length) {
       groups.find(group => group.key === noteCategory).items.push(item)
@@ -77,9 +82,9 @@ export function groupScreenings(records = []) {
     }
     for (const group of groups) {
       const notes = group.key === noteCategory ? view.notes : []
-      if (!buckets[group.key].length && !(group.key === 'exam' && narrative) && !notes.length) continue
+      if (!buckets[group.key].length && !(group.key === noteCategory && narrative) && !notes.length) continue
       group.items.push({ ...item, 结果明细:buckets[group.key], 原文补充:notes,
-        检查所见:group.key === 'exam' ? view.findings : '', 报告结论:group.key === 'exam' ? view.conclusion : '' })
+        检查所见:group.key === noteCategory ? view.findings : '', 报告结论:group.key === noteCategory ? view.conclusion : '' })
     }
   }
   return groups.filter(group => group.items.length)
