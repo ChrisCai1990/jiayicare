@@ -18,6 +18,7 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
   const deleted = [];
   let created;
   let reviewUpdate;
+  let listFilter;
   const urls = ['https://private/messages/one.jpg', 'https://private/messages/two.png'];
   const oss = {
     signStoredUrl: url => `${url}?signed=1`,
@@ -35,7 +36,7 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
     mongoose: { isValidObjectId: value => /^[a-f0-9]{24}$/.test(String(value)) },
     User: { findOne: () => ({ select: () => ({ lean: async () => ({ _id: patientId, tenantId, assignedHealthManager: assigned ? staffId : 'eeeeeeeeeeeeeeeeeeeeeeee' }) }) }) },
     Message: {
-      find: () => ({ select: () => ({ sort: () => ({ skip: () => ({ limit: () => ({ lean: async () => [{ _id: messageId, imageUrls: urls, createdAt: new Date(), recipient: 'manager' }] }) }) }) }) }),
+      find: filter => { listFilter = filter; return { select: () => ({ sort: () => ({ skip: () => ({ limit: () => ({ lean: async () => disposition === 'excluded' && filter.materialDisposition?.$ne === 'excluded' ? [] : [{ _id: messageId, imageUrls: urls, createdAt: new Date(), recipient: 'manager' }] }) }) }) }) }; },
       findOne: () => ({ select: () => ({ lean: async () => messageUser === patientId ? { imageUrls: urls, createdAt: new Date(), materialDisposition: disposition } : null }) }),
       findOneAndUpdate: (filter, update) => {
         reviewUpdate = { filter, update };
@@ -58,7 +59,7 @@ function fixture({ assigned = true, messageUser = patientId, existing = null, cr
     await handlers[method](req, res);
     return res;
   };
-  return { call, copied, deleted, postMiddlewareCount, get created() { return created; }, get reviewUpdate() { return reviewUpdate; } };
+  return { call, copied, deleted, postMiddlewareCount, get created() { return created; }, get reviewUpdate() { return reviewUpdate; }, get listFilter() { return listFilter; } };
 }
 
 test('chat image archive follows existing report upload authorization', () => {
@@ -69,6 +70,23 @@ test('assigned staff sees signed customer chat images as source material', async
   const result = await fixture().call('get');
   assert.equal(result.code, 200);
   assert.equal(result.payload.data[0].imageUrls[0], 'https://private/messages/one.jpg?signed=1');
+});
+
+test('excluded images disappear from source material but remain stored in chat', async () => {
+  const f = fixture({ disposition: 'excluded' });
+  const result = await f.call('get');
+  assert.equal(result.code, 200);
+  assert.deepEqual(result.payload.data, []);
+  assert.equal(f.listFilter.materialDisposition.$ne, 'excluded');
+});
+
+test('workbench can open one specific pending image', async () => {
+  const f = fixture();
+  const result = await f.call('get', { query: { messageId } });
+  assert.equal(result.code, 200);
+  assert.equal(result.payload.data[0]._id, messageId);
+  assert.equal(result.payload.hasMore, false);
+  assert.equal(f.listFilter._id, messageId);
 });
 
 test('another staff member cannot read or archive images', async () => {

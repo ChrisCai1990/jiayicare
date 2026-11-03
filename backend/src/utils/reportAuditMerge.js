@@ -38,7 +38,10 @@ function mergeCoverageAuditItems(originalItems, auditItems) {
       && (!text(old.examDate) || !text(candidate.examDate) || text(old.examDate) === text(candidate.examDate)));
     const incomplete = matches.find(old => evidenceFields.every(field => missing(old[field]))
       || (old.itemType === 'imaging' && missing(old.findings) && !missing(candidate.findings))
-      || (old.itemType === 'imaging' && missing(old.findings) && !missing(candidate.value)));
+      || (old.itemType === 'imaging' && missing(old.findings) && !missing(candidate.value))
+      || (old.itemType === 'imaging' && old.manualReviewStatus !== 'reviewed'
+        && missing(old.diagnosis) && missing(old.conclusion)
+        && (!missing(candidate.diagnosis) || !missing(candidate.conclusion))));
     if (incomplete) {
       for (const field of evidenceFields) {
         if (!missing(incomplete[field]) || missing(candidate[field])) continue;

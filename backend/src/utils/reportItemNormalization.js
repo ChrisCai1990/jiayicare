@@ -92,10 +92,45 @@ function normalizeBreathTestItems(items, report = {}) {
 
 const NON_EXAM_LABEL = /^(?:报告医生|开单医生|审核者|申请科室|检查医生|报告日期|检查日期|报告时间|检查时间|报告编号|检查报告号|诊断结论|检查描述|所见)$/;
 
+function normalizeFibroscanItems(items) {
+  const rows = (items || []).filter(item => !NON_EXAM_LABEL.test(text(item.name)));
+  if (!rows.length) return [];
+  const isReference = item => /参考|对照|分期|阈值|病理学分期/.test(`${text(item.name)} ${text(item.sourceSection)} ${text(item.orderName)}`);
+  const actualRows = rows.filter(item => !isReference(item));
+  if (!actualRows.length) return [];
+  const measured = (kind, unit) => {
+    const label = kind === 'CAP' ? /\bCAP\b|脂肪衰减/i : /\bE\b|肝脏硬度|肝硬度|弹性硬度/i;
+    for (const item of actualRows) {
+      const rowLabel = `${text(item.name)} ${text(item.sourceSection)}`;
+      const raw = text(item.value);
+      if (label.test(rowLabel) && /^\d+(?:\.\d+)?$/.test(raw)
+          && (!text(item.unit) || new RegExp(unit, 'i').test(text(item.unit)))) return raw;
+      const finding = text(item.findings);
+      const match = finding.match(new RegExp(`(?:${kind === 'CAP' ? 'CAP|脂肪衰减' : 'E|肝脏硬度|肝硬度|弹性硬度'})[^；;\\n]{0,20}?(?:中值|中位数|实测值|测定值)?\\s*[：:]?\\s*(\\d+(?:\\.\\d+)?)\\s*${unit}`, 'i'));
+      if (match) return match[1];
+    }
+    return '';
+  };
+  const cap = measured('CAP', 'dB/m');
+  const stiffness = measured('E', 'kPa');
+  const opinion = actualRows.map(item => text(item.diagnosis) || text(item.conclusion)
+    || (/医师意见|医生意见/.test(`${text(item.name)} ${text(item.sourceSection)} ${text(item.orderName)}`) ? text(item.findings) || text(item.value) : '')
+    || text(item.findings).match(/(?:医师意见|医生意见)\s*[：:]\s*(.+)$/)?.[1] || '').find(Boolean) || '';
+  const imaging = actualRows.find(item => item.itemType === 'imaging') || actualRows[0];
+  const originalFinding = text(imaging.findings);
+  const findings = [cap && `CAP中值：${cap} dB/m`, stiffness && `肝脏硬度E中值：${stiffness} kPa`,
+    originalFinding && originalFinding !== opinion ? originalFinding : ''].filter(Boolean).join('；');
+  return [{ ...imaging, name: '肝纤维弹性超声', itemType: 'imaging', value: '', unit: '', referenceRange: '',
+    findings, diagnosis: opinion, conclusion: opinion }];
+}
+
 // 单项报告按“检查项目”收敛。模型可以负责读字，但不能决定把版面标签拆成多少个检验项目。
 function normalizeSingleExamReportItems(items, report = {}) {
   const list = items || [];
   const title = `${text(report.title)} ${text(report.screeningL2)} ${text(report.screeningL3)}`;
+  if (/FibroScan|肝脏?纤维弹性超声|肝脏弹性纤维|肝脏弹性成像|肝纤维化扫描/i.test(title)) {
+    return normalizeFibroscanItems(list);
+  }
   if (/(?:碳|C)\s*1[34].{0,8}呼气/i.test(title)) {
     const normalized = normalizeBreathTestItems(list, report).filter(item => /呼气试验/.test(text(item.name)));
     return normalized.length ? [normalized[0]] : list.filter(item => !NON_EXAM_LABEL.test(text(item.name)));

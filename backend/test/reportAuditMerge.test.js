@@ -37,6 +37,19 @@ test('coverage audit extends a partially extracted numbered imaging result witho
   assert.equal(competing[0].findings, first[0].findings);
 });
 
+test('coverage audit fills a missing ultrasound diagnosis on the existing exam', () => {
+  const first = [{ name: '甲状腺超声', sourcePage: 1, itemType: 'imaging', findings: '甲状腺右叶见低回声。', diagnosis: '', conclusion: '' }];
+  const audit = [{ name: '甲状腺超声', sourcePage: 1, itemType: 'imaging', findings: '',
+    diagnosis: '甲状腺右侧叶结节样病灶：拟 C-TIRADS 3 类', conclusion: '甲状腺右侧叶结节样病灶：拟 C-TIRADS 3 类' }];
+  const merged = mergeCoverageAuditItems(first, audit);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].findings, first[0].findings);
+  assert.equal(merged[0].diagnosis, audit[0].diagnosis);
+  assert.equal(merged[0].conclusion, audit[0].conclusion);
+  const reviewed = mergeCoverageAuditItems([{ ...first[0], manualReviewStatus: 'reviewed' }], audit);
+  assert.equal(reviewed[0].diagnosis, '');
+});
+
 test('explicit normal wording changes unknown only without conflicting evidence', () => {
   assert.equal(normalizeExplicitNormalStatus({ status: 'unknown', diagnosis: '未见异常' }).status, 'normal');
   assert.equal(normalizeExplicitNormalStatus({ status: 'unknown', findings: '巩膜黄染', diagnosis: '未见异常' }).status, 'unknown');

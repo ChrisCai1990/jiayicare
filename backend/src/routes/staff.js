@@ -12316,16 +12316,18 @@ router.get('/patients/:id/chat-images', staffAuth, async (req, res) => {
   try {
     const patient = await chatMaterialPatient(req.staff, req.params.id);
     if (!patient) return res.status(403).json({ success: false, message: '无权查看该客户资料' });
+    const focusId = req.query.messageId ? String(req.query.messageId) : '';
+    if (focusId && !mongoose.isValidObjectId(focusId)) return res.status(400).json({ success: false, message: '会话消息无效' });
     const page = Math.max(1, Math.min(1000, Number.parseInt(req.query.page, 10) || 1));
     const limit = 30;
-    const filter = { user: patient._id, type: 'user', recalled: { $ne: true }, $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }] };
+    const filter = { user: patient._id, type: 'user', recalled: { $ne: true }, materialDisposition: { $ne: 'excluded' }, ...(focusId ? { _id: focusId } : {}), $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }] };
     const rows = await Message.find(filter).select('_id content createdAt recipient imageUrl imageUrls materialDisposition materialDispositionAt').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit + 1).lean();
     const { signStoredUrl } = require('../utils/oss');
     res.json({ success: true, data: rows.slice(0, limit).map(row => ({
       _id: row._id, content: row.content, createdAt: row.createdAt, recipient: row.recipient,
       materialDisposition: row.materialDisposition || '', materialDispositionAt: row.materialDispositionAt || null,
       imageUrls: [...new Set(row.imageUrls?.length ? row.imageUrls : (row.imageUrl ? [row.imageUrl] : []))].map(url => signStoredUrl(url)),
-    })), hasMore: rows.length > limit });
+    })), hasMore: !focusId && rows.length > limit });
   } catch (error) { res.status(500).json({ success: false, message: '会话图片读取失败' }); }
 });
 
@@ -15308,6 +15310,7 @@ const DIETARY_SURVEY_QUESTIONNAIRE_ID = '6a49eab9fc1595013da70645';
 
 const TODO_REVIEW_ROLE = {
   report_plan_conflict: 'healthManager',
+  chat_image_review:   'healthManager',
   report_parse:         'healthManager',
   report_review:        'healthManager',
   outpatient_target_review: 'healthManager',
@@ -15472,6 +15475,32 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
     const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
     const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
+
+    // A chat image remains actionable until the assigned manager explicitly
+    // archives it as a report or marks it as not included. Reading the chat
+    // message must not silently close this task.
+    if (can('chat_image_review')) {
+      const chatImageFilter = {
+        type: 'user', recalled: { $ne: true }, materialDisposition: { $ne: 'excluded' },
+        $or: [{ imageUrl: { $type: 'string', $ne: '' } }, { 'imageUrls.0': { $exists: true } }],
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+      };
+      const chatImages = await Message.find(chatImageFilter).select('_id user content createdAt').populate('user', 'name isDeleted').lean();
+      const sourceIds = chatImages.map(message => String(message._id));
+      const archived = sourceIds.length ? await MedicalReport.find({ sourceChatMessageId: { $in: sourceIds } }).select('sourceChatMessageId').lean() : [];
+      const archivedIds = new Set(archived.map(report => String(report.sourceChatMessageId)));
+      chatImages.forEach(message => {
+        if (!message.user?._id || message.user.isDeleted || archivedIds.has(String(message._id))) return;
+        const createdAt = message.createdAt;
+        todos.push({
+          id: `chatimage_${message._id}`, type: 'chat_image_review', label: '客户会话图片待处理', priority: 2,
+          patientName: message.user.name || '未知', patientId: String(message.user._id),
+          summary: `${(message.content || '').slice(0, 45) || '客户发送了图片'} · 请核对后归入报告审核或标记暂不纳入`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${message.user._id}?tab=reports&chatImageId=${message._id}`,
+        });
+      });
+    }
 
     if (can('annual_plan_customer_response')) {
       const waitingPlans = await AnnualPlan.find({ confirmedAt: null,
@@ -16284,6 +16313,7 @@ const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手�
 输出首轮遗漏的真实检查项目，以及首轮已有项目中检查结果为空、只有横线或明显不完整的项目的完整原文。数值项目已有完整结果时不要重复；文字检查即使已有非空所见，仍须从结果栏首行读到末行，核对其全部编号段落，缺后段时以同一项目名输出完整findings。报告内“检查结果/所见/提示”栏的编号段落属于该检查，不因出现“建议”字样而跳过；独立的汇总页、目录、科普、会员信息和无结果标题不输出。
 血液/尿液/粪便检验每个有结果的子项单独输出；内科、外科、全科、眼科、耳鼻喉、妇科、牙科或口腔科等体格检查也要按报告印刷明细逐项输出，禁止按科室合并；心电图、碳13/碳14呼气试验、头颅MRI不得漏；组合超声按器官拆开。
 眼科须逐行核对左右裸眼视力、矫正视力和眼部检查；带文字的结果不可只写横线。明确“未见异常”应标normal。
+超声页须单独核对下方“超声诊断/诊断/结论”栏：已有检查描述但诊断为空时，以同一检查项目名补出原文diagnosis和conclusion；诊断下方的C-TIRADS等分级释义、风险概率、参考文献不得并入患者诊断。手写内容无法辨认时留空，不猜。
 严格返回JSON，不要解释：
 {"items":[{"name":"项目名","itemType":"lab | imaging | data","value":"","unit":"","referenceRange":"","status":"normal | abnormal | attention | unknown","orderName":"","sourceSection":"原栏目标题","sourceSectionOrder":1,"sourceRowOrder":1,"bodyPart":"","findings":"","diagnosis":"","conclusion":"","pathologyFindings":"","pathologyDiagnosis":""}]}`;
 
@@ -18227,7 +18257,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const existingItemText = describeExistingReportItems(oldPageAtStart);
   const targetOrgans = inferMissingUltrasoundOrgans(oldPageAtStart);
   const targetText = targetOrgans.map(item => item.label).join('、');
-  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出真实遗漏项目；已有同名同栏目项目的数值、所见或结论为空时可输出该项目补全。文字检查虽有非空所见，但原件同一结果栏还有后续编号段落时，也可用相同项目名输出从首行至末行的完整findings；不得另建检查项。人工已核对项目不会被程序覆盖。每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。lab/data 项没有原文数值时不得输出；如看不清或无遗漏，返回 items=[]，禁止猜测。`;
+  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出真实遗漏项目；已有同名同栏目项目的数值、所见或结论为空时可输出该项目补全。超声页若已有检查描述而“超声诊断”为空，须复读页面下方诊断栏，以同一项目名仅补原文diagnosis/conclusion；不要把诊断下方的分级解释或参考文献并入诊断。文字检查虽有非空所见，但原件同一结果栏还有后续编号段落时，也可用相同项目名输出从首行至末行的完整findings；不得另建检查项。人工已核对项目不会被程序覆盖。每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。lab/data 项没有原文数值时不得输出；如看不清或无遗漏，返回 items=[]，禁止猜测。`;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const isPdf = isPdfReport(report);
