@@ -4,6 +4,13 @@ const storage = require('../src/utils/expertCertificates');
 const oss = require('../src/utils/oss');
 const { normalizeLanguages } = require('../../shared/expertQualifications.cjs');
 const { appendCertificateFiles } = require('../../shared/expertCertificateQueue.cjs');
+test('repair multipart filename encoding without corrupting valid Chinese and accented names', () => {
+  const name = '吴医生-执业证与毕业证.png';
+  assert.equal(storage.normalizeName(Buffer.from(name).toString('latin1')), name);
+  assert.equal(storage.normalizeName(name), name);
+  assert.equal(storage.normalizeName('résumé.pdf'), 'résumé.pdf');
+  assert.equal(storage.normalizeName('certificate.pdf'), 'certificate.pdf');
+});
 test('repeated file selection appends files and preserves the category selected for each batch', () => {
   const first = { name: '证书.jpg', size: 123, lastModified: 1 };
   const second = { name: '证书背面.jpg', size: 124, lastModified: 2 };

@@ -15,7 +15,7 @@ function newAccess() {
   return { token, fields: { supplementTokenHash: hash(token), supplementExpiresAt: new Date(Date.now() + 30 * 86400000) } };
 }
 const safe = row => ({ education: row.response?.education || '', languages: row.response?.languages || [],
-  certificates: (row.certificates || []).map(c => ({ _id: c._id, category: c.category, name: c.name, size: c.size, reviewStatus: c.reviewStatus, reviewNote: c.reviewNote })),
+  certificates: (row.certificates || []).map(c => ({ _id: c._id, category: c.category, name: files.normalizeName(c.name), size: c.size, reviewStatus: c.reviewStatus, reviewNote: c.reviewNote })),
   expiresAt: row.supplementExpiresAt });
 const scope = (req, work) => req.admin ? work() : runWithoutTenantScope(work);
 async function access(req, res, next) {
@@ -59,7 +59,7 @@ async function addFile(req, res) {
   if (row.certificates.length >= 20) return res.status(400).json({ message: '每份问卷最多上传20个附件' });
   try { files.fileType(req.file.buffer); } catch (e) { return res.status(400).json({ message: e.message }); }
   const stored = await files.store(req.file, row);
-  const attachment = { ...stored, category: req.body.category, name: String(req.file.originalname).slice(0, 160), uploadedAt: new Date(), uploadedBy: req.admin?._id || null, reviewStatus: 'pending' };
+  const attachment = { ...stored, category: req.body.category, name: files.normalizeName(req.file.originalname).slice(0, 160), uploadedAt: new Date(), uploadedBy: req.admin?._id || null, reviewStatus: 'pending' };
   try {
     const result = await scope(req, () => Recruitment.updateOne({ _id: row._id, status: row.status, 'certificates.19': { $exists: false } }, { $push: { certificates: attachment }, $set: { supplementUpdatedAt: new Date() } }));
     if (!result.matchedCount) { await files.remove(stored.key); return res.status(409).json({ message: '资料状态已变化或附件已满，请刷新' }); }
@@ -73,7 +73,7 @@ async function download(req, res) {
   const file = req.recruitment.certificates.id(req.params.fileId);
   if (!file) return res.status(404).json({ message: '附件不存在' });
   const result = await files.stream(file.key);
-  res.set({ 'Content-Type': file.mimeType, 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}` });
+  res.set({ 'Content-Type': file.mimeType, 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(files.normalizeName(file.name))}` });
   result.stream.on('error', () => res.destroy()).pipe(res);
 }
 router.get('/supplement/:token/certificates/:fileId', access, download);

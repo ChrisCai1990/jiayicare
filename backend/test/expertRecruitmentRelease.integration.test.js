@@ -207,11 +207,12 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
     const invalidFile = await fetch(`${url}/certificates`, { method: 'POST', body: multipart('<script>bad</script>') });
     assert.equal(invalidFile.status, 400);
     const pdf = '%PDF-1.4\nsynthetic certificate';
-    assert.equal((await fetch(`${url}/certificates`, { method: 'POST', body: multipart(pdf) })).status, 201);
+    assert.equal((await fetch(`${url}/certificates`, { method: 'POST', body: multipart(pdf, '医师资格证.pdf') })).status, 201);
     const uploaded = await (await fetch(url)).json();
     assert.equal(uploaded.data.languages.length, 2);
     assert.equal(uploaded.data.certificates[0].reviewStatus, 'pending');
     assert.equal(uploaded.data.certificates[0].key, undefined);
+    assert.equal(uploaded.data.certificates[0].name, '医师资格证.pdf');
     const fileId = uploaded.data.certificates[0]._id;
     assert.equal((await fetch(`${url}/certificates`, { method: 'POST', body: multipart('%PDF-1.4\nsecond certificate') })).status, 201);
     const appendedCertificates = await (await fetch(url)).json();
@@ -219,7 +220,13 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
     assert.equal(appendedCertificates.data.certificates[0]._id, fileId);
     assert.notEqual(appendedCertificates.data.certificates[1]._id, fileId);
     assert.equal((await fetch(`${origin}/supplement/${otherSupplementTokens[0]}/certificates/${fileId}`)).status, 404, '同一共用链接下其他专家不能读取附件');
-    assert.equal(await (await fetch(`${url}/certificates/${fileId}`)).text(), pdf);
+    const previewResponse = await fetch(`${url}/certificates/${fileId}`);
+    assert.match(previewResponse.headers.get('content-disposition'), /^inline;/);
+    assert.equal(previewResponse.headers.get('content-type'), 'application/pdf');
+    assert.equal(await previewResponse.text(), pdf);
+    await asTenant(firstTenant, () => Recruitment.updateOne({ 'certificates._id': fileId }, { $set: { 'certificates.$.name': Buffer.from('旧学历证.pdf').toString('latin1') } }));
+    const legacyName = await (await fetch(url)).json();
+    assert.equal(legacyName.data.certificates[0].name, '旧学历证.pdf');
     assert.equal((await fetch(`${url}/certificates/${oid()}`)).status, 404);
     assert.equal((await fetch(`${url}/certificates/not-an-id`)).status, 400);
     assert.equal((await fetch(`${url}/certificates`, { method: 'POST', body: multipart(Buffer.alloc(10 * 1024 * 1024 + 1)) })).status, 400);

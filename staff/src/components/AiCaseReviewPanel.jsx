@@ -139,7 +139,6 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [reviewSettings, setReviewSettings] = useState({ allowCustomTopic: true })
   const [assessments, setAssessments] = useState([])
   const [closedLoop, setClosedLoop] = useState(false)
-  const [assessmentMode, setAssessmentMode] = useState('routine')
   const [assessmentEdits, setAssessmentEdits] = useState({})
   const [expandedAssessments, setExpandedAssessments] = useState({})
   const [activeAssessmentSections, setActiveAssessmentSections] = useState({})
@@ -198,7 +197,6 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       const targetId = new URLSearchParams(window.location.search).get('phaseAssessmentId')
       const target = (assessmentRes.data || []).find(item => item._id === targetId)
       if (target) {
-        setAssessmentMode(target.assessmentMode || 'routine')
         setAssessments(items => [target, ...items.filter(item => item._id !== targetId)])
       }
       setAssessmentEdits(Object.fromEntries((assessmentRes.data || []).map(item => [item._id, item.content || ''])))
@@ -407,10 +405,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const generateAssessment = async (frequency = 'quarterly') => {
     setBusy(true)
     try {
-      const res = await staffAPI.generatePhaseAssessment(patientId, assessmentMode, assessmentDomain, frequency)
+      const res = await staffAPI.generatePhaseAssessment(patientId, 'routine', assessmentDomain, frequency)
       setAssessments(list => [res.data, ...list.filter(item => item._id !== res.data._id)])
       setAssessmentEdits(items => ({ ...items, [res.data._id]: res.data.content || '' }))
-      toast(`${assessmentMode === 'intensive_nutrition' ? '强化干预' : '常规'}阶段评估草稿已生成，等待对应岗位审核`)
+      toast('阶段性评估草稿已生成，等待对应岗位审核')
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const reviewAssessment = async (assessment, action) => {
@@ -441,17 +439,24 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
 
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
   const isMonthlyAssessment = item => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(item.periodKey || ''))
-  const historicalAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode && item.periodClassification === 'premature_legacy_quarter')
-  const visibleAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode && item.periodClassification !== 'premature_legacy_quarter')
+  const historicalAssessments = assessments.filter(item => item.periodClassification === 'premature_legacy_quarter')
+  const visibleAssessments = assessments.filter(item => item.periodClassification !== 'premature_legacy_quarter')
     .sort((a, b) => Number(isMonthlyAssessment(b)) - Number(isMonthlyAssessment(a)) || new Date(b.createdAt) - new Date(a.createdAt))
   const currentAssessment = visibleAssessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
   return <div style={{ display: 'grid', gridTemplateColumns: mode === 'assessment' ? '1fr' : '230px minmax(0, 1fr)', gap: 14, minHeight: mode === 'assessment' ? 0 : 760 }}>
     {mode !== 'specialty' && <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
-        <div className="card-header" style={{ alignItems: 'flex-start' }}><div style={{ flex: 1 }}><div className="card-title">阶段性评估与复盘</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>常规复盘按已完成的自然月生成，与年度方案确认无关；强化营养按干预开始日期计算。</div><div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className={`btn btn-sm ${assessmentMode === 'routine' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('routine')}>常规管理</button><button className={`btn btn-sm ${assessmentMode === 'intensive_nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('intensive_nutrition')}>强化营养干预 · 12周</button></div><div style={{ marginTop: 9, padding: '8px 10px', background: assessmentMode === 'routine' ? '#EFF6FF' : '#EEF8F3', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>{assessmentMode === 'routine' ? '系统内底稿汇总本月已有记录与待核实事项，不调用外部AI；营养师核对生活方式，健康顾问综合分析所有问题和就医情况，需要时转运动复健师。' : '来源：已确认强化营养干预方案及开始日期；第1—4周每周评估，第5—12周每2周评估，第12周形成总结。'}</div><StageWorkflow assessment={currentAssessment} /></div>{['familyDoctor', 'nutritionist', 'rehabSpecialist', 'tcmDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => generateAssessment()}>{assessmentMode === 'routine' ? '生成月度复盘底稿' : '生成当前节点草稿'}</button>}</div>
+        <div className="card-header" style={{ alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <div className="card-title">阶段性评估与复盘</div>
+            <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>按已完成的自然月汇总服务记录，评估阶段变化并明确下一步安排。</div>
+            <StageWorkflow assessment={currentAssessment} />
+          </div>
+          {['familyDoctor', 'nutritionist', 'rehabSpecialist', 'tcmDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => generateAssessment()}>生成月度复盘底稿</button>}
+        </div>
       <div className="card-body" style={{ display: 'grid', gap: 12 }}>
-        {closedLoop && assessmentMode === 'routine' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => generateAssessment('yearly')}>生成年度总评草稿（进入第11个月）</button>}
-        {closedLoop && assessmentMode === 'routine' && <label>评估领域 <select className="form-input" value={assessmentDomain} onChange={event => setAssessmentDomain(event.target.value)}>{Object.entries(PHASE_DOMAINS).filter(([key]) => ['familyDoctor', 'superadmin'].includes(staff?.role) || key === ({ nutritionist: 'nutrition', rehabSpecialist: 'exercise', tcmDoctor: 'tcm' })[staff?.role]).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>}
-        {!visibleAssessments.length && <div style={{ color: '#8AA89C' }}>{assessmentMode === 'intensive_nutrition' ? '暂无强化干预评估。只有客户确认营养干预方案后，才能按12周节点生成。' : '暂无常规阶段性评估。符合服务权益和周期条件时系统会自动生成，也可由对应岗位人工发起。'}</div>}
+        {closedLoop && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => generateAssessment('yearly')}>生成年度总评草稿（进入第11个月）</button>}
+        {closedLoop && <label>评估领域 <select className="form-input" value={assessmentDomain} onChange={event => setAssessmentDomain(event.target.value)}>{Object.entries(PHASE_DOMAINS).filter(([key]) => ['familyDoctor', 'superadmin'].includes(staff?.role) || key === ({ nutritionist: 'nutrition', rehabSpecialist: 'exercise', tcmDoctor: 'tcm' })[staff?.role]).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>}
+        {!visibleAssessments.length && <div style={{ color: '#8AA89C' }}>暂无阶段性评估与复盘记录，可由对应岗位按评估周期发起。</div>}
         {visibleAssessments.map(item => {
           const status = item.status === 'pending' ? 'nutrition_review' : item.status
           const primary = item.primaryReviewRole || 'nutritionist'
