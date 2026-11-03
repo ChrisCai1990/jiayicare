@@ -591,3 +591,32 @@ textarea.form-control { resize: vertical; }
 .mobile-menu-btn { position: relative; }
 .mobile-menu-btn > .sidebar-workbench-dot { position: absolute; right: -3px; top: -3px; }
 .workbench-reminder-error { padding: 12px 16px; margin-bottom: 16px; color: #9A5B00; background: #FFF8E8; border-radius: 10px; }
+
+/* Consultation reading uses the main area; the case switcher is optional. */
+.consultation-workspace { width: 100%; max-width: 1600px; margin: 0 auto; min-width: 0; font-size: 16px; line-height: 1.75; }
+.consultation-workspace h1 { font-size: 28px; line-height: 1.4; }
+.consultation-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.consultation-toolbar > label { white-space: nowrap; flex-shrink: 0; }
+.consultation-toolbar > select { width: 240px; max-width: 100%; }
+.consultation-selection { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.consultation-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); align-items: start; gap: 20px; }
+.consultation-layout.reading { grid-template-columns: minmax(0, 1fr); }
+.consultation-case-list { padding: 16px; max-height: 70vh; overflow-y: auto; min-width: 0; }
+.consultation-case-list[hidden] { display: none; }
+.consultation-case-list > button { font-size: 15px; line-height: 1.7; }
+.consultation-detail { padding: 28px; min-width: 0; overflow-wrap: anywhere; font-size: 16px; line-height: 1.85; }
+.consultation-detail h3 { font-size: 21px; line-height: 1.5; margin-bottom: 16px; }
+.consultation-detail h4 { font-size: 18px; margin: 18px 0 10px; }
+.consultation-detail p { margin: 10px 0; }
+.consultation-detail .form-input { font-size: 16px; line-height: 1.7; }
+.consultation-referral-reading table, .consultation-referral-reading summary { font-size: 16px !important; }
+@media (max-width: 900px) {
+  .consultation-layout { grid-template-columns: minmax(0, 1fr); }
+  .consultation-case-list { max-height: 280px; }
+  .consultation-detail { padding: 18px; }
+}
+@media (max-width: 480px) {
+  .consultation-detail { padding: 12px; }
+  .consultation-workspace h1 { font-size: 24px; }
+  .consultation-toolbar > select { flex: 1; min-width: 140px; }
+}

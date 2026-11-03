@@ -16,6 +16,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
   const self = id(staff)
   const [rows, setRows] = useState([])
   const [selectedId, setSelectedId] = useState('')
+  const [listOpen, setListOpen] = useState(true)
   const [experts, setExperts] = useState([])
   const [reports, setReports] = useState([])
   const [referrals, setReferrals] = useState([])
@@ -79,7 +80,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
     }).catch(e => setError(e.message))
   }, [])
   async function choose(row) {
-    setSelectedId(id(row)); setBookingMode('coordinate'); setError(''); setEditingRequest(false); setRequestDraft(row.clientRequest || ''); setShowReferralChange(false)
+    setListOpen(false); setSelectedId(id(row)); setBookingMode('coordinate'); setError(''); setEditingRequest(false); setRequestDraft(row.clientRequest || ''); setShowReferralChange(false)
     setForm(row.status === 'team_assignment' && !row.plannerId ? { plannerId: self } : row.referralId ? { referralId: id(row.referralId) } : {})
     setReferrals([]); setExperts([]); setSlots([])
     try { const result = await staffAPI.expertConsultationMaterials(id(row)); setReports(result.data || []) }
@@ -151,11 +152,11 @@ export default function ExpertConsultationsPage({ embedded = false }) {
     }}>{bookingMode === 'direct' ? '确认时间并直接推送专家' : '提交健管专员协调安排'}</button>
 
   </div>
-  return <div className="page-container" style={{ maxWidth: 1100 }}>
+  return <div className="page-container consultation-workspace">
     {!embedded && <h1>专家咨询与 MDT</h1>}
     <p>办理专家咨询与 MDT，查看当前负责人、预约安排及服务进度。</p>
     {error && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
-    <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}><label><input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)}/> 只看待我处理</label>
+    <div className="consultation-toolbar"><label><input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)}/> 只看待我处理</label>
       <select className="form-input" aria-label="咨询类型" value={filter} onChange={e => setFilter(e.target.value)}><option value="">全部咨询</option><option value="single">专家咨询</option><option value="mdt">MDT</option></select>
       {['healthManager', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary" onClick={() => setCreating(!creating)}>＋ 医护端发起</button>}
     </div>
@@ -167,14 +168,18 @@ export default function ExpertConsultationsPage({ embedded = false }) {
       <p>医护端发起直接由客户所属健管专员收集资料，不再经过首次派单；不自动产生收费订单。</p>
       <button className="btn btn-primary" disabled={busy || !draft.patientId || !draft.request.trim()}>提交发起</button>
     </form>}
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 16 }}>
-      <div className="card" style={{ padding: 16 }}><h3>咨询事项</h3>
+    {selected && <div className="consultation-selection">
+      <button type="button" className="btn btn-secondary" aria-expanded={listOpen} aria-controls="consultation-case-list" onClick={() => setListOpen(value => !value)}>{listOpen ? '收起咨询列表' : `切换咨询（${rows.length} 条）`}</button>
+      <strong>{selected.patientId?.name || '客户'} · {selected.type === 'mdt' ? 'MDT 多学科咨询' : '单次专家咨询'}</strong>
+    </div>}
+    <div className={`consultation-layout${selected && !listOpen ? ' reading' : ''}`}>
+      <div id="consultation-case-list" className="card consultation-case-list" hidden={!!selected && !listOpen}><h3>咨询事项</h3>
         {rows.length === 0 && <p>暂无待处理咨询</p>}
         {rows.filter(row => (!filter || row.type === filter) && (!mineOnly || needsMe(row))).map(row => <button key={id(row)} onClick={() => choose(row)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: 10, marginBottom: 8, background: id(row) === selectedId ? '#EFF7F2' : 'white', border: '1px solid #DDE8E1', borderRadius: 8, cursor: 'pointer' }}>
           {needsMe(row) && <small style={{ color: '#176C50' }}>待我处理 · </small>}<b>{row.patientId?.name || '客户'} · {row.type === 'mdt' ? 'MDT 多学科' : '单次专家'}咨询</b> · {stages[row.status]}<br/><small>{row.initiationSource === 'staff' ? '医护端发起' : `线上订单 ${id(row.orderId).slice(-8)}`}</small>
         </button>)}
       </div>
-      <div className="card" style={{ padding: 18, minWidth: 0, overflowWrap: 'anywhere' }}>
+      <div className="card consultation-detail">
         {!selected ? <p>选择一笔服务查看进度。</p> : <>
           <h3>{selected.type === 'mdt' ? 'MDT 多学科' : '单次专家'}咨询 · {stages[selected.status]}</h3>
           <section aria-label="当前办理进度" style={{ background: '#EFF7F2', padding: 16, borderRadius: 10, margin: '12px 0' }}>

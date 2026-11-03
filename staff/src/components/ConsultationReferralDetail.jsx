@@ -19,7 +19,7 @@ export default function ConsultationReferralDetail({ caseId, isExpert, onViewed 
       .catch(e => { if (!cancelled) setError(`查看状态未记录：${e.message}，请点击重新加载。`) })
     return () => { cancelled = true }
   }, [snapshot, open, isExpert, caseId])
-  return <section style={{ margin: '12px 0' }}>
+  return <section className="consultation-referral-reading" style={{ margin: '12px 0' }}>
     <button className="btn btn-secondary" disabled={busy} onClick={show}>{busy ? '加载中…' : open ? '重新加载转介信' : '打开转介信详情'}</button>
     {error && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
     {open && snapshot && <div style={{ padding: 14, border: '1px solid #DDE8E1', borderRadius: 8, marginTop: 8 }}>
