@@ -50,6 +50,8 @@ const schema = new mongoose.Schema({
     reviewedAt: { type: Date, default: null },
   },
   agreement: {
+    profileKind: { type: String, enum: ['medical','professional'], default: 'medical' },
+    organizationName: String, specialty: String,
     institutionId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalInstitution', default: null },
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalDepartment', default: null },
     singleFee: { type: Number, default: null },

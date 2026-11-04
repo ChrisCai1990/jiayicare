@@ -6,7 +6,7 @@ import ExpertQualificationsEditor from '../../components/ExpertQualificationsEdi
 const statusText = { invited: '待填写', submitted: '待审核', approved: '已入库', rejected: '未通过', revoked: '已撤销' }
 const verdictText = { pass: '通过', pending: '待核实', fail: '不通过' }
 const emptyScreen = { qualificationVerified: false, professional: 'pending', communication: 'pending', ethics: 'pending', evidence: '' }
-const emptyApproval = { institutionId: '', departmentId: '', linkedStaffId: '', singleFee: '', mdtFee: '', note: '' }
+const emptyApproval = { profileKind:'medical', organizationName:'', specialty:'', institutionId: '', departmentId: '', linkedStaffId: '', singleFee: '', mdtFee: '', note: '' }
 const id = item => String(item?._id || item || '')
 const same = (left, right) => String(left || '').replace(/\s+/g, '') === String(right || '').replace(/\s+/g, '') && Boolean(String(left || '').trim())
 function autoMatch(row, resources, staff) {
@@ -42,7 +42,7 @@ export default function ExpertRecruitmentPage() {
   const selected = rows.find(row => id(row) === selectedId)
   const screeningSaved = Boolean(selected?.screening?.reviewedAt) && ['qualificationVerified', 'professional', 'communication', 'ethics', 'evidence'].every(key => String(selected.screening[key] ?? '').trim() === String(screening[key] ?? '').trim())
   const screeningPassed = screeningSaved && screening.qualificationVerified && ['professional', 'communication', 'ethics'].every(key => screening[key] === 'pass')
-  const matchingComplete = Boolean(approval.institutionId && approval.departmentId && approval.linkedStaffId)
+  const matchingComplete = Boolean(approval.linkedStaffId && (approval.profileKind === 'professional' ? approval.organizationName.trim() && approval.specialty.trim() : approval.institutionId && approval.departmentId))
 
   async function load() {
     const [recruitments, activeLinks, medical, employees] = await Promise.all([
@@ -66,6 +66,7 @@ export default function ExpertRecruitmentPage() {
     setApproval({ ...emptyApproval,
       singleFee: row.agreement?.singleFee ?? row.response?.singleExpectedFee ?? '',
       mdtFee: row.agreement?.mdtFee ?? row.response?.mdtExpectedFee ?? '',
+      organizationName:row.response?.institutionName || '', specialty:row.response?.departmentName || '',
       ...autoMatch(row, resources, staff),
     })
     setError('')
@@ -163,24 +164,25 @@ export default function ExpertRecruitmentPage() {
             <Info label="其他条件" value={selected.response?.cooperationNotes}/>
             <h4>准入核验</h4>
             {selected.status === 'submitted' ? <>
-              <label style={{ display: 'block', marginBottom: 10 }}><input type="checkbox" checked={screening.qualificationVerified} onChange={setScreen('qualificationVerified')}/> 已核验执业资格、机构与服务范围</label>
+              <label style={{ display: 'block', marginBottom: 10 }}><input type="checkbox" checked={screening.qualificationVerified} onChange={setScreen('qualificationVerified')}/> 已核验专业资质、机构与服务范围</label>
               {['professional', 'communication', 'ethics'].map((key, i) => <Field key={key} label={['专业能力', '沟通能力', '品德与边界'][i]}><select className="form-input" value={screening[key]} onChange={setScreen(key)}>{['pending', 'pass', 'fail'].map(value => <option value={value} key={value}>{verdictText[value]}</option>)}</select></Field>)}
               <Field label="核验依据与备注"><textarea className="form-input" rows={3} maxLength={2000} value={screening.evidence} onChange={setScreen('evidence')}/></Field>
               <button className="btn btn-primary" disabled={busy || screeningSaved} onClick={() => run(() => adminAPI.screenExpertRecruitment(selectedId, screening), '准入核验已保存')}>{busy ? '处理中…' : screeningSaved ? '核验已保存' : '保存核验'}</button>
               <p role="status" style={{ color: screeningSaved ? '#246B4D' : '#9A6700', marginTop: 8 }}>{screeningSaved ? '核验已保存。' : '当前核验尚未保存，请先点击上方按钮。'}</p>
               <h4>合作条件与入库</h4>
-              <p style={{ color: '#60786D' }}>医院、科室按问卷填写的名称与资源库匹配；医护端账号按姓名和手机号匹配。匹配成功后直接确认，无需逐项筛选。</p>
+              <Field label="人员类型"><select className="form-input" value={approval.profileKind} onChange={setApprove('profileKind')}><option value="medical">医院医生（医院＋科室）</option><option value="professional">非医院专业人员（机构／团队＋专业方向）</option></select></Field>
+              {approval.profileKind === 'professional' ? <><Field label="所属机构／团队"><input className="form-input" maxLength={200} value={approval.organizationName} onChange={setApprove('organizationName')} placeholder="无所属机构时填写：独立执业"/></Field><Field label="专业方向"><input className="form-input" maxLength={100} value={approval.specialty} onChange={setApprove('specialty')} placeholder="例如：心理咨询"/></Field><p>适用于心理咨询、营养、运动复健人员。请核验机构、专业资质和服务范围，无需医院科室。</p></> : <><p>医院、科室按问卷名称匹配；账号按姓名和原问卷手机号匹配。</p>
               <Info label="医院自动匹配" value={approval.institutionId ? (resources.institutions || []).find(x => id(x) === approval.institutionId)?.name : '未匹配，请核实问卷中的机构名称及医疗资源库'}/>
-              <Info label="科室自动匹配" value={approval.departmentId ? (resources.departments || []).find(x => id(x) === approval.departmentId)?.name : '未匹配，请核实问卷中的科室及医院下的科室库'}/>
+              <Info label="科室自动匹配" value={approval.departmentId ? (resources.departments || []).find(x => id(x) === approval.departmentId)?.name : '未匹配，请核实问卷中的科室及医院下的科室库'}/></>}
               <Info label="专家账号自动匹配" value={approval.linkedStaffId ? staff.find(x => id(x) === approval.linkedStaffId)?.name : '未匹配，请核实医护端账号的姓名和手机号'}/>
               <p style={{ color: '#637B76', marginTop: 8 }}>擅长内容无需与科室名称逐字相同；是否符合拟开展服务，由上方准入核验确认。</p>
-              {!matchingComplete && <p style={{ color: '#9A6700' }}>资料或资源不匹配时，请先核实原始问卷及基础设置中的机构、科室、人员资料，再刷新本页。系统不会代选其他医院或科室。</p>}
+              {!matchingComplete && <p style={{ color: '#9A6700' }}>请补齐所选类型的信息，并核实账号姓名与原问卷手机号。医院医生还须匹配医院及科室。</p>}
               <Field label="单次咨询每单报酬  元"><input className="form-input" type="number" min="0" value={approval.singleFee} onChange={setApprove('singleFee')}/></Field>
               <Field label="MDT 每单报酬  元"><input className="form-input" type="number" min="0" value={approval.mdtFee} onChange={setApprove('mdtFee')}/></Field>
               <Field label="谈妥条件备注"><textarea className="form-input" rows={2} value={approval.note} onChange={setApprove('note')}/></Field>
               {error && <p role="alert" style={{ color: '#B42318', marginTop: 10 }}>{error}</p>}
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}><button className="btn btn-primary" disabled={busy || !screeningPassed || !matchingComplete} onClick={() => run(() => adminAPI.approveExpertRecruitment(selectedId, approval), '专家已入库')}>确认入库</button><button className="btn btn-secondary" disabled={busy} onClick={() => { const reason = window.prompt('请填写未通过的原因'); if (reason?.trim()) run(() => adminAPI.rejectExpertRecruitment(selectedId, reason), '已记录未通过') }}>未通过</button></div>
-            </> : <><Info label="资格核验" value={selected.screening?.qualificationVerified ? '已核验' : '未核验'}/>{['professional', 'communication', 'ethics'].map((key, i) => <Info key={key} label={['专业', '沟通', '品德'][i]} value={verdictText[selected.screening?.[key]] || '—'}/>)}<Info label="审核依据" value={selected.screening?.evidence}/>{selected.expertProfileId && <Info label="专家库编号" value={id(selected.expertProfileId)}/>}</>}
+            </> : <><Info label="资格核验" value={selected.screening?.qualificationVerified ? '已核验' : '未核验'}/>{['professional', 'communication', 'ethics'].map((key, i) => <Info key={key} label={['专业', '沟通', '品德'][i]} value={verdictText[selected.screening?.[key]] || '—'}/>)}<Info label="审核依据" value={selected.screening?.evidence}/>{selected.agreement?.profileKind === 'professional' && <><Info label="所属机构／团队" value={selected.agreement.organizationName}/><Info label="专业方向" value={selected.agreement.specialty}/></>}{selected.expertProfileId && <Info label="专家库编号" value={id(selected.expertProfileId)}/>}</>}
           </>}
         </>}
       </div>

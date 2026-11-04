@@ -227,7 +227,13 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
   if (!screening.qualificationVerified || ['professional', 'communication', 'ethics'].some(k => screening[k] !== 'pass'))
     return fail(res, 409, '资格核验与专业、沟通、品德三项均通过后才可入库');
   // 执业范围是专业描述，不是科室名称；适配性由上方人工资格与专业核验确认。
-  const institutionId = req.body?.institutionId, departmentId = req.body?.departmentId;
+  const professional = req.body?.profileKind === 'professional';
+  if (req.body?.profileKind && !['medical','professional'].includes(req.body.profileKind)) return fail(res,400,'请选择人员类型');
+  const organizationName = professional ? text(req.body?.organizationName,200) : '';
+  const specialty = professional ? text(req.body?.specialty,100) : '';
+  if (professional && (!organizationName || !specialty)) return fail(res,400,'请填写所属机构／团队及专业方向；独立执业请注明');
+  const institutionId = professional ? null : req.body?.institutionId, departmentId = professional ? null : req.body?.departmentId;
+  if (!professional) {
   if (!mongoose.isValidObjectId(institutionId) || !mongoose.isValidObjectId(departmentId)) return fail(res, 400, '问卷医院或科室未能与医疗资源库唯一匹配');
   const [institution, department] = await Promise.all([
     MedicalInstitution.findOne({ _id: institutionId, status: 'active' }).select('_id name aliases').lean(),
@@ -242,14 +248,16 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
   if (institutionChoices.filter(item => [item.name, ...(item.aliases || [])].some(name => same(name, row.response.institutionName))).length !== 1 ||
       departmentChoices.filter(item => same(item.name, row.response.departmentName)).length !== 1)
     return fail(res, 409, '问卷医院或科室匹配到多条资源，请先核实');
+  }
   const singleFee = money(req.body?.singleFee), mdtFee = money(req.body?.mdtFee);
   if (![singleFee, mdtFee].every(nonnegative) || (row.response.singleConsultation && singleFee === null) || (row.response.mdt && mdtFee === null))
     return fail(res, 400, '请填写已谈妥的服务报酬');
   const linkedStaffId = req.body?.linkedStaffId || null;
   if (!mongoose.isValidObjectId(linkedStaffId)) return fail(res, 400, '问卷姓名和手机号未能与医护端账号唯一匹配');
   const staff = await Admin.findOne({ _id: linkedStaffId, staffStatus: { $ne: 'inactive' },
-    role: { $in: ['specialist', 'familyDoctor', 'nutritionist', 'rehabSpecialist', 'psychologist', 'tcmDoctor'] } }).select('_id tenantId name phone').lean();
+    role: { $in: ['specialist', 'familyDoctor', 'nutritionist', 'rehabSpecialist', 'psychologist', 'tcmDoctor'] } }).select('_id tenantId name phone role').lean();
   if (!staff || String(staff.tenantId) !== String(req.admin.tenantId)) return fail(res, 400, '专家账号无效或不属于本机构');
+  if (professional && !['psychologist','nutritionist','rehabSpecialist'].includes(staff.role)) return fail(res,400,'非医院专业人员适用于心理、营养和运动复健岗位；医生请按医院科室入库');
   if (!same(staff.name, row.response.name) || !staff.phone || staff.phone !== row.response.phone)
     return fail(res, 409, '专家账号姓名或手机号与问卷不一致，请先核实');
   const staffChoices = await Admin.find({ phone: row.response.phone, staffStatus: { $ne: 'inactive' },
@@ -265,7 +273,9 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
   if (existingLink && (existingLink.status !== 'active' ||
       (existingLink.recruitmentId && String(existingLink.recruitmentId) !== String(row._id))))
     return fail(res, 409, '原专家档案已停用或已关联其他准入问卷，请先核实');
+  const profileDetails = { profileKind:professional ? 'professional' : 'medical', organizationName, specialty };
   const cooperation = {
+    ...profileDetails,
     ...recruitmentProfile(row.response),
     serviceModes: [...new Set([...(existingLink?.serviceModes || []),
       ...(row.response.singleConsultation ? ['single_consultation'] : []), ...(row.response.mdt ? ['mdt'] : []),
@@ -277,14 +287,14 @@ router.post('/admin/:id/approve', adminAuth, async (req, res) => {
       recruitmentId: existingLink.recruitmentId || null,
     }, { $set: cooperation }, { new: true, runValidators: true })
     : await MedicalExpert.findOneAndUpdate({ recruitmentId: row._id }, { $setOnInsert: {
-    name: row.response.name, title: row.response.title, institutionId, departmentId,
+    ...profileDetails, name: row.response.name, title: row.response.title, institutionId, departmentId,
     ...recruitmentProfile(row.response), introduction: '', serviceModes: [
       ...(row.response.singleConsultation ? ['single_consultation'] : []), ...(row.response.mdt ? ['mdt'] : []),
     ], linkedStaffId, teamEligible: true, singleConsultationFee: singleFee, mdtFee,
     recruitmentId: row._id, status: 'active',
   } }, { upsert: true, new: true, runValidators: true });
   if (!profile) return fail(res, 409, '专家档案已更新，请刷新后重新核实');
-  row.agreement = { institutionId, departmentId, singleFee, mdtFee, note: text(req.body?.note, 1000) };
+  row.agreement = { ...profileDetails, institutionId, departmentId, singleFee, mdtFee, note: text(req.body?.note, 1000) };
   row.expertProfileId = profile._id;
   row.status = 'approved';
   await row.save();

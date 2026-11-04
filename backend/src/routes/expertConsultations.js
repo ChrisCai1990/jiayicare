@@ -139,7 +139,7 @@ router.get('/staff', staffAuth, async (req, res) => {
 router.get('/staff/experts', staffAuth, async (req, res) => {
   if (!['healthManager', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(req.staff.role)) return fail(res, 403, '无权查看咨询专家库');
   const rows = await MedicalExpert.find({ status: 'active', teamEligible: true, linkedStaffId: { $ne: null } })
-    .select('_id name title institutionId departmentId linkedStaffId serviceModes singleConsultationFee mdtFee').lean();
+    .select('_id name title profileKind organizationName specialty institutionId departmentId linkedStaffId serviceModes singleConsultationFee mdtFee').lean();
   const active = await Admin.find({ _id: { $in: rows.map(x => x.linkedStaffId) }, staffStatus: 'active' }).select('_id').lean();
   const activeIds = new Set(active.map(x => id(x)));
   res.json({ success: true, data: rows.filter(x => activeIds.has(id(x.linkedStaffId))) });

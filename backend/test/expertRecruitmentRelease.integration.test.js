@@ -128,6 +128,26 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
       assert.equal(String(profile._id), String(existingProfile._id), '沿用同一专家的原档案');
       assert.equal(profile.introduction, '保留原档案介绍');
       assert.deepEqual([...profile.expertise], [request.body.registrationScope]);
+      // Nonhospital professionals retain verified staff identity without fabricated hospital records.
+      const counselorId=oid();
+      await Admin.collection.insertOne({_id:counselorId,tenantId:firstTenant,name:'合成心理咨询师',phone:'13800000009',role:'psychologist',staffStatus:'active'});
+      const candidate=await Recruitment.create({tokenHash:sha('counselor'),expiresAt:new Date(Date.now()+86400000),status:'submitted',partnerName:'合成合伙人',specialtyTeam:'心理',createdBy:actor._id,response:{name:'合成心理咨询师',phone:'13800000009',singleConsultation:true,mdt:true},screening:{qualificationVerified:true,professional:'pass',communication:'pass',ethics:'pass',evidence:'合成资质核验'}});
+      const professionalRequest={params:{id:String(candidate._id)},admin:actor,body:{profileKind:'professional',organizationName:'独立执业',specialty:'心理咨询',linkedStaffId:String(counselorId),singleFee:400,mdtFee:399}};
+      const missingOrganization=response(); await approve({...professionalRequest,body:{...professionalRequest.body,organizationName:''}},missingOrganization);assert.equal(missingOrganization.statusCode,400);
+      await Admin.updateOne({_id:counselorId},{$set:{role:'specialist'}});
+      const doctorBypass=response(); await approve(professionalRequest,doctorBypass);assert.equal(doctorBypass.statusCode,400);
+      await Admin.updateOne({_id:counselorId},{$set:{role:'psychologist'}});
+      const professionalApproved=response(); await approve(professionalRequest,professionalApproved);assert.equal(professionalApproved.statusCode,200,JSON.stringify(professionalApproved.body));
+      const professionalProfile=await MedicalExpert.findById(professionalApproved.body.data.expertProfileId);
+      assert.equal(professionalProfile.profileKind,'professional');assert.equal(professionalProfile.institutionId,null);assert.equal(professionalProfile.departmentId,null);
+      assert.equal(professionalProfile.organizationName,'独立执业');assert.equal(professionalProfile.specialty,'心理咨询');assert.equal(professionalProfile.teamEligible,true);
+      assert.equal(String((await Admin.findById(counselorId)).expertProfileId),String(professionalProfile._id));
+      assert.equal((await Recruitment.findById(candidate._id)).agreement.specialty,'心理咨询');
+      const settingsRouter=require('../src/routes/settings');
+      const editProfessional=settingsRouter.stack.find(l=>l.route?.path==='/medical-experts/:id' && l.route.methods.put).route.stack.at(-1).handle;
+      const editedProfessional=response(); await editProfessional({params:{id:String(professionalProfile._id)},admin:actor,body:{...professionalProfile.toObject(),organizationName:'合成心理工作室',linkedStaffId:String(counselorId)}},editedProfessional);
+      assert.equal(editedProfessional.statusCode,200,JSON.stringify(editedProfessional.body));assert.equal((await MedicalExpert.findById(professionalProfile._id)).organizationName,'合成心理工作室');
+      assert.equal(await MedicalInstitution.countDocuments(),1);assert.equal(await MedicalDepartment.countDocuments(),2);
       const sync = handler('post', '/admin/:id/sync-profile');
       const deniedSync = response();
       await sync({ params: { id: String(row._id) }, admin: { ...actor, role: 'specialist' } }, deniedSync);

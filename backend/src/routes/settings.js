@@ -466,10 +466,17 @@ router.post('/medical-experts', adminAuth, async (req, res) => {
 router.put('/medical-experts/:id', adminAuth, async (req, res) => {
   const previous = await MedicalExpert.findById(req.params.id); if (!previous) return res.status(404).json({ success: false, message: '专家不存在' });
   const payload = medicalExpertPayload(req.body);
+  if (previous.profileKind === 'professional') {
+    payload.profileKind='professional'; payload.institutionId=null; payload.departmentId=null;
+    payload.organizationName=cleanText(req.body.organizationName,200); payload.specialty=cleanText(req.body.specialty,100);
+    if (!payload.name || !payload.organizationName || !payload.specialty) return res.status(400).json({success:false,message:'请填写姓名、所属机构／团队和专业方向'});
+    if (String(payload.linkedStaffId || '') !== String(previous.linkedStaffId || '')) return res.status(400).json({success:false,message:'请保留已核验的专业人员账号绑定'});
+  } else {
   if (!payload.name || !payload.institutionId || !payload.departmentId) return res.status(400).json({ success: false, message: '姓名、医院和科室不能为空' });
   if (![payload.institutionId, payload.departmentId, payload.linkedStaffId].every(id => !id || mongoose.isValidObjectId(id))) return res.status(400).json({ success: false, message: '医院、科室或员工账号无效' });
   const department = await MedicalDepartment.findOne({ _id: payload.departmentId, institutionId: payload.institutionId });
   if (!department) return res.status(400).json({ success: false, message: '所选科室不属于该医院' });
+  }
   const linkedStaffId = payload.linkedStaffId;
   const item = await MedicalExpert.findByIdAndUpdate(req.params.id, payload, { new: true, runValidators: true });
   if (previous.linkedStaffId && String(previous.linkedStaffId) !== String(linkedStaffId || '')) await Admin.findByIdAndUpdate(previous.linkedStaffId, { $set: { expertProfileId: null } });

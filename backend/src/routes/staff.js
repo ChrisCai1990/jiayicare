@@ -3711,7 +3711,7 @@ router.get('/medical-resources', staffAuth, async (req, res) => {
   const [institutions, departments, experts] = await Promise.all([
     MedicalInstitution.find({ status: 'active' }).select('name aliases level nature region campuses campusDetails contactName contactTitle phone').sort({ name: 1 }).lean(),
     MedicalDepartment.find({ status: 'active' }).select('institutionId campus name specialties').sort({ name: 1 }).lean(),
-    MedicalExpert.find({ status: 'active' }).select('name title institutionId departmentId campus expertise diseaseTags introduction serviceModes outpatientSchedule linkedStaffId').sort({ name: 1 }).lean(),
+    MedicalExpert.find({ status: 'active' }).select('name title profileKind organizationName specialty institutionId departmentId campus expertise diseaseTags introduction serviceModes outpatientSchedule linkedStaffId').sort({ name: 1 }).lean(),
   ]);
   res.json({ success: true, data: { institutions, departments, experts } });
 });
@@ -8396,7 +8396,7 @@ router.post('/referrals', staffAuth, async (req, res) => {
     referralPurpose: cleanMedicalText(referralPurpose, 100), questionList: cleanMedicalText(questionList, 5000), requiresConclusion: requiresConclusion !== false,
     referralType,
     medicalExpertId: expert?._id || null,
-    medicalExpertSnapshot: expert ? { name: expert.name, title: expert.title, institutionName: expert.institutionId?.name || '', institutionLevel: expert.institutionId?.level || '', departmentName: expert.departmentId?.name || '', campus: expert.campus || expert.departmentId?.campus || '', expertise: expert.expertise || [], diseaseTags: expert.diseaseTags || [], capturedAt: new Date() } : null,
+    medicalExpertSnapshot: expert ? { name: expert.name, title: expert.title, institutionName: expert.institutionId?.name || expert.organizationName || '', institutionLevel: expert.institutionId?.level || '', departmentName: expert.departmentId?.name || expert.specialty || '', campus: expert.campus || expert.departmentId?.campus || '', expertise: expert.expertise || [], diseaseTags: expert.diseaseTags || [], capturedAt: new Date() } : null,
   });
   if (!consultationDraft) await require('../utils/referralAssessmentWorkflow').createReferralWorkbenchTask(referral).catch(() => {});
   await referral.populate([
@@ -8496,7 +8496,7 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
     referral.referralType = referralType;
     referral.medicalExpertId = expert?._id || null;
     if (!(referral.sourceOrderId && referral.consultationType === 'multidisciplinary'))
-      referral.medicalExpertSnapshot = expert ? { name:expert.name, title:expert.title, institutionName:expert.institutionId?.name || '', institutionLevel:expert.institutionId?.level || '', departmentName:expert.departmentId?.name || '', campus:expert.campus || expert.departmentId?.campus || '', expertise:expert.expertise || [], diseaseTags:expert.diseaseTags || [], capturedAt:new Date() } : null;
+      referral.medicalExpertSnapshot = expert ? { name:expert.name, title:expert.title, institutionName:expert.institutionId?.name || expert.organizationName || '', institutionLevel:expert.institutionId?.level || '', departmentName:expert.departmentId?.name || expert.specialty || '', campus:expert.campus || expert.departmentId?.campus || '', expertise:expert.expertise || [], diseaseTags:expert.diseaseTags || [], capturedAt:new Date() } : null;
     referral.linkedDiseaseRecordIds = linkedDiseases.map(d => d._id);
     referral.linkedDiseaseSnapshots = linkedDiseases.map(diseaseSnapshot);
     referral.linkedDiseaseRecordId = linkedDisease?._id || null;

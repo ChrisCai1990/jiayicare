@@ -15788,7 +15788,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     if (!expert) return ''
     const hospital = institutionForExpert(expert)
     const department = departmentForExpert(expert)
-    return `${expert.name}${expert.title ? ` · ${expert.title}` : ''}｜${hospital?.name || '医院待补充'} · ${department?.name || '科室待补充'}`
+    return `${expert.name}${expert.title ? ` · ${expert.title}` : ''}｜${hospital?.name || expert.organizationName || '机构待补充'} · ${department?.name || expert.specialty || '专业待补充'}`
   }
   const normalizedExpertSearch = expertSearch.trim().toLowerCase()
   const filteredExperts = (medicalResources.experts || []).filter(expert => {
@@ -15796,7 +15796,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     const hospital = institutionForExpert(expert)
     const department = departmentForExpert(expert)
     return [
-      expert.name, expert.title, expert.campus, hospital?.name, department?.name,
+      expert.name, expert.title, expert.campus, expert.organizationName, expert.specialty, hospital?.name, department?.name,
       ...(expert.expertise || []), ...(expert.diseaseTags || []),
     ].filter(Boolean).some(value => String(value).toLowerCase().includes(normalizedExpertSearch))
   })
@@ -16018,7 +16018,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
               if (!event.currentTarget.contains(event.relatedTarget)) setExpertMenuOpen(false)
             }}
           >
-            <label className="form-label">医院 / 科室 / 专家 *</label>
+            <label className="form-label">机构 / 科室或专业 / 专家 *</label>
             <input
               className="form-input"
               value={expertMenuOpen ? expertSearch : expertLabel(selectedExpert)}
@@ -16069,7 +16069,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
                   style={{display:'block',width:'100%',padding:'10px 12px',border:0,borderBottom:'1px solid #EEF2F0',background:String(expert._id) === String(form.medicalExpertId) ? '#E8F5EF' : '#fff',color:'#243A32',textAlign:'left',cursor:'pointer'}}
                 >
                   <div><b>{expert.name}</b>{expert.title ? <span style={{marginLeft:8,color:'#668078',fontSize:12}}>{expert.title}</span> : null}</div>
-                  <div style={{color:'#668078',fontSize:12,marginTop:3}}>{hospital?.name || '医院待补充'} · {department?.name || '科室待补充'}{expert.campus ? ` · ${expert.campus}` : ''}</div>
+                  <div style={{color:'#668078',fontSize:12,marginTop:3}}>{hospital?.name || expert.organizationName || '机构待补充'} · {department?.name || expert.specialty || '专业待补充'}{expert.campus ? ` · ${expert.campus}` : ''}</div>
                   {expertise && <div style={{color:'#8AA89C',fontSize:11,marginTop:2}}>擅长：{expertise}</div>}
                 </button>
               }) : <div style={{padding:'12px',color:'#8AA89C',fontSize:13}}>未找到匹配的外部专家</div>}
