@@ -12,7 +12,7 @@ const NAV_SECTIONS = [
       { label: '订单管理', icon: 'orders', path: '/orders' },
       { label: '佣金审核', icon: 'money', path: '/commissions' },
       { label: '消息中心', icon: 'message', path: '/messages' },
-      { label: '用户反馈', icon: 'feedback', path: '/feedback', badgeKey: 'feedback' },
+      { label: '用户反馈', icon: 'feedback', path: '/feedback', badgeKey: 'feedback', allowedRoles: ['superadmin', 'manager'] },
       { label: '账号注销', icon: 'users', path: '/account-deletion', superadminOnly: true },
     ],
   },
@@ -181,12 +181,12 @@ export default function Layout() {
   }, [activeSection, activeGroup, loc.pathname])
 
   useEffect(() => {
-    if (admin?.role === 'platformSuper' || admin?.tenantStatus === 'setup') return
+    if (!['superadmin', 'manager'].includes(admin?.role) || admin?.tenantStatus === 'setup') return
     let cancelled = false
     const loadPending = async () => {
       try {
         const res = await adminAPI.feedbackList({ status: 'pending' })
-        if (!cancelled) setPendingFeedback((res.data || []).length)
+        if (!cancelled) setPendingFeedback(res.total ?? (res.data || []).length)
       } catch { /* 徽标加载失败不影响导航 */ }
     }
     loadPending()

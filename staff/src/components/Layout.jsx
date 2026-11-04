@@ -33,6 +33,7 @@ const ALL_NAV = [
   { label: '运营看板',     icon: 'operations', path: '/operations', roles: ['superadmin','manager'],                                                            moduleKey: 'operations' },
   { label: '日常健康数据', icon: 'checkin', path: '/daily-checkin', roles: [], moduleKey: 'daily_checkin' },
   { label: '消息通知',     icon: 'notifications', path: '/notifications', roles: [] },
+  { label: '分派给我的反馈', icon: 'notifications', path: '/feedback', roles: [] },
   { label: '个人中心',     icon: 'profile', path: '/profile',       roles: [] },
 ]
 
@@ -40,7 +41,7 @@ const PRIMARY_NAV_PATHS = ['/home', '/service-assistant', '/patients', '/notific
 const NAV_GROUPS = [
   { id: 'care', label: '会员服务', paths: ['/followups', '/plans', '/reports', '/service-records', '/expert-consultations', '/daily-checkin'] },
   { id: 'resources', label: '资源与推送', paths: ['/medical-resource-knowledge', '/specialty-library', '/knowledge', '/questionnaires', '/products', '/inventory'] },
-  { id: 'operations', label: '运营协作', paths: ['/commission', '/marketing', '/visitor-leads', '/team', '/availability', '/operations'] },
+  { id: 'operations', label: '运营协作', paths: ['/feedback', '/commission', '/marketing', '/visitor-leads', '/team', '/availability', '/operations'] },
 ]
 
 const isCurrentPath = (currentPath, path) => currentPath === path || currentPath.startsWith(path + '/')

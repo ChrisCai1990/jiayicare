@@ -241,8 +241,9 @@ export const adminAPI = {
 
   // 用户反馈（共用后端 /api/feedback，非 /api/admin 前缀）
   feedbackList:  (params = {}) => reqRoot('/feedback?' + new URLSearchParams(params).toString()),
-  replyFeedback: (id, reply)   => reqRoot(`/feedback/${id}`, { method: 'PATCH', body: JSON.stringify({ reply }) }),
-  resolveFeedback: (id)        => reqRoot(`/feedback/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'resolved' }) }),
+  feedbackAssignees: () => reqRoot('/feedback/assignees'),
+  assignFeedback: (id, data) => reqRoot(`/feedback/${id}/assign`, { method: 'POST', body: JSON.stringify(data) }),
+  replyFeedback: (id, reply, version) => reqRoot(`/feedback/${id}`, { method: 'PATCH', body: JSON.stringify({ reply, version }) }),
 
   // 企业客户管理（B2B2C）
   enterprises:            (params = {}) => req('/enterprises?' + new URLSearchParams(params).toString()),

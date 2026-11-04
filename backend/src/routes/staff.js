@@ -16460,6 +16460,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }).populate('patientId', 'name isDeleted').lean();
     todos.push(...require('../utils/consultationTodos').consultationTodos(consultationRows, req.staff));
     todos.push(...await require('../utils/workbenchAssignmentAttention').loadAssignmentAttention(req.staff));
+    todos.push(...await require('../utils/feedbackWorkflow').loadTodos(req.staff));
     const scopedTodos = todos.filter(todo => visibleTodo(todo, req.staff, inMyScope));
 
     // 按优先级排序：priority越小越紧急，同级按时间倒序；超时优先

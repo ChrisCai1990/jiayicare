@@ -39,6 +39,7 @@ import AvailabilityPage from './pages/AvailabilityPage'
 import ExpertConsultationsPage from './pages/ExpertConsultationsPage'
 import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
+import FeedbackPage from './pages/FeedbackPage'
 import MarketingPage from './pages/MarketingPage'
 import VisitorLeadsPage from './pages/VisitorLeadsPage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
@@ -246,6 +247,7 @@ export default function App() {
               <Route path="expert-consultations" element={<ExpertConsultationsPage />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="feedback" element={<FeedbackPage />} />
               <Route path="marketing" element={<MarketingPage />} />
               <Route path="visitor-leads" element={<VisitorLeadsPage />} />
               <Route path="daily-checkin" element={<DailyCheckinPage />} />

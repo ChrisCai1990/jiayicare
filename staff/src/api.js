@@ -98,6 +98,8 @@ export const serviceGroupAPI = {
 }
 
 export const staffAPI = {
+  getAssignedFeedback: (params = {}) => req('/feedback/assigned?' + new URLSearchParams(params)),
+  submitFeedbackResult: (id, data) => req(`/feedback/${id}/result`, { method: 'POST', body: JSON.stringify(data) }),
   expertConsultationCases: () => req('/expert-consultations/staff'),
   createExpertConsultation: data => req('/expert-consultations/staff', { method: 'POST', body: JSON.stringify(data) }),
   expertConsultationExperts: () => req('/expert-consultations/staff/experts'),

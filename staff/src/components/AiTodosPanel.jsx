@@ -10,6 +10,7 @@ import CheckupHandoffTodoModal from './CheckupHandoffTodoModal'
 import HealthRiskTodoModal from './HealthRiskTodoModal'
 
 const TYPE_CONFIG = {
+  feedback_assigned: { icon: '📮', label: '用户反馈待处理', color: '#1E6B50', priority: 2 },
   expert_consultation_task: { icon: '📅', label: '专家咨询与 MDT 待办', color: '#0077B6', priority: 2 },
   package_history_review: { icon: '🎫', label: '服务包历史次数待核对', color: '#B45309', priority: 2 },
   annual_execution_review: { icon: '📋', label: '方案修订·执行安排待核对', color: '#D97706', priority: 2 },
@@ -78,6 +79,7 @@ function formatTime(date) {
 const PAGE_SIZE = 5
 const TODO_GROUPS = [
   { key: 'all', label: '全部' },
+  { key: 'feedback', label: '用户反馈', types: ['feedback_assigned'] },
   { key: 'consultation', label: '专家咨询预约', types: ['expert_consultation_task'] },
   { key: 'report', label: '报告与资料', types: ['chat_image_review','report_parse','report_review','outpatient_target_review','report_interpretation','report_followup_review','health_course_review','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['annual_execution_review','annual_plan_input_review','annual_plan_customer_response','lifestyle_generate','trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
