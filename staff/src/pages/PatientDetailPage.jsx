@@ -5280,7 +5280,7 @@ export default function PatientDetailPage() {
 
       </details>
 
-      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={user.phaseAssessmentEnabled === true} />
+      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps.filter(task => task.serviceExecutionVisible !== false)} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={user.phaseAssessmentEnabled === true} />
 
       {user.initialArchiveImportPending && <div className="card" style={{padding:16,marginBottom:16}}>初次问卷已保存，档案写入待重试。<button className="btn btn-primary btn-sm" disabled={archiveBusy} onClick={async () => {setArchiveBusy(true);try{await staffAPI.retryInitialArchive(id);await load()}catch(err){toast(err.message)}finally{setArchiveBusy(false)}}}>重新写入初次档案</button></div>}
       {/* Tabs */}
@@ -10465,7 +10465,7 @@ export default function PatientDetailPage() {
         {staff?.role === 'healthManager' && <CheckupProgressPanel taskMode patientId={id} />}
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div><div className="card-title">服务执行任务</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>承接方案生成的营养、监测、体检复查、就医协助、专病管理及沟通任务；随访只是执行方式之一</div></div>
+            <div><div className="card-title">服务执行任务</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>仅展示派发给客户的执行任务；内部审核和岗位待办请在工作台处理</div></div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('followup')}>✨ AI随访建议</button>
               <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('coach')}>✨ AI教练消息</button>
@@ -10518,7 +10518,7 @@ export default function PatientDetailPage() {
                 && serviceGroupKey(candidate) === serviceGroupKey(task)
                 && candidate.status === 'completed'
                 && (candidate.sourceOrderId?.status === 'completed' || candidate.sourceHealthPlanId?.status === 'completed'))
-            const visibleFollowUps = followUps.filter(task => !isSupersededDuplicateServiceTask(task) && !isCancelledStageOfCompletedService(task))
+            const visibleFollowUps = followUps.filter(task => task.serviceExecutionVisible !== false && !isSupersededDuplicateServiceTask(task) && !isCancelledStageOfCompletedService(task))
             const EXECUTION_CATEGORIES = [
               ['all', '全部任务'], ['nutrition', '营养干预'], ['monitoring', '健康监测'],
               ['checkup', '体检与复查'], ['medical', '就医协助'], ['insurance', '保险服务'], ['supply', '配药与营养补充'], ['disease', '专病管理'], ['communication', '客户沟通'],

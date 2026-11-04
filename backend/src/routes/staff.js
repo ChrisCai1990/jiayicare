@@ -2253,6 +2253,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
     data: {
       followUps: followUps.map(followUp => ({
         ...withSignedServiceChecklist(followUp),
+        serviceExecutionVisible: require('../utils/customerServiceExecutionTask').isCustomerServiceExecutionTask(followUp),
         annualVisitItems: require('../utils/annualManagedVisitHandoff').handoffForTask(followUp, annualVisitHandoffs),
         taskRequirements: followUpTaskRequirements(followUp),
         taskPurposes: followUpTaskPurposes(followUp),
