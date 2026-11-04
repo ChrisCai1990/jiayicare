@@ -15760,21 +15760,39 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         _id: { $in: reportFollowUpReviews.map(task => task.sourceId).filter(Boolean) },
       }).select('_id purpose title').lean();
       const reviewDraftById = new Map(reviewDrafts.map(draft => [String(draft._id), draft]));
+      const annualReviewByPatient = new Map();
       reportFollowUpReviews.forEach(task => {
         if (!inMyScope(task.patientId?._id)) return;
         const createdAt = task.createdAt || now;
         const draft = reviewDraftById.get(String(task.sourceId));
         const annualInput = draft?.purpose === 'annual_report_input';
+        if (annualInput) {
+          const patientId = String(task.patientId?._id || '');
+          if (!patientId) return;
+          if (!annualReviewByPatient.has(patientId)) annualReviewByPatient.set(patientId, []);
+          annualReviewByPatient.get(patientId).push({ task, draft, createdAt });
+          return;
+        }
         todos.push({
           id: 'reportfollowup_' + task._id,
-          type: annualInput ? 'annual_plan_input_review' : 'report_followup_review',
-          label: annualInput ? '年度方案待审核' : '报告随访草稿待审核', priority: 2,
+          type: 'report_followup_review',
+          label: '报告随访草稿待审核', priority: 2,
           patientName: task.patientId?.name || '未知', patientId: String(task.patientId?._id || ''),
-          summary: annualInput
-            ? `${draft.title || '报告问题及建议'} · 请审核报告问题及建议，确认后用于年度方案制定`
-            : `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
+          summary: `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${task.patientId?._id}/annual-health?reviewDraftId=${task.sourceId}#report-followup-drafts`,
+        });
+      });
+      annualReviewByPatient.forEach((items, patientId) => {
+        const titles = [...new Set(items.map(({ draft }) => draft.title || '报告问题及建议'))];
+        const createdAt = items.reduce((oldest, item) => new Date(item.createdAt) < new Date(oldest) ? item.createdAt : oldest, items[0].createdAt);
+        todos.push({
+          id: 'annualplaninput_patient_' + patientId,
+          type: 'annual_plan_input_review', label: '年度方案待审核', priority: 2,
+          patientName: items[0].task.patientId?.name || '未知', patientId,
+          summary: `${items.length} 类报告问题及建议待审核 · ${titles.slice(0, 3).join('、')}${titles.length > 3 ? '等' : ''}`,
+          createdAt, overdue: items.some(item => (now - new Date(item.createdAt)) > DAY),
+          link: `/patients/${patientId}/annual-health?reviewAnnualInputs=1#report-followup-drafts`,
         });
       });
     }
