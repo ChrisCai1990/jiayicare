@@ -20,6 +20,7 @@ const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements, followUpTaskPurposes } = require('../utils/medicalAssistRequirements');
 const { normalizeOutpatientConsultations, consultationRequirementLines } = require('../utils/outpatientConsultations');
+const { applyOutpatientModules, loadOutpatientModules } = require('../utils/outpatientWorkflowSource');
 const { advanceCheckupTask, isCheckupService, onCheckupReportAudited, stageForScheme } = require('../utils/checkupOneStopFlow');
 const { ensureStaffInitiatedCheckupService } = require('../utils/checkupServiceInstance');
 const { generateCompactMedicalAssistPurposes } = require('../utils/medicalAssistPurposeDraft');
@@ -2806,6 +2807,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       || await Order.exists({ _id: followUp.sourceOrderId, serviceName: '企业家健康决策计划' })))
     return res.status(409).json({ success: false, message: '请在企业家健康决策计划的岗位流程中办理，不能通过普通随访编辑' });
   if (followUp.workflowKey === 'medical_assist:closure') return res.status(409).json({ success: false, message: '请通过健康规划师确认结案入口处理' });
+  if (followUp.workflowKey === 'system:outpatient_initial_assignment') return res.status(409).json({ success: false, message: '请在健康规划师工作台指定资料收集负责人' });
   if (String(followUp.workflowKey || '').startsWith('rehab:')) return res.status(409).json({success:false,message:'请在运动管理中安排预约或发布服务记录，完成后自动更新本任务'});
   const planReviewPatient = followUpReview.postVisit(followUp) && followUp.aiStatus === 'pending' ? await User.findById(followUp.patientId).select('assignedFamilyDoctor assignedHealthManager').lean() : null;
   if (planReviewPatient && ['in_progress', 'completed'].includes(req.body.status)) return res.status(409).json({ success: false, message: '请先由健康顾问审核随访计划，再执行随访' });
@@ -3987,6 +3989,7 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
         planContent = { ...planContent, hospital: planContent.hospital.trim(), consultations,
           department: consultations.map(row => row.department).join('、'),
           expert: consultations.map(row => row.expert).filter(Boolean).join('、') };
+        planContent = applyOutpatientModules(planContent, await loadOutpatientModules(Product, FollowUpPlan, req.staff.tenantId));
       } catch (err) { return res.status(400).json({ success: false, message: err.message }); }
     }
     try { planContent = { ...planContent, resourceReferences: await freezeMedicalResourceReferences(planContent.resourceReferences) }; }
@@ -4685,7 +4688,7 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
       ? c.escortStaffId
       : null;
   const deferOutpatientAssistant = options.deferMedicalAssistantAssignment && workflowPlan.executorRole === 'medicalAssistant';
-  const executorAssignee = deferOutpatientAssistant ? null : agencyService ? patient?.assignedHealthManager : (explicitCheckupAssignee || resolveAssignee(workflowPlan.executorRole, selectedAssistantId));
+  const executorAssignee = options.deferInitialAssignment || deferOutpatientAssistant ? null : agencyService ? patient?.assignedHealthManager : (explicitCheckupAssignee || resolveAssignee(workflowPlan.executorRole, selectedAssistantId));
   const supervisorAssignee = selectedSupervisorId;
   const previousGate = options.dependsOnTaskId
     ? await FollowUp.findById(options.dependsOnTaskId).select('status').lean()
@@ -4745,6 +4748,44 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
   }
   return executorTask;
 }
+
+async function ensureOutpatientInitialAssignmentTask(plan, patient) {
+  return FollowUp.findOneAndUpdate(
+    { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey: 'system:outpatient_initial_assignment' },
+    { $setOnInsert: {
+      patientId: plan.patientId, staffId: plan.staffId, assignedTo: patient.assignedHealthPlanner,
+      tenantId: plan.tenantId || patient.tenantId || null, clientVisible: false,
+      date: new Date(), remindAt: new Date(), type: 'other', status: 'planned',
+      coordinationGroupId: `medical-assist:${plan._id}`, taskRole: 'executor', workflowKey: 'system:outpatient_initial_assignment', sourceType: 'health_plan',
+      theme: `门诊一站式：接收服务并分配资料收集负责人 · ${plan.title || ''}`,
+      content: '健康顾问已提交服务方案；请由健康规划师指定负责资料收集与核对的健管专员。',
+      plannedContent: '指定本次资料收集与核对的健管专员后，任务进入该专员工作台。',
+    } }, { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+}
+
+router.patch('/plans/:id/outpatient-initial-assignment', staffAuth, async (req, res) => {
+  try {
+    if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康规划师可分配门诊资料收集任务' });
+    const plan = await HealthPlan.findOne({ _id: req.params.id, type: 'medical_assist', status: 'active' }).select('patientId supervisorId title content').lean();
+    if (!plan || !/门诊一站式/.test(`${plan.content?.templateName || ''} ${plan.title || ''}`)) return res.status(404).json({ success: false, message: '门诊服务方案不存在' });
+    if (req.staff.role !== 'superadmin' && String(plan.supervisorId || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '该服务未分配给当前健康规划师' });
+    const manager = await Admin.findOne({ _id: req.body.managerId, role: 'healthManager', staffStatus: 'active', tenantId: req.staff.tenantId }).select('_id name').lean();
+    if (!manager) return res.status(400).json({ success: false, message: '请选择本机构有效的健管专员' });
+    const assignment = await FollowUp.findOne({ sourceHealthPlanId: plan._id, workflowKey: 'system:outpatient_initial_assignment', taskRole: 'executor', status: 'planned', assignedTo: plan.supervisorId }).select('_id').lean();
+    if (!assignment) return res.status(409).json({ success: false, message: '分配任务已处理，请刷新服务任务' });
+    const firstWorkflowId = String(plan.content?.followUpPlans?.[0]?.id || '');
+    const first = await FollowUpPlan.findById(firstWorkflowId).select('name executorRole').lean();
+    if (!first || first.executorRole !== 'healthManager' || !/资料收集与核对/.test(first.name || '')) return res.status(409).json({ success: false, message: '门诊资料收集节点配置不正确' });
+    const now = new Date();
+    const execution = await FollowUp.findOneAndUpdate({ sourceHealthPlanId: plan._id, workflowKey: firstWorkflowId, taskRole: 'executor', status: 'planned', dependsOnTaskId: assignment._id, assignedTo: { $in: [null, manager._id] } },
+      { $set: { assignedTo: manager._id, isBlocked: false, activationEvent: '', date: now, remindAt: now, nextFollowUpDate: now } }, { new: true });
+    if (!execution) return res.status(409).json({ success: false, message: '资料收集任务已由其他人接收或状态发生变化，请刷新' });
+    const completed = await FollowUp.updateOne({ _id: assignment._id, status: 'planned' }, { $set: { status: 'completed', completedAt: now, completedBy: req.staff._id, formData: { managerId: manager._id, managerName: manager.name, assignedAt: now } } });
+    if (completed.modifiedCount !== 1) return res.status(409).json({ success: false, message: '分配状态发生变化，请刷新服务任务' });
+    res.json({ success: true, data: { executionTaskId: execution._id, managerName: manager.name } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 
 
 // PATCH /api/staff/plans/:id/push — 推送方案至客户端
@@ -4915,13 +4956,19 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
         { $set: { workflowKey: String(fixedWorkflowPlans[0]._id) } }
       );
     }
-    const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
+    const patient = await User.findById(plan.patientId).select('tenantId assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
     // 普通单次服务合并为一组任务；门诊一站式按完整阶段分别建任务。
     if (primaryWorkflowPlan) {
       const workflowPlansToCreate = isMultiStageService ? fixedWorkflowPlans : [primaryWorkflowPlan];
       let previousGateId = null;
-      for (const workflowPlan of workflowPlansToCreate) {
-        const gate = await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient, dependsOnTaskId: previousGateId, returnGate: isMultiStageService, deferMedicalAssistantAssignment: isOutpatientOneStop });
+      if (isOutpatientOneStop) {
+        if (!/资料收集与核对/.test(workflowPlansToCreate[0]?.name || '') || workflowPlansToCreate[0]?.executorRole !== 'healthManager')
+          return res.status(409).json({ success: false, message: '门诊服务首个岗位节点配置不正确，请联系管理员核对' });
+        const assignmentTask = await ensureOutpatientInitialAssignmentTask(plan, patient);
+        previousGateId = assignmentTask._id;
+      }
+      for (const [index, workflowPlan] of workflowPlansToCreate.entries()) {
+        const gate = await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient, dependsOnTaskId: previousGateId, returnGate: isMultiStageService, deferMedicalAssistantAssignment: isOutpatientOneStop, deferInitialAssignment: isOutpatientOneStop && index === 0 });
         previousGateId = isMultiStageService ? gate?._id : null;
       }
       const primaryWorkflowKey = String(primaryWorkflowPlan._id);
@@ -6878,6 +6925,11 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
       if (!current || new Date(tpl.updatedAt || 0) > new Date(current.updatedAt || 0)) uniqueTemplates.set(key, tpl);
     });
     templates = [...uniqueTemplates.values()];
+    if (type === 'medical_assist' && templates.some(tpl => /门诊一站式/.test(tpl.name || ''))) {
+      const modules = await loadOutpatientModules(Product, FollowUpPlan, req.staff.tenantId);
+      templates = templates.map(tpl => /门诊一站式/.test(tpl.name || '')
+        ? { ...tpl, content: applyOutpatientModules(tpl.content || {}, modules) } : tpl);
+    }
     res.json({ success: true, data: templates });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -20005,4 +20057,6 @@ router.post('/patients/:id/mdt-packets/:packetId/organize', staffAuth, async (re
 
 require('./rehab')(router, { staffAuth, getVisiblePlanPatientIds, checkPermission });
 router.syncScreeningItems = syncScreeningItems;
+router.ensureOutpatientInitialAssignmentTask = ensureOutpatientInitialAssignmentTask;
+router.upsertMedicalAssistModuleTasks = upsertMedicalAssistModuleTasks;
 module.exports = router;

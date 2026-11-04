@@ -62,6 +62,11 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const nav = useNavigate()
   const { staff } = useStaff()
   const [dispatchTask, setDispatchTask] = useState(null)
+  const [initialAssignment, setInitialAssignment] = useState(null)
+  const [managerOptions, setManagerOptions] = useState([])
+  const [managerId, setManagerId] = useState('')
+  const [assignmentError, setAssignmentError] = useState('')
+  const [assignmentBusy, setAssignmentBusy] = useState(false)
   const [items, setItems] = useState([])
   const [loadError, setLoadError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -172,6 +177,16 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
+    if (task.workflowKey === 'system:outpatient_initial_assignment') {
+      setInitialAssignment(task)
+      setManagerId('')
+      setAssignmentError('')
+      try {
+        const response = await staffAPI.getStaffList({ roles: 'healthManager', pageSize: 500 })
+        setManagerOptions((response.data || []).filter(person => person.role === 'healthManager' && person.staffStatus !== 'inactive'))
+      } catch (error) { setAssignmentError(error.message || '健管专员列表加载失败') }
+      return
+    }
     if (task.workflowKey === 'medical_assist:closure') return
     if (String(task.workflowKey || '').startsWith('rehab:') || task.sourceOrderId?.serviceWorkflowSnapshot?.key === 'rehab') {
       nav(`/patients/${task.patientId?._id || task.patientId}?tab=plans&serviceView=rehab`)
@@ -342,6 +357,21 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         <div className="modal-header"><h3>{dispatchTask.feedbackReview ? '核实客户就医反馈' : dispatchTask.formData?.careFlowMode==='reminder' ? '就医提醒 · 资料与随访审核' : dispatchTask.careFlowId ? '就医协助 · 当前事项' : annualDispatch.isExecution(dispatchTask) ? '就医协助 · 办理记录' : '就医协助 · 派单安排'}</h3><button className="modal-close" onClick={() => setDispatchTask(null)}>×</button></div>
         <div className="modal-body"><AnnualDispatchCard key={dispatchTask._id} task={dispatchTask} staff={staff} onLinked={updated => { setDispatchTask(updated); staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 }).then(r => setItems(r.data || [])) }} /></div>
         <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setDispatchTask(null)}>返回工作台</button></div>
+      </div></div>}
+      {initialAssignment && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 520 }}>
+        <div className="modal-header"><h3>接收门诊一站式服务并分配负责人</h3><button className="modal-close" onClick={() => setInitialAssignment(null)}>×</button></div>
+        <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+          <div>健康顾问已提交{initialAssignment.patientId?.name || '客户'}的服务方案。请指定本次“资料收集与核对”的健管专员，确认后任务进入该专员工作台。</div>
+          <label className="form-group"><span className="form-label">资料收集负责人 *</span><select className="form-input" value={managerId} onChange={event => setManagerId(event.target.value)}><option value="">请选择健管专员</option>{managerOptions.map(person => <option key={person._id} value={person._id}>{person.name}</option>)}</select></label>
+          {assignmentError && <div role="alert" style={{ color: '#B42318' }}>{assignmentError}</div>}
+        </div>
+        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setInitialAssignment(null)}>取消</button><button className="btn btn-primary" disabled={!managerId || assignmentBusy} onClick={async () => {
+          const planId = initialAssignment.sourceHealthPlanId?._id || initialAssignment.sourceHealthPlanId
+          setAssignmentBusy(true); setAssignmentError('')
+          try { await staffAPI.assignOutpatientInitialManager(planId, managerId); await refreshTasks(); setInitialAssignment(null) }
+          catch (error) { setAssignmentError(error.message || '分配失败，请刷新后重试') }
+          finally { setAssignmentBusy(false) }
+        }}>{assignmentBusy ? '分配中…' : '确认分配'}</button></div>
       </div></div>}
     </div>
   )

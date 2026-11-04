@@ -201,6 +201,7 @@ export const staffAPI = {
   // Follow-ups
   getFollowUps:        (p = {}) => req('/staff/followups?' + qs(p)),
   getServiceTasks:     (p = {}) => req('/staff/service-tasks?' + qs(p)),
+  assignOutpatientInitialManager: (planId, managerId) => req(`/staff/plans/${planId}/outpatient-initial-assignment`, { method: 'PATCH', body: JSON.stringify({ managerId }) }),
   getNutritionAssessmentConfig: () => req('/staff/nutrition-assessments/config'),
   getNutritionAssessments: (p = {}) => req('/staff/nutrition-assessments?' + qs(p)),
   getNutritionAssessmentEligibleOrders: (patientId) => req('/staff/nutrition-assessments/eligible-orders?' + qs({ patientId })),
