@@ -341,6 +341,7 @@ export const staffAPI = {
   archiveReportOnly: (id, sourceReportId) => req(`/staff/medical-reports/${id}/archive-only`, { method: 'PATCH', body: JSON.stringify({ sourceReportId }) }),
   markDuplicateReport: (id, sourceReportId, reason) => req(`/staff/medical-reports/${id}/duplicate`, { method: 'PATCH', body: JSON.stringify({ sourceReportId, reason }) }),
   returnReportToManager: (id, reason) => req(`/staff/medical-reports/${id}/advisor-return`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
+  confirmReportInterpretation: id => req(`/staff/medical-reports/${id}/advisor-confirm`, { method: 'PATCH' }),
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
   updateReportPageDate: (id, page, date) => req(`/staff/medical-reports/${id}/page-dates/${page}`, { method: 'PATCH', body: JSON.stringify({ date }) }),
   updateReportItem: (id, itemId, d) => req(`/staff/medical-reports/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),

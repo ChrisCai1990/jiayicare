@@ -6510,7 +6510,7 @@ router.patch('/medical-reports/:id/advisor-return', staffAuth, async (req, res) 
     const now = new Date();
     const history = Array.isArray(report.advisorCorrection?.history) ? report.advisorCorrection.history : [];
     const correction = { status: 'returned', reason, returnedAt: now, returnedBy: req.staff._id, returnedByName: req.staff.name, assignedTo: patient.assignedHealthManager || null, history: [...history, { reason, returnedAt: now, returnedBy: req.staff._id, returnedByName: req.staff.name }] };
-    const changed = await MedicalReport.updateOne({ _id: report._id, audit_status: 'audited', reviewRevision: reviewRevisionMatch(report.reviewRevision), archiveOnly: { $ne: true } }, { $set: { audit_status: 'unaudited', aiStatus: 'pending', ...(report.status === 'analyzed' ? { status: 'pending' } : {}), advisorCorrection: correction, familyDoctorViewedAt: null, familyDoctorViewedBy: null }, $inc: { reviewRevision: 1 } });
+    const changed = await MedicalReport.updateOne({ _id: report._id, audit_status: 'audited', reviewRevision: reviewRevisionMatch(report.reviewRevision), archiveOnly: { $ne: true } }, { $set: { audit_status: 'unaudited', aiStatus: 'pending', ...(report.status === 'analyzed' ? { status: 'pending' } : {}), advisorCorrection: correction, familyDoctorViewedAt: null, familyDoctorViewedBy: null, advisorInterpretationConfirmedAt: null, advisorInterpretationConfirmedBy: null }, $inc: { reviewRevision: 1 } });
     if (!changed.modifiedCount) return res.status(409).json({ success: false, message: '报告已被修改，请刷新' });
     // 专项筛查项目由原报告派生；补正期间撤出，重审时原同步器按报告ID恢复。
     await UserScreeningItem.deleteMany({ user: report.user, reportId: report._id });
@@ -6636,25 +6636,35 @@ router.get('/patients/:id/reports/pending-doctor-audit', staffAuth, async (req, 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// PATCH /api/staff/medical-reports/:id/family-doctor-view — 健康顾问点开单份报告查看时调用，
-// 立即持久化"已查看"，不依赖最后一次性的"确认已查看"整体动作，避免中途退出后进度丢失
+// PATCH /api/staff/medical-reports/:id/family-doctor-view — 仅记录已查看，不完成解读任务。
 router.patch('/medical-reports/:id/family-doctor-view', staffAuth, async (req, res) => {
   try {
     if (req.staff.role !== 'familyDoctor' && req.staff.role !== 'superadmin') {
       return res.status(403).json({ success: false, message: '仅健康顾问可标记查看' });
     }
     const update = { familyDoctorViewedAt: new Date(), familyDoctorViewedBy: req.staff._id };
-    // 联动用户端"待解读/已解读"状态：此前 status 字段从未被任何动作驱动过，一直卡死在默认值
-    // 'pending'（待解读）。这里健康顾问查看即联动置为已解读，但只在当前仍是初始"待解读"状态时
-    // 才覆盖——如果已经是 normal/abnormal 这类真实临床结果状态，不应该被这次查看动作覆盖掉。
     const report = await MedicalReport.findById(req.params.id).select('status audit_status archiveOnly');
     if (!report || report.audit_status !== 'audited' || report.archiveOnly) return res.status(409).json({ success: false, message: '报告尚未完成审核' });
-    if (report && report.status === 'pending') {
-      update.status = 'analyzed';
-    }
     await MedicalReport.updateOne({ _id: req.params.id, audit_status: 'audited', archiveOnly: { $ne: true } }, { $set: update });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/medical-reports/:id/advisor-confirm', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认报告' });
+    const report = await MedicalReport.findById(req.params.id).select('user status audit_status archiveOnly reviewRevision advisorCorrection advisorInterpretationConfirmedAt');
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const patient = await User.findById(report.user).select('tenantId assignedFamilyDoctor').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+    if (req.staff.role !== 'superadmin' && (String(patient.tenantId || '') !== String(req.staff.tenantId || '') || String(patient.assignedFamilyDoctor || '') !== String(req.staff._id))) return res.status(403).json({ success: false, message: '仅客户所属健康顾问可确认' });
+    if (report.audit_status !== 'audited' || report.archiveOnly || report.advisorCorrection?.status === 'returned') return res.status(409).json({ success: false, message: '报告审核状态已变化，请刷新' });
+    if (report.advisorInterpretationConfirmedAt) return res.json({ success: true, alreadyConfirmed: true });
+    const now = new Date();
+    const changed = await MedicalReport.updateOne({ _id: report._id, audit_status: 'audited', archiveOnly: { $ne: true }, advisorInterpretationConfirmedAt: null, reviewRevision: reviewRevisionMatch(report.reviewRevision) }, { $set: { advisorInterpretationConfirmedAt: now, advisorInterpretationConfirmedBy: req.staff._id, familyDoctorViewedAt: now, familyDoctorViewedBy: req.staff._id, ...(report.status === 'pending' ? { status: 'analyzed' } : {}) } });
+    if (!changed.modifiedCount) return res.status(409).json({ success: false, message: '报告已被修改，请刷新后确认' });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
 // GET /api/staff/patients/:id/screening-yearly-summary?year=2026 — 专项筛查年度小结（肿瘤/
@@ -6699,17 +6709,6 @@ router.post('/patients/:id/archive-review', staffAuth, checkPermission('patients
         archiveReviewedByName: req.staff.name || req.staff.username || '',
         archiveReviewSnapshotAt: snapshotAt,
       } }
-    );
-    // “确认已查看健康档案”即健康顾问完成本轮确认；同步关闭用户端报告的“待解读”状态。
-    // 单份点开接口也会即时同步，这里批量兜底兼容在该联动规则上线前已经确认过的历史报告。
-    await MedicalReport.updateMany(
-      {
-        user: new mongoose.Types.ObjectId(req.params.id),
-        audit_status: 'audited',
-        status: 'pending',
-        createdAt: { $lte: snapshotAt },
-      },
-      { $set: { status: 'analyzed' } },
     );
     res.json({ success: true, message: '已确认查看健康档案' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -15762,12 +15761,12 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // 健管专员确认解析结果后，责任才转交健康顾问做报告解读。此前这里只在客户详情页
     // 被动提示，健康顾问工作台没有任务，容易造成审核后的报告无人接手。按单份报告生成
-    // 待解读项；健康顾问点开报告后 familyDoctorViewedAt 会落库，该项随即从工作台消失。
+    // 待解读项按客户归并；只有顾问明确确认后才退出工作台。
     if (can('report_interpretation')) {
       const interpretationFilter = {
         audit_status: 'audited',
         status: 'pending',
-        familyDoctorViewedAt: null,
+        advisorInterpretationConfirmedAt: null,
         // 处方/医嘱已经由“用药信息审核”闭环，不再作为体检报告解读或随访的第二入口。
         documentCategory: { $ne: 'prescription_order' },
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
@@ -15777,15 +15776,24 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const reportRiskIds = new Set((await require('../models/HealthRiskEvent').find({
         sourceType: 'medical_report', status: 'pending', sourceId: { $in: reportsToInterpret.map(report => report._id) },
       }).select('sourceId').lean()).map(event => String(event.sourceId)));
+      const reportsByPatient = new Map();
       reportsToInterpret.forEach(r => {
         if (reportRiskIds.has(String(r._id))) return;
+        const patientId = String(r.user?._id || '');
+        if (!patientId) return;
+        if (!reportsByPatient.has(patientId)) reportsByPatient.set(patientId, []);
+        reportsByPatient.get(patientId).push(r);
+      });
+      reportsByPatient.forEach((patientReports, patientId) => {
+        const r = patientReports[0];
         const createdAt = r.audited_at || r.updatedAt || r.createdAt;
         todos.push({
-          id: 'reportinterpret_' + r._id, type: 'report_interpretation', label: '体检报告待解读', priority: 2,
-          patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: `${r.title} · 健管专员已审核，请查看并向客户解读`,
-          createdAt, overdue: (now - new Date(createdAt)) > DAY,
-          link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
+          id: 'reportinterpret_patient_' + patientId, type: 'report_interpretation', label: '体检报告待解读', priority: 2,
+          patientName: r.user?.name || '未知', patientId,
+          summary: `${patientReports.length} 份报告待确认 · ${patientReports.slice(0, 3).map(item => item.title || '未命名报告').join('、')}${patientReports.length > 3 ? '等' : ''}`,
+          createdAt: patientReports.reduce((oldest, item) => { const date = item.audited_at || item.updatedAt || item.createdAt; return new Date(date) < new Date(oldest) ? date : oldest; }, createdAt),
+          overdue: patientReports.some(item => (now - new Date(item.audited_at || item.updatedAt || item.createdAt)) > DAY),
+          link: `/patients/${patientId}?tab=reports&reportId=${r._id}`,
         });
       });
     }
@@ -15804,21 +15812,39 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         _id: { $in: reportFollowUpReviews.map(task => task.sourceId).filter(Boolean) },
       }).select('_id purpose title').lean();
       const reviewDraftById = new Map(reviewDrafts.map(draft => [String(draft._id), draft]));
+      const annualReviewByPatient = new Map();
       reportFollowUpReviews.forEach(task => {
         if (!inMyScope(task.patientId?._id)) return;
         const createdAt = task.createdAt || now;
         const draft = reviewDraftById.get(String(task.sourceId));
         const annualInput = draft?.purpose === 'annual_report_input';
+        if (annualInput) {
+          const patientId = String(task.patientId?._id || '');
+          if (!patientId) return;
+          if (!annualReviewByPatient.has(patientId)) annualReviewByPatient.set(patientId, []);
+          annualReviewByPatient.get(patientId).push({ task, draft, createdAt });
+          return;
+        }
         todos.push({
           id: 'reportfollowup_' + task._id,
-          type: annualInput ? 'annual_plan_input_review' : 'report_followup_review',
-          label: annualInput ? '年度方案待审核' : '报告随访草稿待审核', priority: 2,
+          type: 'report_followup_review',
+          label: '报告随访草稿待审核', priority: 2,
           patientName: task.patientId?.name || '未知', patientId: String(task.patientId?._id || ''),
-          summary: annualInput
-            ? `${draft.title || '报告问题及建议'} · 请审核报告问题及建议，确认后用于年度方案制定`
-            : `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
+          summary: `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${task.patientId?._id}/annual-health?reviewDraftId=${task.sourceId}#report-followup-drafts`,
+        });
+      });
+      annualReviewByPatient.forEach((items, patientId) => {
+        const titles = [...new Set(items.map(({ draft }) => draft.title || '报告问题及建议'))];
+        const createdAt = items.reduce((oldest, item) => new Date(item.createdAt) < new Date(oldest) ? item.createdAt : oldest, items[0].createdAt);
+        todos.push({
+          id: 'annualplaninput_patient_' + patientId,
+          type: 'annual_plan_input_review', label: '年度方案待审核', priority: 2,
+          patientName: items[0].task.patientId?.name || '未知', patientId,
+          summary: `${items.length} 类报告问题及建议待审核 · ${titles.slice(0, 3).join('、')}${titles.length > 3 ? '等' : ''}`,
+          createdAt, overdue: items.some(item => (now - new Date(item.createdAt)) > DAY),
+          link: `/patients/${patientId}/annual-health?reviewAnnualInputs=1#report-followup-drafts`,
         });
       });
     }
