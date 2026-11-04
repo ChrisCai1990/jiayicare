@@ -1,3 +1,4 @@
+import ReferralRecordCard from '../components/ReferralRecordCard'
 import ConsultationCorrespondence from '../components/ConsultationCorrespondence'
 import ConsultationReadStatus from '../components/ConsultationReadStatus'
 import ReferralScreeningList, { ScreeningResult } from '../components/ReferralScreeningList'
@@ -2220,7 +2221,6 @@ export default function PatientDetailPage() {
   const [referralAssessments, setReferralAssessments] = useState([])
   const [referralAssessmentBusy, setReferralAssessmentBusy] = useState('')
   const [annualDomainDrafts, setAnnualDomainDrafts] = useState({})
-  const [expandedReferralCats, setExpandedReferralCats] = useState({})
   const [reportSearchKw, setReportSearchKw] = useState('')
   const [reportYearFilter, setReportYearFilter] = useState('')
   const [reportDocumentCategory, setReportDocumentCategory] = useState('all')
@@ -11535,13 +11535,12 @@ export default function PatientDetailPage() {
           '健管专员转介':   '#8AA89C',
         }
         const STATUS_LABEL = { pending:'待处理', accepted:'已接受', completed:'已完成', rejected:'已拒绝' }
-        const STATUS_COLOR = { pending:'#D97706', accepted:'#0077B6', completed:'#22A06B', rejected:'#DC3545' }
         const CATS = ['健康顾问转介','专科医师转介','营养师转介','中医师转介','心理咨询师转介','运动复健师转介','就医专员转介','健管专员转介']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         patientReferrals.forEach(r => {
           const role = r.toStaffId?.role
-          const cat = REFERRAL_CAT_MAP[role] || '就医专员转介'
+          const cat = r.referralType === 'external_medical' ? '专科医师转介' : REFERRAL_CAT_MAP[role] || '就医专员转介'
           grouped[cat].push(r)
         })
         Object.values(grouped).forEach(records => records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)))
@@ -11552,35 +11551,17 @@ export default function PatientDetailPage() {
             {patientReferrals.length === 0 && (
               <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无转介记录</div>
             )}
+            <p style={{margin:0,color:'#65776F'}}>共 {patientReferrals.length} 次转介 · 各类按转介时间从新到旧排列，点击单条查看资料与回复。</p>
             {activeCats.map(cat => {
-              const isOpen = !!expandedReferralCats[cat]
               return (
-              <div className="card" key={cat}>
-                <div className="card-header" style={{ cursor: 'pointer', userSelect: 'none' }}
-                  onClick={() => setExpandedReferralCats(prev => ({ ...prev, [cat]: !prev[cat] }))}>
+              <section className="card" key={cat}>
+                <div className="card-header">
                   <div className="card-title" style={{ color: REFERRAL_CAT_COLOR[cat] }}>{cat}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
-                    <span style={{ fontSize: 12, color: '#aaa' }}>{isOpen ? '▲' : '▼'}</span>
-                  </div>
+                  <span style={{color:'#65776F'}}>{grouped[cat].length} 次</span>
                 </div>
-                {isOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                  {grouped[cat].map((r, i) => (
-                    <div key={r._id} style={{ padding: '16px 20px', borderBottom: i < grouped[cat].length - 1 ? '1px solid #f5f2ec' : 'none' }}>
-                      {/* 头部：转介方向 + 状态 + 时间 */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {r.urgency === 'urgent' && (
-                            <span style={{ fontSize: 11, background: '#DC3545', color: '#fff', padding: '1px 8px', borderRadius: 99, fontWeight: 600 }}>紧急</span>
-                          )}
-                          <span style={{ fontWeight: 600, fontSize: 14 }}>{r.reason}</span>
-                          <span style={{ fontSize: 12, color: r.expertConsultationCaseId ? (r.expertConsultationCaseId.status === 'completed' ? '#22A06B' : '#0077B6') : STATUS_COLOR[r.status], fontWeight: 600 }}>· {r.expertConsultationCaseId ? (r.expertConsultationCaseId.status === 'completed' ? '专家咨询已完成' : '专家咨询处理中') : STATUS_LABEL[r.status]}</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-end', fontSize: 12 }}>
-                          <span style={{ color: '#65776F' }}>转介时间：<strong style={{ color: '#33473E' }}>{formatReferralTime(r.createdAt)}</strong></span>
-                          {r.respondedAt && <span style={{ color: '#65776F' }}>回应时间：<strong style={{ color: '#33473E' }}>{formatReferralTime(r.respondedAt)}</strong></span>}
-                        </div>
-                      </div>
+                <div style={{display:'grid',gap:12,padding:16}}>
+                  {grouped[cat].map(r => (
+                    <ReferralRecordCard key={r._id} referral={r}>
                       {/* 转介信息 */}
                       <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
                         发起：<strong>{r.fromStaffId?.name}</strong> → {r.referralType === 'external_medical' ? <>外部专家：<strong>{r.medicalExpertSnapshot?.name}</strong>{r.medicalExpertSnapshot?.title ? `（${r.medicalExpertSnapshot.title}）` : ''}</> : <>接收：<strong>{r.toStaffId?.name}</strong>（{r.toStaffId?.title || REFERRAL_CAT_MAP[r.toStaffId?.role] || r.toStaffId?.role}）</>}
@@ -11645,10 +11626,10 @@ export default function PatientDetailPage() {
                       })()}
                       {r.courseDraftStatus === 'pending_review' && <div style={{ marginTop:10, padding:'10px 12px', background:'#FFF8E8', borderRadius:7, color:'#8A5A00', fontSize:12 }}><div style={{ fontWeight:700, marginBottom:5 }}>健康变化草稿待人工审核</div><div style={{ whiteSpace:'pre-wrap', marginBottom:8 }}>{r.courseDraft?.content}</div><div style={{ display:'flex', gap:8 }}><button className="btn btn-primary btn-sm" onClick={async () => { try { await staffAPI.reviewReferralCourseDraft(r._id,'approve'); toast('已写入健康变化时间轴'); loadPatientReferrals(); load(false) } catch (err) { toast(err.message) } }}>审核通过并写入时间轴</button><button className="btn btn-secondary btn-sm" onClick={async () => { try { await staffAPI.reviewReferralCourseDraft(r._id,'reject'); toast('已退回草稿'); loadPatientReferrals() } catch (err) { toast(err.message) } }}>不采纳</button></div></div>}
                       {r.courseDraftStatus === 'approved' && <div style={{ marginTop:8, color:'#22A06B', fontSize:12 }}>✓ 已由人工审核并写入专病健康变化时间轴</div>}
-                    </div>
+                    </ReferralRecordCard>
                   ))}
-                </div>}
-              </div>
+                </div>
+              </section>
             )})}
           </div>
         )
