@@ -21,7 +21,7 @@ const schema = new mongoose.Schema({
   }],
   supplementUpdatedAt: Date,
   response: {
-    name: String, phone: String, institutionName: String, departmentName: String,
+    name: String, phone: String, contactPhone: String, institutionName: String, departmentName: String,
     title: String, profession: String, education: String, registrationScope: String, experienceYears: Number,
     expertise: [String], unsuitableTopics: String,
     languages: [{ language: String, level: String, _id: false }],
@@ -33,6 +33,8 @@ const schema = new mongoose.Schema({
     scheduleMaintenance: String, recordingPreference: String,
     cooperationNotes: String, privacyAcknowledged: Boolean,
   },
+  contactPhoneChanges: [{ before: String, after: String, updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, updatedByName: String, updatedAt: Date }],
+  availabilityChanges: [{ before: String, after: String, updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, updatedByName: String, updatedAt: Date }],
   educationChanges: [{
     before: String, after: String,
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },

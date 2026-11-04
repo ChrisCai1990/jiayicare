@@ -29,6 +29,8 @@ export default function ExpertRecruitmentPage() {
   const [invite, setInvite] = useState({ partnerName: '', specialtyTeam: '' })
   const [invitationUrl, setInvitationUrl] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  const [phoneEdit, setPhoneEdit] = useState(null)
+  const [availabilityEdit, setAvailabilityEdit] = useState(null)
   const [education, setEducation] = useState('')
   const [editingEducation, setEditingEducation] = useState(false)
   const [showQualifications, setShowQualifications] = useState(false)
@@ -54,6 +56,8 @@ export default function ExpertRecruitmentPage() {
   useEffect(() => { load().catch(e => setError(e.message)) }, [])
   function choose(row) {
     setSelectedId(id(row))
+    setAvailabilityEdit(null)
+    setPhoneEdit(null)
     setEducation(row.response?.education || '')
     setEditingEducation(false)
     setShowQualifications(false)
@@ -117,7 +121,11 @@ export default function ExpertRecruitmentPage() {
           <h3 style={{ marginTop: 0 }}>{selected.response?.name || selected.candidateName || '专家邀请'} · {statusText[selected.status]}</h3>
           {selected.status === 'invited' ? <p>等待专家本人填写。链接过期后需重新发起邀请。</p> : <>
             <h4>专家提交的信息</h4>
-            <Info label="联系方式" value={selected.response?.phone}/><Info label="机构 / 科室" value={`${selected.response?.institutionName || '—'} / ${selected.response?.departmentName || '—'}`}/>
+            <div style={{padding:'14px 0',borderBottom:'1px solid #E5EDE9'}}><strong>联系电话</strong>
+              {phoneEdit ? <div style={{marginTop:10}}><input type="tel" aria-label="联系电话" maxLength={30} className="form-input" style={{fontSize:16,padding:12,width:300,maxWidth:'100%'}} placeholder="手机号码或含区号的固定电话" value={phoneEdit.value} onChange={e=>setPhoneEdit({...phoneEdit,value:e.target.value})}/><button className="btn btn-primary" disabled={busy || !phoneEdit.value.trim()} onClick={()=>run(async()=>{await adminAPI.updateExpertRecruitmentContactPhone(id(selected),phoneEdit.value,phoneEdit.before);setPhoneEdit(null)},'联系电话已保存')}>保存联系电话</button><button className="btn" disabled={busy} onClick={()=>setPhoneEdit(null)}>取消</button></div> : <p>{selected.response?.contactPhone ?? selected.response?.phone ?? '未填写'} {['submitted','approved','rejected'].includes(selected.status) && <button className="btn" disabled={busy} onClick={()=>setPhoneEdit({value:selected.response?.contactPhone ?? selected.response?.phone ?? '',before:selected.response?.contactPhone ?? selected.response?.phone ?? ''})}>填写／修改联系电话</button>}</p>}
+              <p style={{fontSize:14,color:'#65776F'}}>用于联系专家，不变更医护端登录账号和既有绑定。</p>
+              {!!selected.contactPhoneChanges?.length && <details><summary style={{cursor:'pointer',color:'#176B4D'}}>查看联系电话修改记录（{selected.contactPhoneChanges.length}次）</summary>{[...selected.contactPhoneChanges].reverse().map((c,i)=><p key={c._id || i}>{c.updatedByName || '管理员'} · {new Date(c.updatedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}<br/>修改前：{c.before || '未填写'} → 修改后：{c.after}</p>)}</details>}
+            </div><Info label="机构 / 科室" value={`${selected.response?.institutionName || '—'} / ${selected.response?.departmentName || '—'}`}/>
             <Info label="专业 / 职称 / 年限" value={`${selected.response?.profession || '—'} / ${selected.response?.title || '—'} / ${selected.response?.experienceYears ?? '—'} 年`}/>
             <Info label="最高学历" value={<>
               {editingEducation ? <>
@@ -141,7 +149,16 @@ export default function ExpertRecruitmentPage() {
             <Info label="MDT 预期报酬" value={selected.response?.mdt ? `${selected.response.mdtExpectedFee} 元/次` : '不参与'}/>
             <Info label="报价口径" value={{ pre_tax: '税前', after_tax: '税后', undecided: '待商谈' }[selected.response?.feeTaxBasis] || '待商谈'}/>
             <Info label="额外收费说明" value={selected.response?.extraFeeRule}/>
-            <Info label="可安排时间" value={selected.response?.weeklyAvailability}/><Info label="周容量 / 提前派单" value={`${selected.response?.weeklyCapacity ?? '—'} 单 / ${selected.response?.minimumNoticeHours ?? '—'} 小时`}/>
+            <div style={{padding:'14px 0',borderBottom:'1px solid #E5EDE9'}}>
+              <strong>可安排时间</strong>
+              {availabilityEdit ? <div style={{marginTop:10}}>
+                <textarea aria-label="可安排时间" rows={4} maxLength={1000} style={{width:'100%',boxSizing:'border-box',padding:12,fontSize:16}} value={availabilityEdit.value} onChange={e=>setAvailabilityEdit({...availabilityEdit,value:e.target.value})} placeholder="例如：周一、周三 10:00—12:00，周五 14:00—16:00；临时变动可写明日期" />
+                <button className="btn btn-primary" disabled={busy || !availabilityEdit.value.trim()} onClick={()=>run(async()=>{await adminAPI.updateExpertRecruitmentAvailability(id(selected),availabilityEdit.value,availabilityEdit.before);setAvailabilityEdit(null)},'可安排时间已保存')}>保存可安排时间</button>
+                <button className="btn" disabled={busy} onClick={()=>setAvailabilityEdit(null)}>取消</button>
+              </div> : <><p style={{whiteSpace:'pre-wrap'}}>{selected.response?.weeklyAvailability || '未填写'}</p>{['submitted','approved','rejected'].includes(selected.status) && <button className="btn" disabled={busy} onClick={()=>setAvailabilityEdit({value:selected.response?.weeklyAvailability || '',before:selected.response?.weeklyAvailability || ''})}>修改可安排时间</button>}</>}
+              <p style={{color:'#65776F',fontSize:14}}>此处记录常规可安排时间；具体日期的空档和已确认预约，请在医护端“岗位排班”中调整。</p>
+              {!!selected.availabilityChanges?.length && <details style={{marginTop:10}}><summary style={{cursor:'pointer',color:'#176B4D',fontWeight:600}}>查看时间修改记录（{selected.availabilityChanges.length}次）</summary>{[...selected.availabilityChanges].reverse().map((change,i)=><div key={change._id || i} style={{padding:12,marginTop:8,background:'#F3F8F5',borderRadius:8}}><b>{change.updatedByName || '管理员'}</b> · {new Date(change.updatedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}<p style={{whiteSpace:'pre-wrap'}}>修改前：{change.before || '未填写'}</p><p style={{whiteSpace:'pre-wrap'}}>修改后：{change.after}</p></div>)}</details>}
+            </div><Info label="周容量 / 提前派单" value={`${selected.response?.weeklyCapacity ?? '—'} 单 / ${selected.response?.minimumNoticeHours ?? '—'} 小时`}/>
             <Info label="排班维护 / 录制意向" value={`${selected.response?.scheduleMaintenance || '—'} / ${selected.response?.recordingPreference || '—'}`}/>
             <Info label="其他条件" value={selected.response?.cooperationNotes}/>
             <h4>准入核验</h4>

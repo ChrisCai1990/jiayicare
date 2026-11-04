@@ -72,6 +72,23 @@ test('real isolated Mongo enforces one questionnaire submission and tenant-scope
     await asTenant(firstTenant, async () => {
       const row = await Recruitment.findOne({ tokenHash: sha(token) });
       const actor = { _id: oid(), tenantId: firstTenant, role: 'superadmin' };
+      for (const [route,field,previous,changes,value] of [
+        ['availability','weeklyAvailability','previousAvailability','availabilityChanges','周一 10:00—12:00'],
+        ['contact-phone','contactPhone','previousPhone','contactPhoneChanges','0571-12345678'],
+      ]) {
+        const before=field==='contactPhone' ? '13800000000' : '';
+        const edit=handler('patch',`/admin/:id/${route}`);
+        const request={params:{id:String(row._id)},admin:{...actor,name:'测试管理员'},body:{[field]:value,[previous]:before}};
+        const denied=response(); await edit({...request,admin:{...actor,role:'specialist'}},denied); assert.equal(denied.statusCode,403);
+        const invalid=response();await edit({...request,body:{[field]:'',[previous]:before}},invalid);assert.equal(invalid.statusCode,400);
+        const saved=response();await edit(request,saved);assert.equal(saved.statusCode,200);
+        assert.equal(saved.body.data.response[field],value);assert.equal(saved.body.data[changes].length,1);
+        assert.equal(saved.body.data[changes][0].before,before);assert.equal(String(saved.body.data[changes][0].updatedBy),String(actor._id));
+        const stale=response();await edit(request,stale);assert.equal(stale.statusCode,409);
+        const repeat=response();await edit({...request,body:{[field]:value,[previous]:value}},repeat);assert.equal(repeat.body.data[changes].length,1);
+        await asTenant(secondTenant,async()=>{const other=response();await edit({...request,admin:{...actor,tenantId:secondTenant}},other);assert.equal(other.statusCode,409);});
+      }
+      const contactRow=await Recruitment.findById(row._id);assert.equal(contactRow.response.phone,'13800000000','original identity matching phone unchanged');
       const screen = handler('patch', '/admin/:id/screening');
       const approve = handler('post', '/admin/:id/approve');
       const unverified = response();

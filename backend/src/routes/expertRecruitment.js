@@ -142,6 +142,46 @@ router.post('/admin', adminAuth, async (req, res) => {
   res.status(201).json({ success: true, data: { id: row._id, token, expiresAt: row.expiresAt } });
 });
 
+router.patch('/admin/:id/availability', adminAuth, async (req, res) => {
+  if (!adminAllowed(req)) return fail(res, 403, '无专家资料修改权限');
+  if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '记录编号无效');
+  const value = req.body?.weeklyAvailability;
+  if (typeof value !== 'string' || !value.trim() || value.length > 1000) return fail(res, 400, '请填写可安排时间，最多1000字');
+  if (typeof req.body?.previousAvailability !== 'string') return fail(res, 400, '请刷新资料后再修改');
+  const row = await ExpertRecruitment.findOne({ _id:req.params.id, status:{$in:['submitted','approved','rejected']} });
+  if (!row) return fail(res, 409, '仅已提交的问卷可修改可安排时间');
+  const before = row.response?.weeklyAvailability || '';
+  if (before !== req.body.previousAvailability) return fail(res, 409, '可安排时间已被修改，请刷新后重试');
+  const after = value.trim();
+  if (before === after) return res.json({success:true,data:row});
+  const updated = await ExpertRecruitment.findOneAndUpdate({ _id:row._id, status:row.status, 'response.weeklyAvailability':row.response?.weeklyAvailability ?? null }, {
+    $set:{'response.weeklyAvailability':after},
+    $push:{availabilityChanges:{before,after,updatedBy:req.admin._id,updatedByName:req.admin.name || '管理员',updatedAt:new Date()}},
+  }, {new:true,runValidators:true});
+  if (!updated) return fail(res, 409, '可安排时间已被修改，请刷新后重试');
+  res.json({success:true,data:updated});
+});
+
+router.patch('/admin/:id/contact-phone', adminAuth, async (req, res) => {
+  if (!adminAllowed(req)) return fail(res, 403, '无专家资料修改权限');
+  if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '记录编号无效');
+  const value = req.body?.contactPhone;
+  if (typeof value !== 'string' || !/^\+?[0-9() -]{6,30}$/.test(value.trim()) || value.replace(/\D/g,'').length < 6) return fail(res, 400, '请填写联系电话，支持手机、区号及固定电话');
+  if (typeof req.body?.previousPhone !== 'string') return fail(res, 400, '请刷新资料后再修改');
+  const row = await ExpertRecruitment.findOne({ _id:req.params.id, status:{$in:['submitted','approved','rejected']} });
+  if (!row) return fail(res, 409, '仅已提交的问卷可修改联系电话');
+  const before = row.response?.contactPhone ?? row.response?.phone ?? '';
+  if (before !== req.body.previousPhone) return fail(res, 409, '联系电话已被修改，请刷新后重试');
+  const after = value.trim();
+  if (before === after) return res.json({success:true,data:row});
+  const updated = await ExpertRecruitment.findOneAndUpdate({ _id:row._id, status:row.status, 'response.contactPhone':row.response?.contactPhone ?? null }, {
+    $set:{'response.contactPhone':after},
+    $push:{contactPhoneChanges:{before,after,updatedBy:req.admin._id,updatedByName:req.admin.name || '管理员',updatedAt:new Date()}},
+  }, {new:true,runValidators:true});
+  if (!updated) return fail(res, 409, '联系电话已被修改，请刷新后重试');
+  res.json({success:true,data:updated});
+});
+
 router.patch('/admin/:id/education', adminAuth, async (req, res) => {
   if (!adminAllowed(req)) return fail(res, 403, '无专家资料修改权限');
   if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '记录编号无效');
