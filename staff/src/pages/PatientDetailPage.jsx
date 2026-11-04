@@ -12114,7 +12114,7 @@ export default function PatientDetailPage() {
           {medicalLaunchRequested && (() => {
             const today = shanghaiDateInput()
             const datePart = value => value ? String(value).slice(0, 10) : ''
-            const medicalName = value => /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号/.test(value || '')
+            const medicalName = value => /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号|门诊一站式/.test(value || '')
             const gifts = giftRecords.filter(gift => gift.giftType === 'service' && gift.status === 'active' && medicalName(gift.serviceName)
               && (!gift.validFrom || datePart(gift.validFrom) <= today) && (!gift.validTo || datePart(gift.validTo) >= today)
               && Number(gift.serviceCount || 0) > Number(gift.usedCount || 0))
@@ -14496,6 +14496,7 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
             return <div key={gift._id} style={{ padding: '10px 0', borderBottom: '1px solid #E7ECE7' }}>
               <strong>{gift.serviceName || '服务权益'}</strong> · {status} · 剩余 {remaining} / {gift.serviceCount || 0} 次
               <div style={{ color: '#718579', fontSize: 12, marginTop: 4 }}>有效期：{from || '赠送日起'} — {to || '长期有效'}{gift.staffId?.name ? ` · 赠送人：${gift.staffId.name}` : ''}</div>
+              <div style={{ color: '#718579', fontSize: 12 }}>{gift.usageRecords?.length ? `已关联 ${gift.usageRecords.length} 条履约订单，可在服务使用记录查看` : '尚未进入服务履约流程'}</div>
               {gift.remark && <div style={{ color: '#718579', fontSize: 12 }}>{gift.remark}</div>}
             </div>
           })}

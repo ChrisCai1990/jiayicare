@@ -918,7 +918,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     ? templates.filter(tpl => [tpl.name, tpl.content?.hospital, tpl.content?.campus, tpl.content?.department, tpl.content?.expert]
       .some(value => String(value || '').toLocaleLowerCase().includes(normalizedTemplateQuery)))
     : templates
-  const supportedMedicalTemplate = tpl => /医务代办|医疗代诊|专家约诊|代配药|代取药|代配营养素|陪同检查|陪同治疗|陪同就医|就医陪同/.test(tpl.name || '')
+  const supportedMedicalTemplate = tpl => /医务代办|医疗代诊|专家约诊|代配药|代取药|代配营养素|陪同检查|陪同治疗|陪同就医|就医陪同|门诊一站式/.test(tpl.name || '')
   const targetServiceName = annualExpert ? '专家约诊服务' : giftId ? giftServiceName : reservedProductName
   const matchingTemplates = giftId && !giftServiceName ? visibleTemplates.filter(supportedMedicalTemplate) : targetServiceName
     ? visibleTemplates.filter(tpl => {
