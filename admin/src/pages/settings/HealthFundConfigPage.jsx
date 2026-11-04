@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
-const defaults={title:'健康基金使用规则',description:'',personalPriority:true,personalDeductionType:'unlimited',personalDeductionValue:0,corporateDeductionType:'percentage',corporateDeductionValue:20,minOrderAmount:0,eligibleCategories:[],eligibleProductIds:[],allowCouponStacking:true,couponDeductionType:'unlimited',couponDeductionValue:0,refundToOriginalSource:true,enabled:false,sharerAmount:0,recipientAmount:0,inviteEnabled:false,inviterAmount:0,inviteeAmount:0,firstLoginEnabled:false,firstLoginAmount:0,pointsExchangeEnabled:true,pointsPerYuan:100,healthCheckinPoints:5}
+const defaults={title:'健康基金使用规则',description:'',personalPriority:true,personalDeductionType:'unlimited',personalDeductionValue:0,corporateDeductionType:'percentage',corporateDeductionValue:20,minOrderAmount:0,eligibleCategories:[],eligibleProductIds:[],allowCouponStacking:true,couponDeductionType:'unlimited',couponDeductionValue:0,refundToOriginalSource:true,enabled:false,sharerAmount:0,recipientAmount:0,inviteEnabled:false,inviterAmount:0,inviteeAmount:0,firstLoginEnabled:true,firstLoginAmount:100,firstQuestionnaireEnabled:true,firstQuestionnaireAmount:50,pointsExchangeEnabled:true,pointsPerYuan:100,healthCheckinPoints:5}
 const typeOptions=[['unlimited','不限制（最多抵至应付金额）'],['fixedAmount','固定金额上限'],['percentage','订单金额比例上限']]
 function LimitField({title,type,value,onType,onValue,percentageMax=100}) { return <div className="form-group"><label className="form-label">{title}</label><div style={{display:'grid',gridTemplateColumns:'minmax(240px,1fr) minmax(180px,1fr)',gap:12}}><select className="form-input" value={type} onChange={e=>onType(e.target.value)}>{typeOptions.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>{type!=='unlimited'&&<div style={{display:'flex',alignItems:'center',gap:8}}><input className="form-input" type="number" min="0" max={type==='percentage'?percentageMax:undefined} value={value} onChange={e=>onValue(e.target.value)}/><span>{type==='percentage'?'%':'元/单'}</span></div>}</div></div> }
 
@@ -58,8 +58,10 @@ export default function HealthFundConfigPage(){
   </div>
   <p style={{color:'#718096'}}>有效邀请人在登录时确定，无需等待问卷；双方奖励基金在受邀客户提交健康问卷后各发放一次。自己不能邀请自己。</p>
   <h3 style={{marginTop:28}}>首次使用奖励</h3>
-  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.firstLoginEnabled} onChange={e=>set('firstLoginEnabled',e.target.checked)}/>启用客户首次提交健康问卷后的奖励基金（含已有客户首次使用）</label>
-  <div className="form-group"><label className="form-label">首次问卷赠送金额（元）</label><input className="form-input" type="number" min="0" value={form.firstLoginAmount} onChange={e=>set('firstLoginAmount',e.target.value)}/></div>
+  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.firstLoginEnabled} onChange={e=>set('firstLoginEnabled',e.target.checked)}/>启用客户完成激活后的奖励基金</label>
+  <div className="form-group"><label className="form-label">激活奖励金额（元）</label><input className="form-input" type="number" min="0" value={form.firstLoginAmount} onChange={e=>set('firstLoginAmount',e.target.value)}/></div>
+  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.firstQuestionnaireEnabled} onChange={e=>set('firstQuestionnaireEnabled',e.target.checked)}/>启用首次完成健康问卷奖励</label>
+  <div className="form-group"><label className="form-label">首次问卷奖励金额（元）</label><input className="form-input" type="number" min="0" value={form.firstQuestionnaireAmount} onChange={e=>set('firstQuestionnaireAmount',e.target.value)}/></div>
   <p style={{color:'#718096'}}>实际抵扣以商品规则和可用余额为准；会员资格及企业适用条件仍须满足。旧商品未单独配置时保留20%，新商品默认不支持，需逐个设置。</p>
   <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'保存中...':'保存并立即生效'}</button>
  </div></div>

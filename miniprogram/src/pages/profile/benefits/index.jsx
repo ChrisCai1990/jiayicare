@@ -80,6 +80,7 @@ export default function BenefitsPage() {
   const [tab, setTab] = useState('mine');
   const [gifts, setGifts] = useState([]);
   const [giftsLoading, setGiftsLoading] = useState(true);
+  const [giftsError, setGiftsError] = useState('');
   const [detailGift, setDetailGift] = useState(null);
   const [pointsBalance, setPointsBalance] = useState(0);
   const [pointsDetail, setPointsDetail] = useState({ vitality: 0, reward: 0, legacy: 0, exchangeRate: 100, healthCheckinPoints: 5 });
@@ -100,10 +101,12 @@ export default function BenefitsPage() {
   const fundCorp = fund.corporate ?? 0;
 
   const loadGifts = useCallback(async () => {
+    setGiftsLoading(true); setGiftsError('');
     try {
       const res = await giftsAPI.list();
       if (res.success) setGifts(res.data);
-    } catch {} finally { setGiftsLoading(false); }
+      else setGiftsError('赠送权益加载失败，请重试');
+    } catch { setGiftsError('赠送权益加载失败，请重试'); } finally { setGiftsLoading(false); }
   }, []);
 
   const loadPoints = useCallback(async () => {
@@ -162,7 +165,7 @@ export default function BenefitsPage() {
       {tab === 'mine' ? (
         <View style={{ padding: `0 ${spacing.lg}px` }}>
           <View style={{display:'flex',gap:'8px',marginBottom:'14px'}}>{[['plan','健康服务'],['fund','健康基金'],['gift','赠送权益']].map(([key,label])=><View key={key} onClick={()=>setMineSection(key)} style={{flex:1,textAlign:'center',padding:'10px 0',borderRadius:'10px',backgroundColor:mineSection===key?colors.primary:'#fff'}}><Text style={{fontSize:'13px',color:mineSection===key?'#fff':colors.textSecondary}}>{label}</Text></View>)}</View>
-          {mineSection==='plan' && <MembershipBenefits />}
+          {mineSection==='plan' && <MembershipBenefits gifts={gifts} giftsLoading={giftsLoading} giftsError={giftsError} onRefreshGifts={loadGifts} />}
           {mineSection==='fund' && <>
           <View style={{ borderRadius: `${radius.md}px`, backgroundColor: '#1A2B24', padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.md }}>
             <Text style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>健康基金余额</Text>

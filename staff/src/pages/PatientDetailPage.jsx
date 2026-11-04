@@ -12163,7 +12163,7 @@ export default function PatientDetailPage() {
               </div>
             </div>
           })()}
-          <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} onViewRedemption={() => setTab('consumption')} historyReviewNeeded={historyReviewNeeded} isSuperadmin={staff?.role === 'superadmin' || membershipSummary?.canReviewHistory === true} onReviewHistory={openPackageHistoryReview} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} />
+          <MembershipPanel user={user} patientId={id} onRefresh={load} benefits={membershipSummary} benefitsError={membershipError} onBenefitsRefresh={loadMembership} onViewRedemption={() => setTab('consumption')} historyReviewNeeded={historyReviewNeeded} isSuperadmin={staff?.role === 'superadmin' || membershipSummary?.canReviewHistory === true} onReviewHistory={openPackageHistoryReview} partnerBenefits={partnerBenefits} partnerBenefitsError={partnerBenefitsError} giftRecords={giftRecords} giftRecordsLoading={giftRecordsLoading} giftRecordsError={giftRecordsError} onRefreshGifts={() => { setGiftRecordsLoading(true); setGiftRecordsError(''); staffAPI.getPatientGifts(id).then(r => setGiftRecords(r.data || [])).catch(() => setGiftRecordsError('赠送权益加载失败，请刷新重试')).finally(() => setGiftRecordsLoading(false)) }} />
         </>
       )}
 
@@ -14430,7 +14430,13 @@ export default function PatientDetailPage() {
   )
 }
 
-function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, onBenefitsRefresh, onViewRedemption, historyReviewNeeded, isSuperadmin, onReviewHistory, partnerBenefits, partnerBenefitsError }) {
+function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, onBenefitsRefresh, onViewRedemption, historyReviewNeeded, isSuperadmin, onReviewHistory, partnerBenefits, partnerBenefitsError, giftRecords, giftRecordsLoading, giftRecordsError, onRefreshGifts }) {
+  const [coupons, setCoupons] = useState([])
+  const [couponsError, setCouponsError] = useState('')
+  const loadCoupons = useCallback(() => staffAPI.getPatientCoupons(patientId)
+    .then(result => { setCoupons(result.data || []); setCouponsError('') })
+    .catch(() => setCouponsError('优惠券加载失败，请刷新重试')), [patientId])
+  useEffect(() => { loadCoupons() }, [loadCoupons])
   const toast = useToast()
   const [membership, setMembership] = useState(user)
   const [showGift, setShowGift] = useState(false)
@@ -14480,6 +14486,31 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
             : <span style={{ marginLeft: 8 }}>请医护端超级管理员在此客户的“会员权益”中核对。</span>}
         </div>}
         <MembershipBenefitsSummary data={benefits} error={benefitsError} onRefresh={onBenefitsRefresh} onViewRedemption={onViewRedemption} onReviewHistory={isSuperadmin ? onReviewHistory : null} />
+        <div className="card"><div className="card-header"><div className="card-title">单独赠送的服务</div><button type="button" className="btn btn-secondary btn-sm" onClick={onRefreshGifts}>刷新</button></div><div className="card-body">
+          {giftRecordsLoading ? '加载赠送记录中…' : giftRecordsError ? <div role="alert">{giftRecordsError}</div> : !giftRecords?.some(gift => gift.giftType === 'service') ? '暂无单独赠送的服务' : giftRecords.filter(gift => gift.giftType === 'service').map(gift => {
+            const today = new Date().toLocaleDateString('en-CA')
+            const from = String(gift.validFrom || '').slice(0, 10)
+            const to = String(gift.validTo || '').slice(0, 10)
+            const remaining = Math.max(0, Number(gift.serviceCount || 0) - Number(gift.usedCount || 0))
+            const status = gift.status === 'used' || remaining === 0 ? '已使用' : gift.status === 'expired' || (to && to < today) ? '已过期' : from && from > today ? '未生效' : '有效'
+            return <div key={gift._id} style={{ padding: '10px 0', borderBottom: '1px solid #E7ECE7' }}>
+              <strong>{gift.serviceName || '服务权益'}</strong> · {status} · 剩余 {remaining} / {gift.serviceCount || 0} 次
+              <div style={{ color: '#718579', fontSize: 12, marginTop: 4 }}>有效期：{from || '赠送日起'} — {to || '长期有效'}{gift.staffId?.name ? ` · 赠送人：${gift.staffId.name}` : ''}</div>
+              {gift.remark && <div style={{ color: '#718579', fontSize: 12 }}>{gift.remark}</div>}
+            </div>
+          })}
+        </div></div>
+        <div className="card"><div className="card-header"><div className="card-title">赠送的优惠券</div><button type="button" className="btn btn-secondary btn-sm" onClick={loadCoupons}>刷新</button></div><div className="card-body">
+          {couponsError ? <div role="alert">{couponsError}</div> : !coupons.length ? '暂无优惠券' : coupons.map(coupon => {
+            const today = new Date().toLocaleDateString('en-CA')
+            const to = String(coupon.validTo || '').slice(0, 10)
+            const status = coupon.status === 'used' ? '已使用' : coupon.status === 'expired' || (to && to < today) ? '已过期' : '有效'
+            return <div key={coupon._id} style={{ padding: '10px 0', borderBottom: '1px solid #E7ECE7' }}>
+              <strong>{coupon.title}</strong> · {status} · {coupon.type === 'amount' ? `抵扣 ¥${coupon.value}` : `${Number(coupon.value) / 10} 折`}
+              <div style={{ color: '#718579', fontSize: 12, marginTop: 4 }}>有效至 {to || '长期有效'}{Number(coupon.minSpend) > 0 ? ` · 满 ¥${coupon.minSpend} 可用` : ''}</div>
+            </div>
+          })}
+        </div></div>
         <div className="card"><div className="card-header"><div className="card-title">合作伙伴权益</div></div><div className="card-body">
           {partnerBenefitsError || (!partnerBenefits?.length ? '当前会员类型暂无可见合作伙伴权益' : partnerBenefits.map(group => <div key={group.partner.id} style={{ marginBottom: 12 }}><strong>{group.partner.name}</strong>{group.benefits.map(item => <div key={item.id} style={{ marginTop: 5, color: '#4A6558' }}>{item.title}{item.subtitle ? ` · ${item.subtitle}` : ''}</div>)}</div>))}
         </div></div>

@@ -571,6 +571,8 @@ router.post('/onboarding', auth, async (req, res) => {
     const pendingInviteCode = req.user.pendingInviteCode || '';
     const pendingInviterId = req.user.pendingInviter || null;
     await applyOnboardingRewards(user, pendingInviteCode, pendingInviterId);
+    await require('../utils/referralQuestionnaireReward').grantActivationReward(user._id)
+      .catch(error => console.error('[activation-reward] 发放失败', error.message));
     if (pendingInviteCode || pendingInviterId) await User.updateOne({ _id: user._id }, { $unset: { pendingInviteCode: 1, pendingInviter: 1 } });
     user = await User.findById(user._id);
     await require('../utils/healthPlannerAssignment').ensureAssignedHealthPlanner(user);

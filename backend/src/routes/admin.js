@@ -3005,8 +3005,10 @@ const DEFAULT_HEALTH_FUND_POLICY = {
   inviteEnabled: false,
   inviterAmount: 0,
   inviteeAmount: 0,
-  firstLoginEnabled: false,
-  firstLoginAmount: 0,
+  firstLoginEnabled: true,
+  firstLoginAmount: 100,
+  firstQuestionnaireEnabled: true,
+  firstQuestionnaireAmount: 50,
   pointsExchangeEnabled: true,
   pointsPerYuan: 100,
   healthCheckinPoints: 5,
@@ -3058,7 +3060,7 @@ router.put('/system-config/health-fund', adminAuth, async (req, res) => {
     const types = ['unlimited', 'percentage', 'fixedAmount'];
     const value = { ...DEFAULT_HEALTH_FUND_POLICY, ...req.body };
     ['personalDeductionType','corporateDeductionType','couponDeductionType'].forEach(k => { if (!types.includes(value[k])) value[k] = 'unlimited'; });
-    ['personalDeductionValue','corporateDeductionValue','couponDeductionValue','minOrderAmount','sharerAmount','recipientAmount','inviterAmount','inviteeAmount','firstLoginAmount','healthCheckinPoints'].forEach(k => { value[k] = Math.max(0, Number(value[k]) || 0); });
+    ['personalDeductionValue','corporateDeductionValue','couponDeductionValue','minOrderAmount','sharerAmount','recipientAmount','inviterAmount','inviteeAmount','firstLoginAmount','firstQuestionnaireAmount','healthCheckinPoints'].forEach(k => { value[k] = Math.max(0, Number(value[k]) || 0); });
     value.pointsPerYuan = 100;
     value.healthCheckinPoints = Math.min(5, value.healthCheckinPoints);
     value.corporateDeductionType = 'percentage';
