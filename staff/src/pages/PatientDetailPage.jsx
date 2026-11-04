@@ -3439,9 +3439,7 @@ export default function PatientDetailPage() {
       .catch(() => { /* 保持列表数据，下方会显示加载失败提示 */ })
       .finally(() => setReportDetailLoading(false))
 
-    // 健康顾问打开报告详情，联动标记"已解读"（2026-07-28新增）：此前用户端报告列表的
-    // "待解读/已解读"状态字段(status)从未被任何动作驱动过，一直卡死在默认值"待解读"，
-    // 跟审核状态毫无关联。改为健康顾问查看过这份报告后自动置为已解读，不需要额外操作。
+    // 打开仅记录已查看；解读任务须由顾问在详情里明确确认。
     if (staff?.role === 'familyDoctor' || staff?.role === 'superadmin') {
       staffAPI.markReportFamilyDoctorViewed(r._id).catch(() => {})
     }
@@ -5042,6 +5040,21 @@ export default function PatientDetailPage() {
       loadPendingDoctorAudit()
       load()
     } catch (err) { setReportFlowError(err.message || '退回失败') }
+    finally { setReportFlowSaving(false) }
+  }
+
+  const confirmReportInterpretation = async () => {
+    if (!showReportDetail || reportFlowSaving) return
+    try {
+      setReportFlowSaving(true)
+      setReportFlowError('')
+      await staffAPI.confirmReportInterpretation(showReportDetail._id)
+      toast('已确认报告解读')
+      setShowReportDetail(null)
+      await loadReports()
+      loadPendingDoctorAudit()
+      load()
+    } catch (err) { setReportFlowError(err.message || '确认失败') }
     finally { setReportFlowSaving(false) }
   }
 
@@ -13240,7 +13253,11 @@ export default function PatientDetailPage() {
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && showReportDetail.audit_status === 'audited' && !showReportDetail.archiveOnly && (
                 <div style={{ display: 'grid', gap: 7, padding: 10, background: '#FFF7F5', borderRadius: 8 }}>
-                  <b style={{ fontSize: 13 }}>发现归类或正常/异常判断有误？退回健管专员修改</b>
+                  <b style={{ fontSize: 13 }}>健康顾问核对报告</b>
+                  {showReportDetail.advisorInterpretationConfirmedAt
+                    ? <span style={{ fontSize: 13, color: '#1E6B50' }}>已确认解读</span>
+                    : <button className="btn btn-primary btn-sm" disabled={reportFlowSaving || reportDetailLoading} onClick={confirmReportInterpretation}>确认无误，完成解读</button>}
+                  <span style={{ fontSize: 12 }}>发现归类或正常/异常判断有误，可写明原因退回健管专员修改。</span>
                   <textarea className="form-input" rows={2} maxLength={1000} placeholder="请写明报告项目、错误内容和需要核对之处" value={advisorReturnReason} onChange={e => setAdvisorReturnReason(e.target.value)} />
                   <button className="btn btn-danger btn-sm" disabled={!advisorReturnReason.trim() || reportFlowSaving} onClick={returnReportToManager}>退回健管专员修改</button>
                 </div>
