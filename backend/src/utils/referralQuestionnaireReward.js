@@ -10,19 +10,36 @@ async function grant(userId, amount, remark) {
   await HealthFundTransaction.create({ userId, type: 'grant', source: 'enterprise', amount: value, balanceAfter: updated?.healthFundBalance || 0, remark });
 }
 
-async function grantFirstQuestionnaireReward(userId) {
+async function grantActivationReward(userId) {
   const cfg = (await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean())?.value || {};
-  if (cfg.firstLoginEnabled !== true || Number(cfg.firstLoginAmount) <= 0) return false;
+  if (cfg.firstLoginEnabled === false || Number(cfg.firstLoginAmount ?? 100) <= 0) return false;
   const claimed = await User.findOneAndUpdate(
     { _id: userId, onboardingCompleted: true, firstLoginFundGrantedAt: null },
     { $set: { firstLoginFundGrantedAt: new Date() } },
     { new: true },
   );
   if (!claimed) return false;
-  await grant(claimed._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励');
+  await grant(claimed._id, cfg.firstLoginAmount ?? 100, '客户激活奖励基金');
   await Message.create({
     user: claimed._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
-    content: `您已完成健康问卷，¥${Number(cfg.firstLoginAmount)} 首次使用奖励基金已到账。`,
+    content: `您已完成激活，¥${Number(cfg.firstLoginAmount ?? 100)} 奖励基金已到账。`,
+  });
+  return true;
+}
+
+async function grantFirstQuestionnaireReward(userId) {
+  const cfg = (await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean())?.value || {};
+  if (cfg.firstQuestionnaireEnabled === false || Number(cfg.firstQuestionnaireAmount ?? 50) <= 0) return false;
+  const claimed = await User.findOneAndUpdate(
+    { _id: userId, onboardingCompleted: true, firstQuestionnaireFundGrantedAt: null },
+    { $set: { firstQuestionnaireFundGrantedAt: new Date() } },
+    { new: true },
+  );
+  if (!claimed) return false;
+  await grant(claimed._id, cfg.firstQuestionnaireAmount ?? 50, '首次完成健康问卷奖励基金');
+  await Message.create({
+    user: claimed._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+    content: `您已完成健康问卷，¥${Number(cfg.firstQuestionnaireAmount ?? 50)} 奖励基金已到账。`,
   });
   return true;
 }
@@ -69,4 +86,4 @@ async function grantReferralQuestionnaireReward(userId) {
   return true;
 }
 
-module.exports = { grantFirstQuestionnaireReward, grantReferralQuestionnaireReward };
+module.exports = { grantActivationReward, grantFirstQuestionnaireReward, grantReferralQuestionnaireReward };

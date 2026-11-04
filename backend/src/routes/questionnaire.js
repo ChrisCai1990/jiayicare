@@ -457,7 +457,7 @@ router.post('/:id/submit', auth, async (req, res) => {
       await HealthPlan.updateOne({ _id: assignment.sourceHealthPlanId, patientId: subjectId }, { $set: { 'content.checkupIntake': intake } });
     }
 
-    // 邀请关系在登录时固定；首次使用和邀请赠金都要等客户成功提交问卷。
+    // 首次完成问卷与邀请奖励分别领取；重复提交不会重复发放。
     if (!childId) {
       const { grantFirstQuestionnaireReward, grantReferralQuestionnaireReward } = require('../utils/referralQuestionnaireReward');
       await grantFirstQuestionnaireReward(req.user._id)

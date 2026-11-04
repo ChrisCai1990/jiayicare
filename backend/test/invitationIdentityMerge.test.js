@@ -23,17 +23,19 @@ test('identity merge preserves a previously granted invitation reward', () => {
   assert.match(questionnaireReward, /source: 'enterprise'/);
 });
 
-test('login fixes inviter before onboarding and does not grant funds', () => {
+test('login fixes inviter without granting activation fund', () => {
   assert.match(authRoute, /await bindInvitationAtLogin\(user, inviteCode\)/);
   assert.match(authRoute, /invitedBy: inviter\._id/);
-  assert.doesNotMatch(authRoute, /firstLoginFundGrantedAt: now/);
+  assert.doesNotMatch(authRoute, /grantActivationReward\(user\._id\)/);
   assert.match(userRoute, /applyOnboardingRewards\(user, pendingInviteCode, pendingInviterId\)/);
+  assert.match(userRoute, /grantActivationReward\(user\._id\)/);
 });
 
-test('fund grants wait for the first submitted questionnaire', () => {
+test('activation and first questionnaire rewards have separate claims', () => {
   assert.match(questionnaireRoute, /grantFirstQuestionnaireReward\(req\.user\._id\)/);
   assert.match(questionnaireRoute, /grantReferralQuestionnaireReward\(req\.user\._id\)/);
   assert.match(questionnaireReward, /firstLoginFundGrantedAt: null/);
+  assert.match(questionnaireReward, /firstQuestionnaireFundGrantedAt: null/);
   assert.match(questionnaireReward, /onboardingCompleted: true/);
   assert.match(questionnaireReward, /referralRewardGrantedAt: null/);
 });

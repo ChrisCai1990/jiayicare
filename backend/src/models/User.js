@@ -51,6 +51,7 @@ const userSchema = new mongoose.Schema({
   pendingInviteCode: { type: String, default: '' },
   pendingInviter: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   firstLoginFundGrantedAt: { type: Date, default: null },
+  firstQuestionnaireFundGrantedAt: { type: Date, default: null },
   referralRewardGrantedAt: { type: Date, default: null },
   // 会员删除采用可恢复软删除：业务数据不物理清除，避免误删后无法追溯。
   isDeleted: { type: Boolean, default: false, index: true },

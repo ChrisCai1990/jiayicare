@@ -4000,21 +4000,23 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   let sourceOrder = null;
   let giftDraftOrder = null;
   if (req.body.giftId) {
-    if (type !== 'medical_assist' || !isAgencyMedicalAssistPlan(planContent, title)
+    const outpatientOneStopGift = /^门诊一站式服务(?:-|$)/.test(String(planContent.templateName || ''));
+    if (type !== 'medical_assist' || (!isAgencyMedicalAssistPlan(planContent, title) && !outpatientOneStopGift)
       || !['familyDoctor', 'healthPlanner', 'superadmin'].includes(req.staff.role))
       return res.status(400).json({ success: false, message: '此赠送权益须从对应就医协助流程发起' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(patientId)))
       return res.status(403).json({ success: false, message: '无权为该会员建立服务方案' });
+    const giftServiceName = outpatientOneStopGift ? '门诊一站式服务' : '医务代办服务';
     giftDraftOrder = await Order.create({ user: patientId, tenantId: medicalAssistPatient.tenantId || null,
-      serviceId: `gift-draft:${req.body.giftId}`, serviceName: '医务代办服务', servicePrice: 0,
+      serviceId: `gift-draft:${req.body.giftId}`, serviceName: giftServiceName, servicePrice: 0,
       unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'created', status: 'pending',
       initiationSource: 'staff_direct', serviceWorkflowSnapshot: { key: 'medical_assist', source: 'staff_direct' } });
     try {
-      const benefit = await require('../utils/medicalProxyWorkflow').reserveGiftMedicalBenefit(patientId, req.body.giftId, giftDraftOrder, '医务代办服务');
+      const benefit = await require('../utils/medicalProxyWorkflow').reserveGiftMedicalBenefit(patientId, req.body.giftId, giftDraftOrder, giftServiceName);
       if (benefit.status !== 'reserved') {
         await Order.deleteOne({ _id: giftDraftOrder._id });
-        return res.status(409).json({ success: false, message: '赠送权益未生效、已用尽或与医务代办服务不匹配，请刷新会员权益' });
+        return res.status(409).json({ success: false, message: `赠送权益未生效、已用尽或与${giftServiceName}不匹配，请刷新会员权益` });
       }
       sourceOrder = giftDraftOrder;
     } catch (err) {
