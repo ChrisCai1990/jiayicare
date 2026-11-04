@@ -56,9 +56,11 @@ test('真正随访和缺失来源不冒充年度方案，保留客户范围过�
 
 test('年度方案审核归入方案与评估分类', () => {
   const panel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/AiTodosPanel.jsx'), 'utf8');
+  const annualPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/AnnualMgmtPlanPage.jsx'), 'utf8');
   const groups = vm.runInNewContext(panel.match(/const TODO_GROUPS = (\[[\s\S]*?\n\])/)[1]);
   assert.ok(groups.find(group => group.key === 'plan').types.includes('annual_plan_input_review'));
   assert.ok(!groups.find(group => group.key === 'report').types.includes('annual_plan_input_review'));
+  assert.match(annualPage, /<ReportFollowUpDrafts patientId=\{id\} year=\{year\} canEdit=\{canEdit\}/);
 });
 
 test('年度输入与真正的报告随访分别呈现', async () => {

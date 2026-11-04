@@ -11,6 +11,7 @@ import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
 import AnnualPlanSupplement from '../components/AnnualPlanSupplement'
 import AnnualExecutionReview from '../components/AnnualExecutionReview'
 import AnnualPlanRevision from '../components/AnnualPlanRevision'
+import ReportFollowUpDrafts from '../components/ReportFollowUpDrafts'
 import AnnualServiceRecommendations from '../components/AnnualServiceRecommendations'
 import AnnualVisitScheduleReview from '../components/AnnualVisitScheduleReview'
 import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
@@ -1093,6 +1094,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </button>
         </div>
       </div>
+
+      {patientMode && (searchParams.get('reviewAnnualInputs') === '1' || searchParams.has('reviewDraftId')) && (
+        <ReportFollowUpDrafts patientId={id} year={year} canEdit={canEdit} />
+      )}
 
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
       {patientMode && staleManagementSources.length > 0 && !pushedAt && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF7ED', border: '1px solid #F4C995', borderRadius: 10, color: '#713F12' }}>
