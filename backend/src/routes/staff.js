@@ -19,6 +19,7 @@ const { buildStandardAssessments, matchesAssessment } = require('../../../shared
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements, followUpTaskPurposes } = require('../utils/medicalAssistRequirements');
+const { normalizeOutpatientConsultations, consultationRequirementLines } = require('../utils/outpatientConsultations');
 const { advanceCheckupTask, isCheckupService, onCheckupReportAudited, stageForScheme } = require('../utils/checkupOneStopFlow');
 const { ensureStaffInitiatedCheckupService } = require('../utils/checkupServiceInstance');
 const { generateCompactMedicalAssistPurposes } = require('../utils/medicalAssistPurposeDraft');
@@ -3979,6 +3980,15 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   let medicalAssistSupervisor = null;
   let medicalAssistPatient = null;
   if (type === 'medical_assist') {
+    if (/门诊一站式/.test(`${planContent.templateName || ''} ${title || ''}`)) {
+      if (!String(planContent.hospital || '').trim()) return res.status(400).json({ success: false, message: '请填写就诊医院' });
+      try {
+        const consultations = normalizeOutpatientConsultations(planContent);
+        planContent = { ...planContent, hospital: planContent.hospital.trim(), consultations,
+          department: consultations.map(row => row.department).join('、'),
+          expert: consultations.map(row => row.expert).filter(Boolean).join('、') };
+      } catch (err) { return res.status(400).json({ success: false, message: err.message }); }
+    }
     try { planContent = { ...planContent, resourceReferences: await freezeMedicalResourceReferences(planContent.resourceReferences) }; }
     catch (err) { return res.status(400).json({ success: false, message: err.message }); }
     const patient = await User.findById(patientId).select('assignedHealthPlanner tenantId').lean();
@@ -4682,7 +4692,7 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
     : null;
   const executorBlocked = (!!options.dependsOnTaskId && previousGate?.status !== 'completed') || workflowPlan.activationEvent === 'report_audited';
   const requirements = [
-    c.hospital && `医院：${c.hospital}`, c.department && `科室：${c.department}`, c.expert && `医生：${c.expert}`,
+    c.hospital && `医院：${c.hospital}`, ...consultationRequirementLines(c),
     (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
     plan.description && `服务目标：${plan.description}`, c.tasks && `服务要求：${c.tasks}`,
     options.evidence && `触发依据：${options.evidence}`,
@@ -4885,8 +4895,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     const coordinationGroupId = `medical-assist:${plan._id}`;
     const requirements = [
       c.hospital && `医院：${c.hospital}`,
-      c.department && `科室：${c.department}`,
-      c.expert && `医生：${c.expert}`,
+      ...consultationRequirementLines(c),
       c.reviewerName && `方案审核医生：${c.reviewerName}`,
       (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
       plan.description && `${isCheckupService ? '体检目标' : '服务目标'}：${plan.description}`,

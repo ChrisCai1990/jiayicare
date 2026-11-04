@@ -631,7 +631,11 @@ export default function PlanModulesPage() {
 
       {isOutpatientService && <div style={{ background: '#F0F8F4', borderRadius: 12, padding: 18, marginBottom: 20, border: '1px solid #CFE2D9' }}>
         <div style={{ fontWeight: 700, color: '#173B2E' }}>{plan.pushedAt ? '服务已启动' : '健康规划师当前操作'}</div>
-        <div style={{ marginTop: 7, color: '#4A6558', fontSize: 13, lineHeight: 1.8 }}>{plan.pushedAt ? '首个资料收集任务已转交健管专员。后续环节按“执行完成 → 健康规划师验收 → 下一岗位解锁”自动流转。' : '无需在此预填医院、专家、检查或陪诊方案。确认订单信息后，直接启动服务并转交健管专员收集、上传和审核资料。'}</div>
+        <div style={{ marginTop: 7, color: '#4A6558', fontSize: 13, lineHeight: 1.8 }}>{plan.pushedAt ? '首个资料收集任务已转交健管专员。后续环节按“执行完成 → 健康规划师验收 → 下一岗位解锁”自动流转。' : '请核对已登记的就诊专科。确认订单信息后，启动服务并转交健管专员收集、上传和审核资料。'}</div>
+        {!!moduleData.visit?.consultations?.length && <div style={{ marginTop: 10, fontSize: 13, color: '#29483C' }}>
+          <strong>已登记就诊专科：</strong>
+          {moduleData.visit.consultations.map((row, index) => <div key={index} style={{ marginTop: 4 }}>{index + 1}. {row.department}{row.expert ? ` · ${row.expert}` : ''}</div>)}
+        </div>}
       </div>}
 
       {/* 体检订单的核心需求已在上方展示，避免健康规划师重复维护“服务目标”。 */}
