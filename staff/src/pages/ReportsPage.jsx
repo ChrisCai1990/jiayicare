@@ -524,11 +524,49 @@ function OrganizeModal({ source, onClose, onSaved }) {
     } catch (err) { setError(err.message || '整理失败') }
     finally { setSaving(false) }
   }
+  const autoOrganizeClinical = async () => {
+    setSaving(true); setError('')
+    try {
+      const response = await staffAPI.classifyClinicalFiles(source._id)
+      const files = response.data?.files || []
+      const unresolved = files.filter(file => file.documentCategory === 'unknown')
+      if (unresolved.length) { setError(`第 ${unresolved.map(file => file.fileIndex + 1).join('、')} 张图片无法可靠区分病历与处方。请在下方逐张选择，分别整理。`); return }
+      const groups = ['outpatient_record','prescription_order'].map(category => ({ category, files:files.filter(file => file.documentCategory === category) })).filter(group => group.files.length)
+      if (groups.length === 1) {
+        if (groups[0].category === source.documentCategory) { setError('图片分类与当前记录一致，请核对原件后继续审核。'); return }
+        await staffAPI.updateReport(source._id, { documentCategory:groups[0].category })
+        await staffAPI.parseReportAI(source._id)
+        onSaved()
+        return
+      }
+      const childReportIds = []
+      for (const group of groups) {
+        const sourceFiles = group.files.map(file => ({ reportId:source._id, fileIndex:file.fileIndex }))
+        const latestReports = (await staffAPI.getPatientReports(patientId)).data || reports
+        const alreadyOrganized = latestReports.find(report => report.documentCategory === group.category
+          && report.organizedFrom?.length === sourceFiles.length
+          && sourceFiles.every(file => report.organizedFrom.some(origin => String(origin.reportId) === String(file.reportId) && origin.fileIndex === file.fileIndex)))
+        if (alreadyOrganized) { childReportIds.push(alreadyOrganized._id); continue }
+        const dates = [...new Set(group.files.map(file => file.date).filter(Boolean))]
+        const hospitals = [...new Set(group.files.map(file => file.hospital).filter(Boolean))]
+        const organized = await staffAPI.organizeReport({ patientId, files:sourceFiles, autoClinicalSplit:true,
+          title:`${source.title || '客户资料'} · ${group.category === 'outpatient_record' ? '门诊病历' : '处方与医嘱'}`,
+          type:'other', documentCategory:group.category,
+          hospital:hospitals.length === 1 ? hospitals[0] : '', date:dates.length === 1 ? dates[0] : '',
+          note:'从客户混合上传原件自动分类整理；原件保留，内容仍待健管专员审核。' })
+        childReportIds.push(organized.data?._id)
+      }
+      await staffAPI.completeClinicalSplit(source._id, childReportIds)
+      onSaved()
+    } catch (err) { setError(err.message || '自动分类失败，请手动整理') }
+    finally { setSaving(false) }
+  }
   return <div className="modal-overlay">
     <div className="modal" style={{ maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
       <div className="modal-header"><h3 className="modal-title">整理客户已上传的资料</h3><button className="modal-close" onClick={onClose}>✕</button></div>
       <div className="modal-body" style={{ overflowY: 'auto' }}>
         <p style={{ fontSize: 13, color: '#667', marginTop: 0 }}>选择同一客户的文件，按下方顺序生成一条新的待审核记录。整份 PDF 会作为一个文件保留，原始资料不会删除。</p>
+        {(source.fileUrls?.length || (source.fileUrl ? 1 : 0)) > 0 && source.audit_status === 'unaudited' && <button type="button" className="btn btn-secondary" disabled={saving || loading} onClick={autoOrganizeClinical}>{saving ? '识别整理中…' : '自动识别病历／处方并分类'}</button>}
         {error && <div className="login-err" role="alert">{error}</div>}
         {loading ? <p>加载原件中…</p> : <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #e5e9e7', borderRadius: 8, padding: 8 }}>
           {reports.flatMap(report => {

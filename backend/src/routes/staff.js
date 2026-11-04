@@ -1526,6 +1526,28 @@ const normalizedDiseaseRecords = patient => {
   return [{ _id: new mongoose.Types.ObjectId(), name, summary, summaryHistory: legacy.summaryHistory || [], courseEntries: legacy.courseEntries || [], migratedFromLegacyAt: new Date() }];
 };
 
+// The archive UI has always shown legacy medicalRecord as a disease dossier.
+// Persist that existing dossier once so selectors and server-side review use the same source of truth.
+router.post('/patients/:id/disease-records/materialize-legacy', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    if (!['healthManager', 'familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success:false, message:'仅所属健管专员或健康顾问可整理旧版专病档案' });
+    const patient = await User.findOne({ _id:req.params.id, tenantId:req.staff.tenantId, isDeleted:{ $ne:true } })
+      .select('diseaseRecords medicalRecord assignedHealthManager assignedFamilyDoctor').lean();
+    if (!patient) return res.status(404).json({ success:false, message:'客户不存在' });
+    if (req.staff.role !== 'superadmin' && ![patient.assignedHealthManager, patient.assignedFamilyDoctor].some(value => String(value || '') === String(req.staff._id)))
+      return res.status(403).json({ success:false, message:'仅该客户所属健管专员或健康顾问可整理旧版专病档案' });
+    if (patient.diseaseRecords?.length) return res.json({ success:true, data:patient.diseaseRecords, unchanged:true });
+    if (!hasMedicalSummary(patient.medicalRecord?.summary)) return res.status(409).json({ success:false, message:'没有可归一化的旧版专病首次概况' });
+    const records = normalizedDiseaseRecords(patient);
+    records[0].migratedFromLegacyBy = req.staff._id;
+    const saved = await User.collection.updateOne({ _id:patient._id,
+      diseaseRecords:patient.diseaseRecords === undefined ? { $exists:false } : patient.diseaseRecords,
+      'medicalRecord.summary':patient.medicalRecord?.summary }, { $set:{ diseaseRecords:records } });
+    if (!saved.matchedCount) return res.status(409).json({ success:false, message:'专病资料已变化，请刷新后重试' });
+    res.json({ success:true, data:records });
+  } catch (error) { res.status(500).json({ success:false, message:error.message }); }
+});
+
 // 一项疾病对应一份专病档案；服务记录通过 diseaseName 与它关联。
 router.post('/patients/:id/disease-records/:recordId/summary-draft', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
   try {
@@ -5549,6 +5571,7 @@ async function validateArchiveOnlyUpload(staff, patientId, sourceReportId, date)
 // Reorganize existing originals without sending private files through the browser.
 router.post('/medical-reports/organize', staffAuth, checkPermission('reports', 'create'), async (req, res) => {
   const { patientId, files, title, type, documentCategory, hospital, date, note } = req.body || {};
+  const autoClinicalSplit = req.body?.autoClinicalSplit === true;
   if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健管专员可整理客户资料' });
   if (!mongoose.isValidObjectId(patientId) || !String(title || '').trim() || !Array.isArray(files) || !files.length || files.length > 20)
     return res.status(400).json({ success: false, message: '请选择客户、标题和1至20个原件' });
@@ -5583,6 +5606,15 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
   const selectedCategory = documentCategory || sources[0].documentCategory || 'physical_exam';
   if (!allowedTypes.includes(selectedType) || !allowedCategories.includes(selectedCategory))
     return res.status(400).json({ success: false, message: '报告分类无效' });
+  if (autoClinicalSplit && (ids.length !== 1 || !['outpatient_record','prescription_order'].includes(selectedCategory) || sources[0].audit_status !== 'unaudited'))
+    return res.status(409).json({ success:false, message:'自动拆分仅适用于同一条待审核原件中的病历或处方图片' });
+  const organizedId = autoClinicalSplit ? new mongoose.Types.ObjectId(crypto.createHash('sha256')
+    .update(`clinical-organize:${patientId}:${selectedCategory}:${selected.map(item => `${item.source._id}:${item.index}`).sort().join(',')}`)
+    .digest('hex').slice(0, 24)) : null;
+  if (organizedId) {
+    const existing = await MedicalReport.findOne({ _id:organizedId, user:patient._id });
+    if (existing) return res.json({ success:true, data:withSignedReportFiles(existing), unchanged:true });
+  }
   const { copyStoredFile, uploadBase64, deleteFile } = require('../utils/oss');
   const copied = [];
   try {
@@ -5593,6 +5625,7 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
       copied.push(stored);
     }
     const report = await MedicalReport.create({
+      ...(organizedId ? { _id:organizedId } : {}),
       user: patient._id, tenantId: patient.tenantId,
       title: String(title).trim().slice(0, 200), type: selectedType, documentCategory: selectedCategory,
       hospital: String(hospital || '').trim().slice(0, 200), date: date || '', checkDate: date || '',
@@ -5610,6 +5643,10 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
     return res.json({ success: true, data: withSignedReportFiles(report) });
   } catch (error) {
     await Promise.all(copied.map(file => deleteFile(file.key)));
+    if (organizedId && error.code === 11000) {
+      const existing = await MedicalReport.findOne({ _id:organizedId, user:patient._id });
+      if (existing) return res.json({ success:true, data:withSignedReportFiles(existing), unchanged:true });
+    }
     console.error('整理报告失败:', error);
     return res.status(500).json({ success: false, message: '整理失败，请稍后重试' });
   }
@@ -6822,11 +6859,73 @@ router.get('/upload/report-file/:jobId', staffAuth, (req, res) => {
 // 只提取机构和一个报告级日期，供上传报告时自动回填表单用——
 // 不做完整体检项目提取，控制耗时和AI调用成本（2026-07-21需求：单份上传时医院/日期
 // 报告原文本来就印着，不该让专员每次手动重复填写）
-const QUICK_META_PROMPT = `请只从这张医疗资料原件里提取"医院/机构名称"和一个"资料日期"，不要提取其他内容。原件可能是体检、检查、检验报告，也可能是门诊病历或处方。
+const QUICK_META_PROMPT = `请只从这张医疗资料原件里提取"医院/机构名称"、一个"资料日期"和原件文书类别，不要提取其他内容。原件可能是体检、检查、检验报告，也可能是门诊病历或处方。
 规则：
 - institution：机构全称必须与报告原文印刷文字逐字一致，不得翻译、音译、编造。找不到就留空字符串。只有报告原文确实印刷的是英文机构名（境外机构报告）时才保留英文，中文报告严禁输出英文或中英混杂机构名。
 - checkDate：格式 YYYY-MM-DD。报告优先取报告日期，其次检查日期、采样日期；门诊病历优先取就诊日期；处方优先取开方日期。不要把出生日期、打印日期或复诊预约日期当作资料日期。找不到就留空字符串。只输出一个日期，不拼接多个日期。
-仅输出JSON，不要任何额外文字：{"institution":"","checkDate":""}`;
+- documentCategory：只在页眉标题或版式明确是门诊病历、门诊记录时填 outpatient_record；明确是处方笺、电子处方或药品医嘱单时填 prescription_order。正文提到药物不能把病历判为处方；处方上印有诊断不能把处方判为病历。两种文书出现在同一图片或无法确认时填 unknown。
+仅输出JSON，不要任何额外文字：{"institution":"","checkDate":"","documentCategory":"unknown"}`;
+
+// Read only: classify each original image before a staff member creates separate review records.
+router.post('/medical-reports/:id/classify-clinical-files', staffAuth, checkPermission('reports', 'create'), async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success:false, message:'仅健管专员可整理客户资料' });
+    const report = await MedicalReport.findById(req.params.id).select('user fileUrl fileUrls ossKey ossKeys mimeType audit_status').lean();
+    if (!report) return res.status(404).json({ success:false, message:'原始资料不存在' });
+    const patient = await User.findOne({ _id:report.user, tenantId:req.staff.tenantId, isDeleted:{ $ne:true } }).select('_id assignedHealthManager').lean();
+    if (!patient || (req.staff.role !== 'superadmin' && String(patient.assignedHealthManager || '') !== String(req.staff._id)))
+      return res.status(403).json({ success:false, message:'仅该客户所属健管专员可整理资料' });
+    if (report.audit_status !== 'unaudited') return res.status(409).json({ success:false, message:'仅待审核原件可自动分类，请先核对现有归档' });
+    const urls = report.fileUrls?.length ? report.fileUrls : report.fileUrl ? [report.fileUrl] : [];
+    if (!urls.length || urls.length > 20)
+      return res.status(400).json({ success:false, message:'仅支持1至20张图片自动分类' });
+    if (!process.env.QWEN_API_KEY) return res.status(503).json({ success:false, message:'自动识别暂不可用，请使用手动整理归档' });
+    const buffers = await require('../utils/pdf').fetchReportBuffers(report, UPLOADS_DIR);
+    const { parseImage } = require('../utils/ai');
+    const { withStaffService, withPersonalData } = require('../utils/aiDataConsent');
+    const classified = [];
+    for (let index = 0; index < buffers.length; index++) {
+      const imageMime = require('../utils/serviceGroupRules').fileMime(buffers[index]);
+      if (!String(imageMime || '').startsWith('image/')) return res.status(400).json({ success:false, message:`第${index + 1}份原件不是可识别图片，请手动整理` });
+      const raw = await withStaffService(req.staff, () => withPersonalData(patient._id, 'health', () =>
+        withAiContext({ actorId:String(req.staff._id), tenantId:String(req.staff.tenantId), business:'ocr', stage:'clinical_file_classification' }, () =>
+          parseImage(`data:${imageMime};base64,${buffers[index].toString('base64')}`, QUICK_META_PROMPT, { isUrl:false, model:'qwen-vl-plus', maxTokens:250 }))));
+      const parsed = safeParseJSON(raw) || {};
+      classified.push({ fileIndex:index,
+        documentCategory:['outpatient_record','prescription_order'].includes(parsed.documentCategory) ? parsed.documentCategory : 'unknown',
+        hospital:sanitizeInstitution(parsed.institution) || '', date:isCalendarReportDate(parsed.checkDate) ? parsed.checkDate : '' });
+    }
+    res.json({ success:true, data:{ patientId:String(patient._id), files:classified } });
+  } catch (error) {
+    console.error('[clinical-file-classification]', req.params.id, error.code || error.message);
+    res.status(503).json({ success:false, message:'图片分类失败，请使用手动整理归档' });
+  }
+});
+
+router.post('/medical-reports/:id/complete-clinical-split', staffAuth, checkPermission('reports', 'audit'), async (req, res) => {
+  if (!['healthManager','superadmin'].includes(req.staff.role)) return res.status(403).json({ success:false, message:'仅健管专员可完成资料拆分' });
+  const source = await MedicalReport.findById(req.params.id).select('user fileUrl fileUrls audit_status').lean();
+  if (!source) return res.status(404).json({ success:false, message:'原始资料不存在' });
+  const patient = await User.findOne({ _id:source.user, tenantId:req.staff.tenantId, isDeleted:{ $ne:true } }).select('assignedHealthManager').lean();
+  if (!patient || (req.staff.role !== 'superadmin' && String(patient.assignedHealthManager || '') !== String(req.staff._id)))
+    return res.status(403).json({ success:false, message:'仅该客户所属健管专员可完成拆分' });
+  const childIds = req.body?.childReportIds;
+  if (!Array.isArray(childIds) || childIds.length !== 2 || childIds.some(id => !mongoose.isValidObjectId(id)) || new Set(childIds.map(String)).size !== 2)
+    return res.status(400).json({ success:false, message:'请提供两条拆分后的资料记录' });
+  const children = await MedicalReport.find({ _id:{ $in:childIds }, user:source.user }).select('documentCategory organizedFrom').lean();
+  if (children.length !== 2 || new Set(children.map(item => item.documentCategory)).size !== 2
+    || children.some(item => !['outpatient_record','prescription_order'].includes(item.documentCategory)))
+    return res.status(409).json({ success:false, message:'病历和处方待审记录不完整，请刷新后重试' });
+  const coverage = children.flatMap(item => item.organizedFrom || []);
+  const count = source.fileUrls?.length || (source.fileUrl ? 1 : 0);
+  if (coverage.length !== count || new Set(coverage.map(item => Number(item.fileIndex))).size !== count
+    || coverage.some(item => String(item.reportId) !== String(source._id) || !Number.isInteger(Number(item.fileIndex)) || Number(item.fileIndex) < 0 || Number(item.fileIndex) >= count))
+    return res.status(409).json({ success:false, message:'拆分结果未覆盖全部原件，请逐张核对' });
+  const reason = '原件同时包含门诊病历与处方，已按图片分别生成待审核记录；本条混合记录不再单独入档。';
+  const saved = await MedicalReport.updateOne({ _id:source._id, audit_status:'unaudited' }, { $set:{ audit_status:'rejected', reject_reason:reason } });
+  if (!saved.matchedCount) return res.status(409).json({ success:false, message:'原始资料审核状态已变化，请刷新后核对' });
+  res.json({ success:true, data:{ childReportIds:childIds } });
+});
 
 // POST /api/staff/upload/quick-meta — 上传报告后，自动识别机构名+日期回填表单（不做完整体检解析）
 router.post('/upload/quick-meta', staffAuth, async (req, res) => {
@@ -6852,9 +6951,10 @@ router.post('/upload/quick-meta', staffAuth, async (req, res) => {
     const { withStaffService, withPersonalData } = require('../utils/aiDataConsent');
     const text = await withStaffService(req.staff, () => withPersonalData(patient._id, 'health', () =>
       withAiContext({ actorId: String(req.staff._id), tenantId: String(req.staff.tenantId), business: 'ocr', stage: 'quick_meta' }, () =>
-        parseImage(image, QUICK_META_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 200 }))));
+        parseImage(image, QUICK_META_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 250 }))));
     const parsed = safeParseJSON(text) || {};
-    res.json({ success: true, data: { institution: sanitizeInstitution(parsed.institution) || '', checkDate: parsed.checkDate || '' } });
+    res.json({ success: true, data: { institution: sanitizeInstitution(parsed.institution) || '', checkDate: parsed.checkDate || '',
+      documentCategory: ['outpatient_record', 'prescription_order'].includes(parsed.documentCategory) ? parsed.documentCategory : 'unknown' } });
   } catch (err) {
     console.warn('[quick-meta] 机构日期识别失败:', err.code || err.message);
     res.status(503).json({ success: false, message: '自动识别失败，请手动填写机构和日期' });

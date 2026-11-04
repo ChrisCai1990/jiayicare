@@ -880,6 +880,8 @@ const sameDayVisitCandidates = (dossier, date, excludedId = '') => (dossier?.cou
   .filter(entry => String(entry._id) !== String(excludedId) && visitHelpers.isClinicalVisitEntry(entry)
     && visitHelpers.visitDate(entry.occurredAt) === date)
 
+const hasLegacyDiseaseSummary = summary => ['chiefComplaint','presentIllness','physicalExam','epidemiologicalHistory','initialDiagnosis','currentMedication'].some(key => summary?.[key])
+
 function DiseaseArchivePanel({ patientId, user, serviceRecords, onSaved, onOpenReports, onViewReport, onRevokeReport, toast }) {
   const { staff } = useStaff()
   const [generatingSummary, setGeneratingSummary] = useState(false)
@@ -889,7 +891,7 @@ function DiseaseArchivePanel({ patientId, user, serviceRecords, onSaved, onOpenR
   useEffect(() => () => { summaryRequest.current += 1 }, [patientId])
   const legacy = user.medicalRecord || {}
   const legacySummary = legacy.summary || {}
-  const hasLegacy = ['chiefComplaint','presentIllness','physicalExam','epidemiologicalHistory','initialDiagnosis','currentMedication'].some(key => legacySummary[key])
+  const hasLegacy = hasLegacyDiseaseSummary(legacySummary)
   const stored = Array.isArray(user.diseaseRecords) ? user.diseaseRecords : []
   const dossiers = stored.length ? stored : (hasLegacy ? [{ _id: 'legacy', name: legacySummary.linkedDiseases?.[0] || legacySummary.initialDiagnosis || '未命名专病', summary: legacySummary, summaryHistory: legacy.summaryHistory || [], courseEntries: legacy.courseEntries || [] }] : [])
   const serviceGroups = {}
@@ -2818,7 +2820,14 @@ export default function PatientDetailPage() {
     const isCurrent = () => activePatientId.current === id && profileLoadVersion.current === version
     try {
       // Basic information must not wait for the report archive or its audit history.
-      const res = await staffAPI.getPatient(id)
+      let res = await staffAPI.getPatient(id)
+      if (!res.data?.user?.diseaseRecords?.length && hasLegacyDiseaseSummary(res.data?.user?.medicalRecord?.summary)
+        && ['healthManager','familyDoctor','superadmin'].includes(staff?.role)) {
+        try {
+          await staffAPI.materializeLegacyDiseaseRecords(id)
+          res = await staffAPI.getPatient(id)
+        } catch (error) { console.warn('旧版专病档案归一化未完成', error.message) }
+      }
       if (!isCurrent()) return
       setLoadError(null)
       setData(res.data)
@@ -3507,12 +3516,29 @@ export default function PatientDetailPage() {
       if (activePatientId.current !== patientId) return
       if (draft.alreadyArchived) { setCourseArchivePreview(draft.archive); return }
       setDiseaseReportPicker(null)
-      const selectedDisease = diseaseName || (data?.user?.diseaseRecords || []).find(record => String(record._id) === String(report.courseTargetDiseaseId || ''))?.name || draft.recommendedDiseaseName || ''
+      let patientResponse = await staffAPI.getPatient(patientId)
+      if (activePatientId.current !== patientId) return
+      if (!patientResponse.data?.user?.diseaseRecords?.length && hasLegacyDiseaseSummary(patientResponse.data?.user?.medicalRecord?.summary)
+        && ['healthManager','familyDoctor','superadmin'].includes(staff?.role)) {
+        try {
+          await staffAPI.materializeLegacyDiseaseRecords(patientId)
+          patientResponse = await staffAPI.getPatient(patientId)
+        } catch (error) { setHealthCourseError(error.message || '旧版专病档案归一化失败') }
+      }
+      if (activePatientId.current !== patientId) return
+      const currentUser = patientResponse.data?.user || {}
+      const availableDiseaseRecords = Array.isArray(currentUser.diseaseRecords) ? currentUser.diseaseRecords : []
+      const legacySummary = currentUser.medicalRecord?.summary || {}
+      const legacyDiseaseName = !availableDiseaseRecords.length && hasLegacyDiseaseSummary(legacySummary)
+        ? (legacySummary.linkedDiseases?.[0] || legacySummary.initialDiagnosis || '未命名专病') : ''
+      const serviceDiseaseNames = [...new Set((serviceRecords || []).map(item => item.diseaseName?.trim()).filter(Boolean))]
+      const unpersistedDiseaseNames = [...new Set([legacyDiseaseName, ...serviceDiseaseNames].filter(name => name && !availableDiseaseRecords.some(record => record.name === name)))]
+      const selectedDisease = diseaseName || availableDiseaseRecords.find(record => String(record._id) === String(report.courseTargetDiseaseId || ''))?.name || draft.recommendedDiseaseName || ''
       const reportDate = report.checkDate || report.date
       setHealthCourseReview({ report, generatedAt:draft.generatedAt,
         occurredAt:calendarDate(reportDate) || calendarDate(draft.outpatientRecord?.visitDate)
           || (reportDate && !Number.isNaN(Date.parse(reportDate)) ? new Date(reportDate).toLocaleDateString('sv-SE') : ''),
-        diseaseName:selectedDisease, visitChoice:'',
+        diseaseName:selectedDisease, availableDiseaseRecords, unpersistedDiseaseNames, visitChoice:'',
         content: draft.content || '', examination: draft.examination || '', diagnosis: draft.diagnosis || '', medicationChange: draft.medicationChange || '', treatmentResponse: draft.treatmentResponse || '', nextPlan: draft.nextPlan || '', outpatientRecord:draft.outpatientRecord || null, outpatientReviewIssues:draft.outpatientReviewIssues || [] })
       if (!pendingOnly) await loadReports()
     } catch (err) { if (activePatientId.current === patientId) toast(err.message || (pendingOnly ? '加载待审健康变化失败，请重试' : 'AI提取健康变化失败')) }
@@ -3521,7 +3547,7 @@ export default function PatientDetailPage() {
 
   const healthCourseVisitCandidates = review => {
     if (!review) return []
-    const dossier = (data?.user?.diseaseRecords || []).find(record =>
+    const dossier = (review.availableDiseaseRecords || data?.user?.diseaseRecords || []).find(record =>
       String(record._id) === String(review.report.courseTargetDiseaseId || '')
       || record.name === review.diseaseName)
     return sameDayVisitCandidates(dossier, review.occurredAt, '')
@@ -3551,6 +3577,7 @@ export default function PatientDetailPage() {
     if (action === 'dismiss' && !decisionReason) return
     if (action === 'dismiss' && decisionReason.length < 5) { setHealthCourseError('请填写至少5字的不入档原因'); return }
     if (action === 'approve' && !healthCourseReview.diseaseName) { setHealthCourseError('请先由健管专员建立并指定专病首页'); return }
+    if (action === 'approve' && !healthCourseReview.availableDiseaseRecords?.some(record => record.name === healthCourseReview.diseaseName)) { setHealthCourseError('该专病尚未保存为首页，请先在专病管理中核对首次概况并保存'); return }
     if (action === 'approve' && !healthCourseReview.outpatientRecord && !healthCourseReview.content.trim()) { setHealthCourseError('本次健康及症状变化不能为空'); return }
     if (action === 'approve' && healthCourseVisitCandidates(healthCourseReview).length && !healthCourseReview.visitChoice) { setHealthCourseError('该日期已有诊疗记录，请确认同次就医归并或明确选择不同次就医'); return }
     setHealthCourseSaving(true)
@@ -13380,14 +13407,14 @@ export default function PatientDetailPage() {
               {!!healthCourseReview.outpatientReviewIssues?.length && <div role="alert" style={{ padding: 12, marginBottom: 14, borderRadius: 8, background: '#FFF0F0', color: '#B42318', fontSize: 13 }}>原件识别疑点：{healthCourseReview.outpatientReviewIssues.join('；')}</div>}
               {healthCourseError && <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#FFF0F0', color: '#B42318', fontSize: 13 }}>{healthCourseError}</div>}
               <div className="form-group"><label>实际就诊 / 会诊日期 *</label><DateField className="form-input" type="date" value={healthCourseReview.occurredAt} onChange={event => setHealthCourseReview(value => ({ ...value, occurredAt:event.target.value, visitChoice:'' }))} /><small>核对原病历日期，上传日期不等于就诊日期。</small></div>
-              <div className="form-group"><label>归入专病档案 *</label><select className="form-input" value={healthCourseReview.diseaseName} disabled={!!healthCourseReview.report.courseTargetDiseaseId} onChange={event => setHealthCourseReview(value => ({ ...value, diseaseName:event.target.value, visitChoice:'' }))}><option value="">请选择已有专病</option>{(data?.user?.diseaseRecords || []).map(record => <option key={record._id || record.name} value={record.name}>{record.name}</option>)}</select>{healthCourseReview.outpatientRecord && !healthCourseReview.report.courseTargetDiseaseId && <div role="alert" style={{ color:'#B42318', marginTop:6 }}>此病历缺少健管专员确认的专病归属，暂不能写入。请健管专员先建立专病首页并补齐归属。</div>}</div>
+              <div className="form-group"><label>归入专病档案 *</label><select className="form-input" value={(healthCourseReview.availableDiseaseRecords || []).some(record => record.name === healthCourseReview.diseaseName) ? healthCourseReview.diseaseName : ''} disabled={!!healthCourseReview.report.courseTargetDiseaseId} onChange={event => setHealthCourseReview(value => ({ ...value, diseaseName:event.target.value, visitChoice:'' }))}><option value="">请选择已有专病首页</option>{(healthCourseReview.availableDiseaseRecords || []).map(record => <option key={record._id || record.name} value={record.name}>{record.name}</option>)}</select>{!!healthCourseReview.unpersistedDiseaseNames?.length && <div role="alert" style={{ color:'#B45309', marginTop:6 }}>专病管理中可见「{healthCourseReview.unpersistedDiseaseNames.join('、')}」，但尚未保存为可归档的专病首页。请健管专员在专病管理中核对首次概况并保存。</div>}{healthCourseReview.outpatientRecord && !healthCourseReview.report.courseTargetDiseaseId && <div role="alert" style={{ color:'#B42318', marginTop:6 }}>此病历缺少健管专员确认的专病归属，暂不能写入。请健管专员先建立专病首页并补齐归属。</div>}</div>
               {!!healthCourseVisitCandidates(healthCourseReview).length && <div className="form-group" style={{ padding:12, background:'#F2F8F5', borderRadius:8 }}><label>该日期已有诊疗记录，请确认是否同一次就医 *</label><select className="form-input" value={healthCourseReview.visitChoice || ''} onChange={event => setHealthCourseReview(value => ({ ...value, visitChoice:event.target.value }))}><option value="">请选择</option>{healthCourseVisitCandidates(healthCourseReview).map(entry => <option key={entry._id} value={entry._id}>归入已有记录：{entry.sourceInstitution || entry.sourceTitle || '医疗资料'} · {combinedHealthChange(entry).slice(0,35)}</option>)}<option value="separate">不同次就医，单独建立一条</option></select><small>日期相同不代表同一次就医；请核对医院、科室和原始资料后选择。</small></div>}
               {healthCourseReview.outpatientRecord ? <div style={{ display: 'grid', gap: 12 }}>{OUTPATIENT_ARCHIVE_FIELDS.map(([key,label]) => <div className="form-group" key={key}><label>{label}</label><textarea className="form-input" rows={key === 'presentIllness' || key === 'testsAndOrders' ? 4 : 2} value={key === 'diagnoses' ? (healthCourseReview.outpatientRecord.diagnoses || []).join('\n') : healthCourseReview.outpatientRecord[key] || ''} onChange={event => setHealthCourseReview(value => ({ ...value, outpatientRecord:{ ...value.outpatientRecord, [key]:key === 'diagnoses' ? event.target.value.split('\n').map(item => item.trim()).filter(Boolean) : event.target.value } }))} /></div>)}</div> : [
                 ['content', '本次健康及症状变化 *', 4], ['examination', '医疗机构检查信息', 3], ['diagnosis', '医疗机构诊断归档', 3], ['medicationChange', '医疗机构用药医嘱归档', 3], ['treatmentResponse', '治疗后反馈', 3], ['nextPlan', '后续安排', 3],
               ].map(([key, label, rows]) => <div className="form-group" key={key}><label>{label}</label><textarea className="form-input" rows={rows} value={healthCourseReview[key]} onChange={event => setHealthCourseReview(value => ({ ...value, [key]: event.target.value }))} /></div>)}
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => openReportDetail(healthCourseReview.report)}>查看原始资料</button>
             </div>
-            <div className="modal-footer" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{healthCourseError && <div role="alert" style={{ width: '100%', color: '#B42318' }}>{healthCourseError}</div>}{!(data?.user?.diseaseRecords || []).length && <button className="btn btn-secondary" onClick={() => { setHealthCourseReview(null); setServiceRecordCategory('专病管理'); setTab('serviceRecords') }}>先建立专病首页</button>}<button className="btn btn-secondary" disabled={healthCourseSaving} onClick={() => reviewHealthCourseDraft('dismiss')}>不入档</button><button className="btn btn-primary" disabled={healthCourseSaving || (healthCourseReview.outpatientRecord && !healthCourseReview.report.courseTargetDiseaseId) || !(data?.user?.diseaseRecords || []).length || (healthCourseVisitCandidates(healthCourseReview).length > 0 && !healthCourseReview.visitChoice)} onClick={() => reviewHealthCourseDraft('approve')}>{healthCourseSaving ? '保存中…' : healthCourseReview.outpatientRecord ? '确认并写入诊疗时间轴' : '确认并写入健康变化'}</button></div>
+            <div className="modal-footer" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{healthCourseError && <div role="alert" style={{ width: '100%', color: '#B42318' }}>{healthCourseError}</div>}{!healthCourseReview.availableDiseaseRecords?.length && <button className="btn btn-secondary" onClick={() => { setHealthCourseReview(null); setServiceRecordCategory('专病管理'); setTab('serviceRecords') }}>先建立专病首页</button>}<button className="btn btn-secondary" disabled={healthCourseSaving} onClick={() => reviewHealthCourseDraft('dismiss')}>不入档</button><button className="btn btn-primary" disabled={healthCourseSaving || (healthCourseReview.outpatientRecord && !healthCourseReview.report.courseTargetDiseaseId) || !healthCourseReview.availableDiseaseRecords?.some(record => record.name === healthCourseReview.diseaseName) || (healthCourseVisitCandidates(healthCourseReview).length > 0 && !healthCourseReview.visitChoice)} onClick={() => reviewHealthCourseDraft('approve')}>{healthCourseSaving ? '保存中…' : healthCourseReview.outpatientRecord ? '确认并写入诊疗时间轴' : '确认并写入健康变化'}</button></div>
           </div>
         </div>
       )}
@@ -15362,6 +15389,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
   const [metaMessage, setMetaMessage] = useState('')
   // 单文件自动识别时会先上传拿URL，缓存下来给 handleSubmit 复用，避免同一个文件传两次
   const preUploadedRef = useRef(null) // { file, url, mimeType, fileSize }
+  const batchUploadedRef = useRef(new Map())
   const handleFile = async (e) => {
     const files = Array.from(e.target.files)
     if (!files.length) return
@@ -15370,6 +15398,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
     setError('')
     setMetaMessage('')
     preUploadedRef.current = null
+    batchUploadedRef.current.clear()
 
     // 单份上传时，自动识别报告上印刷的机构名/日期回填表单，专员不用每次手动重复填写
     // （2026-07-21需求：单份上传是主流场景，报告原文本来就印着这两项）；多文件一次选择时
@@ -15402,6 +15431,55 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
     try {
       setSaving(true); setServerAccepted(false); setError(''); setUploadProgress(0)
       const total = fileDatas.length
+      if (!form.archiveOnly && total > 1 && ['outpatient_record', 'prescription_order'].includes(form.documentCategory)) {
+        const classified = []
+        for (let i = 0; i < total; i++) {
+          const fd = fileDatas[i]
+          let upload = batchUploadedRef.current.get(fd.file)
+          if (!upload) {
+            setUploadStep(`上传并识别第 ${i + 1}/${total} 张资料...`)
+            upload = await staffAPI.uploadReportFile(fd.file, p => setUploadProgress(Math.round(((i + p) / total) * 80)))
+            batchUploadedRef.current.set(fd.file, upload)
+          }
+          let metadata = upload.metadata
+          if (!metadata) {
+            try {
+              const result = await staffAPI.quickMetaFromReportFile(patientId, upload.url, upload.mimeType)
+              metadata = result.data || {}
+            } catch { metadata = { documentCategory: 'unknown' } }
+            upload.metadata = metadata
+          }
+          classified.push({ ...fd, ...upload, metadata, documentCategory:fd.manualCategory || metadata.documentCategory || 'unknown' })
+        }
+        setFileDatas(classified)
+        const unresolved = classified.filter(fd => !['outpatient_record', 'prescription_order'].includes(fd.documentCategory))
+        if (unresolved.length) {
+          setError(`有 ${unresolved.length} 张图片无法确认是病历还是处方，请逐张核对并选择分类后再保存；原件已上传，尚未建立资料记录。`)
+          return
+        }
+        const groups = mergeFiles
+          ? ['outpatient_record', 'prescription_order'].map(category => classified.filter(fd => fd.documentCategory === category)).filter(group => group.length)
+          : classified.map(fd => [fd])
+        for (const group of groups) {
+          const category = group[0].documentCategory
+          const categoryName = category === 'outpatient_record' ? '门诊病历' : '处方与医嘱'
+          const dates = [...new Set(group.map(fd => fd.metadata.checkDate).filter(Boolean))]
+          const hospitals = [...new Set(group.map(fd => fd.metadata.institution).filter(Boolean))]
+          setUploadStep(`保存${categoryName}（${group.length} 张）...`)
+          await staffAPI.uploadReport({
+            patientId, title: groups.length === 1 ? form.title : `${form.title} · ${categoryName}`,
+            type: DOCUMENT_CATEGORY_REPORT_TYPE[category], documentCategory: category,
+            hospital: hospitals.length === 1 ? hospitals[0] : groups.length === 1 ? form.hospital : '',
+            date: dates.length === 1 ? dates[0] : groups.length === 1 ? normalizedDate : '',
+            note: form.note, fileUrl: group[0].url, fileUrls: group.map(fd => fd.url),
+            ossKey: group[0].ossKey || '', ossKeys: group.map(fd => fd.ossKey).filter(Boolean),
+            mimeType: group[0].mimeType, fileSize: String(group.reduce((sum, fd) => sum + (Number(fd.fileSize) || 0), 0)),
+          })
+        }
+        setUploadProgress(100)
+        onSaved()
+        return
+      }
       if (mergeFiles && total > 1) {
         // 合并模式：全部文件先各自上传拿到url，最后只建一条报告记录、fileUrls存全部url，
         // AI解析时会把这些图片一次性传给模型合并识别（详见后端 runReportParse）
@@ -15552,13 +15630,18 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
             {fileDatas.length > 0 && (
               <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {fileDatas.map((fd, i) => (
-                  <div key={i} style={{ fontSize: 12, color: '#22A06B' }}>✓ {fd.name}</div>
+                  <div key={i} style={{ fontSize: 12, color: '#22A06B', display:'flex', alignItems:'center', gap:8 }}>✓ {fd.name}
+                    {fd.metadata && ['outpatient_record', 'prescription_order'].includes(form.documentCategory) && <select aria-label={`${fd.name}的资料分类`} value={fd.manualCategory || fd.metadata.documentCategory || 'unknown'} onChange={event => setFileDatas(current => current.map((item, index) => index === i ? { ...item, manualCategory:event.target.value } : item))}>
+                      <option value="unknown">待核对分类</option><option value="outpatient_record">门诊病历</option><option value="prescription_order">处方与医嘱</option>
+                    </select>}
+                  </div>
                 ))}
                 {fileDatas.length === 1 && fileDatas[0].file.size >= 8 * 1024 * 1024 && (
                   <div style={{ fontSize: 11, color: '#6B7B73' }}>大文件请手动填写机构和日期；确认后仅上传一次。</div>
                 )}
                 {fileDatas.length > 1 && (
                   <>
+                    {['outpatient_record', 'prescription_order'].includes(form.documentCategory) && !form.archiveOnly && <div style={{ fontSize: 12, color:'#4A6558', marginTop:6 }}>病历与处方图片可一次上传；系统逐张识别并按类别分别建档。识别不清时请核对分类，资料内容仍需健管专员审核。</div>}
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: '#4A6558', cursor: 'pointer' }}>
                       <input type="checkbox" checked={mergeFiles} onChange={e => setMergeFiles(e.target.checked)} />
                       这些文件是同一份报告的多张照片（如结论页+数据页），合并为一条记录
