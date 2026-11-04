@@ -9,4 +9,6 @@ test('日常跟进模板及显式内部任务不进入客户待办', () => {
   assert.equal(isStaffOnlyFollowUp({ theme: '标准随访 · 【日常跟进】', checkInItems: ['sleep'] }), true);
   assert.equal(isStaffOnlyFollowUp({ theme: '【日常跟进】', checkInItems: ['diet', 'exercise'] }), true);
   assert.equal(isStaffOnlyFollowUp({ theme: '客户可见随访', checkInItems: ['bloodPressure'], repeatWeekly: true }), false);
+  assert.equal(isStaffOnlyFollowUp({ sourceType: 'report_followup', workflowKey: 'report_followup:advisor_review', theme: '审核报告问题及建议' }), true);
+  assert.equal(isStaffOnlyFollowUp({ sourceType: 'report_followup', workflowKey: 'report_followup:customer_followup', theme: '报告后续随访' }), false);
 });

@@ -25,7 +25,7 @@ async function syncReportReviewTask(draft) {
   const key = `${draft._id}:report_review`;
   try {
     await FollowUp.findOneAndUpdate({ assessmentActionKey: key }, {
-      $set: { assignedTo: owner, ...(publicationPending ? { status: 'planned', completedAt: null, completedBy: null } : {}), theme: `${patient?.assignedFamilyDoctor ? (publicationPending ? '重试报告随访发布' : annualInput ? '审核报告问题及建议' : '审核报告随访') : '请分配健康顾问'} · ${draft.title}`, plannedContent: annualInput ? '核对各项检查问题和建议，确认后供年度方案融合；此处不派发执行任务。' : publicationPending ? '随访尚未完整发布，请核对负责人后重试；已发布任务会保留。' : (draft.followUpAutomation?.message || '请核对来源原文和随访草稿，审核后才会派发。') },
+      $set: { assignedTo: owner, clientVisible: false, ...(publicationPending ? { status: 'planned', completedAt: null, completedBy: null } : {}), theme: `${patient?.assignedFamilyDoctor ? (publicationPending ? '重试报告随访发布' : annualInput ? '审核报告问题及建议' : '审核报告随访') : '请分配健康顾问'} · ${draft.title}`, plannedContent: annualInput ? '核对各项检查问题和建议，确认后供年度方案融合；此处不派发执行任务。' : publicationPending ? '随访尚未完整发布，请核对负责人后重试；已发布任务会保留。' : (draft.followUpAutomation?.message || '请核对来源原文和随访草稿，审核后才会派发。') },
       $setOnInsert: { assessmentActionKey: key, patientId: draft.patientId, staffId: draft.createdBy || owner, sourceType: 'report_followup', sourceId: draft._id, workflowKey: 'report_followup:advisor_review', taskRole: 'executor', type: 'other', ...(!publicationPending ? { status: 'planned' } : {}), aiStatus: 'approved', reviewRole: 'familyDoctor', date: new Date(), remindAt: new Date() },
     }, { upsert: true });
   } catch (error) { if (error.code !== 11000 || !(await FollowUp.exists({ assessmentActionKey: key }))) throw error; }

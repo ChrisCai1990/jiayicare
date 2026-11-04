@@ -1153,6 +1153,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
         { workflowKey: 'medication:staff-followup' },
         { sourceType: 'annual_service' },
         { sourceType: 'annual_coordination' },
+        { sourceType: 'annual_preparation' },
         { sourceType: 'ai_no_response' },
         { sourceType: 'order', workflowKey: { $not: /^medical_reminder:(?:followup|documents)$/ } },
         { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
