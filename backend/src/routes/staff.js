@@ -6080,6 +6080,18 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         if (reportYear === undefined) report.reportYear = Number(confirmedDate.slice(0, 4));
       }
     }
+    // A draft may contain unmatched results, but approval must not silently omit
+    // them from the screening record. Check the server-classified items, including
+    // requests that only change aiStatus without sending reportItems.
+    if (aiStatus === 'reviewed' && report.documentCategory !== 'prescription_order') {
+      const unclassified = (report.reportItems || []).filter(item =>
+        !(item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length)));
+      if (unclassified.length) return res.status(400).json({
+        success: false,
+        code: 'REPORT_ITEMS_UNCLASSIFIED',
+        message: `还有 ${unclassified.length} 项未归类，请先逐项归类；当前修改可保存为草稿`,
+      });
+    }
     if (autoAuditPending) {
       const roleError = clinicalManagerAuditError(report, req.staff);
       if (roleError) return res.status(403).json({ success: false, message: roleError });
@@ -6569,6 +6581,14 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   if (report.archiveOnly) return res.status(409).json({ success: false, message: '仅留存的补充原件不参与解析和审核' });
   if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
+    if (!['prescription_order', 'outpatient_record'].includes(report.documentCategory)) {
+      const unclassified = (report.reportItems || []).filter(item =>
+        !(item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length)));
+      if (unclassified.length) return res.status(400).json({
+        success: false, code: 'REPORT_ITEMS_UNCLASSIFIED',
+        message: `还有 ${unclassified.length} 项未归类，请先逐项归类；当前修改可保存为草稿`,
+      });
+    }
     const targetError = await outpatientCourseTargetError(report);
     if (targetError) return res.status(409).json({ success: false, message: targetError });
     if (!isManualOnlyReportAudit(report) && report.aiStatus !== 'reviewed') {

@@ -4334,7 +4334,7 @@ export default function PatientDetailPage() {
 
   useEffect(() => {
     if (!ocrReviewReport || ocrFocusItemIndex == null) return
-    const focusKey = `${ocrReviewReport._id}:${ocrFocusItemIndex}`
+    const focusKey = `${ocrReviewReport._id}:${ocrReviewPage}:${ocrFocusItemIndex}`
     if (ocrFocusHandledRef.current === focusKey) return
     ocrFocusHandledRef.current = focusKey
     const frame = requestAnimationFrame(() => {
@@ -4348,7 +4348,7 @@ export default function PatientDetailPage() {
     })
     const timer = setTimeout(() => setOcrFocusItemIndex(null), 2600)
     return () => { cancelAnimationFrame(frame); clearTimeout(timer) }
-  }, [ocrReviewReport, ocrFocusItemIndex])
+  }, [ocrReviewReport, ocrReviewPage, ocrFocusItemIndex])
 
   const handleOpenOCRReview = async (r, focusItems = [], options = {}) => {
     ocrFocusHandledRef.current = null
@@ -13469,9 +13469,26 @@ export default function PatientDetailPage() {
             return next
           })
         }
-        const isClassified = it => Boolean(it?.screeningKey || (Array.isArray(it?.screeningKeys) && it.screeningKeys.length))
-        const matchedN = ocrEditItems.filter(isClassified).length
-        const unclassifiedN = ocrEditItems.length - matchedN
+        const isClassified = it => {
+          const original = ocrReviewReport.reportItems?.find(item => item.itemId && item.itemId === it.itemId)
+          const identityChanged = original && ['name', 'bodyPart', 'orderName', 'sourceSection', 'specimen', 'modality', 'unit'].some(field => String(original[field] || '') !== String(it[field] || ''))
+          return Boolean((it?.screeningKey || (Array.isArray(it?.screeningKeys) && it.screeningKeys.length)) && (!identityChanged || it.classificationSource === 'manual'))
+        }
+        const isSubstantiveItem = it => [it.name, it.value, it.findings, it.diagnosis, it.conclusion].some(value => String(value || '').trim())
+        const substantiveItems = ocrEditItems.map((it, i) => ({ it, i })).filter(({ it }) => isSubstantiveItem(it))
+        const unclassifiedItems = substantiveItems.filter(({ it }) => !isClassified(it))
+        const unclassifiedN = ocrReviewReport.documentCategory === 'prescription_order' ? 0 : unclassifiedItems.length
+        const matchedN = substantiveItems.length - unclassifiedItems.length
+        const unclassifiedByPage = unclassifiedItems.reduce((counts, { it }) => {
+          const page = Number(it.sourcePage) || 1
+          counts[page] = (counts[page] || 0) + 1
+          return counts
+        }, {})
+        const jumpToUnclassified = ({ it, i }) => {
+          ocrFocusHandledRef.current = null
+          setOcrReviewPage(Number(it.sourcePage) || 1)
+          setOcrFocusItemIndex(i)
+        }
         // 所有可选归类项打平，供搜索用
         const allClassifyOpts = classifyGroups.flatMap(g => g.opts.map(o => ({ ...o, groupLabel: g.label })))
         const classifyCell = (it, i) => {
@@ -13485,7 +13502,7 @@ export default function PatientDetailPage() {
           const options = allClassifyOpts.filter(option => !search || [option.groupLabel, option.label, ...(option.searchTerms || [])].join(' ').toLowerCase().includes(search))
           return <div style={{ fontSize: 12, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
             {identityChanged && !manual ? <div style={{ color: '#B45309' }}>项目已修改，保存后重新匹配归类</div> : labels.length ? labels.map(label => <div key={label} style={{ color: '#1E6B50' }}>{manual ? '人工归类' : '系统归类'}：{label}</div>)
-              : <div style={{ color: '#8AA89C' }}>暂未匹配，可手动归类</div>}
+              : <div role="alert" style={{ color: '#B42318', fontWeight: 800, padding: '4px 7px', background: '#FFF1F0', border: '1px solid #FCA5A5', borderRadius: 4 }}>⚠ 未归类 · 请在下方选择分类</div>}
             <details><summary style={{ cursor: 'pointer', color: '#0077B6' }}>选择 / 修改归类</summary>
               <input style={{ width: '100%', marginTop: 4, padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }} placeholder="搜索 Admin 分类或项目别名" value={ocrClassifySearch[i] || ''} onChange={e => setOcrClassifySearch(current => ({ ...current, [i]: e.target.value }))} />
               <div style={{ maxHeight: 180, overflowY: 'auto' }}>{options.map(option => <label key={option.value} style={{ display: 'block', padding: '4px 0' }}>
@@ -13522,12 +13539,21 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
                   <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
                   <select value={activePage} onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
-                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{ocrReviewReport.imagePageEvidence?.[page]?.status === 'image_only' ? '（影像资料）' : missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
+                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{unclassifiedByPage[page] ? `（未归类 ${unclassifiedByPage[page]} 项）` : ocrReviewReport.imagePageEvidence?.[page]?.status === 'image_only' ? '（影像资料）' : missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
                   </select>
                   <button className="btn btn-secondary btn-sm" disabled={activePage >= lastSourcePage} onClick={() => setOcrReviewPage(p => Math.min(lastSourcePage, (p || firstSourcePage) + 1))}>下一页</button>
                 </div>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
+              {unclassifiedN > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF1F0', borderBottom: '1px solid #FCA5A5', color: '#B42318', fontSize: 12 }}>
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>⚠ 未归类 {unclassifiedN} 项：可以保存草稿，全部归类后才能提交审核。点击下列项目直接定位：</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 104, overflowY: 'auto' }}>
+                  {unclassifiedItems.map(entry => <button key={entry.it.itemId || entry.i} type="button" onClick={() => jumpToUnclassified(entry)}
+                    style={{ color: '#B42318', border: '1px solid #FCA5A5', background: '#fff', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', fontSize: 12, textAlign: 'left', maxWidth: '100%' }}>
+                    第 {Number(entry.it.sourcePage) || 1} 页 · {entry.it.sourceSection || entry.it.orderName || '未识别栏目'} · <strong>{entry.it.name || '未命名项目'}</strong>
+                  </button>)}
+                </div>
+              </div>}
               <div className="ocr-review-layout" style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 {/* 左：原始报告预览 */}
                 {(() => {
@@ -13724,8 +13750,9 @@ export default function PatientDetailPage() {
                               原件栏目：{it.sourceSection || it.orderName || '未识别栏目'}
                             </div>}
                             <div ref={node => { if (node) ocrItemRefs.current[i] = node; else delete ocrItemRefs.current[i] }}
-                              style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
+                              style={{ border: !isPrescription && isSubstantiveItem(it) && !isClassified(it) ? '2px solid #E5484D' : isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: !isPrescription && isSubstantiveItem(it) && !isClassified(it) ? '#FFF8F7' : isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
                               {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
+                              {!isPrescription && isSubstantiveItem(it) && !isClassified(it) && <div style={{ color: '#B42318', fontSize: 12, fontWeight: 800, marginBottom: 6 }}>⚠ 未归类 · 此项阻止完成审核</div>}
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
                                 <span style={{ color: isPrescription ? '#1E6B50' : sc, fontSize: 12 }}>{isPrescription ? '处方药品' : (STATUS_OPTS.find(s => s.v === it.status)?.label || '未知')}</span>
                                 <span style={{ color: '#8AA89C', fontWeight: 400, marginLeft: 8 }}>{it.sourcePage ? `P${it.sourcePage} · ` : ''}第 {it.sourceRowOrder || visibleIndex + 1} 项</span>
@@ -13928,7 +13955,8 @@ export default function PatientDetailPage() {
                 </button>}
                 {ocrDraftSavedAt && <span style={{ alignSelf: 'center', color: '#16845B', fontSize: 11, whiteSpace: 'nowrap' }}>已保存 {ocrDraftSavedAt.toLocaleTimeString('zh-CN')}</span>}
                 <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
-                  disabled={ocrSaving} onClick={handleApproveOCR}>
+                  disabled={ocrSaving || (!ocrReviewReport._screeningRecordEdit && unclassifiedN > 0)} onClick={handleApproveOCR}
+                  title={unclassifiedN > 0 && !ocrReviewReport._screeningRecordEdit ? `还有 ${unclassifiedN} 项未归类，请先归类或保存草稿` : undefined}>
                   {ocrSaving ? '保存中…' : ocrReviewReport._screeningRecordEdit ? '✓ 保存重新归类' : '✓ 提交审核（写入专项筛查）'}
                 </button>
                 {!ocrReviewReport._screeningRecordEdit && <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
