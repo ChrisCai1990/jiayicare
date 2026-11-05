@@ -783,6 +783,7 @@ export const staffAPI = {
 }
 
 export const managementReviewAPI = {
+ prepare: (id,data) => req(`/staff/patients/${id}/management-reviews/prepare`, {method:'POST',body:JSON.stringify(data)}),
  get: id => req(`/staff/patients/${id}/management-reviews`),
  sources: (id, period) => req(`/staff/patients/${id}/management-reviews/sources?period=${encodeURIComponent(period)}`),
  create: (id, data) => req(`/staff/patients/${id}/management-reviews`, {method:'POST',body:JSON.stringify(data)}),

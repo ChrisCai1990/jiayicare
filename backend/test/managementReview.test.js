@@ -22,6 +22,10 @@ test('HTTP workflow enforces role, evidence, CAS and advisor approval',async()=>
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
  const call=async(action,role,body)=>fetch(`http://127.0.0.1:${server.address().port}/patients/${u._id}/management-reviews/${row._id}/${action}`,{method:'POST',headers:{'content-type':'application/json','x-role':role},body:JSON.stringify({revision:row.__v,...body})});
  try {
+  const prep=async(role,key)=>fetch(`http://127.0.0.1:${server.address().port}/patients/${u._id}/management-reviews/prepare`,{method:'POST',headers:{'content-type':'application/json','x-role':role},body:JSON.stringify({periodKey:key})});
+  assert.equal((await prep('nutritionist','Q:2026-06-01:1')).status,403);
+  assert.equal((await prep('familyDoctor','M:2026-08')).status,400);
+  assert.equal((await prep('familyDoctor','A:2099')).status,400);
   assert.equal((await call('finalize','familyDoctor',{summary:'ok',actions:[]})).status,409);
   assert.equal((await call('generate-draft','familyDoctor',{})).status,403);
   assert.equal((await call('generate-draft','superadmin',{})).status,403);

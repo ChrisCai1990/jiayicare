@@ -14,7 +14,7 @@ async function userFor(req) {
 }
 async function sources(user,period) {
  const range={$gte:new Date(period.start+'T00:00:00+08:00'),$lt:new Date(Date.parse(period.end+'T00:00:00+08:00')+86400000)};
- const [phase,monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans]=await Promise.all([
+ const [phase,monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews]=await Promise.all([
  Phase.find({patientId:user._id}).select('periodKey periodLabel status content createdAt finalizedAt').sort({createdAt:1}).lean(),
  Monthly.find({patientId:user._id,month:{$gte:period.start.slice(0,7),$lte:period.end.slice(0,7)}}).lean(),
  require('../models/HealthPlan').find({patientId:user._id,createdAt:{$lt:range.$lt}}).select('type title items content createdAt startDate endDate status pushedAt confirmedAt').sort({createdAt:-1}).limit(40).lean(),
@@ -23,9 +23,10 @@ async function sources(user,period) {
  require('../models/ServiceRecord').find({patientId:user._id,date:range}).select('date title type content result structuredContent aiStatus').sort({date:1}).limit(100).lean(),
  require('../models/HealthRecord').find({user:user._id,recordedAt:range}).select('type label value unit extra note recordedAt').sort({recordedAt:1}).limit(500).lean(),
  require('../models/Feedback').find({user:user._id,createdAt:range}).select('type content status reply handlingResult createdAt repliedAt resultAt').sort({createdAt:1}).limit(100).lean(),
- require('../models/NutritionInterventionDraft').find({patientId:user._id,status:'published',publishedAt:{$lt:range.$lt}}).select('actions reviewDate approvedAt publishedAt').sort({publishedAt:-1}).limit(10).lean()
+ require('../models/NutritionInterventionDraft').find({patientId:user._id,status:'published',publishedAt:{$lt:range.$lt}}).select('actions reviewDate approvedAt publishedAt').sort({publishedAt:-1}).limit(10).lean(),
+ Review.find({patientId:user._id,kind:'monthly',start:{$gte:period.start},end:{$lte:period.end}}).select('periodKey label start end status focus contributions summary actions finalizedAt').sort({start:1}).lean()
  ]);
- return {phase:phase.filter(x=>period.kind!=='monthly'||String(x.periodKey).startsWith(period.start.slice(0,7))),monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,note:'来源供人工核对；方案和服务状态不自动等同目标达成。列表有上限，请结合客户完整档案核对。'};
+ return {phase:phase.filter(x=>period.kind!=='monthly'||String(x.periodKey).startsWith(period.start.slice(0,7))),monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,note:'来源供人工核对；方案和服务状态不自动等同目标达成。列表有上限，请结合客户完整档案核对。'};
 }
 router.get('/patients/:id/management-reviews',wrap(async(req,res)=>{
  if(!policy.enabled(req.params.id))return res.json({success:true,enabled:false});
@@ -33,6 +34,16 @@ router.get('/patients/:id/management-reviews',wrap(async(req,res)=>{
  res.json({success:true,enabled:true,data:{patientName:user.name,serviceStart:user.serviceStartDate,serviceEnd:user.serviceExpiry,periods:policy.periods(user),rows,labels:policy.labels,assigned:Object.fromEntries(Object.entries(policy.fields).map(([r,f])=>[r,!!user[f]])),canReview:policy.advisor(user,req.staff),role:req.staff.role}});
 }));
 router.get('/patients/:id/management-reviews/sources',wrap(async(req,res)=>{const user=await userFor(req),period=policy.periods(user).find(x=>x.key===req.query.period);if(!period)fail('周期无效');res.json({success:true,data:await sources(user,period)});}));
+router.post('/patients/:id/management-reviews/prepare',wrap(async(req,res)=>{
+ const user=await userFor(req),period=policy.periods(user).find(p=>p.key===req.body.periodKey);
+ if(!policy.advisor(user,req.staff))fail('仅健康顾问可准备季度年度评估',403);
+ if(!period?.due||period.kind==='monthly')fail('仅支持已到期的季度年度评估');
+ if(await Review.exists({patientId:user._id,periodKey:period.key}))fail('该周期已建立，请刷新后处理现有草稿',409);
+ const roles=['nutritionist','healthManager','familyDoctor'];if(req.body.includeRehab)roles.push('rehabSpecialist');
+ for(const role of roles)if(!user[policy.fields[role]])fail('请先分配'+policy.labels[role]);
+ const draft=await require('../utils/managementReviewAI').prepare({user,period,staff:req.staff,roles,source:await sources(user,period)});
+ res.json({success:true,data:draft});
+}));
 router.post('/patients/:id/management-reviews',wrap(async(req,res)=>{
  const user=await userFor(req), period=policy.periods(user).find(x=>x.key===req.body.periodKey);
  if(!period||!period.due)fail('该周期尚未结束或注册未满一个月');
@@ -64,7 +75,7 @@ router.post('/patients/:id/management-reviews/:reviewId/:action',wrap(async(req,
   else if(row.status!=='collecting')fail('该记录已进入审核或已归档',409);
   const roles=summary?row.roles:policy.advisor(user,req.staff)?row.roles.filter(r=>row.contributions?.[r]?.status!=='submitted'):[req.staff.role];
   if(!summary&&(!roles.length||roles.some(r=>!row.roles.includes(r)||row.contributions?.[r]?.status==='submitted')||(!policy.advisor(user,req.staff)&&!policy.assigned(user,req.staff))))fail('仅生成待本人核对的岗位草稿',403);
-  const generated=await require('../utils/managementReviewAI').generate({Review,user,row,staff:req.staff,source:summary?null:await sources(user,row),roles,summary});return res.json({success:true,data:generated});
+  const generated=await require('../utils/managementReviewAI').generate({Review,user,row,staff:req.staff,source:summary&&row.kind==='monthly'?null:await sources(user,row),roles,summary});return res.json({success:true,data:generated});
  }
  if(action==='complete-action') {
   const item=row.actions.find(x=>policy.id(x._id)===req.body.actionId);if(!item||row.status!=='finalized'||item.status==='completed')fail('行动状态已改变',409);
@@ -101,7 +112,7 @@ router.post('/patients/:id/management-reviews/:reviewId/:action',wrap(async(req,
  }
  const updated=await Review.findOneAndUpdate({_id:row._id,__v:row.__v,status:row.status},{$set:set,$inc:{__v:1},$push:{audit:{action,role,by:req.staff._id,at:now,note,snapshot}}},{new:true,runValidators:true});if(!updated)fail('记录已更新，请刷新',409);
  if(action==='submit'&&updated.status==='advisor_review'){
-  try {const draft=await require('../utils/managementReviewAI').generate({Review,user,row:updated.toObject(),staff:req.staff,roles:updated.roles,summary:true});return res.json({success:true,data:draft});}
+  try {const draft=await require('../utils/managementReviewAI').generate({Review,user,row:updated.toObject(),staff:req.staff,roles:updated.roles,source:updated.kind==='monthly'?null:await sources(user,updated),summary:true});return res.json({success:true,data:draft});}
   catch(e){return res.json({success:true,data:await Review.findById(row._id),warning:'岗位提交已保存，AI汇总未完成，健康顾问可重试：'+e.message});}
  }
  res.json({success:true,data:updated});

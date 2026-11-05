@@ -21,3 +21,17 @@ test('summary prompt contains submitted roles, not raw unreviewed sources',async
  const result=await ai.generate({Review:{findOneAndUpdate:async(f,u)=>++n===1?{__v:2}:u.$set,updateOne:async()=>{}},user:{_id:'p'},row,staff:{_id:'s'},roles:row.roles,summary:true,source:{unreviewed:'must not use'},chat:async m=>{prompt=m[0].content;return JSON.stringify({summary:'待顾问审核的汇总',nextPlan:''})}});
  assert.ok(prompt.includes('专业人员确认的内容'));assert.ok(!prompt.includes('must not use'));assert.equal(result.summary,'待顾问审核的汇总');assert.equal(result.status,undefined);
 });
+
+
+test('quarter preparation reuses monthly evidence and generates questions before dispatch',async()=>{
+ let prompt;const args={user:{_id:'p'},period:{label:'第一季度',start:'2026-06-01',end:'2026-08-31'},staff:{_id:'s'},source:{cycleReviews:[{periodKey:'M:2026-08',status:'advisor_review',focus:'待核实的月度记录'}]},roles:['nutritionist','healthManager','familyDoctor']};
+ const valid={focus:'持续行动与问题变化',questions:Object.fromEntries(args.roles.map(r=>[r,'核实变化的原因与下一步调整']))};
+ const result=await ai.prepare({...args,chat:async m=>{prompt=m[0].content;return JSON.stringify(valid)}});
+ assert.equal(result.source,'ai');assert.deepEqual(result.questions,valid.questions);assert.ok(prompt.includes('待核实的月度记录'));assert.ok(prompt.includes('不补造三个月完整记录'));
+ await assert.rejects(ai.prepare({...args,chat:async()=>JSON.stringify({...valid,questions:{}})}),/不完整/);
+});
+
+test('quarter summary includes approved month results but excludes pending drafts',async()=>{
+ let prompt,n=0;await ai.generate({Review:{findOneAndUpdate:async(f,u)=>++n===1?{__v:2}:u.$set,updateOne:async()=>{}},user:{_id:'p'},row:{_id:'r',__v:1,status:'advisor_review',roles:['familyDoctor'],contributions:{familyDoctor:{status:'submitted'}}},staff:{_id:'s'},roles:['familyDoctor'],summary:true,source:{cycleReviews:[{status:'finalized',summary:'已核实的当月行动结果'},{status:'collecting',summary:'未核实内容不能进入最终汇总'}]},chat:async m=>{prompt=m[0].content;return JSON.stringify({summary:'季度与月度综合摘要',nextPlan:''})}});
+ assert.ok(prompt.includes('已核实的当月行动结果'));assert.ok(!prompt.includes('未核实内容不能进入最终汇总'));
+});
