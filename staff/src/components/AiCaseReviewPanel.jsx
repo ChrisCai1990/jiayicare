@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { staffAPI, API_ORIGIN } from '../api'
+import { staffAPI, API_ORIGIN, managementReviewAPI } from '../api'
 import ReviewPlanAmendment from './ReviewPlanAmendment'
 import AnnualConcernsPanel from './AnnualConcernsPanel'
 import { parseAnnualReviewMessage } from '../utils/annualReviewMessage.mjs'
@@ -133,6 +133,8 @@ function StageWorkflow({ assessment }) {
 }
 
 export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all', onNavigate }) {
+  const [cyclePilot,setCyclePilot]=useState(false)
+  useEffect(()=>{setCyclePilot(false);managementReviewAPI.get(patientId).then(r=>setCyclePilot(r.enabled===true)).catch(()=>{})},[patientId])
   const [assessmentDomain, setAssessmentDomain] = useState(({ nutritionist: 'nutrition', rehabSpecialist: 'exercise', tcmDoctor: 'tcm' })[staff?.role] || 'comprehensive')
   const [topics, setTopics] = useState([])
   const [managedTemplates, setManagedTemplates] = useState([])
@@ -444,7 +446,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     .sort((a, b) => Number(isMonthlyAssessment(b)) - Number(isMonthlyAssessment(a)) || new Date(b.createdAt) - new Date(a.createdAt))
   const currentAssessment = visibleAssessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
   return <div style={{ display: 'grid', gridTemplateColumns: mode === 'assessment' ? '1fr' : '230px minmax(0, 1fr)', gap: 14, minHeight: mode === 'assessment' ? 0 : 760 }}>
-    {mode !== 'specialty' && <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
+    {mode !== 'specialty' && cyclePilot && <div className="card" style={{gridColumn:'1/-1',padding:18}}><h3>月度复盘 · 季度评估 · 年度总评</h3><p>各岗位提交复盘，健康顾问审核；历史记录在统一入口查看。</p><a className="btn btn-primary" href={`/patients/${patientId}/monthly-reviews`}>进入持续管理复盘</a></div>}
+    {mode !== 'specialty' && !cyclePilot && <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
         <div className="card-header" style={{ alignItems: 'flex-start' }}>
           <div style={{ flex: 1 }}>
             <div className="card-title">阶段性评估与复盘</div>

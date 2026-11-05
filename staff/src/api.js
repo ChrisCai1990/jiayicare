@@ -781,3 +781,10 @@ export const staffAPI = {
   },
   deleteScreeningRecord: (id, rid) => req(`/staff/patients/${id}/screening-records/${rid}`, { method: 'DELETE' }),
 }
+
+export const managementReviewAPI = {
+ get: id => req(`/staff/patients/${id}/management-reviews`),
+ sources: (id, period) => req(`/staff/patients/${id}/management-reviews/sources?period=${encodeURIComponent(period)}`),
+ create: (id, data) => req(`/staff/patients/${id}/management-reviews`, {method:'POST',body:JSON.stringify(data)}),
+ act: (id, review, action, data) => req(`/staff/patients/${id}/management-reviews/${review}/${action}`, {method:'POST',body:JSON.stringify(data)}),
+}

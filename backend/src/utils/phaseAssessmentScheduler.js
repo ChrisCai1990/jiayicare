@@ -59,6 +59,7 @@ function completedCalendarPeriod(frequency, now = new Date(), anchor = null) {
 }
 
 async function createAssessment({ plan = null, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null, assessmentAnchor = null, frequencyOverride = '', contextWindow = null }) {
+  if (assessmentMode === 'routine' && require('./managementReviewPolicy').enabled(user._id)) return null;
   if (!user.assignedFamilyDoctor) throw new Error('阶段性评估与复盘须先分配健康顾问');
   const frequency = ['biweekly', 'monthly', 'quarterly', 'yearly'].includes(frequencyOverride)
     ? frequencyOverride : ['monthly', 'quarterly', 'yearly'].includes(template.content?.frequency)

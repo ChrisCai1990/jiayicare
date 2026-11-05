@@ -125,6 +125,7 @@ const { findUnderExtractedPages } = require('../utils/reportPanelCount');
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
+router.use('/', (req,res,next)=>{ if(req.path.includes('/management-reviews'))return staffAuth(req,res,next);next(); }, require('./managementReviews').router);
 async function allPushPatientsBelongToStaff(patientIds, staff) {
   if (!Array.isArray(patientIds) || !patientIds.length) return false;
   const ids = [...new Set(patientIds.map(String))];
@@ -9864,6 +9865,16 @@ router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
 });
 
 // 月度服务复盘：团队内部记录，与阶段性临床评估及用户端健康计划分离。
+router.use(async (req,res,next)=>{
+ if(req.method==='GET'||!req.path.includes('monthly-service-reviews'))return next();
+ try {
+  const match=req.path.match(/^\/patients\/([a-f0-9]{24})\/monthly-service-reviews/i);
+  const record=req.path.match(/^\/monthly-service-reviews\/([a-f0-9]{24})/i);
+  const patientId=match?.[1]||(record?(await MonthlyServiceReview.findById(record[1]).select('patientId').lean())?.patientId:null);
+  if(require('../utils/managementReviewPolicy').enabled(patientId))return res.status(409).json({success:false,message:'该客户请使用新的月度、季度、年度复盘入口'});
+  next();
+ }catch(e){next(e);}
+});
 const monthlyReviewFields = ['healthProgress', 'serviceExecution', 'customerFeedback', 'teamCollaboration', 'unresolvedIssues'];
 async function monthlyReviewRightsForPatient(patientId) {
   const user = await User.findById(patientId).select('servicePackage serviceStartDate serviceExpiry clientBrand familyLinks');
@@ -9905,6 +9916,7 @@ router.get('/patients/:id/monthly-service-reviews', staffAuth, async (req, res) 
     const visible = await getVisiblePlanPatientIds(req.staff);
     const patientScope = !visible || visible.some(id => String(id) === String(req.params.id));
     if (!mongoose.isValidObjectId(req.params.id) || (!patientScope && !(await MonthlyServiceReview.exists({ patientId: req.params.id, 'actions.assigneeId': req.staff._id })))) return res.status(403).json({ success: false, message: '无权查看该客户复盘' });
+    if (require('../utils/managementReviewPolicy').enabled(req.params.id)) return res.json({success:true,enabled:true,data:{plans:[],reviews:[],canOrganize:false}});
     if (!(await monthlyReviewEnabledForPatient(req.params.id))) return res.json({ success: true, enabled: false, data: { plans: [], reviews: [], canOrganize: false } });
     const allPlans = await AnnualPlan.find({ patientId: req.params.id, confirmedAt: { $ne: null } }).select('_id year servicePlanCode templateName confirmedAt').sort({ confirmedAt: -1 }).lean();
     const seenYears = new Set();
@@ -10055,7 +10067,9 @@ router.get('/monthly-service-reviews/workbench', staffAuth, async (req, res) => 
     }).map(month => ({ annualPlanId: plan._id, patientId: plan.patientId?._id, patientName: plan.patientId?.name, month, reviewId: byPatientMonth.get(`${plan.patientId?._id}:${month}`)?._id || null })));
     const assignedReviews = await MonthlyServiceReview.find({ 'actions.assigneeId': req.staff._id, status: 'confirmed', ...rollout.patientFilter() }).select('patientId annualPlanId month actions').lean();
     const actions = assignedReviews.flatMap(review => review.actions.filter(action => action.status === 'pending' && String(action.assigneeId) === String(req.staff._id)).map(action => ({ reviewId: review._id, annualPlanId: review.annualPlanId, patientId: review.patientId, month: review.month, actionId: action._id, title: action.title, dueAt: action.dueAt })));
-    res.json({ success: true, data: { pending, actions } });
+    const cycle = await require('./managementReviews').workbench(req.staff);
+    const isPilot = require('../utils/managementReviewPolicy').enabled;
+    res.json({ success: true, data: { pending: [...pending.filter(x=>!isPilot(x.patientId)), ...cycle.pending], actions: [...actions.filter(x=>!isPilot(x.patientId)), ...cycle.actions] } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -16272,6 +16286,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name membershipTier ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
       assessments.filter(item => {
         if (!item.patientId || !item.patientId.assignedFamilyDoctor) return false;
+        if (item.assessmentMode !== 'intensive_nutrition' && require('../utils/managementReviewPolicy').enabled(item.patientId._id)) return false;
         if (item.status === 'team_review') {
           const targetRole = isSuper ? phaseReviewer(item) : role;
           return !!targetRole && (item.teamRoles || []).includes(targetRole) && item.teamReviews?.[targetRole]?.status !== 'approved'

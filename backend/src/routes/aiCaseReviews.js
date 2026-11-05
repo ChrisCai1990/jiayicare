@@ -227,6 +227,7 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(user._id);
     if (!closedLoop && !['nutritionist', 'familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师或健康顾问可发起阶段性评估' });
     const assessmentMode = req.body.mode === 'intensive_nutrition' ? 'intensive_nutrition' : 'routine';
+    if(assessmentMode==='routine' && require('../utils/managementReviewPolicy').enabled(user._id))return res.status(409).json({success:false,message:'请进入新的月度、季度、年度复盘入口'});
     const isAnnualReview = closedLoop && assessmentMode === 'routine' && req.body.frequency === 'yearly';
     const plan = isAnnualReview || assessmentMode === 'intensive_nutrition'
       ? await AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).lean() : null;
@@ -286,6 +287,7 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     const user = await patientOr404(req, res); if (!user) return;
     const item = await PhaseAssessment.findOne({ _id: req.params.assessmentId, patientId: user._id });
     if (!item) return res.status(404).json({ success: false, message: '阶段性评估不存在' });
+    if(item.assessmentMode!=='intensive_nutrition' && require('../utils/managementReviewPolicy').enabled(user._id))return res.status(409).json({success:false,message:'历史记录已保留，请在新的持续管理复盘入口接续'});
     if (item.status === 'team_review') {
       if (req.body.revision !== item.__v) return res.status(409).json({ success: false, message: '其他岗位已更新复盘，请刷新后继续' });
       const role = req.staff.role;

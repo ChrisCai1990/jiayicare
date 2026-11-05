@@ -1,7 +1,8 @@
 import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { staffAPI } from '../api'
+import { staffAPI, managementReviewAPI } from '../api'
+import ManagementReviewPanel from '../components/ManagementReviewPanel'
 import { useStaff } from '../App'
 
 const FIELDS = [
@@ -16,7 +17,7 @@ const toId = value => String(value?._id || value || '')
 const monthIndex = month => { const [year, number] = String(month || '').split('-').map(Number); return year * 12 + number - 1 }
 const monthText = index => `${Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, '0')}`
 
-export default function MonthlyServiceReviewPage() {
+function LegacyMonthlyServiceReviewPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
   const nav = useNavigate()
@@ -137,4 +138,13 @@ export default function MonthlyServiceReviewPage() {
       </>}
     </>}
   </div>
+}
+
+export default function MonthlyServiceReviewPage() {
+ const { id }=useParams();const [pilot,setPilot]=useState(null);const [error,setError]=useState('');
+ const load=()=>{setError('');managementReviewAPI.get(id).then(setPilot).catch(e=>setError(e.message))};
+ useEffect(()=>{setPilot(null);load()},[id]);
+ if(error)return <div role="alert">{error}<button onClick={load}>重试</button></div>;
+ if(!pilot)return <div>正在读取复盘流程…</div>;
+ return pilot.enabled?<ManagementReviewPanel key={id} patientId={id} initialData={pilot.data}/>:<LegacyMonthlyServiceReviewPage/>;
 }
