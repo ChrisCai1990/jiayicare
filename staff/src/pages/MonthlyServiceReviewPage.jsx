@@ -1,6 +1,6 @@
 import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { staffAPI, managementReviewAPI } from '../api'
 import ManagementReviewPanel from '../components/ManagementReviewPanel'
 import { useStaff } from '../App'
@@ -146,5 +146,6 @@ export default function MonthlyServiceReviewPage() {
  useEffect(()=>{setPilot(null);load()},[id]);
  if(error)return <div role="alert">{error}<button onClick={load}>重试</button></div>;
  if(!pilot)return <div>正在读取复盘流程…</div>;
+ if(pilot.restored)return <Navigate replace to={`/patients/${id}?tab=aiReview`}/>;
  return pilot.enabled?<ManagementReviewPanel key={id} patientId={id} initialData={pilot.data}/>:<LegacyMonthlyServiceReviewPage/>;
 }
