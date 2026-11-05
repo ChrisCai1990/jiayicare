@@ -51,7 +51,7 @@ async function scan(now=new Date()) {
     const needed=missingDraftRoles(row);if(!needed.length||!canRetry(row,now))continue;
     await generateMissing({user,row,now,loadSource:require('../routes/managementReviews').sources,readActor:id=>Admin.findById(id).lean(),
      generate:args=>require('./managementReviewAI').generate({Review,...args}),
-     withinActor:(actor,fn)=>require('./aiDataConsent').withStaffService(actor,()=>require('./tenantScope').tenantContext({staff:actor},null,fn))});count+=needed.length;
+     withinActor:(actor,fn)=>require('./aiDataConsent').withStaffService(actor,()=>new Promise((resolve,reject)=>require('./tenantScope').tenantContext({staff:actor},null,()=>Promise.resolve().then(fn).then(resolve,reject))))});count+=needed.length;
    }catch(e){console.error('[management-review-auto] draft failed',e.code||e.statusCode||'GENERATION_FAILED');}
   }
  }
