@@ -93,7 +93,8 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
   const templateWindowDays = [7, 14, 30, 90, 365].includes(template.content?.windowDays) ? template.content.windowDays : frequency === 'yearly' ? 365 : frequency === 'quarterly' ? 90 : 30;
   const windowDays = contextWindow ? Math.max(1, Math.ceil((new Date(contextWindow.end) - new Date(contextWindow.start)) / 86400000)) : templateWindowDays;
   const monthlyReview = assessmentMode === 'routine' && frequency === 'monthly';
-  const localDraft = monthlyReview ? await require('./monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft(user, contextWindow || { start: new Date(Date.now() - windowDays * 86400000), end: new Date() }) : null;
+  const structuredAI = monthlyReview && require('./managementReviewPolicy').restored(user._id);
+  const localDraft = monthlyReview ? await (structuredAI ? require('./phaseFourDimensionDraft').generate : require('./monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft)(user, contextWindow || { start: new Date(Date.now() - windowDays * 86400000), end: new Date() }) : null;
   const context = monthlyReview ? { sources: localDraft.sources } : await buildStageAssessmentContext(user, windowDays, contextWindow);
   // 月度综合复盘独立于年度方案；专项/年度来源才附上已确认方案。
   if (assessmentMode === 'routine' && frequency === 'monthly') {
@@ -126,7 +127,7 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
     assessmentMode, sourceNutritionPlanId, interventionWeek, ...routing,
     ...(assessmentMode === 'routine' ? { status: 'team_review', reviewWorkflow: advisorNutritionReview ? 'advisor_nutrition' : 'single_owner', teamRoles, teamReviews: {} } : {}),
     periodKey: period.key, periodLabel: period.label, content,
-    evidenceSources: context.sources || [], templateSnapshot: { name: template.name, frequency, windowDays, focus, instructions, minimumData, outputSections, triggerRule: template.content?.triggerRule || '', source: monthlyReview ? 'local_manual' : 'ai' },
+    evidenceSources: context.sources || [], templateSnapshot: { name: template.name, frequency, windowDays, focus, instructions, minimumData, outputSections, triggerRule: template.content?.triggerRule || '', source: monthlyReview && !structuredAI ? 'local_manual' : 'ai', contentFormat: structuredAI ? 'four-dimensions-v2' : undefined },
   });
   await PhaseAssessmentGeneration.updateOne({ _id: generationId, token }, { $set: { status: 'completed', assessmentId: item._id || null } });
   return item;
