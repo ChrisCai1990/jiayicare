@@ -3,6 +3,7 @@ const labels = { familyDoctor:'健康顾问', nutritionist:'营养师', healthMa
 const id = x => String(x?._id || x || '');
 const day = date => new Date(new Date(date).getTime()+8*3600000).toISOString().slice(0,10);
 function enabled(patientId, env=process.env) { return env.MANAGEMENT_REVIEW_MODE === 'allowlist' && String(env.MANAGEMENT_REVIEW_PATIENT_IDS||'').split(',').map(x=>x.trim()).filter(x=>/^[a-f\d]{24}$/i.test(x)).includes(id(patientId)); }
+function restored(patientId, env=process.env) { return env.MANAGEMENT_REVIEW_MODE==='phase_assessment' && String(env.MANAGEMENT_REVIEW_PATIENT_IDS||'').split(',').map(x=>x.trim()).includes(id(patientId)); }
 function assigned(user, staff, role=staff.role) { return staff.role===role && id(user[fields[role]])===id(staff._id); }
 function canRead(user, staff) { return staff.role==='superadmin'||Object.keys(fields).some(role=>assigned(user,staff,role)); }
 function advisor(user, staff) { return staff.role==='superadmin'||assigned(user,staff,'familyDoctor'); }
@@ -23,4 +24,4 @@ function periods(user, now=new Date(), env=process.env) {
  rows.push({key:'Y:'+start,kind:'annual',label:'年度团队总评与下年度计划',start,end,due:eligible&&today>end});return rows;
 }
 function pendingRole(row, role) { return role!=='healthManager' && row.status==='collecting' && row.roles.includes(role) && row.contributions?.[role]?.status!=='submitted'; }
-module.exports={fields,labels,id,day,enabled,assigned,canRead,advisor,periods,pendingRole,addMonths};
+module.exports={fields,labels,id,day,enabled,restored,assigned,canRead,advisor,periods,pendingRole,addMonths};

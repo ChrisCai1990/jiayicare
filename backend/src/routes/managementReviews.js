@@ -29,7 +29,7 @@ async function sources(user,period) {
  return {phase:phase.filter(x=>period.kind!=='monthly'||String(x.periodKey).startsWith(period.start.slice(0,7))),monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,note:'来源供人工核对；方案和服务状态不自动等同目标达成。列表有上限，请结合客户完整档案核对。'};
 }
 router.get('/patients/:id/management-reviews',wrap(async(req,res)=>{
- if(!policy.enabled(req.params.id))return res.json({success:true,enabled:false});
+ if(!policy.enabled(req.params.id))return res.json({success:true,enabled:false,restored:policy.restored(req.params.id)});
  const user=await userFor(req), rows=await Review.find({patientId:user._id}).sort({start:1}).lean();
  const preparations=policy.advisor(user,req.staff)?await require('../models/ManagementReviewPreparation').find({patientId:user._id}).lean():[];
  res.json({success:true,enabled:true,data:{patientName:user.name,serviceStart:user.serviceStartDate,serviceEnd:user.serviceExpiry,periods:policy.periods(user),rows,preparations,labels:policy.labels,assigned:Object.fromEntries(Object.entries(policy.fields).map(([r,f])=>[r,!!user[f]])),canReview:policy.advisor(user,req.staff),role:req.staff.role}});

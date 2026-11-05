@@ -44,3 +44,5 @@ test('HTTP workflow enforces role, evidence, CAS and advisor approval',async()=>
   assert.equal((await call('submit','nutritionist',{contribution})).status,409);
  }finally{server.close();ai.generate=originalAI;User.findOne=originalUser;Review.findOne=originalReview;Review.findOneAndUpdate=originalUpdate;for(const [key,value]of [['MANAGEMENT_REVIEW_MODE',env.mode],['MANAGEMENT_REVIEW_PATIENT_IDS',env.ids]])if(value===undefined)delete process.env[key];else process.env[key]=value;}
 });
+
+test('restoration returns only selected patients to original four-section workflow',()=>{const env={MANAGEMENT_REVIEW_MODE:'phase_assessment',MANAGEMENT_REVIEW_PATIENT_IDS:user._id};assert.equal(p.enabled(user._id,env),false);assert.equal(p.restored(user._id,env),true);assert.equal(p.restored('507f1f77bcf86cd799439099',env),false)});
