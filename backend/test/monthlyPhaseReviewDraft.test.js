@@ -47,6 +47,6 @@ test('月度底稿写明体重下降及同期生活记录，并提出具体核�
 
 test('四维数据与五维生活方式保留缺项；原因和计划逐项对应且不猜测',()=>{
  const {sections}=require('../src/utils/reviewFourSections');const blocks=sections({records:[{type:'bloodPressure',label:'血压',value:'120/80',recordedAt:'2026-10-01'},{type:'bowel',label:'大便',value:'成形',recordedAt:'2026-10-02'},{type:'symptom',value:'乏力',recordedAt:'2026-10-03'},{type:'mood',value:'平静',recordedAt:'2026-10-04'}],reports:[{documentCategory:'body_composition',checkDate:'2026-10-03',title:'体成分',reportItems:[{name:'体脂率',value:'25',unit:'%'}]}],followups:[{date:'2026-10-10',theme:'复查预约',status:'cancelled',cancelReason:'客户出差'}]});
- assert.equal(blocks[0].length,4);assert.equal(blocks[1].length,5);assert.match(blocks[0][0],/暂无记录/);assert.match(blocks[0][1],/120\/80.*成形/);assert.match(blocks[0][2],/体脂率 25 %/);assert.match(blocks[0][3],/乏力/);assert.match(blocks[1][4],/平静/);assert.match(blocks[2][0],/客户出差/);assert.match(blocks[3][0],/对应问题1/);
+ assert.equal(blocks[0].length,4);assert.equal(blocks[1].length,5);assert.match(blocks[0][0],/暂无记录/);assert.match(blocks[0][1],/120\/80.*成形/);assert.match(blocks[0][2],/体脂率 25 %/);assert.match(blocks[0][3],/乏力/);assert.match(blocks[1][4],/平静/);assert.equal(blocks[2].length,2);assert.equal(blocks[3].length,2);assert.match(blocks[2][1],/客户出差/);assert.match(blocks[3][1],/就医或检查完成及时性/);
  const empty=sections();assert.ok(empty[0].every(x=>x.includes('暂无记录')));assert.ok(empty[1].every(x=>x.includes('暂无记录')));assert.doesNotMatch(empty.flat().join(''),/依从性差|每天记录|每日打卡/);
 });
