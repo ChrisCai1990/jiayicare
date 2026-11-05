@@ -34,10 +34,11 @@ async function scan(now=new Date()) {
  if(!ids.length)return 0;
  const users=await User.find({_id:{$in:ids},isDeleted:{$ne:true}}).lean();
  for(const user of users){
-  if(!user.assignedFamilyDoctor||!user.assignedNutritionist||!user.assignedHealthManager)continue;
+  if(!user.assignedFamilyDoctor||!user.assignedNutritionist)continue;
   const tenant=await Tenant.findById(user.tenantId).select('status code serviceScope').lean();
   if(tenant?.status!=='active'||!require('./tenantChannel').hasTenantChannel(tenant,'staff'))continue;
   const access=await require('./serviceAccess').resolveServiceAccess(user,now);if(!access.active)continue;
+  await require('./managementReviewTeam').reconcile(user);
   for(const period of policy.periods(user,now).filter(p=>p.due)){
    try {
     let row=await Review.findOne({patientId:user._id,periodKey:period.key}).lean();
@@ -49,7 +50,7 @@ async function scan(now=new Date()) {
      continue;
     }
     if(!row){
-     const roles=['nutritionist','healthManager'];
+     const roles=['nutritionist'];
      const rehab=await require('../models/HealthPlan').exists({patientId:user._id,type:'rehab',status:{$in:['active','completed']},pushedAt:{$ne:null,$lt:new Date(period.end+'T23:59:59+08:00')},$or:[{endDate:null},{endDate:{$gte:new Date(period.start+'T00:00:00+08:00')}}]});
      if(rehab){if(!user.assignedRehabSpecialist)continue;roles.push('rehabSpecialist');}
      try{row=(await Review.create({patientId:user._id,periodKey:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end,focus:'待AI整理本期重点',roles,audit:[{action:'auto_created',at:now,note:'到期自动建立各岗位复盘'}]})).toObject();}
