@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { authAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../i18n';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
@@ -20,6 +21,7 @@ const REDIRECT_URI = encodeURIComponent(
 const isInWechat = typeof navigator !== 'undefined' && /MicroMessenger/i.test(navigator.userAgent);
 
 export default function LoginScreen({ navigation }) {
+  const { t, language, setLanguage } = useLanguage();
   const { login } = useAuth();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -93,8 +95,8 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.logoMark}>
             <Ionicons name="medical" size={28} color="#5EC99B" />
           </View>
-          <Text style={styles.brandName}>嘉医管家</Text>
-          <Text style={styles.brandSlogan}>您的数字化健康管理服务平台</Text>
+          <Text style={styles.brandName}>{t('嘉医管家')}</Text>
+          <Text style={styles.brandSlogan}>{t('您的数字化健康管理服务平台')}</Text>
         </View>
 
         {/* 底部数据背书行 */}
@@ -124,8 +126,9 @@ export default function LoginScreen({ navigation }) {
           {/* 顶部圆角拉手 */}
           <View style={styles.pullHandle} />
 
-          <Text style={styles.formTitle}>手机号登录</Text>
-          <Text style={styles.formSubtitle}>新用户自动注册，无需等待</Text>
+          <Text style={styles.formTitle}>{t('手机号登录')}</Text>
+          <Text style={styles.formSubtitle}>{t('新用户自动注册，无需等待')}</Text>
+          <TouchableOpacity onPress={() => setLanguage(language === 'en-US' ? 'zh-CN' : 'en-US')}><Text style={styles.formSubtitle}>🌐 {language === 'en-US' ? '简体中文' : 'English'}</Text></TouchableOpacity>
 
           {/* 手机号输入框 */}
           <View style={[styles.field, phoneFocused && styles.fieldFocused]}>
@@ -133,7 +136,7 @@ export default function LoginScreen({ navigation }) {
             <View style={styles.fieldDivider} />
             <TextInput
               style={styles.fieldInput}
-              placeholder="请输入手机号"
+              placeholder={t('请输入手机号')}
               placeholderTextColor={colors.textMuted}
               keyboardType="phone-pad"
               maxLength={11}
@@ -149,7 +152,7 @@ export default function LoginScreen({ navigation }) {
             <Ionicons name="shield-outline" size={17} color={colors.textMuted} style={{ marginRight: 10 }} />
             <TextInput
               style={[styles.fieldInput, { flex: 1 }]}
-              placeholder="输入验证码"
+              placeholder={t('输入验证码')}
               placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
               maxLength={6}
@@ -164,7 +167,7 @@ export default function LoginScreen({ navigation }) {
               disabled={!canSend || loading}
             >
               <Text style={[styles.codeBtnText, canSend && styles.codeBtnTextActive]}>
-                {countdown > 0 ? `${countdown}s` : '获取验证码'}
+                {countdown > 0 ? `${countdown}s` : t('获取验证码')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -178,14 +181,14 @@ export default function LoginScreen({ navigation }) {
           >
             {loading
               ? <ActivityIndicator color={colors.white} />
-              : <Text style={styles.loginBtnText}>立即登录</Text>
+              : <Text style={styles.loginBtnText}>{t('立即登录')}</Text>
             }
           </TouchableOpacity>
 
           {/* 分隔线 */}
           <View style={styles.divRow}>
             <View style={styles.divLine} />
-            <Text style={styles.divText}>或</Text>
+            <Text style={styles.divText}>{t('或')}</Text>
             <View style={styles.divLine} />
           </View>
 
@@ -194,7 +197,7 @@ export default function LoginScreen({ navigation }) {
             {/* 演示一键登录 */}
             <TouchableOpacity style={[styles.altBtn, { flex: 1 }]} onPress={demoLogin} disabled={loading} activeOpacity={0.8}>
               <Ionicons name="flash" size={15} color={colors.primary} />
-              <Text style={styles.altBtnText}>演示体验</Text>
+              <Text style={styles.altBtnText}>{t('演示体验')}</Text>
             </TouchableOpacity>
 
             {/* 微信登录（仅 web 且配置了 AppID 时显示） */}
@@ -212,7 +215,7 @@ export default function LoginScreen({ navigation }) {
                 activeOpacity={0.8}
               >
                 <Ionicons name="logo-wechat" size={16} color="#07C160" />
-                <Text style={styles.altBtnText}>微信登录</Text>
+                <Text style={styles.altBtnText}>{t('微信登录')}</Text>
               </TouchableOpacity>
             ) : null}
           </View>

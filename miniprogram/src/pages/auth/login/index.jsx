@@ -6,8 +6,10 @@ import { authAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import Icon from '../../../components/Icon';
 import { captureInviteCode } from '../../../utils/invitation';
+import { useLanguage } from '../../../i18n';
 
 export default function LoginPage() {
+  const { t, language, setLanguage } = useLanguage();
   Taro.useLoad((options = {}) => {
     captureInviteCode(options);
   });
@@ -176,8 +178,9 @@ export default function LoginPage() {
         <Button onClick={cancelLogin} style={{ width: '100%', margin: '0 0 16px', height: '46px', lineHeight: '46px', backgroundColor: '#fff', color: colors.primary, border: `1.5px solid ${colors.primary}`, borderRadius: `${radius.md}px`, fontSize: '16px', fontWeight: 700 }}>
           暂不登录，先浏览
         </Button>
-        <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>手机号登录</Text>
-        <Text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '24px', display: 'block' }}>手机号验证码登录，新用户自动注册</Text>
+        <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>{t('手机号登录')}</Text>
+        <Text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '24px', display: 'block' }}>{t('手机号验证码登录，新用户自动注册')}</Text>
+        <View onClick={() => setLanguage(language === 'en-US' ? 'zh-CN' : 'en-US')} style={{ padding: '4px 0 14px' }}><Text style={{ color: colors.primary, fontSize: '13px' }}>🌐 {language === 'en-US' ? '简体中文' : 'English'}</Text></View>
 
         <View style={{
           display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
@@ -189,7 +192,7 @@ export default function LoginPage() {
             style={{ flex: 1, fontSize: '16px', color: colors.textPrimary }}
             type="number"
             maxlength={11}
-            placeholder="请输入手机号"
+            placeholder={t('请输入手机号')}
             value={phone}
             onInput={(e) => setPhone(e.detail.value)}
           />
@@ -203,7 +206,7 @@ export default function LoginPage() {
             style={{ flex: 1, fontSize: '16px', color: colors.textPrimary }}
             type="number"
             maxlength={6}
-            placeholder="输入验证码"
+            placeholder={t('输入验证码')}
             value={code}
             onInput={(e) => setCode(e.detail.value)}
           />
@@ -216,7 +219,7 @@ export default function LoginPage() {
             onClick={sendCode}
           >
             <Text style={{ fontSize: '12px', fontWeight: 600, color: canSend ? colors.primary : colors.textMuted }}>
-              {countdown > 0 ? `${countdown}s` : '获取验证码'}
+              {countdown > 0 ? `${countdown}s` : t('获取验证码')}
             </Text>
           </View>
         </View>

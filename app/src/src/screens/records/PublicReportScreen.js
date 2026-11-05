@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { shareAPI } from '../../services/api';
+import { useLanguage } from '../../i18n';
 
 function MetricRow({ m }) {
   const statusColor = m.status === 'normal' ? colors.success : m.status === 'warning' ? colors.warning : colors.danger;
@@ -42,6 +43,7 @@ function HighlightItem({ item }) {
 }
 
 export default function PublicReportScreen({ route, navigation }) {
+  const { t, language } = useLanguage();
   const token = route?.params?.token;
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,7 @@ export default function PublicReportScreen({ route, navigation }) {
 
   // 到期时间格式化
   const expiryText = data?.expiresAt
-    ? `链接有效至 ${new Date(data.expiresAt).toLocaleDateString('zh-CN')}`
+    ? `${language === 'en-US' ? 'Link valid until' : '链接有效至'} ${new Date(data.expiresAt).toLocaleDateString(language)}`
     : '';
 
   return (
@@ -71,7 +73,7 @@ export default function PublicReportScreen({ route, navigation }) {
       <View style={styles.topBar}>
         <View style={styles.guestBadge}>
           <Ionicons name="eye-outline" size={14} color={colors.primary} />
-          <Text style={styles.guestText}>健康报告分享 · 访客查看</Text>
+          <Text style={styles.guestText}>{t('健康报告分享 · 访客查看')}</Text>
         </View>
         <TouchableOpacity style={styles.loginBtn} onPress={() => {
           // 清除 share 参数跳转登录
@@ -79,7 +81,7 @@ export default function PublicReportScreen({ route, navigation }) {
             window.location.href = window.location.origin;
           }
         }}>
-          <Text style={styles.loginBtnText}>登录/注册</Text>
+          <Text style={styles.loginBtnText}>{t('登录/注册')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -110,6 +112,7 @@ export default function PublicReportScreen({ route, navigation }) {
       {/* 报告内容 */}
       {!loading && !error && report && (
         <ScrollView showsVerticalScrollIndicator={false}>
+          {language === 'en-US' && <Text style={{ marginHorizontal: 20, marginTop: 12, color: colors.textMuted, fontSize: 12 }}>{t('报告中的医疗结论保留原文。')}</Text>}
           {/* 分享人信息 */}
           <View style={styles.sharerCard}>
             <View style={styles.sharerAvatar}>
