@@ -10,7 +10,7 @@ async function ensure({user,period,staff,source,includeRehab=false,force=false,M
  const locked=await Model.findOneAndUpdate({_id:row._id,__v:row.__v},{$set:{generation:{status:'running',startedAt:new Date(),token}},$inc:{__v:1}},{new:true});
  if(!locked)throw Object.assign(new Error('草稿已更新，请刷新'),{statusCode:409});
  try{
- const roles=['nutritionist','healthManager','familyDoctor',...(includeRehab?['rehabSpecialist']:[])];
+ const roles=['nutritionist','familyDoctor',...(includeRehab?['rehabSpecialist']:[])];
  const draft=await prepare({user,period,staff,source:await source(),roles});
  const saved=await Model.findOneAndUpdate({_id:row._id,'generation.token':token},{$set:{...draft,includeRehab,generation:{status:'completed',at:new Date()}},$inc:{__v:1}},{new:true});
  if(!saved)throw new Error('草稿已更新，请刷新');return saved;

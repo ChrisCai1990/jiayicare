@@ -22,5 +22,5 @@ function periods(user, now=new Date(), env=process.env) {
  for(let i=0;i<4;i++){const from=addMonths(start,i*3), until=[previousDay(addMonths(start,(i+1)*3)),end].sort()[0];if(from>end)break; rows.push({key:'Q:'+start+':'+(i+1),kind:'quarterly',label:'服务第'+(i+1)+'季度评估',start:from,end:until,due:eligible&&today>until});}
  rows.push({key:'Y:'+start,kind:'annual',label:'年度团队总评与下年度计划',start,end,due:eligible&&today>end});return rows;
 }
-function pendingRole(row, role) { return row.status==='collecting' && row.roles.includes(role) && row.contributions?.[role]?.status!=='submitted'; }
+function pendingRole(row, role) { return role!=='healthManager' && row.status==='collecting' && row.roles.includes(role) && row.contributions?.[role]?.status!=='submitted'; }
 module.exports={fields,labels,id,day,enabled,assigned,canRead,advisor,periods,pendingRole,addMonths};
