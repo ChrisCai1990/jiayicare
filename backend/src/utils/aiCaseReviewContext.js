@@ -20,7 +20,7 @@ async function buildContext(user, scopes = [], options = {}) {
     snapshot.sources.push('健康档案与生活方式（当前版本）');
   }
   if (wanted.has('reports')) {
-    const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' }).sort({ checkDate: -1, createdAt: -1 }).limit(30)
+    const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited', checkDate:{$lte:new Date(end.getTime()+8*3600000).toISOString().slice(0,10)} }).sort({ checkDate: -1, createdAt: -1 }).limit(30)
       .select('title reportYear checkDate institution examConclusion reportItems aiSummary').lean();
     snapshot.reports = clean(reports);
     if (options.annual === true) {
@@ -71,11 +71,11 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
     HealthRecord.find({ user: user._id, recordedAt: { $gte: start, $lte: end } }).sort({ recordedAt: 1 })
       .select('category type label value unit extra status note recordedAt recordedBy.source').limit(240).lean(),
     FollowUp.find({ patientId: user._id, date: { $gte: start, $lte: end } }).sort({ date: 1 })
-      .select('date type status theme content plannedContent executedContent vitals checkInItems completedAt').limit(60).lean(),
+      .select('date type status theme content plannedContent executedContent vitals checkInItems completedAt cancelReason isBlocked').limit(60).lean(),
     AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 })
       .select('year planType templateName moduleData notes confirmedAt').lean(),
-    MedicalReport.find({ user: user._id, audit_status: 'audited' }).sort({ checkDate: -1, createdAt: -1 }).limit(5)
-      .select('title reportYear checkDate institution examConclusion keyFindings reportItems.name reportItems.value reportItems.unit reportItems.status reportItems.conclusion').lean(),
+    MedicalReport.find({ user: user._id, audit_status: 'audited', checkDate:{$lte:new Date(end.getTime()+8*3600000).toISOString().slice(0,10)} }).sort({ checkDate: -1, createdAt: -1 }).limit(100)
+      .select('type documentCategory screeningItemId screeningL1 screeningCategory title reportYear checkDate institution examConclusion keyFindings reportItems.name reportItems.value reportItems.unit reportItems.status reportItems.conclusion').lean(),
   ]);
   const reportBaselines = reports.map(report => ({
     title: report.title, date: report.checkDate || report.reportYear, institution: report.institution,
@@ -95,6 +95,8 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
     confirmedAnnualPlan: plan,
     periodFollowups: followups,
     examBaseline: reportBaselines,
+    periodReports: reports.filter(r=>r.checkDate>=new Date(start.getTime()+8*3600000).toISOString().slice(0,10)),
+    fourSectionEvidence: require('./reviewFourSections').sections({records,followups,reports:reports.filter(r=>r.checkDate>=new Date(start.getTime()+8*3600000).toISOString().slice(0,10))}),
     historicalTrendSummary: { aiHealthSummary: user.aiHealthSummary, aiRiskAssessment: user.aiRiskAssessment },
     basic: { age: user.age, gender: user.gender, height: user.height, weight: user.weight, chronicDiseases: user.chronicDiseases },
     recentHealthRecords: records,

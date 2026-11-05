@@ -63,8 +63,8 @@ function AnnualReviewAnalysis({ content, onReframe, busy }) {
 
 const STAGE_SECTION_META = [
   { icon: '📈', label: '阶段变化', color: '#2563EB', background: '#EFF6FF' },
-  { icon: '🔗', label: '生活关联', color: '#16845B', background: '#EEF8F3' },
-  { icon: '📋', label: '问题与就医', color: '#B45309', background: '#FFF8ED' },
+  { icon: '🔗', label: '生活方式关联', color: '#16845B', background: '#EEF8F3' },
+  { icon: '📋', label: '问题分析', color: '#B45309', background: '#FFF8ED' },
   { icon: '🧭', label: '下一步规划', color: '#7C3AED', background: '#F5F3FF' },
 ]
 

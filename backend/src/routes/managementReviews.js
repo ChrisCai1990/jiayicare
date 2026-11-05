@@ -18,8 +18,8 @@ async function sources(user,period) {
  Phase.find({patientId:user._id}).select('periodKey periodLabel status content createdAt finalizedAt').sort({createdAt:1}).lean(),
  Monthly.find({patientId:user._id,month:{$gte:period.start.slice(0,7),$lte:period.end.slice(0,7)}}).lean(),
  require('../models/HealthPlan').find({patientId:user._id,createdAt:{$lt:range.$lt}}).select('type title items content createdAt startDate endDate status pushedAt confirmedAt').sort({createdAt:-1}).limit(40).lean(),
- require('../models/FollowUp').find({patientId:user._id,date:range}).select('date theme status plannedContent executedContent content completedAt').sort({date:1}).limit(200).lean(),
- require('../models/MedicalReport').find({user:user._id,audit_status:'audited',checkDate:{$gte:period.start,$lte:period.end}}).select('title checkDate reportItems').sort({checkDate:1}).limit(100).lean(),
+ require('../models/FollowUp').find({patientId:user._id,date:range}).select('date theme status plannedContent executedContent content completedAt cancelReason progressRecords isBlocked').sort({date:1}).limit(200).lean(),
+ require('../models/MedicalReport').find({user:user._id,audit_status:'audited',checkDate:{$gte:period.start,$lte:period.end}}).select('title checkDate reportItems type documentCategory screeningItemId screeningL1 screeningCategory').sort({checkDate:1}).limit(100).lean(),
  require('../models/ServiceRecord').find({patientId:user._id,date:range}).select('date title type content result structuredContent aiStatus').sort({date:1}).limit(100).lean(),
  require('../models/HealthRecord').find({user:user._id,recordedAt:range}).select('type label value unit extra note recordedAt').sort({recordedAt:1}).limit(500).lean(),
  require('../models/Feedback').find({user:user._id,createdAt:range}).select('type content status reply handlingResult createdAt repliedAt resultAt').sort({createdAt:1}).limit(100).lean(),
@@ -87,7 +87,7 @@ router.post('/patients/:id/management-reviews/:reviewId/:action',wrap(async(req,
  if(action==='submit') {
   if(!policy.assigned(user,req.staff,role)||!row.roles.includes(role))fail('仅对应岗位本人可提交',403);
   if(row.status!=='collecting')fail('已提交顾问审核',409);
-  const value={};for(const field of ['action','execution','reason','impact','feedback','evidence','next'])value[field]=text(req.body.contribution?.[field]||'');
+  const value={};for(const field of ['action','execution','lifestyle','reason','impact','feedback','evidence','next'])value[field]=text(req.body.contribution?.[field]||'');
   value.state=req.body.contribution?.state;if(!['completed','partial','not_done','unknown','not_applicable'].includes(value.state))fail('请选择执行状态');
   if(!value.action||!value.execution||!value.evidence||!value.feedback||!value.next)fail('请补充行动、执行情况、依据、客户反馈和下一步；未知请明确说明');
   if(['partial','not_done','unknown'].includes(value.state)&&(!value.reason||!value.impact))fail('未完成或待核实事项须说明原因与影响');
