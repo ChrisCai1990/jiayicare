@@ -175,7 +175,7 @@ export default function HomePage() {
         <ServiceSupervisionPanel pendingOnly={isAdvisor} />
         {['healthPlanner', 'nutritionist', 'superadmin'].includes(staff?.role) && <NutritionAssessmentPanel compact workbench hideWhenEmpty />}
         {staff?.role === 'superadmin' && <CheckupProgressPanel taskMode />}
-        {['healthManager', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
+        {['nutritionist', 'superadmin'].includes(staff?.role) && <InventoryDispatchPanel />}
         {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
         {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
       </div>
