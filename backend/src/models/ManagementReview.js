@@ -6,6 +6,7 @@ const schema=new mongoose.Schema({
  status:{type:String,enum:['collecting','advisor_review','finalized'],default:'collecting'},
  focus:{type:String,default:''},roles:[String],questions:{type:mongoose.Schema.Types.Mixed,default:{}},
  contributions:{type:mongoose.Schema.Types.Mixed,default:{}},
+ generation:{type:mongoose.Schema.Types.Mixed,default:null},summaryDraft:{type:mongoose.Schema.Types.Mixed,default:null},
  summary:{type:String,default:''},nextPlan:{type:String,default:''},
  actions:[{title:String,role:String,dueAt:String,status:{type:String,default:'pending'},completedAt:Date,completedBy:{type:mongoose.Schema.Types.ObjectId,ref:'Admin'}}],
  sources:{type:mongoose.Schema.Types.Mixed,default:{}},

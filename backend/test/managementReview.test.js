@@ -10,13 +10,14 @@ test('returned role remains pending without resetting others',()=>{const r={stat
 
 test('HTTP workflow enforces role, evidence, CAS and advisor approval',async()=>{
  const express=require('express'),User=require('../src/models/User'),Review=require('../src/models/ManagementReview');
+ const ai=require('../src/utils/managementReviewAI'),originalAI=ai.generate;ai.generate=async({row})=>row;
  const originalUser=User.findOne,originalReview=Review.findOne,originalUpdate=Review.findOneAndUpdate;
  const env={mode:process.env.MANAGEMENT_REVIEW_MODE,ids:process.env.MANAGEMENT_REVIEW_PATIENT_IDS};
  process.env.MANAGEMENT_REVIEW_MODE='allowlist';process.env.MANAGEMENT_REVIEW_PATIENT_IDS=user._id;
  const u={...user,assignedHealthManager:'507f1f77bcf86cd799439014'};
  let row={_id:'507f1f77bcf86cd799439015',patientId:user._id,periodKey:'M:2026-08',kind:'monthly',status:'collecting',roles:['nutritionist','healthManager'],contributions:{},__v:0,actions:[]};
  User.findOne=()=>({lean:async()=>u});Review.findOne=()=>({lean:async()=>structuredClone(row)});
- Review.findOneAndUpdate=async(filter,update)=>{if(filter.__v!==row.__v||filter.status!==row.status)return null;Object.assign(row,update.$set);row.__v++;return structuredClone(row)};
+ Review.findOneAndUpdate=async(filter,update)=>{if(filter.__v!==row.__v||filter.status!==row.status)return null;Object.assign(row,update.$set);row.__v++;return {...structuredClone(row),toObject:()=>structuredClone(row)}};
  const app=express();app.use(express.json());app.use((req,res,next)=>{const role=req.headers['x-role'];req.staff={role,_id:role==='superadmin'?'507f1f77bcf86cd799439099':u[p.fields[role]]};next()});app.use(require('../src/routes/managementReviews').router);
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
  const call=async(action,role,body)=>fetch(`http://127.0.0.1:${server.address().port}/patients/${u._id}/management-reviews/${row._id}/${action}`,{method:'POST',headers:{'content-type':'application/json','x-role':role},body:JSON.stringify({revision:row.__v,...body})});
@@ -34,5 +35,5 @@ test('HTTP workflow enforces role, evidence, CAS and advisor approval',async()=>
   assert.equal((await call('submit','nutritionist',{contribution})).status,200);
   assert.equal((await call('finalize','familyDoctor',{summary:'真实审核结论',actions:[]})).status,200);assert.equal(row.status,'finalized');
   assert.equal((await call('submit','nutritionist',{contribution})).status,409);
- }finally{server.close();User.findOne=originalUser;Review.findOne=originalReview;Review.findOneAndUpdate=originalUpdate;for(const [key,value]of [['MANAGEMENT_REVIEW_MODE',env.mode],['MANAGEMENT_REVIEW_PATIENT_IDS',env.ids]])if(value===undefined)delete process.env[key];else process.env[key]=value;}
+ }finally{server.close();ai.generate=originalAI;User.findOne=originalUser;Review.findOne=originalReview;Review.findOneAndUpdate=originalUpdate;for(const [key,value]of [['MANAGEMENT_REVIEW_MODE',env.mode],['MANAGEMENT_REVIEW_PATIENT_IDS',env.ids]])if(value===undefined)delete process.env[key];else process.env[key]=value;}
 });
