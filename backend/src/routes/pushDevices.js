@@ -11,7 +11,8 @@ const registry = createPushDeviceRegistry({
 // Authenticated writes only. Never echo or log device tokens in responses.
 router.use(auth);
 router.get('/capabilities', (req, res) => {
-  res.json({ success: true, data: { enabled: nativePushReady() } });
+  res.json({ success: true, data: { enabled: nativePushReady(),
+    providers: ['huawei', 'apns'].filter(provider => nativePushReady(provider)) } });
 });
 for (const [method, operation] of [['put', 'register'], ['delete', 'unregister']]) {
   router[method]('/', async (req, res, next) => {
