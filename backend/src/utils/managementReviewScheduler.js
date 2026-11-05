@@ -35,7 +35,7 @@ async function scan(now=new Date()) {
  const users=await User.find({_id:{$in:ids},isDeleted:{$ne:true}}).lean();
  for(const user of users){
   if(!user.assignedFamilyDoctor||!user.assignedNutritionist||!user.assignedHealthManager)continue;
-  const tenant=await Tenant.findById(user.tenantId).select('status serviceScope').lean();
+  const tenant=await Tenant.findById(user.tenantId).select('status code serviceScope').lean();
   if(tenant?.status!=='active'||!require('./tenantChannel').hasTenantChannel(tenant,'staff'))continue;
   const access=await require('./serviceAccess').resolveServiceAccess(user,now);if(!access.active)continue;
   for(const period of policy.periods(user,now).filter(p=>p.kind==='monthly'&&p.due)){
