@@ -37,7 +37,7 @@ router.post('/patients/:id/management-reviews',wrap(async(req,res)=>{
  const user=await userFor(req), period=policy.periods(user).find(x=>x.key===req.body.periodKey);
  if(!period||!period.due)fail('该周期尚未结束或注册未满一个月');
  if(period.kind!=='monthly'&&!policy.advisor(user,req.staff))fail('季度和年度由健康顾问发起分发',403);
- if(period.kind==='monthly'&&!['familyDoctor','nutritionist','healthManager','rehabSpecialist','superadmin'].includes(req.staff.role))fail('无权发起',403);
+ if(period.kind==='monthly')fail('月度复盘由系统自动生成到各岗位，请等待本岗位草稿',409);
  const existing=await Review.findOne({patientId:user._id,periodKey:period.key});if(existing)return res.json({success:true,data:existing});
  const roles=['nutritionist','healthManager'];
  if(period.kind!=='monthly')roles.push('familyDoctor');
@@ -59,6 +59,7 @@ router.post('/patients/:id/management-reviews/:reviewId/:action',wrap(async(req,
  const action=req.params.action, role=req.body.role||req.staff.role, now=new Date();let set={},note='',snapshot=null;
  if(action==='generate-draft'||action==='generate-summary') {
   const summary=action==='generate-summary';
+  if(!summary&&row.kind==='monthly'&&(!row.roles.includes(req.staff.role)||!policy.assigned(user,req.staff)))fail('月度岗位草稿仅由所属岗位处理，健康顾问在岗位提交后审核汇总',403);
   if(summary){if(!policy.advisor(user,req.staff))fail('仅健康顾问可生成汇总草稿',403);if(row.status!=='advisor_review'||!row.roles.every(r=>row.contributions?.[r]?.status==='submitted'))fail('各岗位提交后才能汇总',409);}
   else if(row.status!=='collecting')fail('该记录已进入审核或已归档',409);
   const roles=summary?row.roles:policy.advisor(user,req.staff)?row.roles.filter(r=>row.contributions?.[r]?.status!=='submitted'):[req.staff.role];
@@ -81,10 +82,10 @@ router.post('/patients/:id/management-reviews/:reviewId/:action',wrap(async(req,
   snapshot=row.contributions?.[role];set.contributions={...row.contributions,[role]:{...value,status:'submitted',by:req.staff._id,at:now}};
   set.status=row.roles.every(r=>set.contributions[r]?.status==='submitted')?'advisor_review':'collecting';
  } else if(action==='return') {
-  if(!policy.advisor(user,req.staff))fail('仅健康顾问可退回',403);if(!row.roles.includes(role))fail('岗位无效');note=text(req.body.note||'');if(!note)fail('请填写退回原因');
+  if(!policy.advisor(user,req.staff))fail('仅健康顾问可退回',403);if(row.kind==='monthly'&&row.status!=='advisor_review')fail('请等待各岗位提交后审核',409);if(!row.roles.includes(role))fail('岗位无效');note=text(req.body.note||'');if(!note)fail('请填写退回原因');
   snapshot=row.contributions?.[role];set.contributions={...row.contributions,[role]:{...snapshot,status:'returned',returnNote:note}};set.status='collecting';set.summary='';set.summaryDraft=null;
  } else if(action==='add-role') {
-  if(!policy.advisor(user,req.staff))fail('仅健康顾问可分发',403);
+  if(!policy.advisor(user,req.staff))fail('仅健康顾问可分发',403);if(row.kind==='monthly'&&row.status!=='advisor_review')fail('月度由各岗位先复盘，提交后再处理协作',409);
   if(!policy.fields[role]||!user[policy.fields[role]]||row.roles.includes(role))fail('请选择已分配且尚未参与的岗位');
   note=text(req.body.note||'');if(!note)fail('请填写分发问题及指导依据');set.roles=[...row.roles,role];set.questions={...row.questions,[role]:note};set.status='collecting';set.summary='';set.summaryDraft=null;
  } else if(action==='finalize') {
@@ -110,12 +111,12 @@ async function workbench(staff){
  const users=await User.find({_id:{$in:ids},isDeleted:{$ne:true}}).lean(),pending=[],actions=[];
  for(const user of users){if(!policy.canRead(user,staff))continue;const rows=await Review.find({patientId:user._id}).lean();for(const period of policy.periods(user).filter(x=>x.due)){
   const row=rows.find(x=>x.periodKey===period.key);let title='';
-  if(!row&&((period.kind!=='monthly'&&policy.advisor(user,staff))||(period.kind==='monthly'&&['nutritionist','healthManager'].includes(staff.role))))title=period.kind==='monthly'?'AI生成岗位复盘草稿':'分发团队评估';
-  else if(row&&policy.pendingRole(row,staff.role)&&policy.assigned(user,staff))title='提交'+policy.labels[staff.role]+'复盘';
+  if(!row&&((period.kind!=='monthly'&&policy.advisor(user,staff))||(period.kind==='monthly'&&['nutritionist','healthManager'].includes(staff.role))))title=period.kind==='monthly'?'本岗位草稿自动准备中':'分发团队评估';
+  else if(row&&policy.pendingRole(row,staff.role)&&policy.assigned(user,staff))title='审核'+policy.labels[staff.role]+'复盘草稿';
   else if(row?.status==='advisor_review'&&policy.advisor(user,staff))title='健康顾问审核';
   if(title)pending.push({annualPlanId:'cycle',patientId:user._id,patientName:user.name,month:period.key,label:period.label+' · '+title,reviewId:row?._id});
  }
  for(const row of rows.filter(x=>x.status==='finalized'))for(const a of row.actions||[])if(a.status==='pending'&&policy.assigned(user,staff,a.role))actions.push({reviewId:row._id,annualPlanId:'cycle',patientId:user._id,month:row.periodKey,actionId:a._id,title:a.title,dueAt:a.dueAt});
  }return {pending,actions};
 }
-module.exports={router,workbench};
+module.exports={router,workbench,sources};

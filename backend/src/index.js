@@ -181,6 +181,7 @@ app.listen(PORT, () => {
   // 已确认管理方案会员的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
   require('./utils/monthlyFollowUpScheduler').startMonthlyReviewScheduler();
   require('./utils/phaseAssessmentScheduler').startPhaseAssessmentScheduler();
+  require('./utils/managementReviewScheduler').start();
   require('./utils/nutritionRecordFollowUp').reconcileUpcoming().then(count => {
     console.log(`[nutrition-followup] 已核对 ${count} 条未来预约记录`);
   }).catch(error => console.error('[nutrition-followup] 预约任务核对失败', error.message));

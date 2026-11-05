@@ -23,6 +23,8 @@ test('HTTP workflow enforces role, evidence, CAS and advisor approval',async()=>
  const call=async(action,role,body)=>fetch(`http://127.0.0.1:${server.address().port}/patients/${u._id}/management-reviews/${row._id}/${action}`,{method:'POST',headers:{'content-type':'application/json','x-role':role},body:JSON.stringify({revision:row.__v,...body})});
  try {
   assert.equal((await call('finalize','familyDoctor',{summary:'ok',actions:[]})).status,409);
+  assert.equal((await call('generate-draft','familyDoctor',{})).status,403);
+  assert.equal((await call('generate-draft','superadmin',{})).status,403);
   const contribution={action:'复查',execution:'未完成',state:'not_done',feedback:'客户已说明原因',evidence:'合成服务记录',next:'重新安排'};
   assert.equal((await call('submit','healthManager',{contribution})).status,400);
   contribution.reason='预约冲突';contribution.impact='缺少复查结果';
