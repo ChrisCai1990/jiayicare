@@ -20,7 +20,7 @@ async function buildContext(user, scopes = [], options = {}) {
     snapshot.sources.push('健康档案与生活方式（当前版本）');
   }
   if (wanted.has('reports')) {
-    const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited', checkDate:{$lte:new Date(end.getTime()+8*3600000).toISOString().slice(0,10)} }).sort({ checkDate: -1, createdAt: -1 }).limit(30)
+    const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' }).sort({ checkDate: -1, createdAt: -1 }).limit(30)
       .select('title reportYear checkDate institution examConclusion reportItems aiSummary').lean();
     snapshot.reports = clean(reports);
     if (options.annual === true) {
