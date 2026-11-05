@@ -38,9 +38,16 @@ async function scan(now=new Date()) {
   const tenant=await Tenant.findById(user.tenantId).select('status code serviceScope').lean();
   if(tenant?.status!=='active'||!require('./tenantChannel').hasTenantChannel(tenant,'staff'))continue;
   const access=await require('./serviceAccess').resolveServiceAccess(user,now);if(!access.active)continue;
-  for(const period of policy.periods(user,now).filter(p=>p.kind==='monthly'&&p.due)){
+  for(const period of policy.periods(user,now).filter(p=>p.due)){
    try {
     let row=await Review.findOne({patientId:user._id,periodKey:period.key}).lean();
+    if(period.kind!=='monthly'){
+     if(row)continue;
+     const actor=await Admin.findById(user.assignedFamilyDoctor).lean();
+     if(!actor||actor.role!=='familyDoctor'||actor.staffStatus==='inactive'||String(actor.tenantId)!==String(user.tenantId))continue;
+     await require('./aiDataConsent').withStaffService(actor,()=>new Promise((resolve,reject)=>require('./tenantScope').tenantContext({staff:actor},null,()=>Promise.resolve().then(()=>require('./managementReviewPreparation').ensure({user,period,staff:actor,source:()=>require('../routes/managementReviews').sources(user,period)})).then(resolve,reject))));
+     continue;
+    }
     if(!row){
      const roles=['nutritionist','healthManager'];
      const rehab=await require('../models/HealthPlan').exists({patientId:user._id,type:'rehab',status:{$in:['active','completed']},pushedAt:{$ne:null,$lt:new Date(period.end+'T23:59:59+08:00')},$or:[{endDate:null},{endDate:{$gte:new Date(period.start+'T00:00:00+08:00')}}]});
