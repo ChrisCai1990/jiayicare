@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { notificationTotal, taskProgress, followUpDateRange, filterReviewTodos, readableServiceText } from '../src/utils/staffWorkspace.js'
+import { notificationTotal, taskProgress, followUpDateRange, filterReviewTodos, groupReviewTodos, readableServiceText } from '../src/utils/staffWorkspace.js'
 
 test('notification count includes messages and both referral queues, never adds sent pushes', () => {
   assert.equal(notificationTotal({ unreadMessageCount: 13, pushCount: 30 }), 13)
@@ -37,4 +37,16 @@ test('display conversion leaves original evidence intact and readable clinical c
   assert.equal(readableServiceText(text), '服务类型：代预约；复查原文来源：方案依据（详见原方案）')
   assert.match(text, /priority:3/)
   assert.equal(readableServiceText('医师已核对 2026-09-01 报告'), '医师已核对 2026-09-01 报告')
+})
+
+test('review folding keeps separate patients and categories and retains unfinished records', () => {
+  const todos = [
+    { id: 'a', patientId: 'p1', type: 'health_course_review', label: '门诊病历待审核' },
+    { id: 'b', patientId: 'p1', type: 'health_course_review', label: '门诊病历待审核' },
+    { id: 'c', patientId: 'p1', type: 'health_course_review', label: '其他健康变化待审核' },
+    { id: 'd', patientId: 'p2', type: 'health_course_review', label: '门诊病历待审核' },
+  ]
+  assert.deepEqual(groupReviewTodos(todos).map(group => group.tasks.map(task => task.id)), [['a', 'b'], ['c'], ['d']])
+  assert.deepEqual(groupReviewTodos(todos.filter(todo => todo.id !== 'a')).map(group => group.tasks.map(task => task.id)), [['b'], ['c'], ['d']])
+  assert.equal(todos.length, 4)
 })

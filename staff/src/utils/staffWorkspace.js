@@ -35,6 +35,25 @@ export function filterReviewTodos(todos, { query = '', age = 'all', priority = '
   return filtered.sort((a, b) => (sort === 'priority' ? level(a) - level(b) : 0) || (time(a) ?? Infinity) - (time(b) ?? Infinity) || String(a.id).localeCompare(String(b.id)))
 }
 
+// Keep the underlying tasks intact: the workbench only folds their presentation.
+export function groupReviewTodos(todos = []) {
+  const groups = []
+  const byKey = new Map()
+  for (const todo of todos) {
+    const key = todo.patientId && todo.type
+      ? JSON.stringify([String(todo.patientId), todo.type, todo.label || ''])
+      : `task:${todo.id}`
+    let group = byKey.get(key)
+    if (!group) {
+      group = { key, tasks: [] }
+      byKey.set(key, group)
+      groups.push(group)
+    }
+    group.tasks.push(todo)
+  }
+  return groups
+}
+
 export function readableServiceText(text = '') {
   return String(text).replace(/\bproxy_booking\b/g, '代预约').replace(/\bbody_comp\b/g, '身体成分')
     .replace(/(?:[（(]?来源[：:]\s*)(?:missing:\d+|priority:\d+|[\w.]+_risk\.missing|review:[a-f\d]{24})[）)]?/gi, '来源：方案依据（详见原方案）')
