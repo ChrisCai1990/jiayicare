@@ -12,3 +12,16 @@ test('不完整或空内容不得保存成成功草稿',()=>{
  assert.throws(()=>renderDraft([[],[],[],[]]));
  assert.throws(()=>renderDraft(dimensions.map(labels=>labels.map(()=>''))));
 });
+
+const {ground}=require('../src/utils/phaseFourDimensionGrounding');
+test('缺本期依据时清除旧报告、虚构生活方式及新增医疗安排',()=>{
+ const input=dimensions.map(labels=>labels.map(()=> '旧报告正常，11月15日每日打卡'));
+ const output=ground(input,{recentHealthRecords:[],periodReports:[],periodFollowups:[]});
+ assert.ok(output[0].every(x=>x.includes('暂无记录')));assert.ok(output[1].every(x=>x==='本期暂无记录。'));
+ assert.doesNotMatch(renderDraft(output),/11月15日|旧报告正常/);assert.match(output[3][1],/不凭旧检查结果新增/);
+});
+test('重复取消不认定未就医，真实未闭环事项与规划对应',()=>{
+ const input=dimensions.map(labels=>labels.map(()=> 'AI草稿'));
+ const output=ground(input,{periodFollowups:[{theme:'医务代办',status:'cancelled',cancelReason:'重复发起已释放预占'},{theme:'眼科复查',status:'planned'}]});
+ assert.match(output[2][1],/重复发起/);assert.match(output[2][1],/不能仅凭状态认定逾期/);assert.match(output[3][1],/眼科复查/);
+});

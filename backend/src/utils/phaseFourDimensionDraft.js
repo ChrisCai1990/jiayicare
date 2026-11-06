@@ -31,10 +31,7 @@ async function generate(user, window) {
  const raw=await require('./aiDataConsent').withPersonalData(user._id,'health',()=>require('./ai').chat([{role:'user',content:prompt}],{provider:'qwen',systemPrompt:'依据证据生成待人工审核的结构化草稿，只输出JSON。',maxTokens:4800,temperature:0.05,timeoutMs:90000}));
  let value=JSON.parse(String(raw).trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));
  renderDraft(value);
- const rows=context.recentHealthRecords||[];
- const types=[['diet'],['exercise'],['sleep'],['smoking','smoke','alcohol','tobacco'],['mood','emotion']];
- types.forEach((names,i)=>{if(!rows.some(r=>names.includes(r.type)))value[1][i]='本期暂无记录。';});
- if(!rows.some(r=>r.type==='symptom'))value[0][3]='本期暂无不适症状主诉记录；无记录不代表没有不适。';
+ value=require('./phaseFourDimensionGrounding').ground(value,context);
  return {content:renderDraft(value),sources:context.sources,dimensions:value};
 }
 module.exports={dimensions,renderDraft,generate};
