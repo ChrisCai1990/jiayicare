@@ -17693,7 +17693,8 @@ async function runOutpatientRecordParse(report, rawParseImage) {
 async function runReportParseControlled(reportId) {
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
-  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage, renderSinglePageRegions } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage, renderSinglePageRegions, renderSinglePageBands } = require('../utils/pdf');
+  const { parseAnnualPageBands } = require('../utils/reportAnnualPageFallback');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { filterMissingReportItems, hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
   const { reviewRevisionMatch } = require('../utils/reportReviewRevision');
@@ -17819,6 +17820,25 @@ async function runReportParseControlled(reportId) {
                 } catch (e) {
                   rethrowAiControl(e);
                   if (['AI_PAGE_BUDGET_PAUSED', 'AI_PAGE_CIRCUIT_PAUSED'].includes(e.code)) break;
+                  if (report.type === 'annual' && ['AI_TIMEOUT', 'AI_OUTPUT_LENGTH'].includes(e.code)) {
+                    try {
+                      const fallbackPrompt = reportParsePrompt
+                        + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
+                        + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
+                      const splitPage = await parseAnnualPageBands({
+                        renderBands: () => renderSinglePageBands(pdfBuf, pageNum, 160),
+                        parseImage, parseJSON: safeParseJSON, mergeItems: mergeCoverageAuditItems,
+                        prompt: fallbackPrompt, pageNum, model: VL_MODEL,
+                      });
+                      batchResults[i] = splitPage;
+                      await MedicalReport.findByIdAndUpdate(reportId, { $set: { [`parseJob.firstPassPages.${pageNum}`]: splitPage } });
+                      console.log(`[parse-ai] 页${pageNum}整页输出失败，四段识别成功：${splitPage.items.length}项`);
+                    } catch (splitError) {
+                      rethrowAiControl(splitError);
+                      console.log(`[parse-ai] 页${pageNum}四段识别失败: ${splitError.message}`);
+                    }
+                    break; // Never retry the same oversized whole-page request.
+                  }
                   if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${pageNum}异常: ${e.message}`);
                 }
               }
