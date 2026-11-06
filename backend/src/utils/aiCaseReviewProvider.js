@@ -28,7 +28,9 @@ async function replyScoped({ preferred, sessionId, prompt, context, attachments,
   try {
     content = await chat(messages, { provider, systemPrompt, maxTokens, temperature: 0.05, timeoutMs: 90000 });
   } catch (error) {
-    if (!retryOnEmptyOrLength || !/AI 返回空内容或输出被截断/.test(String(error.message || ''))) throw error;
+    const retryableOutput = ['AI_EMPTY_RESPONSE', 'AI_OUTPUT_LENGTH'].includes(error.code)
+      || /AI 返回空内容或输出被截断/.test(String(error.message || ''));
+    if (!retryOnEmptyOrLength || !retryableOutput) throw error;
     const retryMessages = [...messages.slice(0, -1), { role: 'user', content: `${messages.at(-1).content}\n\n【精简重试】上次输出未完成。请直接给出完整问题卡；每个问题最多180字，每个字段只写最关键的一句，最后写综合关联和优先级。不要重复资料清单、引言或解释格式。` }];
     content = await chat(retryMessages, { provider, systemPrompt, maxTokens: Math.max(maxTokens, 6500), temperature: 0.05, timeoutMs: 120000 });
   }

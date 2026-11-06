@@ -59,6 +59,26 @@ test('provider error code is retained without copying a sensitive message', asyn
   assert.ok(!JSON.stringify(settled).includes('sensitive'));
 });
 
+test('OCR output failures retain distinct safe codes and messages', async () => {
+  const records = [];
+  const db = {
+    policy: async () => DEFAULT_POLICY, circuit: async () => null, reserve: async () => true,
+    insert: async () => {}, outcome: async () => {}, adjust: async () => {},
+    finish: async (_, record) => { records.push(record); },
+  };
+  const run = createBudgetRunner(db);
+  const options = { provider: 'qwen', model: 'qwen3-vl-plus', messages: [{ content: 'synthetic' }],
+    maxTokens: 32, context: { business: 'ocr', reportId: 'a'.repeat(24), page: 4 } };
+  const response = (content, finish_reason = 'stop') => ({
+    choices: [{ message: { content }, finish_reason }],
+    usage: { prompt_tokens: 2, completion_tokens: 2 },
+  });
+  await assert.rejects(run(options, () => response('', 'stop')), error => error.code === 'AI_EMPTY_RESPONSE' && /空内容/.test(error.message));
+  await assert.rejects(run(options, () => response('{"items":[]}', 'length')), error => error.code === 'AI_OUTPUT_LENGTH' && /长度上限/.test(error.message));
+  await assert.rejects(run(options, () => response('broken json')), error => error.code === 'AI_MALFORMED_RESPONSE' && /格式无效/.test(error.message));
+  assert.deepEqual(records.map(record => record.errorCode), ['EMPTY_OUTPUT', 'OUTPUT_LENGTH', 'MALFORMED_JSON']);
+});
+
 test('policy rejects disabled token limits, malformed prices and invalid warning thresholds', () => {
   assert.deepEqual(validatePolicy(DEFAULT_POLICY), DEFAULT_POLICY);
   for (const patch of [{ pageCalls: 0 }, { dailyTokens: '100' }, { prices: { 'bad.model': { input: 1, output: 1 } } }, { warningPercent: 100 }, { prices: { qwen: { input: 1, output: '' } } }]) {

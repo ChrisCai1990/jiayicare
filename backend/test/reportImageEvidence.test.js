@@ -164,7 +164,7 @@ test('single-page route stops before coverage/classification and preserves exist
   assert.equal(report.reportItems[0], oldItem);
 });
 
-test('dense PDF supplement splits vertically and checks six calls before model use', async () => {
+for (const imageSize of [250000, 520000]) test(`annual PDF supplement splits ${imageSize}-character page and checks six calls`, async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -184,8 +184,7 @@ test('dense PDF supplement splits vertically and checks six calls before model u
     '../models/MedicalReport': { findById: async () => report },
     '../utils/pdf': {
       isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      // Production page 10 was 648,096 base64 characters and still timed out whole.
-      renderSinglePage: async () => 'x'.repeat(648096),
+      renderSinglePage: async () => 'x'.repeat(imageSize),
       renderSinglePageRegions: async () => { regions++; return ['top', 'bottom']; },
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('No model result'); } },
@@ -206,7 +205,7 @@ test('dense PDF supplement splits vertically and checks six calls before model u
   assert.equal(modelCalls, 1);
 });
 
-test('extra dense template lab page uses four bands and reserves twelve calls', async () => {
+test('extra dense annual page uses four bands without hospital template and fits default eight calls', async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -230,7 +229,7 @@ test('extra dense template lab page uses four bands and reserves twelve calls', 
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('No model result'); } },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
-    '../utils/zheyiReportTemplate': { isZheyiReport: () => true, promptForPage: () => '' },
+    '../utils/zheyiReportTemplate': { isZheyiReport: () => false },
   };
   const run = vm.runInNewContext(`${source.slice(start, end)};runReportPageParse`, {
     withAiContext: require('../src/utils/aiBudget').withAiContext,
@@ -242,7 +241,7 @@ test('extra dense template lab page uses four bands and reserves twelve calls', 
   });
   await assert.rejects(run('fixture', 10), /stopped/);
   assert.equal(bands, 1);
-  assert.equal(requiredCalls, 12);
+  assert.equal(requiredCalls, 8);
   assert.equal(modelCalls, 1);
 });
 
@@ -270,7 +269,7 @@ test('image-only upper crop does not discard lower crop lab results', async () =
     '../models/MedicalReport': { findById: async () => ({ _id: 'fixture', user: 'synthetic', type: 'annual', title: '测试体检', reportItems: [] }) },
     '../utils/pdf': {
       isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      renderSinglePage: async () => 'x'.repeat(800001), renderSinglePageRegions: async () => ['top', 'bottom'],
+      renderSinglePage: async () => 'x'.repeat(550000), renderSinglePageRegions: async () => ['top', 'bottom'],
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('Not reached'); } },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },

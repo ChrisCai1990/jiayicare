@@ -18577,10 +18577,11 @@ async function runReportPageParseControlled(reportId, pageNum) {
     // 约 375 KB JPEG 起分区：线上 648K 字符整页在 180 秒内连续超时，
     // 同页 160 DPI 上下分区分别仅约 296K / 226K 字符。
     const densePageBase64Threshold = 500000;
-    if (images[0]?.length > densePageBase64Threshold) {
-      // The largest Shaoyifu/Zheyi lab tables may still exceed the model's
-      // output limit in two halves. Use four horizontal bands for these pages.
-      const useBands = images[0].length > 600000 && (useShaoyifuTemplate || useZheyiTemplate);
+    // A compressed annual-checkup page can contain several dense panels even
+    // when its JPEG is small. Split it by position rather than trusting the
+    // hospital label or the compressed byte count as a measure of content.
+    if (report.type === 'annual' || images[0]?.length > densePageBase64Threshold) {
+      const useBands = report.type === 'annual' && images[0].length > 600000;
       images = useBands
         ? await renderSinglePageBands(pdfBuf, pageNum, 160)
         : await renderSinglePageRegions(pdfBuf, pageNum, 160);
@@ -18594,7 +18595,11 @@ async function runReportPageParseControlled(reportId, pageNum) {
     images = [buffers[pageNum - 1].toString('base64')];
   }
   if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
-  await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * 3);
+  // Four bands already provide a second spatial pass over overlap. A further
+  // coverage call on each band would require twelve calls, above the default
+  // eight-call page allowance before any model request could start.
+  const runCoverageAudit = images.length < 4;
+  await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
   let parsedItems = [];
   let allRegionsImageOnly = true;
   for (let regionIndex = 0; regionIndex < images.length; regionIndex++) {
@@ -18619,10 +18624,14 @@ async function runReportPageParseControlled(reportId, pageNum) {
     if (parsed.imageEvidence?.status !== 'image_only') allRegionsImageOnly = false;
     if (shouldSkipParsedReportPage(parsed)) continue;
     let regionItems = parsed.items;
-    // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
+    // 两段页做覆盖复核；四段页已有重叠分区，保留独立原文校验并避免超出默认调用额度。
+    if (!runCoverageAudit) {
+      parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
+      continue;
+    }
     try {
       const existingNames = [existingItemText, ...regionItems.map(item => str(item.name)).filter(Boolean)].filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧；除遗漏项目，也输出空结果和文字检查后续编号段落的完整原文，保持原项目名和itemType。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请从上到下逐个检查栏目，每个栏目先读左栏再读右栏；除遗漏项目，也输出空结果和文字检查后续编号段落的完整原文，保持原项目名和itemType。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
       const audit = safeParseJSON(auditRaw);
       if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
     } catch (auditError) { rethrowAiControl(auditError);
@@ -18679,7 +18688,11 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const pageEvidence = imagePageEvidence[pageNum];
   const resultMessage = acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
-    : `第${pageNum}页未找到有原文证据的遗漏项，已保留原${oldPage.length}项`;
+    : pageEvidence?.status === 'needs_review'
+      ? `第${pageNum}页有候选未通过原文校验，已保留原${oldPage.length}项，请对照原件人工核对`
+      : parsedItems.length
+        ? `第${pageNum}页识别到${parsedItems.length}项候选，但未形成可接纳的新项目，已保留原${oldPage.length}项，请核对遗漏`
+        : `第${pageNum}页AI未读到可接纳的遗漏项目，已保留原${oldPage.length}项，请对照原件核对是否漏提`;
   const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision) }, {
     $set: {
       reportItems: combined,
