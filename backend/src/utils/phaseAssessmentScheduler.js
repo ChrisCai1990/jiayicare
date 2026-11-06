@@ -94,7 +94,7 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
   const windowDays = contextWindow ? Math.max(1, Math.ceil((new Date(contextWindow.end) - new Date(contextWindow.start)) / 86400000)) : templateWindowDays;
   const monthlyReview = assessmentMode === 'routine' && frequency === 'monthly';
   const structuredAI = monthlyReview && routing.assessmentDomain === 'comprehensive';
-  const localDraft = monthlyReview ? await (structuredAI ? require('./phaseFourDimensionDraft').generate : require('./monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft)(user, contextWindow || { start: new Date(Date.now() - windowDays * 86400000), end: new Date() }) : null;
+  const localDraft = monthlyReview ? await (async () => { const window = contextWindow || { start: new Date(Date.now() - windowDays * 86400000), end: new Date() }; return structuredAI ? require('./phaseReviewScheduledService').run(user, () => require('./phaseFourDimensionDraft').generate(user, window)) : require('./monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft(user, window); })() : null;
   const context = monthlyReview ? { sources: localDraft.sources } : await buildStageAssessmentContext(user, windowDays, contextWindow);
   // 月度综合复盘独立于年度方案；专项/年度来源才附上已确认方案。
   if (assessmentMode === 'routine' && frequency === 'monthly') {

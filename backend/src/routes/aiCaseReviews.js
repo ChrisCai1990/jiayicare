@@ -300,7 +300,7 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
         const end = new Date(Date.UTC(year,month,1)-8*3600000-1);
         if(end>=new Date())return res.status(409).json({success:false,message:'本月尚未结束'});
         const draft = await require('../utils/phaseFourDimensionDraft').generate(user,{start,end});
-        return res.json({success:true,data:{...draft,revision:item.__v,assessmentId:item._id}});
+        return res.json({success:true,data:{...draft,revision:item.__v,assessmentId:item._id,serviceRequest:{kind:'authenticated_phase_preview',actorId:req.staff._id,tenantId:req.staff.tenantId,at:new Date()}}});
       }
       const canInvite = role === 'superadmin' || (role === 'familyDoctor' && isAssignedReviewer(user, req.staff, 'familyDoctor'));
       if (req.body.action === 'include_role') {

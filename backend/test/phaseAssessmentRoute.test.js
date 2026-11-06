@@ -1,3 +1,4 @@
+require('../src/utils/phaseReviewScheduledService').run=async(user,generate)=>generate();
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
