@@ -50,6 +50,7 @@ import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
+import { useAiWorkbench } from '../components/AiWorkbenchProvider'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
 import FollowUpModal from '../components/FollowUpModal'
 import MonitoringFollowUpFields, { isStaffMonitoringFollowUp, initialMonitoringMeasurement, monitoringSubmission } from '../components/MonitoringFollowUpFields'
@@ -2176,6 +2177,7 @@ export default function PatientDetailPage() {
   const location = useLocation()
   const toast = useToast()
   const { staff } = useStaff()
+  const { refresh: refreshAiTodos } = useAiWorkbench()
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null) // 加载会员详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
@@ -4926,6 +4928,8 @@ export default function PatientDetailPage() {
       await staffAPI.reviewAISupplement(id, supId, action)
       toast(action === 'approve' ? '已采纳营养素建议' : action === 'withdraw' ? '已撤回' : '已拒绝')
       loadSupplements()
+      refreshAiTodos()
+      if (location.state?.sourceTodo?.id === `supplement_${supId}`) nav(location.pathname + location.search, { replace: true, state: {} })
     } catch (err) { toast(err.message || '操作失败') }
   }
 
@@ -4935,6 +4939,8 @@ export default function PatientDetailPage() {
       await staffAPI.reviewPatientMedication(id, medId, action)
       toast(action === 'approve' ? '用药信息已核对并归档' : action === 'withdraw' ? '已撤回' : '已退回订正')
       loadMedications()
+      refreshAiTodos()
+      if (location.state?.sourceTodo?.id === `medication_${medId}`) nav(location.pathname + location.search, { replace: true, state: {} })
     } catch (err) { toast(err.message || '操作失败') }
   }
 
@@ -5079,6 +5085,12 @@ export default function PatientDetailPage() {
       toast('已确认报告解读')
       setShowReportDetail(null)
       await loadReports()
+      await refreshAiTodos()
+      if (location.state?.sourceTodo?.type === 'report_interpretation') {
+        const search = new URLSearchParams(location.search)
+        search.delete('reportId')
+        nav(location.pathname + (search.toString() ? `?${search}` : ''), { replace: true, state: {} })
+      }
       loadPendingDoctorAudit()
       load()
     } catch (err) { setReportFlowError(err.message || '确认失败') }
@@ -9925,7 +9937,7 @@ export default function PatientDetailPage() {
               <div className="card-body" style={{ display: 'grid', gap: 10 }}>
                 <div style={{ fontSize: 12, color: '#60756B' }}>这里保留原处方记录；只有明确核对为当前服用的药物才进入下方用药清单。</div>
                 {prescriptionReports.map(report => <div key={report._id} style={{ borderTop: '1px solid #E5EEE9', paddingTop: 8 }}>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setTab('reports'); openReportDetail(report) }}>{report.title || '处方与医嘱'} · {report.clinicalReview?.issuedDate || report.checkDate || '日期未记录'}</button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => openReportDetail(report)}>{report.title || '处方与医嘱'} · {report.clinicalReview?.issuedDate || report.checkDate || '日期未记录'}</button>
                   {report.clinicalReview?.medicationDecision === 'has_medications' && <div style={{ fontSize: 12, marginTop: 5 }}>{(report.clinicalReview.medications || []).map(row => `${row.name || '未命名药物'}${row.includeInCurrentMedication ? '（拟纳入当前用药）' : '（仅处方记录）'}`).join('、')}</div>}
                   {!report.clinicalReview && <div style={{ fontSize: 12, marginTop: 5 }}>{(report.reportItems || []).filter(item => item.itemType === 'medication').map(item => item.genericName || item.name).filter(Boolean).join('、') || '药物明细请查看原处方'}</div>}
                 </div>)}
@@ -13280,8 +13292,10 @@ export default function PatientDetailPage() {
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && showReportDetail.audit_status === 'audited' && !showReportDetail.archiveOnly && (
                 <div style={{ display: 'grid', gap: 7, padding: 10, background: '#FFF7F5', borderRadius: 8 }}>
-                  <b style={{ fontSize: 13 }}>健康顾问核对报告</b>
-                  {showReportDetail.advisorInterpretationConfirmedAt
+                  <b style={{ fontSize: 13 }}>{inferDocumentCategory(showReportDetail) === 'prescription_order' ? '已审核处方与医嘱' : '健康顾问核对报告'}</b>
+                  {inferDocumentCategory(showReportDetail) === 'prescription_order'
+                    ? <span style={{ fontSize: 13, color: '#4A6558' }}>处方原件无需另做报告解读；“用药信息待核对”须在用药信息管理中逐条确认录入内容与资料一致。</span>
+                    : showReportDetail.advisorInterpretationConfirmedAt
                     ? <span style={{ fontSize: 13, color: '#1E6B50' }}>已确认解读</span>
                     : <button className="btn btn-primary btn-sm" disabled={reportFlowSaving || reportDetailLoading} onClick={confirmReportInterpretation}>确认无误，完成解读</button>}
                   <span style={{ fontSize: 12 }}>发现归类或正常/异常判断有误，可写明原因退回健管专员修改。</span>
