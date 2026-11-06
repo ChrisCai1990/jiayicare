@@ -15,7 +15,7 @@ function sections({records=[],reports=[],followups=[]}={}){
  const lifestyle=[['饮食',['diet']],['运动',['exercise']],['睡眠',['sleep']],['烟酒',['smoking','smoke','alcohol','tobacco']],['情绪',['mood','emotion']]];
  const daily=records.filter(r=>['weight','waist','bloodPressure','bloodSugar','heartRate','temperature','stool','bowel','defecation','bowelMovement','oxygen','spo2','ibd_diary'].includes(r.type));
  const types=[...new Set(daily.map(r=>r.type))],weight=comparableWeightChange(records);
- const symptoms=records.filter(r=>r.type==='symptom');
+ const symptoms=records.filter(r=>r.type==='symptom'||/腹泻|腹痛|头晕|头痛|乏力|恶心|呕吐|胸闷|心悸|疼痛|不适/.test([r.value,r.note].filter(Boolean).join(' ')));
  const composition=records.filter(r=>['bodyComposition','bodyFat','bodyFatRate','muscleMass','visceralFat'].includes(r.type));
  const changes=[`专项筛查近期复查：${screening.length?reportText(screening)+'。以上为本期筛查相关结果；首次或复查属性及前次同项结果需核对，不据此推断变化。':'本期暂无记录。'}`,
  `日常健康数据：${daily.length?types.map(type=>type==='weight'&&weight?weight.observation:sample(daily.filter(r=>r.type===type))).join('；'):'本期暂无记录。'}`,

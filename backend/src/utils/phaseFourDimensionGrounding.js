@@ -8,6 +8,8 @@ function ground(value,context){
  const facts=sections({records,reports,followups});out[0]=facts[0].map(x=>short(unlabeled(x)));
  const types=[['diet'],['exercise'],['sleep'],['smoking','smoke','alcohol','tobacco'],['mood','emotion']];
  types.forEach((names,i)=>{if(!records.some(r=>names.includes(r.type)))out[1][i]='本期暂无记录。';});
+ const diet=records.filter(r=>r.type==='diet');
+ if(diet.length&&diet.filter(r=>!text(r.value).replace(/【[^】]+】/g,'').trim()).length/diet.length>=0.8)out[1][0]='本期饮食文字记录多数仅标注餐次，不能仅据这些文字判断膳食结构或行为改变；如有图片，由营养师结合原记录核对。不适相关文字已纳入阶段变化。';
  const lifeRecords=records.some(r=>types.flat().includes(r.type));
  const lifeEvidence=followups.filter(r=>!r.isBlocked&&/饮食|运动|睡眠|烟酒|情绪|生活方式/.test((r.theme||'')+' '+(r.plannedContent||''))&&(r.executedContent||r.cancelReason));
  if(!lifeEvidence.length){
