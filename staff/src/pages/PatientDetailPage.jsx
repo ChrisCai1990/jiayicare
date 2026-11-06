@@ -9913,6 +9913,8 @@ export default function PatientDetailPage() {
                 onClick={() => setMedSubTab(t.key)}>{t.label}</button>
             ))}
             <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              {medSubTab === 'med' && reports.some(report => report.documentCategory === 'prescription_order' && report.audit_status === 'audited') && ['healthManager', 'medicalAssistant', 'familyDoctor', 'superadmin'].includes(staff?.role) &&
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowPrescriptionPicker(true)}>从处方录入</button>}
               {false && medSubTab === 'sup' && (
                 <button className="btn btn-secondary btn-sm" disabled={aiSupGenerating}
                   onClick={generateAISupplement}>
@@ -9931,13 +9933,8 @@ export default function PatientDetailPage() {
             const activeMeds = medications.filter(m => m.aiStatus !== 'pending')
             const visibleMeds = activeMeds.filter(m => medHistoryTab === 'stopped' ? m.stopped : !m.stopped)
             const canApproveMed = staff?.role === 'familyDoctor' || staff?.role === 'superadmin'
-            const prescriptionReports = reports.filter(report => report.documentCategory === 'prescription_order' && report.audit_status === 'audited')
             return (
             <>
-            {prescriptionReports.length > 0 && <div className="card" style={{ marginBottom: 12, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div><strong>处方原件（{prescriptionReports.length} 份）</strong><div style={{ fontSize: 12, color: '#60756B', marginTop: 4 }}>原件保存在“原始资料”；核对仍在服用的药物后，从处方录入并提交健康顾问审核。</div></div>
-              {['healthManager', 'medicalAssistant', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowPrescriptionPicker(true)}>从处方录入用药</button>}
-            </div>}
             {pendingMeds.length > 0 && (
               <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
                 <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', gap: 8 }}>
