@@ -15901,8 +15901,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         audit_status: 'audited',
         status: 'pending',
         advisorInterpretationConfirmedAt: null,
-        // 处方/医嘱已经由“用药信息审核”闭环，不再作为体检报告解读或随访的第二入口。
-        documentCategory: { $ne: 'prescription_order' },
+        // 处方/医嘱和门诊病历走各自的临床资料审核，不生成体检报告解读待办。
+        documentCategory: { $nin: ['prescription_order', 'outpatient_record'] },
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const reportsToInterpret = await MedicalReport.find(interpretationFilter)

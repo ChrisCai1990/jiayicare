@@ -9932,8 +9932,8 @@ export default function PatientDetailPage() {
             const prescriptionReports = reports.filter(report => report.documentCategory === 'prescription_order' && report.audit_status === 'audited')
             return (
             <>
-            {prescriptionReports.length > 0 && <div className="card" style={{ marginBottom: 12 }}>
-              <div className="card-header"><span className="card-title">已审核处方与医嘱</span></div>
+            {prescriptionReports.length > 0 && <details className="card" style={{ marginBottom: 12 }}>
+              <summary className="card-header" style={{ cursor: 'pointer' }}><span className="card-title">查看历史处方与医嘱（{prescriptionReports.length} 份，非待办）</span></summary>
               <div className="card-body" style={{ display: 'grid', gap: 10 }}>
                 <div style={{ fontSize: 12, color: '#60756B' }}>这里保留原处方记录；只有明确核对为当前服用的药物才进入下方用药清单。</div>
                 {prescriptionReports.map(report => <div key={report._id} style={{ borderTop: '1px solid #E5EEE9', paddingTop: 8 }}>
@@ -9942,7 +9942,7 @@ export default function PatientDetailPage() {
                   {!report.clinicalReview && <div style={{ fontSize: 12, marginTop: 5 }}>{(report.reportItems || []).filter(item => item.itemType === 'medication').map(item => item.genericName || item.name).filter(Boolean).join('、') || '药物明细请查看原处方'}</div>}
                 </div>)}
               </div>
-            </div>}
+            </details>}
             {pendingMeds.length > 0 && (
               <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
                 <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -13292,9 +13292,9 @@ export default function PatientDetailPage() {
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && showReportDetail.audit_status === 'audited' && !showReportDetail.archiveOnly && (
                 <div style={{ display: 'grid', gap: 7, padding: 10, background: '#FFF7F5', borderRadius: 8 }}>
-                  <b style={{ fontSize: 13 }}>{inferDocumentCategory(showReportDetail) === 'prescription_order' ? '已审核处方与医嘱' : '健康顾问核对报告'}</b>
-                  {inferDocumentCategory(showReportDetail) === 'prescription_order'
-                    ? <span style={{ fontSize: 13, color: '#4A6558' }}>处方原件无需另做报告解读；“用药信息待核对”须在用药信息管理中逐条确认录入内容与资料一致。</span>
+                  <b style={{ fontSize: 13 }}>{inferDocumentCategory(showReportDetail) === 'prescription_order' ? '已审核处方与医嘱' : inferDocumentCategory(showReportDetail) === 'outpatient_record' ? '已审核门诊病历' : '健康顾问核对报告'}</b>
+                  {['prescription_order', 'outpatient_record'].includes(inferDocumentCategory(showReportDetail))
+                    ? <span style={{ fontSize: 13, color: '#4A6558' }}>{inferDocumentCategory(showReportDetail) === 'prescription_order' ? '处方原件无需另做报告解读；“用药信息待核对”须在用药信息管理中逐条确认录入内容与资料一致。' : '门诊病历由诊疗资料流程核对，无需另做体检报告解读。'}</span>
                     : showReportDetail.advisorInterpretationConfirmedAt
                     ? <span style={{ fontSize: 13, color: '#1E6B50' }}>已确认解读</span>
                     : <button className="btn btn-primary btn-sm" disabled={reportFlowSaving || reportDetailLoading} onClick={confirmReportInterpretation}>确认无误，完成解读</button>}
