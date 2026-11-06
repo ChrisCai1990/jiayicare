@@ -291,6 +291,17 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     if (item.status === 'team_review') {
       if (req.body.revision !== item.__v) return res.status(409).json({ success: false, message: '其他岗位已更新复盘，请刷新后继续' });
       const role = req.staff.role;
+      if (req.body.action === 'preview_four_sections') {
+        if (item.reviewWorkflow !== 'advisor_nutrition' || !/^\d{4}-\d{2}$/.test(item.periodKey)) return res.status(409).json({success:false,message:'仅用于原月度综合复盘'});
+        const currentRole = item.teamReviews?.nutritionist?.status === 'approved' ? 'familyDoctor' : 'nutritionist';
+        if (role !== 'superadmin' && (role !== currentRole || !isAssignedReviewer(user, req.staff, currentRole))) return res.status(403).json({success:false,message:'请由当前待核对岗位生成修订草稿'});
+        const start = new Date(item.periodKey+'-01T00:00:00+08:00');
+        const [year,month]=item.periodKey.split('-').map(Number);
+        const end = new Date(Date.UTC(year,month,1)-8*3600000-1);
+        if(end>=new Date())return res.status(409).json({success:false,message:'本月尚未结束'});
+        const draft = await require('../utils/phaseFourDimensionDraft').generate(user,{start,end});
+        return res.json({success:true,data:{...draft,revision:item.__v,assessmentId:item._id}});
+      }
       const canInvite = role === 'superadmin' || (role === 'familyDoctor' && isAssignedReviewer(user, req.staff, 'familyDoctor'));
       if (req.body.action === 'include_role') {
         if (item.reviewWorkflow === 'single_owner') return res.status(409).json({ success: false, message: '常规阶段性复盘由单一岗位负责，不增加其他岗位待办' });
