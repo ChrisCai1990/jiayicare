@@ -1,5 +1,5 @@
 import { useAiWorkbench } from './AiWorkbenchProvider'
-import { filterReviewTodos } from '../utils/staffWorkspace'
+import { filterReviewTodos, groupReviewTodos } from '../utils/staffWorkspace'
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -101,6 +101,7 @@ export default function AiTodosPanel({ hideGeo = false, hideConsultations = fals
   const [age, setAge] = useState('all')
   const [priority, setPriority] = useState('all')
   const [sort, setSort] = useState('priority')
+  const [expandedGroups, setExpandedGroups] = useState({})
   const [supplyTodo, setSupplyTodo] = useState(null)
   const [checkupTodo, setCheckupTodo] = useState(null)
   const [healthRiskTodo, setHealthRiskTodo] = useState(null)
@@ -173,10 +174,11 @@ export default function AiTodosPanel({ hideGeo = false, hideConsultations = fals
   const activeGroup = TODO_GROUPS.find(item => item.key === group)
   const groupedTodos = group === 'all' ? todos : todos.filter(todo => activeGroup?.types?.includes(todo.type))
   const filteredTodos = filterReviewTodos(groupedTodos, { query, age, priority, sort, config: TYPE_CONFIG })
+  const displayGroups = groupReviewTodos(filteredTodos)
   const overdueCount = todos.filter(t => t.overdue).length
-  const pageCount = Math.max(1, Math.ceil(filteredTodos.length / PAGE_SIZE))
+  const pageCount = Math.max(1, Math.ceil(displayGroups.length / PAGE_SIZE))
   const curPage = Math.min(page, pageCount - 1)
-  const pageTodos = filteredTodos.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
+  const pageGroups = displayGroups.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
 
   return (
     <div className="card" style={{ marginBottom: 20, border: overdueCount > 0 ? '1.5px solid #DC354540' : undefined }}>
@@ -226,7 +228,7 @@ export default function AiTodosPanel({ hideGeo = false, hideConsultations = fals
           <option value="priority">优先级优先，同级最久优先</option><option value="oldest">等待最久优先</option>
         </select>
         <button className="btn btn-secondary btn-sm" onClick={() => { setGroup('all'); setQuery(''); setAge('all'); setPriority('all'); setSort('priority'); setPage(0) }}>清除筛选</button>
-        <span role="status" style={{ width: '100%', fontSize: 12, color: '#65776F' }}>匹配 {filteredTodos.length} 项 · 每页{PAGE_SIZE}项 · {staff?.role === 'superadmin' ? '当前为全平台待审视图' : '显示当前账号待审事项及需协调的异常'}。历史提醒请进入原记录核对后处理。</span>
+        <span role="status" style={{ width: '100%', fontSize: 12, color: '#65776F' }}>匹配 {filteredTodos.length} 项任务，显示为 {displayGroups.length} 组 · 每页{PAGE_SIZE}组 · {staff?.role === 'superadmin' ? '当前为全平台待审视图' : '显示当前账号待审事项及需协调的异常'}。同一会员同类任务可展开逐项审核，未处理项继续保留。</span>
       </div>
       {loadError && <div role="alert" className="login-err" style={{ margin: '0 20px 10px' }}>{loadError} <button onClick={() => refreshTodos()}>重试</button></div>}
       <div className="card-body" style={{ padding: '4px 20px 12px', maxHeight: 560, overflowY: 'auto' }}>
@@ -235,7 +237,19 @@ export default function AiTodosPanel({ hideGeo = false, hideConsultations = fals
             {todos.length ? '没有匹配的待审任务，请调整筛选。' : '暂无待审核任务'}
           </div>
         )}
-        {pageTodos.map((todo, i) => {
+        {pageGroups.map((item, groupIndex) => {
+          const first = item.tasks[0]
+          const isGrouped = item.tasks.length > 1
+          const expanded = !!expandedGroups[item.key]
+          const groupConfig = TYPE_CONFIG[first.type] || { icon: '📌', label: first.type, color: '#8AA89C' }
+          return <React.Fragment key={item.key}>
+            {isGrouped && <button type="button" aria-expanded={expanded} onClick={() => setExpandedGroups(current => ({ ...current, [item.key]: !current[item.key] }))}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', border: 0, borderBottom: '1px solid #f0ede8', background: item.tasks.some(task => task.overdue) ? '#FFF8F8' : '#F6F9F7', padding: '12px 10px', cursor: 'pointer', color: '#1A2B24' }}>
+              <span aria-hidden="true" style={{ width: 36, height: 36, borderRadius: 10, background: groupConfig.color + '15', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{groupConfig.icon}</span>
+              <span style={{ flex: 1, minWidth: 0 }}><strong style={{ color: groupConfig.color, fontSize: 13 }}>{first.patientName} · {first.label || groupConfig.label}</strong><span style={{ display: 'block', fontSize: 12, color: '#65776F', marginTop: 3 }}>{item.tasks.length} 项待处理{item.tasks.some(task => task.overdue) ? ' · 含超时任务' : ''}，展开后逐项核对原件</span></span>
+              <span style={{ fontSize: 12, color: '#1E6B50', flexShrink: 0 }}>{expanded ? '收起' : '展开'} {expanded ? '⌃' : '⌄'}</span>
+            </button>}
+            {(!isGrouped || expanded) && item.tasks.map((todo, i) => {
           const cfg = TYPE_CONFIG[todo.type] || { icon: '📌', label: todo.type, color: '#8AA89C' }
           return (
             <div
@@ -243,11 +257,11 @@ export default function AiTodosPanel({ hideGeo = false, hideConsultations = fals
               onClick={() => todo.type === 'risk_event_review' ? setHealthRiskTodo(todo) : ['checkup_handoff_attention', 'checkup_handoff_pending'].includes(todo.type) ? setCheckupTodo(todo) : SUPPLY_TYPES.has(todo.type) ? setSupplyTodo(todo) : nav(todo.link, { state: { sourceTodo: todo } })}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 12,
-                borderBottom: i < pageTodos.length - 1 ? '1px solid #f0ede8' : 'none',
+                borderBottom: i < item.tasks.length - 1 || groupIndex < pageGroups.length - 1 ? '1px solid #f0ede8' : 'none',
                 cursor: 'pointer',
                 background: todo.overdue ? '#FFF8F8' : 'transparent',
                 margin: todo.overdue ? '0 -20px' : undefined,
-                padding: todo.overdue ? '10px 20px' : '10px 0',
+                padding: isGrouped ? '10px 10px 10px 48px' : todo.overdue ? '10px 20px' : '10px 0',
               }}
             >
               {/* 类型图标 */}
@@ -328,8 +342,9 @@ export default function AiTodosPanel({ hideGeo = false, hideConsultations = fals
               </div>
             </div>
           )
+        })}</React.Fragment>
         })}
-        {filteredTodos.length > PAGE_SIZE && (
+        {displayGroups.length > PAGE_SIZE && (
           <Pagination compact page={curPage + 1} totalPages={pageCount} onChange={next => setPage(next - 1)} />
         )}
       </div>
