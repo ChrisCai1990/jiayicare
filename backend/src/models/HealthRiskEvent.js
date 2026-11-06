@@ -17,7 +17,7 @@ const healthRiskEventSchema = new mongoose.Schema({
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   detectedAt: { type: Date, default: Date.now },
   dueAt: { type: Date, default: null },
-  disposition: { type: String, enum: ['confirmed', 'needs_information', 'contacted', 'referred', 'false_positive', 'source_corrected', ''], default: '' },
+  disposition: { type: String, enum: ['confirmed', 'no_followup', 'needs_information', 'contacted', 'referred', 'false_positive', 'source_corrected', ''], default: '' },
   decisionNote: { type: String, default: '' },
   decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   decidedByName: { type: String, default: '' },

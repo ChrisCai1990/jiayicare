@@ -3,6 +3,7 @@ import { staffAPI } from '../api'
 
 const OUTCOMES = [
   ['confirmed', '已核实需关注'],
+  ['no_followup', '已核实无需后续跟进'],
   ['needs_information', '待补资料（继续待办）'],
   ['contacted', '已联系并安排后续'],
   ['referred', '已建议就医'],

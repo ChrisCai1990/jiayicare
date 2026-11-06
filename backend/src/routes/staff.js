@@ -11934,7 +11934,7 @@ router.patch('/health-risk-events/:id/resolve', staffAuth, async (req, res) => {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可处理风险事件' });
     const disposition = String(req.body?.disposition || '').trim();
     const note = String(req.body?.note || '').trim();
-    if (!['confirmed', 'needs_information', 'contacted', 'referred', 'false_positive'].includes(disposition) || !note || note.length > 1000) return res.status(400).json({ success: false, message: '请选择核实结果并填写处理说明（最多1000字）' });
+    if (!['confirmed', 'no_followup', 'needs_information', 'contacted', 'referred', 'false_positive'].includes(disposition) || !note || note.length > 1000) return res.status(400).json({ success: false, message: '请选择核实结果并填写处理说明（最多1000字）' });
     const HealthRiskEvent = require('../models/HealthRiskEvent');
     const event = await HealthRiskEvent.findById(req.params.id).select('patientId status assignedTo');
     if (!event) return res.status(404).json({ success: false, message: '风险事件不存在' });
