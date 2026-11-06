@@ -11393,7 +11393,7 @@ router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, r
       return res.json({ success: true, message: '已驳回并删除' });
     }
     med.aiStatus = 'approved';
-    if (med.active === false && (String(med.sourceRecordKey || '').startsWith('prescription_report_review:') || med.archiveRecordId)) med.active = true;
+    if (med.active === false && (String(med.sourceRecordKey || '').startsWith('prescription_report_review:') || String(med.sourceRecordKey || '').startsWith('prescription_manual:') || med.archiveRecordId)) med.active = true;
     med.reviewedByName = req.staff.name || '';
     med.reviewedAt = new Date();
     await med.save();
@@ -11559,17 +11559,34 @@ router.get('/patients/:id/medications/:medId/attachments/:index/preview', async 
 
 router.post('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
-    const { name, brandName, specification, dosage, method, frequency, timing, startDate, endDate, purpose, note, imageUrls } = req.body;
-    if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
+    const { name, brandName, specification, dosage, method, frequency, timing, startDate, endDate, purpose, note, imageUrls, sourceReportId } = req.body;
+    if (!String(name || '').trim() || !String(dosage || '').trim() || !String(frequency || '').trim()) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
+    let sourceReport = null;
+    if (sourceReportId) {
+      if (!mongoose.isValidObjectId(sourceReportId)) return res.status(400).json({ success: false, message: '处方编号无效' });
+      if (!['healthManager', 'medicalAssistant', 'familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '当前岗位不能从处方录入用药' });
+      const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+      if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+      if (req.staff.role !== 'superadmin' && String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '只能处理本机构客户' });
+      if (req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅客户所属健康顾问可核对用药' });
+      sourceReport = await MedicalReport.findOne({ _id: sourceReportId, user: req.params.id, documentCategory: 'prescription_order', audit_status: 'audited' }).select('fileUrl fileUrls').lean();
+      if (!sourceReport) return res.status(409).json({ success: false, message: '未找到该客户已审核的处方，请刷新后重试' });
+      const normalizedName = String(name).trim().toLocaleLowerCase('zh-CN');
+      const existing = await Medication.find({ user: req.params.id, stopped: { $ne: true }, aiStatus: { $ne: 'rejected' } }).select('name aiStatus').lean();
+      if (existing.some(medication => String(medication.name || '').trim().toLocaleLowerCase('zh-CN') === normalizedName)) return res.status(409).json({ success: false, message: '已有同名服用中或待核对用药，请先核对现有记录，勿重复写入' });
+      const sourceRecordKey = `prescription_manual:${sourceReport._id}:${normalizedName}`;
+      if (await Medication.exists({ user: req.params.id, sourceRecordKey })) return res.status(409).json({ success: false, message: '此处方药物已经录入，请刷新用药列表' });
+    }
     // 健管专员/就医专员录入的客户现有用药信息需健康顾问核对后归档；不代表平台开药或调整用药。
-    const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
+    const needReview = !!sourceReport || NEEDS_REVIEW_ROLES.includes(req.staff.role);
     const med = await Medication.create({
-      user: req.params.id, name, brandName: brandName || '', specification: specification || '', dosage, method: method || '口服',
-      frequency, timing: timing || '', startDate: startDate || '', endDate: endDate || '',
+      user: req.params.id, name: String(name).trim(), brandName: brandName || '', specification: specification || '', dosage: String(dosage).trim(), method: sourceReport ? (method || '') : (method || '口服'),
+      frequency: String(frequency).trim(), timing: timing || '', startDate: startDate || '', endDate: endDate || '',
       purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
-      imageUrls: await require('../utils/medicationAttachmentStorage').normalizeMedicationAttachments(imageUrls, req.params.id, Medication),
+      imageUrls: sourceReport ? (sourceReport.fileUrls?.length ? sourceReport.fileUrls : sourceReport.fileUrl ? [sourceReport.fileUrl] : []) : await require('../utils/medicationAttachmentStorage').normalizeMedicationAttachments(imageUrls, req.params.id, Medication),
       createdByName: req.staff.name || '',
       aiStatus: needReview ? 'pending' : null,
+      ...(sourceReport ? { active: false, sourceRecordKey: `prescription_manual:${sourceReport._id}:${String(name).trim().toLocaleLowerCase('zh-CN')}`, aiGeneratedBy: '已审核处方/医嘱' } : {}),
     });
     await require('../utils/annualPlanPreparationTasks').completeAnnualPreparationTask(req.params.id, 'medications').catch(() => {});
     res.status(201).json({ success: true, data: med });

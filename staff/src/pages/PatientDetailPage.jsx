@@ -2371,6 +2371,8 @@ export default function PatientDetailPage() {
   const [pendingMedicalAssistOrderId, setPendingMedicalAssistOrderId] = useState('') // 手动点按钮生成时若有关联订单，带给选模板弹窗
   const [reqPrefill, setReqPrefill] = useState(null)
   const [showMedModal, setShowMedModal] = useState(false)
+  const [showPrescriptionPicker, setShowPrescriptionPicker] = useState(false)
+  const [sourcePrescriptionReport, setSourcePrescriptionReport] = useState(null)
   const [showSupModal, setShowSupModal] = useState(false)
   const [editingMed, setEditingMed] = useState(null)
   const [medCorrectionReason, setMedCorrectionReason] = useState('')
@@ -9918,7 +9920,7 @@ export default function PatientDetailPage() {
                 </button>
               )}
               <button className="btn btn-primary btn-sm"
-                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', specification:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingMed(null); setMedError(''); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', specification:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
+                onClick={() => { if (medSubTab === 'med') { setSourcePrescriptionReport(null); setMedForm({ name:'', brandName:'', specification:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingMed(null); setMedError(''); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', specification:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
                 ＋ 新增{medSubTab === 'med' ? '药物' : '营养素'}
               </button>
             </div>
@@ -9932,17 +9934,10 @@ export default function PatientDetailPage() {
             const prescriptionReports = reports.filter(report => report.documentCategory === 'prescription_order' && report.audit_status === 'audited')
             return (
             <>
-            {prescriptionReports.length > 0 && <details className="card" style={{ marginBottom: 12 }}>
-              <summary className="card-header" style={{ cursor: 'pointer' }}><span className="card-title">查看历史处方与医嘱（{prescriptionReports.length} 份，非待办）</span></summary>
-              <div className="card-body" style={{ display: 'grid', gap: 10 }}>
-                <div style={{ fontSize: 12, color: '#60756B' }}>这里保留原处方记录；只有明确核对为当前服用的药物才进入下方用药清单。</div>
-                {prescriptionReports.map(report => <div key={report._id} style={{ borderTop: '1px solid #E5EEE9', paddingTop: 8 }}>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => openReportDetail(report)}>{report.title || '处方与医嘱'} · {report.clinicalReview?.issuedDate || report.checkDate || '日期未记录'}</button>
-                  {report.clinicalReview?.medicationDecision === 'has_medications' && <div style={{ fontSize: 12, marginTop: 5 }}>{(report.clinicalReview.medications || []).map(row => `${row.name || '未命名药物'}${row.includeInCurrentMedication ? '（拟纳入当前用药）' : '（仅处方记录）'}`).join('、')}</div>}
-                  {!report.clinicalReview && <div style={{ fontSize: 12, marginTop: 5 }}>{(report.reportItems || []).filter(item => item.itemType === 'medication').map(item => item.genericName || item.name).filter(Boolean).join('、') || '药物明细请查看原处方'}</div>}
-                </div>)}
-              </div>
-            </details>}
+            {prescriptionReports.length > 0 && <div className="card" style={{ marginBottom: 12, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div><strong>处方原件（{prescriptionReports.length} 份）</strong><div style={{ fontSize: 12, color: '#60756B', marginTop: 4 }}>原件保存在“原始资料”；核对仍在服用的药物后，从处方录入并提交健康顾问审核。</div></div>
+              {['healthManager', 'medicalAssistant', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowPrescriptionPicker(true)}>从处方录入用药</button>}
+            </div>}
             {pendingMeds.length > 0 && (
               <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
                 <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -10230,15 +10225,33 @@ export default function PatientDetailPage() {
             </div>
           </div>}
 
+          {showPrescriptionPicker && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 680 }}>
+            <div className="modal-header"><h3 className="modal-title">选择已审核处方</h3><button className="modal-close" onClick={() => setShowPrescriptionPicker(false)}>✕</button></div>
+            <div className="modal-body" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
+              <p style={{ color: '#60756B', fontSize: 13 }}>只录入经核实仍在服用的药物；每个药物单独提交待审核。仅历史处方无需写入当前用药。</p>
+              {reports.filter(report => report.documentCategory === 'prescription_order' && report.audit_status === 'audited').map(report => {
+                const linkedCount = medications.filter(med => String(med.sourceRecordKey || '').includes(String(report._id))).length
+                return <div key={report._id} style={{ borderTop: '1px solid #E5EEE9', padding: '12px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div><strong>{report.title || '处方与医嘱'}</strong> · {report.clinicalReview?.issuedDate || report.checkDate || '日期未记录'}<div style={{ fontSize: 12, color: '#60756B', marginTop: 4 }}>{linkedCount ? `已关联 ${linkedCount} 条用药记录` : '尚无直接关联的用药记录'}</div></div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setShowPrescriptionPicker(false); openReportDetail(report) }}>查看原件</button>
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => { setShowPrescriptionPicker(false); setSourcePrescriptionReport(report); setEditingMed(null); setMedError(''); setMedForm({ name:'', brandName:'', specification:'', dosage:'', method:'', frequency:'', timing:'', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setShowMedModal(true) }}>录入用药</button>
+                  </div>
+                </div>
+              })}
+            </div>
+          </div></div>}
+
           {/* 新增/编辑药物弹窗：表单字段多，鼠标移出边界误触遮罩会丢失编辑，去掉点遮罩关闭 */}
           {showMedModal && (
             <div className="modal-overlay">
               <div className="modal" style={{ maxWidth: 560 }}>
                 <div className="modal-header">
-                  <h3 className="modal-title">{editingStoppedMed ? '订正已停用药物信息' : editingMed ? '编辑药物' : '新增药物'}</h3>
-                  <button className="modal-close" onClick={() => { setShowMedModal(false); setMedError('') }}>✕</button>
+                  <h3 className="modal-title">{sourcePrescriptionReport ? '依据处方录入用药' : editingStoppedMed ? '订正已停用药物信息' : editingMed ? '编辑药物' : '新增药物'}</h3>
+                  <button className="modal-close" onClick={() => { setShowMedModal(false); setSourcePrescriptionReport(null); setMedError('') }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  {sourcePrescriptionReport && <div style={{ gridColumn: '1/-1', padding: 10, background: '#F2F8F5', borderRadius: 8, fontSize: 13 }}>来源：{sourcePrescriptionReport.title || '处方与医嘱'} · {sourcePrescriptionReport.checkDate || '日期未记录'}。请对照原件并核实当前实际服用情况；提交后进入待审核，不会直接加入服用中。</div>}
                   {editingStoppedMed && <div style={{ gridColumn: '1/-1', fontSize: 12, color: '#8A5A44' }}>只订正历史记录；保存后仍为“已停用”，不会恢复用药提醒。</div>}
                   {[
                     { k: 'name', label: '药品化学名 *', full: false, placeholder: '如：苯磺酸氨氯地平' },
@@ -10264,12 +10277,12 @@ export default function PatientDetailPage() {
                     <div className="form-group"><label className="form-label">停用原因 *</label><input className="form-input" value={medForm.stopReason || ''} onChange={e => setMedForm(f => ({ ...f, stopReason: e.target.value }))}/></div>
                     <div className="form-group" style={{ gridColumn: '1/-1' }}><label className="form-label">本次订正理由 *</label><textarea className="form-input" rows={2} maxLength={1000} value={medCorrectionReason} onChange={e => setMedCorrectionReason(e.target.value)} placeholder="说明原信息哪里不准确及核实依据"/></div>
                   </>}
-                  <RecordImageUploader imageUrls={medForm.imageUrls || []} onChange={imageUrls => setMedForm(form => ({ ...form, imageUrls }))}
-                    uploading={medImageUploading} setUploading={setMedImageUploading} onError={setMedError} />
+                  {sourcePrescriptionReport ? <div style={{ gridColumn: '1/-1', fontSize: 12, color: '#60756B' }}>处方原件将自动作为核对附件。</div> : <RecordImageUploader imageUrls={medForm.imageUrls || []} onChange={imageUrls => setMedForm(form => ({ ...form, imageUrls }))}
+                    uploading={medImageUploading} setUploading={setMedImageUploading} onError={setMedError} />}
                 </div>
                 <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
                   {medError && <div role="alert" style={{ color: '#C0392B', flex: '1 1 100%' }}>{medError}</div>}
-                  <button className="btn btn-ghost" onClick={() => { setShowMedModal(false); setMedError('') }}>取消</button>
+                  <button className="btn btn-ghost" onClick={() => { setShowMedModal(false); setSourcePrescriptionReport(null); setMedError('') }}>取消</button>
                   <button className="btn btn-primary" disabled={medSaving || medImageUploading} onClick={async () => {
                     setMedError('')
                     if (!medForm.name?.trim() || !medForm.dosage?.trim() || !medForm.frequency?.trim()) { setMedError('请填写药品化学名、剂量和频次'); return }
@@ -10279,12 +10292,12 @@ export default function PatientDetailPage() {
                       const needReview = !editingMed && (staff?.role === 'healthManager' || staff?.role === 'medicalAssistant')
                       if (editingStoppedMed) await staffAPI.correctStoppedMedication(id, editingMed, { ...medForm, correctionReason: medCorrectionReason })
                       else if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
-                      else await staffAPI.createPatientMedication(id, medForm)
-                      setShowMedModal(false); loadMedications()
-                      toast(editingStoppedMed ? '历史信息已订正，仍为已停用' : editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
+                      else await staffAPI.createPatientMedication(id, { ...medForm, ...(sourcePrescriptionReport ? { sourceReportId: sourcePrescriptionReport._id } : {}) })
+                      setShowMedModal(false); setSourcePrescriptionReport(null); loadMedications(); refreshAiTodos()
+                      toast(sourcePrescriptionReport ? '已从处方录入，待健康顾问审核' : editingStoppedMed ? '历史信息已订正，仍为已停用' : editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
                     } catch (err) { setMedError(err.message || '保存失败，请稍后重试') }
                     finally { setMedSaving(false) }
-                  }}>{medImageUploading ? '图片上传中...' : medSaving ? '保存中...' : '保存'}</button>
+                  }}>{medImageUploading ? '图片上传中...' : medSaving ? '保存中...' : sourcePrescriptionReport ? '提交待审核' : '保存'}</button>
                 </div>
               </div>
             </div>
