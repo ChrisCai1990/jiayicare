@@ -20001,6 +20001,9 @@ router.get('/workflow-products', staffAuth, async (req, res) => {
 router.resumeReportParseJobs = resumeReportParseJobs;
 // 用户端 PDF 入口也复用同一队列，避免绕过逐页渲染而把 PDF 当图片传给视觉模型。
 router.scheduleReportParse = scheduleReportParse;
+// Internal audited maintenance reuses the same evidence-checked page supplement
+// after it has claimed an unaudited page and established the original staff scope.
+router.runReportPageParse = runReportPageParse;
 // 微信客服外部身份绑定：只允许有客户编辑权限的实际服务人员或超管操作。
 // 不接受昵称/手机号猜测，且必须由工作人员确认已取得客户授权。
 router.post('/wecom-kf/contacts', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
