@@ -7,7 +7,7 @@ const roleNames = { specialist: '专科专家', familyDoctor: '健康顾问', he
 
 const personLabel = person => `${person.name} · ${roleNames[person.role] || person.role}`
 
-export default function SearchableStaffSelect({ people = [], value = '', onChange, excludeId, label = '选择人员', required = false }) {
+export default function SearchableStaffSelect({ people = [], value = '', onChange, excludeId, label = '选择人员', required = false, getLabel = personLabel, placeholder = '输入姓名或岗位，选择人员', emptyMessage = '未找到匹配人员', disabled = false, inputId }) {
   const rootRef = useRef(null)
   const inputRef = useRef(null)
   const listRef = useRef(null)
@@ -19,7 +19,7 @@ export default function SearchableStaffSelect({ people = [], value = '', onChang
   const candidates = people.filter(person => String(person._id) !== String(excludeId || ''))
   const selected = candidates.find(person => String(person._id) === String(value))
   const keyword = query.trim().toLocaleLowerCase()
-  const matches = candidates.filter(person => !keyword || personLabel(person).toLocaleLowerCase().includes(keyword))
+  const matches = candidates.filter(person => !keyword || getLabel(person).toLocaleLowerCase().includes(keyword))
 
   useEffect(() => {
     const closeOutside = event => {
@@ -54,7 +54,7 @@ export default function SearchableStaffSelect({ people = [], value = '', onChang
   }
 
   function handleKeyDown(event) {
-    if (event.key === 'Escape') { setOpen(false); setQuery(''); return }
+    if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); setQuery(''); return }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       setOpen(true)
@@ -66,23 +66,23 @@ export default function SearchableStaffSelect({ people = [], value = '', onChang
     }
   }
 
-  return <div ref={rootRef} style={{ minWidth: 240, position: 'relative' }}>
+  return <div ref={rootRef} style={{ minWidth: 0, position: 'relative' }}>
     <label style={{ display: 'block' }}>{label}
-      <input ref={inputRef} className="form-input" type="text" role="combobox" autoComplete="off" required={required}
+      <input ref={inputRef} id={inputId} disabled={disabled} className="form-input" type="text" role="combobox" autoComplete="off" required={required}
         aria-label={label} aria-autocomplete="list" aria-expanded={open} aria-controls={open ? listId : undefined}
-        value={open ? query : selected ? personLabel(selected) : ''}
+        value={open ? query : selected ? getLabel(selected) : ''}
         onFocus={() => { setQuery(''); setOpen(true); setActive(0) }}
         onChange={event => { setQuery(event.target.value); setOpen(true); setActive(0); if (value) onChange('') }}
-        onKeyDown={handleKeyDown} placeholder="输入姓名或岗位，选择人员"
+        onKeyDown={handleKeyDown} placeholder={placeholder}
         style={{ display: 'block', width: '100%', marginTop: 8 }} />
     </label>
     {open && popup && createPortal(<div ref={listRef} id={listId} role="listbox" style={{ position: 'fixed', zIndex: 99999, ...popup,
       overflowY: 'auto', background: '#fff', border: '1px solid #DCE8E1', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)' }}>
       {matches.length ? matches.map((person, index) => <button key={person._id} type="button" role="option"
-        aria-selected={String(person._id) === String(value)} onMouseDown={event => event.preventDefault()} onClick={() => choose(person)}
+        disabled={disabled} aria-selected={String(person._id) === String(value)} onMouseDown={event => event.preventDefault()} onClick={() => choose(person)}
         style={{ display: 'block', width: '100%', padding: '10px 12px', textAlign: 'left', border: 0,
-          background: index === active ? '#E8F5EF' : '#fff', cursor: 'pointer', color: '#183C2B' }}>{personLabel(person)}</button>)
-        : <div style={{ padding: '12px', color: '#60776C' }}>未找到匹配人员</div>}
+          background: index === active ? '#E8F5EF' : '#fff', cursor: 'pointer', color: '#183C2B' }}>{getLabel(person)}</button>)
+        : <div style={{ padding: '12px', color: '#60776C' }}>{emptyMessage}</div>}
     </div>, document.body)}
   </div>
 }
