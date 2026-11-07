@@ -68,7 +68,7 @@ function httpPost(url, headers, body, timeoutMs = 45000) {
 }
 
 // 通用文本对话
-async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temperature = 0.1, jsonMode = false, webSearch = false, timeoutMs = 45000 } = {}) {
+async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temperature = 0.1, jsonMode = false, webSearch = false, forceWebSearch = false, timeoutMs = 45000 } = {}) {
   const p = provider || selectProvider();
   if (!p) throw new Error('未配置 AI API Key（QWEN_API_KEY 或 DEEPSEEK_API_KEY）');
 
@@ -83,7 +83,7 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temper
       messages: msgs,
       max_tokens: maxTokens,
       temperature,
-      ...(webSearch && p === 'qwen' ? { enable_search: true, search_options: { forced_search: true } } : {}),
+      ...(webSearch && p === 'qwen' ? { enable_search: true, ...(forceWebSearch ? { search_options: { forced_search: true } } : {}) } : {}),
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       ...(jsonMode && p === 'qwen' ? { enable_thinking: false } : {}),
     },
