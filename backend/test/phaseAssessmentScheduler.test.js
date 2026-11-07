@@ -8,6 +8,7 @@ let calls = 0, days, requestedMaxTokens, requestedPrompt;
 ai.chat = async (messages, options) => { calls++; requestedMaxTokens = options.maxTokens; requestedPrompt = messages[0].content; return '阶段评估草稿'; };
 context.buildStageAssessmentContext = async (user, windowDays) => { days = windowDays; return { sources: ['已确认年度管理方案'], confirmedAnnualPlan: { notes: 'PLAN_ONLY_TEST' } }; };
 require('../src/utils/monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft = async () => ({ content: '一、本月记录与变化\n- 本月记录待人工核对\n\n二、生活方式与指标关联\n- 待营养师核对\n\n三、就医、检查与待核实问题\n- 待顾问核对就医原因\n\n四、下月跟进事项\n- 待确认', sources: ['本月就医服务记录0条'] });
+require('../src/utils/phaseFourDimensionDraft').generate = async () => ({content:'统一4/5/2/2维度AI草稿',sources:[]});
 const { createAssessment, scanAndCreatePhaseAssessments } = require('../src/utils/phaseAssessmentScheduler');
 const input = () => ({ plan: { _id: 'plan', confirmedAt: '2025-01-01' }, user: { _id: 'user', membershipTier: 'annual', assignedFamilyDoctor: 'advisor', assignedNutritionist: 'nutritionist', assignedRehabSpecialist: 'exercise' }, template: { _id: 'template', content: { frequency: 'quarterly' } }, periodOverride: { key: '2026-Q3', label: '2026第三季度' } });
 test.beforeEach(t => {
@@ -77,8 +78,9 @@ test('月度综合评估不依赖年度方案，按客户和月份去重', async
   assert.equal(row.annualPlanId, null);
   assert.equal(row.reviewWorkflow, 'advisor_nutrition');
   assert.deepEqual(row.teamRoles, ['nutritionist', 'familyDoctor']);
-  assert.equal(row.templateSnapshot.source, 'local_manual');
-  assert.match(row.content, /待顾问核对就医原因/);
+  assert.equal(row.templateSnapshot.source, 'ai');
+  assert.equal(row.templateSnapshot.contentFormat, 'four-dimensions-v2');
+  assert.match(row.content, /统一4\/5\/2\/2/);
   assert.equal(calls, 0);
 });
 test('自动月度扫描直接遍历有效客户，无需已确认年度方案', async t => {

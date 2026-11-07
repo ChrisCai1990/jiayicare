@@ -291,6 +291,17 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     if (item.status === 'team_review') {
       if (req.body.revision !== item.__v) return res.status(409).json({ success: false, message: '其他岗位已更新复盘，请刷新后继续' });
       const role = req.staff.role;
+      if (req.body.action === 'preview_four_sections') {
+        if (item.reviewWorkflow !== 'advisor_nutrition' || !/^\d{4}-\d{2}$/.test(item.periodKey)) return res.status(409).json({success:false,message:'仅用于原月度综合复盘'});
+        const currentRole = item.teamReviews?.nutritionist?.status === 'approved' ? 'familyDoctor' : 'nutritionist';
+        if (role !== 'superadmin' && (role !== currentRole || !isAssignedReviewer(user, req.staff, currentRole))) return res.status(403).json({success:false,message:'请由当前待核对岗位生成修订草稿'});
+        const start = new Date(item.periodKey+'-01T00:00:00+08:00');
+        const [year,month]=item.periodKey.split('-').map(Number);
+        const end = new Date(Date.UTC(year,month,1)-8*3600000-1);
+        if(end>=new Date())return res.status(409).json({success:false,message:'本月尚未结束'});
+        const draft = await require('../utils/phaseFourDimensionDraft').generate(user,{start,end});
+        return res.json({success:true,data:{...draft,revision:item.__v,assessmentId:item._id}});
+      }
       const canInvite = role === 'superadmin' || (role === 'familyDoctor' && isAssignedReviewer(user, req.staff, 'familyDoctor'));
       if (req.body.action === 'include_role') {
         if (item.reviewWorkflow === 'single_owner') return res.status(409).json({ success: false, message: '常规阶段性复盘由单一岗位负责，不增加其他岗位待办' });
@@ -346,7 +357,7 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
       if (actorRole !== primaryRole(item) || current !== 'rejected') return res.status(403).json({ success: false, message: '仅当前初审岗位可对退回的评估重新生成' });
       const snapshot = await buildStageAssessmentContext(user, item.templateSnapshot?.windowDays || 30);
       const note = String(req.body.reviewNote || item.doctorReview?.note || item.professionalReview?.note || item.nutritionReview?.note || '').trim();
-      const prompt = `请重新生成${item.periodLabel}阶段性健康评估，审核岗位为${ROLE_LABELS[primaryRole(item)]}。主线是“阶段变化→生活方式关联→风险缺口→下一步规划”。参考审核人退回意见，不得诊断、处方、辨证施治、补造事实或把相关性写成因果。健康风险交健康顾问综合复核。\n【日常管理的证据解释规则】${require('../utils/phaseAssessmentEvidenceRules').PHASE_ASSESSMENT_EVIDENCE_RULES}\n【退回意见】${note || '请核对资料与结论'}\n【原草稿】${item.content}\n【最新资料】${JSON.stringify(snapshot).slice(0, 45000)}\n阶段变化优先写可比指标的日期、数值和变化幅度，特别核对comparableChanges.weight；生活关联只依据同期记录，规划要针对已写出的变化与缺口，写明核对人和复评安排。记录总数不能代替指标变化。使用四个栏目：${(item.templateSnapshot?.outputSections || []).join('；') || '阶段数据变化；生活方式关联分析；风险与数据缺口；下一阶段行动规划'}。每栏最多6条。`;
+      const prompt = `请重新生成${item.periodLabel}阶段性健康评估，审核岗位为${ROLE_LABELS[primaryRole(item)]}。主线是“阶段变化→生活方式关联→问题分析→下一步规划”。参考审核人退回意见，不得诊断、处方、辨证施治、补造事实或把相关性写成因果。健康风险交健康顾问综合复核。\n【日常管理的证据解释规则】${require('../utils/phaseAssessmentEvidenceRules').PHASE_ASSESSMENT_EVIDENCE_RULES}\n【退回意见】${note || '请核对资料与结论'}\n【原草稿】${item.content}\n【最新资料】${JSON.stringify(snapshot).slice(0, 45000)}\n阶段变化优先写可比指标的日期、数值和变化幅度，特别核对comparableChanges.weight；生活关联只依据同期记录，规划要针对已写出的变化与缺口，写明核对人和复评安排。记录总数不能代替指标变化。使用四个栏目：${require('../utils/reviewFourSections').headings.join('；')}。每栏最多6条。`;
       const result = await providerAdapter.reply({ subjectId: user._id, preferred: 'qwen', sessionId: String(item._id), prompt, context: snapshot, attachments: [], history: [] });
       if (!result.content) throw new Error('AI未返回阶段评估草稿');
       item.content = result.content; item.evidenceSources = snapshot.sources || []; item.status = initialReviewStatus(primaryRole(item));

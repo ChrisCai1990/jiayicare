@@ -46,6 +46,15 @@ test('isolated Mongo: Admin confirmation, role checks, review metadata and idemp
     assert.equal((await classifyItemsAsync([item]))[0].matchStatus, 'unclassified');
 
     const base = `/staff/medical-reports/${report._id}`;
+    const unmatchedDraft = await MedicalReport.findById(report._id).lean();
+    assert.equal((await call(base, { reportItems: unmatchedDraft.reportItems, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: unmatchedDraft.reviewRevision }, staff, 'PATCH')).status, 200);
+    const unmatchedApproval = await call(base, { aiStatus: 'reviewed' }, staff, 'PATCH');
+    assert.equal(unmatchedApproval.status, 400);
+    assert.equal(unmatchedApproval.body.code, 'REPORT_ITEMS_UNCLASSIFIED');
+    const unmatchedAudit = await call(base + '/audit', { action: 'approve' }, staff, 'PATCH');
+    assert.equal(unmatchedAudit.status, 400);
+    assert.equal(unmatchedAudit.body.code, 'REPORT_ITEMS_UNCLASSIFIED');
+    assert.equal((await MedicalReport.findById(report._id)).aiStatus, 'pending');
     const otherLeaf = await Category.create({ name: '第二分类', parent: root._id });
     const manualKeys = [`${root._id}|${root.name}|${leaf.name}`, `${root._id}|${root.name}|${otherLeaf.name}`];
     let manualReport = await MedicalReport.findById(report._id).lean();

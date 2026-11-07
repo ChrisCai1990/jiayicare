@@ -29,7 +29,7 @@ function createNativePushDispatch({ enabled, Job, Message, User, registry, trans
           // Fresh session lookup for each attempt, never reuse a cached recipient list.
           for (const device of await registry.destinations(user)) {
             if (!enabled()) break;
-            await transport.send({ token: device.token, messageId: String(message._id), count });
+            await transport.send({ provider: device.provider, token: device.token, messageId: String(message._id), count });
           }
         }
         await Job.updateOne({ _id: job._id, attempts: job.attempts }, { $set: { state: 'done', leaseUntil: null } });
