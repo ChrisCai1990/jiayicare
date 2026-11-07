@@ -98,6 +98,8 @@ export const serviceGroupAPI = {
 }
 
 export const staffAPI = {
+  aiWorkspaceStatus: () => req('/staff/ai-workspace/status'),
+  aiWorkspaceChat: (mode, messages) => req('/staff/ai-workspace/chat', { method: 'POST', body: JSON.stringify({ mode, messages }) }),
   getAssignedFeedback: (params = {}) => req('/feedback/assigned?' + new URLSearchParams(params)),
   submitFeedbackResult: (id, data) => req(`/feedback/${id}/result`, { method: 'POST', body: JSON.stringify(data) }),
   expertConsultationCases: () => req('/expert-consultations/staff'),

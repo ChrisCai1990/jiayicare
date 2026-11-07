@@ -50,6 +50,7 @@ import DailyCheckinPage from './pages/DailyCheckinPage'
 import MetabolicPilotPage from './pages/MetabolicPilotPage'
 import ForcePasswordChangePage from './pages/ForcePasswordChangePage'
 import ServiceAssistantPage from './pages/ServiceAssistantPage'
+import AiWorkspacePage from './pages/AiWorkspacePage'
 import ContentReviewsPage from './pages/ContentReviewsPage'
 import ContentReviewHistoryPage from './pages/ContentReviewHistoryPage'
 import MedicalResourceKnowledgePage from './pages/MedicalResourceKnowledgePage'
@@ -223,6 +224,7 @@ export default function App() {
               <Route path="psychology" element={<Navigate to="/expert-consultations?view=psychology" replace />} />
               <Route path="home" element={<HomePage />} />
               <Route path="service-assistant" element={<ErrorBoundary><ServiceAssistantPage /></ErrorBoundary>} />
+              <Route path="ai-workspace" element={<ErrorBoundary><AiWorkspacePage /></ErrorBoundary>} />
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<ErrorBoundary><PatientDetailPage /></ErrorBoundary>} />

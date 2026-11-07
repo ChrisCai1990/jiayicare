@@ -3,6 +3,7 @@ import WorkbenchReminder, { useWorkbenchReminder } from './WorkbenchReminder'
 import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
+import { staffAPI } from '../api'
 import { NotificationSummaryProvider, useNotificationSummary } from './NotificationSummary'
 import AppIcon from './AppIcon'
 import { getSetupNav } from '../setupNav'
@@ -13,6 +14,7 @@ import { hasModulePermission } from '../modulePermission'
 const ALL_NAV = [
   { label: '工作台',       icon: 'home', path: '/home',             roles: [] },
   { label: '家庭服务助手', icon: 'services', path: '/service-assistant', roles: [], moduleKey: 'service_assistant' },
+  { label: 'AI 工作台 · 试用', icon: 'brain', path: '/ai-workspace', roles: [], trialOnly: true },
   { label: '我的会员',     icon: 'patients', path: '/patients',     roles: [],                                                                                  moduleKey: 'patients' },
   { label: '随访管理',     icon: 'followups', path: '/followups',   roles: [],                                                                                  moduleKey: 'followups' },
   { label: '服务方案',     icon: 'plans', path: '/plans',           roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans' },
@@ -37,7 +39,7 @@ const ALL_NAV = [
   { label: '个人中心',     icon: 'profile', path: '/profile',       roles: [] },
 ]
 
-const PRIMARY_NAV_PATHS = ['/home', '/service-assistant', '/patients', '/notifications', '/profile']
+const PRIMARY_NAV_PATHS = ['/home', '/service-assistant', '/ai-workspace', '/patients', '/notifications', '/profile']
 const NAV_GROUPS = [
   { id: 'care', label: '会员服务', paths: ['/followups', '/plans', '/reports', '/service-records', '/expert-consultations', '/daily-checkin'] },
   { id: 'resources', label: '资源与推送', paths: ['/medical-resource-knowledge', '/specialty-library', '/knowledge', '/questionnaires', '/products', '/inventory'] },
@@ -58,9 +60,16 @@ function LayoutContent() {
   const setup = staff?.tenantStatus === 'setup'
   const setupView = setup ? new URLSearchParams(loc.search).get('view') || '/home' : loc.pathname
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [aiWorkspaceEnabled, setAiWorkspaceEnabled] = useState(false)
+  useEffect(() => {
+    let active = true
+    staffAPI.aiWorkspaceStatus().then(result => { if (active) setAiWorkspaceEnabled(result.data?.enabled === true) }).catch(() => { if (active) setAiWorkspaceEnabled(false) })
+    return () => { active = false }
+  }, [staff?._id])
   const { count: notifBadge } = useNotificationSummary()
   const workbench = useWorkbenchReminder()
   const visibleNav = setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
+    if (item.trialOnly && !aiWorkspaceEnabled) return false
     if (staff?.role === 'psychologist') return item.path === '/expert-consultations'
     if (!item.moduleKey) return item.roles.length === 0 || item.roles.includes(staff?.role)
     if (staff?.customPermissions) return hasModulePermission(staff, item.moduleKey, 'view')
