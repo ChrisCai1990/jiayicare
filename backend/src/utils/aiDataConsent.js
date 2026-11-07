@@ -52,6 +52,11 @@ async function assertContextPermission(provider, budgetContext = {}, dependencie
     subjectId = report?.user ? String(report.user) : ''; purpose = 'health';
   }
   const staffService = staffServiceScope.getStore();
+  if (staffService && provider === 'qwen' && budgetContext.stage === 'staff_ai_workspace_trial'
+      && !subjectId && !purpose && !budgetContext.reportId
+      && budgetContext.actorId === staffService.actorId && budgetContext.tenantId === staffService.tenantId) {
+    return; // Authenticated staff-only trial sends manually entered, synthetic discussion text.
+  }
   if (staffService && subjectId && purpose === 'health' && provider === 'qwen') {
     const patient = await (dependencies.readPatient || (query => require('../models/User').findOne(query).select('_id tenantId').lean()))({ _id: subjectId, tenantId: staffService.tenantId });
     if (!patient || String(patient.tenantId || '') !== staffService.tenantId) throw consentError();

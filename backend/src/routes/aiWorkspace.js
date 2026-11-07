@@ -3,6 +3,7 @@ const staffAuth = require('../middleware/staffAuth');
 const { chat } = require('../utils/ai');
 const { withAiContext } = require('../utils/aiBudget');
 const { isAiControlError } = require('../utils/aiBudgetPolicy');
+const { withStaffService } = require('../utils/aiDataConsent');
 
 const router = express.Router();
 router.use(staffAuth);
@@ -52,8 +53,9 @@ router.post('/chat', async (req, res) => {
   if (callCount(req.staff) >= DAILY_LIMIT) return res.status(429).json({ success: false, message: '今日 AI 工作台试用次数已用完，请明天再试' });
   dailyCalls.set(key, callCount(req.staff) + 1);
   try {
-    const content = await withAiContext({ actorId: String(req.staff._id), tenantId: String(req.staff.tenantId), business: 'other', stage: 'staff_ai_workspace_trial' }, () =>
-      chat(messages.map(m => ({ role: m.role, content: m.content })), { provider: 'qwen', systemPrompt: prompts[mode], maxTokens: 1200, temperature: 0.2, timeoutMs: 90000 }));
+    const content = await withStaffService(req.staff, () =>
+      withAiContext({ actorId: String(req.staff._id), tenantId: String(req.staff.tenantId), business: 'other', stage: 'staff_ai_workspace_trial' }, () =>
+        chat(messages.map(m => ({ role: m.role, content: m.content })), { provider: 'qwen', systemPrompt: prompts[mode], maxTokens: 1200, temperature: 0.2, timeoutMs: 90000 })));
     if (!content) return res.status(502).json({ success: false, message: '通义千问没有返回内容，请稍后重试' });
     res.json({ success: true, data: { content, model: 'qwen-plus', dailyUsed: callCount(req.staff), dailyLimit: DAILY_LIMIT } });
   } catch (error) {
