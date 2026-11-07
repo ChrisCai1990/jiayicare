@@ -39,6 +39,7 @@ module.exports = async (req, res, next) => {
     if (admin.mustChangePassword && !isPasswordChange) {
       return res.status(403).json({ success: false, message: '请先修改初始密码' });
     }
+    if (admin.role === 'psychologist' && !require('../utils/psychologyAccess').allowedPsychologistPath(req.method, req.originalUrl)) return res.status(403).json({ success: false, message: '请使用心理咨询工作台' });
     req.staff = admin;
     require('../utils/aiDataConsent').withStaffService(admin, () => tenantContext(req, res, next));
   } catch (err) {

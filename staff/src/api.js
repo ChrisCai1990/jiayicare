@@ -789,3 +789,4 @@ export const managementReviewAPI = {
  create: (id, data) => req(`/staff/patients/${id}/management-reviews`, {method:'POST',body:JSON.stringify(data)}),
  act: (id, review, action, data) => req(`/staff/patients/${id}/management-reviews/${review}/${action}`, {method:'POST',body:JSON.stringify(data)}),
 }
+export const psychologyAPI = { get: (path = '') => req('/staff/psychology' + path), post: (path, body) => req('/staff/psychology' + path, { method: 'POST', body: JSON.stringify(body) }) };

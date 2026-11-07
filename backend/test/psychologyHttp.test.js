@@ -1,0 +1,47 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+require('express-async-errors');
+const express = require('express');
+const mongoose = require('mongoose');
+const Care = require('../src/models/PsychologyCare');
+const User = require('../src/models/User');
+const Audit = require('../src/models/PsychologyAudit');
+const oid = () => new mongoose.Types.ObjectId();
+test('HTTP authorization, audit and version boundaries with isolated model doubles', async t => {
+  const tenantId = oid(), advisorId = oid(), psychologistId = oid(), patientId = oid();
+  let care = new Care({ tenantId, advisorId, psychologistId, patientId, sharedBackground: 'private background', __v: 0 });
+  let audits = 0, writes = 0;
+  const originals = { care: Care.findById, user: User.findById, audit: Audit.create };
+  Care.findById = async () => care;
+  User.findById = () => ({ select: async () => ({ _id: patientId, tenantId, assignedFamilyDoctor: advisorId, name: 'Synthetic' }) });
+  Audit.create = async () => { audits++; };
+  care.save = async () => { writes++; care.__v++; };
+  const authPath = require.resolve('../src/middleware/staffAuth');
+  const oldAuth = require.cache[authPath];
+  require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, exports: (req, res, next) => {
+    const role = req.headers['x-role'];
+    req.staff = { role, tenantId, _id: role === 'familyDoctor' ? advisorId : role === 'psychologist' ? psychologistId : oid() }; next();
+  } };
+  delete require.cache[require.resolve('../src/routes/psychologyCare')];
+  const app = express(); app.use(express.json()); app.use('/api/staff/psychology', require('../src/routes/psychologyCare'));
+  app.use((err, req, res, next) => res.status(500).json({ message: err.message }));
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+  t.after(async () => {
+    Care.findById = originals.care; User.findById = originals.user; Audit.create = originals.audit;
+    if (oldAuth) require.cache[authPath] = oldAuth; else delete require.cache[authPath];
+    await new Promise(resolve => server.close(resolve));
+  });
+  const call = (role, body) => fetch(`http://127.0.0.1:${server.address().port}/api/staff/psychology/${care._id}`, { method: body ? 'POST' : 'GET', headers: { 'x-role': role, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  for (const role of ['nutritionist', 'healthManager', 'superadmin']) assert.equal((await call(role)).status, 403);
+  assert.equal(audits, 0);
+  const read = await call('familyDoctor'); assert.equal(read.status, 200); assert.equal(read.headers.get('cache-control'), 'no-store');
+  assert.equal((await read.json()).data.sharedBackground, 'private background'); assert.equal(audits, 1);
+  assert.equal((await call('familyDoctor', { action: 'unexpected', version: 0, status: 'ended' })).status, 400);
+  assert.equal((await call('psychologist', { action: 'update', version: 0, status: 'ended' })).status, 403);
+  assert.equal((await call('psychologist', { action: 'session', version: 9, content: 'x', date: '2026-11-07' })).status, 409);
+  assert.equal(writes, 0);
+  assert.equal((await call('psychologist', { action: 'session', version: 0, content: '正式会谈', date: '2026-11-07T10:00:00+08:00' })).status, 200);
+  assert.equal(writes, 1); assert.equal(care.sessions.length, 1);
+  assert.equal((await call('familyDoctor', { action: 'update', version: 1, status: 'ended' })).status, 200);
+  assert.equal((await call('psychologist')).status, 404);
+});

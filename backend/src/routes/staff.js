@@ -126,6 +126,7 @@ const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
 router.use('/', (req,res,next)=>{ if(req.path.includes('/management-reviews'))return staffAuth(req,res,next);next(); }, require('./managementReviews').router);
+router.use(require('../middleware/legacyPsychologyGuard'));
 async function allPushPatientsBelongToStaff(patientIds, staff) {
   if (!Array.isArray(patientIds) || !patientIds.length) return false;
   const ids = [...new Set(patientIds.map(String))];
@@ -3783,7 +3784,7 @@ router.get('/medical-resource-knowledge', staffAuth, checkPermission('medical_re
 // GET /api/staff/plans?patientId=&type=&status=
 router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, res) => {
   const { patientId, type, status, patientName, page = 1, limit = 20 } = req.query;
-  const filter = {};
+  const filter = { $and: [await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] };
   if (patientId) filter.patientId = patientId;
   if (type) filter.type = type;
   if (status) filter.status = status;
@@ -7261,7 +7262,7 @@ router.get('/service-records/:id/preview/:source/:index', async (req, res) => {
     || (req.params.source !== 'main' && !mongoose.Types.ObjectId.isValid(req.params.source))) {
     return res.status(403).json({ success: false, message: '预览链接无效或已失效' });
   }
-  const record = await ServiceRecord.findById(req.params.id).select('attachments supplements');
+  const record = await ServiceRecord.findOne({ _id: req.params.id, type: { $ne: 'psychology' } }).select('attachments supplements');
   if (!record) return res.status(404).json({ success: false, message: '服务记录不存在' });
   const files = req.params.source === 'main'
     ? record.attachments
@@ -7358,7 +7359,7 @@ router.post('/followups/:id/expert-appointment/reschedule', staffAuth, checkPerm
 // GET /api/staff/service-records?patientId=&type=
 router.get('/service-records', staffAuth, checkPermission('service_records', 'view'), async (req, res) => {
   const { patientId, type, page = 1, limit = 20 } = req.query;
-  const filter = {};
+  const filter = { $and: [await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] };
   if (req.staff.role !== 'superadmin') filter.staffId = req.staff._id;
   if (patientId) filter.patientId = patientId;
   if (type) filter.type = type;
@@ -7373,6 +7374,7 @@ router.get('/service-records', staffAuth, checkPermission('service_records', 'vi
 
 // POST /api/staff/service-records
 router.post('/service-records', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
+  if (req.body.type === 'psychology') return res.status(409).json({ success: false, message: '心理咨询请从专用工作台记录' });
   if (req.body.type === 'rehab') return res.status(409).json({ success: false, message: '请在客户运动评估与复健模块填写记录' });
   const { patientId, type, date, title, content, result, nextDate, nextFollowUpTheme, diseaseName, medicalEscort, tcmRecord, specialistRecord, attachments } = req.body;
   if (!patientId || !type) return res.status(400).json({ success: false, message: '会员和类型不能为空' });
@@ -7999,7 +8001,7 @@ router.get('/team', staffAuth, checkPermission('team', 'view'), async (req, res)
 // GET /api/staff/patients/:id/plans — 会员的健康方案列表（含年度管理方案）
 router.get('/patients/:id/plans', staffAuth, async (req, res) => {
   const [healthPlans, annualPlans] = await Promise.all([
-    HealthPlan.find({ patientId: req.params.id })
+    HealthPlan.find({ $and: [{ patientId: req.params.id }, await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] })
       .sort({ createdAt: -1 })
       .populate('staffId', 'name role'),
     AnnualPlan.find({ patientId: req.params.id })
@@ -8315,7 +8317,7 @@ router.get('/requisition-items/:type/:id/sub-items', staffAuth, async (req, res)
 // ── User app: 获取待上传开单 ──────────────────────────────
 // GET /api/staff/patients/:id/service-records — 会员的服务记录
 router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
-  const records = await ServiceRecord.find({ patientId: req.params.id })
+  const records = await ServiceRecord.find({ $and: [{ patientId: req.params.id }, await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] })
     .sort({ date: -1 })
     .populate('staffId', 'name role');
   // Show specialist details already saved in completed tasks for older records too.
@@ -9017,7 +9019,7 @@ router.get('/notifications', staffAuth, async (req, res) => {
 // ── 获取会员的活跃方案（用于报告关联） ─────────────────────
 // GET /api/staff/patients/:id/active-plan-items
 router.get('/patients/:id/active-plan-items', staffAuth, async (req, res) => {
-  const plans = await HealthPlan.find({ patientId: req.params.id, status: 'active' })
+  const plans = await HealthPlan.find({ $and: [{ patientId: req.params.id, status: 'active' }, await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] })
     .select('title type items');
   const items = [];
   plans.forEach(plan => {
