@@ -46,7 +46,7 @@ const TAB_CONFIG = [
 ];
 
 function MainTabs() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -77,7 +77,7 @@ function MainTabs() {
           key={tab.name}
           name={tab.name}
           component={tab.component}
-          options={{ tabBarLabel: t(tab.label) }}
+          options={{ tabBarLabel: language === 'en-US' && tab.name === 'Records' ? 'Records' : t(tab.label) }}
         />
       ))}
     </Tab.Navigator>

@@ -26,7 +26,6 @@ const translations = {
   '帮助与反馈': 'Help and feedback', '健康方案': 'Care plans', '用药管理': 'Medications',
   '营养管理': 'Nutrition', '家庭成员': 'Family members', '我的服务': 'My services',
   '我的订单': 'My orders', '服务商城': 'Services', '消息中心': 'Messages',
-  '点击登录 / 注册 ›': 'Log in / Sign up ›', '点击完善个人资料 ›': 'Complete your profile ›',
   '全部订单 ›': 'All orders ›', '待支付': 'To pay', '待服务': 'Upcoming', '进行中': 'In progress',
   '退款/售后': 'Refunds', '常用功能': 'Quick access', '续约服务': 'Renew',
   '嘉医汇 · 嘉医管家': 'Jiayi Care', '健康有人管，生活更安心': 'Care for your health, peace of mind for life',
@@ -50,7 +49,7 @@ const translations = {
 
 const LanguageContext = createContext(null);
 export const syncTabBarLanguage = language => {
-  const labels = language === 'en-US' ? ['Home', 'Health Records', 'Care Team', 'Profile'] : ['首页', '健康档案', '健康管家', '我的'];
+  const labels = language === 'en-US' ? ['Home', 'Records', 'Care Team', 'Profile'] : ['首页', '健康档案', '健康管家', '我的'];
   labels.forEach((text, index) => {
     try { Promise.resolve(Taro.setTabBarItem({ index, text })).catch(() => {}); } catch {}
   });
