@@ -47,17 +47,20 @@ router.get('/status', (req, res) => {
 router.post('/chat', async (req, res) => {
   if (!enabledFor(req.staff)) return res.status(403).json({ success: false, message: 'AI 工作台试用尚未对当前账号开放' });
   if (!process.env.QWEN_API_KEY) return res.status(503).json({ success: false, message: '通义千问尚未配置，请联系管理员' });
-  const { mode, messages } = req.body || {};
+  const { mode, messages, webSearch } = req.body || {};
   if (!Object.hasOwn(prompts, mode) || !validMessages(messages)) return res.status(400).json({ success: false, message: '对话内容无效或过长；知识库模式暂未开放' });
   const key = dailyKey(req.staff);
   if (callCount(req.staff) >= DAILY_LIMIT) return res.status(429).json({ success: false, message: '今日 AI 工作台试用次数已用完，请明天再试' });
   dailyCalls.set(key, callCount(req.staff) + 1);
   try {
+    const searchEnabled = mode === 'free' && webSearch === true;
+    const today = new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric' });
+    const timePrompt = `当前北京时间是 ${today}。模型记忆可能过时；对日期、会议、政策、价格等有时效性的事实，不得仅凭训练记忆断言。${searchEnabled ? '本次已请求联网检索，请根据检索结果核对时间和事实；如果没有取得可靠结果，明确说无法确认。' : '本次未开启联网检索，无法核实近期事实时应明确说明。'}`;
     const content = await withStaffService(req.staff, () =>
       withAiContext({ actorId: String(req.staff._id), tenantId: String(req.staff.tenantId), business: 'other', stage: 'staff_ai_workspace_trial' }, () =>
-        chat(messages.map(m => ({ role: m.role, content: m.content })), { provider: 'qwen', systemPrompt: prompts[mode], maxTokens: 1200, temperature: 0.2, timeoutMs: 90000 })));
+        chat(messages.map(m => ({ role: m.role, content: m.content })), { provider: 'qwen', systemPrompt: `${prompts[mode]} ${timePrompt}`, webSearch: searchEnabled, maxTokens: 1200, temperature: 0.2, timeoutMs: 90000 })));
     if (!content) return res.status(502).json({ success: false, message: '通义千问没有返回内容，请稍后重试' });
-    res.json({ success: true, data: { content, model: 'qwen-plus', dailyUsed: callCount(req.staff), dailyLimit: DAILY_LIMIT } });
+    res.json({ success: true, data: { content, model: 'qwen-plus', webSearch: searchEnabled, dailyUsed: callCount(req.staff), dailyLimit: DAILY_LIMIT } });
   } catch (error) {
     res.status(isAiControlError(error) ? 429 : 502).json({ success: false, message: isAiControlError(error) ? error.message : '模型暂时无法回答，请稍后重试' });
   }

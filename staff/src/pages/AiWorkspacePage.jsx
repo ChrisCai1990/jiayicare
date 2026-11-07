@@ -30,6 +30,7 @@ function AiWorkspaceContent({ staff }) {
   const [sessions, setSessions] = useState(() => readSessions(storageKey))
   const [activeId, setActiveId] = useState(null)
   const [mode, setMode] = useState('free')
+  const [webSearch, setWebSearch] = useState(true)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState(null)
@@ -66,6 +67,7 @@ function AiWorkspaceContent({ staff }) {
     if (!text || busy || !ready || selectedMode === 'knowledge') return
     if (text.length > 4000) { setError('单次输入请控制在 4000 字以内'); return }
     const session = active || createDiscussion(selectedMode)
+    const searchEnabled = selectedMode === 'free' && webSearch
     const userMessage = { role: 'user', content: text }
     const history = [...session.messages, userMessage].slice(-13).map(m => ({ role: m.role, content: m.content }))
     setSessions(prev => prev.map(s => s.id === session.id ? { ...s, title: s.messages.length ? s.title : text.slice(0, 22), updatedAt: Date.now(), messages: [...s.messages, userMessage] } : s))
@@ -73,8 +75,8 @@ function AiWorkspaceContent({ staff }) {
     setBusy(true)
     setError('')
     try {
-      const result = await staffAPI.aiWorkspaceChat(selectedMode, history)
-      setSessions(prev => prev.map(s => s.id === session.id ? { ...s, updatedAt: Date.now(), messages: [...s.messages, { role: 'assistant', content: result.data.content }] } : s))
+      const result = await staffAPI.aiWorkspaceChat(selectedMode, history, searchEnabled)
+      setSessions(prev => prev.map(s => s.id === session.id ? { ...s, updatedAt: Date.now(), messages: [...s.messages, { role: 'assistant', content: result.data.content, webSearch: result.data.webSearch }] } : s))
       setStatus(prev => ({ ...prev, dailyUsed: result.data.dailyUsed }))
     } catch (e) {
       setSessions(prev => prev.map(s => s.id === session.id ? { ...s, messages: s.messages.slice(0, -1) } : s))
@@ -100,8 +102,9 @@ function AiWorkspaceContent({ staff }) {
     <section className="aiw-main">
       <header className="aiw-header"><div><h1>嘉医汇 AI 工作台 <span>试用</span></h1><p>通义千问辅助讨论 · 不连接客户档案</p></div><button type="button" className="aiw-clear" disabled={!active || busy} onClick={() => { setSessions(prev => prev.filter(s => s.id !== activeId)); setActiveId(null); setDraft(''); setError('') }}>清空当前讨论</button></header>
       <div className="aiw-mode-row">{MODES.map(item => <button type="button" key={item.key} disabled={item.disabled || busy} className={`aiw-mode ${selectedMode === item.key ? 'active' : ''}`} onClick={() => createDiscussion(item.key)}><strong>{item.title}</strong><small>{item.detail}</small></button>)}</div>
-      <div className="aiw-info">{selectedMode === 'reply' ? '客户回复草稿：只输入模拟客户消息；生成后由员工核对，系统不会自动发送。' : '自由探讨：仅使用本次对话，不读取知识库、产品实时数据或客户资料。'}</div>
-      <div className="aiw-messages" ref={messagesRef}>{active?.messages.length ? active.messages.map((message, index) => <div key={`${active.id}-${index}`} className={`aiw-message ${message.role === 'user' ? 'user' : 'assistant'}`}><div className="aiw-avatar">{message.role === 'user' ? '我' : '✦'}</div><div className="aiw-bubble">{message.role === 'assistant' && <b>通义千问 · AI 回答</b>}<div>{message.content}</div>{message.role === 'assistant' && <button type="button" onClick={() => copy(message.content)}>复制内容</button>}</div></div>) : <div className="aiw-welcome"><span>✦ 嘉医汇 AI 助手</span><h2>{active ? '新讨论已创建，输入第一个问题。' : selectedMode === 'reply' ? '先用模拟客户消息试试起草。' : '和 AI 一起梳理思路。'}</h2><p>从一个问题开始。模型会结合本次讨论连续回答，内容仅供员工核对。</p><div className="aiw-ideas">{IDEAS[selectedMode].map(idea => <button type="button" key={idea} onClick={() => { setDraft(idea); composerRef.current?.focus() }}>{idea} ↗</button>)}</div></div>}{busy && <div className="aiw-working">通义千问正在生成回答…</div>}</div>
+      <div className="aiw-info">{selectedMode === 'reply' ? '客户回复草稿：只输入模拟客户消息；生成后由员工核对，系统不会自动发送，也不会联网搜索。' : '自由探讨：不读取内部知识库、产品实时数据或客户资料。近期事实请核对检索结果。'}</div>
+      {selectedMode === 'free' && <label className="aiw-search-option"><input type="checkbox" checked={webSearch} disabled={busy} onChange={e => setWebSearch(e.target.checked)} /> 联网查最新信息 <small>默认开启；可能增加调用费用。请勿输入真实客户信息。</small></label>}
+      <div className="aiw-messages" ref={messagesRef}>{active?.messages.length ? active.messages.map((message, index) => <div key={`${active.id}-${index}`} className={`aiw-message ${message.role === 'user' ? 'user' : 'assistant'}`}><div className="aiw-avatar">{message.role === 'user' ? '我' : '✦'}</div><div className="aiw-bubble">{message.role === 'assistant' && <b>通义千问 · {message.webSearch ? '联网模式' : 'AI 回答'}</b>}<div>{message.content}</div>{message.role === 'assistant' && <button type="button" onClick={() => copy(message.content)}>复制内容</button>}</div></div>) : <div className="aiw-welcome"><span>✦ 嘉医汇 AI 助手</span><h2>{active ? '新讨论已创建，输入第一个问题。' : selectedMode === 'reply' ? '先用模拟客户消息试试起草。' : '和 AI 一起梳理思路。'}</h2><p>从一个问题开始。模型会结合本次讨论连续回答，内容仅供员工核对。</p><div className="aiw-ideas">{IDEAS[selectedMode].map(idea => <button type="button" key={idea} onClick={() => { setDraft(idea); composerRef.current?.focus() }}>{idea} ↗</button>)}</div></div>}{busy && <div className="aiw-working">通义千问正在生成回答…</div>}</div>
       <div className="aiw-composer"><textarea ref={composerRef} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} disabled={!ready || busy} placeholder={ready ? selectedMode === 'reply' ? '输入模拟客户消息，生成待审核回复草稿…' : '输入您想讨论的问题…' : unavailableMessage} /><div className="aiw-compose-foot"><span>{error || unavailableMessage || `仅用模拟内容试用；今日已调用 ${status.dailyUsed}/${status.dailyLimit} 次。`}</span><button type="button" className="aiw-primary" disabled={!draft.trim() || !ready || busy} onClick={send}>{busy ? '生成中…' : '发送 ↗'}</button></div></div>
     </section>
   </div>
