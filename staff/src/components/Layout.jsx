@@ -11,7 +11,6 @@ import { hasModulePermission } from '../modulePermission'
 // moduleKey: 对应 StaffRole 里的权限模块 key，无 key 表示所有人可见
 // roles: 无 customRoleId 时按内置角色过滤（空数组=全部可见）
 const ALL_NAV = [
-  { label: '心理咨询', icon: 'services', path: '/psychology', roles: ['familyDoctor', 'psychologist'] },
   { label: '工作台',       icon: 'home', path: '/home',             roles: [] },
   { label: '家庭服务助手', icon: 'services', path: '/service-assistant', roles: [], moduleKey: 'service_assistant' },
   { label: '我的会员',     icon: 'patients', path: '/patients',     roles: [],                                                                                  moduleKey: 'patients' },
@@ -38,7 +37,7 @@ const ALL_NAV = [
   { label: '个人中心',     icon: 'profile', path: '/profile',       roles: [] },
 ]
 
-const PRIMARY_NAV_PATHS = ['/psychology', '/home', '/service-assistant', '/patients', '/notifications', '/profile']
+const PRIMARY_NAV_PATHS = ['/home', '/service-assistant', '/patients', '/notifications', '/profile']
 const NAV_GROUPS = [
   { id: 'care', label: '会员服务', paths: ['/followups', '/plans', '/reports', '/service-records', '/expert-consultations', '/daily-checkin'] },
   { id: 'resources', label: '资源与推送', paths: ['/medical-resource-knowledge', '/specialty-library', '/knowledge', '/questionnaires', '/products', '/inventory'] },
@@ -62,7 +61,7 @@ function LayoutContent() {
   const { count: notifBadge } = useNotificationSummary()
   const workbench = useWorkbenchReminder()
   const visibleNav = setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
-    if (staff?.role === 'psychologist') return item.path === '/psychology'
+    if (staff?.role === 'psychologist') return item.path === '/expert-consultations'
     if (!item.moduleKey) return item.roles.length === 0 || item.roles.includes(staff?.role)
     if (staff?.customPermissions) return hasModulePermission(staff, item.moduleKey, 'view')
     return item.roles.length === 0 || item.roles.includes(staff?.role)

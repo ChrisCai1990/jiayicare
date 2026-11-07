@@ -1,4 +1,3 @@
-import PsychologyPage from './pages/PsychologyPage'
 import React, { useState, createContext, useContext, Component } from 'react'
 
 class ErrorBoundary extends Component {
@@ -199,7 +198,7 @@ function RequirePasswordChanged({ children }) {
 function RequireModule({ children }) {
   const { staff } = useStaff()
   const loc = useLocation()
-  if (staff?.role === 'psychologist' && loc.pathname !== '/psychology') return <Navigate to="/psychology" replace />
+  if (staff?.role === 'psychologist' && !['/expert-consultations', '/psychology'].includes(loc.pathname)) return <Navigate to="/expert-consultations?view=psychology" replace />
   const matched = Object.keys(ROUTE_MODULE).find(
     p => loc.pathname === p || loc.pathname.startsWith(p + '/')
   )
@@ -221,7 +220,7 @@ export default function App() {
             <Route path="/change-password" element={<RequireAuth><ForcePasswordChangePage /></RequireAuth>} />
             <Route path="/" element={<RequireAuth><RequirePasswordChanged><RequireModule><Layout /></RequireModule></RequirePasswordChanged></RequireAuth>}>
               <Route index element={<Navigate to="/home" replace />} />
-              <Route path="psychology" element={<PsychologyPage />} />
+              <Route path="psychology" element={<Navigate to="/expert-consultations?view=psychology" replace />} />
               <Route path="home" element={<HomePage />} />
               <Route path="service-assistant" element={<ErrorBoundary><ServiceAssistantPage /></ErrorBoundary>} />
               <Route path="patients" element={<PatientsPage />} />

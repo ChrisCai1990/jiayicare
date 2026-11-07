@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { psychologyAPI } from '../api'
 import { useStaff } from '../App'
 
-export default function PsychologyPage() {
+export default function PsychologyPage({ embedded = false }) {
   const { staff } = useStaff()
   const advisor = staff?.role === 'familyDoctor'
   const [rows, setRows] = useState([]), [care, setCare] = useState(null)
@@ -13,12 +13,12 @@ export default function PsychologyPage() {
   const [background, setBackground] = useState('')
   const [handoff, setHandoff] = useState({ psychologistId: '', reason: '' })
   const load = async () => setRows((await psychologyAPI.get()).data)
-  useEffect(() => { load().catch(e => setError(e.message)); if (advisor) psychologyAPI.get('/options').then(r => setOptions(r.data)).catch(e => setError(e.message)) }, [advisor])
+  useEffect(() => { load().then(() => { const careId = new URLSearchParams(window.location.search).get('careId'); if (careId) return open(careId) }).catch(e => setError(e.message)); if (advisor) psychologyAPI.get('/options').then(r => setOptions(r.data)).catch(e => setError(e.message)) }, [advisor])
   const open = async id => { const r = await psychologyAPI.get('/' + id); setCare(r.data); setBackground(r.data.sharedBackground); setSession({ date: '', content: '', nextDate: '' }) }
   const run = async fn => { setBusy(true); setError(''); try { await fn() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   const save = payload => run(async () => { await psychologyAPI.post('/' + care._id, { action: 'update', ...payload, version: care.__v }); await open(care._id); await load() })
   if (!['familyDoctor', 'psychologist'].includes(staff?.role)) return <div className="page">当前岗位无权查看心理咨询资料。</div>
-  return <div className="page"><h1>心理咨询</h1>
+  return <div className="page">{!embedded && <h1>心理咨询</h1>}
     <p>长期咨询档案 · 正式记录仅向负责顾问与咨询师开放</p>
     {error && <div role="alert" style={{ color: '#b42318', whiteSpace: 'pre-wrap' }}>{error}</div>}
     <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>

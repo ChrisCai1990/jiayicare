@@ -1,3 +1,5 @@
+import PsychologyPage from './PsychologyPage'
+import { useSearchParams } from 'react-router-dom'
 import ExpertReplyForm from '../components/ExpertReplyForm'
 import ConsultationFollowupReview from '../components/ConsultationFollowupReview'
 import ConsultationCorrespondence from '../components/ConsultationCorrespondence'
@@ -14,7 +16,7 @@ const stages = { team_assignment: '规划师首次派单', intake: '健管收集
 const input = { width: '100%', boxSizing: 'border-box' }
 const textField = (label, value, onChange, rows = 3) => <label style={{ display: 'block', margin: '10px 0' }}><b>{label}</b><textarea className="form-input" style={input} rows={rows} value={value} onChange={e => onChange(e.target.value)}/></label>
 
-export default function ExpertConsultationsPage({ embedded = false }) {
+function StandardExpertConsultationsPage({ embedded = false }) {
   const { staff } = useStaff()
   const self = id(staff)
   const [rows, setRows] = useState([])
@@ -241,4 +243,14 @@ export default function ExpertConsultationsPage({ embedded = false }) {
       </div>
     </div>
   </div>
+}
+
+export default function ExpertConsultationsPage({ embedded = false }) {
+  const { staff } = useStaff()
+  const [params, setParams] = useSearchParams()
+  const psychologist = staff?.role === 'psychologist'
+  const canPsychology = psychologist || staff?.role === 'familyDoctor'
+  const psychology = canPsychology && (psychologist || params.get('view') === 'psychology')
+  if (embedded) return <StandardExpertConsultationsPage embedded />
+  return <><div className="page" style={{ paddingBottom: 0 }}><h1>专家咨询与 MDT</h1>{canPsychology && !psychologist && <div role="tablist" aria-label="咨询服务类型" style={{ display:'flex', gap:12 }}><button role="tab" aria-selected={!psychology} className="btn btn-secondary" onClick={() => setParams({})}>专家咨询 / MDT</button><button role="tab" aria-selected={psychology} className="btn btn-secondary" onClick={() => setParams({ view:'psychology' })}>长期心理咨询</button></div>}</div>{psychology ? <PsychologyPage embedded /> : <StandardExpertConsultationsPage embedded />}</>
 }

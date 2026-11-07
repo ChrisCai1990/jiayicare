@@ -8530,6 +8530,7 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
 // ── 跨角色转介 ──────────────────────────────────────────────
 // POST /api/staff/referrals — 发起转介
 router.post('/referrals', staffAuth, async (req, res) => {
+  if (req.body.referralType !== 'external_medical' && mongoose.isValidObjectId(req.body.toStaffId) && await Admin.exists({ _id: req.body.toStaffId, role: 'psychologist' })) return res.status(409).json({ success: false, message: '心理咨询请通过客户转介中的长期心理咨询流程提交' });
   const { patientId, toStaffId, reason, content, urgency, attachedHealthInfo, linkedDiseaseRecordId, linkedDiseaseName, referralPurpose, questionList, requiresConclusion, referralType = 'internal_collaboration', medicalExpertId } = req.body;
   if (!patientId || !reason || (referralType === 'internal_collaboration' ? !toStaffId : !medicalExpertId)) {
     return res.status(400).json({ success: false, message: referralType === 'external_medical' ? '会员、外部专家、原因不能为空' : '会员、接收人、原因不能为空' });

@@ -48,7 +48,7 @@ import { lifestyleHistoryLabel } from '../utils/lifestyleHistoryLabels.mjs'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { staffAPI, API_ORIGIN } from '../api'
+import { staffAPI, psychologyAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import { useAiWorkbench } from '../components/AiWorkbenchProvider'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
@@ -16109,6 +16109,15 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     setSaving(true); setError('')
     try {
       const payload = { patientId, ...form, consultationCaseId, expectedUpdatedAt: initialReferral?.updatedAt, attachedHealthInfo: buildAttachedHealthInfo() }
+      if (form.referralType === 'internal_collaboration' && selectedRecipient?.role === 'psychologist') {
+        if (initialReferral || consultationCaseId) { setError('已有转介或专家咨询事项请保留原流程；长期心理咨询请从客户页面新建内部转介'); return }
+        const diseases = diseaseOptions.filter(d => form.linkedDiseaseRecordIds.map(String).includes(String(d._id)))
+        const sharedBackground = [`转介原因：${form.reason}`, `紧急程度：${form.urgency === 'urgent' ? '紧急' : '普通'}`, form.questionList && `需要解决的问题：${form.questionList}`, form.content && `详细说明：${form.content}`, diseases.length && `本次所选专病：${JSON.stringify(diseases)}`, ...buildAttachedHealthInfoForAI().map(section => `${section.label}：${formatReferralHealthValue(section.val)}`)].filter(Boolean).join('\n\n')
+        const result = await psychologyAPI.post('', { patientId, psychologistId: form.toStaffId, sharedBackground })
+        window.location.assign(`/expert-consultations?view=psychology&careId=${result.data._id}`)
+        return
+      }
+
       if (initialReferral) await staffAPI.resubmitReferral(initialReferral._id, payload)
       else if (consultationCaseId) {
         let draft = savedConsultationDraft
@@ -16353,7 +16362,8 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           {consultationCaseId && consultationType !== 'mdt' && <label><input type="checkbox" checked={materialsReviewed} onChange={e=>setMaterialsReviewed(e.target.checked)} /> 已审核资料及会诊诉求</label>}
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : initialReferral ? '保存修改并提交' : consultationCaseId ? '保存转介信并确认预约安排' : '发送转介'}</button>
+          {selectedRecipient?.role === 'psychologist' && form.referralType === 'internal_collaboration' && <p style={{ fontSize:12 }}>首次转介建立长期服务关系；后续在“专家咨询”中继续跟进。正式咨询资料仅负责顾问与咨询师可见。</p>}
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : selectedRecipient?.role === 'psychologist' && form.referralType === 'internal_collaboration' ? '发起长期心理咨询' : initialReferral ? '保存修改并提交' : consultationCaseId ? '保存转介信并确认预约安排' : '发送转介'}</button>
         </div>
       </div>
     </div>
