@@ -269,7 +269,7 @@ export default function ProfileScreen({ navigation }) {
       <Modal visible={showLanguage} transparent animationType="fade" onRequestClose={() => setShowLanguage(false)}>
         <View style={styles.modalOverlay}><View style={styles.modalCard}>
           <Text style={styles.modalTitle}>{t('语言')}</Text>
-          {[["system", t('跟随系统')], ["zh-CN", '简体中文'], ["en-US", 'English']].map(([value, label]) => (
+          {[["zh-CN", '简体中文'], ["en-US", 'English']].map(([value, label]) => (
             <TouchableOpacity key={value} style={{ paddingVertical: 14 }} onPress={() => { setLanguage(value); setShowLanguage(false); }}>
               <Text style={styles.modalDesc}>{preference === value ? '✓  ' : '    '}{label}</Text>
             </TouchableOpacity>

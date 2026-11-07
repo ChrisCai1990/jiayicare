@@ -87,8 +87,8 @@ export default function ProfilePage() {
   const nav = (url) => Taro.navigateTo({ url });
   const chooseLanguage = async () => {
     try {
-      const { tapIndex } = await Taro.showActionSheet({ itemList: [t('跟随系统'), '简体中文', 'English'] });
-      setLanguage(['system', 'zh-CN', 'en-US'][tapIndex]);
+      const { tapIndex } = await Taro.showActionSheet({ itemList: ['简体中文', 'English'] });
+      setLanguage(['zh-CN', 'en-US'][tapIndex]);
     } catch {}
   };
   const openProfile = () => {

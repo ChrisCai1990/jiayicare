@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const KEY = 'jy_language';
 const translations = {
   '首页': 'Home', '健康档案': 'Health Records', '随访': 'Follow-ups', '消息': 'Messages', '我的': 'Profile',
-  '语言': 'Language', '简体中文': '简体中文', 'English': 'English', '跟随系统': 'System default',
+  '语言': 'Language', '简体中文': '简体中文', 'English': 'English',
   '退出登录': 'Log out', '确定要退出当前账号吗？': 'Are you sure you want to log out?', '取消': 'Cancel', '确定退出': 'Log out',
   '用户': 'User', '健康评分': 'Health score', '服务天数': 'Service days', '本月记录': 'Records this month',
   '家庭成员': 'Family members', '添加': 'Add', '添加成员': 'Add member', '健康管理': 'Health management',
@@ -36,22 +36,17 @@ const translations = {
 };
 
 const LanguageContext = createContext(null);
-const deviceLanguage = () => {
-  const locale = typeof navigator !== 'undefined' ? (navigator.language || '') : (Intl.DateTimeFormat().resolvedOptions().locale || '');
-  return /^en\b/i.test(locale) ? 'en-US' : 'zh-CN';
-};
-
 export function LanguageProvider({ children }) {
-  const [preference, setPreference] = useState('system');
+  const [preference, setPreference] = useState('zh-CN');
   useEffect(() => { AsyncStorage.getItem(KEY).then(value => {
     if (value === 'en-US' || value === 'zh-CN') setPreference(value);
   }).catch(() => {}); }, []);
   const setLanguage = value => {
-    const next = value === 'en-US' || value === 'zh-CN' ? value : 'system';
+    const next = value === 'en-US' ? 'en-US' : 'zh-CN';
     setPreference(next);
     AsyncStorage.setItem(KEY, next).catch(() => {});
   };
-  const language = preference === 'system' ? deviceLanguage() : preference;
+  const language = preference;
   const t = key => language === 'en-US' ? (translations[key] || key) : key;
   return <LanguageContext.Provider value={{ language, preference, setLanguage, t }}>{children}</LanguageContext.Provider>;
 }

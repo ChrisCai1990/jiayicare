@@ -4,7 +4,7 @@ import Taro from '@tarojs/taro';
 const KEY = 'jy_language';
 const translations = {
   '首页': 'Home', '健康档案': 'Health Records', '健康管家': 'Care Team', '我的': 'Profile',
-  '语言': 'Language', '简体中文': '简体中文', 'English': 'English', '跟随系统': 'System default',
+  '语言': 'Language', '简体中文': '简体中文', 'English': 'English',
   '用户': 'User', '点击登录 / 注册 ›': 'Log in / Sign up ›', '点击完善个人资料 ›': 'Complete your profile ›',
   '会员类型': 'Membership', '服务天数': 'Service days', '到期日': 'Expires',
   '未开通': 'Not active', '标准会员': 'Standard member', '年度会员': 'Annual membership',
@@ -49,10 +49,6 @@ const translations = {
 };
 
 const LanguageContext = createContext(null);
-const deviceLanguage = () => {
-  try { return /^en\b/i.test(Taro.getSystemInfoSync().language || '') ? 'en-US' : 'zh-CN'; } catch { return 'zh-CN'; }
-};
-
 export const syncTabBarLanguage = language => {
   const labels = language === 'en-US' ? ['Home', 'Health Records', 'Care Team', 'Profile'] : ['首页', '健康档案', '健康管家', '我的'];
   labels.forEach((text, index) => {
@@ -62,11 +58,11 @@ export const syncTabBarLanguage = language => {
 
 export function LanguageProvider({ children }) {
   const [preference, setPreference] = useState(() => {
-    try { return Taro.getStorageSync(KEY) || 'system'; } catch { return 'system'; }
+    try { return Taro.getStorageSync(KEY) === 'en-US' ? 'en-US' : 'zh-CN'; } catch { return 'zh-CN'; }
   });
-  const language = preference === 'system' ? deviceLanguage() : preference;
+  const language = preference;
   const setLanguage = value => {
-    const next = value === 'en-US' || value === 'zh-CN' ? value : 'system';
+    const next = value === 'en-US' ? 'en-US' : 'zh-CN';
     setPreference(next);
     try { Taro.setStorageSync(KEY, next); } catch {}
   };
