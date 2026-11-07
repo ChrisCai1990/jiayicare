@@ -11,6 +11,7 @@ import { openManagerConversation } from '../../utils/managerConversation';
 import { homeTaskCards } from '../../utils/homeTaskCards';
 import useArchiveSubject, { storedArchiveId } from '../../hooks/useArchiveSubject';
 import FamilySubjectView from '../../components/FamilySubjectView';
+import { useLanguage, syncTabBarLanguage } from '../../i18n';
 
 // 对齐 app/src/screens/home/HomeScreen.js（2026-07-18 首页瘦身+打卡页重构后）：
 // 打卡网格已抽离到独立页 pages/checkin/index，首页只保留入口按钮；健康管家团队卡片已移至"我的"页。
@@ -179,6 +180,8 @@ function TaskDetailModal({ task, onClose, onDone }) {
 }
 
 export default function HomePage() {
+  const { t, language } = useLanguage();
+  useDidShow(() => syncTabBarLanguage(language));
   const { user: authUser, token, loading: authLoading, isDemo } = useAuth();
   const { statusBarHeight } = useNavBar();
   const archive = useArchiveSubject();
@@ -308,20 +311,20 @@ export default function HomePage() {
   return (
     <ScrollView scrollY style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{padding:`${statusBarHeight+8}px ${spacing.lg}px 18px`,paddingRight:'112px',backgroundColor:colors.background}}>
-        <Text style={{fontSize:'18px',fontWeight:700,color:colors.primary,display:'block'}}>嘉医汇 · 嘉医管家</Text>
-        <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',marginTop:'4px'}}>健康有人管，生活更安心</Text>
+        <Text style={{fontSize:'18px',fontWeight:700,color:colors.primary,display:'block'}}>{t('嘉医汇 · 嘉医管家')}</Text>
+        <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',marginTop:'4px'}}>{t('健康有人管，生活更安心')}</Text>
       </View>
       <View style={{ padding: `0 ${spacing.lg}px` }}>
         <View style={{backgroundColor:'#fff',borderRadius:'18px',padding:'18px',marginBottom:'22px'}}>
           <View style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}>
-            <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'12px',color:colors.textMuted,display:'block'}}>{name}，{greeting}</Text><Text style={{fontSize:'19px',fontWeight:600,color:colors.textPrimary,display:'block',marginTop:'6px'}}>照顾好今天的你</Text></View>
+            <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'12px',color:colors.textMuted,display:'block'}}>{name}，{greeting}</Text><Text style={{fontSize:'19px',fontWeight:600,color:colors.textPrimary,display:'block',marginTop:'6px'}}>{t('照顾好今天的你')}</Text></View>
             <View onClick={openRecordSummary} style={{padding:'8px 10px',borderRadius:'12px',backgroundColor:colors.primary10,textAlign:'center',flexShrink:0}}>
-              <Text style={{fontSize:'14px',fontWeight:600,color:colors.primary,display:'block'}}>记录汇总 ›</Text>
+              <Text style={{fontSize:'14px',fontWeight:600,color:colors.primary,display:'block'}}>{t('记录汇总 ›')}</Text>
             </View>
           </View>
-          <View onClick={sectionState.dashboard === 'error' ? loadCore : openRecordSummary} style={{display:'flex',alignItems:'center',gap:'7px',margin:'14px 0'}}><Icon name="📈" size={16} color={colors.textSecondary}/><Text style={{flex:1,fontSize:'12px',color:colors.textSecondary}}>{sectionState.dashboard === 'error' ? '健康概览暂未更新' : '查看已记录的数值与变化'}</Text><Text style={{fontSize:'12px',color:colors.primary}}>{sectionState.dashboard === 'error' ? '重试 ›' : '查看趋势 ›'}</Text></View>
+          <View onClick={sectionState.dashboard === 'error' ? loadCore : openRecordSummary} style={{display:'flex',alignItems:'center',gap:'7px',margin:'14px 0'}}><Icon name="📈" size={16} color={colors.textSecondary}/><Text style={{flex:1,fontSize:'12px',color:colors.textSecondary}}>{t(sectionState.dashboard === 'error' ? '健康概览暂未更新' : '查看已记录的数值与变化')}</Text><Text style={{fontSize:'12px',color:colors.primary}}>{t(sectionState.dashboard === 'error' ? '重试 ›' : '查看趋势 ›')}</Text></View>
           <View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{display:'flex',alignItems:'center',gap:'9px',backgroundColor:colors.primary,borderRadius:'12px',padding:'13px 15px'}}>
-            <Text style={{fontSize:'22px',color:'#fff'}}>＋</Text><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>记录健康数据</Text><Text style={{color:'#fff'}}>›</Text>
+            <Text style={{fontSize:'22px',color:'#fff'}}>＋</Text><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>{t('记录健康数据')}</Text><Text style={{color:'#fff'}}>›</Text>
           </View>
           <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',textAlign:'center',marginTop:'10px'}}>{growth.totalCheckinDays>0?`近30天已记录 ${growth.totalCheckinDays} 天`:'每一次记录，都多一份了解'}</Text>
         </View>
@@ -330,20 +333,20 @@ export default function HomePage() {
             "随访"已移出Tab，"全部"入口跳转独立随访页（2026-07-18 Tab结构调整） */}
         <View style={{ marginBottom: `${spacing.lg}px` }}>
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>近期安排</Text>
+            <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>{t('近期安排')}</Text>
             <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 500 }}>查看全部</Text>
+              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 500 }}>{t('查看全部')}</Text>
               <Text style={{ fontSize: '13px', color: colors.primary }}>›</Text>
             </View>
           </View>
           <View>
             {sectionError(['dashboard','tasks','followups']) && <Text onClick={loadCore} style={{display:'block',padding:'12px 0',fontSize:'13px',color:colors.danger}}>部分健康安排暂未加载，点击重试{allPendingTaskItems.length ? '；下方保留已加载内容' : ''}</Text>}
-            {!token ? <Text onClick={() => Taro.navigateTo({url:'/pages/auth/login/index'})} style={{display:'block',padding:'20px 0',fontSize:'13px',color:colors.primary}}>登录后查看你的健康安排 ›</Text> : tasksLoading && allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
-              <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', padding: '20px 0', textAlign: 'center' }}>加载中...</Text>
+            {!token ? <Text onClick={() => Taro.navigateTo({url:'/pages/auth/login/index'})} style={{display:'block',padding:'20px 0',fontSize:'13px',color:colors.primary}}>{t('登录后查看你的健康安排 ›')}</Text> : tasksLoading && allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
+              <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', padding: '20px 0', textAlign: 'center' }}>{t('加载中...')}</Text>
             ) : (allPendingTaskItems.length === 0 && todayReminders.length === 0) ? (sectionError(['dashboard','tasks','followups']) ? null : (
               <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: `${spacing.xl}px 0`, gap: `${spacing.sm}px` }}>
                 <Icon name="✅" size={32} color={colors.primary} />
-                <Text style={{ fontSize: '14px', color: colors.textMuted }}>暂无健康计划</Text>
+                <Text style={{ fontSize: '14px', color: colors.textMuted }}>{t('暂无健康计划')}</Text>
               </View>
             )) : (
               <>
@@ -374,7 +377,7 @@ export default function HomePage() {
 
         {submittedFeedback.length>0&&<View onClick={()=>Taro.navigateTo({url:'/pages/tasks/index?feedback=1'})} style={{backgroundColor:'#fff',borderRadius:'14px',padding:'14px 16px',marginBottom:'20px',display:'flex',justifyContent:'space-between'}}><Text style={{fontSize:'13px',color:colors.textSecondary}}>已提交反馈 · {submittedFeedback.length} 项待团队处理</Text><Text style={{fontSize:'13px',color:colors.primary}}>查看 ›</Text></View>}
         <View style={{marginBottom:'24px'}}>
-          <Text style={{fontSize:'17px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'12px'}}>我的权益</Text>
+          <Text style={{fontSize:'17px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'12px'}}>{t('我的权益')}</Text>
           <View onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section=plan'})} style={{backgroundColor:'#fff',borderRadius:'18px',padding:'18px',display:'flex',alignItems:'center',gap:'12px'}}>
             <Icon name="🎁" size={24} color={colors.primary}/>
             <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'15px',fontWeight:600,display:'block',color:colors.textPrimary}}>会员权益</Text><Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'5px'}}>查看计划、使用情况与健康基金</Text>{user?.healthFund?.total!=null&&<Text style={{fontSize:'13px',color:colors.primary,display:'block',marginTop:'7px'}}>健康基金余额 ¥{Number(user.healthFund.total).toFixed(2)}</Text>}</View>
@@ -383,8 +386,8 @@ export default function HomePage() {
         </View>
         <View style={{ marginBottom: `${spacing.lg}px` }}>
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>更多健康服务</Text>
-            <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}><Text style={{ fontSize: '12px', color: colors.primary }}>全部商城 ›</Text></View>
+            <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>{t('更多健康服务')}</Text>
+            <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}><Text style={{ fontSize: '12px', color: colors.primary }}>{t('全部商城 ›')}</Text></View>
           </View>
           {sectionState.services === 'error' && <Text onClick={loadCore} style={{display:'block',padding:'12px 0',fontSize:'13px',color:colors.danger}}>服务暂未更新，点击重试</Text>}
           {sectionState.services === 'loading' && !popularServices.length && <Text style={{fontSize:'13px',color:colors.textSecondary}}>服务加载中…</Text>}

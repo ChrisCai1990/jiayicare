@@ -8,9 +8,11 @@ import { colors, spacing, radius } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { userAPI, ordersAPI } from '../../services/api';
 import Avatar, { AvatarOnDark } from '../../components/Avatar';
+import { useLanguage } from '../../i18n';
 
 // ── 菜单条目 ──────────────────────────────────────────────────────
 function MenuItem({ icon, iconColor, label, value, badge, onPress, isLast }) {
+  const { t } = useLanguage();
   const ic = iconColor || colors.primary;
   return (
     <TouchableOpacity
@@ -21,14 +23,14 @@ function MenuItem({ icon, iconColor, label, value, badge, onPress, isLast }) {
       <View style={[styles.menuIconWrap, { backgroundColor: ic + '14' }]}>
         <Ionicons name={icon} size={18} color={ic} />
       </View>
-      <Text style={styles.menuLabel}>{label}</Text>
+      <Text style={styles.menuLabel}>{t(label)}</Text>
       <View style={styles.menuRight}>
         {badge != null && (
           <View style={styles.menuBadge}>
             <Text style={styles.menuBadgeText}>{badge}</Text>
           </View>
         )}
-        {value ? <Text style={styles.menuValue}>{value}</Text> : null}
+        {value ? <Text style={styles.menuValue}>{t(value)}</Text> : null}
         <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
       </View>
     </TouchableOpacity>
@@ -37,6 +39,7 @@ function MenuItem({ icon, iconColor, label, value, badge, onPress, isLast }) {
 
 // ── 退出登录确认弹窗 ──────────────────────────────────────────────
 function LogoutModal({ visible, onConfirm, onCancel }) {
+  const { t } = useLanguage();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.modalOverlay}>
@@ -44,14 +47,14 @@ function LogoutModal({ visible, onConfirm, onCancel }) {
           <View style={styles.modalIconWrap}>
             <Ionicons name="log-out-outline" size={28} color={colors.danger} />
           </View>
-          <Text style={styles.modalTitle}>退出登录</Text>
-          <Text style={styles.modalDesc}>确定要退出当前账号吗？</Text>
+          <Text style={styles.modalTitle}>{t('退出登录')}</Text>
+          <Text style={styles.modalDesc}>{t('确定要退出当前账号吗？')}</Text>
           <View style={styles.modalBtns}>
             <TouchableOpacity style={styles.modalCancelBtn} onPress={onCancel} activeOpacity={0.8}>
-              <Text style={styles.modalCancelText}>取消</Text>
+              <Text style={styles.modalCancelText}>{t('取消')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.modalConfirmBtn} onPress={onConfirm} activeOpacity={0.8}>
-              <Text style={styles.modalConfirmText}>确定退出</Text>
+              <Text style={styles.modalConfirmText}>{t('确定退出')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -62,7 +65,9 @@ function LogoutModal({ visible, onConfirm, onCancel }) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
+  const { t, language, preference, setLanguage } = useLanguage();
   const { user, isDemo, logout } = useAuth();
+  const [showLanguage, setShowLanguage] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const [monthlyCount, setMonthlyCount] = useState(null);
   const [pendingOrders, setPendingOrders] = useState(0);
@@ -118,7 +123,7 @@ export default function ProfileScreen({ navigation }) {
 
           <View style={styles.headerContent}>
             <AvatarOnDark name={user?.name || '用'} size={76} />
-            <Text style={styles.userName}>{user?.name || '用户'}</Text>
+            <Text style={styles.userName}>{user?.name || t('用户')}</Text>
             <Text style={styles.userSub}>
               {[user?.age && `${user.age}岁`, user?.gender !== '未知' && user?.gender, user?.phone].filter(Boolean).join(' · ')}
             </Text>
@@ -136,7 +141,7 @@ export default function ProfileScreen({ navigation }) {
               {i > 0 && <View style={styles.statsDivider} />}
               <View style={styles.statItem}>
                 <Text style={[styles.statVal, { color: s.color }]}>{s.val}</Text>
-                <Text style={styles.statLabel}>{s.label}</Text>
+                <Text style={styles.statLabel}>{t(s.label)}</Text>
               </View>
             </React.Fragment>
           ))}
@@ -181,10 +186,10 @@ export default function ProfileScreen({ navigation }) {
         {/* ── 家庭成员 ─────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>家庭成员</Text>
+          <Text style={styles.sectionTitle}>{t('家庭成员')}</Text>
             <TouchableOpacity style={styles.sectionLink} onPress={() => navigation.navigate('ComingSoon', { title: '家庭成员', desc: '家庭成员管理功能即将上线，届时可为家人统一管理健康档案。', icon: 'people-outline' })}>
               <Ionicons name="add" size={14} color={colors.primary} />
-              <Text style={styles.sectionLinkText}>添加</Text>
+              <Text style={styles.sectionLinkText}>{t('添加')}</Text>
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}
@@ -193,14 +198,14 @@ export default function ProfileScreen({ navigation }) {
               <View style={styles.addFamilyCircle}>
                 <Ionicons name="add" size={20} color={colors.primary} />
               </View>
-              <Text style={styles.addFamilyLabel}>添加成员</Text>
+              <Text style={styles.addFamilyLabel}>{t('添加成员')}</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
 
         {/* ── 健康管理 ─────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>健康管理</Text>
+          <Text style={styles.sectionTitle}>{t('健康管理')}</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="heart-outline"         iconColor="#DC3545" label="健康档案" value="查看全部" onPress={() => navigation.navigate('Records')} />
             <MenuItem icon="document-text-outline" iconColor="#0077B6" label="体检报告" badge={undefined} onPress={() => navigation.navigate('ReportUpload')} />
@@ -211,7 +216,7 @@ export default function ProfileScreen({ navigation }) {
 
         {/* ── 我的服务 ─────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>我的服务</Text>
+          <Text style={styles.sectionTitle}>{t('我的服务')}</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="receipt-outline"  iconColor={colors.primary} label="我的订单"  badge={pendingOrders > 0 ? pendingOrders : undefined} onPress={() => navigation.navigate('Orders')} />
             <MenuItem icon="people-outline"  iconColor="#22A06B" label="服务群组"  value="即将开放" onPress={() => navigation.navigate('ComingSoon', { title: '服务群组', desc: '专属健康服务群组即将开放，届时可与医生、健管师及病友实时交流。', icon: 'people-outline' })} />
@@ -223,8 +228,9 @@ export default function ProfileScreen({ navigation }) {
 
         {/* ── 账号设置 ─────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>账号设置</Text>
+          <Text style={styles.sectionTitle}>{t('账号设置')}</Text>
           <View style={styles.menuCard}>
+            <MenuItem icon="language-outline" iconColor="#2563EB" label={t('语言')} value={language === 'en-US' ? 'English' : '简体中文'} onPress={() => setShowLanguage(true)} />
             <MenuItem icon="person-outline"        iconColor="#0077B6" label="编辑资料"            onPress={() => navigation.navigate('EditProfile')} />
             <MenuItem icon="notifications-outline" iconColor="#7C3AED" label="消息通知" value={notifLabel} onPress={() => navigation.navigate('NotificationSettings')} />
             <MenuItem icon="lock-closed-outline"   iconColor="#22A06B" label="账号安全"            onPress={() => navigation.navigate('AccountSecurity')} />
@@ -234,7 +240,7 @@ export default function ProfileScreen({ navigation }) {
 
         {/* ── 关于与法律 ───────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>关于与法律</Text>
+          <Text style={styles.sectionTitle}>{t('关于与法律')}</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="document-text-outline" iconColor="#6B7280" label="用户协议"   onPress={() => navigation.navigate('Legal', { type: 'terms' })} />
             <MenuItem icon="shield-outline"        iconColor="#6B7280" label="隐私政策"   onPress={() => navigation.navigate('Legal', { type: 'privacy' })} />
@@ -246,7 +252,7 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.section}>
           <TouchableOpacity style={styles.logoutBtn} onPress={() => setShowLogout(true)} activeOpacity={0.8}>
             <Ionicons name="log-out-outline" size={17} color={colors.danger} />
-            <Text style={styles.logoutText}>退出登录</Text>
+            <Text style={styles.logoutText}>{t('退出登录')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -260,6 +266,17 @@ export default function ProfileScreen({ navigation }) {
         onCancel={() => setShowLogout(false)}
         onConfirm={() => { setShowLogout(false); logout(); }}
       />
+      <Modal visible={showLanguage} transparent animationType="fade" onRequestClose={() => setShowLanguage(false)}>
+        <View style={styles.modalOverlay}><View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>{t('语言')}</Text>
+          {[["zh-CN", '简体中文'], ["en-US", 'English']].map(([value, label]) => (
+            <TouchableOpacity key={value} style={{ paddingVertical: 14 }} onPress={() => { setLanguage(value); setShowLanguage(false); }}>
+              <Text style={styles.modalDesc}>{preference === value ? '✓  ' : '    '}{label}</Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity onPress={() => setShowLanguage(false)}><Text style={styles.modalCancelText}>{t('取消')}</Text></TouchableOpacity>
+        </View></View>
+      </Modal>
     </SafeAreaView>
   );
 }

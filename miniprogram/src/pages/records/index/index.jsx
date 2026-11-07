@@ -10,6 +10,7 @@ import { bloodPressurePoints } from '../../../utils/bloodPressureTrend';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { useAuth } from '../../../context/AuthContext';
+import { useLanguage } from '../../../i18n';
 
 const TYPE_META = {
   bloodPressure: { label: '血压', icon: '💗', unit: 'mmHg' },
@@ -51,6 +52,7 @@ const formatRecordTime = value => {
 };
 
 export default function RecordsIndexPage() {
+  const { t } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const archive = useArchiveSubject();
   const [childArchive, setChildArchive] = useState(null);
@@ -147,7 +149,7 @@ export default function RecordsIndexPage() {
   if (archive.error) return <View style={{ padding: `${statusBarHeight + 24}px ${spacing.lg}px` }}><Text onClick={archive.refresh} style={{ color: colors.danger }}>{archive.error} · 点击重试</Text></View>;
 
   const archivePicker = <View style={{ backgroundColor: '#fff', padding: `${spacing.md}px`, borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px`, border: `1px solid ${colors.border}` }}>
-    <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>当前健康档案</Text>
+    <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>{t('当前健康档案')}</Text>
     <Picker mode="selector" range={[`本人 · ${archive.user?.name || ''}`, ...archive.subjects.map(member => `${member.name} · ${member.kind === 'child' ? '孩子' : '家人'}`)]}
       value={Math.max(0, archive.subjects.findIndex(member => String(member.id) === String(archive.subject?.id)) + 1)}
       onChange={event => archive.select(Number(event.detail.value))}>
@@ -156,14 +158,14 @@ export default function RecordsIndexPage() {
   </View>;
 
   if (archive.subject) return <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.xl}px` }}>
-    <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>健康档案</Text>
+    <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>{t('健康档案')}</Text>
     {archivePicker}
     <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: `${spacing.md}px` }}>当前查看的是{archive.subject.name}的档案。</Text>
     <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
       <View onClick={() => Taro.navigateTo({ url: '/pages/records/upload/index' })} style={{ flex: 1, padding: '15px', backgroundColor: colors.primary, color: '#fff', textAlign: 'center', borderRadius: `${radius.md}px` }}>上传报告</View>
       <View onClick={() => Taro.navigateTo({ url: '/pages/records/medical-reports/index' })} style={{ flex: 1, padding: '15px', backgroundColor: '#fff', color: colors.primary, textAlign: 'center', borderRadius: `${radius.md}px` }}>查看报告</View>
     </View>
-    {childArchiveError ? <Text style={{ color: colors.danger }}>{childArchiveError}</Text> : !childArchive ? <Text>家庭成员档案加载中…</Text> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
+    {childArchiveError ? <Text style={{ color: colors.danger }}>{childArchiveError}</Text> : !childArchive ? <Text>{t('家庭成员档案加载中…')}</Text> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
       <Text style={{ fontSize: '16px', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{childArchive.name}的基础档案</Text>
       <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>{childArchive.birthDate} · {childArchive.ageStage?.label || (archive.subject.kind === 'adult' ? '家庭成员' : '年龄待核实')}</Text>
       {archive.subject.kind === 'child' && childArchive.pendingReviewCount > 0 && <Text style={{ color: colors.warning, display: 'block' }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}
@@ -177,10 +179,10 @@ export default function RecordsIndexPage() {
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ padding: `${statusBarHeight + 12}px ${spacing.lg}px 0` }}>
-        <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>健康档案</Text>
+        <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>{t('健康档案')}</Text>
         {archivePicker}
 
-        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>档案工具</Text>
+        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('档案工具')}</Text>
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
           {[
             { label: '上传报告', hint: '拍照或相册', icon: 'upload', url: '/pages/records/upload/index', primary: true },
@@ -196,11 +198,11 @@ export default function RecordsIndexPage() {
         </View>
 
         {ibdEnabled && <View onClick={() => Taro.navigateTo({ url: '/pages/records/ibd-fc/index' })} style={{ backgroundColor: '#E7F4EE', border: `1px solid ${colors.primary}`, borderRadius: `${radius.md}px`, padding: '14px', marginBottom: `${spacing.md}px` }}>
-          <Text style={{ display: 'block', color: colors.primary, fontSize: '15px', fontWeight: 700 }}>IBD · 粪便钙卫蛋白趋势</Text>
-          <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '12px', marginTop: '4px' }}>查看 FC 曲线与检测记录，录入新的检查结果 →</Text>
+          <Text style={{ display: 'block', color: colors.primary, fontSize: '15px', fontWeight: 700 }}>{t('IBD · 粪便钙卫蛋白趋势')}</Text>
+          <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '12px', marginTop: '4px' }}>{t('查看 FC 曲线与检测记录，录入新的检查结果 →')}</Text>
         </View>}
 
-        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>健康数据趋势</Text>
+        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('健康数据趋势')}</Text>
 
         {!!trendError&&<Text onClick={loadTrends} style={{display:'block',color:colors.danger,fontSize:'13px',marginBottom:'8px'}}>{trendError}</Text>}
         {/* 趋势图 Tab：血压/血糖/睡眠 */}
@@ -233,7 +235,7 @@ export default function RecordsIndexPage() {
       </View>
 
       <View style={{ padding: `0 ${spacing.lg}px` }}>
-        <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>身体成分</Text>
+        <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('身体成分')}</Text>
         {(() => {
           const history = [...bodyCompHistory];
           if (Object.keys(bodyComposition || {}).length) history.push({ ...bodyComposition, _isCurrent: true });
@@ -250,7 +252,7 @@ export default function RecordsIndexPage() {
             const reference = [...rows].reverse().find(row => row?.[metric.referenceKey])?.[metric.referenceKey] || '未录入';
             return { metric, latest, points, reference };
           }).filter(Boolean);
-          if (!cards.length) return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无身体成分数据</Text></View>;
+          if (!cards.length) return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>{t('暂无身体成分数据')}</Text></View>;
           const active = cards.find((item) => item.metric.key === bodyTrendTab) || cards[0];
           return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}>
             <View style={{ display: 'flex', gap: '7px', marginBottom: `${spacing.sm}px` }}>

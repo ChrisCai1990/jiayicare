@@ -4,6 +4,7 @@ import Taro, { useRouter } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { shareAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
+import { useLanguage } from '../../../i18n';
 
 // 对齐 app/src/screens/records/PublicReportScreen.js
 // 小程序场景适配：app端网页版通过URL query传token+window.location跳转登录，小程序没有这两个概念。
@@ -16,6 +17,7 @@ import useNavBar from '../../../hooks/useNavBar';
 // - 分享行为：页面内通过 Taro.showShareMenu + onShareAppMessage（在页面组件里配置）支持转发给好友，
 //   这是小程序原生的分享方式，比app端生成公开链接更符合小程序生态
 export default function PublicReportPage() {
+  const { t, language } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const router = useRouter();
   const token = router.params?.token;
@@ -35,16 +37,16 @@ export default function PublicReportPage() {
   }, [token]);
 
   const report = data?.reportData;
-  const expiryText = data?.expiresAt ? `链接有效至 ${new Date(data.expiresAt).toLocaleDateString('zh-CN')}` : '';
+  const expiryText = data?.expiresAt ? `${language === 'en-US' ? 'Link valid until' : '链接有效至'} ${new Date(data.expiresAt).toLocaleDateString(language)}` : '';
 
   const goToLogin = () => Taro.reLaunch({ url: '/pages/auth/login/index' });
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, borderBottom: `1px solid ${colors.border}` }}>
-        <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>👁 健康报告分享 · 访客查看</Text>
+        <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>👁 {t('健康报告分享 · 访客查看')}</Text>
         <View onClick={goToLogin} style={{ padding: '6px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }}>
-          <Text style={{ fontSize: '13px', color: '#fff', fontWeight: 700 }}>登录/注册</Text>
+          <Text style={{ fontSize: '13px', color: '#fff', fontWeight: 700 }}>{t('登录/注册')}</Text>
         </View>
       </View>
 
@@ -69,6 +71,7 @@ export default function PublicReportPage() {
 
       {!loading && !error && report && (
         <ScrollView scrollY style={{ height: 'calc(100vh - 50px)' }}>
+          {language === 'en-US' && <Text style={{ display: 'block', margin: `${spacing.md}px ${spacing.lg}px 0`, color: colors.textMuted, fontSize: '12px' }}>{t('报告中的医疗结论保留原文。')}</Text>}
           <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, backgroundColor: '#fff', margin: `${spacing.lg}px`, borderRadius: `${radius.lg}px`, padding: `${spacing.md}px`, boxShadow: shadow.sm }}>
             <View style={{ width: '44px', height: '44px', borderRadius: '22px', backgroundColor: colors.primary + '30', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>{(data?.userName || '用').charAt(0).toUpperCase()}</Text>

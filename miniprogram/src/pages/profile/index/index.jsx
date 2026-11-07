@@ -10,6 +10,7 @@ import { getOrderBadgeCounts } from '../../../utils/orderStatus';
 import useArchiveSubject from '../../../hooks/useArchiveSubject';
 import FamilySubjectView from '../../../components/FamilySubjectView';
 import { manageAiDataConsent } from '../../../utils/aiDataConsent';
+import { useLanguage } from '../../../i18n';
 
 const PACKAGE_LABELS = {
   pkg_1y: '年度会员', pkg_6m: '半年会员', pkg_3m: '季度会员',
@@ -18,6 +19,7 @@ const PACKAGE_LABELS = {
 };
 
 function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
+  const { t } = useLanguage();
   const ic = iconColor || colors.primary;
   return (
     <View
@@ -31,7 +33,7 @@ function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
         width: '34px', height: '34px', borderRadius: '9px', backgroundColor: ic + '22',
         display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px`,
       }}><Icon name={icon} size={16} color={ic} /></View>
-      <Text style={{ flex: 1, fontSize: '14px', color: colors.textPrimary, fontWeight: 500 }}>{label}</Text>
+      <Text style={{ flex: 1, fontSize: '14px', color: colors.textPrimary, fontWeight: 500 }}>{t(label)}</Text>
       <View style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         {badge != null && badge > 0 && (
           <View style={{
@@ -41,7 +43,7 @@ function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
             <Text style={{ fontSize: '10px', color: '#fff', fontWeight: 700 }}>{badge}</Text>
           </View>
         )}
-        {value ? <Text style={{ fontSize: '12px', color: colors.textMuted }}>{value}</Text> : null}
+        {value ? <Text style={{ fontSize: '12px', color: colors.textMuted }}>{t(value)}</Text> : null}
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>›</Text>
       </View>
     </View>
@@ -49,6 +51,7 @@ function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
 }
 
 export default function ProfilePage() {
+  const { t, language, setLanguage } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const archive = useArchiveSubject();
   const { user, token, loading: authLoading, logout, updateUser } = useAuth();
@@ -82,6 +85,12 @@ export default function ProfilePage() {
     : '未开通';
 
   const nav = (url) => Taro.navigateTo({ url });
+  const chooseLanguage = async () => {
+    try {
+      const { tapIndex } = await Taro.showActionSheet({ itemList: ['简体中文', 'English'] });
+      setLanguage(['zh-CN', 'en-US'][tapIndex]);
+    } catch {}
+  };
   const openProfile = () => {
     if (authLoading) return;
     if (!token || !user) {
@@ -123,12 +132,12 @@ export default function ProfilePage() {
           <Text style={{ fontSize: '30px', color: '#fff', fontWeight: 700 }}>{(user?.name || '用')[0]}</Text>
         </View>
         <View onClick={openProfile}>
-          <Text style={{ fontSize: '22px', fontWeight: 700, color: '#fff', marginTop: `${spacing.sm}px`, display: 'block' }}>{user?.name || '用户'}</Text>
+          <Text style={{ fontSize: '22px', fontWeight: 700, color: '#fff', marginTop: `${spacing.sm}px`, display: 'block' }}>{user?.name || t('用户')}</Text>
           {!authLoading && (!token || !user) && (
-            <Text style={{ fontSize: '13px', color: '#8FE0BD', marginTop: '6px', display: 'block', fontWeight: 600 }}>点击登录 / 注册 ›</Text>
+            <Text style={{ fontSize: '13px', color: '#8FE0BD', marginTop: '6px', display: 'block', fontWeight: 600 }}>{t('点击登录 / 注册 ›')}</Text>
           )}
           {!authLoading && token && user && !user.onboardingCompleted && (
-            <Text style={{ fontSize: '13px', color: '#8FE0BD', marginTop: '6px', display: 'block', fontWeight: 600 }}>点击完善个人资料 ›</Text>
+            <Text style={{ fontSize: '13px', color: '#8FE0BD', marginTop: '6px', display: 'block', fontWeight: 600 }}>{t('点击完善个人资料 ›')}</Text>
           )}
         </View>
         <Text style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '4px', display: 'block' }}>
@@ -144,17 +153,17 @@ export default function ProfilePage() {
         <View style={{ display: 'flex', alignItems: 'center', padding: `${spacing.md}px 8px` }}>
           <View style={{ flex: 1, minWidth: 0, height: '66px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
             <View style={{ height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '14px', fontWeight: 800, color: hasService ? colors.primary : colors.textMuted, whiteSpace: 'nowrap' }}>{memberType}</Text></View>
-            <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>会员类型</Text>
+            <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>{t('会员类型')}</Text>
           </View>
           <View style={{ width: '1px', height: '50px', backgroundColor: colors.borderLight, flexShrink: 0 }} />
           <View style={{ flex: 1, minWidth: 0, height: '66px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
             <View style={{ height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '22px', lineHeight: '30px', fontWeight: 800, color: hasService ? colors.primary : colors.textMuted }}>{hasService ? daysLeft : '--'}</Text></View>
-            <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>服务天数</Text>
+            <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>{t('服务天数')}</Text>
           </View>
           <View style={{ width: '1px', height: '50px', backgroundColor: colors.borderLight, flexShrink: 0 }} />
           <View style={{ flex: 1, minWidth: 0, height: '66px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
             <View style={{ height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '13px', fontWeight: 800, color: hasService ? colors.textPrimary : colors.textMuted, whiteSpace: 'nowrap' }}>{hasService ? user.serviceExpiry : '--'}</Text></View>
-            <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>到期日</Text>
+            <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>{t('到期日')}</Text>
           </View>
         </View>
         <View style={{
@@ -186,7 +195,7 @@ export default function ProfilePage() {
               <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>{user?.serviceAccess?.active === false ? user.serviceAccess.reason : `到期 ${user.serviceExpiry} · 剩余 ${daysLeft} 天`}</Text>
             </View>
             <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={requestRenewal}>
-              <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>续约服务</Text>
+              <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>{t('续约服务')}</Text>
             </View>
           </View>
         </View>
@@ -196,8 +205,8 @@ export default function ProfilePage() {
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
           <View onClick={() => nav('/pages/orders/index')} style={{ display: 'flex', alignItems: 'center', padding: '14px 16px 10px' }}>
-            <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>我的订单</Text>
-            <Text style={{ fontSize: '12px', color: colors.textMuted }}>全部订单 ›</Text>
+            <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>{t('我的订单')}</Text>
+            <Text style={{ fontSize: '12px', color: colors.textMuted }}>{t('全部订单 ›')}</Text>
           </View>
           <View style={{ display: 'flex', padding: '6px 4px 16px' }}>
             {[
@@ -215,7 +224,7 @@ export default function ProfilePage() {
                     <Text style={{ fontSize: '9px', color: '#fff', fontWeight: 700 }}>{Math.min(orderCounts[item.key], 99)}</Text>
                   </View>
                 )}
-                <Text style={{ display: 'block', marginTop: '4px', fontSize: '11px', color: colors.textSecondary }}>{item.label}</Text>
+                <Text style={{ display: 'block', marginTop: '4px', fontSize: '11px', color: colors.textSecondary }}>{t(item.label)}</Text>
               </View>
             ))}
           </View>
@@ -225,7 +234,7 @@ export default function ProfilePage() {
 
       {/* 高频入口合并为四宫格，团队沟通统一放到“健康管家”Tab */}
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
-        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>常用功能</Text>
+        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>{t('常用功能')}</Text>
         <View style={{ display: 'flex', flexWrap: 'wrap', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
           {[
             { label: '健康方案', icon: 'clipboard-list', color: '#7C3AED', url: '/pages/services/plans/index' },
@@ -235,7 +244,7 @@ export default function ProfilePage() {
           ].map((item, index) => (
             <View key={item.label} onClick={() => nav(item.url)} style={{ width: '50%', boxSizing: 'border-box', padding: '16px 12px', display: 'flex', alignItems: 'center', gap: '9px', borderRight: index % 2 === 0 ? `1px solid ${colors.borderLight}` : 'none', borderBottom: index < 2 ? `1px solid ${colors.borderLight}` : 'none' }}>
               <View style={{ width: '34px', height: '34px', borderRadius: '10px', backgroundColor: item.color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={item.icon} size={17} color={item.color} /></View>
-              <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>{item.label}</Text>
+              <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>{t(item.label)}</Text>
             </View>
           ))}
         </View>
@@ -243,8 +252,9 @@ export default function ProfilePage() {
 
       {/* 账号设置 */}
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
-        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>账号设置</Text>
+        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>{t('账号设置')}</Text>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
+          <MenuItem icon="🌐" iconColor="#2563EB" label={t('语言')} value={language === 'en-US' ? 'English' : '简体中文'} onClick={chooseLanguage} />
           <MenuItem icon="🎁" iconColor="#8e44ad" label="会员权益" onClick={() => nav('/pages/profile/benefits/index')} />
           <MenuItem icon="users" iconColor="#D97706" label="邀请好友" value="分享专属邀请链接" onClick={() => nav('/pages/profile/invite/index')} />
           <MenuItem icon="🔔" iconColor="#7C3AED" label="通知设置" onClick={() => nav('/pages/profile/notifications/index')} />
@@ -256,11 +266,11 @@ export default function ProfilePage() {
 
       {/* 关于与法律 */}
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
-        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>关于与法律</Text>
+        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>{t('关于与法律')}</Text>
         <View style={{ display: 'flex', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: '12px 4px' }}>
           {[['用户协议', 'terms'], ['隐私政策', 'privacy'], ['免责声明', 'disclaimer']].map(([label, type], index) => (
             <View key={type} onClick={() => nav(`/pages/legal/index?type=${type}`)} style={{ flex: 1, textAlign: 'center', borderRight: index < 2 ? `1px solid ${colors.borderLight}` : 'none' }}>
-              <Text style={{ fontSize: '11px', color: colors.textSecondary }}>{label}</Text>
+              <Text style={{ fontSize: '11px', color: colors.textSecondary }}>{t(label)}</Text>
             </View>
           ))}
         </View>
@@ -276,7 +286,7 @@ export default function ProfilePage() {
             border: `1px solid ${colors.danger}66`,
           }}
         >
-          <Text style={{ fontSize: '15px', color: colors.danger, fontWeight: 600 }}>退出登录</Text>
+          <Text style={{ fontSize: '15px', color: colors.danger, fontWeight: 600 }}>{t('退出登录')}</Text>
         </View>
         <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, marginTop: `${spacing.md}px` }}>嘉医管家 v1.0.0（小程序）</Text>
       </View>
@@ -287,14 +297,14 @@ export default function ProfilePage() {
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999,
         }}>
           <View style={{ backgroundColor: '#fff', borderRadius: `${radius.xl}px`, padding: `${spacing.xl}px`, width: '280px', textAlign: 'center' }}>
-            <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }}>退出登录</Text>
-            <Text style={{ fontSize: '14px', color: colors.textSecondary, display: 'block', marginBottom: `${spacing.lg}px` }}>确定要退出当前账号吗？</Text>
+            <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }}>{t('退出登录')}</Text>
+            <Text style={{ fontSize: '14px', color: colors.textSecondary, display: 'block', marginBottom: `${spacing.lg}px` }}>{t('确定要退出当前账号吗？')}</Text>
             <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
               <View style={{ flex: 1, padding: '12px 0', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }} onClick={() => setShowLogout(false)}>
-                <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>取消</Text>
+                <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>{t('取消')}</Text>
               </View>
               <View style={{ flex: 1, padding: '12px 0', borderRadius: `${radius.md}px`, backgroundColor: colors.danger }} onClick={doLogout}>
-                <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>确定退出</Text>
+                <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{t('确定退出')}</Text>
               </View>
             </View>
           </View>
