@@ -4,6 +4,7 @@ import ReviewPlanAmendment from './ReviewPlanAmendment'
 import AnnualConcernsPanel from './AnnualConcernsPanel'
 import { parseAnnualReviewMessage } from '../utils/annualReviewMessage.mjs'
 import { isActiveAnnualConcern, isEvidenceConcern } from '../utils/annualConcernLabels'
+import { suggestCaseReviewScopes } from '../utils/caseReviewScopeSuggestions.mjs'
 
 const PHASE_ROLES = { familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师' }
 const PHASE_DOMAINS = { comprehensive: '综合健康', nutrition: '营养', exercise: '运动', tcm: '药食同源' }
@@ -158,7 +159,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [showCreate, setShowCreate] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [headerExpanded, setHeaderExpanded] = useState(false)
-  const [form, setForm] = useState({ title: '', description: '', reviewType: 'custom', templateId: '', preferredProvider: 'qwen', contextScopes: SCOPES.map(([key]) => key), managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] })
+  const [form, setForm] = useState({ title: '', description: '', reviewType: 'custom', templateId: '', preferredProvider: 'qwen', contextScopes: suggestCaseReviewScopes('custom'), managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] })
   const [editForm, setEditForm] = useState({ title: '', description: '', contextScopes: [], managementTargets: [], targetChangeNote: '' })
   const [conclusionText, setConclusionText] = useState('')
   const [managementTargets, setManagementTargets] = useState([])
@@ -262,7 +263,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     try {
       const res = await staffAPI.createAiCaseReview(patientId, { ...form, managementTargets })
       replaceTopic(res.data); setShowCreate(false)
-      setForm(f => ({ ...f, title: '', description: '', reviewType: 'custom', templateId: '', managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] }))
+      setForm(f => ({ ...f, title: '', description: '', reviewType: 'custom', templateId: '', contextScopes: suggestCaseReviewScopes('custom'), managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] }))
       if (['annual', 'checkup'].includes(res.data.reviewType) && res.data.contextScopes?.includes('reports')) {
         try {
           const started = await staffAPI.sendAiCaseReviewMessage(patientId, res.data._id, { autoStart: true, requestId: `auto_${res.data._id}` })
@@ -576,6 +577,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           const checked = active.contextScopes?.includes(key)
           return <label key={key} style={{ fontSize: 12, border: `1px solid ${checked ? '#1E6B50' : '#D8E1DC'}`, color: checked ? '#1E6B50' : '#65776F', borderRadius: 16, padding: '5px 9px', cursor: active.annualPlanYear ? 'default' : 'pointer' }}><input type="checkbox" checked={checked} disabled={!!active.annualPlanYear} onChange={() => updateScopes(checked ? active.contextScopes.filter(v => v !== key) : [...active.contextScopes, key])} style={{ marginRight: 5 }} />{label}</label>
         })}</div>
+        {!active.annualPlanYear && <div style={{ fontSize: 12, color: '#65776F', marginTop: 7 }}>按主题建议：{SCOPES.filter(([key]) => suggestCaseReviewScopes(active.reviewType, active.title).includes(key)).map(([, label]) => label).join('、')}。依据主题类型和名称；请核对后调整。<button type="button" className="btn btn-secondary btn-sm" disabled={busy} style={{ marginLeft: 8 }} onClick={() => updateScopes(suggestCaseReviewScopes(active.reviewType, active.title))}>应用建议勾选</button></div>}
         {!active.annualPlanYear && <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #E5ECE8' }}><div style={{ fontSize: 12, color: '#65776F', marginBottom: 7 }}>套用研判模板（可用于当前主题）</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{reviewTemplates.map(item => <button key={item.key} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => applyReviewTemplate(item.key)}>{item.label}</button>)}</div></div>}
         </>}
       </div></div>
@@ -643,6 +645,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       <div className="form-group"><label className="form-label">研判主题</label><select className="form-input" defaultValue="" onChange={e => { const item = reviewTemplates.find(v => v.key === e.target.value); if (item) setForm(f => ({ ...f, title: item.title, description: item.outputGuide ? `${item.description}\n\n固定研判输出：${item.outputGuide}` : item.description, reviewType: item.reviewType || 'specialty', templateId: item.key, contextScopes: item.scopes })); else setForm(f => ({ ...f, reviewType: 'custom', templateId: '', title: '', description: '' })) }}>{reviewSettings.allowCustomTopic && <option value="">自定义主题</option>}{!reviewSettings.allowCustomTopic && <option value="">请选择主题</option>}{reviewTemplates.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select><div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>主题及其资料范围、输出结构由 Admin 后台统一设置。</div></div>
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="例如：近期血压波动原因分析" /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
+      <div className="form-group"><label className="form-label">研判资料范围</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={form.contextScopes.includes(key)} onChange={e => setForm(value => ({ ...value, contextScopes: e.target.checked ? [...value.contextScopes, key] : value.contextScopes.filter(item => item !== key) }))} /> {label}</label>)}</div><div style={{ marginTop: 7, color: '#65776F', fontSize: 12 }}>按主题建议：{SCOPES.filter(([key]) => suggestCaseReviewScopes(form.reviewType, form.title).includes(key)).map(([, label]) => label).join('、')}。依据主题类型和名称；请核对后调整。<button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => setForm(value => ({ ...value, contextScopes: suggestCaseReviewScopes(value.reviewType, value.title) }))}>应用建议勾选</button></div></div>
       <div className="form-group"><label className="form-label">拟管理目标与拟干预重点</label><div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>可先填写研判方向；年度或体检主题也可留空，由AI根据最近一次已审核体检报告提出草稿。资料核实后仍须在结论处逐条确认。</div>
         {(form.managementTargets || []).map((row, index) => <div key={index} style={{ border: '1px solid #E1E9E3', borderRadius: 8, padding: 9, marginBottom: 8 }}>
           <input className="form-input" aria-label={`拟管理目标 ${index + 1}`} value={row.goal || ''} onChange={e => setForm(f => ({ ...f, managementTargets: f.managementTargets.map((item, i) => i === index ? { ...item, goal: e.target.value } : item) }))} placeholder="拟管理目标，如改善空腹血糖" style={{ marginBottom: 7 }} />
@@ -657,7 +660,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       <div style={{ fontSize: 13, color: '#65776F', marginBottom: 12 }}>类型：{topicTypeLabel(active)}{active.templateSnapshot?.name ? ` · 模板：${active.templateSnapshot.name}` : ''}</div>
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={editForm.title} onChange={e => setEditForm(value => ({ ...value, title: e.target.value }))} /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={5} value={editForm.description} onChange={e => setEditForm(value => ({ ...value, description: e.target.value }))} /></div>
-      <div className="form-group"><label className="form-label">研判资料范围</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={editForm.contextScopes.includes(key)} onChange={e => setEditForm(value => ({ ...value, contextScopes: e.target.checked ? [...value.contextScopes, key] : value.contextScopes.filter(item => item !== key) }))} /> {label}</label>)}</div></div>
+      <div className="form-group"><label className="form-label">研判资料范围</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={editForm.contextScopes.includes(key)} onChange={e => setEditForm(value => ({ ...value, contextScopes: e.target.checked ? [...value.contextScopes, key] : value.contextScopes.filter(item => item !== key) }))} /> {label}</label>)}</div><button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setEditForm(value => ({ ...value, contextScopes: suggestCaseReviewScopes(active.reviewType, value.title) }))}>应用建议勾选</button></div>
       <div className="form-group"><label className="form-label">拟管理目标与拟干预重点</label>{active.conclusion?.status === 'confirmed' && <div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>可按客户沟通结果调整。保存后仍为健康顾问确认版，原目标保留在历史记录中。</div>}
         {(editForm.managementTargets || []).map((row, index) => <div key={index} style={{ border: '1px solid #E1E9E3', borderRadius: 8, padding: 9, marginBottom: 8 }}>
           <input className="form-input" aria-label={`编辑拟管理目标 ${index + 1}`} value={row.goal || ''} onChange={e => setEditForm(value => ({ ...value, managementTargets: value.managementTargets.map((item, i) => i === index ? { ...item, goal: e.target.value } : item) }))} placeholder="拟管理目标" style={{ marginBottom: 7 }} />

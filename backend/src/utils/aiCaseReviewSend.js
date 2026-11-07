@@ -91,8 +91,11 @@ async function finishSend(Model, topic, generate) {
       attachments: result.files || [], evidenceRefs: snapshot.sources, contextSnapshot: snapshot,
     } }, $set: set, $inc: { __v: 1 } });
   } catch (err) {
+    const message = err.code === 'AI_OUTPUT_LENGTH'
+      ? '本轮研判超过AI输出上限，自动精简重试仍未完成；请缩小资料范围或聚焦单个问题后重试'
+      : String(err.message || 'AI回复失败');
     await Model.updateOne(filter, { $set: { 'generation.status': 'failed',
-      'generation.error': String(err.message || 'AI回复失败').slice(0, 500) }, $inc: { __v: 1 } });
+      'generation.error': message.slice(0, 500) }, $inc: { __v: 1 } });
   }
 }
 
