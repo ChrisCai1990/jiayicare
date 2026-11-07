@@ -40,9 +40,10 @@ const archiveValue = value => {
 const STATUS_COLOR = { normal: colors.success, warning: colors.warning, low: colors.info };
 
 const pad2 = value => String(value).padStart(2, '0');
-const formatRecordDate = value => {
+const formatRecordDate = (value, language = 'zh-CN') => {
   const date = value ? new Date(value) : null;
-  if (!date || Number.isNaN(date.getTime())) return '未知日期';
+  if (!date || Number.isNaN(date.getTime())) return language === 'en-US' ? 'Unknown date' : '未知日期';
+  if (language === 'en-US') return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 };
 const formatRecordTime = value => {
@@ -52,7 +53,7 @@ const formatRecordTime = value => {
 };
 
 export default function RecordsIndexPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const archive = useArchiveSubject();
   const [childArchive, setChildArchive] = useState(null);
@@ -191,8 +192,8 @@ export default function RecordsIndexPage() {
           ].map((action) => (
             <View key={action.label} onClick={() => Taro.navigateTo({ url: action.url })} style={{ flex: 1, minWidth: 0, backgroundColor: action.primary ? colors.primary : '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${action.primary ? colors.primary : colors.border}`, padding: '13px 8px', textAlign: 'center', boxShadow: shadow.card }}>
               <View style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}><Icon name={action.icon} size={20} color={action.primary ? '#fff' : colors.primary} /></View>
-              <Text style={{ fontSize: '12px', fontWeight: 700, color: action.primary ? '#fff' : colors.textPrimary, display: 'block' }}>{action.label}</Text>
-              <Text style={{ fontSize: '9px', color: action.primary ? 'rgba(255,255,255,0.72)' : colors.textMuted, display: 'block', marginTop: '2px', whiteSpace: 'nowrap' }}>{action.hint}</Text>
+              <Text style={{ fontSize: '12px', fontWeight: 700, color: action.primary ? '#fff' : colors.textPrimary, display: 'block' }}>{t(action.label)}</Text>
+              <Text style={{ fontSize: '9px', color: action.primary ? 'rgba(255,255,255,0.72)' : colors.textMuted, display: 'block', marginTop: '2px', whiteSpace: 'nowrap' }}>{t(action.hint)}</Text>
             </View>
           ))}
         </View>
@@ -215,19 +216,19 @@ export default function RecordsIndexPage() {
                   backgroundColor: trendTab === t.k ? colors.primary : colors.background,
                   border: `1px solid ${trendTab === t.k ? colors.primary : colors.border}`,
                 }}>
-                  <Text style={{ fontSize: '12px', color: trendTab === t.k ? '#fff' : colors.textSecondary, fontWeight: trendTab === t.k ? 700 : 400 }}>{t.l}</Text>
+                  <Text style={{ fontSize: '12px', color: trendTab === t.k ? '#fff' : colors.textSecondary, fontWeight: trendTab === t.k ? 700 : 400 }}>{language === 'en-US' ? ({ bloodPressure: 'BP', bloodSugar: 'Glucose', waist: 'Waist', sleep: 'Sleep', heartRate: 'Pulse', weight: 'Weight' }[t.k]) : t.l}</Text>
                 </View>
               ))}
             </View>
-            <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{trendMap[trendTab].label}</Text>
+            <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{language === 'en-US' ? ({ bloodPressure: 'Blood pressure trend, last 30 days (mmHg)', bloodSugar: 'Blood glucose (mmol/L)', sleep: 'Sleep (hours)', heartRate: 'Heart rate (bpm)', weight: 'Weight (kg)', waist: 'Waist (cm)' }[trendTab]) : trendMap[trendTab].label}</Text>
             {trendTab === 'bloodPressure' ? <View style={{ marginBottom: '10px' }}>
               {bpLatestByArm.map(({ arm, point }) => <View key={arm} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                <Text style={{ fontSize: '13px', color: colors.textSecondary }}>{arm} · {formatRecordDate(point.recordedAt)}</Text>
+                <Text style={{ fontSize: '13px', color: colors.textSecondary }}>{t(arm)} · {formatRecordDate(point.recordedAt, language)}</Text>
                 <Text style={{ fontSize: '15px', fontWeight: 700, color: arm === '右臂' ? colors.danger : colors.primary }}>{point.sys}/{point.dia} mmHg</Text>
               </View>)}
             </View> : trendMap[trendTab].data.length>0?<View style={{marginBottom:'10px'}}>
               <Text style={{fontSize:'26px',fontWeight:800,color:trendMap[trendTab].color,display:'block'}}>{trendMap[trendTab].data[trendMap[trendTab].data.length-1].displayValue} {TYPE_META[trendTab].unit}</Text>
-              <Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'4px'}}>最近记录：{formatRecordDate(trendMap[trendTab].data[trendMap[trendTab].data.length-1].recordedAt)}</Text>
+              <Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'4px'}}>{language === 'en-US' ? 'Latest: ' : '最近记录：'}{formatRecordDate(trendMap[trendTab].data[trendMap[trendTab].data.length-1].recordedAt, language)}</Text>
             </View>:<Text style={{display:'block',color:colors.textSecondary}}>暂无{TYPE_META[trendTab].label}记录</Text>}
             {trendTab === 'bloodPressure' ? <BloodPressureChart records={bpTrend} height={105} /> : <TrendChart points={trendMap[trendTab].data} height={120} color={trendMap[trendTab].color} mode="line" />}
           </View>
@@ -256,10 +257,10 @@ export default function RecordsIndexPage() {
           const active = cards.find((item) => item.metric.key === bodyTrendTab) || cards[0];
           return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}>
             <View style={{ display: 'flex', gap: '7px', marginBottom: `${spacing.sm}px` }}>
-              {cards.map(({ metric }) => <View key={metric.key} onClick={() => setBodyTrendTab(metric.key)} style={{ flex: 1, minWidth: 0, textAlign: 'center', padding: '6px 2px', borderRadius: `${radius.full}px`, backgroundColor: active.metric.key === metric.key ? colors.primary : colors.background, border: `1px solid ${active.metric.key === metric.key ? colors.primary : colors.border}` }}><Text style={{ fontSize: '11px', color: active.metric.key === metric.key ? '#fff' : colors.textSecondary }}>{metric.key === 'weight' ? '体重' : metric.label}</Text></View>)}
+              {cards.map(({ metric }) => <View key={metric.key} onClick={() => setBodyTrendTab(metric.key)} style={{ flex: 1, minWidth: 0, textAlign: 'center', padding: '6px 2px', borderRadius: `${radius.full}px`, backgroundColor: active.metric.key === metric.key ? colors.primary : colors.background, border: `1px solid ${active.metric.key === metric.key ? colors.primary : colors.border}` }}><Text style={{ fontSize: '11px', color: active.metric.key === metric.key ? '#fff' : colors.textSecondary }}>{t(metric.key === 'weight' ? '体重' : metric.label)}</Text></View>)}
             </View>
             <View style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{active.metric.label}</Text>
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{t(active.metric.label)}</Text>
               <Text style={{ fontSize: '18px', fontWeight: 800, color: active.metric.color }}>{bodyNumber(active.latest[active.metric.key])} {active.metric.unit}</Text>
             </View>
             <TrendChart points={active.points} height={118} color={active.metric.color} mode="line" />

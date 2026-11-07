@@ -152,7 +152,7 @@ export default function ProfilePage() {
       }}>
         <View style={{ display: 'flex', alignItems: 'center', padding: `${spacing.md}px 8px` }}>
           <View style={{ flex: 1, minWidth: 0, height: '66px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
-            <View style={{ height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '14px', fontWeight: 800, color: hasService ? colors.primary : colors.textMuted, whiteSpace: 'nowrap' }}>{memberType}</Text></View>
+            <View style={{ height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '14px', fontWeight: 800, color: hasService ? colors.primary : colors.textMuted, whiteSpace: 'nowrap' }}>{t(memberType)}</Text></View>
             <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>{t('会员类型')}</Text>
           </View>
           <View style={{ width: '1px', height: '50px', backgroundColor: colors.borderLight, flexShrink: 0 }} />
@@ -172,11 +172,11 @@ export default function ProfilePage() {
         }}>
           <View style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Icon name="💰" size={13} color="#D97706" />
-            <Text style={{ fontSize: '12px', fontWeight: 600, color: '#D97706' }}>健康基金</Text>
+            <Text style={{ fontSize: '12px', fontWeight: 600, color: '#D97706' }}>{t('健康基金')}</Text>
           </View>
           <View style={{ textAlign: 'right' }}>
             <Text style={{ fontSize: '15px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>¥{Number(fundTotal).toFixed(2)}</Text>
-            <Text style={{ fontSize: '10px', color: colors.textMuted }}>自有 ¥{Number(fundPersonal).toFixed(2)} · 活力 ¥{Number(fundVitality).toFixed(2)} · 奖励 ¥{Number(fundCorp).toFixed(2)}</Text>
+            <Text style={{ fontSize: '10px', color: colors.textMuted }}>{t('自有')} ¥{Number(fundPersonal).toFixed(2)} · {t('活力')} ¥{Number(fundVitality).toFixed(2)} · {t('奖励')} ¥{Number(fundCorp).toFixed(2)}</Text>
           </View>
         </View>
       </View>
@@ -191,8 +191,8 @@ export default function ProfilePage() {
               <Icon name="🛡️" size={18} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{PACKAGE_LABELS[user.servicePackage] || user.servicePackage}</Text>
-              <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>{user?.serviceAccess?.active === false ? user.serviceAccess.reason : `到期 ${user.serviceExpiry} · 剩余 ${daysLeft} 天`}</Text>
+              <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{t(PACKAGE_LABELS[user.servicePackage] || user.servicePackage)}</Text>
+              <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>{user?.serviceAccess?.active === false ? user.serviceAccess.reason : language === 'en-US' ? `Expires ${user.serviceExpiry} · ${daysLeft} days left` : `到期 ${user.serviceExpiry} · 剩余 ${daysLeft} 天`}</Text>
             </View>
             <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={requestRenewal}>
               <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>{t('续约服务')}</Text>

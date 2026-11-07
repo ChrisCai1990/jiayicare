@@ -3,6 +3,7 @@ import { View, Text, Input, Picker, Image, Textarea } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../i18n';
 import { recordsAPI } from '../../services/api';
 import BloodPressurePhoto from '../../components/BloodPressurePhoto';
 import BloodSugarPhoto from '../../components/BloodSugarPhoto';
@@ -154,18 +155,20 @@ export function parseQuickHealthText(text, fallbackDate, todayDate) {
 }
 
 function Chip({ label, active, color, onClick }) {
+  const { t } = useLanguage();
   return (
     <View onClick={onClick} style={{
       padding: '6px 14px', borderRadius: `${radius.sm}px`,
       backgroundColor: active ? color : colors.border + '50',
       border: `1px solid ${active ? color : colors.border}`,
     }}>
-      <Text style={{ fontSize: '13px', fontWeight: active ? 700 : 500, color: active ? '#fff' : colors.textSecondary }}>{label}</Text>
+      <Text style={{ fontSize: '13px', fontWeight: active ? 700 : 500, color: active ? '#fff' : colors.textSecondary }}>{t(label)}</Text>
     </View>
   );
 }
 
 export default function CheckinPage() {
+  const { t } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -438,7 +441,7 @@ export default function CheckinPage() {
         }}>
           <Icon name={isDone ? '✅' : item.icon} size={18} color={isDone ? item.color : colors.textSecondary} />
         </View>
-        <Text style={{ fontSize: '12px', color: isDone ? item.color : colors.textSecondary, fontWeight: isDone ? 700 : 500 }}>{item.label}</Text>
+        <Text style={{ fontSize: '12px', color: isDone ? item.color : colors.textSecondary, fontWeight: isDone ? 700 : 500 }}>{t(item.label)}</Text>
       </View>
     );
   };
@@ -575,22 +578,22 @@ export default function CheckinPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>今日健康数据</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{t('今日健康数据')}</Text>
         <View style={{ width: '28px' }} />
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>
       <WeightProgressPhotos />
       {loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+        <Text style={{ fontSize: '13px', color: colors.textMuted }}>{t('加载中...')}</Text>
       ) : (
         <>
           {/* 必打卡项 */}
           <View style={{ marginBottom: `${spacing.lg}px` }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>记录健康数据</Text>
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{t('记录健康数据')}</Text>
               <View style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Text onClick={openBatchModal} style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>多日快速补录</Text>
+                <Text onClick={openBatchModal} style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{t('多日快速补录')}</Text>
                 {mandatoryItems.length > 0 && <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{doneMandatoryCount}/{mandatoryItems.length}</Text>}
               </View>
             </View>
@@ -599,7 +602,7 @@ export default function CheckinPage() {
             </View>
             {allMandatoryDone && (
               <View style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: `${spacing.sm}px`, padding: `${spacing.sm}px`, backgroundColor: '#FEF9E7', borderRadius: `${radius.sm}px` }}>
-                <Text style={{ fontSize: '12px', color: '#B7791F', fontWeight: 600 }}>⭐ 今日核心指标已完成！保持健康好习惯 🎉</Text>
+                <Text style={{ fontSize: '12px', color: '#B7791F', fontWeight: 600 }}>⭐ {t('今日核心指标已完成！保持健康好习惯')} 🎉</Text>
               </View>
             )}
           </View>
@@ -607,7 +610,7 @@ export default function CheckinPage() {
           {/* 可选打卡项 */}
           {optionalItems.length > 0 && (
             <View style={{ marginBottom: `${spacing.lg}px` }}>
-              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>按需记录</Text>
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('按需记录')}</Text>
               <View style={{ display: 'flex', flexWrap: 'wrap', gap: `${spacing.sm}px` }}>
                 {optionalItems.map(renderCheckinItem)}
               </View>
@@ -616,7 +619,7 @@ export default function CheckinPage() {
 
           {/* 症状自评 */}
           <View style={{ marginBottom: `${spacing.lg}px` }}>
-            <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>今天有不适吗？</Text>
+            <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('今天有不适吗？')}</Text>
             <View onClick={openSymptomModal} style={{
               display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: doneTypes.symptom ? '#FDECEA1A' : '#fff',
               borderRadius: `${radius.md}px`, border: `1px solid ${doneTypes.symptom ? colors.danger + '4D' : colors.border}`, padding: `${spacing.md}px`,
@@ -628,7 +631,7 @@ export default function CheckinPage() {
                 <Icon name={doneTypes.symptom ? '✅' : symptomItem.icon} size={18} color={doneTypes.symptom ? symptomItem.color : colors.textSecondary} />
               </View>
               <Text style={{ flex: 1, fontSize: '13px', color: colors.textSecondary }}>
-                {doneTypes.symptom ? '今天已记录不适情况' : '点击选择症状或描述不适（可选）'}
+                {t(doneTypes.symptom ? '今天已记录不适情况' : '点击选择症状或描述不适（可选）')}
               </Text>
               <Text style={{ fontSize: '13px', color: colors.textMuted }}>›</Text>
             </View>

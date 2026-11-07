@@ -50,8 +50,12 @@ const formatChineseDate = (value, includeYear = false) => {
   if (!date || Number.isNaN(date.getTime())) return '';
   return `${includeYear ? `${date.getFullYear()}年` : ''}${date.getMonth() + 1}月${date.getDate()}日`;
 };
-const displayTaskDate = (value) => {
+const displayTaskDate = (value, language = 'zh-CN') => {
   if (!value) return '';
+  if (language === 'en-US') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
   if (/\d+月\d+日/.test(String(value))) return String(value);
   return formatChineseDate(value);
 };
@@ -66,26 +70,28 @@ function urgencyByDate(dateVal) {
 }
 
 function TaskItemRow({ task, onPress }) {
+  const { t, language } = useLanguage();
   const urgency = task.scheduleLabel ? {...URGENCY_CONFIG.low,label:task.scheduleLabel} : URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
   const upload = task.uploadTask || (task.canUploadReports ? task : null);
   const title = task.uploadTask ? String(task.title || '').replace(/^本次就医安排\s*·\s*/, '') : task.title || '健康安排';
   return <View style={{backgroundColor:'#fff',borderRadius:'18px',padding:'16px',marginBottom:'10px'}}>
     <View onClick={() => onPress(task)} style={{display:'flex',alignItems:'center',gap:'10px'}}>
       <View style={{width:'36px',height:'36px',borderRadius:'11px',backgroundColor:colors.primary10,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon name="📋" size={19} color={colors.primary}/></View>
-      <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'15px',fontWeight:600,color:colors.textPrimary}}>{title}</Text><Text style={{display:'block',fontSize:'12px',color:colors.textSecondary,marginTop:'3px'}}>{task.assignee} · {displayTaskDate(task.dueDate || task.date)} {task.dueTime}</Text></View>
-      <Text style={{fontSize:'12px',color:colors.primary,flexShrink:0}}>{upload ? '详情 ›' : urgency.label+' ›'}</Text>
+      <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'15px',fontWeight:600,color:colors.textPrimary}}>{title}</Text><Text style={{display:'block',fontSize:'12px',color:colors.textSecondary,marginTop:'3px'}}>{task.assignee} · {displayTaskDate(task.dueDate || task.date, language)} {task.dueTime}</Text></View>
+      <Text style={{fontSize:'12px',color:colors.primary,flexShrink:0}}>{upload ? t('详情 ›') : `${t(urgency.label)} ›`}</Text>
     </View>
     {upload && <>
-      <Text style={{display:'block',margin:'10px 0 12px 46px',fontSize:'12px',color:colors.textSecondary}}>{task.assignee} · {urgency.label}</Text>
+      <Text style={{display:'block',margin:'10px 0 12px 46px',fontSize:'12px',color:colors.textSecondary}}>{task.assignee} · {t(urgency.label)}</Text>
       <View style={{display:'flex',alignItems:'center',gap:'10px',backgroundColor:colors.primary10,borderRadius:'12px',padding:'12px'}}>
-        <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'11px',color:colors.primary}}>{upload.documentDeclaration?'已反馈，待专员核实':'需要你处理'}</Text><Text style={{display:'block',fontSize:'13px',color:colors.textPrimary,marginTop:'4px'}}>{upload.documentDeclaration?upload.documentDeclaration.label:'就医后提交资料或说明情况'}</Text></View>
-        <View onClick={() => Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+encodeURIComponent(upload.careFlowId)})} style={{padding:'10px',backgroundColor:colors.primary,borderRadius:'9px',flexShrink:0}}><Text style={{fontSize:'13px',color:'#fff'}}>{upload.documentDeclaration?'查看反馈':'提交资料'}</Text></View>
+        <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'11px',color:colors.primary}}>{t(upload.documentDeclaration?'已反馈，待专员核实':'需要你处理')}</Text><Text style={{display:'block',fontSize:'13px',color:colors.textPrimary,marginTop:'4px'}}>{upload.documentDeclaration?upload.documentDeclaration.label:t('就医后提交资料或说明情况')}</Text></View>
+        <View onClick={() => Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+encodeURIComponent(upload.careFlowId)})} style={{padding:'10px',backgroundColor:colors.primary,borderRadius:'9px',flexShrink:0}}><Text style={{fontSize:'13px',color:'#fff'}}>{t(upload.documentDeclaration?'查看反馈':'提交资料')}</Text></View>
       </View>
     </>}
   </View>;
 }
 
 function ReminderItemRow({ reminder, isLast }) {
+  const { t } = useLanguage();
   const meta = REM_CAT_META[reminder.category] || REM_CAT_META.medication;
   const time = reminder.reminderTime || '';
   return (
@@ -95,10 +101,10 @@ function ReminderItemRow({ reminder, isLast }) {
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }} numberOfLines={1}>{reminder.title}</Text>
-        <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }} numberOfLines={1}>提醒{time ? ` · ${time}` : ''}</Text>
+        <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }} numberOfLines={1}>{t('提醒')}{time ? ` · ${time}` : ''}</Text>
       </View>
       <View style={{ padding: '4px 10px', borderRadius: `${radius.full}px`, backgroundColor: meta.bg, flexShrink: 0 }}>
-        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textSecondary }}>提醒</Text>
+        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textSecondary }}>{t('提醒')}</Text>
       </View>
     </View>
   );
@@ -326,7 +332,7 @@ export default function HomePage() {
           <View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{display:'flex',alignItems:'center',gap:'9px',backgroundColor:colors.primary,borderRadius:'12px',padding:'13px 15px'}}>
             <Text style={{fontSize:'22px',color:'#fff'}}>＋</Text><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>{t('记录健康数据')}</Text><Text style={{color:'#fff'}}>›</Text>
           </View>
-          <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',textAlign:'center',marginTop:'10px'}}>{growth.totalCheckinDays>0?`近30天已记录 ${growth.totalCheckinDays} 天`:'每一次记录，都多一份了解'}</Text>
+          <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',textAlign:'center',marginTop:'10px'}}>{growth.totalCheckinDays>0?(language === 'en-US' ? `Recorded on ${growth.totalCheckinDays} of the last 30 days` : `近30天已记录 ${growth.totalCheckinDays} 天`):t('每一次记录，都多一份了解')}</Text>
         </View>
 
         {/* 待办任务：像素级对齐app端TaskItem/ReminderItem图标行+紧急度徽章，
@@ -339,6 +345,7 @@ export default function HomePage() {
               <Text style={{ fontSize: '13px', color: colors.primary }}>›</Text>
             </View>
           </View>
+          {language === 'en-US' && <Text style={{ fontSize: '11px', color: colors.textMuted, marginBottom: '8px' }}>Care team notes are shown in their original language.</Text>}
           <View>
             {sectionError(['dashboard','tasks','followups']) && <Text onClick={loadCore} style={{display:'block',padding:'12px 0',fontSize:'13px',color:colors.danger}}>部分健康安排暂未加载，点击重试{allPendingTaskItems.length ? '；下方保留已加载内容' : ''}</Text>}
             {!token ? <Text onClick={() => Taro.navigateTo({url:'/pages/auth/login/index'})} style={{display:'block',padding:'20px 0',fontSize:'13px',color:colors.primary}}>{t('登录后查看你的健康安排 ›')}</Text> : tasksLoading && allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
@@ -362,25 +369,25 @@ export default function HomePage() {
           {taskCards.length > 3 && (
             <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', padding: '0 4px' }}>
               <Text style={{ fontSize: '12px', color: colors.primary }}>⋯</Text>
-              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>还有 {taskCards.length - 3} 项健康计划 · 查看全部</Text>
+              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>{language === 'en-US' ? `${taskCards.length - 3} more care plans · View all` : `还有 ${taskCards.length - 3} 项健康计划 · 查看全部`}</Text>
               <Text style={{ fontSize: '12px', color: colors.primary }}>›</Text>
             </View>
           )}
           {todayReminders.length > 0 && (
             <View onClick={() => Taro.navigateTo({ url: '/pages/reminders/index' })} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', padding: '0 4px' }}>
               <Icon name="🔔" size={12} color={colors.primary} />
-              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>今日 {todayReminders.length} 条提醒已合并 · 管理提醒</Text>
+              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>{language === 'en-US' ? `${todayReminders.length} reminders today · Manage` : `今日 ${todayReminders.length} 条提醒已合并 · 管理提醒`}</Text>
               <Text style={{ fontSize: '12px', color: colors.primary }}>›</Text>
             </View>
           )}
         </View>
 
-        {submittedFeedback.length>0&&<View onClick={()=>Taro.navigateTo({url:'/pages/tasks/index?feedback=1'})} style={{backgroundColor:'#fff',borderRadius:'14px',padding:'14px 16px',marginBottom:'20px',display:'flex',justifyContent:'space-between'}}><Text style={{fontSize:'13px',color:colors.textSecondary}}>已提交反馈 · {submittedFeedback.length} 项待团队处理</Text><Text style={{fontSize:'13px',color:colors.primary}}>查看 ›</Text></View>}
+        {submittedFeedback.length>0&&<View onClick={()=>Taro.navigateTo({url:'/pages/tasks/index?feedback=1'})} style={{backgroundColor:'#fff',borderRadius:'14px',padding:'14px 16px',marginBottom:'20px',display:'flex',justifyContent:'space-between'}}><Text style={{fontSize:'13px',color:colors.textSecondary}}>{language === 'en-US' ? `Feedback sent · ${submittedFeedback.length} awaiting your care team` : `已提交反馈 · ${submittedFeedback.length} 项待团队处理`}</Text><Text style={{fontSize:'13px',color:colors.primary}}>{t('查看 ›')}</Text></View>}
         <View style={{marginBottom:'24px'}}>
           <Text style={{fontSize:'17px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'12px'}}>{t('我的权益')}</Text>
           <View onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section=plan'})} style={{backgroundColor:'#fff',borderRadius:'18px',padding:'18px',display:'flex',alignItems:'center',gap:'12px'}}>
             <Icon name="🎁" size={24} color={colors.primary}/>
-            <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'15px',fontWeight:600,display:'block',color:colors.textPrimary}}>会员权益</Text><Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'5px'}}>查看计划、使用情况与健康基金</Text>{user?.healthFund?.total!=null&&<Text style={{fontSize:'13px',color:colors.primary,display:'block',marginTop:'7px'}}>健康基金余额 ¥{Number(user.healthFund.total).toFixed(2)}</Text>}</View>
+            <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'15px',fontWeight:600,display:'block',color:colors.textPrimary}}>{t('会员权益')}</Text><Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'5px'}}>{t('查看计划、使用情况与健康基金')}</Text>{user?.healthFund?.total!=null&&<Text style={{fontSize:'13px',color:colors.primary,display:'block',marginTop:'7px'}}>{t('健康基金')} ¥{Number(user.healthFund.total).toFixed(2)}</Text>}</View>
             <Text style={{color:colors.primary}}>›</Text>
           </View>
         </View>
