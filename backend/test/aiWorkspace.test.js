@@ -1,6 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { enabledFor, validMessages } = require('../src/routes/aiWorkspace');
+const { enabledFor, validMessages, needsFreshSearch } = require('../src/routes/aiWorkspace');
+
+test('only time-sensitive questions require forced web search', () => {
+  assert.equal(needsFreshSearch('深圳APEC会议'), true);
+  assert.equal(needsFreshSearch('2026年最新政策'), true);
+  assert.equal(needsFreshSearch('哪些工作适合先让 AI 辅助？'), false);
+});
 
 test('AI workspace stays closed until explicitly enabled and scoped to pilot staff', () => {
   const previousFlag = process.env.AI_WORKSPACE_PILOT_ENABLED;
