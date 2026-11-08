@@ -16,7 +16,7 @@ const router = express.Router();
 
 function withSignedReportFiles(report) {
   const obj = report.toObject ? report.toObject() : { ...report };
-  if (obj.translationEn?.sourceHash !== sourceHash(sourceForTranslation(obj))) delete obj.translationEn;
+  if (obj.translationEn && obj.translationEn.sourceHash !== sourceHash(sourceForTranslation(obj))) delete obj.translationEn;
   delete obj.duplicateOriginal;
   if (obj.advisorCorrection?.status === 'returned') {
     delete obj.translationEn;
