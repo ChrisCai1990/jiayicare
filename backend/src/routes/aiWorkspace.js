@@ -23,6 +23,8 @@ function callCount(staff) {
 
 function enabledFor(staff) {
   if (process.env.AI_WORKSPACE_PILOT_ENABLED !== 'true') return false;
+  if (!staffAuth.STAFF_ROLES.includes(staff?.role)) return false;
+  if (process.env.AI_WORKSPACE_PILOT_ALL_STAFF === 'true') return true;
   const ids = String(process.env.AI_WORKSPACE_PILOT_STAFF_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
   return ids.length ? ids.includes(String(staff._id)) : staff.role === 'superadmin';
 }

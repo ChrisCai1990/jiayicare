@@ -7,6 +7,8 @@ function canRead(actor, care, patient) {
 function allowedPsychologistPath(method, url) {
   const path = String(url).split('?')[0];
   return /^\/api\/staff\/psychology(?:\/|$)/.test(path)
+    || (method === 'GET' && path === '/api/staff/ai-workspace/status')
+    || (method === 'POST' && path === '/api/staff/ai-workspace/chat')
     || (method === 'GET' && path === '/api/staff/me')
     || (method === 'PUT' && path === '/api/staff/me/password');
 }

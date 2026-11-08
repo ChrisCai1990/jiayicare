@@ -70,7 +70,7 @@ function LayoutContent() {
   const workbench = useWorkbenchReminder()
   const visibleNav = setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
     if (item.trialOnly && !aiWorkspaceEnabled) return false
-    if (staff?.role === 'psychologist') return item.path === '/expert-consultations'
+    if (staff?.role === 'psychologist') return item.path === '/expert-consultations' || item.path === '/ai-workspace'
     if (!item.moduleKey) return item.roles.length === 0 || item.roles.includes(staff?.role)
     if (staff?.customPermissions) return hasModulePermission(staff, item.moduleKey, 'view')
     return item.roles.length === 0 || item.roles.includes(staff?.role)

@@ -15,7 +15,7 @@
 
 ## 开启和撤下
 
-后端环境变量默认 `AI_WORKSPACE_PILOT_ENABLED=false`，此时菜单隐藏、后端拒绝聊天调用。开启试用时设置 `AI_WORKSPACE_PILOT_ENABLED=true`；未设置人员名单时仅 `superadmin` 可以使用。若指定人员，设置 `AI_WORKSPACE_PILOT_STAFF_IDS` 为逗号分隔的员工 ID，名单之外不可使用。需要已有 `QWEN_API_KEY`，否则页面显示未配置并禁用发送。
+后端环境变量默认 `AI_WORKSPACE_PILOT_ENABLED=false`，此时菜单隐藏、后端拒绝聊天调用。开启试用时设置 `AI_WORKSPACE_PILOT_ENABLED=true`；未设置人员名单时仅 `superadmin` 可以使用。若指定人员，设置 `AI_WORKSPACE_PILOT_STAFF_IDS` 为逗号分隔的员工 ID，名单之外不可使用。设置 `AI_WORKSPACE_PILOT_ALL_STAFF=true` 时，已认证且所属机构已开通医护端的全部岗位均可试用，优先于人员名单；仍受每人每日 30 次试用限制。需要已有 `QWEN_API_KEY`，否则页面显示未配置并禁用发送。
 
 撤下试用只需将 `AI_WORKSPACE_PILOT_ENABLED=false` 并重启后端，员工刷新后入口消失，直达接口仍受后端拦截。若最终决定不保留，再从代码中移除独立页面、路由和菜单；不涉及数据库迁移。浏览器中已有试用对话由各员工关闭标签页或清除该站点会话存储清理。
 

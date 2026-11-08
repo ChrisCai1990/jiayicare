@@ -23,6 +23,9 @@ test('legacy and lookalike paths denied for psychologists', () => {
   for (const path of ['/api/staff/patients', '/api/staff/reports', '/api/staff/service-records', '/api/staff/psychology-other', '/api/admin/users']) assert.equal(allowedPsychologistPath('GET', path), false);
   assert.equal(allowedPsychologistPath('GET', '/api/staff/psychology/abc?x=1'), true);
   assert.equal(allowedPsychologistPath('GET', '/api/staff/me'), true);
+  assert.equal(allowedPsychologistPath('GET', '/api/staff/ai-workspace/status'), true);
+  assert.equal(allowedPsychologistPath('POST', '/api/staff/ai-workspace/chat'), true);
+  assert.equal(allowedPsychologistPath('GET', '/api/staff/ai-workspace/chat'), false);
   assert.equal(allowedPsychologistPath('PUT', '/api/staff/me/password'), true);
   assert.equal(allowedPsychologistPath('POST', '/api/staff/me'), false);
 });

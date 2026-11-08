@@ -199,7 +199,7 @@ function RequirePasswordChanged({ children }) {
 function RequireModule({ children }) {
   const { staff } = useStaff()
   const loc = useLocation()
-  if (staff?.role === 'psychologist' && !['/expert-consultations', '/psychology'].includes(loc.pathname)) return <Navigate to="/expert-consultations?view=psychology" replace />
+  if (staff?.role === 'psychologist' && !['/expert-consultations', '/psychology', '/ai-workspace'].includes(loc.pathname)) return <Navigate to="/expert-consultations?view=psychology" replace />
   const matched = Object.keys(ROUTE_MODULE).find(
     p => loc.pathname === p || loc.pathname.startsWith(p + '/')
   )
