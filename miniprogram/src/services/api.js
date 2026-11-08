@@ -279,6 +279,7 @@ export const remindersAPI = {
 export const reportsAPI = {
   list: (patientId = '') => request(`/reports${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
   byCategory: (patientId = '') => request(`/reports/by-category${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
+  translateEn: (id) => request(`/reports/${id}/translate-en`, { method: 'POST', timeout: 70000 }),
   get: (id) => request(`/reports/${id}`),
   create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
   delete: (id) => request(`/reports/${id}`, { method: 'DELETE' }),

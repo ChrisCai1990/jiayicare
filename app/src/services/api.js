@@ -202,12 +202,18 @@ export const remindersAPI = {
 export const reportsAPI = {
   list:        (patientId = '') => request(`/reports${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
   byCategory:  (patientId = '') => request(`/reports/by-category${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
+  translateEn: (id) => request(`/reports/${id}/translate-en`, { method: 'POST', timeout: 70000 }),
   get:         (id)   => request(`/reports/${id}`),
   uploadBase64: (content, mimeType) => request('/reports/upload-base64', { method: 'POST', body: JSON.stringify({ content, mimeType }), timeout: 60000 }),
   cleanupUploads: (uploadTokens) => request('/reports/upload-cleanup', { method: 'POST', body: JSON.stringify({ uploadTokens }) }),
   create:      (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
   delete:      (id)   => request(`/reports/${id}`, { method: 'DELETE' }),
   parseAI:     (id)   => request(`/reports/${id}/parse-ai`, { method: 'POST' }),
+};
+
+export const aiDataConsentAPI = {
+  list: () => request('/ai-data-consent'),
+  update: (purpose, data) => request(`/ai-data-consent/${purpose}`, { method: 'PUT', body: JSON.stringify(data) }),
 };
 
 // ── AI Chat ───────────────────────────────────────────────────────

@@ -99,6 +99,7 @@ const medicalReportSchema = new mongoose.Schema({
   examConclusion:       { type: String, default: '' }, // 检查医嘱：诊断结论模板
   examMainConclusions:  { type: mongoose.Schema.Types.Mixed, default: {} }, // 检查项主要结论 { [项目名]: '结论文字' }
   reportItems:     [reportItemSchema],                // 解析后的各项结果
+  translationEn:   { type: mongoose.Schema.Types.Mixed, default: null }, // 独立英文参考译文；原文与检验数值不改
   reviewRevision:  { type: Number, default: 0 },      // 审核编辑乐观锁；任何项目/整表写入后递增
   deletedReportItems: { type: mongoose.Schema.Types.Mixed, default: [] }, // 补提排除人工删除项
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字

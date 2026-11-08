@@ -88,6 +88,20 @@ const translations = {
   '已反馈，待专员核实': 'Submitted, awaiting review', '需要你处理': 'Action needed',
   '就医后提交资料或说明情况': 'Upload documents or describe your visit',
   '查看反馈': 'View response', '提交资料': 'Submit documents',
+  '体检报告': 'Medical reports', '所属档案': 'Record owner', '本人': 'Self',
+  '搜索报告标题': 'Search report titles', '暂无体检报告': 'No medical reports yet',
+  '上传报告后，将按年度和类目自动归类展示': 'Uploaded reports appear by year and category',
+  '日期待核对': 'Date to verify', '常见肿瘤筛查': 'Cancer screening',
+  '心血管筛查': 'Cardiovascular screening', '脑血管病筛查': 'Cerebrovascular screening',
+  '慢性病筛查': 'Chronic disease screening', '其他常规筛查': 'Other routine screening',
+  '健康促进筛查': 'Preventive screening', '待审核': 'Pending review',
+  '查看原始报告文件': 'View original report', 'AI 趋势分析': 'AI trend analysis',
+  '（已审核）': ' (reviewed)', '（待审核）': ' (pending review)',
+  '检查项目': 'Test items', '暂无解析数据，请联系健管专员': 'No extracted data. Contact your care coordinator.',
+  '检查所见': 'Findings', '诊断意见': 'Diagnostic opinion', '参考范围': 'Reference range',
+  '正常': 'Normal', '异常': 'Abnormal', '关注': 'Attention',
+  '体成分': 'Body composition', '人体成分分析': 'Body composition analysis',
+  '阴道超声': 'Transvaginal ultrasound', '肾功能': 'Kidney function',
 };
 
 const LanguageContext = createContext(null);

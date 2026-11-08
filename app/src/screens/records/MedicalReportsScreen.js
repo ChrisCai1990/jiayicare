@@ -5,7 +5,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { reportsAPI } from '../../services/api';
+import { reportsAPI, aiDataConsentAPI } from '../../services/api';
+import { useLanguage } from '../../i18n';
 
 // 后端 fileUrl 存的是相对路径（如 /api/uploads/reports/xxx.pdf），拼上域名后用系统浏览器/PDF查看器打开
 const FILE_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://jiaycare.com/api').replace(/\/api$/, '');
@@ -85,8 +86,31 @@ const CATEGORY_META = {
 };
 const ITEM_STATUS_COLOR = { normal: colors.success, abnormal: colors.danger, attention: colors.warning, unknown: colors.textMuted };
 const ITEM_STATUS_LABEL = { normal: '正常', abnormal: '异常', attention: '关注', unknown: '未知' };
+const displayReportTitle = (title, language, t) => {
+  if (language !== 'en-US') return title;
+  const annual = String(title || '').match(/^(\d{4})年度体检报告$/);
+  return annual ? `${annual[1]} Annual health checkup report` : t(title);
+};
 
-function ReportItemRow({ item, highlighted }) {
+const confirmTranslationConsent = async () => {
+  const response = await aiDataConsentAPI.list();
+  const item = response.data?.find(row => row.purpose === 'report_translation');
+  if (!item?.available) throw new Error('Translation is unavailable');
+  if (item.granted) return true;
+  const detail = `Provider: ${item.recipient}\nData: extracted title, test names, findings and diagnostic text from the selected reviewed report. May include names and measurements in narrative text. Report images are not sent; structured test values, units and ranges are not sent separately.\nUse: English reference translation only. The original report is unchanged. You may decline or withdraw future processing in AI consent settings. Past processing cannot be undone.`;
+  const agreed = Platform.OS === 'web' && typeof window !== 'undefined'
+    ? window.confirm(`${item.title}\n${detail}`)
+    : await new Promise(resolve => Alert.alert(item.title, detail, [
+      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+      { text: 'Agree', onPress: () => resolve(true) },
+    ], { cancelable: true, onDismiss: () => resolve(false) }));
+  if (!agreed) return false;
+  await aiDataConsentAPI.update('report_translation', { subjectId: item.subjectId, granted: true, version: item.version, revision: item.revision });
+  return true;
+};
+
+function ReportItemRow({ item, highlighted, translation }) {
+  const { t, language } = useLanguage();
   const statusColor = ITEM_STATUS_COLOR[item.status] || colors.textMuted;
   const rowStyle = highlighted ? [styles.itemRow, styles.itemRowHighlighted] : styles.itemRow;
   // 检查项目（影像/内镜/CT/MRI 等）：完整展示 检查部位/检查所见/诊断意见
@@ -96,33 +120,50 @@ function ReportItemRow({ item, highlighted }) {
     return (
       <View style={[...(Array.isArray(rowStyle) ? rowStyle : [rowStyle]), { flexDirection: 'column', alignItems: 'stretch' }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={[styles.itemName, item.status === 'abnormal' && { color: statusColor }]}>{item.name}</Text>
-          {item.bodyPart ? <Text style={styles.itemRef}>· {item.bodyPart}</Text> : null}
+          <Text style={[styles.itemName, item.status === 'abnormal' && { color: statusColor }]}>{language === 'en-US' && translation?.name ? translation.name : item.name}</Text>
+          {item.bodyPart ? <Text style={styles.itemRef}>· {language === 'en-US' && translation?.bodyPart ? translation.bodyPart : item.bodyPart}</Text> : null}
           {(item.status === 'abnormal' || item.status === 'attention') && (
-            <Text style={[styles.itemStatus, { color: statusColor }]}>{ITEM_STATUS_LABEL[item.status]}</Text>
+            <Text style={[styles.itemStatus, { color: statusColor }]}>{t(ITEM_STATUS_LABEL[item.status])}</Text>
           )}
         </View>
-        {findings ? <Text style={[styles.itemRef, { marginTop: 2 }]}>检查所见：{findings}</Text> : null}
-        {item.diagnosis ? <Text style={[styles.itemRef, { marginTop: 2, color: statusColor }]}>诊断意见：{item.diagnosis}</Text> : null}
+        {language === 'en-US' && translation?.name ? <Text style={styles.itemRef}>Original: {item.name}{item.bodyPart ? ` · ${item.bodyPart}` : ''}</Text> : null}
+        {findings ? <Text style={[styles.itemRef, { marginTop: 2 }]}>{t('检查所见')}：{language === 'en-US' && translation?.findings ? translation.findings : findings}</Text> : null}
+        {item.diagnosis ? <Text style={[styles.itemRef, { marginTop: 2, color: statusColor }]}>{t('诊断意见')}：{language === 'en-US' && translation?.diagnosis ? translation.diagnosis : item.diagnosis}</Text> : null}
+        {language === 'en-US' && (translation?.findings || translation?.diagnosis) ? <Text style={styles.itemRef}>Original: {findings}{item.diagnosis ? ` · ${item.diagnosis}` : ''}</Text> : null}
       </View>
     );
   }
   return (
     <View style={rowStyle}>
       <View style={{ flex: 1 }}>
-        <Text style={styles.itemName}>{item.name}</Text>
-        {item.referenceRange ? <Text style={styles.itemRef}>参考范围：{item.referenceRange}</Text> : null}
+        <Text style={styles.itemName}>{language === 'en-US' && translation?.name ? translation.name : item.name}</Text>
+        {language === 'en-US' && translation?.name ? <Text style={styles.itemRef}>{item.name}</Text> : null}
+        {item.referenceRange ? <Text style={styles.itemRef}>{t('参考范围')}：{item.referenceRange}</Text> : null}
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={[styles.itemValue, { color: statusColor }]}>{item.value}{item.unit ? ` ${item.unit}` : ''}</Text>
-        <Text style={[styles.itemStatus, { color: statusColor }]}>{ITEM_STATUS_LABEL[item.status] || ''}</Text>
+        <Text style={[styles.itemStatus, { color: statusColor }]}>{t(ITEM_STATUS_LABEL[item.status] || '')}</Text>
       </View>
     </View>
   );
 }
 
-function ReportCard({ report, onPreview, autoExpand, highlightItemIndex }) {
+function ReportCard({ report, onPreview, autoExpand, highlightItemIndex, allowTranslate = true }) {
+  const { t, language } = useLanguage();
   const [expanded, setExpanded] = useState(!!autoExpand);
+  const [translation, setTranslation] = useState(report.translationEn || null);
+  const [translating, setTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState('');
+  const translate = async () => {
+    if (translating) return;
+    setTranslating(true); setTranslateError('');
+    try {
+      if (!await confirmTranslationConsent()) return;
+      const response = await reportsAPI.translateEn(report._id);
+      setTranslation(response.data);
+    } catch (error) { setTranslateError(error.message || 'Translation unavailable'); }
+    finally { setTranslating(false); }
+  };
   const hasItems = report.reportItems?.length > 0;
   const hasAI = !!report.aiSummary;
   const hasFile = !!(report.fileUrl || report.fileUrls?.length || report.hasContent);
@@ -131,7 +172,8 @@ function ReportCard({ report, onPreview, autoExpand, highlightItemIndex }) {
     <View style={[styles.reportCard, autoExpand && styles.reportCardHighlighted]}>
       <TouchableOpacity style={styles.reportCardHeader} onPress={() => setExpanded(e => !e)} activeOpacity={0.8}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.reportTitle}>{report.title}</Text>
+          <Text style={styles.reportTitle}>{language === 'en-US' ? (translation?.title || displayReportTitle(report.title, language, t)) : report.title}</Text>
+          {language === 'en-US' && (translation?.title || displayReportTitle(report.title, language, t) !== report.title) ? <Text style={styles.reportMeta}>{report.title}</Text> : null}
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
             {report.checkDate || report.date
               ? <Text style={styles.reportMeta}><Ionicons name="calendar-outline" size={11} color={colors.textMuted} /> {report.checkDate || report.date}</Text>
@@ -142,7 +184,7 @@ function ReportCard({ report, onPreview, autoExpand, highlightItemIndex }) {
           </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {report.aiStatus === 'pending' && <View style={styles.aiPendingBadge}><Text style={styles.aiPendingText}>待审核</Text></View>}
+          {report.aiStatus === 'pending' && <View style={styles.aiPendingBadge}><Text style={styles.aiPendingText}>{t('待审核')}</Text></View>}
           {report.aiStatus === 'reviewed' && <Ionicons name="checkmark-circle" size={18} color={colors.success} />}
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
         </View>
@@ -150,26 +192,31 @@ function ReportCard({ report, onPreview, autoExpand, highlightItemIndex }) {
 
       {expanded && (
         <View style={styles.reportCardBody}>
+          {language === 'en-US' ? <View style={{ marginBottom: spacing.sm }}>
+            <Text style={styles.itemRef}>Machine translation is for reference. Check the original report for medical decisions.</Text>
+            {!translation && allowTranslate ? <TouchableOpacity onPress={translate} disabled={translating} style={{ paddingVertical: 8 }}><Text style={{ color: colors.primary, fontSize: 13 }}>{translating ? 'Translating…' : 'Translate this report ›'}</Text></TouchableOpacity> : null}
+            {translateError ? <Text style={{ color: colors.danger, fontSize: 11 }}>{translateError}</Text> : null}
+          </View> : null}
           {hasFile && (
             <TouchableOpacity style={styles.viewOriginalBtn} onPress={() => openOriginalFile(report, onPreview)} activeOpacity={0.8}>
               <Ionicons name="document-attach-outline" size={16} color={colors.primary} />
-              <Text style={styles.viewOriginalBtnText}>查看原始报告文件</Text>
+              <Text style={styles.viewOriginalBtnText}>{t('查看原始报告文件')}</Text>
             </TouchableOpacity>
           )}
           {hasAI && (
             <View style={styles.aiSummaryBox}>
-              <Text style={styles.aiSummaryTitle}>AI 趋势分析{report.aiStatus === 'reviewed' ? '（已审核）' : '（待审核）'}</Text>
+              <Text style={styles.aiSummaryTitle}>{t('AI 趋势分析')}{t(report.aiStatus === 'reviewed' ? '（已审核）' : '（待审核）')}</Text>
               <Text style={styles.aiSummaryText}>{report.aiSummary}</Text>
             </View>
           )}
           {hasItems ? (
             <View>
-              <Text style={styles.itemsSectionLabel}>检查项目（{report.reportItems.length} 项）</Text>
-              {report.reportItems.map((item, i) => <ReportItemRow key={i} item={item} highlighted={highlightItemIndex === i} />)}
+              <Text style={styles.itemsSectionLabel}>{t('检查项目')} ({report.reportItems.length})</Text>
+              {report.reportItems.map((item, i) => <ReportItemRow key={i} item={item} translation={translation?.items?.[i]} highlighted={highlightItemIndex === i} />)}
             </View>
           ) : (
             <View style={styles.noItemsWrap}>
-              <Text style={styles.noItemsText}>暂无解析数据，请联系健管专员</Text>
+              <Text style={styles.noItemsText}>{t('暂无解析数据，请联系健管专员')}</Text>
             </View>
           )}
         </View>
@@ -179,6 +226,7 @@ function ReportCard({ report, onPreview, autoExpand, highlightItemIndex }) {
 }
 
 export default function MedicalReportsScreen({ navigation, route }) {
+  const { t, language } = useLanguage();
   const patientId = route?.params?.patientId || '';
   // 溯源跳转：AI健康分析结论若能核对到具体报告项，会带 highlightReportId(+highlightItemIndex)
   // 跳转过来，进页面后自动定位到对应年份、展开那份报告、高亮那一行检查项，不用手动来回翻找。
@@ -212,7 +260,7 @@ export default function MedicalReportsScreen({ navigation, route }) {
   const kw = searchKw.trim();
   const searchResults = kw
     ? years.flatMap(y => y.categories.flatMap(cat => cat.reports))
-        .filter(r => (r.title || '').toLowerCase().includes(kw.toLowerCase()))
+        .filter(r => `${r.title || ''} ${r.translationEn?.title || ''} ${displayReportTitle(r.title || '', language, t)}`.toLowerCase().includes(kw.toLowerCase()))
     : null;
 
   return (
@@ -221,7 +269,7 @@ export default function MedicalReportsScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>体检报告</Text>
+        <Text style={styles.headerTitle}>{t('体检报告')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -230,7 +278,7 @@ export default function MedicalReportsScreen({ navigation, route }) {
           <Ionicons name="search-outline" size={16} color={colors.textMuted} />
           <TextInput
             style={styles.searchInput}
-            placeholder="搜索报告标题"
+            placeholder={t('搜索报告标题')}
             placeholderTextColor={colors.textMuted}
             value={searchKw}
             onChangeText={setSearchKw}
@@ -248,18 +296,18 @@ export default function MedicalReportsScreen({ navigation, route }) {
       ) : years.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Ionicons name="document-text-outline" size={56} color={colors.textMuted} />
-          <Text style={styles.emptyTitle}>暂无体检报告</Text>
-          <Text style={styles.emptyDesc}>上传报告后，将按年度和类目自动归类展示</Text>
+          <Text style={styles.emptyTitle}>{t('暂无体检报告')}</Text>
+          <Text style={styles.emptyDesc}>{t('上传报告后，将按年度和类目自动归类展示')}</Text>
         </View>
       ) : searchResults ? (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.lg }}>
           {searchResults.length === 0 ? (
             <View style={styles.emptyWrap}>
               <Ionicons name="search-outline" size={56} color={colors.textMuted} />
-              <Text style={styles.emptyDesc}>没有匹配"{kw}"的报告</Text>
+              <Text style={styles.emptyDesc}>{language === 'en-US' ? `No reports match “${kw}”` : `没有匹配"${kw}"的报告`}</Text>
             </View>
           ) : searchResults.map(r => (
-            <ReportCard key={r._id} report={r} onPreview={setPreviewUri} />
+            <ReportCard key={r._id} report={r} onPreview={setPreviewUri} allowTranslate={!patientId} />
           ))}
           <View style={{ height: spacing.xl * 2 }} />
         </ScrollView>
@@ -271,7 +319,7 @@ export default function MedicalReportsScreen({ navigation, route }) {
               <TouchableOpacity key={y.year}
                 style={[styles.yearChip, selYear === y.year && styles.yearChipActive]}
                 onPress={() => setSelYear(y.year)}>
-                <Text style={[styles.yearChipText, selYear === y.year && styles.yearChipTextActive]}>{y.year ? `${y.year} 年` : '日期待核对'}</Text>
+                <Text style={[styles.yearChipText, selYear === y.year && styles.yearChipTextActive]}>{y.year ? (language === 'en-US' ? String(y.year) : `${y.year} 年`) : t('日期待核对')}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -286,12 +334,12 @@ export default function MedicalReportsScreen({ navigation, route }) {
                     <View style={[styles.categoryIconWrap, { backgroundColor: meta.color + '18' }]}>
                       <Ionicons name={meta.icon} size={20} color={meta.color} />
                     </View>
-                    <Text style={[styles.categoryTitle, { color: meta.color }]}>{meta.label}</Text>
-                    <Text style={styles.categoryCount}>{cat.reports.length} 份</Text>
+                    <Text style={[styles.categoryTitle, { color: meta.color }]}>{t(meta.label)}</Text>
+                    <Text style={styles.categoryCount}>{language === 'en-US' ? `${cat.reports.length} reports` : `${cat.reports.length} 份`}</Text>
                   </View>
 
                   {cat.reports.map(r => (
-                    <ReportCard key={r._id} report={r} onPreview={setPreviewUri}
+                    <ReportCard key={r._id} report={r} onPreview={setPreviewUri} allowTranslate={!patientId}
                       autoExpand={r._id === highlightReportId}
                       highlightItemIndex={r._id === highlightReportId ? highlightItemIndex : undefined} />
                   ))}
