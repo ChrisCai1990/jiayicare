@@ -13,6 +13,10 @@ router.use((req, res, next) => {
 });
 router.get('/', async (req, res) => {
   const filter = req.staff.role === 'familyDoctor' ? { advisorId: req.staff._id } : { psychologistId: req.staff._id, status: { $ne: 'ended' } };
+  if (req.query.patientId !== undefined) {
+    if (typeof req.query.patientId !== 'string' || !mongoose.isValidObjectId(req.query.patientId)) return res.status(400).json({ success: false, message: '无效客户编号' });
+    filter.patientId = req.query.patientId;
+  }
   const rows = await Care.find(filter).select('-sessions -sharedBackground -history').lean();
   const patients = await User.find({ _id: { $in: rows.map(x => x.patientId) } }).select('name tenantId assignedFamilyDoctor isDeleted').lean();
   const data = rows.filter(x => canRead(req.staff, x, patients.find(p => String(p._id) === String(x.patientId)))).map(x => ({ ...x, patientName: patients.find(p => String(p._id) === String(x.patientId)).name }));

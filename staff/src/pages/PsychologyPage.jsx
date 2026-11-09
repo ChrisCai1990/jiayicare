@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { psychologyAPI } from '../api'
 import { useStaff } from '../App'
+import ConsultationCreatePanel from '../components/ConsultationCreatePanel'
+import './ConsultationHub.css'
 
 const sessionSections = [
   ['review', '上次咨询回顾反馈', '填写上次咨询后的变化与反馈；首次咨询可注明“首次咨询，无上次记录”'],
@@ -13,7 +15,7 @@ const emptySession = () => ({ date: '', nextDate: '', ...Object.fromEntries(sess
 // Keep the existing protected content contract and historical records intact.
 const sessionContent = session => sessionSections.map(([key, label]) => `【${label}】\n${session[key].trim()}`).join('\n\n')
 
-export default function PsychologyPage({ embedded = false }) {
+export default function PsychologyPage({ embedded = false, patient = null }) {
   const { staff } = useStaff()
   const advisor = staff?.role === 'familyDoctor'
   const [rows, setRows] = useState([]), [care, setCare] = useState(null)
@@ -22,8 +24,27 @@ export default function PsychologyPage({ embedded = false }) {
   const [session, setSession] = useState(emptySession)
   const [background, setBackground] = useState('')
   const [handoff, setHandoff] = useState({ psychologistId: '', reason: '' })
-  const load = async () => setRows((await psychologyAPI.get()).data)
-  useEffect(() => { load().then(() => { const careId = new URLSearchParams(window.location.search).get('careId'); if (careId) return open(careId) }).catch(e => setError(e.message)); if (advisor) psychologyAPI.get('/options').then(r => setOptions(r.data)).catch(e => setError(e.message)) }, [advisor])
+  const [creating, setCreating] = useState(false), [loading, setLoading] = useState(true)
+  const listPath = patient ? '?patientId=' + encodeURIComponent(patient._id) : ''
+  const load = async () => { const data = (await psychologyAPI.get(listPath)).data; setRows(data); return data }
+  useEffect(() => {
+    let active = true
+    setLoading(true); setCare(null); setRows([]); setError('')
+    const initialize = async () => {
+      const rows = (await psychologyAPI.get(listPath)).data
+      if (!active) return
+      setRows(rows)
+      const careId = patient ? rows[0]?._id : new URLSearchParams(window.location.search).get('careId')
+      if (careId) {
+        const detail = (await psychologyAPI.get('/' + careId)).data
+        if (!active) return
+        setCare(detail); setBackground(detail.sharedBackground); setSession(emptySession())
+      }
+      if (advisor) { const r = await psychologyAPI.get('/options'); if (active) setOptions(r.data) }
+    }
+    initialize().catch(e => { if (active) setError(e.message) }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [advisor, listPath])
   const open = async id => { const r = await psychologyAPI.get('/' + id); setCare(r.data); setBackground(r.data.sharedBackground); setSession(emptySession()) }
   const run = async fn => { setBusy(true); setError(''); try { await fn() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   const save = payload => run(async () => { await psychologyAPI.post('/' + care._id, { action: 'update', ...payload, version: care.__v }); await open(care._id); await load() })
@@ -31,12 +52,14 @@ export default function PsychologyPage({ embedded = false }) {
   return <div className="psychology-workspace">{!embedded && <h1>心理咨询</h1>}
     <div className="psychology-privacy">仅负责顾问与咨询师可查看正式咨询资料</div>
     {error && <div role="alert" style={{ color: '#b42318', whiteSpace: 'pre-wrap' }}>{error}</div>}
-    <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
+    {patient && <div className="hub-header"><div><h2>长期心理咨询</h2><p>该客户的咨询记录与持续跟进</p></div>{!loading && !care && !error && <button className="btn btn-primary" onClick={() => setCreating(true)}>发起长期心理咨询</button>}</div>}
+    {creating && <ConsultationCreatePanel initialType="psychology" fixedPatient={patient} onClose={() => setCreating(false)} onCreated={async (_, record) => { setCreating(false); await run(async () => { await open(record._id || record.id); await load() }) }} />}
+    {loading ? <p role="status">正在加载咨询档案…</p> : <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
       {!care ? <>
-        <div className="card" style={{ padding: 20 }}>{rows.length ? rows.map(row => <p key={row._id}><button className="btn btn-secondary" onClick={() => run(() => open(row._id))}>{row.patientName} · {{ active: '进行中', paused: '暂停', ended: '已结束' }[row.status]}</button></p>) : <div className="psychology-empty"><span className="empty-symbol">◎</span><h2>还没有长期心理咨询服务</h2><p>{advisor ? '点击右上角“发起服务”，或从客户页面发起转介。' : '健康顾问指派后，客户的咨询档案会显示在这里。'}</p></div>}</div>
+        <div className="card" style={{ padding: 20 }}>{rows.length ? rows.map(row => <p key={row._id}><button className="btn btn-secondary" onClick={() => run(() => open(row._id))}>{row.patientName} · {{ active: '进行中', paused: '暂停', ended: '已结束' }[row.status]}</button></p>) : <div className="psychology-empty"><span className="empty-symbol">◎</span><h2>还没有长期心理咨询服务</h2><p>{advisor ? (patient ? '在这里发起服务，后续咨询记录将持续保存在本客户档案中。' : '点击右上角“发起服务”，或从客户页面发起转介。') : '健康顾问指派后，客户的咨询档案会显示在这里。'}</p></div>}</div>
 
       </> : <>
-        <button className="btn btn-secondary" onClick={() => setCare(null)}>返回列表</button>
+        {!patient && <button className="btn btn-secondary" onClick={() => setCare(null)}>返回列表</button>}
         <h2>{care.patient.name} · {{ active: '进行中', paused: '暂停', ended: '已结束' }[care.status]}</h2>
         <div className="card" style={{ padding: 20 }}><h3>顾问共享资料</h3>{advisor ? <><textarea className="form-input" rows={6} maxLength={20000} style={{ width: '100%' }} value={background} onChange={e => setBackground(e.target.value)} /><button className="btn btn-secondary" onClick={() => save({ status: care.status, sharedBackground: background })}>保存共享资料</button><div style={{ marginTop: 16 }}>{['active', 'paused', 'ended'].filter(s => s !== care.status).map(status => <button className="btn btn-secondary" key={status} onClick={() => save({ status })}>{{ active: '恢复服务', paused: '暂停服务', ended: '结束服务' }[status]}</button>)}</div></> : <p style={{ whiteSpace: 'pre-wrap' }}>{care.sharedBackground}</p>}</div>
         {advisor && care.status !== 'ended' && <div className="card" style={{ padding: 20, marginTop: 16 }}><h3>咨询师交接</h3><p>交接后原咨询师立即失去访问权限，新咨询师可查看完整历史。</p><select className="form-input" value={handoff.psychologistId} onChange={e => setHandoff({ ...handoff, psychologistId: e.target.value })}><option value="">请选择新咨询师</option>{options.psychologists.filter(p => p._id !== care.psychologistId).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select><input className="form-input" maxLength={1000} placeholder="交接原因" value={handoff.reason} onChange={e => setHandoff({ ...handoff, reason: e.target.value })} /><button className="btn btn-secondary" onClick={() => save({ action: 'transfer', ...handoff })}>确认交接</button></div>}
@@ -62,6 +85,6 @@ export default function PsychologyPage({ embedded = false }) {
           <button className="btn btn-primary">提交正式记录</button>
         </form>}
       </>}
-    </fieldset>
+    </fieldset>}
   </div>
 }

@@ -1,3 +1,4 @@
+import PsychologyPage from './PsychologyPage'
 import ReferralRecordCard from '../components/ReferralRecordCard'
 import ConsultationCorrespondence from '../components/ConsultationCorrespondence'
 import ConsultationReadStatus from '../components/ConsultationReadStatus'
@@ -5340,6 +5341,7 @@ export default function PatientDetailPage() {
       <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps.filter(task => task.serviceExecutionVisible !== false)} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={user.phaseAssessmentEnabled === true} />
 
       {user.initialArchiveImportPending && <div className="card" style={{padding:16,marginBottom:16}}>初次问卷已保存，档案写入待重试。<button className="btn btn-primary btn-sm" disabled={archiveBusy} onClick={async () => {setArchiveBusy(true);try{await staffAPI.retryInitialArchive(id);await load()}catch(err){toast(err.message)}finally{setArchiveBusy(false)}}}>重新写入初次档案</button></div>}
+      {staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff?._id) && tab === 'info' && <div className="card" style={{ padding: 18, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><div><strong>心理咨询</strong><p style={{ margin: '6px 0 0', color: '#718078', fontSize: 13 }}>查看该客户的历次咨询记录，或发起长期咨询服务</p></div><button className="btn btn-secondary" onClick={() => setTab('psychology')}>查看与跟进</button></div>}
       {/* Tabs */}
       {(() => {
         const groups = [
@@ -5358,7 +5360,7 @@ export default function PatientDetailPage() {
             ...(user.phaseAssessmentEnabled === true ? [{ key: 'aiReview', label: '阶段性评估与复盘' }] : []),
           ] },
           { key: 'serviceExecution', label: '服务执行', tabs: [{ key: 'followups', label: '执行任务' }] },
-          { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }] },
+          { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }, ...(staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff?._id) ? [{ key: 'psychology', label: '心理咨询' }] : [])] },
           { key: 'referrals', label: '转介记录', tabs: [{ key: 'referrals', label: '转介记录' }] },
           { key: 'consumption', label: '消费记录', tabs: [{ key: 'consumption', label: '消费记录' }] },
           { key: 'family', label: '家庭信息', tabs: [{ key: 'family', label: '家庭信息' }] },
@@ -5383,6 +5385,8 @@ export default function PatientDetailPage() {
           {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{secondaryTabs.map(renderTab)}</div>}
         </div>
       })()}
+
+      {tab === 'psychology' && (staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff?._id) ? <PsychologyPage key={id} embedded patient={{ _id: id, name: user.name }} /> : <div className="card" style={{ padding: 20 }}>仅该客户的负责健康顾问可查看心理咨询档案。</div>)}
 
       {['ai', 'aiCase'].includes(tab) && <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
         {[['screening','筛查与评估结果'],['analysis','AI健康信息整理'],['specialty','专项研判']].map(([key,label]) => <button key={key} className={`btn btn-sm ${(tab === 'aiCase' ? key === 'specialty' : screeningWorkspaceView === key) ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setTab(key === 'specialty' ? 'aiCase' : 'ai'); if (key !== 'specialty') setScreeningWorkspaceView(key) }}>{label}</button>)}
@@ -16162,7 +16166,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         const diseases = diseaseOptions.filter(d => form.linkedDiseaseRecordIds.map(String).includes(String(d._id)))
         const sharedBackground = [`转介原因：${form.reason}`, `紧急程度：${form.urgency === 'urgent' ? '紧急' : '普通'}`, form.questionList && `需要解决的问题：${form.questionList}`, form.content && `详细说明：${form.content}`, diseases.length && `本次所选专病：${JSON.stringify(diseases)}`, ...buildAttachedHealthInfoForAI().map(section => `${section.label}：${formatReferralHealthValue(section.val)}`)].filter(Boolean).join('\n\n')
         const result = await psychologyAPI.post('', { patientId, psychologistId: form.toStaffId, sharedBackground })
-        window.location.assign(`/expert-consultations?view=psychology&careId=${result.data._id}`)
+        window.location.assign(`/patients/${patientId}?tab=psychology`)
         return
       }
 

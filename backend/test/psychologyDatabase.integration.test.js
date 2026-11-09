@@ -43,6 +43,15 @@ test('real isolated Mongo and authenticated HTTP care lifecycle', { skip: !proce
   assert.equal((await call(0, '', { patientId: patient, psychologistId: actors[7]._id, sharedBackground: 'foreign' })).status, 403);
   const created = await call(0, '', { patientId: patient, psychologistId: actors[1]._id, sharedBackground: 'minimum background' });
   assert.equal(created.status, 201, JSON.stringify(created)); const path = '/' + created.data._id;
+  assert.equal((await call(0, '?patientId=invalid')).status, 400);
+  const scoped = await call(0, '?patientId=' + patient);
+  assert.equal(scoped.data.length, 1);
+  assert.equal(scoped.data[0].sessions, undefined);
+  assert.equal((await call(0, '?patientId=' + oid())).data.length, 0);
+  assert.equal((await call(5, '?patientId=' + patient)).data.length, 0);
+  assert.equal((await call(7, '?patientId=' + patient)).data.length, 0);
+  assert.equal((await call(2, '?patientId=' + patient)).status, 403);
+
   assert.equal((await call(0, '', { patientId: patient, psychologistId: actors[1]._id, sharedBackground: 'duplicate' })).status, 409);
   for (const i of [2, 3, 4]) assert.equal((await call(i, path)).status, 403);
   assert.equal((await call(7, path)).status, 404);
