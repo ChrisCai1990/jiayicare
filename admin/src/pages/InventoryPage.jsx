@@ -58,6 +58,15 @@ export default function InventoryPage() {
       document.getElementById('inventory-counted')?.focus({ preventScroll:true })
     })
   }
+  const startSettings = productId => {
+    const p = data.products.find(row => row._id === productId)
+    if (!p) return
+    setSettings({ productId, name:p.name || '', unit:p.inventoryTracking?.unit || '件', linkedProductIds:p.linkedProductIds || [], salePrices:p.salePrices || [], minStock:p.inventoryTracking?.minStock ?? 0, defaultCost:p.inventoryTracking?.defaultCost ?? 0, location:p.inventoryTracking?.location ?? '' })
+    requestAnimationFrame(() => {
+      document.getElementById('inventory-settings-form')?.scrollIntoView({ behavior:'smooth', block:'center' })
+      document.getElementById('inventory-sale-prices')?.focus({ preventScroll:true })
+    })
+  }
   const actualValue = data.products.filter(p => !p.needsOpeningCount).reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.inventoryTracking?.defaultCost || 0), 0)
   const unverifiedCount = data.products.filter(p => p.needsOpeningCount).length
   const manualSales = consumption.manual.filter(x => x.type === 'manual_sale').reduce((sum, x) => sum + x.units * x.unitPrice, 0)
@@ -70,8 +79,8 @@ export default function InventoryPage() {
     <section className="card" style={{ padding:20, marginBottom:18 }}>
       <h2>库存概览</h2>
       <p>实物物资 {data.products.length} 项 · 已核实物资按参考成本估算库存 {money(actualValue)} · 待实盘核实 {unverifiedCount} 项 · 近 500 条记录中的商城订单 {money(mallSales)} / 医护录入消费 {money(manualSales)}</p>
-      <div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>物资</th><th>类别</th><th>可用</th><th>预警</th><th>关联服务</th><th>参考成本</th><th>存放地点</th><th>操作</th></tr></thead><tbody>
-        {data.products.map(p => <tr key={p._id}><td>{p.name}</td><td>{p.inventoryTracking?.kind === 'reusable' ? '可重复使用设备' : '耗材/商品'}</td><td>{p.needsOpeningCount ? `待核实（旧账面 ${p.stock}）` : `${p.stock} ${p.inventoryTracking?.unit || ''}`}</td><td>{p.needsOpeningCount ? '待实盘核实' : Number(p.stock) <= Number(p.inventoryTracking?.minStock || 0) ? '低库存' : '-'}</td><td>{(p.linkedProducts || []).map(x => x.name).join('、') || '未关联'}</td><td>{money(p.inventoryTracking?.defaultCost)}</td><td>{p.inventoryTracking?.location || '-'}</td><td><button className="btn btn-secondary" type="button" onClick={() => startCount(p._id)}>校正库存</button></td></tr>)}
+      <div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>物资</th><th>类别</th><th>可用</th><th>预警</th><th>销售定价</th><th>关联服务</th><th>参考成本</th><th>存放地点</th><th>操作</th></tr></thead><tbody>
+        {data.products.map(p => <tr key={p._id}><td>{p.name}</td><td>{p.inventoryTracking?.kind === 'reusable' ? '可重复使用设备' : '耗材/商品'}</td><td>{p.needsOpeningCount ? `待核实（旧账面 ${p.stock}）` : `${p.stock} ${p.inventoryTracking?.unit || ''}`}</td><td>{p.needsOpeningCount ? '待实盘核实' : Number(p.stock) <= Number(p.inventoryTracking?.minStock || 0) ? '低库存' : '-'}</td><td>{p.salePrices?.length ? p.salePrices.map(row => <div key={row.label}>{row.label} · {row.units}{p.inventoryTracking?.unit || '件'} / {money(row.price)}</div>) : <span style={{ color:'#b45309' }}>未设置</span>}</td><td>{(p.linkedProducts || []).map(x => x.name).join('、') || '未关联'}</td><td>{money(p.inventoryTracking?.defaultCost)}</td><td>{p.inventoryTracking?.location || '-'}</td><td><div style={{ display:'flex', gap:6, flexWrap:'wrap' }}><button className="btn btn-primary" type="button" onClick={() => startSettings(p._id)}>编辑定价</button><button className="btn btn-secondary" type="button" onClick={() => startCount(p._id)}>校正库存</button></div></td></tr>)}
       </tbody></table></div>
     </section>
     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:18 }}>
@@ -89,13 +98,13 @@ export default function InventoryPage() {
         <input className="form-input" placeholder="存放地点" value={enable.location} onChange={e => setEnable({ ...enable, location:e.target.value })} />
         <button className="btn btn-primary" disabled={busy || !enable.name.trim() || enable.openingQuantity === '' || !enable.openingNote.trim()}>建立物资台账</button>
       </form>
-      <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(() => adminAPI.updateInventorySettings(settings.productId, settings)) }}>
-        <h2>物资设置与服务关联</h2><p>物资名称、成本、预警只维护一次；可关联多个服务，各服务售价在商城产品中分别维护。</p>
-        <SearchableProductSelect products={data.products} value={settings.productId} onChange={productId => { const p = data.products.find(x => x._id === productId); setSettings({ productId, name:p?.name || '', unit:p?.inventoryTracking?.unit || '件', linkedProductIds:p?.linkedProductIds || [], salePrices:p?.salePrices || [], minStock:p?.inventoryTracking?.minStock ?? 0, defaultCost:p?.inventoryTracking?.defaultCost ?? 0, location:p?.inventoryTracking?.location ?? '' }) }} />
+      <form id="inventory-settings-form" className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(() => adminAPI.updateInventorySettings(settings.productId, settings)) }}>
+        <h2>物资设置与销售定价</h2><p>在这里维护物资的销售规格和价格；参考成本仅用于估算库存，不是客户售价。商城服务价格仍在商城产品中维护。</p>
+        <SearchableProductSelect products={data.products} value={settings.productId} onChange={startSettings} />
         <label>物资名称 / 规格<input className="form-input" required value={settings.name} onChange={e => setSettings({ ...settings, name:e.target.value })} /></label>
         <label>库存单位<input className="form-input" required value={settings.unit} onChange={e => setSettings({ ...settings, unit:e.target.value })} /></label>
         <ProductLinksEditor products={catalog} value={settings.linkedProductIds} onChange={linkedProductIds => setSettings({ ...settings, linkedProductIds })} />
-        <SalePricesEditor value={settings.salePrices} onChange={salePrices => setSettings({ ...settings, salePrices })} unit={settings.unit} />
+        <div id="inventory-sale-prices" tabIndex={-1}><SalePricesEditor value={settings.salePrices} onChange={salePrices => setSettings({ ...settings, salePrices })} unit={settings.unit} /></div>
         <label>最低库存<input className="form-input" type="number" min="0" value={settings.minStock} onChange={e => setSettings({ ...settings, minStock:e.target.value })} /></label>
         <label>参考成本价<input className="form-input" type="number" min="0" step="0.01" value={settings.defaultCost} onChange={e => setSettings({ ...settings, defaultCost:e.target.value })} /></label>
         <input className="form-input" placeholder="存放地点" value={settings.location} onChange={e => setSettings({ ...settings, location:e.target.value })} />
