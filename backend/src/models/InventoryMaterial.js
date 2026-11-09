@@ -4,6 +4,7 @@ const schema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   stock: { type: Number, default: 0, min: 0 },
   linkedProductIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+  salePrices: [{ label: { type: String, required: true, trim: true }, units: { type: Number, required: true, min: 1 }, price: { type: Number, required: true, min: 0 }, _id: false }],
   legacyProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
   inventoryTracking: {
     enabled: { type: Boolean, default: true },
