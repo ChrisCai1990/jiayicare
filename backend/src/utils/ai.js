@@ -68,11 +68,11 @@ function httpPost(url, headers, body, timeoutMs = 45000) {
 }
 
 // 通用文本对话
-async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temperature = 0.1, jsonMode = false, webSearch = false, forceWebSearch = false, timeoutMs = 45000 } = {}) {
+async function chat(messages, { systemPrompt, maxTokens = 2000, provider, model: requestedModel, temperature = 0.1, jsonMode = false, webSearch = false, forceWebSearch = false, timeoutMs = 45000 } = {}) {
   const p = provider || selectProvider();
   if (!p) throw new Error('未配置 AI API Key（QWEN_API_KEY 或 DEEPSEEK_API_KEY）');
 
-  const model = p === 'deepseek' ? 'deepseek-chat' : 'qwen-plus';
+  const model = requestedModel || (p === 'deepseek' ? 'deepseek-chat' : 'qwen-plus');
   const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages;
 
   const result = await controlledCall({ provider: p, model, messages: msgs, maxTokens }, () => httpPost(

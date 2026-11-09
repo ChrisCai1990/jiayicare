@@ -56,7 +56,7 @@ async function assertContextPermission(provider, budgetContext = {}, dependencie
   if (staffService && provider === 'qwen' && budgetContext.stage === 'staff_ai_workspace_trial'
       && !subjectId && !purpose && !budgetContext.reportId
       && budgetContext.actorId === staffService.actorId && budgetContext.tenantId === staffService.tenantId) {
-    return; // Authenticated staff-only trial sends manually entered, synthetic discussion text.
+      return; // Authenticated staff-only trial sends synthetic discussion text and optional transient attachments.
   }
   if (staffService && subjectId && purpose === 'health' && provider === 'qwen') {
     const patient = await (dependencies.readPatient || (query => require('../models/User').findOne(query).select('_id tenantId').lean()))({ _id: subjectId, tenantId: staffService.tenantId });

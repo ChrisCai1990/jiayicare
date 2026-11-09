@@ -99,7 +99,7 @@ export const serviceGroupAPI = {
 
 export const staffAPI = {
   aiWorkspaceStatus: () => req('/staff/ai-workspace/status'),
-  aiWorkspaceChat: (mode, messages, webSearch = false) => req('/staff/ai-workspace/chat', { method: 'POST', body: JSON.stringify({ mode, messages, webSearch }) }),
+  aiWorkspaceChat: (mode, messages, webSearch = false, attachment = null) => req('/staff/ai-workspace/chat', { method: 'POST', body: JSON.stringify({ mode, messages, webSearch, attachment }) }),
   getAssignedFeedback: (params = {}) => req('/feedback/assigned?' + new URLSearchParams(params)),
   submitFeedbackResult: (id, data) => req(`/feedback/${id}/result`, { method: 'POST', body: JSON.stringify(data) }),
   expertConsultationCases: () => req('/expert-consultations/staff'),

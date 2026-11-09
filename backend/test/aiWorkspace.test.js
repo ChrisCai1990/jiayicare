@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { enabledFor, validMessages, needsFreshSearch } = require('../src/routes/aiWorkspace');
+const { enabledFor, validMessages, needsFreshSearch, validAttachment } = require('../src/routes/aiWorkspace');
 const { STAFF_ROLES } = require('../src/middleware/staffAuth');
 
 test('only time-sensitive questions require forced web search', () => {
@@ -46,4 +46,13 @@ test('chat rejects forged roles, empty messages and oversized history', () => {
   assert.equal(validMessages([{ role: 'assistant', content: '未以用户问题结尾' }]), false);
   assert.equal(validMessages([{ role: 'user', content: 'x'.repeat(4001) }]), false);
   assert.equal(validMessages(Array.from({ length: 14 }, () => ({ role: 'user', content: 'x' }))), false);
+});
+
+test('workspace accepts bounded images and extracted text only', () => {
+  assert.equal(validAttachment(null), true);
+  assert.equal(validAttachment({ kind: 'image', name: 'sample.png', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }), true);
+  assert.equal(validAttachment({ kind: 'image', name: 'sample.svg', dataUrl: 'data:image/svg+xml;base64,PHN2Zz4=' }), false);
+  assert.equal(validAttachment({ kind: 'text', name: 'sample.pdf', text: '模拟材料' }), true);
+  assert.equal(validAttachment({ kind: 'text', name: 'sample.pdf', text: 'x'.repeat(12001) }), false);
+  assert.equal(validAttachment({ kind: 'unknown', name: 'sample.docx', text: 'data' }), false);
 });
