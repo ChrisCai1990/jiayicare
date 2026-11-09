@@ -2,18 +2,29 @@ import React, { useEffect, useState } from 'react'
 import { psychologyAPI } from '../api'
 import { useStaff } from '../App'
 
+const sessionSections = [
+  ['review', '上次咨询回顾反馈', '填写上次咨询后的变化与反馈；首次咨询可注明“首次咨询，无上次记录”'],
+  ['concerns', '本次咨询主诉问题', '记录客户本次希望讨论的问题及主要困扰'],
+  ['assessment', '问题评估', '填写对本次问题的评估'],
+  ['progress', '咨询过程与进展', '记录本次咨询过程、采用的方法及进展'],
+  ['recommendations', '风险及后续建议', '记录风险评估情况、后续建议与跟进安排'],
+]
+const emptySession = () => ({ date: '', nextDate: '', ...Object.fromEntries(sessionSections.map(([key]) => [key, ''])) })
+// Keep the existing protected content contract and historical records intact.
+const sessionContent = session => sessionSections.map(([key, label]) => `【${label}】\n${session[key].trim()}`).join('\n\n')
+
 export default function PsychologyPage({ embedded = false }) {
   const { staff } = useStaff()
   const advisor = staff?.role === 'familyDoctor'
   const [rows, setRows] = useState([]), [care, setCare] = useState(null)
   const [options, setOptions] = useState({ patients: [], psychologists: [] })
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
-  const [session, setSession] = useState({ date: '', content: '', nextDate: '' })
+  const [session, setSession] = useState(emptySession)
   const [background, setBackground] = useState('')
   const [handoff, setHandoff] = useState({ psychologistId: '', reason: '' })
   const load = async () => setRows((await psychologyAPI.get()).data)
   useEffect(() => { load().then(() => { const careId = new URLSearchParams(window.location.search).get('careId'); if (careId) return open(careId) }).catch(e => setError(e.message)); if (advisor) psychologyAPI.get('/options').then(r => setOptions(r.data)).catch(e => setError(e.message)) }, [advisor])
-  const open = async id => { const r = await psychologyAPI.get('/' + id); setCare(r.data); setBackground(r.data.sharedBackground); setSession({ date: '', content: '', nextDate: '' }) }
+  const open = async id => { const r = await psychologyAPI.get('/' + id); setCare(r.data); setBackground(r.data.sharedBackground); setSession(emptySession()) }
   const run = async fn => { setBusy(true); setError(''); try { await fn() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   const save = payload => run(async () => { await psychologyAPI.post('/' + care._id, { action: 'update', ...payload, version: care.__v }); await open(care._id); await load() })
   if (!['familyDoctor', 'psychologist'].includes(staff?.role)) return <div className="page">当前岗位无权查看心理咨询资料。</div>
@@ -32,7 +43,24 @@ export default function PsychologyPage({ embedded = false }) {
         <h3>历次正式咨询记录</h3>
         {[...care.sessions].reverse().map(s => <article className="card" key={s._id} style={{ padding: 20, marginBottom: 12 }}><strong>{new Date(s.date).toLocaleString('zh-CN')}</strong><p style={{ whiteSpace: 'pre-wrap' }}>{s.content}</p>{s.nextDate && <p>下次咨询：{new Date(s.nextDate).toLocaleString('zh-CN')}</p>}</article>)}
         {!care.sessions.length && <p>尚未提交咨询记录。</p>}
-        {!advisor && care.status === 'active' && <form onSubmit={e => { e.preventDefault(); save({ action: 'session', ...session, date: session.date ? new Date(session.date).toISOString() : '', nextDate: session.nextDate ? new Date(session.nextDate).toISOString() : '' }) }}><h3>新增会谈记录</h3><label className="psychology-field">会谈时间 <input className="form-input" required type="datetime-local" value={session.date} onChange={e => setSession({ ...session, date: e.target.value })} /></label><textarea className="form-input" required maxLength={30000} rows={10} style={{ width: '100%', marginTop: 12 }} value={session.content} onChange={e => setSession({ ...session, content: e.target.value })} placeholder="评估、咨询过程、进展、风险及后续建议；提交后负责顾问可完整查看" /><label className="psychology-field">下次咨询 <input className="form-input" type="datetime-local" value={session.nextDate} onChange={e => setSession({ ...session, nextDate: e.target.value })} /></label><button className="btn btn-primary">提交正式记录</button></form>}
+        {!advisor && care.status === 'active' && <form className="card psychology-session-form" onSubmit={e => {
+          e.preventDefault()
+          if (sessionSections.some(([key]) => !session[key].trim())) { setError('请填写全部五项咨询记录；不适用的项目请注明原因。'); return }
+          const content = sessionContent(session)
+          if (content.length > 30000) { setError('咨询记录合计不能超过30000字，请精简后提交。'); return }
+          save({ action: 'session', content, date: session.date ? new Date(session.date).toISOString() : '', nextDate: session.nextDate ? new Date(session.nextDate).toISOString() : '' })
+        }}>
+          <h3>新增会谈记录</h3>
+          <p className="psychology-session-hint">请按以下五项填写，提交后负责顾问可完整查看。首次咨询或不适用的项目请注明情况。</p>
+          <label className="psychology-field">会谈时间 <input className="form-input" required type="datetime-local" value={session.date} onChange={e => setSession({ ...session, date: e.target.value })} /></label>
+          {sessionSections.map(([key, label, placeholder], index) => <label className="psychology-session-section" key={key}>
+            <span><span className="psychology-section-number">{index + 1}</span>{label} <span aria-hidden="true">*</span></span>
+            <textarea className="form-input" required maxLength={30000} rows={4} value={session[key]} onChange={e => setSession({ ...session, [key]: e.target.value })} placeholder={placeholder} />
+          </label>)}
+          <label className="psychology-field">下次咨询 <input className="form-input" type="datetime-local" value={session.nextDate} onChange={e => setSession({ ...session, nextDate: e.target.value })} /></label>
+          {error && <div role="alert" className="consultation-form-error">{error}</div>}
+          <button className="btn btn-primary">提交正式记录</button>
+        </form>}
       </>}
     </fieldset>
   </div>
