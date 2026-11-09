@@ -129,7 +129,7 @@ export default function ReportsPage() {
                   <td style={{ fontSize: 11 }}>{r.audited_at ? new Date(r.audited_at).toLocaleString() : '未完成'}<br />{Object.keys(r.reviewActivity || {}).length ? `${Math.round(Object.values(r.reviewActivity).reduce((total, entry) => total + (entry.durationMs || 0), 0) / 60000)}分钟` : '时长未记录'}</td>
                   <td>
                     <span style={{ color: AUDIT_COLOR[r.audit_status], fontWeight: 500, fontSize: 13 }}>
-                      {AUDIT_STATUS[r.audit_status]}
+                      {r.archiveOnly ? '仅留存·不解析' : AUDIT_STATUS[r.audit_status]}
                     </span>
                     {r.reject_reason && <div style={{ fontSize: 11, color: '#DC3545' }}>{r.reject_reason}</div>}
                   </td>
@@ -137,16 +137,16 @@ export default function ReportsPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => openDetail(r)}>查看</button>
-                      {can('reports', 'create') && ['healthManager', 'superadmin'].includes(staff?.role) && r.user?._id && Boolean(r.fileUrls?.length || r.fileUrl || r.ossKeys?.length) && (
+                      {can('reports', 'create') && ['healthManager', 'superadmin'].includes(staff?.role) && r.user?._id && !r.archiveOnly && Boolean(r.fileUrls?.length || r.fileUrl || r.ossKeys?.length) && (
                         <button className="btn btn-secondary btn-sm" onClick={() => setOrganizeSource(r)}>整理归档</button>
                       )}
                       {r.audit_status !== 'audited' && (
                         <button className="btn btn-secondary btn-sm" onClick={() => { setEditModal(r); setEditForm({ title: r.title || '', type: r.type || 'annual', hospital: r.hospital || r.institution || '', date: r.checkDate || r.date || '', note: r.note || '', institutionStatus: r.institutionStatus || 'pending' }) }}>✏️ 修改</button>
                       )}
-                      {can('reports', 'audit') && r.audit_status === 'unaudited' && (
+                      {can('reports', 'audit') && !r.archiveOnly && r.audit_status === 'unaudited' && (
                         <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
                       )}
-                      {can('reports', 'audit') && (r.audit_status === 'unaudited' || r.audit_status === 'audited') && (
+                      {can('reports', 'audit') && !r.archiveOnly && (r.audit_status === 'unaudited' || r.audit_status === 'audited') && (
                         <button className="btn btn-danger btn-sm" onClick={() => { setRejectModal(r); setRejectReason('') }}>✗ 驳回</button>
                       )}
                     </div>
@@ -474,7 +474,7 @@ const DOCUMENT_CATEGORIES = {
   physical_exam: '体检报告', lab_report: '检验报告', exam_report: '检查报告',
   body_composition: '身体成分', functional_medicine: '功能医学', genetic_test: '基因检测',
   outpatient_record: '门诊病历', inpatient_record: '住院病历', prescription_order: '处方/检查单',
-  questionnaire: '问卷', other_customer_material: '其他资料',
+  questionnaire: '问卷', other_customer_material: '其他资料', insurance_claim_receipt: '报销票据／费用清单',
 }
 
 function OrganizeModal({ source, onClose, onSaved }) {
@@ -592,7 +592,7 @@ function OrganizeModal({ source, onClose, onSaved }) {
         })}
         <div className="form-group"><label className="form-label">整理后标题 *</label><input className="form-input" value={form.title} onChange={set('title')} maxLength={200} /></div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div className="form-group"><label className="form-label">资料类别</label><select className="form-input" value={form.documentCategory} onChange={set('documentCategory')}>{Object.entries(DOCUMENT_CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <div className="form-group"><label className="form-label">资料类别</label><select className="form-input" value={form.documentCategory} onChange={set('documentCategory')}>{Object.entries(DOCUMENT_CATEGORIES).filter(([value]) => value !== 'insurance_claim_receipt').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div className="form-group"><label className="form-label">报告类型</label><select className="form-input" value={form.type} onChange={set('type')}>{Object.entries(REPORT_TYPE).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

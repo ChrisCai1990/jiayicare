@@ -781,6 +781,7 @@ const DOCUMENT_CATEGORIES = [
   { key: 'prescription_order', label: '处方与医嘱' },
   { key: 'questionnaire', label: '问卷资料' },
   { key: 'other_customer_material', label: '其他资料' },
+  { key: 'insurance_claim_receipt', label: '报销票据／费用清单' },
 ]
 const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
 // 用药信息在“用药”模块审核后即完成闭环，不再要求健康顾问重复审核同一处方的健康变化。
@@ -11204,7 +11205,7 @@ export default function PatientDetailPage() {
             && (!reportFocusId || String(r._id) === String(reportFocusId))
         })
         const categoryCount = key => reportsInBaseScope.filter(r => inferDocumentCategory(r) === key).length
-        const reportsInScope = reportsInBaseScope.filter(r => reportDocumentCategory === 'all' || inferDocumentCategory(r) === reportDocumentCategory)
+        const reportsInScope = reportsInBaseScope.filter(r => reportDocumentCategory === 'all' || (reportDocumentCategory === 'insurance_claim' ? r.insuranceClaim : inferDocumentCategory(r) === reportDocumentCategory))
         const isReportInfoMissing = report => !(report.hospital || report.institution) || !(report.checkDate || report.date)
         const missingReportCount = reportsInScope.filter(isReportInfoMissing).length
         const taskFilterCount = key => key === 'all' ? reportsInScope.length : reportsInScope.filter(r => getReportTaskKey(r) === key).length
@@ -11326,6 +11327,7 @@ export default function PatientDetailPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 8, marginBottom: 12 }}>
               <button type="button" onClick={() => { setReportDocumentCategory('all'); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === 'all' ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === 'all' ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>全部资料</strong><span style={{ float: 'right', color: '#789287' }}>{reportsInBaseScope.length}</span></button>
+              <button type="button" onClick={() => { setReportDocumentCategory('insurance_claim'); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === 'insurance_claim' ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === 'insurance_claim' ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>高端险事后报销资料</strong><span style={{ float: 'right', color: '#789287' }}>{reportsInBaseScope.filter(r => r.insuranceClaim).length}</span></button>
               {DOCUMENT_CATEGORIES.map(item => <button key={item.key} type="button" onClick={() => { setReportDocumentCategory(item.key); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === item.key ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === item.key ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>{item.label}</strong><span style={{ float: 'right', color: '#789287' }}>{categoryCount(item.key)}</span></button>)}
             </div>
             {reports.length > 0 && <div className="report-list-toolbar">
@@ -11395,7 +11397,7 @@ export default function PatientDetailPage() {
                               {((r.parseJob?.status === 'failed') || (r.parseJob?.status === 'completed' && r.parseJob.message?.includes('识别失败'))) && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}</div>}
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
-                            <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
+                            <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{r.insuranceClaim ? '高端险事后报销资料' : typeLabel}</div></td>
                             <td style={{ color: '#60756B' }}>{r.hospital || r.institution || (r.institutionStatus === 'unknown' ? '来源机构不明' : '') || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ fontSize: 11 }}>{r.audited_at ? new Date(r.audited_at).toLocaleString() : '未完成'}<br />{r.audited_by || ''}<br />{Object.keys(r.reviewActivity || {}).length ? `有效时长 ${Math.round(Object.values(r.reviewActivity).reduce((sum, session) => sum + (session.durationMs || 0), 0) / 60000)} 分钟` : '时长未记录'}</td>
@@ -12821,7 +12823,7 @@ export default function PatientDetailPage() {
                 <label className="form-label">报告归类</label>
                 <select className="form-input" value={editingReportForm.documentCategory || ''}
                   onChange={e => setEditingReportForm(f => ({ ...f, documentCategory: e.target.value, clinicalReview: {} }))}>
-                  {DOCUMENT_CATEGORIES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  {DOCUMENT_CATEGORIES.filter(t => t.key !== 'insurance_claim_receipt' || editingReport?.documentCategory === 'insurance_claim_receipt').map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -13017,7 +13019,7 @@ export default function PatientDetailPage() {
                   ['报告日期', r.checkDate || r.date || '-'],
                   ['审核状态', r.duplicateOf ? '重复上传·不计入筛查' : r.archiveOnly ? '仅留存·不解析' : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改' : r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
                   ['审核人', r.audited_by || '-'],
-                  ...(r.archiveOnly ? [['关联已审报告', reports.find(item => item._id === String(r.archiveSourceReportId))?.title || '已关联']] : []),
+                  ...(r.archiveOnly && r.archiveSourceReportId ? [['关联已审报告', reports.find(item => item._id === String(r.archiveSourceReportId))?.title || '已关联']] : []),
                   ...(r.duplicateOf ? [['重复确认依据', r.duplicateReason || '已核对原件']] : []),
                   ...(r.advisorCorrection?.reason ? [['顾问退回原因', r.advisorCorrection.reason]] : []),
                   ...(r.reject_reason ? [['驳回原因', r.reject_reason]] : []),
@@ -15421,10 +15423,11 @@ const DOCUMENT_CATEGORY_REPORT_TYPE = {
   physical_exam: 'annual', lab_report: 'blood', exam_report: 'other', body_composition: 'body_comp',
   functional_medicine: 'functional', genetic_test: 'genetic', outpatient_record: 'other', inpatient_record: 'other',
   prescription_order: 'other', questionnaire: 'other', other_customer_material: 'other',
+  insurance_claim_receipt: 'other',
 }
 
 function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, onQueued }) {
-  const [form, setForm] = useState({ documentCategory: '', title: '', hospital: '', date: '', note: '', archiveOnly: false, archiveSourceReportId: '' })
+  const [form, setForm] = useState({ documentCategory: '', title: '', hospital: '', date: '', note: '', archiveOnly: false, archiveSourceReportId: '', insuranceClaim: false })
   const [fileDatas, setFileDatas] = useState([])
   // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
   // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
@@ -15436,6 +15439,8 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
   const [error, setError] = useState('')
 
   const selectedReportType = DOCUMENT_CATEGORY_REPORT_TYPE[form.documentCategory] || 'other'
+  const claimReceipt = form.documentCategory === 'insurance_claim_receipt'
+  const archiveOnly = form.archiveOnly || claimReceipt
 
   const [metaDetecting, setMetaDetecting] = useState(false)
   const [metaMessage, setMetaMessage] = useState('')
@@ -15457,7 +15462,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
     // 语义不明确（可能是多页同一份报告，也可能是多份不同报告），不做自动识别，交回手动填写
     // Large PDFs may take minutes to store. Uploading once here and again on
     // submit starts two simultaneous copies when staff confirms immediately.
-    if (!form.archiveOnly && files.length === 1 && files[0].size < 8 * 1024 * 1024 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
+    if (form.documentCategory && !archiveOnly && files.length === 1 && files[0].size < 8 * 1024 * 1024 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
       setMetaDetecting(true)
       try {
         const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
@@ -15477,13 +15482,13 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
     if (!form.title) { setError('请填写资料名称'); return }
     if (!form.documentCategory) { setError('请先按原件内容选择资料分类'); return }
     if (!fileDatas.length) { setError('请选择资料文件（图片或PDF）'); return }
-    if (form.archiveOnly && !form.archiveSourceReportId) { setError('请选择同次体检中已审核的结果报告'); return }
+    if (form.archiveOnly && !claimReceipt && !form.archiveSourceReportId) { setError('请选择同次体检中已审核的结果报告'); return }
     const normalizedDate = form.date ? calendarDate(form.date) : ''
     if (form.date && !normalizedDate) { setError('报告日期无效，请填写完整日期（如 2026-09-23）'); return }
     try {
       setSaving(true); setServerAccepted(false); setError(''); setUploadProgress(0)
       const total = fileDatas.length
-      if (!form.archiveOnly && total > 1 && ['outpatient_record', 'prescription_order'].includes(form.documentCategory)) {
+      if (!archiveOnly && total > 1 && ['outpatient_record', 'prescription_order'].includes(form.documentCategory)) {
         const classified = []
         for (let i = 0; i < total; i++) {
           const fd = fileDatas[i]
@@ -15523,7 +15528,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
             type: DOCUMENT_CATEGORY_REPORT_TYPE[category], documentCategory: category,
             hospital: hospitals.length === 1 ? hospitals[0] : groups.length === 1 ? form.hospital : '',
             date: dates.length === 1 ? dates[0] : groups.length === 1 ? normalizedDate : '',
-            note: form.note, fileUrl: group[0].url, fileUrls: group.map(fd => fd.url),
+            note: form.note, insuranceClaim: form.insuranceClaim, fileUrl: group[0].url, fileUrls: group.map(fd => fd.url),
             ossKey: group[0].ossKey || '', ossKeys: group.map(fd => fd.ossKey).filter(Boolean),
             mimeType: group[0].mimeType, fileSize: String(group.reduce((sum, fd) => sum + (Number(fd.fileSize) || 0), 0)),
           })
@@ -15555,8 +15560,9 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
           hospital: form.hospital,
           date: normalizedDate,
           note: form.note,
-          archiveOnly: form.archiveOnly,
-          archiveSourceReportId: form.archiveSourceReportId,
+          archiveOnly,
+          archiveSourceReportId: claimReceipt ? '' : form.archiveSourceReportId,
+          insuranceClaim: form.insuranceClaim || claimReceipt,
           fileUrl: urls[0],
           fileUrls: urls,
           ossKey: ossKeys[0] || '',
@@ -15585,7 +15591,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
                 patientId, title: form.title, type: selectedReportType,
                 documentCategory: form.documentCategory, hospital: form.hospital,
                 date: normalizedDate, note: form.note,
-                archiveOnly: form.archiveOnly, archiveSourceReportId: form.archiveSourceReportId,
+                archiveOnly, archiveSourceReportId: claimReceipt ? '' : form.archiveSourceReportId, insuranceClaim: form.insuranceClaim || claimReceipt,
               } : undefined,
               serverCreatesReport ? () => setServerAccepted(true) : undefined
             )
@@ -15600,8 +15606,9 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
             hospital: form.hospital,
             date: normalizedDate,
             note: form.note,
-            archiveOnly: form.archiveOnly,
-            archiveSourceReportId: form.archiveSourceReportId,
+            archiveOnly,
+            archiveSourceReportId: claimReceipt ? '' : form.archiveSourceReportId,
+            insuranceClaim: form.insuranceClaim || claimReceipt,
             fileUrl: url,
             fileUrls: [url],
             ossKey: ossKey || '',
@@ -15632,7 +15639,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-          {['healthManager', 'superadmin'].includes(staffRole) && (
+          {['healthManager', 'superadmin'].includes(staffRole) && !claimReceipt && (
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                 <input type="checkbox" checked={form.archiveOnly} onChange={e => setForm(f => ({ ...f, archiveOnly: e.target.checked, archiveSourceReportId: e.target.checked ? f.archiveSourceReportId : '' }))} />
@@ -15652,12 +15659,18 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
             <label className="form-label">资料分类 *</label>
             <select className="form-input" value={form.documentCategory} onChange={e => setForm(f => ({ ...f, documentCategory: e.target.value }))}>
               <option value="">请选择资料分类</option>
-              {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+              {DOCUMENT_CATEGORIES.filter(item => item.key !== 'insurance_claim_receipt' || ['healthManager', 'superadmin'].includes(staffRole)).map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
             </select>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>
               按原件选：年度／综合体检报告、门诊病历、处方、检验报告或检查报告；单项 MRI、听力等检查请选择“检查报告”。
             </div>
+            {claimReceipt && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 6 }}>发票、费用清单等仅保存原件，不进行医疗解析或生成审核待办。病历、检验及检查报告请选各自原有分类。</div>}
           </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            <input type="checkbox" checked={form.insuranceClaim || claimReceipt} disabled={claimReceipt} onChange={e => setForm(f => ({ ...f, insuranceClaim: e.target.checked }))} />
+            归入高端险事后报销资料
+          </label>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">资料名称 *</label>
@@ -15670,7 +15683,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
               <input className="form-input" value={form.hospital} onChange={e => setForm(f => ({ ...f, hospital: e.target.value }))} placeholder={metaDetecting ? '正在自动识别...' : '如：协和医院'} />
             </div>
             <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-              <label className="form-label">报告日期 {metaDetecting && <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>识别中…</span>}</label>
+              <label className="form-label">{claimReceipt ? '资料日期' : '报告日期'} {metaDetecting && <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>识别中…</span>}</label>
               <DateField className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
             </div>
           </div>
@@ -15693,14 +15706,14 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
                 )}
                 {fileDatas.length > 1 && (
                   <>
-                    {['outpatient_record', 'prescription_order'].includes(form.documentCategory) && !form.archiveOnly && <div style={{ fontSize: 12, color:'#4A6558', marginTop:6 }}>病历与处方图片可一次上传；系统逐张识别并按类别分别建档。识别不清时请核对分类，资料内容仍需健管专员审核。</div>}
+                    {['outpatient_record', 'prescription_order'].includes(form.documentCategory) && !archiveOnly && <div style={{ fontSize: 12, color:'#4A6558', marginTop:6 }}>病历与处方图片可一次上传；系统逐张识别并按类别分别建档。识别不清时请核对分类，资料内容仍需健管专员审核。</div>}
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: '#4A6558', cursor: 'pointer' }}>
                       <input type="checkbox" checked={mergeFiles} onChange={e => setMergeFiles(e.target.checked)} />
                       这些文件是同一份报告的多张照片（如结论页+数据页），合并为一条记录
                     </label>
                     <div style={{ fontSize: 11, color: '#8AA89C' }}>
                       {mergeFiles
-                        ? form.archiveOnly ? `共 ${fileDatas.length} 个文件将合并为一条仅存档资料` : `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
+                        ? archiveOnly ? `共 ${fileDatas.length} 个文件将合并为一条仅存档资料` : `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
                         : `共 ${fileDatas.length} 个文件，每个文件将分别创建一条报告记录`}
                     </div>
                   </>

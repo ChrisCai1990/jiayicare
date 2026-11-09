@@ -5553,17 +5553,19 @@ router.patch('/medical-reports/:id/items/:itemId', staffAuth, async (req, res) =
 });
 
 // 完整原件仅留存时，必须由所属健管专员关联本客户已审核的单项结果。
-async function validateArchiveOnlyUpload(staff, patientId, sourceReportId, date) {
+async function validateArchiveOnlyUpload(staff, patientId, sourceReportId, date, documentCategory) {
   if (!['healthManager', 'superadmin'].includes(staff.role)) return { status: 403, message: '仅健管专员可确认留存原件' };
-  if (!mongoose.isValidObjectId(sourceReportId)) return { status: 400, message: '请选择同次体检中已审核的结果报告' };
+  const claimReceipt = documentCategory === 'insurance_claim_receipt';
+  if (!claimReceipt && !mongoose.isValidObjectId(sourceReportId)) return { status: 400, message: '请选择同次体检中已审核的结果报告' };
   const [source, owner] = await Promise.all([
-    MedicalReport.findOne({ _id: sourceReportId, user: patientId }).select('audit_status archiveOnly checkDate date').lean(),
+    claimReceipt ? null : MedicalReport.findOne({ _id: sourceReportId, user: patientId }).select('audit_status archiveOnly checkDate date').lean(),
     User.findById(patientId).select('tenantId assignedHealthManager isDeleted').lean(),
   ]);
   if (!owner || owner.isDeleted) return { status: 404, message: '客户不存在' };
   if (staff.role !== 'superadmin' && (String(owner.tenantId || '') !== String(staff.tenantId || '') || String(owner.assignedHealthManager || '') !== String(staff._id))) {
     return { status: 403, message: '仅客户所属健管专员可确认留存原件' };
   }
+  if (claimReceipt) return { source: null };
   if (!source || source.audit_status !== 'audited' || source.archiveOnly) return { status: 409, message: '关联报告须为同一客户已审核的结果报告' };
   const sourceYear = String(source.checkDate || source.date || '').slice(0, 4);
   if (date && /^\d{4}$/.test(sourceYear) && sourceYear !== String(date).slice(0, 4)) return { status: 400, message: '存档原件与关联报告的体检年份不一致' };
@@ -5608,6 +5610,7 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
   const selectedCategory = documentCategory || sources[0].documentCategory || 'physical_exam';
   if (!allowedTypes.includes(selectedType) || !allowedCategories.includes(selectedCategory))
     return res.status(400).json({ success: false, message: '报告分类无效' });
+  if (selectedCategory === 'insurance_claim_receipt') return res.status(400).json({ success: false, message: '报销票据请从原始资料上传入口单独存档' });
   if (autoClinicalSplit && (ids.length !== 1 || !['outpatient_record','prescription_order'].includes(selectedCategory) || sources[0].audit_status !== 'unaudited'))
     return res.status(409).json({ success:false, message:'自动拆分仅适用于同一条待审核原件中的病历或处方图片' });
   const organizedId = autoClinicalSplit ? new mongoose.Types.ObjectId(crypto.createHash('sha256')
@@ -5630,6 +5633,7 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
       ...(organizedId ? { _id:organizedId } : {}),
       user: patient._id, tenantId: patient.tenantId,
       title: String(title).trim().slice(0, 200), type: selectedType, documentCategory: selectedCategory,
+      insuranceClaim: sources.every(source => source.insuranceClaim === true),
       hospital: String(hospital || '').trim().slice(0, 200), date: date || '', checkDate: date || '',
       reportYear: date ? Number(date.slice(0, 4)) : null,
       note: String(note || '').trim().slice(0, 1000),
@@ -5657,11 +5661,13 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
-    const { patientId, title, type, documentCategory, hospital, date, note, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2, sourceOrderId, sourceProductId, sourceServiceRecordId, archiveOnly, archiveSourceReportId } = req.body;
+    const { patientId, title, type, documentCategory, hospital, date, note, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2, sourceOrderId, sourceProductId, sourceServiceRecordId, archiveOnly, archiveSourceReportId, insuranceClaim } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
+    const claimReceipt = documentCategory === 'insurance_claim_receipt';
+    if (claimReceipt && (!archiveOnly || !insuranceClaim || archiveSourceReportId || planId || planItemId || screeningL1 || screeningL2)) return res.status(400).json({ success: false, message: '报销票据须作为独立原件仅存档' });
     let archiveSource;
     if (archiveOnly) {
-      const validation = await validateArchiveOnlyUpload(req.staff, patientId, archiveSourceReportId, date);
+      const validation = await validateArchiveOnlyUpload(req.staff, patientId, archiveSourceReportId, date, documentCategory);
       if (validation.message) return res.status(validation.status).json({ success: false, message: validation.message });
       archiveSource = validation.source;
     }
@@ -5753,7 +5759,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     }
 
     report = await MedicalReport.create({
-      user: patientId, title, type: type || 'other', documentCategory: documentCategory || 'physical_exam', hospital: hospital || '', note: String(note || '').slice(0, 1000),
+      user: patientId, title, type: type || 'other', documentCategory: documentCategory || 'physical_exam', hospital: hospital || '', note: String(note || '').slice(0, 1000), insuranceClaim: insuranceClaim === true || claimReceipt,
       date: checkDate, checkDate, reportYear,
       fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, ossKey: resolvedOssKey, ossKeys: resolvedOssKeys, content: effectiveContent,
       mimeType: effectiveMimeType, fileSize: fileSize || '',
@@ -5763,7 +5769,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       sourceServiceRecordId: sourceServiceRecordId || null, uploadedByRole: req.staff.role || '',
       planId: planId || null, planItemId: planItemId || null,
       screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '',
-      ...(archiveOnly ? { archiveOnly: true, archiveSourceReportId, archiveOnlyAt: new Date(), archiveOnlyBy: req.staff._id } : {}),
+      ...(archiveOnly ? { archiveOnly: true, archiveSourceReportId: claimReceipt ? null : archiveSourceReportId, archiveOnlyAt: new Date(), archiveOnlyBy: req.staff._id } : {}),
     });
     // report 已成功入库，回填体检方案条目失败不应让前端误判整次上传失败（此前 plan.save() 抛错会被下面
     // 的 catch 捕到、返回500"上传失败"，但 report 记录其实已经存在——健管专员据此又重传一次，导致同一
@@ -5877,6 +5883,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     }
     if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision, clinicalReview, courseTargetDiseaseId, screeningReclassification } = req.body;
+    if (documentCategory === 'insurance_claim_receipt' && report.documentCategory !== 'insurance_claim_receipt') return res.status(400).json({ success: false, message: '报销票据请从原始资料上传入口单独存档' });
+    if (report.documentCategory === 'insurance_claim_receipt' && documentCategory && documentCategory !== 'insurance_claim_receipt') return res.status(409).json({ success: false, message: '报销票据不能直接改为医疗报告' });
     if (report.archiveOnly && (aiStatus !== undefined || reportItems !== undefined || screeningReclassification)) return res.status(409).json({ success: false, message: '仅留存原件不参与解析和审核' });
     if (screeningReclassification && (editSource !== 'ocr_review' || !Array.isArray(reportItems) || aiStatus !== undefined)) {
       return res.status(400).json({ success: false, message: '重新归类请求无效' });
@@ -6809,11 +6817,14 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
     if (metadata.date && !/^\d{4}-\d{2}-\d{2}$/.test(metadata.date)) {
       return res.status(400).json({ success: false, message: '报告日期格式错误' });
     }
+    const claimReceipt = metadata.documentCategory === 'insurance_claim_receipt';
+    if (claimReceipt && (metadata.archiveOnly !== true || metadata.insuranceClaim !== true || metadata.archiveSourceReportId))
+      return res.status(400).json({ success: false, message: '报销票据须作为独立原件仅存档' });
     let archiveSourceDate = '';
     if (metadata.archiveOnly) {
-      const validation = await validateArchiveOnlyUpload(req.staff, metadata.patientId, metadata.archiveSourceReportId, metadata.date);
+      const validation = await validateArchiveOnlyUpload(req.staff, metadata.patientId, metadata.archiveSourceReportId, metadata.date, metadata.documentCategory);
       if (validation.message) return res.status(validation.status).json({ success: false, message: validation.message });
-      archiveSourceDate = validation.source.checkDate || validation.source.date || '';
+      archiveSourceDate = validation.source?.checkDate || validation.source?.date || '';
     }
     const patient = await User.findOne({ _id: metadata.patientId, tenantId: req.staff.tenantId, isDeleted: { $ne: true } }).select('_id tenantId').lean();
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
@@ -6826,14 +6837,15 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
       date: metadata.date || archiveSourceDate,
       note: String(metadata.note || '').slice(0, 1000),
       archiveOnly: metadata.archiveOnly === true,
-      archiveSourceReportId: metadata.archiveOnly ? metadata.archiveSourceReportId : null,
+      archiveSourceReportId: metadata.archiveOnly && !claimReceipt ? metadata.archiveSourceReportId : null,
+      insuranceClaim: metadata.insuranceClaim === true || claimReceipt,
       uploadedBy: req.staff._id, uploadedByRole: req.staff.role || '',
     };
   }
   const jobId = createReportUploadJob(req.staff._id, req.file, async (buffer, mimeType) => {
     if (!metadata) return uploadBuffer(buffer, mimeType, 'reports');
     if (metadata.archiveOnly) {
-      const validation = await validateArchiveOnlyUpload(req.staff, metadata.patientId, metadata.archiveSourceReportId, metadata.date);
+      const validation = await validateArchiveOnlyUpload(req.staff, metadata.patientId, metadata.archiveSourceReportId, metadata.date, metadata.documentCategory);
       if (validation.message) throw new Error(validation.message);
     }
     const sourceSha256 = crypto.createHash('sha256').update(buffer).digest('hex');
@@ -6844,7 +6856,7 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
     try {
       const report = await MedicalReport.create({
         user: metadata.patientId, tenantId: metadata.tenantId, title: metadata.title,
-        type: metadata.type, documentCategory: metadata.documentCategory,
+        type: metadata.type, documentCategory: metadata.documentCategory, insuranceClaim: metadata.insuranceClaim,
         hospital: metadata.hospital, date: metadata.date, checkDate: metadata.date,
         reportYear: metadata.date ? Number(metadata.date.slice(0, 4)) : null,
         note: metadata.note, fileUrl: stored.url, fileUrls: [stored.url],

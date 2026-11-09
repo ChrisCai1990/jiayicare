@@ -145,7 +145,7 @@ const medicalReportSchema = new mongoose.Schema({
   // 避免门诊病历、处方、问卷等资料被强行归入体检报告类型。
   documentCategory: {
     type: String,
-    enum: ['physical_exam', 'lab_report', 'exam_report', 'body_composition', 'functional_medicine', 'genetic_test', 'outpatient_record', 'inpatient_record', 'prescription_order', 'questionnaire', 'other_customer_material'],
+    enum: ['physical_exam', 'lab_report', 'exam_report', 'body_composition', 'functional_medicine', 'genetic_test', 'outpatient_record', 'inpatient_record', 'prescription_order', 'questionnaire', 'other_customer_material', 'insurance_claim_receipt'],
     default: undefined,
   },
   hospital:    { type: String, default: '' },
@@ -180,6 +180,7 @@ const medicalReportSchema = new mongoose.Schema({
   reject_reason:{ type: String, default: '' },
   // 同次体检后补的完整原件：保留文件，结构化结果仍以关联的已审核报告为准。
   archiveOnly: { type: Boolean, default: false },
+  insuranceClaim: { type: Boolean, default: false },
   archiveSourceReportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
   archiveOnlyAt: { type: Date, default: null },
   archiveOnlyBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },

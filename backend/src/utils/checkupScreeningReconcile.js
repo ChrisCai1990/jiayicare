@@ -13,7 +13,7 @@ function sameCheckupRound(plan, report) {
     && !Number.isNaN(target.getTime()) && !Number.isNaN(actual.getTime())
     && Math.abs(target.getTime() - actual.getTime()) <= 45 * 86400000;
 }
-const NON_EXAM_CATEGORIES = ['outpatient_record', 'inpatient_record', 'prescription_order', 'questionnaire', 'other_customer_material'];
+const NON_EXAM_CATEGORIES = ['outpatient_record', 'inpatient_record', 'prescription_order', 'questionnaire', 'other_customer_material', 'insurance_claim_receipt'];
 const hasResult = part => [part.value, part.findings, part.diagnosis, part.conclusion]
   .some(value => value !== null && value !== undefined && !/^[\s\-—–/]*$/.test(String(value)));
 
