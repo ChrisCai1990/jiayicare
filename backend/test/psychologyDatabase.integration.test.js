@@ -67,7 +67,7 @@ test('real isolated Mongo and authenticated HTTP care lifecycle', { skip: !proce
   await User.collection.updateOne({ _id: patient }, { $set: { assignedFamilyDoctor: actors[5]._id } });
   assert.equal((await call(0, path)).status, 404); assert.equal((await call(5, path)).status, 404);
   assert.equal((await call(5, '/takeover', { patientId: patient, reason: 'new responsible advisor' })).status, 200);
-  result = await call(5, path); assert.equal(result.data.sessions[0].content, 'confidential formal record');
+  result = await call(5, path); assert.equal(result.data.sessions[0].content, 'confidential formal record'); assert.equal(result.data.sessions[0].authorName, actors[1].name);
   assert.equal((await call(5, path, { action: 'update', version: result.data.__v, status: 'ended' })).status, 200);
   assert.equal((await call(6, path)).status, 404);
 });

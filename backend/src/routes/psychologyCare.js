@@ -69,7 +69,12 @@ router.use('/:id', async (req, res, next) => {
 });
 router.get('/:id', async (req, res) => {
   await Audit.create({ tenantId: req.staff.tenantId, careId: req.care._id, actorId: req.staff._id, action: 'read' });
-  res.json({ success: true, data: { ...req.care.toObject(), patient: { name: req.carePatient.name, age: req.carePatient.age, gender: req.carePatient.gender } } });
+  const data = req.care.toObject();
+  const authorIds = [...new Set(data.sessions.map(s => s.authorId && String(s.authorId)).filter(Boolean))];
+  const authors = authorIds.length ? await Admin.find({ _id: { $in: authorIds }, tenantId: req.staff.tenantId }).select('name').lean() : [];
+  const authorNames = new Map(authors.map(a => [String(a._id), a.name]));
+  data.sessions = data.sessions.map(s => ({ ...s, authorName: authorNames.get(String(s.authorId)) || '' }));
+  res.json({ success: true, data: { ...data, patient: { name: req.carePatient.name, age: req.carePatient.age, gender: req.carePatient.gender } } });
 });
 router.post('/:id', async (req, res) => {
   const care = req.care;
