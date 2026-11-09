@@ -35,6 +35,7 @@ export default function InventoryPage() {
   const [entry, setEntry] = useState({ productId:'', serviceProductId:'', salePriceLabel:'', orderId:'', requestId:crypto.randomUUID(), type:'receipt', units:1, batchNo:'', serialNo:'', expiresAt:'', location:'', userId:'', assigneeId:'', unitCost:'', unitPrice:'', note:'' })
   const [count, setCount] = useState({ productId:'', counted:'', note:'' })
   const [settings, setSettings] = useState({ productId:'', name:'', unit:'件', linkedProductIds:[], salePrices:[], minStock:0, defaultCost:0, location:'' })
+  const [priceEditor, setPriceEditor] = useState({ productId:'', salePrices:[] })
   const load = async () => {
     const [inventory, products, usage, staff] = await Promise.all([adminAPI.inventory(), adminAPI.products(), adminAPI.inventoryConsumption(), adminAPI.inventoryPeople()])
     setData(inventory.data)
@@ -45,8 +46,8 @@ export default function InventoryPage() {
   useEffect(() => { load().catch(e => setError(e.message)) }, [])
   const submit = async (operation) => {
     setBusy(true); setError(''); setMessage('')
-    try { await operation(); await load(); setMessage('已保存') }
-    catch (e) { setError(e.message) }
+    try { await operation(); await load(); setMessage('已保存'); return true }
+    catch (e) { setError(e.message); return false }
     finally { setBusy(false) }
   }
   const selected = data.products.find(p => p._id === entry.productId)
@@ -67,6 +68,11 @@ export default function InventoryPage() {
       document.getElementById('inventory-sale-prices')?.focus({ preventScroll:true })
     })
   }
+  const saveSalePrices = async e => {
+    e.preventDefault()
+    if (await submit(() => adminAPI.updateInventorySettings(priceEditor.productId, { salePrices:priceEditor.salePrices })))
+      setPriceEditor({ productId:'', salePrices:[] })
+  }
   const actualValue = data.products.filter(p => !p.needsOpeningCount).reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.inventoryTracking?.defaultCost || 0), 0)
   const unverifiedCount = data.products.filter(p => p.needsOpeningCount).length
   const manualSales = consumption.manual.filter(x => x.type === 'manual_sale').reduce((sum, x) => sum + x.units * x.unitPrice, 0)
@@ -80,7 +86,9 @@ export default function InventoryPage() {
       <h2>库存概览</h2>
       <p>实物物资 {data.products.length} 项 · 已核实物资按参考成本估算库存 {money(actualValue)} · 待实盘核实 {unverifiedCount} 项 · 近 500 条记录中的商城订单 {money(mallSales)} / 医护录入消费 {money(manualSales)}</p>
       <div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>物资</th><th>类别</th><th>可用</th><th>预警</th><th>销售定价</th><th>关联服务</th><th>参考成本</th><th>存放地点</th><th>操作</th></tr></thead><tbody>
-        {data.products.map(p => <tr key={p._id}><td>{p.name}</td><td>{p.inventoryTracking?.kind === 'reusable' ? '可重复使用设备' : '耗材/商品'}</td><td>{p.needsOpeningCount ? `待核实（旧账面 ${p.stock}）` : `${p.stock} ${p.inventoryTracking?.unit || ''}`}</td><td>{p.needsOpeningCount ? '待实盘核实' : Number(p.stock) <= Number(p.inventoryTracking?.minStock || 0) ? '低库存' : '-'}</td><td>{p.salePrices?.length ? p.salePrices.map(row => <div key={row.label}>{row.label} · {row.units}{p.inventoryTracking?.unit || '件'} / {money(row.price)}</div>) : <span style={{ color:'#b45309' }}>未设置</span>}</td><td>{(p.linkedProducts || []).map(x => x.name).join('、') || '未关联'}</td><td>{money(p.inventoryTracking?.defaultCost)}</td><td>{p.inventoryTracking?.location || '-'}</td><td><div style={{ display:'flex', gap:6, flexWrap:'wrap' }}><button className="btn btn-primary" type="button" onClick={() => startSettings(p._id)}>编辑定价</button><button className="btn btn-secondary" type="button" onClick={() => startCount(p._id)}>校正库存</button></div></td></tr>)}
+        {data.products.map(p => <React.Fragment key={p._id}><tr><td>{p.name}</td><td>{p.inventoryTracking?.kind === 'reusable' ? '可重复使用设备' : '耗材/商品'}</td><td>{p.needsOpeningCount ? `待核实（旧账面 ${p.stock}）` : `${p.stock} ${p.inventoryTracking?.unit || ''}`}</td><td>{p.needsOpeningCount ? '待实盘核实' : Number(p.stock) <= Number(p.inventoryTracking?.minStock || 0) ? '低库存' : '-'}</td><td>{p.salePrices?.length ? p.salePrices.map(row => <div key={row.label}>{row.label} · {row.units}{p.inventoryTracking?.unit || '件'} / {money(row.price)}</div>) : <span style={{ color:'#b45309' }}>未设置</span>}</td><td>{(p.linkedProducts || []).map(x => x.name).join('、') || '未关联'}</td><td>{money(p.inventoryTracking?.defaultCost)}</td><td>{p.inventoryTracking?.location || '-'}</td><td><div style={{ display:'flex', gap:6, flexWrap:'wrap' }}><button className="btn btn-primary" type="button" onClick={() => setPriceEditor({ productId:p._id, salePrices:(p.salePrices || []).map(row => ({ label:row.label, units:row.units, price:row.price })) })}>编辑定价</button><button className="btn btn-secondary" type="button" onClick={() => startCount(p._id)}>校正库存</button></div></td></tr>
+          {priceEditor.productId === p._id && <tr><td colSpan={9}><form onSubmit={saveSalePrices} style={{ maxWidth:650, padding:'12px 0' }}><strong>{p.name} · 销售定价</strong><SalePricesEditor value={priceEditor.salePrices} onChange={salePrices => setPriceEditor(current => ({ ...current, salePrices }))} unit={p.inventoryTracking?.unit || '件'} /><div style={{ display:'flex', gap:8 }}><button className="btn btn-primary" disabled={busy}>保存定价</button><button className="btn btn-secondary" type="button" onClick={() => setPriceEditor({ productId:'', salePrices:[] })}>取消</button></div></form></td></tr>}
+        </React.Fragment>)}
       </tbody></table></div>
     </section>
     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:18 }}>
