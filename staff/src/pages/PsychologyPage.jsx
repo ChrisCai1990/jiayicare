@@ -50,9 +50,9 @@ export default function PsychologyPage({ embedded = false, patient = null }) {
   const save = payload => run(async () => { await psychologyAPI.post('/' + care._id, { action: 'update', ...payload, version: care.__v }); await open(care._id); await load() })
   if (!['familyDoctor', 'psychologist'].includes(staff?.role)) return <div className="page">当前岗位无权查看心理咨询资料。</div>
   return <div className="psychology-workspace">{!embedded && <h1>心理咨询</h1>}
-    <div className="psychology-privacy">仅负责顾问与咨询师可查看正式咨询资料</div>
+    {!care && <div className="psychology-privacy">仅负责顾问与咨询师可查看正式咨询资料</div>}
     {error && <div role="alert" style={{ color: '#b42318', whiteSpace: 'pre-wrap' }}>{error}</div>}
-    {patient && <div className="hub-header"><div><h2>长期心理咨询</h2><p>该客户的咨询记录与持续跟进</p></div>{!loading && !care && !error && <button className="btn btn-primary" onClick={() => setCreating(true)}>发起长期心理咨询</button>}</div>}
+    {patient && !care && <div className="hub-header"><div><h2>长期心理咨询</h2><p>该客户的咨询记录与持续跟进</p></div>{!loading && !care && !error && <button className="btn btn-primary" onClick={() => setCreating(true)}>发起长期心理咨询</button>}</div>}
     {creating && <ConsultationCreatePanel initialType="psychology" fixedPatient={patient} onClose={() => setCreating(false)} onCreated={async (_, record) => { setCreating(false); await run(async () => { await open(record._id || record.id); await load() }) }} />}
     {loading ? <p role="status">正在加载咨询档案…</p> : <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
       {!care ? <>
@@ -60,11 +60,8 @@ export default function PsychologyPage({ embedded = false, patient = null }) {
 
       </> : <>
         {!patient && <button className="btn btn-secondary" onClick={() => setCare(null)}>返回列表</button>}
-        <h2>{care.patient.name} · {{ active: '进行中', paused: '暂停', ended: '已结束' }[care.status]}</h2>
-        <div className="card" style={{ padding: 20 }}><h3>顾问共享资料</h3>{advisor ? <><textarea className="form-input" rows={6} maxLength={20000} style={{ width: '100%' }} value={background} onChange={e => setBackground(e.target.value)} /><button className="btn btn-secondary" onClick={() => save({ status: care.status, sharedBackground: background })}>保存共享资料</button><div style={{ marginTop: 16 }}>{['active', 'paused', 'ended'].filter(s => s !== care.status).map(status => <button className="btn btn-secondary" key={status} onClick={() => save({ status })}>{{ active: '恢复服务', paused: '暂停服务', ended: '结束服务' }[status]}</button>)}</div></> : <p style={{ whiteSpace: 'pre-wrap' }}>{care.sharedBackground}</p>}</div>
-        {advisor && care.status !== 'ended' && <div className="card" style={{ padding: 20, marginTop: 16 }}><h3>咨询师交接</h3><p>交接后原咨询师立即失去访问权限，新咨询师可查看完整历史。</p><select className="form-input" value={handoff.psychologistId} onChange={e => setHandoff({ ...handoff, psychologistId: e.target.value })}><option value="">请选择新咨询师</option>{options.psychologists.filter(p => p._id !== care.psychologistId).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select><input className="form-input" maxLength={1000} placeholder="交接原因" value={handoff.reason} onChange={e => setHandoff({ ...handoff, reason: e.target.value })} /><button className="btn btn-secondary" onClick={() => save({ action: 'transfer', ...handoff })}>确认交接</button></div>}
-        <h3>历次正式咨询记录</h3>
-        {[...care.sessions].reverse().map(s => <article className="card" key={s._id} style={{ padding: 20, marginBottom: 12 }}><strong>{new Date(s.date).toLocaleString('zh-CN')}</strong><p style={{ whiteSpace: 'pre-wrap' }}>{s.content}</p>{s.originalContent && <details className="psychology-original-record"><summary>查看分类整理前的原始记录</summary><p style={{ whiteSpace: 'pre-wrap' }}>{s.originalContent}</p></details>}{s.nextDate && <p>下次咨询：{new Date(s.nextDate).toLocaleString('zh-CN')}</p>}</article>)}
+        <div className="psychology-record-header"><div><h2>咨询师记录</h2><span>{!patient && `${care.patient.name} · `}{{ active: '进行中', paused: '暂停', ended: '已结束' }[care.status]} · 共 {care.sessions.length} 次咨询</span></div><small>仅负责顾问与咨询师可见</small></div>
+        {[...care.sessions].sort((a, b) => new Date(b.date) - new Date(a.date) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).map((s, index) => <article className="card psychology-record" key={s._id}><details open={index === 0}><summary><strong>{index === 0 ? '最近一次咨询' : '咨询记录'}</strong><time>{new Date(s.date).toLocaleString('zh-CN')}</time><span className="psychology-record-toggle">展开 / 收起</span></summary><div className="psychology-record-body"><p style={{ whiteSpace: 'pre-wrap' }}>{s.content}</p>{s.originalContent && <details className="psychology-original-record"><summary>查看分类整理前的原始记录</summary><p style={{ whiteSpace: 'pre-wrap' }}>{s.originalContent}</p></details>}{s.nextDate && <p>下次咨询：{new Date(s.nextDate).toLocaleString('zh-CN')}</p>}</div></details></article>)}
         {!care.sessions.length && <p>尚未提交咨询记录。</p>}
         {!advisor && care.status === 'active' && <form className="card psychology-session-form" onSubmit={e => {
           e.preventDefault()
@@ -84,6 +81,10 @@ export default function PsychologyPage({ embedded = false, patient = null }) {
           {error && <div role="alert" className="consultation-form-error">{error}</div>}
           <button className="btn btn-primary">提交正式记录</button>
         </form>}
+        <details className="psychology-management"><summary>{advisor ? '共享资料与服务管理' : '顾问共享资料'}</summary>
+        <div className="card" style={{ padding: 20 }}><h3>顾问共享资料</h3>{advisor ? <><textarea className="form-input" rows={6} maxLength={20000} style={{ width: '100%' }} value={background} onChange={e => setBackground(e.target.value)} /><button className="btn btn-secondary" onClick={() => save({ status: care.status, sharedBackground: background })}>保存共享资料</button><div style={{ marginTop: 16 }}>{['active', 'paused', 'ended'].filter(s => s !== care.status).map(status => <button className="btn btn-secondary" key={status} onClick={() => save({ status })}>{{ active: '恢复服务', paused: '暂停服务', ended: '结束服务' }[status]}</button>)}</div></> : <p style={{ whiteSpace: 'pre-wrap' }}>{care.sharedBackground}</p>}</div>
+        {advisor && care.status !== 'ended' && <div className="card" style={{ padding: 20, marginTop: 16 }}><h3>咨询师交接</h3><p>交接后原咨询师立即失去访问权限，新咨询师可查看完整历史。</p><select className="form-input" value={handoff.psychologistId} onChange={e => setHandoff({ ...handoff, psychologistId: e.target.value })}><option value="">请选择新咨询师</option>{options.psychologists.filter(p => p._id !== care.psychologistId).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select><input className="form-input" maxLength={1000} placeholder="交接原因" value={handoff.reason} onChange={e => setHandoff({ ...handoff, reason: e.target.value })} /><button className="btn btn-secondary" onClick={() => save({ action: 'transfer', ...handoff })}>确认交接</button></div>}
+        </details>
       </>}
     </fieldset>}
   </div>
