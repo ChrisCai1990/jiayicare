@@ -6158,8 +6158,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // them from the screening record. Check the server-classified items, including
     // requests that only change aiStatus without sending reportItems.
     if (aiStatus === 'reviewed' && report.documentCategory !== 'prescription_order') {
-      const unclassified = (report.reportItems || []).filter(item =>
-        !(item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length)));
+      const unclassified = require('../utils/screeningMatch').findUnclassifiedNamedItems(report.reportItems);
       if (unclassified.length) return res.status(400).json({
         success: false,
         code: 'REPORT_ITEMS_UNCLASSIFIED',
@@ -6656,8 +6655,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
     if (!['prescription_order', 'outpatient_record'].includes(report.documentCategory)) {
-      const unclassified = (report.reportItems || []).filter(item =>
-        !(item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length)));
+      const unclassified = require('../utils/screeningMatch').findUnclassifiedNamedItems(report.reportItems);
       if (unclassified.length) return res.status(400).json({
         success: false, code: 'REPORT_ITEMS_UNCLASSIFIED',
         message: `还有 ${unclassified.length} 项未归类，请先逐项归类；当前修改可保存为草稿`,

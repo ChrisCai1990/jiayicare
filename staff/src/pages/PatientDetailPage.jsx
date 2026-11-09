@@ -4421,7 +4421,7 @@ export default function PatientDetailPage() {
     // 旧数据迁移：只有明确标记为 imaging 的旧记录才把 value 搬到 findings。
     // 不能用“内容长度 > 40”猜类型，否则用户只是打开并保存，字段内容也会被改写。
     const items = JSON.parse(JSON.stringify(latestReport.reportItems || []))
-      .filter(it => it.name && String(it.name).trim())
+      .filter(it => [it.name, it.value, it.findings, it.diagnosis, it.conclusion].some(value => String(value || '').trim()))
       .map(it => {
         // 旧处方曾借用 lab 类型；打开审核时即迁移为独立药品类型，保存后持久化。
         if (latestReport.documentCategory === 'prescription_order') {
@@ -13541,9 +13541,9 @@ export default function PatientDetailPage() {
         }
         const isSubstantiveItem = it => [it.name, it.value, it.findings, it.diagnosis, it.conclusion].some(value => String(value || '').trim())
         const substantiveItems = ocrEditItems.map((it, i) => ({ it, i })).filter(({ it }) => isSubstantiveItem(it))
-        const unclassifiedItems = substantiveItems.filter(({ it }) => !isClassified(it))
+        const unclassifiedItems = substantiveItems.filter(({ it }) => String(it.name || '').trim() && !isClassified(it))
         const unclassifiedN = ocrReviewReport.documentCategory === 'prescription_order' ? 0 : unclassifiedItems.length
-        const matchedN = substantiveItems.length - unclassifiedItems.length
+        const matchedN = substantiveItems.filter(({ it }) => String(it.name || '').trim() && isClassified(it)).length
         const unclassifiedByPage = unclassifiedItems.reduce((counts, { it }) => {
           const page = Number(it.sourcePage) || 1
           counts[page] = (counts[page] || 0) + 1
@@ -13567,6 +13567,7 @@ export default function PatientDetailPage() {
           const options = allClassifyOpts.filter(option => !search || [option.groupLabel, option.label, ...(option.searchTerms || [])].join(' ').toLowerCase().includes(search))
           return <div style={{ fontSize: 12, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
             {identityChanged && !manual ? <div style={{ color: '#B45309' }}>项目已修改，保存后重新匹配归类</div> : labels.length ? labels.map(label => <div key={label} style={{ color: '#1E6B50' }}>{manual ? '人工归类' : '系统归类'}：{label}</div>)
+              : !String(it.name || '').trim() ? <div style={{ color: '#6B7E75' }}>原文未识别出项目名称；可对照原件补写名称后归类</div>
               : <div role="alert" style={{ color: '#B42318', fontWeight: 800, padding: '4px 7px', background: '#FFF1F0', border: '1px solid #FCA5A5', borderRadius: 4 }}>⚠ 未归类 · 请在下方选择分类</div>}
             <details><summary style={{ cursor: 'pointer', color: '#0077B6' }}>选择 / 修改归类</summary>
               <input style={{ width: '100%', marginTop: 4, padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }} placeholder="搜索 Admin 分类或项目别名" value={ocrClassifySearch[i] || ''} onChange={e => setOcrClassifySearch(current => ({ ...current, [i]: e.target.value }))} />

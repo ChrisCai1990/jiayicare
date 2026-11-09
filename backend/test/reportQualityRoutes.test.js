@@ -81,9 +81,11 @@ test('isolated Mongo: Admin confirmation, role checks, review metadata and idemp
     assert.equal((await MedicalReport.findById(report._id)).audit_status, 'unaudited');
     assert.equal((await call(base, { date: '2026-09-20', institutionStatus: 'unknown' }, admin, 'PATCH')).status, 200);
     const beforeApproval = await MedicalReport.findById(report._id).lean();
-    const approved = await call(base, { reportItems: beforeApproval.reportItems, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: beforeApproval.reviewRevision }, admin, 'PATCH');
+    const unnamedSourceText = { itemId: randomUUID(), name: '', itemType: 'imaging', findings: '原报告仍需保留的检查所见', screeningKey: '', screeningKeys: [] };
+    const approved = await call(base, { reportItems: [...beforeApproval.reportItems, unnamedSourceText], aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: beforeApproval.reviewRevision }, admin, 'PATCH');
     assert.equal(approved.status, 200, approved.body.message);
     assert.equal((await MedicalReport.findById(report._id)).audit_status, 'audited');
+    assert.equal((await MedicalReport.findById(report._id)).reportItems[1].findings, unnamedSourceText.findings);
     await UserScreeningItem.updateOne({ user: patient, reportId: report._id, itemId: manualKeys[1] }, { $set: { category: String(root._id), parentLabel: root.name, itemLabel: otherLeaf.name, status: 'completed' } }, { upsert: true });
     const beforeReclassification = await MedicalReport.findById(report._id).lean();
     const reclassified = await call(base, { reportItems: [{ ...beforeReclassification.reportItems[0], manualClassificationKeys: [manualKeys[0]] }], screeningReclassification: true, editSource: 'ocr_review', expectedRevision: beforeReclassification.reviewRevision }, staff, 'PATCH');
