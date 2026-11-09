@@ -1,5 +1,5 @@
 // ── 首次登录问卷分批推送 ────────────────────────────────────────────
-// 第一批（onboarding 完成后立即推送）：健康问卷表（成人）+ 膳食调查问卷 + Epworth 嗜睡量表
+// 第一批（onboarding 完成后立即推送）：健康问卷表（成人）+ 膳食调查问卷 + 嘉医汇睡眠情况问卷
 // 第二批（间隔数天后自动推送）：焦虑自评量表（SAS）+ 抑郁自评量表（SDS）
 // 第三批（条件触发，非定时）：症状自评量表（SCL90）—— 仅当第二批SAS/SDS任一标准分≥53（异常）才推送，
 //   触发点在 questionnaire.js 提交接口里判定完异常后调用 pushBatch3ForAbnormalPsych()
@@ -7,7 +7,7 @@
 
 const BATCH2_DELAY_DAYS = 3; // 第二批推送延迟天数
 
-const BATCH1_TITLES = ['健康问卷表（成人）', '膳食调查问卷', 'Epworth 嗜睡量表'];
+const BATCH1_TITLES = ['健康问卷表（成人）', '膳食调查问卷'];
 const BATCH2_TITLES = ['焦虑自评量表（SAS）', '抑郁自评量表（SDS）'];
 const BATCH3_TITLES = ['症状自评量表（SCL90）'];
 
@@ -44,6 +44,8 @@ async function pushQuestionnairesToUser(userId, titles) {
 
 async function pushBatch1(userId) {
   await pushQuestionnairesToUser(userId, BATCH1_TITLES);
+  const result = await require('./sleepIntakePush').pushSleepIntake(userId);
+  if (['template_unavailable', 'missing_operator'].includes(result)) console.error('[sleep-intake] 首次推送未完成', String(userId), result);
 }
 
 // 扫描所有"完成onboarding满BATCH2_DELAY_DAYS天、且未推送过第二批"的用户，逐一推送

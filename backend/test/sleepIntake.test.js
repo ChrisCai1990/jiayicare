@@ -1,0 +1,9 @@
+const test = require('node:test'); const assert = require('node:assert/strict');
+const { KEY, QUESTIONS, validate, record, archive } = require('../src/utils/sleepIntake');
+const { idFor } = require('../src/utils/sleepIntakePush');
+const answers = () => Object.fromEntries(QUESTIONS.filter(q => q.required).map(q => [q.id, q.options[0].label]));
+test('original intake has no scoring and preserves optional blanks', () => { const clean=validate({...answers(), injected:'bad'}); assert.equal(clean.injected,undefined); assert.equal(clean.schedule,undefined); assert.ok(QUESTIONS.every(q=>q.scoreEnabled===false)); });
+test('missing and invalid answers rejected', () => { assert.throws(()=>validate({})); assert.throws(()=>validate({...answers(),routine:'fake'})); assert.throws(()=>validate({...answers(),schedule:[]})); });
+test('snapshot archives raw answers with no score or diagnosis', () => { const row=record({_id:'abc',submittedAt:new Date(),answers:answers(),questionnaireSnapshot:{standardTemplateKey:KEY,title:'睡眠',questions:QUESTIONS}}); assert.equal(row.answers.length,9); assert.equal(row.totalScore,undefined); assert.equal(row.answers[1].answer,'未填写（选填）'); });
+test('archive uses subject ID and stable response key, failures are visible',async()=>{let seen;await archive({updateOne:async(f,u)=>(seen={f,u},{matchedCount:1})},'subject',{_id:'abc',answers:answers(),questionnaireSnapshot:{standardTemplateKey:KEY,questions:QUESTIONS}});assert.equal(seen.f._id,'subject');assert.ok(seen.u.$set['sleepIntakeRecords.abc']);await assert.rejects(()=>archive({updateOne:async()=>({matchedCount:0})},'subject',{_id:'abc',answers:answers(),questionnaireSnapshot:{standardTemplateKey:KEY,questions:QUESTIONS}}));});
+test('push identity stable and isolated per member',()=>{assert.equal(idFor('v:u'),idFor('v:u'));assert.notEqual(idFor('v:u'),idFor('v:b'));assert.match(idFor('v:u'),/^[a-f0-9]{24}$/);});

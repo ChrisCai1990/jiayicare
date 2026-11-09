@@ -1,3 +1,4 @@
+const sleepIntake = require('../utils/sleepIntake');
 const express = require('express');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
@@ -284,9 +285,18 @@ router.post('/:id/submit', auth, async (req, res) => {
       }
     }
     // 新链路按推送实例防重复；无 assignmentId 的历史入口仍沿用客户+模板防重复。
+    const isSleepIntake = questionnaire.standardTemplateKey === sleepIntake.KEY;
+    if (isSleepIntake) {
+      try { const clean = sleepIntake.validate(answers, questionnaire.questions); Object.keys(answers).forEach(k => delete answers[k]); Object.assign(answers, clean); }
+      catch (e) { return res.status(400).json({ success: false, message: e.message }); }
+    }
     const existing = assignment
       ? await QuestionnaireResponse.findOne({ pushRecordId: assignment._id })
       : await QuestionnaireResponse.findOne({ questionnaire: req.params.id, user: subjectId, pushRecordId: null });
+    if (existing && isSleepIntake) {
+      await sleepIntake.archive(User, subjectId, existing);
+      return res.json({ success: true, data: existing });
+    }
     if (existing) return res.status(400).json({ success: false, message: '您已提交过此问卷' });
 
     // genderOnly 题目校验：与用户性别不符的题目不应作答（男性提交了女性专属题的答案会被忽略）；
@@ -332,20 +342,27 @@ router.post('/:id/submit', auth, async (req, res) => {
     const psychScaleKey = getPsychScaleKey(questionnaire.title);
     const factorScores = psychScaleKey === 'scl90' ? calcFactorScores(questionnaire, answers) : {};
 
-    const response = await QuestionnaireResponse.create({
+    const responseData = {
       questionnaire: req.params.id,
       user: subjectId,
       submittedBy: childId ? req.user._id : null,
       answers,
-      questionnaireSnapshot: questionnaire.archivePurpose === 'child_health' || questionnaire.standardTemplateKey === 'rehab_screening_v1' ? {
-        title: questionnaire.title, ageStage: childStage, questions: effectiveQuestions.map(q => ({ id: q.id, text: q.text, archiveField: q.archiveField, type: q.type })),
+      questionnaireSnapshot: isSleepIntake || questionnaire.archivePurpose === 'child_health' || questionnaire.standardTemplateKey === 'rehab_screening_v1' ? {
+        standardTemplateKey: questionnaire.standardTemplateKey, title: questionnaire.title, ageStage: childStage, questions: effectiveQuestions.map(q => ({ id: q.id, text: q.text, archiveField: q.archiveField, type: q.type })),
         submittedByName: childId ? req.user.name || '监护人' : '',
       } : null,
       totalScore,
       factorScores,
       pushRecordId: assignment?._id || null,
       sourceOrderId: assignment?.sourceOrderId || null,
-    });
+    };
+    const response = isSleepIntake
+      ? await QuestionnaireResponse.findOneAndUpdate(
+          { _id: require('../utils/sleepIntakePush').idFor(`sleep-response:${questionnaire._id}:${subjectId}:${assignment?._id || 'initial'}`) },
+          { $setOnInsert: responseData }, { upsert: true, new: true, setDefaultsOnInsert: true })
+      : await QuestionnaireResponse.create(responseData);
+
+    if (isSleepIntake) await sleepIntake.archive(User, subjectId, response);
 
     if (String(questionnaire._id) === require('../utils/legacyLifestyleInterview').QUESTIONNAIRE_ID) {
       try {
@@ -384,6 +401,8 @@ router.post('/:id/submit', auth, async (req, res) => {
       } catch (e) {
         console.error('[psych-scale-import] 心理量表自动写入档案失败', e.message);
       }
+    } else if (isSleepIntake) {
+      // Already persisted above, without a clinical score or review gate.
     } else if (questionnaire.archivePurpose === 'child_health') {
       try {
         const { followupChildMutation, initialChildMutation } = require('../utils/childArchive');
