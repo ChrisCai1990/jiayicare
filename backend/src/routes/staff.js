@@ -5855,6 +5855,71 @@ router.patch('/medical-reports/:id/page-dates/:page', staffAuth, async (req, res
   }
 });
 
+// 已审资料的大类更正重新开启对应类别的解析与审核。旧顾问草稿失效，已入档记录须先撤销。
+router.patch('/medical-reports/:id/category-correction', staffAuth, async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role))
+      return res.status(403).json({ success:false, message:'仅健管专员可更正已审核资料分类' });
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success:false, message:'报告不存在' });
+    const scope = await getVisiblePlanPatientIds(req.staff);
+    if (scope && !scope.some(id => String(id) === String(report.user)))
+      return res.status(403).json({ success:false, message:'无此会员权限' });
+    const category = String(req.body?.documentCategory || '');
+    const reason = cleanMedicalText(req.body?.reason, 500);
+    if (!MedicalReport.schema.path('documentCategory').enumValues.includes(category))
+      return res.status(400).json({ success:false, message:'请选择有效的资料分类' });
+    if (reason.length < 5) return res.status(400).json({ success:false, message:'请填写至少5字的更正原因' });
+    if (report.audit_status !== 'audited' || report.archiveOnly || report.duplicateOf)
+      return res.status(409).json({ success:false, message:'仅正常已审核报告可更正分类，请刷新' });
+    if (category === report.documentCategory)
+      return res.status(400).json({ success:false, message:'新旧资料分类相同' });
+    if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running'
+      || report.parseJob?.status === 'processing' || report.pageParseStatus?.status === 'processing'
+      || report.healthCourseDraft?.status === 'extracting')
+      return res.status(409).json({ success:false, message:'报告正在处理，请完成后刷新重试' });
+    const patient = await User.findById(report.user).select('diseaseRecords').lean();
+    if (patient && findReportArchive(patient.diseaseRecords, report._id))
+      return res.status(409).json({ success:false, message:'报告已有诊疗时间轴记录，请先由健康顾问撤销误入档记录' });
+    if (report.healthCourseDraft?.status === 'approved')
+      return res.status(409).json({ success:false, message:'顾问草稿已入档，请先撤销误入档记录' });
+    const now = new Date();
+    const previousDraft = report.healthCourseDraft || null;
+    const previousClinicalReview = report.clinicalReview || null;
+    const update = { $set: { documentCategory:category, audit_status:'unaudited', aiStatus:'none',
+      parseJob:null, audited_by:'', audited_at:null, reviewedAt:null, reviewedByStaff:null,
+      staffAuditSnapshot:{ reportItems:null, snapshotAt:null }, advisorCorrection:null, aiSummary:'',
+      reportItems:[], keyFindings:[], examDescription:'', examConclusion:'', examMainConclusions:{},
+      healthCourseDraft:previousDraft ? { ...previousDraft, status:'superseded', supersededAt:now, supersededReason:'资料分类更正' } : null,
+      clinicalReview:null,
+    }, $push: { categoryCorrectionHistory: {
+      from:report.documentCategory || '', to:category, reason, at:now,
+      by:req.staff._id, byName:req.staff.name || req.staff.username || '',
+      previousDraft, previousClinicalReview,
+      previousAudit:{ status:report.audit_status, by:report.audited_by, at:report.audited_at, aiStatus:report.aiStatus },
+      previousStaffAuditSnapshot:report.staffAuditSnapshot, previousAdvisorCorrection:report.advisorCorrection,
+      previousAiSummary:report.aiSummary, previousReportItems:report.reportItems,
+      previousKeyFindings:report.keyFindings, previousExamDescription:report.examDescription,
+      previousExamConclusion:report.examConclusion, previousExamMainConclusions:report.examMainConclusions,
+    }, dataEditLog: {
+      itemIndex:-1, itemName:'已审资料大类更正', field:'documentCategory', oldValue:report.documentCategory || '', newValue:category,
+      operatorId:req.staff._id, operatorName:req.staff.name || req.staff.username || '', operatorRole:req.staff.role,
+      source:`audited_category_correction: ${reason}`, at:now,
+    } }, $inc:{ reviewRevision:1 } };
+    if (report.documentCategory === 'outpatient_record' && category !== 'outpatient_record')
+      update.$set.courseTargetDiseaseId = null;
+    const changed = await MedicalReport.updateOne({ _id:report._id, updatedAt:report.updatedAt,
+      audit_status:'audited', documentCategory:report.documentCategory }, update);
+    if (!changed.modifiedCount)
+      return res.status(409).json({ success:false, message:'报告已变化，请刷新后重新核对' });
+    // 与顾问退回相同：待重审期间撤出由旧审核派生的筛查、身体成分和风险记录。
+    await UserScreeningItem.deleteMany({ user:report.user, reportId:report._id });
+    await removeBodyCompositionFromReturnedReport(report.user, report._id);
+    await require('../utils/healthRiskEvents').syncReportRisk(await MedicalReport.findById(report._id));
+    return res.json({ success:true, data:{ documentCategory:category, invalidatedDraft:!!previousDraft, needsReview:true } });
+  } catch (err) { return res.status(500).json({ success:false, message:err.message }); }
+});
+
 router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);

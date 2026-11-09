@@ -2286,6 +2286,7 @@ export default function PatientDetailPage() {
   const [showReferralModal, setShowReferralModal] = useState(() => !!location.state?.editReferral || new URLSearchParams(location.search).get('compose') === 'referral')
   const [editingReferral, setEditingReferral] = useState(() => location.state?.editReferral || null)
   const [showReportDetail, setShowReportDetail] = useState(null)
+  const [categoryCorrection, setCategoryCorrection] = useState(null)
   const [archiveSourceReportId, setArchiveSourceReportId] = useState('')
   const [duplicateSourceReportId, setDuplicateSourceReportId] = useState('')
   const [duplicateReason, setDuplicateReason] = useState('')
@@ -3438,6 +3439,7 @@ export default function PatientDetailPage() {
   const openReportDetail = (r) => {
     // 立即显示弹窗（用列表里已有的数据）
     setShowReportDetail(r)
+    setCategoryCorrection(null)
     setArchiveSourceReportId('')
     setLegacyOutpatientTargetId('')
     setAdvisorReturnReason('')
@@ -13013,7 +13015,9 @@ export default function PatientDetailPage() {
                 const l1Node = r.screeningL1 ? screeningTree.find(n => String(n._id) === r.screeningL1) : null
                 const categoryLabel = l1Node ? [l1Node.label, r.screeningL2].filter(Boolean).join(' › ') : (r.type === 'annual' ? '年度体检报告' : null)
                 const rows = [
-                  ['报告类型', typeLabel],
+                  ['资料分类', DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'],
+                  ...(r.categoryCorrectionHistory?.length ? [['分类更正', `${DOCUMENT_CATEGORY_LABEL[r.categoryCorrectionHistory.at(-1).from] || '其他资料'} → ${DOCUMENT_CATEGORY_LABEL[r.categoryCorrectionHistory.at(-1).to] || '其他资料'}（${r.categoryCorrectionHistory.at(-1).byName || '医护人员'}）`]] : []),
+                  ['筛查类型', typeLabel],
                   ...(categoryLabel && categoryLabel !== typeLabel ? [['分类', categoryLabel]] : []),
                   ['医院 / 机构', r.hospital || '-'],
                   ['报告日期', r.checkDate || r.date || '-'],
@@ -13411,6 +13415,37 @@ export default function PatientDetailPage() {
                 && !isManualOnlyReport(showReportDetail) && (
                 <div style={{ fontSize: 12, color: '#8AA89C', textAlign: 'center', padding: '4px 0' }}>
                   {showReportDetail.aiStatus === 'none' ? '请先返回报告列表点击“AI解析”，再在“审核AI结果”中核对并确认' : '请在“审核AI结果”里确认解析数据，确认后自动完成审核'}
+                </div>
+              )}
+              {showReportDetail.audit_status === 'audited' && !showReportDetail.archiveOnly && !showReportDetail.duplicateOf
+                && ['healthManager', 'superadmin'].includes(staff?.role) && (
+                <div style={{ display:'grid', gap:8, padding:'10px 0' }}>
+                  {!categoryCorrection ? <button className="btn btn-secondary btn-sm" onClick={() => setCategoryCorrection({ documentCategory:inferDocumentCategory(showReportDetail), reason:'' })}>更正资料分类</button> : <>
+                    <div style={{ fontSize:12, color:'#60756B' }}>更正会保留原审核记录供追溯，使旧顾问草稿失效，并按新分类重新进入解析与审核。已入档资料须先由健康顾问撤销误入档记录。</div>
+                    <select className="form-input" value={categoryCorrection.documentCategory} onChange={e => setCategoryCorrection(v => ({ ...v, documentCategory:e.target.value }))}>
+                      {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+                    </select>
+                    <textarea className="form-input" rows={2} placeholder="填写更正依据（至少5字）" value={categoryCorrection.reason} onChange={e => setCategoryCorrection(v => ({ ...v, reason:e.target.value }))} />
+                    {reportFlowError && <div role="alert" style={{ color:'#B42318', fontSize:12 }}>{reportFlowError}</div>}
+                    <div style={{ display:'flex', gap:8 }}>
+                      <button className="btn btn-primary btn-sm" disabled={reportFlowSaving || categoryCorrection.reason.trim().length < 5 || categoryCorrection.documentCategory === inferDocumentCategory(showReportDetail)} onClick={async () => {
+                        if (!window.confirm(`确认将资料分类更正为「${DOCUMENT_CATEGORY_LABEL[categoryCorrection.documentCategory]}」？原审核将留痕，报告须按新分类重新解析和审核；旧顾问草稿将失效。`)) return
+                        setReportFlowSaving(true)
+                        setReportFlowError('')
+                        try {
+                          const result = await staffAPI.correctReportCategory(showReportDetail._id, categoryCorrection)
+                          const latest = await staffAPI.getReport(showReportDetail._id)
+                          setShowReportDetail(latest.data)
+                          setReportScreeningData([])
+                          setCategoryCorrection(null)
+                          await loadReports()
+                          toast(result.data?.invalidatedDraft ? '资料分类已更正；旧顾问草稿已失效，请按新分类重新解析和审核' : '资料分类已更正，请按新分类重新解析和审核')
+                        } catch (error) { setReportFlowError(error.message || '资料分类更正失败') }
+                        finally { setReportFlowSaving(false) }
+                      }}>确认更正</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setCategoryCorrection(null)}>取消</button>
+                    </div>
+                  </>}
                 </div>
               )}
               <button className="btn btn-secondary" onClick={() => { setShowReportDetail(null); setShowRejectInput(false); setRejectReason('') }}>关闭</button>

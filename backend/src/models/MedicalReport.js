@@ -247,6 +247,7 @@ const medicalReportSchema = new mongoose.Schema({
     source: { type: String, default: '' },
     at: { type: Date, default: Date.now },
   }],
+  categoryCorrectionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 医护端：上传人 & 关联方案项目
   uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   submittedByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // 代孩子上传时保留实际提交者

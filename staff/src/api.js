@@ -350,6 +350,7 @@ export const staffAPI = {
   returnReportToManager: (id, reason) => req(`/staff/medical-reports/${id}/advisor-return`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   confirmReportInterpretation: id => req(`/staff/medical-reports/${id}/advisor-confirm`, { method: 'PATCH' }),
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
+  correctReportCategory: (id, data) => req(`/staff/medical-reports/${id}/category-correction`, { method: 'PATCH', body: JSON.stringify(data) }),
   updateReportPageDate: (id, page, date) => req(`/staff/medical-reports/${id}/page-dates/${page}`, { method: 'PATCH', body: JSON.stringify({ date }) }),
   updateReportItem: (id, itemId, d) => req(`/staff/medical-reports/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
   deleteReport:  (id, reason) => req(`/staff/medical-reports/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
