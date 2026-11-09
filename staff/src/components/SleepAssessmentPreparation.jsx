@@ -14,7 +14,7 @@ export default function SleepAssessmentPreparation({ records = [] }) {
     </div>
     {!rows.length ? <p style={{ color: '#8AA89C', fontSize: 13, margin: '8px 0 0' }}>暂无睡眠评估记录</p> : rows.map((row, i) => <article key={row.id || i} style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #E4ECE7' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, justifyContent: 'space-between' }}>
-        <strong>嘉医汇睡眠情况问卷</strong>
+        <strong>{row.title || '睡眠评估问卷'}</strong>
         <span style={{ color: '#60786B', fontSize: 13 }}>填写时间：{new Date(row.completedAt).toLocaleString('zh-CN')}</span>
       </div>
       {row.answers?.length > 0 && <details><summary style={{ cursor: 'pointer' }}>查看原始答卷</summary>{row.answers.map((item, index) => <p key={index}><strong>{item.question}</strong><br />{item.answer ?? '未填写'}</p>)}</details>}

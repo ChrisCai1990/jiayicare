@@ -1,6 +1,6 @@
 // Original service intake; no licensed instrument, clinical score or diagnostic threshold.
 const KEY = 'jiayihui_sleep_intake_v1';
-const TITLE = '嘉医汇睡眠情况问卷';
+const TITLE = '睡眠评估问卷';
 const question = (id, text, labels, required = true) => ({ id, text, type: labels ? 'radio' : 'text', required, scoreEnabled: false, ...(labels ? { options: labels.map(label => ({ label })) } : {}) });
 const QUESTIONS = [
   question('routine', '最近两周，您的作息通常属于哪种情况？', ['作息大致固定', '经常变化', '有轮班或夜班', '暂时说不清']),

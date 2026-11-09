@@ -23,7 +23,7 @@ async function pushSleepIntake(userId) {
   if (await PushRecord.exists({ patientId: userId, questionnaireId: q._id })) return 'already_pushed';
   const result = await PushRecord.updateOne({ _id: idFor(`${KEY}:${userId}`), patientId: userId },
     { $setOnInsert: { staffId: staff._id, patientId: userId, tenantId, type: 'questionnaire', questionnaireId: q._id,
-      title: TITLE, content: '睡眠情况采集，请按实际情况填写。' } }, { upsert: true });
+      title: q.title, content: '睡眠情况采集，请按实际情况填写。' } }, { upsert: true });
   return result.upsertedCount ? 'pushed' : 'already_pushed';
 }
 module.exports = { pushSleepIntake, TEMPLATE_ID, idFor };
