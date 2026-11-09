@@ -1,3 +1,4 @@
+import SleepAssessmentPreparation from '../components/SleepAssessmentPreparation'
 import PsychologyPage from './PsychologyPage'
 import ReferralRecordCard from '../components/ReferralRecordCard'
 import ConsultationCorrespondence from '../components/ConsultationCorrespondence'
@@ -6335,6 +6336,7 @@ export default function PatientDetailPage() {
         <CoreArchiveSection user={user} section="medication" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} canImport={['healthManager','superadmin','platformSuper'].includes(staff?.role)}/>
 
         {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，会员自填自动写入）── */}
+        <SleepAssessmentPreparation />
         <PsychAssessmentPanel user={user} />
         <div className="card"><RehabWorkspace patientId={id} staff={staff} view="assessment" onSaved={loadServiceRecords} /></div>
 
