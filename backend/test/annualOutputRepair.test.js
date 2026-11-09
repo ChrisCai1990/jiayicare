@@ -31,6 +31,33 @@ test('same-day daily followups for different confirmed problems combine without 
   const duplicate = { ...raw, templateNodes: [raw.templateNodes[0], { ...raw.templateNodes[0] }] };
   assert.throws(() => validateAnnualRaw(duplicate, [...catalog, ...templates], sources, keys), /个性化事项“【日常跟进】”.*关联问题：肾结晶/);
 });
+test('AI daily followup without confirmed ongoing management is discarded', async () => {
+  const source = { id: 'summary', content: { note: 'background only' } };
+  const templates = [{ id: 'daily', name: '【日常跟进】', category: 'personalized' }];
+  const raw = { ...rawPlan(), checkup_completion: [], annual_checkup: {},
+    templateNodes: [{ standardPlanId: 'daily', matchReason: 'AI added internal followup', sourceIds: [source.id] }],
+    evidenceCoverage: [{ sourceId: source.id, status: 'deferred', reason: 'No separate action' }] };
+  const check = value => validateAnnualRaw(value, [...catalog, ...templates], [source], keys);
+  const result = await validateOrRepairAnnual(raw, check,
+    () => assert.fail('unsupported daily followup should not need an AI retry'),
+    value => normalizeConfirmedManagement(value, [source], templates));
+  assert.deepEqual(result.templateNodes, []);
+  check(result);
+  assert.equal(raw.templateNodes.length, 1);
+});
+test('daily followup retains only confirmed ongoing sources', () => {
+  const ongoing = { id: 'management_issue:weight', content: { problem: '体重', direction: 'ongoing_management' } };
+  const background = { id: 'summary', content: {} };
+  const templates = [{ id: 'daily', name: '【日常跟进】', category: 'personalized' }];
+  const raw = { ...rawPlan(), checkup_completion: [], annual_checkup: {},
+    templateNodes: [{ standardPlanId: 'daily', matchReason: '顾问已确认体重管理',
+      sourceIds: [ongoing.id, background.id] }],
+    evidenceCoverage: [{ sourceId: ongoing.id, status: 'included', reason: '顾问已确认' },
+      { sourceId: background.id, status: 'deferred', reason: '背景信息' }] };
+  const result = normalizeConfirmedManagement(raw, [ongoing, background], templates);
+  assert.deepEqual(result.templateNodes[0].sourceIds, [ongoing.id]);
+  validateAnnualRaw(result, [...catalog, ...templates], [ongoing, background], keys);
+});
 const validate = raw => { validateAnnualRaw(raw, catalog, evidence, keys); validateClinicalRules(raw, [], evidence); };
 test('string-list focus is losslessly normalized and passes actual validators without AI retry', async () => {
   const raw = rawPlan();
