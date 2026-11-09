@@ -1,0 +1,2 @@
+const test = require('node:test');const assert = require('node:assert/strict');const {formatLegacy} = require('../src/scripts/formatLegacyPsychologySession');
+test('旧记录只整理明确标题，保留正文并标注缺失',()=>{const source='本次咨询主诉问题：主诉\n问题评估：\n评估\n咨询过程：过程\n风险及后续建议：\n建议';assert.equal(formatLegacy(source),'【上次咨询回顾反馈】\n原记录未填写。\n\n【本次咨询主诉问题】\n主诉\n\n【问题评估】\n评估\n\n【咨询过程与进展】\n过程\n\n【风险及后续建议】\n建议');assert.throws(()=>formatLegacy('无标题的原文'));assert.throws(()=>formatLegacy(source+'\n问题评估：重复'));assert.equal(formatLegacy(formatLegacy(source)),null)});
