@@ -9,3 +9,6 @@
 操作：backend/src/scripts/sleepIntakeRelease.js preview（只读名单），seed（幂等创建正式模板），backfill（仅合资格未推送未填写用户）。首次和补推共用推送函数。推送留痕优先使用所属专员，无专员则以同机构管理账号记录系统推送；不修改客户归属，不增加审核门槛。缺操作账号记missing_operator。
 
 发布前运行node --test backend/test/sleepIntake.test.js及staff构建，核验实际客户名单人数与字段。发布结果以实际回执为准。
+
+## 发布回执
+2026-11-09：d074ce3ab40c08584799464a7980d79852dc5e30已上线，备份/var/backups/jiayicare-sleep-intake-20261109T210408；Staff构建、17项本地专项/12项服务器复验、公网资源与API健康通过。模板e0cf657129ee34fb186299d3已创建；已激活成人预检88人、实际生成问卷推送88条、再次预检88条already_pushed。是用户端问卷任务，不代表微信订阅通知送达。未代客户填写真实答卷，真实客户提交后的页面验收尚待实际使用。
