@@ -1347,9 +1347,9 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     if (enrollment) {
       const policy = await EnterpriseInsurancePolicy.findOne({ _id: enrollment.policyId, status: 'active' }).lean();
       if (canUseInsuranceCoverage(policy, enrollment)) insuranceCoverage = { policy, enrollment };
-      insuranceCases = await InsuranceServiceCase.find({ patientId: user._id, enrollmentId: enrollment._id })
-        .sort({ createdAt: -1 }).limit(20).populate('assignedTo', 'name role').lean();
     }
+    insuranceCases = await InsuranceServiceCase.find({ patientId: user._id, enterpriseId: user.enterpriseId })
+      .sort({ createdAt: -1 }).limit(20).populate('assignedTo', 'name role').lean();
   }
 
   const displayedUser = user.toObject();
