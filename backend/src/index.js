@@ -177,6 +177,7 @@ app.listen(PORT, () => {
   require('./utils/onboardingPush').startBatch2Scheduler();
 
   require('./utils/commissionMaturity').startCommissionScheduler();
+  require('./utils/marketPartnerSettlement').startScheduler();
 
   // AI每日健康关怀
   require('./utils/dailyCareScheduler').startDailyCareScheduler();

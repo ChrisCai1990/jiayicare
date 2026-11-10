@@ -24,11 +24,11 @@ test('single-visit referral requires direct contribution; repeated assessment re
 });
 
 test('quick-close reward includes day seven, excludes day eight, and never applies to renewals', () => {
-  const firstConversationAt = '2026-11-01T00:00:00.000Z';
+  const firstConversationAt = '2026-11-01T00:00:00+08:00';
   const base = { paidCents: 12000000, policy: POLICIES.weightManagement, firstConversationAt };
-  assert.equal(commissionCents({ ...base, paidAt: '2026-11-08T00:00:00.000Z' }).quickCloseCents, 100000);
-  assert.equal(commissionCents({ ...base, paidAt: '2026-11-08T00:00:00.001Z' }).quickCloseCents, 0);
-  assert.equal(commissionCents({ ...base, paidAt: '2026-11-02T00:00:00.000Z', periodNumber: 2 }).quickCloseCents, 0);
+  assert.equal(commissionCents({ ...base, paidAt: '2026-11-08T23:59:59+08:00' }).quickCloseCents, 100000);
+  assert.equal(commissionCents({ ...base, paidAt: '2026-11-09T00:00:00+08:00' }).quickCloseCents, 0);
+  assert.equal(commissionCents({ ...base, paidAt: '2026-11-02T00:00:00+08:00', periodNumber: 2 }).quickCloseCents, 0);
 });
 
 test('partial refund recomputes from retained cash and yields a signed correction', () => {

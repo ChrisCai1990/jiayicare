@@ -169,6 +169,8 @@ const orderSchema = new mongoose.Schema({
   marketPartnerAttributionId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerAttribution', default: null },
   marketPartnerRuleId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerRule', default: null },
   marketPartnerRuleVersion: { type: Number, default: null },
+  marketPartnerDirectReferral: { type: Boolean, default: false },
+  marketPartnerFirstConversationAt: { type: Date, default: null },
   fulfillerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 服务人（实际提供服务，单服务人场景）
   // 多服务岗位归属：产品由多岗位协同服务时，每个岗位对应的具体服务人。结算时按产品 servicePerformerRoles
   // 里各岗位的比例，为这里指定的人各生成一条绩效记录。为空则退回 referrer/fulfiller 单服务人逻辑。
@@ -185,11 +187,15 @@ orderSchema.index({ paymentStatus: 1, wecomOrderAlertQueuedAt: 1, paidAt: 1 });
 // 用户取消、Admin取消和支付退款共用订单状态联动；重复通知可安全重试。
 orderSchema.post('save', async function (doc) {
   await require('../utils/commissionMaturity').refreshOrderCommissions(doc);
+  if (process.env.MARKET_PARTNER_ENABLED === 'true')
+    await require('../utils/marketPartnerSettlement').syncOrder(doc);
 });
 orderSchema.post('findOneAndUpdate', async function (doc) {
   if (!doc) return;
   const current = await this.model.findById(doc._id);
   await require('../utils/commissionMaturity').refreshOrderCommissions(current);
+  if (process.env.MARKET_PARTNER_ENABLED === 'true')
+    await require('../utils/marketPartnerSettlement').syncOrder(current);
 });
 
 orderSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);

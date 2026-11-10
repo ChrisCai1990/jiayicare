@@ -38,8 +38,11 @@ function commissionCents({ paidCents, policy, periodNumber = 1, monthlyQualified
   const baseCents = Math.round(paidCents * basisPoints / 10000);
   let quickCloseCents = 0;
   if (policy.quickClose && periodNumber === 1 && basisPoints > 0 && firstConversationAt && paidAt) {
-    const elapsed = new Date(paidAt).getTime() - new Date(firstConversationAt).getTime();
-    if (Number.isFinite(elapsed) && elapsed >= 0 && elapsed <= 7 * 86400000) {
+    const started = new Date(firstConversationAt).getTime();
+    const paid = new Date(paidAt).getTime();
+    const chinaDay = ms => Math.floor((ms + 8 * 3600000) / 86400000);
+    if (Number.isFinite(started) && Number.isFinite(paid) && paid >= started
+      && chinaDay(paid) - chinaDay(started) <= 7) {
       quickCloseCents = Math.min(Math.round(paidCents / 100), quickCloseCapCents);
     }
   }
