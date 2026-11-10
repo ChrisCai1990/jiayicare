@@ -13,7 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD = ROOT / 'miniprogram' / 'dist'
 SITE = '/var/www/jiayicare-static/mobile-preview-joinwehealth'
 EXPECTED_INDEX_SHA = '11f40a8f3d049968f8513b08647d5bebbe0d65e4bdf161438149cf5844cdc2cb'
-EXPECTED_SERVER_COMMIT = '63cfd6b0bf4'
+EXPECTED_SERVER_COMMIT = 'd8d4a3ba83a'
 
 
 def sha(data):
@@ -38,6 +38,8 @@ def main():
     files = {p.relative_to(BUILD).as_posix(): p.read_bytes() for p in BUILD.rglob('*') if p.is_file()}
     assert 'index.html' in files and len(files) > 20
     assert b'/mobile-preview/js/' in files['index.html']
+    for marker in [b'name="viewport"', b'viewport-fit=cover', b'/mobile-preview/demo/entry.js', b'weui-tabbar__label']:
+        assert marker in files['index.html'], f'Missing mobile H5 safeguard: {marker!r}'
     bundle = b''.join(value for name, value in files.items() if name.endswith('.js'))
     for marker in ['jy_language', '请选择左臂或右臂', 'Systolic pressure']:
         assert marker.encode() in bundle, f'Missing release feature: {marker}'
