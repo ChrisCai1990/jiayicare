@@ -17,7 +17,9 @@ export default function TrendChart({ points = [], height = 80, color = colors.pr
     const padding = Math.max((max - min) * 0.15, 1);
     const low = min - padding;
     const high = max + padding;
-    const xAt = (index) => points.length === 1 ? width / 2 : width * (0.04 + 0.92 * index / (points.length - 1));
+    const xAt = (index) => points.length === 1 ? width / 2 : process.env.TARO_ENV === 'h5'
+      ? width * (0.04 + 0.92 * index / (points.length - 1))
+      : 10 + index * ((width - 20) / (points.length - 1));
     const yAt = (value) => top + ((high - value) / (high - low || 1)) * (height - top - bottom);
     ctx.setLineWidth(mini ? 1.5 : 2.5);
     ctx.setStrokeStyle(color);
@@ -49,13 +51,17 @@ export default function TrendChart({ points = [], height = 80, color = colors.pr
   return (
     <View>
       <Canvas canvasId={canvasId} id={canvasId} style={{ width: '100%', height: `${height}px`, display: 'block' }} />
-      {!mini && (
+      {!mini && (process.env.TARO_ENV === 'h5' ? (
         <View style={{ position: 'relative', height: '14px', marginTop: '4px' }}>
           {points.map((p, i) => (
             <Text key={i} style={{ position: 'absolute', left: points.length === 1 ? '50%' : `${4 + 92 * i / (points.length - 1)}%`, transform: 'translateX(-50%)', fontSize: '9px', color: colors.textMuted, whiteSpace: 'nowrap', display: points.length > 5 && i % Math.ceil(points.length / 4) !== 0 && i !== points.length - 1 ? 'none' : 'block' }} numberOfLines={1}>{p.label}</Text>
           ))}
         </View>
-      )}
+      ) : (
+        <View style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+          {points.map((p, i) => <Text key={i} style={{ flex: 1, fontSize: '9px', color: colors.textMuted, textAlign: 'center' }} numberOfLines={1}>{p.label}</Text>)}
+        </View>
+      ))}
     </View>
   );
 }

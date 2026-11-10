@@ -44,7 +44,7 @@ function FcChart({ rows, days }) {
       ctx.arc(x(row), y(row), 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     });
     ctx.draw();
-    });
+    }, width);
   }, [rows, days, width]);
 
   if (!points.length) return <Text style={{ display: 'block', textAlign: 'center', padding: '38px 0', color: colors.textMuted }}>近{days}天暂无 FC 检测记录</Text>;

@@ -22,9 +22,9 @@ function nativeAdapter(ctx) {
   };
 }
 
-export function drawChart(canvasId, height, paint) {
+export function drawChart(canvasId, height, paint, miniWidth = 300) {
   if (process.env.TARO_ENV !== 'h5') {
-    paint(Taro.createCanvasContext(canvasId), 300, height);
+    paint(Taro.createCanvasContext(canvasId), miniWidth, height);
     return () => {};
   }
 

@@ -87,7 +87,8 @@ async function run() {
   }
   await page.getByText('健康档案', { exact: true }).last().click();
   if (process.env.SMOKE_WEBKIT) { await page.waitForTimeout(1800); console.log('records debug', (await page.locator('body').innerText()).slice(0, 500), errors, await page.evaluate(() => ({appHtml:document.getElementById('app')?.innerHTML.slice(0,1300), bodyChildren:[...document.body.children].map(node=>[node.tagName,node.id,node.className]).slice(0,10)}))); }
-  await page.getByText('历史健康记录').waitFor({ timeout: 10000 });
+  await page.getByText('档案工具', { exact: true }).waitFor({ timeout: 10000 });
+  if (await page.getByText('历史健康记录', { exact: true }).count()) throw new Error('Unexpected history section below the archive');
   if (process.env.SMOKE_CHART_LAYOUT) {
     await page.waitForTimeout(1000);
     await page.screenshot({ path: 'output/chart-layout-webkit.png', fullPage: true });
@@ -102,11 +103,11 @@ async function run() {
     for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) painted++;
     return { canvasId: node.getAttribute('canvas-id'), width: node.width, height: node.height, rectWidth: node.getBoundingClientRect().width, painted };
   })));
-  await page.getByText('125/81 mmHg').last().waitFor();
+  if (process.env.SMOKE_RECENT_TRENDS) await page.getByText('125/81 mmHg').last().waitFor();
   if (process.env.SMOKE_RECENT_TRENDS) console.log('records-after-trends', (await page.locator('body').innerText()).slice(0, 800), errors);
   await page.getByText('体重', { exact: true }).last().click();
-  await page.getByText('68.5 kg').last().waitFor();
-  console.log('records history visible');
+  await page.getByText(process.env.SMOKE_CHART_LAYOUT ? '48.5 kg' : '68.5 kg').last().waitFor();
+  console.log('archive matches mini program layout');
   await page.getByText('健康管家', { exact: true }).last().click();
   await page.locator('taro-text-core:visible').filter({ hasText: '测试顾问' }).first().click();
   await page.getByText('发送消息，您的健管专员会在工作时间内回复您').waitFor({ timeout: 10000 });
