@@ -6086,11 +6086,14 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       }).map(item => ({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
       // Reviewers may choose existing Admin nodes for this item; no taxonomy/rule creation.
-      const previousById = new Map((report.reportItems || []).map(item => [item.itemId, item]));
+      // Legacy reports can lack persisted itemIds on every row. Mongoose may
+      // generate different transient IDs on GET and PATCH; a unique identity
+      // match preserves the right row's classification without guessing.
+      const previousItems = require('../utils/reportItemPreviousMatch').previousReportItemsFor(nextItems, report.reportItems || []);
       const classificationFields = ['screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence', 'classificationSource', 'classificationReviewedBy', 'classificationReviewedAt'];
       const manualIndex = nextItems.some(item => Object.hasOwn(item, 'manualClassificationKeys')) ? await require('../utils/screeningMatch').buildAdminIndex({ fresh: true }) : null;
-      for (const item of nextItems) {
-        const previous = previousById.get(item.itemId);
+      for (const [index, item] of nextItems.entries()) {
+        const previous = previousItems[index];
         if (Object.hasOwn(item, 'manualClassificationKeys')) {
           try { Object.assign(item, require('../utils/reportManualClassification').manualClassification(item.manualClassificationKeys, manualIndex, req.staff._id)); }
           catch (error) { return res.status(400).json({ success: false, message: error.message }); }
