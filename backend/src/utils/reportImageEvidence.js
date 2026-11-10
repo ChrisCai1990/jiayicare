@@ -109,11 +109,12 @@ function hasSamePrintedLabRow(item, sections) {
   });
 }
 
-function countUncoveredPrintedRows(sections, items) {
-  if (!sections?.some(section => section.rows?.length)) return { total: 0, uncovered: 0 };
+function findUncoveredPrintedRows(sections, items) {
+  if (!sections?.some(section => section.rows?.length)) return { total: 0, rows: [] };
   const normalize = value => normalizeText(value);
   const seen = new Set();
-  let total = 0, uncovered = 0;
+  let total = 0;
+  const rows = [];
   for (const section of sections) for (const row of section.rows || []) {
     if (!normalize(row.name) || !normalize(row.value)) continue;
     const key = [normalize(section.title), normalize(row.name), normalize(row.value), normalize(row.unit)].join('|');
@@ -124,9 +125,14 @@ function countUncoveredPrintedRows(sections, items) {
       && normalize(item.name) === normalize(row.name) && normalize(item.value) === normalize(row.value)
       && (!normalize(item.unit) || !normalize(row.unit) || normalize(item.unit) === normalize(row.unit))
       && (!item.sourceSection || !section.title || sectionForItem(item, [section]) !== null));
-    if (!covered) uncovered++;
+    if (!covered) rows.push({ sectionTitle: section.title, name: row.name, value: row.value });
   }
-  return { total, uncovered };
+  return { total, rows };
+}
+
+function countUncoveredPrintedRows(sections, items) {
+  const result = findUncoveredPrintedRows(sections, items);
+  return { total: result.total, uncovered: result.rows.length };
 }
 
 function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, verifyTableRows = false, existingItems = [] } = {}) {
@@ -187,7 +193,7 @@ function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, 
       : blockedReasons.uncovered_rows ? '原件检验表有未进入审核草稿的结果行，请逐行对照原件补提或人工录入。'
       : status === 'needs_review' ? UNVERIFIED_MESSAGE : '' };
   return { ...parsed, items, summary: '', pageType: imageOnly ? 'image_only' : parsed.pageType,
-    skipPage: imageOnly || parsed.skipPage === true, imageEvidence: pageEvidence };
+    skipPage: imageOnly || (parsed.skipPage === true && !transcript), imageEvidence: pageEvidence };
 }
 
 // Shared by full PDF/image OCR and every supplement/retry. Independent transcription never sees
@@ -212,7 +218,7 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
     // Only this guard may attach verification metadata; model/source-provided flags are untrusted.
     delete parsed.imageEvidence;
     const needsCheck = imageReport || parsed.hasMedicalImages === true || parsed.pageType === 'image_only'
-      || (verifyTableRows && parsed.items.some(item => ['lab', 'data'].includes(item.itemType)))
+      || verifyTableRows
       || parsed.items.some(item => ['imaging', 'diagnosis', 'pathology'].includes(item.itemType)
         || item.findings || item.diagnosis || /超声|彩超|B超|内镜|心电|CT|MRI/i.test(item.name || ''));
     if (!needsCheck) return JSON.stringify(parsed);
@@ -243,7 +249,7 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
     if (Number.isInteger(sourcePage) && guarded.imageEvidence?.status === 'image_only') {
       imageOnlyPages.set(sourceKey, guarded);
     }
-    if (guarded.imageEvidence) onEvidence(sourcePage, guarded.imageEvidence);
+    if (guarded.imageEvidence) onEvidence(sourcePage, guarded.imageEvidence, evidenceSections(evidence), options);
     return JSON.stringify(guarded);
   };
 }
@@ -256,4 +262,4 @@ function recordPageEvidence(pages, page, evidence) {
 }
 
 module.exports = { IMAGE_ONLY_MESSAGE, UNVERIFIED_MESSAGE, IMAGE_EVIDENCE_PROMPT,
-  guardImageEvidence, createReportImageParser, recordPageEvidence };
+  guardImageEvidence, createReportImageParser, recordPageEvidence, findUncoveredPrintedRows };

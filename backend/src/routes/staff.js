@@ -18671,10 +18671,13 @@ async function runReportPageParseControlled(reportId, pageNum) {
   if (!report) throw new Error('报告不存在');
   if (isManualOnlyReport(report)) throw new Error(manualOnlyReportMessage(report));
   const imagePageEvidence = {};
-  const parseImage = createReportImageParser(rawParseImage, { report, verifyTableRows: true, onEvidence: (page, evidence) => {
+  const regionEvidenceSections = new Map();
+  const parseImage = createReportImageParser(rawParseImage, { report, verifyTableRows: true, onEvidence: (page, evidence, sections, options) => {
     recordPageEvidence(imagePageEvidence, page, evidence);
+    if (Number.isInteger(options?.regionIndex) && sections) regionEvidenceSections.set(options.regionIndex, sections);
   } });
 
+  const { findUncoveredPrintedRows } = require('../utils/reportImageEvidence');
   const { alignSupplementCandidate, describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, supplementMatches } = require('../utils/reportPageSupplement');
   const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
   const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
@@ -18742,7 +18745,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : reportParsePromptForCategory(report.documentCategory);
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对本图可见内容，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对本图可见内容，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, regionIndex, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) { rethrowAiControl(error);
@@ -18754,6 +18757,29 @@ async function runReportPageParseControlled(reportId, pageNum) {
     if (parsed.imageEvidence?.status !== 'image_only') allRegionsImageOnly = false;
     if (shouldSkipParsedReportPage(parsed)) continue;
     let regionItems = parsed.items;
+    if (report.type === 'annual') {
+      const uncovered = findUncoveredPrintedRows(regionEvidenceSections.get(regionIndex), [...oldPageAtStart, ...regionItems]).rows;
+      if (uncovered.length) {
+        // An optional focused pass asks only about rows independently read but
+        // missed by the first pass. Keep enough page quota for the remaining
+        // regions; never let this pass strand a half-finished page.
+        let capacity = true;
+        try {
+          await require('../utils/aiBudget').assertSupplementCallCapacity(
+            { reportId: String(reportId), page: pageNum }, undefined, 1 + 2 * (images.length - regionIndex - 1));
+        } catch (error) { rethrowAiControl(error); capacity = false; }
+        if (capacity) {
+          try {
+            const targets = uncovered.slice(0, 24).map(row => `${row.sectionTitle || '未命名栏目'}：${row.name}`).join('、');
+            const focusedRaw = await parseImage(images[regionIndex], `${reportParsePromptForCategory(report.documentCategory)}\n\n【遗漏检验行定向补提】独立原文转录发现以下项目有印刷结果，但本页草稿和首轮候选尚未覆盖：${targets}。只输出本图中这些项目的同一行名称、结果、单位和参考范围；逐行读取两侧表格。不得重复输出其他项目；看不清的行不要猜测。`, { sourcePage: pageNum, regionIndex, stage: 'focused_supplement', isUrl: false, model: 'qwen-vl-plus', maxTokens: 4000, timeoutMs: 180000 });
+            const focused = safeParseJSON(focusedRaw);
+            if (Array.isArray(focused?.items)) regionItems = mergeCoverageAuditItems(regionItems, focused.items);
+          } catch (error) { rethrowAiControl(error);
+            console.log(`[parse-page] ${reportId} P${pageNum} 遗漏行定向补提未完成: ${error.message}`);
+          }
+        }
+      }
+    }
     // 两段页做覆盖复核；四段页已有重叠分区，保留独立原文校验并避免超出默认调用额度。
     if (!runCoverageAudit) {
       parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
