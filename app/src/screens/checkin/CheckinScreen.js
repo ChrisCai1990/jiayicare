@@ -184,13 +184,17 @@ export default function CheckinScreen({ navigation }) {
       Alert.alert('请填写完整', measureType === 'sleep' ? '请填写入睡时间和醒来时间' : '请填写完整数值');
       return;
     }
+    if (measureType === 'bloodPressure' && !measureOption) {
+      Alert.alert('请选择测量手臂', '请选择左臂或右臂');
+      return;
+    }
 
     let payload = {
       category: item.category || 'vitals',
       type: measureType,
       label: item.recordLabel || item.label,
       unit: fields[0]?.unit || '',
-      note: [measureOption, measureNote].filter(Boolean).join(' · '),
+      note: measureType === 'bloodPressure' ? measureNote : [measureOption, measureNote].filter(Boolean).join(' · '),
       recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
     };
 
@@ -198,7 +202,7 @@ export default function CheckinScreen({ navigation }) {
       const sys = parseInt(measureValues.sys, 10);
       const dia = parseInt(measureValues.dia, 10);
       payload.value = `${sys}/${dia}`;
-      payload.extra = { sys, dia };
+      payload.extra = { sys, dia, arm: measureOption };
       payload.status = sys >= 140 || dia >= 90 ? 'warning' : sys < 90 || dia < 60 ? 'low' : 'normal';
     } else if (measureType === 'sleep') {
       const dur = calcSleepDuration(measureValues.sleepTime, measureValues.wakeTime);

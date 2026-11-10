@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { authAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../i18n';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
@@ -21,6 +22,7 @@ const isInWechat = typeof navigator !== 'undefined' && /MicroMessenger/i.test(na
 
 export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
+  const { t, language, setLanguage } = useLanguage();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [countdown, setCountdown] = useState(0);
@@ -145,8 +147,11 @@ export default function LoginScreen({ navigation }) {
           {/* 顶部圆角拉手 */}
           <View style={styles.pullHandle} />
 
-          <Text style={styles.formTitle}>手机号登录</Text>
-          <Text style={styles.formSubtitle}>手机号验证码登录，新用户自动注册</Text>
+          <TouchableOpacity accessibilityRole="button" onPress={() => setLanguage(language === 'en-US' ? 'zh-CN' : 'en-US')}>
+            <Text style={styles.formSubtitle}>🌐 {language === 'en-US' ? '简体中文' : 'English'}</Text>
+          </TouchableOpacity>
+          <Text style={styles.formTitle}>{t('手机号登录')}</Text>
+          <Text style={styles.formSubtitle}>{t('手机号验证码登录，新用户自动注册')}</Text>
 
           {/* 手机号输入框 */}
           <View style={[styles.field, phoneFocused && styles.fieldFocused]}>
@@ -154,7 +159,7 @@ export default function LoginScreen({ navigation }) {
             <View style={styles.fieldDivider} />
             <TextInput
               style={styles.fieldInput}
-              placeholder="请输入手机号"
+              placeholder={t('请输入手机号')}
               placeholderTextColor={colors.textMuted}
               keyboardType="phone-pad"
               maxLength={11}
@@ -170,7 +175,7 @@ export default function LoginScreen({ navigation }) {
             <Ionicons name="shield-outline" size={17} color={colors.textMuted} style={{ marginRight: 10 }} />
             <TextInput
               style={[styles.fieldInput, { flex: 1 }]}
-              placeholder="输入验证码"
+              placeholder={t('输入验证码')}
               placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
               maxLength={6}
@@ -185,7 +190,7 @@ export default function LoginScreen({ navigation }) {
               disabled={!canSend || loading}
             >
               <Text style={[styles.codeBtnText, canSend && styles.codeBtnTextActive]}>
-                {countdown > 0 ? `${countdown}s` : '获取验证码'}
+                {countdown > 0 ? `${countdown}s` : t('获取验证码')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -235,7 +240,7 @@ export default function LoginScreen({ navigation }) {
           >
             {loading
               ? <ActivityIndicator color={colors.white} />
-              : <Text style={styles.loginBtnText}>立即登录</Text>
+              : <Text style={styles.loginBtnText}>{t('立即登录')}</Text>
             }
           </TouchableOpacity>
 

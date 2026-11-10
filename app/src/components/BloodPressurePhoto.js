@@ -41,6 +41,7 @@ export default function BloodPressurePhoto({ onSaved }) {
   const [image, setImage] = useState('');
   const [draft, setDraft] = useState(null);
   const [values, setValues] = useState({});
+  const [arm, setArm] = useState('');
   const [when, setWhen] = useState(nowText);
   const [confirmed, setConfirmed] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -54,7 +55,7 @@ export default function BloodPressurePhoto({ onSaved }) {
     try {
       const photo = await pickPhoto(camera);
       if (!photo) return;
-      setImage(photo); setDraft(null); setValues({}); setConfirmed(false); setWhen(nowText());
+      setImage(photo); setDraft(null); setValues({}); setArm(''); setConfirmed(false); setWhen(nowText());
       const result = await recordsAPI.recognizeBloodPressure(photo);
       setDraft(result.data);
       setValues(Object.fromEntries(['sys', 'dia', 'pulse'].map(k => [k, result.data[k] == null ? '' : String(result.data[k])])));
@@ -64,6 +65,7 @@ export default function BloodPressurePhoto({ onSaved }) {
   const submit = async () => {
     if (lock.current || !draft) return;
     if (!confirmed) { setError('请先确认原图、数值和测量时间无误'); return; }
+    if (!arm) { setError('请选择左臂或右臂'); return; }
     if (!/^\d+$/.test(values.sys || '') || !/^\d+$/.test(values.dia || '') || (values.pulse && !/^\d+$/.test(values.pulse))) { setError('请填写完整的整数读数，脉搏可留空'); return; }
     if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(when)) { setError('时间格式应为 YYYY-MM-DD HH:mm'); return; }
     lock.current = true; setBusy(true); setError('');
@@ -71,11 +73,11 @@ export default function BloodPressurePhoto({ onSaved }) {
       await recordsAPI.create({
         type: 'bloodPressure', category: 'vitals', label: '血压', unit: 'mmHg',
         value: Number(values.sys) + '/' + Number(values.dia),
-        extra: { sys: Number(values.sys), dia: Number(values.dia), pulse: values.pulse ? Number(values.pulse) : null },
+        extra: { sys: Number(values.sys), dia: Number(values.dia), pulse: values.pulse ? Number(values.pulse) : null, arm },
         recordedAt: when.replace(' ', 'T') + ':00+08:00', imageUrl: image,
         photoRecognition: { token: draft.token, confirmed: true },
       });
-      setImage(''); setDraft(null); setConfirmed(false); onSaved?.();
+      setImage(''); setDraft(null); setArm(''); setConfirmed(false); onSaved?.();
     } catch (err) { setError(err.message || '保存失败，请重试'); }
     finally { lock.current = false; setBusy(false); }
   };
@@ -96,9 +98,13 @@ export default function BloodPressurePhoto({ onSaved }) {
       {[['sys', '收缩压 / 高压（mmHg）'], ['dia', '舒张压 / 低压（mmHg）'], ['pulse', '脉搏（次/分，可留空）']].map(([key, label]) => <View key={key}>
         <Text>{label}</Text><TextInput accessibilityLabel={label} editable={!busy} style={field} keyboardType="number-pad" value={values[key] || ''} placeholder="未识别，请核对补填" onChangeText={text => { setValues(v => ({ ...v, [key]: text })); setConfirmed(false); }} />
       </View>)}
+      <Text>测量手臂</Text>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {['左臂', '右臂'].map(option => <TouchableOpacity key={option} accessibilityRole="button" accessibilityState={{ selected: arm === option }} onPress={() => { setArm(option); setConfirmed(false); }} style={[button, { backgroundColor: arm === option ? '#1E6B50' : '#7B8790' }]}><Text style={{ color: '#fff' }}>{option}</Text></TouchableOpacity>)}
+      </View>
       <Text>测量时间（北京时间，默认现在，请核对）</Text>
       <TextInput accessibilityLabel="测量时间" editable={!busy} style={field} value={when} placeholder="YYYY-MM-DD HH:mm" onChangeText={v => { setWhen(v); setConfirmed(false); }} />
-      <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: confirmed }} disabled={busy} onPress={() => setConfirmed(v => !v)} style={{ paddingVertical: 12 }}><Text>{confirmed ? '☑' : '□'} 我已核对原图、读数及测量时间，确认无误</Text></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: confirmed }} disabled={busy} onPress={() => setConfirmed(v => !v)} style={{ paddingVertical: 12 }}><Text>{confirmed ? '☑' : '□'} 我已核对原图、读数、测量手臂及时间，确认无误</Text></TouchableOpacity>
       <TouchableOpacity accessibilityRole="button" disabled={busy || !confirmed} style={[button, { opacity: busy || !confirmed ? 0.5 : 1 }]} onPress={submit}><Text style={{ color: '#fff' }}>确认并提交图片记录</Text></TouchableOpacity>
     </View>}
     {!!error && <Text style={{ color: '#b42318', paddingVertical: 10 }}>{error}</Text>}

@@ -11,6 +11,7 @@ import { mockBloodPressureData, mockBloodSugarData } from '../../data/mockData';
 import { recordsAPI, userAPI, ibdAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import BodyCompositionCharts from './BodyCompositionCharts';
+import { bloodPressureArm } from '../../utils/bloodPressureTrend';
 
 const { width: W } = Dimensions.get('window');
 const CHART_INNER_W = W - spacing.lg * 2 - spacing.md * 2;
@@ -313,6 +314,10 @@ function RecordRow({ record, typeCfg, isLast, onPress }) {
           ? <Text style={styles.recordNote}>{record.extra.sleepTime} 入睡 → {record.extra.wakeTime} 醒来</Text>
           : null
         }
+        {typeCfg.key === 'bloodPressure' && !record.note?.includes(bloodPressureArm(record))
+          ? <Text style={styles.recordNote}>{bloodPressureArm(record)}</Text>
+          : null
+        }
         {record.note ? <Text style={styles.recordNote}>{record.note}</Text> : null}
       </View>
       <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
@@ -364,6 +369,7 @@ export default function RecordsScreen({ navigation }) {
   const [chartType, setChartType]     = useState('bloodPressure');
   const [chartPeriod, setChartPeriod] = useState('周');
   const [chartData, setChartData]     = useState([]);
+  const [selectedBpArm, setSelectedBpArm] = useState('');
   const [chartData2, setChartData2]   = useState([]); // 血糖：餐后2h
   const [chartData3, setChartData3]   = useState([]); // 血糖：睡前
   const [chartLoading, setChartLoading] = useState(false);
@@ -407,6 +413,9 @@ export default function RecordsScreen({ navigation }) {
   // 个人档案/生活方式/医疗保障/年度复查计划已抽离到 ProfileArchiveScreen.js（2026-07-18 健康档案页瘦身）
 
   const currentTypeCfg = CHART_TYPES.find(t => t.key === chartType) || CHART_TYPES[0];
+  const bpArms = ['左臂', '右臂', '未标注'].filter(arm => chartData.some(record => bloodPressureArm(record) === arm));
+  const activeBpArm = bpArms.includes(selectedBpArm) ? selectedBpArm : bpArms[0];
+  const bpChartData = chartData.filter(record => bloodPressureArm(record) === activeBpArm);
   const PERIOD_TABS = ['周', '月', '年'];
 
   // ── 加载仪表板数据（本页只需要 latestVitals）────────────────────
@@ -494,6 +503,7 @@ export default function RecordsScreen({ navigation }) {
       setEditValues({
         sys: String(record.extra?.sys ?? String(record.value).split('/')[0] ?? ''),
         dia: String(record.extra?.dia ?? String(record.value).split('/')[1] ?? ''),
+        arm: bloodPressureArm(record) === '未标注' ? '' : bloodPressureArm(record),
       });
     } else if (record.type === 'sleep') {
       setEditValues({
@@ -515,8 +525,9 @@ export default function RecordsScreen({ navigation }) {
         const sys = parseInt(editValues.sys, 10);
         const dia = parseInt(editValues.dia, 10);
         if (!sys || !dia) { Alert.alert('请填写完整', '收缩压和舒张压不能为空'); setEditSaving(false); return; }
+        if (!editValues.arm) { Alert.alert('请选择测量手臂', '请选择左臂或右臂'); setEditSaving(false); return; }
         payload.value = `${sys}/${dia}`;
-        payload.extra = { ...editRecord.extra, sys, dia };
+        payload.extra = { ...editRecord.extra, sys, dia, arm: editValues.arm };
       } else if (editRecord.type === 'sleep') {
         if (!editValues.sleepTime || !editValues.wakeTime) { Alert.alert('请填写完整', '入睡和醒来时间不能为空'); setEditSaving(false); return; }
         const dur = calcSleepDuration(editValues.sleepTime, editValues.wakeTime);
@@ -777,9 +788,12 @@ export default function RecordsScreen({ navigation }) {
             ) : chartType === 'bloodPressure' ? (
               /* 文档#21：血压拆分为收缩压和舒张压两张独立图 */
               <>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                  {bpArms.map(arm => <TouchableOpacity key={arm} accessibilityRole="button" accessibilityState={{ selected: activeBpArm === arm }} onPress={() => setSelectedBpArm(arm)} style={[styles.periodBtn, activeBpArm === arm && styles.periodBtnActive]}><Text style={[styles.periodText, activeBpArm === arm && styles.periodTextActive]}>{arm}</Text></TouchableOpacity>)}
+                </View>
                 <Text style={styles.splitChartLabel}>收缩压 (mmHg)</Text>
                 <TrendChart
-                  data={chartData}
+                  data={bpChartData}
                   typeCfg={{ ...currentTypeCfg, color: '#DC3545',
                     getVal: r => r.extra?.sys ?? parseFloat(String(r.value).split('/')[0]) ?? 0,
                     refLines: [
@@ -793,7 +807,7 @@ export default function RecordsScreen({ navigation }) {
                 />
                 <Text style={[styles.splitChartLabel, { marginTop: spacing.md }]}>舒张压 (mmHg)</Text>
                 <TrendChart
-                  data={chartData}
+                  data={bpChartData}
                   typeCfg={{ ...currentTypeCfg, color: '#0077B6',
                     getVal: r => r.extra?.dia ?? parseFloat(String(r.value).split('/')[1]) ?? 0,
                     refLines: [
@@ -1077,6 +1091,12 @@ export default function RecordsScreen({ navigation }) {
                     <View style={styles.editField}>
                       <View style={styles.editFieldLabel}><Text style={styles.editFieldLabelText}>舒张压（mmHg）</Text></View>
                       <TextInput style={styles.editInput} keyboardType="number-pad" value={editValues.dia || ''} onChangeText={v => setEditValues(p => ({ ...p, dia: v }))} />
+                    </View>
+                    <View style={styles.editField}>
+                      <View style={styles.editFieldLabel}><Text style={styles.editFieldLabelText}>测量手臂</Text></View>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {['左臂', '右臂'].map(arm => <TouchableOpacity key={arm} accessibilityRole="button" accessibilityState={{ selected: editValues.arm === arm }} onPress={() => setEditValues(p => ({ ...p, arm }))} style={[styles.periodBtn, editValues.arm === arm && styles.periodBtnActive]}><Text style={[styles.periodText, editValues.arm === arm && styles.periodTextActive]}>{arm}</Text></TouchableOpacity>)}
+                      </View>
                     </View>
                   </>
                 ) : editRecord?.type === 'sleep' ? (

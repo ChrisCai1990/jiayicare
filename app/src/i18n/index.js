@@ -18,6 +18,7 @@ const translations = {
   '获得健康顾问跟进、健管服务与专属权益': 'Get follow-ups, health services and member benefits',
   '了解详情': 'Learn more', '嘉医管家': 'Jiayi Care', '您的数字化健康管理服务平台': 'Your digital health management platform',
   '手机号登录': 'Sign in with phone', '新用户自动注册，无需等待': 'New users are registered automatically',
+  '手机号验证码登录，新用户自动注册': 'Sign in with a phone code. New users register automatically.',
   '请输入手机号': 'Enter your phone number', '输入验证码': 'Enter verification code',
   '获取验证码': 'Get code', '立即登录': 'Sign in', '或': 'or', '演示体验': 'Try demo',
   '微信登录': 'Sign in with WeChat', '登录代表同意': 'By signing in, you agree to',

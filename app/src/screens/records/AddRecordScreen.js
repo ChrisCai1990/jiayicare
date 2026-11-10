@@ -237,6 +237,10 @@ export default function AddRecordScreen({ navigation, route }) {
       showToast('warn', warnMsg);
       return;
     }
+    if (activeType.id === 'bloodPressure' && !measureOption) {
+      showToast('warn', '请选择左臂或右臂');
+      return;
+    }
 
     setSaving(true);
     setToast(null);
@@ -251,14 +255,14 @@ export default function AddRecordScreen({ navigation, route }) {
         type: activeType.id,
         label: activeType.label,
         unit: activeType.fields[0]?.unit || '',
-        note: [measureOption, note].filter(Boolean).join(' · ') || '',
+        note: activeType.id === 'bloodPressure' ? note : [measureOption, note].filter(Boolean).join(' · ') || '',
       };
 
       if (activeType.id === 'bloodPressure') {
         const sys = parseInt(values.sys, 10);
         const dia = parseInt(values.dia, 10);
         payload.value = `${sys}/${dia}`;
-        payload.extra = { sys, dia };
+        payload.extra = { sys, dia, arm: measureOption };
         payload.status = sys >= 140 || dia >= 90 ? 'warning' : sys < 90 || dia < 60 ? 'low' : 'normal';
       } else if (activeType.id === 'sleep') {
         const dur = calcSleepDuration(values.sleepTime, values.wakeTime);
