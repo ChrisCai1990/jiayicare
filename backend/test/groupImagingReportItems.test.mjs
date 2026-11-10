@@ -29,3 +29,12 @@ test('different examination, date or conflicting detail stays separate', () => {
   assert.equal(groupImagingReportItems([summary, { ...summary, sourcePage: 7, itemId: 'thyroid' }]).length, 2)
   assert.equal(groupImagingReportItems([summary, { ...summary, sourcePage: 7, examDate: '2025-04-15' }]).length, 2)
 })
+
+test('same finding in summary report and individual report merges with institution alias', () => {
+  const finding = '双侧颈动脉内径正常，内膜稍毛糙，管腔未见明显狭窄，血流通畅。'
+  const individual = { ...base, reportId: 'single', sourcePage: 1, name: '双侧颈动脉彩超', findings: finding, diagnosis: '双侧颈动脉内膜稍毛糙' }
+  const comprehensive = { ...base, reportId: 'checkup', sourcePage: 7, name: '双侧颈动脉', institution: '浙江大学医学院附属邵逸夫医院', findings: finding, diagnosis: '双侧颈动脉内膜稍毛糙' }
+  const [group] = groupImagingReportItems([individual, comprehensive])
+  assert.equal(group.items.length, 2)
+  assert.deepEqual(new Set(group.items.map(item => item.reportId)), new Set(['single', 'checkup']))
+})

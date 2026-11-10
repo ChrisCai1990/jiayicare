@@ -75,6 +75,7 @@ import ReviewSourceImage from '../components/ReviewSourceImage'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
+import { screeningItemIssueTitle } from '../utils/specialtyIssueSuggestion.mjs'
 import AICheckupReview from '../components/AICheckupReview'
 import AnnualReviewCommunicationPanel from '../components/AnnualReviewCommunicationPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
@@ -6971,6 +6972,7 @@ export default function PatientDetailPage() {
                             <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
                             <td style={{ padding: '4px 8px' }}><SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
                               source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                              suggestedIssue={screeningItemIssueTitle(item)}
                               sourceText={[item.name, item.conclusion, item.diagnosis, item.findings].filter(Boolean).join('；')}
                               sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} /></td>
                           </tr>
@@ -7009,6 +7011,7 @@ export default function PatientDetailPage() {
                         <div style={{ fontSize: 11, fontWeight: 600, color: '#0369A1', marginBottom: 4 }}>检查项目</div>
                         {imgGroups.map(({ items, primary, sourcePages }, j) => {
                           const item = primary
+                          const sourceReportCount = new Set(items.map(i => i.reportId).filter(Boolean)).size
                           const findings = item.findings || item.value || ''
                           return (
                             <div key={j} style={{ border: '1px solid #BFDBFE', borderRadius: 6, marginBottom: 6, overflow: 'hidden' }}>
@@ -7016,14 +7019,15 @@ export default function PatientDetailPage() {
                                 <span style={{ fontWeight: 600, color: '#1E40AF', fontSize: 12 }}>{item.name}</span>
                                 {item.bodyPart && <span style={{ fontSize: 11, color: '#3B82F6' }}>· {item.bodyPart}</span>}
                                 {(item.examDate || r.checkDate) && <span style={{ fontSize: 11, color: '#93C5FD', marginLeft: 'auto' }}>{item.examDate || r.checkDate}</span>}
-                                {sourcePages.length > 1 && <span style={{ fontSize: 11, color: '#3B82F6' }}>来源第{sourcePages.join('、')}页</span>}
+                                {sourcePages.length > 1 && <span style={{ fontSize: 11, color: '#3B82F6' }}>{sourceReportCount > 1 ? '多份原件，来源页见下' : `来源第${sourcePages.join('、')}页`}</span>}
                                 <SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast}
-                                  source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                                  source={{ kind: 'screening', reportId: item.reportId || (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                                  suggestedIssue={screeningItemIssueTitle(item)}
                                   sourceText={[item.name, item.conclusion, item.diagnosis, item.findings].filter(Boolean).join('；')}
                                   sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} />
                               </div>
                               <div style={{ padding: '6px 10px', fontSize: 12, background: '#fff', lineHeight: 1.7 }}>
-                                {items.length > 1 && <details style={{ marginBottom: 4, color: '#6B7280' }}><summary style={{ cursor: 'pointer' }}>查看原报告识别来源（{items.length}处）</summary><div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{items.map(i => `第${i.sourcePage || '未知'}页 ${i.name || '检查项'}：${i.findings || i.value || ''}${i.diagnosis ? `；${i.diagnosis}` : ''}`).join('\n')}</div></details>}
+                                {items.length > 1 && <details style={{ marginBottom: 4, color: '#6B7280' }}><summary style={{ cursor: 'pointer' }}>查看原报告识别来源（{items.length}处）</summary><div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{items.map(i => `${i.reportTitle || '原报告'}第${i.sourcePage || '未知'}页 ${i.name || '检查项'}：${i.findings || i.value || ''}${i.diagnosis ? `；${i.diagnosis}` : ''}`).join('\n')}</div></details>}
                                 {item.conclusion && <div style={{ color: '#5B21B6', fontWeight: 600, marginBottom: 4 }}><span style={{ color: '#7C3AED' }}>主要结论：</span>{item.conclusion}</div>}
                                 {findings && <div style={{ color: '#374151', marginBottom: 4, whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>检查所见：</span>{findings}</div>}
                                 {item.diagnosis && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>诊断意见：</span>{item.diagnosis}</div>}
@@ -7091,6 +7095,7 @@ export default function PatientDetailPage() {
                             <span style={{ color: '#4A6558' }}>{item.value || '-'}</span>
                             <SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast}
                               source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                              suggestedIssue={screeningItemIssueTitle(item)}
                               sourceText={[item.name, item.value, item.conclusion].filter(Boolean).join('；')}
                               sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} />
                           </div>
@@ -7350,6 +7355,8 @@ export default function PatientDetailPage() {
                   const subItems = Array.isArray(it.matchedItems) && it.matchedItems.length ? it.matchedItems : [it]
                   subItems.forEach(sub => {
                     aiVirtualMap[vKey].reportItems.push({
+                      reportId: rid,
+                      reportTitle: it.reportTitle || '',
                       itemId: it.itemId || '',
                       name: sub.name || it.itemLabel,
                       sourcePage: sub.sourcePage || '',
@@ -7382,6 +7389,17 @@ export default function PatientDetailPage() {
                   if (!treeData[_l1Key]) treeData[_l1Key] = {}
                   if (!treeData[_l1Key][_l2]) treeData[_l1Key][_l2] = {}
                   if (!treeData[_l1Key][_l2][_l3]) treeData[_l1Key][_l2][_l3] = []
+                  const sibling = treeData[_l1Key][_l2][_l3].find(previous =>
+                    previous.isAI && previous.checkDate === rec.checkDate &&
+                    previous.reportItems.length && rec.reportItems.length &&
+                    [...previous.reportItems, ...rec.reportItems].every(item => item.itemType === 'imaging') &&
+                    groupImagingReportItems([...previous.reportItems, ...rec.reportItems]).length === 1
+                  )
+                  if (sibling) {
+                    sibling.reportItems.push(...rec.reportItems)
+                    sibling._sourceItems.push(...rec._sourceItems)
+                    return
+                  }
                   treeData[_l1Key][_l2][_l3].push(rec)
                 })
 

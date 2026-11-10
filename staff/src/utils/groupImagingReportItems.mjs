@@ -6,7 +6,8 @@ function sameContext(a, b) {
   if (a.itemId && b.itemId && a.itemId !== b.itemId) return false
   if ((!a.itemId || !b.itemId) && compact(a.name) !== compact(b.name)) return false
   if (a.examDate && b.examDate && a.examDate !== b.examDate) return false
-  if (a.institution && b.institution && a.institution !== b.institution) return false
+  if (a.institution && b.institution && a.institution !== b.institution
+    && !a.institution.includes(b.institution) && !b.institution.includes(a.institution)) return false
   return true
 }
 
