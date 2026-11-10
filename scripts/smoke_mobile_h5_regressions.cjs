@@ -12,6 +12,14 @@ yesterdayNoonBeijing.setUTCHours(4, 10, 0, 0);
 const records = [
   record('bloodPressure', '125/81', '2025-01-03T02:00:00.000Z', { sys: 125, dia: 81, arm: '左臂' }),
   record('weight', '68.5', '2025-01-04T02:00:00.000Z'),
+  ...(process.env.SMOKE_RECENT_TRENDS ? [record('bloodPressure', '125/81', new Date().toISOString(), { sys: 125, dia: 81, arm: '左臂' }), record('weight', '68.5', new Date().toISOString())] : []),
+  ...(process.env.SMOKE_CHART_LAYOUT ? [
+    record('bloodPressure', '121/79', '2026-10-09T01:15:00.000Z', { sys: 121, dia: 79, arm: '右臂' }),
+    record('bloodPressure', '122/84', '2026-10-09T01:16:00.000Z', { sys: 122, dia: 84, arm: '右臂' }),
+    record('bloodPressure', '111/68', '2026-10-22T01:12:00.000Z', { sys: 111, dia: 68, arm: '右臂' }),
+    record('bloodPressure', '118/76', new Date().toISOString(), { sys: 118, dia: 76 }),
+    ...[7.5, 7.8, 8.5, 9.7].map((value, index) => record('sleep', String(value), `2026-10-${[22, 23, 24, 26][index]}T02:00:00.000Z`)),
+  ] : []),
 ];
 const notification = { _id: 'questionnaire-1', type: 'questionnaire', sender: '测试顾问', title: '问卷调查', content: '睡眠评估问卷，请按实际情况填写。', questionnaireId: 'form-1', createdAt: yesterdayNoonBeijing.toISOString(), unread: true };
 const systemNotification = { _id: 'system-1', type: 'system', sender: '系统通知', title: '历史消息', content: '测试系统消息', createdAt: yesterdayNoonBeijing.toISOString(), unread: false };
@@ -33,7 +41,9 @@ async function run() {
     else if (path === '/guardian-children' || path === '/family-links') data = { success: true, data: [] };
     else if (path === '/records') {
       const type = url.searchParams.get('type');
-      const selected = type ? records.filter(row => row.type === type) : records;
+      const days = Number(url.searchParams.get('days'));
+      const selected = records.filter(row => (!type || row.type === type) && (!days || new Date(row.recordedAt).getTime() >= Date.now() - days * 86400000))
+        .sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt));
       data = { success: true, data: selected, total: selected.length, page: 1 };
     } else if (path.startsWith('/records/trend/')) {
       const now = new Date().toISOString();

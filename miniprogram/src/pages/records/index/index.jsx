@@ -130,7 +130,9 @@ export default function RecordsIndexPage() {
   async function loadTrends() {
     const generation=++trendGeneration.current;
     const types=CORE_TYPES;
-    const results=await Promise.allSettled(types.map(type=>recordsAPI.trend(type)));
+    // Fetch the latest records from the past year. The trend endpoint defaults to
+    // 30 days and can leave a chart with one point while older records exist.
+    const results=await Promise.allSettled(types.map(type=>recordsAPI.list({ type, days: 365, limit: 100 })));
     if(generation!==trendGeneration.current)return;
     const setters=[setBpTrend,setBsTrend,setWaistTrend,setSleepTrend,setHeartTrend,setWeightTrend];
     setTrendError(results.some(result=>result.status==='rejected'||result.value?.success===false)?'部分趋势更新失败，点击重试':'');
@@ -142,19 +144,19 @@ export default function RecordsIndexPage() {
         const value=Number.parseFloat(index===0?(row.extra?.sys??row.value):row.value);
         return {label:`${pad2(date.getMonth()+1)}-${pad2(date.getDate())}`,recordedAt:row.recordedAt,value,time:date.getTime(),displayValue:index===0&&row.extra?.dia!=null?`${value}/${row.extra.dia}`:String(value)};
       }).filter(row=>Number.isFinite(row.value)&&Number.isFinite(row.time)).sort((a,b)=>a.time-b.time).slice(-10);
-      setters[index](points);
+      setters[index](points.slice(-12));
     });
   }
 
   const bpPoints = bloodPressurePoints(bpTrend, 60);
   const bpLatestByArm = ['左臂', '右臂', '未标注'].map(arm => ({ arm, point: [...bpPoints].reverse().find(point => point.arm === arm) })).filter(item => item.point);
   const trendMap = {
-    bloodPressure: { data: bpTrend, color: colors.danger, label: '近30天血压趋势 (mmHg)' },
-    bloodSugar: { data: bsTrend, color: colors.warning, label: '血糖 (mmol/L)' },
-    sleep: { data: sleepTrend, color: '#7C3AED', label: '睡眠 (小时)' },
-    heartRate: { data: heartTrend, color: '#DC2626', label: '心率 (次/分)' },
-    weight: { data: weightTrend, color: '#0369A1', label: '体重 (kg)' },
-    waist: { data: waistTrend, color: '#0F766E', label: '腰围 (cm)' },
+    bloodPressure: { data: bpTrend, color: colors.danger, label: '近一年血压趋势 (mmHg)' },
+    bloodSugar: { data: bsTrend, color: colors.warning, label: '近一年血糖趋势 (mmol/L)' },
+    sleep: { data: sleepTrend, color: '#7C3AED', label: '近一年睡眠趋势 (小时)' },
+    heartRate: { data: heartTrend, color: '#DC2626', label: '近一年心率趋势 (次/分)' },
+    weight: { data: weightTrend, color: '#0369A1', label: '近一年体重趋势 (kg)' },
+    waist: { data: waistTrend, color: '#0F766E', label: '近一年腰围趋势 (cm)' },
   };
 
   if (archive.loading) return <View style={{ padding: `${statusBarHeight + 24}px ${spacing.lg}px` }}>正在核对档案…</View>;
@@ -231,7 +233,7 @@ export default function RecordsIndexPage() {
                 </View>
               ))}
             </View>
-            <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{language === 'en-US' ? ({ bloodPressure: 'Blood pressure trend, last 30 days (mmHg)', bloodSugar: 'Blood glucose (mmol/L)', sleep: 'Sleep (hours)', heartRate: 'Heart rate (bpm)', weight: 'Weight (kg)', waist: 'Waist (cm)' }[trendTab]) : trendMap[trendTab].label}</Text>
+            <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{language === 'en-US' ? ({ bloodPressure: 'Blood pressure trend, last year (mmHg)', bloodSugar: 'Blood glucose, last year (mmol/L)', sleep: 'Sleep, last year (hours)', heartRate: 'Heart rate, last year (bpm)', weight: 'Weight, last year (kg)', waist: 'Waist, last year (cm)' }[trendTab]) : trendMap[trendTab].label}</Text>
             {trendTab === 'bloodPressure' ? <View style={{ marginBottom: '10px' }}>
               {bpLatestByArm.map(({ arm, point }) => <View key={arm} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
                 <Text style={{ fontSize: '13px', color: colors.textSecondary }}>{t(arm)} · {formatRecordDate(point.recordedAt, language)}</Text>
