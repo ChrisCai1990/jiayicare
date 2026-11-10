@@ -26,6 +26,11 @@ staffRouter.use(prepareMaterials);
 async function validLinks(ids, req) {
   return Array.isArray(ids) && ids.every(validId) && new Set(ids.map(String)).size === ids.length && await Product.countDocuments({ tenantId: tenant(req), _id: { $in: ids } }) === ids.length;
 }
+function validSalePrices(rows) {
+  return Array.isArray(rows) && rows.every(row => String(row.label || '').trim() && Number.isInteger(Number(row.units)) && Number(row.units) > 0
+    && row.price !== '' && row.price !== null && row.price !== undefined && Number.isFinite(Number(row.price)) && Number(row.price) >= 0 && Math.abs(Math.round(Number(row.price) * 100) - Number(row.price) * 100) < 1e-6)
+    && new Set(rows.map(row => String(row.label).trim())).size === rows.length;
+}
 
 async function list(req, res) {
   const products = await Material.find(productFilter(req)).sort({ name: 1 }).lean();
@@ -74,11 +79,13 @@ staffRouter.get('/users/:id', async (req, res) => {
 
 adminRouter.post('/products/:id/enable', (req, res) => bad(res, '请刷新页面，通过新建实物物资建立独立库存', 409));
 adminRouter.post('/materials', async (req, res) => {
-  const { name, linkedProductIds = [], kind = 'consumable', unit = '件', minStock = 0, defaultCost = 0, location = '', openingQuantity, openingNote = '' } = req.body || {};
+  const { name, linkedProductIds = [], salePrices = [], kind = 'consumable', unit = '件', minStock = 0, defaultCost = 0, location = '', openingQuantity, openingNote = '' } = req.body || {};
   if (!String(name || '').trim() || !['consumable', 'reusable'].includes(kind) || !Number.isInteger(Number(minStock)) || Number(minStock) < 0 || !Number.isFinite(Number(defaultCost)) || Number(defaultCost) < 0) return bad(res, '请填写物资名称及有效参数');
   if (openingQuantity === undefined || openingQuantity === null || String(openingQuantity).trim() === '' || !Number.isInteger(Number(openingQuantity)) || Number(openingQuantity) < 0 || !String(openingNote).trim()) return bad(res, '请填写实盘期初数量和清点依据');
   if (!await validLinks(linkedProductIds, req)) return bad(res, '关联服务必须属于本机构，且不能重复');
+  if (!validSalePrices(salePrices)) return bad(res, '销售规格须填写名称、盒数和有效总价，且名称不能重复');
   const product = await Material.create({ tenantId: tenant(req), name: String(name).trim().slice(0, 120), stock: Number(openingQuantity), linkedProductIds,
+    salePrices: salePrices.map(row => ({ label: String(row.label).trim().slice(0, 80), units: Number(row.units), price: Number(row.price) })),
     inventoryTracking: { enabled: true, kind, unit: String(unit).trim().slice(0, 20) || '件', minStock: Number(minStock), defaultCost: Number(defaultCost), location: String(location).trim().slice(0, 80) } });
   try {
     await InventoryEntry.create({ tenantId: tenant(req), productId: product._id, materialId: product._id, type: 'opening', quantity: product.stock, units: product.stock, balanceAfter: product.stock, unitCost: Number(defaultCost), actorId: actor(req)._id, note: `独立物资实盘期初：${String(openingNote).trim()}`.slice(0, 500) });
@@ -90,9 +97,11 @@ adminRouter.patch('/products/:id/settings', async (req, res) => {
   if (!validId(req.params.id)) return bad(res, '商品编号无效');
   const product = await Material.findOne({ ...productFilter(req), _id: req.params.id });
   if (!product) return bad(res, '物资不存在', 404);
-  const { minStock, defaultCost, location, name, linkedProductIds } = req.body || {};
+  const { minStock, defaultCost, location, name, unit, linkedProductIds, salePrices } = req.body || {};
   if (name !== undefined) { if (!String(name).trim()) return bad(res, '请填写物资名称'); product.name = String(name).trim().slice(0, 120); }
+  if (unit !== undefined) { if (!String(unit).trim()) return bad(res, '请填写物资单位'); product.inventoryTracking.unit = String(unit).trim().slice(0, 20); }
   if (linkedProductIds !== undefined) { if (!await validLinks(linkedProductIds, req)) return bad(res, '关联服务必须属于本机构，且不能重复'); product.linkedProductIds = linkedProductIds; }
+  if (salePrices !== undefined) { if (!validSalePrices(salePrices)) return bad(res, '销售规格须填写名称、盒数和有效总价，且名称不能重复'); product.salePrices = salePrices.map(row => ({ label: String(row.label).trim().slice(0, 80), units: Number(row.units), price: Number(row.price) })); }
   if (minStock !== undefined) {
     if (!Number.isInteger(Number(minStock)) || Number(minStock) < 0) return bad(res, '最低库存无效');
     product.inventoryTracking.minStock = Number(minStock);
@@ -107,7 +116,7 @@ adminRouter.patch('/products/:id/settings', async (req, res) => {
 });
 
 async function addEntry(req, res) {
-  const { productId, type, units, sourceReceiptId, batchNo = '', serialNo = '', expiresAt, location = '', userId, assigneeId, fromIssued = false, orderId, unitCost, unitPrice, serviceProductId, requestId, note = '' } = req.body || {};
+  const { productId, type, units, sourceReceiptId, batchNo = '', serialNo = '', expiresAt, location = '', userId, assigneeId, fromIssued = false, orderId, unitCost, unitPrice, serviceProductId, salePriceLabel = '', requestId, note = '' } = req.body || {};
   if (!validId(productId)) return bad(res, '请选择物资');
   if (!['receipt', 'issue', 'use', 'return', 'loss', 'manual_sale'].includes(type)) return bad(res, '流水类型无效');
   if (req.staff && !['issue', 'use', 'return', 'manual_sale'].includes(type)) return bad(res, '该操作需在管理后台办理', 403);
@@ -147,8 +156,13 @@ async function addEntry(req, res) {
     service = await Product.findOne({ _id: serviceProductId, tenantId: tenant(req) });
     if (!service) return bad(res, '关联服务不存在');
   }
-  if (type === 'manual_sale' && !service) return bad(res, '录入消费时请选择关联服务');
-  if (type === 'manual_sale' && req.staff && Number(unitPrice) !== Number(service.originalPrice)) return bad(res, '成交价须使用所选服务的后台售价', 403);
+  const salePrice = type === 'manual_sale' && salePriceLabel
+    ? (product.salePrices || []).find(row => row.label === String(salePriceLabel).trim()) : null;
+  if (salePriceLabel && !salePrice) return bad(res, '物资销售规格已调整，请刷新后重新选择', 409);
+  if (salePrice && service) return bad(res, '物资销售规格不能同时关联服务');
+  if (type === 'manual_sale' && !salePrice && !service) return bad(res, '录入消费时请选择物资销售规格或关联服务');
+  if (salePrice && amount % Number(salePrice.units) !== 0) return bad(res, '销售数量须为所选规格盒数的整数倍');
+  if (type === 'manual_sale' && req.staff && !salePrice && Number(unitPrice) !== Number(service.originalPrice)) return bad(res, '成交价须使用所选服务的后台售价', 403);
   if (userId && !await User.exists({ _id: userId, tenantId: tenant(req) })) return bad(res, '客户不存在', 404);
   if (orderId) {
     const paidOrder = await Order.findOne({ _id: orderId, tenantId: tenant(req), user: userId, paymentStatus: 'paid', tradeStatus: { $nin: ['closed', 'refunded'] } });
@@ -165,7 +179,7 @@ async function addEntry(req, res) {
     const remaining = ledger.reduce((sum, row) => sum + (row.type === 'issue' ? row.units : row.type === 'return' || (row.type === 'use' && row.fromIssued && product.inventoryTracking.kind !== 'reusable') ? -row.units : row.type === 'reversal' ? (row.fromIssued && row.quantity === 0 ? (product.inventoryTracking.kind === 'reusable' ? 0 : row.units) : -row.quantity) : 0), 0);
     if (remaining < amount) return bad(res, '该人员已领用的未使用数量不足', 409);
   }
-  if (type === 'manual_sale' && (!Number.isFinite(Number(unitPrice)) || Number(unitPrice) < 0)) return bad(res, '请输入本次成交单价');
+  if (type === 'manual_sale' && !salePrice && (!Number.isFinite(Number(unitPrice)) || Number(unitPrice) < 0)) return bad(res, '请输入本次成交单价');
   if (unitCost !== undefined && unitCost !== '' && (!Number.isFinite(Number(unitCost)) || Number(unitCost) < 0)) return bad(res, '成本单价无效');
   let delta = ['receipt', 'return'].includes(type) ? amount : -amount;
   if ((type === 'use' && fromIssued) || type === 'manual_sale') delta = 0;
@@ -175,7 +189,7 @@ async function addEntry(req, res) {
   );
   if (!updated) return bad(res, '可用库存不足或物资状态已变化', 409);
   try {
-    const entry = await InventoryEntry.create({ tenantId: tenant(req), productId, materialId: productId, serviceProductId: service?._id || null, requestId, type, quantity: delta, units: amount, fromIssued: !!fromIssued, sourceOrderId: orderId || null, balanceAfter: Number(updated.stock), sourceReceiptId: sourceReceiptId || null, batchNo: resolvedBatch.slice(0, 80), serialNo: String(serialNo).trim().slice(0, 80), expiresAt: resolvedExpiry, location: String(location || product.inventoryTracking.location || '').trim().slice(0, 80), userId: userId || null, assigneeId: assigneeId || null, unitCost: unitCost === undefined || unitCost === '' ? Number(product.inventoryTracking.defaultCost || 0) : Number(unitCost), unitPrice: type === 'manual_sale' ? Number(unitPrice) : 0, note: String(note).trim().slice(0, 500), actorId: actor(req)._id, confirmedBy: req.inventoryConfirmedBy || null, dispatchRequestId: req.inventoryDispatchId || null, delivery: req.inventoryDelivery || undefined });
+    const entry = await InventoryEntry.create({ tenantId: tenant(req), productId, materialId: productId, serviceProductId: service?._id || null, salePriceLabel: salePrice?.label || '', requestId, type, quantity: delta, units: amount, fromIssued: !!fromIssued, sourceOrderId: orderId || null, balanceAfter: Number(updated.stock), sourceReceiptId: sourceReceiptId || null, batchNo: resolvedBatch.slice(0, 80), serialNo: String(serialNo).trim().slice(0, 80), expiresAt: resolvedExpiry, location: String(location || product.inventoryTracking.location || '').trim().slice(0, 80), userId: userId || null, assigneeId: assigneeId || null, unitCost: unitCost === undefined || unitCost === '' ? Number(product.inventoryTracking.defaultCost || 0) : Number(unitCost), unitPrice: type === 'manual_sale' ? (salePrice ? Number(salePrice.price) / Number(salePrice.units) : Number(unitPrice)) : 0, note: String(note).trim().slice(0, 500), actorId: actor(req)._id, confirmedBy: req.inventoryConfirmedBy || null, dispatchRequestId: req.inventoryDispatchId || null, delivery: req.inventoryDelivery || undefined });
     return res.json({ success: true, data: entry });
   } catch (error) {
     await Material.updateOne({ _id: productId, tenantId: tenant(req) }, { $inc: { stock: -delta } });

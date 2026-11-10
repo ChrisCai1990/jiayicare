@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(require.resolve('../src/routes/inventory'), 'utf8');
 function setup() {
   const handlers = {}; const entries = [];
-  const material = { _id:'material', tenantId:'tenant', name:'血糖传感器', stock:8, linkedProductIds:['monitor','diabetes'], inventoryTracking:{ enabled:true, kind:'consumable', unit:'件' } };
+  const material = { _id:'material', tenantId:'tenant', name:'血糖传感器', stock:8, linkedProductIds:['monitor','diabetes'], salePrices:[{label:'四件组合',units:4,price:6800}], inventoryTracking:{ enabled:true, kind:'consumable', unit:'件' } };
   const products = [{ _id:'monitor', originalPrice:200 }, { _id:'diabetes', originalPrice:2000 }];
   const chain = rows => ({ select(){return this}, sort(){return this}, limit(){return this}, populate(){return this}, lean:async()=>rows });
   const Material = {
@@ -53,6 +53,18 @@ test('using issued supplies and recording service revenue do not deduct physical
   assert.equal((await call('/entries',{fromIssued:true,assigneeId:'staff',serviceProductId:'diabetes',orderId:'order'})).code,200);
   assert.equal((await call('/entries',{type:'manual_sale',serviceProductId:'diabetes',unitPrice:2000,note:'已收款'},true)).code,200);
   assert.equal(material.stock,8); assert.equal(entries[0].quantity,0); assert.equal(entries[1].quantity,0);
+});
+test('four-unit material sale records one 6800 package without deducting inventory again',async()=>{
+  const {call,material,entries}=setup();
+  const saved=await call('/entries',{type:'manual_sale',serviceProductId:'',salePriceLabel:'四件组合',units:4,unitPrice:2380,note:'线下收款凭据'},true);
+  assert.equal(saved.code,200);
+  assert.equal(entries[0].units,4);
+  assert.equal(entries[0].unitPrice,1700);
+  assert.equal(entries[0].units*entries[0].unitPrice,6800);
+  assert.equal(entries[0].salePriceLabel,'四件组合');
+  assert.equal(material.stock,8);
+  assert.equal((await call('/entries',{type:'manual_sale',salePriceLabel:'四件组合',units:1,note:'线下收款凭据'},true)).code,400);
+  assert.equal((await call('/entries',{type:'manual_sale',salePriceLabel:'已删除规格',units:4,note:'线下收款凭据'},true)).code,409);
 });
 test('unlinked services, insufficient stock and repeated requests are rejected',async()=>{
   const {call,material}=setup();

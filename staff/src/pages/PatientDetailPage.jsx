@@ -2240,6 +2240,7 @@ export default function PatientDetailPage() {
   const [reportPage, setReportPage] = useState(1)
   const [openReportActionId, setOpenReportActionId] = useState(null)
   const [patientOrders, setPatientOrders] = useState([])
+  const [inventoryConsumption, setInventoryConsumption] = useState({ patientId: '', manual: [] })
   const [scheduleBookingContext, setScheduleBookingContext] = useState(null)
   const [patientOrdersLoading, setPatientOrdersLoading] = useState(false)
   const [patientOrdersError, setPatientOrdersError] = useState('')
@@ -11833,10 +11834,15 @@ export default function PatientDetailPage() {
         const thisYear = new Date().getFullYear()
         const yearOrders = patientOrders.filter(o => new Date(o.createdAt).getFullYear() === thisYear)
         const billableYearOrders = yearOrders.filter(o => o.status !== 'cancelled' && o.paymentStatus !== 'refunded' && o.tradeStatus !== 'refunded' && o.tradeStatus !== 'closed')
-        const yearTotal = billableYearOrders.reduce((sum, order) => {
+        const orderYearTotal = billableYearOrders.reduce((sum, order) => {
           const paid = Number(order.paidAmount || 0)
           return sum + (paid > 0 ? paid : Number(order.servicePrice || 0))
         }, 0)
+        const manualYearTotal = inventoryConsumption.patientId === id
+          ? inventoryConsumption.manual.filter(entry => entry.type === 'manual_sale' && new Date(entry.createdAt).getFullYear() === thisYear)
+            .reduce((sum, entry) => sum + Number(entry.units || 0) * Number(entry.unitPrice || 0), 0)
+          : 0
+        const yearTotal = orderYearTotal + manualYearTotal
         const includedServices = packageEntitlements.length ? packageEntitlements.flatMap(entitlement => {
           const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
           return (entitlement.rights?.productEntitlements || []).map((right, index) => {
@@ -11896,7 +11902,7 @@ export default function PatientDetailPage() {
         }
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <PatientInventoryConsumption patientId={id} />
+            <PatientInventoryConsumption patientId={id} onDataChange={(patientId, data) => setInventoryConsumption({ patientId, manual: data.manual || [] })} />
             {/* 账户概览 */}
             <div className="card">
               <div className="card-header"><div className="card-title">账户概览</div></div>
