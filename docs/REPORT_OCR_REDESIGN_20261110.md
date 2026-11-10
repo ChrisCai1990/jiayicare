@@ -42,6 +42,10 @@
 3. 达到逐行验收门槛后，仅对指定试点报告开启新流程；核对审核页面与来源坐标，再扩大至年度报告。处方、病历独立验收后分别切换。
 4. 通过特性开关按报告类型回退到旧解析器；已保存人工审核记录不回滚、不自动覆盖。保留每次切换的版本与结果统计。
 
+## 本地原型状态
+
+`backend/src/utils/reportOcrWords.js` 已提供只读文字层及扫描图 OCR 适配器：`pdftotext -bbox-layout` 与 Tesseract TSV 均保留词级坐标，不拼接表格列；纯解析与无效输入测试通过。它尚未接入正式解析、尚未在真实报告上测量识别准确率，也不代表选择 Tesseract 为正式主引擎。下一步是建立同一页的行/栏目结构和人工真值，再比较 PP-StructureV3 与 Qwen 路径。
+
 ## 参考资料
 
 - 阿里云 Qwen3-VL-Plus 模型能力与输出上限：https://help.aliyun.com/zh/model-studio/qwen3-vl-plus
