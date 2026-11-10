@@ -1,4 +1,4 @@
-const { chromium } = require('../../apple-ios-build3-20261019/node_modules/playwright');
+const { chromium, webkit } = require('../../apple-ios-build3-20261019/node_modules/playwright');
 
 const base = process.env.MOBILE_H5_URL || 'http://127.0.0.1:8765/mobile-preview/';
 const user = { _id: 'smoke-user', name: '测试用户', careTeam: [{ kind: 'healthManager', name: '测试顾问' }], bodyCompHistory: process.env.SMOKE_RECENT_TRENDS ? [{ weight: '68.5', measuredAt: new Date().toISOString() }] : {} };
@@ -14,7 +14,9 @@ const notification = { _id: 'questionnaire-1', type: 'questionnaire', sender: '�
 const systemNotification = { _id: 'system-1', type: 'system', sender: '系统通知', title: '历史消息', content: '测试系统消息', createdAt: yesterdayNoonBeijing.toISOString(), unread: false };
 
 async function run() {
-  const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
+  const browser = process.env.SMOKE_WEBKIT
+    ? await webkit.launch({ headless: true })
+    : await chromium.launch({ headless: true, executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: 'zh-CN', timezoneId: 'Asia/Shanghai' });
   await context.addInitScript(() => {
     localStorage.setItem('jy_token', 'smoke-token');
