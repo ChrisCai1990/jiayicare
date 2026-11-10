@@ -253,7 +253,7 @@ test('single-page route stops before coverage/classification and preserves exist
   assert.equal(report.reportItems[0], oldItem);
 });
 
-for (const imageSize of [250000, 520000]) test(`annual PDF supplement splits ${imageSize}-character page and checks six calls`, async () => {
+for (const imageSize of [250000, 520000, 648096]) test(`annual PDF supplement splits ${imageSize}-character page and checks four calls`, async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -290,11 +290,11 @@ for (const imageSize of [250000, 520000]) test(`annual PDF supplement splits ${i
   });
   await assert.rejects(run('fixture', 9), /stopped/);
   assert.equal(regions, 1);
-  assert.equal(requiredCalls, 6);
+  assert.equal(requiredCalls, 4);
   assert.equal(modelCalls, 1);
 });
 
-test('extra dense annual page uses four bands without hospital template and fits default eight calls', async () => {
+test('exceptionally large annual page uses four bands without hospital template and checks eight calls', async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -313,7 +313,7 @@ test('extra dense annual page uses four bands without hospital template and fits
     '../models/MedicalReport': { findById: async () => ({ _id: 'fixture', user: 'synthetic', type: 'annual', title: '测试体检', reportItems: [] }) },
     '../utils/pdf': {
       isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      renderSinglePage: async () => 'x'.repeat(648096),
+      renderSinglePage: async () => 'x'.repeat(1000001),
       renderSinglePageBands: async () => { bands++; return ['a', 'b', 'c', 'd']; },
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('No model result'); } },

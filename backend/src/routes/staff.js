@@ -18705,11 +18705,13 @@ async function runReportPageParseControlled(reportId, pageNum) {
     // 约 375 KB JPEG 起分区：线上 648K 字符整页在 180 秒内连续超时，
     // 同页 160 DPI 上下分区分别仅约 296K / 226K 字符。
     const densePageBase64Threshold = 500000;
-    // A compressed annual-checkup page can contain several dense panels even
-    // when its JPEG is small. Split it by position rather than trusting the
-    // hospital label or the compressed byte count as a measure of content.
+    // The independent transcript already audits printed table rows. On annual
+    // pages the extra coverage pass repeatedly hit OUTPUT_LENGTH, and four
+    // bands doubled the minimum calls without improving that page. Keep the
+    // full table row in each top/bottom crop; reserve four bands for unusually
+    // large rendered pages that cannot fit two crops.
     if (report.type === 'annual' || images[0]?.length > densePageBase64Threshold) {
-      const useBands = report.type === 'annual' && images[0].length > 600000;
+      const useBands = images[0].length > 1000000;
       images = useBands
         ? await renderSinglePageBands(pdfBuf, pageNum, 160)
         : await renderSinglePageRegions(pdfBuf, pageNum, 160);
@@ -18723,10 +18725,10 @@ async function runReportPageParseControlled(reportId, pageNum) {
     images = [buffers[pageNum - 1].toString('base64')];
   }
   if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
-  // Four bands already provide a second spatial pass over overlap. A further
-  // coverage call on each band would require twelve calls, above the default
-  // eight-call page allowance before any model request could start.
-  const runCoverageAudit = images.length < 4;
+  // For annual reports the independent transcript checks every printed table
+  // row. Repeating a full candidate list as a coverage audit is both costly
+  // and prone to output truncation on dense lab pages.
+  const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
   await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
   let parsedItems = [];
   let allRegionsImageOnly = true;
