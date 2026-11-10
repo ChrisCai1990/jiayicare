@@ -13545,6 +13545,11 @@ export default function PatientDetailPage() {
         const substantiveItems = ocrEditItems.map((it, i) => ({ it, i })).filter(({ it }) => isSubstantiveItem(it))
         const unclassifiedItems = substantiveItems.filter(({ it }) => String(it.name || '').trim() && !isClassified(it))
         const unclassifiedN = ocrReviewReport.documentCategory === 'prescription_order' ? 0 : unclassifiedItems.length
+        const ambiguousItems = ocrReviewReport.documentCategory === 'prescription_order' ? [] : substantiveItems.filter(({ it }) => {
+          const keys = [...new Set([...(Array.isArray(it.screeningKeys) ? it.screeningKeys : []), it.screeningKey].filter(Boolean))]
+          return String(it.name || '').trim() && isClassified(it) && keys.length > 1
+            && !(it.classificationSource === 'manual' && (it.classificationReviewedBy || Object.hasOwn(it, 'manualClassificationKeys')))
+        })
         const matchedN = substantiveItems.filter(({ it }) => String(it.name || '').trim() && isClassified(it)).length
         const unclassifiedByPage = unclassifiedItems.reduce((counts, { it }) => {
           const page = Number(it.sourcePage) || 1
@@ -13565,6 +13570,7 @@ export default function PatientDetailPage() {
           const identityChanged = original && ['name', 'bodyPart', 'orderName', 'sourceSection', 'specimen', 'modality', 'unit'].some(field => String(original[field] || '') !== String(it[field] || ''))
           const manual = it.classificationSource === 'manual'
           const selected = it.screeningKeys?.length ? it.screeningKeys : it.screeningKey ? [it.screeningKey] : []
+          const needsMultiConfirmation = ambiguousItems.some(entry => entry.i === i)
           const search = (ocrClassifySearch[i] || '').trim().toLowerCase()
           const options = allClassifyOpts.filter(option => !search || [option.groupLabel, option.label, ...(option.searchTerms || [])].join(' ').toLowerCase().includes(search))
           return <div style={{ fontSize: 12, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
@@ -13580,6 +13586,10 @@ export default function PatientDetailPage() {
               <div style={{ color: '#8AA89C' }}>可多选；保存草稿或提交审核后生效。</div>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setClassify(i, [])}>恢复自动匹配</button>
             </details>
+            {needsMultiConfirmation && <div role="alert" style={{ marginTop: 6, padding: '7px 9px', color: '#B42318', background: '#FFF1F0', borderRadius: 5 }}>
+              此项目同时匹配 {selected.length} 个分类。请核对原件与上方路径；可在“选择 / 修改归类”中调整。
+              <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => setClassify(i, selected)}>确认这些分类</button>
+            </div>}
             {nameConcern && <div role="alert" style={{ color: '#B45309' }}>{nameConcern}</div>}
           </div>
         }
@@ -13619,6 +13629,14 @@ export default function PatientDetailPage() {
                   {unclassifiedItems.map(entry => <button key={entry.it.itemId || entry.i} type="button" onClick={() => jumpToUnclassified(entry)}
                     style={{ color: '#B42318', border: '1px solid #FCA5A5', background: '#fff', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', fontSize: 12, textAlign: 'left', maxWidth: '100%' }}>
                     第 {Number(entry.it.sourcePage) || 1} 页 · {entry.it.sourceSection || entry.it.orderName || '未识别栏目'} · <strong>{entry.it.name || '未命名项目'}</strong>
+                  </button>)}
+                </div>
+              </div>}
+              {ambiguousItems.length > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF8E6', borderBottom: '1px solid #FCD34D', color: '#92400E', fontSize: 12 }}>
+                <strong>⚠ {ambiguousItems.length} 项同时匹配多个分类，须逐项核对归属后才能提交审核。可先保存草稿：</strong>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, maxHeight: 104, overflowY: 'auto' }}>
+                  {ambiguousItems.map(entry => <button key={entry.it.itemId || entry.i} type="button" onClick={() => jumpToUnclassified(entry)} style={{ border: '1px solid #FCD34D', borderRadius: 5, padding: '4px 8px', background: '#fff', color: '#92400E', cursor: 'pointer', textAlign: 'left' }}>
+                    第 {Number(entry.it.sourcePage) || 1} 页 · {entry.it.name}：{reportClassificationLabels(entry.it, screeningCatalog).join('；')}
                   </button>)}
                 </div>
               </div>}
@@ -13762,12 +13780,12 @@ export default function PatientDetailPage() {
                       {/* 异常快览仅适用于检验数值，不用于处方。 */}
                       {!isPrescription && <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>
-                          检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 影像/检查 ${imgRows.length} 项` : ''}
+                          本页检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 本页影像/检查 ${imgRows.length} 项` : ''}
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
                           {labRows.length > 0 && !activeImageEvidence?.message && abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
-                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已归类 {matchedN} 项（将写入专项筛查）</span>
-                          <span style={{ marginLeft: 8, fontWeight: 400, color: reviewedCount === indexedAll.length ? '#16A34A' : '#D97706' }}>· 人工已核对 {reviewedCount}/{indexedAll.length}</span>
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 整份报告已归类 {matchedN} 项（提交审核后写入专项筛查）</span>
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: reviewedCount === indexedAll.length ? '#16A34A' : '#D97706' }}>· 整份报告人工已核对 {reviewedCount}/{indexedAll.length}（仅记录核对进度，不阻止保存）</span>
                         </div>
                         {abn.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -14023,8 +14041,8 @@ export default function PatientDetailPage() {
                 </button>}
                 {ocrDraftSavedAt && <span style={{ alignSelf: 'center', color: '#16845B', fontSize: 11, whiteSpace: 'nowrap' }}>已保存 {ocrDraftSavedAt.toLocaleTimeString('zh-CN')}</span>}
                 <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
-                  disabled={ocrSaving || (!ocrReviewReport._screeningRecordEdit && unclassifiedN > 0)} onClick={handleApproveOCR}
-                  title={unclassifiedN > 0 && !ocrReviewReport._screeningRecordEdit ? `还有 ${unclassifiedN} 项未归类，请先归类或保存草稿` : undefined}>
+                  disabled={ocrSaving || (!ocrReviewReport._screeningRecordEdit && unclassifiedN > 0) || ambiguousItems.length > 0} onClick={handleApproveOCR}
+                  title={ambiguousItems.length > 0 ? `还有 ${ambiguousItems.length} 项多分类待确认` : unclassifiedN > 0 && !ocrReviewReport._screeningRecordEdit ? `还有 ${unclassifiedN} 项未归类，请先归类或保存草稿` : undefined}>
                   {ocrSaving ? '保存中…' : ocrReviewReport._screeningRecordEdit ? '✓ 保存重新归类' : '✓ 提交审核（写入专项筛查）'}
                 </button>
                 {!ocrReviewReport._screeningRecordEdit && <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}

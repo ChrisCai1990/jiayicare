@@ -6157,12 +6157,17 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // A draft may contain unmatched results, but approval must not silently omit
     // them from the screening record. Check the server-classified items, including
     // requests that only change aiStatus without sending reportItems.
-    if (aiStatus === 'reviewed' && report.documentCategory !== 'prescription_order') {
+    if ((aiStatus === 'reviewed' || screeningReclassification) && report.documentCategory !== 'prescription_order') {
       const unclassified = require('../utils/screeningMatch').findUnclassifiedNamedItems(report.reportItems);
-      if (unclassified.length) return res.status(400).json({
+      if (aiStatus === 'reviewed' && unclassified.length) return res.status(400).json({
         success: false,
         code: 'REPORT_ITEMS_UNCLASSIFIED',
-        message: `还有 ${unclassified.length} 项未归类，请先逐项归类；当前修改可保存为草稿`,
+        message: `整份报告还有 ${unclassified.length} 项未归类：${unclassified.slice(0, 5).map(item => `第${Number(item.sourcePage) || 1}页「${item.name}」`).join('、')}${unclassified.length > 5 ? '等' : ''}。请逐项归类；当前修改可保存为草稿。人工核对进度不影响保存`,
+      });
+      const ambiguous = require('../utils/screeningMatch').findUnconfirmedMultiClassifiedItems(report.reportItems);
+      if (ambiguous.length) return res.status(400).json({
+        success: false, code: 'REPORT_ITEMS_MULTIPLE_CLASSIFICATIONS',
+        message: `整份报告有 ${ambiguous.length} 项同时匹配多个分类，须逐项确认：${ambiguous.slice(0, 5).map(item => `第${Number(item.sourcePage) || 1}页「${item.name}」`).join('、')}${ambiguous.length > 5 ? '等' : ''}。请在项目下方选择并确认正确分类后再提交审核；可先保存草稿`,
       });
     }
     if (autoAuditPending) {
@@ -6658,7 +6663,12 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
       const unclassified = require('../utils/screeningMatch').findUnclassifiedNamedItems(report.reportItems);
       if (unclassified.length) return res.status(400).json({
         success: false, code: 'REPORT_ITEMS_UNCLASSIFIED',
-        message: `还有 ${unclassified.length} 项未归类，请先逐项归类；当前修改可保存为草稿`,
+        message: `整份报告还有 ${unclassified.length} 项未归类：${unclassified.slice(0, 5).map(item => `第${Number(item.sourcePage) || 1}页「${item.name}」`).join('、')}${unclassified.length > 5 ? '等' : ''}。请逐项归类；当前修改可保存为草稿。人工核对进度不影响保存`,
+      });
+      const ambiguous = require('../utils/screeningMatch').findUnconfirmedMultiClassifiedItems(report.reportItems);
+      if (ambiguous.length) return res.status(400).json({
+        success: false, code: 'REPORT_ITEMS_MULTIPLE_CLASSIFICATIONS',
+        message: `整份报告有 ${ambiguous.length} 项同时匹配多个分类，须逐项确认：${ambiguous.slice(0, 5).map(item => `第${Number(item.sourcePage) || 1}页「${item.name}」`).join('、')}${ambiguous.length > 5 ? '等' : ''}。请在项目下方选择并确认正确分类后再提交审核；可先保存草稿`,
       });
     }
     const targetError = await outpatientCourseTargetError(report);
