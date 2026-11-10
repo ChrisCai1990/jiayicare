@@ -38,6 +38,12 @@ async function run() {
     const path = url.pathname.slice(4);
     let data = { success: true, data: [] };
     if (path === '/user/me') data = { success: true, data: user };
+    else if (path === '/user/report') data = { success: true, data: {
+      periodLabel: url.searchParams.get('period') === 'month' ? '本月记录汇总' : '本周记录汇总',
+      dateRange: url.searchParams.get('period') === 'month' ? '10/11 - 11/10' : '11/3 - 11/10',
+      recordCount: process.env.SMOKE_CHART_LAYOUT ? 6 : 2, taskCompletion: { total: 0, completed: 0, rate: 0 },
+      metrics: [{ type: 'bloodPressure', label: '血压', value: '118/76', unit: 'mmHg', delta: '+7/+8' }],
+    } };
     else if (path === '/guardian-children' || path === '/family-links') data = { success: true, data: [] };
     else if (path === '/records') {
       const type = url.searchParams.get('type');
@@ -103,6 +109,32 @@ async function run() {
     for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) painted++;
     return { canvasId: node.getAttribute('canvas-id'), width: node.width, height: node.height, rectWidth: node.getBoundingClientRect().width, painted };
   })));
+  if (process.env.SMOKE_REPORT_LAYOUT) {
+    await page.getByText('健康报告', { exact: true }).first().click();
+    await page.getByText('近30天', { exact: true }).first().click();
+    await page.getByText('近30天记录汇总').waitFor();
+    await page.getByText('本时段该手臂仅有 1 次记录，暂无变化趋势').waitFor();
+    if (process.env.SMOKE_CHART_LAYOUT) {
+      await page.getByText('睡眠', { exact: true }).last().waitFor();
+      await page.getByText('9.7').last().waitFor();
+      await page.waitForTimeout(500);
+      const painted = await page.evaluate(() => [...document.querySelectorAll('canvas[canvas-id^="trend-line"]')]
+        .filter(node => node.closest('.taro_page')?.classList.contains('taro_page_show'))
+        .map(node => {
+          const data = node.getContext('2d').getImageData(0, 0, node.width, node.height).data;
+          let count = 0;
+          for (let i = 3; i < data.length; i += 4) if (data[i]) count++;
+          return count;
+        }));
+      if (!painted.some(count => count > 0)) throw new Error(`Report trend canvas is blank: ${painted}`);
+      console.log('report trend pixels', painted);
+    }
+    if (await page.getByText('0/0 任务完成', { exact: false }).count()) throw new Error('Empty task progress is visible');
+    await page.screenshot({ path: 'output/report-layout-webkit.png', fullPage: true });
+    console.log('report layout', (await page.locator('body').innerText()).slice(0, 420));
+    await browser.close();
+    return;
+  }
   if (process.env.SMOKE_RECENT_TRENDS) await page.getByText('125/81 mmHg').last().waitFor();
   if (process.env.SMOKE_RECENT_TRENDS) console.log('records-after-trends', (await page.locator('body').innerText()).slice(0, 800), errors);
   await page.getByText('体重', { exact: true }).last().click();

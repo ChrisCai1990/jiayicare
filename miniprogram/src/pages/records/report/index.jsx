@@ -11,6 +11,8 @@ import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/HealthReportScreen.js 的核心信息：周期评分+指标趋势图化展示+任务完成率+亮点。
 const TREND_ICON = { down: '↓', up: '↑', stable: '–' };
+const EXTRA_METRICS = { sleep: { label: '睡眠', unit: '小时' }, waist: { label: '腰围', unit: 'cm' } };
+const RECORD_LABELS = { bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', weight: '体重', sleep: '睡眠', waist: '腰围' };
 const bloodPressureArm = record => {
   const arm = record?.arm || record?.extra?.arm || record?.note || '';
   if (/左[臂手]/.test(arm)) return '左臂';
@@ -23,6 +25,7 @@ const recordDate = value => {
 };
 
 export default function HealthReportPage() {
+  const isH5 = process.env.TARO_ENV === 'h5';
   const { statusBarHeight } = useNavBar();
   const [period, setPeriod] = useState('week');
   const [report, setReport] = useState(null);
@@ -56,11 +59,11 @@ export default function HealthReportPage() {
         all.push(...result.data);
         if (result.data.length < 100) break;
       }
-      if (active) setRecords(all.filter(record => ['bloodPressure', 'bloodSugar', 'heartRate', 'weight'].includes(record.type)));
+      if (active) setRecords(isH5 ? all : all.filter(record => ['bloodPressure', 'bloodSugar', 'heartRate', 'weight'].includes(record.type)));
     })().catch(() => { if (active) setRecordsError('明细加载失败，请稍后重试'); })
       .finally(() => { if (active) setRecordsLoading(false); });
     return () => { active = false; };
-  }, [report, period]);
+  }, [report, period, isH5]);
 
   useEffect(() => {
     if (!report?.metrics?.length) return;
@@ -82,7 +85,16 @@ export default function HealthReportPage() {
   }, [report, period]);
 
   const bpRecords = records.filter(record => record.type === 'bloodPressure');
-  const bpByArm = ['左臂', '右臂'].map(arm => ({ arm, record: bpRecords.find(record => bloodPressureArm(record) === arm) })).filter(item => item.record);
+  const bpByArm = (isH5 ? ['左臂', '右臂', '未标注手臂'] : ['左臂', '右臂'])
+    .map(arm => ({ arm, record: bpRecords.find(record => bloodPressureArm(record) === arm) })).filter(item => item.record);
+  const extraMetrics = isH5 ? Object.entries(EXTRA_METRICS).map(([type, meta]) => {
+    if (report?.metrics?.some(metric => metric.type === type)) return null;
+    const rows = records.filter(record => record.type === type && Number.isFinite(Number.parseFloat(record.value)))
+      .sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt));
+    if (!rows.length) return null;
+    return { type, label: meta.label, unit: meta.unit, value: rows[rows.length - 1].value, count: rows.length };
+  }).filter(Boolean) : [];
+  const visibleMetrics = [...(report?.metrics || []), ...extraMetrics];
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -100,7 +112,7 @@ export default function HealthReportPage() {
 
       <View style={{ padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
       <View style={{ display: 'flex', gap: '8px', marginBottom: `${spacing.lg}px` }}>
-        {[{ k: 'week', l: '本周' }, { k: 'month', l: '本月' }].map((p) => (
+        {[{ k: 'week', l: isH5 ? '近7天' : '本周' }, { k: 'month', l: isH5 ? '近30天' : '本月' }].map((p) => (
           <View
             key={p.k}
             onClick={() => setPeriod(p.k)}
@@ -123,9 +135,9 @@ export default function HealthReportPage() {
         <>
           <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
             <View>
-              <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{report.periodLabel || (period === 'month' ? '本月记录汇总' : '本周记录汇总')}</Text>
+              <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{isH5 ? (period === 'month' ? '近30天记录汇总' : '近7天记录汇总') : report.periodLabel || (period === 'month' ? '本月记录汇总' : '本周记录汇总')}</Text>
               <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', margin: '4px 0' }}>{report.dateRange}</Text>
-              {!!report.taskCompletion && (
+              {!!report.taskCompletion && (!isH5 || Number(report.taskCompletion.total) > 0) && (
                 <Text style={{ fontSize: '12px', color: colors.textSecondary }}>☑ {report.taskCompletion.completed}/{report.taskCompletion.total} 任务完成（{report.taskCompletion.rate}%）</Text>
               )}
             </View>
@@ -133,12 +145,16 @@ export default function HealthReportPage() {
 
           <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '12px', lineHeight: '20px', marginBottom: '12px' }}>本页汇总已记录的数据；数值升降不代表健康状况改善或恶化。</Text>
 
-          {report.metrics?.length > 0 && (
+          {visibleMetrics.length > 0 && (
             <View style={{ marginBottom: `${spacing.md}px` }}>
               <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>健康指标</Text>
-              {report.metrics.map((m, i) => {
+              {visibleMetrics.map((m, i) => {
                 const key = m.type || m.key || m.label;
-                const points = chartData[key];
+                const points = chartData[key] || (isH5 && EXTRA_METRICS[key] ? records.filter(record => record.type === key).map(record => ({
+                  label: `${new Date(record.recordedAt).getMonth() + 1}/${new Date(record.recordedAt).getDate()}`,
+                  value: Number.parseFloat(record.value),
+                  recordedAt: record.recordedAt,
+                })).filter(point => Number.isFinite(point.value)).sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt)).slice(-10) : []);
                 const statusColor = colors.textPrimary;
                 const trendColor = colors.textSecondary;
                 return (
@@ -184,8 +200,8 @@ export default function HealthReportPage() {
                 : records.length ? records.map((record, index) => (
                 <View key={record._id || index} style={{ padding: '12px 0', borderBottom: index < records.length - 1 ? `1px solid ${colors.border}` : 'none' }}>
                   <View style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                    <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 600 }}>{record.label}{record.type === 'bloodPressure' ? ` · ${bloodPressureArm(record)}` : ''}</Text>
-                    <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 700 }}>{record.value} {record.unit}</Text>
+                    <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 600 }}>{isH5 ? (record.label || RECORD_LABELS[record.type] || record.type) : record.label}{record.type === 'bloodPressure' ? ` · ${bloodPressureArm(record)}` : ''}</Text>
+                    <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 700 }}>{record.value} {isH5 ? (record.unit || EXTRA_METRICS[record.type]?.unit || '') : record.unit}</Text>
                   </View>
                   <Text style={{ display: 'block', marginTop: '4px', fontSize: '11px', color: colors.textMuted }}>{recordDate(record.recordedAt)}</Text>
                 </View>

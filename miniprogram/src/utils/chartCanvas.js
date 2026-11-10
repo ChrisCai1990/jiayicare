@@ -32,18 +32,26 @@ export function drawChart(canvasId, height, paint, miniWidth = 300) {
   let frame = 0;
   let observer;
   let lastWidth = 0;
+  let attempts = 0;
   const render = () => {
     if (!active) return;
     const canvas = document.querySelector(`canvas[canvas-id="${canvasId}"]`);
     const width = canvas?.getBoundingClientRect().width || 0;
-    if (width < 1) return;
+    if (width < 1) {
+      if (attempts++ < 30) frame = requestAnimationFrame(render);
+      return;
+    }
     if (width === lastWidth && observer) return;
     lastWidth = width;
     const scale = Math.min(window.devicePixelRatio || 1, 3);
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(height * scale);
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      if (attempts++ < 30) frame = requestAnimationFrame(render);
+      return;
+    }
+    attempts = 0;
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     paint(nativeAdapter(ctx), width, height);
     if (!observer && typeof ResizeObserver !== 'undefined') {
