@@ -1,7 +1,7 @@
 const { chromium } = require('../../apple-ios-build3-20261019/node_modules/playwright');
 
 const base = process.env.MOBILE_H5_URL || 'http://127.0.0.1:8765/mobile-preview/';
-const user = { _id: 'smoke-user', name: '测试用户', careTeam: [{ kind: 'healthManager', name: '测试顾问' }], bodyCompHistory: {} };
+const user = { _id: 'smoke-user', name: '测试用户', careTeam: [{ kind: 'healthManager', name: '测试顾问' }], bodyCompHistory: process.env.SMOKE_RECENT_TRENDS ? [{ weight: '68.5', measuredAt: new Date().toISOString() }] : {} };
 const record = (type, value, date, extra = {}) => ({ _id: `${type}-${date}`, type, value, recordedAt: date, extra });
 const yesterdayNoonBeijing = new Date(Date.now() + 8 * 3600000);
 yesterdayNoonBeijing.setUTCDate(yesterdayNoonBeijing.getUTCDate() - 1);
@@ -30,7 +30,12 @@ async function run() {
       const type = url.searchParams.get('type');
       const selected = type ? records.filter(row => row.type === type) : records;
       data = { success: true, data: selected, total: selected.length, page: 1 };
-    } else if (path.startsWith('/records/trend/')) data = { success: true, data: [] };
+    } else if (path.startsWith('/records/trend/')) {
+      const now = new Date().toISOString();
+      data = { success: true, data: process.env.SMOKE_RECENT_TRENDS && path.endsWith('/bloodPressure')
+        ? [record('bloodPressure', '125/81', now, { sys: 125, dia: 81, arm: '左臂' })]
+        : process.env.SMOKE_RECENT_TRENDS && path.endsWith('/weight') ? [record('weight', '68.5', now)] : [] };
+    }
     else if (path === '/ibd/status') data = { success: true, data: { enabled: false } };
     else if (path === '/messages') data = { success: true, data: [notification, systemNotification] };
     else if (path === '/messages/thread/manager') data = { success: true, data: [] };
@@ -46,7 +51,8 @@ async function run() {
   await page.waitForTimeout(1200);
   await page.getByText('健康档案', { exact: true }).last().click();
   await page.getByText('历史健康记录').waitFor({ timeout: 10000 });
-  await page.getByText('125/81 mmHg').waitFor();
+  await page.getByText('125/81 mmHg').last().waitFor();
+  if (process.env.SMOKE_RECENT_TRENDS) console.log('records-after-trends', (await page.locator('body').innerText()).slice(0, 800), errors);
   await page.getByText('体重', { exact: true }).last().click();
   await page.getByText('68.5 kg').waitFor();
   console.log('records history visible');
