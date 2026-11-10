@@ -30,3 +30,10 @@ export function specialtyIssueSuggestions(text) {
   }
   return [...new Map(found.sort((a, b) => a.index - b.index).map(row => [row.title, row.title])).values()].slice(0, 8)
 }
+
+export function screeningItemIssueTitle(item) {
+  const name = String(item?.name || '').trim()
+  if (!name) return ''
+  const suffix = item.status === 'abnormal' ? '异常' : item.status === 'attention' ? '需关注' : ''
+  return suffix ? `${name}${suffix}`.slice(0, 80) : ''
+}
