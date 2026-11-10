@@ -12,6 +12,7 @@ export default function ReportImageEvidenceNotice({ evidence, hasItems = false }
       {[
         evidence.blockedReasons.section_mismatch > 0 && `栏目不符 ${evidence.blockedReasons.section_mismatch} 项`,
         evidence.blockedReasons.row_mismatch > 0 && `表格行不符 ${evidence.blockedReasons.row_mismatch} 项`,
+        evidence.blockedReasons.uncovered_rows > 0 && `原件结果行待补 ${evidence.blockedReasons.uncovered_rows} 行`,
         evidence.blockedReasons.unverified_text > 0 && `原文未核实 ${evidence.blockedReasons.unverified_text} 项`,
         evidence.blockedReasons.unreadable > 0 && `文字不可辨 ${evidence.blockedReasons.unreadable} 项`,
       ].filter(Boolean).join(' · ')}

@@ -100,6 +100,37 @@ test('supplemented lab result must share a printed table row with its name and u
   assert.equal(ambiguousSection.imageEvidence.blockedReasons.row_mismatch, 1);
 });
 
+test('generic section rows validate different PDF layouts without hospital templates', () => {
+  const candidate = { name: '葡萄糖', itemType: 'lab', value: '6.5', unit: 'mmol/L', sourceSection: '生化检验' };
+  const layouts = [
+    { hasMedicalImages: false, readability: 'clear', sections: [
+      { title: '生化检验', clinicalText: '', rows: [{ name: '葡萄糖', value: '6.5', unit: 'mmol/L', referenceRange: '3.9-6.1' }] },
+    ] },
+    { hasMedicalImages: false, readability: 'clear', sections: [
+      { title: '尿液检查', clinicalText: '', rows: [{ name: '葡萄糖', value: '阴性', unit: '', referenceRange: '阴性' }] },
+      { title: '生化检验', clinicalText: '', rows: [{ name: '葡萄糖', value: 6.5, unit: 'mmol/L', referenceRange: '3.9-6.1' }] },
+    ] },
+  ];
+  for (const [index, evidence] of layouts.entries()) {
+    const existingItems = index ? [{ name: '葡萄糖', itemType: 'lab', value: '阴性', sourceSection: '尿液检查' }] : [];
+    const guarded = guardImageEvidence({ items: [candidate] }, evidence, { verifyTableRows: true, existingItems });
+    assert.deepEqual(guarded.items, [candidate]);
+    assert.equal(guarded.imageEvidence.status, 'verified');
+  }
+  const missing = guardImageEvidence({ items: [candidate] }, layouts[1], { verifyTableRows: true });
+  assert.equal(missing.imageEvidence.blockedReasons.uncovered_rows, 1);
+  assert.equal(missing.imageEvidence.status, 'needs_review');
+  const wrongPanel = guardImageEvidence({ items: [{ ...candidate, sourceSection: '尿液检查' }] }, layouts[1],
+    { verifyTableRows: true });
+  assert.deepEqual(wrongPanel.items, []);
+  assert.equal(wrongPanel.imageEvidence.blockedReasons.row_mismatch, 1);
+  const zero = guardImageEvidence({ items: [{ ...candidate, value: '0' }] }, {
+    hasMedicalImages: false, readability: 'clear', sections: [{ title: '生化检验', clinicalText: '',
+      rows: [{ name: '葡萄糖', value: 0, unit: 'mmol/L', referenceRange: '' }] }],
+  }, { verifyTableRows: true });
+  assert.equal(zero.items.length, 1);
+});
+
 test('metadata, footer and machine measurements do not count as clinical findings', () => {
   const result = guardImageEvidence({ items: [narrative] }, { ...imageOnly,
     clinicalText: '检查项目：乳腺超声\n此报告仅供临床医生参考，签名有效\n距离 0.482 cm\nMI 0.6\n仅用于软件测试，不对应真实患者' });
