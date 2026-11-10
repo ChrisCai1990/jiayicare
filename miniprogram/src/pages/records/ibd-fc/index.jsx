@@ -23,6 +23,7 @@ function FcChart({ rows, days }) {
   useEffect(() => {
     if (!points.length) return;
     const ctx = Taro.createCanvasContext(chartId);
+    if (process.env.TARO_ENV === 'h5' && typeof ctx.font !== 'string') return;
     const left = 32, right = width - 13, top = 17, bottom = 143;
     const max = Math.max(1, ...points.map(row => Number(row.value))) * 1.12;
     const x = row => left + ((dateMs(row.date) - start) / (end - start)) * (right - left);

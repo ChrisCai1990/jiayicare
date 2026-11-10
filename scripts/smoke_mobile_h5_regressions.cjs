@@ -49,14 +49,31 @@ async function run() {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.stack || error.message));
+  page.on('requestfailed', request => errors.push(`request failed ${request.url()}: ${request.failure()?.errorText}`));
+  page.on('response', response => { if (response.status() >= 400) errors.push(`HTTP ${response.status()} ${response.url()}`); });
+  page.on('console', message => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1200);
+  if (process.env.SMOKE_RECORDS_LOOP) {
+    for (let attempt = 1; attempt <= Number(process.env.SMOKE_RECORDS_LOOP); attempt++) {
+      await page.getByText('健康档案', { exact: true }).last().click();
+      await page.waitForTimeout(1800);
+      const state = await page.evaluate(() => ({ route: location.hash, text: document.body.innerText.slice(0, 250), pages: [...document.querySelectorAll('.taro_page')].map(node => ({ id: node.id, className: node.className, text: node.innerText.slice(0, 100) })), diagnostic: window.__h5DiagnosticErrors }));
+      console.log('records loop', attempt, JSON.stringify(state), errors);
+      if (!state.text.includes('当前健康档案')) break;
+      await page.getByText('首页', { exact: true }).last().click();
+      await page.waitForTimeout(200);
+    }
+    await browser.close();
+    return;
+  }
   await page.getByText('健康档案', { exact: true }).last().click();
+  if (process.env.SMOKE_WEBKIT) { await page.waitForTimeout(1800); console.log('records debug', (await page.locator('body').innerText()).slice(0, 500), errors, await page.evaluate(() => ({appHtml:document.getElementById('app')?.innerHTML.slice(0,1300), bodyChildren:[...document.body.children].map(node=>[node.tagName,node.id,node.className]).slice(0,10)}))); }
   await page.getByText('历史健康记录').waitFor({ timeout: 10000 });
   await page.getByText('125/81 mmHg').last().waitFor();
   if (process.env.SMOKE_RECENT_TRENDS) console.log('records-after-trends', (await page.locator('body').innerText()).slice(0, 800), errors);
   await page.getByText('体重', { exact: true }).last().click();
-  await page.getByText('68.5 kg').waitFor();
+  await page.getByText('68.5 kg').last().waitFor();
   console.log('records history visible');
   await page.getByText('健康管家', { exact: true }).last().click();
   await page.locator('taro-text-core:visible').filter({ hasText: '测试顾问' }).first().click();

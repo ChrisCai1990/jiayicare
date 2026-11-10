@@ -9,6 +9,9 @@ export default function TrendChart({ points = [], height = 80, color = colors.pr
   useEffect(() => {
     if (!points.length) return;
     const ctx = Taro.createCanvasContext(canvasId);
+    // Taro H5 can create a placeholder context before a tab page's canvas mounts.
+    // Calling setFontSize on that placeholder throws and leaves the page blank in WebKit.
+    if (process.env.TARO_ENV === 'h5' && typeof ctx.font !== 'string') return;
     const width = 300;
     const top = showValues && !mini ? 17 : 5;
     const bottom = 7;

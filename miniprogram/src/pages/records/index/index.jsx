@@ -281,15 +281,15 @@ export default function RecordsIndexPage() {
       </View>
       <View style={{ padding: `0 ${spacing.lg}px ${spacing.xl}px` }}>
         <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('历史健康记录')}</Text>
-        <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
-          {['bloodPressure', 'weight'].map(type => <View key={type} onClick={() => setHistoryType(type)} style={{ padding: '9px 18px', borderRadius: `${radius.full}px`, backgroundColor: historyType === type ? colors.primary : '#fff', border: `1px solid ${historyType === type ? colors.primary : colors.border}` }}>
+        <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}>
+          <View style={{ display: 'inline-flex', gap: `${spacing.sm}px` }}>{CORE_TYPES.map(type => <View key={type} onClick={() => setHistoryType(type)} style={{ flexShrink: 0, padding: '9px 18px', borderRadius: `${radius.full}px`, backgroundColor: historyType === type ? colors.primary : '#fff', border: `1px solid ${historyType === type ? colors.primary : colors.border}` }}>
             <Text style={{ fontSize: '14px', color: historyType === type ? '#fff' : colors.textPrimary }}>{t(TYPE_META[type].label)}</Text>
-          </View>)}
-        </View>
+          </View>)}</View>
+        </ScrollView>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `0 ${spacing.md}px`, boxShadow: shadow.card }}>
           {historyRows.map((row, index) => {
             const bp = historyType === 'bloodPressure' ? bloodPressurePoints([row], 1)[0] : null;
-            const value = bp ? `${bp.sys}/${bp.dia} mmHg` : `${String(row?.value ?? '未记录')} ${TYPE_META[historyType].unit}`;
+            const value = bp ? `${bp.sys}/${bp.dia} mmHg` : `${String(row?.value ?? '未记录')} ${row?.unit || TYPE_META[historyType].unit}`;
             return <View key={row?._id || `${historyPage}-${index}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '13px 0', borderBottom: index < historyRows.length - 1 ? `1px solid ${colors.borderLight}` : 'none' }}>
               <View><Text style={{ display: 'block', fontSize: '13px', color: colors.textSecondary }}>{formatRecordDate(row?.recordedAt, language)} {formatRecordTime(row?.recordedAt)}</Text>{bp && <Text style={{ fontSize: '12px', color: colors.textMuted }}>{t(bp.arm)}</Text>}</View>
               <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{value}</Text>

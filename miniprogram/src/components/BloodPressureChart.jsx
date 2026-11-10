@@ -30,6 +30,7 @@ export default function BloodPressureChart({ records = [], height = 108 }) {
 
     const draw = (field, showDates) => {
       const ctx = Taro.createCanvasContext(canvasIds[field]);
+      if (process.env.TARO_ENV === 'h5' && typeof ctx.font !== 'string') return;
       const values = points.map(point => point[field]);
       const padding = Math.max((Math.max(...values) - Math.min(...values)) * 0.2, 5);
       const low = Math.min(...values) - padding;
