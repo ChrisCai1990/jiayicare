@@ -85,6 +85,7 @@ export default function HealthReportPage() {
   }, [report, period]);
 
   const bpRecords = records.filter(record => record.type === 'bloodPressure');
+  const recentBpRecords = isH5 ? [...bpRecords].sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt)).slice(0, 5) : [];
   const bpByArm = (isH5 ? ['左臂', '右臂', '未标注手臂'] : ['左臂', '右臂'])
     .map(arm => ({ arm, record: bpRecords.find(record => bloodPressureArm(record) === arm) })).filter(item => item.record);
   const extraMetrics = isH5 ? Object.entries(EXTRA_METRICS).map(([type, meta]) => {
@@ -169,7 +170,18 @@ export default function HealthReportPage() {
                         )}
                       </View>
                     </View>
-                    {m.type === 'bloodPressure' && bpByArm.length > 0 && (
+                    {isH5 && m.type === 'bloodPressure' && bpRecords.length > 0 && (
+                      <View style={{ marginBottom: '8px' }}>
+                        <Text style={{ display: 'block', fontSize: '12px', color: colors.textSecondary, marginBottom: '4px' }}>
+                          近{period === 'month' ? '30' : '7'}天血压记录：{bpRecords.length} 次{bpRecords.length > recentBpRecords.length ? '（显示最近 5 次，完整记录见下方明细）' : ''}
+                        </Text>
+                        {recentBpRecords.map((record, index) => <View key={record._id || index} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '5px 0', borderBottom: index < recentBpRecords.length - 1 ? `1px solid ${colors.border}` : 'none' }}>
+                          <Text style={{ fontSize: '12px', color: colors.textSecondary }}>{recordDate(record.recordedAt)} · {bloodPressureArm(record)}</Text>
+                          <Text style={{ fontSize: '12px', fontWeight: 700, color: colors.textPrimary }}>{record.value} mmHg</Text>
+                        </View>)}
+                      </View>
+                    )}
+                    {!isH5 && m.type === 'bloodPressure' && bpByArm.length > 0 && (
                       <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
                         {bpByArm.map(({ arm, record }) => <Text key={arm} style={{ fontSize: '12px', color: colors.textSecondary, backgroundColor: colors.background, padding: '5px 8px', borderRadius: `${radius.sm}px` }}>{arm} {record.value} mmHg · {recordDate(record.recordedAt)}</Text>)}
                       </View>

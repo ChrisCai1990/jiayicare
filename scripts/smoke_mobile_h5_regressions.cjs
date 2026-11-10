@@ -115,6 +115,9 @@ async function run() {
     await page.getByText('近30天记录汇总').waitFor();
     await page.getByText('本时段该手臂仅有 1 次记录，暂无变化趋势').waitFor();
     if (process.env.SMOKE_CHART_LAYOUT) {
+      await page.getByText('近30天血压记录：2 次').waitFor();
+      await page.getByText('111/68 mmHg', { exact: true }).last().waitFor();
+      await page.getByText('118/76 mmHg', { exact: true }).last().waitFor();
       await page.getByText('睡眠', { exact: true }).last().waitFor();
       await page.getByText('9.7').last().waitFor();
       await page.waitForTimeout(500);

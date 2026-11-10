@@ -12,7 +12,7 @@ from ssh_config import connect
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD = ROOT / 'miniprogram' / 'dist'
 SITE = '/var/www/jiayicare-static/mobile-preview-joinwehealth'
-EXPECTED_INDEX_SHA = 'f3b7c7e0fd413534f63473266f931e6665faa415065cc00be9d8998fcc5b22ba'
+EXPECTED_INDEX_SHA = '40dbb374d7bf942ce7c7e85521a72ec3d3312038dcf39403870d8df0020e22ea'
 EXPECTED_SERVER_COMMIT = 'a9474091add'
 
 
