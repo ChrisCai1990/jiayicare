@@ -1,7 +1,10 @@
 const { chromium, webkit } = require('../../apple-ios-build3-20261019/node_modules/playwright');
 
 const base = process.env.MOBILE_H5_URL || 'http://127.0.0.1:8765/mobile-preview/';
-const user = { _id: 'smoke-user', name: '测试用户', careTeam: [{ kind: 'healthManager', name: '测试顾问' }], bodyCompHistory: process.env.SMOKE_RECENT_TRENDS ? [{ weight: '68.5', measuredAt: new Date().toISOString() }] : {} };
+const user = { _id: 'smoke-user', name: '测试用户', careTeam: [{ kind: 'healthManager', name: '测试顾问' }], bodyCompHistory: process.env.SMOKE_CHART_LAYOUT ? [
+  { weight: '51.1', measuredAt: '2026-01-21' }, { weight: '51.2', measuredAt: '2026-02-25' },
+  { weight: '50.1', measuredAt: '2026-05-23' }, { weight: '48.5', measuredAt: '2026-10-22' },
+] : process.env.SMOKE_RECENT_TRENDS ? [{ weight: '68.5', measuredAt: new Date().toISOString() }] : {} };
 const record = (type, value, date, extra = {}) => ({ _id: `${type}-${date}`, type, value, recordedAt: date, extra });
 const yesterdayNoonBeijing = new Date(Date.now() + 8 * 3600000);
 yesterdayNoonBeijing.setUTCDate(yesterdayNoonBeijing.getUTCDate() - 1);
@@ -17,7 +20,7 @@ async function run() {
   const browser = process.env.SMOKE_WEBKIT
     ? await webkit.launch({ headless: true })
     : await chromium.launch({ headless: true, executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: 'zh-CN', timezoneId: 'Asia/Shanghai' });
+  const context = await browser.newContext({ viewport: { width: process.env.SMOKE_CHART_LAYOUT ? 760 : 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: 'zh-CN', timezoneId: 'Asia/Shanghai' });
   await context.addInitScript(() => {
     localStorage.setItem('jy_token', 'smoke-token');
     localStorage.setItem('jy_user', JSON.stringify({ _id: 'smoke-user', name: '测试用户', careTeam: [{ kind: 'healthManager', name: '测试顾问' }], bodyCompHistory: {} }));
@@ -34,7 +37,11 @@ async function run() {
       data = { success: true, data: selected, total: selected.length, page: 1 };
     } else if (path.startsWith('/records/trend/')) {
       const now = new Date().toISOString();
-      data = { success: true, data: process.env.SMOKE_RECENT_TRENDS && path.endsWith('/bloodPressure')
+      data = { success: true, data: process.env.SMOKE_CHART_LAYOUT && path.endsWith('/bloodPressure')
+        ? [record('bloodPressure', '111/68', '2026-10-22T02:00:00.000Z', { sys: 111, dia: 68, arm: '右臂' }), record('bloodPressure', '118/76', new Date().toISOString(), { sys: 118, dia: 76 })]
+        : process.env.SMOKE_CHART_LAYOUT && path.endsWith('/sleep')
+          ? [7.5, 7.8, 8.5, 9.7].map((value, index) => record('sleep', String(value), `2026-10-${[22, 23, 24, 26][index]}T02:00:00.000Z`))
+        : process.env.SMOKE_RECENT_TRENDS && path.endsWith('/bloodPressure')
         ? [record('bloodPressure', '125/81', now, { sys: 125, dia: 81, arm: '左臂' })]
         : process.env.SMOKE_RECENT_TRENDS && path.endsWith('/weight') ? [record('weight', '68.5', now)] : [] };
     }
@@ -46,6 +53,7 @@ async function run() {
     else if (path === '/auth/session/activity') data = { success: true };
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
   });
+  if (base.startsWith('http://127.0.0.1')) await context.route('**/mobile-preview/demo/entry.js*', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.stack || error.message));
@@ -70,6 +78,20 @@ async function run() {
   await page.getByText('健康档案', { exact: true }).last().click();
   if (process.env.SMOKE_WEBKIT) { await page.waitForTimeout(1800); console.log('records debug', (await page.locator('body').innerText()).slice(0, 500), errors, await page.evaluate(() => ({appHtml:document.getElementById('app')?.innerHTML.slice(0,1300), bodyChildren:[...document.body.children].map(node=>[node.tagName,node.id,node.className]).slice(0,10)}))); }
   await page.getByText('历史健康记录').waitFor({ timeout: 10000 });
+  if (process.env.SMOKE_CHART_LAYOUT) {
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: 'output/chart-layout-webkit.png', fullPage: true });
+    await page.getByText('睡眠', { exact: true }).first().click();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: 'output/chart-layout-sleep-webkit.png', fullPage: true });
+    console.log('chart screenshot saved');
+  }
+  if (process.env.SMOKE_CHART_DIAG) console.log('canvas diagnostics', await page.evaluate(() => [...document.querySelectorAll('canvas')].map(node => {
+    const pixels = node.getContext('2d').getImageData(0, 0, node.width, node.height).data;
+    let painted = 0;
+    for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) painted++;
+    return { canvasId: node.getAttribute('canvas-id'), width: node.width, height: node.height, rectWidth: node.getBoundingClientRect().width, painted };
+  })));
   await page.getByText('125/81 mmHg').last().waitFor();
   if (process.env.SMOKE_RECENT_TRENDS) console.log('records-after-trends', (await page.locator('body').innerText()).slice(0, 800), errors);
   await page.getByText('体重', { exact: true }).last().click();

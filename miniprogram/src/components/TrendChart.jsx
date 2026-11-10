@@ -1,18 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Canvas } from '@tarojs/components';
-import Taro from '@tarojs/taro';
 import { colors } from '../theme';
+import { drawChart } from '../utils/chartCanvas';
 
 let chartSeed = 0;
 export default function TrendChart({ points = [], height = 80, color = colors.primary, unit = '', showValues = true, mini = false }) {
   const canvasId = useRef(`trend-line-${chartSeed += 1}`).current;
   useEffect(() => {
     if (!points.length) return;
-    const ctx = Taro.createCanvasContext(canvasId);
-    // Taro H5 can create a placeholder context before a tab page's canvas mounts.
-    // Calling setFontSize on that placeholder throws and leaves the page blank in WebKit.
-    if (process.env.TARO_ENV === 'h5' && typeof ctx.font !== 'string') return;
-    const width = 300;
+    return drawChart(canvasId, height, (ctx, width) => {
     const top = showValues && !mini ? 17 : 5;
     const bottom = 7;
     const values = points.map((p) => Number(p.value) || 0);
@@ -21,7 +17,7 @@ export default function TrendChart({ points = [], height = 80, color = colors.pr
     const padding = Math.max((max - min) * 0.15, 1);
     const low = min - padding;
     const high = max + padding;
-    const xAt = (index) => points.length === 1 ? width / 2 : 10 + index * ((width - 20) / (points.length - 1));
+    const xAt = (index) => points.length === 1 ? width / 2 : width * (0.04 + 0.92 * index / (points.length - 1));
     const yAt = (value) => top + ((high - value) / (high - low || 1)) * (height - top - bottom);
     ctx.setLineWidth(mini ? 1.5 : 2.5);
     ctx.setStrokeStyle(color);
@@ -40,6 +36,7 @@ export default function TrendChart({ points = [], height = 80, color = colors.pr
       }
     });
     ctx.draw();
+    });
   }, [canvasId, points, height, color, unit, showValues, mini]);
 
   if (!points.length) {
@@ -53,9 +50,9 @@ export default function TrendChart({ points = [], height = 80, color = colors.pr
     <View>
       <Canvas canvasId={canvasId} id={canvasId} style={{ width: '100%', height: `${height}px`, display: 'block' }} />
       {!mini && (
-        <View style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+        <View style={{ position: 'relative', height: '14px', marginTop: '4px' }}>
           {points.map((p, i) => (
-            <Text key={i} style={{ flex: 1, fontSize: '9px', color: colors.textMuted, textAlign: 'center' }} numberOfLines={1}>{p.label}</Text>
+            <Text key={i} style={{ position: 'absolute', left: points.length === 1 ? '50%' : `${4 + 92 * i / (points.length - 1)}%`, transform: 'translateX(-50%)', fontSize: '9px', color: colors.textMuted, whiteSpace: 'nowrap', display: points.length > 5 && i % Math.ceil(points.length / 4) !== 0 && i !== points.length - 1 ? 'none' : 'block' }} numberOfLines={1}>{p.label}</Text>
           ))}
         </View>
       )}

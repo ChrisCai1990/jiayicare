@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Canvas, Text, View } from '@tarojs/components';
-import Taro from '@tarojs/taro';
 import { bloodPressurePoints, bloodPressurePointsForArm } from '../utils/bloodPressureTrend';
 import { colors } from '../theme';
 import { useLanguage } from '../i18n';
+import { drawChart } from '../utils/chartCanvas';
 
 let chartSeed = 0;
 const ARMS = [
@@ -23,14 +23,11 @@ export default function BloodPressureChart({ records = [], height = 108 }) {
 
   useEffect(() => {
     if (!points.length) return;
-    const width = 300;
-    const left = 28;
-    const right = width - 28;
-    const xAt = index => points.length === 1 ? width / 2 : left + index * (right - left) / (points.length - 1);
-
     const draw = (field, showDates) => {
-      const ctx = Taro.createCanvasContext(canvasIds[field]);
-      if (process.env.TARO_ENV === 'h5' && typeof ctx.font !== 'string') return;
+      return drawChart(canvasIds[field], height, (ctx, width) => {
+      const left = 28;
+      const right = width - 28;
+      const xAt = index => points.length === 1 ? width / 2 : left + index * (right - left) / (points.length - 1);
       const values = points.map(point => point[field]);
       const padding = Math.max((Math.max(...values) - Math.min(...values)) * 0.2, 5);
       const low = Math.min(...values) - padding;
@@ -72,10 +69,12 @@ export default function BloodPressureChart({ records = [], height = 108 }) {
         });
       }
       ctx.draw();
+      });
     };
 
-    draw('sys', false);
-    draw('dia', true);
+    const stopSys = draw('sys', false);
+    const stopDia = draw('dia', true);
+    return () => { stopSys(); stopDia(); };
   }, [canvasIds, records, activeArm, height]);
 
   if (!allPoints.length) return <Text style={{ fontSize: '12px', color: colors.textMuted }}>{language === 'en-US' ? 'No blood pressure records' : '暂无血压记录'}</Text>;

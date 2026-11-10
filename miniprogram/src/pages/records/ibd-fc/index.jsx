@@ -5,6 +5,7 @@ import { ibdAPI, reportsAPI } from '../../../services/api';
 import { colors, radius, spacing } from '../../../theme';
 import useNavBar from '../../../hooks/useNavBar';
 import { chooseImageWithPrivacy, isImagePickerCancelled, isPrivacyDeclarationMissing, showImagePickerError } from '../../../utils/imagePicker';
+import { drawChart } from '../../../utils/chartCanvas';
 
 const chartId = 'ibd-fc-trend';
 const dateMs = value => Date.parse(`${value}T12:00:00+08:00`);
@@ -22,9 +23,8 @@ function FcChart({ rows, days }) {
 
   useEffect(() => {
     if (!points.length) return;
-    const ctx = Taro.createCanvasContext(chartId);
-    if (process.env.TARO_ENV === 'h5' && typeof ctx.font !== 'string') return;
-    const left = 32, right = width - 13, top = 17, bottom = 143;
+    return drawChart(chartId, 160, (ctx, canvasWidth) => {
+    const left = 32, right = canvasWidth - 13, top = 17, bottom = 143;
     const max = Math.max(1, ...points.map(row => Number(row.value))) * 1.12;
     const x = row => left + ((dateMs(row.date) - start) / (end - start)) * (right - left);
     const y = row => bottom - Number(row.value) / max * (bottom - top);
@@ -44,6 +44,7 @@ function FcChart({ rows, days }) {
       ctx.arc(x(row), y(row), 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     });
     ctx.draw();
+    });
   }, [rows, days, width]);
 
   if (!points.length) return <Text style={{ display: 'block', textAlign: 'center', padding: '38px 0', color: colors.textMuted }}>近{days}天暂无 FC 检测记录</Text>;

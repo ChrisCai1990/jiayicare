@@ -12,7 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD = ROOT / 'miniprogram' / 'dist'
 SITE = '/var/www/jiayicare-static/mobile-preview-joinwehealth'
 LIVE_SHA = '11f40a8f3d049968f8513b08647d5bebbe0d65e4bdf161438149cf5844cdc2cb'
-PREVIOUS_DIAGNOSTIC_SHA = '743b8e7c3977c781e1731041e78d02427cdf84247ef7c30c05b5f00664a7275c'
+PREVIOUS_DIAGNOSTIC_SHA = '62e62bd9db769993fd8f55adefdeb43bdb26216d37002257e896ff511c296a0f'
 
 
 def sha(data):
