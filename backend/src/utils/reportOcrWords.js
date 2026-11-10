@@ -115,5 +115,32 @@ async function readScanImageWords(imageBuffer, { language = 'chi_sim+eng' } = {}
     [filename, 'stdout', '-l', language, 'tsv'], { timeoutMs: 120000 })));
 }
 
+// Fail-closed coverage audit for searchable PDFs. This intentionally does not
+// create clinical items: a same-line pair is evidence of an omission, not proof
+// that every field (unit, reference range, abnormal mark) was read correctly.
+async function auditPdfTextCoverage(pdfBuffer, reportItems, pageNumbers) {
+  if (!Buffer.isBuffer(pdfBuffer) || !pdfBuffer.length) throw new Error('PDF 内容无效');
+  const pages = [...new Set(pageNumbers || [])].filter(page => Number.isInteger(page) && page > 0).sort((a, b) => a - b);
+  const result = { checkedPages: 0, candidateRows: 0, matchedRows: 0, uncoveredRows: 0, pagesWithGaps: [], unavailablePages: [] };
+  await withTempFile(pdfBuffer, 'pdf', async filename => {
+    for (const page of pages) {
+      try {
+        const layout = await run('pdftotext', ['-f', String(page), '-l', String(page), '-layout', filename, '-']);
+        const pairs = parseLayoutResultPairs(layout, page);
+        if (!pairs.length) continue;
+        const counts = compareShadowPairsToItems(pairs, reportItems);
+        result.checkedPages++;
+        result.candidateRows += counts.candidateRows;
+        result.matchedRows += counts.matchedRows;
+        result.uncoveredRows += counts.uncoveredRows;
+        if (counts.uncoveredRows) result.pagesWithGaps.push(page);
+      } catch (_) {
+        result.unavailablePages.push(page);
+      }
+    }
+  });
+  return result;
+}
+
 module.exports = { parsePdfTextBoxes, parseTesseractTsv, parseLayoutResultPairs, compareShadowPairsToItems,
-  readPdfPageTextBoxes, readPdfPageLayout, readScanImageWords };
+  readPdfPageTextBoxes, readPdfPageLayout, readScanImageWords, auditPdfTextCoverage };

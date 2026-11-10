@@ -18372,6 +18372,15 @@ async function runReportParseControlled(reportId) {
       const parsedItemDates = [...new Set(classified.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
       const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : normalizeReportDate(checkDate);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
+      // Searchable PDF pages are independently checked against printed result
+      // rows. This audit records counts only and never adds an unverified item.
+      const textCoverage = !isPrescriptionReport && report.type === 'annual'
+        ? await require('../utils/reportOcrWords').auditPdfTextCoverage(
+          pdfBuf, classified, Array.from({ length: knownTotalPages || totalPageCount }, (_, i) => i + 1))
+        : null;
+      const textGapWarning = textCoverage?.uncoveredRows
+        ? `⚠️ PDF文字层在第${textCoverage.pagesWithGaps.join('、')}页发现至少${textCoverage.uncoveredRows}条有结果的原文行未与草稿同名同值对应，请逐行核对；该数字是保守候选统计，不代表全部漏项。`
+        : '';
       const summaryText = [...new Set([...summaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
       const failedPageList = [...new Set([...failedPageNumbers, ...qualityRetryPages])].sort((a, b) => a - b);
@@ -18385,13 +18394,15 @@ async function runReportParseControlled(reportId) {
         : failedPages > 0
           ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败${failedPageLabel}，请核对是否有遗漏项目${qualityWarning ? `\n${qualityWarning}` : ''}`
           : [summaryText, qualityWarning].filter(Boolean).join('\n');
+      const reviewedSummary = [aiSummaryOut, textGapWarning].filter(Boolean).join('\n');
       const savedPdf = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(parseStartRevision) }, {
         $inc: { reviewRevision: 1 },
         reportItems: classified,
         imagePageEvidence,
-        aiSummary:   aiSummaryOut,
+        aiSummary:   reviewedSummary,
         aiStatus:    allFailed ? 'failed' : 'pending',
-        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}` },
+        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${textCoverage?.uncoveredRows ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
+          ...(textCoverage ? { textCoverage } : {}) },
         institution, checkDate: resolvedCheckDate, reportYear: resolvedCheckDate ? Number(resolvedCheckDate.slice(0, 4)) : null,
       });
       if (!savedPdf) throw new Error('审核期间内容已修改，AI结果未覆盖人工数据');
