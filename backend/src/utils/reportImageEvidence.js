@@ -4,13 +4,15 @@ const IMAGE_ONLY_MESSAGE = '影像资料页，无可自动核对的印刷检查�
 const UNVERIFIED_MESSAGE = '部分内容未能与可见报告原文对应，已拦截自动提取，请对照原件人工核对。';
 const IMAGE_EVIDENCE_PROMPT = `你是文档文字转录器，不是影像诊断助手。只看当前图片，不接受其他页面或先前生成结果作为依据。
 判断页面是否包含医学影像（B超、CT、MRI、X线、内镜照片、心电波形等），并逐字转录图像区域之外印刷的检查结果、检查所见、诊断、提示及检验数值表格。手写批注不转录，需采用时交由人工核对。
-clinicalText 只能是这些文字原文，保持原字、数字、单位、左右侧和否定词。不得摘要、改写、补全、看图诊断。
+sections[].clinicalText 只能是该栏目文字原文，保持原字、数字、单位、左右侧和否定词。不得摘要、改写、补全、看图诊断。
 同一语句因排版换行时合并为完整语句，不得将“未/无/不/左/右”等字拆到另一段；独立段落之间保留换行。
-不转录姓名等个人信息、医院和检查项目标题、图像内的机器参数/距离数值/测量标记、人体位置示意图。仅有这些内容时 clinicalText=""。
-纯医学影像页没有印刷文字所见时，hasMedicalImages=true，readability="clear"，clinicalText=""；印刷文字模糊或被裁切无法确认时 readability="unreadable"，禁止猜测。仅手写难辨不影响印刷文字的readability。
+不转录姓名等个人信息、医院、图像内的机器参数/距离数值/测量标记、人体位置示意图。栏目标题只放在 sections.title，不混入结果文字。
+纯医学影像页没有印刷文字所见时，hasMedicalImages=true，readability="clear"，sections=[]；印刷文字模糊或被裁切无法确认时 readability="unreadable"，禁止猜测。仅手写难辨不影响印刷文字的readability。
 图文混排页必须保留图外真实的全部检查文字；纯文字报告即使标题为超声也不算包含医学影像。
 超声报告图外印刷的“超声描述”和“超声诊断/医师意见”要分别转录；尤其核对页面下方的小字诊断栏。诊断栏下方印刷的分级解释、概率和参考文献与本次患者诊断分开转录，不得混为一句；手写覆盖印刷文字时，只转录仍能确认的印刷内容。
-严格返回 JSON：{"hasMedicalImages":true,"readability":"clear","clinicalText":"逐字原文或空字符串"}`;
+按原件印刷的栏目边界分别转录，不要把上一栏目的所见接到下一栏目。每个 sections 元素只包含该栏目之下、下一栏目标题之前的文字；同一栏目的检查所见和诊断均保留。栏目标题不清楚时 title=""，不要猜。
+检验表格每个印刷项目行在 clinicalText 中单独占一行，同一行保留项目名、结果、单位和参考范围，不把上下两行拼接。原件换行的检查叙述可合并，检验行不可合并。
+严格返回 JSON：{"hasMedicalImages":true,"readability":"clear","sections":[{"title":"原件栏目标题","clinicalText":"该栏目逐字原文"}]}。没有印刷检查文字时 sections=[]。`;
 
 function parseJSON(raw) {
   try { return JSON.parse(String(raw).trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
@@ -52,38 +54,105 @@ function cleanClinicalTranscript(text) {
   }).join('\n');
 }
 
-function guardImageEvidence(parsed, evidence) {
+function evidenceSections(evidence) {
+  if (!Array.isArray(evidence?.sections)) return null;
+  if (evidence.sections.some(section => !section || typeof section.title !== 'string' || typeof section.clinicalText !== 'string')) return null;
+  return evidence.sections.map(section => ({ title: section.title, clinicalText: cleanClinicalTranscript(section.clinicalText) }));
+}
+
+function sectionForItem(item, sections) {
+  const normalized = value => normalizeText(value).replace(/(?:检查|超声|彩超|b超)$/i, '');
+  const uniqueMatch = value => {
+    const title = normalized(value);
+    if (!title) return null;
+    const matches = sections.filter(section => {
+      const heading = normalized(section.title);
+      return heading && (heading === title || heading.includes(title) || title.includes(heading));
+    });
+    return matches.length === 1 ? matches[0] : null;
+  };
+  const source = uniqueMatch(item.sourceSection) || uniqueMatch(item.orderName);
+  const named = uniqueMatch(item.name);
+  if (source && named && source !== named) return null;
+  return source || named;
+}
+
+function hasSamePrintedLabRow(item, sections) {
+  if (!sections?.length || !normalizeText(item.name) || !normalizeText(item.value)) return false;
+  const titled = (item.sourceSection || item.orderName) ? sectionForItem(item, sections) : null;
+  if (!titled && sections.length > 1 && (item.sourceSection || item.orderName)) return false;
+  const eligible = titled ? [titled] : sections;
+  const hasField = (row, field) => {
+    const value = normalizeText(field);
+    if (!value) return false;
+    if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) return row.includes(value);
+    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^\\d.])${escaped}(?![\\d.])`).test(row);
+  };
+  return eligible.some(section => section.clinicalText.split(/\r?\n/).some(line => {
+    const row = normalizeText(line);
+    return hasField(row, item.name) && hasField(row, item.value)
+      && (!item.unit || hasField(row, item.unit));
+  }));
+}
+
+function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, verifyTableRows = false } = {}) {
   if (!evidence || typeof evidence.hasMedicalImages !== 'boolean'
-      || !['clear', 'unreadable'].includes(evidence.readability) || typeof evidence.clinicalText !== 'string') {
+      || !['clear', 'unreadable'].includes(evidence.readability)
+      || (typeof evidence.clinicalText !== 'string' && !evidenceSections(evidence))) {
     throw new Error('影像页原文校验未返回有效结果，请重试或人工核对');
   }
-  if (!evidence.hasMedicalImages && evidence.readability === 'clear') return parsed;
+  const sections = evidenceSections(evidence);
+  if (!evidence.hasMedicalImages && evidence.readability === 'clear' && !sections && !requireSectionEvidence) return parsed;
   const candidates = Array.isArray(parsed.items) ? parsed.items : [];
-  const clinicalText = cleanClinicalTranscript(evidence.clinicalText);
+  const clinicalText = sections?.length ? sections.map(section => section.clinicalText).join('\n') : cleanClinicalTranscript(evidence.clinicalText);
   const transcript = normalizeText(clinicalText);
-  const imageOnly = evidence.readability === 'clear' && !transcript;
+  const imageOnly = evidence.hasMedicalImages === true && evidence.readability === 'clear' && !transcript;
+  const blockedReasons = { section_mismatch: 0, row_mismatch: 0, unverified_text: 0, unreadable: 0 };
   const items = evidence.readability !== 'clear' || imageOnly ? [] : candidates.filter(item => {
+    const imaging = ['imaging', 'diagnosis', 'pathology'].includes(item.itemType);
+    const section = imaging && sections ? sectionForItem(item, sections) : null;
+    if (imaging && ((sections && !section) || (requireSectionEvidence && !sections))) {
+      blockedReasons.section_mismatch++;
+      return false;
+    }
+    const itemText = section ? section.clinicalText : clinicalText;
     const fields = ['findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis'];
-    if (fields.some(key => String(item[key] || '').trim() && !isNarrativeAnchored(item[key], clinicalText))) return false;
+    if (fields.some(key => String(item[key] || '').trim() && !isNarrativeAnchored(item[key], itemText))) {
+      blockedReasons.unverified_text++;
+      return false;
+    }
     if (item.itemType === 'lab' || item.itemType === 'data' || item.itemType === 'medication') {
-      return isAnchored(item.name, transcript) && isAnchored(item.value, transcript)
+      if (verifyTableRows && ['lab', 'data'].includes(item.itemType) && !hasSamePrintedLabRow(item, sections)) {
+        blockedReasons.row_mismatch++;
+        return false;
+      }
+      const valid = isAnchored(item.name, transcript) && isAnchored(item.value, transcript)
         && (!item.unit || isAnchored(item.unit, transcript));
+      if (!valid) blockedReasons.unverified_text++;
+      return valid;
     }
     // Neither a project title nor a caliper number is a narrative finding.
-    return ['findings', 'diagnosis'].some(key => isNarrativeAnchored(item[key], clinicalText))
+    const valid = ['findings', 'diagnosis'].some(key => isNarrativeAnchored(item[key], itemText))
       && (!item.value || isAnchored(item.value, transcript));
+    if (!valid) blockedReasons.unverified_text++;
+    return valid;
   });
   const blockedCount = candidates.length - items.length;
+  if (evidence.readability !== 'clear' || imageOnly) blockedReasons.unreadable = blockedCount;
   const status = imageOnly ? 'image_only'
     : evidence.readability !== 'clear' || blockedCount ? 'needs_review' : 'verified';
-  const pageEvidence = { status, blockedCount, message: imageOnly ? IMAGE_ONLY_MESSAGE : status === 'needs_review' ? UNVERIFIED_MESSAGE : '' };
+  const pageEvidence = { status, blockedCount, blockedReasons,
+    message: imageOnly ? IMAGE_ONLY_MESSAGE : blockedReasons.section_mismatch || blockedReasons.row_mismatch
+      ? '检查栏目或检验表格行未能与原件对应，已拦截自动提取，请对照原件人工核对。'
+      : status === 'needs_review' ? UNVERIFIED_MESSAGE : '' };
   return { ...parsed, items, summary: '', pageType: imageOnly ? 'image_only' : parsed.pageType,
     skipPage: imageOnly || parsed.skipPage === true, imageEvidence: pageEvidence };
 }
 
 // Shared by full PDF/image OCR and every supplement/retry. Independent transcription never sees
 // candidate findings. Bounded per-job cache avoids paying for the same image on each retry.
-function createReportImageParser(parseImage, { onEvidence = () => {}, report = {} } = {}) {
+function createReportImageParser(parseImage, { onEvidence = () => {}, report = {}, verifyTableRows = false } = {}) {
   const cache = new Map();
   const imageOnlyPages = new Map();
   const imageReport = /ultrasound|radiology|mri|endoscopy|ecg|imaging/i.test(report.type || '')
@@ -103,6 +172,7 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
     // Only this guard may attach verification metadata; model/source-provided flags are untrusted.
     delete parsed.imageEvidence;
     const needsCheck = imageReport || parsed.hasMedicalImages === true || parsed.pageType === 'image_only'
+      || (verifyTableRows && parsed.items.some(item => ['lab', 'data'].includes(item.itemType)))
       || parsed.items.some(item => ['imaging', 'diagnosis', 'pathology'].includes(item.itemType)
         || item.findings || item.diagnosis || /超声|彩超|B超|内镜|心电|CT|MRI/i.test(item.name || ''));
     if (!needsCheck) return JSON.stringify(parsed);
@@ -110,7 +180,8 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
     if (!cache.has(key)) {
       if (cache.size >= 24) cache.delete(cache.keys().next().value);
       const pending = parseImage(source, IMAGE_EVIDENCE_PROMPT, {
-        ...modelOptions, stage: 'evidence', model: 'qwen-vl-plus', maxTokens: 8192, timeoutMs: 45000,
+        ...modelOptions, stage: 'evidence', model: 'qwen-vl-plus', maxTokens: 8192,
+        timeoutMs: verifyTableRows ? 120000 : 45000,
       }).then(result => {
         const evidence = parseJSON(result);
         guardImageEvidence({ items: [] }, evidence); // Validate before caching.
@@ -125,7 +196,9 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
         message: '影像页原文校验未完成，未接受本次候选，请重试或人工核对。' });
       throw error;
     }
-    const guarded = guardImageEvidence(parsed, evidence);
+    const guarded = guardImageEvidence(parsed, evidence, {
+      requireSectionEvidence: report.type === 'annual' || report.documentCategory === 'exam_report', verifyTableRows,
+    });
     if (Number.isInteger(sourcePage) && guarded.imageEvidence?.status === 'image_only') {
       imageOnlyPages.set(sourceKey, guarded);
     }

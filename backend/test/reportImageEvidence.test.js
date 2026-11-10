@@ -43,6 +43,63 @@ test('dropping a negation or laterality cannot pass by matching a substring of t
   assert.deepEqual(result.items, []);
 });
 
+test('annual examination findings must be anchored to their own printed section', async () => {
+  const pelvic = { name: '子宫、附件彩超', sourceSection: '子宫、附件彩超', itemType: 'imaging',
+    findings: '左右肝内胆管未见明显扩张。', diagnosis: '子宫多发肌瘤。' };
+  const evidence = { hasMedicalImages: false, readability: 'clear', sections: [
+    { title: '肝胆脾胰彩超', clinicalText: '左右肝内胆管未见明显扩张。' },
+    { title: '子宫、附件彩超', clinicalText: '子宫肌层回声不均。\n子宫多发肌瘤。' },
+  ] };
+  const guarded = guardImageEvidence({ items: [pelvic, { ...pelvic, findings: '子宫肌层回声不均。' }] }, evidence,
+    { requireSectionEvidence: true });
+  assert.deepEqual(guarded.items, [{ ...pelvic, findings: '子宫肌层回声不均。' }]);
+  assert.equal(guarded.imageEvidence.status, 'needs_review');
+  assert.equal(guarded.imageEvidence.blockedReasons.unverified_text, 1);
+  const wrongSection = guardImageEvidence({ items: [{ ...pelvic, sourceSection: '肝胆脾胰彩超', diagnosis: '' }] },
+    evidence, { requireSectionEvidence: true });
+  assert.equal(wrongSection.imageEvidence.blockedReasons.section_mismatch, 1);
+
+  let calls = 0;
+  const parse = createReportImageParser(async (_, prompt) => {
+    calls++;
+    return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? evidence : { items: [pelvic] });
+  }, { report: { type: 'annual' } });
+  assert.deepEqual(JSON.parse(await parse('page', 'extract', { sourcePage: 6 })).items, []);
+  assert.equal(calls, 2);
+});
+
+test('annual imaging without section evidence waits for manual verification', () => {
+  const candidate = { ...narrative, sourceSection: '乳腺超声' };
+  const evidence = { hasMedicalImages: false, readability: 'clear', clinicalText: candidate.findings };
+  const guarded = guardImageEvidence({ items: [candidate] }, evidence, { requireSectionEvidence: true });
+  assert.deepEqual(guarded.items, []);
+  assert.equal(guarded.imageEvidence.blockedReasons.section_mismatch, 1);
+  assert.equal(guarded.imageEvidence.status, 'needs_review');
+  const emptyTranscript = guardImageEvidence({ items: [candidate] }, { ...evidence, clinicalText: '' },
+    { requireSectionEvidence: true });
+  assert.equal(emptyTranscript.imageEvidence.status, 'needs_review');
+});
+
+test('supplemented lab result must share a printed table row with its name and unit', async () => {
+  const sugar = { itemType: 'lab', name: '葡萄糖', value: '6.5', unit: 'mmol/L', sourceSection: '血糖' };
+  const wrong = { ...sugar, value: '4.3' };
+  const partialNumber = { ...sugar, value: '5' };
+  const evidence = { hasMedicalImages: false, readability: 'clear', sections: [
+    { title: '血糖', clinicalText: '葡萄糖 6.5 mmol/L 3.9-6.1\n胰岛素 4.3 mIU/L 2-25' },
+  ] };
+  const guarded = guardImageEvidence({ items: [sugar, wrong, partialNumber] }, evidence, { verifyTableRows: true });
+  assert.deepEqual(guarded.items, [sugar]);
+  assert.equal(guarded.imageEvidence.blockedReasons.row_mismatch, 2);
+
+  const parse = createReportImageParser(async (_, prompt) => JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT
+    ? evidence : { items: [sugar, wrong] }), { verifyTableRows: true });
+  assert.deepEqual(JSON.parse(await parse('lab-page', 'supplement', { sourcePage: 1 })).items, [sugar]);
+  const ambiguousSection = guardImageEvidence({ items: [{ ...sugar, sourceSection: '未匹配栏目' }] },
+    { ...evidence, sections: [...evidence.sections, { title: '其他栏目', clinicalText: '葡萄糖 6.5 mmol/L' }] },
+    { verifyTableRows: true });
+  assert.equal(ambiguousSection.imageEvidence.blockedReasons.row_mismatch, 1);
+});
+
 test('metadata, footer and machine measurements do not count as clinical findings', () => {
   const result = guardImageEvidence({ items: [narrative] }, { ...imageOnly,
     clinicalText: '检查项目：乳腺超声\n此报告仅供临床医生参考，签名有效\n距离 0.482 cm\nMI 0.6\n仅用于软件测试，不对应真实患者' });
@@ -152,7 +209,7 @@ test('single-page route stops before coverage/classification and preserves exist
     ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
-    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract',
     isManualOnlyReport: () => false,
     safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true, console,
   });
@@ -197,7 +254,7 @@ for (const imageSize of [250000, 520000]) test(`annual PDF supplement splits ${i
     ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
-    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract',
     isManualOnlyReport: () => false, console,
   });
   await assert.rejects(run('fixture', 9), /stopped/);
@@ -237,7 +294,7 @@ test('extra dense annual page uses four bands without hospital template and fits
     ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
-    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract',
     isManualOnlyReport: () => false, console,
   });
   await assert.rejects(run('fixture', 10), /stopped/);
@@ -256,7 +313,8 @@ test('image-only upper crop does not discard lower crop lab results', async () =
   const modules = {
     '../utils/aiBudget': { assertSupplementCallCapacity: async () => {} },
     '../utils/ai': { parseImage: async (image, prompt) => {
-      if (prompt === IMAGE_EVIDENCE_PROMPT) return JSON.stringify(imageOnly);
+      if (prompt === IMAGE_EVIDENCE_PROMPT) return JSON.stringify(image === 'top' ? imageOnly
+        : { hasMedicalImages: false, readability: 'clear', sections: [{ title: '血糖', clinicalText: '血糖 5.1 mmol/L' }] });
       if (prompt.startsWith('coverage')) return JSON.stringify({ items: [] });
       return JSON.stringify({ items: image === 'top' ? [{ name: '影像', itemType: 'imaging', findings: '无证据' }] : [lab] });
     } },
@@ -281,7 +339,7 @@ test('image-only upper crop does not discard lower crop lab results', async () =
     ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
-    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', PAGE_COVERAGE_AUDIT_PROMPT: 'coverage',
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract', PAGE_COVERAGE_AUDIT_PROMPT: 'coverage',
     isManualOnlyReport: () => false, safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true,
     mergeCoverageAuditItems: (left, right) => [...left, ...right], resequenceSupplementSourceOrder: items => items, str: String, console,
     tagReportPageItems: items => { assert.equal(JSON.stringify(items), JSON.stringify([lab])); throw new Error('lower-crop-retained'); },
@@ -335,7 +393,7 @@ for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'page-cir
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
     isManualOnlyReport: () => false, isPediatricAge: () => false, UPLOADS_DIR: '',
-    REPORT_PARSE_PROMPT: 'extract', BODY_COMPOSITION_RETRY_PROMPT: 'body composition',
+    REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract', BODY_COMPOSITION_RETRY_PROMPT: 'body composition',
     safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true,
     findUnderExtractedPages: () => ({ pagesToRetry: [], underOrders: [] }),
     findUnderExtractedCBC: () => ({ pagesToRetry: [], missingGroups: [] }),

@@ -16691,6 +16691,7 @@ router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
 });
 
 const { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, normalizeReportDate, isCalendarReportDate, reviewMetadataError } = require('../utils/reportExtractionPolicy');
+const { reportParsePromptForCategory } = require('../utils/reportCategoryPrompt');
 
 function safeParseJSON(text) {
   try { return JSON.parse(String(text).trim().replace(/^```json\n?|\n?```$/g, '')); }
@@ -17818,7 +17819,7 @@ async function runReportParseControlled(reportId) {
   }
   const parseStartRevision = Number(report.reviewRevision || 0);
   const isPrescriptionReport = report.documentCategory === 'prescription_order';
-  const reportParsePrompt = isPrescriptionReport ? PRESCRIPTION_PARSE_PROMPT : REPORT_PARSE_PROMPT;
+  const reportParsePrompt = isPrescriptionReport ? PRESCRIPTION_PARSE_PROMPT : reportParsePromptForCategory(report.documentCategory);
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const bodyCompositionPrompt = usePediatricBodyComposition
@@ -18670,7 +18671,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   if (!report) throw new Error('报告不存在');
   if (isManualOnlyReport(report)) throw new Error(manualOnlyReportMessage(report));
   const imagePageEvidence = {};
-  const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence) => {
+  const parseImage = createReportImageParser(rawParseImage, { report, verifyTableRows: true, onEvidence: (page, evidence) => {
     recordPageEvidence(imagePageEvidence, page, evidence);
   } });
 
@@ -18738,7 +18739,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
         : images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
-        : REPORT_PARSE_PROMPT;
+        : reportParsePromptForCategory(report.documentCategory);
       const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对本图可见内容，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
@@ -18813,12 +18814,23 @@ async function runReportPageParseControlled(reportId, pageNum) {
     afterItems: classifiedPage,
   }].slice(-3);
   const pageEvidence = imagePageEvidence[pageNum];
+  const candidateDiagnostics = { existing: 0, withoutResult: 0, other: 0 };
+  if (!acceptedSupplementItems.length) {
+    for (const candidate of parsedItems) {
+      if (!hasReportItemEvidence(candidate)) candidateDiagnostics.withoutResult++;
+      else if (supplementMatches(oldPage, candidate).length) candidateDiagnostics.existing++;
+      else candidateDiagnostics.other++;
+    }
+  }
+  const candidateDetail = !acceptedSupplementItems.length && parsedItems.length
+    ? `（与已有项目匹配且未接纳${candidateDiagnostics.existing}项、缺可核对结果${candidateDiagnostics.withoutResult}项、其他待核对${candidateDiagnostics.other}项）`
+    : '';
   const resultMessage = acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : pageEvidence?.status === 'needs_review'
       ? `第${pageNum}页有候选未通过原文校验，已保留原${oldPage.length}项，请对照原件人工核对`
       : parsedItems.length
-        ? `第${pageNum}页识别到${parsedItems.length}项候选，但未形成可接纳的新项目，已保留原${oldPage.length}项，请核对遗漏`
+        ? `第${pageNum}页识别到${parsedItems.length}项候选${candidateDetail}，未形成可接纳的新项目，已保留原${oldPage.length}项，请核对遗漏`
         : `第${pageNum}页AI未读到可接纳的遗漏项目，已保留原${oldPage.length}项，请对照原件核对是否漏提`;
   const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision) }, {
     $set: {
