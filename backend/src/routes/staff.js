@@ -5449,6 +5449,12 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
   }
   if (assignedItemIds) await report.save();
   const data = withSignedReportFiles(report);
+  // Older parsers stored alternative automatic candidates in screeningKeys,
+  // although only screeningKey is the actual screening destination. Present
+  // only the current unique match when it still agrees with that destination.
+  data.reportItems = await require('../utils/reportClassificationReview').collapseStaleAutomaticCandidates(
+    data.reportItems, require('../utils/screeningMatch').classifyItemsAsync
+  );
   if (require('../utils/pdf').isPdfReport(report)) {
     try {
       const { fetchReportBuffer, getPdfPageCountFromBuffer } = require('../utils/pdf');
@@ -6116,6 +6122,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         })
         : await require('../utils/screeningMatch').classifyItemsAsync(nextItems);
       nextItems.splice(0, nextItems.length, ...matchedItems);
+      const currentCandidates = await require('../utils/reportClassificationReview').collapseStaleAutomaticCandidates(
+        nextItems, require('../utils/screeningMatch').classifyItemsAsync
+      );
+      nextItems.splice(0, nextItems.length, ...currentCandidates);
       nextItems.forEach(item => {
         if (item.manualReviewStatus === 'reviewed') {
           item.manualReviewedAt = item.manualReviewedAt || new Date();
@@ -6161,6 +6171,9 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // them from the screening record. Check the server-classified items, including
     // requests that only change aiStatus without sending reportItems.
     if ((aiStatus === 'reviewed' || screeningReclassification) && report.documentCategory !== 'prescription_order') {
+      report.reportItems = await require('../utils/reportClassificationReview').collapseStaleAutomaticCandidates(
+        report.reportItems, require('../utils/screeningMatch').classifyItemsAsync
+      );
       const unclassified = require('../utils/screeningMatch').findUnclassifiedNamedItems(report.reportItems);
       if (aiStatus === 'reviewed' && unclassified.length) return res.status(400).json({
         success: false,
@@ -6663,6 +6676,9 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
     if (!['prescription_order', 'outpatient_record'].includes(report.documentCategory)) {
+      report.reportItems = await require('../utils/reportClassificationReview').collapseStaleAutomaticCandidates(
+        report.reportItems, require('../utils/screeningMatch').classifyItemsAsync
+      );
       const unclassified = require('../utils/screeningMatch').findUnclassifiedNamedItems(report.reportItems);
       if (unclassified.length) return res.status(400).json({
         success: false, code: 'REPORT_ITEMS_UNCLASSIFIED',
