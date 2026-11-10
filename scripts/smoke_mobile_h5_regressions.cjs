@@ -138,7 +138,7 @@ async function run() {
     await browser.close();
     return;
   }
-  if (process.env.SMOKE_RECENT_TRENDS) await page.getByText('125/81 mmHg').last().waitFor();
+  if (process.env.SMOKE_RECENT_TRENDS) await page.getByText('收缩压 125 · 舒张压 81 mmHg').waitFor();
   if (process.env.SMOKE_RECENT_TRENDS) console.log('records-after-trends', (await page.locator('body').innerText()).slice(0, 800), errors);
   await page.getByText('体重', { exact: true }).last().click();
   await page.getByText(process.env.SMOKE_CHART_LAYOUT ? '48.5 kg' : '68.5 kg').last().waitFor();
