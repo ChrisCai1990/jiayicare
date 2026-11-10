@@ -43,6 +43,39 @@ function parseTesseractTsv(tsv) {
   return words;
 }
 
+// Conservative shadow-only detector. A pair identifies a possible printed
+// result row; it is never sufficient by itself to write a clinical item.
+function parseLayoutResultPairs(layoutText, pageNum) {
+  if (!Number.isInteger(pageNum) || pageNum < 1) throw new Error('页码无效');
+  const pairs = [];
+  const identityOrFooter = /姓名|身份证|体检号|病历号|报告时间|检查时间|检查医生|报告人|医师|医生|医院|中心|第\s*\d+\s*页/;
+  const pair = /([\u4e00-\u9fffA-Za-z（）()\/+\-]{2,30})\s+([<>≤≥]?[+-]?\d+(?:\.\d+)?|阴性|阳性)(?=\s|$)/g;
+  for (const [index, line] of String(layoutText || '').split(/\r?\n/).entries()) {
+    if (identityOrFooter.test(line) || /\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(line)) continue;
+    for (const match of line.matchAll(pair)) {
+      if (/^(阴性|阳性|正常|异常)$/.test(match[1])) continue;
+      pairs.push({ page: pageNum, line: index + 1, name: match[1], value: match[2], source: 'pdf_text' });
+    }
+  }
+  return pairs;
+}
+
+function compareShadowPairsToItems(pairs, reportItems) {
+  const normalize = value => String(value || '').normalize('NFKC').toLowerCase()
+    .replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
+  const existing = new Set((reportItems || []).map(item =>
+    `${Number(item.sourcePage) || 1}|${normalize(item.name)}|${normalize(item.value)}`));
+  const seen = new Set();
+  let matched = 0;
+  for (const row of pairs || []) {
+    const key = `${Number(row.page) || 1}|${normalize(row.name)}|${normalize(row.value)}`;
+    if (!normalize(row.name) || !normalize(row.value) || seen.has(key)) continue;
+    seen.add(key);
+    if (existing.has(key)) matched++;
+  }
+  return { candidateRows: seen.size, matchedRows: matched, uncoveredRows: seen.size - matched };
+}
+
 function run(program, args, { timeoutMs = 60000, maxBuffer = 12 * 1024 * 1024 } = {}) {
   return new Promise((resolve, reject) => execFile(program, args,
     { timeout: timeoutMs, maxBuffer, encoding: 'utf8' }, (error, stdout) => {
@@ -68,6 +101,12 @@ async function readPdfPageTextBoxes(pdfBuffer, pageNum) {
     ['-f', String(pageNum), '-l', String(pageNum), '-bbox-layout', filename, '-'])));
 }
 
+async function readPdfPageLayout(pdfBuffer, pageNum) {
+  if (!Buffer.isBuffer(pdfBuffer) || !Number.isInteger(pageNum) || pageNum < 1) throw new Error('PDF 页码或内容无效');
+  return withTempFile(pdfBuffer, 'pdf', async filename => run('pdftotext',
+    ['-f', String(pageNum), '-l', String(pageNum), '-layout', filename, '-']));
+}
+
 async function readScanImageWords(imageBuffer, { language = 'chi_sim+eng' } = {}) {
   if (!Buffer.isBuffer(imageBuffer) || !imageBuffer.length) throw new Error('扫描图内容无效');
   if (!/^[a-z_]+(?:\+[a-z_]+)*$/i.test(language)) throw new Error('OCR 语言参数无效');
@@ -76,4 +115,5 @@ async function readScanImageWords(imageBuffer, { language = 'chi_sim+eng' } = {}
     [filename, 'stdout', '-l', language, 'tsv'], { timeoutMs: 120000 })));
 }
 
-module.exports = { parsePdfTextBoxes, parseTesseractTsv, readPdfPageTextBoxes, readScanImageWords };
+module.exports = { parsePdfTextBoxes, parseTesseractTsv, parseLayoutResultPairs, compareShadowPairsToItems,
+  readPdfPageTextBoxes, readPdfPageLayout, readScanImageWords };

@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parsePdfTextBoxes, parseTesseractTsv, readPdfPageTextBoxes, readScanImageWords } = require('../src/utils/reportOcrWords');
+const { parsePdfTextBoxes, parseTesseractTsv, parseLayoutResultPairs, compareShadowPairsToItems,
+  readPdfPageTextBoxes, readScanImageWords } = require('../src/utils/reportOcrWords');
 
 test('PDF text layer keeps words and page coordinates without joining table columns', () => {
   const words = parsePdfTextBoxes('<page><word xMin="10" yMin="20" xMax="40" yMax="32">白细胞</word>'
@@ -24,6 +25,32 @@ test('scanned OCR keeps word boxes and line IDs while dropping nonword TSV recor
   assert.deepEqual(result.map(word => [word.text, word.line, word.confidence]), [
     ['葡萄糖', '2:1:1', 93.2], ['5.85', '2:1:1', 88.4],
   ]);
+});
+
+test('shadow layout detector finds two result columns without copying identity lines', () => {
+  const pairs = parseLayoutResultPairs([
+    '项目名称      结果         参考范围      项目名称       结果',
+    '白细胞计数       5.7          3.5-9.5      红细胞计数        4.41',
+    '姓名 张某      体检号 12345',
+    '报告时间 2021-06-16',
+    '尿蛋白          阴性         阴性',
+  ].join('\n'), 6);
+  assert.deepEqual(pairs.map(row => [row.page, row.name, row.value]), [
+    [6, '白细胞计数', '5.7'], [6, '红细胞计数', '4.41'], [6, '尿蛋白', '阴性'],
+  ]);
+  assert.equal(pairs.every(row => row.source === 'pdf_text' && row.line > 0), true);
+});
+
+test('shadow coverage counts unique same-page name and value pairs only', () => {
+  const pairs = [
+    { page: 4, name: '白细胞计数', value: '5.7' },
+    { page: 4, name: '白细胞计数', value: '5.7' },
+    { page: 4, name: '红细胞计数', value: '4.41' },
+  ];
+  assert.deepEqual(compareShadowPairsToItems(pairs, [
+    { sourcePage: 4, name: '白细胞 计数', value: '5.7' },
+    { sourcePage: 5, name: '红细胞计数', value: '4.41' },
+  ]), { candidateRows: 2, matchedRows: 1, uncoveredRows: 1 });
 });
 
 test('OCR adapters reject invalid input before invoking local binaries', async () => {
