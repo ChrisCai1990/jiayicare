@@ -105,6 +105,8 @@ app.use('/api/share',         require('./routes/share'));
 app.use('/api/admin/account-deletion', require('./routes/accountDeletionAdmin'));
 app.use('/api/admin/nutrition-assessment-config', require('./routes/nutritionAssessmentConfig'));
 app.use('/api/admin',         require('./routes/admin'));
+if (process.env.MARKET_PARTNER_ENABLED === 'true')
+  app.use('/api/admin/market-partners', require('./routes/marketPartnersAdmin'));
 app.use('/api/admin/inventory', require('./routes/inventory').adminRouter);
 app.use('/api/admin',         require('./routes/enterpriseServiceRecords').adminRouter);
 app.use('/api/admin/clinical-standards', require('./routes/clinicalStandardsAdmin'));

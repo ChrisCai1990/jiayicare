@@ -164,6 +164,11 @@ const orderSchema = new mongoose.Schema({
   // ── 绩效归属（供佣金自动结算使用，谁引流/谁服务）──
   referrerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 转介绍人（引流下单）
   referralSource: { type: String, enum: ['', 'direct', 'share', 'push', 'manual'], default: '' },
+  // 外部市场合伙人与内部员工推荐归属分别记账。
+  marketPartnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartner', default: null },
+  marketPartnerAttributionId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerAttribution', default: null },
+  marketPartnerRuleId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerRule', default: null },
+  marketPartnerRuleVersion: { type: Number, default: null },
   fulfillerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 服务人（实际提供服务，单服务人场景）
   // 多服务岗位归属：产品由多岗位协同服务时，每个岗位对应的具体服务人。结算时按产品 servicePerformerRoles
   // 里各岗位的比例，为这里指定的人各生成一条绩效记录。为空则退回 referrer/fulfiller 单服务人逻辑。

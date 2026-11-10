@@ -145,7 +145,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated, 
   );
 }
 
-function PurchaseModal({ item, mode, onClose, shareToken = '', initialBeneficiaryUserId = '', pushRecordId = '' }) {
+function PurchaseModal({ item, mode, onClose, shareToken = '', partnerCode = '', initialBeneficiaryUserId = '', pushRecordId = '' }) {
   const { statusBarHeight, navBarHeight, totalHeight } = useNavBar();
   const { user, updateUser } = useAuth();
   const isPay = mode === 'pay';
@@ -278,7 +278,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', initialBeneficiar
       const res = isPay
         ? (pendingOrderRef.current
           ? await paymentsAPI.retry(pendingOrderRef.current.id)
-          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, familyPayment ? null : couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice, familyPayment ? false : useSharedFund, beneficiaryUserId, pushRecordId))
+          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, familyPayment ? null : couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice, familyPayment ? false : useSharedFund, beneficiaryUserId, pushRecordId, partnerCode))
         : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined, beneficiaryUserId);
       if (res.success) {
         if (res.data?.packageCovered) {
@@ -604,10 +604,15 @@ export default function ServiceMallPage() {
     servicesAPI.claimProductShare(routeParams.shareToken).catch(() => {});
   }, [user?._id, routeParams.shareToken]);
 
+  useEffect(() => {
+    if (!user || !routeParams.partnerCode || !routeParams.productId) return;
+    servicesAPI.claimPartnerReferral(routeParams.productId, routeParams.partnerCode).catch(() => {});
+  }, [user?._id, routeParams.partnerCode, routeParams.productId]);
+
   const openPurchase = (svc, mode) => {
     if (!user) {
       try {
-        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`].filter(Boolean).join('&');
+        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`, routeParams.partnerCode && `partnerCode=${routeParams.partnerCode}`].filter(Boolean).join('&');
         Taro.setStorageSync('jy_post_login_url', `/pages/services/mall/index${query ? `?${query}` : ''}`);
       } catch {}
       Taro.showModal({
@@ -621,7 +626,7 @@ export default function ServiceMallPage() {
     }
     if (!user.onboardingCompleted) {
       try {
-        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`].filter(Boolean).join('&');
+        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`, routeParams.partnerCode && `partnerCode=${routeParams.partnerCode}`].filter(Boolean).join('&');
         Taro.setStorageSync('jy_post_login_url', `/pages/services/mall/index${query ? `?${query}` : ''}`);
       } catch {}
       Taro.showModal({
@@ -638,7 +643,7 @@ export default function ServiceMallPage() {
   const closeSharedDetail = () => {
     if (!user && routeParams.shareToken) {
       try {
-        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`, routeParams.invite && `invite=${routeParams.invite}`].filter(Boolean).join('&');
+        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`, routeParams.partnerCode && `partnerCode=${routeParams.partnerCode}`, routeParams.invite && `invite=${routeParams.invite}`].filter(Boolean).join('&');
         Taro.setStorageSync('jy_post_login_url', `/pages/services/mall/index${query ? `?${query}` : ''}`);
       } catch {}
       Taro.showModal({
@@ -741,7 +746,7 @@ export default function ServiceMallPage() {
       )}
 
       {selectedService && (
-        <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''}
+        <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''} partnerCode={routeParams.partnerCode || ''}
           initialBeneficiaryUserId={selectedService.id === routeParams.productId && routeParams.beneficiaryUserId ? routeParams.beneficiaryUserId : storedArchiveId(user?._id)}
           pushRecordId={selectedService.id === routeParams.productId ? routeParams.pushRecordId || '' : ''}
           onClose={() => setSelectedService(null)} />

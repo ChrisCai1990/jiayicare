@@ -253,12 +253,29 @@ router.post('/inquiries', auth, async (req, res) => {
   res.json({ success: true, data: inquiry, message: '咨询已提交，健管师将尽快联系您' });
 });
 
+router.post('/partner-referrals/claim', auth, async (req, res) => {
+  if (process.env.MARKET_PARTNER_ENABLED !== 'true')
+    return res.status(404).json({ success: false, message: '推荐服务暂未开放' });
+  const productId = req.body?.productId;
+  const code = String(req.body?.partnerCode || '').trim();
+  if (!mongoose.Types.ObjectId.isValid(productId) || !code || code.length > 24)
+    return res.status(400).json({ success: false, message: '推荐信息无效' });
+  const product = await Product.findOne({ _id: productId, status: 'on' }).select('tenantId').lean();
+  if (!product || String(product.tenantId) !== String(req.user.tenantId))
+    return res.status(404).json({ success: false, message: '商品不存在' });
+  const match = await require('../utils/marketPartnerAttribution').claim({
+    tenantId: req.user.tenantId, patientId: req.user._id, productId: product._id, code,
+  });
+  if (!match) return res.status(404).json({ success: false, message: '推荐码无效或未授权该商品' });
+  res.json({ success: true, data: { productId, productLine: match.rule.productLine } });
+});
+
 // POST /api/services/order — 提交服务预约（支持单项服务 & 服务包）
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
   const appPayment = req.body.paymentScene === 'app';
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [], beneficiaryUserId, pushRecordId } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', partnerCode = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [], beneficiaryUserId, pushRecordId } = req.body;
   if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
@@ -565,6 +582,14 @@ router.post('/order', auth, async (req, res) => {
     if (productShare?.sharerStaffId) referrerId = productShare.sharerStaffId;
   }
 
+  // A market partner is an external acquisition source; do not also generate an internal referrer commission.
+  const marketPartnerMatch = process.env.MARKET_PARTNER_ENABLED === 'true' && product && serviceUser.tenantId
+    ? await require('../utils/marketPartnerAttribution').resolveForOrder({
+      tenantId: serviceUser.tenantId, patientId: serviceUser._id, productId: product._id,
+      code: partnerCode, at: new Date(),
+    }) : null;
+  if (marketPartnerMatch) referrerId = null;
+
   // 所有订单统一由客户所属健康规划师收单和总督办；住院等专业评估作为后续子任务分派给健康顾问。
   const followUpStaffId = await resolveOrderWorkflowAssignee(serviceUser._id, service.name);
   if (!followUpStaffId) {
@@ -618,6 +643,10 @@ router.post('/order', auth, async (req, res) => {
     } : null,
     inventoryReserved: inventory.reserved,
     referrerId,
+    marketPartnerId: marketPartnerMatch?.attribution?.partnerId || null,
+    marketPartnerAttributionId: marketPartnerMatch?.attribution?._id || null,
+    marketPartnerRuleId: marketPartnerMatch?.rule?._id || null,
+    marketPartnerRuleVersion: marketPartnerMatch?.rule?.version || null,
     referralSource: pushedRecommendation ? 'push' : productShare ? 'share' : 'direct',
     pushRecordId: pushedRecommendation?._id || null,
     servicePerformers,
