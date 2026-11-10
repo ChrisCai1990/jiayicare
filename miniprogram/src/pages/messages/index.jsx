@@ -112,15 +112,19 @@ function normalizePushRecord(pr, beneficiaryUserId = '') {
 function fmtMsgTime(t) {
   if (!t) return '';
   const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return '';
   const now = new Date();
   const diffMs = now - d;
-  if (diffMs < 60000) return '刚刚';
-  if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}分钟前`;
-  const diffDays = Math.floor(diffMs / 86400000);
-  if (diffDays === 0) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  if (diffDays === 1) return '昨天';
-  if (diffDays < 7) return `周${'日一二三四五六'[d.getDay()]}`;
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const messageDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const calendarDays = Math.round((today - messageDay) / 86400000);
+  if (calendarDays === 0 && diffMs >= 0 && diffMs < 60000) return '刚刚';
+  if (calendarDays === 0 && diffMs >= 0 && diffMs < 3600000) return `${Math.floor(diffMs / 60000)}分钟前`;
+  const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (calendarDays === 0) return clock;
+  if (calendarDays === 1) return `昨天 ${clock}`;
+  if (calendarDays > 1 && calendarDays < 7) return `周${'日一二三四五六'[d.getDay()]} ${clock}`;
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${clock}`;
 }
 
 export default function MessagesPage({ embedded = false, active = true, refreshKey = 0, assistantConfig = {} }) {
@@ -514,7 +518,7 @@ function MessageDetailModal({ msg, onClose, paymentActivityRef }) {
   };
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={onClose}>
-      <View onClick={(e) => e.stopPropagation && e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '75%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+      <View onClick={(e) => e.stopPropagation && e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', width: '100%', maxHeight: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View style={{ display: 'flex', alignItems: 'center', marginBottom: `${spacing.md}px` }}>
           <View style={{ width: '44px', height: '44px', borderRadius: '14px', backgroundColor: conf.color + '30', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px` }}>
@@ -526,7 +530,7 @@ function MessageDetailModal({ msg, onClose, paymentActivityRef }) {
           </View>
         </View>
         {!!msg.title && <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, marginBottom: `${spacing.sm}px`, display: 'block' }}>{msg.title}</Text>}
-        <ScrollView scrollY style={{ flex: 1, marginBottom: `${spacing.md}px` }}>
+        <ScrollView scrollY style={{ flex: 1, minHeight: 0, marginBottom: `${spacing.md}px` }}>
           <Text style={{ fontSize: '15px', color: colors.textSecondary, lineHeight: '24px' }}>{msg.content || '（暂无详细内容）'}</Text>
         </ScrollView>
         <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
@@ -866,8 +870,15 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
   };
 
   useEffect(() => {
+    const requestThread = () => {
+      let timeoutId;
+      return Promise.race([
+        withUnreadBadgeUpdate(() => messagesAPI.getThread(role)),
+        new Promise((_, reject) => { timeoutId = setTimeout(() => reject(new Error('会话加载超时，请点击重试')), 20000); }),
+      ]).finally(() => clearTimeout(timeoutId));
+    };
     const controller = createRefreshController({
-      request: () => withUnreadBadgeUpdate(() => messagesAPI.getThread(role)),
+      request: requestThread,
       onData: applyThread,
       onError: error => { setThreadError(error.message || '会话暂未加载，请重试'); setLoading(false); },
     });

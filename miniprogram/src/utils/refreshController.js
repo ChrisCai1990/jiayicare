@@ -1,5 +1,5 @@
 // One request at a time; stopped/superseded responses cannot repaint the page.
-export function createRefreshController({ request, onData, onError, interval = 2000, timers = { setTimeout, clearTimeout } }) {
+export function createRefreshController({ request, onData, onError, interval = 2000, timers = { setTimeout: (callback, delay) => setTimeout(callback, delay), clearTimeout: id => clearTimeout(id) } }) {
   let active = false, pending = false, running = false, generation = 0, timer;
   const clear = () => { timers.clearTimeout(timer); timer = undefined; };
   async function run() {

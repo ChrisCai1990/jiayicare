@@ -59,9 +59,6 @@ export default function RecordsIndexPage() {
   const [childArchive, setChildArchive] = useState(null);
   const [childArchiveError, setChildArchiveError] = useState('');
   const { updateUser } = useAuth();
-  const [records, setRecords] = useState([]);
-  const [filter, setFilter] = useState('bloodPressure');
-  const [loading, setLoading] = useState(true);
   const [ibdEnabled, setIbdEnabled] = useState(false);
   const [bpTrend, setBpTrend] = useState([]);
   const [bsTrend, setBsTrend] = useState([]);
@@ -73,28 +70,45 @@ export default function RecordsIndexPage() {
   const [bodyTrendTab, setBodyTrendTab] = useState('weight');
   const [bodyComposition, setBodyComposition] = useState({});
   const [bodyCompHistory, setBodyCompHistory] = useState([]);
-  const [showAllRecords, setShowAllRecords] = useState(false);
+  const [historyType, setHistoryType] = useState('bloodPressure');
+  const [historyRows, setHistoryRows] = useState([]);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const historyRequest = useRef(0);
+
+  const loadHistory = useCallback(async (page = 1) => {
+    const requestId = ++historyRequest.current;
+    setHistoryLoading(true);
+    setHistoryError('');
+    if (page === 1) { setHistoryRows([]); setHistoryPage(0); setHistoryTotal(0); }
+    try {
+      const result = await recordsAPI.list({ type: historyType, limit: 20, page });
+      if (requestId !== historyRequest.current) return;
+      if (!result?.success || !Array.isArray(result.data)) throw new Error('历史记录加载失败');
+      setHistoryRows(previous => page === 1 ? result.data : [...previous, ...result.data]);
+      setHistoryPage(page);
+      setHistoryTotal(Number(result.total) || 0);
+    } catch (error) {
+      if (requestId === historyRequest.current) setHistoryError(error?.message || '历史记录加载失败');
+    } finally {
+      if (requestId === historyRequest.current) setHistoryLoading(false);
+    }
+  }, [historyType]);
+
+  useEffect(() => { loadHistory(1); }, [loadHistory]);
 
   const trendGeneration = useRef(0);
   const [trendError,setTrendError] = useState('');
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await recordsAPI.list({ limit: 50 });
-      if (res.success) setRecords(res.data || []);
-    } catch {}
-    setLoading(false);
-  }, []);
-
   useDidShow(() => {
-    load();
     ibdAPI.status().then(res => setIbdEnabled(!!res.data?.enabled)).catch(() => setIbdEnabled(false));
     loadTrends();
     userAPI.getMe().then((res) => {
       if (res?.success && res.data) {
         updateUser(res.data);
         setBodyComposition(res.data.bodyComposition || {});
-        setBodyCompHistory(res.data.bodyCompHistory || []);
+        setBodyCompHistory(Array.isArray(res.data.bodyCompHistory) ? res.data.bodyCompHistory : []);
       }
     }).catch(() => {});
   });
@@ -132,9 +146,6 @@ export default function RecordsIndexPage() {
     });
   }
 
-  const filtered = records.filter((r) => r.type === filter);
-  const dailyRecords = records.filter((r) => DAILY_TYPES.includes(r.type));
-  const symptoms = records.filter((r) => r.type === 'symptom');
   const bpPoints = bloodPressurePoints(bpTrend, 60);
   const bpLatestByArm = ['左臂', '右臂', '未标注'].map(arm => ({ arm, point: [...bpPoints].reverse().find(point => point.arm === arm) })).filter(item => item.point);
   const trendMap = {
@@ -211,7 +222,7 @@ export default function RecordsIndexPage() {
           <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
             <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: `${spacing.sm}px` }}>
               {CORE_TYPES.map((k) => ({ k, l: TYPE_META[k].label })).map((t) => (
-                <View key={t.k} onClick={() => { setTrendTab(t.k); setFilter(t.k); }} style={{
+                <View key={t.k} onClick={() => setTrendTab(t.k)} style={{
                   padding: '5px 12px', borderRadius: `${radius.full}px`,
                   backgroundColor: trendTab === t.k ? colors.primary : colors.background,
                   border: `1px solid ${trendTab === t.k ? colors.primary : colors.border}`,
@@ -267,6 +278,28 @@ export default function RecordsIndexPage() {
             <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '6px', display: 'block' }}>最新检测：{bodyDate(active.latest) || '未标注'} · 参考范围：{active.reference}</Text>
           </View>;
         })()}
+      </View>
+      <View style={{ padding: `0 ${spacing.lg}px ${spacing.xl}px` }}>
+        <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('历史健康记录')}</Text>
+        <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
+          {['bloodPressure', 'weight'].map(type => <View key={type} onClick={() => setHistoryType(type)} style={{ padding: '9px 18px', borderRadius: `${radius.full}px`, backgroundColor: historyType === type ? colors.primary : '#fff', border: `1px solid ${historyType === type ? colors.primary : colors.border}` }}>
+            <Text style={{ fontSize: '14px', color: historyType === type ? '#fff' : colors.textPrimary }}>{t(TYPE_META[type].label)}</Text>
+          </View>)}
+        </View>
+        <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `0 ${spacing.md}px`, boxShadow: shadow.card }}>
+          {historyRows.map((row, index) => {
+            const bp = historyType === 'bloodPressure' ? bloodPressurePoints([row], 1)[0] : null;
+            const value = bp ? `${bp.sys}/${bp.dia} mmHg` : `${String(row?.value ?? '未记录')} ${TYPE_META[historyType].unit}`;
+            return <View key={row?._id || `${historyPage}-${index}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '13px 0', borderBottom: index < historyRows.length - 1 ? `1px solid ${colors.borderLight}` : 'none' }}>
+              <View><Text style={{ display: 'block', fontSize: '13px', color: colors.textSecondary }}>{formatRecordDate(row?.recordedAt, language)} {formatRecordTime(row?.recordedAt)}</Text>{bp && <Text style={{ fontSize: '12px', color: colors.textMuted }}>{t(bp.arm)}</Text>}</View>
+              <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{value}</Text>
+            </View>;
+          })}
+          {!historyLoading && !historyError && historyRows.length === 0 && <Text style={{ display: 'block', padding: '16px 0', color: colors.textMuted }}>{t('暂无记录')}</Text>}
+        </View>
+        {historyError && <Text onClick={() => loadHistory(historyPage || 1)} style={{ display: 'block', padding: '12px 0', color: colors.danger }}>{historyError} · {t('点击重试')}</Text>}
+        {historyLoading && <Text style={{ display: 'block', padding: '12px 0', color: colors.textMuted }}>{t('加载中...')}</Text>}
+        {!historyLoading && historyRows.length < historyTotal && <Text onClick={() => loadHistory(historyPage + 1)} style={{ display: 'block', padding: '14px 0', color: colors.primary, textAlign: 'center' }}>{t('加载更多')}</Text>}
       </View>
       <View style={{ height: '20px' }} />
     </View>
