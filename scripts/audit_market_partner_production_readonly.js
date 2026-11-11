@@ -39,6 +39,11 @@ async function main() {
     { projection: { _id: 1, name: 1, originalPrice: 1, paymentChannel: 1 } })
       .sort({ name: 1 }).limit(50).toArray();
     console.log('candidate_products=' + JSON.stringify(candidates));
+    const packages = await db.collection('servicepackages').find({ active: true,
+      'activation.enabled': true, 'configuration.membershipTier': 'consumer365' },
+    { projection: { _id: 1, name: 1, clientBrand: 1, 'activation.price': 1,
+      'activation.durationMonths': 1, 'configuration.includes365': 1 } }).toArray();
+    console.log('consumer365_packages=' + JSON.stringify(packages));
     console.log('market_partner_enabled=' + (env.MARKET_PARTNER_ENABLED || env.env?.MARKET_PARTNER_ENABLED || 'unset'));
     console.log('startup_schema_writes_enabled=' + (env.STARTUP_SCHEMA_WRITES_ENABLED || env.env?.STARTUP_SCHEMA_WRITES_ENABLED || 'unset'));
   } finally {

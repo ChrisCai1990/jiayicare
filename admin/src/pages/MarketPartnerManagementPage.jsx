@@ -27,6 +27,7 @@ export default function MarketPartnerManagementPage() {
   const [offlineRefunds, setOfflineRefunds] = useState([])
   const [lossReviews, setLossReviews] = useState([])
   const [products, setProducts] = useState([])
+  const [eligiblePackages, setEligiblePackages] = useState([])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -48,13 +49,14 @@ export default function MarketPartnerManagementPage() {
   const [lossReview, setLossReview] = useState({ orderId: '', terminatedAt: '', reason: '', evidence: '' })
 
   const refresh = async () => {
-    const [p, r, t, productsResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse] = await Promise.all([
-      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(),
+    const [p, r, t, productsResponse, packagesResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse] = await Promise.all([
+      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerEligiblePackages(), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(),
     ])
     setPartners(p.data || [])
     setRules(r.data || [])
     setTeamRules(t.data || [])
     setProducts(productsResponse.data || [])
+    setEligiblePackages(packagesResponse.data || [])
     setCommissions(commissionsResponse.data?.rows || [])
     setReceipts(receiptsResponse.data || [])
     setTeamIncentives(teamIncentivesResponse.data || [])
@@ -82,6 +84,7 @@ export default function MarketPartnerManagementPage() {
       return { year: Number(year), basisPoints: toBasisPoints(percent) }
     }) : []
     run(() => adminAPI.createMarketPartnerRule({ productId: rule.productId, productLine: rule.productLine,
+      sourceType: rule.productLine === 'consumer365' ? 'servicePackage' : 'product',
       kind: rule.kind, firstBasisPoints: toBasisPoints(rule.firstPercent), tierBasisPoints,
       renewalBasisPoints, effectiveFrom: new Date(rule.effectiveFrom).toISOString(),
       directReferralRequired: rule.directReferralRequired, quickCloseEnabled: rule.quickCloseEnabled,
@@ -94,7 +97,8 @@ export default function MarketPartnerManagementPage() {
       ruleType: team.ruleType, basisPoints: toBasisPoints(team.percent),
       amountCents: Math.round(Number(team.amountYuan) * 100), effectiveFrom: new Date(team.effectiveFrom).toISOString() }))
   }
-  const productName = id => products.find(item => String(item._id) === String(id))?.name || String(id || '')
+  const productName = id => products.find(item => String(item._id) === String(id))?.name
+    || eligiblePackages.find(item => String(item._id) === String(id))?.name || String(id || '')
   const runPreview = e => {
     e.preventDefault(); setBusy(true); setError(''); setPreviewResult(null)
     adminAPI.previewMarketPartnerRule({ ruleId: preview.ruleId, paidCents: Math.round(Number(preview.paidYuan) * 100),
@@ -227,8 +231,8 @@ export default function MarketPartnerManagementPage() {
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人佣金规则</h2>
       <p style={{ color: '#667a6d' }}>先保存草稿，检查产品、比例与生效时间后再发布。旧订单沿用原规则版本。</p>
       <form onSubmit={submitRule} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <select style={inputStyle} aria-label="商品" value={rule.productId} onChange={e => setRule({ ...rule, productId: e.target.value })} required><option value="">选择商品</option>{products.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
-        <select style={inputStyle} aria-label="产品线" value={rule.productLine} onChange={e => setRule({ ...rule, productLine: e.target.value })}>{LINES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <select style={inputStyle} aria-label="商品或服务包" value={rule.productId} onChange={e => setRule({ ...rule, productId: e.target.value })} required><option value="">选择商品或服务包</option>{(rule.productLine === 'consumer365' ? eligiblePackages : products).map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
+        <select style={inputStyle} aria-label="产品线" value={rule.productLine} onChange={e => setRule({ ...rule, productLine: e.target.value, productId: '' })}>{LINES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         <select style={inputStyle} aria-label="计佣类型" value={rule.kind} onChange={e => setRule({ ...rule, kind: e.target.value })}><option value="annual">年度</option><option value="first">首次</option><option value="every">每次</option></select>
         <input style={inputStyle} aria-label="首年或首次比例" type="number" min="0" max="100" step="0.01" value={rule.firstPercent} onChange={e => setRule({ ...rule, firstPercent: e.target.value })} placeholder="首次比例 %" />
         <input style={inputStyle} aria-label="阶梯比例" value={rule.tiers} onChange={e => setRule({ ...rule, tiers: e.target.value })} placeholder="阶梯 10,15,18,20" />

@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const schema = new mongoose.Schema({
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+  // The identifier may reference a ServicePackage for the 365 membership line.
+  sourceType: { type: String, enum: ['product', 'servicePackage'], default: 'product' },
   productLine: { type: String, required: true, trim: true },
   version: { type: Number, required: true, min: 1 },
   status: { type: String, enum: ['draft', 'active', 'retired'], default: 'draft' },

@@ -216,6 +216,8 @@ router.get('/packages', auth, async (req, res) => {
     originalPrice: Number(item.activation?.originalPrice || item.activation?.price || 0),
     features: item.activation?.features || [], tag: item.activation?.tag || '',
     highlight: !!item.activation?.highlight,
+    membershipTier: item.configuration?.membershipTier || '',
+    includes365: !!item.configuration?.includes365,
   })) });
 });
 
@@ -263,10 +265,15 @@ router.post('/partner-referrals/claim', auth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(productId) || !code || code.length > 24)
     return res.status(400).json({ success: false, message: '推荐信息无效' });
   const product = await Product.findOne({ _id: productId, status: 'on' }).select('tenantId').lean();
-  if (!product || String(product.tenantId) !== String(req.user.tenantId))
-    return res.status(404).json({ success: false, message: '商品不存在' });
+  const servicePackage = product ? null : await ServicePackage.findOne({ _id: productId,
+    clientBrand: req.user.clientBrand || 'jiayiguanjia', active: true,
+    'activation.enabled': true, 'activation.durationMonths': 12,
+    'configuration.membershipTier': 'consumer365', 'configuration.includes365': true }).select('_id').lean();
+  if ((!product || String(product.tenantId) !== String(req.user.tenantId)) && !servicePackage)
+    return res.status(404).json({ success: false, message: '商品或会员服务包不存在' });
   const match = await require('../utils/marketPartnerAttribution').claim({
-    tenantId: req.user.tenantId, patientId: req.user._id, productId: product._id, code,
+    tenantId: req.user.tenantId, patientId: req.user._id,
+    productId: product?._id || servicePackage._id, code,
   });
   if (!match) return res.status(404).json({ success: false, message: '推荐码无效或未授权该商品' });
   res.json({ success: true, data: { productId, productLine: match.rule.productLine } });
@@ -585,9 +592,10 @@ router.post('/order', auth, async (req, res) => {
   }
 
   // A market partner is an external acquisition source; do not also generate an internal referrer commission.
-  const marketPartnerMatch = process.env.MARKET_PARTNER_ENABLED === 'true' && product && serviceUser.tenantId
+  const marketPartnerMatch = process.env.MARKET_PARTNER_ENABLED === 'true' && (product || servicePackage) && serviceUser.tenantId
     ? await require('../utils/marketPartnerAttribution').resolveForOrder({
-      tenantId: serviceUser.tenantId, patientId: serviceUser._id, productId: product._id,
+      tenantId: serviceUser.tenantId, patientId: serviceUser._id,
+      productId: product?._id || servicePackage._id,
       code: partnerCode, at: new Date(),
     }) : null;
   if (marketPartnerMatch) referrerId = null;

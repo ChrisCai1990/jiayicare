@@ -556,6 +556,7 @@ export default function ServiceMallPage() {
     const query = [
       `productId=${detailService.id}`,
       shareToken && `shareToken=${shareToken}`,
+      routeParams.partnerCode && detailService.id === routeParams.productId && `partnerCode=${encodeURIComponent(routeParams.partnerCode)}`,
       user?.referralCode && `invite=${user.referralCode}`,
     ].filter(Boolean).join('&');
     return {
@@ -574,6 +575,7 @@ export default function ServiceMallPage() {
       return;
     }
     let active = true;
+    if (detailService.servicePackage) { setShareToken(''); return; }
     servicesAPI.createProductShare(detailService.id).then((res) => {
       if (!active || !res.success) return;
       setShareToken(res.data.token);
@@ -584,20 +586,34 @@ export default function ServiceMallPage() {
   const [listError, setListError] = useState('');
 
   useEffect(() => {
-    servicesAPI.list().then((res) => {
+    let active = true;
+    Promise.all([
+      servicesAPI.list(),
+      user ? servicesAPI.packages().catch(() => ({ success: false, data: [] })) : Promise.resolve({ success: true, data: [] }),
+    ]).then(([res, packageRes]) => {
+      if (!active) return;
       if (!res.success) throw new Error(res.message || '服务加载失败');
-      setServices(res.data?.services || []);
-      setCategoryTree(res.data?.categoryTree || (res.data?.categories || []).filter((name) => name !== '全部').map((name) => ({ id: name, name, children: [] })));
-      const target = (res.data?.services || []).find((service) => service.id === routeParams.productId);
+      const packages = (packageRes.success ? packageRes.data || [] : [])
+        .filter(item => item.membershipTier === 'consumer365' && item.includes365 && Number(item.durationMonths) === 12)
+        .map(item => ({ ...item, servicePackage: true, category: '会员服务',
+          subtitle: item.duration, description: (item.features || []).join('；'), fulfillmentType: 'subscription_service' }));
+      const allServices = [...(res.data?.services || []), ...packages];
+      setServices(allServices);
+      const tree = res.data?.categoryTree || (res.data?.categories || []).filter((name) => name !== '全部').map((name) => ({ id: name, name, children: [] }));
+      setCategoryTree(packages.length && !tree.some(item => item.name === '会员服务')
+        ? [...tree, { id: 'membership', name: '会员服务', productCount: packages.length, totalProductCount: packages.length, children: [] }] : tree);
+      const target = allServices.find((service) => service.id === routeParams.productId);
       if (target && routeParams.beneficiaryUserId && routeParams.pushRecordId && user?.onboardingCompleted) {
         setSelectedService(target); setPurchaseMode('pay');
       } else if (target) setDetailService(target);
     }).catch(() => {
+      if (!active) return;
       setServices([]);
       setCategoryTree([]);
       setListError('服务加载失败，请稍后重试');
-    }).finally(() => setLoading(false));
-  }, []);
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [user?._id]);
 
   useEffect(() => {
     if (!user || !routeParams.shareToken) return;
@@ -721,6 +737,11 @@ export default function ServiceMallPage() {
       </View>}
 
       <View style={{ padding: `0 ${spacing.lg}px`, paddingBottom: `${spacing.xxl}px` }}>
+        {!user && routeParams.productId && routeParams.partnerCode && (
+          <View onClick={() => openPurchase({ id: routeParams.productId }, 'pay')} style={{ padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, backgroundColor: colors.primary10, borderRadius: `${radius.md}px` }}>
+            <Text style={{ color: colors.primary, fontWeight: 700 }}>登录后查看推荐的会员服务并购买 ›</Text>
+          </View>
+        )}
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : (
@@ -738,7 +759,7 @@ export default function ServiceMallPage() {
         <ServiceDetailModal
           item={detailService}
           isAuthenticated={!!user}
-          shareReady={!user || !!shareToken}
+          shareReady={!user || !!shareToken || !!detailService.servicePackage}
           onClose={closeSharedDetail}
           onConsult={() => { openPurchase(detailService, 'consult'); setDetailService(null); }}
           onPay={() => { openPurchase(detailService, 'pay'); setDetailService(null); }}

@@ -288,6 +288,7 @@ export const adminAPI = {
   createMarketPartner: data => req('/market-partners', { method: 'POST', body: JSON.stringify(data) }),
   setMarketPartnerStatus: (id, status) => req(`/market-partners/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   marketPartnerRules: () => req('/market-partners/rules'),
+  marketPartnerEligiblePackages: () => req('/market-partners/eligible-packages'),
   createMarketPartnerRule: data => req('/market-partners/rules', { method: 'POST', body: JSON.stringify(data) }),
   previewMarketPartnerRule: data => req('/market-partners/rules/preview', { method: 'POST', body: JSON.stringify(data) }),
   publishMarketPartnerRule: id => req(`/market-partners/rules/${id}/publish`, { method: 'PATCH' }),

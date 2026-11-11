@@ -14,6 +14,7 @@ const Commission = require('../models/Commission');
 const Refund = require('../models/Refund');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
+const ServicePackage = require('../models/ServicePackage');
 const User = require('../models/User');
 const MarketPartnerAttribution = require('../models/MarketPartnerAttribution');
 const MarketPartnerLoss = require('../models/MarketPartnerLoss');
@@ -437,14 +438,32 @@ router.get('/rules', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+router.get('/eligible-packages', async (req, res) => {
+  try {
+    const rows = await ServicePackage.find({ active: true, 'activation.enabled': true,
+      'activation.durationMonths': 12, 'configuration.membershipTier': 'consumer365',
+      'configuration.includes365': true }).select('_id name clientBrand activation.price').lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
 router.post('/rules', async (req, res) => {
   if (!validId(req.body?.productId)) return res.status(400).json({ success: false, message: '无效商品' });
   try {
-    const product = await Product.findOne({ _id: req.body.productId, tenantId: tenant(req) }).select('_id').lean();
-    if (!product) return res.status(404).json({ success: false, message: '商品不存在' });
-    const latest = await MarketPartnerRule.findOne({ tenantId: tenant(req), productId: product._id }).sort({ version: -1 }).select('version').lean();
-    const row = await MarketPartnerRule.create({ tenantId: tenant(req), productId: product._id,
-      productLine: String(req.body.productLine || '').trim(), version: (latest?.version || 0) + 1,
+    const productLine = String(req.body.productLine || '').trim();
+    const sourceType = req.body.sourceType || 'product';
+    if (!['product', 'servicePackage'].includes(sourceType)
+      || (productLine === 'consumer365') !== (sourceType === 'servicePackage'))
+      return res.status(400).json({ success: false, message: '365会员须选择有效年度服务包，其他规则须选择商品' });
+    const source = sourceType === 'servicePackage'
+      ? await ServicePackage.findOne({ _id: req.body.productId, active: true,
+        'activation.enabled': true, 'activation.durationMonths': 12,
+        'configuration.membershipTier': 'consumer365', 'configuration.includes365': true }).select('_id').lean()
+      : await Product.findOne({ _id: req.body.productId, tenantId: tenant(req) }).select('_id').lean();
+    if (!source) return res.status(404).json({ success: false, message: '商品或365会员服务包不存在' });
+    const latest = await MarketPartnerRule.findOne({ tenantId: tenant(req), productId: source._id }).sort({ version: -1 }).select('version').lean();
+    const row = await MarketPartnerRule.create({ tenantId: tenant(req), productId: source._id,
+      sourceType, productLine, version: (latest?.version || 0) + 1,
       kind: req.body.kind, firstBasisPoints: req.body.firstBasisPoints,
       tierBasisPoints: req.body.tierBasisPoints || [], renewalBasisPoints: req.body.renewalBasisPoints || [],
       directReferralRequired: req.body.directReferralRequired === true,

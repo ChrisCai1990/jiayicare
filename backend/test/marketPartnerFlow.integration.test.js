@@ -364,4 +364,66 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(afterFullOnlineRefund.eligibleCashCents, 0);
     assert.equal(afterFullOnlineRefund.accruedCents, 0);
     assert.equal(afterFullOnlineRefund.status, 'cancelled');
+
+    const memberPackageId = oid();
+    await mongoose.connection.db.collection('servicepackages').insertOne({ _id: memberPackageId,
+      name: '365健康会员', clientBrand: 'jiayiguanjia', active: true,
+      activation: { enabled: true, durationMonths: 12, price: 365, originalPrice: 365 },
+      configuration: { includes365: true, membershipTier: 'consumer365', deliveryMode: 'digital' } });
+    const memberPartner = await call(clerkId, 'POST', prefix, { name: '会员合成合伙人',
+      phone: '13900000004', productLine: 'consumer365', contractReference: 'MEMBER-PARTNER-001' });
+    assert.equal(memberPartner.status, 201, JSON.stringify(memberPartner.body));
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/${memberPartner.body.data._id}/status`,
+      { status: 'active' })).status, 200);
+    const eligiblePackages = await call(clerkId, 'GET', `${prefix}/eligible-packages`);
+    assert.equal(eligiblePackages.status, 200);
+    assert.equal(eligiblePackages.body.data.some(item => item._id === String(memberPackageId)), true);
+    const memberRule = await call(clerkId, 'POST', `${prefix}/rules`, {
+      productId: String(memberPackageId), sourceType: 'servicePackage', productLine: 'consumer365',
+      kind: 'annual', firstBasisPoints: 2000,
+      renewalBasisPoints: [{ year: 2, basisPoints: 1000 }, { year: 3, basisPoints: 500 }],
+      effectiveFrom: new Date(Date.now() - 86400000).toISOString() });
+    assert.equal(memberRule.status, 201, JSON.stringify(memberRule.body));
+    assert.equal((await call(clerkId, 'PATCH',
+      `${prefix}/rules/${memberRule.body.data._id}/publish`, {})).status, 200);
+    const memberClaim = await fetch(`${base}/api/services/partner-referrals/claim`, {
+      method: 'POST', headers: { authorization: `Bearer ${customerToken}`,
+        'content-type': 'application/json' },
+      body: JSON.stringify({ productId: String(memberPackageId),
+        partnerCode: memberPartner.body.data.referralCode }),
+    });
+    assert.equal(memberClaim.status, 200, await memberClaim.text());
+    const memberCheckout = async () => {
+      const response = await fetch(`${base}/api/services/order`, { method: 'POST',
+        headers: { authorization: `Bearer ${customerToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ serviceId: String(memberPackageId), expectedAmount: 365,
+          paymentMethod: 'wechat_pay', partnerCode: memberPartner.body.data.referralCode }) });
+      const body = await response.json();
+      assert.equal(response.status, 200, JSON.stringify(body));
+      return body.data.orderId;
+    };
+    const firstMemberOrderId = await memberCheckout();
+    const memberHistory = await call(clerkId, 'POST', `${prefix}/customer-histories`, {
+      orderId: firstMemberOrderId, priorPaidPeriods: 0,
+      evidence: '合成会员购买历史核对结果：此前无付费年度' });
+    assert.equal(memberHistory.status, 201, JSON.stringify(memberHistory.body));
+    assert.equal((await call(reviewerId, 'PATCH',
+      `${prefix}/customer-histories/${memberHistory.body.data._id}/review`,
+      { status: 'approved' })).status, 200);
+    assert.equal(await Commission.countDocuments({ orderId: firstMemberOrderId }), 0);
+    const firstMemberPayment = await Payment.findOne({ order: firstMemberOrderId });
+    await require('../src/utils/orderSettlement').confirmPayment({
+      outTradeNo: firstMemberPayment.outTradeNo, transactionId: 'SYNTHETIC-MEMBER-001',
+      paidAt: new Date() });
+    const firstMemberCommission = await Commission.findOne({ orderId: firstMemberOrderId }).lean();
+    assert.equal(firstMemberCommission.periodNumber, 1);
+    assert.equal(firstMemberCommission.accruedCents, 7300);
+    const secondMemberOrderId = await memberCheckout();
+    const secondMemberPayment = await Payment.findOne({ order: secondMemberOrderId });
+    await require('../src/utils/orderSettlement').confirmPayment({
+      outTradeNo: secondMemberPayment.outTradeNo, transactionId: 'SYNTHETIC-MEMBER-002',
+      paidAt: new Date(Date.now() + 1000) });
+    const secondMemberCommission = await Commission.findOne({ orderId: secondMemberOrderId }).lean();
+    assert.equal(secondMemberCommission.periodNumber, 2);
+    assert.equal(secondMemberCommission.accruedCents, 3650);
   });
