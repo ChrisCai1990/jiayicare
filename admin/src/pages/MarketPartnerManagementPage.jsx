@@ -47,6 +47,9 @@ export default function MarketPartnerManagementPage() {
   const [leadEvent, setLeadEvent] = useState({ patientId: '', productId: '', partnerCode: '', directReferral: false, evidence: '' })
   const [offlineRefund, setOfflineRefund] = useState({ orderId: '', amountYuan: '', reference: '', evidence: '', reason: '' })
   const [lossReview, setLossReview] = useState({ orderId: '', terminatedAt: '', reason: '', evidence: '' })
+  const [accountingKey, setAccountingKey] = useState('')
+  const [accounting, setAccounting] = useState(null)
+  const [accountingError, setAccountingError] = useState('')
 
   const refresh = async () => {
     const [p, r, t, productsResponse, packagesResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse] = await Promise.all([
@@ -119,9 +122,34 @@ export default function MarketPartnerManagementPage() {
     const form = recoveries[item._id] || {}
     run(() => adminAPI.recordMarketPartnerRecovery(item._id, { amountCents: Math.round(Number(form.amountYuan) * 100), recoveryReference: form.reference }))
   }
+  const loadAccounting = async event => {
+    event.preventDefault(); setAccounting(null); setAccountingError('')
+    try { setAccounting((await adminAPI.marketPartnerOrderAccounting(accountingKey.trim())).data) }
+    catch (err) { setAccountingError(err.message || '订单核算读取失败') }
+  }
+  const yuan = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
 
   return <div style={{ maxWidth: 1100 }}>
     <div className="page-header"><div><div className="page-title">市场合伙人</div><div className="page-subtitle">审核合伙人、按产品配置佣金和服务团队激励</div></div></div>
+    <section style={boxStyle}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>订单一页核算</h2>
+      <p style={{ color: '#667a6d' }}>按同一订单查看客户、产品、实收、合伙人推广费和服务团队绩效。预估与已发分开显示；履约成本和交易成本未录入时不计算最终毛利。</p>
+      <form onSubmit={loadAccounting} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input style={{ ...inputStyle, minWidth: 260 }} aria-label="核算订单号或ID" placeholder="订单号或订单 ID" value={accountingKey} onChange={event => setAccountingKey(event.target.value)} required />
+        <button className="btn btn-primary">查询订单核算</button>
+      </form>
+      {accountingError && <p role="alert" style={{ color: '#B42318' }}>{accountingError}</p>}
+      {accounting && <div style={{ marginTop: 14, lineHeight: 1.8 }}>
+        <div><strong>{accounting.order.serviceName}</strong>{accounting.order.specificationLabel && ` · ${accounting.order.specificationLabel}`} · {accounting.order.orderNo}</div>
+        <div>客户：{accounting.order.user?.name || '—'}；合伙人：{accounting.order.marketPartnerId?.name || '无'}；登记者：{accounting.order.initiatedByStaff?.name || '—'}；内部推广人：{accounting.order.referrerId?.name || '无'}</div>
+        <div>订单标价 {yuan(Math.round(Number(accounting.order.servicePrice || 0) * 100))}；现金实收 {yuan(accounting.cash.paidCents)}；成功退款 {yuan(accounting.cash.refundedCents)}；净实收 <strong>{yuan(accounting.cash.netCents)}</strong>；支付状态 {accounting.order.paymentStatus}</div>
+        <div>服务团队：{accounting.order.servicePerformers?.length ? accounting.order.servicePerformers.map(item => `${ROLES.find(([role]) => role === item.role)?.[1] || item.role} ${item.staffId?.name || '待确认'}`).join('、') : '待确认'}</div>
+        <div>合伙人推广费：{accounting.partnerCommission.length ? accounting.partnerCommission.map(item => `${yuan(item.accruedCents)}（${item.status}，已发 ${yuan(item.paidCents)}，已追回 ${yuan(item.recoveredCents)}）`).join('；') : '暂无计提'}</div>
+        <div>内部推广与服务绩效：{accounting.staffCommissions.length ? accounting.staffCommissions.map(item => `${item.staffId?.name || '员工'} ${item.role === 'referrer' ? '推广' : '服务'} ${yuan(Math.round(Number(item.commissionAmount || 0) * 100))}（${item.status}）`).join('；') : '暂无计提'}</div>
+        <div>服务团队专项激励：{accounting.teamIncentives.length ? accounting.teamIncentives.map(item => `${item.staffId?.name || '员工'} ${yuan(item.amountCents)}（${item.status}，已发 ${yuan(item.paidCents)}）`).join('；') : '暂无计提'}</div>
+        <div>线下到账凭据：{accounting.receipts.length ? accounting.receipts.map(item => `${yuan(item.amountCents)}（${item.status}）`).join('；') : '无'}</div>
+      </div>}
+    </section>
     {error && <div role="alert" style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
     {notice && <div style={{ color: '#176b4d', marginBottom: 12 }}>{notice}</div>}
     <section style={boxStyle}>

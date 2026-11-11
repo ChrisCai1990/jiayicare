@@ -158,6 +158,13 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const staffCommission = await require('../src/models/Commission').findOne({ orderId: recorded._id,
       staffId: offlineNutritionistId, role: 'fulfiller' }).lean();
     assert.equal(staffCommission.commissionAmount, 8, '同一订单独立生成服务人员绩效');
+    const accounting = await call(clerkId, 'GET', `${prefix}/order-accounting/${recorded._id}`);
+    assert.equal(accounting.status, 200, JSON.stringify(accounting.body));
+    assert.equal(accounting.body.data.cash.netCents, 10000);
+    assert.equal(accounting.body.data.partnerCommission[0].accruedCents, 1000);
+    assert.equal(accounting.body.data.staffCommissions[0].commissionAmount, 8);
+    assert.equal(accounting.body.data.order.servicePerformers[0].staffId.name, '线下营养师');
+    assert.equal((await call(outsiderId, 'GET', `${prefix}/order-accounting/${recorded._id}`)).status, 404);
     const order = await call(clerkId, 'POST', `${prefix}/offline-orders`, { productId: String(productId),
       patientId: String(patientId), contractReference: 'OFFLINE-CONTRACT-001',
       partnerCode: partner.body.data.referralCode, priceCents: 10000 });

@@ -86,6 +86,32 @@ router.get('/attributed-orders', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// 同一订单的收款、外部推广与内部服务激励对账视图；只读，不改变各自审核流程。
+router.get('/order-accounting/:id', async (req, res) => {
+  const key = String(req.params.id || '').trim();
+  if (!validId(key) && !/^[A-Za-z0-9-]{6,80}$/.test(key))
+    return res.status(400).json({ success: false, message: '请输入有效订单 ID 或订单号' });
+  try {
+    const order = await Order.findOne({ tenantId: tenant(req), ...(validId(key) ? { _id: key } : { orderNo: key }) })
+      .select('_id orderNo user serviceId serviceName specificationLabel servicePrice paymentStatus paidAmount refundedAmount paidAt initiatedByStaff referrerId marketPartnerId servicePerformers status fulfillmentStatus')
+      .populate('user', 'name phone').populate('marketPartnerId', 'name referralCode')
+      .populate('initiatedByStaff', 'name role').populate('referrerId', 'name role')
+      .populate('servicePerformers.staffId', 'name role').lean();
+    if (!order) return res.status(404).json({ success: false, message: '本机构订单不存在' });
+    const [partnerCommission, staffCommissions, teamIncentives, receipts] = await Promise.all([
+      MarketPartnerCommission.find({ tenantId: tenant(req), orderId: order._id }).select('partnerId accruedCents eligibleCashCents paidCents recoveredCents status').lean(),
+      Commission.find({ tenantId: tenant(req), orderId: order._id }).select('staffId role commissionAmount status redemptionSequence').populate('staffId', 'name role').lean(),
+      TeamIncentive.find({ tenantId: tenant(req), orderId: order._id }).select('staffId role amountCents paidCents recoveredCents status').populate('staffId', 'name role').lean(),
+      MarketPartnerReceipt.find({ tenantId: tenant(req), orderId: order._id }).select('amountCents status receivedAt').lean(),
+    ]);
+    const paidCents = Math.round(Number(order.paidAmount || 0) * 100);
+    const refundedCents = Math.round(Number(order.refundedAmount || 0) * 100);
+    res.json({ success: true, data: { order, cash: { paidCents, refundedCents,
+      netCents: Math.max(0, paidCents - refundedCents) }, partnerCommission,
+      staffCommissions, teamIncentives, receipts } });
+  } catch (err) { fail(res, err); }
+});
+
 router.get('/lead-events', async (req, res) => {
   try {
     const rows = await MarketPartnerLeadEvent.find({ tenantId: tenant(req) }).sort({ occurredAt: -1 })
