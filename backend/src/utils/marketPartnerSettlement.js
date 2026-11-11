@@ -5,6 +5,8 @@ const MarketPartnerCommission = require('../models/MarketPartnerCommission');
 const MarketPartnerReceipt = require('../models/MarketPartnerReceipt');
 const Payment = require('../models/Payment');
 const MarketPartnerLoss = require('../models/MarketPartnerLoss');
+const MarketPartnerCustomerHistory = require('../models/MarketPartnerCustomerHistory');
+const AnnualServicePeriod = require('../models/AnnualServicePeriod');
 const { commissionCents } = require('./partnerCommissionPolicy');
 
 const cents = value => Math.round(Number(value || 0) * 100);
@@ -42,12 +44,25 @@ async function verifiedCashCents(order) {
   return payment ? cents(order.paidAmount) : null;
 }
 
+function annualPeriodNumber(history, verifiedSinceCutover) {
+  if (!history || !Number.isSafeInteger(history.priorPaidPeriods) || history.priorPaidPeriods < 0)
+    return null;
+  if (!Number.isSafeInteger(verifiedSinceCutover) || verifiedSinceCutover < 0)
+    throw new TypeError('无效的切换后付费年数');
+  return history.priorPaidPeriods + verifiedSinceCutover + 1;
+}
+
 async function paidPeriodNumber(order, rule) {
   if (rule.kind === 'every') return 1;
+  const annual = rule.kind === 'annual';
+  const history = annual ? await MarketPartnerCustomerHistory.findOne({ tenantId: order.tenantId,
+    patientId: order.user, productLine: rule.productLine, status: 'approved' }).lean() : null;
+  if (annual && !history) return null;
   const productIds = await MarketPartnerRule.distinct('productId', { tenantId: order.tenantId, productLine: rule.productLine });
   const priorOrders = await Order.find({ tenantId: order.tenantId, user: order.user,
     serviceId: { $in: productIds.map(String) }, paymentStatus: 'paid',
     refundStatus: { $ne: 'refunded' },
+    ...(history ? { paidAt: { $gte: history.cutoverAt } } : {}),
     $or: [{ paidAt: { $lt: order.paidAt } }, { paidAt: order.paidAt, _id: { $lt: order._id } }] })
     .select('_id paidAmount paymentMethod tenantId').lean();
   let verified = 0;
@@ -56,7 +71,15 @@ async function paidPeriodNumber(order, rule) {
       && !await MarketPartnerLoss.exists({ tenantId: order.tenantId, orderId: previous._id,
         status: 'approved' })) verified += 1;
   }
-  return verified + 1;
+  return annual ? annualPeriodNumber(history, verified) : verified + 1;
+}
+
+async function annualContractPeriod(order, rule, periodNumber) {
+  if (!order.marketPartnerContractReference || periodNumber <= 1
+    || !['annualAdvisor', 'premiumAdvisor'].includes(rule.productLine)) return null;
+  return AnnualServicePeriod.findOne({ patientId: order.user, sourceType: 'offline_contract',
+    contractReference: order.marketPartnerContractReference,
+    confirmedAt: { $ne: null } }).select('_id').lean();
 }
 
 async function qualifiedMonthlyCount(order, rule, now) {
@@ -104,6 +127,10 @@ async function syncOrder(order, now = new Date()) {
     orderId: order._id, status: 'approved' });
   const eligibleCashCents = loss ? 0 : Math.max(0, paidCashCents - refundCents);
   const periodNumber = await paidPeriodNumber(order, rule);
+  if (periodNumber === null) return null;
+  if (order.marketPartnerContractReference && periodNumber > 1
+    && ['annualAdvisor', 'premiumAdvisor'].includes(rule.productLine)
+    && !await annualContractPeriod(order, rule, periodNumber)) return null;
   const monthlyQualifiedCount = await qualifiedMonthlyCount(order, rule, now);
   const calculated = commissionCents({ paidCents: eligibleCashCents, policy: policyFromRule(rule), periodNumber,
     monthlyQualifiedCount, directReferral: order.marketPartnerDirectReferral === true,
@@ -155,7 +182,7 @@ async function syncOrder(order, now = new Date()) {
 
 async function refreshOpenCommissions(limit = 2000) {
   const ids = await MarketPartnerCommission.distinct('orderId', {
-    status: { $in: ['estimated', 'pending', 'partially_paid', 'paid', 'reversal_due'] },
+    status: { $in: ['estimated', 'pending', 'partially_paid', 'paid', 'reversal_due', 'cancelled'] },
   });
   for (const id of ids.slice(0, limit)) {
     const order = await Order.findById(id);
@@ -179,4 +206,4 @@ function startScheduler() {
 }
 
 module.exports = { syncOrder, refreshOpenCommissions, startScheduler, policyFromRule, maturity, statusFor, tierFinalAt,
-  verifiedCashCents, refundedCashCents };
+  verifiedCashCents, refundedCashCents, annualContractPeriod, annualPeriodNumber };

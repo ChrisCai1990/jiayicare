@@ -21,6 +21,8 @@ export default function MarketPartnerManagementPage() {
   const [commissions, setCommissions] = useState([])
   const [receipts, setReceipts] = useState([])
   const [offlineOrders, setOfflineOrders] = useState([])
+  const [attributedOrders, setAttributedOrders] = useState([])
+  const [customerHistories, setCustomerHistories] = useState([])
   const [offlineRefunds, setOfflineRefunds] = useState([])
   const [lossReviews, setLossReviews] = useState([])
   const [products, setProducts] = useState([])
@@ -39,12 +41,13 @@ export default function MarketPartnerManagementPage() {
   const [recoveries, setRecoveries] = useState({})
   const [receipt, setReceipt] = useState({ orderId: '', amountYuan: '', reference: '', receivedAt: '', evidence: '' })
   const [offlineOrder, setOfflineOrder] = useState({ patientId: '', productId: '', specificationLabel: '', priceYuan: '', partnerCode: '', contractReference: '' })
+  const [customerHistory, setCustomerHistory] = useState({ orderId: '', priorPaidPeriods: '0', evidence: '' })
   const [offlineRefund, setOfflineRefund] = useState({ orderId: '', amountYuan: '', reference: '', evidence: '', reason: '' })
   const [lossReview, setLossReview] = useState({ orderId: '', terminatedAt: '', reason: '', evidence: '' })
 
   const refresh = async () => {
-    const [p, r, t, productsResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse] = await Promise.all([
-      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(),
+    const [p, r, t, productsResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse] = await Promise.all([
+      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(),
     ])
     setPartners(p.data || [])
     setRules(r.data || [])
@@ -54,6 +57,8 @@ export default function MarketPartnerManagementPage() {
     setReceipts(receiptsResponse.data || [])
     setTeamIncentives(teamIncentivesResponse.data || [])
     setOfflineOrders(offlineOrdersResponse.data || [])
+    setAttributedOrders(attributedOrdersResponse.data || [])
+    setCustomerHistories(customerHistoriesResponse.data || [])
     setOfflineRefunds(offlineRefundsResponse.data || [])
     setLossReviews(lossReviewsResponse.data || [])
   }
@@ -171,6 +176,19 @@ export default function MarketPartnerManagementPage() {
       </form>
       <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>订单</th><th>客户</th><th>商品</th><th>合同</th><th>金额</th><th>支付</th><th>操作</th></tr></thead><tbody>
         {offlineOrders.map(item => <tr key={item._id}><td>{item.orderNo}<br /><small>{item._id}</small></td><td>{item.user?.name || '—'}</td><td>{item.serviceName}</td><td>{item.marketPartnerContractReference}</td><td>¥{Number(item.servicePrice || 0).toFixed(2)}</td><td>{item.paymentStatus}</td><td>{item.paymentStatus !== 'paid' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.payOrder(item._id, 'onsite', item.servicePrice))}>登记已收款</button>}</td></tr>)}
+      </tbody></table></div>
+    </section>
+    <section style={boxStyle}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>年度客户历史付费年序</h2>
+      <p style={{ color: '#667a6d' }}>年度订单计佣前须核准该客户在首次合伙人订单以前已付费的服务年数。填 0 也需列明核对依据；另一位管理员复核通过后才生成佣金。</p>
+      <form onSubmit={e => { e.preventDefault(); run(() => adminAPI.submitMarketPartnerCustomerHistory({ ...customerHistory, priorPaidPeriods: Number(customerHistory.priorPaidPeriods) })) }} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <select style={{ ...inputStyle, minWidth: 260 }} aria-label="年度合伙人订单" value={customerHistory.orderId} onChange={e => setCustomerHistory({ ...customerHistory, orderId: e.target.value })} required><option value="">选择年度合伙人订单</option>{attributedOrders.filter(item => rules.some(ruleItem => String(ruleItem._id) === String(item.marketPartnerRuleId) && ruleItem.kind === 'annual')).map(item => <option key={item._id} value={item._id}>{item.user?.name || '客户'} · {item.serviceName} · {item.orderNo || item._id}</option>)}</select>
+        <input style={{ ...inputStyle, width: 95 }} aria-label="历史已付年数" type="number" min="0" max="100" step="1" value={customerHistory.priorPaidPeriods} onChange={e => setCustomerHistory({ ...customerHistory, priorPaidPeriods: e.target.value })} required />
+        <input style={{ ...inputStyle, minWidth: 300 }} aria-label="历史年序依据" placeholder="历史合同／订单编号和核对结果" value={customerHistory.evidence} onChange={e => setCustomerHistory({ ...customerHistory, evidence: e.target.value })} required />
+        <button className="btn btn-primary" disabled={busy}>提交年序核准</button>
+      </form>
+      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>客户</th><th>产品线</th><th>既往已付年数</th><th>状态</th><th>操作</th></tr></thead><tbody>
+        {customerHistories.map(item => <tr key={item._id}><td>{item.patientId?.name || item.patientId}</td><td>{item.productLine}</td><td>{item.priorPaidPeriods}</td><td>{item.status}</td><td>{item.status === 'requested' && <><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerCustomerHistory(item._id, 'approved'))}>核准</button> <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerCustomerHistory(item._id, 'rejected'))}>退回</button></>}{item.status === 'approved' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.recalculateMarketPartnerCustomerHistory(item._id))}>重算佣金</button>}</td></tr>)}
       </tbody></table></div>
     </section>
     <section style={boxStyle}>

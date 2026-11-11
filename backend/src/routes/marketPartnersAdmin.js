@@ -17,6 +17,7 @@ const Product = require('../models/Product');
 const User = require('../models/User');
 const MarketPartnerAttribution = require('../models/MarketPartnerAttribution');
 const MarketPartnerLoss = require('../models/MarketPartnerLoss');
+const MarketPartnerCustomerHistory = require('../models/MarketPartnerCustomerHistory');
 const { commissionCents } = require('../utils/partnerCommissionPolicy');
 const { teamIncentiveCents } = require('../utils/teamIncentivePolicy');
 
@@ -71,6 +72,111 @@ router.get('/offline-orders', async (req, res) => {
       .sort({ createdAt: -1 }).limit(200).populate('marketPartnerId', 'name referralCode')
       .populate('user', 'name phone').lean();
     res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.get('/attributed-orders', async (req, res) => {
+  try {
+    const rows = await Order.find({ tenantId: tenant(req), marketPartnerId: { $ne: null } })
+      .sort({ createdAt: -1 }).limit(200).select('_id user serviceName orderNo marketPartnerId marketPartnerRuleId paymentStatus paidAt')
+      .populate('user', 'name phone').populate('marketPartnerId', 'name referralCode').lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.get('/customer-histories', async (req, res) => {
+  try {
+    const rows = await MarketPartnerCustomerHistory.find({ tenantId: tenant(req) })
+      .sort({ createdAt: -1 }).limit(200).populate('patientId', 'name phone').lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/customer-histories', async (req, res) => {
+  if (!validId(req.body?.orderId)) return res.status(400).json({ success: false, message: '请选择合伙人订单' });
+  const priorPaidPeriods = Number(req.body.priorPaidPeriods);
+  const evidence = String(req.body.evidence || '').trim();
+  if (!Number.isSafeInteger(priorPaidPeriods) || priorPaidPeriods < 0 || priorPaidPeriods > 100
+    || evidence.length < 10 || evidence.length > 1000)
+    return res.status(400).json({ success: false, message: '请填写历史付费年数及可核对的订单或合同依据' });
+  try {
+    const order = await Order.findOne({ _id: req.body.orderId, tenantId: tenant(req),
+      marketPartnerId: { $ne: null } }).lean();
+    const rule = order && await MarketPartnerRule.findOne({ _id: order.marketPartnerRuleId,
+      tenantId: tenant(req), kind: 'annual' }).lean();
+    if (!rule) return res.status(409).json({ success: false, message: '仅年度合伙人订单需要历史年序核准' });
+    const productIds = await MarketPartnerRule.distinct('productId', { tenantId: tenant(req),
+      productLine: rule.productLine });
+    const first = await Order.findOne({ tenantId: tenant(req), user: order.user,
+      serviceId: { $in: productIds.map(String) }, marketPartnerId: { $ne: null } })
+      .sort({ createdAt: 1 }).select('createdAt').lean();
+    const key = { tenantId: tenant(req), patientId: order.user, productLine: rule.productLine };
+    const previous = await MarketPartnerCustomerHistory.findOne(key);
+    if (previous && previous.status !== 'rejected')
+      return res.status(409).json({ success: false, message: '该客户产品线已有待核或已通过的历史年序' });
+    const row = previous ? await MarketPartnerCustomerHistory.findOneAndUpdate({ _id: previous._id,
+      status: 'rejected' }, {
+      $push: { reviewHistory: { priorPaidPeriods: previous.priorPaidPeriods, evidence: previous.evidence,
+        reviewedBy: previous.reviewedBy, reviewedAt: previous.reviewedAt,
+        reviewNote: previous.reviewNote } },
+      $set: { status: 'requested', cutoverAt: first?.createdAt || order.createdAt,
+        priorPaidPeriods, evidence, submittedBy: req.admin._id,
+        reviewedBy: null, reviewedAt: null, reviewNote: '' },
+    }, { new: true }) : await MarketPartnerCustomerHistory.create({ ...key,
+      cutoverAt: first?.createdAt || order.createdAt, priorPaidPeriods, evidence,
+      submittedBy: req.admin._id });
+    if (!row) return res.status(409).json({ success: false, message: '历史年序状态已变化' });
+    res.status(201).json({ success: true, data: row });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '该客户已有历史年序记录' });
+    fail(res, err);
+  }
+});
+
+async function recalculateCustomerHistory(row, tenantId) {
+  const productIds = await MarketPartnerRule.distinct('productId', { tenantId,
+    productLine: row.productLine });
+  const orders = await Order.find({ tenantId, user: row.patientId,
+    serviceId: { $in: productIds.map(String) }, marketPartnerId: { $ne: null },
+    paymentStatus: { $in: ['paid', 'refunded'] } }).sort({ paidAt: 1 });
+  let checked = 0;
+  for (const order of orders) {
+    await require('../utils/marketPartnerSettlement').syncOrder(order);
+    checked += 1;
+  }
+  return checked;
+}
+
+router.patch('/customer-histories/:id/review', async (req, res) => {
+  if (!validId(req.params.id) || !['approved', 'rejected'].includes(req.body?.status))
+    return res.status(400).json({ success: false, message: '审核状态无效' });
+  try {
+    const row = await MarketPartnerCustomerHistory.findOne({ _id: req.params.id,
+      tenantId: tenant(req), status: 'requested' });
+    if (!row) return res.status(404).json({ success: false, message: '待核历史年序不存在' });
+    if (String(row.submittedBy) === String(req.admin._id))
+      return res.status(403).json({ success: false, message: '提交人与审核人须为不同人员' });
+    const updated = await MarketPartnerCustomerHistory.findOneAndUpdate({ _id: row._id,
+      status: 'requested' }, { $set: { status: req.body.status, reviewedBy: req.admin._id,
+      reviewedAt: new Date(), reviewNote: String(req.body.reviewNote || '').trim().slice(0, 500) } }, { new: true });
+    if (!updated) return res.status(409).json({ success: false, message: '审核状态已变化' });
+    let warning = '';
+    if (updated.status === 'approved') {
+      try { await recalculateCustomerHistory(updated, tenant(req)); }
+      catch (error) { warning = `历史年序已核准，佣金重算待重试：${error.message}`; }
+    }
+    res.json({ success: true, data: updated, warning });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/customer-histories/:id/recalculate', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效历史年序' });
+  try {
+    const row = await MarketPartnerCustomerHistory.findOne({ _id: req.params.id,
+      tenantId: tenant(req), status: 'approved' });
+    if (!row) return res.status(404).json({ success: false, message: '已核准历史年序不存在' });
+    const checked = await recalculateCustomerHistory(row, tenant(req));
+    res.json({ success: true, data: { checked } });
   } catch (err) { fail(res, err); }
 });
 
@@ -616,6 +722,12 @@ router.patch('/commissions/:id/pay', async (req, res) => {
     if (!before) return res.status(404).json({ success: false, message: '佣金记录不存在' });
     const order = await Order.findOne({ _id: before.orderId, tenantId: tenant(req) });
     if (!order) return res.status(409).json({ success: false, message: '来源订单不存在' });
+    const originalRule = await MarketPartnerRule.findOne({ _id: before.ruleId,
+      tenantId: tenant(req), version: before.ruleVersion }).lean();
+    if (!originalRule || (order.marketPartnerContractReference && before.periodNumber > 1
+      && ['annualAdvisor', 'premiumAdvisor'].includes(originalRule.productLine)
+      && !await require('../utils/marketPartnerSettlement').annualContractPeriod(order, originalRule, before.periodNumber)))
+      return res.status(409).json({ success: false, message: '年度续费合同尚未对应已确认的服务期' });
     await require('../utils/marketPartnerSettlement').syncOrder(order);
     const row = await MarketPartnerCommission.findOne({ _id: before._id, tenantId: tenant(req) });
     const now = new Date();

@@ -109,9 +109,14 @@ router.get('/orders', async (req, res) => {
   const rows = await Order.find({ tenantId: req.marketPartner.tenantId, marketPartnerId: req.marketPartner._id })
     .sort({ createdAt: -1 }).limit(200).select('user orderNo serviceName paidAt paidAmount paymentStatus refundStatus')
     .populate('user', 'name').lean();
+  const commissions = await MarketPartnerCommission.find({ tenantId: req.marketPartner.tenantId,
+    partnerId: req.marketPartner._id, orderId: { $in: rows.map(row => row._id) } })
+    .select('orderId status').lean();
+  const commissionStatus = new Map(commissions.map(row => [String(row.orderId), row.status]));
   res.json({ success: true, data: rows.map(row => ({ orderNo: row.orderNo,
     customer: maskedName(row.user?.name), serviceName: row.serviceName, paidAt: row.paidAt,
-    paidAmount: row.paidAmount, paymentStatus: row.paymentStatus, refundStatus: row.refundStatus })) });
+    paidAmount: row.paidAmount, paymentStatus: row.paymentStatus, refundStatus: row.refundStatus,
+    commissionStatus: commissionStatus.get(String(row._id)) || 'awaiting_review' })) });
 });
 
 module.exports = router;

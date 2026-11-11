@@ -96,7 +96,7 @@ export default function MarketPartnerPortalPage() {
         </section>) : <section style={card}>暂无佣金记录</section>)
           : (orders.length ? orders.map((item, index) => <section key={`${item.orderNo}-${index}`} style={card}>
             <strong>{item.serviceName}</strong><p>客户 {item.customer} · {date(item.paidAt)}</p>
-            <p style={{ marginBottom: 0 }}>实收 ¥{Number(item.paidAmount || 0).toFixed(2)} · {item.paymentStatus}</p>
+            <p style={{ marginBottom: 0 }}>订单登记实收 ¥{Number(item.paidAmount || 0).toFixed(2)} · {item.paymentStatus} · 佣金 {item.commissionStatus === 'awaiting_review' ? '待核对' : (labels[item.commissionStatus] || item.commissionStatus)}</p>
           </section>) : <section style={card}>暂无交易记录</section>)}
       </>}
     </div>
