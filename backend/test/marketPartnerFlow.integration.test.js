@@ -150,6 +150,18 @@ test('online and offline partner payments, renewals, refunds and team incentives
       productId: String(sharedCatalogProductId), contractReference: 'STAFF-CATALOG-001', priceCents: 12000 });
     assert.equal(sharedCatalogOrder.status, 201, JSON.stringify(sharedCatalogOrder.body));
     assert.equal((await Order.findById(sharedCatalogOrder.body.data.orderId)).paymentStatus, 'unpaid');
+    const automaticReferencePayload = { productId: String(sharedCatalogProductId), priceCents: 12000,
+      requestId: crypto.randomUUID() };
+    const automaticReferenceOrder = await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`, automaticReferencePayload);
+    assert.equal(automaticReferenceOrder.status, 201, JSON.stringify(automaticReferenceOrder.body));
+    assert.match(automaticReferenceOrder.body.data.businessReference, /^SO[A-F0-9]{24}$/);
+    assert.equal((await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`,
+      automaticReferencePayload)).status, 409);
+    await mongoose.connection.db.collection('products').updateOne({ _id: sharedCatalogProductId },
+      { $set: { 'serviceWorkflow.key': 'annual_management' } });
+    assert.equal((await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`, {
+      ...automaticReferencePayload, requestId: crypto.randomUUID() })).status, 409,
+    '年度组合不能通过单项待收款订单绕过年度权益承接');
     assert.equal((await call(clerkId, 'PATCH', `/api/admin/orders/${recorded._id}/pay`,
       { paymentMethod: 'onsite', paidAmount: 100 })).status, 200);
     const staffReceipt = await call(clerkId, 'POST', `${prefix}/receipts`, { orderId: String(recorded._id),
@@ -438,6 +450,14 @@ test('online and offline partner payments, renewals, refunds and team incentives
       name: '365健康会员', clientBrand: 'jiayiguanjia', active: true,
       activation: { enabled: true, durationMonths: 12, price: 365, originalPrice: 365 },
       configuration: { includes365: true, membershipTier: 'consumer365', deliveryMode: 'digital' } });
+    const listCustomerPackages = async () => {
+      const response = await fetch(`${base}/api/services/packages`, {
+        headers: { authorization: `Bearer ${customerToken}` },
+      });
+      assert.equal(response.status, 200);
+      return (await response.json()).data;
+    };
+    assert.equal((await listCustomerPackages()).find(item => item.id === String(memberPackageId)).canJoin365, true);
     const memberPartner = await call(clerkId, 'POST', prefix, { name: '会员合成合伙人',
       phone: '13900000004', productLine: 'consumer365', contractReference: 'MEMBER-PARTNER-001' });
     assert.equal(memberPartner.status, 201, JSON.stringify(memberPartner.body));
@@ -494,6 +514,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
     await require('../src/utils/orderSettlement').confirmPayment({
       outTradeNo: firstMemberPayment.outTradeNo, transactionId: 'SYNTHETIC-MEMBER-001',
       paidAt: new Date() });
+    assert.equal((await listCustomerPackages()).find(item => item.id === String(memberPackageId)).canJoin365, false);
     const firstMemberCommission = await Commission.findOne({ orderId: firstMemberOrderId }).lean();
     assert.equal(firstMemberCommission.periodNumber, 1);
     assert.equal(firstMemberCommission.accruedCents, 7300);

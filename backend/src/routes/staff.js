@@ -7860,7 +7860,8 @@ router.get('/products', staffAuth, checkPermission('products', 'view'), async (r
     servicePrices: p.servicePrices || [],
     skus: (p.skus || []).filter(sku => sku.active !== false).map(sku => ({ label: sku.label, price: sku.price })),
     paymentChannel: p.paymentChannel,
-    offlineOrderEligible: !p.stockLimited && !p.memberBundle?.enabled && !(p.serviceItems || []).length,
+    offlineOrderEligible: !p.stockLimited && !p.memberBundle?.enabled && !(p.serviceItems || []).length
+      && p.serviceWorkflow?.key !== 'annual_management',
     features: p.features || [],
     servicePerformerRoles: p.servicePerformerRoles || [],
   }));
@@ -7871,12 +7872,14 @@ router.get('/products', staffAuth, checkPermission('products', 'view'), async (r
 router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products', 'send'), async (req, res) => {
   const tenantId = req.staff.tenantId || null;
   const contractReference = String(req.body?.contractReference || '').trim();
+  const requestId = String(req.body?.requestId || '').trim();
   const partnerCode = String(req.body?.partnerCode || '').trim().toUpperCase();
   const specificationLabel = String(req.body?.specificationLabel || '').trim();
   if (!mongoose.isValidObjectId(req.params.id) || !mongoose.isValidObjectId(req.body?.productId)
-    || !/^[A-Za-z0-9_.-]{6,100}$/.test(contractReference)
+    || (contractReference && !/^[A-Za-z0-9_.-]{6,100}$/.test(contractReference))
+    || (!contractReference && !/^[a-f\d-]{36}$/i.test(requestId))
     || (partnerCode && !/^[A-F0-9]{12}$/.test(partnerCode)))
-    return res.status(400).json({ success: false, message: '请选择客户、商品并填写有效合同编号和推荐码' });
+    return res.status(400).json({ success: false, message: '请选择客户、商品并填写有效合同编号或重新打开登记窗口' });
   let claimedAttributionId = null;
   let createdOrder = false;
   try {
@@ -7890,8 +7893,9 @@ router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products
       Product.findOne({ _id: req.body.productId, tenantId, status: 'on' }),
     ]);
     if (!patient || !product) return res.status(404).json({ success: false, message: '本机构客户或上架商品不存在' });
-    if (product.stockLimited || product.memberBundle?.enabled || product.serviceItems?.length)
-      return res.status(409).json({ success: false, message: '该商品需使用现有购买或权益流程' });
+    if (product.stockLimited || product.memberBundle?.enabled || product.serviceItems?.length
+      || product.serviceWorkflow?.key === 'annual_management')
+      return res.status(409).json({ success: false, message: '该商品需使用专属购买、年度合同或权益流程' });
     const sku = specificationLabel ? (product.skus || []).find(item => item.label === specificationLabel && item.active !== false) : null;
     const listed = specificationLabel ? (sku?.price ?? (product.servicePrices || []).find(item => item.label === specificationLabel)?.price)
       : product.originalPrice;
@@ -7899,9 +7903,10 @@ router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products
       || (!specificationLabel && ((product.skus || []).some(item => item.active !== false) || (product.servicePrices || []).length))
       || !Number.isFinite(listed) || listed <= 0 || Math.round(listed * 100) !== Number(req.body.priceCents))
       return res.status(409).json({ success: false, message: '价格或规格已变化，请刷新产品库后重试' });
-    const orderId = crypto.createHash('sha256').update(`staff-offline:${tenantId}:${contractReference}`).digest('hex').slice(0, 24);
-    if (await Order.exists({ _id: orderId }) || await Order.exists({ tenantId, marketPartnerContractReference: contractReference }))
-      return res.status(409).json({ success: false, message: '该合同编号已有订单' });
+    const orderId = crypto.createHash('sha256').update(`staff-offline:${tenantId}:${contractReference || `${req.staff._id}:${requestId}`}`).digest('hex').slice(0, 24);
+    const businessReference = contractReference || `SO${orderId.toUpperCase()}`;
+    if (await Order.exists({ _id: orderId }) || await Order.exists({ tenantId, marketPartnerContractReference: businessReference }))
+      return res.status(409).json({ success: false, message: '该合同或业务编号已有订单' });
 
     const roleRules = product.servicePerformerRoles || [];
     const submitted = Array.isArray(req.body.servicePerformers) ? req.body.servicePerformers : [];
@@ -7922,6 +7927,8 @@ router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products
       const rule = await attribution.activeRule(tenantId, product._id);
       if (rule?.productLine === 'consumer365')
         return res.status(409).json({ success: false, message: '365 会员须走商城下单' });
+      if (rule?.kind === 'annual' && !contractReference)
+        return res.status(400).json({ success: false, message: '年度合伙人服务须填写实际合同编号，供服务期核对' });
       partner = partnerCode
         ? await attribution.claim({ tenantId, patientId: patient._id, productId: product._id, code: partnerCode })
         : await attribution.resolveForOrder({ tenantId, patientId: patient._id, productId: product._id });
@@ -7951,13 +7958,13 @@ router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products
         marketPartnerDirectEventId: contribution?.directEventId || null,
         marketPartnerDirectReferral: contribution?.directReferral === true,
         marketPartnerFirstConversationAt: contribution?.firstConversationAt || null,
-        marketPartnerContractReference: contractReference } : {}),
-      note: `医护线下登记，合同编号：${contractReference}` });
+        marketPartnerContractReference: businessReference } : {}),
+      note: `医护线下登记，${contractReference ? '合同编号' : '系统业务编号'}：${businessReference}` });
     createdOrder = true;
     if (partner) await require('../models/MarketPartnerAttribution').updateOne({ _id: partner.attribution._id, tenantId },
       { $set: { orderId: order._id } });
     res.status(201).json({ success: true, data: { orderId: order._id, orderNo: order.orderNo,
-      serviceName: order.serviceName, price: listed, partnerAttributed: !!partner,
+      serviceName: order.serviceName, price: listed, businessReference, partnerAttributed: !!partner,
       servicePerformers: order.servicePerformers, paymentStatus: order.paymentStatus } });
   } catch (err) {
     if (claimedAttributionId && !createdOrder)

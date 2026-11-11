@@ -21,6 +21,7 @@ export default function ProductPushPage() {
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
   const [catFilter, setCatFilter] = useState('全部')
+  const [productSearch, setProductSearch] = useState('')
   const [categories, setCategories] = useState(['全部'])
   const [selected, setSelected] = useState([])   // 已选产品 id 数组
   const [selectedPrices, setSelectedPrices] = useState({})  // { productId: price }
@@ -60,7 +61,8 @@ export default function ProductPushPage() {
     setPushRecords(pr.data.records)
   }
 
-  const categoryProducts = catFilter === '全部' ? products : products.filter(p => p.category === catFilter)
+  const categoryProducts = (catFilter === '全部' ? products : products.filter(p => p.category === catFilter))
+    .filter(p => `${p.name} ${p.subtitle || ''} ${p.category || ''}`.toLowerCase().includes(productSearch.trim().toLowerCase()))
   const filtered = requestedMedicalServices ? categoryProducts.filter(p => /medical_assist|medical_proxy/.test(p.serviceWorkflow?.key || '') || /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号/.test(p.name || '')) : categoryProducts
 
   const toggleProduct = (id) => {
@@ -95,9 +97,10 @@ export default function ProductPushPage() {
 
       {showOfflineOrder && <OfflineOrderDialog products={products.filter(p => p.offlineOrderEligible)}
         initialPatientId={requestedPatientId} onClose={() => setShowOfflineOrder(false)}
-        onSaved={order => { setShowOfflineOrder(false); toast(`已登记待收款订单 ${order.orderNo}，请由管理端核对收款`) }} />}
+        onSaved={order => { setShowOfflineOrder(false); toast(`已登记待收款订单 ${order.orderNo}，业务编号 ${order.businessReference}；请由管理端核对收款`) }} />}
 
       {/* 分类筛选 */}
+      <input className="form-input" aria-label="搜索服务产品" placeholder="搜索服务或产品名称" value={productSearch} onChange={event => setProductSearch(event.target.value)} style={{ width: '100%', maxWidth: 420, marginBottom: 12 }} />
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {categories.map(c => (
           <button key={c}
@@ -323,8 +326,10 @@ function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
   const [patientId, setPatientId] = useState(initialPatientId)
   const [search, setSearch] = useState('')
   const [productId, setProductId] = useState('')
+  const [productSearch, setProductSearch] = useState('')
   const [label, setLabel] = useState('')
   const [contractReference, setContractReference] = useState('')
+  const [requestId] = useState(() => crypto.randomUUID())
   const [partnerCode, setPartnerCode] = useState('')
   const [staffList, setStaffList] = useState([])
   const [performers, setPerformers] = useState({})
@@ -339,15 +344,15 @@ function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
   }, [])
   const submit = async () => {
     setError('')
-    if (!patientId || !productId || !selectedPrice || !/^[A-Za-z0-9_.-]{6,100}$/.test(contractReference.trim())) {
-      setError('请选择客户、商品和规格，并填写 6 至 100 位合同编号（字母、数字、下划线、点或短横线）')
+    if (!patientId || !productId || !selectedPrice || (contractReference.trim() && !/^[A-Za-z0-9_.-]{6,100}$/.test(contractReference.trim()))) {
+      setError('请选择客户、商品和规格；外部合同编号如有，须为 6 至 100 位字母、数字、下划线、点或短横线')
       return
     }
     setSaving(true)
     try {
       const result = await staffAPI.createOfflineOrder(patientId, {
         productId, specificationLabel: prices.length ? label : '',
-        priceCents: Math.round(Number(selectedPrice) * 100), contractReference: contractReference.trim(),
+        priceCents: Math.round(Number(selectedPrice) * 100), contractReference: contractReference.trim(), requestId,
         partnerCode: partnerCode.trim().toUpperCase(),
         servicePerformers: Object.entries(performers).filter(([, staffId]) => staffId).map(([role, staffId]) => ({ role, staffId })),
       })
@@ -359,7 +364,7 @@ function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
     <div className="modal" style={{ maxWidth: 560, maxHeight: '88vh', overflowY: 'auto' }}>
       <div className="modal-header"><h3 className="modal-title">登记线下服务 / 产品</h3><button type="button" className="modal-close" onClick={onClose}>✕</button></div>
       <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
-        <div style={{ fontSize: 12, color: '#64766d' }}>从 Admin 产品库选择上架商品并登记本次线下成交。登记后只生成待收款订单，实际收款由管理端确认。</div>
+        <div style={{ fontSize: 12, color: '#64766d' }}>从 Admin 产品库选择单项服务并登记线下成交；年度组合、库存和权益包走专属流程。登记后只生成待收款订单，实际收款由管理端确认。</div>
         <label>客户<input className="form-input" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索客户姓名或手机号" /></label>
         <PatientSearchStatus search={patientSearch} />
         <select className="form-input" value={patientId} onChange={event => setPatientId(event.target.value)}>
@@ -367,9 +372,9 @@ function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
           {patientId && !patientSearch.patients.some(item => item._id === patientId) && <option value={patientId}>已选择客户</option>}
           {patientSearch.patients.map(item => <option key={item._id} value={item._id}>{item.name} · {item.phone}</option>)}
         </select>
-        <label>服务 / 产品<select className="form-input" value={productId} onChange={event => { setProductId(event.target.value); setLabel(''); setPerformers({}) }}>
+        <label>服务 / 产品<input className="form-input" aria-label="搜索登记商品" value={productSearch} onChange={event => setProductSearch(event.target.value)} placeholder="搜索产品名称或分类" style={{ marginBottom: 6 }} /><select className="form-input" value={productId} onChange={event => { setProductId(event.target.value); setLabel(''); setPerformers({}) }}>
           <option value="">请选择 Admin 产品库商品</option>
-          {products.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {products.filter(item => item.id === productId || `${item.name} ${item.category || ''}`.toLowerCase().includes(productSearch.trim().toLowerCase())).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
         {!products.length && <div role="status" style={{ color: '#B45309', fontSize: 12 }}>Admin 产品库暂无适合单项登记的上架商品。</div>}
         {!!prices.length && <label>收费规格<select className="form-input" value={label} onChange={event => setLabel(event.target.value)}>
@@ -377,9 +382,9 @@ function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
           {prices.map((item, index) => <option key={`${item.label}-${index}`} value={item.label}>{item.label} · ¥{Number(item.price).toFixed(2)}</option>)}
         </select></label>}
         {product && <div>产品库标价：<strong>¥{selectedPrice ? Number(selectedPrice).toFixed(2) : '请选规格'}</strong></div>}
-        <label>合同 / 业务编号<input className="form-input" value={contractReference} maxLength={100} onChange={event => setContractReference(event.target.value)} placeholder="用于防止重复登记" /></label>
+        <label>外部合同编号（如有）<input className="form-input" value={contractReference} maxLength={100} onChange={event => setContractReference(event.target.value)} placeholder="没有合同可留空，系统自动生成业务编号" /></label>
         <label>合伙人推荐码（如有）<input className="form-input" value={partnerCode} maxLength={12} onChange={event => setPartnerCode(event.target.value)} placeholder="无合伙人时留空" /></label>
-        {!!product?.servicePerformerRoles?.length && <div><strong style={{ fontSize: 13 }}>服务团队</strong><div style={{ fontSize: 12, color: '#64766d' }}>可先留空，实际服务归属应按岗位确认。</div>
+        {!!product?.servicePerformerRoles?.length && <div><strong style={{ fontSize: 13 }}>服务团队</strong><div style={{ fontSize: 12, color: '#64766d' }}>这里只记录履约人员，不自动记为该人员的推广业绩或整单营收；服务激励以实际完成和审核为准。</div>
           {product.servicePerformerRoles.map(rule => <label key={rule.role} style={{ display: 'block', marginTop: 8 }}>{PERFORMER_ROLE_LABEL[rule.role] || rule.role}
             <select className="form-input" value={performers[rule.role] || ''} onChange={event => setPerformers(previous => ({ ...previous, [rule.role]: event.target.value }))}>
               <option value="">待确定</option>

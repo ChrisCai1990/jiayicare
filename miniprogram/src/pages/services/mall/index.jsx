@@ -594,7 +594,7 @@ export default function ServiceMallPage() {
       if (!active) return;
       if (!res.success) throw new Error(res.message || '服务加载失败');
       const packages = (packageRes.success ? packageRes.data || [] : [])
-        .filter(item => item.membershipTier === 'consumer365' && item.includes365 && Number(item.durationMonths) === 12)
+        .filter(item => item.membershipTier === 'consumer365' && item.includes365 && Number(item.durationMonths) === 12 && item.canJoin365 === true)
         .map(item => ({ ...item, servicePackage: true, category: '会员服务',
           subtitle: item.duration, description: (item.features || []).join('；'), fulfillmentType: 'subscription_service' }));
       const allServices = [...(res.data?.services || []), ...packages];

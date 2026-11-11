@@ -204,8 +204,17 @@ router.post('/product-shares/:token/claim', auth, async (req, res) => {
 
 // 新客户可自主开通的服务包，展示内容完全由 Admin 维护。
 router.get('/packages', auth, async (req, res) => {
-  const user = await User.findById(req.user._id).select('clientBrand').lean();
+  const user = await User.findById(req.user._id).select('_id clientBrand servicePackage serviceExpiry membershipTier serviceStartDate').lean();
   const clientBrand = user?.clientBrand || 'jiayiguanjia';
+  const [access, entitlements] = await Promise.all([
+    require('../utils/serviceAccess').resolveServiceAccess(user),
+    require('../utils/packageEntitlements').applicableEntitlements(user._id),
+  ]);
+  const activeAnnualEntitlement = entitlements.some(row => row.rights?.includes365 === true
+    || ['consumer365', 'annual', 'enterprise'].includes(String(row.rights?.membershipTier || '')));
+  const activeLegacyAnnual = !!user.servicePackage && access.active === true
+    && (access.source === 'verified_renewal' || ['consumer365', 'annual', 'enterprise'].includes(user.membershipTier));
+  const canJoin365 = !activeAnnualEntitlement && !activeLegacyAnnual;
   const list = await ServicePackage.find({ clientBrand, active: true, 'activation.enabled': true })
     .sort({ 'activation.highlight': -1, sortOrder: 1, createdAt: 1 }).lean();
   res.json({ success: true, data: list.map(item => ({
@@ -218,6 +227,7 @@ router.get('/packages', auth, async (req, res) => {
     highlight: !!item.activation?.highlight,
     membershipTier: item.configuration?.membershipTier || '',
     includes365: !!item.configuration?.includes365,
+    canJoin365,
   })) });
 });
 
