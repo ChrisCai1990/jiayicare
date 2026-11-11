@@ -430,6 +430,21 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const firstMemberCommission = await Commission.findOne({ orderId: firstMemberOrderId }).lean();
     assert.equal(firstMemberCommission.periodNumber, 1);
     assert.equal(firstMemberCommission.accruedCents, 7300);
+    const portalRead = async route => {
+      const response = await fetch(`${base}/api/market-partner/${route}`, {
+        headers: { authorization: `Bearer ${memberPortalToken}` },
+      });
+      assert.equal(response.status, 200);
+      return (await response.json()).data;
+    };
+    const memberOrders = await portalRead('orders');
+    assert.equal(memberOrders.length, 1);
+    assert.equal(memberOrders[0].orderNo, (await Order.findById(firstMemberOrderId)).orderNo);
+    assert.equal(memberOrders[0].paidAmount, 365);
+    const memberCommissions = await portalRead('commissions');
+    assert.equal(memberCommissions.length, 1);
+    assert.equal(memberCommissions[0].accruedCents, 7300);
+    assert.equal(memberCommissions[0].periodNumber, 1);
     const secondMemberOrderId = await memberCheckout();
     const secondMemberPayment = await Payment.findOne({ order: secondMemberOrderId });
     await require('../src/utils/orderSettlement').confirmPayment({
