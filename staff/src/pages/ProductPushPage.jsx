@@ -15,6 +15,7 @@ export default function ProductPushPage() {
   const requestedMedicalProxy = new URLSearchParams(location.search).get('medicalProxy') === '1'
   const requestedMedicalServices = new URLSearchParams(location.search).get('medicalServices') === '1'
   const requestedPatientId = new URLSearchParams(location.search).get('patientId') || ''
+  const requestedOffline = new URLSearchParams(location.search).get('offline') === '1'
   const toast = useToast()
   const [products, setProducts] = useState([])
   const [patients, setPatients] = useState([])
@@ -26,6 +27,7 @@ export default function ProductPushPage() {
   const [pushRecords, setPushRecords] = useState([])
   const [showPatientModal, setShowPatientModal] = useState(false)
   const [bookingContext, setBookingContext] = useState(null)
+  const [showOfflineOrder, setShowOfflineOrder] = useState(requestedOffline)
 
   useEffect(() => {
     Promise.all([
@@ -88,7 +90,12 @@ export default function ProductPushPage() {
           <h1 className="page-title">产品推送</h1>
           <p className="page-subtitle">{requestedMedicalServices ? '选择就医服务产品；单人单项可由医护端直接扣健康基金，套餐权益仍优先使用' : '选择产品推送给会员；单人单项可由医护端直接扣健康基金'}</p>
         </div>
+        <button type="button" className="btn btn-secondary" onClick={() => setShowOfflineOrder(true)}>登记线下服务 / 产品</button>
       </div>
+
+      {showOfflineOrder && <OfflineOrderDialog products={products.filter(p => p.offlineOrderEligible)}
+        initialPatientId={requestedPatientId} onClose={() => setShowOfflineOrder(false)}
+        onSaved={order => { setShowOfflineOrder(false); toast(`已登记待收款订单 ${order.orderNo}，请由管理端核对收款`) }} />}
 
       {/* 分类筛选 */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -310,6 +317,81 @@ export default function ProductPushPage() {
       {bookingContext && <ScheduleBookingDialog context={bookingContext} onClose={() => setBookingContext(null)} onSaved={() => toast('已预约时间，可在排班与预约中查看')} />}
     </div>
   )
+}
+
+function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
+  const [patientId, setPatientId] = useState(initialPatientId)
+  const [search, setSearch] = useState('')
+  const [productId, setProductId] = useState('')
+  const [label, setLabel] = useState('')
+  const [contractReference, setContractReference] = useState('')
+  const [partnerCode, setPartnerCode] = useState('')
+  const [staffList, setStaffList] = useState([])
+  const [performers, setPerformers] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const patientSearch = usePatientSearch(search)
+  const product = products.find(item => item.id === productId)
+  const prices = product ? ((product.skus || []).length ? product.skus : (product.servicePrices || [])).filter(item => item.label && Number(item.price) > 0) : []
+  const selectedPrice = prices.length ? prices.find(item => item.label === label)?.price : product?.price
+  useEffect(() => {
+    staffAPI.getStaffList({ pageSize: 500 }).then(result => setStaffList(result.data?.staff || result.data?.list || result.data || [])).catch(() => setStaffList([]))
+  }, [])
+  const submit = async () => {
+    setError('')
+    if (!patientId || !productId || !selectedPrice || !/^[A-Za-z0-9_.-]{6,100}$/.test(contractReference.trim())) {
+      setError('请选择客户、商品和规格，并填写 6 至 100 位合同编号（字母、数字、下划线、点或短横线）')
+      return
+    }
+    setSaving(true)
+    try {
+      const result = await staffAPI.createOfflineOrder(patientId, {
+        productId, specificationLabel: prices.length ? label : '',
+        priceCents: Math.round(Number(selectedPrice) * 100), contractReference: contractReference.trim(),
+        partnerCode: partnerCode.trim().toUpperCase(),
+        servicePerformers: Object.entries(performers).filter(([, staffId]) => staffId).map(([role, staffId]) => ({ role, staffId })),
+      })
+      onSaved(result.data)
+    } catch (err) { setError(err.message || '登记失败，请核对后重试') }
+    finally { setSaving(false) }
+  }
+  return <div className="modal-overlay" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="modal" style={{ maxWidth: 560, maxHeight: '88vh', overflowY: 'auto' }}>
+      <div className="modal-header"><h3 className="modal-title">登记线下服务 / 产品</h3><button type="button" className="modal-close" onClick={onClose}>✕</button></div>
+      <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+        <div style={{ fontSize: 12, color: '#64766d' }}>从 Admin 产品库选择已配置的线下商品。登记后只生成待收款订单，实际收款由管理端确认。</div>
+        <label>客户<input className="form-input" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索客户姓名或手机号" /></label>
+        <PatientSearchStatus search={patientSearch} />
+        <select className="form-input" value={patientId} onChange={event => setPatientId(event.target.value)}>
+          <option value="">请选择客户</option>
+          {patientId && !patientSearch.patients.some(item => item._id === patientId) && <option value={patientId}>已选择客户</option>}
+          {patientSearch.patients.map(item => <option key={item._id} value={item._id}>{item.name} · {item.phone}</option>)}
+        </select>
+        <label>服务 / 产品<select className="form-input" value={productId} onChange={event => { setProductId(event.target.value); setLabel(''); setPerformers({}) }}>
+          <option value="">请选择 Admin 线下商品</option>
+          {products.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select></label>
+        {!products.length && <div role="status" style={{ color: '#B45309', fontSize: 12 }}>Admin 产品库暂无上架的线下商品，请先配置收款方式为线下。</div>}
+        {!!prices.length && <label>收费规格<select className="form-input" value={label} onChange={event => setLabel(event.target.value)}>
+          <option value="">请选择规格</option>
+          {prices.map((item, index) => <option key={`${item.label}-${index}`} value={item.label}>{item.label} · ¥{Number(item.price).toFixed(2)}</option>)}
+        </select></label>}
+        {product && <div>产品库标价：<strong>¥{selectedPrice ? Number(selectedPrice).toFixed(2) : '请选规格'}</strong></div>}
+        <label>合同 / 业务编号<input className="form-input" value={contractReference} maxLength={100} onChange={event => setContractReference(event.target.value)} placeholder="用于防止重复登记" /></label>
+        <label>合伙人推荐码（如有）<input className="form-input" value={partnerCode} maxLength={12} onChange={event => setPartnerCode(event.target.value)} placeholder="无合伙人时留空" /></label>
+        {!!product?.servicePerformerRoles?.length && <div><strong style={{ fontSize: 13 }}>服务团队</strong><div style={{ fontSize: 12, color: '#64766d' }}>可先留空，实际服务归属应按岗位确认。</div>
+          {product.servicePerformerRoles.map(rule => <label key={rule.role} style={{ display: 'block', marginTop: 8 }}>{PERFORMER_ROLE_LABEL[rule.role] || rule.role}
+            <select className="form-input" value={performers[rule.role] || ''} onChange={event => setPerformers(previous => ({ ...previous, [rule.role]: event.target.value }))}>
+              <option value="">待确定</option>
+              {staffList.filter(item => item.role === rule.role).map(item => <option key={item._id} value={item._id}>{item.name}</option>)}
+            </select></label>)}
+        </div>}
+        {error && <div role="alert" className="login-err">{error}</div>}
+      </div>
+      <div className="modal-footer"><button type="button" className="btn btn-secondary" onClick={onClose}>取消</button>
+        <button type="button" className="btn btn-primary" onClick={submit} disabled={saving || !products.length}>{saving ? '登记中…' : '登记待收款订单'}</button></div>
+    </div>
+  </div>
 }
 
 const PERFORMER_ROLE_LABEL = {

@@ -82,6 +82,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
     app.use('/api/admin', require('../src/routes/admin'));
     app.use('/api/services', require('../src/routes/services'));
     app.use('/api/staff', require('../src/routes/annualServicePeriods'));
+    app.use('/api/staff', require('../src/routes/staff'));
     server = app.listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -106,6 +107,57 @@ test('online and offline partner payments, renewals, refunds and team incentives
       effectiveFrom: new Date(Date.now() - 86400000).toISOString() });
     assert.equal(rule.status, 201, JSON.stringify(rule.body));
     assert.equal((await call(clerkId, 'PATCH', `${prefix}/rules/${rule.body.data._id}/publish`, {})).status, 200);
+    const staffPatientId = oid(), outsiderPatientId = oid(), offlineNutritionistId = oid();
+    await mongoose.connection.db.collection('admins').insertOne({ _id: offlineNutritionistId, tenantId,
+      username: 'offline-nutritionist', name: '线下营养师', password: 'unused', role: 'nutritionist', staffStatus: 'active' });
+    await mongoose.connection.db.collection('users').insertMany([
+      { _id: staffPatientId, tenantId, name: '医护线下客户', assignedHealthPlanner: plannerId },
+      { _id: outsiderPatientId, tenantId: otherTenantId, name: '异机构客户' },
+    ]);
+    await mongoose.connection.db.collection('products').updateOne({ _id: productId }, { $set: {
+      servicePerformerRoles: [{ role: 'nutritionist', ruleType: 'percentage', rate: 8 }],
+    } });
+    const staffContract = 'STAFF-OFFLINE-001';
+    const staffPayload = { productId: String(productId), contractReference: staffContract,
+      partnerCode: partner.body.data.referralCode, priceCents: 10000,
+      servicePerformers: [{ role: 'nutritionist', staffId: String(offlineNutritionistId) }] };
+    const staffOrder = await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`, staffPayload);
+    assert.equal(staffOrder.status, 201, JSON.stringify(staffOrder.body));
+    const recorded = await Order.findById(staffOrder.body.data.orderId);
+    assert.equal(recorded.paymentStatus, 'unpaid');
+    assert.equal(String(recorded.marketPartnerId), String(partner.body.data._id));
+    assert.equal(String(recorded.servicePerformers[0].staffId), String(offlineNutritionistId));
+    assert.equal(String(recorded.initiatedByStaff), String(plannerId));
+    assert.equal(recorded.referrerId, null, '登记人不能自动获得内部推广绩效');
+    assert.equal((await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`, staffPayload)).status, 409);
+    assert.equal((await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`,
+      { ...staffPayload, contractReference: 'STAFF-OFFLINE-002', priceCents: 9900 })).status, 409);
+    assert.equal((await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`,
+      { ...staffPayload, contractReference: 'STAFF-OFFLINE-ROLE', servicePerformers: [
+        { role: 'nutritionist', staffId: String(plannerId) }] })).status, 400);
+    const attributedAgain = await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`,
+      { ...staffPayload, contractReference: 'STAFF-OFFLINE-004', partnerCode: '' });
+    assert.equal(attributedAgain.status, 201, JSON.stringify(attributedAgain.body));
+    assert.equal(String((await Order.findById(attributedAgain.body.data.orderId)).marketPartnerId),
+      String(partner.body.data._id));
+    assert.equal((await call(plannerId, 'POST', `/api/staff/patients/${outsiderPatientId}/offline-orders`,
+      { ...staffPayload, contractReference: 'STAFF-OFFLINE-003' })).status, 403);
+    assert.equal((await call(clerkId, 'PATCH', `/api/admin/orders/${recorded._id}/pay`,
+      { paymentMethod: 'onsite', paidAmount: 100 })).status, 200);
+    const staffReceipt = await call(clerkId, 'POST', `${prefix}/receipts`, { orderId: String(recorded._id),
+      amountCents: 10000, reference: 'BANK-STAFF-001', evidence: '隔离环境到账凭据',
+      receivedAt: new Date().toISOString() });
+    assert.equal(staffReceipt.status, 201, JSON.stringify(staffReceipt.body));
+    assert.equal((await call(reviewerId, 'PATCH', `${prefix}/receipts/${staffReceipt.body.data._id}/review`,
+      { status: 'approved' })).status, 200);
+    assert.equal((await Commission.findOne({ orderId: recorded._id }).lean()).accruedCents, 1000);
+    const internalOrder = await Order.findById(recorded._id);
+    const verified = await call(clerkId, 'PATCH', `/api/admin/orders/${recorded._id}/verify`,
+      { verifyCode: internalOrder.verifyCode });
+    assert.equal(verified.status, 200, JSON.stringify(verified.body));
+    const staffCommission = await require('../src/models/Commission').findOne({ orderId: recorded._id,
+      staffId: offlineNutritionistId, role: 'fulfiller' }).lean();
+    assert.equal(staffCommission.commissionAmount, 8, '同一订单独立生成服务人员绩效');
     const order = await call(clerkId, 'POST', `${prefix}/offline-orders`, { productId: String(productId),
       patientId: String(patientId), contractReference: 'OFFLINE-CONTRACT-001',
       partnerCode: partner.body.data.referralCode, priceCents: 10000 });

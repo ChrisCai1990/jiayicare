@@ -455,6 +455,7 @@ export const staffAPI = {
 
   // P3 — Products
   getProducts:    (p = {}) => req('/staff/products?' + qs(p)),
+  createOfflineOrder: (patientId, data) => req(`/staff/patients/${patientId}/offline-orders`, { method: 'POST', body: JSON.stringify(data) }),
   getProductCategories: () => req('/staff/product-categories'),
   pushProduct:    (id, data) => req(`/staff/products/${id}/push`, { method: 'POST', body: JSON.stringify(data) }),
   pushBundle:     (data)     => req('/staff/products/push-bundle', { method: 'POST', body: JSON.stringify(data) }),

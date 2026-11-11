@@ -7846,7 +7846,7 @@ router.put('/me/password', staffAuth, async (req, res) => {
 // GET /api/staff/products — 从商城产品集合获取（与管理后台联通）
 router.get('/products', staffAuth, checkPermission('products', 'view'), async (req, res) => {
   const { category = '' } = req.query;
-  const filter = { status: 'on' };
+  const filter = { status: 'on', tenantId: req.staff.tenantId || null };
   if (category) filter.category = category;
   const products = await Product.find(filter).sort({ sortOrder: 1 });
   const list = products.map(p => ({
@@ -7858,10 +7858,113 @@ router.get('/products', staffAuth, checkPermission('products', 'view'), async (r
     originalPrice: p.originalPrice,
     icon: '🛍',
     servicePrices: p.servicePrices || [],
+    skus: (p.skus || []).filter(sku => sku.active !== false).map(sku => ({ label: sku.label, price: sku.price })),
+    paymentChannel: p.paymentChannel,
+    offlineOrderEligible: p.paymentChannel === 'offline' && !p.stockLimited && !p.memberBundle?.enabled && !(p.serviceItems || []).length,
     features: p.features || [],
     servicePerformerRoles: p.servicePerformerRoles || [],
   }));
   res.json({ success: true, data: { products: list } });
+});
+
+// 医护登记线下成交：只建待收款订单，金额取 Admin 产品库；财务仍在 Admin 核实收款。
+router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products', 'send'), async (req, res) => {
+  const tenantId = req.staff.tenantId || null;
+  const contractReference = String(req.body?.contractReference || '').trim();
+  const partnerCode = String(req.body?.partnerCode || '').trim().toUpperCase();
+  const specificationLabel = String(req.body?.specificationLabel || '').trim();
+  if (!mongoose.isValidObjectId(req.params.id) || !mongoose.isValidObjectId(req.body?.productId)
+    || !/^[A-Za-z0-9_.-]{6,100}$/.test(contractReference)
+    || (partnerCode && !/^[A-F0-9]{12}$/.test(partnerCode)))
+    return res.status(400).json({ success: false, message: '请选择客户、商品并填写有效合同编号和推荐码' });
+  let claimedAttributionId = null;
+  let createdOrder = false;
+  try {
+    if (!await allPushPatientsBelongToStaff([req.params.id], req.staff))
+      return res.status(403).json({ success: false, message: '只能为本机构客户登记' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id)))
+      return res.status(403).json({ success: false, message: '只能为自己负责的客户登记' });
+    const [patient, product] = await Promise.all([
+      User.findOne({ _id: req.params.id, tenantId, isDeleted: { $ne: true } }).select('_id name'),
+      Product.findOne({ _id: req.body.productId, tenantId, status: 'on', paymentChannel: 'offline' }),
+    ]);
+    if (!patient || !product) return res.status(404).json({ success: false, message: '本机构客户或线下商品不存在' });
+    if (product.stockLimited || product.memberBundle?.enabled || product.serviceItems?.length)
+      return res.status(409).json({ success: false, message: '该商品需使用现有购买或权益流程' });
+    const sku = specificationLabel ? (product.skus || []).find(item => item.label === specificationLabel && item.active !== false) : null;
+    const listed = specificationLabel ? (sku?.price ?? (product.servicePrices || []).find(item => item.label === specificationLabel)?.price)
+      : product.originalPrice;
+    if ((specificationLabel && !sku && !(product.servicePrices || []).some(item => item.label === specificationLabel))
+      || (!specificationLabel && ((product.skus || []).some(item => item.active !== false) || (product.servicePrices || []).length))
+      || !Number.isFinite(listed) || listed <= 0 || Math.round(listed * 100) !== Number(req.body.priceCents))
+      return res.status(409).json({ success: false, message: '价格或规格已变化，请刷新产品库后重试' });
+    const orderId = crypto.createHash('sha256').update(`staff-offline:${tenantId}:${contractReference}`).digest('hex').slice(0, 24);
+    if (await Order.exists({ _id: orderId }) || await Order.exists({ tenantId, marketPartnerContractReference: contractReference }))
+      return res.status(409).json({ success: false, message: '该合同编号已有订单' });
+
+    const roleRules = product.servicePerformerRoles || [];
+    const submitted = Array.isArray(req.body.servicePerformers) ? req.body.servicePerformers : [];
+    if (submitted.length > roleRules.length || submitted.some(item => !roleRules.some(rule => rule.role === item.role) || !mongoose.isValidObjectId(item.staffId))
+      || new Set(submitted.map(item => item.role)).size !== submitted.length)
+      return res.status(400).json({ success: false, message: '服务团队岗位无效' });
+    const staffIds = submitted.map(item => item.staffId);
+    if (staffIds.length) {
+      const staffRows = await Admin.find({ _id: { $in: staffIds }, tenantId, staffStatus: 'active' }).select('_id role').lean();
+      if (submitted.some(item => !staffRows.some(staff => String(staff._id) === String(item.staffId) && staff.role === item.role)))
+        return res.status(400).json({ success: false, message: '服务人员须为本机构在职且岗位一致' });
+    }
+
+    let partner = null;
+    let contribution = null;
+    {
+      const attribution = require('../utils/marketPartnerAttribution');
+      const rule = await attribution.activeRule(tenantId, product._id);
+      if (rule?.productLine === 'consumer365')
+        return res.status(409).json({ success: false, message: '365 会员须走商城下单' });
+      partner = partnerCode
+        ? await attribution.claim({ tenantId, patientId: patient._id, productId: product._id, code: partnerCode })
+        : await attribution.resolveForOrder({ tenantId, patientId: patient._id, productId: product._id });
+      if (partnerCode && !partner) return res.status(409).json({ success: false, message: '推荐码无效或合伙人未获该商品授权' });
+      if (partner) {
+        if (partnerCode) claimedAttributionId = partner.attribution._id;
+        contribution = await require('../utils/marketPartnerLeadEvent').contributionAtOrder({ tenantId,
+          partnerId: partner.attribution.partnerId, patientId: patient._id, productId: product._id, at: new Date() });
+      }
+    }
+
+    const order = await Order.create({ _id: orderId, user: patient._id, payerUser: patient._id,
+      beneficiaryName: patient.name || '', tenantId, serviceId: String(product._id), serviceName: product.name,
+      servicePrice: listed, unitPrice: listed, specificationLabel, skuCode: sku?.code || '', totalUnits: sku?.totalUnits || 1,
+      orderNo: `SO${Date.now()}${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+      orderType: 'product', fulfillmentType: sku?.fulfillmentType || product.fulfillmentType,
+      tradeStatus: 'awaiting_payment', paymentStatus: 'unpaid', paymentMethod: '', paymentExpectedAmount: listed,
+      initiationSource: 'staff_direct', initiatedByStaff: req.staff._id,
+      serviceWorkflowSnapshot: product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null,
+      serviceProviderSnapshot: { code: product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
+      performanceRuleSnapshot: product.performanceRule?.toObject?.() || product.performanceRule || null,
+      servicePerformerRolesSnapshot: roleRules.map(item => item.toObject?.() || item),
+      servicePerformers: submitted.map(item => ({ role: item.role, staffId: item.staffId })),
+      ...(partner ? { marketPartnerId: partner.attribution.partnerId,
+        marketPartnerAttributionId: partner.attribution._id, marketPartnerRuleId: partner.rule._id,
+        marketPartnerRuleVersion: partner.rule.version, marketPartnerLeadEventId: contribution?.eventId || null,
+        marketPartnerDirectEventId: contribution?.directEventId || null,
+        marketPartnerDirectReferral: contribution?.directReferral === true,
+        marketPartnerFirstConversationAt: contribution?.firstConversationAt || null,
+        marketPartnerContractReference: contractReference } : {}),
+      note: `医护线下登记，合同编号：${contractReference}` });
+    createdOrder = true;
+    if (partner) await require('../models/MarketPartnerAttribution').updateOne({ _id: partner.attribution._id, tenantId },
+      { $set: { orderId: order._id } });
+    res.status(201).json({ success: true, data: { orderId: order._id, orderNo: order.orderNo,
+      serviceName: order.serviceName, price: listed, partnerAttributed: !!partner,
+      servicePerformers: order.servicePerformers, paymentStatus: order.paymentStatus } });
+  } catch (err) {
+    if (claimedAttributionId && !createdOrder)
+      await require('../models/MarketPartnerAttribution').deleteOne({ _id: claimedAttributionId, orderId: null });
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '合同编号或订单已存在' });
+    res.status(500).json({ success: false, message: '线下订单登记失败' });
+  }
 });
 
 // 医护端单项服务基金结算：报价和扣款均以当前上架商品、当前余额和服务端规则为准。
