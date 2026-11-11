@@ -18750,8 +18750,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
     images = [buffers[pageNum - 1].toString('base64')];
   }
   if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
-  // Scanned annual lab tables can be read locally without consuming the page's
-  // exhausted visual-model call allowance. The result stays an unverified draft.
+  // Structured annual text-layer lab and department rows can be read locally
+  // without consuming visual-model calls. Results remain unverified drafts.
   let localScan = null;
   if (isPdf && report.type === 'annual') {
     try {
@@ -18759,8 +18759,13 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const layout = await readPdfPageLayout(pdfBuf, pageNum);
       const { parseTextLabTable } = require('../utils/reportTextLabTable');
       const textCandidate = parseTextLabTable(layout, pageNum);
-      if (textCandidate.supported) {
-        localScan = { ...textCandidate, source: 'pdf_text' };
+      const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
+      const physicalCandidate = parseTextPhysicalExam(layout, pageNum);
+      if (textCandidate.supported || physicalCandidate.supported) {
+        localScan = { source: 'pdf_text', items: [
+          ...(textCandidate.supported ? textCandidate.items : []),
+          ...(physicalCandidate.supported ? physicalCandidate.items : []),
+        ] };
       } else if (parseLayoutResultPairs(layout, pageNum).length < 3) {
         const { extractScannedLabTable } = require('../utils/reportScanOcr');
         const scanImage = await renderSinglePage(pdfBuf, pageNum, 300);
