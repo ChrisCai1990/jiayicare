@@ -22,7 +22,7 @@ async function freePort() {
   return port;
 }
 
-test('offline contract, actual payment and two-person receipt review produce one commission',
+test('offline payment, refunds and annual renewal gate produce audited partner commissions',
   { skip: !process.env.TEST_MONGOD, timeout: 60000 }, async t => {
     const dbpath = mkdtempSync(path.join(tmpdir(), 'market-partner-flow-'));
     const mongoPort = await freePort();
@@ -147,4 +147,68 @@ test('offline contract, actual payment and two-person receipt review produce one
     assert.equal(cancelled.accruedCents, 0);
     assert.equal(cancelled.status, 'cancelled');
     assert.equal(cancelled.ledger.at(-1).amountCents, -500);
+
+    // Annual terms require reviewed historical years; later offline renewals also require
+    // a confirmed service period carrying the exact contract number.
+    const annualProductId = oid();
+    await mongoose.connection.db.collection('products').insertOne({ _id: annualProductId, tenantId,
+      name: '年度健康顾问', category: 'health', status: 'on', paymentChannel: 'offline',
+      originalPrice: 100, fulfillmentType: 'subscription_service', stockLimited: false });
+    const annualPartner = await call(clerkId, 'POST', prefix, { name: '年度合成合伙人',
+      phone: '13900000002', productLine: 'annualAdvisor', contractReference: 'ANNUAL-PARTNER-001' });
+    assert.equal(annualPartner.status, 201, JSON.stringify(annualPartner.body));
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/${annualPartner.body.data._id}/status`,
+      { status: 'active' })).status, 200);
+    const annualRule = await call(clerkId, 'POST', `${prefix}/rules`, {
+      productId: String(annualProductId), productLine: 'annualAdvisor', kind: 'annual',
+      firstBasisPoints: 2000, renewalBasisPoints: [{ year: 2, basisPoints: 1000 }],
+      effectiveFrom: new Date(Date.now() - 86400000).toISOString() });
+    assert.equal(annualRule.status, 201, JSON.stringify(annualRule.body));
+    assert.equal((await call(clerkId, 'PATCH',
+      `${prefix}/rules/${annualRule.body.data._id}/publish`, {})).status, 200);
+    const annualOrder = async reference => call(clerkId, 'POST', `${prefix}/offline-orders`, {
+      productId: String(annualProductId), patientId: String(patientId),
+      partnerCode: annualPartner.body.data.referralCode, contractReference: reference,
+      priceCents: 10000 });
+    const annualReceipt = async annualOrderId => {
+      const paid = await call(clerkId, 'PATCH', `/api/admin/orders/${annualOrderId}/pay`,
+        { paymentMethod: 'onsite', paidAmount: 100 });
+      assert.equal(paid.status, 200, JSON.stringify(paid.body));
+      const receiptRow = await call(clerkId, 'POST', `${prefix}/receipts`, { orderId: annualOrderId,
+        amountCents: 10000, reference: `ANNUAL-BANK-${crypto.randomUUID()}`,
+        evidence: '隔离环境合成年度到账凭据', receivedAt: new Date().toISOString() });
+      assert.equal(receiptRow.status, 201, JSON.stringify(receiptRow.body));
+      const approved = await call(reviewerId, 'PATCH',
+        `${prefix}/receipts/${receiptRow.body.data._id}/review`, { status: 'approved' });
+      assert.equal(approved.status, 200, JSON.stringify(approved.body));
+    };
+    const firstAnnual = await annualOrder('ANNUAL-CONTRACT-001');
+    assert.equal(firstAnnual.status, 201, JSON.stringify(firstAnnual.body));
+    const firstAnnualId = firstAnnual.body.data._id;
+    const history = await call(clerkId, 'POST', `${prefix}/customer-histories`, {
+      orderId: firstAnnualId, priorPaidPeriods: 0, evidence: '合成历史合同核对结果：此前无付费年度' });
+    assert.equal(history.status, 201, JSON.stringify(history.body));
+    assert.equal((await call(reviewerId, 'PATCH',
+      `${prefix}/customer-histories/${history.body.data._id}/review`,
+      { status: 'approved' })).status, 200);
+    await annualReceipt(firstAnnualId);
+    const yearOne = await Commission.findOne({ orderId: firstAnnualId }).lean();
+    assert.equal(yearOne.periodNumber, 1);
+    assert.equal(yearOne.accruedCents, 2000);
+    const secondAnnual = await annualOrder('ANNUAL-CONTRACT-002');
+    assert.equal(secondAnnual.status, 201, JSON.stringify(secondAnnual.body));
+    const secondAnnualId = secondAnnual.body.data._id;
+    await annualReceipt(secondAnnualId);
+    assert.equal(await Commission.countDocuments({ orderId: secondAnnualId }), 0);
+    await mongoose.connection.db.collection('annualserviceperiods').insertOne({
+      patientId, annualPlanId: oid(), sourceType: 'offline_contract',
+      contractReference: 'ANNUAL-CONTRACT-002', startDate: '2027-01-01', endDate: '2027-12-31',
+      evidenceSnapshot: { test: true }, confirmedBy: reviewerId, confirmedAt: new Date(),
+    });
+    const recalculated = await call(reviewerId, 'POST',
+      `${prefix}/customer-histories/${history.body.data._id}/recalculate`, {});
+    assert.equal(recalculated.status, 200, JSON.stringify(recalculated.body));
+    const yearTwo = await Commission.findOne({ orderId: secondAnnualId }).lean();
+    assert.equal(yearTwo.periodNumber, 2);
+    assert.equal(yearTwo.accruedCents, 1000);
   });
