@@ -12,6 +12,7 @@ const mongoose = require('mongoose');
 const { auditMarketPartnerIndexes } = require('../src/utils/marketPartnerIndexes');
 const Commission = require('../src/models/MarketPartnerCommission');
 const Receipt = require('../src/models/MarketPartnerReceipt');
+const TeamIncentive = require('../src/models/TeamIncentive');
 
 const oid = () => new mongoose.Types.ObjectId();
 async function freePort() {
@@ -22,7 +23,7 @@ async function freePort() {
   return port;
 }
 
-test('offline payment, refunds and annual renewal gate produce audited partner commissions',
+test('offline payments, annual renewals, refunds and team incentives pass audited HTTP flow',
   { skip: !process.env.TEST_MONGOD, timeout: 60000 }, async t => {
     const dbpath = mkdtempSync(path.join(tmpdir(), 'market-partner-flow-'));
     const mongoPort = await freePort();
@@ -211,4 +212,56 @@ test('offline payment, refunds and annual renewal gate produce audited partner c
     const yearTwo = await Commission.findOne({ orderId: secondAnnualId }).lean();
     assert.equal(yearTwo.periodNumber, 2);
     assert.equal(yearTwo.accruedCents, 1000);
+
+    const nutritionistId = oid();
+    await mongoose.connection.db.collection('admins').insertOne({ _id: nutritionistId, tenantId,
+      username: 'partner-nutritionist', name: '合成营养师', password: 'unused', role: 'nutritionist' });
+    const teamRule = await call(clerkId, 'POST', `${prefix}/team-rules`, {
+      productId: String(annualProductId), role: 'nutritionist', trigger: 'service_completed',
+      ruleType: 'percentage', basisPoints: 500,
+      effectiveFrom: new Date(Date.now() - 86400000).toISOString() });
+    assert.equal(teamRule.status, 201, JSON.stringify(teamRule.body));
+    assert.equal((await call(clerkId, 'PATCH',
+      `${prefix}/team-rules/${teamRule.body.data._id}/publish`, {})).status, 200);
+    const teamInput = { orderId: firstAnnualId, staffId: String(nutritionistId),
+      role: 'nutritionist' };
+    assert.equal((await call(clerkId, 'POST', `${prefix}/team-incentives`, teamInput)).status, 409);
+    await mongoose.connection.db.collection('fulfillments').insertOne({ _id: oid(), order: new mongoose.Types.ObjectId(firstAnnualId),
+      status: 'completed', completedAt: new Date() });
+    const incentive = await call(clerkId, 'POST', `${prefix}/team-incentives`, teamInput);
+    assert.equal(incentive.status, 201, JSON.stringify(incentive.body));
+    assert.equal(incentive.body.data.amountCents, 500);
+    assert.equal((await call(clerkId, 'POST', `${prefix}/team-incentives`, teamInput)).status, 409);
+    assert.equal((await call(clerkId, 'PATCH',
+      `${prefix}/team-incentives/${incentive.body.data._id}/confirm`, {})).status, 403);
+    assert.equal((await call(reviewerId, 'PATCH',
+      `${prefix}/team-incentives/${incentive.body.data._id}/confirm`, {})).status, 200);
+    assert.equal((await call(reviewerId, 'PATCH',
+      `${prefix}/team-incentives/${incentive.body.data._id}/pay`,
+      { paymentReference: 'TEAM-BANK-001' })).status, 409);
+    assert.equal((await TeamIncentive.findById(incentive.body.data._id)).status, 'confirmed');
+    // Move only the synthetic paid timestamp past the 30-day boundary.
+    await mongoose.connection.db.collection('orders').updateOne(
+      { _id: new mongoose.Types.ObjectId(firstAnnualId) },
+      { $set: { paidAt: new Date(Date.now() - 31 * 86400000) } });
+    const teamPaid = await call(reviewerId, 'PATCH',
+      `${prefix}/team-incentives/${incentive.body.data._id}/pay`,
+      { paymentReference: 'TEAM-BANK-001' });
+    assert.equal(teamPaid.status, 200, JSON.stringify(teamPaid.body));
+    assert.equal(teamPaid.body.data.paidCents, 500);
+    const annualRefund = await call(clerkId, 'POST', `${prefix}/offline-orders/${firstAnnualId}/refunds`, {
+      amountCents: 5000, reference: 'ANNUAL-REFUND-001', evidence: '隔离环境合成团队激励退款凭据',
+      reason: '合成年度部分退款' });
+    assert.equal(annualRefund.status, 201, JSON.stringify(annualRefund.body));
+    assert.equal((await call(reviewerId, 'PATCH',
+      `${prefix}/offline-refunds/${annualRefund.body.data._id}/confirm`, {})).status, 200);
+    const teamDue = await TeamIncentive.findById(incentive.body.data._id).lean();
+    assert.equal(teamDue.amountCents, 250);
+    assert.equal(teamDue.status, 'reversal_due');
+    const recovered = await call(reviewerId, 'PATCH',
+      `${prefix}/team-incentives/${incentive.body.data._id}/recover`,
+      { amountCents: 250, recoveryReference: 'TEAM-RECOVERY-001' });
+    assert.equal(recovered.status, 200, JSON.stringify(recovered.body));
+    assert.equal(recovered.body.data.recoveredCents, 250);
+    assert.equal(recovered.body.data.status, 'paid');
   });
