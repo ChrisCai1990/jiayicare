@@ -92,6 +92,9 @@ test('online and offline partner payments, renewals, refunds and team incentives
       return { status: response.status, body: await response.json() };
     };
     const prefix = '/api/admin/market-partners';
+    const initialCatalog = await (await fetch(`${base}/api/services`)).json();
+    assert.equal(initialCatalog.data.services.some(service => service.id === String(productId)), false,
+      'contract-only products must not appear as purchasable marketplace goods');
     const partner = await call(clerkId, 'POST', prefix, { name: '合成合伙人', phone: '13900000001',
       productLine: 'singleVisit', contractReference: 'PARTNER-CONTRACT-001' });
     assert.equal(partner.status, 201, JSON.stringify(partner.body));
@@ -282,6 +285,9 @@ test('online and offline partner payments, renewals, refunds and team incentives
     await mongoose.connection.db.collection('products').insertOne({ _id: onlineProductId, tenantId,
       name: '商城单次服务', category: 'health', status: 'on', paymentChannel: 'wechat_pay',
       originalPrice: 100, fulfillmentType: 'digital_content', stockLimited: false });
+    const activeCatalog = await (await fetch(`${base}/api/services`)).json();
+    assert.equal(activeCatalog.data.services.some(service => service.id === String(onlineProductId)), true);
+    assert.equal(activeCatalog.data.services.some(service => service.id === String(annualProductId)), false);
     const onlinePartner = await call(clerkId, 'POST', prefix, { name: '商城合成合伙人',
       phone: '13900000003', productLine: 'onlineSingle', contractReference: 'ONLINE-PARTNER-001' });
     assert.equal(onlinePartner.status, 201, JSON.stringify(onlinePartner.body));

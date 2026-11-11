@@ -26,7 +26,8 @@ const { resolveOrderWorkflowAssignee, orderOwnershipFields } = require('../utils
 // service content before being asked to log in or authorize personal data.
 router.get('/', async (req, res) => {
   const [products, categoryDocs] = await Promise.all([
-    Product.find({ status: 'on' }).sort({ sortOrder: 1, createdAt: 1 }),
+    Product.find({ status: 'on', paymentChannel: { $ne: 'offline' } })
+      .sort({ sortOrder: 1, createdAt: 1 }),
     ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).lean(),
   ]);
 
@@ -172,7 +173,8 @@ router.post('/member-bundle-entitlements/:id/transfer', auth, async (req, res) =
 
 // Product-only sharing. A token identifies the sharer without exposing user ids in the URL.
 router.post('/product-shares', auth, async (req, res) => {
-  const product = await Product.findOne({ _id: req.body.productId, status: 'on' }).select('_id name images');
+  const product = await Product.findOne({ _id: req.body.productId, status: 'on',
+    paymentChannel: { $ne: 'offline' } }).select('_id name images');
   if (!product) return res.status(404).json({ success: false, message: '产品不存在或已下架' });
   const share = await ProductShare.create({
     token: crypto.randomBytes(18).toString('base64url'),
