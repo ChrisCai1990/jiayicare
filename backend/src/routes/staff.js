@@ -18747,16 +18747,20 @@ async function runReportPageParseControlled(reportId, pageNum) {
     try {
       const { readPdfPageLayout, parseLayoutResultPairs } = require('../utils/reportOcrWords');
       const layout = await readPdfPageLayout(pdfBuf, pageNum);
-      if (parseLayoutResultPairs(layout, pageNum).length < 3) {
+      const { parseTextLabTable } = require('../utils/reportTextLabTable');
+      const textCandidate = parseTextLabTable(layout, pageNum);
+      if (textCandidate.supported) {
+        localScan = { ...textCandidate, source: 'pdf_text' };
+      } else if (parseLayoutResultPairs(layout, pageNum).length < 3) {
         const { extractScannedLabTable } = require('../utils/reportScanOcr');
         const scanImage = await renderSinglePage(pdfBuf, pageNum, 300);
         const candidate = await extractScannedLabTable(Buffer.from(scanImage, 'base64'), pageNum);
         if (candidate.supported && candidate.items.length >= 6) {
-          localScan = candidate;
-          imagePageEvidence[pageNum] = { status: 'needs_review',
-            message: `本地扫描表格识别出${candidate.items.length}条待核对候选；请逐行核对项目、数值、单位及异常标记。` };
+          localScan = { ...candidate, source: 'local_ocr' };
         }
       }
+      if (localScan) imagePageEvidence[pageNum] = { status: 'needs_review',
+        message: `本地${localScan.source === 'pdf_text' ? 'PDF文字层' : '扫描表格'}提取出${localScan.items.length}条待核对候选；请逐行核对项目、数值、单位及异常标记。` };
     } catch (error) {
       console.log(`[parse-page] P${pageNum} 本地表格OCR不可用，继续原补提流程：${error.code || error.name || 'ERROR'}`);
     }
@@ -18888,7 +18892,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     ? `（与已有项目匹配且未接纳${candidateDiagnostics.existing}项、缺可核对结果${candidateDiagnostics.withoutResult}项、其他待核对${candidateDiagnostics.other}项）`
     : '';
   const resultMessage = localScan
-    ? `第${pageNum}页本地OCR识别${localScan.items.length}条候选，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
+    ? `第${pageNum}页本地${localScan.source === 'pdf_text' ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
     : acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : pageEvidence?.status === 'needs_review'
