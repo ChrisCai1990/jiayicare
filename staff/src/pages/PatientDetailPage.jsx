@@ -5316,7 +5316,7 @@ export default function PatientDetailPage() {
           <span style={{ fontSize: 18 }}>🥗</span>
           <div style={{ flex: 1, minWidth: 180 }}>
             <span style={{ color: '#166534', fontWeight: 600, fontSize: 14 }}>膳食调查问卷待营养师复核</span>
-            <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>提交于 {new Date(r.submittedAt).toLocaleDateString('zh-CN')}</span>
+            <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>提交于 {new Date(r.submittedAt).toLocaleDateString('zh-CN')} · {r.answers.filter(answer => answer.archiveField && answer.changed).length} 项与当前生活方式档案不同</span>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpenDietaryResponseId(value => value === String(r.responseId) ? '' : String(r.responseId))}>{openDietaryResponseId === String(r.responseId) ? '收起问卷' : '查看问卷内容'}</button>
           {(staff?.role === 'nutritionist' || staff?.role === 'superadmin') && (
@@ -5326,7 +5326,7 @@ export default function PatientDetailPage() {
           )}
           {openDietaryResponseId === String(r.responseId) && <div style={{ flexBasis: '100%', borderTop: '1px solid #BBF7D0', paddingTop: 12, marginTop: 3 }}>
             <div style={{ color: '#166534', fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{r.title || '膳食调查问卷'} · 客户原始回答（{r.answers?.length || 0}项）</div>
-            {(r.answers || []).length ? (r.answers || []).map((answer, index) => <div key={`${answer.questionId}-${index}`} style={{ padding: '9px 11px', marginBottom: 7, border: '1px solid #DCF0E4', borderRadius: 8, background: '#fff' }}><div style={{ fontSize: 12, color: '#65776F' }}>{index + 1}. {answer.questionText || '题目'}</div><div style={{ fontSize: 13, color: '#173B2E', marginTop: 4, whiteSpace: 'pre-wrap' }}>{readableDietaryAnswer(answer.answer)}</div></div>) : <div style={{ color: '#B45309', fontSize: 13 }}>这份答卷没有可显示的题目与回答，请先核对问卷原始记录，不要直接确认。</div>}
+            {(r.answers || []).length ? (r.answers || []).map((answer, index) => <div key={`${answer.questionId}-${index}`} style={{ padding: '9px 11px', marginBottom: 7, border: `1px solid ${answer.archiveField && answer.changed ? '#F4D7A4' : '#DCF0E4'}`, borderRadius: 8, background: answer.archiveField && answer.changed ? '#FFF9EF' : '#fff' }}><div style={{ fontSize: 12, color: '#65776F' }}>{index + 1}. {answer.questionText || '题目'}{answer.archiveField && answer.changed && <strong style={{ color: '#9A6B1D', marginLeft: 8 }}>与当前档案不同 · 待核实</strong>}</div><div style={{ fontSize: 13, color: '#173B2E', marginTop: 4, whiteSpace: 'pre-wrap' }}>{readableDietaryAnswer(answer.answer)}</div>{answer.archiveField && answer.changed && <div style={{ marginTop: 4, fontSize: 12, color: '#806F52' }}>当前已核实档案：{answer.baselineValue || '未记录'}</div>}</div>) : <div style={{ color: '#B45309', fontSize: 13 }}>这份答卷没有可显示的题目与回答，请先核对问卷原始记录，不要直接确认。</div>}
           </div>}
         </div>
       ))}
@@ -6674,6 +6674,19 @@ export default function PatientDetailPage() {
           )
         })()}
 
+        {/* 客户问卷中的不同答案先供营养师核实，不混入已确认的变化历史。 */}
+        {(() => {
+          const latestSurvey = qResponses.find(response => response.isDietarySurvey)
+          const pendingAnswers = (latestSurvey?.answers || []).filter(answer => answer.archiveField && answer.changed)
+          if (!pendingAnswers.length) return null
+          return <div className="card" style={{ marginBottom: 20, padding: '16px 20px', border: '1px solid #F4D7A4', background: '#FFF9EF' }}>
+            <div style={{ fontWeight: 700, color: '#7C4A03' }}>客户膳食问卷与当前生活方式档案不同（{pendingAnswers.length} 项）</div>
+            <div style={{ fontSize: 12, color: '#806F52', marginTop: 4 }}>提交于 {new Date(latestSurvey.submittedAt).toLocaleDateString('zh-CN')}；以下为客户自述，营养师核实后才计入下方变化记录。</div>
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {pendingAnswers.map(answer => <div key={answer.questionId} style={{ fontSize: 12, color: '#4B3512' }}><b>{answer.questionText}</b><div>当前档案：{answer.baselineValue || '未记录'} → 问卷回答：{readableDietaryAnswer(answer.answer)}</div></div>)}
+            </div>
+          </div>
+        })()}
         {/* 生活方式变化历史：每次只展示本次真正改变的字段，并关联同期健康状况变化。 */}
         {(() => {
           const entries = [...(user.lifestyleHistory || [])].sort((a, b) => new Date(b.effectiveAt || b.recordedAt) - new Date(a.effectiveAt || a.recordedAt))

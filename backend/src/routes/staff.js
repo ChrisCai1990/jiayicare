@@ -16191,13 +16191,23 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const dietaryResponses = await QuestionnaireResponse.find(dietaryFilter)
-        .populate('user', 'name phone').sort({ submittedAt: -1 }).lean();
+        .populate('user', 'name phone lifestyle_data lifestyleHistory archiveVersionHistory').sort({ submittedAt: -1 }).lean();
+      const dietaryQuestionnaire = dietaryResponses.length
+        ? await DynamicQuestionnaire.findById(DIETARY_SURVEY_QUESTIONNAIRE_ID).select('title questions').lean()
+        : null;
       dietaryResponses.forEach(r => {
         const createdAt = r.submittedAt || r.createdAt;
+        const currentLifestyle = r.user ? require('../utils/effectiveLifestyle').effectiveLifestyle(r.user) : {};
+        const changes = dietaryQuestionnaire && r.user
+          ? buildArchiveDraft({ ...r.user, lifestyle_data: currentLifestyle }, dietaryQuestionnaire, r).items
+            .filter(item => item.path.startsWith('lifestyle_data.') && item.existing !== item.valueStr)
+          : [];
         todos.push({
           id: 'dietary_' + r._id, type: 'dietary_survey_review', label: '膳食调查问卷待复核', priority: 3,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: '客户已提交膳食调查问卷，待营养师复核',
+          summary: changes.length
+            ? `${changes.length} 项与当前生活方式档案不同：${changes.slice(0, 3).map(item => item.label).join('、')}${changes.length > 3 ? '等' : ''}；待营养师核实`
+            : '客户已提交膳食调查问卷，待营养师复核',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=archive&responseId=${r._id}`,
         });
@@ -19145,7 +19155,11 @@ router.get('/patients/:id/questionnaire-responses', staffAuth, async (req, res) 
     const data = responses
       .filter(r => r.questionnaire && (String(r.questionnaire._id) === DIETARY_SURVEY_QUESTIONNAIRE_ID || (r.questionnaire.questions || []).some(q => q.archiveField)))
       .map(r => {
-        const draft = buildArchiveDraft(r.proxyEntry ? {...archiveUser,lifestyle_data:require('../utils/effectiveLifestyle').effectiveLifestyle(archiveUser||{})} : archiveUser || {}, r.questionnaire, r);
+        // 膳食问卷要与已核实修订后的当前值比较，不能只看首次建档的基础值。
+        const comparisonUser = String(r.questionnaire._id) === DIETARY_SURVEY_QUESTIONNAIRE_ID || r.proxyEntry
+          ? { ...archiveUser, lifestyle_data: require('../utils/effectiveLifestyle').effectiveLifestyle(archiveUser || {}) }
+          : archiveUser || {};
+        const draft = buildArchiveDraft(comparisonUser, r.questionnaire, r);
         const draftByQuestionId = new Map((draft.items || []).map(item => [String(item.questionId), item]));
         const questions = r.questionnaireSnapshot?.questions?.length ? r.questionnaireSnapshot.questions : r.questionnaire.questions || [];
         const answers = questions.flatMap(question => {
