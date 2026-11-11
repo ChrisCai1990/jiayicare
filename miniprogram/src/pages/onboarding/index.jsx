@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, Input, Button, Picker, Switch } from '@tarojs/components';
+import { View, Text, Input, Button, Switch } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
 import { userAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
+import ResidencePicker from '../../components/ResidencePicker';
 import { entrySourceLabel, savedEntrySource } from '../../utils/entrySource';
 
 // 首次登录最小化建档：姓名+身份证号+联系电话，其余健康信息交给问卷库分批采集。
@@ -24,7 +25,7 @@ export default function OnboardingPage() {
   const [healthMonitoringConsent, setHealthMonitoringConsent] = useState(true);
   const entrySource = savedEntrySource();
 
-  const canSubmit = name.trim() && idNumber.trim() && contactPhone.trim() && residence.length >= 2 && !submitting;
+  const canSubmit = name.trim() && idNumber.trim() && contactPhone.trim() && residence[0]?.trim() && residence[1]?.trim() && !submitting;
   const needsPhoneVerification = contactPhone.trim() !== (user?.phone || '').trim();
 
   const sendCode = async () => {
@@ -40,7 +41,7 @@ export default function OnboardingPage() {
     if (!name.trim()) { setErrorMsg('请填写姓名'); return; }
     if (!idNumber.trim()) { setErrorMsg(`请填写${idType === 'passport' ? '护照号' : '身份证号'}`); return; }
     if (!contactPhone.trim()) { setErrorMsg('请填写联系电话'); return; }
-    if (residence.length < 2) { setErrorMsg('请选择常住所在地'); return; }
+    if (!residence[0]?.trim() || !residence[1]?.trim()) { setErrorMsg('请选择省份并填写城市'); return; }
     if (needsPhoneVerification && !/^\d{6}$/.test(verificationCode.trim())) { setErrorMsg('请输入收到的6位短信验证码'); return; }
     setSubmitting(true);
     try {
@@ -144,9 +145,7 @@ export default function OnboardingPage() {
 
         <View style={{ marginBottom: `${spacing.xxl}px` }}>
           <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, marginBottom: `${spacing.sm}px`, display: 'block' }}>常住所在地</Text>
-          <Picker mode="region" value={residence} onChange={(e) => setResidence(e.detail.value || [])}>
-            <View style={{ backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '12px' }}><Text style={{ fontSize: '15px', color: residence.length ? colors.textPrimary : colors.textMuted }}>{residence.length ? residence.join(' ') : '请选择省 / 市 / 区'}</Text></View>
-          </Picker>
+          <ResidencePicker value={residence} onChange={setResidence} style={{ backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '12px' }} />
           <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '6px', display: 'block' }}>仅用于匹配本地健康服务，不读取手机定位。</Text>
         </View>
 

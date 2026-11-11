@@ -476,8 +476,8 @@ router.post('/:id/submit', auth, async (req, res) => {
       await HealthPlan.updateOne({ _id: assignment.sourceHealthPlanId, patientId: subjectId }, { $set: { 'content.checkupIntake': intake } });
     }
 
-    // 首次完成问卷与邀请奖励分别领取；重复提交不会重复发放。
-    if (!childId) {
+    // 仅首次成人健康建档问卷可领取首次问卷与邀请奖励；睡眠等补填问卷不触发赠金。
+    if (!childId && require('../utils/initialArchiveReview').isIntake(questionnaire)) {
       const { grantFirstQuestionnaireReward, grantReferralQuestionnaireReward } = require('../utils/referralQuestionnaireReward');
       await grantFirstQuestionnaireReward(req.user._id)
         .catch(error => console.error('[first-questionnaire-reward] 发放失败', error.message));
