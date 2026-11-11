@@ -54,3 +54,26 @@ test('questionnaire invitation grants are counted as reward fund, not personal f
     HealthFundTransaction.aggregate = fundAggregate;
   }
 });
+
+test('activation and first questionnaire grants remain reward fund without gift records', async () => {
+  const giftAggregate = GiftRecord.aggregate;
+  const fundAggregate = HealthFundTransaction.aggregate;
+  GiftRecord.aggregate = async () => [];
+  HealthFundTransaction.aggregate = async pipeline => {
+    const match = pipeline[0].$match;
+    if (match.remark?.$in) {
+      assert.ok(match.remark.$in.includes('客户激活奖励基金'));
+      assert.ok(match.remark.$in.includes('首次完成健康问卷奖励基金'));
+      return [{ total: 150 }];
+    }
+    return [];
+  };
+  try {
+    const user = { _id: 'new-customer', healthFundBalance: 150 };
+    assert.equal(await getCorporateFundAvailable(user), 150);
+    assert.equal(await getPersonalFundAvailable(user), 0);
+  } finally {
+    GiftRecord.aggregate = giftAggregate;
+    HealthFundTransaction.aggregate = fundAggregate;
+  }
+});

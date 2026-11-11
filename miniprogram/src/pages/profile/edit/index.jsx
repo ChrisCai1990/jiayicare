@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, Input, Picker, Button, Textarea } from '@tarojs/components';
+import { View, Text, Input, Button, Textarea } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { userAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import ResidencePicker from '../../../components/ResidencePicker';
 
 // 完整对齐 app/src/screens/profile/EditProfileScreen.js 的健康档案字段结构。
 const GENDER_OPTIONS = ['男', '女', '未知'];
@@ -284,7 +285,7 @@ export default function EditProfilePage() {
         </View>
         <Field label="年龄" value={age} onInput={setAge} type="number" unit="岁" />
         <Field label="联系电话" value={contactPhone} onInput={setContactPhone} placeholder="用于快递联系（与登录手机号独立）" type="number" />
-        <View style={{ marginBottom: `${spacing.md}px` }}><Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>常住所在地</Text><Picker mode="region" value={residence} onChange={(e) => setResidence(e.detail.value || [])}><View style={boxStyle}><Text style={{ color: residence.length ? colors.textPrimary : colors.textMuted }}>{residence.length ? residence.join(' ') : '请选择省 / 市 / 区'}</Text></View></Picker></View>
+        <View style={{ marginBottom: `${spacing.md}px` }}><Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>常住所在地</Text><ResidencePicker value={residence} onChange={setResidence} style={boxStyle} /></View>
         <View style={{ marginBottom: 0 }}>
           <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>配送地址（快递）</Text>
           <Textarea

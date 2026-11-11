@@ -73,6 +73,7 @@ async function getCorporateFundAvailable(user) {
   const platformRewardRemarks = [
     '首次使用小程序健康基金奖励', '邀请好友首次使用小程序奖励', '通过好友邀请首次使用小程序奖励',
     '邀请好友完成问卷奖励', '通过好友邀请完成问卷奖励',
+    '客户激活奖励基金', '首次完成健康问卷奖励基金',
   ];
   const [grants, pointsExchangeGrants, legacyFirstLoginGrants, spent] = await Promise.all([GiftRecord.aggregate([
     { $match: { patientId: user._id, giftType: 'fund', status: 'active' } },
@@ -88,8 +89,7 @@ async function getCorporateFundAvailable(user) {
     ] } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]), HealthFundTransaction.aggregate([
-    // 1.0.86 之前首登赠金曾误记为 promotion；按明确的业务备注兼容
-    // 已发放余额，避免必须先跑数据迁移才能正确展示和抵扣。
+    // 按明确的业务备注归类平台奖励，兼容旧 promotion 来源和未建 GiftRecord 的新奖励。
     { $match: { userId: user._id, type: 'grant', status: 'active', remark: { $in: platformRewardRemarks } } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]), HealthFundTransaction.aggregate([
