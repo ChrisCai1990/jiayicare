@@ -359,7 +359,7 @@ function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
     <div className="modal" style={{ maxWidth: 560, maxHeight: '88vh', overflowY: 'auto' }}>
       <div className="modal-header"><h3 className="modal-title">登记线下服务 / 产品</h3><button type="button" className="modal-close" onClick={onClose}>✕</button></div>
       <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
-        <div style={{ fontSize: 12, color: '#64766d' }}>从 Admin 产品库选择已配置的线下商品。登记后只生成待收款订单，实际收款由管理端确认。</div>
+        <div style={{ fontSize: 12, color: '#64766d' }}>从 Admin 产品库选择上架商品并登记本次线下成交。登记后只生成待收款订单，实际收款由管理端确认。</div>
         <label>客户<input className="form-input" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索客户姓名或手机号" /></label>
         <PatientSearchStatus search={patientSearch} />
         <select className="form-input" value={patientId} onChange={event => setPatientId(event.target.value)}>
@@ -368,10 +368,10 @@ function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
           {patientSearch.patients.map(item => <option key={item._id} value={item._id}>{item.name} · {item.phone}</option>)}
         </select>
         <label>服务 / 产品<select className="form-input" value={productId} onChange={event => { setProductId(event.target.value); setLabel(''); setPerformers({}) }}>
-          <option value="">请选择 Admin 线下商品</option>
+          <option value="">请选择 Admin 产品库商品</option>
           {products.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
-        {!products.length && <div role="status" style={{ color: '#B45309', fontSize: 12 }}>Admin 产品库暂无上架的线下商品，请先配置收款方式为线下。</div>}
+        {!products.length && <div role="status" style={{ color: '#B45309', fontSize: 12 }}>Admin 产品库暂无适合单项登记的上架商品。</div>}
         {!!prices.length && <label>收费规格<select className="form-input" value={label} onChange={event => setLabel(event.target.value)}>
           <option value="">请选择规格</option>
           {prices.map((item, index) => <option key={`${item.label}-${index}`} value={item.label}>{item.label} · ¥{Number(item.price).toFixed(2)}</option>)}

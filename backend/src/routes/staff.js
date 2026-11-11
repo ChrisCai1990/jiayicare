@@ -7860,7 +7860,7 @@ router.get('/products', staffAuth, checkPermission('products', 'view'), async (r
     servicePrices: p.servicePrices || [],
     skus: (p.skus || []).filter(sku => sku.active !== false).map(sku => ({ label: sku.label, price: sku.price })),
     paymentChannel: p.paymentChannel,
-    offlineOrderEligible: p.paymentChannel === 'offline' && !p.stockLimited && !p.memberBundle?.enabled && !(p.serviceItems || []).length,
+    offlineOrderEligible: !p.stockLimited && !p.memberBundle?.enabled && !(p.serviceItems || []).length,
     features: p.features || [],
     servicePerformerRoles: p.servicePerformerRoles || [],
   }));
@@ -7887,9 +7887,9 @@ router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products
       return res.status(403).json({ success: false, message: '只能为自己负责的客户登记' });
     const [patient, product] = await Promise.all([
       User.findOne({ _id: req.params.id, tenantId, isDeleted: { $ne: true } }).select('_id name'),
-      Product.findOne({ _id: req.body.productId, tenantId, status: 'on', paymentChannel: 'offline' }),
+      Product.findOne({ _id: req.body.productId, tenantId, status: 'on' }),
     ]);
-    if (!patient || !product) return res.status(404).json({ success: false, message: '本机构客户或线下商品不存在' });
+    if (!patient || !product) return res.status(404).json({ success: false, message: '本机构客户或上架商品不存在' });
     if (product.stockLimited || product.memberBundle?.enabled || product.serviceItems?.length)
       return res.status(409).json({ success: false, message: '该商品需使用现有购买或权益流程' });
     const sku = specificationLabel ? (product.skus || []).find(item => item.label === specificationLabel && item.active !== false) : null;

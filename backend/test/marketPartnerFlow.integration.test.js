@@ -142,6 +142,14 @@ test('online and offline partner payments, renewals, refunds and team incentives
       String(partner.body.data._id));
     assert.equal((await call(plannerId, 'POST', `/api/staff/patients/${outsiderPatientId}/offline-orders`,
       { ...staffPayload, contractReference: 'STAFF-OFFLINE-003' })).status, 403);
+    const sharedCatalogProductId = oid();
+    await mongoose.connection.db.collection('products').insertOne({ _id: sharedCatalogProductId, tenantId,
+      name: '现有商城服务线下成交', category: 'health', status: 'on', paymentChannel: 'wechat_pay',
+      originalPrice: 120, fulfillmentType: 'offline_service', stockLimited: false });
+    const sharedCatalogOrder = await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`, {
+      productId: String(sharedCatalogProductId), contractReference: 'STAFF-CATALOG-001', priceCents: 12000 });
+    assert.equal(sharedCatalogOrder.status, 201, JSON.stringify(sharedCatalogOrder.body));
+    assert.equal((await Order.findById(sharedCatalogOrder.body.data.orderId)).paymentStatus, 'unpaid');
     assert.equal((await call(clerkId, 'PATCH', `/api/admin/orders/${recorded._id}/pay`,
       { paymentMethod: 'onsite', paidAmount: 100 })).status, 200);
     const staffReceipt = await call(clerkId, 'POST', `${prefix}/receipts`, { orderId: String(recorded._id),
