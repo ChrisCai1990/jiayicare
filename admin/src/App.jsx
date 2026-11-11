@@ -5,6 +5,8 @@ import { getToken, clearToken } from './api'
 import LoginPage from './pages/LoginPage'
 import HrApp from './pages/hr/HrApp'
 import PublicOpsDashboardPage from './pages/public/PublicOpsDashboardPage'
+import MarketPartnerPortalPage from './pages/public/MarketPartnerPortalPage'
+import MarketPartnerManagementPage from './pages/MarketPartnerManagementPage'
 import ExpertInvitationPage from './pages/public/ExpertInvitationPage'
 import ExpertSupplementPage from './pages/public/ExpertSupplementPage'
 import ExpertRecruitmentPage from './pages/settings/ExpertRecruitmentPage'
@@ -144,6 +146,7 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/hr/*" element={<HrApp />} />
             <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
+            <Route path="/market-partner" element={<MarketPartnerPortalPage />} />
             <Route path="/expert-invitation/:token" element={<ExpertInvitationPage />} />
             <Route path="/expert-questionnaire/:token" element={<ExpertInvitationPage reusable />} />
             <Route path="/expert-supplement/:token" element={<ExpertSupplementPage />} />
@@ -168,6 +171,7 @@ export default function App() {
               <Route path="products"   element={<ProductsPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="partners"   element={<PartnersPage />} />
+              <Route path="market-partners" element={<MarketPartnerManagementPage />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
               <Route path="tenants" element={<TenantsPage />} />
               <Route path="agreements" element={<PlatformAgreementPage />} />

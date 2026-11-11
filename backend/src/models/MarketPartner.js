@@ -13,6 +13,7 @@ const schema = new mongoose.Schema({
 }, { timestamps: true });
 
 schema.index({ tenantId: 1, referralCode: 1 }, { unique: true });
+schema.index({ referralCode: 1 }, { unique: true });
 schema.index({ tenantId: 1, phone: 1, status: 1 });
 schema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 

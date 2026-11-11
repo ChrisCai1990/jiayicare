@@ -22,6 +22,7 @@ const NAV_SECTIONS = [
       { label: '商城产品', icon: 'product', path: '/products' },
       { label: '物资与设备', icon: 'product', path: '/inventory' },
       { label: '合作伙伴权益', icon: 'partner', path: '/partners' },
+      { label: '市场合伙人', icon: 'partner', path: '/market-partners', superadminOnly: true },
       { label: '企业客户', icon: 'company', path: '/enterprises' },
       { label: '健康基金', icon: 'fund', path: '/health-fund' },
       { label: '运营看板', icon: 'chart', path: '/ops-dashboard' },
