@@ -13,6 +13,9 @@ const { auditMarketPartnerIndexes } = require('../src/utils/marketPartnerIndexes
 const Commission = require('../src/models/MarketPartnerCommission');
 const Receipt = require('../src/models/MarketPartnerReceipt');
 const TeamIncentive = require('../src/models/TeamIncentive');
+const Order = require('../src/models/Order');
+const Payment = require('../src/models/Payment');
+const Refund = require('../src/models/Refund');
 
 const oid = () => new mongoose.Types.ObjectId();
 async function freePort() {
@@ -23,7 +26,7 @@ async function freePort() {
   return port;
 }
 
-test('offline payments, annual renewals, refunds and team incentives pass audited HTTP flow',
+test('online and offline partner payments, renewals, refunds and team incentives pass isolated flow',
   { skip: !process.env.TEST_MONGOD, timeout: 60000 }, async t => {
     const dbpath = mkdtempSync(path.join(tmpdir(), 'market-partner-flow-'));
     const mongoPort = await freePort();
@@ -51,7 +54,7 @@ test('offline payments, annual renewals, refunds and team incentives pass audite
       { autoIndex: false, autoCreate: false });
     await auditMarketPartnerIndexes({ apply: true });
     const tenantId = oid(), otherTenantId = oid(), clerkId = oid(), reviewerId = oid(),
-      outsiderId = oid(), patientId = oid(), productId = oid();
+      outsiderId = oid(), plannerId = oid(), patientId = oid(), productId = oid();
     await mongoose.connection.db.collection('tenants').insertMany([
       { _id: tenantId, code: 'jiayihui', status: 'active', name: '测试机构' },
       { _id: otherTenantId, code: 'other', status: 'active', name: '其他机构', serviceScope: ['admin'] },
@@ -60,8 +63,12 @@ test('offline payments, annual renewals, refunds and team incentives pass audite
       { _id: clerkId, tenantId, username: 'partner-clerk', name: '登记者', password: 'unused', role: 'superadmin' },
       { _id: reviewerId, tenantId, username: 'partner-reviewer', name: '复核者', password: 'unused', role: 'superadmin' },
       { _id: outsiderId, tenantId: otherTenantId, username: 'partner-outsider', name: '异机构', password: 'unused', role: 'superadmin' },
+      { _id: plannerId, tenantId, username: 'partner-planner', name: '合成规划师', password: 'unused',
+        role: 'healthPlanner', staffStatus: 'active' },
     ]);
-    await mongoose.connection.db.collection('users').insertOne({ _id: patientId, tenantId, name: '合成客户' });
+    await mongoose.connection.db.collection('users').insertOne({ _id: patientId, tenantId,
+      name: '合成客户', onboardingCompleted: true, wechatMpOpenid: 'synthetic-openid',
+      assignedHealthPlanner: plannerId });
     await mongoose.connection.db.collection('products').insertOne({ _id: productId, tenantId,
       name: '单次线下服务', category: 'health', status: 'on', paymentChannel: 'offline',
       originalPrice: 100, fulfillmentType: 'offline_service', stockLimited: false });
@@ -71,6 +78,7 @@ test('offline payments, annual renewals, refunds and team incentives pass audite
     app.use(express.json());
     app.use('/api/admin/market-partners', require('../src/routes/marketPartnersAdmin'));
     app.use('/api/admin', require('../src/routes/admin'));
+    app.use('/api/services', require('../src/routes/services'));
     server = app.listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -264,4 +272,85 @@ test('offline payments, annual renewals, refunds and team incentives pass audite
     assert.equal(recovered.status, 200, JSON.stringify(recovered.body));
     assert.equal(recovered.body.data.recoveredCents, 250);
     assert.equal(recovered.body.data.status, 'paid');
+
+    const onlineProductId = oid();
+    await mongoose.connection.db.collection('products').insertOne({ _id: onlineProductId, tenantId,
+      name: '商城单次服务', category: 'health', status: 'on', paymentChannel: 'wechat_pay',
+      originalPrice: 100, fulfillmentType: 'digital_content', stockLimited: false });
+    const onlinePartner = await call(clerkId, 'POST', prefix, { name: '商城合成合伙人',
+      phone: '13900000003', productLine: 'onlineSingle', contractReference: 'ONLINE-PARTNER-001' });
+    assert.equal(onlinePartner.status, 201, JSON.stringify(onlinePartner.body));
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/${onlinePartner.body.data._id}/status`,
+      { status: 'active' })).status, 200);
+    const onlineRule = await call(clerkId, 'POST', `${prefix}/rules`, {
+      productId: String(onlineProductId), productLine: 'onlineSingle', kind: 'first',
+      firstBasisPoints: 1000, effectiveFrom: new Date(Date.now() - 86400000).toISOString() });
+    assert.equal(onlineRule.status, 201, JSON.stringify(onlineRule.body));
+    assert.equal((await call(clerkId, 'PATCH',
+      `${prefix}/rules/${onlineRule.body.data._id}/publish`, {})).status, 200);
+    const customerToken = jwt.sign({ id: String(patientId) }, process.env.JWT_SECRET);
+    const wrongClaim = await fetch(`${base}/api/services/partner-referrals/claim`, {
+      method: 'POST', headers: { authorization: `Bearer ${customerToken}`,
+        'content-type': 'application/json' },
+      body: JSON.stringify({ productId: String(onlineProductId), partnerCode: '000000000000' }),
+    });
+    assert.equal(wrongClaim.status, 404);
+    const claimResponse = await fetch(`${base}/api/services/partner-referrals/claim`, {
+      method: 'POST', headers: { authorization: `Bearer ${customerToken}`,
+        'content-type': 'application/json' },
+      body: JSON.stringify({ productId: String(onlineProductId),
+        partnerCode: onlinePartner.body.data.referralCode }),
+    });
+    assert.equal(claimResponse.status, 200, await claimResponse.text());
+    const match = await require('../src/utils/marketPartnerAttribution').resolveForOrder({
+      tenantId, patientId, productId: onlineProductId });
+    assert.ok(match);
+    const wechatPay = require('../src/utils/wechatPay');
+    const originalCreateJsapiPayment = wechatPay.createJsapiPayment;
+    wechatPay.createJsapiPayment = async () => ({ prepayId: 'synthetic-prepay', client: { test: true } });
+    t.after(() => { wechatPay.createJsapiPayment = originalCreateJsapiPayment; });
+    const checkoutResponse = await fetch(`${base}/api/services/order`, {
+      method: 'POST', headers: { authorization: `Bearer ${customerToken}`,
+        'content-type': 'application/json' },
+      body: JSON.stringify({ serviceId: String(onlineProductId), paymentMethod: 'wechat_pay',
+        expectedAmount: 100, partnerCode: onlinePartner.body.data.referralCode }),
+    });
+    const checkout = await checkoutResponse.json();
+    assert.equal(checkoutResponse.status, 200, JSON.stringify(checkout));
+    const onlineOrderId = new mongoose.Types.ObjectId(checkout.data.orderId);
+    const createdOrder = await Order.findById(onlineOrderId);
+    assert.equal(String(createdOrder.marketPartnerId), String(match.attribution.partnerId));
+    assert.equal(String(createdOrder.marketPartnerRuleId), String(match.rule._id));
+    const payment = await Payment.findOne({ order: onlineOrderId });
+    const outTradeNo = payment.outTradeNo;
+    assert.equal(await Commission.countDocuments({ orderId: onlineOrderId }), 0);
+    await require('../src/utils/marketPartnerSettlement').syncOrder(
+      await Order.findById(onlineOrderId));
+    assert.equal(await Commission.countDocuments({ orderId: onlineOrderId }), 0);
+    await require('../src/utils/orderSettlement').confirmPayment({ outTradeNo,
+      transactionId: 'SYNTHETIC-TRANSACTION-001', paidAt: new Date(),
+      snapshot: { source: 'isolated_test' } });
+    assert.equal((await Payment.findById(payment._id)).status, 'succeeded');
+    const onlineCommission = await Commission.findOne({ orderId: onlineOrderId }).lean();
+    assert.equal(onlineCommission.accruedCents, 1000);
+    assert.equal(onlineCommission.eligibleCashCents, 10000);
+    await require('../src/utils/orderSettlement').confirmPayment({ outTradeNo,
+      transactionId: 'SYNTHETIC-TRANSACTION-001', paidAt: new Date() });
+    assert.equal(await Commission.countDocuments({ orderId: onlineOrderId }), 1);
+    assert.equal((await Commission.findOne({ orderId: onlineOrderId }).lean()).ledger.length, 1);
+    const onlineRefund = await Refund.create({ order: onlineOrderId, user: patientId,
+      amount: 50, totalAmount: 100, outRefundNo: 'SYNTHETIC-REFUND-001' });
+    await require('../src/utils/orderSettlement').confirmRefund(onlineRefund,
+      { source: 'isolated_test' });
+    const afterOnlineRefund = await Commission.findOne({ orderId: onlineOrderId }).lean();
+    assert.equal(afterOnlineRefund.eligibleCashCents, 5000);
+    assert.equal(afterOnlineRefund.accruedCents, 500);
+    const remainingRefund = await Refund.create({ order: onlineOrderId, user: patientId,
+      amount: 50, totalAmount: 100, outRefundNo: 'SYNTHETIC-REFUND-002' });
+    await require('../src/utils/orderSettlement').confirmRefund(remainingRefund,
+      { source: 'isolated_test' });
+    const afterFullOnlineRefund = await Commission.findOne({ orderId: onlineOrderId }).lean();
+    assert.equal(afterFullOnlineRefund.eligibleCashCents, 0);
+    assert.equal(afterFullOnlineRefund.accruedCents, 0);
+    assert.equal(afterFullOnlineRefund.status, 'cancelled');
   });
