@@ -11,8 +11,12 @@ const TeamIncentive = require('../models/TeamIncentive');
 const Fulfillment = require('../models/Fulfillment');
 const Admin = require('../models/Admin');
 const Commission = require('../models/Commission');
+const Refund = require('../models/Refund');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
+const User = require('../models/User');
+const MarketPartnerAttribution = require('../models/MarketPartnerAttribution');
+const MarketPartnerLoss = require('../models/MarketPartnerLoss');
 const { commissionCents } = require('../utils/partnerCommissionPolicy');
 const { teamIncentiveCents } = require('../utils/teamIncentivePolicy');
 
@@ -58,6 +62,205 @@ router.patch('/:id/status', async (req, res) => {
     if (row.status === 'active' && !row.approvedAt) { row.approvedAt = new Date(); row.approvedBy = req.admin._id; }
     await row.save();
     res.json({ success: true, data: row });
+  } catch (err) { fail(res, err); }
+});
+
+router.get('/offline-orders', async (req, res) => {
+  try {
+    const rows = await Order.find({ tenantId: tenant(req), marketPartnerContractReference: { $type: 'string' } })
+      .sort({ createdAt: -1 }).limit(200).populate('marketPartnerId', 'name referralCode')
+      .populate('user', 'name phone').lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/offline-orders', async (req, res) => {
+  const { productId, patientId } = req.body || {};
+  if (!validId(productId) || !validId(patientId))
+    return res.status(400).json({ success: false, message: '请选择有效客户与商品' });
+  const contractReference = String(req.body.contractReference || '').trim();
+  const code = String(req.body.partnerCode || '').trim().toUpperCase();
+  const specificationLabel = String(req.body.specificationLabel || '').trim();
+  if (!/^[A-Za-z0-9_.-]{6,100}$/.test(contractReference) || !/^[A-F0-9]{12}$/.test(code))
+    return res.status(400).json({ success: false, message: '请填写合同编号及合伙人推荐码' });
+  let claimedAttributionId = null;
+  let createdOrder = false;
+  try {
+    const [product, patient] = await Promise.all([
+      Product.findOne({ _id: productId, tenantId: tenant(req), status: 'on', paymentChannel: 'offline' }),
+      User.findOne({ _id: patientId, tenantId: tenant(req), isDeleted: { $ne: true } }).select('_id name tenantId'),
+    ]);
+    if (!product || !patient) return res.status(404).json({ success: false, message: '本机构线下商品或客户不存在' });
+    if (product.stockLimited || product.memberBundle?.enabled || product.serviceItems?.length)
+      return res.status(409).json({ success: false, message: '该商品有库存或组合权益，请使用现有购买流程' });
+    const sku = specificationLabel ? (product.skus || []).find(item => item.label === specificationLabel && item.active !== false) : null;
+    const listed = specificationLabel ? (sku?.price ?? (product.servicePrices || []).find(item => item.label === specificationLabel)?.price)
+      : product.originalPrice;
+    if (!Number.isFinite(listed) || listed <= 0 || Math.round(listed * 100) !== Number(req.body.priceCents))
+      return res.status(409).json({ success: false, message: '合同金额须与当前商品规格价格一致，请核对' });
+    if (await Order.exists({ tenantId: tenant(req), marketPartnerContractReference: contractReference }))
+      return res.status(409).json({ success: false, message: '该合同编号已有订单' });
+    const applicableRule = await require('../utils/marketPartnerAttribution').activeRule(tenant(req), product._id);
+    if (applicableRule?.productLine === 'consumer365')
+      return res.status(409).json({ success: false, message: '365 会员须走商城下单' });
+    const match = await require('../utils/marketPartnerAttribution').claim({ tenantId: tenant(req),
+      patientId: patient._id, productId: product._id, code });
+    if (!match) return res.status(409).json({ success: false, message: '推荐码无效，或该合伙人未获此商品授权' });
+    claimedAttributionId = match.attribution._id;
+    const order = await Order.create({ user: patient._id, payerUser: patient._id,
+      beneficiaryName: patient.name || '', tenantId: tenant(req), serviceId: String(product._id),
+      serviceName: product.name, servicePrice: listed, unitPrice: listed,
+      specificationLabel, skuCode: sku?.code || '', totalUnits: sku?.totalUnits || 1,
+      orderNo: `MP${Date.now()}${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+      orderType: 'product', fulfillmentType: sku?.fulfillmentType || product.fulfillmentType,
+      tradeStatus: 'awaiting_payment', paymentStatus: 'unpaid', paymentMethod: '',
+      paymentExpectedAmount: listed, initiationSource: 'admin',
+      serviceWorkflowSnapshot: product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null,
+      serviceProviderSnapshot: { code: product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
+      marketPartnerId: match.attribution.partnerId, marketPartnerAttributionId: match.attribution._id,
+      marketPartnerRuleId: match.rule._id, marketPartnerRuleVersion: match.rule.version,
+      marketPartnerContractReference: contractReference,
+      note: `线下合同订单：${contractReference}` });
+    createdOrder = true;
+    await MarketPartnerAttribution.updateOne({ _id: match.attribution._id, tenantId: tenant(req) },
+      { $set: { orderId: order._id } });
+    res.status(201).json({ success: true, data: order });
+  } catch (err) {
+    if (claimedAttributionId && !createdOrder)
+      await MarketPartnerAttribution.deleteOne({ _id: claimedAttributionId, orderId: null });
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '合同编号或订单已存在' });
+    fail(res, err);
+  }
+});
+
+router.get('/offline-refunds', async (req, res) => {
+  try {
+    const orderIds = await Order.distinct('_id', { tenantId: tenant(req),
+      marketPartnerId: { $ne: null }, paymentMethod: 'onsite' });
+    const rows = await Refund.find({ order: { $in: orderIds },
+      marketPartnerOfflineReference: { $type: 'string' } })
+      .sort({ createdAt: -1 }).limit(200).populate('order', 'orderNo serviceName').lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/offline-orders/:id/refunds', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效订单' });
+  try {
+    const order = await Order.findOne({ _id: req.params.id, tenantId: tenant(req),
+      marketPartnerId: { $ne: null }, paymentMethod: 'onsite', paymentStatus: 'paid' });
+    if (!order) return res.status(409).json({ success: false, message: '线下已付款订单不存在' });
+    if (await Refund.exists({ order: order._id, status: { $in: ['requested', 'processing'] } }))
+      return res.status(409).json({ success: false, message: '该订单已有待复核退款' });
+    const amountCents = Number(req.body?.amountCents);
+    const reference = String(req.body?.reference || '').trim();
+    const evidence = String(req.body?.evidence || '').trim();
+    const refundableCents = Math.round(Number(order.paidAmount - order.refundedAmount) * 100);
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || amountCents > refundableCents
+      || !/^[A-Za-z0-9_.-]{6,120}$/.test(reference) || !evidence || evidence.length > 500)
+      return res.status(400).json({ success: false, message: '请核对实际已退金额、退款流水号和转账凭据' });
+    const row = await Refund.create({ order: order._id, user: order.user, payment: null,
+      requestedBy: req.admin._id, amount: amountCents / 100, totalAmount: order.paidAmount,
+      reason: String(req.body.reason || '线下合同退款').trim().slice(0, 500),
+      outRefundNo: `MR${Date.now()}${crypto.randomBytes(5).toString('hex')}`,
+      marketPartnerOfflineReference: reference, marketPartnerOfflineEvidence: evidence,
+      marketPartnerOfflineSubmittedBy: req.admin._id });
+    res.status(201).json({ success: true, data: row });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '退款流水号已登记' });
+    fail(res, err);
+  }
+});
+
+router.patch('/offline-refunds/:id/confirm', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效退款' });
+  try {
+    const refund = await Refund.findOne({ _id: req.params.id, status: { $in: ['requested', 'processing'] },
+      marketPartnerOfflineReference: { $type: 'string' } });
+    const order = refund && await Order.findOne({ _id: refund.order, tenantId: tenant(req),
+      marketPartnerId: { $ne: null }, paymentMethod: 'onsite', paymentStatus: 'paid' });
+    if (!refund || !order) return res.status(404).json({ success: false, message: '待复核线下退款不存在' });
+    if (String(refund.marketPartnerOfflineSubmittedBy) === String(req.admin._id))
+      return res.status(403).json({ success: false, message: '退款登记者与复核人须为不同人员' });
+    if (refund.status === 'processing' && (String(refund.marketPartnerOfflineReviewedBy) !== String(req.admin._id)
+      || new Date(refund.updatedAt).getTime() > Date.now() - 60000))
+      return res.status(409).json({ success: false, message: '退款正在入账；如超时，请原复核人重试' });
+    const refundableCents = Math.round(Number(order.paidAmount - order.refundedAmount) * 100);
+    if (Math.round(refund.amount * 100) > refundableCents)
+      return res.status(409).json({ success: false, message: '可退余额已变化' });
+    const claimed = refund.status === 'processing' ? refund
+      : await Refund.findOneAndUpdate({ _id: refund._id, status: 'requested' },
+        { $set: { status: 'processing', marketPartnerOfflineReviewedBy: req.admin._id } }, { new: true });
+    if (!claimed) return res.status(409).json({ success: false, message: '退款状态已变化' });
+    const updatedOrder = await require('../utils/orderSettlement').confirmRefund(claimed,
+      { source: 'market_partner_offline_refund', reference: claimed.marketPartnerOfflineReference });
+    res.json({ success: true, data: { refund: await Refund.findById(claimed._id), order: updatedOrder } });
+  } catch (err) { fail(res, err); }
+});
+
+router.get('/loss-reviews', async (req, res) => {
+  try {
+    const rows = await MarketPartnerLoss.find({ tenantId: tenant(req) }).sort({ createdAt: -1 }).limit(200)
+      .populate('orderId', 'orderNo serviceName paidAt').lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/loss-reviews', async (req, res) => {
+  if (!validId(req.body?.orderId)) return res.status(400).json({ success: false, message: '无效订单' });
+  try {
+    const order = await Order.findOne({ _id: req.body.orderId, tenantId: tenant(req),
+      marketPartnerId: { $ne: null }, paymentStatus: 'paid' });
+    if (!order?.paidAt) return res.status(409).json({ success: false, message: '合伙人已付款订单不存在' });
+    const terminatedAt = new Date(req.body.terminatedAt);
+    const reason = String(req.body.reason || '').trim();
+    const evidence = String(req.body.evidence || '').trim();
+    const cutoff = new Date(order.paidAt).getTime() + 30 * 86400000;
+    if (!Number.isFinite(terminatedAt.getTime()) || terminatedAt < order.paidAt
+      || terminatedAt.getTime() > cutoff || terminatedAt > new Date()
+      || !reason || reason.length > 500 || !evidence || evidence.length > 500)
+      return res.status(400).json({ success: false, message: '须提交付款后30天内正式终止的日期、原因和合同或服务终止依据' });
+    if (/未登录|未回复|暂停|投诉/.test(reason) && !/合同解除|正式终止|退费/.test(`${reason} ${evidence}`))
+      return res.status(400).json({ success: false, message: '未登录、未回复、暂停或投诉不能单独作为流失依据' });
+    const previous = await MarketPartnerLoss.findOne({ tenantId: tenant(req), orderId: order._id });
+    if (previous && previous.status !== 'rejected')
+      return res.status(409).json({ success: false, message: '该订单已有待审核或已通过的流失记录' });
+    const row = previous ? await MarketPartnerLoss.findOneAndUpdate({ _id: previous._id, status: 'rejected' }, {
+      $push: { reviewHistory: { reason: previous.reason, evidence: previous.evidence,
+        terminatedAt: previous.terminatedAt, reviewedBy: previous.reviewedBy,
+        reviewedAt: previous.reviewedAt, reviewNote: previous.reviewNote } },
+      $set: { status: 'requested', terminatedAt, reason, evidence,
+        requestedBy: req.admin._id, reviewedBy: null, reviewedAt: null, reviewNote: '' },
+    }, { new: true }) : await MarketPartnerLoss.create({ tenantId: tenant(req), orderId: order._id,
+      partnerId: order.marketPartnerId, terminatedAt, reason, evidence,
+      requestedBy: req.admin._id });
+    if (!row) return res.status(409).json({ success: false, message: '流失审核状态已变化，请刷新' });
+    res.status(201).json({ success: true, data: row });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '该订单已有流失审核记录' });
+    fail(res, err);
+  }
+});
+
+router.patch('/loss-reviews/:id/review', async (req, res) => {
+  if (!validId(req.params.id) || !['approved', 'rejected'].includes(req.body?.status))
+    return res.status(400).json({ success: false, message: '审核状态无效' });
+  try {
+    const row = await MarketPartnerLoss.findOne({ _id: req.params.id, tenantId: tenant(req),
+      status: 'requested' });
+    if (!row) return res.status(404).json({ success: false, message: '待审核记录不存在' });
+    if (String(row.requestedBy) === String(req.admin._id))
+      return res.status(403).json({ success: false, message: '提交人与审核人须为不同人员' });
+    const order = await Order.findOne({ _id: row.orderId, tenantId: tenant(req) });
+    if (!order || row.terminatedAt < order.paidAt
+      || row.terminatedAt.getTime() > new Date(order.paidAt).getTime() + 30 * 86400000)
+      return res.status(409).json({ success: false, message: '订单或30天终止日期已变化' });
+    const updated = await MarketPartnerLoss.findOneAndUpdate({ _id: row._id, status: 'requested' },
+      { $set: { status: req.body.status, reviewedBy: req.admin._id, reviewedAt: new Date(),
+        reviewNote: String(req.body.reviewNote || '').trim().slice(0, 500) } }, { new: true });
+    if (!updated) return res.status(409).json({ success: false, message: '审核状态已变化' });
+    if (updated.status === 'approved') await require('../utils/marketPartnerSettlement').syncOrder(order);
+    res.json({ success: true, data: updated });
   } catch (err) { fail(res, err); }
 });
 
@@ -130,7 +333,17 @@ router.post('/rules/preview', async (req, res) => {
       monthlyQualifiedCount: req.body.monthlyQualifiedCount || 1, directReferral: req.body.directReferral === true,
       firstConversationAt: req.body.firstConversationAt, paidAt: req.body.paidAt,
       quickCloseCapCents: row.quickCloseCapCents });
-    res.json({ success: true, data: { ...result, ruleId: row._id, ruleVersion: row.version } });
+    const directCostCents = req.body.directCostCents;
+    const teamIncentiveCents = req.body.teamIncentiveCents;
+    const transactionCostCents = req.body.transactionCostCents;
+    const costsComplete = [directCostCents, teamIncentiveCents, transactionCostCents]
+      .every(value => Number.isSafeInteger(value) && value >= 0);
+    const retention = costsComplete ? require('../utils/marketPartnerRetention').retentionPreview({
+      paidCents, directCostCents, teamIncentiveCents,
+      partnerCommissionCents: result.totalCents, transactionCostCents,
+      floorBasisPoints: row.retentionFloorBasisPoints ?? null }) : null;
+    res.json({ success: true, data: { ...result, ruleId: row._id, ruleVersion: row.version,
+      retention, costsComplete } });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
 });
 
@@ -254,6 +467,66 @@ router.patch('/team-incentives/:id/confirm', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+router.patch('/team-incentives/:id/pay', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效激励记录' });
+  const reference = String(req.body?.paymentReference || '').trim();
+  if (!/^[A-Za-z0-9_.-]{6,80}$/.test(reference))
+    return res.status(400).json({ success: false, message: '请填写实际转账凭证号' });
+  try {
+    const row = await TeamIncentive.findOne({ _id: req.params.id, tenantId: tenant(req),
+      status: 'confirmed' });
+    if (!row) return res.status(404).json({ success: false, message: '已审核待打款激励不存在' });
+    const order = await Order.findOne({ _id: row.orderId, tenantId: tenant(req) });
+    if (!order || !order.paidAt || order.paymentStatus !== 'paid'
+      || ['requested', 'processing'].includes(order.refundStatus)
+      || Date.now() < new Date(order.paidAt).getTime() + 30 * 86400000)
+      return res.status(409).json({ success: false, message: '订单未达到付款后30天或退款仍在处理' });
+    await require('../utils/teamIncentiveSettlement').syncOrder(order);
+    const current = await TeamIncentive.findOne({ _id: row._id, tenantId: tenant(req), status: 'confirmed' });
+    if (!current || current.amountCents <= 0)
+      return res.status(409).json({ success: false, message: '激励金额已变化，请重新审核' });
+    const updated = await TeamIncentive.findOneAndUpdate({ _id: current._id,
+      status: 'confirmed', updatedAt: current.updatedAt, paymentReference: null },
+    { $set: { status: 'paid', paidCents: current.amountCents, paidAt: new Date(),
+      paidBy: req.admin._id, paymentReference: reference } }, { new: true });
+    if (!updated) return res.status(409).json({ success: false, message: '激励状态已变化，请刷新' });
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '转账凭证号已使用' });
+    fail(res, err);
+  }
+});
+
+router.patch('/team-incentives/:id/recover', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效激励记录' });
+  const amountCents = Number(req.body?.amountCents);
+  const reference = String(req.body?.recoveryReference || '').trim();
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || !/^[A-Za-z0-9_.-]{6,80}$/.test(reference))
+    return res.status(400).json({ success: false, message: '请填写已实际追回金额及凭证号' });
+  try {
+    const row = await TeamIncentive.findOne({ _id: req.params.id, tenantId: tenant(req),
+      status: 'reversal_due' });
+    if (!row) return res.status(404).json({ success: false, message: '待追回激励不存在' });
+    const due = row.paidCents - (row.recoveredCents || 0) - row.amountCents;
+    if (amountCents > due) return res.status(409).json({ success: false, message: '追回金额超过待追回余额' });
+    const recoveredCents = (row.recoveredCents || 0) + amountCents;
+    const status = row.paidCents - recoveredCents > row.amountCents ? 'reversal_due'
+      : row.amountCents === 0 ? 'cancelled' : 'paid';
+    const updated = await TeamIncentive.findOneAndUpdate({ _id: row._id,
+      tenantId: tenant(req), status: 'reversal_due', updatedAt: row.updatedAt,
+      recoveryReferences: { $ne: reference } }, {
+      $inc: { recoveredCents: amountCents }, $addToSet: { recoveryReferences: reference },
+      $set: { status }, $push: { adjustments: { basisCents: row.basisCents,
+        amountCents: row.amountCents, at: new Date(), reason: `已追回 ${amountCents} 分，凭证 ${reference}` } },
+    }, { new: true });
+    if (!updated) return res.status(409).json({ success: false, message: '记录已变化或凭证已使用' });
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '追回凭证号已使用' });
+    fail(res, err);
+  }
+});
+
 router.get('/receipts', async (req, res) => {
   try {
     const rows = await MarketPartnerReceipt.find({ tenantId: tenant(req) }).sort({ createdAt: -1 })
@@ -351,15 +624,16 @@ router.patch('/commissions/:id/pay', async (req, res) => {
       return res.status(409).json({ success: false, message: '尚未达到发放条件或退款待核对' });
     const limit = row.finalEligibleAt && now >= row.finalEligibleAt
       ? row.accruedCents : Math.floor(row.accruedCents / 2);
-    if (row.paidCents + amountCents > limit)
-      return res.status(409).json({ success: false, message: `当前最多还可登记 ${(Math.max(0, limit - row.paidCents) / 100).toFixed(2)} 元` });
+    const netPaidCents = row.paidCents - (row.recoveredCents || 0);
+    if (netPaidCents + amountCents > limit)
+      return res.status(409).json({ success: false, message: `当前最多还可登记 ${(Math.max(0, limit - netPaidCents) / 100).toFixed(2)} 元` });
     const ledgerKey = `pay:${paymentReference}`;
     const updated = await MarketPartnerCommission.findOneAndUpdate({ _id: row._id,
       tenantId: tenant(req), paidCents: row.paidCents, updatedAt: row.updatedAt,
       'ledger.key': { $ne: ledgerKey } }, {
       $inc: { paidCents: amountCents },
       $addToSet: { paymentReferences: paymentReference },
-      $set: { status: row.paidCents + amountCents === row.accruedCents ? 'paid' : 'partially_paid' },
+      $set: { status: netPaidCents + amountCents === row.accruedCents ? 'paid' : 'partially_paid' },
       $push: { ledger: { key: ledgerKey, kind: 'payment', amountCents, at: now,
         actorId: req.admin._id, reason: '人工确认已完成转账' } },
     }, { new: true });
@@ -367,6 +641,36 @@ router.patch('/commissions/:id/pay', async (req, res) => {
     res.json({ success: true, data: updated });
   } catch (err) {
     if (err.code === 11000) return res.status(409).json({ success: false, message: '转账凭证号已用于其他佣金记录' });
+    fail(res, err);
+  }
+});
+
+router.patch('/commissions/:id/recover', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效佣金记录' });
+  const amountCents = Number(req.body?.amountCents);
+  const reference = String(req.body?.recoveryReference || '').trim();
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || !/^[A-Za-z0-9_.-]{6,80}$/.test(reference))
+    return res.status(400).json({ success: false, message: '请填写已实际追回金额及凭证号' });
+  try {
+    const row = await MarketPartnerCommission.findOne({ _id: req.params.id, tenantId: tenant(req) });
+    if (!row) return res.status(404).json({ success: false, message: '佣金记录不存在' });
+    const due = Math.max(0, row.paidCents - (row.recoveredCents || 0) - row.accruedCents);
+    if (amountCents > due) return res.status(409).json({ success: false, message: '追回金额超过待追回余额' });
+    const recoveredCents = (row.recoveredCents || 0) + amountCents;
+    const nextStatus = require('../utils/marketPartnerSettlement').statusFor({
+      accruedCents: row.accruedCents, paidCents: row.paidCents - recoveredCents,
+      firstReady: !!row.firstEligibleAt && new Date() >= row.firstEligibleAt });
+    const updated = await MarketPartnerCommission.findOneAndUpdate({ _id: row._id,
+      tenantId: tenant(req), updatedAt: row.updatedAt, 'recoveryReferences': { $ne: reference } }, {
+      $inc: { recoveredCents: amountCents }, $addToSet: { recoveryReferences: reference },
+      $set: { status: nextStatus },
+      $push: { ledger: { key: `recover:${reference}`, kind: 'recovery', amountCents: -amountCents,
+        at: new Date(), actorId: req.admin._id, reason: '人工确认已追回' } },
+    }, { new: true });
+    if (!updated) return res.status(409).json({ success: false, message: '记录已变化或凭证已使用' });
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '追回凭证号已使用' });
     fail(res, err);
   }
 });

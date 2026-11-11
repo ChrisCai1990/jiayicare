@@ -19,7 +19,9 @@ const schema = new mongoose.Schema({
   firstEligibleAt: { type: Date, default: null },
   finalEligibleAt: { type: Date, default: null },
   paidCents: { type: Number, default: 0, min: 0 },
+  recoveredCents: { type: Number, default: 0, min: 0 },
   paymentReferences: [{ type: String }],
+  recoveryReferences: [{ type: String }],
   ledger: [{
     key: { type: String, required: true },
     kind: { type: String, enum: ['accrual', 'recalculation', 'payment', 'refund', 'recovery'], required: true },
@@ -34,6 +36,8 @@ schema.index({ tenantId: 1, orderId: 1, partnerId: 1 }, { unique: true });
 schema.index({ tenantId: 1, partnerId: 1, salesMonth: 1, status: 1 });
 schema.index({ tenantId: 1, paymentReferences: 1 }, { unique: true,
   partialFilterExpression: { paymentReferences: { $type: 'string' } } });
+schema.index({ tenantId: 1, recoveryReferences: 1 }, { unique: true,
+  partialFilterExpression: { recoveryReferences: { $type: 'string' } } });
 schema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
 module.exports = mongoose.model('MarketPartnerCommission', schema);

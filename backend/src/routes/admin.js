@@ -774,9 +774,13 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   }
   const receipt = require('../utils/manualOrderPayment').validateManualOrderPayment(order, paymentMethod, paidAmount);
   if (receipt.error) return res.status(400).json({ success: false, message: receipt.error });
+  if (order.marketPartnerContractReference && (paymentMethod !== 'onsite'
+    || Math.round(receipt.amount * 100) !== Math.round(Number(order.servicePrice) * 100)))
+    return res.status(409).json({ success: false, message: '合伙人线下合同须按核定合同金额登记现金收款' });
 
   order.paymentMethod = paymentMethod;
   order.paymentStatus = 'paid';
+  if (order.marketPartnerContractReference) order.tradeStatus = 'paid';
   order.paidAmount = receipt.amount;
   order.paidAt = new Date();
   order.paidBy = req.admin._id;

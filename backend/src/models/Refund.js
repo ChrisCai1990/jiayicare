@@ -16,6 +16,13 @@ const refundSchema = new mongoose.Schema({
   failureMessage: { type: String, default: '' },
   succeededAt: { type: Date, default: null },
   notifySnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+  marketPartnerOfflineReference: { type: String, default: null },
+  marketPartnerOfflineEvidence: { type: String, default: '' },
+  marketPartnerOfflineSubmittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  marketPartnerOfflineReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
 }, { timestamps: true });
+
+refundSchema.index({ marketPartnerOfflineReference: 1 }, { unique: true,
+  partialFilterExpression: { marketPartnerOfflineReference: { $type: 'string' } } });
 
 module.exports = mongoose.model('Refund', refundSchema);

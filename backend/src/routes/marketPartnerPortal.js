@@ -101,6 +101,7 @@ router.get('/commissions', async (req, res) => {
     paymentStatus: row.orderId?.paymentStatus || '', refundStatus: row.orderId?.refundStatus || '',
     salesMonth: row.salesMonth, periodNumber: row.periodNumber, eligibleCashCents: row.eligibleCashCents,
     basisPoints: row.basisPoints, accruedCents: row.accruedCents, paidCents: row.paidCents,
+    recoveredCents: row.recoveredCents || 0,
     status: row.status, firstEligibleAt: row.firstEligibleAt, finalEligibleAt: row.finalEligibleAt })) });
 });
 

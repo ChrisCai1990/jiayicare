@@ -92,7 +92,7 @@ export default function MarketPartnerPortalPage() {
           <strong>{item.serviceName}</strong><span style={{ float: 'right' }}>{labels[item.status] || item.status}</span>
           <p style={{ marginBottom: 4 }}>客户 {item.customer} · {date(item.paidAt)} · 第 {item.periodNumber} 期</p>
           <p style={{ margin: '4px 0' }}>计佣实收 {money(item.eligibleCashCents)} × {(item.basisPoints / 100).toFixed(2)}%</p>
-          <p style={{ marginBottom: 0 }}>应计 {money(item.accruedCents)}　已发 {money(item.paidCents)}</p>
+          <p style={{ marginBottom: 0 }}>应计 {money(item.accruedCents)}　累计已发 {money(item.paidCents)}　已追回 {money(item.recoveredCents || 0)}</p>
         </section>) : <section style={card}>暂无佣金记录</section>)
           : (orders.length ? orders.map((item, index) => <section key={`${item.orderNo}-${index}`} style={card}>
             <strong>{item.serviceName}</strong><p>客户 {item.customer} · {date(item.paidAt)}</p>

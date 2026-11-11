@@ -4,6 +4,7 @@ const MarketPartnerRule = require('../models/MarketPartnerRule');
 const MarketPartnerCommission = require('../models/MarketPartnerCommission');
 const MarketPartnerReceipt = require('../models/MarketPartnerReceipt');
 const Payment = require('../models/Payment');
+const MarketPartnerLoss = require('../models/MarketPartnerLoss');
 const { commissionCents } = require('./partnerCommissionPolicy');
 
 const cents = value => Math.round(Number(value || 0) * 100);
@@ -51,7 +52,9 @@ async function paidPeriodNumber(order, rule) {
     .select('_id paidAmount paymentMethod tenantId').lean();
   let verified = 0;
   for (const previous of priorOrders) {
-    if ((await verifiedCashCents(previous)) > 0) verified += 1;
+    if ((await verifiedCashCents(previous)) > 0
+      && !await MarketPartnerLoss.exists({ tenantId: order.tenantId, orderId: previous._id,
+        status: 'approved' })) verified += 1;
   }
   return verified + 1;
 }
@@ -61,7 +64,7 @@ async function qualifiedMonthlyCount(order, rule, now) {
   const salesMonth = monthKey(order.paidAt);
   if (now < tierFinalAt(salesMonth)) return 1;
   const rows = await MarketPartnerCommission.find({ tenantId: order.tenantId, partnerId: order.marketPartnerId,
-    salesMonth, periodNumber: 1, status: { $ne: 'cancelled' } })
+    salesMonth, periodNumber: 1, eligibleCashCents: { $gt: 0 }, status: { $ne: 'cancelled' } })
     .select('patientId').lean();
   return Math.max(1, new Set(rows.map(item => String(item.patientId))).size);
 }
@@ -97,7 +100,9 @@ async function syncOrder(order, now = new Date()) {
   const paidCashCents = await verifiedCashCents(order);
   if (paidCashCents === null) return null;
   const refundCents = await refundedCashCents(order._id);
-  const eligibleCashCents = Math.max(0, paidCashCents - refundCents);
+  const loss = await MarketPartnerLoss.exists({ tenantId: order.tenantId,
+    orderId: order._id, status: 'approved' });
+  const eligibleCashCents = loss ? 0 : Math.max(0, paidCashCents - refundCents);
   const periodNumber = await paidPeriodNumber(order, rule);
   const monthlyQualifiedCount = await qualifiedMonthlyCount(order, rule, now);
   const calculated = commissionCents({ paidCents: eligibleCashCents, policy: policyFromRule(rule), periodNumber,
@@ -122,7 +127,7 @@ async function syncOrder(order, now = new Date()) {
       } catch (err) { if (err.code !== 11000) throw err; continue; }
     }
     const nextStatus = statusFor({ accruedCents: calculated.totalCents,
-      paidCents: current.paidCents, firstReady: ready.firstReady });
+      paidCents: current.paidCents - (current.recoveredCents || 0), firstReady: ready.firstReady });
     const difference = calculated.totalCents - current.accruedCents;
     if (difference === 0 && current.status === nextStatus
       && String(current.firstEligibleAt || '') === String(ready.firstEligibleAt || '')

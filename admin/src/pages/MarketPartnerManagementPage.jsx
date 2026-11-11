@@ -20,20 +20,31 @@ export default function MarketPartnerManagementPage() {
   const [teamIncentives, setTeamIncentives] = useState([])
   const [commissions, setCommissions] = useState([])
   const [receipts, setReceipts] = useState([])
+  const [offlineOrders, setOfflineOrders] = useState([])
+  const [offlineRefunds, setOfflineRefunds] = useState([])
+  const [lossReviews, setLossReviews] = useState([])
   const [products, setProducts] = useState([])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [partner, setPartner] = useState({ name: '', phone: '', productLine: 'consumer365', contractReference: '' })
   const [rule, setRule] = useState({ productId: '', productLine: 'consumer365', kind: 'annual', firstPercent: '20', tiers: '', renewals: '2:10,3:5,4:5,5:5', effectiveFrom: '', directReferralRequired: false, quickCloseEnabled: false, retentionFloorPercent: '' })
+  const [preview, setPreview] = useState({ ruleId: '', paidYuan: '', directCostYuan: '', teamCostYuan: '', transactionCostYuan: '', periodNumber: '1', monthlyQualifiedCount: '1', directReferral: false })
+  const [previewResult, setPreviewResult] = useState(null)
   const [team, setTeam] = useState({ productId: '', specificationLabel: '', role: 'familyDoctor', trigger: 'service_completed', ruleType: 'percentage', percent: '0', amountYuan: '0', effectiveFrom: '' })
   const [teamClaim, setTeamClaim] = useState({ orderId: '', staffId: '', role: 'familyDoctor', note: '' })
+  const [teamPaymentReferences, setTeamPaymentReferences] = useState({})
+  const [teamRecoveries, setTeamRecoveries] = useState({})
   const [payouts, setPayouts] = useState({})
+  const [recoveries, setRecoveries] = useState({})
   const [receipt, setReceipt] = useState({ orderId: '', amountYuan: '', reference: '', receivedAt: '', evidence: '' })
+  const [offlineOrder, setOfflineOrder] = useState({ patientId: '', productId: '', specificationLabel: '', priceYuan: '', partnerCode: '', contractReference: '' })
+  const [offlineRefund, setOfflineRefund] = useState({ orderId: '', amountYuan: '', reference: '', evidence: '', reason: '' })
+  const [lossReview, setLossReview] = useState({ orderId: '', terminatedAt: '', reason: '', evidence: '' })
 
   const refresh = async () => {
-    const [p, r, t, productsResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse] = await Promise.all([
-      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(),
+    const [p, r, t, productsResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse] = await Promise.all([
+      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(),
     ])
     setPartners(p.data || [])
     setRules(r.data || [])
@@ -42,6 +53,9 @@ export default function MarketPartnerManagementPage() {
     setCommissions(commissionsResponse.data?.rows || [])
     setReceipts(receiptsResponse.data || [])
     setTeamIncentives(teamIncentivesResponse.data || [])
+    setOfflineOrders(offlineOrdersResponse.data || [])
+    setOfflineRefunds(offlineRefundsResponse.data || [])
+    setLossReviews(lossReviewsResponse.data || [])
   }
   useEffect(() => { refresh().catch(err => setError(err.message)) }, [])
 
@@ -73,11 +87,25 @@ export default function MarketPartnerManagementPage() {
       amountCents: Math.round(Number(team.amountYuan) * 100), effectiveFrom: new Date(team.effectiveFrom).toISOString() }))
   }
   const productName = id => products.find(item => String(item._id) === String(id))?.name || String(id || '')
+  const runPreview = e => {
+    e.preventDefault(); setBusy(true); setError(''); setPreviewResult(null)
+    adminAPI.previewMarketPartnerRule({ ruleId: preview.ruleId, paidCents: Math.round(Number(preview.paidYuan) * 100),
+      directCostCents: Math.round(Number(preview.directCostYuan) * 100),
+      teamIncentiveCents: Math.round(Number(preview.teamCostYuan) * 100),
+      transactionCostCents: Math.round(Number(preview.transactionCostYuan) * 100),
+      periodNumber: Number(preview.periodNumber), monthlyQualifiedCount: Number(preview.monthlyQualifiedCount),
+      directReferral: preview.directReferral, paidAt: new Date().toISOString() })
+      .then(response => setPreviewResult(response.data)).catch(err => setError(err.message)).finally(() => setBusy(false))
+  }
   const setPayout = (id, value) => setPayouts(current => ({ ...current, [id]: { ...current[id], ...value } }))
   const pay = item => {
     const form = payouts[item._id] || {}
     const amountCents = Math.round(Number(form.amountYuan) * 100)
     run(() => adminAPI.recordMarketPartnerPayout(item._id, { amountCents, paymentReference: form.reference }))
+  }
+  const recover = item => {
+    const form = recoveries[item._id] || {}
+    run(() => adminAPI.recordMarketPartnerRecovery(item._id, { amountCents: Math.round(Number(form.amountYuan) * 100), recoveryReference: form.reference }))
   }
 
   return <div style={{ maxWidth: 1100 }}>
@@ -101,6 +129,51 @@ export default function MarketPartnerManagementPage() {
       </tbody></table></div>
     </section>
     <section style={boxStyle}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>30 天内正式流失审核</h2>
+      <p style={{ color: '#667a6d' }}>仅合同解除或服务正式终止可提交；未登录、未回复、暂停和投诉不自动算流失。另一位管理员审核通过后重算佣金。</p>
+      <form onSubmit={e => { e.preventDefault(); run(() => adminAPI.submitMarketPartnerLossReview({ ...lossReview, terminatedAt: new Date(lossReview.terminatedAt).toISOString() })) }} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <input style={inputStyle} aria-label="流失订单ID" placeholder="订单ID" value={lossReview.orderId} onChange={e => setLossReview({ ...lossReview, orderId: e.target.value })} required />
+        <input style={inputStyle} aria-label="正式终止时间" type="datetime-local" value={lossReview.terminatedAt} onChange={e => setLossReview({ ...lossReview, terminatedAt: e.target.value })} required />
+        <input style={inputStyle} aria-label="终止原因" placeholder="正式终止原因" value={lossReview.reason} onChange={e => setLossReview({ ...lossReview, reason: e.target.value })} required />
+        <input style={inputStyle} aria-label="终止依据" placeholder="合同或服务终止依据" value={lossReview.evidence} onChange={e => setLossReview({ ...lossReview, evidence: e.target.value })} required />
+        <button className="btn btn-primary" disabled={busy}>提交审核</button>
+      </form>
+      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>订单</th><th>终止日期</th><th>原因</th><th>状态</th><th>操作</th></tr></thead><tbody>
+        {lossReviews.map(item => <tr key={item._id}><td>{item.orderId?.orderNo || item.orderId}</td><td>{item.terminatedAt?.slice(0, 10)}</td><td>{item.reason}</td><td>{item.status}</td><td>{item.status === 'requested' && <><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerLoss(item._id, 'approved'))}>审核通过</button> <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerLoss(item._id, 'rejected'))}>退回</button></>}</td></tr>)}
+      </tbody></table></div>
+    </section>
+    <section style={boxStyle}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>线下退款复核</h2>
+      <p style={{ color: '#667a6d' }}>登记已经完成的退款转账。另一位管理员复核后，订单与合伙人佣金按实际退款金额重算。</p>
+      <form onSubmit={e => { e.preventDefault(); run(() => adminAPI.submitMarketPartnerOfflineRefund(offlineRefund.orderId, { ...offlineRefund, amountCents: Math.round(Number(offlineRefund.amountYuan) * 100) })) }} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <input style={inputStyle} aria-label="退款订单ID" placeholder="订单ID" value={offlineRefund.orderId} onChange={e => setOfflineRefund({ ...offlineRefund, orderId: e.target.value })} required />
+        <input style={inputStyle} aria-label="退款金额元" type="number" min="0.01" step="0.01" placeholder="已退金额 元" value={offlineRefund.amountYuan} onChange={e => setOfflineRefund({ ...offlineRefund, amountYuan: e.target.value })} required />
+        <input style={inputStyle} aria-label="退款流水号" placeholder="退款流水号" value={offlineRefund.reference} onChange={e => setOfflineRefund({ ...offlineRefund, reference: e.target.value })} required />
+        <input style={inputStyle} aria-label="退款凭据" placeholder="转账凭据说明" value={offlineRefund.evidence} onChange={e => setOfflineRefund({ ...offlineRefund, evidence: e.target.value })} required />
+        <input style={inputStyle} aria-label="退款原因" placeholder="退款原因" value={offlineRefund.reason} onChange={e => setOfflineRefund({ ...offlineRefund, reason: e.target.value })} />
+        <button className="btn btn-primary" disabled={busy}>提交退款复核</button>
+      </form>
+      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>订单</th><th>金额</th><th>流水号</th><th>状态</th><th>操作</th></tr></thead><tbody>
+        {offlineRefunds.map(item => <tr key={item._id}><td>{item.order?.orderNo || item.order}</td><td>¥{Number(item.amount || 0).toFixed(2)}</td><td>{item.marketPartnerOfflineReference}</td><td>{item.status}</td><td>{['requested', 'processing'].includes(item.status) && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.confirmMarketPartnerOfflineRefund(item._id))}>确认已退款</button>}</td></tr>)}
+      </tbody></table></div>
+    </section>
+    <section style={boxStyle}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>非商城线下合同订单</h2>
+      <p style={{ color: '#667a6d' }}>按已上架的线下商品原价或规格价建单。建单后登记线下实收，再在下方提交收款凭据复核。</p>
+      <form onSubmit={e => { e.preventDefault(); run(() => adminAPI.createMarketPartnerOfflineOrder({ ...offlineOrder, priceCents: Math.round(Number(offlineOrder.priceYuan) * 100) })) }} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <input style={inputStyle} aria-label="客户ID" placeholder="客户ID" value={offlineOrder.patientId} onChange={e => setOfflineOrder({ ...offlineOrder, patientId: e.target.value })} required />
+        <select style={inputStyle} aria-label="线下商品" value={offlineOrder.productId} onChange={e => setOfflineOrder({ ...offlineOrder, productId: e.target.value })} required><option value="">选择线下商品</option>{products.filter(item => item.status === 'on' && item.paymentChannel === 'offline').map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
+        <input style={inputStyle} aria-label="合同规格" placeholder="规格（可留空）" value={offlineOrder.specificationLabel} onChange={e => setOfflineOrder({ ...offlineOrder, specificationLabel: e.target.value })} />
+        <input style={inputStyle} aria-label="合同金额元" type="number" min="0.01" step="0.01" placeholder="商品价格 元" value={offlineOrder.priceYuan} onChange={e => setOfflineOrder({ ...offlineOrder, priceYuan: e.target.value })} required />
+        <input style={inputStyle} aria-label="线下推荐码" placeholder="合伙人推荐码" value={offlineOrder.partnerCode} onChange={e => setOfflineOrder({ ...offlineOrder, partnerCode: e.target.value })} required />
+        <input style={inputStyle} aria-label="线下合同编号" placeholder="合同编号" value={offlineOrder.contractReference} onChange={e => setOfflineOrder({ ...offlineOrder, contractReference: e.target.value })} required />
+        <button className="btn btn-primary" disabled={busy}>建立待付款订单</button>
+      </form>
+      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>订单</th><th>客户</th><th>商品</th><th>合同</th><th>金额</th><th>支付</th><th>操作</th></tr></thead><tbody>
+        {offlineOrders.map(item => <tr key={item._id}><td>{item.orderNo}<br /><small>{item._id}</small></td><td>{item.user?.name || '—'}</td><td>{item.serviceName}</td><td>{item.marketPartnerContractReference}</td><td>¥{Number(item.servicePrice || 0).toFixed(2)}</td><td>{item.paymentStatus}</td><td>{item.paymentStatus !== 'paid' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.payOrder(item._id, 'onsite', item.servicePrice))}>登记已收款</button>}</td></tr>)}
+      </tbody></table></div>
+    </section>
+    <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>服务团队实际贡献</h2>
       <p style={{ color: '#667a6d' }}>仅对已付款且履约记录已完成的订单计提；与原有服务绩效重复时系统拒绝。计提与审核须由不同管理员完成。</p>
       <form onSubmit={e => { e.preventDefault(); run(() => adminAPI.createTeamIncentive(teamClaim)) }} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
@@ -111,7 +184,7 @@ export default function MarketPartnerManagementPage() {
         <button className="btn btn-primary" disabled={busy}>提交计提</button>
       </form>
       <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>订单</th><th>服务人员</th><th>岗位</th><th>激励</th><th>状态</th><th>操作</th></tr></thead><tbody>
-        {teamIncentives.map(item => <tr key={item._id}><td>{item.orderId?.orderNo || item.orderId}</td><td>{item.staffId?.name || item.staffId}</td><td>{ROLES.find(([value]) => value === item.role)?.[1] || item.role}</td><td>¥{(item.amountCents / 100).toFixed(2)}</td><td>{item.status}</td><td>{item.status === 'pending' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.confirmTeamIncentive(item._id))}>审核确认</button>}</td></tr>)}
+        {teamIncentives.map(item => <tr key={item._id}><td>{item.orderId?.orderNo || item.orderId}</td><td>{item.staffId?.name || item.staffId}</td><td>{ROLES.find(([value]) => value === item.role)?.[1] || item.role}</td><td>¥{(item.amountCents / 100).toFixed(2)}<br /><small>已发 ¥{((item.paidCents || 0) / 100).toFixed(2)}／追回 ¥{((item.recoveredCents || 0) / 100).toFixed(2)}</small></td><td>{item.status}</td><td>{item.status === 'pending' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.confirmTeamIncentive(item._id))}>审核确认</button>}{item.status === 'confirmed' && <div style={{ display: 'flex', gap: 5 }}><input style={inputStyle} aria-label="团队激励转账凭证号" placeholder="已转账凭证号" value={teamPaymentReferences[item._id] || ''} onChange={e => setTeamPaymentReferences(current => ({ ...current, [item._id]: e.target.value }))} /><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.payTeamIncentive(item._id, teamPaymentReferences[item._id]))}>确认已转账</button></div>}{item.status === 'reversal_due' && <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}><input style={{ ...inputStyle, width: 95 }} aria-label="团队已追回金额元" type="number" min="0.01" step="0.01" placeholder="追回 元" value={teamRecoveries[item._id]?.amountYuan || ''} onChange={e => setTeamRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], amountYuan: e.target.value } }))} /><input style={inputStyle} aria-label="团队追回凭证号" placeholder="追回凭证号" value={teamRecoveries[item._id]?.reference || ''} onChange={e => setTeamRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], reference: e.target.value } }))} /><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.recoverTeamIncentive(item._id, { amountCents: Math.round(Number(teamRecoveries[item._id]?.amountYuan) * 100), recoveryReference: teamRecoveries[item._id]?.reference }))}>确认已追回</button></div>}</td></tr>)}
       </tbody></table></div>
     </section>
     <section style={boxStyle}>
@@ -133,6 +206,19 @@ export default function MarketPartnerManagementPage() {
       <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>商品</th><th>产品线</th><th>版本</th><th>状态</th><th>生效</th><th>操作</th></tr></thead><tbody>
         {rules.map(item => <tr key={item._id}><td>{productName(item.productId)}</td><td>{item.productLine}</td><td>{item.version}</td><td>{item.status}</td><td>{item.effectiveFrom?.slice(0, 10)}</td><td>{item.status === 'draft' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.publishMarketPartnerRule(item._id))}>发布</button>}</td></tr>)}
       </tbody></table></div>
+      <h3 style={{ fontSize: 16 }}>规则与企业留存试算</h3>
+      <form onSubmit={runPreview} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <select style={inputStyle} aria-label="试算规则" value={preview.ruleId} onChange={e => setPreview({ ...preview, ruleId: e.target.value })} required><option value="">选择规则版本</option>{rules.map(item => <option key={item._id} value={item._id}>{productName(item.productId)} · v{item.version}</option>)}</select>
+        <input style={inputStyle} aria-label="试算现金实收元" type="number" min="0.01" step="0.01" placeholder="现金实收 元" value={preview.paidYuan} onChange={e => setPreview({ ...preview, paidYuan: e.target.value })} required />
+        <input style={inputStyle} aria-label="履约直接成本元" type="number" min="0" step="0.01" placeholder="履约直接成本 元" value={preview.directCostYuan} onChange={e => setPreview({ ...preview, directCostYuan: e.target.value })} required />
+        <input style={inputStyle} aria-label="团队激励成本元" type="number" min="0" step="0.01" placeholder="团队激励 元" value={preview.teamCostYuan} onChange={e => setPreview({ ...preview, teamCostYuan: e.target.value })} required />
+        <input style={inputStyle} aria-label="交易成本元" type="number" min="0" step="0.01" placeholder="交易成本 元" value={preview.transactionCostYuan} onChange={e => setPreview({ ...preview, transactionCostYuan: e.target.value })} required />
+        <input style={{ ...inputStyle, width: 85 }} aria-label="服务年度序号" type="number" min="1" step="1" value={preview.periodNumber} onChange={e => setPreview({ ...preview, periodNumber: e.target.value })} />
+        <input style={{ ...inputStyle, width: 85 }} aria-label="月度有效新客数" type="number" min="1" step="1" value={preview.monthlyQualifiedCount} onChange={e => setPreview({ ...preview, monthlyQualifiedCount: e.target.value })} />
+        <label><input type="checkbox" checked={preview.directReferral} onChange={e => setPreview({ ...preview, directReferral: e.target.checked })} /> 亲自促成</label>
+        <button className="btn btn-primary" disabled={busy}>计算留存</button>
+      </form>
+      {previewResult && <p style={{ marginBottom: 0 }}>合伙人佣金 ¥{(previewResult.totalCents / 100).toFixed(2)}；企业预计留存 {previewResult.retention ? `¥${(previewResult.retention.retainedCents / 100).toFixed(2)}（${(previewResult.retention.retentionBasisPoints / 100).toFixed(2)}%）` : '成本不全，请人工复核'}{previewResult.retention?.belowFloor && '；低于本产品留存底线，请复核'}</p>}
     </section>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>线下收款复核</h2>
@@ -169,14 +255,18 @@ export default function MarketPartnerManagementPage() {
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人佣金核对</h2>
       <p style={{ color: '#667a6d' }}>这里只登记已经完成的转账；系统不会自动向合伙人付款。首笔与尾款上限由后端核验。</p>
-      <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr><th>合伙人</th><th>订单</th><th>应计</th><th>已发</th><th>状态</th><th>登记已转账</th></tr></thead><tbody>
+      <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr><th>合伙人</th><th>订单</th><th>应计</th><th>已发／追回</th><th>状态</th><th>登记已转账或追回</th></tr></thead><tbody>
         {commissions.map(item => <tr key={item._id}>
           <td>{item.partnerId?.name || '—'}</td><td>{item.orderId?.serviceName || '—'}<br />{item.orderId?.orderNo || ''}</td>
-          <td>¥{(item.accruedCents / 100).toFixed(2)}</td><td>¥{(item.paidCents / 100).toFixed(2)}</td><td>{item.status}</td>
+          <td>¥{(item.accruedCents / 100).toFixed(2)}</td><td>¥{(item.paidCents / 100).toFixed(2)}／¥{((item.recoveredCents || 0) / 100).toFixed(2)}</td><td>{item.status}</td>
           <td>{!['cancelled', 'reversal_due', 'paid'].includes(item.status) && <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             <input style={{ ...inputStyle, minWidth: 90, width: 95 }} aria-label="已转账金额元" type="number" min="0.01" step="0.01" placeholder="金额 元" value={payouts[item._id]?.amountYuan || ''} onChange={e => setPayout(item._id, { amountYuan: e.target.value })} />
             <input style={{ ...inputStyle, minWidth: 135 }} aria-label="转账凭证号" placeholder="转账凭证号" value={payouts[item._id]?.reference || ''} onChange={e => setPayout(item._id, { reference: e.target.value })} />
             <button className="btn btn-sm" disabled={busy} onClick={() => pay(item)}>确认已转账</button>
+          </div>}{item.status === 'reversal_due' && <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            <input style={{ ...inputStyle, minWidth: 90, width: 95 }} aria-label="已追回金额元" type="number" min="0.01" step="0.01" placeholder="追回 元" value={recoveries[item._id]?.amountYuan || ''} onChange={e => setRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], amountYuan: e.target.value } }))} />
+            <input style={{ ...inputStyle, minWidth: 135 }} aria-label="追回凭证号" placeholder="追回凭证号" value={recoveries[item._id]?.reference || ''} onChange={e => setRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], reference: e.target.value } }))} />
+            <button className="btn btn-sm" disabled={busy} onClick={() => recover(item)}>确认已追回</button>
           </div>}</td>
         </tr>)}
       </tbody></table></div>
