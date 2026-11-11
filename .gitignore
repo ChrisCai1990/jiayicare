@@ -40,3 +40,4 @@ miniprogram/project.private.config.json
 
 # Isolated Apple account-deletion build (source overlay is tracked separately)
 release/apple-h5-build-20261027/
+backend/.ocr-runtime/

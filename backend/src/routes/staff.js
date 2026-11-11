@@ -18708,8 +18708,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const templatePrompt = useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum)
     : useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '';
   let images;
+  let pdfBuf;
   if (isPdf) {
-    const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
+    pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
     // 单页补提必须保留整张表格的同一行关系。过去无差别左右切图，会把左侧项目名和右侧数值拆开，
     // 导致模型返回“有名称、无数值”的空壳项；先渲染整页，再对较大的页按上下分区。
     images = [await renderSinglePage(pdfBuf, pageNum, 200)];
@@ -18739,14 +18740,35 @@ async function runReportPageParseControlled(reportId, pageNum) {
     images = [buffers[pageNum - 1].toString('base64')];
   }
   if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
+  // Scanned annual lab tables can be read locally without consuming the page's
+  // exhausted visual-model call allowance. The result stays an unverified draft.
+  let localScan = null;
+  if (isPdf && report.type === 'annual') {
+    try {
+      const { readPdfPageLayout, parseLayoutResultPairs } = require('../utils/reportOcrWords');
+      const layout = await readPdfPageLayout(pdfBuf, pageNum);
+      if (parseLayoutResultPairs(layout, pageNum).length < 3) {
+        const { extractScannedLabTable } = require('../utils/reportScanOcr');
+        const scanImage = await renderSinglePage(pdfBuf, pageNum, 300);
+        const candidate = await extractScannedLabTable(Buffer.from(scanImage, 'base64'), pageNum);
+        if (candidate.supported && candidate.items.length >= 6) {
+          localScan = candidate;
+          imagePageEvidence[pageNum] = { status: 'needs_review',
+            message: `本地扫描表格识别出${candidate.items.length}条待核对候选；请逐行核对项目、数值、单位及异常标记。` };
+        }
+      }
+    } catch (error) {
+      console.log(`[parse-page] P${pageNum} 本地表格OCR不可用，继续原补提流程：${error.code || error.name || 'ERROR'}`);
+    }
+  }
   // For annual reports the independent transcript checks every printed table
   // row. Repeating a full candidate list as a coverage audit is both costly
   // and prone to output truncation on dense lab pages.
   const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
-  await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
-  let parsedItems = [];
-  let allRegionsImageOnly = true;
-  for (let regionIndex = 0; regionIndex < images.length; regionIndex++) {
+  if (!localScan) await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
+  let parsedItems = localScan?.items || [];
+  let allRegionsImageOnly = !localScan;
+  for (let regionIndex = 0; regionIndex < (localScan ? 0 : images.length); regionIndex++) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -18820,8 +18842,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // 模型即使违反差量指令返回整页，也只允许真正缺项进入；同身份且原来为空的未审核项
   // 可由有原文证据的候选补全，避免“第一次空、补提仍被去重挡住”。
   const alignedCandidates = parsedItems.map(item => alignSupplementCandidate(oldPageAtStart, item)).filter(Boolean);
-  const missingCandidates = filterMissingReportItems(oldPageAtStart, alignedCandidates, { targetOrgans });
-  const enrichmentCandidates = alignedCandidates.filter(item => supplementMatches(oldPageAtStart, item).length && hasReportItemEvidence(item));
+  const supplementOptions = { targetOrgans, preserveDistinctMeasuredSections: Boolean(localScan) };
+  const missingCandidates = filterMissingReportItems(oldPageAtStart, alignedCandidates, supplementOptions);
+  const enrichmentCandidates = alignedCandidates.filter(item => supplementMatches(oldPageAtStart, item, supplementOptions).length && hasReportItemEvidence(item));
   let newPage = resequenceSupplementSourceOrder(tagReportPageItems([...missingCandidates, ...enrichmentCandidates], pageNum));
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
@@ -18831,10 +18854,10 @@ async function runReportPageParseControlled(reportId, pageNum) {
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage);
-  const latestMissing = filterMissingReportItems(oldPage, newPage, { targetOrgans });
-  const latestEnrichment = newPage.filter(item => supplementMatches(oldPage, item).length && hasReportItemEvidence(item));
+  const latestMissing = filterMissingReportItems(oldPage, newPage, supplementOptions);
+  const latestEnrichment = newPage.filter(item => supplementMatches(oldPage, item, supplementOptions).length && hasReportItemEvidence(item));
   const deletedItems = (latest.deletedReportItems || []).filter(belongsToRequestedPage);
-  const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !supplementMatches(deletedItems, item).length));
+  const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !supplementMatches(deletedItems, item, supplementOptions).length), supplementOptions);
   const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched];
   const mergedPage = supplementMerge.items;
   const classifiedPage = (await classifyItemsAsync(mergedPage)).map(normalizeExplicitNormalStatus);
@@ -18864,7 +18887,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const candidateDetail = !acceptedSupplementItems.length && parsedItems.length
     ? `（与已有项目匹配且未接纳${candidateDiagnostics.existing}项、缺可核对结果${candidateDiagnostics.withoutResult}项、其他待核对${candidateDiagnostics.other}项）`
     : '';
-  const resultMessage = acceptedSupplementItems.length
+  const resultMessage = localScan
+    ? `第${pageNum}页本地OCR识别${localScan.items.length}条候选，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
+    : acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : pageEvidence?.status === 'needs_review'
       ? `第${pageNum}页有候选未通过原文校验，已保留原${oldPage.length}项，请对照原件人工核对`
@@ -18876,7 +18901,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
       reportItems: combined,
       ...(pageEvidence ? { [`imagePageEvidence.${pageNum}`]: pageEvidence } : {}),
       aiStatus: 'pending',
-      pageParseStatus: { pageNum, status: acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
+      pageParseStatus: { pageNum, status: localScan ? 'needs_review' : acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
       pageParseHistory,
     },
     $inc: { reviewRevision: 1 },

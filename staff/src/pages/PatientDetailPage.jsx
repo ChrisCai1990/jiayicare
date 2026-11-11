@@ -4574,7 +4574,7 @@ export default function PatientDetailPage() {
         ocrRevisionRef.current = Number(latest.reviewRevision || 0)
         setOcrReviewReport(prev => (prev && prev._id === latest._id) ? { ...prev, ...latest } : prev)
         if (latest.pageParseStatus?.status !== 'processing') {
-          if (latest.pageParseStatus?.status === 'success') {
+          if (['success', 'needs_review'].includes(latest.pageParseStatus?.status)) {
             setOcrEditItems(JSON.parse(JSON.stringify(latest.reportItems || [])))
             toast(latest.pageParseStatus.message || `第${ocrReviewPage}页补提完成`)
           } else if (latest.pageParseStatus?.status === 'failed') {
@@ -13748,7 +13748,7 @@ export default function PatientDetailPage() {
                 })()}
               <div className="modal-body ocr-review-fields" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
                 {activePageParse && activePageParse.status !== 'image_only' && (
-                  <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
+                  <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing || activePageParse.status === 'needs_review' ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing || activePageParse.status === 'needs_review' ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
                     {pageParsing ? `第${activePage}页正在补提，请稍候，完成后本页会自动刷新。` : pageParseStale ? `第${activePage}页上次补提已中断，可以重新补提。` : activePageParse.message}
                   </div>
                 )}
