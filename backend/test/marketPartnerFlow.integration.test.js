@@ -74,11 +74,13 @@ test('online and offline partner payments, renewals, refunds and team incentives
       originalPrice: 100, fulfillmentType: 'offline_service', stockLimited: false });
     process.env.JWT_SECRET = 'isolated-market-partner-flow-secret';
     process.env.MARKET_PARTNER_ENABLED = 'true';
+    process.env.HEALTH_MANAGEMENT_ROLLOUT_MODE = 'all';
     const app = express();
     app.use(express.json());
     app.use('/api/admin/market-partners', require('../src/routes/marketPartnersAdmin'));
     app.use('/api/admin', require('../src/routes/admin'));
     app.use('/api/services', require('../src/routes/services'));
+    app.use('/api/staff', require('../src/routes/annualServicePeriods'));
     server = app.listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -209,14 +211,17 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const secondAnnualId = secondAnnual.body.data._id;
     await annualReceipt(secondAnnualId);
     assert.equal(await Commission.countDocuments({ orderId: secondAnnualId }), 0);
-    await mongoose.connection.db.collection('annualserviceperiods').insertOne({
-      patientId, annualPlanId: oid(), sourceType: 'offline_contract',
-      contractReference: 'ANNUAL-CONTRACT-002', startDate: '2027-01-01', endDate: '2027-12-31',
-      evidenceSnapshot: { test: true }, confirmedBy: reviewerId, confirmedAt: new Date(),
-    });
-    const recalculated = await call(reviewerId, 'POST',
-      `${prefix}/customer-histories/${history.body.data._id}/recalculate`, {});
-    assert.equal(recalculated.status, 200, JSON.stringify(recalculated.body));
+    const annualPlanId = oid();
+    await mongoose.connection.db.collection('annualplans').insertOne({ _id: annualPlanId,
+      patientId, year: 2027, continuitySource: { previousPlanId: oid() },
+      reviewStatus: 'pending', moduleData: {} });
+    const servicePeriod = await call(plannerId, 'POST',
+      `/api/staff/annual-plans/${annualPlanId}/service-period`, {
+        sourceType: 'offline_contract', contractReference: 'ANNUAL-CONTRACT-002',
+        startDate: '2027-01-01', endDate: '2027-12-31', verified: true,
+      });
+    assert.equal(servicePeriod.status, 200, JSON.stringify(servicePeriod.body));
+    assert.equal(servicePeriod.body.data.period.contractReference, 'ANNUAL-CONTRACT-002');
     const yearTwo = await Commission.findOne({ orderId: secondAnnualId }).lean();
     assert.equal(yearTwo.periodNumber, 2);
     assert.equal(yearTwo.accruedCents, 1000);
