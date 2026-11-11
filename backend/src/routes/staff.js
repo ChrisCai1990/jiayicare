@@ -18804,7 +18804,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
     if (parsed.imageEvidence?.status !== 'image_only') allRegionsImageOnly = false;
     if (shouldSkipParsedReportPage(parsed)) continue;
     let regionItems = parsed.items;
-    if (report.type === 'annual') {
+    if (report.type === 'annual' || report.documentCategory === 'lab_report'
+      || (!report.documentCategory && ['blood', 'bloodTest', 'tumor'].includes(report.type))) {
       const uncovered = findUncoveredPrintedRows(regionEvidenceSections.get(regionIndex), [...oldPageAtStart, ...regionItems]).rows;
       if (uncovered.length) {
         // An optional focused pass asks only about rows independently read but

@@ -43,6 +43,17 @@ test('dropping a negation or laterality cannot pass by matching a substring of t
   assert.deepEqual(result.items, []);
 });
 
+test('printed line wraps do not discard an otherwise exact ultrasound finding', () => {
+  const finding = '脾脏形态大小正常，回声细小均匀，其内未见明显异常。';
+  const guarded = guardImageEvidence({ items: [{ name: '脾脏超声', itemType: 'imaging', findings: finding }] },
+    { ...imageOnly, clinicalText: '脾脏形态大小正常，回声细小均匀，\n其内未见明显异常。' });
+  assert.equal(guarded.items.length, 1);
+  const wrong = guardImageEvidence({ items: [{ name: '脾脏超声', itemType: 'imaging',
+    findings: finding.replace('未见', '可见') }] },
+  { ...imageOnly, clinicalText: '脾脏形态大小正常，回声细小均匀，\n其内未见明显异常。' });
+  assert.deepEqual(wrong.items, []);
+});
+
 test('annual examination findings must be anchored to their own printed section', async () => {
   const pelvic = { name: '子宫、附件彩超', sourceSection: '子宫、附件彩超', itemType: 'imaging',
     findings: '左右肝内胆管未见明显扩张。', diagnosis: '子宫多发肌瘤。' };
@@ -66,6 +77,46 @@ test('annual examination findings must be anchored to their own printed section'
   }, { report: { type: 'annual' } });
   assert.deepEqual(JSON.parse(await parse('page', 'extract', { sourcePage: 6 })).items, []);
   assert.equal(calls, 2);
+});
+
+test('standalone ultrasound accepts printed findings and diagnosis under field headings', async () => {
+  const evidence = { hasMedicalImages: true, readability: 'clear', sections: [
+    { title: '检查所见', clinicalText: '右乳腺内见低回声结节。\n左乳腺内见低回声结节。' },
+    { title: '检查提示', clinicalText: '双乳腺低回声结节，考虑BI-RADS 3类。' },
+  ] };
+  const candidate = { name: '乳腺超声', sourceSection: '双侧乳腺超声', itemType: 'imaging',
+    findings: '右乳腺内见低回声结节。左乳腺内见低回声结节。',
+    diagnosis: '双乳腺低回声结节，考虑BI-RADS 3类。' };
+  const guarded = guardImageEvidence({ items: [candidate] }, evidence,
+    { requireSectionEvidence: true, allowStandaloneExamHeadings: true });
+  assert.deepEqual(guarded.items, [candidate]);
+  assert.equal(guarded.imageEvidence.status, 'verified');
+  const parser = createReportImageParser(async (_, prompt) => JSON.stringify(
+    prompt === IMAGE_EVIDENCE_PROMPT ? evidence : { items: [candidate] }),
+  { report: { type: 'ultrasound', documentCategory: 'exam_report' } });
+  assert.deepEqual(JSON.parse(await parser('breast-ultrasound', 'extract', { sourcePage: 1 })).items, [candidate]);
+  const legacyParser = createReportImageParser(async (_, prompt) => JSON.stringify(
+    prompt === IMAGE_EVIDENCE_PROMPT ? evidence : { items: [candidate] }),
+  { report: { type: 'ultrasound' } });
+  assert.deepEqual(JSON.parse(await legacyParser('legacy-breast-ultrasound', 'extract', { sourcePage: 1 })).items, [candidate]);
+  const partial = guardImageEvidence({ items: [{ ...candidate,
+    findings: '右乳腺内见低回声结节。', diagnosis: '' }] }, evidence,
+  { requireSectionEvidence: true, allowStandaloneExamHeadings: true });
+  assert.equal(partial.items.length, 1);
+  assert.equal(partial.imageEvidence.status, 'needs_review');
+  assert.equal(partial.imageEvidence.blockedReasons.uncovered_narrative, 3);
+});
+
+test('standalone fallback cannot turn named multi-exam sections into shared evidence', () => {
+  const evidence = { hasMedicalImages: true, readability: 'clear', sections: [
+    { title: '乳腺超声', clinicalText: '右乳腺内见低回声结节。' },
+    { title: '甲状腺超声', clinicalText: '甲状腺内见低回声结节。' },
+  ] };
+  const wrong = { name: '乳腺超声', itemType: 'imaging', findings: '甲状腺内见低回声结节。' };
+  const guarded = guardImageEvidence({ items: [wrong] }, evidence,
+    { requireSectionEvidence: true, allowStandaloneExamHeadings: true });
+  assert.deepEqual(guarded.items, []);
+  assert.equal(guarded.imageEvidence.blockedReasons.unverified_text, 1);
 });
 
 test('annual imaging without section evidence waits for manual verification', () => {
@@ -129,6 +180,28 @@ test('generic section rows validate different PDF layouts without hospital templ
       rows: [{ name: '葡萄糖', value: 0, unit: 'mmol/L', referenceRange: '' }] }],
   }, { verifyTableRows: true });
   assert.equal(zero.items.length, 1);
+});
+
+test('lab rows with a printed star and generic column heading retain same-row verification', () => {
+  const evidence = { hasMedicalImages: false, readability: 'clear', sections: [
+    { title: '肿瘤标志物', clinicalText: '', rows: [
+      { name: '糖类抗原CA19–9', value: '<1.2', unit: 'U/mL', referenceRange: '0.0–37.0' },
+      { name: '糖类抗原CA125', value: '30.3', unit: 'U/mL', referenceRange: '<47.0' },
+    ] },
+  ] };
+  const existing = { itemType: 'lab', name: '*糖类抗原CA19-9', value: '<1.2', unit: 'U/mL',
+    sourceSection: '检验项目' };
+  const missing = { itemType: 'lab', name: '*糖类抗原CA125', value: '30.3', unit: 'U/mL',
+    sourceSection: '检验项目' };
+  const guarded = guardImageEvidence({ items: [missing] }, evidence,
+    { verifyTableRows: true, existingItems: [existing] });
+  assert.deepEqual(guarded.items, [missing]);
+  assert.equal(guarded.imageEvidence.blockedReasons.row_mismatch, 0);
+  assert.equal(guarded.imageEvidence.blockedReasons.uncovered_rows, 0);
+  const wrongValue = guardImageEvidence({ items: [{ ...missing, value: '3.03' }] }, evidence,
+    { verifyTableRows: true, existingItems: [existing] });
+  assert.deepEqual(wrongValue.items, []);
+  assert.equal(wrongValue.imageEvidence.blockedReasons.row_mismatch, 1);
 });
 
 test('empty supplement candidates still transcribe printed rows for a focused retry', async () => {

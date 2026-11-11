@@ -22,7 +22,16 @@ function parseJSON(raw) {
 function normalizeText(value) {
   // Preserve decimals, signs, laterality and negation. Only layout and equivalent typography differ.
   return String(value || '').normalize('NFKC').toLowerCase()
-    .replace(/[×＊]/g, '*').replace(/[\s，,。；;：:、()\[\]【】]/g, '');
+    .replace(/[×＊]/g, '*').replace(/[‐‑‒–—−]/g, '-')
+    .replace(/[\s，,。；;：:、()\[\]【】]/g, '');
+}
+
+function normalizeLabName(value) {
+  return normalizeText(value).replace(/^\*+/, '');
+}
+
+function genericLabHeading(value) {
+  return /^(?:检验|检查)?(?:项目|名称|结果)$/u.test(String(value || '').trim());
 }
 
 function isAnchored(value, transcript) {
@@ -34,7 +43,12 @@ function isNarrativeAnchored(value, clinicalText) {
   // Match whole printed clauses, not arbitrary substrings: “见异常” must not match “未见异常”.
   const clauses = text => String(text || '')
     .split(/[\r\n。；;，,：:]/).map(normalizeText).filter(Boolean);
-  const source = new Set(clauses(clinicalText));
+  const source = new Set([
+    ...clauses(clinicalText),
+    // A photographed report may hard-wrap one printed sentence across lines.
+    // Joining those lines still requires an exact clause match after punctuation.
+    ...clauses(String(clinicalText || '').replace(/\r?\n/g, '')),
+  ]);
   const parts = clauses(value);
   return parts.length > 0 && parts.every(part => source.has(part));
 }
@@ -85,10 +99,20 @@ function sectionForItem(item, sections) {
   return source || named;
 }
 
+// A standalone examination often prints "检查所见" and "检查提示" as two
+// headings under one exam. Those headings describe fields, not separate exams.
+// Annual reports can contain several exams on one page, so they must still
+// match a named section instead of using this fallback.
+function standaloneExamText(sections) {
+  if (!sections?.length || !sections.every(section => /^(?:超声)?(?:检查)?(?:所见|结果|描述|诊断|提示|结论|印象|医师意见)$/u.test(section.title.trim()))) return '';
+  return sections.map(section => section.clinicalText).filter(Boolean).join('\n');
+}
+
 function hasSamePrintedLabRow(item, sections) {
   if (!sections?.length || !normalizeText(item.name) || !normalizeText(item.value)) return false;
-  const titled = (item.sourceSection || item.orderName) ? sectionForItem(item, sections) : null;
-  if (!titled && sections.length > 1 && (item.sourceSection || item.orderName)) return false;
+  const hasSpecificSection = !genericLabHeading(item.sourceSection) && Boolean(item.sourceSection || item.orderName);
+  const titled = hasSpecificSection ? sectionForItem(item, sections) : null;
+  if (!titled && sections.length > 1 && hasSpecificSection) return false;
   const eligible = titled ? [titled] : sections;
   const hasField = (row, field) => {
     const value = normalizeText(field);
@@ -98,12 +122,13 @@ function hasSamePrintedLabRow(item, sections) {
     return new RegExp(`(^|[^\\d.])${escaped}(?![\\d.])`).test(row);
   };
   return eligible.some(section => {
-    const printedRows = section.rows?.length
-      ? section.rows.map(row => `${row.name} ${row.value} ${row.unit} ${row.referenceRange}`)
-      : section.clinicalText.split(/\r?\n/);
-    return printedRows.some(line => {
+    if (section.rows?.length) return section.rows.some(row =>
+      normalizeLabName(row.name) === normalizeLabName(item.name)
+      && normalizeText(row.value) === normalizeText(item.value)
+      && (!item.unit || normalizeText(row.unit) === normalizeText(item.unit)));
+    return section.clinicalText.split(/\r?\n/).some(line => {
     const row = normalizeText(line);
-    return hasField(row, item.name) && hasField(row, item.value)
+    return hasField(row, normalizeLabName(item.name)) && hasField(row, item.value)
       && (!item.unit || hasField(row, item.unit));
     });
   });
@@ -122,9 +147,10 @@ function findUncoveredPrintedRows(sections, items) {
     seen.add(key);
     total++;
     const covered = (items || []).some(item => ['lab', 'data'].includes(item.itemType)
-      && normalize(item.name) === normalize(row.name) && normalize(item.value) === normalize(row.value)
+      && normalizeLabName(item.name) === normalizeLabName(row.name) && normalize(item.value) === normalize(row.value)
       && (!normalize(item.unit) || !normalize(row.unit) || normalize(item.unit) === normalize(row.unit))
-      && (!item.sourceSection || !section.title || sectionForItem(item, [section]) !== null));
+      && (!item.sourceSection || genericLabHeading(item.sourceSection) || !section.title
+        || sectionForItem(item, [section]) !== null));
     if (!covered) rows.push({ sectionTitle: section.title, name: row.name, value: row.value });
   }
   return { total, rows };
@@ -135,7 +161,7 @@ function countUncoveredPrintedRows(sections, items) {
   return { total: result.total, uncovered: result.rows.length };
 }
 
-function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, verifyTableRows = false, existingItems = [] } = {}) {
+function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, verifyTableRows = false, existingItems = [], allowStandaloneExamHeadings = false } = {}) {
   if (!evidence || typeof evidence.hasMedicalImages !== 'boolean'
       || !['clear', 'unreadable'].includes(evidence.readability)
       || (typeof evidence.clinicalText !== 'string' && !evidenceSections(evidence))) {
@@ -149,16 +175,17 @@ function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, 
     ...(section.rows || []).map(row => `${row.name} ${row.value} ${row.unit} ${row.referenceRange}`)].join('\n')).join('\n')
     : cleanClinicalTranscript(evidence.clinicalText);
   const transcript = normalizeText(clinicalText);
+  const standaloneText = allowStandaloneExamHeadings ? standaloneExamText(sections) : '';
   const imageOnly = evidence.hasMedicalImages === true && evidence.readability === 'clear' && !transcript;
-  const blockedReasons = { section_mismatch: 0, row_mismatch: 0, uncovered_rows: 0, unverified_text: 0, unreadable: 0 };
+  const blockedReasons = { section_mismatch: 0, row_mismatch: 0, uncovered_rows: 0, uncovered_narrative: 0, unverified_text: 0, unreadable: 0 };
   const items = evidence.readability !== 'clear' || imageOnly ? [] : candidates.filter(item => {
     const imaging = ['imaging', 'diagnosis', 'pathology'].includes(item.itemType);
     const section = imaging && sections ? sectionForItem(item, sections) : null;
-    if (imaging && ((sections && !section) || (requireSectionEvidence && !sections))) {
+    if (imaging && ((sections && !section && !standaloneText) || (requireSectionEvidence && !sections))) {
       blockedReasons.section_mismatch++;
       return false;
     }
-    const itemText = section ? section.clinicalText : clinicalText;
+    const itemText = section ? section.clinicalText : standaloneText || clinicalText;
     const fields = ['findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis'];
     if (fields.some(key => String(item[key] || '').trim() && !isNarrativeAnchored(item[key], itemText))) {
       blockedReasons.unverified_text++;
@@ -169,7 +196,8 @@ function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, 
         blockedReasons.row_mismatch++;
         return false;
       }
-      const valid = isAnchored(item.name, transcript) && isAnchored(item.value, transcript)
+      const valid = (isAnchored(item.name, transcript) || isAnchored(normalizeLabName(item.name), transcript))
+        && isAnchored(item.value, transcript)
         && (!item.unit || isAnchored(item.unit, transcript));
       if (!valid) blockedReasons.unverified_text++;
       return valid;
@@ -185,12 +213,20 @@ function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, 
   const rowCoverage = verifyTableRows && !imageOnly && evidence.readability === 'clear'
     ? countUncoveredPrintedRows(sections, [...existingItems, ...items]) : { total: 0, uncovered: 0 };
   blockedReasons.uncovered_rows = rowCoverage.uncovered;
+  if (standaloneText && evidence.readability === 'clear') {
+    const clauses = value => String(value || '').split(/[\r\n。；;，,：:]/)
+      .map(normalizeText).filter(part => part.length >= 6);
+    const covered = new Set(items.flatMap(item => ['findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis']
+      .flatMap(field => clauses(item[field]))));
+    blockedReasons.uncovered_narrative = clauses(standaloneText).filter(part => !covered.has(part)).length;
+  }
   const status = imageOnly ? 'image_only'
-    : evidence.readability !== 'clear' || blockedCount || rowCoverage.uncovered ? 'needs_review' : 'verified';
+    : evidence.readability !== 'clear' || blockedCount || rowCoverage.uncovered || blockedReasons.uncovered_narrative ? 'needs_review' : 'verified';
   const pageEvidence = { status, blockedCount, blockedReasons, tableRowCount: rowCoverage.total,
     message: imageOnly ? IMAGE_ONLY_MESSAGE : blockedReasons.section_mismatch || blockedReasons.row_mismatch
       ? '检查栏目或检验表格行未能与原件对应，已拦截自动提取，请对照原件人工核对。'
       : blockedReasons.uncovered_rows ? '原件检验表有未进入审核草稿的结果行，请逐行对照原件补提或人工录入。'
+      : blockedReasons.uncovered_narrative ? '原件检查所见或结论有未进入审核草稿的文字，请对照原件补提或人工录入。'
       : status === 'needs_review' ? UNVERIFIED_MESSAGE : '' };
   return { ...parsed, items, summary: '', pageType: imageOnly ? 'image_only' : parsed.pageType,
     skipPage: imageOnly || (parsed.skipPage === true && !transcript), imageEvidence: pageEvidence };
@@ -244,6 +280,8 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
     }
     const guarded = guardImageEvidence(parsed, evidence, {
       requireSectionEvidence: report.type === 'annual' || report.documentCategory === 'exam_report', verifyTableRows,
+      allowStandaloneExamHeadings: report.type !== 'annual' &&
+        (report.documentCategory === 'exam_report' || (!report.documentCategory && imageReport)),
       existingItems: (report.reportItems || []).filter(item => Number(item.sourcePage || 1) === Number(sourcePage || 1)),
     });
     if (Number.isInteger(sourcePage) && guarded.imageEvidence?.status === 'image_only') {
