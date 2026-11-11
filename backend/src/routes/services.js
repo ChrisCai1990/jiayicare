@@ -589,6 +589,11 @@ router.post('/order', auth, async (req, res) => {
       code: partnerCode, at: new Date(),
     }) : null;
   if (marketPartnerMatch) referrerId = null;
+  const marketPartnerContribution = marketPartnerMatch && product
+    ? await require('../utils/marketPartnerLeadEvent').contributionAtOrder({
+      tenantId: serviceUser.tenantId, partnerId: marketPartnerMatch.attribution.partnerId,
+      patientId: serviceUser._id, productId: product._id, at: new Date(),
+    }) : null;
 
   // 所有订单统一由客户所属健康规划师收单和总督办；住院等专业评估作为后续子任务分派给健康顾问。
   const followUpStaffId = await resolveOrderWorkflowAssignee(serviceUser._id, service.name);
@@ -647,6 +652,10 @@ router.post('/order', auth, async (req, res) => {
     marketPartnerAttributionId: marketPartnerMatch?.attribution?._id || null,
     marketPartnerRuleId: marketPartnerMatch?.rule?._id || null,
     marketPartnerRuleVersion: marketPartnerMatch?.rule?.version || null,
+    marketPartnerLeadEventId: marketPartnerContribution?.eventId || null,
+    marketPartnerDirectEventId: marketPartnerContribution?.directEventId || null,
+    marketPartnerDirectReferral: marketPartnerContribution?.directReferral === true,
+    marketPartnerFirstConversationAt: marketPartnerContribution?.firstConversationAt || null,
     referralSource: pushedRecommendation ? 'push' : productShare ? 'share' : 'direct',
     pushRecordId: pushedRecommendation?._id || null,
     servicePerformers,

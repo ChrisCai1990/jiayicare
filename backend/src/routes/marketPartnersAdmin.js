@@ -18,6 +18,7 @@ const User = require('../models/User');
 const MarketPartnerAttribution = require('../models/MarketPartnerAttribution');
 const MarketPartnerLoss = require('../models/MarketPartnerLoss');
 const MarketPartnerCustomerHistory = require('../models/MarketPartnerCustomerHistory');
+const MarketPartnerLeadEvent = require('../models/MarketPartnerLeadEvent');
 const { commissionCents } = require('../utils/partnerCommissionPolicy');
 const { teamIncentiveCents } = require('../utils/teamIncentivePolicy');
 
@@ -81,6 +82,57 @@ router.get('/attributed-orders', async (req, res) => {
       .sort({ createdAt: -1 }).limit(200).select('_id user serviceName orderNo marketPartnerId marketPartnerRuleId paymentStatus paidAt')
       .populate('user', 'name phone').populate('marketPartnerId', 'name referralCode').lean();
     res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.get('/lead-events', async (req, res) => {
+  try {
+    const rows = await MarketPartnerLeadEvent.find({ tenantId: tenant(req) }).sort({ occurredAt: -1 })
+      .limit(200).populate('partnerId', 'name referralCode').populate('patientId', 'name phone')
+      .populate('productId', 'name').lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/lead-events', async (req, res) => {
+  if (!validId(req.body?.patientId) || !validId(req.body?.productId))
+    return res.status(400).json({ success: false, message: '请选择客户和商品' });
+  const code = String(req.body.partnerCode || '').trim().toUpperCase();
+  const evidence = String(req.body.evidence || '').trim();
+  if (!/^[A-F0-9]{12}$/.test(code) || evidence.length < 10 || evidence.length > 1000)
+    return res.status(400).json({ success: false, message: '请填写推荐码及具体的首次沟通依据' });
+  try {
+    const [patient, product, partner] = await Promise.all([
+      User.findOne({ _id: req.body.patientId, tenantId: tenant(req), isDeleted: { $ne: true } }).select('_id').lean(),
+      Product.findOne({ _id: req.body.productId, tenantId: tenant(req), status: 'on' }).select('_id').lean(),
+      MarketPartner.findOne({ tenantId: tenant(req), referralCode: code, status: 'active' }).select('_id productLine').lean(),
+    ]);
+    if (!patient || !product || !partner)
+      return res.status(404).json({ success: false, message: '本机构客户、商品或合伙人不存在' });
+    const rule = await require('../utils/marketPartnerAttribution').activeRule(tenant(req), product._id);
+    if (!rule || rule.productLine !== partner.productLine)
+      return res.status(409).json({ success: false, message: '该合伙人未获此商品授权' });
+    const row = await MarketPartnerLeadEvent.create({ tenantId: tenant(req),
+      partnerId: partner._id, patientId: patient._id, productId: product._id,
+      directReferral: req.body.directReferral === true, evidence, occurredAt: new Date(),
+      submittedBy: req.admin._id });
+    res.status(201).json({ success: true, data: row });
+  } catch (err) { fail(res, err); }
+});
+
+router.patch('/lead-events/:id/review', async (req, res) => {
+  if (!validId(req.params.id) || !['approved', 'rejected'].includes(req.body?.status))
+    return res.status(400).json({ success: false, message: '审核状态无效' });
+  try {
+    const row = await MarketPartnerLeadEvent.findOne({ _id: req.params.id,
+      tenantId: tenant(req), status: 'requested' });
+    if (!row) return res.status(404).json({ success: false, message: '待审核沟通事件不存在' });
+    if (String(row.submittedBy) === String(req.admin._id))
+      return res.status(403).json({ success: false, message: '记录人与审核人须为不同人员' });
+    const updated = await MarketPartnerLeadEvent.findOneAndUpdate({ _id: row._id, status: 'requested' },
+      { $set: { status: req.body.status, reviewedBy: req.admin._id, reviewedAt: new Date() } }, { new: true });
+    if (!updated) return res.status(409).json({ success: false, message: '审核状态已变化' });
+    res.json({ success: true, data: updated });
   } catch (err) { fail(res, err); }
 });
 
@@ -213,6 +265,10 @@ router.post('/offline-orders', async (req, res) => {
       patientId: patient._id, productId: product._id, code });
     if (!match) return res.status(409).json({ success: false, message: '推荐码无效，或该合伙人未获此商品授权' });
     claimedAttributionId = match.attribution._id;
+    const contribution = await require('../utils/marketPartnerLeadEvent').contributionAtOrder({
+      tenantId: tenant(req), partnerId: match.attribution.partnerId, patientId: patient._id,
+      productId: product._id, at: new Date(),
+    });
     const order = await Order.create({ user: patient._id, payerUser: patient._id,
       beneficiaryName: patient.name || '', tenantId: tenant(req), serviceId: String(product._id),
       serviceName: product.name, servicePrice: listed, unitPrice: listed,
@@ -225,6 +281,10 @@ router.post('/offline-orders', async (req, res) => {
       serviceProviderSnapshot: { code: product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
       marketPartnerId: match.attribution.partnerId, marketPartnerAttributionId: match.attribution._id,
       marketPartnerRuleId: match.rule._id, marketPartnerRuleVersion: match.rule.version,
+      marketPartnerLeadEventId: contribution?.eventId || null,
+      marketPartnerDirectEventId: contribution?.directEventId || null,
+      marketPartnerDirectReferral: contribution?.directReferral === true,
+      marketPartnerFirstConversationAt: contribution?.firstConversationAt || null,
       marketPartnerContractReference: contractReference,
       note: `线下合同订单：${contractReference}` });
     createdOrder = true;

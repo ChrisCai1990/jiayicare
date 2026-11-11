@@ -171,6 +171,8 @@ const orderSchema = new mongoose.Schema({
   marketPartnerRuleVersion: { type: Number, default: null },
   marketPartnerDirectReferral: { type: Boolean, default: false },
   marketPartnerFirstConversationAt: { type: Date, default: null },
+  marketPartnerLeadEventId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerLeadEvent', default: null },
+  marketPartnerDirectEventId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerLeadEvent', default: null },
   marketPartnerContractReference: { type: String, default: null },
   fulfillerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 服务人（实际提供服务，单服务人场景）
   // 多服务岗位归属：产品由多岗位协同服务时，每个岗位对应的具体服务人。结算时按产品 servicePerformerRoles

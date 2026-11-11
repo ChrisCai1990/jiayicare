@@ -22,6 +22,7 @@ export default function MarketPartnerManagementPage() {
   const [receipts, setReceipts] = useState([])
   const [offlineOrders, setOfflineOrders] = useState([])
   const [attributedOrders, setAttributedOrders] = useState([])
+  const [leadEvents, setLeadEvents] = useState([])
   const [customerHistories, setCustomerHistories] = useState([])
   const [offlineRefunds, setOfflineRefunds] = useState([])
   const [lossReviews, setLossReviews] = useState([])
@@ -42,12 +43,13 @@ export default function MarketPartnerManagementPage() {
   const [receipt, setReceipt] = useState({ orderId: '', amountYuan: '', reference: '', receivedAt: '', evidence: '' })
   const [offlineOrder, setOfflineOrder] = useState({ patientId: '', productId: '', specificationLabel: '', priceYuan: '', partnerCode: '', contractReference: '' })
   const [customerHistory, setCustomerHistory] = useState({ orderId: '', priorPaidPeriods: '0', evidence: '' })
+  const [leadEvent, setLeadEvent] = useState({ patientId: '', productId: '', partnerCode: '', directReferral: false, evidence: '' })
   const [offlineRefund, setOfflineRefund] = useState({ orderId: '', amountYuan: '', reference: '', evidence: '', reason: '' })
   const [lossReview, setLossReview] = useState({ orderId: '', terminatedAt: '', reason: '', evidence: '' })
 
   const refresh = async () => {
-    const [p, r, t, productsResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse] = await Promise.all([
-      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(),
+    const [p, r, t, productsResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse] = await Promise.all([
+      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(),
     ])
     setPartners(p.data || [])
     setRules(r.data || [])
@@ -59,6 +61,7 @@ export default function MarketPartnerManagementPage() {
     setOfflineOrders(offlineOrdersResponse.data || [])
     setAttributedOrders(attributedOrdersResponse.data || [])
     setCustomerHistories(customerHistoriesResponse.data || [])
+    setLeadEvents(leadEventsResponse.data || [])
     setOfflineRefunds(offlineRefundsResponse.data || [])
     setLossReviews(lossReviewsResponse.data || [])
   }
@@ -131,6 +134,21 @@ export default function MarketPartnerManagementPage() {
           {item.status !== 'active' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.setMarketPartnerStatus(item._id, 'active'))}>启用</button>}
           {item.status === 'active' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.setMarketPartnerStatus(item._id, 'suspended'))}>暂停</button>}
         </td></tr>)}
+      </tbody></table></div>
+    </section>
+    <section style={boxStyle}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>首次沟通与亲自促成证据</h2>
+      <p style={{ color: '#667a6d' }}>请在首次方案沟通时登记，时间由服务器生成且不可回填。另一位管理员审核通过后，新订单才会冻结这条证据，用于亲自推荐和 7 天促成奖励。</p>
+      <form onSubmit={e => { e.preventDefault(); run(() => adminAPI.submitMarketPartnerLeadEvent(leadEvent)) }} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <input style={inputStyle} aria-label="沟通客户ID" placeholder="客户ID" value={leadEvent.patientId} onChange={e => setLeadEvent({ ...leadEvent, patientId: e.target.value })} required />
+        <select style={inputStyle} aria-label="沟通商品" value={leadEvent.productId} onChange={e => setLeadEvent({ ...leadEvent, productId: e.target.value })} required><option value="">选择商品</option>{products.filter(item => item.status === 'on').map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
+        <input style={inputStyle} aria-label="沟通合伙人码" placeholder="合伙人推荐码" value={leadEvent.partnerCode} onChange={e => setLeadEvent({ ...leadEvent, partnerCode: e.target.value })} required />
+        <label><input type="checkbox" checked={leadEvent.directReferral} onChange={e => setLeadEvent({ ...leadEvent, directReferral: e.target.checked })} /> 亲自促成</label>
+        <input style={{ ...inputStyle, minWidth: 280 }} aria-label="沟通证据" placeholder="首次沟通具体内容与依据" value={leadEvent.evidence} onChange={e => setLeadEvent({ ...leadEvent, evidence: e.target.value })} required />
+        <button className="btn btn-primary" disabled={busy}>登记首次沟通</button>
+      </form>
+      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>合伙人</th><th>客户</th><th>商品</th><th>记录时间</th><th>亲自促成</th><th>状态</th><th>操作</th></tr></thead><tbody>
+        {leadEvents.map(item => <tr key={item._id}><td>{item.partnerId?.name || '—'}</td><td>{item.patientId?.name || '—'}</td><td>{item.productId?.name || '—'}</td><td>{item.occurredAt?.slice(0, 16).replace('T', ' ')}</td><td>{item.directReferral ? '是' : '否'}</td><td>{item.status}</td><td>{item.status === 'requested' && <><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerLeadEvent(item._id, 'approved'))}>审核通过</button> <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerLeadEvent(item._id, 'rejected'))}>退回</button></>}</td></tr>)}
       </tbody></table></div>
     </section>
     <section style={boxStyle}>

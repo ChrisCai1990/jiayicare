@@ -147,6 +147,14 @@ export default function Layout() {
   const { admin, logout } = useAdmin()
   const nav = useNavigate()
   const loc = useLocation()
+  const [marketPartnerAvailable, setMarketPartnerAvailable] = useState(false)
+  useEffect(() => {
+    if (admin?.role !== 'superadmin' || admin?.tenantStatus === 'setup') return
+    let cancelled = false
+    adminAPI.marketPartners().then(() => { if (!cancelled) setMarketPartnerAvailable(true) })
+      .catch(() => { if (!cancelled) setMarketPartnerAvailable(false) })
+    return () => { cancelled = true }
+  }, [admin?.role, admin?.tenantId, admin?.tenantStatus])
   const visibleSections = useMemo(
     () => NAV_SECTIONS
       .filter(section => admin?.role === 'platformSuper' ? section.platformOnly : !section.platformOnly)
@@ -154,11 +162,12 @@ export default function Layout() {
         ...section,
         items: section.items.filter(item =>
           (!item.superadminOnly || admin?.role === 'superadmin')
+          && (item.path !== '/market-partners' || marketPartnerAvailable)
           && (!item.allowedRoles || item.allowedRoles.includes(admin?.role))
           && (!item.aiControlOnly || admin?.role === 'platformSuper')
           && (admin?.tenantStatus !== 'setup' || ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees', '/saas-plan'].includes(item.path))),
       })).filter(section => section.items.length),
-    [admin?.role, admin?.tenantId, admin?.tenantStatus],
+    [admin?.role, admin?.tenantId, admin?.tenantStatus, marketPartnerAvailable],
   )
   const activeSection = visibleSections.find(section => section.items.some(item => isItemActive(loc.pathname, item.path)))?.label
   const activeItem = visibleSections.flatMap(section => section.items).find(item => isItemActive(loc.pathname, item.path))
