@@ -78,6 +78,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const app = express();
     app.use(express.json());
     app.use('/api/admin/market-partners', require('../src/routes/marketPartnersAdmin'));
+    app.use('/api/market-partner', require('../src/routes/marketPartnerPortal'));
     app.use('/api/admin', require('../src/routes/admin'));
     app.use('/api/services', require('../src/routes/services'));
     app.use('/api/staff', require('../src/routes/annualServicePeriods'));
@@ -386,6 +387,17 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(memberRule.status, 201, JSON.stringify(memberRule.body));
     assert.equal((await call(clerkId, 'PATCH',
       `${prefix}/rules/${memberRule.body.data._id}/publish`, {})).status, 200);
+    const memberPortalToken = jwt.sign({ type: 'marketPartner', id: String(memberPartner.body.data._id),
+      tenantId: String(tenantId) }, process.env.JWT_SECRET);
+    const memberProducts = await fetch(`${base}/api/market-partner/products`, {
+      headers: { authorization: `Bearer ${memberPortalToken}` },
+    });
+    assert.equal(memberProducts.status, 200);
+    const memberLinks = (await memberProducts.json()).data;
+    assert.equal(memberLinks.length, 1);
+    assert.equal(memberLinks[0].id, String(memberPackageId));
+    assert.match(memberLinks[0].miniProgramPath,
+      new RegExp(`productId=${memberPackageId}&partnerCode=${memberPartner.body.data.referralCode}$`));
     const memberClaim = await fetch(`${base}/api/services/partner-referrals/claim`, {
       method: 'POST', headers: { authorization: `Bearer ${customerToken}`,
         'content-type': 'application/json' },

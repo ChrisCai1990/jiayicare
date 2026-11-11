@@ -7,6 +7,7 @@ const MarketPartnerRule = require('../models/MarketPartnerRule');
 const MarketPartnerCommission = require('../models/MarketPartnerCommission');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
+const ServicePackage = require('../models/ServicePackage');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
 
 router.use((req, res, next) => process.env.MARKET_PARTNER_ENABLED === 'true'
@@ -84,11 +85,16 @@ router.get('/me', (req, res) => res.json({ success: true, data: { name: req.mark
 router.get('/products', async (req, res) => {
   const rules = await MarketPartnerRule.find({ tenantId: req.marketPartner.tenantId,
     productLine: req.marketPartner.productLine, status: 'active', effectiveFrom: { $lte: new Date() },
-    $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: new Date() } }] }).select('productId').lean();
-  const products = await Product.find({ _id: { $in: rules.map(row => row.productId) }, status: 'on' })
+    $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: new Date() } }] }).select('productId sourceType').lean();
+  const products = await Product.find({ _id: { $in: rules.filter(row => row.sourceType !== 'servicePackage').map(row => row.productId) },
+    status: 'on', paymentChannel: { $ne: 'offline' } })
     .select('name').lean();
-  res.json({ success: true, data: products.map(product => ({ id: String(product._id), name: product.name,
-    miniProgramPath: `/pages/services/mall/index?productId=${product._id}&partnerCode=${req.marketPartner.referralCode}` })) });
+  const packages = await ServicePackage.find({ _id: { $in: rules.filter(row => row.sourceType === 'servicePackage').map(row => row.productId) },
+    active: true, 'activation.enabled': true, 'activation.durationMonths': 12,
+    'configuration.membershipTier': 'consumer365', 'configuration.includes365': true })
+    .select('name').lean();
+  res.json({ success: true, data: [...products, ...packages].map(item => ({ id: String(item._id), name: item.name,
+    miniProgramPath: `/pages/services/mall/index?productId=${item._id}&partnerCode=${req.marketPartner.referralCode}` })) });
 });
 
 router.get('/commissions', async (req, res) => {
