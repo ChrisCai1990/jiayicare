@@ -88,3 +88,9 @@ GitHub 插件连查询当前登录账号也返回 `403 Sorry. Your account was s
 生产可设置 `STARTUP_SCHEMA_WRITES_ENABLED=false`，因此新增唯一索引不能依赖自动建索引。已加入索引核对脚本 `backend/src/scripts/marketPartnerIndexMigration.js`：默认只列缺口，只有明确设定 `MARKET_PARTNER_INDEX_APPLY=true` 才建索引；启用 `MARKET_PARTNER_ENABLED=true` 时后端启动会检查索引，缺失则拒绝启动。尚无可用隔离 MongoDB 实测索引创建和并发收款/退款；这仍是上线阻断项。
 
 管理端侧栏仅在本机构合伙人 API 可用时显示“市场合伙人”，默认关停阶段不暴露空入口。本地未找到 `mongod`、Docker 或 Podman；20 项定向测试、管理端构建和后端语法检查通过，不能替代真实数据库及小程序审核验收。
+
+## 2026-11-11 本地真实 MongoDB 索引与并发验收
+
+在工作区旧验收资料中找回已校验的 MongoDB 7.0.34 Windows 便携版。新建仅绑定 `127.0.0.1:27135` 的隔离实例；新增显式开关测试 `backend/test/marketPartnerMongo.integration.test.js`，硬编码回环地址、随机测试库，测试后删除该随机库，不读取应用 `MONGODB_URI`。真实 MongoDB 中先核对缺失索引，再执行创建并复查齐备。线下收款编号、合伙人打款编号、合伙人追回编号、线下合同编号、线下退款编号、团队打款编号各做 20 路并发插入，每组仅 1 条成功、19 条被唯一索引拒绝，测试通过。其余 18 项定向单测通过。
+
+这证明索引迁移及上述编号的数据库去重约束在本地真实 MongoDB 成立；尚未验证完整 HTTP 收款/退款审核、年度服务期联动、角色权限及生产历史数据。生产索引仍须只读预检后单独迁移；不得据此打开生产功能开关。
