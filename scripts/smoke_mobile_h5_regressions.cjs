@@ -42,7 +42,7 @@ async function run() {
       periodLabel: url.searchParams.get('period') === 'month' ? '本月记录汇总' : '本周记录汇总',
       dateRange: url.searchParams.get('period') === 'month' ? '10/11 - 11/10' : '11/3 - 11/10',
       recordCount: process.env.SMOKE_CHART_LAYOUT ? 6 : 2, taskCompletion: { total: 0, completed: 0, rate: 0 },
-      metrics: [{ type: 'bloodPressure', label: '血压', value: '118/76', unit: 'mmHg', delta: '+7/+8' }],
+      metrics: [{ type: 'bloodPressure', label: '血压', value: '118/76', unit: 'mmHg', delta: '+7/+8', changeText: '10月22日至11月12日：收缩压上升 7 mmHg，舒张压上升 8 mmHg。' }],
     } };
     else if (path === '/guardian-children' || path === '/family-links') data = { success: true, data: [] };
     else if (path === '/records') {
@@ -113,6 +113,14 @@ async function run() {
     await page.getByText('健康报告', { exact: true }).first().click();
     await page.getByText('近30天', { exact: true }).first().click();
     await page.getByText('近30天记录汇总').waitFor();
+    await page.getByText('10月22日至11月12日：收缩压上升 7 mmHg，舒张压上升 8 mmHg。').waitFor();
+    if (process.env.SMOKE_MONTHLY_CHANGE) {
+      if (errors.length) throw new Error(`page errors: ${errors.join('; ')}`);
+      console.log('monthly comparison rendered');
+      await browser.close();
+      return;
+    }
+    await page.getByText('查看曲线 ›').first().click();
     await page.getByText('本时段该手臂仅有 1 次记录，暂无变化趋势').waitFor();
     if (process.env.SMOKE_CHART_LAYOUT) {
       await page.getByText('近30天血压记录：2 次').waitFor();
