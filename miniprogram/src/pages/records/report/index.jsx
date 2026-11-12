@@ -9,8 +9,7 @@ import { recordsWithinDays } from '../../../utils/reportTrend';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
-// 对齐 app/src/screens/records/HealthReportScreen.js 的核心信息：周期评分+指标趋势图化展示+任务完成率+亮点。
-const TREND_ICON = { down: '↓', up: '↑', stable: '–' };
+const TREND_DESCRIPTION = { down: '下降', up: '上升', stable: '基本持平' };
 const bloodPressureArm = record => {
   const arm = record?.arm || record?.extra?.arm || record?.note || '';
   if (/左[臂手]/.test(arm)) return '左臂';
@@ -28,6 +27,7 @@ export default function HealthReportPage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState({});
+  const [expandedMetric, setExpandedMetric] = useState('');
   const [showRecords, setShowRecords] = useState(false);
   const [records, setRecords] = useState([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -37,6 +37,8 @@ export default function HealthReportPage() {
     setLoading(true);
     setReport(null);
     setShowRecords(false);
+    setExpandedMetric('');
+    setChartData({});
     userAPI.getReport(period).then((res) => {
       if (res.success) setReport(res.data);
     }).catch(() => {}).finally(() => setLoading(false));
@@ -82,7 +84,6 @@ export default function HealthReportPage() {
   }, [report, period]);
 
   const bpRecords = records.filter(record => record.type === 'bloodPressure');
-  const bpByArm = ['左臂', '右臂'].map(arm => ({ arm, record: bpRecords.find(record => bloodPressureArm(record) === arm) })).filter(item => item.record);
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -140,29 +141,24 @@ export default function HealthReportPage() {
                 const key = m.type || m.key || m.label;
                 const points = chartData[key];
                 const statusColor = colors.textPrimary;
-                const trendColor = colors.textSecondary;
+                const isExpanded = expandedMetric === key;
+                const trendDescription = m.type === 'bloodPressure'
+                  ? (bpRecords.length > 1 ? '查看分侧趋势' : '已有记录')
+                  : (points?.length > 1 ? (TREND_DESCRIPTION[m.trend] || '查看变化趋势') : '已有记录');
                 return (
                   <View key={i} style={{ backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.md}px`, marginBottom: '8px', boxShadow: shadow.card }}>
-                    <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <View onClick={() => setExpandedMetric(current => current === key ? '' : key)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
                       <Text style={{ fontSize: '14px', color: colors.textPrimary, fontWeight: 600 }}>{m.label}</Text>
                       <View style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Text style={{ fontSize: '16px', fontWeight: 800, color: statusColor }}>{m.value ?? m.displayValue}</Text>
-                        <Text style={{ fontSize: '11px', color: colors.textMuted }}>{m.unit}</Text>
-                        {!!m.delta && (m.type !== 'bloodPressure' || bpByArm.length === 0) && (
-                          <Text style={{ fontSize: '11px', fontWeight: 600, color: trendColor, backgroundColor: trendColor + '20', padding: '2px 6px', borderRadius: `${radius.full}px` }}>{TREND_ICON[m.trend] || ''} {m.delta}</Text>
-                        )}
+                        <Text style={{ fontSize: '12px', color: colors.textSecondary }}>{trendDescription}</Text>
+                        <Text style={{ fontSize: '12px', color: colors.primary }}>{isExpanded ? '收起 ▲' : '查看曲线 ›'}</Text>
                       </View>
                     </View>
-                    {m.type === 'bloodPressure' && bpByArm.length > 0 && (
-                      <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
-                        {bpByArm.map(({ arm, record }) => <Text key={arm} style={{ fontSize: '12px', color: colors.textSecondary, backgroundColor: colors.background, padding: '5px 8px', borderRadius: `${radius.sm}px` }}>{arm} {record.value} mmHg · {recordDate(record.recordedAt)}</Text>)}
-                      </View>
-                    )}
-                    {m.type === 'bloodPressure' ? (recordsLoading
+                    {isExpanded && (m.type === 'bloodPressure' ? (recordsLoading
                       ? <Text style={{ fontSize: '12px', color: colors.textMuted }}>血压趋势加载中...</Text>
                       : recordsError ? <Text style={{ fontSize: '12px', color: colors.danger }}>{recordsError}</Text>
                       : <View><Text style={{ display: 'block', fontSize: '11px', color: colors.textMuted, marginBottom: '6px' }}>{period === 'month' ? '近30天' : '近7天'}血压趋势</Text><BloodPressureChart records={bpRecords} height={105} /></View>)
-                      : points?.length > 1 && <TrendChart points={points} height={70} color={statusColor} />}
+                      : <TrendChart points={points || []} height={90} color={statusColor} unit={m.unit || ''} />)}
                   </View>
                 );
               })}
