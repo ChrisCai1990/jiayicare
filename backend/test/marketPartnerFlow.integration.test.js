@@ -631,6 +631,10 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(packageAccounting.status, 200, JSON.stringify(packageAccounting.body));
     assert.deepEqual(packageAccounting.body.data.revenueAllocation.map(item => item.amountCents), [21900, 14600]);
     assert.deepEqual(packageAccounting.body.data.revenueAllocation.map(item => item.businessType), ['service', 'product']);
+    const packageRevenue = await call(clerkId, 'GET', `${prefix}/team-revenue`);
+    assert.equal(packageRevenue.status, 200, JSON.stringify(packageRevenue.body));
+    assert.deepEqual(packageRevenue.body.data.filter(item => ['advisory', 'testing'].includes(item.serviceItemKey))
+      .map(item => [item.businessType, item.amountCents]), [['service', 21900], ['product', 14600]]);
     assert.equal((await listCustomerPackages()).find(item => item.id === String(memberPackageId)).canJoin365, false);
     const firstMemberCommission = await Commission.findOne({ orderId: firstMemberOrderId }).lean();
     assert.equal(firstMemberCommission.periodNumber, 1);
