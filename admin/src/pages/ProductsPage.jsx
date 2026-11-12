@@ -788,7 +788,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
     { key: 'fund', label: '基金抵扣' },
     { key: 'memberBundle', label: '会员专享包' },
     { key: 'businessAllocation', label: '业务归属' },
-    { key: 'performance', label: '绩效分配' },
+    { key: 'performance', label: '员工推广／服务佣金' },
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
     { key: 'ai', label: 'AI推荐设置' },
@@ -962,6 +962,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
 
           {tab === 'performance' && (
             <div>
+              <p style={{ color: '#667a6d', fontSize: 12 }}>本页仅设置员工的推广佣金与实际履约服务佣金，可按收费项目、岗位及个人调整；市场合伙人佣金在“合伙人管理”单独设置。业务营收归属在“业务归属”页。</p>
               {(form.servicePrices || []).some(price => price.label?.trim()) && <SpecificationPerformanceSettings
                 prices={form.servicePrices} staffList={staffList} productRule={form.performanceRule}
                 productRoles={form.servicePerformerRoles} productOverrides={form.staffPerformanceOverrides}
