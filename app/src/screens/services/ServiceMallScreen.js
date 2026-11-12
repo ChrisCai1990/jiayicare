@@ -253,7 +253,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             </View>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView style={{ flexShrink: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {hasSpecs ? (
             <View style={[styles.modalPriceRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 8 }]}>
               <Text style={styles.modalPriceLabel}>选择规格</Text>
