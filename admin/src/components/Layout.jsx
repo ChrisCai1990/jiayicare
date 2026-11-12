@@ -71,8 +71,7 @@ const NAV_SECTIONS = [
       { label: '专项筛查项目', icon: 'screen', path: '/projects/lab-test-packages' },
       { label: '检查医嘱', icon: 'exam', path: '/projects/special-exams' },
       { label: '功能医学检测', icon: 'medical', path: '/projects/functional-medicine' },
-      { label: '服务项目', icon: 'service', path: '/projects/service-items' },
-      { label: '其他收费', icon: 'money', path: '/projects/other-charges' },
+      { label: '收费产品（线上/线下）', icon: 'money', path: '/projects/charge-products' },
       { label: '项目模板', icon: 'template', path: '/projects/templates' },
       { label: '随访表单', icon: 'form', path: '/projects/followup-forms' },
       { label: '随访方案', icon: 'plan', path: '/projects/followup-plans' },
@@ -98,7 +97,7 @@ const NAV_GROUPS = {
   },
   '项目设置': {
     '基础项目库': ['/projects/categories', '/projects/diseases', '/projects/specialty-library', '/projects/lab-test-items', '/projects/lab-test-orders', '/projects/lab-test-packages', '/projects/special-exams', '/projects/functional-medicine'],
-    '服务与随访': ['/projects/service-items', '/projects/other-charges', '/projects/templates', '/projects/followup-forms', '/projects/followup-plans'],
+    '服务与随访': ['/projects/charge-products', '/projects/templates', '/projects/followup-forms', '/projects/followup-plans'],
   },
 }
 

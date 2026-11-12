@@ -26,7 +26,16 @@ const productSchema = new mongoose.Schema({
   images:        [{ type: String }],
   // An unpublished IBD draft can await commercial pricing; every published product still needs a price.
   originalPrice: { type: Number, required: function () { return this.status === 'on'; }, min: 0, default: null },
-  servicePrices: [{ label: { type: String }, price: { type: Number } }],
+  servicePrices: [{
+    label: { type: String }, price: { type: Number },
+    businessAllocations: [{
+      key: { type: String, required: true }, name: { type: String, required: true },
+      businessType: { type: String, enum: ['service', 'product'], default: 'service' },
+      teamRole: { type: String, enum: require('../utils/tenantScope').SERVICE_PERFORMER_ROLES, required: true },
+      childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+      revenueSharePercent: { type: Number, min: 0, max: 100, required: true },
+    }],
+  }],
   memberPrices:  { type: mongoose.Schema.Types.Mixed, default: {} },
   category:      { type: String, required: true },
   sortOrder:     { type: Number, default: 999 },
@@ -49,7 +58,7 @@ const productSchema = new mongoose.Schema({
     enum: ['offline_service', 'remote_service', 'delivery_and_service', 'subscription_service', 'digital_content'],
     default: 'offline_service',
   },
-  paymentChannel: { type: String, enum: ['wechat_pay', 'offline'], default: 'wechat_pay' },
+  paymentChannel: { type: String, enum: ['wechat_pay', 'offline', 'both'], default: 'wechat_pay' },
   // 对外服务主体由商品逐项明确，避免把平台运营主体与实际服务提供方混淆。
   serviceProvider: { type: String, enum: ['platform', 'jiayihui_health'], default: 'platform' },
   bookingRequired: { type: Boolean, default: true },

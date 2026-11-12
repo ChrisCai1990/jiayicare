@@ -1094,9 +1094,9 @@ router.get('/lab-test-packages', adminAuth, async (req, res) => {
   res.json({ success: true, data: list, total });
 });
 makeProjectCRUD(LabTestPackage, 'lab-test-packages');
-makeProjectCRUD(ServiceItem,    'service-items');
+router.use('/service-items', adminAuth, (_req, res) => res.status(410).json({ success: false, message: '服务收费已统一到产品库，请在收费产品管理中维护' }));
 makeProjectCRUD(MedicalDeliveryResource, 'medical-delivery-resources');
-makeProjectCRUD(OtherCharge,    'other-charges');
+router.use('/other-charges', adminAuth, (_req, res) => res.status(410).json({ success: false, message: '其他收费已统一到产品库，请在收费产品管理中维护' }));
 
 // ── 特殊检查项目（额外支持软删除和检查类型筛选）──────────────────
 router.get('/special-exams', adminAuth, async (req, res) => {

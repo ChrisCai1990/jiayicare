@@ -215,8 +215,9 @@ export default function App() {
               <Route path="projects/lab-test-packages" element={<LabTestPackagePage />} />
               <Route path="projects/special-exams"    element={<SpecialExamPage />} />
               <Route path="projects/functional-medicine" element={<FunctionalMedicinePage />} />
-              <Route path="projects/service-items"    element={<ServiceItemPage />} />
-              <Route path="projects/other-charges"    element={<OtherChargePage />} />
+              <Route path="projects/charge-products" element={<ProductsPage />} />
+              <Route path="projects/service-items" element={<Navigate to="/projects/charge-products" replace />} />
+              <Route path="projects/other-charges" element={<Navigate to="/projects/charge-products" replace />} />
               <Route path="projects/templates"        element={<ProjectTemplatePage />} />
               <Route path="projects/followup-forms"   element={<FollowUpFormPage />} />
               <Route path="projects/followup-plans"   element={<FollowUpPlanPage />} />

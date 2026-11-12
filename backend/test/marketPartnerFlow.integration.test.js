@@ -98,6 +98,13 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const initialCatalog = await (await fetch(`${base}/api/services`)).json();
     assert.equal(initialCatalog.data.services.some(service => service.id === String(productId)), false,
       'contract-only products must not appear as purchasable marketplace goods');
+    await mongoose.connection.db.collection('products').updateOne({ _id: productId },
+      { $set: { paymentChannel: 'both' } });
+    const dualChannelCatalog = await (await fetch(`${base}/api/services`)).json();
+    assert.equal(dualChannelCatalog.data.services.some(service => service.id === String(productId)), true,
+      'one product should be visible in the storefront and remain available for offline orders');
+    assert.equal((await call(clerkId, 'GET', '/api/admin/service-items')).status, 410);
+    assert.equal((await call(clerkId, 'GET', '/api/admin/other-charges')).status, 410);
     const childDoctorId = oid(), childNutritionId = oid();
     await mongoose.connection.db.collection('products').insertMany([
       { _id: childDoctorId, tenantId, name: '顾问子产品', category: 'health', status: 'off', originalPrice: 60 },
@@ -285,6 +292,18 @@ test('online and offline partner payments, renewals, refunds and team incentives
       partnerCode: partner.body.data.referralCode, priceCents: 10000 });
     assert.equal(order.status, 201, JSON.stringify(order.body));
     const orderId = order.body.data._id;
+    await mongoose.connection.db.collection('products').updateOne({ _id: productId }, { $set: { servicePrices: [
+      { label: '体检服务', price: 80, businessAllocations: [
+        { key: 'exam', name: '顾问管理服务', businessType: 'service', teamRole: 'familyDoctor', revenueSharePercent: 100 }] },
+      { label: '陪同服务', price: 20, businessAllocations: [
+        { key: 'escort', name: '健管专员管理服务', businessType: 'service', teamRole: 'healthManager', revenueSharePercent: 100 }] },
+    ] } });
+    const specOrder = await call(clerkId, 'POST', `${prefix}/offline-orders`, { productId: String(productId),
+      patientId: String(patientId), specificationLabel: '陪同服务', contractReference: 'OFFLINE-SPEC-001',
+      partnerCode: partner.body.data.referralCode, priceCents: 2000 });
+    assert.equal(specOrder.status, 201, JSON.stringify(specOrder.body));
+    assert.equal(specOrder.body.data.servicePrice, 20);
+    assert.deepEqual(specOrder.body.data.businessAllocationsSnapshot.map(item => item.key), ['escort']);
     assert.equal((await call(clerkId, 'PATCH', `/api/admin/orders/${orderId}/pay`,
       { paymentMethod: 'onsite', paidAmount: 100 })).status, 200);
     assert.equal(await Commission.countDocuments({ orderId }), 0);

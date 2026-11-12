@@ -2099,7 +2099,29 @@ router.post('/products/ai-draft', adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/products
-async function validateProductSettlementConfig({ serviceItems, staffPerformanceOverrides }, tenantId, productId = null) {
+async function validateProductSettlementConfig({ serviceItems, servicePrices, staffPerformanceOverrides }, tenantId, productId = null) {
+  if (servicePrices !== undefined) {
+    if (!Array.isArray(servicePrices)) return '收费项目格式错误';
+    const labels = servicePrices.map(row => String(row.label || '').trim());
+    if (new Set(labels).size !== labels.length) return '收费项目名称不能重复';
+    const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
+    for (const price of servicePrices) {
+      const rows = price.businessAllocations || [];
+      if (!Array.isArray(rows)) return '收费项目业务归属格式错误';
+      if (!rows.length) continue;
+      if (!String(price.label || '').trim() || new Set(rows.map(row => row.key)).size !== rows.length
+        || rows.some(row => !String(row.key || '').trim() || !String(row.name || '').trim()
+          || !['service', 'product'].includes(row.businessType || 'service') || !roles.includes(row.teamRole)
+          || !Number.isFinite(Number(row.revenueSharePercent)) || Number(row.revenueSharePercent) <= 0
+          || (row.businessType === 'product' && !mongoose.isValidObjectId(row.childProductId)))
+        || Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent), 0) - 100) > 0.001)
+        return `收费项目「${price.label}」的业务归属须完整填写且合计100%`;
+      const ids = [...new Set(rows.filter(row => row.childProductId).map(row => String(row.childProductId)))];
+      if (ids.some(id => !mongoose.isValidObjectId(id) || id === String(productId))) return '关联产品不能是当前产品';
+      if (ids.length && await Product.countDocuments({ _id: { $in: ids }, tenantId }) !== ids.length)
+        return '关联产品须来自本机构产品库';
+    }
+  }
   if (serviceItems !== undefined) {
     if (!Array.isArray(serviceItems)) return '子产品配置格式错误';
     const linked = serviceItems.filter(item => item.name || item.childProductId || Number(item.revenueSharePercent) > 0);
@@ -2138,7 +2160,7 @@ async function validateProductSettlementConfig({ serviceItems, staffPerformanceO
 
 router.post('/products', adminAuth, async (req, res) => {
   const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
-  const settlementError = await validateProductSettlementConfig({ serviceItems, staffPerformanceOverrides }, req.admin.tenantId);
+  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, staffPerformanceOverrides }, req.admin.tenantId);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
@@ -2146,7 +2168,7 @@ router.post('/products', adminAuth, async (req, res) => {
   if (!name || !category) return res.status(400).json({ success: false, message: '名称、分类为必填项' });
   const priceError = productPublicationError({ name, category, originalPrice, servicePrices, memberPrices, skus, specialtyTerms, status: status || 'off' });
   if (priceError) return res.status(400).json({ success: false, message: priceError });
-  if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
+  if (paymentChannel && !['wechat_pay', 'offline', 'both'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
   const product = await Product.create({
@@ -2174,12 +2196,12 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
-  if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
+  if (paymentChannel && !['wechat_pay', 'offline', 'both'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
   const existingProduct = await Product.findById(req.params.id);
   if (!existingProduct) return res.status(404).json({ success: false, message: '产品不存在' });
-  const settlementError = await validateProductSettlementConfig({ serviceItems, staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
+  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const sharedInventory = existingProduct.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: existingProduct._id });
   if (sharedInventory && stock !== undefined && Number(stock) !== Number(existingProduct.stock)) return res.status(409).json({ success: false, message: '已启用物资台账，请通过入库或盘点调整库存' });

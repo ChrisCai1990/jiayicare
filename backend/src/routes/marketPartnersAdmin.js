@@ -435,7 +435,7 @@ router.post('/offline-orders', async (req, res) => {
   let createdOrder = false;
   try {
     const [product, patient] = await Promise.all([
-      Product.findOne({ _id: productId, tenantId: tenant(req), status: 'on', paymentChannel: 'offline' }),
+      Product.findOne({ _id: productId, tenantId: tenant(req), status: 'on', paymentChannel: { $in: ['offline', 'both'] } }),
       User.findOne({ _id: patientId, tenantId: tenant(req), isDeleted: { $ne: true } }).select('_id name tenantId'),
     ]);
     if (!product || !patient) return res.status(404).json({ success: false, message: '本机构线下商品或客户不存在' });
@@ -472,6 +472,7 @@ router.post('/offline-orders', async (req, res) => {
       serviceItemsSnapshot: serviceItems.map(item => ({ key:item.key, name:item.name, units:item.units,
         usedUnits:0, childProductId:item.childProductId || null, businessType:item.businessType || 'service', teamRole:item.teamRole || '',
         revenueSharePercent:item.revenueSharePercent || 0, performers:item.performers || [] })),
+      businessAllocationsSnapshot: require('../utils/productBusinessAllocations').snapshot(product, specificationLabel),
       performanceRuleSnapshot: product.performanceRule?.toObject?.() || product.performanceRule || null,
       servicePerformerRolesSnapshot: (product.servicePerformerRoles || []).map(row => row.toObject?.() || row),
       staffPerformanceOverridesSnapshot: (product.staffPerformanceOverrides || []).map(row => row.toObject?.() || row),

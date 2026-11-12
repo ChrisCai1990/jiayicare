@@ -575,7 +575,7 @@ router.post('/order', auth, async (req, res) => {
     return res.status(400).json({ success: false, message: '该服务须使用微信小程序支付' });
   }
   const commercePaymentChannel = service.paymentChannel || 'wechat_pay';
-  if (paidAmount > 0 && commercePaymentChannel !== 'wechat_pay') {
+  if (paidAmount > 0 && !['wechat_pay', 'both'].includes(commercePaymentChannel)) {
     return res.status(409).json({ success: false, message: '该商品当前未配置普通微信支付，请联系客服' });
   }
   if (paidAmount > 0 && !appPayment && !req.user.wechatMpOpenid) {
@@ -698,7 +698,7 @@ router.post('/order', auth, async (req, res) => {
       key: item.key, name: item.name, businessType: item.businessType,
       teamRole: item.teamRole || '', childProductId: item.childProductId || null,
       revenueSharePercent: item.revenueSharePercent,
-    })),
+    })).concat(product ? require('../utils/productBusinessAllocations').snapshot(product, service.specificationLabel) : []),
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
     staffPerformanceOverridesSnapshot: (product?.staffPerformanceOverrides || []).map(row => row.toObject ? row.toObject() : row),
     servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
