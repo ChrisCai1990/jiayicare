@@ -104,7 +104,7 @@ export default function NotificationSettingsPage() {
           </View>
         </View>
       ))}
-      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block' }}>{process.env.TARO_ENV === 'h5' ? '上方入口管理 App 系统通知；分类提醒开关暂未开放。' : '分类提醒开关仅影响小程序内的展示设置。'}</Text>
+      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block' }}>{process.env.TARO_ENV === 'h5' ? '上方入口管理 App 系统通知；分类提醒开关暂未开放。' : '分类开关目前仅保存在本机，尚未连接微信订阅通知。'}</Text>
       </View>
       </ScrollView>
     </View>
