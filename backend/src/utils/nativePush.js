@@ -24,9 +24,9 @@ function getDispatcher() {
   }
   return dispatcher;
 }
-async function enqueueNativePush(message) {
+async function enqueueNativePush(message, deliveryKey) {
   if (!enabled()) return;
-  try { await getDispatcher().enqueue(message); }
+  try { await getDispatcher().enqueue(message, deliveryKey); }
   catch { console.warn('[native-push] queue write failed'); }
 }
 let timer;

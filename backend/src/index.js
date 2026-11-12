@@ -217,6 +217,8 @@ app.listen(PORT, () => {
   require('./utils/recurringSupplyPlanScheduler').startRecurringSupplyPlanScheduler();
   require('./utils/medicationLifecycleScheduler').startMedicationLifecycleScheduler();
   require('./utils/combinedMedicationReminder').startMedicationReminderScheduler();
+  require('./utils/customerReminderPushScheduler').startCustomerReminderPushScheduler();
+  require('./utils/serviceExpiryPushScheduler').startServiceExpiryPushScheduler();
   require('./utils/appointmentReminderScheduler').startAppointmentReminderScheduler();
   require('./utils/checkupAppointmentReminderScheduler').startCheckupAppointmentReminderScheduler();
 });

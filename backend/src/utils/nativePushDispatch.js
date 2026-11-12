@@ -1,4 +1,4 @@
-const humanTypes = new Set(['doctor', 'manager', 'planner', 'nutritionist', 'medicalAssistant']);
+const humanTypes = new Set(['doctor', 'manager', 'planner', 'nutritionist', 'medicalAssistant', 'system']);
 function eligible(message) {
   return !!message && humanTypes.has(message.type) && message.unread === true
     && !message.recalled && !message.isAI && !message.aiGenerated
@@ -6,9 +6,9 @@ function eligible(message) {
 }
 function createNativePushDispatch({ enabled, Job, Message, User, registry, transport, unreadCount = async () => 0, now = () => new Date() }) {
   return {
-    async enqueue(message) {
+    async enqueue(message, deliveryKey) {
       if (!enabled() || !eligible(message)) return;
-      await Job.updateOne({ _id: String(message._id) }, { $setOnInsert: {
+      await Job.updateOne({ _id: deliveryKey || String(message._id) }, { $setOnInsert: {
         messageId: message._id, state: 'pending', attempts: 0, dueAt: now(),
         expiresAt: new Date(now().getTime() + 24 * 60 * 60 * 1000),
       } }, { upsert: true });
@@ -32,6 +32,7 @@ function createNativePushDispatch({ enabled, Job, Message, User, registry, trans
           if (!devices.length) state = 'no_destination';
           for (const device of devices) {
             if (!enabled()) break;
+            if (device.settings?.[require('./nativePushCategory').category(message)] === false) continue;
             await transport.send({ provider: device.provider, token: device.token, messageId: String(message._id), count });
           }
         }

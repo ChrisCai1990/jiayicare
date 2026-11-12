@@ -6670,6 +6670,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   const { action, rejectReason, abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } = req.body;
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+  const wasAudited = report.audit_status === 'audited';
   const clinicalRoleError = clinicalManagerAuditError(report, req.staff);
   if (clinicalRoleError) return res.status(403).json({ success: false, message: clinicalRoleError });
   if (report.archiveOnly) return res.status(409).json({ success: false, message: '仅留存的补充原件不参与解析和审核' });
@@ -6775,6 +6776,17 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
       const workflow = require('../utils/medicalProxyWorkflow');
       await workflow.createClinicalPrescriptionMedicationDrafts(report, req.staff);
       if (!report.clinicalReview) await workflow.createPrescriptionMedicationDrafts({ patientId: report.user, assignedTo: req.staff._id }, [String(report._id)]);
+    }
+    if (!wasAudited) {
+      try {
+        const dedupeKey = `report-organized:${report._id}:${report.reviewRevision || 0}`;
+        const message = await Message.findOneAndUpdate({ dedupeKey }, { $setOnInsert: {
+          user: report.user, type: 'system', sender: '嘉医管家', title: '报告整理完成',
+          content: '您的检查资料已完成整理，可在 App 的报告档案中查看。',
+          pushCategory: 'report', unread: true, dedupeKey,
+        } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+        await require('../utils/nativePush').enqueueNativePush(message);
+      } catch (error) { console.error('[report-organized-push] failed', report._id, error.message); }
     }
   }
   res.json({ success: true, data: await MedicalReport.findById(report._id) });

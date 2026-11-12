@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const messageSchema = new mongoose.Schema({
   user:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   type:    { type: String, enum: ['doctor', 'manager', 'planner', 'medicalAssistant', 'system', 'user', 'nutritionist'], required: true },
+  pushCategory: { type: String, enum: require('../utils/nativePushCategory').categories, default: undefined },
   sender:  { type: String, required: true },
   title:   { type: String },
   content: { type: String, required: true },
@@ -48,5 +49,12 @@ messageSchema.index({ user: 1, unread: 1 });
 messageSchema.index({ conversationId: 1, createdAt: 1 });
 messageSchema.index({ type: 1, wecomAlertQueuedAt: 1, createdAt: 1 });
 messageSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
+
+// Only newly created, eligible messages enter the external notification queue.
+// The dispatcher rechecks unread/recall state before delivery.
+messageSchema.pre('save', function () { this.$locals.createdForPush = this.isNew; });
+messageSchema.post('save', async function (doc) {
+  if (this.$locals.createdForPush) await require('../utils/nativePush').enqueueNativePush(doc);
+});
 
 module.exports = mongoose.model('Message', messageSchema);

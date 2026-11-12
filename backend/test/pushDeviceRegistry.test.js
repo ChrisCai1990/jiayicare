@@ -11,7 +11,8 @@ function setup() {
   const api = createPushDeviceRegistry({
     enabled: () => enabled,
     Device: {
-      async updateOne(filter, update) { rows.set(filter._id, { _id: filter._id, ...update.$set }); },
+      findById(id) { return query(rows.get(id) || null); },
+      async updateOne(filter, update) { rows.set(filter._id, { ...rows.get(filter._id), _id: filter._id, ...update.$set }); },
       async deleteOne(filter) { for (const [id, row] of rows) if (matches(row, filter)) rows.delete(id); },
       find(filter) { return query([...rows.values()].filter(row => matches(row, filter))); },
     },
@@ -30,9 +31,12 @@ test('registration binds server identity, account switch transfers destination a
   const x = setup();
   await x.api.register(a, 'a1', { ...input, user: 'b', tenantId: 'tenant-b', sessionId: 'b1' });
   assert.equal([...x.rows.values()][0].user, 'a');
+  [...x.rows.values()][0].settings = { doctor: false };
   await x.api.register(a, 'a1', input);
   assert.equal(x.rows.size, 1);
+  assert.equal([...x.rows.values()][0].settings.doctor, false);
   await x.api.register(b, 'b1', input);
+  assert.deepEqual([...x.rows.values()][0].settings, {});
   await x.api.unregister(a, 'a1', input);
   assert.equal(x.rows.size, 1);
   assert.deepEqual(await x.api.destinations(a), []);

@@ -72,9 +72,10 @@ async function scanMedicationReminders(now = new Date()) {
         const dedupeKey = `medication-slot:${plan.user}:${due.toISOString()}`;
         const _id = new mongoose.Types.ObjectId(crypto.createHash('sha256').update(dedupeKey).digest('hex').slice(0,24));
         const result = await Message.updateOne({ _id }, { $setOnInsert: { user: plan.user, type: 'system', sender: '嘉医管家',
-          title: `${slot.time} 用药提醒`, content: slotContent(slot), unread: true, isAI: false, aiGenerated: false, dedupeKey,
+          title: `${slot.time} 用药提醒`, content: slotContent(slot), unread: true, isAI: false, aiGenerated: false, dedupeKey, pushCategory: 'medication',
         } }, { upsert: true, setDefaultsOnInsert: true });
         sent += result.upsertedCount || 0;
+        if (result.upsertedCount) await require('./nativePush').enqueueNativePush(await Message.findById(_id).lean());
       }
       const next = groupedSlots(meds, new Date(+now + 1))[0];
       await Reminder.updateOne(unchanged, { $set: { nextMedicationAt: next?.date || null, enabled: !!next,
