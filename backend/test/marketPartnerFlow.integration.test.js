@@ -116,7 +116,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(composite.status, 200, JSON.stringify(composite.body));
     const compositeOrder = await Order.create({ tenantId, user: patientId,
       serviceId: String(composite.body.data._id), serviceName: compositePayload.name, orderType: 'product',
-      orderNo: 'SYNTHETIC-COMPOSITE-001', paymentStatus: 'paid', paidAmount: 100.05, refundedAmount: 20,
+      orderNo: 'SYNTHETIC-COMPOSITE-001', paymentStatus: 'paid', paidAt: new Date(), paidAmount: 100.05, refundedAmount: 20,
       serviceItemsSnapshot: compositeItems, staffPerformanceOverridesSnapshot: compositePayload.staffPerformanceOverrides });
     const compositeAccounting = await call(clerkId, 'GET', `${prefix}/order-accounting/${compositeOrder._id}`);
     assert.equal(compositeAccounting.status, 200, JSON.stringify(compositeAccounting.body));
@@ -125,6 +125,64 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const teamRevenue = await call(clerkId, 'GET', `${prefix}/team-revenue`);
     assert.equal(teamRevenue.status, 200, JSON.stringify(teamRevenue.body));
     assert.deepEqual(teamRevenue.body.data.map(item => item.amountCents), [4803, 3202]);
+    const blockedCompositeRule = await call(clerkId, 'POST', `${prefix}/team-rules`, {
+      productId: String(composite.body.data._id), role: 'nutritionist', trigger: 'service_completed',
+      ruleType: 'percentage', basisPoints: 500, effectiveFrom: new Date().toISOString() });
+    assert.equal(blockedCompositeRule.status, 409, '组合规则不能按整单金额重复配置专项激励');
+    assert.equal((await call(clerkId, 'POST', `${prefix}/team-incentives`, {
+      orderId: String(compositeOrder._id), staffId: String(plannerId), role: 'nutritionist',
+    })).status, 409, '组合订单不能按整单净额给单个人员计提');
+    const compositeDoctorId = oid(), otherCompositeDoctorId = oid(), compositeNutritionistId = oid();
+    const doctorEvidenceId = oid(), nutritionEvidenceId = oid();
+    await mongoose.connection.db.collection('admins').insertMany([
+      { _id: compositeDoctorId, tenantId, username: 'composite-doctor', name: '组合顾问', password: 'unused', role: 'familyDoctor' },
+      { _id: otherCompositeDoctorId, tenantId, username: 'other-composite-doctor', name: '另一组合顾问', password: 'unused', role: 'familyDoctor' },
+      { _id: compositeNutritionistId, tenantId, username: 'composite-nutritionist', name: '组合营养师', password: 'unused', role: 'nutritionist' },
+    ]);
+    await Order.collection.updateOne({ _id: compositeOrder._id }, { $set: {
+      paymentMethod: 'wechat', redemptions: [
+        { _id: doctorEvidenceId, sequence: 1, serviceItemKey: 'doctor', redeemedBy: compositeDoctorId, redeemedAt: new Date() },
+        { _id: nutritionEvidenceId, sequence: 2, serviceItemKey: 'nutrition', redeemedBy: compositeNutritionistId, redeemedAt: new Date() },
+      ],
+    } });
+    await Payment.collection.insertOne({ _id: oid(), order: compositeOrder._id, user: patientId,
+      channel: 'wechat_pay', status: 'succeeded', amount: 100.05,
+      outTradeNo: 'COMPOSITE-PAID-001', paidAt: new Date() });
+    await Refund.collection.insertOne({ _id: oid(), order: compositeOrder._id, user: patientId,
+      status: 'succeeded', amount: 20, totalAmount: 100.05,
+      outRefundNo: 'COMPOSITE-REFUND-001', succeededAt: new Date() });
+    for (const [childId, role] of [[childDoctorId, 'familyDoctor'], [childNutritionId, 'nutritionist']]) {
+      const childRule = await call(clerkId, 'POST', `${prefix}/team-rules`, {
+        productId: String(childId), role, trigger: 'service_completed', ruleType: 'percentage',
+        basisPoints: 500, effectiveFrom: new Date(Date.now() - 86400000).toISOString() });
+      assert.equal(childRule.status, 201, JSON.stringify(childRule.body));
+      assert.equal((await call(clerkId, 'PATCH', `${prefix}/team-rules/${childRule.body.data._id}/publish`, {})).status, 200);
+    }
+    const compositeDoctorIncentive = await call(clerkId, 'POST', `${prefix}/team-incentives`, {
+      orderId: String(compositeOrder._id), staffId: String(compositeDoctorId), role: 'familyDoctor',
+      serviceItemKey: 'doctor', serviceEvidenceId: String(doctorEvidenceId), note: '顾问子项完成' });
+    assert.equal(compositeDoctorIncentive.status, 201, JSON.stringify(compositeDoctorIncentive.body));
+    assert.equal(compositeDoctorIncentive.body.data.basisCents, 4803);
+    assert.equal(compositeDoctorIncentive.body.data.amountCents, 240);
+    assert.equal((await call(clerkId, 'POST', `${prefix}/team-incentives`, {
+      orderId: String(compositeOrder._id), staffId: String(otherCompositeDoctorId), role: 'familyDoctor',
+      serviceItemKey: 'doctor', serviceEvidenceId: String(doctorEvidenceId), note: '重复认领同一子项',
+    })).status, 409, '同一子项核销不能发给第二人');
+    const compositeNutritionIncentive = await call(clerkId, 'POST', `${prefix}/team-incentives`, {
+      orderId: String(compositeOrder._id), staffId: String(compositeNutritionistId), role: 'nutritionist',
+      serviceItemKey: 'nutrition', serviceEvidenceId: String(nutritionEvidenceId), note: '营养子项完成' });
+    assert.equal(compositeNutritionIncentive.status, 201, JSON.stringify(compositeNutritionIncentive.body));
+    assert.equal(compositeNutritionIncentive.body.data.basisCents, 3202);
+    assert.equal(compositeNutritionIncentive.body.data.amountCents, 160);
+    assert.equal((await call(reviewerId, 'PATCH',
+      `${prefix}/team-incentives/${compositeDoctorIncentive.body.data._id}/confirm`, {})).status, 200);
+    await Refund.collection.insertOne({ _id: oid(), order: compositeOrder._id, user: patientId,
+      status: 'succeeded', amount: 20, totalAmount: 100.05,
+      outRefundNo: 'COMPOSITE-REFUND-002', succeededAt: new Date() });
+    await Order.collection.updateOne({ _id: compositeOrder._id }, { $set: { refundedAmount: 40 } });
+    await require('../src/utils/teamIncentiveSettlement').syncOrder(await Order.findById(compositeOrder._id));
+    assert.equal((await TeamIncentive.findById(compositeDoctorIncentive.body.data._id)).amountCents, 180);
+    assert.equal((await TeamIncentive.findById(compositeNutritionIncentive.body.data._id)).amountCents, 120);
     const partner = await call(clerkId, 'POST', prefix, { name: '合成合伙人', phone: '13900000001',
       productLine: 'singleVisit', contractReference: 'PARTNER-CONTRACT-001' });
     assert.equal(partner.status, 201, JSON.stringify(partner.body));
@@ -577,4 +635,106 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const secondMemberCommission = await Commission.findOne({ orderId: secondMemberOrderId }).lean();
     assert.equal(secondMemberCommission.periodNumber, 2);
     assert.equal(secondMemberCommission.accruedCents, 3650);
+
+    // 经营总览须汇总完整付款期、退款回溯和三类互斥推广来源，且隔离其他机构。
+    const overviewPaidAt = new Date('2030-01-01T04:00:00Z');
+    await Order.collection.insertMany([
+      { _id: oid(), tenantId, user: patientId, serviceName: '合成合伙人服务', serviceId: String(productId),
+        paymentStatus: 'paid', paymentMethod: 'wechat', paidAt: overviewPaidAt, paidAmount: 100.05,
+        refundedAmount: 20, marketPartnerId: partner.body.data._id, referrerId: clerkId },
+      { _id: oid(), tenantId, user: patientId, serviceName: '合成员工服务', serviceId: String(productId),
+        paymentStatus: 'paid', paymentMethod: 'onsite', paidAt: overviewPaidAt, paidAmount: 50,
+        refundedAmount: 0, referrerId: clerkId },
+      { _id: oid(), tenantId, user: patientId, serviceName: '合成自然订单', serviceId: String(productId),
+        paymentStatus: 'refunded', paymentMethod: 'wechat', paidAt: overviewPaidAt, paidAmount: 25,
+        refundedAmount: 25 },
+      { _id: oid(), tenantId: otherTenantId, user: outsiderPatientId, serviceName: '异机构订单',
+        paymentStatus: 'paid', paymentMethod: 'wechat', paidAt: overviewPaidAt, paidAmount: 200 },
+      { _id: oid(), tenantId, user: patientId, serviceName: '零元权益履约',
+        paymentStatus: 'paid', paidAt: overviewPaidAt, paidAmount: 0 },
+    ]);
+    const overview = await call(clerkId, 'GET', `${prefix}/business-overview?from=2030-01-01&to=2030-01-01`);
+    assert.equal(overview.status, 200, JSON.stringify(overview.body));
+    assert.equal(overview.body.data.total.paidCents, 17505);
+    assert.equal(overview.body.data.total.refundedCents, 4500);
+    assert.equal(overview.body.data.total.netCents, 13005);
+    assert.equal(overview.body.data.sources.partner.netCents, 8005);
+    assert.equal(overview.body.data.sources.staff.netCents, 5000);
+    assert.equal(overview.body.data.sources.unassigned.netCents, 0);
+    assert.equal(overview.body.data.partners[0].name, '合成合伙人');
+    assert.equal((await call(outsiderId, 'GET', `${prefix}/business-overview?from=2030-01-01&to=2030-01-01`)).body.data.total.netCents, 20000);
+    const businessOrders = await call(clerkId, 'GET',
+      `${prefix}/business-orders?from=2030-01-01&to=2030-01-01&page=1&pageSize=2`);
+    assert.equal(businessOrders.status, 200, JSON.stringify(businessOrders.body));
+    assert.equal(businessOrders.body.data.count, 3, '明细不含零元权益与异机构订单');
+    assert.equal(businessOrders.body.data.rows.length, 2);
+    const partnerBusinessOrders = await call(clerkId, 'GET',
+      `${prefix}/business-orders?from=2030-01-01&to=2030-01-01&source=partner`);
+    assert.equal(partnerBusinessOrders.body.data.count, 1);
+    assert.equal(partnerBusinessOrders.body.data.rows[0].netCents, 8005);
+    assert.equal((await call(outsiderId, 'GET',
+      `${prefix}/business-orders?from=2030-01-01&to=2030-01-01`)).body.data.count, 1);
+
+    // 草稿可修订；已发布版不可原位更改，只能以不重叠的新版接续。
+    const nextEffective = new Date(Date.now() + 3 * 86400000).toISOString();
+    const nextPartnerDraft = await call(clerkId, 'POST', `${prefix}/rules`, {
+      productId: String(productId), productLine: 'singleVisit', kind: 'first',
+      firstBasisPoints: 1000, effectiveFrom: nextEffective });
+    assert.equal(nextPartnerDraft.status, 201, JSON.stringify(nextPartnerDraft.body));
+    const partnerDraftEdit = { updatedAt: nextPartnerDraft.body.data.updatedAt,
+      kind: 'first', firstBasisPoints: 1200, tierBasisPoints: [], renewalBasisPoints: [],
+      effectiveFrom: nextEffective };
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/rules/${nextPartnerDraft.body.data._id}`,
+      partnerDraftEdit)).status, 200);
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/rules/${nextPartnerDraft.body.data._id}`,
+      partnerDraftEdit)).status, 409, '旧页面不能覆盖新草稿');
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/rules/${rule.body.data._id}`,
+      partnerDraftEdit)).status, 409, '已发布版不可原位更改');
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/rules/${nextPartnerDraft.body.data._id}/publish`,
+      {})).status, 409, '规则时间重叠不得发布');
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/rules/${rule.body.data._id}/end`,
+      { effectiveUntil: nextEffective })).status, 200);
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/rules/${nextPartnerDraft.body.data._id}/publish`,
+      {})).status, 200);
+
+    const nextTeamDraft = await call(clerkId, 'POST', `${prefix}/team-rules`, {
+      productId: String(annualProductId), role: 'nutritionist', trigger: 'service_completed',
+      ruleType: 'percentage', basisPoints: 500, effectiveFrom: nextEffective });
+    assert.equal(nextTeamDraft.status, 201, JSON.stringify(nextTeamDraft.body));
+    const teamDraftEdit = { updatedAt: nextTeamDraft.body.data.updatedAt, ruleType: 'percentage',
+      basisPoints: 600, amountCents: 0, effectiveFrom: nextEffective };
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/team-rules/${nextTeamDraft.body.data._id}`,
+      teamDraftEdit)).status, 200);
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/team-rules/${teamRule.body.data._id}`,
+      teamDraftEdit)).status, 409);
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/team-rules/${nextTeamDraft.body.data._id}/publish`,
+      {})).status, 409);
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/team-rules/${teamRule.body.data._id}/end`,
+      { effectiveUntil: nextEffective })).status, 200);
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/team-rules/${nextTeamDraft.body.data._id}/publish`,
+      {})).status, 200);
+
+    const profile = (await call(clerkId, 'GET', prefix)).body.data.find(item =>
+      String(item._id) === String(partner.body.data._id));
+    const profileEdit = { name: '合成合伙人新名称', phone: '13900000001', productLine: profile.productLine,
+      contractReference: profile.contractReference, updatedAt: profile.updatedAt,
+      reason: '隔离环境验证资料修改留痕' };
+    const editedProfile = await call(clerkId, 'PATCH', `${prefix}/${profile._id}`, profileEdit);
+    assert.equal(editedProfile.status, 200, JSON.stringify(editedProfile.body));
+    assert.equal(editedProfile.body.data.changeHistory.length, 1);
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/${profile._id}`, profileEdit)).status, 409);
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/${profile._id}`, {
+      ...profileEdit, updatedAt: editedProfile.body.data.updatedAt,
+      productLine: 'medicalAssist' })).status, 409, '启用期间不得直接切换授权线');
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/${profile._id}/status`,
+      { status: 'suspended' })).status, 200);
+    const suspended = (await call(clerkId, 'GET', prefix)).body.data.find(item =>
+      String(item._id) === String(profile._id));
+    const changedLine = await call(clerkId, 'PATCH', `${prefix}/${profile._id}`, {
+      ...profileEdit, updatedAt: suspended.updatedAt, productLine: 'medicalAssist',
+      reason: '隔离环境验证暂停后调整产品线' });
+    assert.equal(changedLine.status, 200, JSON.stringify(changedLine.body));
+    assert.equal(changedLine.body.data.changeHistory.length, 2);
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/${profile._id}/status`,
+      { status: 'active' })).status, 200);
   });

@@ -23,6 +23,7 @@ const NAV_SECTIONS = [
       { label: '物资与设备', icon: 'product', path: '/inventory' },
       { label: '合作伙伴权益', icon: 'partner', path: '/partners' },
       { label: '市场合伙人', icon: 'partner', path: '/market-partners', superadminOnly: true },
+      { label: '经营与分账总览', icon: 'chart', path: '/business-accounting', superadminOnly: true },
       { label: '企业客户', icon: 'company', path: '/enterprises' },
       { label: '健康基金', icon: 'fund', path: '/health-fund' },
       { label: '运营看板', icon: 'chart', path: '/ops-dashboard' },
@@ -162,7 +163,7 @@ export default function Layout() {
         ...section,
         items: section.items.filter(item =>
           (!item.superadminOnly || admin?.role === 'superadmin')
-          && (item.path !== '/market-partners' || marketPartnerAvailable)
+          && (!['/market-partners', '/business-accounting'].includes(item.path) || marketPartnerAvailable)
           && (!item.allowedRoles || item.allowedRoles.includes(admin?.role))
           && (!item.aiControlOnly || admin?.role === 'platformSuper')
           && (admin?.tenantStatus !== 'setup' || ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees', '/saas-plan'].includes(item.path))),

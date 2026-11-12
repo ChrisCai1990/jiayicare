@@ -7,6 +7,7 @@ const schema = new mongoose.Schema({
   role: { type: String, enum: ['familyDoctor', 'nutritionist', 'healthManager'], required: true },
   trigger: { type: String, required: true },
   serviceEvidenceId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  serviceItemKey: { type: String, default: '' },
   ruleId: { type: mongoose.Schema.Types.ObjectId, ref: 'TeamIncentiveRule', required: true },
   ruleVersion: { type: Number, required: true },
   basisCents: { type: Number, required: true, min: 0 },
@@ -26,6 +27,8 @@ const schema = new mongoose.Schema({
 }, { timestamps: true });
 
 schema.index({ tenantId: 1, orderId: 1, staffId: 1, role: 1, trigger: 1, serviceEvidenceId: 1 }, { unique: true });
+// One service evidence/role may be credited to one performer only, including concurrent claims.
+schema.index({ tenantId: 1, orderId: 1, role: 1, trigger: 1, serviceEvidenceId: 1 }, { unique: true });
 schema.index({ tenantId: 1, staffId: 1, status: 1, createdAt: -1 });
 schema.index({ tenantId: 1, paymentReference: 1 }, { unique: true,
   partialFilterExpression: { paymentReference: { $type: 'string' } } });

@@ -10,6 +10,13 @@ const schema = new mongoose.Schema({
   referralCode: { type: String, required: true, uppercase: true, trim: true },
   approvedAt: { type: Date, default: null },
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  changeHistory: [{
+    at: { type: Date, required: true },
+    by: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
+    reason: { type: String, required: true },
+    before: { type: mongoose.Schema.Types.Mixed, required: true },
+    after: { type: mongoose.Schema.Types.Mixed, required: true },
+  }],
 }, { timestamps: true });
 
 schema.index({ tenantId: 1, referralCode: 1 }, { unique: true });

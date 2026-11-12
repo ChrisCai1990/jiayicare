@@ -39,6 +39,98 @@ router.get('/', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// 现金经营口径：按付款日期归属订单，成功退款回溯冲减该付款期。
+// 在数据库端汇总全部符合条件的订单，不能用页面最近 200 单相加。
+router.get('/business-overview', async (req, res) => {
+  const from = String(req.query.from || '');
+  const to = String(req.query.to || '');
+  if ((from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) || (to && !/^\d{4}-\d{2}-\d{2}$/.test(to)) || (from && to && from > to))
+    return res.status(400).json({ success: false, message: '日期范围无效' });
+  try {
+    const paidAt = {};
+    if (from) paidAt.$gte = new Date(`${from}T00:00:00+08:00`);
+    if (to) paidAt.$lt = new Date(new Date(`${to}T00:00:00+08:00`).getTime() + 86400000);
+    if ([...Object.values(paidAt)].some(date => Number.isNaN(date.getTime())))
+      return res.status(400).json({ success: false, message: '日期范围无效' });
+    const match = { tenantId: tenant(req), paidAmount: { $gt: 0 }, paidAt: Object.keys(paidAt).length ? paidAt : { $type: 'date' },
+      paymentStatus: { $in: ['paid', 'refunded'] } };
+    const money = value => ({ $round: [{ $multiply: [{ $ifNull: [value, 0] }, 100] }, 0] });
+    const [result] = await Order.aggregate([
+      { $match: match },
+      { $project: { user: 1, marketPartnerId: 1, referrerId: 1, serviceId: 1, serviceName: 1, paymentMethod: 1,
+        paidCents: money('$paidAmount'), refundedCents: money('$refundedAmount') } },
+      { $addFields: { netCents: { $max: [0, { $subtract: ['$paidCents', '$refundedCents'] }] },
+        sourceType: { $cond: [{ $ne: [{ $ifNull: ['$marketPartnerId', null] }, null] }, 'partner',
+          { $cond: [{ $ne: [{ $ifNull: ['$referrerId', null] }, null] }, 'staff', 'unassigned'] }] } } },
+      { $facet: {
+        total: [{ $group: { _id: null, paidCents: { $sum: '$paidCents' }, refundedCents: { $sum: '$refundedCents' },
+          netCents: { $sum: '$netCents' }, orderCount: { $sum: 1 } } }],
+        sources: [{ $group: { _id: '$sourceType', netCents: { $sum: '$netCents' }, orderCount: { $sum: 1 } } }],
+        partners: [{ $match: { sourceType: 'partner' } }, { $group: { _id: '$marketPartnerId', netCents: { $sum: '$netCents' },
+          orderCount: { $sum: 1 } } }, { $sort: { netCents: -1 } }],
+        staff: [{ $match: { sourceType: 'staff' } }, { $group: { _id: '$referrerId', netCents: { $sum: '$netCents' },
+          orderCount: { $sum: 1 } } }, { $sort: { netCents: -1 } }],
+        products: [{ $group: { _id: { serviceId: '$serviceId', serviceName: '$serviceName' }, netCents: { $sum: '$netCents' },
+          orderCount: { $sum: 1 } } }, { $sort: { netCents: -1 } }],
+        channels: [{ $group: { _id: '$paymentMethod', netCents: { $sum: '$netCents' }, orderCount: { $sum: 1 } } }],
+      } },
+    ]).allowDiskUse(true);
+    const [partnerNames, staffNames] = await Promise.all([
+      MarketPartner.find({ tenantId: tenant(req), _id: { $in: result.partners.map(row => row._id) } }).select('name').lean(),
+      Admin.find({ tenantId: tenant(req), _id: { $in: result.staff.map(row => row._id) } }).select('name').lean(),
+    ]);
+    const names = new Map([...partnerNames, ...staffNames].map(row => [String(row._id), row.name]));
+    const total = result.total[0] || { paidCents: 0, refundedCents: 0, netCents: 0, orderCount: 0 };
+    res.json({ success: true, data: { period: { from: from || null, to: to || null, basis: 'payment_date_restated_for_refunds' }, total,
+      sources: Object.fromEntries(result.sources.map(row => [row._id, { netCents: row.netCents, orderCount: row.orderCount }])),
+      partners: result.partners.map(row => ({ id: row._id, name: names.get(String(row._id)) || '已停用合伙人', netCents: row.netCents, orderCount: row.orderCount })),
+      staff: result.staff.map(row => ({ id: row._id, name: names.get(String(row._id)) || '已停用员工', netCents: row.netCents, orderCount: row.orderCount })),
+      products: result.products.map(row => ({ serviceId: row._id.serviceId, name: row._id.serviceName || '未命名产品',
+        netCents: row.netCents, orderCount: row.orderCount })),
+      channels: result.channels.map(row => ({ channel: row._id || '未标注', netCents: row.netCents, orderCount: row.orderCount })),
+    } });
+  } catch (err) { fail(res, err); }
+});
+
+router.get('/business-orders', async (req, res) => {
+  const from = String(req.query.from || ''), to = String(req.query.to || '');
+  const source = String(req.query.source || '');
+  const page = Number(req.query.page || 1), pageSize = Number(req.query.pageSize || 20);
+  if ((from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) || (to && !/^\d{4}-\d{2}-\d{2}$/.test(to))
+    || (from && to && from > to) || !Number.isSafeInteger(page) || page < 1
+    || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50
+    || (source && !['partner', 'staff', 'unassigned'].includes(source)))
+    return res.status(400).json({ success: false, message: '筛选或分页条件无效' });
+  try {
+    const match = { tenantId: tenant(req), paidAmount: { $gt: 0 }, paymentStatus: { $in: ['paid', 'refunded'] },
+      paidAt: {} };
+    if (from) match.paidAt.$gte = new Date(`${from}T00:00:00+08:00`);
+    if (to) match.paidAt.$lt = new Date(new Date(`${to}T00:00:00+08:00`).getTime() + 86400000);
+    if (!Object.keys(match.paidAt).length) match.paidAt = { $type: 'date' };
+    if (Object.values(match.paidAt).some(value => Number.isNaN(value.getTime?.())))
+      return res.status(400).json({ success: false, message: '日期范围无效' });
+    if (source === 'partner') match.marketPartnerId = { $ne: null };
+    if (source === 'staff') { match.marketPartnerId = null; match.referrerId = { $ne: null }; }
+    if (source === 'unassigned') { match.marketPartnerId = null; match.referrerId = null; }
+    const [count, orders] = await Promise.all([
+      Order.countDocuments(match),
+      Order.find(match).sort({ paidAt: -1, _id: -1 }).skip((page - 1) * pageSize).limit(pageSize)
+        .select('_id orderNo user serviceName specificationLabel paymentMethod paidAmount refundedAmount paidAt marketPartnerId referrerId')
+        .populate('user', 'name').populate('marketPartnerId', 'name').populate('referrerId', 'name').lean(),
+    ]);
+    res.json({ success: true, data: { page, pageSize, count,
+      rows: orders.map(order => ({ id: order._id, orderNo: order.orderNo, customer: order.user?.name || '—',
+        product: order.serviceName, specification: order.specificationLabel || '', channel: order.paymentMethod || '',
+        paidAt: order.paidAt, paidCents: Math.round(Number(order.paidAmount || 0) * 100),
+        refundedCents: Math.round(Number(order.refundedAmount || 0) * 100),
+        netCents: Math.max(0, Math.round(Number(order.paidAmount || 0) * 100)
+          - Math.round(Number(order.refundedAmount || 0) * 100)),
+        sourceType: order.marketPartnerId ? 'partner' : order.referrerId ? 'staff' : 'unassigned',
+        sourceName: order.marketPartnerId?.name || order.referrerId?.name || '无推广归属',
+      })) } });
+  } catch (err) { fail(res, err); }
+});
+
 router.post('/', async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
@@ -50,6 +142,36 @@ router.post('/', async (req, res) => {
       contractReference: String(req.body?.contractReference || '').trim().slice(0, 150),
       referralCode: crypto.randomBytes(6).toString('hex').toUpperCase() });
     res.status(201).json({ success: true, data: row });
+  } catch (err) { fail(res, err); }
+});
+
+router.patch('/:id', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效合伙人' });
+  const name = String(req.body?.name || '').trim().slice(0, 150);
+  const phone = String(req.body?.phone || '').trim();
+  const productLine = String(req.body?.productLine || '').trim();
+  const contractReference = String(req.body?.contractReference || '').trim().slice(0, 150);
+  const reason = String(req.body?.reason || '').trim().slice(0, 500);
+  const expected = new Date(req.body?.updatedAt);
+  if (!name || !/^1\d{10}$/.test(phone) || !productLine || !reason || !Number.isFinite(expected.getTime()))
+    return res.status(400).json({ success: false, message: '请填写合伙人信息、修改原因及当前版本' });
+  try {
+    const current = await MarketPartner.findOne({ _id: req.params.id, tenantId: tenant(req) }).lean();
+    if (!current) return res.status(404).json({ success: false, message: '合伙人不存在' });
+    if (current.status === 'closed') return res.status(409).json({ success: false, message: '已关闭合伙人不可修改' });
+    if (current.status === 'active' && productLine !== current.productLine)
+      return res.status(409).json({ success: false, message: '先暂停合伙人，再修改授权产品线' });
+    if (current.status === 'active' && !contractReference)
+      return res.status(409).json({ success: false, message: '启用中的合伙人须保留合同编号' });
+    const before = { name: current.name, phone: current.phone, productLine: current.productLine,
+      contractReference: current.contractReference || '' };
+    const after = { name, phone, productLine, contractReference };
+    const row = await MarketPartner.findOneAndUpdate({ _id: current._id, tenantId: tenant(req),
+      updatedAt: expected, status: current.status }, { $set: after, $push: { changeHistory: {
+      at: new Date(), by: req.admin._id, reason, before, after,
+    } } }, { new: true, runValidators: true });
+    if (!row) return res.status(409).json({ success: false, message: '合伙人资料已变化，请刷新后重试' });
+    res.json({ success: true, data: row });
   } catch (err) { fail(res, err); }
 });
 
@@ -88,9 +210,19 @@ router.get('/attributed-orders', async (req, res) => {
 
 // 已付款组合订单按购买时的拆解快照汇总团队营收；退款后的净实收实时重算。
 router.get('/team-revenue', async (req, res) => {
+  const from = String(req.query.from || ''), to = String(req.query.to || '');
+  if ((from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) || (to && !/^\d{4}-\d{2}-\d{2}$/.test(to))
+    || (from && to && from > to))
+    return res.status(400).json({ success: false, message: '日期范围无效' });
   try {
     const totals = new Map();
-    const cursor = Order.find({ tenantId: tenant(req), paymentStatus: 'paid',
+    const paidAt = {};
+    if (from) paidAt.$gte = new Date(`${from}T00:00:00+08:00`);
+    if (to) paidAt.$lt = new Date(new Date(`${to}T00:00:00+08:00`).getTime() + 86400000);
+    if (Object.values(paidAt).some(date => Number.isNaN(date.getTime())))
+      return res.status(400).json({ success: false, message: '日期范围无效' });
+    const cursor = Order.find({ tenantId: tenant(req), paymentStatus: { $in: ['paid', 'refunded'] },
+      paidAmount: { $gt: 0 }, paidAt: Object.keys(paidAt).length ? paidAt : { $type: 'date' },
       'serviceItemsSnapshot.childProductId': { $ne: null } })
       .select('_id paidAmount refundedAmount serviceItemsSnapshot').lean().cursor();
     for await (const order of cursor) {
@@ -123,7 +255,7 @@ router.get('/order-accounting/:id', async (req, res) => {
     return res.status(400).json({ success: false, message: '请输入有效订单 ID 或订单号' });
   try {
     const order = await Order.findOne({ tenantId: tenant(req), ...(validId(key) ? { _id: key } : { orderNo: key }) })
-      .select('_id orderNo user serviceId serviceName specificationLabel servicePrice paymentStatus paidAmount refundedAmount paidAt initiatedByStaff referrerId marketPartnerId servicePerformers serviceItemsSnapshot status fulfillmentStatus')
+      .select('_id orderNo user serviceId serviceName specificationLabel servicePrice paymentStatus paidAmount refundedAmount paidAt initiatedByStaff referrerId marketPartnerId servicePerformers serviceItemsSnapshot redemptions status fulfillmentStatus')
       .populate('user', 'name phone').populate('marketPartnerId', 'name referralCode')
       .populate('initiatedByStaff', 'name role').populate('referrerId', 'name role')
       .populate('servicePerformers.staffId', 'name role').lean();
@@ -552,6 +684,37 @@ router.post('/rules', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// 仅草稿可原位修改；已发布版本只能复制成新版本，历史订单继续引用旧版。
+router.patch('/rules/:id', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效规则' });
+  const expected = new Date(req.body?.updatedAt);
+  const start = new Date(req.body?.effectiveFrom);
+  const end = req.body?.effectiveUntil ? new Date(req.body.effectiveUntil) : null;
+  const rates = [req.body?.firstBasisPoints, ...(req.body?.tierBasisPoints || []),
+    ...(req.body?.renewalBasisPoints || []).map(item => item.basisPoints)];
+  const years = (req.body?.renewalBasisPoints || []).map(item => item.year);
+  if (!Number.isFinite(expected.getTime()) || !Number.isFinite(start.getTime())
+    || (end && (!Number.isFinite(end.getTime()) || end <= start))
+    || !rates.every(value => Number.isSafeInteger(value) && value >= 0 && value <= 10000)
+    || !years.every(value => Number.isSafeInteger(value) && value >= 2 && value <= 20)
+    || new Set(years).size !== years.length
+    || !['annual', 'first', 'every'].includes(req.body?.kind))
+    return res.status(400).json({ success: false, message: '规则草稿内容或版本时间无效' });
+  try {
+    const fields = { kind: req.body.kind, firstBasisPoints: req.body.firstBasisPoints,
+      tierBasisPoints: req.body.tierBasisPoints || [], renewalBasisPoints: req.body.renewalBasisPoints || [],
+      directReferralRequired: req.body.directReferralRequired === true,
+      quickCloseEnabled: req.body.quickCloseEnabled === true,
+      quickCloseCapCents: req.body.quickCloseCapCents ?? 100000,
+      retentionFloorBasisPoints: req.body.retentionFloorBasisPoints ?? null,
+      effectiveFrom: start, effectiveUntil: end };
+    const row = await MarketPartnerRule.findOneAndUpdate({ _id: req.params.id, tenantId: tenant(req),
+      status: 'draft', updatedAt: expected }, { $set: fields }, { new: true, runValidators: true });
+    if (!row) return res.status(409).json({ success: false, message: '草稿已变化或已发布，请刷新后重试' });
+    res.json({ success: true, data: row });
+  } catch (err) { fail(res, err); }
+});
+
 router.patch('/rules/:id/publish', async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效规则' });
   try {
@@ -618,8 +781,10 @@ router.get('/team-rules', async (req, res) => {
 router.post('/team-rules', async (req, res) => {
   if (!validId(req.body?.productId)) return res.status(400).json({ success: false, message: '无效商品' });
   try {
-    const product = await Product.findOne({ _id: req.body.productId, tenantId: tenant(req) }).select('_id').lean();
+    const product = await Product.findOne({ _id: req.body.productId, tenantId: tenant(req) }).select('_id serviceItems').lean();
     if (!product) return res.status(404).json({ success: false, message: '商品不存在' });
+    if ((product.serviceItems || []).some(item => item.childProductId && Number(item.revenueSharePercent) > 0))
+      return res.status(409).json({ success: false, message: '组合产品专项激励须按子项净实收与实际核销计算；当前请勿按整单创建规则' });
     const key = { tenantId: tenant(req), productId: product._id,
       specificationLabel: String(req.body.specificationLabel || '').trim(), role: req.body.role,
       trigger: String(req.body.trigger || '').trim() };
@@ -633,11 +798,36 @@ router.post('/team-rules', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+router.patch('/team-rules/:id', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效团队规则' });
+  const expected = new Date(req.body?.updatedAt);
+  const start = new Date(req.body?.effectiveFrom);
+  const end = req.body?.effectiveUntil ? new Date(req.body.effectiveUntil) : null;
+  if (!Number.isFinite(expected.getTime()) || !Number.isFinite(start.getTime())
+    || (end && (!Number.isFinite(end.getTime()) || end <= start))
+    || !['percentage', 'fixedAmount'].includes(req.body?.ruleType)
+    || !Number.isSafeInteger(req.body?.basisPoints) || req.body.basisPoints < 0 || req.body.basisPoints > 10000
+    || !Number.isSafeInteger(req.body?.amountCents) || req.body.amountCents < 0)
+    return res.status(400).json({ success: false, message: '团队规则草稿内容或版本时间无效' });
+  try {
+    const row = await TeamIncentiveRule.findOneAndUpdate({ _id: req.params.id, tenantId: tenant(req),
+      status: 'draft', updatedAt: expected }, { $set: {
+      ruleType: req.body.ruleType, basisPoints: req.body.basisPoints, amountCents: req.body.amountCents,
+      capCents: req.body.capCents ?? null, effectiveFrom: start, effectiveUntil: end,
+    } }, { new: true, runValidators: true });
+    if (!row) return res.status(409).json({ success: false, message: '草稿已变化或已发布，请刷新后重试' });
+    res.json({ success: true, data: row });
+  } catch (err) { fail(res, err); }
+});
+
 router.patch('/team-rules/:id/publish', async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效规则' });
   try {
     const row = await TeamIncentiveRule.findOne({ _id: req.params.id, tenantId: tenant(req), status: 'draft' });
     if (!row) return res.status(404).json({ success: false, message: '草稿规则不存在' });
+    const product = await Product.findOne({ _id: row.productId, tenantId: tenant(req) }).select('serviceItems').lean();
+    if ((product?.serviceItems || []).some(item => item.childProductId && Number(item.revenueSharePercent) > 0))
+      return res.status(409).json({ success: false, message: '组合产品专项激励尚未按子项核算，不能发布整单规则' });
     const overlap = await TeamIncentiveRule.exists({ tenantId: tenant(req), productId: row.productId,
       specificationLabel: row.specificationLabel, role: row.role, trigger: row.trigger,
       status: 'active', effectiveFrom: { $lt: row.effectiveUntil || new Date('9999-12-31') },
@@ -681,8 +871,17 @@ router.post('/team-incentives', async (req, res) => {
     const order = await Order.findOne({ _id: req.body.orderId, tenantId: tenant(req), paymentStatus: 'paid' });
     if (!order || ['refunded', 'requested', 'processing'].includes(order.refundStatus))
       return res.status(409).json({ success: false, message: '订单未付款或退款待处理' });
-    const product = await Product.findOne({ _id: order.serviceId, tenantId: tenant(req) }).select('_id').lean();
-    const evidence = await Fulfillment.findOne({ order: order._id, status: 'completed', completedAt: { $ne: null } });
+    const composite = (order.serviceItemsSnapshot || []).some(item => item.childProductId && Number(item.revenueSharePercent) > 0);
+    const serviceItemKey = composite ? String(req.body?.serviceItemKey || '').trim() : '';
+    const item = composite ? (order.serviceItemsSnapshot || []).find(entry => entry.key === serviceItemKey) : null;
+    if (composite && (!item || item.teamRole !== role || !validId(req.body?.serviceEvidenceId)))
+      return res.status(409).json({ success: false, message: '请选择该岗位已核销的组合子项和核销记录' });
+    const productId = composite ? item.childProductId : order.serviceId;
+    const product = await Product.findOne({ _id: productId, tenantId: tenant(req) }).select('_id').lean();
+    const evidence = composite
+      ? (order.redemptions || []).find(entry => String(entry._id) === String(req.body.serviceEvidenceId)
+        && entry.serviceItemKey === serviceItemKey)
+      : await Fulfillment.findOne({ order: order._id, status: 'completed', completedAt: { $ne: null } });
     const staff = await Admin.findOne({ _id: req.body.staffId, tenantId: tenant(req), role }).select('_id').lean();
     if (!product || !evidence || !staff)
       return res.status(409).json({ success: false, message: '商品、已完成履约记录或服务人员岗位未核实' });
@@ -691,17 +890,25 @@ router.post('/team-incentives', async (req, res) => {
       return res.status(409).json({ success: false, message: '该人员已有本单现行服务绩效，不可重复计提' });
     const verified = await require('../utils/marketPartnerSettlement').verifiedCashCents(order);
     if (verified === null) return res.status(409).json({ success: false, message: '现金收款尚未核实' });
-    const basisCents = Math.max(0, verified - await require('../utils/marketPartnerSettlement').refundedCashCents(order._id));
+    const netCents = Math.max(0, verified - await require('../utils/marketPartnerSettlement').refundedCashCents(order._id));
+    const allocation = composite ? require('../utils/serviceItemIncentiveBasis')
+      .unitBasis(order, netCents, serviceItemKey, evidence._id) : null;
+    if (composite && !allocation)
+      return res.status(409).json({ success: false, message: '组合拆解或核销次数无法核对' });
+    const basisCents = composite ? allocation.basisCents : netCents;
     const at = order.paidAt;
     const rule = await TeamIncentiveRule.findOne({ tenantId: tenant(req), productId: product._id,
-      specificationLabel: order.specificationLabel || '', role, trigger: 'service_completed', status: 'active',
+      specificationLabel: composite ? '' : order.specificationLabel || '', role, trigger: 'service_completed', status: 'active',
       effectiveFrom: { $lte: at }, $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: at } }] })
       .sort({ version: -1 }).lean();
     if (!rule) return res.status(409).json({ success: false, message: '付款时无适用的团队激励规则' });
     const amountCents = teamIncentiveCents({ role, ruleType: rule.ruleType, basisCents,
       basisPoints: rule.basisPoints, amountCents: rule.amountCents, capCents: rule.capCents });
+    if (await TeamIncentive.exists({ tenantId: tenant(req), orderId: order._id, role,
+      trigger: rule.trigger, serviceEvidenceId: evidence._id }))
+      return res.status(409).json({ success: false, message: '该子项核销或履约证据已归属其他人员，请走纠错审核' });
     const row = await TeamIncentive.create({ tenantId: tenant(req), orderId: order._id,
-      staffId: staff._id, role, trigger: rule.trigger, serviceEvidenceId: evidence._id,
+      staffId: staff._id, role, trigger: rule.trigger, serviceEvidenceId: evidence._id, serviceItemKey,
       ruleId: rule._id, ruleVersion: rule.version, basisCents, amountCents,
       submittedBy: req.admin._id, note: String(req.body?.note || '').trim().slice(0, 500) });
     res.status(201).json({ success: true, data: row });
@@ -718,8 +925,10 @@ router.patch('/team-incentives/:id/confirm', async (req, res) => {
     if (!row) return res.status(404).json({ success: false, message: '待审核激励不存在' });
     if (String(row.submittedBy) === String(req.admin._id))
       return res.status(403).json({ success: false, message: '计提人与审核人须为不同人员' });
-    const evidence = await Fulfillment.findOne({ _id: row.serviceEvidenceId,
-      order: row.orderId, status: 'completed' });
+    const evidence = row.serviceItemKey
+      ? await Order.findOne({ _id: row.orderId, tenantId: tenant(req),
+        redemptions: { $elemMatch: { _id: row.serviceEvidenceId, serviceItemKey: row.serviceItemKey } } }).select('_id').lean()
+      : await Fulfillment.findOne({ _id: row.serviceEvidenceId, order: row.orderId, status: 'completed' });
     if (!evidence) return res.status(409).json({ success: false, message: '履约证据状态已变化' });
     const updated = await TeamIncentive.findOneAndUpdate({ _id: row._id, status: 'pending' },
       { $set: { status: 'confirmed', confirmedAt: new Date(), confirmedBy: req.admin._id } }, { new: true });
