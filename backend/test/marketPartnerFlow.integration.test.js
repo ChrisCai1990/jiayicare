@@ -161,6 +161,14 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal((await call(clerkId, 'POST', '/api/admin/products', { name: '金额不符', category: 'health',
       originalPrice: 18800, status: 'off', servicePrices: [{ label: '全程陪伴', price: 18800,
         businessAllocations: exactRows.map((row, index) => index === 3 ? { ...row, allocationAmountCents: 199998 } : row) }] })).status, 400);
+    const deliverySeparateFromRevenue = await call(clerkId, 'POST', '/api/admin/products', {
+      name: '交付子项与归属分离', category: 'health', originalPrice: 18800, status: 'off',
+      servicePrices: [{ label: '全程陪伴', price: 18800, businessAllocations: exactRows }],
+      serviceItems: [{ key: 'followup', name: '随访交付', businessType: 'service', teamRole: 'healthManager',
+        units: 12, revenueSharePercent: 0 }],
+    });
+    assert.equal(deliverySeparateFromRevenue.status, 200, JSON.stringify(deliverySeparateFromRevenue.body));
+    assert.equal(deliverySeparateFromRevenue.body.data.serviceItems[0].revenueSharePercent, 0);
     const wholeProduct = await call(clerkId, 'POST', '/api/admin/products', {
       name: '无收费规格的组合服务', category: 'health', originalPrice: 100, status: 'off',
       businessAllocations: [

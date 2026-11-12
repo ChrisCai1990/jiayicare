@@ -714,9 +714,12 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
         : Math.abs(wholeRows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001))) {
       toast('整单业务归属须合计100%；有收费项目时请逐项设置'); setTab('businessAllocation'); return
     }
-    if (allocatedItems.length && (allocatedItems.some(item => !allocationItemName(item, productsForBundle).trim() || Number(item.revenueSharePercent) <= 0
-      || (item.businessType === 'product' && !item.childProductId))
-      || Math.abs(allocatedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001)) {
+    const hasSeparateAllocations = wholeRows.length > 0 || ((form.servicePrices || []).length > 0
+      && form.servicePrices.every(price => (price.businessAllocations || []).length > 0))
+    if (allocatedItems.length && (allocatedItems.some(item => !allocationItemName(item, productsForBundle).trim()
+      || (item.businessType === 'product' && !item.childProductId)
+      || (!hasSeparateAllocations && Number(item.revenueSharePercent) <= 0))
+      || (!hasSeparateAllocations && Math.abs(allocatedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001))) {
       toast('请为每项业务填写归属金额；产品／检测须关联产品库，金额合计须覆盖产品原价'); setTab('businessAllocation'); return
     }
     const fundValue = Number(form.healthFundDeduction?.value)

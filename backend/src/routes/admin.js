@@ -2156,15 +2156,18 @@ async function validateProductSettlementConfig({ serviceItems, servicePrices, bu
   }
   if (serviceItems !== undefined) {
     if (!Array.isArray(serviceItems)) return '子产品配置格式错误';
+    const hasSeparateAllocations = (businessAllocations || []).length > 0
+      || ((servicePrices || []).length > 0 && servicePrices.every(price => (price.businessAllocations || []).length > 0));
     const linked = serviceItems.filter(item => item.name || item.childProductId || Number(item.revenueSharePercent) > 0);
     if (linked.length) {
       if (linked.length !== serviceItems.length || linked.some(item => !String(item.name || '').trim())) return '团队归属项目须填写名称';
-      if (Math.abs(linked.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) > 0.001)
+      if (!hasSeparateAllocations && Math.abs(linked.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) > 0.001)
         return '团队归属比例合计必须为100%';
       if (new Set(linked.map(item => item.key)).size !== linked.length) return '子项目标识不能重复';
       const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
       if (linked.some(item => !['service', 'product'].includes(item.businessType || 'service')
-        || !roles.includes(item.teamRole) || !Number.isFinite(Number(item.revenueSharePercent)) || Number(item.revenueSharePercent) <= 0
+        || !roles.includes(item.teamRole) || !Number.isFinite(Number(item.revenueSharePercent))
+        || Number(item.revenueSharePercent) < 0 || (!hasSeparateAllocations && Number(item.revenueSharePercent) <= 0)
         || (item.businessType === 'product' && !item.childProductId)))
         return '请为每个子项目选择团队并填写大于0的营收比例';
       const ids = linked.filter(item => item.childProductId).map(item => String(item.childProductId));
