@@ -4,8 +4,15 @@
   <id>https://jiaycare.com/knowledge/</id>
   <link href="https://jiaycare.com/knowledge/feed.xml" rel="self"/>
   <link href="https://jiaycare.com/knowledge/"/>
-  <updated>2026-09-24T00:00:00Z</updated>
+  <updated>2026-10-23T00:00:00Z</updated>
   <subtitle>经专业审核的健康教育内容</subtitle>
+  <entry>
+    <title>准备记录血压前，先把这些信息留好</title>
+    <id>https://jiaycare.com/knowledge/guides/blood-pressure-recording-preparation.html</id>
+    <link href="https://jiaycare.com/knowledge/guides/blood-pressure-recording-preparation.html"/>
+    <updated>2026-10-23T00:00:00Z</updated>
+    <summary>记录测量时间、环境和感受，为下一步与专业人员沟通做好准备。</summary>
+  </entry>
   <entry>
     <title>对比历年体检报告时，先看哪些变化？</title>
     <id>https://jiaycare.com/knowledge/guides/checkup-report-comparison.html</id>
