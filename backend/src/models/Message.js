@@ -56,5 +56,13 @@ messageSchema.pre('save', function () { this.$locals.createdForPush = this.isNew
 messageSchema.post('save', async function (doc) {
   if (this.$locals.createdForPush) await require('../utils/nativePush').enqueueNativePush(doc);
 });
+messageSchema.post('updateOne', async function (result) {
+  if (!result?.upsertedId) return;
+  const doc = await this.model.findById(result.upsertedId).lean();
+  await require('../utils/nativePush').enqueueNativePush(doc);
+});
+messageSchema.post('findOneAndUpdate', async function (doc) {
+  if (this.getOptions().upsert && doc) await require('../utils/nativePush').enqueueNativePush(doc);
+});
 
 module.exports = mongoose.model('Message', messageSchema);
