@@ -150,7 +150,7 @@ async function clearMonitoringSystemMessage(userId) {
   await require('../models/Message').updateOne({ user: userId, dedupeKey: `health-monitoring:${userId}`, unread: true }, { $set: { unread: false, readAt: new Date() } });
 }
 
-async function syncMonitoringSystemMessage(userId, now = new Date()) {
+async function syncMonitoringSystemMessage(userId, now = new Date(), { sendPush = false } = {}) {
   const Message = require('../models/Message');
   const HealthRecord = require('../models/HealthRecord');
   const patient = await User.findById(userId).select('onboardingCompleted healthMonitoringConsentAt healthMonitoringPreference isDeleted').lean();
@@ -167,15 +167,17 @@ async function syncMonitoringSystemMessage(userId, now = new Date()) {
   const labels = pending.map(item => item.sourceKey.endsWith('blood_pressure') ? '测量血压' : '记录体重');
   const completed = pending.length === 0;
   const content = completed ? '今日健康监测已完成，数据已记录。' : `今日请完成：${labels.join('、')}。完成后数据将用于更新健康趋势。`;
-  return Message.findOneAndUpdate(
+  const message = await Message.findOneAndUpdate(
     { dedupeKey: `health-monitoring:${userId}` },
     { $set: {
-      user: userId, type: 'system', sender: '嘉医汇', title: '今日健康监测', content,
+      user: userId, type: 'system', sender: '嘉医汇', title: '今日健康监测', content, pushCategory: 'measurement',
       unread: !completed, readAt: completed ? new Date() : null,
       action: { type: 'health_monitoring', route: 'AddRecord', dueTypes, date: cstDay },
     }, $setOnInsert: { dedupeKey: `health-monitoring:${userId}` } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+  if (sendPush && !completed) await require('./nativePush').enqueueNativePush(message, `monitor:${userId}:${cstDay}`);
+  return message;
 }
 
 module.exports = { patientAge, buildMonitoringReminderSpecs, activeToday, syncMonitoringSystemMessage, syncServiceCycleMonitoringReminders };

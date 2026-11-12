@@ -36,8 +36,22 @@ const WHITELIST = [
   { method: 'GET', prefix: '/api/messages/unread-count' },
 ];
 
+function isResidenceOnlyUpdate(req) {
+  if (req.method !== 'PUT' || req.originalUrl.split('?')[0] !== '/api/user/me') return false;
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1) return false;
+  const residence = body.residence;
+  if (!residence || typeof residence !== 'object' || Array.isArray(residence)) return false;
+  const keys = Object.keys(residence);
+  if (!keys.length || keys.some(key => !['province', 'city', 'district'].includes(key))) return false;
+  return ['province', 'city'].every(key => typeof residence[key] === 'string' && !!residence[key].trim() && residence[key].length <= 100)
+    && (residence.district === undefined || typeof residence.district === 'string' && residence.district.length <= 100);
+}
+
 function isWhitelisted(req) {
   const url = req.originalUrl.split('?')[0];
+  // 首次登录后的地区补填属于基础资料，不能因服务期尚未开始而卡住入口。
+  if (isResidenceOnlyUpdate(req)) return true;
   // 到期后仍可查看本人已发布方案并答复；派发门槛在确认接口内另行校验。
   if (require('../utils/healthManagementRollout').enabledForPatient(req.user?._id)) {
     if (req.method === 'GET' && /^\/api\/user\/annual-mgmt-plans\/?$/.test(url)) return true;

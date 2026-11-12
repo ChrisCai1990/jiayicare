@@ -27,7 +27,10 @@ function createPushDeviceRegistry({ Device, Session, enabled }) {
       if (!await Session.exists({ user: binding.user, sessionId, logoutAt: null })) fail(401, '登录已退出');
       // Atomic ownership transfer on account switch; no duplicate destinations.
       // Client user/tenant/session fields are intentionally ignored.
-      await Device.updateOne({ _id: device._id }, { $set: { provider: device.provider, token: device.token, ...binding } }, { upsert: true, runValidators: true });
+      const previous = await Device.findById(device._id).select('user').lean();
+      await Device.updateOne({ _id: device._id }, { $set: { provider: device.provider, token: device.token, ...binding,
+        ...(previous && String(previous.user) !== String(binding.user) ? { settings: {} } : {}),
+      } }, { upsert: true, runValidators: true });
     },
     async unregister(user, sessionId, input) {
       const binding = owner(user, sessionId);
@@ -43,7 +46,10 @@ function createPushDeviceRegistry({ Device, Session, enabled }) {
         .select('sessionId').lean();
       const active = new Set(sessions.map(s => s.sessionId));
       // Future dispatcher must call this at send time, never cache across logout.
-      return devices.filter(d => active.has(d.sessionId) && enabled(d.provider)).map(d => ({ provider: d.provider, token: d.token }));
+      return devices.filter(d => active.has(d.sessionId) && enabled(d.provider)).map(d => {
+        const settings = d.settings instanceof Map ? Object.fromEntries(d.settings) : d.settings;
+        return { provider: d.provider, token: d.token, ...(settings && Object.keys(settings).length ? { settings } : {}) };
+      });
     },
   };
 }

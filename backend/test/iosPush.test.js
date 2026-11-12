@@ -68,7 +68,8 @@ test('APNs registration keeps authenticated ownership and gates each provider', 
   let saved;
   const registry = createPushDeviceRegistry({
     enabled: provider => provider === 'apns', Session: { exists: async () => true },
-    Device: { updateOne: async (filter, update) => { saved = { filter, update }; } },
+    Device: { findById: () => ({ select() { return this; }, lean: async () => null }),
+      updateOne: async (filter, update) => { saved = { filter, update }; } },
   });
   await registry.register({ _id: 'real-user', tenantId: 'real-tenant' }, 'real-session',
     { provider: 'apns', token, user: 'attacker', tenantId: 'attacker', sessionId: 'attacker' });

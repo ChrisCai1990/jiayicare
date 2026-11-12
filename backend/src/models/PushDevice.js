@@ -9,6 +9,7 @@ const schema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   tenantId: { type: mongoose.Schema.Types.ObjectId, default: null },
   sessionId: { type: String, required: true, select: false },
+  settings: { type: Map, of: Boolean, default: {} },
 }, { timestamps: true });
 schema.index({ user: 1, tenantId: 1 });
 module.exports = mongoose.model('PushDevice', schema);

@@ -18,12 +18,31 @@ test('default-off does not enqueue or send; drafts/AI/recalled/read messages exc
   const off = setup({ enabled: () => false });
   await off.enqueue(message); await off.tick();
   assert.deepEqual(off.writes, []); assert.deepEqual(off.sends, []);
-  for (const patch of [{ unread: false }, { recalled: true }, { isAI: true }, { aiGenerated: true }, { type: 'system' }, { aiReviewStatus: 'pending' }]) {
+  for (const patch of [{ unread: false }, { recalled: true }, { isAI: true }, { aiGenerated: true }, { aiReviewStatus: 'pending' }]) {
     const c = setup({ Message: { findById: () => ({ lean: async () => ({ ...message, ...patch }) }) } });
     await c.enqueue({ ...message, ...patch });
     assert.equal(c.writes.length, 0);
     await c.tick(); assert.equal(c.sends.length, 0);
   }
+});
+test('system messages are eligible; category settings block only the selected destination', async () => {
+  const system = { ...message, type: 'system', title: '用药提醒' };
+  const c = setup({ Message: { findById: () => ({ lean: async () => system }) },
+    registry: { destinations: async () => [
+      { provider: 'huawei', token: 'off', settings: { medication: false } },
+      { provider: 'huawei', token: 'on', settings: { medication: true } },
+    ] } });
+  await c.enqueue(system, 'medication:today'); await c.tick();
+  assert.equal(c.writes[0][0]._id, 'medication:today');
+  assert.deepEqual(c.sends.map(item => item.token), ['on']);
+});
+test('rolling monitoring message queues only for its scheduled daily slot', async () => {
+  const monitoring = { ...message, type: 'system', dedupeKey: 'health-monitoring:patient' };
+  const c = setup();
+  await c.enqueue(monitoring);
+  assert.equal(c.writes.length, 0);
+  await c.enqueue(monitoring, 'monitor:patient:2026-11-12');
+  assert.equal(c.writes[0][0]._id, 'monitor:patient:2026-11-12');
 });
 test('saved human message enqueues idempotently and fresh registry decides recipients', async () => {
   const c = setup(); await c.enqueue(message); await c.tick();
@@ -34,6 +53,7 @@ test('saved human message enqueues idempotently and fresh registry decides recip
   assert.equal(c.writes.at(-1)[1].$set.state, 'done');
   const revoked = setup({ registry: { destinations: async () => [] } });
   await revoked.tick(); assert.equal(revoked.sends.length, 0);
+  assert.equal(revoked.writes.at(-1)[1].$set.state, 'no_destination');
 });
 test('transport failure schedules bounded retry without storing raw exception', async () => {
   const c = setup({ transport: { send: async () => { throw new Error('private-token'); } } });

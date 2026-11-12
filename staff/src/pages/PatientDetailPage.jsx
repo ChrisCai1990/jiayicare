@@ -4100,7 +4100,8 @@ export default function PatientDetailPage() {
 
   const handleSave = async () => {
     try {
-      await staffAPI.updatePatient(id, editForm)
+      const { serviceStartDate, ...changes } = editForm
+      await staffAPI.updatePatient(id, user.serviceStartDate ? changes : { ...changes, serviceStartDate })
       toast('保存成功')
       setEditing(false)
       load()
@@ -5746,9 +5747,11 @@ export default function PatientDetailPage() {
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">服务开始时间</label>
-                    <DateField className="form-input" type="date" value={editForm.serviceStartDate}
-                      onChange={e => setEditForm(f => ({ ...f, serviceStartDate: e.target.value }))} />
+                    <label className="form-label">首次加入日期（服务开始）</label>
+                    {user.serviceStartDate
+                      ? <div className="form-input" style={{ background: '#f7f5f0', color: '#4A6558' }}>{user.serviceStartDate}（已记录，不可修改）</div>
+                      : <DateField className="form-input" type="date" value={editForm.serviceStartDate}
+                          onChange={e => setEditForm(f => ({ ...f, serviceStartDate: e.target.value }))} />}
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">服务到期时间</label>
@@ -5793,7 +5796,7 @@ export default function PatientDetailPage() {
                   <InfoRow label="会员类型（运营标签）" value={user.memberType || '-'} />
                   <InfoRow label="会员来源" value={user.source || '-'} />
                   <InfoRow label="服务包" value={getServicePackageLabel(user.servicePackage)} />
-                  <InfoRow label="服务开始" value={user.serviceStartDate || '-'} />
+                  <InfoRow label="首次加入日期" value={user.serviceStartDate || '未记录'} />
                   <InfoRow label="服务到期" value={user.serviceExpiry || '-'} />
                   <InfoRow label="健康评分" value={(() => {
                     const s = user.healthScore
