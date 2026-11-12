@@ -46,7 +46,7 @@ async function main() {
     await page.goto('http://127.0.0.1:8765/mobile-preview/#/pages/profile/notifications/index');
     await page.waitForTimeout(1200);
     await page.locator('taro-switch-core').first().click();
-    await page.getByText('设备已绑定。新服务消息将发送系统通知。').waitFor();
+    await page.getByText('设备已绑定。新消息和到点提醒将发送系统通知。').waitFor();
     await page.getByText('用药提醒', { exact: true }).waitFor();
     await page.locator('taro-switch-core').nth(1).click();
     assert.deepEqual(settingChanges, [{ key: 'medication', enabled: false }]);

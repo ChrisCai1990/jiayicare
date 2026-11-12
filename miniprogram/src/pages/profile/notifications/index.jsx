@@ -12,8 +12,8 @@ import { pushDevicesAPI } from '../../../services/api';
 const SETTINGS = [
   { group: '健康提醒', items: [
     { key: 'medication', label: '用药提醒', desc: '服药时间到时推送通知' },
-    { key: 'measurement', label: '测量提醒', desc: '血压、血糖等检测提醒' },
-    { key: 'exercise', label: '运动提醒', desc: '每日运动计划推送' },
+    { key: 'measurement', label: '测量提醒', desc: '已设置的血压、血糖等测量提醒' },
+    { key: 'exercise', label: '运动提醒', desc: '已设置的运动提醒到点推送' },
   ] },
   { group: '服务消息', items: [
     { key: 'doctor', label: '健康顾问消息', desc: '健康顾问回复及随访通知' },
@@ -34,7 +34,7 @@ export default function NotificationSettingsPage() {
   const [pushBusy, setPushBusy] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(hasSystemPushOptIn);
   const [pushMessage, setPushMessage] = useState(() => hasSystemPushOptIn()
-    ? '此设备已绑定。新服务消息将发送系统通知。' : '开启后将申请 iPhone 系统通知权限。');
+    ? '此设备已绑定。新消息和到点提醒将发送系统通知。' : '开启后将申请 iPhone 系统通知权限。');
 
   const changePush = async enable => {
     if (pushBusy) return;
@@ -43,7 +43,7 @@ export default function NotificationSettingsPage() {
       if (enable) {
         if (!await enableSystemPush()) throw new Error('设备绑定未完成，请重试');
         setPushEnabled(true);
-        setPushMessage('设备已绑定。新服务消息将发送系统通知。');
+        setPushMessage('设备已绑定。新消息和到点提醒将发送系统通知。');
       } else {
         await disableSystemPush();
         setPushEnabled(false);
