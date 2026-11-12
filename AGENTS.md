@@ -1104,4 +1104,4 @@ pkg_1y（年度¥2980）/ pkg_6m（半年¥1680）/ pkg_3m（季度¥980）
 
 > 2026-11-04：用户反馈全部由机构管理员先分派；负责人在医护端工作台及分派给我的反馈提交内部结果，管理员核对后回复客户。按机构和当前负责人授权，版本冲突拦截、内部意见不公开；历史数据不批量分派。详见 docs/FEEDBACK_ASSIGNMENT_20261104.md。
 
-> 2026-11-12 用户确认：今后小程序的用户端更新须同步核对并实现已发布 App 的对应功能，分别验证小程序、App 源码与实际安装版的发布状态。App Store 正式版更新可直接在 App Store Connect 选择新构建提交审核；TestFlight 仅作可选测试。当前项目未配置 EAS Update，不得把 App 网页构建或 GitHub 同步称为已安装原生 App 更新；原生版发布须核验实际渠道与构建号。
+> 2026-11-12 用户确认：今后小程序用户端更新须同步核对已安装 App 的对应页面并分别验收。现有 iPhone App 的用户页面走 Taro H5 `https://app.joinwehealth.com/mobile-preview/`，页面更新按该入口的哈希校验与回退发布；`https://jiaycare.com/` 的 Expo 网页构建不能替代它。2026-11-12 健康报告与血压时间页面已按原 H5 路径发布，见 `docs/APP_H5_REPORT_RELEASE_20261112.md`（专用源码分支 `fix/app-h5-report-20261112`）。原生通知等能力更新仍须新安装包；TestFlight 是可选测试，App Store 正式版可直接提交新构建审核。当前项目未配置 EAS Update，不得把仅改源码或普通网页称为已安装 App 更新。
