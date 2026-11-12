@@ -141,6 +141,9 @@ const PERFORMER_ROLE_OPTIONS = [
   { value: 'tcmDoctor', label: '中医师' },
 ]
 const ROLE_LABEL_MAP = Object.fromEntries(PERFORMER_ROLE_OPTIONS.map(o => [o.value, o.label]))
+const allocationItemName = (item, products) => item.businessType === 'product'
+  ? (products.find(product => String(product._id) === String(item.childProductId))?.name || item.name || '')
+  : `${ROLE_LABEL_MAP[item.teamRole] || '健管专员'}管理服务`
 
 function ServicePerformerRolesForm({ roles, staffList, onChange }) {
   const list = roles || []
@@ -219,7 +222,7 @@ function ChildProductPicker({ products, parentId, value, onChange }) {
 
 function ServiceItemsForm({ items, products, parentId, originalPrice, onChange }) {
   const list = items || []
-  const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '', units: 1, businessType: 'service', childProductId: '', teamRole: 'healthManager', revenueSharePercent: 0, performers: [] }])
+  const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '健管专员管理服务', units: 1, businessType: 'service', childProductId: '', teamRole: 'healthManager', revenueSharePercent: 0, performers: [] }])
   const update = (i, patch) => onChange(list.map((item, idx) => idx === i ? { ...item, ...patch } : item))
   const totalShare = list.reduce((sum, item) => sum + (Number(item.revenueSharePercent) || 0), 0)
   const price = Number(originalPrice) || 0
@@ -231,8 +234,10 @@ function ServiceItemsForm({ items, products, parentId, originalPrice, onChange }
     <div style={{fontSize:12,color:'#888',marginBottom:10}}>可直接填写各团队归属金额，无须关联子产品。金额以本产品原价为配置基准；实际成交价或退款变化时按同一比例分摊。确有独立交付的产品时才关联产品库。业务归属不等于个人服务费。</div>
     {list.map((item, i) => <div key={item.key || i} style={{border:'1px solid #e0d9ce',borderRadius:8,padding:12,marginBottom:12}}>
       <div style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,alignItems:'center'}}>
-        <input className="form-input" value={item.name || ''} placeholder="子项目名称" onChange={e=>update(i,{name:e.target.value})}/>
-        <input className="form-input" type="number" min="1" value={item.units || 1} onChange={e=>update(i,{units:Math.max(1,parseInt(e.target.value)||1)})}/>
+        <div style={{fontWeight:600,color:'#365a4a'}}>{allocationItemName(item, products) || '请选择产品库项目'}</div>
+        <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#667a6d'}}>数量/次数
+          <input className="form-input" type="number" min="1" aria-label="数量或服务次数" value={item.units || 1} onChange={e=>update(i,{units:Math.max(1,parseInt(e.target.value)||1)})}/>
+        </label>
         <button type="button" onClick={()=>onChange(list.filter((_,idx)=>idx!==i))} style={{color:'#c0392b',background:'none',border:'none',cursor:'pointer'}}>删除</button>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1.3fr 1fr 1fr',gap:8,marginTop:8}}>
@@ -251,7 +256,7 @@ function ServiceItemsForm({ items, products, parentId, originalPrice, onChange }
       <details style={{marginTop:8}} open={item.businessType === 'product' ? true : undefined}><summary style={{cursor:'pointer',fontSize:12,color:'#6B7D74'}}>交付商品关联（{item.businessType === 'product' ? '必填' : '可选'}）</summary>
         <ChildProductPicker products={products} parentId={parentId} value={item.childProductId} onChange={childProductId=>{
           const child = products.find(p=>p._id===childProductId)
-          update(i,{childProductId,name:item.name || child?.name || ''})
+          update(i,{childProductId,name:child?.name || ''})
         }} />
       </details>
     </div>)}
@@ -574,11 +579,11 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   }
 
   const save = async () => {
-    const allocatedItems = (form.serviceItems || []).filter(item => item.name?.trim() || item.childProductId || Number(item.revenueSharePercent) > 0)
-    if (allocatedItems.length && (allocatedItems.some(item => !item.name?.trim() || Number(item.revenueSharePercent) <= 0
+    const allocatedItems = form.serviceItems || []
+    if (allocatedItems.length && (allocatedItems.some(item => !allocationItemName(item, productsForBundle).trim() || Number(item.revenueSharePercent) <= 0
       || (item.businessType === 'product' && !item.childProductId))
       || Math.abs(allocatedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001)) {
-      toast('每项服务请填写名称和归属金额，合计须覆盖产品原价'); setTab('businessAllocation'); return
+      toast('请为每项业务填写归属金额；产品／检测须关联产品库，金额合计须覆盖产品原价'); setTab('businessAllocation'); return
     }
     const fundValue = Number(form.healthFundDeduction?.value)
     if (form.healthFundDeduction?.mode === 'percentage' && (!Number.isFinite(fundValue) || fundValue < 1 || fundValue > 100)) { toast('商品抵扣比例须为1%-100%'); return }
@@ -640,8 +645,8 @@ function ProductModal({ product, categories, onClose, onSaved }) {
             amount: parseFloat(r.amount) || 0,
             defaultStaffId: r.defaultStaffId || null,
           })),
-        serviceItems: (form.serviceItems || []).filter(item => item.name?.trim()).map(item => ({
-          key: item.key || `item_${Date.now()}`, name: item.name.trim(), units: Math.max(1, parseInt(item.units) || 1),
+        serviceItems: (form.serviceItems || []).map(item => ({
+          key: item.key || `item_${Date.now()}`, name: allocationItemName(item, productsForBundle).trim(), units: Math.max(1, parseInt(item.units) || 1),
           childProductId: item.childProductId || null, businessType: item.businessType || 'service', teamRole: item.teamRole || 'healthManager', revenueSharePercent: Number(item.revenueSharePercent) || 0,
           performers: (item.performers || []).filter(r=>r.role).map(r=>({ role:r.role, ruleType:r.ruleType || 'percentage', rate:parseFloat(r.rate)||0, amount:parseFloat(r.amount)||0, defaultStaffId:r.defaultStaffId||null })),
         })),
