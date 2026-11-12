@@ -146,6 +146,9 @@ const allocationItemName = (item, products) => item.businessType === 'product'
   ? (products.find(product => String(product._id) === String(item.childProductId))?.name || item.name || '')
   : item.businessType === 'enterprise' ? '企业资源'
   : `${ROLE_LABEL_MAP[item.teamRole] || '健管专员'}管理服务`
+const moneyCents = value => Math.round(Number(value || 0) * 100)
+const allocationCents = (row, priceCents) => row.allocationAmountCents != null
+  ? Number(row.allocationAmountCents) : Math.round(priceCents * Number(row.revenueSharePercent || 0) / 100)
 
 function ServicePerformerRolesForm({ roles, staffList, onChange }) {
   const list = roles || []
@@ -269,12 +272,13 @@ function ServiceItemsForm({ items, products, parentId, originalPrice, onChange }
 function SpecificationAllocationsForm({ prices, products, onChange }) {
   const updatePrice = (index, rows) => onChange(prices.map((price, i) => i === index ? { ...price, businessAllocations: rows } : price))
   return <div style={{ marginTop: 16 }}>
-    <div style={{ fontSize: 12, color: '#667a6d', marginBottom: 12 }}>每个收费项目按自己的售价分配业务营收，可分别归属服务团队、产品／检测及企业资源。企业资源只计业务归属，不自动生成个人佣金。</div>
+    <div style={{ fontSize: 12, color: '#667a6d', marginBottom: 12 }}>按收费项目填写归属金额，金额精确到分并须合计售价；百分比仅供查看。实收或退款变化时按这些金额的比例分摊。资源归属不自动生成个人佣金。</div>
     {prices.filter(price => price.label?.trim()).map(price => {
       const index = prices.indexOf(price)
       const rows = price.businessAllocations || []
       const amount = Number(price.price) || 0
-      const total = rows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0)
+      const priceCents = moneyCents(amount)
+      const allocatedCents = rows.reduce((sum, row) => sum + allocationCents(row, priceCents), 0)
       const updateRow = (rowIndex, patch) => updatePrice(index, rows.map((row, i) => i === rowIndex ? { ...row, ...patch } : row))
       return <div key={`${price.label}:${index}`} style={{ border: '1px solid #e0d9ce', borderRadius: 8, padding: 12, marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -294,18 +298,25 @@ function SpecificationAllocationsForm({ prices, products, onChange }) {
                 {PERFORMER_ROLE_OPTIONS.map(role => <option key={role.value} value={role.value}>{role.label}团队</option>)}
               </select>}
             <input key={`${row.key}:${amount}`} className="form-input" type="number" min="0" step="0.01"
-              defaultValue={amount ? (amount * Number(row.revenueSharePercent || 0) / 100).toFixed(2) : ''}
+              defaultValue={priceCents ? (allocationCents(row, priceCents) / 100).toFixed(2) : ''}
               placeholder="归属金额 ¥" aria-label={`${price.label}归属金额元`} disabled={!amount}
-              onBlur={event => updateRow(rowIndex, { revenueSharePercent: Math.round(Number(event.target.value || 0) / amount * 1000000) / 10000 })}
+              onBlur={event => {
+                const cents = moneyCents(event.target.value)
+                updatePrice(index, rows.map((item, i) => {
+                  const value = i === rowIndex ? cents : allocationCents(item, priceCents)
+                  return { ...item, allocationAmountCents: value,
+                    revenueSharePercent: priceCents ? Math.round(value / priceCents * 10000000000) / 100000000 : 0 }
+                }))
+              }}
               onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
-            <div className="form-input" style={{ background: '#f6f8f7' }}>{Number(row.revenueSharePercent || 0).toFixed(2)}%</div>
+            <div className="form-input" style={{ background: '#f6f8f7' }}>{(priceCents ? allocationCents(row, priceCents) / priceCents * 100 : 0).toFixed(2)}%</div>
             <button type="button" onClick={() => updatePrice(index, rows.filter((_, i) => i !== rowIndex))} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer' }}>删除</button>
           </div>
           {row.businessType === 'product' && <ChildProductPicker products={products} value={row.childProductId}
             onChange={childProductId => updateRow(rowIndex, { childProductId })} />}
         </div>)}
-        <div style={{ fontSize: 12, marginTop: 8, color: rows.length && Math.abs(total - 100) < 0.001 ? '#1E6B50' : '#8a8a8a' }}>
-          {rows.length ? `已分配 ¥${(amount * total / 100).toFixed(2)} / ¥${amount.toFixed(2)}（${total.toFixed(2)}%）` : '尚未配置业务归属'}
+        <div style={{ fontSize: 12, marginTop: 8, color: rows.length && allocatedCents === priceCents ? '#1E6B50' : '#c0392b' }}>
+          {rows.length ? `已分配 ¥${(allocatedCents / 100).toFixed(2)} / ¥${amount.toFixed(2)}（${(priceCents ? allocatedCents / priceCents * 100 : 0).toFixed(2)}%）${allocatedCents !== priceCents ? `，差额 ¥${((priceCents - allocatedCents) / 100).toFixed(2)}` : ''}` : '尚未配置业务归属'}
         </div>
       </div>
     })}
@@ -571,11 +582,11 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
       servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price),
         businessAllocations: (sp.businessAllocations || []).map(row => ({ key: row.key, name: row.name,
           businessType: row.businessType || 'service', teamRole: row.teamRole, childProductId: row.childProductId || '',
-          revenueSharePercent: row.revenueSharePercent })),
+          revenueSharePercent: row.revenueSharePercent, allocationAmountCents: row.allocationAmountCents })),
         performanceConfig: sp.performanceConfig?.enabled === true ? sp.performanceConfig : null })),
       businessAllocations: (product.businessAllocations || []).map(row => ({ key: row.key, name: row.name,
         businessType: row.businessType || 'service', teamRole: row.teamRole, childProductId: row.childProductId || '',
-        revenueSharePercent: row.revenueSharePercent })),
+        revenueSharePercent: row.revenueSharePercent, allocationAmountCents: row.allocationAmountCents })),
       fulfillmentType: product.fulfillmentType || 'offline_service',
       paymentChannel: product.paymentChannel || 'wechat_pay',
       bookingRequired: product.bookingRequired !== false,
@@ -686,15 +697,21 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
     const allocatedItems = form.serviceItems || []
     const specAllocationsInvalid = (form.servicePrices || []).some(price => {
       const rows = price.businessAllocations || []
+      const cents = moneyCents(price.price)
+      const exact = rows.some(row => row.allocationAmountCents != null)
       return rows.length && (rows.some(row => Number(row.revenueSharePercent) <= 0
         || (row.businessType === 'product' && !row.childProductId))
-        || Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001)
+        || (exact ? rows.reduce((sum, row) => sum + allocationCents(row, cents), 0) !== cents
+          : Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001))
     })
     if (specAllocationsInvalid) { toast('每个已配置收费项目的归属金额须合计为该项目售价'); setTab('businessAllocation'); return }
     const wholeRows = form.businessAllocations || []
+    const wholeCents = moneyCents(form.originalPrice)
+    const wholeExact = wholeRows.some(row => row.allocationAmountCents != null)
     if (wholeRows.length && ((form.servicePrices || []).some(price => price.label?.trim())
       || wholeRows.some(row => Number(row.revenueSharePercent) <= 0 || (row.businessType === 'product' && !row.childProductId))
-      || Math.abs(wholeRows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001)) {
+      || (wholeExact ? wholeRows.reduce((sum, row) => sum + allocationCents(row, wholeCents), 0) !== wholeCents
+        : Math.abs(wholeRows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001))) {
       toast('整单业务归属须合计100%；有收费项目时请逐项设置'); setTab('businessAllocation'); return
     }
     if (allocatedItems.length && (allocatedItems.some(item => !allocationItemName(item, productsForBundle).trim() || Number(item.revenueSharePercent) <= 0
@@ -718,11 +735,13 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
             key: row.key, name: `${sp.label.trim()} · ${allocationItemName(row, productsForBundle).trim().replace(`${sp.label.trim()} · `, '')}`,
             businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
             childProductId: row.childProductId || null, revenueSharePercent: Number(row.revenueSharePercent) || 0,
+            ...(row.allocationAmountCents == null ? {} : { allocationAmountCents: allocationCents(row, moneyCents(sp.price)) }),
           })) }))
       const cleanedWholeRows = wholeRows.map(row => ({
         key: row.key, name: `整单 · ${allocationItemName(row, productsForBundle).trim().replace('整单 · ', '')}`,
         businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
         childProductId: row.childProductId || null, revenueSharePercent: Number(row.revenueSharePercent) || 0,
+        ...(row.allocationAmountCents == null ? {} : { allocationAmountCents: allocationCents(row, wholeCents) }),
       }))
 
       const payload = {

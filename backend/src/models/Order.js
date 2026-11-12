@@ -45,6 +45,7 @@ const orderSchema = new mongoose.Schema({
     teamRole: { type: String, default: '' },
     childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
     revenueSharePercent: { type: Number, min: 0, max: 100, required: true },
+    allocationAmountCents: { type: Number, min: 1, default: undefined },
   }],
   performanceRuleSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   staffPerformanceOverridesSnapshot: { type: [mongoose.Schema.Types.Mixed], default: [] },

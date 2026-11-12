@@ -7,6 +7,7 @@ function snapshot(product, specificationLabel) {
     key: row.key, name: row.name, businessType: row.businessType || 'service',
     teamRole: row.teamRole, childProductId: row.childProductId || null,
     revenueSharePercent: Number(row.revenueSharePercent),
+    ...(row.allocationAmountCents == null ? {} : { allocationAmountCents: Number(row.allocationAmountCents) }),
   }));
 }
 module.exports = { snapshot };

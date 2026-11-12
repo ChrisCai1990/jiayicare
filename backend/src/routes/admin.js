@@ -2099,12 +2099,12 @@ router.post('/products/ai-draft', adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/products
-async function validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, staffPerformanceOverrides }, tenantId, productId = null) {
+async function validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, originalPrice, staffPerformanceOverrides }, tenantId, productId = null) {
   if (businessAllocations !== undefined) {
     if (!Array.isArray(businessAllocations)) return '整单业务归属格式错误';
     if (businessAllocations.length && (servicePrices || []).length) return '有收费项目时请逐项设置业务归属';
     if (businessAllocations.length) {
-      const error = await validateProductSettlementConfig({ servicePrices: [{ label: '整单', businessAllocations }] }, tenantId, productId);
+      const error = await validateProductSettlementConfig({ servicePrices: [{ label: '整单', price: originalPrice, businessAllocations }] }, tenantId, productId);
       if (error) return error.replace('收费项目「整单」', '整单');
     }
   }
@@ -2134,13 +2134,19 @@ async function validateProductSettlementConfig({ serviceItems, servicePrices, bu
       const rows = price.businessAllocations || [];
       if (!Array.isArray(rows)) return '收费项目业务归属格式错误';
       if (!rows.length) continue;
+      const exactAmounts = rows.some(row => row.allocationAmountCents != null);
+      const amountCents = Math.round(Number(price.price) * 100);
       if (!String(price.label || '').trim() || new Set(rows.map(row => row.key)).size !== rows.length
         || rows.some(row => !String(row.key || '').trim() || !String(row.name || '').trim()
           || !['service', 'product', 'enterprise'].includes(row.businessType || 'service')
           || (row.businessType === 'enterprise' ? row.teamRole !== 'enterpriseResource' : !roles.includes(row.teamRole))
           || !Number.isFinite(Number(row.revenueSharePercent)) || Number(row.revenueSharePercent) <= 0
           || (row.businessType === 'product' && !mongoose.isValidObjectId(row.childProductId)))
-        || Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent), 0) - 100) > 0.001)
+        || (exactAmounts
+          ? !Number.isSafeInteger(amountCents) || amountCents <= 0
+            || rows.some(row => !Number.isSafeInteger(Number(row.allocationAmountCents)) || Number(row.allocationAmountCents) <= 0)
+            || rows.reduce((sum, row) => sum + Number(row.allocationAmountCents), 0) !== amountCents
+          : Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent), 0) - 100) > 0.001))
         return `收费项目「${price.label}」的业务归属须完整填写且合计100%`;
       const ids = [...new Set(rows.filter(row => row.childProductId).map(row => String(row.childProductId)))];
       if (ids.some(id => !mongoose.isValidObjectId(id) || id === String(productId))) return '关联产品不能是当前产品';
@@ -2186,7 +2192,7 @@ async function validateProductSettlementConfig({ serviceItems, servicePrices, bu
 
 router.post('/products', adminAuth, async (req, res) => {
   const { name, subtitle, images, originalPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
-  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, staffPerformanceOverrides }, req.admin.tenantId);
+  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, originalPrice, staffPerformanceOverrides }, req.admin.tenantId);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
@@ -2237,7 +2243,9 @@ router.put('/products/:id', adminAuth, async (req, res) => {
       ? existingProduct.serviceItems.find(row => row.key === item.key)?.performers || []
       : item.performers,
   }));
-  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
+  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations,
+    originalPrice: originalPrice === undefined ? existingProduct.originalPrice : originalPrice,
+    staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const sharedInventory = existingProduct.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: existingProduct._id });
   if (sharedInventory && stock !== undefined && Number(stock) !== Number(existingProduct.stock)) return res.status(409).json({ success: false, message: '已启用物资台账，请通过入库或盘点调整库存' });

@@ -147,6 +147,20 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(normalProductEdit.status, 200, JSON.stringify(normalProductEdit.body));
     assert.equal(normalProductEdit.body.data.servicePrices[1].performanceConfig.performanceRule.referrerRate, 4,
       'ordinary catalog edits must preserve independent commission rules');
+    const exactAmounts = [1480000, 100000, 100000, 200000];
+    const exactRoles = ['familyDoctor', 'healthManager', 'medicalAssistant', 'enterpriseResource'];
+    const exactRows = exactAmounts.map((amount, index) => ({ key: `exact_${index}`, name: `归属${index}`,
+      businessType: index === 3 ? 'enterprise' : 'service', teamRole: exactRoles[index],
+      allocationAmountCents: amount, revenueSharePercent: amount / 1880000 * 100 }));
+    const exactProduct = await call(clerkId, 'POST', '/api/admin/products', { name: '金额精确归属', category: 'health',
+      originalPrice: 18800, status: 'off', servicePrices: [{ label: '全程陪伴', price: 18800, businessAllocations: exactRows }] });
+    assert.equal(exactProduct.status, 200, JSON.stringify(exactProduct.body));
+    assert.deepEqual(require('../src/utils/businessRevenueAllocation').allocations({ businessAllocationsSnapshot:
+      require('../src/utils/productBusinessAllocations').snapshot(exactProduct.body.data, '全程陪伴') }, 1880000)
+      .map(row => row.amountCents), exactAmounts);
+    assert.equal((await call(clerkId, 'POST', '/api/admin/products', { name: '金额不符', category: 'health',
+      originalPrice: 18800, status: 'off', servicePrices: [{ label: '全程陪伴', price: 18800,
+        businessAllocations: exactRows.map((row, index) => index === 3 ? { ...row, allocationAmountCents: 199998 } : row) }] })).status, 400);
     const wholeProduct = await call(clerkId, 'POST', '/api/admin/products', {
       name: '无收费规格的组合服务', category: 'health', originalPrice: 100, status: 'off',
       businessAllocations: [
