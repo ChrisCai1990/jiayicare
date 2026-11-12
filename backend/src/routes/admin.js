@@ -2102,16 +2102,16 @@ router.post('/products/ai-draft', adminAuth, async (req, res) => {
 async function validateProductSettlementConfig({ serviceItems, staffPerformanceOverrides }, tenantId, productId = null) {
   if (serviceItems !== undefined) {
     if (!Array.isArray(serviceItems)) return '子产品配置格式错误';
-    const linked = serviceItems.filter(item => item.childProductId || Number(item.revenueSharePercent) > 0);
+    const linked = serviceItems.filter(item => item.name || item.childProductId || Number(item.revenueSharePercent) > 0);
     if (linked.length) {
-      if (linked.length !== serviceItems.length) return '组合产品的每个子项均须关联子产品和营收比例';
+      if (linked.length !== serviceItems.length || linked.some(item => !String(item.name || '').trim())) return '团队归属项目须填写名称';
       if (Math.abs(linked.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) > 0.001)
-        return '子产品营收分配比例合计必须为100%';
+        return '团队归属比例合计必须为100%';
       if (new Set(linked.map(item => item.key)).size !== linked.length) return '子项目标识不能重复';
       const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
       if (linked.some(item => !roles.includes(item.teamRole) || !Number.isFinite(Number(item.revenueSharePercent)) || Number(item.revenueSharePercent) <= 0))
         return '请为每个子项目选择团队并填写大于0的营收比例';
-      const ids = linked.map(item => String(item.childProductId || ''));
+      const ids = linked.filter(item => item.childProductId).map(item => String(item.childProductId));
       if (ids.some(id => !mongoose.Types.ObjectId.isValid(id) || id === String(productId))) return '子产品不能是当前组合产品';
       const children = await Product.find({ _id: { $in: ids }, tenantId }).select('_id serviceItems').lean();
       if (new Set(children.map(row => String(row._id))).size !== new Set(ids).size) return '子产品必须来自本机构产品库';

@@ -737,4 +737,54 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(changedLine.body.data.changeHistory.length, 2);
     assert.equal((await call(clerkId, 'PATCH', `${prefix}/${profile._id}/status`,
       { status: 'active' })).status, 200);
+
+    // 管理服务直接分配给团队，不需要虚构两个商城子产品。
+    const managedItems = [
+      { key: 'advisor', name: '健康顾问管理', units: 1, teamRole: 'familyDoctor', revenueSharePercent: 60 },
+      { key: 'manager', name: '健管专员跟进', units: 1, teamRole: 'healthManager', revenueSharePercent: 40 },
+    ];
+    const managedProduct = await call(clerkId, 'POST', '/api/admin/products', {
+      name: '年度管理服务五千元', category: 'health', originalPrice: 5000, status: 'off', serviceItems: managedItems });
+    assert.equal(managedProduct.status, 200, JSON.stringify(managedProduct.body));
+    const managedOrder = await Order.create({ tenantId, user: patientId,
+      serviceId: managedProduct.body.data._id, serviceName: '年度管理服务五千元', orderType: 'product',
+      orderNo: 'SYNTHETIC-MANAGED-5000', paymentStatus: 'paid', paymentMethod: 'wechat', paidAt: new Date(), paidAmount: 5000,
+      serviceItemsSnapshot: managedItems });
+    const managedDoctorEvidence = oid(), managedManagerEvidence = oid(), managedManagerId = oid();
+    await mongoose.connection.db.collection('admins').insertOne({ _id: managedManagerId, tenantId,
+      username: 'managed-manager', name: '管理服务健管专员', password: 'unused', role: 'healthManager' });
+    await Order.collection.updateOne({ _id: managedOrder._id }, { $set: { redemptions: [
+      { _id: managedDoctorEvidence, sequence: 1, serviceItemKey: 'advisor', redeemedBy: compositeDoctorId, redeemedAt: new Date() },
+      { _id: managedManagerEvidence, sequence: 2, serviceItemKey: 'manager', redeemedBy: managedManagerId, redeemedAt: new Date() },
+    ] } });
+    await Payment.collection.insertOne({ _id: oid(), order: managedOrder._id, user: patientId,
+      channel: 'wechat_pay', status: 'succeeded', amount: 5000,
+      outTradeNo: 'MANAGED-5000-PAID', paidAt: new Date() });
+    const managedAccounting = await call(clerkId, 'GET', `${prefix}/order-accounting/${managedOrder._id}`);
+    assert.deepEqual(managedAccounting.body.data.revenueAllocation.map(item => item.amountCents), [300000, 200000]);
+    const managedRevenue = await call(clerkId, 'GET', `${prefix}/team-revenue`);
+    assert.deepEqual(managedRevenue.body.data.filter(item => ['advisor', 'manager'].includes(item.serviceItemKey))
+      .map(item => item.amountCents), [300000, 200000]);
+    for (const role of ['familyDoctor', 'healthManager']) {
+      const managedRule = await call(clerkId, 'POST', `${prefix}/team-rules`, {
+        productId: String(managedProduct.body.data._id), role, trigger: 'service_completed',
+        ruleType: 'percentage', basisPoints: 500, effectiveFrom: new Date(Date.now() - 86400000).toISOString() });
+      assert.equal(managedRule.status, 201, JSON.stringify(managedRule.body));
+      assert.equal((await call(clerkId, 'PATCH', `${prefix}/team-rules/${managedRule.body.data._id}/publish`, {})).status, 200);
+    }
+    const managedIncentive = await call(clerkId, 'POST', `${prefix}/team-incentives`, {
+      orderId: String(managedOrder._id), staffId: String(compositeDoctorId), role: 'familyDoctor',
+      serviceItemKey: 'advisor', serviceEvidenceId: String(managedDoctorEvidence) });
+    assert.equal(managedIncentive.status, 201, JSON.stringify(managedIncentive.body));
+    assert.equal(managedIncentive.body.data.basisCents, 300000);
+    assert.equal(managedIncentive.body.data.amountCents, 15000);
+    assert.equal((await call(clerkId, 'POST', `${prefix}/team-incentives`, {
+      orderId: String(managedOrder._id), staffId: String(managedManagerId), role: 'healthManager',
+      serviceItemKey: 'manager', serviceEvidenceId: String(managedManagerEvidence) })).status, 201);
+    await Refund.collection.insertOne({ _id: oid(), order: managedOrder._id, user: patientId,
+      status: 'succeeded', amount: 1000, totalAmount: 5000,
+      outRefundNo: 'MANAGED-5000-REFUND', succeededAt: new Date() });
+    await Order.collection.updateOne({ _id: managedOrder._id }, { $set: { refundedAmount: 1000 } });
+    await require('../src/utils/teamIncentiveSettlement').syncOrder(await Order.findById(managedOrder._id));
+    assert.equal((await TeamIncentive.findById(managedIncentive.body.data._id)).basisCents, 240000);
   });

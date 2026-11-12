@@ -208,7 +208,7 @@ router.get('/attributed-orders', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-// 已付款组合订单按购买时的拆解快照汇总团队营收；退款后的净实收实时重算。
+// 已付款订单按购买时的服务团队归属快照汇总；退款后的净实收实时重算。
 router.get('/team-revenue', async (req, res) => {
   const from = String(req.query.from || ''), to = String(req.query.to || '');
   if ((from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) || (to && !/^\d{4}-\d{2}-\d{2}$/.test(to))
@@ -223,23 +223,18 @@ router.get('/team-revenue', async (req, res) => {
       return res.status(400).json({ success: false, message: '日期范围无效' });
     const cursor = Order.find({ tenantId: tenant(req), paymentStatus: { $in: ['paid', 'refunded'] },
       paidAmount: { $gt: 0 }, paidAt: Object.keys(paidAt).length ? paidAt : { $type: 'date' },
-      'serviceItemsSnapshot.childProductId': { $ne: null } })
-      .select('_id paidAmount refundedAmount serviceItemsSnapshot').lean().cursor();
+      'serviceItemsSnapshot.0': { $exists: true } })
+      .select('_id serviceId paidAmount refundedAmount serviceItemsSnapshot').lean().cursor();
     for await (const order of cursor) {
-      const items = order.serviceItemsSnapshot || [];
-      if (!items.length || !items.every(item => item.childProductId && Number(item.revenueSharePercent) > 0)
-        || Math.abs(items.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) > 0.001) continue;
       const netCents = Math.max(0, Math.round(Number(order.paidAmount || 0) * 100)
         - Math.round(Number(order.refundedAmount || 0) * 100));
-      let assigned = 0;
-      items.forEach((item, index) => {
-        const amountCents = index === items.length - 1 ? netCents - assigned
-          : Math.round(netCents * Number(item.revenueSharePercent) / 100);
-        assigned += amountCents;
-        const key = `${item.teamRole}:${item.childProductId}`;
+      const allocations = require('../utils/serviceItemIncentiveBasis').allocations(order, netCents);
+      if (!allocations) continue;
+      allocations.forEach(item => {
+        const key = `${order.serviceId}:${item.teamRole}:${item.key}`;
         const row = totals.get(key) || { teamRole: item.teamRole, childProductId: item.childProductId,
-          name: item.name, amountCents: 0, orderCount: 0 };
-        row.amountCents += amountCents;
+          serviceItemKey: item.key, name: item.name, amountCents: 0, orderCount: 0 };
+        row.amountCents += item.amountCents;
         row.orderCount += 1;
         totals.set(key, row);
       });
@@ -269,17 +264,10 @@ router.get('/order-accounting/:id', async (req, res) => {
     const paidCents = Math.round(Number(order.paidAmount || 0) * 100);
     const refundedCents = Math.round(Number(order.refundedAmount || 0) * 100);
     const netCents = Math.max(0, paidCents - refundedCents);
-    const items = order.serviceItemsSnapshot || [];
-    const configured = items.length > 0 && items.every(item => item.childProductId && Number(item.revenueSharePercent) > 0)
-      && Math.abs(items.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) < 0.001;
-    let allocatedCents = 0;
-    const revenueAllocation = configured ? items.map((item, index) => {
-      const amountCents = index === items.length - 1
-        ? netCents - allocatedCents : Math.round(netCents * Number(item.revenueSharePercent) / 100);
-      allocatedCents += amountCents;
-      return { serviceItemKey: item.key, childProductId: item.childProductId, name: item.name,
-        teamRole: item.teamRole, sharePercent: item.revenueSharePercent, amountCents };
-    }) : [];
+    const revenueAllocation = (require('../utils/serviceItemIncentiveBasis').allocations(order, netCents) || [])
+      .map(item => ({ serviceItemKey: item.key, childProductId: item.childProductId, name: item.name,
+        teamRole: item.teamRole, sharePercent: order.serviceItemsSnapshot.find(row => row.key === item.key)?.revenueSharePercent || 0,
+        amountCents: item.amountCents }));
     res.json({ success: true, data: { order, cash: { paidCents, refundedCents,
       netCents }, revenueAllocation, partnerCommission,
       staffCommissions, teamIncentives, receipts } });
@@ -783,8 +771,8 @@ router.post('/team-rules', async (req, res) => {
   try {
     const product = await Product.findOne({ _id: req.body.productId, tenantId: tenant(req) }).select('_id serviceItems').lean();
     if (!product) return res.status(404).json({ success: false, message: '商品不存在' });
-    if ((product.serviceItems || []).some(item => item.childProductId && Number(item.revenueSharePercent) > 0))
-      return res.status(409).json({ success: false, message: '组合产品专项激励须按子项净实收与实际核销计算；当前请勿按整单创建规则' });
+    if ((product.serviceItems || []).length && (product.serviceItems || []).every(item => item.childProductId))
+      return res.status(409).json({ success: false, message: '已关联子产品的专项激励须按子产品规则计算' });
     const key = { tenantId: tenant(req), productId: product._id,
       specificationLabel: String(req.body.specificationLabel || '').trim(), role: req.body.role,
       trigger: String(req.body.trigger || '').trim() };
@@ -826,8 +814,8 @@ router.patch('/team-rules/:id/publish', async (req, res) => {
     const row = await TeamIncentiveRule.findOne({ _id: req.params.id, tenantId: tenant(req), status: 'draft' });
     if (!row) return res.status(404).json({ success: false, message: '草稿规则不存在' });
     const product = await Product.findOne({ _id: row.productId, tenantId: tenant(req) }).select('serviceItems').lean();
-    if ((product?.serviceItems || []).some(item => item.childProductId && Number(item.revenueSharePercent) > 0))
-      return res.status(409).json({ success: false, message: '组合产品专项激励尚未按子项核算，不能发布整单规则' });
+    if ((product?.serviceItems || []).length && (product.serviceItems || []).every(item => item.childProductId))
+      return res.status(409).json({ success: false, message: '已关联子产品的专项激励须按子产品规则计算' });
     const overlap = await TeamIncentiveRule.exists({ tenantId: tenant(req), productId: row.productId,
       specificationLabel: row.specificationLabel, role: row.role, trigger: row.trigger,
       status: 'active', effectiveFrom: { $lt: row.effectiveUntil || new Date('9999-12-31') },
@@ -871,12 +859,12 @@ router.post('/team-incentives', async (req, res) => {
     const order = await Order.findOne({ _id: req.body.orderId, tenantId: tenant(req), paymentStatus: 'paid' });
     if (!order || ['refunded', 'requested', 'processing'].includes(order.refundStatus))
       return res.status(409).json({ success: false, message: '订单未付款或退款待处理' });
-    const composite = (order.serviceItemsSnapshot || []).some(item => item.childProductId && Number(item.revenueSharePercent) > 0);
+    const composite = (order.serviceItemsSnapshot || []).some(item => Number(item.revenueSharePercent) > 0);
     const serviceItemKey = composite ? String(req.body?.serviceItemKey || '').trim() : '';
     const item = composite ? (order.serviceItemsSnapshot || []).find(entry => entry.key === serviceItemKey) : null;
     if (composite && (!item || item.teamRole !== role || !validId(req.body?.serviceEvidenceId)))
       return res.status(409).json({ success: false, message: '请选择该岗位已核销的组合子项和核销记录' });
-    const productId = composite ? item.childProductId : order.serviceId;
+    const productId = composite ? item.childProductId || order.serviceId : order.serviceId;
     const product = await Product.findOne({ _id: productId, tenantId: tenant(req) }).select('_id').lean();
     const evidence = composite
       ? (order.redemptions || []).find(entry => String(entry._id) === String(req.body.serviceEvidenceId)

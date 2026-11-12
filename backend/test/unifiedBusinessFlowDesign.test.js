@@ -70,8 +70,8 @@ test('combination child items and repeated units keep the cash allocation exact'
   const first = { _id: 'r1', sequence: 1, serviceItemKey: 'nutrition' };
   const second = { _id: 'r2', sequence: 2, serviceItemKey: 'nutrition' };
   const order = { serviceItemsSnapshot: [
-    { key: 'doctor', childProductId: 'p1', teamRole: 'familyDoctor', revenueSharePercent: 60, units: 1 },
-    { key: 'nutrition', childProductId: 'p2', teamRole: 'nutritionist', revenueSharePercent: 40, units: 2 },
+    { key: 'doctor', name: '顾问服务', childProductId: 'p1', teamRole: 'familyDoctor', revenueSharePercent: 60, units: 1 },
+    { key: 'nutrition', name: '营养服务', childProductId: 'p2', teamRole: 'nutritionist', revenueSharePercent: 40, units: 2 },
   ], redemptions: [first, second] };
   assert.deepEqual(allocations(order, 8005).map(item => item.amountCents), [4803, 3202]);
   assert.equal(unitBasis(order, 8005, 'nutrition', first._id).basisCents, 1601);

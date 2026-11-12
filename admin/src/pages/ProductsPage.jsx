@@ -210,43 +210,50 @@ function ChildProductPicker({ products, parentId, value, onChange }) {
       placeholder="搜索子产品名称或分类" aria-label="搜索产品库子产品" />
     <select className="form-input" value={value || ''} onChange={event => onChange(event.target.value)}
       aria-label="关联产品库子产品">
-      <option value="">关联产品库子产品</option>
+      <option value="">不关联子产品（管理服务）</option>
       {matches.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
     </select>
     {query && <span style={{ fontSize: 12, color: '#6B7D74' }}>匹配 {matches.filter(product => product._id !== value).length} 项{matches.every(product => product._id === value) ? '，请换个关键词' : ''}</span>}
   </div>
 }
 
-function ServiceItemsForm({ items, staffList, products, parentId, onChange }) {
+function ServiceItemsForm({ items, staffList, products, parentId, originalPrice, onChange }) {
   const list = items || []
   const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '', units: 1, childProductId: '', teamRole: 'healthManager', revenueSharePercent: 0, performers: [] }])
   const update = (i, patch) => onChange(list.map((item, idx) => idx === i ? { ...item, ...patch } : item))
   const totalShare = list.reduce((sum, item) => sum + (Number(item.revenueSharePercent) || 0), 0)
+  const price = Number(originalPrice) || 0
   return <div style={{ marginTop: 18, borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-      <label className="form-label">组合服务子项目（按子项目逐次核销）</label>
+      <label className="form-label">服务团队业务归属（按服务项目逐次核销）</label>
       <button type="button" className="btn btn-sm btn-ghost" onClick={add}>+ 添加子项目</button>
     </div>
-    <div style={{fontSize:12,color:'#888',marginBottom:10}}>组合产品可关联本机构产品库中的子产品，设置负责团队和营收比例（合计100%）。营收归属与实际发放的服务绩效分开核算。</div>
+    <div style={{fontSize:12,color:'#888',marginBottom:10}}>可直接填写各团队归属金额，无须关联子产品。金额以本产品原价为配置基准；实际成交价或退款变化时按同一比例分摊。确有独立交付的产品时才关联产品库。业务归属不等于个人服务费。</div>
     {list.map((item, i) => <div key={item.key || i} style={{border:'1px solid #e0d9ce',borderRadius:8,padding:12,marginBottom:12}}>
       <div style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,alignItems:'center'}}>
         <input className="form-input" value={item.name || ''} placeholder="子项目名称" onChange={e=>update(i,{name:e.target.value})}/>
         <input className="form-input" type="number" min="1" value={item.units || 1} onChange={e=>update(i,{units:Math.max(1,parseInt(e.target.value)||1)})}/>
         <button type="button" onClick={()=>onChange(list.filter((_,idx)=>idx!==i))} style={{color:'#c0392b',background:'none',border:'none',cursor:'pointer'}}>删除</button>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'2fr 1.3fr 1fr',gap:8,marginTop:8}}>
+      <div style={{display:'grid',gridTemplateColumns:'1.3fr 1fr 1fr',gap:8,marginTop:8}}>
+        <select className="form-input" value={item.teamRole || 'healthManager'} onChange={e=>update(i,{teamRole:e.target.value})}>
+          {PERFORMER_ROLE_OPTIONS.map(role=><option key={role.value} value={role.value}>{role.label}团队</option>)}
+        </select>
+        <input key={`${item.key}:${price}`} className="form-input" type="number" min="0" step="0.01" defaultValue={price ? (price * Number(item.revenueSharePercent || 0) / 100).toFixed(2) : ''}
+          placeholder="归属金额 ¥" aria-label={`${item.name || `第${i + 1}项`}归属金额元`} disabled={!price}
+          onBlur={e=>update(i,{revenueSharePercent: Math.round(Number(e.target.value || 0) / price * 1000000) / 10000})}
+          onKeyDown={e=>{ if (e.key === 'Enter') e.currentTarget.blur() }}/>
+        <div className="form-input" style={{background:'#f6f8f7',color:'#5c6e6a'}}>{Number(item.revenueSharePercent || 0).toFixed(2)}%</div>
+      </div>
+      <details style={{marginTop:8}}><summary style={{cursor:'pointer',fontSize:12,color:'#6B7D74'}}>交付商品关联（可选）</summary>
         <ChildProductPicker products={products} parentId={parentId} value={item.childProductId} onChange={childProductId=>{
           const child = products.find(p=>p._id===childProductId)
           update(i,{childProductId,name:item.name || child?.name || ''})
         }} />
-        <select className="form-input" value={item.teamRole || 'healthManager'} onChange={e=>update(i,{teamRole:e.target.value})}>
-          {PERFORMER_ROLE_OPTIONS.map(role=><option key={role.value} value={role.value}>{role.label}团队</option>)}
-        </select>
-        <input className="form-input" type="number" min="0" max="100" step="0.01" value={item.revenueSharePercent ?? 0} placeholder="营收占比%" onChange={e=>update(i,{revenueSharePercent:e.target.value})}/>
-      </div>
+      </details>
       <ServicePerformerRolesForm roles={item.performers || []} staffList={staffList} onChange={v=>update(i,{performers:v})}/>
     </div>)}
-    {!!list.length && <div style={{fontSize:12,color:Math.abs(totalShare-100)<0.001?'#1E6B50':'#c0392b'}}>组合营收比例合计：{totalShare}%{totalShare > 0 && Math.abs(totalShare-100)>=0.001?'（配置拆解时须合计100%）':''}</div>}
+    {!!list.length && <div style={{fontSize:12,color:Math.abs(totalShare-100)<0.001?'#1E6B50':'#c0392b'}}>团队归属金额合计：¥{(price * totalShare / 100).toFixed(2)} / ¥{price.toFixed(2)}；比例合计：{totalShare.toFixed(2)}%{totalShare > 0 && Math.abs(totalShare-100)>=0.001?'（须覆盖整笔配置基准金额）':''}</div>}
   </div>
 }
 
@@ -550,9 +557,10 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   }
 
   const save = async () => {
-    const linkedItems = (form.serviceItems || []).filter(item => item.childProductId || Number(item.revenueSharePercent) > 0)
-    if (linkedItems.length && (linkedItems.length !== form.serviceItems.length || linkedItems.some(item => !item.childProductId) || Math.abs(linkedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001)) {
-      toast('组合子产品须逐项关联产品库，营收比例合计为100%'); setTab('performance'); return
+    const allocatedItems = (form.serviceItems || []).filter(item => item.name?.trim() || item.childProductId || Number(item.revenueSharePercent) > 0)
+    if (allocatedItems.length && (allocatedItems.some(item => !item.name?.trim() || Number(item.revenueSharePercent) <= 0)
+      || Math.abs(allocatedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001)) {
+      toast('每项服务请填写名称和归属金额，合计须覆盖产品原价'); setTab('performance'); return
     }
     const fundValue = Number(form.healthFundDeduction?.value)
     if (form.healthFundDeduction?.mode === 'percentage' && (!Number.isFinite(fundValue) || fundValue < 1 || fundValue > 100)) { toast('商品抵扣比例须为1%-100%'); return }
@@ -821,7 +829,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                 staffList={staffList}
                 onChange={v => set('servicePerformerRoles', v)}
               />
-              <ServiceItemsForm items={form.serviceItems} staffList={staffList} products={productsForBundle} parentId={product?._id} onChange={v => set('serviceItems', v)} />
+              <ServiceItemsForm items={form.serviceItems} staffList={staffList} products={productsForBundle} parentId={product?._id} originalPrice={form.originalPrice} onChange={v => set('serviceItems', v)} />
               <StaffPerformanceOverridesForm rows={form.staffPerformanceOverrides} staffList={staffList} onChange={v => set('staffPerformanceOverrides', v)} />
             </div>
           )}

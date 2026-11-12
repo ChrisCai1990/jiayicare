@@ -210,7 +210,7 @@ export default function MarketPartnerManagementPage() {
         <div><strong>{accounting.order.serviceName}</strong>{accounting.order.specificationLabel && ` · ${accounting.order.specificationLabel}`} · {accounting.order.orderNo}</div>
         <div>客户：{accounting.order.user?.name || '—'}；合伙人：{accounting.order.marketPartnerId?.name || '无'}；登记者：{accounting.order.initiatedByStaff?.name || '—'}；内部推广人：{accounting.order.referrerId?.name || '无'}</div>
         <div>订单标价 {yuan(Math.round(Number(accounting.order.servicePrice || 0) * 100))}；现金实收 {yuan(accounting.cash.paidCents)}；成功退款 {yuan(accounting.cash.refundedCents)}；净实收 <strong>{yuan(accounting.cash.netCents)}</strong>；支付状态 {accounting.order.paymentStatus}</div>
-        <div>子产品／团队营收：{accounting.revenueAllocation?.length ? accounting.revenueAllocation.map(item => `${item.name} → ${ROLES.find(([role]) => role === item.teamRole)?.[1] || item.teamRole} ${yuan(item.amountCents)}（${item.sharePercent}%）`).join('；') : '未配置组合拆解'}</div>
+        <div>服务团队业务归属：{accounting.revenueAllocation?.length ? accounting.revenueAllocation.map(item => `${item.name} → ${ROLES.find(([role]) => role === item.teamRole)?.[1] || item.teamRole} ${yuan(item.amountCents)}（${item.sharePercent}%）`).join('；') : '未配置团队归属'}</div>
         <div>服务团队：{accounting.order.servicePerformers?.length ? accounting.order.servicePerformers.map(item => `${ROLES.find(([role]) => role === item.role)?.[1] || item.role} ${item.staffId?.name || '待确认'}`).join('、') : '待确认'}</div>
         <div>合伙人推广费：{accounting.partnerCommission.length ? accounting.partnerCommission.map(item => `${yuan(item.accruedCents)}（${item.status}，已发 ${yuan(item.paidCents)}，已追回 ${yuan(item.recoveredCents)}）`).join('；') : '暂无计提'}</div>
         <div>内部推广与服务绩效：{accounting.staffCommissions.length ? accounting.staffCommissions.map(item => `${item.staffId?.name || '员工'} ${item.role === 'referrer' ? '推广' : '服务'} ${yuan(Math.round(Number(item.commissionAmount || 0) * 100))}（${item.status}）`).join('；') : '暂无计提'}</div>
@@ -219,11 +219,11 @@ export default function MarketPartnerManagementPage() {
       </div>}
     </section>
     <section style={boxStyle}>
-      <h2 style={{fontSize:18,marginTop:0}}>组合产品团队业务营收</h2>
-      <p style={{color:'#667a6d'}}>按已付款订单的子产品拆解快照汇总，成功退款实时扣减；这是业务营收归属，员工佣金在下方单独核算。</p>
-      {teamRevenue.length ? <table className="table"><thead><tr><th>负责团队</th><th>子产品</th><th>订单数</th><th>净实收归属</th></tr></thead><tbody>
-        {teamRevenue.map(item=><tr key={`${item.teamRole}:${item.childProductId}`}><td>{ROLES.find(([role])=>role===item.teamRole)?.[1] || item.teamRole}</td><td>{item.name}</td><td>{item.orderCount}</td><td>{yuan(item.amountCents)}</td></tr>)}
-      </tbody></table> : <div>暂无已付款且完成拆解配置的组合产品订单</div>}
+      <h2 style={{fontSize:18,marginTop:0}}>服务团队业务归属</h2>
+      <p style={{color:'#667a6d'}}>按已付款订单的团队归属快照汇总，成功退款实时扣减；这是业务营收归属，员工佣金在下方单独核算。</p>
+      {teamRevenue.length ? <table className="table"><thead><tr><th>负责团队</th><th>服务项目</th><th>订单数</th><th>净实收归属</th></tr></thead><tbody>
+        {teamRevenue.map(item=><tr key={`${item.teamRole}:${item.childProductId || item.serviceItemKey}`}><td>{ROLES.find(([role])=>role===item.teamRole)?.[1] || item.teamRole}</td><td>{item.name}</td><td>{item.orderCount}</td><td>{yuan(item.amountCents)}</td></tr>)}
+      </tbody></table> : <div>暂无已付款且完成团队归属配置的订单</div>}
     </section>
     {error && <div role="alert" style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
     {notice && <div style={{ color: '#176b4d', marginBottom: 12 }}>{notice}</div>}
@@ -327,7 +327,7 @@ export default function MarketPartnerManagementPage() {
         <input style={inputStyle} aria-label="团队订单ID" placeholder="订单ID" value={teamClaim.orderId} onChange={e => { setTeamClaim({ ...teamClaim, orderId: e.target.value, serviceItemKey: '', serviceEvidenceId: '' }); setTeamClaimOrder(null) }} required />
         <button type="button" className="btn" disabled={!teamClaim.orderId.trim()} onClick={loadTeamClaimOrder}>读取订单子项</button>
         {!!teamClaimOrder?.serviceItemsSnapshot?.length && <>
-          <select style={inputStyle} aria-label="已完成子产品" value={teamClaim.serviceItemKey} onChange={e => setTeamClaim({ ...teamClaim, serviceItemKey: e.target.value, serviceEvidenceId: '' })} required><option value="">选择子产品</option>{teamClaimOrder.serviceItemsSnapshot.map(item => <option key={item.key} value={item.key}>{item.name} · {ROLES.find(([role]) => role === item.teamRole)?.[1] || item.teamRole}</option>)}</select>
+          <select style={inputStyle} aria-label="已完成服务项目" value={teamClaim.serviceItemKey} onChange={e => setTeamClaim({ ...teamClaim, serviceItemKey: e.target.value, serviceEvidenceId: '' })} required><option value="">选择服务项目</option>{teamClaimOrder.serviceItemsSnapshot.map(item => <option key={item.key} value={item.key}>{item.name} · {ROLES.find(([role]) => role === item.teamRole)?.[1] || item.teamRole}</option>)}</select>
           <select style={inputStyle} aria-label="子产品核销记录" value={teamClaim.serviceEvidenceId} onChange={e => setTeamClaim({ ...teamClaim, serviceEvidenceId: e.target.value })} required><option value="">选择已核销记录</option>{(teamClaimOrder.redemptions || []).filter(item => item.serviceItemKey === teamClaim.serviceItemKey).map(item => <option key={item._id} value={item._id}>第 {item.sequence} 次 · {item.redeemedAt?.slice(0, 16).replace('T', ' ')}</option>)}</select>
         </>}
         <input style={inputStyle} aria-label="服务人员ID" placeholder="实际服务人员ID" value={teamClaim.staffId} onChange={e => setTeamClaim({ ...teamClaim, staffId: e.target.value })} required />
@@ -395,7 +395,7 @@ export default function MarketPartnerManagementPage() {
     </section>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>服务团队激励规则</h2>
-      <p style={{ color: '#667a6d' }}>组合服务请针对每个子产品分别设置规则。计提时选择已核销的子项与实际人员；系统按该子项的净实收份额及核销次数计算。</p>
+      <p style={{ color: '#667a6d' }}>管理服务可按母产品设置岗位规则，实际计提只取已核销服务项目的净实收份额；关联商品仍按子产品规则。团队业务归属与个人服务费分别核算。</p>
       <form id="team-incentive-rule-form" onSubmit={submitTeam} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <select style={inputStyle} aria-label="团队商品" value={team.productId} disabled={!!editingTeam} onChange={e => setTeam({ ...team, productId: e.target.value })} required><option value="">选择商品</option>{products.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
         <input style={inputStyle} aria-label="规格" placeholder="规格，可留空" value={team.specificationLabel} disabled={!!editingTeam} onChange={e => setTeam({ ...team, specificationLabel: e.target.value })} />

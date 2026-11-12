@@ -3,7 +3,7 @@
 function allocations(order, netCents) {
   const items = order.serviceItemsSnapshot || [];
   if (!Number.isSafeInteger(netCents) || netCents < 0 || !items.length
-    || !items.every(item => item.childProductId && Number.isInteger(Number(item.units))
+    || !items.every(item => item.key && item.name && Number.isInteger(Number(item.units))
       && Number(item.units) > 0 && Number(item.revenueSharePercent) > 0)
     || Math.abs(items.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) > 0.001)
     return null;
