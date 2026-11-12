@@ -8,6 +8,9 @@ function createNativePushDispatch({ enabled, Job, Message, User, registry, trans
   return {
     async enqueue(message, deliveryKey) {
       if (!enabled() || !eligible(message)) return;
+      // The rolling monitoring inbox item is updated throughout the day. Only
+      // its scheduled daily slot may create a desktop notification.
+      if (!deliveryKey && String(message.dedupeKey || '').startsWith('health-monitoring:')) return;
       await Job.updateOne({ _id: deliveryKey || String(message._id) }, { $setOnInsert: {
         messageId: message._id, state: 'pending', attempts: 0, dueAt: now(),
         expiresAt: new Date(now().getTime() + 24 * 60 * 60 * 1000),

@@ -36,6 +36,14 @@ test('system messages are eligible; category settings block only the selected de
   assert.equal(c.writes[0][0]._id, 'medication:today');
   assert.deepEqual(c.sends.map(item => item.token), ['on']);
 });
+test('rolling monitoring message queues only for its scheduled daily slot', async () => {
+  const monitoring = { ...message, type: 'system', dedupeKey: 'health-monitoring:patient' };
+  const c = setup();
+  await c.enqueue(monitoring);
+  assert.equal(c.writes.length, 0);
+  await c.enqueue(monitoring, 'monitor:patient:2026-11-12');
+  assert.equal(c.writes[0][0]._id, 'monitor:patient:2026-11-12');
+});
 test('saved human message enqueues idempotently and fresh registry decides recipients', async () => {
   const c = setup(); await c.enqueue(message); await c.tick();
   assert.deepEqual(c.writes[0][0], { _id: message._id });
