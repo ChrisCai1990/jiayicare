@@ -17,6 +17,7 @@ import NutritionAssessmentFields, { initialNutritionAssessment, missingNutrition
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import { calendarDate } from '../../../shared/calendarDate.mjs'
+import { trendChange } from '../utils/trendChange.mjs'
 import { resolveReportReviewDate } from '../../../shared/reportReviewDate.mjs'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
 import ChildHealthArchive from '../components/ChildHealthArchive'
@@ -636,7 +637,7 @@ function LsText({ label, value = '', editing, placeholder, multiline, onChange }
 }
 
 // ── 简易 SVG 折线趋势图 ───────────────────────────────────────────
-function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
+function MiniTrendChart({ data, color = '#1E6B50', label, unit = '', showChange = false, refLow, refHigh }) {
   const [selectedPoint, setSelectedPoint] = useState(null);
   if (!data || data.length < 2) return null;
   const W = 260, H = 80, PAD = 8;
@@ -651,10 +652,12 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
   const ys = vals.map(v => toY(v));
   const pts = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
   const last = data[data.length - 1];
+  const change = trendChange(data);
+  const formatValue = value => new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(value);
   const highY = refHigh != null ? toY(refHigh) : null;
   const lowY  = refLow  != null ? toY(refLow)  : null;
   return (
-    <div style={{ display: 'inline-block', marginRight: 16, marginBottom: 12 }}>
+    <div style={{ display: 'inline-block', width: showChange ? W : undefined, verticalAlign: 'top', marginRight: 16, marginBottom: 12 }}>
       <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4, fontWeight: 600 }}>{label}</div>
       <svg width={W} height={H} style={{ border: '1px solid #f0ece4', borderRadius: 8, background: '#faf9f6' }}>
         {highY != null && (
@@ -691,6 +694,14 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
         <text x={PAD} y={H - 2} fontSize="9" fill="#aaa">{data[0].x}</text>
         <text x={W - PAD} y={H - 2} textAnchor="end" fontSize="9" fill="#aaa">{last.x}</text>
       </svg>
+      {showChange && change && (
+        <div style={{ fontSize: 11, color: '#4A6558', marginTop: 4 }} aria-label={`${label}首末记录变化`}>
+          首末记录：{formatValue(change.first)} → {formatValue(change.last)}{unit ? ` ${unit}` : ''}
+          <strong style={{ marginLeft: 6, color: '#1A2B24' }}>
+            {change.direction} {formatValue(change.amount)}{unit ? ` ${unit}` : ''}
+          </strong>
+        </div>
+      )}
       {selectedPoint && data.includes(selectedPoint) && (
         <div aria-live="polite" style={{ fontSize: 11, color: '#4A6558', marginTop: 4 }}>
           日期：{selectedPoint.date || selectedPoint.x}　数值：{selectedPoint.y}
@@ -8538,18 +8549,18 @@ export default function PatientDetailPage() {
                 const diastolic = Number(r.extra?.dia ?? r.dia ?? valueDia);
                 if (systolic > 0) {
                   if (!byType.bloodPressureSystolic) byType.bloodPressureSystolic = [];
-                  byType.bloodPressureSystolic.push({ x: dateStr, date: measuredAt, y: systolic });
+                  byType.bloodPressureSystolic.push({ x: dateStr, date: measuredAt, y: systolic, unit: 'mmHg' });
                 }
                 if (diastolic > 0) {
                   if (!byType.bloodPressureDiastolic) byType.bloodPressureDiastolic = [];
-                  byType.bloodPressureDiastolic.push({ x: dateStr, date: measuredAt, y: diastolic });
+                  byType.bloodPressureDiastolic.push({ x: dateStr, date: measuredAt, y: diastolic, unit: 'mmHg' });
                 }
                 return;
               }
               const y = parseFloat(r.value) || 0;
               if (y > 0) {
                 if (!byType[r.type]) byType[r.type] = [];
-                byType[r.type].push({ x: dateStr, date: fullDate, y });
+                byType[r.type].push({ x: dateStr, date: fullDate, y, unit: r.unit || '' });
               }
             });
             return Object.entries(byType).filter(([, arr]) => arr.length >= 2).reverse();
@@ -8627,7 +8638,7 @@ export default function PatientDetailPage() {
               ) : charts.length >= 1 ? (
                 <div id="trend-chart-wrap" style={{ padding: '12px 16px', overflowX: 'auto' }}>
                   {charts.map(([type, arr]) => (
-                    <MiniTrendChart key={type} data={[...arr].reverse()} color={TYPE_COLORS[type] || '#1E6B50'} label={TREND_TYPE_LABELS[type] || type} />
+                    <MiniTrendChart key={type} data={[...arr].reverse()} color={TYPE_COLORS[type] || '#1E6B50'} label={TREND_TYPE_LABELS[type] || type} unit={arr[0]?.unit || ''} showChange />
                   ))}
                 </div>
               ) : (
