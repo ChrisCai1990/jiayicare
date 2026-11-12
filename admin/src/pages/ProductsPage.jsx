@@ -1269,7 +1269,7 @@ export default function ProductsPage({ commissionMode = false }) {
         </tr></thead><tbody>{visible.length ? visible.map(product => {
           const specific = (product.servicePrices || []).filter(row => row.performanceConfig?.enabled === true).length
           return <tr key={product._id}><td>{product.name}</td><td>{product.servicePrices?.length || 0} 项</td>
-            <td>{specific ? `${specific} 项独立规则` : product.performanceRule?.ruleType !== 'none' ? '产品通用规则' : '未设置／沿用员工规则'}</td>
+            <td>{specific ? `${specific} 项独立规则` : product.performanceRule?.ruleType && product.performanceRule.ruleType !== 'none' ? '产品通用规则' : '未设置／沿用员工规则'}</td>
             <td><button className="btn btn-sm btn-ghost" onClick={() => { setEditing(product); setShowModal(true) }}>设置佣金</button></td></tr>
         }) : <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24 }}>暂无匹配产品</td></tr>}</tbody></table>}
       </div>
