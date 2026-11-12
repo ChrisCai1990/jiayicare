@@ -23,6 +23,9 @@ export default function BusinessAccountingPage() {
   const [teamRevenue, setTeamRevenue] = useState([])
   const [source, setSource] = useState('')
   const [page, setPage] = useState(1)
+  const [productPage, setProductPage] = useState(1)
+  const [productsExpanded, setProductsExpanded] = useState(false)
+  const [ordersExpanded, setOrdersExpanded] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -32,10 +35,10 @@ export default function BusinessAccountingPage() {
     try {
       const [summary, orderList, teamList] = await Promise.all([
         adminAPI.marketPartnerBusinessOverview(period),
-        adminAPI.marketPartnerBusinessOrders({ ...period, ...(source ? { source } : {}), page: 1, pageSize: 20 }),
+        adminAPI.marketPartnerBusinessOrders({ ...period, ...(source ? { source } : {}), page: 1, pageSize: 10 }),
         adminAPI.marketPartnerTeamRevenue(period),
       ])
-      setData(summary.data); setOrders(orderList.data); setTeamRevenue(teamList.data || []); setPage(1)
+      setData(summary.data); setOrders(orderList.data); setTeamRevenue(teamList.data || []); setPage(1); setProductPage(1)
     }
     catch (err) { setError(err.message || '经营数据读取失败') }
     finally { setLoading(false) }
@@ -44,7 +47,7 @@ export default function BusinessAccountingPage() {
     setLoading(true); setError('')
     try {
       const result = await adminAPI.marketPartnerBusinessOrders({ ...(from ? { from } : {}), ...(to ? { to } : {}),
-        ...(nextSource ? { source: nextSource } : {}), page: nextPage, pageSize: 20 })
+        ...(nextSource ? { source: nextSource } : {}), page: nextPage, pageSize: 10 })
       setOrders(result.data); setSource(nextSource); setPage(nextPage)
     } catch (err) { setError(err.message || '订单明细读取失败') }
     finally { setLoading(false) }
@@ -76,15 +79,32 @@ export default function BusinessAccountingPage() {
         <tr key={row.id}><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.netCents)}</td></tr>} />
       <DataTable title="内部员工推广业务" headers={['员工', '已付款订单数', '净实收归属']} rows={data.staff} render={row =>
         <tr key={row.id}><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.netCents)}</td></tr>} />
-      <DataTable title="产品业务" headers={['产品', '已付款订单数', '净实收']} rows={data.products} render={(row, index) =>
-        <tr key={`${row.serviceId || row.name}:${index}`}><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.netCents)}</td></tr>} />
+      <section style={{ ...card, marginTop: 16, overflowX: 'auto' }}>
+        <button type="button" className="btn" aria-expanded={productsExpanded} onClick={() => setProductsExpanded(value => !value)}>
+          产品业务（{data.products.length} 项）{productsExpanded ? '收起 ▲' : '展开 ▼'}
+        </button>
+        {productsExpanded && <>
+          <table className="table"><thead><tr><th>产品</th><th>已付款订单数</th><th>净实收</th></tr></thead>
+            <tbody>{data.products.length ? data.products.slice((productPage - 1) * 10, productPage * 10).map((row, index) =>
+              <tr key={`${row.serviceId || row.name}:${index}`}><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.netCents)}</td></tr>)
+              : <tr><td colSpan={3}>所选期间暂无记录</td></tr>}</tbody></table>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>每页 10 项 · 第 {productPage} / {Math.max(1, Math.ceil(data.products.length / 10))} 页</span>
+            <button type="button" className="btn" disabled={productPage <= 1} onClick={() => setProductPage(value => value - 1)}>上一页</button>
+            <button type="button" className="btn" disabled={productPage * 10 >= data.products.length} onClick={() => setProductPage(value => value + 1)}>下一页</button>
+          </div>
+        </>}
+      </section>
       <DataTable title="收款渠道" headers={['渠道', '已付款订单数', '净实收']} rows={data.channels} render={row =>
         <tr key={row.channel}><td>{channelName[row.channel] || row.channel}</td><td>{row.orderCount}</td><td>{money(row.netCents)}</td></tr>} />
       <DataTable title="已拆解组合产品的团队业务归属" headers={['负责团队', '子产品', '订单数', '净实收分摊']} rows={teamRevenue} render={row =>
         <tr key={`${row.teamRole}:${row.childProductId}`}><td>{roleName[row.teamRole] || row.teamRole}</td><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.amountCents)}</td></tr>} />
       <p style={{ color: '#667a6d' }}>团队表仅含已完成 100% 子产品拆解的订单；未拆解的订单仍计入企业净实收。人员服务激励必须依据实际履约，不能把团队分摊额直接当作个人收入。</p>
       <section style={{ ...card, marginTop: 16, overflowX: 'auto' }}>
-        <h2 style={{ fontSize: 18, marginTop: 0 }}>订单明细</h2>
+        <button type="button" className="btn" aria-expanded={ordersExpanded} onClick={() => setOrdersExpanded(value => !value)}>
+          订单明细（{orders?.count || 0} 笔）{ordersExpanded ? '收起 ▲' : '展开 ▼'}
+        </button>
+        {ordersExpanded && <>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
           {[['', '全部来源'], ['partner', '外部合伙人'], ['staff', '内部员工'], ['unassigned', '无推广归属']].map(([key, label]) =>
             <button type="button" key={key} className={source === key ? 'btn btn-primary' : 'btn'} disabled={loading} onClick={() => loadOrderPage(key, 1)}>{label}</button>)}
@@ -100,8 +120,9 @@ export default function BusinessAccountingPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span>共 {orders?.count || 0} 笔 · 第 {page} 页</span>
           <button className="btn" disabled={loading || page <= 1} onClick={() => loadOrderPage(source, page - 1)}>上一页</button>
-          <button className="btn" disabled={loading || page * 20 >= (orders?.count || 0)} onClick={() => loadOrderPage(source, page + 1)}>下一页</button>
+          <button className="btn" disabled={loading || page * 10 >= (orders?.count || 0)} onClick={() => loadOrderPage(source, page + 1)}>下一页</button>
         </div>
+        </>}
       </section>
       <div style={{ ...card, marginTop: 16, lineHeight: 1.8 }}>
         <strong>后续核算接入</strong>：财务已确认营业收入、实际成本与毛利、员工已履约服务业绩、激励应付和实付仍需按统一账本接入。现有组合子产品团队营收、佣金核对和单笔订单查询可在 <Link to="/market-partners">市场合伙人</Link> 查看。
