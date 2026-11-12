@@ -102,6 +102,7 @@ const productSchema = new mongoose.Schema({
   serviceItems: [{
     key: { type: String, required: true },
     name: { type: String, required: true },
+    businessType: { type: String, enum: ['service', 'product'], default: 'service' },
     childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
     teamRole: { type: String, enum: require('../utils/tenantScope').SERVICE_PERFORMER_ROLES, default: 'healthManager' },
     revenueSharePercent: { type: Number, min: 0, max: 100, default: 0 },

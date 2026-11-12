@@ -29,12 +29,22 @@ const orderSchema = new mongoose.Schema({
   serviceItemsSnapshot: [{
     key: { type: String, required: true },
     name: { type: String, required: true },
+    businessType: { type: String, enum: ['service', 'product'], default: 'service' },
     childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
     teamRole: { type: String, default: '' },
     revenueSharePercent: { type: Number, default: 0 },
     units: { type: Number, default: 1, min: 1 },
     usedUnits: { type: Number, default: 0, min: 0 },
     performers: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
+  }],
+  // 年度会员服务包的业务归属独立于权益核销，不生成虚构的服务次数。
+  businessAllocationsSnapshot: [{
+    key: { type: String, required: true },
+    name: { type: String, required: true },
+    businessType: { type: String, enum: ['service', 'product'], required: true },
+    teamRole: { type: String, default: '' },
+    childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+    revenueSharePercent: { type: Number, min: 0, max: 100, required: true },
   }],
   performanceRuleSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   staffPerformanceOverridesSnapshot: { type: [mongoose.Schema.Types.Mixed], default: [] },

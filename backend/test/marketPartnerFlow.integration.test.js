@@ -80,6 +80,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
     app.use('/api/admin/market-partners', require('../src/routes/marketPartnersAdmin'));
     app.use('/api/market-partner', require('../src/routes/marketPartnerPortal'));
     app.use('/api/admin', require('../src/routes/admin'));
+    app.use('/api/admin', require('../src/routes/settings'));
     app.use('/api/services', require('../src/routes/services'));
     app.use('/api/staff', require('../src/routes/annualServicePeriods'));
     app.use('/api/staff', require('../src/routes/staff'));
@@ -544,6 +545,22 @@ test('online and offline partner payments, renewals, refunds and team incentives
       name: '365健康会员', clientBrand: 'jiayiguanjia', active: true,
       activation: { enabled: true, durationMonths: 12, price: 365, originalPrice: 365 },
       configuration: { includes365: true, membershipTier: 'consumer365', deliveryMode: 'digital' } });
+    const packagePayload = { name: '365健康会员', clientBrand: 'jiayiguanjia', active: true,
+      activation: { enabled: true, durationMonths: 12, price: 365, originalPrice: 365 },
+      configuration: { includes365: true, membershipTier: 'consumer365', deliveryMode: 'digital',
+        businessAllocations: [
+          { key: 'advisory', name: '年度管理服务', businessType: 'service',
+            teamRole: 'familyDoctor', revenueSharePercent: 60 },
+          { key: 'testing', name: '检测产品业务', businessType: 'product',
+            teamRole: 'healthManager', childProductId: String(childDoctorId), revenueSharePercent: 40 },
+        ] } };
+    assert.equal((await call(clerkId, 'PUT', `/api/admin/service-packages/${memberPackageId}`,
+      { ...packagePayload, configuration: { ...packagePayload.configuration,
+        businessAllocations: packagePayload.configuration.businessAllocations.map((item, index) =>
+          index ? { ...item, revenueSharePercent: 30 } : item) } })).status, 400);
+    const configuredPackage = await call(clerkId, 'PUT', `/api/admin/service-packages/${memberPackageId}`,
+      packagePayload);
+    assert.equal(configuredPackage.status, 200, JSON.stringify(configuredPackage.body));
     const listCustomerPackages = async () => {
       const response = await fetch(`${base}/api/services/packages`, {
         headers: { authorization: `Bearer ${customerToken}` },
@@ -596,6 +613,8 @@ test('online and offline partner payments, renewals, refunds and team incentives
       return body.data.orderId;
     };
     const firstMemberOrderId = await memberCheckout();
+    assert.deepEqual((await Order.findById(firstMemberOrderId).lean()).businessAllocationsSnapshot
+      .map(item => item.businessType), ['service', 'product']);
     const memberHistory = await call(clerkId, 'POST', `${prefix}/customer-histories`, {
       orderId: firstMemberOrderId, priorPaidPeriods: 0,
       evidence: '合成会员购买历史核对结果：此前无付费年度' });
@@ -608,6 +627,10 @@ test('online and offline partner payments, renewals, refunds and team incentives
     await require('../src/utils/orderSettlement').confirmPayment({
       outTradeNo: firstMemberPayment.outTradeNo, transactionId: 'SYNTHETIC-MEMBER-001',
       paidAt: new Date() });
+    const packageAccounting = await call(clerkId, 'GET', `${prefix}/order-accounting/${firstMemberOrderId}`);
+    assert.equal(packageAccounting.status, 200, JSON.stringify(packageAccounting.body));
+    assert.deepEqual(packageAccounting.body.data.revenueAllocation.map(item => item.amountCents), [21900, 14600]);
+    assert.deepEqual(packageAccounting.body.data.revenueAllocation.map(item => item.businessType), ['service', 'product']);
     assert.equal((await listCustomerPackages()).find(item => item.id === String(memberPackageId)).canJoin365, false);
     const firstMemberCommission = await Commission.findOne({ orderId: firstMemberOrderId }).lean();
     assert.equal(firstMemberCommission.periodNumber, 1);

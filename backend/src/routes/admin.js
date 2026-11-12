@@ -2109,7 +2109,9 @@ async function validateProductSettlementConfig({ serviceItems, staffPerformanceO
         return '团队归属比例合计必须为100%';
       if (new Set(linked.map(item => item.key)).size !== linked.length) return '子项目标识不能重复';
       const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
-      if (linked.some(item => !roles.includes(item.teamRole) || !Number.isFinite(Number(item.revenueSharePercent)) || Number(item.revenueSharePercent) <= 0))
+      if (linked.some(item => !['service', 'product'].includes(item.businessType || 'service')
+        || !roles.includes(item.teamRole) || !Number.isFinite(Number(item.revenueSharePercent)) || Number(item.revenueSharePercent) <= 0
+        || (item.businessType === 'product' && !item.childProductId)))
         return '请为每个子项目选择团队并填写大于0的营收比例';
       const ids = linked.filter(item => item.childProductId).map(item => String(item.childProductId));
       if (ids.some(id => !mongoose.Types.ObjectId.isValid(id) || id === String(productId))) return '子产品不能是当前组合产品';

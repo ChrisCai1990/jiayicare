@@ -18,11 +18,73 @@ const MEMBERSHIP_TIERS = [
   { value: 'enterprise', label: '企业会员' },
 ]
 
+const ALLOCATION_ROLES = [
+  ['familyDoctor', '健康顾问'], ['nutritionist', '营养师'],
+  ['healthManager', '健管专员'], ['medicalAssistant', '就医团队'],
+]
+
+function PackageAllocationRow({ row, price, products, onChange, onRemove }) {
+  const [search, setSearch] = useState('')
+  const query = search.trim().toLowerCase()
+  const options = products.filter(product => String(product._id) === String(row.childProductId || '')
+    || !query || `${product.name} ${product.category || ''}`.toLowerCase().includes(query))
+  return <div style={{ border: '1px solid #D9E4DD', borderRadius: 8, padding: 10, marginTop: 8 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr auto', gap: 8 }}>
+      <input className="form-input" value={row.name || ''} placeholder="归属项目名称" onChange={event => onChange({ name: event.target.value })} />
+      <select className="form-input" value={row.businessType || 'service'} onChange={event => onChange({ businessType: event.target.value })}>
+        <option value="service">管理服务</option><option value="product">产品／检测</option>
+      </select>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>删除</button>
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+      <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => onChange({ teamRole: event.target.value })}>
+        {ALLOCATION_ROLES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+      <input key={`${row.key}:${price}`} className="form-input" type="number" min="0" step="0.01"
+        defaultValue={price ? (price * Number(row.revenueSharePercent || 0) / 100).toFixed(2) : ''}
+        placeholder="归属金额 ¥" aria-label={`${row.name || '项目'}归属金额元`} disabled={!price}
+        onBlur={event => onChange({ revenueSharePercent: Math.round(Number(event.target.value || 0) / price * 1000000) / 10000 })}
+        onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+      <div className="form-input" style={{ background: '#F6F8F7' }}>{Number(row.revenueSharePercent || 0).toFixed(2)}%</div>
+    </div>
+    {row.businessType === 'product' && <div style={{ marginTop: 8 }}>
+      <input className="form-input" type="search" placeholder="搜索产品名称或分类" value={search} onChange={event => setSearch(event.target.value)} />
+      <select className="form-input" style={{ marginTop: 6 }} value={row.childProductId || ''}
+        onChange={event => onChange({ childProductId: event.target.value })}>
+        <option value="">选择产品库项目</option>
+        {options.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
+      </select>
+    </div>}
+  </div>
+}
+
+function PackageAllocationEditor({ rows, price, products, onChange }) {
+  const list = rows || []
+  const total = list.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0)
+  const update = (index, patch) => onChange(list.map((row, i) => i === index ? { ...row, ...patch } : row))
+  return <div className="form-group" style={{ borderTop: '1px solid #E5E7EB', paddingTop: 14 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <label className="form-label">业务营收归属</label>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange([...list, {
+        key: `allocation_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: '',
+        businessType: 'service', teamRole: 'healthManager', childProductId: '', revenueSharePercent: 0,
+      }])}>+ 添加归属项目</button>
+    </div>
+    <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0' }}>按本服务包售价填金额，服务与产品合计应为100%。实际付款或退款按冻结比例分摊；此处不设置个人服务费，也不改变会员权益。</p>
+    {list.map((row, index) => <PackageAllocationRow key={row.key || index} row={row} price={Number(price) || 0}
+      products={products} onChange={patch => update(index, patch)} onRemove={() => onChange(list.filter((_, i) => i !== index))} />)}
+    {!!list.length && <div style={{ marginTop: 8, color: Math.abs(total - 100) < 0.001 ? '#1E6B50' : '#C0392B' }}>
+      已分配 ¥{((Number(price) || 0) * total / 100).toFixed(2)} / ¥{(Number(price) || 0).toFixed(2)}（{total.toFixed(2)}%）
+    </div>}
+  </div>
+}
+
 // ─── 共用：简单列表管理组件（标签/来源） ─────────────────────────
 function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn, withClientBrand = false, withEntitlements = false, withActivation = false }) {
   const toast = useToast()
   const [list, setList] = useState([])
   const [productCatalog, setProductCatalog] = useState([])
+  const [allProductCatalog, setAllProductCatalog] = useState([])
   const [productSearch, setProductSearch] = useState('')
   const [poolProductSearch, setPoolProductSearch] = useState({})
   const [showIncludedOnly, setShowIncludedOnly] = useState(false)
@@ -34,7 +96,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [clientBrand, setClientBrand] = useState('jiayiguanjia')
   const [entitlements, setEntitlements] = useState({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthArchiveConcierge: false, healthConsultation: false, medicalPlanning: false, expertAppointment: false, reportInterpretation: false })
   const [activation, setActivation] = useState({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false })
-  const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [] })
+  const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [], businessAllocations: [] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -44,17 +106,27 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
     if (withActivation) requests.push(adminAPI.products({ limit: 500 }))
     Promise.all(requests).then(([r, products]) => {
       setList(r.data)
-      if (products) setProductCatalog((products.data || []).filter(item => item.status === 'on'))
+      if (products) {
+        setAllProductCatalog(products.data || [])
+        setProductCatalog((products.data || []).filter(item => item.status === 'on'))
+      }
     }).catch(e => toast(e.message)).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
 
-  const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [] }
+  const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [], businessAllocations: [] }
   const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthArchiveConcierge: false, healthConsultation: false, medicalPlanning: false, expertAppointment: false, reportInterpretation: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setConfiguration(emptyConfiguration); setProductSearch(''); setPoolProductSearch({}); setShowIncludedOnly(false); setError(''); setShowModal(true) }
   const openEdit = item => { const legacySchedule = item.configuration?.phaseAssessmentSchedule || []; const legacyFrequency = legacySchedule.includes('week2') ? 'biweekly' : legacySchedule.includes('month1') ? 'monthly' : legacySchedule.includes('quarterly') ? 'quarterly' : ''; setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, phaseAssessment: !!item.entitlements?.phaseAssessment, monthlyServiceReview: !!item.entitlements?.monthlyServiceReview, healthArchiveConcierge: !!item.entitlements?.healthArchiveConcierge, healthConsultation: !!item.entitlements?.healthConsultation, medicalPlanning: !!item.entitlements?.medicalPlanning, expertAppointment: !!item.entitlements?.expertAppointment, reportInterpretation: !!item.entitlements?.reportInterpretation }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setConfiguration({ ...emptyConfiguration, ...(item.configuration || {}), phaseAssessmentFrequency: item.configuration?.phaseAssessmentFrequency || legacyFrequency, serviceEntitlements: item.configuration?.serviceEntitlements || [], sharedEntitlementPools: item.configuration?.sharedEntitlementPools || [] }); setProductSearch(''); setPoolProductSearch({}); setShowIncludedOnly(false); setError(''); setShowModal(true) }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
+    const allocations = configuration.businessAllocations || []
+    if (withActivation && allocations.length && (!Number(activation.price)
+      || allocations.some(row => !row.name?.trim() || Number(row.revenueSharePercent) <= 0
+        || (row.businessType === 'product' && !row.childProductId))
+      || Math.abs(allocations.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001)) {
+      setError('请填写售价及每项归属金额；产品项目需关联产品库，金额合计须为售价的100%'); return
+    }
     setSaving(true); setError('')
     try {
       const activationPayload = { ...activation, features: activation.featuresText.split(/\r?\n/).map(v => v.trim()).filter(Boolean) }
@@ -272,6 +344,9 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   </div>
                 </div>
               )}
+              {withActivation && <PackageAllocationEditor rows={configuration.businessAllocations || []}
+                price={activation.price} products={allProductCatalog}
+                onChange={businessAllocations => setConfiguration(value => ({ ...value, businessAllocations }))} />}
               {withActivation && (
                 <div className="form-group" style={{ borderTop: '1px solid #E5E7EB', paddingTop: 14 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>

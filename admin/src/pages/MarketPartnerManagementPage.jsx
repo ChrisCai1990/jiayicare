@@ -210,7 +210,7 @@ export default function MarketPartnerManagementPage() {
         <div><strong>{accounting.order.serviceName}</strong>{accounting.order.specificationLabel && ` · ${accounting.order.specificationLabel}`} · {accounting.order.orderNo}</div>
         <div>客户：{accounting.order.user?.name || '—'}；合伙人：{accounting.order.marketPartnerId?.name || '无'}；登记者：{accounting.order.initiatedByStaff?.name || '—'}；内部推广人：{accounting.order.referrerId?.name || '无'}</div>
         <div>订单标价 {yuan(Math.round(Number(accounting.order.servicePrice || 0) * 100))}；现金实收 {yuan(accounting.cash.paidCents)}；成功退款 {yuan(accounting.cash.refundedCents)}；净实收 <strong>{yuan(accounting.cash.netCents)}</strong>；支付状态 {accounting.order.paymentStatus}</div>
-        <div>服务团队业务归属：{accounting.revenueAllocation?.length ? accounting.revenueAllocation.map(item => `${item.name} → ${ROLES.find(([role]) => role === item.teamRole)?.[1] || item.teamRole} ${yuan(item.amountCents)}（${item.sharePercent}%）`).join('；') : '未配置团队归属'}</div>
+        <div>服务／产品业务归属：{accounting.revenueAllocation?.length ? accounting.revenueAllocation.map(item => `${item.businessType === 'product' ? '产品' : '服务'}·${item.name} → ${ROLES.find(([role]) => role === item.teamRole)?.[1] || item.teamRole} ${yuan(item.amountCents)}（${item.sharePercent}%）`).join('；') : '未配置业务归属'}</div>
         <div>服务团队：{accounting.order.servicePerformers?.length ? accounting.order.servicePerformers.map(item => `${ROLES.find(([role]) => role === item.role)?.[1] || item.role} ${item.staffId?.name || '待确认'}`).join('、') : '待确认'}</div>
         <div>合伙人推广费：{accounting.partnerCommission.length ? accounting.partnerCommission.map(item => `${yuan(item.accruedCents)}（${item.status}，已发 ${yuan(item.paidCents)}，已追回 ${yuan(item.recoveredCents)}）`).join('；') : '暂无计提'}</div>
         <div>内部推广与服务绩效：{accounting.staffCommissions.length ? accounting.staffCommissions.map(item => `${item.staffId?.name || '员工'} ${item.role === 'referrer' ? '推广' : '服务'} ${yuan(Math.round(Number(item.commissionAmount || 0) * 100))}（${item.status}）`).join('；') : '暂无计提'}</div>
@@ -219,11 +219,11 @@ export default function MarketPartnerManagementPage() {
       </div>}
     </section>
     <section style={boxStyle}>
-      <h2 style={{fontSize:18,marginTop:0}}>服务团队业务归属</h2>
-      <p style={{color:'#667a6d'}}>按已付款订单的团队归属快照汇总，成功退款实时扣减；这是业务营收归属，员工佣金在下方单独核算。</p>
-      {teamRevenue.length ? <table className="table"><thead><tr><th>负责团队</th><th>服务项目</th><th>订单数</th><th>净实收归属</th></tr></thead><tbody>
-        {teamRevenue.map(item=><tr key={`${item.teamRole}:${item.childProductId || item.serviceItemKey}`}><td>{ROLES.find(([role])=>role===item.teamRole)?.[1] || item.teamRole}</td><td>{item.name}</td><td>{item.orderCount}</td><td>{yuan(item.amountCents)}</td></tr>)}
-      </tbody></table> : <div>暂无已付款且完成团队归属配置的订单</div>}
+      <h2 style={{fontSize:18,marginTop:0}}>服务与产品业务归属</h2>
+      <p style={{color:'#667a6d'}}>按已付款订单的归属快照汇总，成功退款实时扣减；这是业务营收归属，员工佣金在下方单独核算。</p>
+      {teamRevenue.length ? <table className="table"><thead><tr><th>归属类型</th><th>负责团队</th><th>项目</th><th>订单数</th><th>净实收归属</th></tr></thead><tbody>
+        {teamRevenue.map(item=><tr key={`${item.businessType}:${item.teamRole}:${item.childProductId || item.serviceItemKey}`}><td>{item.businessType === 'product' ? '产品／检测' : '管理服务'}</td><td>{ROLES.find(([role])=>role===item.teamRole)?.[1] || item.teamRole}</td><td>{item.name}</td><td>{item.orderCount}</td><td>{yuan(item.amountCents)}</td></tr>)}
+      </tbody></table> : <div>暂无已付款且完成业务归属配置的订单</div>}
     </section>
     {error && <div role="alert" style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
     {notice && <div style={{ color: '#176b4d', marginBottom: 12 }}>{notice}</div>}

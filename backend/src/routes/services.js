@@ -690,8 +690,14 @@ router.post('/order', auth, async (req, res) => {
     servicePerformers,
     serviceItemsSnapshot: productServiceItems.map(item => ({
       key: item.key, name: item.name, units: item.units, usedUnits: 0,
-      childProductId: item.childProductId || null, teamRole: item.teamRole || '', revenueSharePercent: item.revenueSharePercent || 0,
+      childProductId: item.childProductId || null, businessType: item.businessType || 'service',
+      teamRole: item.teamRole || '', revenueSharePercent: item.revenueSharePercent || 0,
       performers: (item.performers || []).map(p => p.toObject ? p.toObject() : p),
+    })),
+    businessAllocationsSnapshot: (servicePackage?.configuration?.businessAllocations || []).map(item => ({
+      key: item.key, name: item.name, businessType: item.businessType,
+      teamRole: item.teamRole || '', childProductId: item.childProductId || null,
+      revenueSharePercent: item.revenueSharePercent,
     })),
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
     staffPerformanceOverridesSnapshot: (product?.staffPerformanceOverrides || []).map(row => row.toObject ? row.toObject() : row),

@@ -97,9 +97,11 @@ export default function BusinessAccountingPage() {
       </section>
       <DataTable title="收款渠道" headers={['渠道', '已付款订单数', '净实收']} rows={data.channels} render={row =>
         <tr key={row.channel}><td>{channelName[row.channel] || row.channel}</td><td>{row.orderCount}</td><td>{money(row.netCents)}</td></tr>} />
-      <DataTable title="服务团队业务归属" headers={['负责团队', '服务项目', '订单数', '净实收分摊']} rows={teamRevenue} render={row =>
+      <DataTable title="管理服务业务归属" headers={['负责团队', '服务项目', '订单数', '净实收分摊']} rows={teamRevenue.filter(row => row.businessType !== 'product')} render={row =>
         <tr key={`${row.teamRole}:${row.childProductId || row.serviceItemKey}`}><td>{roleName[row.teamRole] || row.teamRole}</td><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.amountCents)}</td></tr>} />
-      <p style={{ color: '#667a6d' }}>团队表仅含已完成 100% 归属配置的订单；未拆解的订单仍计入企业净实收。人员服务激励必须依据实际履约，不能把团队分摊额直接当作个人收入。</p>
+      <DataTable title="产品／检测业务归属" headers={['负责团队', '产品或检测', '订单数', '净实收分摊']} rows={teamRevenue.filter(row => row.businessType === 'product')} render={row =>
+        <tr key={`${row.teamRole}:${row.childProductId || row.serviceItemKey}`}><td>{roleName[row.teamRole] || row.teamRole}</td><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.amountCents)}</td></tr>} />
+      <p style={{ color: '#667a6d' }}>归属表仅含已完成 100% 配置的订单；未拆解的订单仍计入企业净实收。人员激励必须依据实际推广或履约，不能把业务归属额直接当作个人收入。</p>
       <section style={{ ...card, marginTop: 16, overflowX: 'auto' }}>
         <button type="button" className="btn" aria-expanded={ordersExpanded} onClick={() => setOrdersExpanded(value => !value)}>
           订单明细（{orders?.count || 0} 笔）{ordersExpanded ? '收起 ▲' : '展开 ▼'}

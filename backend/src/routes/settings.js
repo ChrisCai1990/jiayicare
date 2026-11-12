@@ -16,6 +16,7 @@ const MemberTag      = require('../models/MemberTag');
 const MemberSource   = require('../models/MemberSource');
 const MemberType     = require('../models/MemberType');
 const ServicePackage = require('../models/ServicePackage');
+const Product        = require('../models/Product');
 const Disease        = require('../models/Disease');
 const ProjectCategory = require('../models/ProjectCategory');
 const LabTestItem    = require('../models/LabTestItem');
@@ -775,6 +776,28 @@ router.get('/service-packages', adminAuth, async (req, res) => {
   res.json({ success: true, data: list });
 });
 
+async function validatePackageBusinessAllocations(rows, tenantId) {
+  if (rows == null) return null;
+  if (!Array.isArray(rows) || rows.length > 50) return '业务归属配置格式无效';
+  if (!rows.length) return null;
+  const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
+  if (new Set(rows.map(row => row.key)).size !== rows.length
+    || rows.some(row => !String(row.key || '').trim() || !String(row.name || '').trim()
+      || !['service', 'product'].includes(row.businessType)
+      || !roles.includes(row.teamRole)
+      || !Number.isFinite(Number(row.revenueSharePercent)) || Number(row.revenueSharePercent) <= 0
+      || (row.businessType === 'product' && !mongoose.isValidObjectId(row.childProductId))))
+    return '业务归属项目须填写名称、类型、负责团队和有效金额；产品项目须关联产品库';
+  if (Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent), 0) - 100) > 0.001)
+    return '服务与产品归属比例合计须为100%';
+  const productIds = [...new Set(rows.filter(row => row.businessType === 'product').map(row => String(row.childProductId)))];
+  if (productIds.length) {
+    const found = await Product.find({ _id: { $in: productIds }, tenantId }).select('_id').lean();
+    if (found.length !== productIds.length) return '关联产品须来自本机构产品库';
+  }
+  return null;
+}
+
 async function normalizeServicePackageConfiguration(clientBrand, configuration) {
   const next = configuration && typeof configuration === 'object' ? { ...configuration } : {};
   // 不复用运营维护的 MemberType 树：其中可能有归属根节点和历史类型，
@@ -799,6 +822,8 @@ router.post('/service-packages', adminAuth, async (req, res) => {
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
+  const allocationError = await validatePackageBusinessAllocations(configuration?.businessAllocations, req.admin.tenantId);
+  if (allocationError) return res.status(400).json({ success: false, message: allocationError });
   const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, configuration);
   const item = await ServicePackage.create({ name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: normalizedConfiguration });
   res.json({ success: true, data: item });
@@ -809,6 +834,8 @@ router.put('/service-packages/:id', adminAuth, async (req, res) => {
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
+  const allocationError = await validatePackageBusinessAllocations(configuration?.businessAllocations, req.admin.tenantId);
+  if (allocationError) return res.status(400).json({ success: false, message: allocationError });
   const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, configuration);
   const item = await ServicePackage.findByIdAndUpdate(
     req.params.id,

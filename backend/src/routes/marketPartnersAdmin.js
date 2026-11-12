@@ -223,17 +223,18 @@ router.get('/team-revenue', async (req, res) => {
       return res.status(400).json({ success: false, message: '日期范围无效' });
     const cursor = Order.find({ tenantId: tenant(req), paymentStatus: { $in: ['paid', 'refunded'] },
       paidAmount: { $gt: 0 }, paidAt: Object.keys(paidAt).length ? paidAt : { $type: 'date' },
-      'serviceItemsSnapshot.0': { $exists: true } })
-      .select('_id serviceId paidAmount refundedAmount serviceItemsSnapshot').lean().cursor();
+      $or: [{ 'serviceItemsSnapshot.0': { $exists: true } },
+        { 'businessAllocationsSnapshot.0': { $exists: true } }] })
+      .select('_id serviceId paidAmount refundedAmount serviceItemsSnapshot businessAllocationsSnapshot').lean().cursor();
     for await (const order of cursor) {
       const netCents = Math.max(0, Math.round(Number(order.paidAmount || 0) * 100)
         - Math.round(Number(order.refundedAmount || 0) * 100));
-      const allocations = require('../utils/serviceItemIncentiveBasis').allocations(order, netCents);
-      if (!allocations) continue;
-      allocations.forEach(item => {
-        const key = `${order.serviceId}:${item.teamRole}:${item.key}`;
-        const row = totals.get(key) || { teamRole: item.teamRole, childProductId: item.childProductId,
-          serviceItemKey: item.key, name: item.name, amountCents: 0, orderCount: 0 };
+      const allocated = require('../utils/businessRevenueAllocation').allocations(order, netCents);
+      if (!allocated) continue;
+      allocated.forEach(item => {
+        const key = `${order.serviceId}:${item.businessType}:${item.teamRole}:${item.key}`;
+        const row = totals.get(key) || { businessType: item.businessType, teamRole: item.teamRole,
+          childProductId: item.childProductId, serviceItemKey: item.key, name: item.name, amountCents: 0, orderCount: 0 };
         row.amountCents += item.amountCents;
         row.orderCount += 1;
         totals.set(key, row);
@@ -250,7 +251,7 @@ router.get('/order-accounting/:id', async (req, res) => {
     return res.status(400).json({ success: false, message: '请输入有效订单 ID 或订单号' });
   try {
     const order = await Order.findOne({ tenantId: tenant(req), ...(validId(key) ? { _id: key } : { orderNo: key }) })
-      .select('_id orderNo user serviceId serviceName specificationLabel servicePrice paymentStatus paidAmount refundedAmount paidAt initiatedByStaff referrerId marketPartnerId servicePerformers serviceItemsSnapshot redemptions status fulfillmentStatus')
+      .select('_id orderNo user serviceId serviceName specificationLabel servicePrice paymentStatus paidAmount refundedAmount paidAt initiatedByStaff referrerId marketPartnerId servicePerformers serviceItemsSnapshot businessAllocationsSnapshot redemptions status fulfillmentStatus')
       .populate('user', 'name phone').populate('marketPartnerId', 'name referralCode')
       .populate('initiatedByStaff', 'name role').populate('referrerId', 'name role')
       .populate('servicePerformers.staffId', 'name role').lean();
@@ -264,9 +265,9 @@ router.get('/order-accounting/:id', async (req, res) => {
     const paidCents = Math.round(Number(order.paidAmount || 0) * 100);
     const refundedCents = Math.round(Number(order.refundedAmount || 0) * 100);
     const netCents = Math.max(0, paidCents - refundedCents);
-    const revenueAllocation = (require('../utils/serviceItemIncentiveBasis').allocations(order, netCents) || [])
+    const revenueAllocation = (require('../utils/businessRevenueAllocation').allocations(order, netCents) || [])
       .map(item => ({ serviceItemKey: item.key, childProductId: item.childProductId, name: item.name,
-        teamRole: item.teamRole, sharePercent: order.serviceItemsSnapshot.find(row => row.key === item.key)?.revenueSharePercent || 0,
+        businessType: item.businessType, teamRole: item.teamRole, sharePercent: item.sharePercent,
         amountCents: item.amountCents }));
     res.json({ success: true, data: { order, cash: { paidCents, refundedCents,
       netCents }, revenueAllocation, partnerCommission,
@@ -469,7 +470,7 @@ router.post('/offline-orders', async (req, res) => {
       tradeStatus: 'awaiting_payment', paymentStatus: 'unpaid', paymentMethod: '',
       paymentExpectedAmount: listed, initiationSource: 'admin',
       serviceItemsSnapshot: serviceItems.map(item => ({ key:item.key, name:item.name, units:item.units,
-        usedUnits:0, childProductId:item.childProductId || null, teamRole:item.teamRole || '',
+        usedUnits:0, childProductId:item.childProductId || null, businessType:item.businessType || 'service', teamRole:item.teamRole || '',
         revenueSharePercent:item.revenueSharePercent || 0, performers:item.performers || [] })),
       performanceRuleSnapshot: product.performanceRule?.toObject?.() || product.performanceRule || null,
       servicePerformerRolesSnapshot: (product.servicePerformerRoles || []).map(row => row.toObject?.() || row),
