@@ -198,6 +198,25 @@ function ServicePerformerRolesForm({ roles, staffList, onChange }) {
   )
 }
 
+function ChildProductPicker({ products, parentId, value, onChange }) {
+  const [search, setSearch] = useState('')
+  const query = search.trim().toLowerCase()
+  const available = products.filter(product => product._id === value || (product._id !== parentId
+    && !(product.serviceItems || []).some(child => child.childProductId)))
+  const matches = available.filter(product => product._id === value
+    || !query || `${product.name || ''} ${product.category || ''}`.toLowerCase().includes(query))
+  return <div style={{ display: 'grid', gap: 6 }}>
+    <input className="form-input" type="search" value={search} onChange={event => setSearch(event.target.value)}
+      placeholder="搜索子产品名称或分类" aria-label="搜索产品库子产品" />
+    <select className="form-input" value={value || ''} onChange={event => onChange(event.target.value)}
+      aria-label="关联产品库子产品">
+      <option value="">关联产品库子产品</option>
+      {matches.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
+    </select>
+    {query && <span style={{ fontSize: 12, color: '#6B7D74' }}>匹配 {matches.filter(product => product._id !== value).length} 项{matches.every(product => product._id === value) ? '，请换个关键词' : ''}</span>}
+  </div>
+}
+
 function ServiceItemsForm({ items, staffList, products, parentId, onChange }) {
   const list = items || []
   const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '', units: 1, childProductId: '', teamRole: 'healthManager', revenueSharePercent: 0, performers: [] }])
@@ -216,13 +235,10 @@ function ServiceItemsForm({ items, staffList, products, parentId, onChange }) {
         <button type="button" onClick={()=>onChange(list.filter((_,idx)=>idx!==i))} style={{color:'#c0392b',background:'none',border:'none',cursor:'pointer'}}>删除</button>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'2fr 1.3fr 1fr',gap:8,marginTop:8}}>
-        <select className="form-input" value={item.childProductId || ''} onChange={e=>{
-          const child = products.find(p=>p._id===e.target.value)
-          update(i,{childProductId:e.target.value,name:item.name || child?.name || ''})
-        }}>
-          <option value="">关联产品库子产品</option>
-          {products.filter(p=>p._id!==parentId && !(p.serviceItems || []).some(child=>child.childProductId)).map(p=><option key={p._id} value={p._id}>{p.name}</option>)}
-        </select>
+        <ChildProductPicker products={products} parentId={parentId} value={item.childProductId} onChange={childProductId=>{
+          const child = products.find(p=>p._id===childProductId)
+          update(i,{childProductId,name:item.name || child?.name || ''})
+        }} />
         <select className="form-input" value={item.teamRole || 'healthManager'} onChange={e=>update(i,{teamRole:e.target.value})}>
           {PERFORMER_ROLE_OPTIONS.map(role=><option key={role.value} value={role.value}>{role.label}团队</option>)}
         </select>
