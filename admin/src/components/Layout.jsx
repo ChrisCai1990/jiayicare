@@ -20,6 +20,7 @@ const NAV_SECTIONS = [
     label: '运营管理',
     items: [
       { label: '商城产品', icon: 'product', path: '/products' },
+      { label: '佣金规则', icon: 'money', path: '/commission-rules' },
       { label: '物资与设备', icon: 'product', path: '/inventory' },
       { label: '合作伙伴权益', icon: 'partner', path: '/partners' },
       { label: '市场合伙人', icon: 'partner', path: '/market-partners', superadminOnly: true },
@@ -86,7 +87,7 @@ const NAV_SECTIONS = [
 
 const NAV_GROUPS = {
   '运营管理': {
-    '经营与服务': ['/products', '/inventory', '/partners', '/enterprises', '/health-fund'],
+    '经营与服务': ['/products', '/commission-rules', '/inventory', '/partners', '/enterprises', '/health-fund'],
     '运营与质量': ['/ops-dashboard', '/care-quality', '/metabolic-pilot', '/research-care-journeys'],
     '内容与工具': ['/health-plan-templates', '/ai-case-review-templates', '/questionnaires', '/change-logs'],
   },

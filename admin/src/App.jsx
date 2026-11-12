@@ -170,6 +170,7 @@ export default function App() {
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />
               <Route path="products"   element={<ProductsPage />} />
+              <Route path="commission-rules" element={<ProductsPage commissionMode />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="partners"   element={<PartnersPage />} />
               <Route path="market-partners" element={<MarketPartnerManagementPage />} />

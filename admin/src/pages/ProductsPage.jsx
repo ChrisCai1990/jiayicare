@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { adminAPI, API_ORIGIN } from '../api'
 import { useToast } from '../App'
 
@@ -549,7 +550,7 @@ function ImageUploadList({ images, onChange }) {
 }
 
 // ── 产品表单 Modal ──────────────────────────────────────────────
-function ProductModal({ product, categories, onClose, onSaved }) {
+function ProductModal({ product, categories, onClose, onSaved, commissionMode = false }) {
   const toast = useToast()
   const isEdit = !!product?._id
   const inventoryTracked = product?.inventoryTracking?.enabled === true || product?.usesSharedInventory === true
@@ -622,7 +623,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   })
   const [loading, setLoading] = useState(false)
   const [generatingAi, setGeneratingAi] = useState(false)
-  const [tab, setTab] = useState('basic')
+  const [tab, setTab] = useState(commissionMode ? 'performance' : 'basic')
   const [staffList, setStaffList] = useState([])
   const [productsForBundle, setProductsForBundle] = useState([])
 
@@ -663,6 +664,25 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   }
 
   const save = async () => {
+    if (commissionMode) {
+      setLoading(true)
+      try {
+        await adminAPI.updateProductCommissionRules(product._id, {
+          expectedUpdatedAt: product.updatedAt,
+          performanceRule: form.performanceRule,
+          servicePerformerRoles: form.servicePerformerRoles || [],
+          staffPerformanceOverrides: form.staffPerformanceOverrides || [],
+          servicePrices: (form.servicePrices || []).map(row => ({ label: row.label,
+            performanceConfig: row.performanceConfig?.enabled === true ? row.performanceConfig : null })),
+          serviceItems: (form.serviceItems || []).map(row => ({ key: row.key, performers: row.performers || [] })),
+        })
+        toast('✅ 佣金规则已保存')
+        onSaved()
+        onClose()
+      } catch (err) { toast('❌ ' + (err.message || '保存失败，请刷新后重试')) }
+      finally { setLoading(false) }
+      return
+    }
     const allocatedItems = form.serviceItems || []
     const specAllocationsInvalid = (form.servicePrices || []).some(price => {
       const rows = price.businessAllocations || []
@@ -694,7 +714,6 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       const cleanedPrices = form.servicePrices
         .filter(sp => sp.label.trim() && sp.price !== '' && !isNaN(parseFloat(sp.price)))
         .map(sp => ({ label: sp.label.trim(), price: parseFloat(sp.price),
-          performanceConfig: sp.performanceConfig?.enabled === true ? sp.performanceConfig : null,
           businessAllocations: (sp.businessAllocations || []).map(row => ({
             key: row.key, name: `${sp.label.trim()} · ${allocationItemName(row, productsForBundle).trim().replace(`${sp.label.trim()} · `, '')}`,
             businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
@@ -744,25 +763,9 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           })),
         } : { enabled:false },
         skus: form.skus || [],
-        performanceRule: form.performanceRule,
-        servicePerformerRoles: (form.servicePerformerRoles || [])
-          .filter(r => r.role)
-          .map(r => ({
-            role: r.role,
-            ruleType: r.ruleType || 'percentage',
-            rate: parseFloat(r.rate) || 0,
-            amount: parseFloat(r.amount) || 0,
-            defaultStaffId: r.defaultStaffId || null,
-          })),
         serviceItems: (form.serviceItems || []).map(item => ({
           key: item.key || `item_${Date.now()}`, name: allocationItemName(item, productsForBundle).trim(), units: Math.max(1, parseInt(item.units) || 1),
           childProductId: item.childProductId || null, businessType: item.businessType || 'service', teamRole: item.teamRole || 'healthManager', revenueSharePercent: Number(item.revenueSharePercent) || 0,
-          performers: (item.performers || []).filter(r=>r.role).map(r=>({ role:r.role, ruleType:r.ruleType || 'percentage', rate:parseFloat(r.rate)||0, amount:parseFloat(r.amount)||0, defaultStaffId:r.defaultStaffId||null })),
-        })),
-        staffPerformanceOverrides: (form.staffPerformanceOverrides || []).map(row => ({
-          staffId:row.staffId, ruleType:row.ruleType || 'percentage',
-          referrerRate:Number(row.referrerRate)||0, fulfillerRate:Number(row.fulfillerRate)||0,
-          referrerAmount:Number(row.referrerAmount)||0, fulfillerAmount:Number(row.fulfillerAmount)||0,
         })),
         specialtyTerms: form.specialtyTerms || undefined,
         aiProfile: form.aiProfile,
@@ -782,13 +785,12 @@ function ProductModal({ product, categories, onClose, onSaved }) {
     }
   }
 
-  const tabs = [
+  const tabs = commissionMode ? [{ key: 'performance', label: '员工推广／服务佣金' }] : [
     { key: 'basic', label: '基本信息' },
     { key: 'price', label: '收费项目' },
     { key: 'fund', label: '基金抵扣' },
     { key: 'memberBundle', label: '会员专享包' },
     { key: 'businessAllocation', label: '业务归属' },
-    { key: 'performance', label: '员工推广／服务佣金' },
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
     { key: 'ai', label: 'AI推荐设置' },
@@ -802,7 +804,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         onClick={e => e.stopPropagation()}
       >
         <div className="modal-header">
-          <div className="modal-title">{isEdit ? '✏️ 编辑产品' : '➕ 新增产品'}</div>
+          <div className="modal-title">{commissionMode ? `佣金规则 · ${product.name}` : isEdit ? '✏️ 编辑产品' : '➕ 新增产品'}</div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
@@ -1143,7 +1145,7 @@ function CategoryModal({ categories, onClose, onChanged }) {
 }
 
 // ── 主页面 ──────────────────────────────────────────────────────
-export default function ProductsPage() {
+export default function ProductsPage({ commissionMode = false }) {
   const toast = useToast()
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
@@ -1153,6 +1155,7 @@ export default function ProductsPage() {
   const [showCatModal, setShowCatModal] = useState(false)
   const [selected, setSelected] = useState([])
   const [filters, setFilters] = useState({ name: '', category: '', status: '' })
+  const [commissionPage, setCommissionPage] = useState(1)
 
   const categoryNames = categories.map(c => c.name)
 
@@ -1235,6 +1238,49 @@ export default function ProductsPage() {
         {sp.label}:¥{sp.price}
       </span>
     ))
+  }
+
+  if (commissionMode) {
+    const pageCount = Math.max(1, Math.ceil(products.length / 10))
+    const visible = products.slice((Math.min(commissionPage, pageCount) - 1) * 10, Math.min(commissionPage, pageCount) * 10)
+    return <div className="page">
+      <div className="page-header"><div><div className="page-title">佣金规则</div>
+        <div className="page-subtitle">员工推广与履约服务按产品和收费项目设置；市场合伙人按独立规则结算。</div></div></div>
+      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <strong>市场合伙人推广佣金</strong>
+        <p style={{ color: '#667a6d', margin: '8px 0 12px' }}>首次、续费及规则版本在市场合伙人模块管理，与员工佣金分别核算。</p>
+        <Link className="btn btn-ghost" to="/market-partners">进入市场合伙人规则</Link>
+      </div>
+      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <strong>员工推广与服务佣金</strong>
+        <p style={{ color: '#667a6d', margin: '8px 0 12px' }}>选择产品后，可设置通用规则、各收费项目、服务岗位及指定员工例外。保存仅更新佣金规则，不修改价格或业务归属。</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input className="form-input" type="search" style={{ maxWidth: 300 }} placeholder="搜索产品名称" value={filters.name}
+            onChange={event => { setCommissionPage(1); setFilters(current => ({ ...current, name: event.target.value })) }} />
+          <select className="form-input" style={{ maxWidth: 180 }} value={filters.category}
+            onChange={event => { setCommissionPage(1); setFilters(current => ({ ...current, category: event.target.value })) }}>
+            <option value="">全部分类</option>{categoryNames.map(name => <option key={name}>{name}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+        {loading ? <div className="loading">加载中...</div> : <table className="table"><thead><tr>
+          <th>产品</th><th>收费项目</th><th>规则状态</th><th>操作</th>
+        </tr></thead><tbody>{visible.length ? visible.map(product => {
+          const specific = (product.servicePrices || []).filter(row => row.performanceConfig?.enabled === true).length
+          return <tr key={product._id}><td>{product.name}</td><td>{product.servicePrices?.length || 0} 项</td>
+            <td>{specific ? `${specific} 项独立规则` : product.performanceRule?.ruleType !== 'none' ? '产品通用规则' : '未设置／沿用员工规则'}</td>
+            <td><button className="btn btn-sm btn-ghost" onClick={() => { setEditing(product); setShowModal(true) }}>设置佣金</button></td></tr>
+        }) : <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24 }}>暂无匹配产品</td></tr>}</tbody></table>}
+      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', marginTop: 12 }}>
+        <span>第 {Math.min(commissionPage, pageCount)} / {pageCount} 页</span>
+        <button className="btn btn-sm" disabled={commissionPage <= 1} onClick={() => setCommissionPage(page => page - 1)}>上一页</button>
+        <button className="btn btn-sm" disabled={commissionPage >= pageCount} onClick={() => setCommissionPage(page => page + 1)}>下一页</button>
+      </div>
+      {showModal && <ProductModal product={editing} commissionMode categories={categoryNames}
+        onClose={() => setShowModal(false)} onSaved={load} />}
+    </div>
   }
 
   return (

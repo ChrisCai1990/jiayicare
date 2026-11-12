@@ -2227,6 +2227,16 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   }
   const existingProduct = await Product.findById(req.params.id);
   if (!existingProduct) return res.status(404).json({ success: false, message: '产品不存在' });
+  const mergedServicePrices = servicePrices?.map(price => ({ ...price,
+    performanceConfig: price.performanceConfig === undefined
+      ? existingProduct.servicePrices.find(row => row.label === price.label)?.performanceConfig || null
+      : price.performanceConfig,
+  }));
+  const mergedServiceItems = serviceItems?.map(item => ({ ...item,
+    performers: item.performers === undefined
+      ? existingProduct.serviceItems.find(row => row.key === item.key)?.performers || []
+      : item.performers,
+  }));
   const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const sharedInventory = existingProduct.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: existingProduct._id });
@@ -2237,7 +2247,15 @@ router.put('/products/:id', adminAuth, async (req, res) => {
     skus: skus ?? existingProduct.skus,
     specialtyTerms: specialtyTerms ?? existingProduct.specialtyTerms, status: status ?? existingProduct.status });
   if (priceError) return res.status(400).json({ success: false, message: priceError });
-  const updateData = { name, subtitle, images, originalPrice, servicePrices, ...(businessAllocations !== undefined ? { businessAllocations } : {}), memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], ...(staffPerformanceOverrides !== undefined ? { staffPerformanceOverrides } : {}), fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, ...(healthFundDeduction !== undefined ? { healthFundDeduction } : {}), memberBundle: memberBundle || { enabled:false }, skus: skus || [] };
+  const updateData = { name, subtitle, images, originalPrice,
+    ...(servicePrices !== undefined ? { servicePrices: mergedServicePrices } : {}),
+    ...(businessAllocations !== undefined ? { businessAllocations } : {}), memberPrices, category, sortOrder, features, description, stock, status,
+    ...(performanceRule !== undefined ? { performanceRule } : {}),
+    ...(servicePerformerRoles !== undefined ? { servicePerformerRoles } : {}),
+    ...(serviceItems !== undefined ? { serviceItems: mergedServiceItems } : {}),
+    ...(staffPerformanceOverrides !== undefined ? { staffPerformanceOverrides } : {}),
+    fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy,
+    ...(healthFundDeduction !== undefined ? { healthFundDeduction } : {}), memberBundle: memberBundle || { enabled:false }, skus: skus || [] };
   if (originalPrice === '') updateData.originalPrice = null;
   if (specialtyTerms !== undefined) updateData.specialtyTerms = specialtyTerms;
   if (stock !== undefined) updateData.stockLimited = stockLimited === true || Number(stock) > 0;
@@ -2247,6 +2265,42 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   const product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, data: product, message: '产品更新成功' });
+});
+
+// Commission rules are edited independently of catalog pricing and business attribution.
+router.patch('/products/:id/commission-rules', adminAuth, async (req, res) => {
+  const product = await Product.findOne({ _id: req.params.id, tenantId: req.admin.tenantId });
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  const { expectedUpdatedAt, performanceRule, servicePerformerRoles, staffPerformanceOverrides, servicePrices, serviceItems } = req.body;
+  if (!expectedUpdatedAt || !Number.isFinite(new Date(expectedUpdatedAt).getTime()))
+    return res.status(400).json({ success: false, message: '缺少产品版本，请刷新后重试' });
+  if (!performanceRule || !['none', 'percentage', 'fixedAmount'].includes(performanceRule.ruleType)
+    || ['referrerRate', 'fulfillerRate'].some(key => !Number.isFinite(Number(performanceRule[key] ?? 0)) || Number(performanceRule[key] ?? 0) < 0 || Number(performanceRule[key] ?? 0) > 100)
+    || ['referrerAmount', 'fulfillerAmount'].some(key => !Number.isFinite(Number(performanceRule[key] ?? 0)) || Number(performanceRule[key] ?? 0) < 0))
+    return res.status(400).json({ success: false, message: '员工推广／服务规则无效' });
+  const validRoles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
+  const validPerformers = rows => Array.isArray(rows) && rows.every(row => validRoles.includes(row.role)
+    && ['none', 'percentage', 'fixedAmount'].includes(row.ruleType || 'percentage')
+    && Number.isFinite(Number(row.rate || 0)) && Number(row.rate || 0) >= 0 && Number(row.rate || 0) <= 100
+    && Number.isFinite(Number(row.amount || 0)) && Number(row.amount || 0) >= 0);
+  if (!validPerformers(servicePerformerRoles) || !Array.isArray(servicePrices) || !Array.isArray(serviceItems)
+    || servicePrices.length !== product.servicePrices.length || serviceItems.length !== product.serviceItems.length
+    || new Set(servicePrices.map(row => row.label)).size !== servicePrices.length
+    || new Set(serviceItems.map(row => row.key)).size !== serviceItems.length
+    || servicePrices.some(row => !product.servicePrices.some(current => current.label === row.label))
+    || serviceItems.some(row => !product.serviceItems.some(current => current.key === row.key) || !validPerformers(row.performers || [])))
+    return res.status(400).json({ success: false, message: '收费项目或服务子项已变化，请刷新后重试' });
+  const prices = product.servicePrices.map(current => ({ ...current.toObject(),
+    performanceConfig: servicePrices.find(row => row.label === current.label)?.performanceConfig || null }));
+  const items = product.serviceItems.map(current => ({ ...current.toObject(),
+    performers: serviceItems.find(row => row.key === current.key)?.performers || [] }));
+  const error = await validateProductSettlementConfig({ servicePrices: prices, staffPerformanceOverrides }, req.admin.tenantId, product._id);
+  if (error) return res.status(400).json({ success: false, message: error });
+  const updated = await Product.findOneAndUpdate({ _id: product._id, tenantId: req.admin.tenantId,
+    updatedAt: new Date(expectedUpdatedAt) }, { $set: { performanceRule, servicePerformerRoles,
+    staffPerformanceOverrides, servicePrices: prices, serviceItems: items } }, { new: true, runValidators: true });
+  if (!updated) return res.status(409).json({ success: false, message: '产品已被其他人修改，请刷新后重试' });
+  res.json({ success: true, data: updated, message: '佣金规则已保存' });
 });
 
 router.patch('/products/:id/health-fund-deduction', adminAuth, async (req, res) => {

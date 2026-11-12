@@ -131,6 +131,22 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(configuredPrices.body.data.servicePrices[1].businessAllocations[0].name, '陪同服务 · 健管管理');
     assert.equal(configuredPrices.body.data.servicePrices[0].businessAllocations[1].businessType, 'enterprise');
     assert.equal(configuredPrices.body.data.servicePrices[1].performanceConfig.performanceRule.referrerRate, 4);
+    const commissionPayload = { expectedUpdatedAt: configuredPrices.body.data.updatedAt,
+      performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0 },
+      servicePerformerRoles: [], staffPerformanceOverrides: [], serviceItems: [],
+      servicePrices: pricedProduct.servicePrices.map(row => ({ label: row.label,
+        performanceConfig: row.performanceConfig || null })) };
+    const separateCommission = await call(clerkId, 'PATCH', `/api/admin/products/${configuredPrices.body.data._id}/commission-rules`, commissionPayload);
+    assert.equal(separateCommission.status, 200, JSON.stringify(separateCommission.body));
+    assert.equal((await call(clerkId, 'PATCH', `/api/admin/products/${configuredPrices.body.data._id}/commission-rules`, {
+      ...commissionPayload, expectedUpdatedAt: new Date(new Date(commissionPayload.expectedUpdatedAt).getTime() - 1000).toISOString(),
+    })).status, 409);
+    const normalProductEdit = await call(clerkId, 'PUT', `/api/admin/products/${configuredPrices.body.data._id}`, {
+      name: pricedProduct.name, category: pricedProduct.category, originalPrice: pricedProduct.originalPrice,
+      status: 'off', servicePrices: pricedProduct.servicePrices.map(({ performanceConfig, ...row }) => row) });
+    assert.equal(normalProductEdit.status, 200, JSON.stringify(normalProductEdit.body));
+    assert.equal(normalProductEdit.body.data.servicePrices[1].performanceConfig.performanceRule.referrerRate, 4,
+      'ordinary catalog edits must preserve independent commission rules');
     const wholeProduct = await call(clerkId, 'POST', '/api/admin/products', {
       name: '无收费规格的组合服务', category: 'health', originalPrice: 100, status: 'off',
       businessAllocations: [
