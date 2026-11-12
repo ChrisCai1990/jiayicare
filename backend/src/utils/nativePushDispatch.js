@@ -23,16 +23,19 @@ function createNativePushDispatch({ enabled, Job, Message, User, registry, trans
       if (!job) return;
       try {
         const message = await Message.findById(job.messageId).lean();
+        let state = 'done';
         if (eligible(message)) {
           const user = await User.findById(message.user).lean();
           const count = user && !user.isDeleted ? await unreadCount(user._id) : 0;
           // Fresh session lookup for each attempt, never reuse a cached recipient list.
-          for (const device of await registry.destinations(user)) {
+          const devices = await registry.destinations(user);
+          if (!devices.length) state = 'no_destination';
+          for (const device of devices) {
             if (!enabled()) break;
             await transport.send({ provider: device.provider, token: device.token, messageId: String(message._id), count });
           }
         }
-        await Job.updateOne({ _id: job._id, attempts: job.attempts }, { $set: { state: 'done', leaseUntil: null } });
+        await Job.updateOne({ _id: job._id, attempts: job.attempts }, { $set: { state, leaseUntil: null } });
       } catch {
         await Job.updateOne({ _id: job._id, attempts: job.attempts }, { $set: {
           state: job.attempts >= 3 ? 'failed' : 'pending', leaseUntil: null,
