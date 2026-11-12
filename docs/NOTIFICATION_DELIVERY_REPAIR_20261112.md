@@ -1,5 +1,9 @@
 # App and mini-program notification repair (2026-11-12)
 
+## Category-switch follow-up
+
+The user clarified that every category shown on the iPhone settings screen is needed for real notifications. A prepared H5 update makes the top App notification control and individual category switches functional, loading and saving each category through `/api/push-devices/settings`. The matching backend release is in `../backend-push-release-20261112`, commit `0df3f788` merged with production source at `f68f5912`; details are in its `docs/APP_NOTIFICATION_CATEGORIES_20261112.md`. H5 build and browser interaction/regression smoke passed. This follow-up has **not** been published: production Git has unrelated tracked modifications and the standard backend release gate stops. The H5 category UI must be published only after the matching backend API is live.
+
 ## Confirmed production state
 
 - The customer can see messages in the in-app list. Two advisor messages inspected today were recalled; neither should be restored or resent.

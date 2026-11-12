@@ -22,12 +22,17 @@ async function main() {
       } };
     });
     const registrations = [];
+    const settingChanges = [];
     await context.route('**/api/**', async route => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
       let result = { success: true, data: [] };
       if (path === '/api/user/me') result = { success: true, data: { _id: 'push-smoke-user', name: '测试用户' } };
       if (path === '/api/push-devices/capabilities') result = { success: true, data: { enabled: true, providers: ['apns'] } };
+      if (path === '/api/push-devices/settings' && request.method() === 'GET') result = { success: true, data: { medication: true, measurement: true, exercise: true, doctor: true, manager: true, nutritionist: true, report: true, system: true, service_exp: true } };
+      if (path === '/api/push-devices/settings' && request.method() === 'PATCH') {
+        settingChanges.push(JSON.parse(request.postData()));
+      }
       if (path === '/api/push-devices' && request.method() === 'PUT') {
         registrations.push(JSON.parse(request.postData()));
       }
@@ -40,8 +45,11 @@ async function main() {
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('http://127.0.0.1:8765/mobile-preview/#/pages/profile/notifications/index');
     await page.waitForTimeout(1200);
-    await page.getByText('开启 / 重新绑定').click();
+    await page.locator('taro-switch-core').first().click();
     await page.getByText('设备已绑定。新服务消息将发送系统通知。').waitFor();
+    await page.getByText('用药提醒', { exact: true }).waitFor();
+    await page.locator('taro-switch-core').nth(1).click();
+    assert.deepEqual(settingChanges, [{ key: 'medication', enabled: false }]);
     assert.deepEqual(registrations, [{ provider: 'apns', token: 'a'.repeat(64) }]);
     const actions = await page.evaluate(() => window.__nativeActions);
     assert.ok(actions.includes('request-push-token'));

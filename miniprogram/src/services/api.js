@@ -240,6 +240,8 @@ export const tasksAPI = {
 // ── Messages ──────────────────────────────────────────────────────
 export const pushDevicesAPI = {
   capabilities: () => request('/push-devices/capabilities'),
+  settings: () => request('/push-devices/settings'),
+  setSetting: (key, enabled) => request('/push-devices/settings', { method: 'PATCH', body: JSON.stringify({ key, enabled }) }),
   register: device => request('/push-devices', { method: 'PUT', body: JSON.stringify(device) }),
   unregister: device => request('/push-devices', { method: 'DELETE', body: JSON.stringify(device) }),
 };

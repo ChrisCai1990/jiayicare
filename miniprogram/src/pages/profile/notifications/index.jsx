@@ -5,9 +5,10 @@ import { colors, spacing, radius, shadow } from '../../../theme';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { isNativeApp } from '../../../utils/appBridge';
-import { enableSystemPush, disableSystemPush } from '../../../utils/pushSession';
+import { enableSystemPush, disableSystemPush, hasSystemPushOptIn } from '../../../utils/pushSession';
+import { pushDevicesAPI } from '../../../services/api';
 
-// 通知设置为本地开关（与 app 端一致，存 storage，不是服务端配置项）
+// App 开关由服务端保存并在发送时执行；小程序仍使用本机设置。
 const SETTINGS = [
   { group: '健康提醒', items: [
     { key: 'medication', label: '用药提醒', desc: '服药时间到时推送通知' },
@@ -31,17 +32,21 @@ export default function NotificationSettingsPage() {
   const { statusBarHeight } = useNavBar();
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [pushBusy, setPushBusy] = useState(false);
-  const [pushMessage, setPushMessage] = useState('开启后将申请 iPhone 系统通知权限。');
+  const [pushEnabled, setPushEnabled] = useState(hasSystemPushOptIn);
+  const [pushMessage, setPushMessage] = useState(() => hasSystemPushOptIn()
+    ? '此设备已绑定。新服务消息将发送系统通知。' : '开启后将申请 iPhone 系统通知权限。');
 
   const changePush = async enable => {
     if (pushBusy) return;
     setPushBusy(true);
     try {
       if (enable) {
-        await enableSystemPush();
+        if (!await enableSystemPush()) throw new Error('设备绑定未完成，请重试');
+        setPushEnabled(true);
         setPushMessage('设备已绑定。新服务消息将发送系统通知。');
       } else {
         await disableSystemPush();
+        setPushEnabled(false);
         setPushMessage('已关闭此设备的系统通知。');
       }
     } catch (error) { setPushMessage(error.message || '设置失败，请重试'); }
@@ -49,14 +54,26 @@ export default function NotificationSettingsPage() {
   };
 
   useEffect(() => {
+    if (isNativeApp()) {
+      pushDevicesAPI.settings().then(res => {
+        if (res.success && res.data) setSettings({ ...DEFAULT_SETTINGS, ...res.data });
+      }).catch(() => {});
+      return;
+    }
     try {
       const raw = Taro.getStorageSync('jy_notif_settings');
       if (raw) setSettings(JSON.parse(raw));
     } catch {}
   }, []);
 
-  const toggle = (key) => {
+  const toggle = async (key) => {
     const next = { ...settings, [key]: !settings[key] };
+    if (isNativeApp()) {
+      if (!pushEnabled) return Taro.showToast({ title: '请先开启 App 系统消息通知', icon: 'none' });
+      try { await pushDevicesAPI.setSetting(key, next[key]); setSettings(next); }
+      catch (error) { Taro.showToast({ title: error.message || '保存失败，请重试', icon: 'none' }); }
+      return;
+    }
     setSettings(next);
     try { Taro.setStorageSync('jy_notif_settings', JSON.stringify(next)); } catch {}
   };
@@ -78,12 +95,12 @@ export default function NotificationSettingsPage() {
       <ScrollView scrollY style={{ flex: 1, height: 0 }}>
       <View style={{ padding: `${spacing.lg}px`, paddingBottom: '96px' }}>
       {isNativeApp() && <View style={{ backgroundColor: '#fff', padding: '16px', marginBottom: '20px', borderRadius: '12px' }}>
-        <Text style={{ display: 'block', fontWeight: 700 }}>App 系统消息通知</Text>
-        <Text style={{ display: 'block', fontSize: '12px', margin: '12px 0', color: colors.textMuted }}>{pushBusy ? '正在处理…' : pushMessage}</Text>
-        <View style={{ display: 'flex', gap: '24px' }}>
-          <Text onClick={() => changePush(true)} style={{ color: colors.primary }}>开启 / 重新绑定</Text>
-          <Text onClick={() => changePush(false)} style={{ color: colors.textSecondary }}>关闭推送</Text>
+        <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontWeight: 700 }}>App 系统消息通知</Text>
+          <Switch checked={pushEnabled} disabled={pushBusy} onChange={event => changePush(event.detail.value)} color={colors.primary} />
         </View>
+        <Text style={{ display: 'block', fontSize: '12px', margin: '12px 0', color: colors.textMuted }}>{pushBusy ? '正在处理…' : pushMessage}</Text>
+        {pushEnabled && <Text onClick={() => changePush(true)} style={{ color: colors.primary }}>重新绑定设备</Text>}
       </View>}
       {SETTINGS.map((group) => (
         <View key={group.group} style={{ marginBottom: `${spacing.lg}px` }}>
@@ -98,13 +115,13 @@ export default function NotificationSettingsPage() {
                   <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{item.label}</Text>
                   <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '2px' }}>{item.desc}</Text>
                 </View>
-                <Switch checked={process.env.TARO_ENV === 'h5' ? false : settings[item.key]} disabled={process.env.TARO_ENV === 'h5'} onChange={() => toggle(item.key)} color={colors.primary} />
+                <Switch checked={isNativeApp() ? pushEnabled && settings[item.key] : settings[item.key]} disabled={isNativeApp() && (!pushEnabled || pushBusy)} onChange={() => toggle(item.key)} color={colors.primary} />
               </View>
             ))}
           </View>
         </View>
       ))}
-      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block' }}>{process.env.TARO_ENV === 'h5' ? '上方入口管理 App 系统通知；分类提醒开关暂未开放。' : '分类开关目前仅保存在本机，尚未连接微信订阅通知。'}</Text>
+      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block' }}>{isNativeApp() ? '分类设置保存在服务端；新消息按设置发送至本设备。' : '分类开关目前仅保存在本机，尚未连接微信订阅通知。'}</Text>
       </View>
       </ScrollView>
     </View>

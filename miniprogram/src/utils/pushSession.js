@@ -9,6 +9,7 @@ function saved() {
 }
 function remember(device) { Taro.setStorageSync(KEY, device); }
 function forget() { try { Taro.removeStorageSync(KEY); } catch {} }
+export function hasSystemPushOptIn() { return !!saved(); }
 
 export async function enableSystemPush({ interactive = true } = {}) {
   if (!isNativeApp() || !loadToken()) throw new Error('请先在 App 登录');
