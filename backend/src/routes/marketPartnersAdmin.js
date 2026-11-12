@@ -86,6 +86,36 @@ router.get('/attributed-orders', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// 已付款组合订单按购买时的拆解快照汇总团队营收；退款后的净实收实时重算。
+router.get('/team-revenue', async (req, res) => {
+  try {
+    const totals = new Map();
+    const cursor = Order.find({ tenantId: tenant(req), paymentStatus: 'paid',
+      'serviceItemsSnapshot.childProductId': { $ne: null } })
+      .select('_id paidAmount refundedAmount serviceItemsSnapshot').lean().cursor();
+    for await (const order of cursor) {
+      const items = order.serviceItemsSnapshot || [];
+      if (!items.length || !items.every(item => item.childProductId && Number(item.revenueSharePercent) > 0)
+        || Math.abs(items.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) > 0.001) continue;
+      const netCents = Math.max(0, Math.round(Number(order.paidAmount || 0) * 100)
+        - Math.round(Number(order.refundedAmount || 0) * 100));
+      let assigned = 0;
+      items.forEach((item, index) => {
+        const amountCents = index === items.length - 1 ? netCents - assigned
+          : Math.round(netCents * Number(item.revenueSharePercent) / 100);
+        assigned += amountCents;
+        const key = `${item.teamRole}:${item.childProductId}`;
+        const row = totals.get(key) || { teamRole: item.teamRole, childProductId: item.childProductId,
+          name: item.name, amountCents: 0, orderCount: 0 };
+        row.amountCents += amountCents;
+        row.orderCount += 1;
+        totals.set(key, row);
+      });
+    }
+    res.json({ success: true, data: [...totals.values()].sort((a, b) => b.amountCents - a.amountCents) });
+  } catch (err) { fail(res, err); }
+});
+
 // 同一订单的收款、外部推广与内部服务激励对账视图；只读，不改变各自审核流程。
 router.get('/order-accounting/:id', async (req, res) => {
   const key = String(req.params.id || '').trim();
@@ -93,7 +123,7 @@ router.get('/order-accounting/:id', async (req, res) => {
     return res.status(400).json({ success: false, message: '请输入有效订单 ID 或订单号' });
   try {
     const order = await Order.findOne({ tenantId: tenant(req), ...(validId(key) ? { _id: key } : { orderNo: key }) })
-      .select('_id orderNo user serviceId serviceName specificationLabel servicePrice paymentStatus paidAmount refundedAmount paidAt initiatedByStaff referrerId marketPartnerId servicePerformers status fulfillmentStatus')
+      .select('_id orderNo user serviceId serviceName specificationLabel servicePrice paymentStatus paidAmount refundedAmount paidAt initiatedByStaff referrerId marketPartnerId servicePerformers serviceItemsSnapshot status fulfillmentStatus')
       .populate('user', 'name phone').populate('marketPartnerId', 'name referralCode')
       .populate('initiatedByStaff', 'name role').populate('referrerId', 'name role')
       .populate('servicePerformers.staffId', 'name role').lean();
@@ -106,8 +136,20 @@ router.get('/order-accounting/:id', async (req, res) => {
     ]);
     const paidCents = Math.round(Number(order.paidAmount || 0) * 100);
     const refundedCents = Math.round(Number(order.refundedAmount || 0) * 100);
+    const netCents = Math.max(0, paidCents - refundedCents);
+    const items = order.serviceItemsSnapshot || [];
+    const configured = items.length > 0 && items.every(item => item.childProductId && Number(item.revenueSharePercent) > 0)
+      && Math.abs(items.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) < 0.001;
+    let allocatedCents = 0;
+    const revenueAllocation = configured ? items.map((item, index) => {
+      const amountCents = index === items.length - 1
+        ? netCents - allocatedCents : Math.round(netCents * Number(item.revenueSharePercent) / 100);
+      allocatedCents += amountCents;
+      return { serviceItemKey: item.key, childProductId: item.childProductId, name: item.name,
+        teamRole: item.teamRole, sharePercent: item.revenueSharePercent, amountCents };
+    }) : [];
     res.json({ success: true, data: { order, cash: { paidCents, refundedCents,
-      netCents: Math.max(0, paidCents - refundedCents) }, partnerCommission,
+      netCents }, revenueAllocation, partnerCommission,
       staffCommissions, teamIncentives, receipts } });
   } catch (err) { fail(res, err); }
 });
@@ -276,7 +318,7 @@ router.post('/offline-orders', async (req, res) => {
       User.findOne({ _id: patientId, tenantId: tenant(req), isDeleted: { $ne: true } }).select('_id name tenantId'),
     ]);
     if (!product || !patient) return res.status(404).json({ success: false, message: '本机构线下商品或客户不存在' });
-    if (product.stockLimited || product.memberBundle?.enabled || product.serviceItems?.length)
+    if (product.stockLimited || product.memberBundle?.enabled)
       return res.status(409).json({ success: false, message: '该商品有库存或组合权益，请使用现有购买流程' });
     const sku = specificationLabel ? (product.skus || []).find(item => item.label === specificationLabel && item.active !== false) : null;
     const listed = specificationLabel ? (sku?.price ?? (product.servicePrices || []).find(item => item.label === specificationLabel)?.price)
@@ -296,14 +338,22 @@ router.post('/offline-orders', async (req, res) => {
       tenantId: tenant(req), partnerId: match.attribution.partnerId, patientId: patient._id,
       productId: product._id, at: new Date(),
     });
+    const serviceItems = sku ? [] : (product.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
+    const totalUnits = Math.max(1, Number(sku?.totalUnits) || serviceItems.reduce((sum, item) => sum + Number(item.units || 1), 0) || 1);
     const order = await Order.create({ user: patient._id, payerUser: patient._id,
       beneficiaryName: patient.name || '', tenantId: tenant(req), serviceId: String(product._id),
-      serviceName: product.name, servicePrice: listed, unitPrice: listed,
-      specificationLabel, skuCode: sku?.code || '', totalUnits: sku?.totalUnits || 1,
+      serviceName: product.name, servicePrice: listed, unitPrice: Math.round(listed / totalUnits * 100) / 100,
+      specificationLabel, skuCode: sku?.code || '', totalUnits,
       orderNo: `MP${Date.now()}${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
       orderType: 'product', fulfillmentType: sku?.fulfillmentType || product.fulfillmentType,
       tradeStatus: 'awaiting_payment', paymentStatus: 'unpaid', paymentMethod: '',
       paymentExpectedAmount: listed, initiationSource: 'admin',
+      serviceItemsSnapshot: serviceItems.map(item => ({ key:item.key, name:item.name, units:item.units,
+        usedUnits:0, childProductId:item.childProductId || null, teamRole:item.teamRole || '',
+        revenueSharePercent:item.revenueSharePercent || 0, performers:item.performers || [] })),
+      performanceRuleSnapshot: product.performanceRule?.toObject?.() || product.performanceRule || null,
+      servicePerformerRolesSnapshot: (product.servicePerformerRoles || []).map(row => row.toObject?.() || row),
+      staffPerformanceOverridesSnapshot: (product.staffPerformanceOverrides || []).map(row => row.toObject?.() || row),
       serviceWorkflowSnapshot: product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null,
       serviceProviderSnapshot: { code: product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
       marketPartnerId: match.attribution.partnerId, marketPartnerAttributionId: match.attribution._id,

@@ -102,8 +102,21 @@ const productSchema = new mongoose.Schema({
   serviceItems: [{
     key: { type: String, required: true },
     name: { type: String, required: true },
+    childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+    teamRole: { type: String, enum: require('../utils/tenantScope').SERVICE_PERFORMER_ROLES, default: 'healthManager' },
+    revenueSharePercent: { type: Number, min: 0, max: 100, default: 0 },
     units: { type: Number, default: 1, min: 1 },
     performers: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
+  }],
+  // 本产品对具体员工的推广/服务绩效覆盖；未配置时沿用员工全局或产品岗位规则。
+  staffPerformanceOverrides: [{
+    staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
+    ruleType: { type: String, enum: ['percentage', 'fixedAmount'], required: true },
+    referrerRate: { type: Number, min: 0, max: 100, default: 0 },
+    fulfillerRate: { type: Number, min: 0, max: 100, default: 0 },
+    referrerAmount: { type: Number, min: 0, default: 0 },
+    fulfillerAmount: { type: Number, min: 0, default: 0 },
+    _id: false,
   }],
   skus: [{
     code: { type: String, required: true },

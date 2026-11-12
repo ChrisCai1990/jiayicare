@@ -145,7 +145,9 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
   const [errMsg, setErrMsg]       = useState('');
   const [serviceProviderConsent, setServiceProviderConsent] = useState(false);
   // 多规格：默认选第一个规格
-  const hasSpecs = !!(item?.servicePrices && item.servicePrices.length > 0);
+  const specifications = item?.servicePrices?.length
+    ? item.servicePrices : (item?.skus || []).filter(sku => sku.active !== false);
+  const hasSpecs = specifications.length > 0;
   const [specIdx, setSpecIdx] = useState(0);
 
   // 健康基金抵扣 + 优惠券
@@ -165,8 +167,8 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
 
   if (!item) return null;
 
-  const currentPrice = hasSpecs ? (item.servicePrices[specIdx]?.price ?? item.price) : item.price;
-  const currentSpecLabel = hasSpecs ? item.servicePrices[specIdx]?.label : '';
+  const currentPrice = hasSpecs ? (specifications[specIdx]?.price ?? item.price) : item.price;
+  const currentSpecLabel = hasSpecs ? specifications[specIdx]?.label : '';
 
   const selectedCoupon = coupons.find(c => c._id === couponId) || null;
   const couponDiscount = selectedCoupon
@@ -238,7 +240,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
+        <View style={[styles.modalCard, { maxHeight: '92%' }]}>
           <View style={styles.modalHandle} />
 
           <View style={styles.modalServiceRow}>
@@ -251,10 +253,11 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             </View>
           </View>
 
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {hasSpecs ? (
             <View style={[styles.modalPriceRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 8 }]}>
               <Text style={styles.modalPriceLabel}>选择规格</Text>
-              {item.servicePrices.map((sp, i) => {
+              {specifications.map((sp, i) => {
                 const active = i === specIdx;
                 return (
                   <TouchableOpacity
@@ -453,6 +456,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
                 : '提交后，健管师将与您联系确认具体服务安排'}
             </Text>
           </View>
+          </ScrollView>
 
           <View style={styles.modalBtns}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>

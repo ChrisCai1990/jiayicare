@@ -309,6 +309,7 @@ export const adminAPI = {
   marketPartnerOfflineOrders: () => req('/market-partners/offline-orders'),
   marketPartnerAttributedOrders: () => req('/market-partners/attributed-orders'),
   marketPartnerOrderAccounting: id => req(`/market-partners/order-accounting/${encodeURIComponent(id)}`),
+  marketPartnerTeamRevenue: () => req('/market-partners/team-revenue'),
   marketPartnerLeadEvents: () => req('/market-partners/lead-events'),
   submitMarketPartnerLeadEvent: data => req('/market-partners/lead-events', { method: 'POST', body: JSON.stringify(data) }),
   reviewMarketPartnerLeadEvent: (id, status) => req(`/market-partners/lead-events/${id}/review`, { method: 'PATCH', body: JSON.stringify({ status }) }),

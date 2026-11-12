@@ -31,6 +31,14 @@ router.get('/', async (req, res) => {
     ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).lean(),
   ]);
 
+  // “人已购”按真实已付款客户去重统计；Product.sales 历史字段未随付款维护。
+  const paidBuyers = products.length ? await Order.aggregate([
+    { $match: { serviceId: { $in: products.map(product => String(product._id)) }, paymentStatus: 'paid', paidAmount: { $gt: 0 } } },
+    { $group: { _id: { serviceId: '$serviceId', user: '$user' } } },
+    { $group: { _id: '$_id.serviceId', count: { $sum: 1 } } },
+  ]) : [];
+  const paidBuyerCount = new Map(paidBuyers.map(row => [String(row._id), row.count]));
+
   const productCountByCategory = products.reduce((counts, product) => {
     const name = String(product.category || '').trim();
     if (name) counts.set(name, (counts.get(name) || 0) + 1);
@@ -72,15 +80,16 @@ router.get('/', async (req, res) => {
   const productById = new Map(products.map(product => [String(product._id), product]));
   const services = products.map(p => {
     const firstPrice = p.servicePrices?.[0];
+    const firstSku = (p.skus || []).find(item => item.active !== false);
     return {
       id: p._id.toString(),
       category: p.category,
       name: p.name,
       subtitle: p.subtitle || '',
-      price: firstPrice ? firstPrice.price : p.originalPrice,
+      price: firstPrice ? firstPrice.price : (firstSku?.price ?? p.originalPrice),
       originalPrice: p.originalPrice,
       rating: 5.0,
-      reviewCount: p.sales || 0,
+      reviewCount: paidBuyerCount.get(String(p._id)) || 0,
       tag: '',
       tagColor: '',
       icon: 'storefront-outline',
@@ -351,7 +360,7 @@ router.post('/order', auth, async (req, res) => {
       name: product.name,
       // 商城展示和后台日常改价都以“收费项目”servicePrices 为准；SKU
       // 只补充次数、有效期等履约信息，不能用残留旧价覆盖页面显示价。
-      price: selectedPrice ? selectedPrice.price : product.originalPrice,
+      price: selectedPrice ? selectedPrice.price : (selectedSku?.price ?? product.originalPrice),
       specificationLabel: selectedSku?.label || selectedPrice?.label || '',
       skuCode: selectedSku?.code || '',
       skuTotalUnits: selectedSku?.totalUnits || 0,
@@ -681,9 +690,11 @@ router.post('/order', auth, async (req, res) => {
     servicePerformers,
     serviceItemsSnapshot: productServiceItems.map(item => ({
       key: item.key, name: item.name, units: item.units, usedUnits: 0,
+      childProductId: item.childProductId || null, teamRole: item.teamRole || '', revenueSharePercent: item.revenueSharePercent || 0,
       performers: (item.performers || []).map(p => p.toObject ? p.toObject() : p),
     })),
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
+    staffPerformanceOverridesSnapshot: (product?.staffPerformanceOverrides || []).map(row => row.toObject ? row.toObject() : row),
     servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
     serviceWorkflowSnapshot: product?.serviceWorkflow ? { ...(product.serviceWorkflow.toObject ? product.serviceWorkflow.toObject() : product.serviceWorkflow), ...(product.serviceWorkflow.key === 'rehab' ? { skuValidityDays:service.skuValidityDays } : {}) } : null,
     specialtyTermsSnapshot: product?.specialtyTerms?.key ? (product.specialtyTerms.toObject ? product.specialtyTerms.toObject() : product.specialtyTerms) : null,

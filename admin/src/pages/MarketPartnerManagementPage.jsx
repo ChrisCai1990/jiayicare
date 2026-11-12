@@ -8,7 +8,7 @@ const LINES = [
   ['assessment', '单次评估'], ['psychology', '心理咨询'], ['rehabilitation', '运动复健'],
   ['testing', '检测'], ['supplements', '营养素补充'],
 ]
-const ROLES = [['familyDoctor', '健康顾问'], ['nutritionist', '营养师'], ['healthManager', '健管专员']]
+const ROLES = [['familyDoctor', '健康顾问'], ['nutritionist', '营养师'], ['healthManager', '健管专员'], ['medicalAssistant', '就医专员'], ['psychologist', '心理咨询师'], ['rehabSpecialist', '运动复健师'], ['specialist', '专科医师'], ['tcmDoctor', '中医师']]
 const inputStyle = { padding: '9px 10px', border: '1px solid #cbd8d1', borderRadius: 6, minWidth: 150 }
 const boxStyle = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
 const toBasisPoints = value => Math.round(Number(value) * 100)
@@ -18,6 +18,7 @@ export default function MarketPartnerManagementPage() {
   const [rules, setRules] = useState([])
   const [teamRules, setTeamRules] = useState([])
   const [teamIncentives, setTeamIncentives] = useState([])
+  const [teamRevenue, setTeamRevenue] = useState([])
   const [commissions, setCommissions] = useState([])
   const [receipts, setReceipts] = useState([])
   const [offlineOrders, setOfflineOrders] = useState([])
@@ -52,8 +53,8 @@ export default function MarketPartnerManagementPage() {
   const [accountingError, setAccountingError] = useState('')
 
   const refresh = async () => {
-    const [p, r, t, productsResponse, packagesResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse] = await Promise.all([
-      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerEligiblePackages(), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(),
+    const [p, r, t, productsResponse, packagesResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse, teamRevenueResponse] = await Promise.all([
+      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerEligiblePackages(), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(), adminAPI.marketPartnerTeamRevenue(),
     ])
     setPartners(p.data || [])
     setRules(r.data || [])
@@ -63,6 +64,7 @@ export default function MarketPartnerManagementPage() {
     setCommissions(commissionsResponse.data?.rows || [])
     setReceipts(receiptsResponse.data || [])
     setTeamIncentives(teamIncentivesResponse.data || [])
+    setTeamRevenue(teamRevenueResponse.data || [])
     setOfflineOrders(offlineOrdersResponse.data || [])
     setAttributedOrders(attributedOrdersResponse.data || [])
     setCustomerHistories(customerHistoriesResponse.data || [])
@@ -143,12 +145,20 @@ export default function MarketPartnerManagementPage() {
         <div><strong>{accounting.order.serviceName}</strong>{accounting.order.specificationLabel && ` · ${accounting.order.specificationLabel}`} · {accounting.order.orderNo}</div>
         <div>客户：{accounting.order.user?.name || '—'}；合伙人：{accounting.order.marketPartnerId?.name || '无'}；登记者：{accounting.order.initiatedByStaff?.name || '—'}；内部推广人：{accounting.order.referrerId?.name || '无'}</div>
         <div>订单标价 {yuan(Math.round(Number(accounting.order.servicePrice || 0) * 100))}；现金实收 {yuan(accounting.cash.paidCents)}；成功退款 {yuan(accounting.cash.refundedCents)}；净实收 <strong>{yuan(accounting.cash.netCents)}</strong>；支付状态 {accounting.order.paymentStatus}</div>
+        <div>子产品／团队营收：{accounting.revenueAllocation?.length ? accounting.revenueAllocation.map(item => `${item.name} → ${ROLES.find(([role]) => role === item.teamRole)?.[1] || item.teamRole} ${yuan(item.amountCents)}（${item.sharePercent}%）`).join('；') : '未配置组合拆解'}</div>
         <div>服务团队：{accounting.order.servicePerformers?.length ? accounting.order.servicePerformers.map(item => `${ROLES.find(([role]) => role === item.role)?.[1] || item.role} ${item.staffId?.name || '待确认'}`).join('、') : '待确认'}</div>
         <div>合伙人推广费：{accounting.partnerCommission.length ? accounting.partnerCommission.map(item => `${yuan(item.accruedCents)}（${item.status}，已发 ${yuan(item.paidCents)}，已追回 ${yuan(item.recoveredCents)}）`).join('；') : '暂无计提'}</div>
         <div>内部推广与服务绩效：{accounting.staffCommissions.length ? accounting.staffCommissions.map(item => `${item.staffId?.name || '员工'} ${item.role === 'referrer' ? '推广' : '服务'} ${yuan(Math.round(Number(item.commissionAmount || 0) * 100))}（${item.status}）`).join('；') : '暂无计提'}</div>
         <div>服务团队专项激励：{accounting.teamIncentives.length ? accounting.teamIncentives.map(item => `${item.staffId?.name || '员工'} ${yuan(item.amountCents)}（${item.status}，已发 ${yuan(item.paidCents)}）`).join('；') : '暂无计提'}</div>
         <div>线下到账凭据：{accounting.receipts.length ? accounting.receipts.map(item => `${yuan(item.amountCents)}（${item.status}）`).join('；') : '无'}</div>
       </div>}
+    </section>
+    <section style={boxStyle}>
+      <h2 style={{fontSize:18,marginTop:0}}>组合产品团队业务营收</h2>
+      <p style={{color:'#667a6d'}}>按已付款订单的子产品拆解快照汇总，成功退款实时扣减；这是业务营收归属，员工佣金在下方单独核算。</p>
+      {teamRevenue.length ? <table className="table"><thead><tr><th>负责团队</th><th>子产品</th><th>订单数</th><th>净实收归属</th></tr></thead><tbody>
+        {teamRevenue.map(item=><tr key={`${item.teamRole}:${item.childProductId}`}><td>{ROLES.find(([role])=>role===item.teamRole)?.[1] || item.teamRole}</td><td>{item.name}</td><td>{item.orderCount}</td><td>{yuan(item.amountCents)}</td></tr>)}
+      </tbody></table> : <div>暂无已付款且完成拆解配置的组合产品订单</div>}
     </section>
     {error && <div role="alert" style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
     {notice && <div style={{ color: '#176b4d', marginBottom: 12 }}>{notice}</div>}

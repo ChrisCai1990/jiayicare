@@ -27,6 +27,7 @@ const EMPTY_FORM = {
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
   servicePerformerRoles: [],
   serviceItems: [],
+  staffPerformanceOverrides: [],
   aiProfile: {
     enabledForRecommendation: false, targetNeeds: [], suitableFor: [], notSuitableFor: [],
     requiredQuestions: [], supportedCities: [], includedItems: [], excludedItems: [],
@@ -197,23 +198,59 @@ function ServicePerformerRolesForm({ roles, staffList, onChange }) {
   )
 }
 
-function ServiceItemsForm({ items, staffList, onChange }) {
+function ServiceItemsForm({ items, staffList, products, parentId, onChange }) {
   const list = items || []
-  const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '', units: 1, performers: [] }])
+  const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '', units: 1, childProductId: '', teamRole: 'healthManager', revenueSharePercent: 0, performers: [] }])
   const update = (i, patch) => onChange(list.map((item, idx) => idx === i ? { ...item, ...patch } : item))
+  const totalShare = list.reduce((sum, item) => sum + (Number(item.revenueSharePercent) || 0), 0)
   return <div style={{ marginTop: 18, borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
       <label className="form-label">组合服务子项目（按子项目逐次核销）</label>
       <button type="button" className="btn btn-sm btn-ghost" onClick={add}>+ 添加子项目</button>
     </div>
-    <div style={{fontSize:12,color:'#888',marginBottom:10}}>每个子项目可独立设置次数、岗位和结算方式；固定金额及比例均按每次核销计算。</div>
+    <div style={{fontSize:12,color:'#888',marginBottom:10}}>组合产品可关联本机构产品库中的子产品，设置负责团队和营收比例（合计100%）。营收归属与实际发放的服务绩效分开核算。</div>
     {list.map((item, i) => <div key={item.key || i} style={{border:'1px solid #e0d9ce',borderRadius:8,padding:12,marginBottom:12}}>
       <div style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,alignItems:'center'}}>
         <input className="form-input" value={item.name || ''} placeholder="子项目名称" onChange={e=>update(i,{name:e.target.value})}/>
         <input className="form-input" type="number" min="1" value={item.units || 1} onChange={e=>update(i,{units:Math.max(1,parseInt(e.target.value)||1)})}/>
         <button type="button" onClick={()=>onChange(list.filter((_,idx)=>idx!==i))} style={{color:'#c0392b',background:'none',border:'none',cursor:'pointer'}}>删除</button>
       </div>
+      <div style={{display:'grid',gridTemplateColumns:'2fr 1.3fr 1fr',gap:8,marginTop:8}}>
+        <select className="form-input" value={item.childProductId || ''} onChange={e=>{
+          const child = products.find(p=>p._id===e.target.value)
+          update(i,{childProductId:e.target.value,name:item.name || child?.name || ''})
+        }}>
+          <option value="">关联产品库子产品</option>
+          {products.filter(p=>p._id!==parentId && !(p.serviceItems || []).some(child=>child.childProductId)).map(p=><option key={p._id} value={p._id}>{p.name}</option>)}
+        </select>
+        <select className="form-input" value={item.teamRole || 'healthManager'} onChange={e=>update(i,{teamRole:e.target.value})}>
+          {PERFORMER_ROLE_OPTIONS.map(role=><option key={role.value} value={role.value}>{role.label}团队</option>)}
+        </select>
+        <input className="form-input" type="number" min="0" max="100" step="0.01" value={item.revenueSharePercent ?? 0} placeholder="营收占比%" onChange={e=>update(i,{revenueSharePercent:e.target.value})}/>
+      </div>
       <ServicePerformerRolesForm roles={item.performers || []} staffList={staffList} onChange={v=>update(i,{performers:v})}/>
+    </div>)}
+    {!!list.length && <div style={{fontSize:12,color:Math.abs(totalShare-100)<0.001?'#1E6B50':'#c0392b'}}>组合营收比例合计：{totalShare}%{totalShare > 0 && Math.abs(totalShare-100)>=0.001?'（配置拆解时须合计100%）':''}</div>}
+  </div>
+}
+
+function StaffPerformanceOverridesForm({ rows, staffList, onChange }) {
+  const list = rows || []
+  const update = (index, patch) => onChange(list.map((row, i) => i===index?{...row,...patch}:row))
+  return <div style={{marginTop:18,borderTop:'1px solid #e0d9ce',paddingTop:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <label className="form-label">本产品员工个人推广／服务佣金</label>
+      <button type="button" className="btn btn-sm btn-ghost" onClick={()=>onChange([...list,{staffId:'',ruleType:'percentage',referrerRate:0,fulfillerRate:0,referrerAmount:0,fulfillerAmount:0}])}>+ 添加员工</button>
+    </div>
+    <div style={{fontSize:12,color:'#888',marginBottom:10}}>有个人规则时优先于员工通用比例和产品岗位比例；推广与服务分别计提，服务仍须实际履约。</div>
+    {list.map((row,i)=><div key={i} style={{display:'grid',gridTemplateColumns:'1.4fr 1fr 1fr 1fr auto',gap:8,marginBottom:8}}>
+      <select className="form-input" value={row.staffId || ''} onChange={e=>update(i,{staffId:e.target.value})}>
+        <option value="">选择员工</option>{staffList.map(staff=><option key={staff._id} value={staff._id}>{staff.name} · {ROLE_LABEL_MAP[staff.role] || staff.role}</option>)}
+      </select>
+      <select className="form-input" value={row.ruleType || 'percentage'} onChange={e=>update(i,{ruleType:e.target.value})}><option value="percentage">按比例</option><option value="fixedAmount">固定金额</option></select>
+      <input className="form-input" type="number" min="0" max={row.ruleType==='fixedAmount'?undefined:100} step="0.01" value={row.ruleType==='fixedAmount'?row.referrerAmount:row.referrerRate} placeholder="推广" onChange={e=>update(i,{[row.ruleType==='fixedAmount'?'referrerAmount':'referrerRate']:e.target.value})}/>
+      <input className="form-input" type="number" min="0" max={row.ruleType==='fixedAmount'?undefined:100} step="0.01" value={row.ruleType==='fixedAmount'?row.fulfillerAmount:row.fulfillerRate} placeholder="服务" onChange={e=>update(i,{[row.ruleType==='fixedAmount'?'fulfillerAmount':'fulfillerRate']:e.target.value})}/>
+      <button type="button" onClick={()=>onChange(list.filter((_,idx)=>idx!==i))} style={{color:'#c0392b',background:'none',border:'none',cursor:'pointer'}}>删除</button>
     </div>)}
   </div>
 }
@@ -429,7 +466,14 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       })),
       serviceItems: (product.serviceItems || []).map(item => ({
         key: item.key, name: item.name, units: item.units || 1,
+        childProductId: item.childProductId ? String(item.childProductId) : '',
+        teamRole: item.teamRole || 'healthManager', revenueSharePercent: item.revenueSharePercent || 0,
         performers: (item.performers || []).map(r => ({ role:r.role, ruleType:r.ruleType || 'percentage', rate:r.rate || 0, amount:r.amount || 0, defaultStaffId:r.defaultStaffId ? String(r.defaultStaffId) : '' })),
+      })),
+      staffPerformanceOverrides: (product.staffPerformanceOverrides || []).map(row => ({
+        staffId: String(row.staffId || ''), ruleType: row.ruleType || 'percentage',
+        referrerRate: row.referrerRate || 0, fulfillerRate: row.fulfillerRate || 0,
+        referrerAmount: row.referrerAmount || 0, fulfillerAmount: row.fulfillerAmount || 0,
       })),
       specialtyTerms: product.specialtyTerms || null,
       aiProfile: {
@@ -490,6 +534,10 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   }
 
   const save = async () => {
+    const linkedItems = (form.serviceItems || []).filter(item => item.childProductId || Number(item.revenueSharePercent) > 0)
+    if (linkedItems.length && (linkedItems.length !== form.serviceItems.length || linkedItems.some(item => !item.childProductId) || Math.abs(linkedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001)) {
+      toast('组合子产品须逐项关联产品库，营收比例合计为100%'); setTab('performance'); return
+    }
     const fundValue = Number(form.healthFundDeduction?.value)
     if (form.healthFundDeduction?.mode === 'percentage' && (!Number.isFinite(fundValue) || fundValue < 1 || fundValue > 100)) { toast('商品抵扣比例须为1%-100%'); return }
     const isUnpricedIbdDraft = form.category === '专病管理' && /IBD|炎症性肠病/i.test(form.name) && form.status === 'off'
@@ -552,7 +600,13 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           })),
         serviceItems: (form.serviceItems || []).filter(item => item.name?.trim()).map(item => ({
           key: item.key || `item_${Date.now()}`, name: item.name.trim(), units: Math.max(1, parseInt(item.units) || 1),
+          childProductId: item.childProductId || null, teamRole: item.teamRole || 'healthManager', revenueSharePercent: Number(item.revenueSharePercent) || 0,
           performers: (item.performers || []).filter(r=>r.role).map(r=>({ role:r.role, ruleType:r.ruleType || 'percentage', rate:parseFloat(r.rate)||0, amount:parseFloat(r.amount)||0, defaultStaffId:r.defaultStaffId||null })),
+        })),
+        staffPerformanceOverrides: (form.staffPerformanceOverrides || []).map(row => ({
+          staffId:row.staffId, ruleType:row.ruleType || 'percentage',
+          referrerRate:Number(row.referrerRate)||0, fulfillerRate:Number(row.fulfillerRate)||0,
+          referrerAmount:Number(row.referrerAmount)||0, fulfillerAmount:Number(row.fulfillerAmount)||0,
         })),
         specialtyTerms: form.specialtyTerms || undefined,
         aiProfile: form.aiProfile,
@@ -751,7 +805,8 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                 staffList={staffList}
                 onChange={v => set('servicePerformerRoles', v)}
               />
-              <ServiceItemsForm items={form.serviceItems} staffList={staffList} onChange={v => set('serviceItems', v)} />
+              <ServiceItemsForm items={form.serviceItems} staffList={staffList} products={productsForBundle} parentId={product?._id} onChange={v => set('serviceItems', v)} />
+              <StaffPerformanceOverridesForm rows={form.staffPerformanceOverrides} staffList={staffList} onChange={v => set('staffPerformanceOverrides', v)} />
             </div>
           )}
 

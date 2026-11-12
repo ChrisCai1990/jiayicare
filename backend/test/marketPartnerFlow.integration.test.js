@@ -97,6 +97,34 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const initialCatalog = await (await fetch(`${base}/api/services`)).json();
     assert.equal(initialCatalog.data.services.some(service => service.id === String(productId)), false,
       'contract-only products must not appear as purchasable marketplace goods');
+    const childDoctorId = oid(), childNutritionId = oid();
+    await mongoose.connection.db.collection('products').insertMany([
+      { _id: childDoctorId, tenantId, name: '顾问子产品', category: 'health', status: 'off', originalPrice: 60 },
+      { _id: childNutritionId, tenantId, name: '营养子产品', category: 'health', status: 'off', originalPrice: 40 },
+    ]);
+    const compositeItems = [
+      { key: 'doctor', name: '顾问服务', units: 1, childProductId: String(childDoctorId), teamRole: 'familyDoctor', revenueSharePercent: 60 },
+      { key: 'nutrition', name: '营养服务', units: 1, childProductId: String(childNutritionId), teamRole: 'nutritionist', revenueSharePercent: 40 },
+    ];
+    const compositePayload = { name: '年度组合测试', category: 'health', originalPrice: 100, status: 'off',
+      serviceItems: compositeItems, staffPerformanceOverrides: [{ staffId: String(plannerId), ruleType: 'percentage',
+        referrerRate: 4, fulfillerRate: 3 }] };
+    const invalidComposite = await call(clerkId, 'POST', '/api/admin/products', {
+      ...compositePayload, serviceItems: [{ ...compositeItems[0], revenueSharePercent: 50 }, compositeItems[1]] });
+    assert.equal(invalidComposite.status, 400, '组合营收比例必须合计100%');
+    const composite = await call(clerkId, 'POST', '/api/admin/products', compositePayload);
+    assert.equal(composite.status, 200, JSON.stringify(composite.body));
+    const compositeOrder = await Order.create({ tenantId, user: patientId,
+      serviceId: String(composite.body.data._id), serviceName: compositePayload.name, orderType: 'product',
+      orderNo: 'SYNTHETIC-COMPOSITE-001', paymentStatus: 'paid', paidAmount: 100.05, refundedAmount: 20,
+      serviceItemsSnapshot: compositeItems, staffPerformanceOverridesSnapshot: compositePayload.staffPerformanceOverrides });
+    const compositeAccounting = await call(clerkId, 'GET', `${prefix}/order-accounting/${compositeOrder._id}`);
+    assert.equal(compositeAccounting.status, 200, JSON.stringify(compositeAccounting.body));
+    assert.deepEqual(compositeAccounting.body.data.revenueAllocation.map(item => item.amountCents), [4803, 3202]);
+    assert.equal(compositeAccounting.body.data.revenueAllocation[0].teamRole, 'familyDoctor');
+    const teamRevenue = await call(clerkId, 'GET', `${prefix}/team-revenue`);
+    assert.equal(teamRevenue.status, 200, JSON.stringify(teamRevenue.body));
+    assert.deepEqual(teamRevenue.body.data.map(item => item.amountCents), [4803, 3202]);
     const partner = await call(clerkId, 'POST', prefix, { name: '合成合伙人', phone: '13900000001',
       productLine: 'singleVisit', contractReference: 'PARTNER-CONTRACT-001' });
     assert.equal(partner.status, 201, JSON.stringify(partner.body));
@@ -116,6 +144,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
     ]);
     await mongoose.connection.db.collection('products').updateOne({ _id: productId }, { $set: {
       servicePerformerRoles: [{ role: 'nutritionist', ruleType: 'percentage', rate: 8 }],
+      staffPerformanceOverrides: [{ staffId: offlineNutritionistId, ruleType: 'percentage', referrerRate: 0, fulfillerRate: 5 }],
     } });
     const staffContract = 'STAFF-OFFLINE-001';
     const staffPayload = { productId: String(productId), contractReference: staffContract,
@@ -146,6 +175,13 @@ test('online and offline partner payments, renewals, refunds and team incentives
     await mongoose.connection.db.collection('products').insertOne({ _id: sharedCatalogProductId, tenantId,
       name: '现有商城服务线下成交', category: 'health', status: 'on', paymentChannel: 'wechat_pay',
       originalPrice: 120, fulfillmentType: 'offline_service', stockLimited: false });
+    await Order.create({ tenantId, user: patientId, serviceId: String(sharedCatalogProductId),
+      serviceName: '现有商城服务线下成交', orderType: 'product', paymentStatus: 'paid', paidAmount: 120 });
+    await Order.create({ tenantId, user: patientId, serviceId: String(sharedCatalogProductId),
+      serviceName: '现有商城服务线下成交', orderType: 'product', paymentStatus: 'paid', paidAmount: 120 });
+    const paidCatalog = await (await fetch(`${base}/api/services`)).json();
+    assert.equal(paidCatalog.data.services.find(item => item.id === String(sharedCatalogProductId)).reviewCount, 1,
+      '已购人数按实际付款客户去重，而非未维护的 Product.sales 字段');
     const sharedCatalogOrder = await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`, {
       productId: String(sharedCatalogProductId), contractReference: 'STAFF-CATALOG-001', priceCents: 12000 });
     assert.equal(sharedCatalogOrder.status, 201, JSON.stringify(sharedCatalogOrder.body));
@@ -177,12 +213,12 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(verified.status, 200, JSON.stringify(verified.body));
     const staffCommission = await require('../src/models/Commission').findOne({ orderId: recorded._id,
       staffId: offlineNutritionistId, role: 'fulfiller' }).lean();
-    assert.equal(staffCommission.commissionAmount, 8, '同一订单独立生成服务人员绩效');
+    assert.equal(staffCommission.commissionAmount, 5, '产品个人服务比例覆盖岗位默认比例');
     const accounting = await call(clerkId, 'GET', `${prefix}/order-accounting/${recorded._id}`);
     assert.equal(accounting.status, 200, JSON.stringify(accounting.body));
     assert.equal(accounting.body.data.cash.netCents, 10000);
     assert.equal(accounting.body.data.partnerCommission[0].accruedCents, 1000);
-    assert.equal(accounting.body.data.staffCommissions[0].commissionAmount, 8);
+    assert.equal(accounting.body.data.staffCommissions[0].commissionAmount, 5);
     assert.equal(accounting.body.data.order.servicePerformers[0].staffId.name, '线下营养师');
     assert.equal((await call(outsiderId, 'GET', `${prefix}/order-accounting/${recorded._id}`)).status, 404);
     const order = await call(clerkId, 'POST', `${prefix}/offline-orders`, { productId: String(productId),

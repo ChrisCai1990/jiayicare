@@ -6,6 +6,9 @@ const Admin = require('../models/Admin');
 const { eligibility } = require('./commissionEligibility');
 const { commissionBlockReason } = require('./commissionLifecycle');
 
+const productStaffRule = (order, staffId) => (order.staffPerformanceOverridesSnapshot || [])
+  .find(row => String(row.staffId) === String(staffId)) || null;
+
 // 支付确认后，按该产品/服务预设的 performanceRule，为转介绍人(referrer)和服务人(fulfiller)
 // 各自生成一条独立的待结算 Commission 记录（互不影响，各自角色对应各自的比例或固定金额）。
 // 订单需先标记 referrerId/fulfillerId 才能生成对应角色的记录，缺失的一方直接跳过不生成。
@@ -70,7 +73,8 @@ async function settleOrderCommission(order) {
   if (order.referrerId) {
     const staff = await Admin.findById(order.referrerId).select('personalPerformanceRule').catch(() => null);
     const personalRule = staff?.personalPerformanceRule;
-    const effectiveRule = (personalRule && personalRule.ruleType !== 'none') ? personalRule : productRule;
+    const effectiveRule = productStaffRule(order, order.referrerId)
+      || ((personalRule && personalRule.ruleType !== 'none') ? personalRule : productRule);
     const { amount, rate } = buildAmount('referrer', effectiveRule);
     await createCommission(order.referrerId, 'referrer', rate, amount);
   }
@@ -87,16 +91,19 @@ async function settleOrderCommission(order) {
       if (!staffId) continue; // 该岗位没落实到具体人，跳过不生成
       const ruleType = pr.ruleType || 'percentage';
       if (ruleType === 'none') continue;
-      const rate = ruleType === 'percentage' ? (parseFloat(pr.rate) || 0) / 100 : 0;
-      const amount = ruleType === 'fixedAmount'
-        ? Math.min(parseFloat(pr.amount) || 0, base)
+      const override = productStaffRule(order, staffId);
+      const effectiveType = override?.ruleType || ruleType;
+      const rate = effectiveType === 'percentage' ? (parseFloat(override ? override.fulfillerRate : pr.rate) || 0) / 100 : 0;
+      const amount = effectiveType === 'fixedAmount'
+        ? Math.min(parseFloat(override ? override.fulfillerAmount : pr.amount) || 0, base)
         : Math.round(base * rate * 100) / 100;
       await createCommission(staffId, 'fulfiller', rate, amount);
     }
   } else if (order.fulfillerId) {
     const staff = await Admin.findById(order.fulfillerId).select('personalPerformanceRule').catch(() => null);
     const personalRule = staff?.personalPerformanceRule;
-    const effectiveRule = (personalRule && personalRule.ruleType !== 'none') ? personalRule : productRule;
+    const effectiveRule = productStaffRule(order, order.fulfillerId)
+      || ((personalRule && personalRule.ruleType !== 'none') ? personalRule : productRule);
     const { amount, rate } = buildAmount('fulfiller', effectiveRule);
     await createCommission(order.fulfillerId, 'fulfiller', rate, amount);
   }
@@ -117,7 +124,8 @@ async function settleReferralCommission(order) {
   }
   if (!productRule) productRule = (await Service.findOne({ serviceId: order.serviceId }).catch(() => null))?.performanceRule;
   const staff = await Admin.findById(order.referrerId).select('personalPerformanceRule').catch(() => null);
-  const rule = staff?.personalPerformanceRule && staff.personalPerformanceRule.ruleType !== 'none' ? staff.personalPerformanceRule : productRule;
+  const rule = productStaffRule(order, order.referrerId)
+    || (staff?.personalPerformanceRule && staff.personalPerformanceRule.ruleType !== 'none' ? staff.personalPerformanceRule : productRule);
   if (!rule || rule.ruleType === 'none') return { created: [] };
   const base = Number(order.paidAmount || order.paymentExpectedAmount || order.servicePrice || 0);
   const rate = rule.ruleType === 'percentage' ? (Number(rule.referrerRate) || 0) / 100 : 0;
@@ -141,18 +149,22 @@ async function settleRedemptionCommission(order, redemption) {
   if (commissionBlockReason(order) || !redemption?.serviceItemKey || !order.serviceItemsSnapshot?.length) return { created: [] };
   const item = order.serviceItemsSnapshot.find(i => i.key === redemption.serviceItemKey);
   if (!item) return { created: [] };
-  const base = Math.round(((order.paidAmount || order.servicePrice || 0) / Math.max(1, order.totalUnits || 1)) * 100) / 100;
+  const hasRevenueSplit = order.serviceItemsSnapshot.every(row => row.childProductId && Number(row.revenueSharePercent) > 0);
+  const base = hasRevenueSplit
+    ? Math.round((Number(order.paidAmount || order.servicePrice || 0) * Number(item.revenueSharePercent) / 100 / Math.max(1, item.units || 1)) * 100) / 100
+    : Math.round(((order.paidAmount || order.servicePrice || 0) / Math.max(1, order.totalUnits || 1)) * 100) / 100;
   const performerMap = {};
   (order.servicePerformers || []).forEach(sp => { if (sp.role && sp.staffId) performerMap[sp.role] = sp.staffId; });
   const created = [];
   for (const rule of item.performers || []) {
     const staffId = performerMap[rule.role] || rule.defaultStaffId
       || (item.performers.length === 1 ? order.fulfillerId : null);
-    const ruleType = rule.ruleType || 'percentage';
+    const override = productStaffRule(order, staffId);
+    const ruleType = override?.ruleType || rule.ruleType || 'percentage';
     if (!staffId || ruleType === 'none') continue;
-    const rate = ruleType === 'percentage' ? (Number(rule.rate) || 0) / 100 : 0;
+    const rate = ruleType === 'percentage' ? (Number(override ? override.fulfillerRate : rule.rate) || 0) / 100 : 0;
     const amount = ruleType === 'fixedAmount'
-      ? Number(rule.amount) || 0
+      ? Number(override ? override.fulfillerAmount : rule.amount) || 0
       : Math.round(base * rate * 100) / 100;
     if (amount <= 0) continue;
     try {
