@@ -2,10 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const resolver = require('../src/utils/serviceAccess');
 const { checkServiceActive } = require('../src/middleware/checkServiceActive');
-async function call(method, url) {
-  let status = 200; let body; let next = false;
-  await checkServiceActive({ method, originalUrl: url, user: { _id: 'patient' } }, { status(value) { status = value; return this; }, json(value) { body = value; return this; } }, () => { next = true; });
-  return { status, body, next };
+async function call(method, url, body) {
+  let status = 200; let responseBody; let next = false;
+  await checkServiceActive({ method, originalUrl: url, body, user: { _id: 'patient' } }, { status(value) { status = value; return this; }, json(value) { responseBody = value; return this; } }, () => { next = true; });
+  return { status, body: responseBody, next };
 }
 test('已到期客户可查看并答复本人年度方案，白名单只匹配指定路径', async t => {
   t.mock.method(resolver, 'resolveServiceAccess', async () => ({ active: false, reason: '服务期已结束' }));
@@ -20,6 +20,18 @@ test('服务有效放行，核验异常返回可重试503不回退旧日期', as
   resolver.resolveServiceAccess.mock.mockImplementation(async () => { throw Error('database unavailable'); });
   assert.equal((await call('POST', '/api/records')).status, 503);
   assert.equal((await call('GET', '/api/user/me')).next, true);
+});
+test('服务期未开始时仅允许补填常住地区，不放行其他资料更新', async t => {
+  t.mock.method(resolver, 'resolveServiceAccess', async () => ({ active: false, reason: '服务期尚未开始' }));
+  const residence = { province: '广东省', city: '深圳市', district: '宝安区' };
+  assert.equal((await call('PUT', '/api/user/me', { residence })).next, true);
+  for (const body of [
+    { residence, name: '其他修改' },
+    { residence: { province: '广东省', city: '' } },
+    { residence: { ...residence, serviceExpiry: '2099-01-01' } },
+    { residence: [] },
+  ]) assert.equal((await call('PUT', '/api/user/me', body)).status, 403);
+  assert.equal((await call('PUT', '/api/user/me/extra', { residence })).status, 403);
 });
 test('确认白名单不允许到期客户启动首次方案，仅续年可提前确认', async t => {
   const { assertAnnualConfirmationAccess } = require('../src/utils/annualPlanConfirmation');
