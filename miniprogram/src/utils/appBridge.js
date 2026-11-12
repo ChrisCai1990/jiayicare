@@ -1,5 +1,6 @@
 export function isNativeApp() {
   return process.env.TARO_ENV === 'h5' && typeof window !== 'undefined'
+    && !/^\/mobile-preview\/review(?:\/|$)/.test(window.location.pathname)
     && window.__JIAYICARE_NATIVE_BRIDGE__ === 'v1'
     && typeof window.ReactNativeWebView?.postMessage === 'function';
 }

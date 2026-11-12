@@ -30,10 +30,10 @@ async function run() {
     : await chromium.launch({ headless: true, executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
   const context = await browser.newContext({ viewport: { width: process.env.SMOKE_CHART_LAYOUT ? 760 : 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: 'zh-CN', timezoneId: 'Asia/Shanghai' });
   await context.addInitScript(() => {
-    localStorage.setItem('jy_token', 'smoke-token');
-    localStorage.setItem('jy_user', JSON.stringify({ _id: 'smoke-user', name: '测试用户', careTeam: [{ kind: 'healthManager', name: '测试顾问' }], bodyCompHistory: {} }));
+    localStorage.setItem('jy_token', JSON.stringify({ data: 'smoke-token' }));
+    localStorage.setItem('jy_user', JSON.stringify({ data: JSON.stringify({ _id: 'smoke-user', name: '测试用户', careTeam: [{ kind: 'healthManager', name: '测试顾问' }], bodyCompHistory: {} }) }));
   });
-  await context.route('https://jiaycare.com/api/**', async route => {
+  await context.route('**/api/**', async route => {
     const url = new URL(route.request().url());
     const path = url.pathname.slice(4);
     let data = { success: true, data: [] };
