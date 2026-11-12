@@ -13,6 +13,6 @@ The switches in the iPhone 1.0.2(5) notification settings screen must control re
 
 ## Verification and release state
 
-- 29 targeted backend tests passed after merging production commit `3b424783`; App H5 build and browser smoke passed in `../app-h5-push-release-20261112`.
+- 34 targeted backend tests passed after merging production commit `3b424783` and the existing monthly-report explanation commit `e3169a4a`; App H5 build and browser smoke passed in `../app-h5-push-release-20261112`.
 - Production source is `3b424783916c2f24f40f9b16205420febc2d2b5e` and has 8 dirty tracked files unrelated to this change, including `backend/src/utils/healthRecordSummary.js` and seven geo site files. The normal backend deploy gate refuses a dirty server. No backend or new H5 category UI was published in this follow-up. H5 dry-run verified the current live index hash and 47-file candidate.
 - After the unrelated production edits are reconciled, recheck the exact server commit and H5 index, run the normal backend release from the clean merged source, publish H5, and verify a newly sent, non-recalled human message plus a due reminder on a real iPhone. Provider acceptance and a stored device token alone do not establish handset delivery.
