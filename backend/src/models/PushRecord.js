@@ -29,6 +29,7 @@ const pushRecordSchema = new mongoose.Schema({
     productId: { type: String },
     name:      { type: String },
     price:     { type: Number },
+    specificationLabel: { type: String, default: '' },
     category:  { type: String },
     icon:      { type: String, default: '🛍' },
     images:    [{ type: String }],   // 产品图片，供推送详情展示封面

@@ -699,9 +699,9 @@ router.post('/order', auth, async (req, res) => {
       teamRole: item.teamRole || '', childProductId: item.childProductId || null,
       revenueSharePercent: item.revenueSharePercent,
     })).concat(product ? require('../utils/productBusinessAllocations').snapshot(product, service.specificationLabel) : []),
-    performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
-    staffPerformanceOverridesSnapshot: (product?.staffPerformanceOverrides || []).map(row => row.toObject ? row.toObject() : row),
-    servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
+    performanceRuleSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, service.specificationLabel).performanceRule,
+    staffPerformanceOverridesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, service.specificationLabel).staffPerformanceOverrides,
+    servicePerformerRolesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, service.specificationLabel).servicePerformerRoles,
     serviceWorkflowSnapshot: product?.serviceWorkflow ? { ...(product.serviceWorkflow.toObject ? product.serviceWorkflow.toObject() : product.serviceWorkflow), ...(product.serviceWorkflow.key === 'rehab' ? { skuValidityDays:service.skuValidityDays } : {}) } : null,
     specialtyTermsSnapshot: product?.specialtyTerms?.key ? (product.specialtyTerms.toObject ? product.specialtyTerms.toObject() : product.specialtyTerms) : null,
     serviceProviderSnapshot: serviceProvider === 'jiayihui_health'

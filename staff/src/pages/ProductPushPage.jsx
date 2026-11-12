@@ -339,6 +339,9 @@ function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
   const product = products.find(item => item.id === productId)
   const prices = product ? ((product.skus || []).length ? product.skus : (product.servicePrices || [])).filter(item => item.label && Number(item.price) > 0) : []
   const selectedPrice = prices.length ? prices.find(item => item.label === label)?.price : product?.price
+  const specificPerformance = product?.servicePrices?.find(item => item.label === label)?.performanceConfig
+  const performerRoles = specificPerformance?.enabled === true
+    ? (specificPerformance.servicePerformerRoles || []) : (product?.servicePerformerRoles || [])
   useEffect(() => {
     staffAPI.getStaffList({ pageSize: 500 }).then(result => setStaffList(result.data?.staff || result.data?.list || result.data || [])).catch(() => setStaffList([]))
   }, [])
@@ -377,15 +380,15 @@ function OfflineOrderDialog({ products, initialPatientId, onClose, onSaved }) {
           {products.filter(item => item.id === productId || `${item.name} ${item.category || ''}`.toLowerCase().includes(productSearch.trim().toLowerCase())).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
         {!products.length && <div role="status" style={{ color: '#B45309', fontSize: 12 }}>Admin 产品库暂无适合单项登记的上架商品。</div>}
-        {!!prices.length && <label>收费规格<select className="form-input" value={label} onChange={event => setLabel(event.target.value)}>
+        {!!prices.length && <label>收费规格<select className="form-input" value={label} onChange={event => { setLabel(event.target.value); setPerformers({}) }}>
           <option value="">请选择规格</option>
           {prices.map((item, index) => <option key={`${item.label}-${index}`} value={item.label}>{item.label} · ¥{Number(item.price).toFixed(2)}</option>)}
         </select></label>}
         {product && <div>产品库标价：<strong>¥{selectedPrice ? Number(selectedPrice).toFixed(2) : '请选规格'}</strong></div>}
         <label>外部合同编号（如有）<input className="form-input" value={contractReference} maxLength={100} onChange={event => setContractReference(event.target.value)} placeholder="没有合同可留空，系统自动生成业务编号" /></label>
         <label>合伙人推荐码（如有）<input className="form-input" value={partnerCode} maxLength={12} onChange={event => setPartnerCode(event.target.value)} placeholder="无合伙人时留空" /></label>
-        {!!product?.servicePerformerRoles?.length && <div><strong style={{ fontSize: 13 }}>服务团队</strong><div style={{ fontSize: 12, color: '#64766d' }}>这里只记录履约人员，不自动记为该人员的推广业绩或整单营收；服务激励以实际完成和审核为准。</div>
-          {product.servicePerformerRoles.map(rule => <label key={rule.role} style={{ display: 'block', marginTop: 8 }}>{PERFORMER_ROLE_LABEL[rule.role] || rule.role}
+        {!!performerRoles.length && <div><strong style={{ fontSize: 13 }}>服务团队</strong><div style={{ fontSize: 12, color: '#64766d' }}>这里只记录履约人员，不自动记为该人员的推广业绩或整单营收；服务激励以实际完成和审核为准。</div>
+          {performerRoles.map(rule => <label key={rule.role} style={{ display: 'block', marginTop: 8 }}>{PERFORMER_ROLE_LABEL[rule.role] || rule.role}
             <select className="form-input" value={performers[rule.role] || ''} onChange={event => setPerformers(previous => ({ ...previous, [rule.role]: event.target.value }))}>
               <option value="">待确定</option>
               {staffList.filter(item => item.role === rule.role).map(item => <option key={item._id} value={item._id}>{item.name}</option>)}
@@ -424,7 +427,13 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
   const toggle = id => setSelectedPatients(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
 
   // 有产品配了服务岗位才需要加载员工列表供选人
-  const productsWithRoles = selectedItems.filter(p => (p.servicePerformerRoles || []).length > 0)
+  const withSelectedRoles = product => {
+    const matches = (product.servicePrices || []).filter(row => Number(row.price) === Number(selectedPrices?.[product.id] ?? product.price))
+    const specific = matches.length === 1 ? matches[0].performanceConfig : null
+    return { ...product, specificationLabel: matches.length === 1 ? matches[0].label : '',
+      selectedPerformerRoles: specific?.enabled === true ? (specific.servicePerformerRoles || []) : (product.servicePerformerRoles || []) }
+  }
+  const productsWithRoles = selectedItems.map(withSelectedRoles).filter(p => p.selectedPerformerRoles.length > 0)
   useEffect(() => {
     if (productsWithRoles.length === 0) return
     staffAPI.getStaffList({ pageSize: 500 }).then(r => {
@@ -434,7 +443,7 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
     const init = {}
     productsWithRoles.forEach(p => {
       init[p.id] = {}
-      ;(p.servicePerformerRoles || []).forEach(sr => { if (sr.defaultStaffId) init[p.id][sr.role] = String(sr.defaultStaffId) })
+      p.selectedPerformerRoles.forEach(sr => { if (sr.defaultStaffId) init[p.id][sr.role] = String(sr.defaultStaffId) })
     })
     setPerformers(init)
   }, [selectedItems.length])
@@ -488,7 +497,8 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
       await staffAPI.pushBundle({
         productIds: selectedItems.map(p => p.id),
         patientIds: selectedPatients,
-        pricedProducts: selectedItems.map(p => ({ productId: p.id, price: selectedPrices?.[p.id] ?? p.price })),
+        pricedProducts: selectedItems.map(p => { const selected = withSelectedRoles(p); return { productId: p.id,
+          price: selectedPrices?.[p.id] ?? p.price, specificationLabel: selected.specificationLabel } }),
         servicePerformers,
       })
       onSaved(selectedPatients.length)
@@ -532,7 +542,7 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
               <div key={p.id} style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 4 }}>{p.name}</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {(p.servicePerformerRoles || []).map(sr => (
+                  {p.selectedPerformerRoles.map(sr => (
                     <div key={sr.role} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       <span style={{ fontSize: 12, color: '#8AA89C' }}>{PERFORMER_ROLE_LABEL[sr.role] || sr.role}({sr.rate}%)</span>
                       <select

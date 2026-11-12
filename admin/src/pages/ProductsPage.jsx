@@ -324,6 +324,36 @@ function ServiceItemPerformanceSettings({ items, staffList, onChange }) {
   </details>
 }
 
+function SpecificationPerformanceSettings({ prices, staffList, productRule, productRoles, productOverrides, onChange }) {
+  const update = (index, performanceConfig) => onChange(prices.map((price, i) => i === index ? { ...price, performanceConfig } : price))
+  return <div style={{ marginTop: 16 }}>
+    <p style={{ color: '#667a6d', fontSize: 12 }}>每个收费项目可独立设置推广和服务绩效；未单独设置时沿用下方产品通用规则。订单按实际购买项目冻结规则。</p>
+    {prices.filter(price => price.label?.trim()).map(price => {
+      const index = prices.indexOf(price)
+      const config = price.performanceConfig?.enabled === true ? price.performanceConfig : null
+      const setConfig = patch => update(index, { ...config, ...patch, enabled: true })
+      return <details key={`${price.label}:${index}`} style={{ border: '1px solid #e0d9ce', borderRadius: 8, padding: 12, marginBottom: 10 }}>
+        <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{price.label} · ¥{Number(price.price || 0).toFixed(2)} · {config ? '独立绩效' : '沿用通用规则'}</summary>
+        <label style={{ display: 'block', marginTop: 12 }}>规则来源
+          <select className="form-input" value={config ? 'specific' : 'default'} onChange={event => update(index,
+            event.target.value === 'specific' ? { enabled: true,
+              performanceRule: { ...productRule }, servicePerformerRoles: [...(productRoles || [])],
+              staffPerformanceOverrides: [...(productOverrides || [])] } : null)}>
+            <option value="default">沿用产品通用规则</option><option value="specific">此收费项目单独设置</option>
+          </select>
+        </label>
+        {config && <>
+          <PerformanceRuleForm rule={config.performanceRule} onChange={performanceRule => setConfig({ performanceRule })} />
+          <ServicePerformerRolesForm roles={config.servicePerformerRoles || []} staffList={staffList}
+            onChange={servicePerformerRoles => setConfig({ servicePerformerRoles })} />
+          <StaffPerformanceOverridesForm rows={config.staffPerformanceOverrides || []} staffList={staffList}
+            onChange={staffPerformanceOverrides => setConfig({ staffPerformanceOverrides })} />
+        </>}
+      </details>
+    })}
+  </div>
+}
+
 function StaffPerformanceOverridesForm({ rows, staffList, onChange }) {
   const list = rows || []
   const update = (index, patch) => onChange(list.map((row, i) => i===index?{...row,...patch}:row))
@@ -538,7 +568,8 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price),
         businessAllocations: (sp.businessAllocations || []).map(row => ({ key: row.key, name: row.name,
           businessType: row.businessType || 'service', teamRole: row.teamRole, childProductId: row.childProductId || '',
-          revenueSharePercent: row.revenueSharePercent })) })),
+          revenueSharePercent: row.revenueSharePercent })),
+        performanceConfig: sp.performanceConfig?.enabled === true ? sp.performanceConfig : null })),
       fulfillmentType: product.fulfillmentType || 'offline_service',
       paymentChannel: product.paymentChannel || 'wechat_pay',
       bookingRequired: product.bookingRequired !== false,
@@ -652,6 +683,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       const cleanedPrices = form.servicePrices
         .filter(sp => sp.label.trim() && sp.price !== '' && !isNaN(parseFloat(sp.price)))
         .map(sp => ({ label: sp.label.trim(), price: parseFloat(sp.price),
+          performanceConfig: sp.performanceConfig?.enabled === true ? sp.performanceConfig : null,
           businessAllocations: (sp.businessAllocations || []).map(row => ({
             key: row.key, name: `${sp.label.trim()} · ${allocationItemName(row, productsForBundle).trim().replace(`${sp.label.trim()} · `, '')}`,
             businessType: row.businessType || 'service', teamRole: row.teamRole || 'healthManager',
@@ -908,14 +940,19 @@ function ProductModal({ product, categories, onClose, onSaved }) {
 
           {tab === 'performance' && (
             <div>
-              <PerformanceRuleForm rule={form.performanceRule} onChange={v => set('performanceRule', v)} />
-              <ServicePerformerRolesForm
-                roles={form.servicePerformerRoles}
-                staffList={staffList}
-                onChange={v => set('servicePerformerRoles', v)}
-              />
+              {(form.servicePrices || []).some(price => price.label?.trim()) && <SpecificationPerformanceSettings
+                prices={form.servicePrices} staffList={staffList} productRule={form.performanceRule}
+                productRoles={form.servicePerformerRoles} productOverrides={form.staffPerformanceOverrides}
+                onChange={v => set('servicePrices', v)} />}
+              <details open={!(form.servicePrices || []).some(price => price.label?.trim())}>
+                {(form.servicePrices || []).some(price => price.label?.trim()) && <summary style={{ cursor: 'pointer', fontWeight: 600 }}>产品通用绩效规则（未单独设置的收费项目适用）</summary>}
+                <PerformanceRuleForm rule={form.performanceRule} onChange={v => set('performanceRule', v)} />
+                <ServicePerformerRolesForm roles={form.servicePerformerRoles} staffList={staffList}
+                  onChange={v => set('servicePerformerRoles', v)} />
+                <StaffPerformanceOverridesForm rows={form.staffPerformanceOverrides} staffList={staffList}
+                  onChange={v => set('staffPerformanceOverrides', v)} />
+              </details>
               <ServiceItemPerformanceSettings items={form.serviceItems} staffList={staffList} onChange={v => set('serviceItems', v)} />
-              <StaffPerformanceOverridesForm rows={form.staffPerformanceOverrides} staffList={staffList} onChange={v => set('staffPerformanceOverrides', v)} />
             </div>
           )}
 

@@ -7930,7 +7930,7 @@ router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products
     if (await Order.exists({ _id: orderId }) || await Order.exists({ tenantId, marketPartnerContractReference: businessReference }))
       return res.status(409).json({ success: false, message: '该合同或业务编号已有订单' });
 
-    const roleRules = product.servicePerformerRoles || [];
+    const roleRules = require('../utils/productPerformanceSnapshot').snapshot(product, specificationLabel).servicePerformerRoles;
     const submitted = Array.isArray(req.body.servicePerformers) ? req.body.servicePerformers : [];
     if (submitted.length > roleRules.length || submitted.some(item => !roleRules.some(rule => rule.role === item.role) || !mongoose.isValidObjectId(item.staffId))
       || new Set(submitted.map(item => item.role)).size !== submitted.length)
@@ -7972,9 +7972,9 @@ router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products
       initiationSource: 'staff_direct', initiatedByStaff: req.staff._id,
       serviceWorkflowSnapshot: product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null,
       serviceProviderSnapshot: { code: product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
-      performanceRuleSnapshot: product.performanceRule?.toObject?.() || product.performanceRule || null,
-      staffPerformanceOverridesSnapshot: (product.staffPerformanceOverrides || []).map(row => row.toObject?.() || row),
-      servicePerformerRolesSnapshot: roleRules.map(item => item.toObject?.() || item),
+      performanceRuleSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, specificationLabel).performanceRule,
+      staffPerformanceOverridesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, specificationLabel).staffPerformanceOverrides,
+      servicePerformerRolesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, specificationLabel).servicePerformerRoles,
       servicePerformers: submitted.map(item => ({ role: item.role, staffId: item.staffId })),
       ...(partner ? { marketPartnerId: partner.attribution.partnerId,
         marketPartnerAttributionId: partner.attribution._id, marketPartnerRuleId: partner.rule._id,
@@ -8086,9 +8086,9 @@ router.post('/patients/:id/fund-orders', staffAuth, checkPermission('products', 
             units: item.units, usedUnits: 0, childProductId: item.childProductId || null,
             teamRole: item.teamRole || '', revenueSharePercent: item.revenueSharePercent || 0, performers: item.performers || [] })),
           businessAllocationsSnapshot: require('../utils/productBusinessAllocations').snapshot(quote.product, quote.label),
-          performanceRuleSnapshot: quote.product.performanceRule?.toObject?.() || quote.product.performanceRule || null,
-          staffPerformanceOverridesSnapshot: (quote.product.staffPerformanceOverrides || []).map(row => row.toObject?.() || row),
-          servicePerformerRolesSnapshot: quote.product.servicePerformerRoles || [],
+          performanceRuleSnapshot: require('../utils/productPerformanceSnapshot').snapshot(quote.product, quote.label).performanceRule,
+          staffPerformanceOverridesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(quote.product, quote.label).staffPerformanceOverrides,
+          servicePerformerRolesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(quote.product, quote.label).servicePerformerRoles,
           serviceWorkflowSnapshot: quote.product.serviceWorkflow?.toObject?.() || quote.product.serviceWorkflow || null,
           serviceProviderSnapshot: { code: quote.product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
           note: `医护端直接从健康基金扣款；操作人：${req.staff.name || req.staff._id}`,
@@ -8144,13 +8144,13 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const products = await Product.find({ _id: { $in: productIds } });
   if (!products.length) return res.status(404).json({ success: false, message: '产品不存在' });
-  const priceMap = {};
+  const priceMap = {}, specificationMap = {};
   if (pricedProducts?.length) {
-    pricedProducts.forEach(pp => { priceMap[String(pp.productId)] = pp.price });
+    pricedProducts.forEach(pp => { priceMap[String(pp.productId)] = pp.price; specificationMap[String(pp.productId)] = String(pp.specificationLabel || '').trim() });
   }
   const productItems = products.map(p => ({
     productId: p._id.toString(), name: p.name,
-    price: priceMap[p._id.toString()] ?? p.originalPrice, category: p.category, icon: '🛍',
+    price: priceMap[p._id.toString()] ?? p.originalPrice, specificationLabel: specificationMap[p._id.toString()] || '', category: p.category, icon: '🛍',
     images: p.images || [], servicePrices: p.servicePrices || [],
   }));
   const totalPrice = productItems.reduce((sum, p) => sum + p.price, 0);

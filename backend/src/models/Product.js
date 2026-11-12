@@ -35,6 +35,7 @@ const productSchema = new mongoose.Schema({
       childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
       revenueSharePercent: { type: Number, min: 0, max: 100, required: true },
     }],
+    performanceConfig: { type: mongoose.Schema.Types.Mixed, default: null },
   }],
   memberPrices:  { type: mongoose.Schema.Types.Mixed, default: {} },
   category:      { type: String, required: true },

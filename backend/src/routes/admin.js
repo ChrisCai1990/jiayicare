@@ -2106,6 +2106,23 @@ async function validateProductSettlementConfig({ serviceItems, servicePrices, st
     if (new Set(labels).size !== labels.length) return '收费项目名称不能重复';
     const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
     for (const price of servicePrices) {
+      const performance = price.performanceConfig;
+      if (performance != null) {
+        const rule = performance.performanceRule || {};
+        const roles = performance.servicePerformerRoles || [];
+        const overrides = performance.staffPerformanceOverrides || [];
+        if (performance.enabled !== true || !['none', 'percentage', 'fixedAmount'].includes(rule.ruleType)
+          || !Array.isArray(roles) || !Array.isArray(overrides)
+          || ['referrerRate', 'fulfillerRate'].some(key => !Number.isFinite(Number(rule[key] ?? 0)) || Number(rule[key] ?? 0) < 0 || Number(rule[key] ?? 0) > 100)
+          || ['referrerAmount', 'fulfillerAmount'].some(key => !Number.isFinite(Number(rule[key] ?? 0)) || Number(rule[key] ?? 0) < 0)
+          || roles.some(row => !require('../utils/tenantScope').SERVICE_PERFORMER_ROLES.includes(row.role)
+            || !['none', 'percentage', 'fixedAmount'].includes(row.ruleType || 'percentage')
+            || !Number.isFinite(Number(row.rate || 0)) || Number(row.rate || 0) < 0 || Number(row.rate || 0) > 100
+            || !Number.isFinite(Number(row.amount || 0)) || Number(row.amount || 0) < 0))
+          return `收费项目「${price.label}」的绩效规则无效`;
+        const overrideError = await validateProductSettlementConfig({ staffPerformanceOverrides: overrides }, tenantId, productId);
+        if (overrideError) return `收费项目「${price.label}」：${overrideError}`;
+      }
       const rows = price.businessAllocations || [];
       if (!Array.isArray(rows)) return '收费项目业务归属格式错误';
       if (!rows.length) continue;

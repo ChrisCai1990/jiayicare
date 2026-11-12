@@ -101,6 +101,12 @@ async function createLocked({ record, user, serviceUser, items, options }) {
   for (const item of items) {
     const product = await Product.findOne({ _id: item.productId, status: 'on' });
     if (!product) throw checkoutError(`“${item.name}”已下架或调整，请联系健康规划师重新推荐`);
+    const named = (product.servicePrices || []).find(row => row.label === item.specificationLabel);
+    const matched = (product.servicePrices || []).filter(row => cents(row.price) === cents(item.price));
+    const selectedPrice = item.specificationLabel ? named : matched.length === 1 ? matched[0] : null;
+    if ((product.servicePrices || []).length && (!selectedPrice || cents(selectedPrice.price) !== cents(item.price)))
+      throw checkoutError(`“${item.name}”收费项目或价格已变化，请重新推送`);
+    item.specificationLabel = selectedPrice?.label || '';
     products.push(product);
     const assignee = await resolveOrderWorkflowAssignee(serviceUser._id, item.name);
     if (!assignee) throw checkoutError('当前没有可用的服务负责人，请联系平台处理后再购买');
@@ -116,7 +122,7 @@ async function createLocked({ record, user, serviceUser, items, options }) {
   if (finalPrice > 0) {
     if (options.paymentMethod !== 'wechat') throw checkoutError('合并付款须使用微信支付', 400);
     if (!appPayment && !user.wechatMpOpenid) throw checkoutError('请先使用微信登录绑定当前小程序账号后再支付', 400);
-    if (products.some(p => p.paymentChannel !== 'wechat_pay')) throw checkoutError('所选商品中有商品未配置普通微信支付，请联系客服');
+    if (products.some(p => !['wechat_pay', 'both'].includes(p.paymentChannel))) throw checkoutError('所选商品中有商品未配置普通微信支付，请联系客服');
   }
   const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
   const ids = items.map(() => new mongoose.Types.ObjectId());
@@ -141,6 +147,8 @@ async function createLocked({ record, user, serviceUser, items, options }) {
         _id: ids[index], checkoutGroupId: ids[0], user: serviceUser._id, payerUser: user._id,
         beneficiaryName: serviceUser.name || '', tenantId: serviceUser.tenantId || null,
         serviceId: String(product._id), serviceName: items[index].name,
+        specificationLabel: items[index].specificationLabel || '',
+        businessAllocationsSnapshot: require('./productBusinessAllocations').snapshot(product, items[index].specificationLabel),
         ...(index === 0 ? { checkoutActionLockToken: outTradeNo, checkoutActionLockUntil: new Date(Date.now() + 120000) } : {}),
         servicePrice: allocation.price, orderType: 'product', pushRecordId: record._id, referralSource: 'push', referrerId: record.staffId,
         servicePerformers: (record.servicePerformers || []).filter(sp => sp.role && sp.staffId && (!sp.productId || String(sp.productId) === String(product._id))).map(sp => ({ role: sp.role, staffId: sp.staffId })),
@@ -150,8 +158,9 @@ async function createLocked({ record, user, serviceUser, items, options }) {
         checkoutPointsAmount: points[index],
         paymentOutTradeNo: outTradeNo, paymentEnvironment: finalPrice > 0 ? 'production' : '', inventoryReserved: inventory.reserved,
         fulfillmentType: product.fulfillmentType || 'offline_service',
-        performanceRuleSnapshot: product.performanceRule?.toObject?.() || product.performanceRule || null,
-        servicePerformerRolesSnapshot: (product.servicePerformerRoles || []).map(item => item.toObject ? item.toObject() : item),
+        performanceRuleSnapshot: require('./productPerformanceSnapshot').snapshot(product, items[index].specificationLabel).performanceRule,
+        servicePerformerRolesSnapshot: require('./productPerformanceSnapshot').snapshot(product, items[index].specificationLabel).servicePerformerRoles,
+        staffPerformanceOverridesSnapshot: require('./productPerformanceSnapshot').snapshot(product, items[index].specificationLabel).staffPerformanceOverrides,
         serviceWorkflowSnapshot: product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null,
         specialtyTermsSnapshot: product.specialtyTerms?.toObject?.() || product.specialtyTerms || null,
         couponId: quote.coupon?._id || null, couponDiscount: allocation.coupon,

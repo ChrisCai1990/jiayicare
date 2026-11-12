@@ -118,13 +118,16 @@ test('online and offline partner payments, renewals, refunds and team incentives
       servicePrices: [{ label: '体检服务', price: 80, businessAllocations: [
         { key: 'exam', name: '体检服务 · 顾问管理', businessType: 'service', teamRole: 'familyDoctor', revenueSharePercent: 100 }] },
       { label: '陪同服务', price: 20, businessAllocations: [
-        { key: 'escort', name: '陪同服务 · 健管管理', businessType: 'service', teamRole: 'healthManager', revenueSharePercent: 100 }] }] };
+        { key: 'escort', name: '陪同服务 · 健管管理', businessType: 'service', teamRole: 'healthManager', revenueSharePercent: 100 }],
+        performanceConfig: { enabled: true, performanceRule: { ruleType: 'percentage', referrerRate: 4, fulfillerRate: 2 },
+          servicePerformerRoles: [{ role: 'healthManager', ruleType: 'percentage', rate: 2 }], staffPerformanceOverrides: [] } }] };
     assert.equal((await call(clerkId, 'POST', '/api/admin/products', { ...pricedProduct,
       servicePrices: [{ ...pricedProduct.servicePrices[0], businessAllocations: [
         { ...pricedProduct.servicePrices[0].businessAllocations[0], revenueSharePercent: 80 }] }] })).status, 400);
     const configuredPrices = await call(clerkId, 'POST', '/api/admin/products', pricedProduct);
     assert.equal(configuredPrices.status, 200, JSON.stringify(configuredPrices.body));
     assert.equal(configuredPrices.body.data.servicePrices[1].businessAllocations[0].name, '陪同服务 · 健管管理');
+    assert.equal(configuredPrices.body.data.servicePrices[1].performanceConfig.performanceRule.referrerRate, 4);
     const compositePayload = { name: '年度组合测试', category: 'health', originalPrice: 100, status: 'off',
       serviceItems: compositeItems, staffPerformanceOverrides: [{ staffId: String(plannerId), ruleType: 'percentage',
         referrerRate: 4, fulfillerRate: 3 }] };
@@ -307,7 +310,9 @@ test('online and offline partner payments, renewals, refunds and team incentives
       { label: '体检服务', price: 80, businessAllocations: [
         { key: 'exam', name: '顾问管理服务', businessType: 'service', teamRole: 'familyDoctor', revenueSharePercent: 100 }] },
       { label: '陪同服务', price: 20, businessAllocations: [
-        { key: 'escort', name: '健管专员管理服务', businessType: 'service', teamRole: 'healthManager', revenueSharePercent: 100 }] },
+        { key: 'escort', name: '健管专员管理服务', businessType: 'service', teamRole: 'healthManager', revenueSharePercent: 100 }],
+        performanceConfig: { enabled: true, performanceRule: { ruleType: 'percentage', referrerRate: 6, fulfillerRate: 3 },
+          servicePerformerRoles: [{ role: 'healthManager', ruleType: 'percentage', rate: 3 }], staffPerformanceOverrides: [] } },
     ] } });
     const specOrder = await call(clerkId, 'POST', `${prefix}/offline-orders`, { productId: String(productId),
       patientId: String(patientId), specificationLabel: '陪同服务', contractReference: 'OFFLINE-SPEC-001',
@@ -315,6 +320,8 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(specOrder.status, 201, JSON.stringify(specOrder.body));
     assert.equal(specOrder.body.data.servicePrice, 20);
     assert.deepEqual(specOrder.body.data.businessAllocationsSnapshot.map(item => item.key), ['escort']);
+    assert.equal(specOrder.body.data.performanceRuleSnapshot.referrerRate, 6);
+    assert.deepEqual(specOrder.body.data.servicePerformerRolesSnapshot.map(item => item.role), ['healthManager']);
     assert.equal((await call(clerkId, 'PATCH', `/api/admin/orders/${orderId}/pay`,
       { paymentMethod: 'onsite', paidAmount: 100 })).status, 200);
     assert.equal(await Commission.countDocuments({ orderId }), 0);
