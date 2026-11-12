@@ -217,7 +217,7 @@ function ChildProductPicker({ products, parentId, value, onChange }) {
   </div>
 }
 
-function ServiceItemsForm({ items, staffList, products, parentId, originalPrice, onChange }) {
+function ServiceItemsForm({ items, products, parentId, originalPrice, onChange }) {
   const list = items || []
   const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '', units: 1, businessType: 'service', childProductId: '', teamRole: 'healthManager', revenueSharePercent: 0, performers: [] }])
   const update = (i, patch) => onChange(list.map((item, idx) => idx === i ? { ...item, ...patch } : item))
@@ -254,10 +254,24 @@ function ServiceItemsForm({ items, staffList, products, parentId, originalPrice,
           update(i,{childProductId,name:item.name || child?.name || ''})
         }} />
       </details>
-      <ServicePerformerRolesForm roles={item.performers || []} staffList={staffList} onChange={v=>update(i,{performers:v})}/>
     </div>)}
     {!!list.length && <div style={{fontSize:12,color:Math.abs(totalShare-100)<0.001?'#1E6B50':'#c0392b'}}>团队归属金额合计：¥{(price * totalShare / 100).toFixed(2)} / ¥{price.toFixed(2)}；比例合计：{totalShare.toFixed(2)}%{totalShare > 0 && Math.abs(totalShare-100)>=0.001?'（须覆盖整笔配置基准金额）':''}</div>}
   </div>
+}
+
+function ServiceItemPerformanceSettings({ items, staffList, onChange }) {
+  const list = items || []
+  if (!list.length) return null
+  const configured = list.filter(item => item.performers?.length).length
+  return <details style={{ marginTop: 20, borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
+    <summary style={{ cursor: 'pointer', fontWeight: 600 }}>子项目服务绩效（{configured} 项已配置）</summary>
+    <p style={{ fontSize: 12, color: '#667a6d' }}>此处设置实际服务人员的绩效，与“业务归属”中的团队营收分配分别核算。需有服务核销和实际执行人。</p>
+    {list.map((item, index) => <div key={item.key || index} style={{ border: '1px solid #e0d9ce', borderRadius: 8, padding: 12, marginTop: 10 }}>
+      <strong>{item.name || `第 ${index + 1} 个子项目`}</strong>
+      <ServicePerformerRolesForm roles={item.performers || []} staffList={staffList}
+        onChange={performers => onChange(list.map((row, i) => i === index ? { ...row, performers } : row))} />
+    </div>)}
+  </details>
 }
 
 function StaffPerformanceOverridesForm({ rows, staffList, onChange }) {
@@ -564,7 +578,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
     if (allocatedItems.length && (allocatedItems.some(item => !item.name?.trim() || Number(item.revenueSharePercent) <= 0
       || (item.businessType === 'product' && !item.childProductId))
       || Math.abs(allocatedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001)) {
-      toast('每项服务请填写名称和归属金额，合计须覆盖产品原价'); setTab('performance'); return
+      toast('每项服务请填写名称和归属金额，合计须覆盖产品原价'); setTab('businessAllocation'); return
     }
     const fundValue = Number(form.healthFundDeduction?.value)
     if (form.healthFundDeduction?.mode === 'percentage' && (!Number.isFinite(fundValue) || fundValue < 1 || fundValue > 100)) { toast('商品抵扣比例须为1%-100%'); return }
@@ -659,6 +673,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
     { key: 'price', label: '收费项目' },
     { key: 'fund', label: '基金抵扣' },
     { key: 'memberBundle', label: '会员专享包' },
+    { key: 'businessAllocation', label: '业务归属' },
     { key: 'performance', label: '绩效分配' },
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
@@ -833,10 +848,13 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                 staffList={staffList}
                 onChange={v => set('servicePerformerRoles', v)}
               />
-              <ServiceItemsForm items={form.serviceItems} staffList={staffList} products={productsForBundle} parentId={product?._id} originalPrice={form.originalPrice} onChange={v => set('serviceItems', v)} />
+              <ServiceItemPerformanceSettings items={form.serviceItems} staffList={staffList} onChange={v => set('serviceItems', v)} />
               <StaffPerformanceOverridesForm rows={form.staffPerformanceOverrides} staffList={staffList} onChange={v => set('staffPerformanceOverrides', v)} />
             </div>
           )}
+
+          {tab === 'businessAllocation' && <ServiceItemsForm items={form.serviceItems} products={productsForBundle}
+            parentId={product?._id} originalPrice={form.originalPrice} onChange={v => set('serviceItems', v)} />}
 
           {tab === 'images' && (
             <div className="form-group">
