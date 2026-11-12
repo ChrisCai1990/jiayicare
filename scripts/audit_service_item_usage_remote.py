@@ -31,7 +31,7 @@ const {MongoClient}=require('mongodb');
       db.collection('orders').countDocuments({serviceId:{$in:chargeIds}}),
     ]) : [0,0];
     const products=await db.collection('products').find({},
-      {projection:{_id:1,tenantId:1,name:1,originalPrice:1,paymentChannel:1,status:1}}).toArray();
+      {projection:{_id:1,tenantId:1,name:1,originalPrice:1,paymentChannel:1,status:1,servicePrices:1}}).toArray();
     const names=new Map();
     for(const p of products){const key=`${p.tenantId}:${p.name}`;names.set(key,[...(names.get(key)||[]),p]);}
     const comparisons=items.map(s=>({id:String(s._id),name:s.name,price:s.retailPrice,
@@ -46,6 +46,7 @@ const {MongoClient}=require('mongodb');
       otherChargeTemplateReferences:templateRefs[1],otherChargeOrderStringReferences:chargeOrderRefs[0],
       otherChargeOrderObjectIdReferences:chargeOrderRefs[1],chargeComparisons,
       productCount:products.length,productChannels:products.reduce((a,p)=>(a[p.paymentChannel||'wechat_pay']=(a[p.paymentChannel||'wechat_pay']||0)+1,a),{}),
+      duplicatePriceLabels:products.filter(p=>{const labels=(p.servicePrices||[]).map(x=>String(x.label||'').trim());return new Set(labels).size!==labels.length;}).map(p=>({id:String(p._id),name:p.name})),
       comparisons}),'utf8').toString('base64'));
   } finally {await client.close();}
 })().catch(e=>{console.error(e.message);process.exitCode=1});
