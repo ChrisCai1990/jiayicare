@@ -2099,7 +2099,15 @@ router.post('/products/ai-draft', adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/products
-async function validateProductSettlementConfig({ serviceItems, servicePrices, staffPerformanceOverrides }, tenantId, productId = null) {
+async function validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, staffPerformanceOverrides }, tenantId, productId = null) {
+  if (businessAllocations !== undefined) {
+    if (!Array.isArray(businessAllocations)) return '整单业务归属格式错误';
+    if (businessAllocations.length && (servicePrices || []).length) return '有收费项目时请逐项设置业务归属';
+    if (businessAllocations.length) {
+      const error = await validateProductSettlementConfig({ servicePrices: [{ label: '整单', businessAllocations }] }, tenantId, productId);
+      if (error) return error.replace('收费项目「整单」', '整单');
+    }
+  }
   if (servicePrices !== undefined) {
     if (!Array.isArray(servicePrices)) return '收费项目格式错误';
     const labels = servicePrices.map(row => String(row.label || '').trim());
@@ -2177,8 +2185,8 @@ async function validateProductSettlementConfig({ serviceItems, servicePrices, st
 }
 
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
-  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, staffPerformanceOverrides }, req.admin.tenantId);
+  const { name, subtitle, images, originalPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
+  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, staffPerformanceOverrides }, req.admin.tenantId);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
@@ -2191,7 +2199,7 @@ router.post('/products', adminAuth, async (req, res) => {
   }
   const product = await Product.create({
     name, subtitle: subtitle || '', images: images || [],
-    originalPrice: originalPrice === '' ? null : originalPrice, servicePrices: servicePrices || [], memberPrices: memberPrices || {},
+    originalPrice: originalPrice === '' ? null : originalPrice, servicePrices: servicePrices || [], businessAllocations: businessAllocations || [], memberPrices: memberPrices || {},
     category, sortOrder: sortOrder ?? 999, features: features || [],
     description: description || '', stock: stock ?? 0, stockLimited: stockLimited === true || Number(stock) > 0, status: status || 'off',
     performanceRule: performanceRule || undefined,
@@ -2210,7 +2218,7 @@ router.post('/products', adminAuth, async (req, res) => {
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
@@ -2219,7 +2227,7 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   }
   const existingProduct = await Product.findById(req.params.id);
   if (!existingProduct) return res.status(404).json({ success: false, message: '产品不存在' });
-  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
+  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const sharedInventory = existingProduct.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: existingProduct._id });
   if (sharedInventory && stock !== undefined && Number(stock) !== Number(existingProduct.stock)) return res.status(409).json({ success: false, message: '已启用物资台账，请通过入库或盘点调整库存' });
@@ -2229,7 +2237,7 @@ router.put('/products/:id', adminAuth, async (req, res) => {
     skus: skus ?? existingProduct.skus,
     specialtyTerms: specialtyTerms ?? existingProduct.specialtyTerms, status: status ?? existingProduct.status });
   if (priceError) return res.status(400).json({ success: false, message: priceError });
-  const updateData = { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], ...(staffPerformanceOverrides !== undefined ? { staffPerformanceOverrides } : {}), fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, ...(healthFundDeduction !== undefined ? { healthFundDeduction } : {}), memberBundle: memberBundle || { enabled:false }, skus: skus || [] };
+  const updateData = { name, subtitle, images, originalPrice, servicePrices, ...(businessAllocations !== undefined ? { businessAllocations } : {}), memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], ...(staffPerformanceOverrides !== undefined ? { staffPerformanceOverrides } : {}), fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, ...(healthFundDeduction !== undefined ? { healthFundDeduction } : {}), memberBundle: memberBundle || { enabled:false }, skus: skus || [] };
   if (originalPrice === '') updateData.originalPrice = null;
   if (specialtyTerms !== undefined) updateData.specialtyTerms = specialtyTerms;
   if (stock !== undefined) updateData.stockLimited = stockLimited === true || Number(stock) > 0;

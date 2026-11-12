@@ -18,7 +18,7 @@ function safeImgSrc(url) {
 const EMPTY_FORM = {
   name: '', subtitle: '', category: '', originalPrice: '', sortOrder: 999,
   features: '', description: '', stock: 0, stockLimited: false, status: 'off',
-  images: [], servicePrices: [],
+  images: [], servicePrices: [], businessAllocations: [],
   fulfillmentType: 'offline_service', paymentChannel: 'wechat_pay', bookingRequired: true,
   deliveryRequired: false, serviceLocation: '', validityDays: 365,
   refundPolicy: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。', skus: [],
@@ -278,10 +278,14 @@ function SpecificationAllocationsForm({ prices, products, onChange }) {
       return <div key={`${price.label}:${index}`} style={{ border: '1px solid #e0d9ce', borderRadius: 8, padding: 12, marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <strong>{price.label} · ¥{amount.toFixed(2)}</strong>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => updatePrice(index, [...rows, {
+          <div style={{ display: 'flex', gap: 8 }}><button type="button" className="btn btn-sm btn-ghost" onClick={() => updatePrice(index, [...rows, {
             key: `allocation_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '健管专员管理服务',
             businessType: 'service', teamRole: 'healthManager', childProductId: '', revenueSharePercent: 0,
-          }])}>+ 添加归属</button>
+          }])}>+ 添加团队归属</button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => updatePrice(index, [...rows, {
+            key: `enterprise_${Date.now()}`, name: '企业资源', businessType: 'enterprise',
+            teamRole: 'enterpriseResource', childProductId: '', revenueSharePercent: 0,
+          }])}>+ 添加企业资源</button></div>
         </div>
         {rows.map((row, rowIndex) => <div key={row.key || rowIndex} style={{ borderTop: '1px solid #edf0ed', paddingTop: 10, marginTop: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr 1fr 1fr auto', gap: 8, alignItems: 'center' }}>
@@ -572,6 +576,9 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           businessType: row.businessType || 'service', teamRole: row.teamRole, childProductId: row.childProductId || '',
           revenueSharePercent: row.revenueSharePercent })),
         performanceConfig: sp.performanceConfig?.enabled === true ? sp.performanceConfig : null })),
+      businessAllocations: (product.businessAllocations || []).map(row => ({ key: row.key, name: row.name,
+        businessType: row.businessType || 'service', teamRole: row.teamRole, childProductId: row.childProductId || '',
+        revenueSharePercent: row.revenueSharePercent })),
       fulfillmentType: product.fulfillmentType || 'offline_service',
       paymentChannel: product.paymentChannel || 'wechat_pay',
       bookingRequired: product.bookingRequired !== false,
@@ -668,6 +675,12 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         || Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001)
     })
     if (specAllocationsInvalid) { toast('每个已配置收费项目的归属金额须合计为该项目售价'); setTab('businessAllocation'); return }
+    const wholeRows = form.businessAllocations || []
+    if (wholeRows.length && ((form.servicePrices || []).some(price => price.label?.trim())
+      || wholeRows.some(row => Number(row.revenueSharePercent) <= 0 || (row.businessType === 'product' && !row.childProductId))
+      || Math.abs(wholeRows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001)) {
+      toast('整单业务归属须合计100%；有收费项目时请逐项设置'); setTab('businessAllocation'); return
+    }
     if (allocatedItems.length && (allocatedItems.some(item => !allocationItemName(item, productsForBundle).trim() || Number(item.revenueSharePercent) <= 0
       || (item.businessType === 'product' && !item.childProductId))
       || Math.abs(allocatedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001)) {
@@ -691,6 +704,11 @@ function ProductModal({ product, categories, onClose, onSaved }) {
             businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
             childProductId: row.childProductId || null, revenueSharePercent: Number(row.revenueSharePercent) || 0,
           })) }))
+      const cleanedWholeRows = wholeRows.map(row => ({
+        key: row.key, name: `整单 · ${allocationItemName(row, productsForBundle).trim().replace('整单 · ', '')}`,
+        businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
+        childProductId: row.childProductId || null, revenueSharePercent: Number(row.revenueSharePercent) || 0,
+      }))
 
       const payload = {
         name: form.name,
@@ -704,6 +722,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         status: form.status,
         images: form.images,
         servicePrices: cleanedPrices,
+        businessAllocations: cleanedWholeRows,
         fulfillmentType: form.fulfillmentType,
         paymentChannel: form.paymentChannel,
         bookingRequired: form.bookingRequired,
@@ -961,9 +980,15 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           {tab === 'businessAllocation' && (form.servicePrices || []).some(price => price.label?.trim()) &&
             <SpecificationAllocationsForm prices={form.servicePrices} products={productsForBundle}
               onChange={v => set('servicePrices', v)} />}
+          {tab === 'businessAllocation' && !(form.servicePrices || []).some(price => price.label?.trim()) && <>
+            <h3 style={{ marginBottom: 4 }}>整单业务归属</h3>
+            <SpecificationAllocationsForm prices={[{ label: '整单', price: form.originalPrice, businessAllocations: form.businessAllocations || [] }]}
+              products={productsForBundle} onChange={v => set('businessAllocations', v[0].businessAllocations)} />
+          </>}
           {tab === 'businessAllocation' && (!(form.servicePrices || []).some(price => price.label?.trim()) || !!form.serviceItems?.length) &&
-            <details open={!(form.servicePrices || []).some(price => price.label?.trim())}>
-              {(form.servicePrices || []).some(price => price.label?.trim()) && <summary style={{ cursor: 'pointer' }}>整单服务核销子项（已有配置）</summary>}
+            <details>
+              <summary style={{ cursor: 'pointer' }}>服务交付与核销子项（已有配置时可编辑）</summary>
+              <p style={{ fontSize: 12, color: '#667a6d' }}>此处记录实际交付的子项目和核销次数；上方已设置业务归属时，营收按上方配置核算。</p>
               <ServiceItemsForm items={form.serviceItems} products={productsForBundle}
                 parentId={product?._id} originalPrice={form.originalPrice} onChange={v => set('serviceItems', v)} />
             </details>}

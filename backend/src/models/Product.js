@@ -37,6 +37,14 @@ const productSchema = new mongoose.Schema({
     }],
     performanceConfig: { type: mongoose.Schema.Types.Mixed, default: null },
   }],
+  // No charge-item variants: whole-order revenue attribution, separate from redeemable serviceItems.
+  businessAllocations: [{
+    key: { type: String, required: true }, name: { type: String, required: true },
+    businessType: { type: String, enum: ['service', 'product', 'enterprise'], default: 'service' },
+    teamRole: { type: String, enum: [...require('../utils/tenantScope').SERVICE_PERFORMER_ROLES, 'enterpriseResource'], required: true },
+    childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+    revenueSharePercent: { type: Number, min: 0, max: 100, required: true },
+  }],
   memberPrices:  { type: mongoose.Schema.Types.Mixed, default: {} },
   category:      { type: String, required: true },
   sortOrder:     { type: Number, default: 999 },

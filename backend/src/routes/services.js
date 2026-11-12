@@ -694,11 +694,14 @@ router.post('/order', auth, async (req, res) => {
       teamRole: item.teamRole || '', revenueSharePercent: item.revenueSharePercent || 0,
       performers: (item.performers || []).map(p => p.toObject ? p.toObject() : p),
     })),
-    businessAllocationsSnapshot: (servicePackage?.configuration?.businessAllocations || []).map(item => ({
-      key: item.key, name: item.name, businessType: item.businessType,
-      teamRole: item.teamRole || '', childProductId: item.childProductId || null,
-      revenueSharePercent: item.revenueSharePercent,
-    })).concat(product ? require('../utils/productBusinessAllocations').snapshot(product, service.specificationLabel) : []),
+    businessAllocationsSnapshot: (() => {
+      const productRows = product ? require('../utils/productBusinessAllocations').snapshot(product, service.specificationLabel) : [];
+      return productRows.length ? productRows : (servicePackage?.configuration?.businessAllocations || []).map(item => ({
+        key: item.key, name: item.name, businessType: item.businessType,
+        teamRole: item.teamRole || '', childProductId: item.childProductId || null,
+        revenueSharePercent: item.revenueSharePercent,
+      }));
+    })(),
     performanceRuleSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, service.specificationLabel).performanceRule,
     staffPerformanceOverridesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, service.specificationLabel).staffPerformanceOverrides,
     servicePerformerRolesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, service.specificationLabel).servicePerformerRoles,

@@ -131,6 +131,14 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(configuredPrices.body.data.servicePrices[1].businessAllocations[0].name, '陪同服务 · 健管管理');
     assert.equal(configuredPrices.body.data.servicePrices[0].businessAllocations[1].businessType, 'enterprise');
     assert.equal(configuredPrices.body.data.servicePrices[1].performanceConfig.performanceRule.referrerRate, 4);
+    const wholeProduct = await call(clerkId, 'POST', '/api/admin/products', {
+      name: '无收费规格的组合服务', category: 'health', originalPrice: 100, status: 'off',
+      businessAllocations: [
+        { key: 'team', name: '整单 · 健康顾问管理服务', businessType: 'service', teamRole: 'familyDoctor', revenueSharePercent: 60 },
+        { key: 'resource', name: '整单 · 企业资源', businessType: 'enterprise', teamRole: 'enterpriseResource', revenueSharePercent: 40 },
+      ] });
+    assert.equal(wholeProduct.status, 200, JSON.stringify(wholeProduct.body));
+    assert.deepEqual(require('../src/utils/productBusinessAllocations').snapshot(wholeProduct.body.data, '').map(row => row.key), ['team', 'resource']);
     const compositePayload = { name: '年度组合测试', category: 'health', originalPrice: 100, status: 'off',
       serviceItems: compositeItems, staffPerformanceOverrides: [{ staffId: String(plannerId), ruleType: 'percentage',
         referrerRate: 4, fulfillerRate: 3 }] };
