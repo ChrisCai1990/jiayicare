@@ -229,10 +229,10 @@ function ServiceItemsForm({ items, products, parentId, originalPrice, onChange }
   const price = Number(originalPrice) || 0
   return <div style={{ marginTop: 18, borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-      <label className="form-label">服务团队业务归属（按服务项目逐次核销）</label>
+      <label className="form-label">服务交付子项（按服务项目逐次核销）</label>
       <button type="button" className="btn btn-sm btn-ghost" onClick={add}>+ 添加子项目</button>
     </div>
-    <div style={{fontSize:12,color:'#888',marginBottom:10}}>可直接填写各团队归属金额，无须关联子产品。金额以本产品原价为配置基准；实际成交价或退款变化时按同一比例分摊。确有独立交付的产品时才关联产品库。业务归属不等于个人服务费。</div>
+    <div style={{fontSize:12,color:'#888',marginBottom:10}}>这里配置实际交付和核销的子项目。业务金额请在“业务归属”页按服务、产品、资源分配；旧产品尚未配置新归属时，历史子项目比例继续生效。</div>
     {list.map((item, i) => <div key={item.key || i} style={{border:'1px solid #e0d9ce',borderRadius:8,padding:12,marginBottom:12}}>
       <div style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,alignItems:'center'}}>
         <div style={{fontWeight:600,color:'#365a4a'}}>{allocationItemName(item, products) || '请选择产品库项目'}</div>
@@ -278,19 +278,15 @@ function SpecificationAllocationsForm({ prices, products, onChange }) {
       return <div key={`${price.label}:${index}`} style={{ border: '1px solid #e0d9ce', borderRadius: 8, padding: 12, marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <strong>{price.label} · ¥{amount.toFixed(2)}</strong>
-          <div style={{ display: 'flex', gap: 8 }}><button type="button" className="btn btn-sm btn-ghost" onClick={() => updatePrice(index, [...rows, {
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => updatePrice(index, [...rows, {
             key: `allocation_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '健管专员管理服务',
             businessType: 'service', teamRole: 'healthManager', childProductId: '', revenueSharePercent: 0,
-          }])}>+ 添加团队归属</button>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => updatePrice(index, [...rows, {
-            key: `enterprise_${Date.now()}`, name: '企业资源', businessType: 'enterprise',
-            teamRole: 'enterpriseResource', childProductId: '', revenueSharePercent: 0,
-          }])}>+ 添加企业资源</button></div>
+          }])}>+ 添加归属</button>
         </div>
         {rows.map((row, rowIndex) => <div key={row.key || rowIndex} style={{ borderTop: '1px solid #edf0ed', paddingTop: 10, marginTop: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr 1fr 1fr auto', gap: 8, alignItems: 'center' }}>
             <select className="form-input" value={row.businessType || 'service'} onChange={event => updateRow(rowIndex, { businessType: event.target.value, teamRole: event.target.value === 'enterprise' ? 'enterpriseResource' : 'healthManager', childProductId: '', name: '' })}>
-              <option value="service">管理服务</option><option value="product">产品／检测</option><option value="enterprise">企业资源</option>
+              <option value="service">服务</option><option value="product">产品</option><option value="enterprise">资源</option>
             </select>
             {row.businessType === 'enterprise' ? <div className="form-input" style={{ background: '#f6f8f7' }}>企业资源（不关联个人）</div>
               : <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => updateRow(rowIndex, { teamRole: event.target.value })}>
@@ -932,6 +928,11 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                   onChange={v => set('servicePrices', v)}
                 />
               </div>
+              <details style={{ marginTop: 20 }}>
+                <summary style={{ cursor: 'pointer' }}>服务交付与核销子项（{form.serviceItems?.length || 0} 项）</summary>
+                <ServiceItemsForm items={form.serviceItems} products={productsForBundle}
+                  parentId={product?._id} originalPrice={form.originalPrice} onChange={v => set('serviceItems', v)} />
+              </details>
             </div>
           )}
 
@@ -985,13 +986,6 @@ function ProductModal({ product, categories, onClose, onSaved }) {
             <SpecificationAllocationsForm prices={[{ label: '整单', price: form.originalPrice, businessAllocations: form.businessAllocations || [] }]}
               products={productsForBundle} onChange={v => set('businessAllocations', v[0].businessAllocations)} />
           </>}
-          {tab === 'businessAllocation' && (!(form.servicePrices || []).some(price => price.label?.trim()) || !!form.serviceItems?.length) &&
-            <details>
-              <summary style={{ cursor: 'pointer' }}>服务交付与核销子项（已有配置时可编辑）</summary>
-              <p style={{ fontSize: 12, color: '#667a6d' }}>此处记录实际交付的子项目和核销次数；上方已设置业务归属时，营收按上方配置核算。</p>
-              <ServiceItemsForm items={form.serviceItems} products={productsForBundle}
-                parentId={product?._id} originalPrice={form.originalPrice} onChange={v => set('serviceItems', v)} />
-            </details>}
 
           {tab === 'images' && (
             <div className="form-group">
