@@ -114,6 +114,17 @@ test('online and offline partner payments, renewals, refunds and team incentives
       { key: 'doctor', name: '顾问服务', units: 1, childProductId: String(childDoctorId), teamRole: 'familyDoctor', revenueSharePercent: 60 },
       { key: 'nutrition', name: '营养服务', units: 1, childProductId: String(childNutritionId), teamRole: 'nutritionist', revenueSharePercent: 40 },
     ];
+    const pricedProduct = { name: '多收费项目测试', category: 'health', originalPrice: 100, status: 'off',
+      servicePrices: [{ label: '体检服务', price: 80, businessAllocations: [
+        { key: 'exam', name: '体检服务 · 顾问管理', businessType: 'service', teamRole: 'familyDoctor', revenueSharePercent: 100 }] },
+      { label: '陪同服务', price: 20, businessAllocations: [
+        { key: 'escort', name: '陪同服务 · 健管管理', businessType: 'service', teamRole: 'healthManager', revenueSharePercent: 100 }] }] };
+    assert.equal((await call(clerkId, 'POST', '/api/admin/products', { ...pricedProduct,
+      servicePrices: [{ ...pricedProduct.servicePrices[0], businessAllocations: [
+        { ...pricedProduct.servicePrices[0].businessAllocations[0], revenueSharePercent: 80 }] }] })).status, 400);
+    const configuredPrices = await call(clerkId, 'POST', '/api/admin/products', pricedProduct);
+    assert.equal(configuredPrices.status, 200, JSON.stringify(configuredPrices.body));
+    assert.equal(configuredPrices.body.data.servicePrices[1].businessAllocations[0].name, '陪同服务 · 健管管理');
     const compositePayload = { name: '年度组合测试', category: 'health', originalPrice: 100, status: 'off',
       serviceItems: compositeItems, staffPerformanceOverrides: [{ staffId: String(plannerId), ruleType: 'percentage',
         referrerRate: 4, fulfillerRate: 3 }] };
