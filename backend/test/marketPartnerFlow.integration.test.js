@@ -116,17 +116,20 @@ test('online and offline partner payments, renewals, refunds and team incentives
     ];
     const pricedProduct = { name: '多收费项目测试', category: 'health', originalPrice: 100, status: 'off',
       servicePrices: [{ label: '体检服务', price: 80, businessAllocations: [
-        { key: 'exam', name: '体检服务 · 顾问管理', businessType: 'service', teamRole: 'familyDoctor', revenueSharePercent: 100 }] },
+        { key: 'exam', name: '体检服务 · 顾问管理', businessType: 'service', teamRole: 'familyDoctor', revenueSharePercent: 75 },
+        { key: 'enterprise', name: '体检服务 · 企业资源', businessType: 'enterprise', teamRole: 'enterpriseResource', revenueSharePercent: 25 }] },
       { label: '陪同服务', price: 20, businessAllocations: [
         { key: 'escort', name: '陪同服务 · 健管管理', businessType: 'service', teamRole: 'healthManager', revenueSharePercent: 100 }],
         performanceConfig: { enabled: true, performanceRule: { ruleType: 'percentage', referrerRate: 4, fulfillerRate: 2 },
           servicePerformerRoles: [{ role: 'healthManager', ruleType: 'percentage', rate: 2 }], staffPerformanceOverrides: [] } }] };
     assert.equal((await call(clerkId, 'POST', '/api/admin/products', { ...pricedProduct,
       servicePrices: [{ ...pricedProduct.servicePrices[0], businessAllocations: [
-        { ...pricedProduct.servicePrices[0].businessAllocations[0], revenueSharePercent: 80 }] }] })).status, 400);
+        { ...pricedProduct.servicePrices[0].businessAllocations[0], revenueSharePercent: 80 },
+        pricedProduct.servicePrices[0].businessAllocations[1]] }] })).status, 400);
     const configuredPrices = await call(clerkId, 'POST', '/api/admin/products', pricedProduct);
     assert.equal(configuredPrices.status, 200, JSON.stringify(configuredPrices.body));
     assert.equal(configuredPrices.body.data.servicePrices[1].businessAllocations[0].name, '陪同服务 · 健管管理');
+    assert.equal(configuredPrices.body.data.servicePrices[0].businessAllocations[1].businessType, 'enterprise');
     assert.equal(configuredPrices.body.data.servicePrices[1].performanceConfig.performanceRule.referrerRate, 4);
     const compositePayload = { name: '年度组合测试', category: 'health', originalPrice: 100, status: 'off',
       serviceItems: compositeItems, staffPerformanceOverrides: [{ staffId: String(plannerId), ruleType: 'percentage',

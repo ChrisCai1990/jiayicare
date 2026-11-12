@@ -2128,7 +2128,8 @@ async function validateProductSettlementConfig({ serviceItems, servicePrices, st
       if (!rows.length) continue;
       if (!String(price.label || '').trim() || new Set(rows.map(row => row.key)).size !== rows.length
         || rows.some(row => !String(row.key || '').trim() || !String(row.name || '').trim()
-          || !['service', 'product'].includes(row.businessType || 'service') || !roles.includes(row.teamRole)
+          || !['service', 'product', 'enterprise'].includes(row.businessType || 'service')
+          || (row.businessType === 'enterprise' ? row.teamRole !== 'enterpriseResource' : !roles.includes(row.teamRole))
           || !Number.isFinite(Number(row.revenueSharePercent)) || Number(row.revenueSharePercent) <= 0
           || (row.businessType === 'product' && !mongoose.isValidObjectId(row.childProductId)))
         || Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent), 0) - 100) > 0.001)

@@ -30,8 +30,8 @@ const productSchema = new mongoose.Schema({
     label: { type: String }, price: { type: Number },
     businessAllocations: [{
       key: { type: String, required: true }, name: { type: String, required: true },
-      businessType: { type: String, enum: ['service', 'product'], default: 'service' },
-      teamRole: { type: String, enum: require('../utils/tenantScope').SERVICE_PERFORMER_ROLES, required: true },
+      businessType: { type: String, enum: ['service', 'product', 'enterprise'], default: 'service' },
+      teamRole: { type: String, enum: [...require('../utils/tenantScope').SERVICE_PERFORMER_ROLES, 'enterpriseResource'], required: true },
       childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
       revenueSharePercent: { type: Number, min: 0, max: 100, required: true },
     }],

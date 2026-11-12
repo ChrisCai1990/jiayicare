@@ -41,7 +41,7 @@ const orderSchema = new mongoose.Schema({
   businessAllocationsSnapshot: [{
     key: { type: String, required: true },
     name: { type: String, required: true },
-    businessType: { type: String, enum: ['service', 'product'], required: true },
+    businessType: { type: String, enum: ['service', 'product', 'enterprise'], required: true },
     teamRole: { type: String, default: '' },
     childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
     revenueSharePercent: { type: Number, min: 0, max: 100, required: true },

@@ -4,7 +4,7 @@ function allocations(order, netCents) {
     ? order.businessAllocationsSnapshot : order.serviceItemsSnapshot || [];
   if (!Number.isSafeInteger(netCents) || netCents < 0 || !items.length
     || !items.every(item => item.key && item.name
-      && ['service', 'product'].includes(item.businessType || 'service')
+      && ['service', 'product', 'enterprise'].includes(item.businessType || 'service')
       && Number.isFinite(Number(item.revenueSharePercent)) && Number(item.revenueSharePercent) > 0
       && ((item.businessType || 'service') !== 'product' || item.childProductId))
     || Math.abs(items.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) > 0.001)

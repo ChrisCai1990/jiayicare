@@ -143,6 +143,7 @@ const PERFORMER_ROLE_OPTIONS = [
 const ROLE_LABEL_MAP = Object.fromEntries(PERFORMER_ROLE_OPTIONS.map(o => [o.value, o.label]))
 const allocationItemName = (item, products) => item.businessType === 'product'
   ? (products.find(product => String(product._id) === String(item.childProductId))?.name || item.name || '')
+  : item.businessType === 'enterprise' ? '企业资源'
   : `${ROLE_LABEL_MAP[item.teamRole] || '健管专员'}管理服务`
 
 function ServicePerformerRolesForm({ roles, staffList, onChange }) {
@@ -267,7 +268,7 @@ function ServiceItemsForm({ items, products, parentId, originalPrice, onChange }
 function SpecificationAllocationsForm({ prices, products, onChange }) {
   const updatePrice = (index, rows) => onChange(prices.map((price, i) => i === index ? { ...price, businessAllocations: rows } : price))
   return <div style={{ marginTop: 16 }}>
-    <div style={{ fontSize: 12, color: '#667a6d', marginBottom: 12 }}>每个收费项目是独立成交规格，按该项目自己的售价分配业务营收。订单只使用实际购买项目的配置，不把不同项目价格相加。</div>
+    <div style={{ fontSize: 12, color: '#667a6d', marginBottom: 12 }}>每个收费项目按自己的售价分配业务营收，可分别归属服务团队、产品／检测及企业资源。企业资源只计业务归属，不自动生成个人佣金。</div>
     {prices.filter(price => price.label?.trim()).map(price => {
       const index = prices.indexOf(price)
       const rows = price.businessAllocations || []
@@ -284,12 +285,13 @@ function SpecificationAllocationsForm({ prices, products, onChange }) {
         </div>
         {rows.map((row, rowIndex) => <div key={row.key || rowIndex} style={{ borderTop: '1px solid #edf0ed', paddingTop: 10, marginTop: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr 1fr 1fr auto', gap: 8, alignItems: 'center' }}>
-            <select className="form-input" value={row.businessType || 'service'} onChange={event => updateRow(rowIndex, { businessType: event.target.value, childProductId: '', name: '' })}>
-              <option value="service">管理服务</option><option value="product">产品／检测</option>
+            <select className="form-input" value={row.businessType || 'service'} onChange={event => updateRow(rowIndex, { businessType: event.target.value, teamRole: event.target.value === 'enterprise' ? 'enterpriseResource' : 'healthManager', childProductId: '', name: '' })}>
+              <option value="service">管理服务</option><option value="product">产品／检测</option><option value="enterprise">企业资源</option>
             </select>
-            <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => updateRow(rowIndex, { teamRole: event.target.value })}>
-              {PERFORMER_ROLE_OPTIONS.map(role => <option key={role.value} value={role.value}>{role.label}团队</option>)}
-            </select>
+            {row.businessType === 'enterprise' ? <div className="form-input" style={{ background: '#f6f8f7' }}>企业资源（不关联个人）</div>
+              : <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => updateRow(rowIndex, { teamRole: event.target.value })}>
+                {PERFORMER_ROLE_OPTIONS.map(role => <option key={role.value} value={role.value}>{role.label}团队</option>)}
+              </select>}
             <input key={`${row.key}:${amount}`} className="form-input" type="number" min="0" step="0.01"
               defaultValue={amount ? (amount * Number(row.revenueSharePercent || 0) / 100).toFixed(2) : ''}
               placeholder="归属金额 ¥" aria-label={`${price.label}归属金额元`} disabled={!amount}
@@ -686,7 +688,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           performanceConfig: sp.performanceConfig?.enabled === true ? sp.performanceConfig : null,
           businessAllocations: (sp.businessAllocations || []).map(row => ({
             key: row.key, name: `${sp.label.trim()} · ${allocationItemName(row, productsForBundle).trim().replace(`${sp.label.trim()} · `, '')}`,
-            businessType: row.businessType || 'service', teamRole: row.teamRole || 'healthManager',
+            businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
             childProductId: row.childProductId || null, revenueSharePercent: Number(row.revenueSharePercent) || 0,
           })) }))
 
