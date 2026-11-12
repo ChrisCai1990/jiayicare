@@ -2519,7 +2519,7 @@ export default function PatientDetailPage() {
     finally { setDeleteRecordSaving(false) }
   }
   const [editingRecord, setEditingRecord] = useState(null) // 正在修正的健康数据记录（数据有疑问时医护端修改，留痕修改人）
-  const [editRecordForm, setEditRecordForm] = useState({ value: '', sys: '', dia: '', note: '' })
+  const [editRecordForm, setEditRecordForm] = useState({ value: '', sys: '', dia: '', note: '', recordedAt: '' })
   const [editRecordSaving, setEditRecordSaving] = useState(false)
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
@@ -2878,10 +2878,14 @@ export default function PatientDetailPage() {
   }
 
   // 健康数据记录有疑问时医护端修正：血压拆sys/dia两个数值输入，其余类型统一走单值输入
+  const beijingRecordTime = value => {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? '' : new Date(date.getTime() + 8 * 3600000).toISOString().slice(0, 16)
+  }
   const startEditRecord = (r) => {
     setEditingRecord(r)
     if (r.type === 'bloodPressure') {
-      setEditRecordForm({ value: '', sys: String(r.extra?.sys ?? ''), dia: String(r.extra?.dia ?? ''), note: r.note || '' })
+      setEditRecordForm({ value: '', sys: String(r.extra?.sys ?? ''), dia: String(r.extra?.dia ?? ''), note: r.note || '', recordedAt: beijingRecordTime(r.recordedAt) })
     } else {
       setEditRecordForm({ value: String(r.value ?? ''), sys: '', dia: '', note: r.note || '' })
     }
@@ -2898,6 +2902,13 @@ export default function PatientDetailPage() {
         if (!sys || !dia) { toast('收缩压和舒张压不能为空'); setEditRecordSaving(false); return }
         payload.value = `${sys}/${dia}`
         payload.extra = { ...editingRecord.extra, sys, dia }
+        if (editRecordForm.recordedAt !== beijingRecordTime(editingRecord.recordedAt)) {
+          const measuredAt = new Date(`${editRecordForm.recordedAt}:00+08:00`)
+          if (Number.isNaN(measuredAt.getTime()) || measuredAt.getTime() > Date.now()) {
+            toast('测量时间无效或晚于当前时间'); setEditRecordSaving(false); return
+          }
+          payload.recordedAt = measuredAt.toISOString()
+        }
       } else {
         if (!editRecordForm.value) { toast('数值不能为空'); setEditRecordSaving(false); return }
         if (editingRecord.type === 'waist' && (!Number.isFinite(Number(editRecordForm.value)) || Number(editRecordForm.value) <= 0)) {
@@ -8521,16 +8532,17 @@ export default function PatientDetailPage() {
               const dateStr = recordedDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
               const fullDate = recordedDate.toLocaleDateString('zh-CN');
               if (r.type === 'bloodPressure') {
+                const measuredAt = recordedDate.toLocaleString('zh-CN', { hour12: false });
                 const [valueSys, valueDia] = String(r.value || '').split('/').map(Number);
                 const systolic = Number(r.extra?.sys ?? r.sys ?? valueSys);
                 const diastolic = Number(r.extra?.dia ?? r.dia ?? valueDia);
                 if (systolic > 0) {
                   if (!byType.bloodPressureSystolic) byType.bloodPressureSystolic = [];
-                  byType.bloodPressureSystolic.push({ x: dateStr, date: fullDate, y: systolic });
+                  byType.bloodPressureSystolic.push({ x: dateStr, date: measuredAt, y: systolic });
                 }
                 if (diastolic > 0) {
                   if (!byType.bloodPressureDiastolic) byType.bloodPressureDiastolic = [];
-                  byType.bloodPressureDiastolic.push({ x: dateStr, date: fullDate, y: diastolic });
+                  byType.bloodPressureDiastolic.push({ x: dateStr, date: measuredAt, y: diastolic });
                 }
                 return;
               }
@@ -10993,7 +11005,8 @@ export default function PatientDetailPage() {
               </div>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {editingRecord.type === 'bloodPressure' ? (
-                  <div style={{ display: 'flex', gap: 12 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'flex', gap: 12 }}>
                     <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                       <label className="form-label">收缩压（mmHg）</label>
                       <input className="form-input" type="number" value={editRecordForm.sys}
@@ -11003,6 +11016,13 @@ export default function PatientDetailPage() {
                       <label className="form-label">舒张压（mmHg）</label>
                       <input className="form-input" type="number" value={editRecordForm.dia}
                         onChange={e => setEditRecordForm(p => ({ ...p, dia: e.target.value }))} />
+                    </div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">测量时间（北京时间，可修正）</label>
+                      <input className="form-input" type="datetime-local" value={editRecordForm.recordedAt}
+                        max={beijingRecordTime(new Date())}
+                        onChange={e => setEditRecordForm(p => ({ ...p, recordedAt: e.target.value }))} />
                     </div>
                   </div>
                 ) : isFreeText ? (

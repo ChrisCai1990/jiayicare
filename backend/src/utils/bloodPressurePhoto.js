@@ -47,12 +47,12 @@ function validateConfirmation(body, userId) {
   if (![sys, dia].every(v => Number.isInteger(v) && v > 0 && v < 1000) || sys <= dia ||
       body.value !== sys + '/' + dia || body.unit !== 'mmHg') throw new Error('请核对收缩压、舒张压及单位，收缩压应大于舒张压');
   if (pulse != null && (!Number.isInteger(pulse) || pulse <= 0 || pulse >= 1000)) throw new Error('请核对脉搏数值或留空');
-  if (!body.recordedAt || !Number.isFinite(Date.parse(body.recordedAt)) || Date.parse(body.recordedAt) > Date.now() + 60000) {
+  if (body.recordedAt && (!Number.isFinite(Date.parse(body.recordedAt)) || Date.parse(body.recordedAt) > Date.now())) {
     throw new Error('请填写有效的测量时间，不能晚于当前时间');
   }
-  // Both customer clients explicitly collect China local time; reject normalized invalid dates such as February 30.
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+08:00$/.test(body.recordedAt) ||
-      new Date(Date.parse(body.recordedAt) + 8 * 3600000).toISOString().slice(0, 19) !== body.recordedAt.slice(0, 19)) {
+  // 未修改时由记录接口用服务端提交时间；手动补录时验证北京时间与日历日期。
+  if (body.recordedAt && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+08:00$/.test(body.recordedAt) ||
+      new Date(Date.parse(body.recordedAt) + 8 * 3600000).toISOString().slice(0, 19) !== body.recordedAt.slice(0, 19))) {
     throw new Error('请核对测量日期和时间');
   }
   return { imageHash: draft.hash, originalValues: draft.values, confirmedAt: new Date(), provider: 'qwen-vl' };

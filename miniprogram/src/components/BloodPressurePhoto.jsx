@@ -9,9 +9,8 @@ const box = { padding: '12px', margin: '12px 0', background: '#edf6f1', borderRa
 const field = { background: '#fff', padding: '10px', margin: '8px 0', border: '1px solid #cedbd3', borderRadius: '6px' };
 const inputField = { ...field, boxSizing: 'border-box', width: '100%', height: '48px', minHeight: '48px', fontSize: '18px', lineHeight: '28px', color: '#1A2B24' };
 function localTime() {
-  const d = new Date();
-  const pad = v => String(v).padStart(2, '0');
-  return { date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()), time: pad(d.getHours()) + ':' + pad(d.getMinutes()) };
+  const [date, time] = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16).split('T');
+  return { date, time };
 }
 
 export default function BloodPressurePhoto({ onSaved }) {
@@ -20,6 +19,7 @@ export default function BloodPressurePhoto({ onSaved }) {
   const [values, setValues] = useState({});
   const [arm, setArm] = useState('');
   const [when, setWhen] = useState(localTime);
+  const [manualTime, setManualTime] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -39,7 +39,7 @@ export default function BloodPressurePhoto({ onSaved }) {
       if (data.length > 8 * 1024 * 1024) throw new Error('图片超过6MB，请压缩或重新拍摄');
       const mime = /\.png$/i.test(path) ? 'png' : /\.webp$/i.test(path) ? 'webp' : 'jpeg';
       const image = 'data:image/' + mime + ';base64,' + data;
-      setDraft(null); setConfirmed(false); setValues({}); setPhoto({ path, image }); setWhen(localTime());
+      setDraft(null); setConfirmed(false); setValues({}); setPhoto({ path, image }); setWhen(localTime()); setManualTime(false);
       const result = await recordsAPI.recognizeBloodPressure(image);
       setDraft(result.data);
       setValues(Object.fromEntries(['sys', 'dia', 'pulse'].map(k => [k, result.data[k] == null ? '' : String(result.data[k])])));
@@ -48,16 +48,19 @@ export default function BloodPressurePhoto({ onSaved }) {
   };
   const submit = async () => {
     if (lock.current || !draft) return;
-    if (!confirmed) { setError('请勾选确认原图、数值和测量时间无误'); return; }
+    if (!confirmed) { setError('请核对原图、数值及测量时间后确认'); return; }
     if (!arm) { setError('请选择左臂或右臂'); return; }
     if (!/^\d+$/.test(values.sys || '') || !/^\d+$/.test(values.dia || '') || (values.pulse && !/^\d+$/.test(values.pulse))) { setError('请填写完整的整数读数，脉搏可留空'); return; }
+    const measuredAt = manualTime ? new Date(when.date + 'T' + when.time + ':00+08:00') : null;
+    if (manualTime && (Number.isNaN(measuredAt.getTime()) || measuredAt.getTime() > Date.now())) { setError('测量时间不能晚于当前时间'); return; }
     lock.current = true; setBusy(true); setError('');
     try {
       await recordsAPI.create({
         type: 'bloodPressure', category: 'vitals', label: '血压', unit: 'mmHg',
         value: Number(values.sys) + '/' + Number(values.dia),
         extra: { sys: Number(values.sys), dia: Number(values.dia), pulse: values.pulse ? Number(values.pulse) : null, arm },
-        recordedAt: when.date + 'T' + when.time + ':00+08:00', imageUrl: photo.image,
+        ...(manualTime ? { recordedAt: `${when.date}T${when.time}:00+08:00` } : {}),
+        imageUrl: photo.image,
         photoRecognition: { token: draft.token, confirmed: true },
       });
       setDraft(null); setPhoto(null); setConfirmed(false);
@@ -79,10 +82,13 @@ export default function BloodPressurePhoto({ onSaved }) {
       {[['sys', '收缩压 / 高压（mmHg）'], ['dia', '舒张压 / 低压（mmHg）'], ['pulse', '脉搏（次/分，可留空）']].map(([key, label]) => <View key={key}>
         <Text>{label}</Text><Input disabled={busy} style={inputField} type="number" value={values[key] || ''} placeholder="未识别，请核对补填" onInput={e => update(key, e.detail.value)} />
       </View>)}
-      <Text>测量时间（北京时间，默认现在，请核对）</Text>
-      <Picker disabled={busy} mode="date" value={when.date} end={localTime().date} onChange={e => { setWhen(w => ({ ...w, date: e.detail.value })); setConfirmed(false); }}><View style={field}>{when.date}</View></Picker>
-      <Picker disabled={busy} mode="time" value={when.time} onChange={e => { setWhen(w => ({ ...w, time: e.detail.value })); setConfirmed(false); }}><View style={field}>{when.time}</View></Picker>
-      <View onClick={() => !busy && setConfirmed(v => !v)} style={{ padding: '12px 0' }}><Text>{confirmed ? '☑' : '□'} 我已核对原图、读数及测量时间，确认无误</Text></View>
+      <Text style={{ display: 'block' }}>测量时间默认取提交时间；补录时可手动修改。</Text>
+      <Text onClick={() => { setManualTime(value => !value); setWhen(localTime()); setConfirmed(false); }} style={{ color: '#1E6B50', display: 'block', padding: '10px 0' }}>{manualTime ? '使用提交时间' : '修改测量时间'}</Text>
+      {manualTime && <View>
+        <Picker disabled={busy} mode="date" value={when.date} end={localTime().date} onChange={e => { setWhen(w => ({ ...w, date: e.detail.value })); setConfirmed(false); }}><View style={field}>{when.date}</View></Picker>
+        <Picker disabled={busy} mode="time" value={when.time} onChange={e => { setWhen(w => ({ ...w, time: e.detail.value })); setConfirmed(false); }}><View style={field}>{when.time}</View></Picker>
+      </View>}
+      <View onClick={() => !busy && setConfirmed(v => !v)} style={{ padding: '12px 0' }}><Text>{confirmed ? '☑' : '□'} 我已核对原图、读数及测量时间设置</Text></View>
       <Button disabled={busy || !confirmed} onClick={submit}>确认并提交图片记录</Button>
     </View>}
     {!!error && <Text style={{ color: '#b42318', display: 'block', padding: '10px 0' }}>{error}</Text>}

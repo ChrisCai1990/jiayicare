@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const express = require('express');
 const authPath = require.resolve('../src/middleware/auth');
 const aiPath = require.resolve('../src/utils/ai');
+const consentPath = require.resolve('../src/utils/aiDataConsent');
 let calls = 0;
 require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, exports: (req, res, next) => {
   if (!req.headers.authorization) return res.status(401).json({ success: false });
@@ -11,6 +12,8 @@ require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, expo
 require.cache[aiPath] = { id: aiPath, filename: aiPath, loaded: true, exports: { parseImage: async () => {
   calls++; return '{"sys":128,"dia":82,"pulse":72}';
 } } };
+require.cache[consentPath] = { id: consentPath, filename: consentPath, loaded: true,
+  exports: { requireHealthConsent: (_req, _res, next) => next() } };
 const router = require('../src/routes/bloodPressurePhoto');
 const { validateConfirmation } = require('../src/utils/bloodPressurePhoto');
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
@@ -36,6 +39,10 @@ test('recognition endpoint requires auth and consent; produces confirmable draft
     const body = { type: 'bloodPressure', unit: 'mmHg', value: '128/82', extra: { sys: 128, dia: 82, pulse: 72 }, imageUrl: image,
       recordedAt: '2026-01-01T08:00:00+08:00', photoRecognition: { token: data.token, confirmed: true } };
     assert.equal(validateConfirmation(body, 'test-user').originalValues.pulse, 72);
+    const defaultTime = { ...body }; delete defaultTime.recordedAt;
+    assert.equal(validateConfirmation(defaultTime, 'test-user').originalValues.sys, 128,
+      '未手动修改时允许由记录接口写入服务端提交时间');
+    assert.throws(() => validateConfirmation({ ...body, recordedAt: '2099-01-01T08:00:00+08:00' }, 'test-user'), /测量时间/);
     delete process.env.QWEN_API_KEY;
     assert.equal((await post({ image, consent: true })).status, 503);
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

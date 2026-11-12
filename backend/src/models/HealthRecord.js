@@ -22,6 +22,13 @@ const healthRecordSchema = new mongoose.Schema({
   status:   { type: String, enum: ['normal', 'warning', 'danger'], default: 'normal' },
   note:     { type: String, default: '' },
   recordedAt: { type: Date, default: Date.now },
+  measurementTimeRevisions: [{
+    previousAt: { type: Date, required: true },
+    updatedAt: { type: Date, required: true },
+    editedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
+    editedAt: { type: Date, default: Date.now },
+    _id: false,
+  }],
   importBatchId: { type: String, default: '', index: true },
   importFileName: { type: String, default: '' },
   sourceFollowUpId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },

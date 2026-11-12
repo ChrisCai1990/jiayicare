@@ -12458,7 +12458,15 @@ router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (re
     record.value = String(value);
     if (extra !== undefined) record.extra = extra;
     if (note !== undefined) record.note = note;
-    if (recordedAt) { const d = new Date(recordedAt); if (!isNaN(d.getTime())) record.recordedAt = d; }
+    if (recordedAt) {
+      const d = new Date(recordedAt);
+      if (Number.isNaN(d.getTime()) || (record.type === 'bloodPressure' && d.getTime() > Date.now()))
+        return res.status(400).json({ success: false, message: '测量时间无效或晚于当前时间' });
+      if (record.type === 'bloodPressure' && d.getTime() !== record.recordedAt.getTime()) {
+        record.measurementTimeRevisions.push({ previousAt: record.recordedAt, updatedAt: d, editedBy: req.staff._id });
+      }
+      record.recordedAt = d;
+    }
     record.status = calcHealthRecordStatus(record.type, value, extra !== undefined ? extra : record.extra);
     record.aiAlertStatus = (record.type === 'bloodPressure' && record.status === 'danger') ? 'pending' : null;
     record.editedBy = {

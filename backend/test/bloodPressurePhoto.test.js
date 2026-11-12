@@ -43,10 +43,12 @@ test('rejects unconfirmed, wrong user, swapped image, forged or expired draft', 
     assert.throws(() => validateConfirmation(p, 'user1'));
   }
 });
-test('rejects invalid values, units, missing/future measurement times', () => {
+test('defaults omitted measurement time and rejects invalid or future manual time', () => {
+  const noManualTime = payload(); delete noManualTime.recordedAt;
+  assert.ok(validateConfirmation(noManualTime, 'user1'));
   for (const patch of [
     { value: '125/82' }, { extra: { sys: 80, dia: 126 } }, { unit: 'kPa' },
-    { extra: { ...values, pulse: -1 } }, { recordedAt: null }, { recordedAt: 'invalid' },
+    { extra: { ...values, pulse: -1 } }, { recordedAt: 'invalid' },
     { recordedAt: '2026-02-30T08:30:00+08:00' },
     { recordedAt: new Date(Date.now() + 3600000).toISOString() }, { type: 'heartRate' },
   ]) assert.throws(() => validateConfirmation({ ...payload(), ...patch }, 'user1'));
