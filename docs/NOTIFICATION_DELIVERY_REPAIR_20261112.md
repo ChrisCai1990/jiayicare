@@ -11,13 +11,14 @@
 ## Prepared source
 
 - Isolated native source: `../ios-push-fix-20261112`, based on the known iOS 1.0.0(3) source. Version 1.0.2(5) adds `expo-notifications`, production APNs entitlement, permission and device-token acquisition, icon badge updates, and notification-open events through the existing H5 bridge.
-- This worktree adds App H5 opt-in, APNs device registration, restoration after a previously approved opt-in, logout cleanup, unread-count badge sync, and notification-open navigation. The H5 build uses `/mobile-preview/` asset paths and same-origin API calls.
+- This worktree adds App H5 opt-in, APNs device registration, restoration after a previously approved opt-in, logout cleanup, unread-count badge sync, and notification-open navigation. The H5 build uses `/mobile-preview/` asset paths and same-origin API calls. It includes the monthly report explanation change that was deployed concurrently.
 - The backend dispatcher now records `no_destination` instead of `done` when an eligible message has no device. It does not change historical messages or jobs.
 
 ## Verification and release limits
 
 - Backend APNs/registry/dispatcher tests: 13 passed.
 - Native SDK 54 iOS JS export succeeded; Expo configuration resolved version 1.0.2(5), `expo-notifications`, and production APNs entitlement. This is not a signed-device delivery result.
-- H5 production build succeeded with 47 output files and `/mobile-preview/` asset paths. It has not been deployed. The installed App H5 has other release overlays; compare those before replacing its current assets.
-- A signed TestFlight candidate is being built separately. The user must install a version containing the native module, allow Notifications and Badges, then explicitly choose **App 系统消息通知 → 开启 / 重新绑定**. Only a new, non-recalled human message and real-device receipt can establish delivery.
+- H5 production build succeeded with 47 output files and `/mobile-preview/` asset paths. Local smoke covered APNs binding, badge bridge, health archive, adviser conversation, questionnaire, and message list. The H5 was published with a hash-checked index swap from `e66a6c4c` to `17ea89a5`; backup: `/var/backups/jiayicare-app-h5-push-20261112-17ea89a5f8c0/previous-index.html`. Public entry and its referenced assets were verified.
+- Signed iOS 1.0.2(5) EAS build `cccc6c9e-a00a-4927-b1a3-42c5bbd24fc8` finished; its Xcode log contains ExpoNotifications and APNs entitlement. The binary was uploaded to App Store Connect / TestFlight submission `088121f6-b478-474b-967d-6df35b284507` and awaits Apple processing. The user must install it, allow Notifications and Badges, then explicitly choose **App 系统消息通知 → 开启 / 重新绑定**. Only a new, non-recalled human message and real-device receipt can establish delivery.
+- The backend `no_destination` status change passed 13 tests in branch `fix/backend-push-status-20261112` commit `e77a7e53`, but production deployment was stopped by the existing Git cleanliness gate: tracked production files are modified by other work. Do not bypass that gate or claim this backend status change is live.
 - The WeChat mini-program notification sender cannot be completed until its subscription template ID and field definitions are available. No customer subscription or test notification has been triggered.
