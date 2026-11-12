@@ -154,6 +154,7 @@ export default function HealthReportPage() {
                         <Text style={{ fontSize: '12px', color: colors.primary }}>{isExpanded ? '收起 ▲' : '查看曲线 ›'}</Text>
                       </View>
                     </View>
+                    {period === 'month' && <Text style={{ display: 'block', fontSize: '12px', lineHeight: '20px', color: colors.textSecondary, marginTop: '6px' }}>{m.changeText || '本期暂无可比较的变化说明。'}</Text>}
                     {isExpanded && (m.type === 'bloodPressure' ? (recordsLoading
                       ? <Text style={{ fontSize: '12px', color: colors.textMuted }}>血压趋势加载中...</Text>
                       : recordsError ? <Text style={{ fontSize: '12px', color: colors.danger }}>{recordsError}</Text>
