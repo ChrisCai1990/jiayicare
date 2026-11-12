@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import Taro from '@tarojs/taro';
 import { loadToken, saveToken, clearToken, setUnauthorizedHandler, userAPI, authAPI } from '../services/api';
 import { resetUnreadBadge, refreshUnreadBadge } from '../utils/unreadBadge';
+import { restoreSystemPush, disableSystemPush, forgetPushSession } from '../utils/pushSession';
 
 const AuthContext = createContext(null);
 
@@ -64,6 +65,8 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async (notifyServer = true) => {
+    if (notifyServer) { try { await disableSystemPush(); } catch {} }
+    else forgetPushSession();
     if (notifyServer) { try { await authAPI.sessionActivity('logout'); } catch {} }
     clearToken();
     resetUnreadBadge();
@@ -74,8 +77,14 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!token) return undefined;
     authAPI.sessionActivity('foreground').catch(() => {});
+    restoreSystemPush();
+    const resume = () => { if (document.visibilityState === 'visible') restoreSystemPush(); };
+    if (process.env.TARO_ENV === 'h5') document.addEventListener('visibilitychange', resume);
     const timer = setInterval(() => authAPI.sessionActivity('heartbeat').catch(() => {}), 60000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      if (process.env.TARO_ENV === 'h5') document.removeEventListener('visibilitychange', resume);
+    };
   }, [token]);
 
   useEffect(() => {

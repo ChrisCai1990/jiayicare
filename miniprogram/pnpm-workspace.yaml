@@ -1,0 +1,9 @@
+packages:
+  - .
+allowBuilds:
+  '@swc/core': true
+  '@tarojs/binding': true
+  core-js-pure: true
+  core-js: true
+  esbuild: true
+  swiper: true

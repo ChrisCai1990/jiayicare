@@ -34,6 +34,7 @@ test('saved human message enqueues idempotently and fresh registry decides recip
   assert.equal(c.writes.at(-1)[1].$set.state, 'done');
   const revoked = setup({ registry: { destinations: async () => [] } });
   await revoked.tick(); assert.equal(revoked.sends.length, 0);
+  assert.equal(revoked.writes.at(-1)[1].$set.state, 'no_destination');
 });
 test('transport failure schedules bounded retry without storing raw exception', async () => {
   const c = setup({ transport: { send: async () => { throw new Error('private-token'); } } });

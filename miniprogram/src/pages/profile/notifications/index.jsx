@@ -4,6 +4,8 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { isNativeApp } from '../../../utils/appBridge';
+import { enableSystemPush, disableSystemPush } from '../../../utils/pushSession';
 
 // 通知设置为本地开关（与 app 端一致，存 storage，不是服务端配置项）
 const SETTINGS = [
@@ -28,6 +30,23 @@ const DEFAULT_SETTINGS = Object.fromEntries(SETTINGS.flatMap(group => group.item
 export default function NotificationSettingsPage() {
   const { statusBarHeight } = useNavBar();
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState('开启后将申请 iPhone 系统通知权限。');
+
+  const changePush = async enable => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      if (enable) {
+        await enableSystemPush();
+        setPushMessage('设备已绑定。新服务消息将发送系统通知。');
+      } else {
+        await disableSystemPush();
+        setPushMessage('已关闭此设备的系统通知。');
+      }
+    } catch (error) { setPushMessage(error.message || '设置失败，请重试'); }
+    finally { setPushBusy(false); }
+  };
 
   useEffect(() => {
     try {
@@ -58,6 +77,14 @@ export default function NotificationSettingsPage() {
 
       <ScrollView scrollY style={{ flex: 1, height: 0 }}>
       <View style={{ padding: `${spacing.lg}px`, paddingBottom: '96px' }}>
+      {isNativeApp() && <View style={{ backgroundColor: '#fff', padding: '16px', marginBottom: '20px', borderRadius: '12px' }}>
+        <Text style={{ display: 'block', fontWeight: 700 }}>App 系统消息通知</Text>
+        <Text style={{ display: 'block', fontSize: '12px', margin: '12px 0', color: colors.textMuted }}>{pushBusy ? '正在处理…' : pushMessage}</Text>
+        <View style={{ display: 'flex', gap: '24px' }}>
+          <Text onClick={() => changePush(true)} style={{ color: colors.primary }}>开启 / 重新绑定</Text>
+          <Text onClick={() => changePush(false)} style={{ color: colors.textSecondary }}>关闭推送</Text>
+        </View>
+      </View>}
       {SETTINGS.map((group) => (
         <View key={group.group} style={{ marginBottom: `${spacing.lg}px` }}>
           <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>{group.group}</Text>
@@ -71,13 +98,13 @@ export default function NotificationSettingsPage() {
                   <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{item.label}</Text>
                   <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '2px' }}>{item.desc}</Text>
                 </View>
-                <Switch checked={settings[item.key]} onChange={() => toggle(item.key)} color={colors.primary} />
+                <Switch checked={process.env.TARO_ENV === 'h5' ? false : settings[item.key]} disabled={process.env.TARO_ENV === 'h5'} onChange={() => toggle(item.key)} color={colors.primary} />
               </View>
             ))}
           </View>
         </View>
       ))}
-      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block' }}>关闭后仍可在“消息”页查看历史通知，仅停止新消息推送。</Text>
+      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block' }}>{process.env.TARO_ENV === 'h5' ? '上方入口管理 App 系统通知；分类提醒开关暂未开放。' : '分类提醒开关仅影响小程序内的展示设置。'}</Text>
       </View>
       </ScrollView>
     </View>

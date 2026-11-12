@@ -7,6 +7,8 @@ import { LanguageProvider } from './i18n';
 import { refreshUnreadBadge } from './utils/unreadBadge';
 import { captureInviteCode } from './utils/invitation';
 import { captureEntrySource } from './utils/entrySource';
+import { loadToken } from './services/api';
+import { callNative, isNativeApp } from './utils/appBridge';
 
 import './app.less';
 
@@ -44,8 +46,15 @@ class PageErrorBoundary extends Component {
 class App extends Component {
   unreadPollTimer = null;
   refreshUnread = () => refreshUnreadBadge({ notify: true });
+  onPushOpen = () => {
+    if (loadToken()) Taro.navigateTo({ url: '/pages/messages/index' }).catch(() => {});
+  };
 
   componentDidMount() {
+    if (isNativeApp()) {
+      window.addEventListener('jiayicare:push-open', this.onPushOpen);
+      callNative('consume-push-open', {}, 5000).then(opened => { if (opened) this.onPushOpen(); }).catch(() => {});
+    }
     try {
       const launch = Taro.getLaunchOptionsSync?.() || {};
       captureInviteCode(launch.query || {});
@@ -63,6 +72,10 @@ class App extends Component {
     this.unreadPollTimer = setInterval(this.refreshUnread, 5000);
   }
   componentDidHide() { clearInterval(this.unreadPollTimer); this.unreadPollTimer = null; }
+  componentWillUnmount() {
+    clearInterval(this.unreadPollTimer);
+    if (isNativeApp()) window.removeEventListener('jiayicare:push-open', this.onPushOpen);
+  }
 
   // this.props.children 是将要会渲染的页面
   render() {

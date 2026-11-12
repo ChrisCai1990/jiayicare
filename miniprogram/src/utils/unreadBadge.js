@@ -1,5 +1,6 @@
 import Taro from '@tarojs/taro';
 import { loadToken, messagesAPI } from '../services/api';
+import { callNative, isNativeApp } from './appBridge';
 
 let generation = 0;
 let reading = 0;
@@ -18,6 +19,7 @@ function writeBadge(count, version) {
 
 export function resetUnreadBadge() {
   lastCount = null;
+  if (isNativeApp()) callNative('set-push-badge', { count: 0 }, 5000).catch(() => {});
   return writeBadge(0, ++generation);
 }
 
@@ -39,6 +41,7 @@ export async function refreshUnreadBadge({ notify = false } = {}) {
     }
     lastCount = count;
     await writeBadge(count, version);
+    if (isNativeApp()) callNative('set-push-badge', { count: Math.min(99, count) }, 5000).catch(() => {});
   } catch { /* Keep the last confirmed count on a transient network failure. */ }
 }
 

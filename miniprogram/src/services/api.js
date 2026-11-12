@@ -5,7 +5,8 @@
 import Taro from '@tarojs/taro';
 
 
-const BASE_URL = 'https://jiaycare.com/api';
+const BASE_URL = process.env.TARO_ENV === 'h5' && typeof window !== 'undefined'
+  ? `${window.location.origin}/api` : 'https://jiaycare.com/api';
 
 // 后端返回的图片等资源常是相对路径(/api/uploads/xxx.png)，小程序 <Image> 需要完整 URL 才能加载。
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
@@ -237,6 +238,12 @@ export const tasksAPI = {
 };
 
 // ── Messages ──────────────────────────────────────────────────────
+export const pushDevicesAPI = {
+  capabilities: () => request('/push-devices/capabilities'),
+  register: device => request('/push-devices', { method: 'PUT', body: JSON.stringify(device) }),
+  unregister: device => request('/push-devices', { method: 'DELETE', body: JSON.stringify(device) }),
+};
+
 export const messagesAPI = {
   transcribe: (id, consentVersion) => request(`/messages/${id}/transcribe`, { method: 'POST', body: JSON.stringify({ consentVersion }), timeout: 60000 }),
   list: () => request('/messages'),
