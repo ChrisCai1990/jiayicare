@@ -1850,7 +1850,7 @@ router.put('/patients/:id', staffAuth, checkPatientEditOrLifestyleSurvey, async 
     'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
     'assignedSpecialist', 'assignedTcmDoctor', 'assignedPsychologist',
     'assignedRehabSpecialist', 'assignedMedicalAssistant', 'assignedHealthPlanner',
-    'servicePackage', 'serviceExpiry', 'serviceStartDate', 'isRegisteredClient',
+    'servicePackage', 'serviceExpiry', 'isRegisteredClient',
     'bloodTypeABO', 'bloodTypeRH',
     'traumaHistory', 'transfusionHistory', 'poisoningHistory', 'infectiousHistory', 'vaccinationHistory', 'otherDiseaseHistory',
     'basic_insurance', 'commercial_medical', 'critical_illness',
@@ -1870,6 +1870,16 @@ router.put('/patients/:id', staffAuth, checkPatientEditOrLifestyleSurvey, async 
   allowed.forEach(k => {
     if (req.body[k] !== undefined) updateData[k] = req.body[k];
   });
+  try {
+    const firstStart = require('../utils/firstServiceStartDate').firstServiceStartDateUpdate(existingPatient.serviceStartDate, req.body.serviceStartDate);
+    if (firstStart.write) {
+      updateData.serviceStartDate = firstStart.value;
+      // 空白日期仅能初始化一次，防止两个编辑页面并发覆盖首次加入日期。
+      editFilter.serviceStartDate = { $in: ['', null] };
+    }
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ success: false, message: err.message });
+  }
 
   if (req.body.clientBrand !== undefined) {
     const clientBrand = req.body.clientBrand;
