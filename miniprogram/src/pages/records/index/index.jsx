@@ -222,7 +222,7 @@ export default function RecordsIndexPage() {
               <Text style={{fontSize:'26px',fontWeight:800,color:trendMap[trendTab].color,display:'block'}}>{trendMap[trendTab].data[trendMap[trendTab].data.length-1].displayValue} {TYPE_META[trendTab].unit}</Text>
               <Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'4px'}}>{language === 'en-US' ? 'Latest: ' : '最近记录：'}{formatRecordDate(trendMap[trendTab].data[trendMap[trendTab].data.length-1].recordedAt, language)}</Text>
             </View>:<Text style={{display:'block',color:colors.textSecondary}}>暂无{TYPE_META[trendTab].label}记录</Text>}
-            {trendTab === 'bloodPressure' ? <BloodPressureChart records={bpTrend} height={105} showValues={false} /> : <TrendChart points={trendMap[trendTab].data} height={120} color={trendMap[trendTab].color} mode="line" />}
+            {trendTab === 'bloodPressure' ? <BloodPressureChart records={bpTrend} height={105} /> : <TrendChart points={trendMap[trendTab].data} height={120} color={trendMap[trendTab].color} mode="line" />}
           </View>
         )}
       </View>

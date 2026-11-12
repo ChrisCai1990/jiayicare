@@ -12,7 +12,7 @@ const ARMS = [
   { arm: '未标注', color: '#7B8790' },
 ];
 
-export default function BloodPressureChart({ records = [], height = 108, showValues = true }) {
+export default function BloodPressureChart({ records = [], height = 108 }) {
   const { t, language } = useLanguage();
   const canvasIds = useRef({ sys: `blood-pressure-sys-${chartSeed += 1}`, dia: `blood-pressure-dia-${chartSeed += 1}` }).current;
   const [selectedArm, setSelectedArm] = useState('');
@@ -57,10 +57,8 @@ export default function BloodPressureChart({ records = [], height = 108, showVal
         const x = xAt(index); const y = yAt(point[field]);
         ctx.beginPath(); ctx.setFillStyle('#fff'); ctx.setStrokeStyle(color); ctx.setLineWidth(2);
         ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-        if (showValues) {
-          ctx.setFillStyle(color); ctx.setFontSize(10); ctx.setTextAlign('center');
-          ctx.fillText(String(point[field]), x, Math.max(11, y - 8));
-        }
+        ctx.setFillStyle(color); ctx.setFontSize(10); ctx.setTextAlign('center');
+        ctx.fillText(String(point[field]), x, Math.max(11, y - 8));
       });
 
       if (showDates) {
@@ -77,7 +75,7 @@ export default function BloodPressureChart({ records = [], height = 108, showVal
 
     draw('sys', false);
     draw('dia', true);
-  }, [canvasIds, records, activeArm, height, showValues]);
+  }, [canvasIds, records, activeArm, height]);
 
   if (!allPoints.length) return <Text style={{ fontSize: '12px', color: colors.textMuted }}>{language === 'en-US' ? 'No blood pressure records' : '暂无血压记录'}</Text>;
   return <View>
