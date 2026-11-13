@@ -5,6 +5,7 @@ import { adminAPI } from '../api'
 const card = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
 const label = { display: 'block', fontWeight: 600, marginBottom: 6 }
 const round = value => Math.round(Number(value || 0) * 100) / 100
+const pageSize = 10
 const lineName = { consumer365: '365会员', annualAdvisor: '年度顾问', premiumAdvisor: '高端顾问',
   weightManagement: '体重管理', chronicManagement: '慢病管理', medicalAssist: '单次就医',
   oneStopMedical: '一站式就医', assessment: '评估', psychology: '心理咨询', rehabilitation: '运动复健',
@@ -31,6 +32,7 @@ export default function PersonCommissionRulesPage() {
   const [selected, setSelected] = useState([])
   const [search, setSearch] = useState('')
   const [referrerRate, setReferrerRate] = useState('0')
+  const [repeatRate, setRepeatRate] = useState('0')
   const [fulfillerRate, setFulfillerRate] = useState('0')
   const [kind, setKind] = useState('first')
   const [renewal2, setRenewal2] = useState('10')
@@ -38,6 +40,9 @@ export default function PersonCommissionRulesPage() {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [rowEdit, setRowEdit] = useState(null)
+  const [promotionPage, setPromotionPage] = useState(1)
+  const [peoplePage, setPeoplePage] = useState(1)
+  const [configuredSearch, setConfiguredSearch] = useState('')
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
@@ -86,15 +91,15 @@ export default function PersonCommissionRulesPage() {
     && row.productIds?.some(id => String(id) === productId) && !row.effectiveUntil)
   const activePartner = partnerRules.find(row => String(row.partnerId) === personId && row.category === category
     && String(row.productId) === productId && row.status === 'active' && !row.effectiveUntil)
-  const currentPromotionRows = useMemo(() => {
-    if (!personId) return []
+  const latestRulesFor = id => {
+    if (!id) return []
     const now = new Date()
     const rows = tab === 'staff'
-      ? staffRules.filter(rule => String(rule.staffId) === personId
+      ? staffRules.filter(rule => String(rule.staffId) === id
         && (!rule.effectiveUntil || new Date(rule.effectiveUntil) > now)
         && new Date(rule.effectiveFrom) <= now)
         .flatMap(rule => (rule.productIds || []).map(id => ({ rule, id: String(id) })))
-      : partnerRules.filter(rule => String(rule.partnerId) === personId && rule.status === 'active'
+      : partnerRules.filter(rule => String(rule.partnerId) === id && rule.status === 'active'
         && (!rule.effectiveUntil || new Date(rule.effectiveUntil) > now)
         && new Date(rule.effectiveFrom) <= now)
         .map(rule => ({ rule, id: String(rule.productId) }))
@@ -105,8 +110,10 @@ export default function PersonCommissionRulesPage() {
         || (item.rule.version > previous.rule.version && item.rule.effectiveFrom === previous.rule.effectiveFrom))
         latest.set(item.id, item)
     }
-    return [...latest.values()].filter(item => tab === 'staff' ? Number(item.rule.referrerRate) > 0
-      : !item.rule.disabled && (Number(item.rule.firstBasisPoints) > 0
+    return [...latest.values()]
+  }
+  const currentPromotionRows = useMemo(() => latestRulesFor(personId).filter(item => tab === 'staff' ? Number(item.rule.referrerRate) > 0
+      : !item.rule.disabled && (Number(item.rule.firstBasisPoints) > 0 || Number(item.rule.repeatBasisPoints) > 0
         || (item.rule.renewalBasisPoints || []).some(year => year.basisPoints > 0)))
       .map(item => {
       const catalog = [...allProducts, ...allPackages].find(row => String(row._id) === item.id)
@@ -114,8 +121,27 @@ export default function PersonCommissionRulesPage() {
         || packages.some(row => String(row._id) === item.id)
       return { ...item, name: catalog?.name || `已移除产品（${item.id}）`, onSale,
         category: item.rule.category || catalog?.category || '未分类' }
-    }).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
-  }, [personId, tab, staffRules, partnerRules, allProducts, allPackages, packages])
+    }).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')),
+  [personId, tab, staffRules, partnerRules, allProducts, allPackages, packages])
+  const configuredPeople = useMemo(() => people.map(row => {
+    const latest = latestRulesFor(String(row._id))
+    const promotionCount = latest.filter(item => tab === 'staff' ? Number(item.rule.referrerRate) > 0
+      : !item.rule.disabled && (Number(item.rule.firstBasisPoints) > 0 || Number(item.rule.repeatBasisPoints) > 0
+        || (item.rule.renewalBasisPoints || []).some(year => year.basisPoints > 0))).length
+    const serviceCount = tab === 'staff' ? latest.filter(item => Number(item.rule.fulfillerRate) > 0).length : 0
+    const hasThreshold = tab === 'staff' && serviceThresholds.some(rule => String(rule.staffId) === String(row._id)
+      && !rule.effectiveUntil)
+    return { ...row, promotionCount, serviceCount, hasThreshold }
+  }).filter(row => row.promotionCount || row.serviceCount || row.hasThreshold)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-CN')),
+  [people, tab, staffRules, partnerRules, serviceThresholds])
+  const matchedConfiguredPeople = configuredPeople.filter(row => `${row.name || ''} ${row.username || ''} ${row.phone || ''}`
+    .toLowerCase().includes(configuredSearch.trim().toLowerCase()))
+  const peoplePageCount = Math.max(1, Math.ceil(matchedConfiguredPeople.length / pageSize))
+  const visiblePeoplePage = Math.min(peoplePage, peoplePageCount)
+  const promotionPageCount = Math.max(1, Math.ceil(currentPromotionRows.length / pageSize))
+  const visiblePromotionPage = Math.min(promotionPage, promotionPageCount)
+  const pagedPromotionRows = currentPromotionRows.slice((visiblePromotionPage - 1) * pageSize, visiblePromotionPage * pageSize)
 
   const loadExisting = (id, nextCategory, nextProductId, nextTab = tab) => {
     const row = nextTab === 'staff'
@@ -126,6 +152,7 @@ export default function PersonCommissionRulesPage() {
     setSelected(nextProductId ? [nextProductId] : [])
     setReferrerRate(nextTab === 'staff' ? String(row?.referrerRate ?? 0)
       : String((row?.firstBasisPoints || 0) / 100))
+    setRepeatRate(String((row?.repeatBasisPoints ?? row?.firstBasisPoints ?? 0) / 100))
     setFulfillerRate(nextTab === 'staff' ? String(row?.fulfillerRate ?? 0) : '0')
     setKind(row?.kind || 'first')
     const renewal = Object.fromEntries((row?.renewalBasisPoints || []).map(item => [item.year, item.basisPoints / 100]))
@@ -134,6 +161,7 @@ export default function PersonCommissionRulesPage() {
   }
   const changePerson = id => {
     setPersonId(id); setCategory(''); setSelected([]); setSearch(''); setMessage(''); setRowEdit(null)
+    setPromotionPage(1)
     const current = serviceThresholds.find(row => String(row.staffId) === id && !row.effectiveUntil)
     setThresholdYuan(String((current?.thresholdCents || 0) / 100))
   }
@@ -146,6 +174,7 @@ export default function PersonCommissionRulesPage() {
   }
   const changeTab = value => {
     setTab(value); setPersonId(''); setPersonSearch(''); setCategory(''); setSelected([]); setSearch(''); setMessage(''); setRowEdit(null)
+    setPromotionPage(1); setPeoplePage(1); setConfiguredSearch('')
     setThresholdYuan('0')
   }
   const saveThreshold = async () => {
@@ -163,7 +192,8 @@ export default function PersonCommissionRulesPage() {
   const chooseProduct = id => { loadExisting(personId, category, id); setMessage('') }
   const save = async () => {
     if (!personId || !category || selected.length !== 1) { setMessage('请选择人员、类别和一个产品'); return }
-    if ([referrerRate, ...(tab === 'staff' ? [fulfillerRate] : kind === 'annual' ? [renewal2, renewal35] : [])]
+    if ([referrerRate, ...(tab === 'staff' ? [fulfillerRate] : kind === 'annual' ? [renewal2, renewal35]
+      : kind === 'every' ? [repeatRate] : [])]
       .some(value => !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) {
       setMessage('比例须为 0–100%'); return
     }
@@ -173,7 +203,8 @@ export default function PersonCommissionRulesPage() {
         productIds: selected, referrerRate: Number(referrerRate), fulfillerRate: Number(fulfillerRate) })
       else await adminAPI.savePartnerPersonCommissionRule({ partnerId: personId,
         productLine: person.productLine, category, productIds: selected, kind,
-        firstPercent: Number(referrerRate), renewals: kind === 'annual'
+        firstPercent: Number(referrerRate), repeatPercent: kind === 'every' ? Number(repeatRate) : undefined,
+        renewals: kind === 'annual'
           ? [{ year: 2, percent: Number(renewal2) }, ...[3, 4, 5].map(year => ({ year, percent: Number(renewal35) }))] : [] })
       await load(); setMessage('规则已保存，该产品的新订单按新版计算；其他产品设置不变')
     } catch (error) { setMessage(error.message || '保存失败') }
@@ -182,6 +213,7 @@ export default function PersonCommissionRulesPage() {
   const preview = round(1000 * Number(referrerRate || 0) / 100)
   const editPromotion = item => setRowEdit({ id: item.id, rate: String(tab === 'staff'
     ? item.rule.referrerRate : item.rule.firstBasisPoints / 100),
+    repeatRate: String((item.rule.repeatBasisPoints ?? item.rule.firstBasisPoints ?? 0) / 100),
     serviceRate: String(item.rule.fulfillerRate ?? 0), kind: item.rule.kind || 'first',
     renewals: Object.fromEntries((item.rule.renewalBasisPoints || []).map(year =>
       [year.year, String(year.basisPoints / 100)])) })
@@ -190,6 +222,8 @@ export default function PersonCommissionRulesPage() {
     const years = Object.entries(rowEdit?.renewals || {}).map(([year, percent]) =>
       ({ year: Number(year), percent: Number(percent) }))
     if (!Number.isFinite(rate) || rate < 0 || rate > 100
+      || (rowEdit?.kind === 'every' && (!Number.isFinite(Number(rowEdit.repeatRate))
+        || Number(rowEdit.repeatRate) < 0 || Number(rowEdit.repeatRate) > 100))
       || years.some(year => !Number.isFinite(year.percent) || year.percent < 0 || year.percent > 100)) {
       setMessage('比例须为 0–100%'); return
     }
@@ -200,7 +234,9 @@ export default function PersonCommissionRulesPage() {
         fulfillerRate: item.rule.fulfillerRate })
       else await adminAPI.savePartnerPersonCommissionRule({ partnerId: personId,
         productLine: person.productLine, category: item.category, productIds: [item.id],
-        kind: rowEdit.kind, firstPercent: rate, renewals: rowEdit.kind === 'annual' ? years : [] })
+         kind: rowEdit.kind, firstPercent: rate,
+         repeatPercent: rowEdit.kind === 'every' ? Number(rowEdit.repeatRate) : undefined,
+         renewals: rowEdit.kind === 'annual' ? years : [] })
       await load(); setRowEdit(null)
       setMessage('推广佣金已更新，新订单按新版规则计算')
     } catch (error) { setMessage(error.message || '保存失败') }
@@ -227,6 +263,75 @@ export default function PersonCommissionRulesPage() {
         <button className={tab === 'partner' ? 'btn btn-primary' : 'btn btn-ghost'} onClick={() => changeTab('partner')}>市场合伙人</button>
         {tab === 'partner' && <Link className="btn btn-ghost" to="/market-partners">合伙人档案与团队</Link>}
       </div>
+      <strong>已设置规则的{tab === 'staff' ? '员工' : '市场合伙人'}（{configuredPeople.length}）</strong>
+      <p style={{ color: '#667a6d' }}>点击人员可直接查看其推广产品和佣金；员工的服务费及月度门槛也计入已设置名单。</p>
+      <input className="form-input" type="search" aria-label="搜索已设置人员" placeholder="搜索姓名、账号或手机号"
+        value={configuredSearch} onChange={event => { setConfiguredSearch(event.target.value); setPeoplePage(1) }}
+        style={{ maxWidth: 360, marginBottom: 12 }} />
+      <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr><th>人员</th><th>推广产品</th>
+        {tab === 'staff' && <><th>服务费产品</th><th>月度门槛</th></>}<th>操作</th></tr></thead><tbody>
+        {matchedConfiguredPeople.slice((visiblePeoplePage - 1) * pageSize, visiblePeoplePage * pageSize).map(row =>
+          <tr key={row._id}><td>{row.name}{tab === 'staff' ? ` · ${row.role || ''}` : ''}</td><td>{row.promotionCount} 项</td>
+            {tab === 'staff' && <><td>{row.serviceCount} 项</td><td>{row.hasThreshold ? '已设置' : '未设置'}</td></>}
+            <td><button className="btn btn-sm" onClick={() => changePerson(String(row._id))}>查看并编辑</button></td></tr>)}
+      </tbody></table></div>
+      {!matchedConfiguredPeople.length && <p>暂无匹配的已设置人员。</p>}
+      {matchedConfiguredPeople.length > pageSize && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+        <button className="btn btn-sm" disabled={visiblePeoplePage === 1} onClick={() => setPeoplePage(visiblePeoplePage - 1)}>上一页</button>
+        <span>第 {visiblePeoplePage} / {peoplePageCount} 页，每页最多 10 人</span>
+        <button className="btn btn-sm" disabled={visiblePeoplePage === peoplePageCount} onClick={() => setPeoplePage(visiblePeoplePage + 1)}>下一页</button>
+      </div>}
+    </div>
+    <div style={card}><strong>{person ? `${person.name} · 有推广佣金的产品（${currentPromotionRows.length}）` : '人员推广佣金总览'}</strong>
+      <p style={{ color: '#667a6d' }}>选择人员后直接查看当前有推广佣金的产品，并在此编辑或移除。逐笔推荐须在本次订单提供该合伙人推荐码；历史订单保留原规则。</p>
+      {person && <><div style={{ overflowX: 'auto' }}><table className="table"><thead><tr>
+        <th>产品／服务包</th><th>类别</th><th>推广佣金</th><th>销售状态</th><th>操作</th>
+      </tr></thead><tbody>{pagedPromotionRows.map(item => <tr key={item.id}>
+        <td>{item.name}</td><td>{item.category}</td>
+        <td>{tab === 'staff' ? `${item.rule.referrerRate}%` : item.rule.kind === 'annual'
+          ? `首年 ${item.rule.firstBasisPoints / 100}%${(item.rule.renewalBasisPoints || []).length
+            ? `；${item.rule.renewalBasisPoints.map(year => `第${year.year}年 ${year.basisPoints / 100}%`).join('；')}` : ''}`
+          : item.rule.kind === 'every'
+            ? `首次 ${item.rule.firstBasisPoints / 100}%；再次推荐 ${(item.rule.repeatBasisPoints ?? item.rule.firstBasisPoints) / 100}% · 逐笔确认`
+            : `${item.rule.firstBasisPoints / 100}% · 仅首次`}</td>
+        <td>{item.onSale ? '在售' : '已下架／不可售'}</td>
+        <td><button className="btn btn-sm" disabled={busy || !item.onSale} onClick={() => editPromotion(item)}>直接编辑</button>{' '}
+          <button className="btn btn-sm" disabled={busy} onClick={() => removePromotionRow(item)}>移除推广佣金</button></td>
+      </tr>).flatMap((entry, index) => {
+        const item = pagedPromotionRows[index]
+        if (rowEdit?.id !== item.id) return [entry]
+        return [entry, <tr key={`${item.id}:edit`}><td colSpan="5"><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {tab === 'partner' && <label>计佣方式 <select className="form-input" value={rowEdit.kind}
+            onChange={event => setRowEdit({ ...rowEdit, kind: event.target.value,
+              renewals: event.target.value === 'annual' && !Object.keys(rowEdit.renewals).length
+                ? { 2: '10', 3: '5', 4: '5', 5: '5' } : rowEdit.renewals })}>
+            <option value="first">仅首次</option><option value="annual">年度首续</option><option value="every">每次（本单须有推荐码）</option>
+          </select></label>}
+          <label>{tab === 'partner' && rowEdit.kind === 'every' ? '首次推荐比例 %' : '推广比例 %'} <input className="form-input" type="number" min="0" max="100" step="0.01"
+            value={rowEdit.rate} onChange={event => setRowEdit({ ...rowEdit, rate: event.target.value,
+              repeatRate: rowEdit.repeatRate === rowEdit.rate ? event.target.value : rowEdit.repeatRate })}
+            style={{ maxWidth: 130 }} /></label>
+          {tab === 'partner' && rowEdit.kind === 'every' && <label>再次推荐比例 % <input className="form-input"
+            type="number" min="0" max="100" step="0.01" value={rowEdit.repeatRate}
+            onChange={event => setRowEdit({ ...rowEdit, repeatRate: event.target.value })}
+            style={{ maxWidth: 130 }} /></label>}
+          {tab === 'partner' && rowEdit.kind === 'annual' && Object.entries(rowEdit.renewals)
+            .sort(([a], [b]) => Number(a) - Number(b)).map(([year, percent]) =>
+              <label key={year}>第 {year} 年 % <input className="form-input" type="number" min="0" max="100" step="0.01"
+                value={percent} onChange={event => setRowEdit({ ...rowEdit,
+                  renewals: { ...rowEdit.renewals, [year]: event.target.value } })} style={{ maxWidth: 110 }} /></label>)}
+          <button className="btn btn-primary" disabled={busy} onClick={() => savePromotionRow(item)}>保存新版</button>
+          <button className="btn btn-ghost" onClick={() => setRowEdit(null)}>取消</button>
+        </div></td></tr>]
+      })}</tbody></table></div>
+        {!currentPromotionRows.length && <p>该人员当前没有生效且比例大于 0 的推广佣金产品。</p>}
+        {currentPromotionRows.length > pageSize && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+          <button className="btn btn-sm" disabled={visiblePromotionPage === 1} onClick={() => { setPromotionPage(visiblePromotionPage - 1); setRowEdit(null) }}>上一页</button>
+          <span>第 {visiblePromotionPage} / {promotionPageCount} 页，每页最多 10 项</span>
+          <button className="btn btn-sm" disabled={visiblePromotionPage === promotionPageCount} onClick={() => { setPromotionPage(visiblePromotionPage + 1); setRowEdit(null) }}>下一页</button>
+        </div>}</>}
+    </div>
+    <div style={card}>
       {loading ? <p>加载中...</p> : <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
           <div><label style={label}>选择{tab === 'staff' ? '员工' : '合伙人'}</label>
@@ -271,10 +376,15 @@ export default function PersonCommissionRulesPage() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12, marginTop: 18 }}>
             {tab === 'partner' && <div><label style={label}>计佣方式</label><select className="form-input" value={kind} onChange={event => setKind(event.target.value)}>
-              <option value="first">仅首次</option><option value="annual">年度首续</option><option value="every">每次</option></select></div>}
-            <div><label style={label}>{tab === 'partner' && kind === 'annual' ? '首年推广比例 %' : '推广比例 %'}</label>
+              <option value="first">仅首次</option><option value="annual">年度首续</option><option value="every">每次（本单须有推荐码）</option></select></div>}
+            <div><label style={label}>{tab === 'partner' && kind === 'annual' ? '首年推广比例 %'
+              : tab === 'partner' && kind === 'every' ? '首次推荐比例 %' : '推广比例 %'}</label>
               <input className="form-input" type="number" min="0" max="100" step="0.01" value={referrerRate}
-                onChange={event => setReferrerRate(event.target.value)} /></div>
+                onChange={event => { if (kind === 'every' && repeatRate === referrerRate) setRepeatRate(event.target.value)
+                  setReferrerRate(event.target.value) }} /></div>
+            {tab === 'partner' && kind === 'every' && <div><label style={label}>再次推荐比例 %</label>
+              <input className="form-input" type="number" min="0" max="100" step="0.01" value={repeatRate}
+                onChange={event => setRepeatRate(event.target.value)} /></div>}
             {tab === 'staff' && <div><label style={label}>服务比例 %</label><input className="form-input" type="number"
               min="0" max="100" step="0.01" value={fulfillerRate} onChange={event => setFulfillerRate(event.target.value)} /></div>}
             {tab === 'partner' && kind === 'annual' && <><div><label style={label}>第 2 年推广比例 %</label>
@@ -291,47 +401,10 @@ export default function PersonCommissionRulesPage() {
         {message && <p role="status" style={{ color: /^(规则已|推广佣金已)/.test(message) ? '#1E6B50' : '#b42318' }}>{message}</p>}
       </>}
     </div>
-    <div style={card}><strong>{person ? `${person.name} · 有推广佣金的产品（${currentPromotionRows.length}）` : '人员推广佣金总览'}</strong>
-      <p style={{ color: '#667a6d' }}>选择人员后直接查看当前有推广佣金的产品，并在此编辑或移除。修改只影响新订单，历史订单保留原规则。</p>
-      {person && <><div style={{ overflowX: 'auto' }}><table className="table"><thead><tr>
-        <th>产品／服务包</th><th>类别</th><th>推广佣金</th><th>销售状态</th><th>操作</th>
-      </tr></thead><tbody>{currentPromotionRows.map(item => <tr key={item.id}>
-        <td>{item.name}</td><td>{item.category}</td>
-        <td>{tab === 'staff' ? `${item.rule.referrerRate}%` : item.rule.kind === 'annual'
-          ? `首年 ${item.rule.firstBasisPoints / 100}%${(item.rule.renewalBasisPoints || []).length
-            ? `；${item.rule.renewalBasisPoints.map(year => `第${year.year}年 ${year.basisPoints / 100}%`).join('；')}` : ''}`
-          : `${item.rule.firstBasisPoints / 100}% · ${item.rule.kind === 'every' ? '每次' : '仅首次'}`}</td>
-        <td>{item.onSale ? '在售' : '已下架／不可售'}</td>
-        <td><button className="btn btn-sm" disabled={busy || !item.onSale} onClick={() => editPromotion(item)}>直接编辑</button>{' '}
-          <button className="btn btn-sm" disabled={busy} onClick={() => removePromotionRow(item)}>移除推广佣金</button></td>
-      </tr>).flatMap((entry, index) => {
-        const item = currentPromotionRows[index]
-        if (rowEdit?.id !== item.id) return [entry]
-        return [entry, <tr key={`${item.id}:edit`}><td colSpan="5"><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {tab === 'partner' && <label>计佣方式 <select className="form-input" value={rowEdit.kind}
-            onChange={event => setRowEdit({ ...rowEdit, kind: event.target.value,
-              renewals: event.target.value === 'annual' && !Object.keys(rowEdit.renewals).length
-                ? { 2: '10', 3: '5', 4: '5', 5: '5' } : rowEdit.renewals })}>
-            <option value="first">仅首次</option><option value="annual">年度首续</option><option value="every">每次</option>
-          </select></label>}
-          <label>推广比例 % <input className="form-input" type="number" min="0" max="100" step="0.01"
-            value={rowEdit.rate} onChange={event => setRowEdit({ ...rowEdit, rate: event.target.value })}
-            style={{ maxWidth: 130 }} /></label>
-          {tab === 'partner' && rowEdit.kind === 'annual' && Object.entries(rowEdit.renewals)
-            .sort(([a], [b]) => Number(a) - Number(b)).map(([year, percent]) =>
-              <label key={year}>第 {year} 年 % <input className="form-input" type="number" min="0" max="100" step="0.01"
-                value={percent} onChange={event => setRowEdit({ ...rowEdit,
-                  renewals: { ...rowEdit.renewals, [year]: event.target.value } })} style={{ maxWidth: 110 }} /></label>)}
-          <button className="btn btn-primary" disabled={busy} onClick={() => savePromotionRow(item)}>保存新版</button>
-          <button className="btn btn-ghost" onClick={() => setRowEdit(null)}>取消</button>
-        </div></td></tr>]
-      })}</tbody></table></div>
-        {!currentPromotionRows.length && <p>该人员当前没有生效且比例大于 0 的推广佣金产品。</p>}</>}
-    </div>
     <div style={card}><strong>当前选中产品规则</strong><p style={{ color: '#667a6d' }}>选择产品后查看；修改保存为新版本，旧订单不回算。</p>
       {productId && personId && <div>{tab === 'staff'
         ? activeStaff ? `员工规则 v${activeStaff.version} · 推广 ${activeStaff.referrerRate}% · 服务 ${activeStaff.fulfillerRate}%` : '该产品尚未设置员工规则'
-        : activePartner ? `合伙人规则 v${activePartner.version} · ${activePartner.kind === 'annual' ? '年度首续' : activePartner.kind === 'every' ? '每次' : '仅首次'} · 首次 ${activePartner.firstBasisPoints / 100}%` : '该产品尚未设置合伙人规则'}</div>}
+        : activePartner ? `合伙人规则 v${activePartner.version} · ${activePartner.kind === 'annual' ? '年度首续' : activePartner.kind === 'every' ? '每次（逐笔推荐）' : '仅首次'} · 首次 ${activePartner.firstBasisPoints / 100}%${activePartner.kind === 'every' ? ` · 再次推荐 ${(activePartner.repeatBasisPoints ?? activePartner.firstBasisPoints) / 100}%` : ''}` : '该产品尚未设置合伙人规则'}</div>}
       {productId && personId && <details style={{ marginTop: 12 }}><summary>该产品历史版本</summary>
         {(tab === 'staff' ? staffRules.filter(row => String(row.staffId) === personId && row.category === category
           && row.productIds?.some(id => String(id) === productId) && row.effectiveUntil)

@@ -665,6 +665,25 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const match = await require('../src/utils/marketPartnerAttribution').resolveForOrder({
       tenantId, patientId, productId: onlineProductId });
     assert.ok(match);
+    const repeatedProductId = oid();
+    await mongoose.connection.db.collection('products').insertOne({ _id: repeatedProductId, tenantId,
+      name: '逐笔推荐服务', category: 'health', status: 'on', paymentChannel: 'wechat_pay',
+      originalPrice: 100, fulfillmentType: 'digital_content', stockLimited: false });
+    const repeatedRule = await call(clerkId, 'POST', `${prefix}/rules`, {
+      productId: String(repeatedProductId), productLine: 'onlineSingle', kind: 'every',
+      firstBasisPoints: 800, effectiveFrom: new Date(Date.now() - 86400000).toISOString() });
+    assert.equal(repeatedRule.status, 201, JSON.stringify(repeatedRule.body));
+    assert.equal((await call(clerkId, 'PATCH',
+      `${prefix}/rules/${repeatedRule.body.data._id}/publish`, {})).status, 200);
+    const attribution = require('../src/utils/marketPartnerAttribution');
+    assert.ok(await attribution.claim({ tenantId, patientId, productId: repeatedProductId,
+      code: onlinePartner.body.data.referralCode }));
+    assert.equal(await attribution.resolveForOrder({ tenantId, patientId,
+      productId: repeatedProductId }), null, '旧推荐记录不能让之后自行购买的订单自动归给合伙人');
+    const repeatedMatch = await attribution.resolveForOrder({ tenantId, patientId,
+      productId: repeatedProductId, code: onlinePartner.body.data.referralCode });
+    assert.equal(String(repeatedMatch.attribution.partnerId), String(onlinePartner.body.data._id));
+    assert.equal(repeatedMatch.rule.kind, 'every');
     const wechatPay = require('../src/utils/wechatPay');
     const originalCreateJsapiPayment = wechatPay.createJsapiPayment;
     wechatPay.createJsapiPayment = async () => ({ prepayId: 'synthetic-prepay', client: { test: true } });

@@ -15,6 +15,7 @@ const schema = new mongoose.Schema({
   effectiveUntil: { type: Date, default: null },
   kind: { type: String, enum: ['annual', 'first', 'every'], required: true },
   firstBasisPoints: { type: Number, min: 0, max: 10000, default: 0 },
+  repeatBasisPoints: { type: Number, min: 0, max: 10000, default: null },
   tierBasisPoints: [{ type: Number, min: 0, max: 10000 }],
   renewalBasisPoints: [{ year: { type: Number, min: 2 }, basisPoints: { type: Number, min: 0, max: 10000 } }],
   directReferralRequired: { type: Boolean, default: false },

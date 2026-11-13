@@ -23,6 +23,7 @@ function rateFor({ policy, periodNumber, monthlyQualifiedCount = 1, directReferr
   if (policy.directReferralRequired && !directReferral) return 0;
   if (policy.kind === 'annual' && periodNumber > 1) return policy.renewals?.[periodNumber] || 0;
   if (policy.kind === 'first' && periodNumber > 1) return 0;
+  if (policy.kind === 'every' && periodNumber > 1 && policy.repeat != null) return policy.repeat;
   if (!['annual', 'first', 'every'].includes(policy.kind)) throw new TypeError('unknown policy kind');
   const basisPoints = policy.tiers
     ? policy.tiers[Math.min(monthlyQualifiedCount, policy.tiers.length) - 1]

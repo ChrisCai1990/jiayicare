@@ -23,6 +23,14 @@ test('single-visit referral requires direct contribution; repeated assessment re
     periodNumber: 3 }).totalCents, 6800);
 });
 
+test('each purchase can use a separately configured repeat referral rate', () => {
+  const policy = { kind: 'every', first: 1500, repeat: 800 };
+  assert.equal(commissionCents({ paidCents: 10000, policy, periodNumber: 1 }).totalCents, 1500);
+  assert.equal(commissionCents({ paidCents: 10000, policy, periodNumber: 2 }).totalCents, 800);
+  assert.equal(commissionCents({ paidCents: 10000,
+    policy: { kind: 'every', first: 1500 }, periodNumber: 2 }).totalCents, 1500);
+});
+
 test('quick-close reward includes day seven, excludes day eight, and never applies to renewals', () => {
   const firstConversationAt = '2026-11-01T00:00:00+08:00';
   const base = { paidCents: 12000000, policy: POLICIES.weightManagement, firstConversationAt };

@@ -147,11 +147,12 @@ router.get('/partners', async (req, res) => {
 });
 
 router.post('/partners', async (req, res) => {
-  const { partnerId, productLine, category, productIds, kind, firstPercent, renewals } = req.body || {};
+  const { partnerId, productLine, category, productIds, kind, firstPercent, repeatPercent, renewals } = req.body || {};
   const yearRows = Array.isArray(renewals) ? renewals : [];
   if (!mongoose.isValidObjectId(partnerId) || !String(productLine || '').trim()
     || !String(category || '').trim() || !validIds(productIds) || productIds.length !== 1
-    || !['annual', 'first', 'every'].includes(kind) || !validRate(firstPercent)
+     || !['annual', 'first', 'every'].includes(kind) || !validRate(firstPercent)
+     || (repeatPercent != null && !validRate(repeatPercent))
     || yearRows.length > 19 || yearRows.some(row => !Number.isSafeInteger(Number(row.year))
       || Number(row.year) < 2 || Number(row.year) > 20 || !validRate(row.percent))
     || new Set(yearRows.map(row => Number(row.year))).size !== yearRows.length)
@@ -184,6 +185,8 @@ router.post('/partners', async (req, res) => {
       rows.push({ tenantId, productId, partnerId, sourceType, productLine: ruleLine, category,
         version: (latest?.version || 0) + 1, status: 'active', effectiveFrom: now,
         kind, firstBasisPoints: Math.round(Number(firstPercent) * 100),
+        repeatBasisPoints: kind === 'every' && repeatPercent != null
+          ? Math.round(Number(repeatPercent) * 100) : null,
         renewalBasisPoints: kind === 'annual' ? yearRows.map(row => ({ year: Number(row.year),
           basisPoints: Math.round(Number(row.percent) * 100) })) : [],
         createdBy: req.admin._id, publishedBy: req.admin._id, publishedAt: now });
@@ -213,7 +216,7 @@ router.post('/partners/:id/remove-promotion', async (req, res) => {
       partnerId: current.partnerId, sourceType: current.sourceType,
       productLine: current.productLine, category: current.category,
       version: (latest?.version || 0) + 1, status: 'active', disabled: true,
-      effectiveFrom: now, kind: current.kind, firstBasisPoints: 0,
+      effectiveFrom: now, kind: current.kind, firstBasisPoints: 0, repeatBasisPoints: 0,
       tierBasisPoints: [], renewalBasisPoints: [], directReferralRequired: current.directReferralRequired,
       createdBy: req.admin._id, publishedBy: req.admin._id, publishedAt: now });
     await MarketPartnerRule.updateMany({ tenantId, partnerId: current.partnerId,
