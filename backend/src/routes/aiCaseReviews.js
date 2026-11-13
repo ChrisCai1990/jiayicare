@@ -227,6 +227,7 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(user._id);
     if (!closedLoop && !['nutritionist', 'familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师或健康顾问可发起阶段性评估' });
     const assessmentMode = req.body.mode === 'intensive_nutrition' ? 'intensive_nutrition' : 'routine';
+    if(assessmentMode==='routine' && require('../utils/managementReviewPolicy').enabled(user._id))return res.status(409).json({success:false,message:'请进入新的月度、季度、年度复盘入口'});
     const isAnnualReview = closedLoop && assessmentMode === 'routine' && req.body.frequency === 'yearly';
     const plan = isAnnualReview || assessmentMode === 'intensive_nutrition'
       ? await AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).lean() : null;
@@ -286,9 +287,21 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     const user = await patientOr404(req, res); if (!user) return;
     const item = await PhaseAssessment.findOne({ _id: req.params.assessmentId, patientId: user._id });
     if (!item) return res.status(404).json({ success: false, message: '阶段性评估不存在' });
+    if(item.assessmentMode!=='intensive_nutrition' && require('../utils/managementReviewPolicy').enabled(user._id))return res.status(409).json({success:false,message:'历史记录已保留，请在新的持续管理复盘入口接续'});
     if (item.status === 'team_review') {
       if (req.body.revision !== item.__v) return res.status(409).json({ success: false, message: '其他岗位已更新复盘，请刷新后继续' });
       const role = req.staff.role;
+      if (req.body.action === 'preview_four_sections') {
+        if (item.reviewWorkflow !== 'advisor_nutrition' || !/^\d{4}-\d{2}$/.test(item.periodKey)) return res.status(409).json({success:false,message:'仅用于原月度综合复盘'});
+        const currentRole = item.teamReviews?.nutritionist?.status === 'approved' ? 'familyDoctor' : 'nutritionist';
+        if (role !== 'superadmin' && (role !== currentRole || !isAssignedReviewer(user, req.staff, currentRole))) return res.status(403).json({success:false,message:'请由当前待核对岗位生成修订草稿'});
+        const start = new Date(item.periodKey+'-01T00:00:00+08:00');
+        const [year,month]=item.periodKey.split('-').map(Number);
+        const end = new Date(Date.UTC(year,month,1)-8*3600000-1);
+        if(end>=new Date())return res.status(409).json({success:false,message:'本月尚未结束'});
+        const draft = await require('../utils/phaseFourDimensionDraft').generate(user,{start,end});
+        return res.json({success:true,data:{...draft,revision:item.__v,assessmentId:item._id,serviceRequest:{kind:'authenticated_phase_preview',actorId:req.staff._id,tenantId:req.staff.tenantId,at:new Date()}}});
+      }
       const canInvite = role === 'superadmin' || (role === 'familyDoctor' && isAssignedReviewer(user, req.staff, 'familyDoctor'));
       if (req.body.action === 'include_role') {
         if (item.reviewWorkflow === 'single_owner') return res.status(409).json({ success: false, message: '常规阶段性复盘由单一岗位负责，不增加其他岗位待办' });
@@ -344,7 +357,7 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
       if (actorRole !== primaryRole(item) || current !== 'rejected') return res.status(403).json({ success: false, message: '仅当前初审岗位可对退回的评估重新生成' });
       const snapshot = await buildStageAssessmentContext(user, item.templateSnapshot?.windowDays || 30);
       const note = String(req.body.reviewNote || item.doctorReview?.note || item.professionalReview?.note || item.nutritionReview?.note || '').trim();
-      const prompt = `请重新生成${item.periodLabel}阶段性健康评估，审核岗位为${ROLE_LABELS[primaryRole(item)]}。主线是“阶段变化→生活方式关联→风险缺口→下一步规划”。参考审核人退回意见，不得诊断、处方、辨证施治、补造事实或把相关性写成因果。健康风险交健康顾问综合复核。\n【日常管理的证据解释规则】${require('../utils/phaseAssessmentEvidenceRules').PHASE_ASSESSMENT_EVIDENCE_RULES}\n【退回意见】${note || '请核对资料与结论'}\n【原草稿】${item.content}\n【最新资料】${JSON.stringify(snapshot).slice(0, 45000)}\n阶段变化优先写可比指标的日期、数值和变化幅度，特别核对comparableChanges.weight；生活关联只依据同期记录，规划要针对已写出的变化与缺口，写明核对人和复评安排。记录总数不能代替指标变化。使用四个栏目：${(item.templateSnapshot?.outputSections || []).join('；') || '阶段数据变化；生活方式关联分析；风险与数据缺口；下一阶段行动规划'}。每栏最多6条。`;
+      const prompt = `请重新生成${item.periodLabel}阶段性健康评估，审核岗位为${ROLE_LABELS[primaryRole(item)]}。主线是“阶段变化→生活方式关联→问题分析→下一步规划”。参考审核人退回意见，不得诊断、处方、辨证施治、补造事实或把相关性写成因果。健康风险交健康顾问综合复核。\n【日常管理的证据解释规则】${require('../utils/phaseAssessmentEvidenceRules').PHASE_ASSESSMENT_EVIDENCE_RULES}\n【退回意见】${note || '请核对资料与结论'}\n【原草稿】${item.content}\n【最新资料】${JSON.stringify(snapshot).slice(0, 45000)}\n阶段变化优先写可比指标的日期、数值和变化幅度，特别核对comparableChanges.weight；生活关联只依据同期记录，规划要针对已写出的变化与缺口，写明核对人和复评安排。记录总数不能代替指标变化。使用四个栏目：${require('../utils/reviewFourSections').headings.join('；')}。每栏最多6条。`;
       const result = await providerAdapter.reply({ subjectId: user._id, preferred: 'qwen', sessionId: String(item._id), prompt, context: snapshot, attachments: [], history: [] });
       if (!result.content) throw new Error('AI未返回阶段评估草稿');
       item.content = result.content; item.evidenceSources = snapshot.sources || []; item.status = initialReviewStatus(primaryRole(item));
@@ -756,7 +769,10 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       const autoGuide = automatic
         ? `${isAnnualReview ? `这是年度综合研判首次讨论。${issueCardGuide}` : '这是本主题首次讨论。'}${exam ? '优先核对最近一次已审核体检报告及其日期/项目依据' : '暂无已审核的体检报告，请依据已审核健康趋势、AI风险提示及已纳入问题，不得虚构体检所见'}。区分已确认事实与待核实信息，目标仅为草稿，须由健康顾问确认。`
         : incrementalGuide;
-      const result = await providerAdapter.reply({ subjectId: user._id, preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isAnnualReview ? 5000 : isSupplement ? 900 : automatic ? 3200 : 1800, retryOnEmptyOrLength: isAnnualReview });
+      const focusedGuide = !isAnnualReview && !isSupplement
+        ? '本轮只分析当前主题，不逐项复述全部档案。按“关键依据、初步判断、待核实信息、下一步核对”四部分回答；每部分最多3点，全文控制在600个中文字以内。模板的栏目要求只保留与本主题有关的要点。'
+        : '';
+      const result = await providerAdapter.reply({ subjectId: user._id, preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n${annualBoundary}\n${isAnnualReview ? `\n【既有单项主题的历史资料】\n${specialtySummary.length ? JSON.stringify(specialtySummary) : '暂无。'}\n这些资料与年度问题清单一起综合分析；未确认的历史单项结论仅列为待核实。` : ''}\n\n【分析方式】\n${autoGuide}\n${focusedGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isAnnualReview ? 5000 : isSupplement ? 900 : automatic ? 3200 : 1800, retryOnEmptyOrLength: true, retryMode: isAnnualReview ? 'annual' : 'topic' });
       if (isAnnualReview && (automatic || reframeAnnual)) {
         const targetLogic = require('../utils/caseReviewManagementTargets');
         const initialTargets = targetLogic.targetsFromIncludedConcerns(topic.concerns, result.content, proposedTargets);

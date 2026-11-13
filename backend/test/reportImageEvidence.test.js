@@ -43,6 +43,183 @@ test('dropping a negation or laterality cannot pass by matching a substring of t
   assert.deepEqual(result.items, []);
 });
 
+test('printed line wraps do not discard an otherwise exact ultrasound finding', () => {
+  const finding = '脾脏形态大小正常，回声细小均匀，其内未见明显异常。';
+  const guarded = guardImageEvidence({ items: [{ name: '脾脏超声', itemType: 'imaging', findings: finding }] },
+    { ...imageOnly, clinicalText: '脾脏形态大小正常，回声细小均匀，\n其内未见明显异常。' });
+  assert.equal(guarded.items.length, 1);
+  const wrong = guardImageEvidence({ items: [{ name: '脾脏超声', itemType: 'imaging',
+    findings: finding.replace('未见', '可见') }] },
+  { ...imageOnly, clinicalText: '脾脏形态大小正常，回声细小均匀，\n其内未见明显异常。' });
+  assert.deepEqual(wrong.items, []);
+});
+
+test('annual examination findings must be anchored to their own printed section', async () => {
+  const pelvic = { name: '子宫、附件彩超', sourceSection: '子宫、附件彩超', itemType: 'imaging',
+    findings: '左右肝内胆管未见明显扩张。', diagnosis: '子宫多发肌瘤。' };
+  const evidence = { hasMedicalImages: false, readability: 'clear', sections: [
+    { title: '肝胆脾胰彩超', clinicalText: '左右肝内胆管未见明显扩张。' },
+    { title: '子宫、附件彩超', clinicalText: '子宫肌层回声不均。\n子宫多发肌瘤。' },
+  ] };
+  const guarded = guardImageEvidence({ items: [pelvic, { ...pelvic, findings: '子宫肌层回声不均。' }] }, evidence,
+    { requireSectionEvidence: true });
+  assert.deepEqual(guarded.items, [{ ...pelvic, findings: '子宫肌层回声不均。' }]);
+  assert.equal(guarded.imageEvidence.status, 'needs_review');
+  assert.equal(guarded.imageEvidence.blockedReasons.unverified_text, 1);
+  const wrongSection = guardImageEvidence({ items: [{ ...pelvic, sourceSection: '肝胆脾胰彩超', diagnosis: '' }] },
+    evidence, { requireSectionEvidence: true });
+  assert.equal(wrongSection.imageEvidence.blockedReasons.section_mismatch, 1);
+
+  let calls = 0;
+  const parse = createReportImageParser(async (_, prompt) => {
+    calls++;
+    return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? evidence : { items: [pelvic] });
+  }, { report: { type: 'annual' } });
+  assert.deepEqual(JSON.parse(await parse('page', 'extract', { sourcePage: 6 })).items, []);
+  assert.equal(calls, 2);
+});
+
+test('standalone ultrasound accepts printed findings and diagnosis under field headings', async () => {
+  const evidence = { hasMedicalImages: true, readability: 'clear', sections: [
+    { title: '检查所见', clinicalText: '右乳腺内见低回声结节。\n左乳腺内见低回声结节。' },
+    { title: '检查提示', clinicalText: '双乳腺低回声结节，考虑BI-RADS 3类。' },
+  ] };
+  const candidate = { name: '乳腺超声', sourceSection: '双侧乳腺超声', itemType: 'imaging',
+    findings: '右乳腺内见低回声结节。左乳腺内见低回声结节。',
+    diagnosis: '双乳腺低回声结节，考虑BI-RADS 3类。' };
+  const guarded = guardImageEvidence({ items: [candidate] }, evidence,
+    { requireSectionEvidence: true, allowStandaloneExamHeadings: true });
+  assert.deepEqual(guarded.items, [candidate]);
+  assert.equal(guarded.imageEvidence.status, 'verified');
+  const parser = createReportImageParser(async (_, prompt) => JSON.stringify(
+    prompt === IMAGE_EVIDENCE_PROMPT ? evidence : { items: [candidate] }),
+  { report: { type: 'ultrasound', documentCategory: 'exam_report' } });
+  assert.deepEqual(JSON.parse(await parser('breast-ultrasound', 'extract', { sourcePage: 1 })).items, [candidate]);
+  const legacyParser = createReportImageParser(async (_, prompt) => JSON.stringify(
+    prompt === IMAGE_EVIDENCE_PROMPT ? evidence : { items: [candidate] }),
+  { report: { type: 'ultrasound' } });
+  assert.deepEqual(JSON.parse(await legacyParser('legacy-breast-ultrasound', 'extract', { sourcePage: 1 })).items, [candidate]);
+  const partial = guardImageEvidence({ items: [{ ...candidate,
+    findings: '右乳腺内见低回声结节。', diagnosis: '' }] }, evidence,
+  { requireSectionEvidence: true, allowStandaloneExamHeadings: true });
+  assert.equal(partial.items.length, 1);
+  assert.equal(partial.imageEvidence.status, 'needs_review');
+  assert.equal(partial.imageEvidence.blockedReasons.uncovered_narrative, 3);
+});
+
+test('standalone fallback cannot turn named multi-exam sections into shared evidence', () => {
+  const evidence = { hasMedicalImages: true, readability: 'clear', sections: [
+    { title: '乳腺超声', clinicalText: '右乳腺内见低回声结节。' },
+    { title: '甲状腺超声', clinicalText: '甲状腺内见低回声结节。' },
+  ] };
+  const wrong = { name: '乳腺超声', itemType: 'imaging', findings: '甲状腺内见低回声结节。' };
+  const guarded = guardImageEvidence({ items: [wrong] }, evidence,
+    { requireSectionEvidence: true, allowStandaloneExamHeadings: true });
+  assert.deepEqual(guarded.items, []);
+  assert.equal(guarded.imageEvidence.blockedReasons.unverified_text, 1);
+});
+
+test('annual imaging without section evidence waits for manual verification', () => {
+  const candidate = { ...narrative, sourceSection: '乳腺超声' };
+  const evidence = { hasMedicalImages: false, readability: 'clear', clinicalText: candidate.findings };
+  const guarded = guardImageEvidence({ items: [candidate] }, evidence, { requireSectionEvidence: true });
+  assert.deepEqual(guarded.items, []);
+  assert.equal(guarded.imageEvidence.blockedReasons.section_mismatch, 1);
+  assert.equal(guarded.imageEvidence.status, 'needs_review');
+  const emptyTranscript = guardImageEvidence({ items: [candidate] }, { ...evidence, clinicalText: '' },
+    { requireSectionEvidence: true });
+  assert.equal(emptyTranscript.imageEvidence.status, 'needs_review');
+});
+
+test('supplemented lab result must share a printed table row with its name and unit', async () => {
+  const sugar = { itemType: 'lab', name: '葡萄糖', value: '6.5', unit: 'mmol/L', sourceSection: '血糖' };
+  const wrong = { ...sugar, value: '4.3' };
+  const partialNumber = { ...sugar, value: '5' };
+  const evidence = { hasMedicalImages: false, readability: 'clear', sections: [
+    { title: '血糖', clinicalText: '葡萄糖 6.5 mmol/L 3.9-6.1\n胰岛素 4.3 mIU/L 2-25' },
+  ] };
+  const guarded = guardImageEvidence({ items: [sugar, wrong, partialNumber] }, evidence, { verifyTableRows: true });
+  assert.deepEqual(guarded.items, [sugar]);
+  assert.equal(guarded.imageEvidence.blockedReasons.row_mismatch, 2);
+
+  const parse = createReportImageParser(async (_, prompt) => JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT
+    ? evidence : { items: [sugar, wrong] }), { verifyTableRows: true });
+  assert.deepEqual(JSON.parse(await parse('lab-page', 'supplement', { sourcePage: 1 })).items, [sugar]);
+  const ambiguousSection = guardImageEvidence({ items: [{ ...sugar, sourceSection: '未匹配栏目' }] },
+    { ...evidence, sections: [...evidence.sections, { title: '其他栏目', clinicalText: '葡萄糖 6.5 mmol/L' }] },
+    { verifyTableRows: true });
+  assert.equal(ambiguousSection.imageEvidence.blockedReasons.row_mismatch, 1);
+});
+
+test('generic section rows validate different PDF layouts without hospital templates', () => {
+  const candidate = { name: '葡萄糖', itemType: 'lab', value: '6.5', unit: 'mmol/L', sourceSection: '生化检验' };
+  const layouts = [
+    { hasMedicalImages: false, readability: 'clear', sections: [
+      { title: '生化检验', clinicalText: '', rows: [{ name: '葡萄糖', value: '6.5', unit: 'mmol/L', referenceRange: '3.9-6.1' }] },
+    ] },
+    { hasMedicalImages: false, readability: 'clear', sections: [
+      { title: '尿液检查', clinicalText: '', rows: [{ name: '葡萄糖', value: '阴性', unit: '', referenceRange: '阴性' }] },
+      { title: '生化检验', clinicalText: '', rows: [{ name: '葡萄糖', value: 6.5, unit: 'mmol/L', referenceRange: '3.9-6.1' }] },
+    ] },
+  ];
+  for (const [index, evidence] of layouts.entries()) {
+    const existingItems = index ? [{ name: '葡萄糖', itemType: 'lab', value: '阴性', sourceSection: '尿液检查' }] : [];
+    const guarded = guardImageEvidence({ items: [candidate] }, evidence, { verifyTableRows: true, existingItems });
+    assert.deepEqual(guarded.items, [candidate]);
+    assert.equal(guarded.imageEvidence.status, 'verified');
+  }
+  const missing = guardImageEvidence({ items: [candidate] }, layouts[1], { verifyTableRows: true });
+  assert.equal(missing.imageEvidence.blockedReasons.uncovered_rows, 1);
+  assert.equal(missing.imageEvidence.status, 'needs_review');
+  const wrongPanel = guardImageEvidence({ items: [{ ...candidate, sourceSection: '尿液检查' }] }, layouts[1],
+    { verifyTableRows: true });
+  assert.deepEqual(wrongPanel.items, []);
+  assert.equal(wrongPanel.imageEvidence.blockedReasons.row_mismatch, 1);
+  const zero = guardImageEvidence({ items: [{ ...candidate, value: '0' }] }, {
+    hasMedicalImages: false, readability: 'clear', sections: [{ title: '生化检验', clinicalText: '',
+      rows: [{ name: '葡萄糖', value: 0, unit: 'mmol/L', referenceRange: '' }] }],
+  }, { verifyTableRows: true });
+  assert.equal(zero.items.length, 1);
+});
+
+test('lab rows with a printed star and generic column heading retain same-row verification', () => {
+  const evidence = { hasMedicalImages: false, readability: 'clear', sections: [
+    { title: '肿瘤标志物', clinicalText: '', rows: [
+      { name: '糖类抗原CA19–9', value: '<1.2', unit: 'U/mL', referenceRange: '0.0–37.0' },
+      { name: '糖类抗原CA125', value: '30.3', unit: 'U/mL', referenceRange: '<47.0' },
+    ] },
+  ] };
+  const existing = { itemType: 'lab', name: '*糖类抗原CA19-9', value: '<1.2', unit: 'U/mL',
+    sourceSection: '检验项目' };
+  const missing = { itemType: 'lab', name: '*糖类抗原CA125', value: '30.3', unit: 'U/mL',
+    sourceSection: '检验项目' };
+  const guarded = guardImageEvidence({ items: [missing] }, evidence,
+    { verifyTableRows: true, existingItems: [existing] });
+  assert.deepEqual(guarded.items, [missing]);
+  assert.equal(guarded.imageEvidence.blockedReasons.row_mismatch, 0);
+  assert.equal(guarded.imageEvidence.blockedReasons.uncovered_rows, 0);
+  const wrongValue = guardImageEvidence({ items: [{ ...missing, value: '3.03' }] }, evidence,
+    { verifyTableRows: true, existingItems: [existing] });
+  assert.deepEqual(wrongValue.items, []);
+  assert.equal(wrongValue.imageEvidence.blockedReasons.row_mismatch, 1);
+});
+
+test('empty supplement candidates still transcribe printed rows for a focused retry', async () => {
+  let calls = 0;
+  const parse = createReportImageParser(async (_, prompt) => {
+    calls++;
+    return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT
+      ? { hasMedicalImages: false, readability: 'clear', sections: [{ title: '血常规', clinicalText: '',
+        rows: [{ name: '白细胞', value: '5.7', unit: '10^9/L', referenceRange: '3.5-9.5' }] }] }
+      : { items: [], skipPage: true });
+  }, { verifyTableRows: true });
+  const result = JSON.parse(await parse('printed-lab-page', 'supplement', { sourcePage: 6 }));
+  assert.equal(calls, 2);
+  assert.equal(result.imageEvidence.blockedReasons.uncovered_rows, 1);
+  assert.deepEqual(result.items, []);
+  assert.equal(result.skipPage, false);
+});
+
 test('metadata, footer and machine measurements do not count as clinical findings', () => {
   const result = guardImageEvidence({ items: [narrative] }, { ...imageOnly,
     clinicalText: '检查项目：乳腺超声\n此报告仅供临床医生参考，签名有效\n距离 0.482 cm\nMI 0.6\n仅用于软件测试，不对应真实患者' });
@@ -138,6 +315,7 @@ test('single-page route stops before coverage/classification and preserves exist
     '../utils/aiBudget': { assertSupplementCallCapacity: async () => {} },
     '../utils/ai': { parseImage: async (_, prompt) => { calls++; return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
     '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
+    '../utils/reportAnnualPageFallback': require('../src/utils/reportAnnualPageFallback'),
     '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
     '../models/MedicalReport': db,
     '../utils/pdf': { isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'), renderSinglePage: async () => 'synthetic-image' },
@@ -151,7 +329,7 @@ test('single-page route stops before coverage/classification and preserves exist
     ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
-    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract',
     isManualOnlyReport: () => false,
     safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true, console,
   });
@@ -164,7 +342,7 @@ test('single-page route stops before coverage/classification and preserves exist
   assert.equal(report.reportItems[0], oldItem);
 });
 
-test('dense PDF supplement splits vertically and checks six calls before model use', async () => {
+for (const imageSize of [250000, 520000, 648096]) test(`annual PDF supplement splits ${imageSize}-character page and checks four calls`, async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -184,8 +362,7 @@ test('dense PDF supplement splits vertically and checks six calls before model u
     '../models/MedicalReport': { findById: async () => report },
     '../utils/pdf': {
       isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      // Production page 10 was 648,096 base64 characters and still timed out whole.
-      renderSinglePage: async () => 'x'.repeat(648096),
+      renderSinglePage: async () => 'x'.repeat(imageSize),
       renderSinglePageRegions: async () => { regions++; return ['top', 'bottom']; },
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('No model result'); } },
@@ -197,16 +374,16 @@ test('dense PDF supplement splits vertically and checks six calls before model u
     ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
-    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract',
     isManualOnlyReport: () => false, console,
   });
   await assert.rejects(run('fixture', 9), /stopped/);
   assert.equal(regions, 1);
-  assert.equal(requiredCalls, 6);
+  assert.equal(requiredCalls, 4);
   assert.equal(modelCalls, 1);
 });
 
-test('extra dense template lab page uses four bands and reserves twelve calls', async () => {
+test('exceptionally large annual page uses four bands without hospital template and checks eight calls', async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -225,25 +402,69 @@ test('extra dense template lab page uses four bands and reserves twelve calls', 
     '../models/MedicalReport': { findById: async () => ({ _id: 'fixture', user: 'synthetic', type: 'annual', title: '测试体检', reportItems: [] }) },
     '../utils/pdf': {
       isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      renderSinglePage: async () => 'x'.repeat(648096),
+      renderSinglePage: async () => 'x'.repeat(1000001),
       renderSinglePageBands: async () => { bands++; return ['a', 'b', 'c', 'd']; },
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('No model result'); } },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
-    '../utils/zheyiReportTemplate': { isZheyiReport: () => true, promptForPage: () => '' },
+    '../utils/zheyiReportTemplate': { isZheyiReport: () => false },
   };
   const run = vm.runInNewContext(`${source.slice(start, end)};runReportPageParse`, {
     withAiContext: require('../src/utils/aiBudget').withAiContext,
     ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
-    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract',
     isManualOnlyReport: () => false, console,
   });
   await assert.rejects(run('fixture', 10), /stopped/);
   assert.equal(bands, 1);
-  assert.equal(requiredCalls, 12);
+  assert.equal(requiredCalls, 8);
   assert.equal(modelCalls, 1);
+});
+
+test('annual supplement targets only rows missed by the first pass and keeps later-region capacity', async () => {
+  const fs = require('fs');
+  const vm = require('vm');
+  const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
+  const start = source.indexOf('async function runReportPageParse(');
+  const end = source.indexOf('// POST /api/staff/medical-reports/:id/parse-ai', start);
+  const first = { name: '葡萄糖', itemType: 'lab', value: '5.1', unit: 'mmol/L', sourceSection: '生化' };
+  const missing = { name: '尿素', itemType: 'lab', value: '4.2', unit: 'mmol/L', sourceSection: '生化' };
+  const calls = [];
+  const modules = {
+    '../utils/aiBudget': { assertSupplementCallCapacity: async (_, __, count) => { calls.push(count); } },
+    '../utils/ai': { parseImage: async (image, prompt) => {
+      if (prompt === IMAGE_EVIDENCE_PROMPT) return JSON.stringify({ hasMedicalImages: false, readability: 'clear', sections: image === 'top'
+        ? [{ title: '生化', clinicalText: '', rows: [
+          { name: '葡萄糖', value: '5.1', unit: 'mmol/L', referenceRange: '' },
+          { name: '尿素', value: '4.2', unit: 'mmol/L', referenceRange: '' },
+        ] }] : [] });
+      if (prompt.includes('遗漏检验行定向补提')) { assert.match(prompt, /生化：尿素/); assert.doesNotMatch(prompt, /生化：葡萄糖/); return JSON.stringify({ items: [missing] }); }
+      return JSON.stringify({ items: image === 'top' ? [first] : [] });
+    } },
+    '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
+    '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
+    '../models/MedicalReport': { findById: async () => ({ _id: 'fixture', user: 'synthetic', type: 'annual', reportItems: [] }) },
+    '../utils/pdf': { isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
+      renderSinglePage: async () => 'x'.repeat(520000), renderSinglePageRegions: async () => ['top', 'bottom'] },
+    '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('Not reached'); } },
+    '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
+    '../utils/zheyiReportTemplate': { isZheyiReport: () => false },
+  };
+  const run = vm.runInNewContext(`${source.slice(start, end)};runReportPageParse`, {
+    withAiContext: require('../src/utils/aiBudget').withAiContext,
+    ...require('../src/utils/aiBudgetPolicy'),
+    require: name => { assert.ok(modules[name], name); return modules[name]; },
+    User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract',
+    isManualOnlyReport: () => false, safeParseJSON: JSON.parse, shouldSkipParsedReportPage: () => false,
+    mergeCoverageAuditItems: require('../src/utils/reportAuditMerge').mergeCoverageAuditItems,
+    tagReportPageItems: items => { assert.deepEqual(JSON.parse(JSON.stringify(items)), [first, missing]); throw new Error('focused-rows-retained'); },
+    resequenceSupplementSourceOrder: items => items, console,
+  });
+  await assert.rejects(run('fixture', 5), /focused-rows-retained/);
+  assert.deepEqual(calls, [4, 3]);
 });
 
 test('image-only upper crop does not discard lower crop lab results', async () => {
@@ -256,7 +477,8 @@ test('image-only upper crop does not discard lower crop lab results', async () =
   const modules = {
     '../utils/aiBudget': { assertSupplementCallCapacity: async () => {} },
     '../utils/ai': { parseImage: async (image, prompt) => {
-      if (prompt === IMAGE_EVIDENCE_PROMPT) return JSON.stringify(imageOnly);
+      if (prompt === IMAGE_EVIDENCE_PROMPT) return JSON.stringify(image === 'top' ? imageOnly
+        : { hasMedicalImages: false, readability: 'clear', sections: [{ title: '血糖', clinicalText: '血糖 5.1 mmol/L' }] });
       if (prompt.startsWith('coverage')) return JSON.stringify({ items: [] });
       return JSON.stringify({ items: image === 'top' ? [{ name: '影像', itemType: 'imaging', findings: '无证据' }] : [lab] });
     } },
@@ -270,7 +492,7 @@ test('image-only upper crop does not discard lower crop lab results', async () =
     '../models/MedicalReport': { findById: async () => ({ _id: 'fixture', user: 'synthetic', type: 'annual', title: '测试体检', reportItems: [] }) },
     '../utils/pdf': {
       isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      renderSinglePage: async () => 'x'.repeat(800001), renderSinglePageRegions: async () => ['top', 'bottom'],
+      renderSinglePage: async () => 'x'.repeat(550000), renderSinglePageRegions: async () => ['top', 'bottom'],
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('Not reached'); } },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
@@ -281,7 +503,7 @@ test('image-only upper crop does not discard lower crop lab results', async () =
     ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
-    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', PAGE_COVERAGE_AUDIT_PROMPT: 'coverage',
+    isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract', PAGE_COVERAGE_AUDIT_PROMPT: 'coverage',
     isManualOnlyReport: () => false, safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true,
     mergeCoverageAuditItems: (left, right) => [...left, ...right], resequenceSupplementSourceOrder: items => items, str: String, console,
     tagReportPageItems: items => { assert.equal(JSON.stringify(items), JSON.stringify([lab])); throw new Error('lower-crop-retained'); },
@@ -317,6 +539,7 @@ for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'page-cir
     '../utils/ai': { parseImage: async (_, prompt) => { calls++; if (mode === 'budget-pause') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('预算不足'); if (mode === 'page-budget') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('第1页调用次数不足', 'AI_PAGE_BUDGET_PAUSED'); if (mode === 'page-circuit') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('本报告第 1 页连续调用异常', 'AI_PAGE_CIRCUIT_PAUSED'); return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
     '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
     '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
+    '../utils/reportAnnualPageFallback': require('../src/utils/reportAnnualPageFallback'),
     '../utils/reportReviewRevision': require('../src/utils/reportReviewRevision'),
     '../utils/aiDataConsent': { withReportStaffService: (_report, run) => run() },
     '../models/MedicalReport': db,
@@ -334,7 +557,7 @@ for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'page-cir
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
     isManualOnlyReport: () => false, isPediatricAge: () => false, UPLOADS_DIR: '',
-    REPORT_PARSE_PROMPT: 'extract', BODY_COMPOSITION_RETRY_PROMPT: 'body composition',
+    REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract', BODY_COMPOSITION_RETRY_PROMPT: 'body composition',
     safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true,
     findUnderExtractedPages: () => ({ pagesToRetry: [], underOrders: [] }),
     findUnderExtractedCBC: () => ({ pagesToRetry: [], missingGroups: [] }),

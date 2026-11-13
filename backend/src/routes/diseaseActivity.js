@@ -19,7 +19,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
   async function activities(patient) {
     const [plans, records, tasks] = await Promise.all([
       HealthPlan.find({ patientId: patient._id, type: 'medical_assist' }).select('title status startDate createdAt sourceOrderId').lean(),
-      ServiceRecord.find({ patientId: patient._id }).select('title type date content result diseaseName sourceHealthPlanId sourceOrderId aiStatus staffId sourcePhaseAssessmentId').populate('staffId', 'name').lean(),
+      ServiceRecord.find({ patientId: patient._id, type: { $ne: 'psychology' } }).select('title type date content result diseaseName sourceHealthPlanId sourceOrderId aiStatus staffId sourcePhaseAssessmentId').populate('staffId', 'name').lean(),
       FollowUp.find({ patientId: patient._id }).select('theme type date status sourceHealthPlanId sourceOrderId assignedTo executedContent').populate('assignedTo', 'name').lean(),
     ]);
     return diseaseActivity({ plans, records: records.filter(r => r.type !== 'phase_assessment' || r.sourcePhaseAssessmentId), tasks, diseases: patient.diseaseRecords || [] });

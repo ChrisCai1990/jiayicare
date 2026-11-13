@@ -12,7 +12,7 @@ const NAV_SECTIONS = [
       { label: '订单管理', icon: 'orders', path: '/orders' },
       { label: '佣金审核', icon: 'money', path: '/commissions' },
       { label: '消息中心', icon: 'message', path: '/messages' },
-      { label: '用户反馈', icon: 'feedback', path: '/feedback', badgeKey: 'feedback' },
+      { label: '用户反馈', icon: 'feedback', path: '/feedback', badgeKey: 'feedback', allowedRoles: ['superadmin', 'manager'] },
       { label: '账号注销', icon: 'users', path: '/account-deletion', superadminOnly: true },
     ],
   },
@@ -20,8 +20,14 @@ const NAV_SECTIONS = [
     label: '运营管理',
     items: [
       { label: '商城产品', icon: 'product', path: '/products' },
+      { label: '佣金规则', icon: 'money', path: '/commission-rules' },
       { label: '物资与设备', icon: 'product', path: '/inventory' },
       { label: '合作伙伴权益', icon: 'partner', path: '/partners' },
+      { label: '市场合伙人', icon: 'partner', path: '/market-partners', superadminOnly: true },
+      { label: '合伙人团队', icon: 'partner', path: '/partner-teams', superadminOnly: true },
+      { label: '合伙人业务登记', icon: 'orders', path: '/market-partner-operations', superadminOnly: true },
+      { label: '合伙人财务审核', icon: 'money', path: '/market-partner-finance', superadminOnly: true },
+      { label: '经营与分账总览', icon: 'chart', path: '/business-accounting', superadminOnly: true },
       { label: '企业客户', icon: 'company', path: '/enterprises' },
       { label: '健康基金', icon: 'fund', path: '/health-fund' },
       { label: '运营看板', icon: 'chart', path: '/ops-dashboard' },
@@ -69,8 +75,7 @@ const NAV_SECTIONS = [
       { label: '专项筛查项目', icon: 'screen', path: '/projects/lab-test-packages' },
       { label: '检查医嘱', icon: 'exam', path: '/projects/special-exams' },
       { label: '功能医学检测', icon: 'medical', path: '/projects/functional-medicine' },
-      { label: '服务项目', icon: 'service', path: '/projects/service-items' },
-      { label: '其他收费', icon: 'money', path: '/projects/other-charges' },
+      { label: '收费产品（线上/线下）', icon: 'money', path: '/projects/charge-products' },
       { label: '项目模板', icon: 'template', path: '/projects/templates' },
       { label: '随访表单', icon: 'form', path: '/projects/followup-forms' },
       { label: '随访方案', icon: 'plan', path: '/projects/followup-plans' },
@@ -85,7 +90,7 @@ const NAV_SECTIONS = [
 
 const NAV_GROUPS = {
   '运营管理': {
-    '经营与服务': ['/products', '/inventory', '/partners', '/enterprises', '/health-fund'],
+    '经营与服务': ['/products', '/commission-rules', '/inventory', '/partners', '/enterprises', '/health-fund'],
     '运营与质量': ['/ops-dashboard', '/care-quality', '/metabolic-pilot', '/research-care-journeys'],
     '内容与工具': ['/health-plan-templates', '/ai-case-review-templates', '/questionnaires', '/change-logs'],
   },
@@ -96,7 +101,7 @@ const NAV_GROUPS = {
   },
   '项目设置': {
     '基础项目库': ['/projects/categories', '/projects/diseases', '/projects/specialty-library', '/projects/lab-test-items', '/projects/lab-test-orders', '/projects/lab-test-packages', '/projects/special-exams', '/projects/functional-medicine'],
-    '服务与随访': ['/projects/service-items', '/projects/other-charges', '/projects/templates', '/projects/followup-forms', '/projects/followup-plans'],
+    '服务与随访': ['/projects/charge-products', '/projects/templates', '/projects/followup-forms', '/projects/followup-plans'],
   },
 }
 
@@ -146,6 +151,14 @@ export default function Layout() {
   const { admin, logout } = useAdmin()
   const nav = useNavigate()
   const loc = useLocation()
+  const [marketPartnerAvailable, setMarketPartnerAvailable] = useState(false)
+  useEffect(() => {
+    if (admin?.role !== 'superadmin' || admin?.tenantStatus === 'setup') return
+    let cancelled = false
+    adminAPI.marketPartners().then(() => { if (!cancelled) setMarketPartnerAvailable(true) })
+      .catch(() => { if (!cancelled) setMarketPartnerAvailable(false) })
+    return () => { cancelled = true }
+  }, [admin?.role, admin?.tenantId, admin?.tenantStatus])
   const visibleSections = useMemo(
     () => NAV_SECTIONS
       .filter(section => admin?.role === 'platformSuper' ? section.platformOnly : !section.platformOnly)
@@ -153,11 +166,12 @@ export default function Layout() {
         ...section,
         items: section.items.filter(item =>
           (!item.superadminOnly || admin?.role === 'superadmin')
+          && (!['/market-partners', '/market-partner-operations', '/market-partner-finance', '/business-accounting'].includes(item.path) || marketPartnerAvailable)
           && (!item.allowedRoles || item.allowedRoles.includes(admin?.role))
           && (!item.aiControlOnly || admin?.role === 'platformSuper')
           && (admin?.tenantStatus !== 'setup' || ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees', '/saas-plan'].includes(item.path))),
       })).filter(section => section.items.length),
-    [admin?.role, admin?.tenantId, admin?.tenantStatus],
+    [admin?.role, admin?.tenantId, admin?.tenantStatus, marketPartnerAvailable],
   )
   const activeSection = visibleSections.find(section => section.items.some(item => isItemActive(loc.pathname, item.path)))?.label
   const activeItem = visibleSections.flatMap(section => section.items).find(item => isItemActive(loc.pathname, item.path))
@@ -181,12 +195,12 @@ export default function Layout() {
   }, [activeSection, activeGroup, loc.pathname])
 
   useEffect(() => {
-    if (admin?.role === 'platformSuper' || admin?.tenantStatus === 'setup') return
+    if (!['superadmin', 'manager'].includes(admin?.role) || admin?.tenantStatus === 'setup') return
     let cancelled = false
     const loadPending = async () => {
       try {
         const res = await adminAPI.feedbackList({ status: 'pending' })
-        if (!cancelled) setPendingFeedback((res.data || []).length)
+        if (!cancelled) setPendingFeedback(res.total ?? (res.data || []).length)
       } catch { /* 徽标加载失败不影响导航 */ }
     }
     loadPending()

@@ -7,6 +7,7 @@ import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../../servi
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import MembershipBenefits from '../../../components/MembershipBenefits';
+import { useLanguage } from '../../../i18n';
 import { formatChineseDate, formatChineseDateTime } from '../../../utils/date';
 
 // 对齐 app/src/screens/profile/BenefitsScreen.js
@@ -75,6 +76,7 @@ function PartnerBenefitCard({ benefit, onPress }) {
 }
 
 export default function BenefitsPage() {
+  const { t } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [tab, setTab] = useState('mine');
@@ -149,22 +151,22 @@ export default function BenefitsPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>会员权益</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{t('会员权益')}</Text>
         <View style={{ width: '28px' }} />
       </View>
 
       <View style={{ display: 'flex', margin: `${spacing.md}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: colors.border + '40', borderRadius: `${radius.full}px`, padding: '3px' }}>
         <View onClick={() => setTab('mine')} style={{ flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: `${radius.full}px`, backgroundColor: tab === 'mine' ? '#fff' : 'transparent' }}>
-          <Text style={{ fontSize: '13px', fontWeight: 600, color: tab === 'mine' ? colors.primary : colors.textMuted }}>我的专属权益</Text>
+          <Text style={{ fontSize: '13px', fontWeight: 600, color: tab === 'mine' ? colors.primary : colors.textMuted }}>{t('我的专属权益')}</Text>
         </View>
         <View onClick={() => setTab('partner')} style={{ flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: `${radius.full}px`, backgroundColor: tab === 'partner' ? '#fff' : 'transparent' }}>
-          <Text style={{ fontSize: '13px', fontWeight: 600, color: tab === 'partner' ? colors.primary : colors.textMuted }}>合作伙伴权益</Text>
+          <Text style={{ fontSize: '13px', fontWeight: 600, color: tab === 'partner' ? colors.primary : colors.textMuted }}>{t('合作伙伴权益')}</Text>
         </View>
       </View>
 
       {tab === 'mine' ? (
         <View style={{ padding: `0 ${spacing.lg}px` }}>
-          <View style={{display:'flex',gap:'8px',marginBottom:'14px'}}>{[['plan','健康服务'],['fund','健康基金'],['gift','赠送权益']].map(([key,label])=><View key={key} onClick={()=>setMineSection(key)} style={{flex:1,textAlign:'center',padding:'10px 0',borderRadius:'10px',backgroundColor:mineSection===key?colors.primary:'#fff'}}><Text style={{fontSize:'13px',color:mineSection===key?'#fff':colors.textSecondary}}>{label}</Text></View>)}</View>
+          <View style={{display:'flex',gap:'8px',marginBottom:'14px'}}>{[['plan','健康服务'],['fund','健康基金'],['gift','赠送权益']].map(([key,label])=><View key={key} onClick={()=>setMineSection(key)} style={{flex:1,textAlign:'center',padding:'10px 0',borderRadius:'10px',backgroundColor:mineSection===key?colors.primary:'#fff'}}><Text style={{fontSize:'13px',color:mineSection===key?'#fff':colors.textSecondary}}>{t(label)}</Text></View>)}</View>
           {mineSection==='plan' && <MembershipBenefits gifts={gifts} giftsLoading={giftsLoading} giftsError={giftsError} onRefreshGifts={loadGifts} />}
           {mineSection==='fund' && <>
           <View style={{ borderRadius: `${radius.md}px`, backgroundColor: '#1A2B24', padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.md }}>

@@ -11,6 +11,7 @@ import { userAPI, recordsAPI, systemAPI } from '../../services/api';
 import AnimatedNumber from '../../components/AnimatedNumber';
 import { HomeScreenSkeleton } from '../../components/SkeletonLoader';
 import { mockBloodPressureData, mockBloodSugarData, mockTasks } from '../../data/mockData';
+import { useLanguage } from '../../i18n';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -324,6 +325,7 @@ function ReminderItem({ reminder, isLast }) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
+  const { t } = useLanguage();
   const { user: authUser, isDemo } = useAuth();
   const [dashData, setDashData]       = useState(null);
   const [scoreHistory, setScoreHistory] = useState([]);
@@ -490,8 +492,8 @@ export default function HomeScreen({ navigation }) {
         {/* ── 顶部 Logo 栏 ──────────────────────────────────────── */}
         <View style={styles.topBar}>
           <View>
-            <Text style={styles.logo}>嘉医汇</Text>
-            <Text style={styles.logoSub}>数字化健康管理，全周期服务陪伴</Text>
+            <Text style={styles.logo}>{t('嘉医汇')}</Text>
+            <Text style={styles.logoSub}>{t('数字化健康管理，全周期服务陪伴')}</Text>
           </View>
           <TouchableOpacity
             style={styles.avatarChip}
@@ -512,7 +514,7 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.heroScoreRow}>
               <AnimatedNumber value={score} style={styles.heroScoreNum} duration={900} />
               <View style={styles.heroScoreMeta}>
-                <Text style={styles.heroScoreLabel}>健康评分 / 100</Text>
+                <Text style={styles.heroScoreLabel}>{t('健康评分 / 100')}</Text>
                 {isDemo && <Text style={styles.heroScoreTrend}>↑ 较上月 +3 分</Text>}
               </View>
               {scoreHistory.length >= 2 && (
@@ -529,9 +531,9 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.onboardBanner}>
               <View style={styles.onboardHeader}>
                 <Ionicons name="rocket-outline" size={20} color={colors.primary} />
-                <Text style={styles.onboardTitle}>开始您的健康管理之旅</Text>
+                <Text style={styles.onboardTitle}>{t('开始您的健康管理之旅')}</Text>
               </View>
-              <Text style={styles.onboardSub}>完成以下步骤，激活个人健康档案</Text>
+              <Text style={styles.onboardSub}>{t('完成以下步骤，激活个人健康档案')}</Text>
               {[
                 { icon: 'person-outline', label: '完善健康资料', done: !!(user?.height && user?.weight), screen: 'EditProfile' },
                 { icon: 'add-circle-outline', label: '录入第一条健康数据', done: false, screen: 'AddRecord' },
@@ -558,13 +560,13 @@ export default function HomeScreen({ navigation }) {
 
           {/* ── 健康指标区块 ──────────────────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>健康指标</Text>
+            <Text style={styles.sectionTitle}>{t('健康指标')}</Text>
             <View style={styles.metricsGrid}>
 
               {/* 血压 */}
               <View style={styles.metricCard}>
                 <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>血压</Text>
+                  <Text style={styles.metricCardTitle}>{t('血压')}</Text>
                   <View style={[styles.statusBadge, { backgroundColor: bpStatus.bg }]}>
                     <Text style={[styles.statusBadgeText, { color: bpStatus.color }]}>{bpStatus.label}</Text>
                   </View>
@@ -579,7 +581,7 @@ export default function HomeScreen({ navigation }) {
               {/* 血糖 */}
               <View style={styles.metricCard}>
                 <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>血糖</Text>
+                  <Text style={styles.metricCardTitle}>{t('血糖')}</Text>
                   <View style={[styles.statusBadge, { backgroundColor: bsStatus.bg }]}>
                     <Text style={[styles.statusBadgeText, { color: bsStatus.color }]}>{bsStatus.label}</Text>
                   </View>
@@ -606,7 +608,7 @@ export default function HomeScreen({ navigation }) {
                 {bmiVal ? <BmiBar value={parseFloat(bmiVal)} /> : (
                   <TouchableOpacity style={styles.chartEmptyMini} onPress={() => navigation.navigate('EditProfile')} activeOpacity={0.7}>
                     <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-                    <Text style={styles.chartEmptyMiniText}>完善身高体重</Text>
+                    <Text style={styles.chartEmptyMiniText}>{t('完善身高体重')}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -614,21 +616,21 @@ export default function HomeScreen({ navigation }) {
               {/* 睡眠 */}
               <View style={styles.metricCard}>
                 <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>睡眠</Text>
+                  <Text style={styles.metricCardTitle}>{t('睡眠')}</Text>
                   <View style={[styles.statusBadge, { backgroundColor: sleepBg }]}>
                     <Text style={[styles.statusBadgeText, { color: sleepLabelColor }]}>{sleepLabel}</Text>
                   </View>
                 </View>
                 <View style={styles.sleepRow}>
-                  <Text style={styles.sleepRowLabel}>入睡时间</Text>
+                  <Text style={styles.sleepRowLabel}>{t('入睡时间')}</Text>
                   <Text style={[styles.sleepRowValue, !sleepHours && { color: colors.textDisabled }]}>{sleepBedTime}</Text>
                 </View>
                 <View style={[styles.sleepRow, { borderTopWidth: 1, borderTopColor: colors.borderLight }]}>
-                  <Text style={styles.sleepRowLabel}>晨起时间</Text>
+                  <Text style={styles.sleepRowLabel}>{t('晨起时间')}</Text>
                   <Text style={[styles.sleepRowValue, !sleepHours && { color: colors.textDisabled }]}>{sleepWakeTime}</Text>
                 </View>
                 <View style={[styles.sleepRow, { borderTopWidth: 1, borderTopColor: colors.borderLight, marginTop: 2 }]}>
-                  <Text style={styles.sleepRowLabel}>睡眠时长</Text>
+                  <Text style={styles.sleepRowLabel}>{t('睡眠时长')}</Text>
                   {sleepHours != null ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                       <Text style={[styles.sleepRowValue, { color: colors.primary, fontWeight: '700' }]}>
@@ -637,7 +639,7 @@ export default function HomeScreen({ navigation }) {
                     </View>
                   ) : (
                     <TouchableOpacity onPress={() => navigation.navigate('AddRecord')} activeOpacity={0.7}>
-                      <Text style={[styles.sleepRowValue, { color: colors.primary, fontSize: 11 }]}>点击录入</Text>
+                      <Text style={[styles.sleepRowValue, { color: colors.primary, fontSize: 11 }]}>{t('点击录入')}</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -646,7 +648,7 @@ export default function HomeScreen({ navigation }) {
               {/* 情绪 */}
               <View style={[styles.metricCard, styles.metricCardFull]}>
                 <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>情绪</Text>
+                  <Text style={styles.metricCardTitle}>{t('情绪')}</Text>
                   <View style={[styles.statusBadge, { backgroundColor: moodScore >= 6 ? '#E8F5EF' : '#FDECEA' }]}>
                     <Text style={[styles.statusBadgeText, { color: moodLabelColor }]}>{moodLabel}</Text>
                   </View>

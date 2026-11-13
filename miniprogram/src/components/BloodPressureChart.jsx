@@ -3,6 +3,7 @@ import { Canvas, Text, View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { bloodPressurePoints, bloodPressurePointsForArm } from '../utils/bloodPressureTrend';
 import { colors } from '../theme';
+import { useLanguage } from '../i18n';
 
 let chartSeed = 0;
 const ARMS = [
@@ -12,6 +13,7 @@ const ARMS = [
 ];
 
 export default function BloodPressureChart({ records = [], height = 108 }) {
+  const { t, language } = useLanguage();
   const canvasIds = useRef({ sys: `blood-pressure-sys-${chartSeed += 1}`, dia: `blood-pressure-dia-${chartSeed += 1}` }).current;
   const [selectedArm, setSelectedArm] = useState('');
   const allPoints = bloodPressurePoints(records, (records || []).length || 1);
@@ -75,19 +77,19 @@ export default function BloodPressureChart({ records = [], height = 108 }) {
     draw('dia', true);
   }, [canvasIds, records, activeArm, height]);
 
-  if (!allPoints.length) return <Text style={{ fontSize: '12px', color: colors.textMuted }}>暂无血压记录</Text>;
+  if (!allPoints.length) return <Text style={{ fontSize: '12px', color: colors.textMuted }}>{language === 'en-US' ? 'No blood pressure records' : '暂无血压记录'}</Text>;
   return <View>
     <View style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
       {visibleArms.map(({ arm, color }) => <View key={arm} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <View onClick={() => setSelectedArm(arm)} style={{ padding: '6px 18px', borderRadius: '999px', backgroundColor: activeArm === arm ? color : colors.background, border: `1px solid ${activeArm === arm ? color : colors.border}` }}>
-          <Text style={{ fontSize: '12px', fontWeight: activeArm === arm ? 700 : 400, color: activeArm === arm ? '#fff' : colors.textSecondary }}>{arm}</Text>
+          <Text style={{ fontSize: '12px', fontWeight: activeArm === arm ? 700 : 400, color: activeArm === arm ? '#fff' : colors.textSecondary }}>{t(arm)}</Text>
         </View>
       </View>)}
     </View>
-    <Text style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: colors.textSecondary }}>收缩压（mmHg）</Text>
+    <Text style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: colors.textSecondary }}>{t('收缩压')} (mmHg)</Text>
     <Canvas canvasId={canvasIds.sys} id={canvasIds.sys} style={{ width: '100%', height: `${height}px`, display: 'block' }} />
     <View style={{ height: '1px', backgroundColor: colors.border, margin: '6px 0 8px' }} />
-    <Text style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: colors.textSecondary }}>舒张压（mmHg）</Text>
+    <Text style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: colors.textSecondary }}>{t('舒张压')} (mmHg)</Text>
     <Canvas canvasId={canvasIds.dia} id={canvasIds.dia} style={{ width: '100%', height: `${height}px`, display: 'block' }} />
   </View>;
 }

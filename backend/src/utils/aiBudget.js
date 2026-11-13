@@ -90,7 +90,7 @@ function createBudgetRunner(db = store, now = () => new Date()) {
         // Do not persist arbitrary provider error messages, which may echo clinical inputs.
         errorCode: failed ? (error?.code === 'AI_TIMEOUT' ? 'TIMEOUT'
           : (safeProviderCode || (error || result?.error ? 'UPSTREAM_ERROR'
-            : (outputTruncated ? 'OUTPUT_LENGTH' : (emptyOutput ? 'EMPTY_OUTPUT' : 'UPSTREAM_ERROR')))))
+            : (outputTruncated ? 'OUTPUT_LENGTH' : (emptyOutput ? 'EMPTY_OUTPUT' : (malformed ? 'MALFORMED_JSON' : 'UPSTREAM_ERROR'))))))
           : (usage ? '' : 'USAGE_MISSING'),
       });
     } catch {
@@ -101,8 +101,10 @@ function createBudgetRunner(db = store, now = () => new Date()) {
     if (error) throw error;
     if (result?.error) throw new Error('AI 服务返回异常，请稍后重试');
     if (failed) {
-      const outputError = new Error('AI 返回空内容或输出被截断，请人工核对');
-      outputError.code = outputTruncated ? 'AI_OUTPUT_LENGTH' : 'AI_EMPTY_RESPONSE';
+      const outputError = new Error(outputTruncated ? 'AI 输出达到长度上限，当前页需分段重试或人工核对'
+        : emptyOutput ? 'AI 返回空内容，请重试或人工核对'
+          : 'AI 返回格式无效，请重试或人工核对');
+      outputError.code = outputTruncated ? 'AI_OUTPUT_LENGTH' : emptyOutput ? 'AI_EMPTY_RESPONSE' : 'AI_MALFORMED_RESPONSE';
       throw outputError;
     }
     return result;

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme';
+import { useLanguage } from '../i18n';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
@@ -56,6 +57,7 @@ const TAB_CONFIG = [
 
 function MainTabs() {
   const { token } = useAuth();
+  const { t, language } = useLanguage();
   // 和小程序一致：访客可先浏览公开首页，个人档案和健康管家须登录后进入。
   const visibleTabs = token ? TAB_CONFIG : TAB_CONFIG.filter(tab => tab.name === 'Home');
 
@@ -90,7 +92,7 @@ function MainTabs() {
           name={tab.name}
           component={tab.component}
           options={{
-            tabBarLabel: tab.label,
+            tabBarLabel: language === 'en-US' && tab.name === 'Records' ? 'Records' : t(tab.label),
           }}
         />
       ))}

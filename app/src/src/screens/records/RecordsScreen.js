@@ -10,6 +10,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { mockBloodPressureData, mockBloodSugarData } from '../../data/mockData';
 import { recordsAPI, userAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../i18n';
 
 const { width: W } = Dimensions.get('window');
 const CHART_INNER_W = W - spacing.lg * 2 - spacing.md * 2;
@@ -339,6 +340,7 @@ function ProfileEditModal({ visible, profile, onSave, onClose }) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function RecordsScreen({ navigation }) {
+  const { t } = useLanguage();
   const { isDemo } = useAuth();
   const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
@@ -521,11 +523,11 @@ export default function RecordsScreen({ navigation }) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={[styles.header, { borderBottomWidth: 1, borderBottomColor: colors.borderLight }]}>
-          <Text style={styles.pageTitle}>健康档案</Text>
+          <Text style={styles.pageTitle}>{t('健康档案')}</Text>
         </View>
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>加载中…</Text>
+          <Text style={styles.loadingText}>{t('加载中…')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -536,7 +538,7 @@ export default function RecordsScreen({ navigation }) {
       {/* ── Header ──────────────────────────────────────────────── */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.pageTitle}>健康档案</Text>
+          <Text style={styles.pageTitle}>{t('健康档案')}</Text>
           <Text style={styles.syncInfo}>最后同步：{today}</Text>
         </View>
         <TouchableOpacity
@@ -545,7 +547,7 @@ export default function RecordsScreen({ navigation }) {
           activeOpacity={0.8}
         >
           <Ionicons name="add" size={18} color={colors.white} />
-          <Text style={styles.addRecordBtnText}>录入</Text>
+          <Text style={styles.addRecordBtnText}>{t('录入')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -560,11 +562,11 @@ export default function RecordsScreen({ navigation }) {
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
               <Ionicons name="person-circle-outline" size={17} color={colors.primary} />
-              <Text style={styles.sectionTitle}>个人健康档案</Text>
+              <Text style={styles.sectionTitle}>{t('个人健康档案')}</Text>
             </View>
             <TouchableOpacity style={styles.editBtn} onPress={() => setEditingProfile(true)}>
               <Ionicons name="pencil-outline" size={13} color={colors.primary} />
-              <Text style={styles.editBtnText}>编辑</Text>
+              <Text style={styles.editBtnText}>{t('编辑')}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.profileCard}>
@@ -585,7 +587,7 @@ export default function RecordsScreen({ navigation }) {
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
               <Ionicons name="stats-chart-outline" size={17} color={colors.primary} />
-              <Text style={styles.sectionTitle}>最新健康指标</Text>
+              <Text style={styles.sectionTitle}>{t('最新健康指标')}</Text>
             </View>
           </View>
           <View style={styles.metricsGrid}>
@@ -666,7 +668,7 @@ export default function RecordsScreen({ navigation }) {
                 <Ionicons name="document-outline" size={28} color={colors.textDisabled} />
                 <Text style={styles.historyEmptyText}>暂无{currentTypeCfg.label}记录</Text>
                 <TouchableOpacity style={styles.historyAddBtn} onPress={() => navigation.navigate('AddRecord')}>
-                  <Text style={styles.historyAddBtnText}>+ 立即录入</Text>
+                  <Text style={styles.historyAddBtnText}>{t('+ 立即录入')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (

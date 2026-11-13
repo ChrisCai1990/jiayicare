@@ -145,7 +145,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated, 
   );
 }
 
-function PurchaseModal({ item, mode, onClose, shareToken = '', initialBeneficiaryUserId = '', pushRecordId = '' }) {
+function PurchaseModal({ item, mode, onClose, shareToken = '', partnerCode = '', initialBeneficiaryUserId = '', pushRecordId = '' }) {
   const { statusBarHeight, navBarHeight, totalHeight } = useNavBar();
   const { user, updateUser } = useAuth();
   const isPay = mode === 'pay';
@@ -278,7 +278,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', initialBeneficiar
       const res = isPay
         ? (pendingOrderRef.current
           ? await paymentsAPI.retry(pendingOrderRef.current.id)
-          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, familyPayment ? null : couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice, familyPayment ? false : useSharedFund, beneficiaryUserId, pushRecordId))
+          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, familyPayment ? null : couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice, familyPayment ? false : useSharedFund, beneficiaryUserId, pushRecordId, partnerCode))
         : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined, beneficiaryUserId);
       if (res.success) {
         if (res.data?.packageCovered) {
@@ -556,6 +556,7 @@ export default function ServiceMallPage() {
     const query = [
       `productId=${detailService.id}`,
       shareToken && `shareToken=${shareToken}`,
+      routeParams.partnerCode && detailService.id === routeParams.productId && `partnerCode=${encodeURIComponent(routeParams.partnerCode)}`,
       user?.referralCode && `invite=${user.referralCode}`,
     ].filter(Boolean).join('&');
     return {
@@ -574,6 +575,7 @@ export default function ServiceMallPage() {
       return;
     }
     let active = true;
+    if (detailService.servicePackage) { setShareToken(''); return; }
     servicesAPI.createProductShare(detailService.id).then((res) => {
       if (!active || !res.success) return;
       setShareToken(res.data.token);
@@ -584,30 +586,49 @@ export default function ServiceMallPage() {
   const [listError, setListError] = useState('');
 
   useEffect(() => {
-    servicesAPI.list().then((res) => {
+    let active = true;
+    Promise.all([
+      servicesAPI.list(),
+      user ? servicesAPI.packages().catch(() => ({ success: false, data: [] })) : Promise.resolve({ success: true, data: [] }),
+    ]).then(([res, packageRes]) => {
+      if (!active) return;
       if (!res.success) throw new Error(res.message || '服务加载失败');
-      setServices(res.data?.services || []);
-      setCategoryTree(res.data?.categoryTree || (res.data?.categories || []).filter((name) => name !== '全部').map((name) => ({ id: name, name, children: [] })));
-      const target = (res.data?.services || []).find((service) => service.id === routeParams.productId);
+      const packages = (packageRes.success ? packageRes.data || [] : [])
+        .filter(item => item.membershipTier === 'consumer365' && item.includes365 && Number(item.durationMonths) === 12 && item.canJoin365 === true)
+        .map(item => ({ ...item, servicePackage: true, category: '会员服务',
+          subtitle: item.duration, description: (item.features || []).join('；'), fulfillmentType: 'subscription_service' }));
+      const allServices = [...(res.data?.services || []), ...packages];
+      setServices(allServices);
+      const tree = res.data?.categoryTree || (res.data?.categories || []).filter((name) => name !== '全部').map((name) => ({ id: name, name, children: [] }));
+      setCategoryTree(packages.length && !tree.some(item => item.name === '会员服务')
+        ? [...tree, { id: 'membership', name: '会员服务', productCount: packages.length, totalProductCount: packages.length, children: [] }] : tree);
+      const target = allServices.find((service) => service.id === routeParams.productId);
       if (target && routeParams.beneficiaryUserId && routeParams.pushRecordId && user?.onboardingCompleted) {
         setSelectedService(target); setPurchaseMode('pay');
       } else if (target) setDetailService(target);
     }).catch(() => {
+      if (!active) return;
       setServices([]);
       setCategoryTree([]);
       setListError('服务加载失败，请稍后重试');
-    }).finally(() => setLoading(false));
-  }, []);
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [user?._id]);
 
   useEffect(() => {
     if (!user || !routeParams.shareToken) return;
     servicesAPI.claimProductShare(routeParams.shareToken).catch(() => {});
   }, [user?._id, routeParams.shareToken]);
 
+  useEffect(() => {
+    if (!user || !routeParams.partnerCode || !routeParams.productId) return;
+    servicesAPI.claimPartnerReferral(routeParams.productId, routeParams.partnerCode).catch(() => {});
+  }, [user?._id, routeParams.partnerCode, routeParams.productId]);
+
   const openPurchase = (svc, mode) => {
     if (!user) {
       try {
-        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`].filter(Boolean).join('&');
+        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`, routeParams.partnerCode && `partnerCode=${routeParams.partnerCode}`].filter(Boolean).join('&');
         Taro.setStorageSync('jy_post_login_url', `/pages/services/mall/index${query ? `?${query}` : ''}`);
       } catch {}
       Taro.showModal({
@@ -621,7 +642,7 @@ export default function ServiceMallPage() {
     }
     if (!user.onboardingCompleted) {
       try {
-        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`].filter(Boolean).join('&');
+        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`, routeParams.partnerCode && `partnerCode=${routeParams.partnerCode}`].filter(Boolean).join('&');
         Taro.setStorageSync('jy_post_login_url', `/pages/services/mall/index${query ? `?${query}` : ''}`);
       } catch {}
       Taro.showModal({
@@ -638,7 +659,7 @@ export default function ServiceMallPage() {
   const closeSharedDetail = () => {
     if (!user && routeParams.shareToken) {
       try {
-        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`, routeParams.invite && `invite=${routeParams.invite}`].filter(Boolean).join('&');
+        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`, routeParams.partnerCode && `partnerCode=${routeParams.partnerCode}`, routeParams.invite && `invite=${routeParams.invite}`].filter(Boolean).join('&');
         Taro.setStorageSync('jy_post_login_url', `/pages/services/mall/index${query ? `?${query}` : ''}`);
       } catch {}
       Taro.showModal({
@@ -716,6 +737,11 @@ export default function ServiceMallPage() {
       </View>}
 
       <View style={{ padding: `0 ${spacing.lg}px`, paddingBottom: `${spacing.xxl}px` }}>
+        {!user && routeParams.productId && routeParams.partnerCode && (
+          <View onClick={() => openPurchase({ id: routeParams.productId }, 'pay')} style={{ padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, backgroundColor: colors.primary10, borderRadius: `${radius.md}px` }}>
+            <Text style={{ color: colors.primary, fontWeight: 700 }}>登录后查看推荐的会员服务并购买 ›</Text>
+          </View>
+        )}
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : (
@@ -733,7 +759,7 @@ export default function ServiceMallPage() {
         <ServiceDetailModal
           item={detailService}
           isAuthenticated={!!user}
-          shareReady={!user || !!shareToken}
+          shareReady={!user || !!shareToken || !!detailService.servicePackage}
           onClose={closeSharedDetail}
           onConsult={() => { openPurchase(detailService, 'consult'); setDetailService(null); }}
           onPay={() => { openPurchase(detailService, 'pay'); setDetailService(null); }}
@@ -741,7 +767,7 @@ export default function ServiceMallPage() {
       )}
 
       {selectedService && (
-        <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''}
+        <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''} partnerCode={routeParams.partnerCode || ''}
           initialBeneficiaryUserId={selectedService.id === routeParams.productId && routeParams.beneficiaryUserId ? routeParams.beneficiaryUserId : storedArchiveId(user?._id)}
           pushRecordId={selectedService.id === routeParams.productId ? routeParams.pushRecordId || '' : ''}
           onClose={() => setSelectedService(null)} />

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
@@ -18,11 +19,84 @@ const MEMBERSHIP_TIERS = [
   { value: 'enterprise', label: '企业会员' },
 ]
 
+const ALLOCATION_ROLES = [
+  ['familyDoctor', '健康顾问'], ['nutritionist', '营养师'],
+  ['healthManager', '健管专员'], ['medicalAssistant', '就医专员'],
+  ['psychologist', '心理咨询师'], ['rehabSpecialist', '运动复健师'],
+  ['specialist', '专科医师'], ['tcmDoctor', '中医师'],
+]
+const packageAllocationName = row => row.businessType === 'enterprise' ? '企业资源'
+  : row.businessType === 'product' ? '产品／检测归属'
+    : `${ALLOCATION_ROLES.find(([role]) => role === row.teamRole)?.[1] || '服务团队'}管理服务`
+
+function PackageAllocationRow({ row, price, products, onChange, onRemove }) {
+  const [search, setSearch] = useState('')
+  const query = search.trim().toLowerCase()
+  const options = products.filter(product => String(product._id) === String(row.childProductId || '')
+    || !query || `${product.name} ${product.category || ''}`.toLowerCase().includes(query))
+  return <div style={{ border: '1px solid #D9E4DD', borderRadius: 8, padding: 10, marginTop: 8 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr auto', gap: 8 }}>
+      <input className="form-input" value={row.name || ''} placeholder="项目名称可留空，按团队自动命名" onChange={event => onChange({ name: event.target.value })} />
+      <select className="form-input" value={row.businessType || 'service'} onChange={event => {
+        const businessType = event.target.value
+        const next = { ...row, businessType, teamRole: businessType === 'enterprise' ? 'enterpriseResource' : 'healthManager', childProductId: '' }
+        onChange({ ...next, name: packageAllocationName(next) })
+      }}>
+        <option value="service">服务</option><option value="product">产品</option><option value="enterprise">资源</option>
+      </select>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>删除</button>
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+      {row.businessType === 'enterprise' ? <div className="form-input" style={{ background: '#F6F8F7' }}>企业资源（不关联个人）</div>
+        : <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => onChange({ teamRole: event.target.value,
+          name: packageAllocationName({ ...row, teamRole: event.target.value }) })}>
+          {ALLOCATION_ROLES.map(([value, label]) => <option key={value} value={value}>{label}团队</option>)}
+        </select>}
+      <input key={`${row.key}:${price}`} className="form-input" type="number" min="0" step="0.01"
+        defaultValue={price ? (price * Number(row.revenueSharePercent || 0) / 100).toFixed(2) : ''}
+        placeholder="归属金额 ¥" aria-label={`${row.name || '项目'}归属金额元`} disabled={!price}
+        onBlur={event => onChange({ revenueSharePercent: Math.round(Number(event.target.value || 0) / price * 1000000) / 10000 })}
+        onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+      <div className="form-input" style={{ background: '#F6F8F7' }}>{Number(row.revenueSharePercent || 0).toFixed(2)}%</div>
+    </div>
+    {row.businessType === 'product' && <div style={{ marginTop: 8 }}>
+      <input className="form-input" type="search" placeholder="搜索产品名称或分类" value={search} onChange={event => setSearch(event.target.value)} />
+      <select className="form-input" style={{ marginTop: 6 }} value={row.childProductId || ''}
+        onChange={event => onChange({ childProductId: event.target.value })}>
+        <option value="">选择产品库项目</option>
+        {options.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
+      </select>
+    </div>}
+  </div>
+}
+
+function PackageAllocationEditor({ rows, price, products, onChange }) {
+  const list = rows || []
+  const total = list.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0)
+  const update = (index, patch) => onChange(list.map((row, i) => i === index ? { ...row, ...patch } : row))
+  return <div className="form-group" style={{ borderTop: '1px solid #E5E7EB', paddingTop: 14 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <label className="form-label">业务营收归属</label>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange([...list, {
+        key: `allocation_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: '健管专员管理服务',
+        businessType: 'service', teamRole: 'healthManager', childProductId: '', revenueSharePercent: 0,
+      }])}>+ 添加归属项目</button>
+    </div>
+    <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0' }}>按本服务包售价填金额，服务、产品和资源合计应为100%。实际付款或退款按冻结比例分摊；资源不关联个人，此处不设置个人服务费。</p>
+    {list.map((row, index) => <PackageAllocationRow key={row.key || index} row={row} price={Number(price) || 0}
+      products={products} onChange={patch => update(index, patch)} onRemove={() => onChange(list.filter((_, i) => i !== index))} />)}
+    {!!list.length && <div style={{ marginTop: 8, color: Math.abs(total - 100) < 0.001 ? '#1E6B50' : '#C0392B' }}>
+      已分配 ¥{((Number(price) || 0) * total / 100).toFixed(2)} / ¥{(Number(price) || 0).toFixed(2)}（{total.toFixed(2)}%）
+    </div>}
+  </div>
+}
+
 // ─── 共用：简单列表管理组件（标签/来源） ─────────────────────────
 function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn, withClientBrand = false, withEntitlements = false, withActivation = false }) {
   const toast = useToast()
   const [list, setList] = useState([])
   const [productCatalog, setProductCatalog] = useState([])
+  const [allProductCatalog, setAllProductCatalog] = useState([])
   const [productSearch, setProductSearch] = useState('')
   const [poolProductSearch, setPoolProductSearch] = useState({})
   const [showIncludedOnly, setShowIncludedOnly] = useState(false)
@@ -34,7 +108,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [clientBrand, setClientBrand] = useState('jiayiguanjia')
   const [entitlements, setEntitlements] = useState({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthArchiveConcierge: false, healthConsultation: false, medicalPlanning: false, expertAppointment: false, reportInterpretation: false })
   const [activation, setActivation] = useState({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false })
-  const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [] })
+  const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [], businessAllocations: [] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -44,22 +118,35 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
     if (withActivation) requests.push(adminAPI.products({ limit: 500 }))
     Promise.all(requests).then(([r, products]) => {
       setList(r.data)
-      if (products) setProductCatalog((products.data || []).filter(item => item.status === 'on'))
+      if (products) {
+        setAllProductCatalog(products.data || [])
+        setProductCatalog((products.data || []).filter(item => item.status === 'on'))
+      }
     }).catch(e => toast(e.message)).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
 
-  const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [] }
+  const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [], businessAllocations: [] }
   const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthArchiveConcierge: false, healthConsultation: false, medicalPlanning: false, expertAppointment: false, reportInterpretation: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setConfiguration(emptyConfiguration); setProductSearch(''); setPoolProductSearch({}); setShowIncludedOnly(false); setError(''); setShowModal(true) }
   const openEdit = item => { const legacySchedule = item.configuration?.phaseAssessmentSchedule || []; const legacyFrequency = legacySchedule.includes('week2') ? 'biweekly' : legacySchedule.includes('month1') ? 'monthly' : legacySchedule.includes('quarterly') ? 'quarterly' : ''; setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, phaseAssessment: !!item.entitlements?.phaseAssessment, monthlyServiceReview: !!item.entitlements?.monthlyServiceReview, healthArchiveConcierge: !!item.entitlements?.healthArchiveConcierge, healthConsultation: !!item.entitlements?.healthConsultation, medicalPlanning: !!item.entitlements?.medicalPlanning, expertAppointment: !!item.entitlements?.expertAppointment, reportInterpretation: !!item.entitlements?.reportInterpretation }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setConfiguration({ ...emptyConfiguration, ...(item.configuration || {}), phaseAssessmentFrequency: item.configuration?.phaseAssessmentFrequency || legacyFrequency, serviceEntitlements: item.configuration?.serviceEntitlements || [], sharedEntitlementPools: item.configuration?.sharedEntitlementPools || [] }); setProductSearch(''); setPoolProductSearch({}); setShowIncludedOnly(false); setError(''); setShowModal(true) }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
+    const allocations = (configuration.businessAllocations || []).map(row => ({ ...row,
+      name: String(row.name || '').trim() || packageAllocationName(row) }))
+    if (withActivation && allocations.length && (!Number(activation.price)
+      || allocations.some(row => Number(row.revenueSharePercent) <= 0
+        || (row.businessType === 'product' && !row.childProductId))
+      || Math.abs(allocations.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001)) {
+      const message = '请填写售价及每项归属金额；产品项目需关联产品库，金额合计须为售价的100%'
+      setError(message); toast(message); return
+    }
     setSaving(true); setError('')
     try {
       const activationPayload = { ...activation, features: activation.featuresText.split(/\r?\n/).map(v => v.trim()).filter(Boolean) }
       delete activationPayload.featuresText
-      const payload = withClientBrand ? { name, clientBrand, ...(withEntitlements ? { entitlements } : {}), ...(withActivation ? { activation: activationPayload, configuration } : {}) } : { name }
+      const payload = withClientBrand ? { name, clientBrand, ...(withEntitlements ? { entitlements } : {}), ...(withActivation ? { activation: activationPayload,
+        configuration: { ...configuration, businessAllocations: allocations } } : {}) } : { name }
       if (editId) { await updateFn(editId, payload); toast('已更新') }
       else { await createFn(payload); toast('已创建') }
       setShowModal(false); load()
@@ -107,7 +194,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              {(withClientBrand ? ['名称', '客户归属', ...(withEntitlements ? ['AI权益'] : []), ...(withActivation ? ['用户开通'] : []), '状态', '操作'] : ['名称', '状态', '操作']).map(h => (
+              {(withClientBrand ? ['名称', '客户归属', ...(withEntitlements ? ['AI权益'] : []), ...(withActivation ? ['用户开通', '业务归属'] : []), '状态', '操作'] : ['名称', '状态', '操作']).map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
               ))}
             </tr>
@@ -123,19 +210,24 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                 {withActivation && <td style={{ padding: '10px 14px', fontSize: 12, color: '#4B5563' }}>
                   {item.activation?.enabled ? `${item.activation.durationMonths || '-'}个月 / ¥${item.activation.price || 0}` : '不展示'}
                 </td>}
+                {withActivation && <td style={{ padding: '10px 14px', fontSize: 12 }}>
+                  {Math.abs((item.configuration?.businessAllocations || []).reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) < 0.001
+                    ? <span style={{ color: '#1E6B50' }}>已设置 100%</span>
+                    : <span style={{ color: '#C0392B' }}>未设置完整</span>}
+                </td>}
                 <td style={{ padding: '10px 14px' }}>
                   <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: isItemActive(item) ? '#E8F5EF' : '#FEF2F2', color: isItemActive(item) ? '#1E6B50' : '#DC2626' }}>
                     {isItemActive(item) ? '启用' : '停用'}
                   </span>
                 </td>
                 <td style={{ padding: '10px 14px' }}>
-                  <button className="btn btn-secondary btn-sm" onClick={() => openEdit(item)} style={{ marginRight: 6 }}>编辑</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => openEdit(item)} style={{ marginRight: 6 }}>{withActivation ? '编辑／业务归属' : '编辑'}</button>
                   <button className="btn btn-secondary btn-sm" onClick={() => handleToggle(item)} style={{ marginRight: 6 }}>{isItemActive(item) ? '停用' : '启用'}</button>
                   <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item)}>删除</button>
                 </td>
               </tr>
             ))}
-            {!visibleList.length && <tr><td colSpan={withClientBrand ? 6 : 3} style={{ padding: 28, textAlign: 'center', color: '#6B7280' }}>当前筛选条件下暂无服务包</td></tr>}
+            {!visibleList.length && <tr><td colSpan={withClientBrand ? (withActivation ? 7 : 6) : 3} style={{ padding: 28, textAlign: 'center', color: '#6B7280' }}>当前筛选条件下暂无服务包</td></tr>}
           </tbody>
         </table>
       )}
@@ -272,6 +364,9 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   </div>
                 </div>
               )}
+              {withActivation && <PackageAllocationEditor rows={configuration.businessAllocations || []}
+                price={activation.price} products={allProductCatalog}
+                onChange={businessAllocations => setConfiguration(value => ({ ...value, businessAllocations }))} />}
               {withActivation && (
                 <div className="form-group" style={{ borderTop: '1px solid #E5E7EB', paddingTop: 14 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -454,7 +549,9 @@ function MemberTypeTab() {
 const TABS = ['会员标签', '会员来源', '会员类型', '服务包']
 
 export default function MemberSettingsPage() {
-  const [tab, setTab] = useState(0)
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState(searchParams.get('tab') === 'packages' ? 3 : 0)
+  useEffect(() => { if (searchParams.get('tab') === 'packages') setTab(3) }, [searchParams])
 
   return (
     <div>
@@ -504,7 +601,7 @@ export default function MemberSettingsPage() {
         {tab === 3 && (
           <SimpleListTab
             title="服务包"
-            desc="按客户归属维护医护端可选的服务包"
+            desc="365健康会员等年度服务包在此维护；点击“编辑／业务归属”设置团队拆分"
             fetchFn={adminAPI.servicePackages}
             createFn={adminAPI.createServicePackage}
             updateFn={adminAPI.updateServicePackage}

@@ -18,7 +18,7 @@ function sameReportItem(a, b) {
 // A page supplement often receives the same lab row with a different unit or
 // section spelling. Match the exact identity first; then treat a same-name
 // measured row on this page as existing instead of adding a competing result.
-function supplementMatches(existingItems, candidate) {
+function supplementMatches(existingItems, candidate, options = {}) {
   const list = existingItems || [];
   const exact = list.filter(item => sameReportItem(item, candidate));
   if (exact.length) return exact;
@@ -33,6 +33,12 @@ function supplementMatches(existingItems, candidate) {
   if (!['lab', 'data'].includes(candidate?.itemType) || !cleanPart(candidate.name)) return [];
   return list.filter(item => ['lab', 'data'].includes(item?.itemType)
     && cleanPart(item.name) === cleanPart(candidate.name)
+    && (!options.preserveDistinctMeasuredSections
+      || !cleanPart(item.orderName || item.sourceSection)
+      || !cleanPart(candidate.orderName || candidate.sourceSection)
+      || cleanPart(item.orderName || item.sourceSection) === cleanPart(candidate.orderName || candidate.sourceSection)
+      || !cleanPart(item.value) || !cleanPart(candidate.value)
+      || cleanPart(item.value) === cleanPart(candidate.value))
     && (!cleanPart(item.specimen) || !cleanPart(candidate.specimen) || cleanPart(item.specimen) === cleanPart(candidate.specimen))
     && (!cleanPart(item.examDate) || !cleanPart(candidate.examDate) || cleanPart(item.examDate) === cleanPart(candidate.examDate))
     && (!cleanPart(item.unit) || !cleanPart(candidate.unit)
@@ -106,7 +112,7 @@ function alignSupplementCandidate(existingItems, candidate) {
 }
 
 // 仅允许以“有证据的新候选”补全同一身份的未人工核对空壳项；人工已核对数据永不被 OCR 改写。
-function mergeSupplementItems(existingItems, candidates) {
+function mergeSupplementItems(existingItems, candidates, options = {}) {
   const result = [...(existingItems || [])];
   const indexByKey = new Map(result.map((item, index) => [reportItemIdentityKey(item), index]));
   const added = [];
@@ -114,7 +120,7 @@ function mergeSupplementItems(existingItems, candidates) {
   for (const candidate of (candidates || [])) {
     if (!cleanPart(candidate?.name) || !hasReportItemEvidence(candidate)) continue;
     const key = reportItemIdentityKey(candidate);
-    const compatibleItems = supplementMatches(result, candidate);
+    const compatibleItems = supplementMatches(result, candidate, options);
     const compatible = compatibleItems.map(item => result.indexOf(item));
     const index = indexByKey.get(key) ?? (compatible.length === 1 ? compatible[0] : undefined);
     if (index == null) {
@@ -215,8 +221,8 @@ function filterMissingReportItems(existingItems, candidates, options = {}) {
       if (targeted.every(organ => existingCoveredOrgans.has(organ.key))) return false;
     }
     const key = reportItemIdentityKey(item);
-    if (existingKeys.has(key) || supplementMatches(existingItems, item).length
-      || acceptedKeys.has(key) || supplementMatches(acceptedItems, item).length) return false;
+    if (existingKeys.has(key) || supplementMatches(existingItems, item, options).length
+      || acceptedKeys.has(key) || supplementMatches(acceptedItems, item, options).length) return false;
     acceptedKeys.add(key);
     acceptedItems.push(item);
     return true;

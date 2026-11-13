@@ -73,6 +73,7 @@ async function getCorporateFundAvailable(user) {
   const platformRewardRemarks = [
     '首次使用小程序健康基金奖励', '邀请好友首次使用小程序奖励', '通过好友邀请首次使用小程序奖励',
     '邀请好友完成问卷奖励', '通过好友邀请完成问卷奖励',
+    '客户激活奖励基金', '首次完成健康问卷奖励基金',
   ];
   const [grants, pointsExchangeGrants, legacyFirstLoginGrants, spent] = await Promise.all([GiftRecord.aggregate([
     { $match: { patientId: user._id, giftType: 'fund', status: 'active' } },

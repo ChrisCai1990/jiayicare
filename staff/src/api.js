@@ -107,6 +107,10 @@ export const inAppServiceGroupAPI = {
 }
 
 export const staffAPI = {
+  aiWorkspaceStatus: () => req('/staff/ai-workspace/status'),
+  aiWorkspaceChat: (mode, messages, webSearch = false, attachment = null) => req('/staff/ai-workspace/chat', { method: 'POST', body: JSON.stringify({ mode, messages, webSearch, attachment }) }),
+  getAssignedFeedback: (params = {}) => req('/feedback/assigned?' + new URLSearchParams(params)),
+  submitFeedbackResult: (id, data) => req(`/feedback/${id}/result`, { method: 'POST', body: JSON.stringify(data) }),
   expertConsultationCases: () => req('/expert-consultations/staff'),
   createExpertConsultation: data => req('/expert-consultations/staff', { method: 'POST', body: JSON.stringify(data) }),
   expertConsultationExperts: () => req('/expert-consultations/staff/experts'),
@@ -355,6 +359,7 @@ export const staffAPI = {
   returnReportToManager: (id, reason) => req(`/staff/medical-reports/${id}/advisor-return`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   confirmReportInterpretation: id => req(`/staff/medical-reports/${id}/advisor-confirm`, { method: 'PATCH' }),
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
+  correctReportCategory: (id, data) => req(`/staff/medical-reports/${id}/category-correction`, { method: 'PATCH', body: JSON.stringify(data) }),
   updateReportPageDate: (id, page, date) => req(`/staff/medical-reports/${id}/page-dates/${page}`, { method: 'PATCH', body: JSON.stringify({ date }) }),
   updateReportItem: (id, itemId, d) => req(`/staff/medical-reports/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
   deleteReport:  (id, reason) => req(`/staff/medical-reports/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
@@ -459,6 +464,7 @@ export const staffAPI = {
 
   // P3 — Products
   getProducts:    (p = {}) => req('/staff/products?' + qs(p)),
+  createOfflineOrder: (patientId, data) => req(`/staff/patients/${patientId}/offline-orders`, { method: 'POST', body: JSON.stringify(data) }),
   getProductCategories: () => req('/staff/product-categories'),
   pushProduct:    (id, data) => req(`/staff/products/${id}/push`, { method: 'POST', body: JSON.stringify(data) }),
   pushBundle:     (data)     => req('/staff/products/push-bundle', { method: 'POST', body: JSON.stringify(data) }),
@@ -788,3 +794,12 @@ export const staffAPI = {
   },
   deleteScreeningRecord: (id, rid) => req(`/staff/patients/${id}/screening-records/${rid}`, { method: 'DELETE' }),
 }
+
+export const managementReviewAPI = {
+ prepare: (id,data) => req(`/staff/patients/${id}/management-reviews/prepare`, {method:'POST',body:JSON.stringify(data)}),
+ get: id => req(`/staff/patients/${id}/management-reviews`),
+ sources: (id, period) => req(`/staff/patients/${id}/management-reviews/sources?period=${encodeURIComponent(period)}`),
+ create: (id, data) => req(`/staff/patients/${id}/management-reviews`, {method:'POST',body:JSON.stringify(data)}),
+ act: (id, review, action, data) => req(`/staff/patients/${id}/management-reviews/${review}/${action}`, {method:'POST',body:JSON.stringify(data)}),
+}
+export const psychologyAPI = { get: (path = '') => req('/staff/psychology' + path), post: (path, body) => req('/staff/psychology' + path, { method: 'POST', body: JSON.stringify(body) }) };

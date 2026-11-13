@@ -363,6 +363,8 @@ function findUnclassifiedNamedItems(items) {
   );
 }
 
+const { findUnconfirmedMultiClassifiedItems } = require('./reportClassificationReview');
+
 // “血清”描述的是标本类型，不是检验项目本身。既保留报告原名，也增加去掉该前缀后的候选，
 // 让“血清总蛋白”能够精确命中Admin已有的“总蛋白”，且不影响任何既有精确匹配。
 function reportNameCandidates(value) {
@@ -437,6 +439,6 @@ module.exports = {
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
   matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates, reportNameCandidates,
   hasConfirmedClassification, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName,
-  findUnclassifiedNamedItems, shouldExcludeClassificationNode,
+  findUnclassifiedNamedItems, findUnconfirmedMultiClassifiedItems, shouldExcludeClassificationNode,
   inferStoolPanelPages,
 };

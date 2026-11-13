@@ -5,12 +5,13 @@ class PushDeviceInputError extends Error {
 }
 function fail(status, message) { throw new PushDeviceInputError(status, message); }
 function destination(input) {
-  if (input?.provider !== 'huawei') fail(400, '暂不支持此推送通道');
+  if (!['huawei', 'apns'].includes(input?.provider)) fail(400, '暂不支持此推送通道');
   const token = input.token;
   if (typeof token !== 'string' || !token.length || token.length > 4096 || /\s|[\x00-\x1f\x7f]/.test(token)) {
     fail(400, '设备推送凭据无效');
   }
-  return { _id: createHash('sha256').update(`huawei:${token}`).digest('hex'), provider: 'huawei', token };
+  if (input.provider === 'apns' && (!/^[a-f0-9]{2,512}$/.test(token) || token.length % 2 !== 0)) fail(400, '苹果推送凭据无效');
+  return { _id: createHash('sha256').update(`${input.provider}:${token}`).digest('hex'), provider: input.provider, token };
 }
 
 function createPushDeviceRegistry({ Device, Session, enabled }) {
@@ -20,13 +21,16 @@ function createPushDeviceRegistry({ Device, Session, enabled }) {
   }
   return {
     async register(user, sessionId, input) {
-      if (!enabled()) fail(503, '系统推送尚未开放');
       const binding = owner(user, sessionId);
       const device = destination(input);
+      if (!enabled(device.provider)) fail(503, '此设备的系统推送尚未开放');
       if (!await Session.exists({ user: binding.user, sessionId, logoutAt: null })) fail(401, '登录已退出');
       // Atomic ownership transfer on account switch; no duplicate destinations.
       // Client user/tenant/session fields are intentionally ignored.
-      await Device.updateOne({ _id: device._id }, { $set: { provider: device.provider, token: device.token, ...binding } }, { upsert: true, runValidators: true });
+      const previous = await Device.findById(device._id).select('user').lean();
+      await Device.updateOne({ _id: device._id }, { $set: { provider: device.provider, token: device.token, ...binding,
+        ...(previous && String(previous.user) !== String(binding.user) ? { settings: {} } : {}),
+      } }, { upsert: true, runValidators: true });
     },
     async unregister(user, sessionId, input) {
       const binding = owner(user, sessionId);
@@ -42,7 +46,10 @@ function createPushDeviceRegistry({ Device, Session, enabled }) {
         .select('sessionId').lean();
       const active = new Set(sessions.map(s => s.sessionId));
       // Future dispatcher must call this at send time, never cache across logout.
-      return devices.filter(d => active.has(d.sessionId)).map(d => ({ provider: d.provider, token: d.token }));
+      return devices.filter(d => active.has(d.sessionId) && enabled(d.provider)).map(d => {
+        const settings = d.settings instanceof Map ? Object.fromEntries(d.settings) : d.settings;
+        return { provider: d.provider, token: d.token, ...(settings && Object.keys(settings).length ? { settings } : {}) };
+      });
     },
   };
 }

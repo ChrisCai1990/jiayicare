@@ -6,10 +6,10 @@ import { recordsAPI, userAPI, ibdAPI, guardianChildrenAPI, familyLinksAPI } from
 import useArchiveSubject from '../../../hooks/useArchiveSubject';
 import TrendChart from '../../../components/TrendChart';
 import BloodPressureChart from '../../../components/BloodPressureChart';
-import { bloodPressurePoints } from '../../../utils/bloodPressureTrend';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { useAuth } from '../../../context/AuthContext';
+import { useLanguage } from '../../../i18n';
 
 const TYPE_META = {
   bloodPressure: { label: '血压', icon: '💗', unit: 'mmHg' },
@@ -39,9 +39,10 @@ const archiveValue = value => {
 const STATUS_COLOR = { normal: colors.success, warning: colors.warning, low: colors.info };
 
 const pad2 = value => String(value).padStart(2, '0');
-const formatRecordDate = value => {
+const formatRecordDate = (value, language = 'zh-CN') => {
   const date = value ? new Date(value) : null;
-  if (!date || Number.isNaN(date.getTime())) return '未知日期';
+  if (!date || Number.isNaN(date.getTime())) return language === 'en-US' ? 'Unknown date' : '未知日期';
+  if (language === 'en-US') return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 };
 const formatRecordTime = value => {
@@ -51,6 +52,7 @@ const formatRecordTime = value => {
 };
 
 export default function RecordsIndexPage() {
+  const { t, language } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const archive = useArchiveSubject();
   const [childArchive, setChildArchive] = useState(null);
@@ -132,8 +134,6 @@ export default function RecordsIndexPage() {
   const filtered = records.filter((r) => r.type === filter);
   const dailyRecords = records.filter((r) => DAILY_TYPES.includes(r.type));
   const symptoms = records.filter((r) => r.type === 'symptom');
-  const bpPoints = bloodPressurePoints(bpTrend, 60);
-  const bpLatestByArm = ['左臂', '右臂', '未标注'].map(arm => ({ arm, point: [...bpPoints].reverse().find(point => point.arm === arm) })).filter(item => item.point);
   const trendMap = {
     bloodPressure: { data: bpTrend, color: colors.danger, label: '近30天血压趋势 (mmHg)' },
     bloodSugar: { data: bsTrend, color: colors.warning, label: '血糖 (mmol/L)' },
@@ -147,7 +147,7 @@ export default function RecordsIndexPage() {
   if (archive.error) return <View style={{ padding: `${statusBarHeight + 24}px ${spacing.lg}px` }}><Text onClick={archive.refresh} style={{ color: colors.danger }}>{archive.error} · 点击重试</Text></View>;
 
   const archivePicker = <View style={{ backgroundColor: '#fff', padding: `${spacing.md}px`, borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px`, border: `1px solid ${colors.border}` }}>
-    <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>当前健康档案</Text>
+    <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>{t('当前健康档案')}</Text>
     <Picker mode="selector" range={[`本人 · ${archive.user?.name || ''}`, ...archive.subjects.map(member => `${member.name} · ${member.kind === 'child' ? '孩子' : '家人'}`)]}
       value={Math.max(0, archive.subjects.findIndex(member => String(member.id) === String(archive.subject?.id)) + 1)}
       onChange={event => archive.select(Number(event.detail.value))}>
@@ -156,14 +156,14 @@ export default function RecordsIndexPage() {
   </View>;
 
   if (archive.subject) return <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.xl}px` }}>
-    <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>健康档案</Text>
+    <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>{t('健康档案')}</Text>
     {archivePicker}
     <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: `${spacing.md}px` }}>当前查看的是{archive.subject.name}的档案。</Text>
     <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
       <View onClick={() => Taro.navigateTo({ url: '/pages/records/upload/index' })} style={{ flex: 1, padding: '15px', backgroundColor: colors.primary, color: '#fff', textAlign: 'center', borderRadius: `${radius.md}px` }}>上传报告</View>
       <View onClick={() => Taro.navigateTo({ url: '/pages/records/medical-reports/index' })} style={{ flex: 1, padding: '15px', backgroundColor: '#fff', color: colors.primary, textAlign: 'center', borderRadius: `${radius.md}px` }}>查看报告</View>
     </View>
-    {childArchiveError ? <Text style={{ color: colors.danger }}>{childArchiveError}</Text> : !childArchive ? <Text>家庭成员档案加载中…</Text> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
+    {childArchiveError ? <Text style={{ color: colors.danger }}>{childArchiveError}</Text> : !childArchive ? <Text>{t('家庭成员档案加载中…')}</Text> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
       <Text style={{ fontSize: '16px', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{childArchive.name}的基础档案</Text>
       <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>{childArchive.birthDate} · {childArchive.ageStage?.label || (archive.subject.kind === 'adult' ? '家庭成员' : '年龄待核实')}</Text>
       {archive.subject.kind === 'child' && childArchive.pendingReviewCount > 0 && <Text style={{ color: colors.warning, display: 'block' }}>{childArchive.pendingReviewCount} 份问卷待医护核实</Text>}
@@ -177,10 +177,10 @@ export default function RecordsIndexPage() {
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ padding: `${statusBarHeight + 12}px ${spacing.lg}px 0` }}>
-        <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>健康档案</Text>
+        <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>{t('健康档案')}</Text>
         {archivePicker}
 
-        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>档案工具</Text>
+        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('档案工具')}</Text>
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
           {[
             { label: '上传报告', hint: '拍照或相册', icon: 'upload', url: '/pages/records/upload/index', primary: true },
@@ -189,18 +189,18 @@ export default function RecordsIndexPage() {
           ].map((action) => (
             <View key={action.label} onClick={() => Taro.navigateTo({ url: action.url })} style={{ flex: 1, minWidth: 0, backgroundColor: action.primary ? colors.primary : '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${action.primary ? colors.primary : colors.border}`, padding: '13px 8px', textAlign: 'center', boxShadow: shadow.card }}>
               <View style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}><Icon name={action.icon} size={20} color={action.primary ? '#fff' : colors.primary} /></View>
-              <Text style={{ fontSize: '12px', fontWeight: 700, color: action.primary ? '#fff' : colors.textPrimary, display: 'block' }}>{action.label}</Text>
-              <Text style={{ fontSize: '9px', color: action.primary ? 'rgba(255,255,255,0.72)' : colors.textMuted, display: 'block', marginTop: '2px', whiteSpace: 'nowrap' }}>{action.hint}</Text>
+              <Text style={{ fontSize: '12px', fontWeight: 700, color: action.primary ? '#fff' : colors.textPrimary, display: 'block' }}>{t(action.label)}</Text>
+              <Text style={{ fontSize: '9px', color: action.primary ? 'rgba(255,255,255,0.72)' : colors.textMuted, display: 'block', marginTop: '2px', whiteSpace: 'nowrap' }}>{t(action.hint)}</Text>
             </View>
           ))}
         </View>
 
         {ibdEnabled && <View onClick={() => Taro.navigateTo({ url: '/pages/records/ibd-fc/index' })} style={{ backgroundColor: '#E7F4EE', border: `1px solid ${colors.primary}`, borderRadius: `${radius.md}px`, padding: '14px', marginBottom: `${spacing.md}px` }}>
-          <Text style={{ display: 'block', color: colors.primary, fontSize: '15px', fontWeight: 700 }}>IBD · 粪便钙卫蛋白趋势</Text>
-          <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '12px', marginTop: '4px' }}>查看 FC 曲线与检测记录，录入新的检查结果 →</Text>
+          <Text style={{ display: 'block', color: colors.primary, fontSize: '15px', fontWeight: 700 }}>{t('IBD · 粪便钙卫蛋白趋势')}</Text>
+          <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '12px', marginTop: '4px' }}>{t('查看 FC 曲线与检测记录，录入新的检查结果 →')}</Text>
         </View>}
 
-        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>健康数据趋势</Text>
+        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('健康数据趋势')}</Text>
 
         {!!trendError&&<Text onClick={loadTrends} style={{display:'block',color:colors.danger,fontSize:'13px',marginBottom:'8px'}}>{trendError}</Text>}
         {/* 趋势图 Tab：血压/血糖/睡眠 */}
@@ -213,19 +213,14 @@ export default function RecordsIndexPage() {
                   backgroundColor: trendTab === t.k ? colors.primary : colors.background,
                   border: `1px solid ${trendTab === t.k ? colors.primary : colors.border}`,
                 }}>
-                  <Text style={{ fontSize: '12px', color: trendTab === t.k ? '#fff' : colors.textSecondary, fontWeight: trendTab === t.k ? 700 : 400 }}>{t.l}</Text>
+                  <Text style={{ fontSize: '12px', color: trendTab === t.k ? '#fff' : colors.textSecondary, fontWeight: trendTab === t.k ? 700 : 400 }}>{language === 'en-US' ? ({ bloodPressure: 'BP', bloodSugar: 'Glucose', waist: 'Waist', sleep: 'Sleep', heartRate: 'Pulse', weight: 'Weight' }[t.k]) : t.l}</Text>
                 </View>
               ))}
             </View>
-            <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{trendMap[trendTab].label}</Text>
-            {trendTab === 'bloodPressure' ? <View style={{ marginBottom: '10px' }}>
-              {bpLatestByArm.map(({ arm, point }) => <View key={arm} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                <Text style={{ fontSize: '13px', color: colors.textSecondary }}>{arm} · {formatRecordDate(point.recordedAt)}</Text>
-                <Text style={{ fontSize: '15px', fontWeight: 700, color: arm === '右臂' ? colors.danger : colors.primary }}>{point.sys}/{point.dia} mmHg</Text>
-              </View>)}
-            </View> : trendMap[trendTab].data.length>0?<View style={{marginBottom:'10px'}}>
+            <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{language === 'en-US' ? ({ bloodPressure: 'Blood pressure trend, last 30 days (mmHg)', bloodSugar: 'Blood glucose (mmol/L)', sleep: 'Sleep (hours)', heartRate: 'Heart rate (bpm)', weight: 'Weight (kg)', waist: 'Waist (cm)' }[trendTab]) : trendMap[trendTab].label}</Text>
+            {trendTab === 'bloodPressure' ? null : trendMap[trendTab].data.length>0?<View style={{marginBottom:'10px'}}>
               <Text style={{fontSize:'26px',fontWeight:800,color:trendMap[trendTab].color,display:'block'}}>{trendMap[trendTab].data[trendMap[trendTab].data.length-1].displayValue} {TYPE_META[trendTab].unit}</Text>
-              <Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'4px'}}>最近记录：{formatRecordDate(trendMap[trendTab].data[trendMap[trendTab].data.length-1].recordedAt)}</Text>
+              <Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'4px'}}>{language === 'en-US' ? 'Latest: ' : '最近记录：'}{formatRecordDate(trendMap[trendTab].data[trendMap[trendTab].data.length-1].recordedAt, language)}</Text>
             </View>:<Text style={{display:'block',color:colors.textSecondary}}>暂无{TYPE_META[trendTab].label}记录</Text>}
             {trendTab === 'bloodPressure' ? <BloodPressureChart records={bpTrend} height={105} /> : <TrendChart points={trendMap[trendTab].data} height={120} color={trendMap[trendTab].color} mode="line" />}
           </View>
@@ -233,7 +228,7 @@ export default function RecordsIndexPage() {
       </View>
 
       <View style={{ padding: `0 ${spacing.lg}px` }}>
-        <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>身体成分</Text>
+        <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('身体成分')}</Text>
         {(() => {
           const history = [...bodyCompHistory];
           if (Object.keys(bodyComposition || {}).length) history.push({ ...bodyComposition, _isCurrent: true });
@@ -250,14 +245,14 @@ export default function RecordsIndexPage() {
             const reference = [...rows].reverse().find(row => row?.[metric.referenceKey])?.[metric.referenceKey] || '未录入';
             return { metric, latest, points, reference };
           }).filter(Boolean);
-          if (!cards.length) return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无身体成分数据</Text></View>;
+          if (!cards.length) return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>{t('暂无身体成分数据')}</Text></View>;
           const active = cards.find((item) => item.metric.key === bodyTrendTab) || cards[0];
           return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}>
             <View style={{ display: 'flex', gap: '7px', marginBottom: `${spacing.sm}px` }}>
-              {cards.map(({ metric }) => <View key={metric.key} onClick={() => setBodyTrendTab(metric.key)} style={{ flex: 1, minWidth: 0, textAlign: 'center', padding: '6px 2px', borderRadius: `${radius.full}px`, backgroundColor: active.metric.key === metric.key ? colors.primary : colors.background, border: `1px solid ${active.metric.key === metric.key ? colors.primary : colors.border}` }}><Text style={{ fontSize: '11px', color: active.metric.key === metric.key ? '#fff' : colors.textSecondary }}>{metric.key === 'weight' ? '体重' : metric.label}</Text></View>)}
+              {cards.map(({ metric }) => <View key={metric.key} onClick={() => setBodyTrendTab(metric.key)} style={{ flex: 1, minWidth: 0, textAlign: 'center', padding: '6px 2px', borderRadius: `${radius.full}px`, backgroundColor: active.metric.key === metric.key ? colors.primary : colors.background, border: `1px solid ${active.metric.key === metric.key ? colors.primary : colors.border}` }}><Text style={{ fontSize: '11px', color: active.metric.key === metric.key ? '#fff' : colors.textSecondary }}>{t(metric.key === 'weight' ? '体重' : metric.label)}</Text></View>)}
             </View>
             <View style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{active.metric.label}</Text>
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{t(active.metric.label)}</Text>
               <Text style={{ fontSize: '18px', fontWeight: 800, color: active.metric.color }}>{bodyNumber(active.latest[active.metric.key])} {active.metric.unit}</Text>
             </View>
             <TrendChart points={active.points} height={118} color={active.metric.color} mode="line" />

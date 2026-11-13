@@ -26,9 +26,18 @@ const { resolveOrderWorkflowAssignee, orderOwnershipFields } = require('../utils
 // service content before being asked to log in or authorize personal data.
 router.get('/', async (req, res) => {
   const [products, categoryDocs] = await Promise.all([
-    Product.find({ status: 'on' }).sort({ sortOrder: 1, createdAt: 1 }),
+    Product.find({ status: 'on', paymentChannel: { $ne: 'offline' } })
+      .sort({ sortOrder: 1, createdAt: 1 }),
     ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).lean(),
   ]);
+
+  // “人已购”按真实已付款客户去重统计；Product.sales 历史字段未随付款维护。
+  const paidBuyers = products.length ? await Order.aggregate([
+    { $match: { serviceId: { $in: products.map(product => String(product._id)) }, paymentStatus: 'paid', paidAmount: { $gt: 0 } } },
+    { $group: { _id: { serviceId: '$serviceId', user: '$user' } } },
+    { $group: { _id: '$_id.serviceId', count: { $sum: 1 } } },
+  ]) : [];
+  const paidBuyerCount = new Map(paidBuyers.map(row => [String(row._id), row.count]));
 
   const productCountByCategory = products.reduce((counts, product) => {
     const name = String(product.category || '').trim();
@@ -71,15 +80,16 @@ router.get('/', async (req, res) => {
   const productById = new Map(products.map(product => [String(product._id), product]));
   const services = products.map(p => {
     const firstPrice = p.servicePrices?.[0];
+    const firstSku = (p.skus || []).find(item => item.active !== false);
     return {
       id: p._id.toString(),
       category: p.category,
       name: p.name,
       subtitle: p.subtitle || '',
-      price: firstPrice ? firstPrice.price : p.originalPrice,
+      price: firstPrice ? firstPrice.price : (firstSku?.price ?? p.originalPrice),
       originalPrice: p.originalPrice,
       rating: 5.0,
-      reviewCount: p.sales || 0,
+      reviewCount: paidBuyerCount.get(String(p._id)) || 0,
       tag: '',
       tagColor: '',
       icon: 'storefront-outline',
@@ -172,7 +182,8 @@ router.post('/member-bundle-entitlements/:id/transfer', auth, async (req, res) =
 
 // Product-only sharing. A token identifies the sharer without exposing user ids in the URL.
 router.post('/product-shares', auth, async (req, res) => {
-  const product = await Product.findOne({ _id: req.body.productId, status: 'on' }).select('_id name images');
+  const product = await Product.findOne({ _id: req.body.productId, status: 'on',
+    paymentChannel: { $ne: 'offline' } }).select('_id name images');
   if (!product) return res.status(404).json({ success: false, message: '产品不存在或已下架' });
   const share = await ProductShare.create({
     token: crypto.randomBytes(18).toString('base64url'),
@@ -202,8 +213,17 @@ router.post('/product-shares/:token/claim', auth, async (req, res) => {
 
 // 新客户可自主开通的服务包，展示内容完全由 Admin 维护。
 router.get('/packages', auth, async (req, res) => {
-  const user = await User.findById(req.user._id).select('clientBrand').lean();
+  const user = await User.findById(req.user._id).select('_id clientBrand servicePackage serviceExpiry membershipTier serviceStartDate').lean();
   const clientBrand = user?.clientBrand || 'jiayiguanjia';
+  const [access, entitlements] = await Promise.all([
+    require('../utils/serviceAccess').resolveServiceAccess(user),
+    require('../utils/packageEntitlements').applicableEntitlements(user._id),
+  ]);
+  const activeAnnualEntitlement = entitlements.some(row => row.rights?.includes365 === true
+    || ['consumer365', 'annual', 'enterprise'].includes(String(row.rights?.membershipTier || '')));
+  const activeLegacyAnnual = !!user.servicePackage && access.active === true
+    && (access.source === 'verified_renewal' || ['consumer365', 'annual', 'enterprise'].includes(user.membershipTier));
+  const canJoin365 = !activeAnnualEntitlement && !activeLegacyAnnual;
   const list = await ServicePackage.find({ clientBrand, active: true, 'activation.enabled': true })
     .sort({ 'activation.highlight': -1, sortOrder: 1, createdAt: 1 }).lean();
   res.json({ success: true, data: list.map(item => ({
@@ -214,6 +234,9 @@ router.get('/packages', auth, async (req, res) => {
     originalPrice: Number(item.activation?.originalPrice || item.activation?.price || 0),
     features: item.activation?.features || [], tag: item.activation?.tag || '',
     highlight: !!item.activation?.highlight,
+    membershipTier: item.configuration?.membershipTier || '',
+    includes365: !!item.configuration?.includes365,
+    canJoin365,
   })) });
 });
 
@@ -253,12 +276,34 @@ router.post('/inquiries', auth, async (req, res) => {
   res.json({ success: true, data: inquiry, message: '咨询已提交，健管师将尽快联系您' });
 });
 
+router.post('/partner-referrals/claim', auth, async (req, res) => {
+  if (process.env.MARKET_PARTNER_ENABLED !== 'true')
+    return res.status(404).json({ success: false, message: '推荐服务暂未开放' });
+  const productId = req.body?.productId;
+  const code = String(req.body?.partnerCode || '').trim();
+  if (!mongoose.Types.ObjectId.isValid(productId) || !code || code.length > 24)
+    return res.status(400).json({ success: false, message: '推荐信息无效' });
+  const product = await Product.findOne({ _id: productId, status: 'on' }).select('tenantId').lean();
+  const servicePackage = product ? null : await ServicePackage.findOne({ _id: productId,
+    clientBrand: req.user.clientBrand || 'jiayiguanjia', active: true,
+    'activation.enabled': true, 'activation.durationMonths': 12,
+    'configuration.membershipTier': 'consumer365', 'configuration.includes365': true }).select('_id').lean();
+  if ((!product || String(product.tenantId) !== String(req.user.tenantId)) && !servicePackage)
+    return res.status(404).json({ success: false, message: '商品或会员服务包不存在' });
+  const match = await require('../utils/marketPartnerAttribution').claim({
+    tenantId: req.user.tenantId, patientId: req.user._id,
+    productId: product?._id || servicePackage._id, code,
+  });
+  if (!match) return res.status(404).json({ success: false, message: '推荐码无效或未授权该商品' });
+  res.json({ success: true, data: { productId, productLine: match.rule.productLine } });
+});
+
 // POST /api/services/order — 提交服务预约（支持单项服务 & 服务包）
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
   const appPayment = req.body.paymentScene === 'app';
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [], beneficiaryUserId, pushRecordId } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', partnerCode = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [], beneficiaryUserId, pushRecordId } = req.body;
   if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
@@ -315,7 +360,7 @@ router.post('/order', auth, async (req, res) => {
       name: product.name,
       // 商城展示和后台日常改价都以“收费项目”servicePrices 为准；SKU
       // 只补充次数、有效期等履约信息，不能用残留旧价覆盖页面显示价。
-      price: selectedPrice ? selectedPrice.price : product.originalPrice,
+      price: selectedPrice ? selectedPrice.price : (selectedSku?.price ?? product.originalPrice),
       specificationLabel: selectedSku?.label || selectedPrice?.label || '',
       skuCode: selectedSku?.code || '',
       skuTotalUnits: selectedSku?.totalUnits || 0,
@@ -530,7 +575,7 @@ router.post('/order', auth, async (req, res) => {
     return res.status(400).json({ success: false, message: '该服务须使用微信小程序支付' });
   }
   const commercePaymentChannel = service.paymentChannel || 'wechat_pay';
-  if (paidAmount > 0 && commercePaymentChannel !== 'wechat_pay') {
+  if (paidAmount > 0 && !['wechat_pay', 'both'].includes(commercePaymentChannel)) {
     return res.status(409).json({ success: false, message: '该商品当前未配置普通微信支付，请联系客服' });
   }
   if (paidAmount > 0 && !appPayment && !req.user.wechatMpOpenid) {
@@ -564,6 +609,20 @@ router.post('/order', auth, async (req, res) => {
     });
     if (productShare?.sharerStaffId) referrerId = productShare.sharerStaffId;
   }
+
+  // A market partner is an external acquisition source; do not also generate an internal referrer commission.
+  const marketPartnerMatch = process.env.MARKET_PARTNER_ENABLED === 'true' && (product || servicePackage) && serviceUser.tenantId
+    ? await require('../utils/marketPartnerAttribution').resolveForOrder({
+      tenantId: serviceUser.tenantId, patientId: serviceUser._id,
+      productId: product?._id || servicePackage._id,
+      code: partnerCode, at: new Date(),
+    }) : null;
+  if (marketPartnerMatch) referrerId = null;
+  const marketPartnerContribution = marketPartnerMatch && product
+    ? await require('../utils/marketPartnerLeadEvent').contributionAtOrder({
+      tenantId: serviceUser.tenantId, partnerId: marketPartnerMatch.attribution.partnerId,
+      patientId: serviceUser._id, productId: product._id, at: new Date(),
+    }) : null;
 
   // 所有订单统一由客户所属健康规划师收单和总督办；住院等专业评估作为后续子任务分派给健康顾问。
   const followUpStaffId = await resolveOrderWorkflowAssignee(serviceUser._id, service.name);
@@ -618,15 +677,34 @@ router.post('/order', auth, async (req, res) => {
     } : null,
     inventoryReserved: inventory.reserved,
     referrerId,
+    marketPartnerId: marketPartnerMatch?.attribution?.partnerId || null,
+    marketPartnerAttributionId: marketPartnerMatch?.attribution?._id || null,
+    marketPartnerRuleId: marketPartnerMatch?.rule?._id || null,
+    marketPartnerRuleVersion: marketPartnerMatch?.rule?.version || null,
+    marketPartnerLeadEventId: marketPartnerContribution?.eventId || null,
+    marketPartnerDirectEventId: marketPartnerContribution?.directEventId || null,
+    marketPartnerDirectReferral: marketPartnerContribution?.directReferral === true,
+    marketPartnerFirstConversationAt: marketPartnerContribution?.firstConversationAt || null,
     referralSource: pushedRecommendation ? 'push' : productShare ? 'share' : 'direct',
     pushRecordId: pushedRecommendation?._id || null,
     servicePerformers,
     serviceItemsSnapshot: productServiceItems.map(item => ({
       key: item.key, name: item.name, units: item.units, usedUnits: 0,
+      childProductId: item.childProductId || null, businessType: item.businessType || 'service',
+      teamRole: item.teamRole || '', revenueSharePercent: item.revenueSharePercent || 0,
       performers: (item.performers || []).map(p => p.toObject ? p.toObject() : p),
     })),
-    performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
-    servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
+    businessAllocationsSnapshot: (() => {
+      const productRows = product ? require('../utils/productBusinessAllocations').snapshot(product, service.specificationLabel) : [];
+      return productRows.length ? productRows : (servicePackage?.configuration?.businessAllocations || []).map(item => ({
+        key: item.key, name: item.name, businessType: item.businessType,
+        teamRole: item.teamRole || '', childProductId: item.childProductId || null,
+        revenueSharePercent: item.revenueSharePercent,
+      }));
+    })(),
+    performanceRuleSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, service.specificationLabel).performanceRule,
+    staffPerformanceOverridesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, service.specificationLabel).staffPerformanceOverrides,
+    servicePerformerRolesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, service.specificationLabel).servicePerformerRoles,
     serviceWorkflowSnapshot: product?.serviceWorkflow ? { ...(product.serviceWorkflow.toObject ? product.serviceWorkflow.toObject() : product.serviceWorkflow), ...(product.serviceWorkflow.key === 'rehab' ? { skuValidityDays:service.skuValidityDays } : {}) } : null,
     specialtyTermsSnapshot: product?.specialtyTerms?.key ? (product.specialtyTerms.toObject ? product.specialtyTerms.toObject() : product.specialtyTerms) : null,
     serviceProviderSnapshot: serviceProvider === 'jiayihui_health'

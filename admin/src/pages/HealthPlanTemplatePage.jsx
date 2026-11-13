@@ -225,10 +225,16 @@ const TYPE_META = {
   exam:     { label: '检查', color: '#1E6B50', bg: '#E8F5EF' },
   func:     { label: '功能医学', color: '#8B5CF6', bg: '#F3EEFF' },
 }
+const CHECKUP_TYPE_ORDER = { lab: 0, exam: 1, func: 2 }
+const groupCheckupItems = items => (Array.isArray(items) ? items : [])
+  .map((item, index) => ({ item, index }))
+  .sort((a, b) => (CHECKUP_TYPE_ORDER[a.item?.type] ?? 3) - (CHECKUP_TYPE_ORDER[b.item?.type] ?? 3) || a.index - b.index)
+  .map(({ item }) => item)
+
 function OrderSelector({ label, value, onChange, labOrders, examOrders, functionalTests, showReason }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const selected = Array.isArray(value) ? value : []
+  const selected = groupCheckupItems(value)
 
   const allOptions = [
     ...labOrders.map(o => ({ ...o, _type: 'lab', _label: '[检验]' })),
@@ -242,7 +248,7 @@ function OrderSelector({ label, value, onChange, labOrders, examOrders, function
     if (isSelected(item._id)) {
       onChange(selected.filter(s => s.id !== item._id))
     } else {
-      onChange([...selected, { type: item._type, id: item._id, name: item.name, ...(showReason ? { reason: '' } : {}) }])
+      onChange(groupCheckupItems([...selected, { type: item._type, id: item._id, name: item.name, ...(showReason ? { reason: '' } : {}) }]))
     }
   }
 
@@ -688,6 +694,10 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
   const save = async () => {
     if (!name.trim()) { toast('❌ 模板名称不能为空'); return }
     const content = { ...contentRef.current, clientBrands, workflowProductId }
+    if (planType === 'annual_checkup') {
+      content.checkItems = groupCheckupItems(content.checkItems)
+      content.addons = groupCheckupItems(content.addons)
+    }
     if (planType === 'health_management' && !content.servicePlanCode) {
       toast('❌ 请选择唯一服务版本')
       return

@@ -3,6 +3,7 @@ import { Component } from 'react';
 import Taro from '@tarojs/taro';
 import { View, Text } from '@tarojs/components';
 import { AuthProvider } from './context/AuthContext';
+import { LanguageProvider } from './i18n';
 import { refreshUnreadBadge } from './utils/unreadBadge';
 import { captureInviteCode } from './utils/invitation';
 import { captureEntrySource } from './utils/entrySource';
@@ -65,7 +66,7 @@ class App extends Component {
 
   // this.props.children 是将要会渲染的页面
   render() {
-    return <AuthProvider><PageErrorBoundary>{this.props.children}</PageErrorBoundary></AuthProvider>;
+    return <LanguageProvider><AuthProvider><PageErrorBoundary>{this.props.children}</PageErrorBoundary></AuthProvider></LanguageProvider>;
   }
 }
 

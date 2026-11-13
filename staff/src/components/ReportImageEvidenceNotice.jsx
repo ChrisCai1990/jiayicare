@@ -8,6 +8,15 @@ export default function ReportImageEvidenceNotice({ evidence, hasItems = false }
     color: '#344B40', fontSize: 13, lineHeight: 1.8 }}>
     <strong style={{ display: 'block', marginBottom: 4 }}>{imageOnly ? '影像资料页 · 无文字检查结果' : '原文待核对'}</strong>
     <div>{imageOnly ? '原图已保留，供医护查看。图像和测量标记不自动生成检查所见或诊断。请查看文字报告页；若没有文字报告，请补充报告或由医生填写。' : evidence.message}</div>
+    {!imageOnly && Object.values(evidence.blockedReasons || {}).some(count => count > 0) && <div style={{ marginTop: 6, color: '#9A6700' }}>
+      {[
+        evidence.blockedReasons.section_mismatch > 0 && `栏目不符 ${evidence.blockedReasons.section_mismatch} 项`,
+        evidence.blockedReasons.row_mismatch > 0 && `表格行不符 ${evidence.blockedReasons.row_mismatch} 项`,
+        evidence.blockedReasons.uncovered_rows > 0 && `原件结果行待补 ${evidence.blockedReasons.uncovered_rows} 行`,
+        evidence.blockedReasons.unverified_text > 0 && `原文未核实 ${evidence.blockedReasons.unverified_text} 项`,
+        evidence.blockedReasons.unreadable > 0 && `文字不可辨 ${evidence.blockedReasons.unreadable} 项`,
+      ].filter(Boolean).join(' · ')}
+    </div>}
     {imageOnly && hasItems && <div style={{ marginTop: 6, color: '#9A6700' }}>本页已有条目未自动删除，请逐项核对来源；无原文依据的 AI 内容不应提交审核。</div>}
   </div>
 }

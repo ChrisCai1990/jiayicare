@@ -1,3 +1,7 @@
+import ConsultationCreatePanel from '../components/ConsultationCreatePanel'
+import './ConsultationHub.css'
+import PsychologyPage from './PsychologyPage'
+import { useSearchParams } from 'react-router-dom'
 import ExpertReplyForm from '../components/ExpertReplyForm'
 import ConsultationFollowupReview from '../components/ConsultationFollowupReview'
 import ConsultationCorrespondence from '../components/ConsultationCorrespondence'
@@ -14,7 +18,7 @@ const stages = { team_assignment: '规划师首次派单', intake: '健管收集
 const input = { width: '100%', boxSizing: 'border-box' }
 const textField = (label, value, onChange, rows = 3) => <label style={{ display: 'block', margin: '10px 0' }}><b>{label}</b><textarea className="form-input" style={input} rows={rows} value={value} onChange={e => onChange(e.target.value)}/></label>
 
-export default function ExpertConsultationsPage({ embedded = false }) {
+function StandardExpertConsultationsPage({ embedded = false, hideCreate = false }) {
   const { staff } = useStaff()
   const self = id(staff)
   const [rows, setRows] = useState([])
@@ -162,7 +166,7 @@ export default function ExpertConsultationsPage({ embedded = false }) {
     {error && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
     <div className="consultation-toolbar"><label><input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)}/> 只看待我处理</label>
       <select className="form-input" aria-label="咨询类型" value={filter} onChange={e => setFilter(e.target.value)}><option value="">全部咨询</option><option value="single">专家咨询</option><option value="mdt">MDT</option></select>
-      {['healthManager', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary" onClick={() => setCreating(!creating)}>＋ 医护端发起</button>}
+      {!hideCreate && ['healthManager', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary" onClick={() => setCreating(!creating)}>＋ 医护端发起</button>}
     </div>
     {creating && <form className="card" style={{ padding: 20, marginBottom: 20 }} onSubmit={create}>
       <h3>发起专家咨询 / MDT</h3><PatientPicker value={draft.patientId} onChange={patientId => setDraft({ ...draft, patientId })} />
@@ -240,5 +244,22 @@ export default function ExpertConsultationsPage({ embedded = false }) {
         </>}
       </div>
     </div>
+  </div>
+}
+
+export default function ExpertConsultationsPage({ embedded = false }) {
+  const { staff } = useStaff()
+  const [params, setParams] = useSearchParams()
+  const [creating, setCreating] = useState(false)
+  const psychologist = staff?.role === 'psychologist'
+  const canPsychology = psychologist || staff?.role === 'familyDoctor'
+  const psychology = canPsychology && (psychologist || params.get('view') === 'psychology')
+  const canCreate = ['familyDoctor', 'healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role)
+  if (embedded) return <StandardExpertConsultationsPage embedded />
+  return <div className="consultation-hub">
+    <header className="hub-header"><div><span className="hub-eyebrow">专业协作</span><h1>专家咨询与 MDT</h1><p>发起咨询、查看进展与持续跟进，在这里完成。</p></div>{canCreate && <button className="btn btn-primary" onClick={() => setCreating(true)}>＋ 发起服务</button>}</header>
+    {canPsychology && !psychologist && <div className="hub-tabs" role="tablist" aria-label="咨询服务类型"><button role="tab" aria-selected={!psychology} onClick={() => setParams({})}>专家咨询 / MDT</button><button role="tab" aria-selected={psychology} onClick={() => setParams({ view:'psychology' })}>长期心理咨询</button></div>}
+    {creating && <ConsultationCreatePanel initialType={psychology ? 'psychology' : 'single'} onClose={() => setCreating(false)} onCreated={(type, record) => { setCreating(false); setParams(type === 'psychology' ? { view:'psychology', careId:record._id || record.id } : { caseId:record._id || record.id }) }} />}
+    {psychology ? <PsychologyPage key={params.get('careId') || 'list'} embedded /> : <StandardExpertConsultationsPage key={params.get('caseId') || 'list'} embedded hideCreate />}
   </div>
 }

@@ -1,3 +1,4 @@
+require('../src/utils/phaseReviewScheduledService').run=async(user,generate)=>generate();
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
@@ -11,6 +12,7 @@ let aiCalls = 0;
 require('../src/utils/ai').chat = async () => { aiCalls++; return '年度总评草稿'; };
 require('../src/utils/aiCaseReviewContext').buildStageAssessmentContext = async () => ({ sources: [] });
 require('../src/utils/monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft = async () => ({ content: '一、本月记录与变化\n- 待人工核对\n\n二、生活方式与指标关联\n- 待营养师核对\n\n三、就医、检查与待核实问题\n- 待顾问核对\n\n四、下月跟进事项\n- 待确认', sources: [] });
+require('../src/utils/phaseFourDimensionDraft').generate=async()=>({content:'统一四板块草稿',sources:[],dimensions:[[],[],[],[]]});
 const ids = { patient: '000000000000000000000001', reviewer: '000000000000000000000002', assessment: '000000000000000000000003', plan: '000000000000000000000004', template: '000000000000000000000005', nutrition: '000000000000000000000006' };
 let actor;
 const auth = require.resolve('../src/middleware/staffAuth'); require(auth);
@@ -286,4 +288,15 @@ test('有效强化营养仍沿用既有周节点、营养岗位和资料窗口',
   const res = await request(t, { mode: 'intensive_nutrition' }, 'POST');
   assert.equal(res.status, 201, JSON.stringify(res.body)); assert.equal(res.body.data.interventionWeek, 2);
   assert.equal(res.body.data.primaryReviewRole, 'nutritionist'); assert.equal(res.body.data.templateSnapshot.windowDays, 7); assert.equal(aiCalls, 1);
+});
+
+test('统一修订预览仅当前岗位可生成，不改变已审核意见或正文',async t=>{
+ const row=setup(t,'familyDoctor',{status:'team_review',reviewWorkflow:'advisor_nutrition',periodKey:'2026-10',teamReviews:{nutritionist:{status:'approved',content:'营养师原意见'}},__v:0});
+ const res=await request(t,{action:'preview_four_sections',revision:0});
+ assert.equal(res.status,200);assert.equal(row.content,'作息较规律');assert.equal(row.teamReviews.nutritionist.content,'营养师原意见');
+ assert.equal((await request(t,{action:'preview_four_sections',revision:2})).status,409);
+});
+test('营养师未提交时健康顾问不能提前生成本轮修订',async t=>{
+ setup(t,'familyDoctor',{status:'team_review',reviewWorkflow:'advisor_nutrition',periodKey:'2026-10',teamReviews:{},__v:0});
+ assert.equal((await request(t,{action:'preview_four_sections',revision:0})).status,403);
 });

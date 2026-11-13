@@ -7,6 +7,8 @@ import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import useArchiveSubject from '../../../hooks/useArchiveSubject';
 import { openOriginalFile } from '../../../utils/openOriginalFile';
+import { useLanguage } from '../../../i18n';
+import { ensureAiDataConsent } from '../../../utils/aiDataConsent';
 
 // 对齐 app/src/screens/records/MedicalReportsScreen.js
 // 小程序场景适配：原件通过普通鉴权请求读取二进制，写入带正确后缀的本地文件后预览，
@@ -21,9 +23,15 @@ const CATEGORY_META = {
 };
 const ITEM_STATUS_COLOR = { normal: colors.success, abnormal: colors.danger, attention: colors.warning, unknown: colors.textMuted };
 const ITEM_STATUS_LABEL = { normal: '正常', abnormal: '异常', attention: '关注', unknown: '未知' };
+const displayReportTitle = (title, language, t) => {
+  if (language !== 'en-US') return title;
+  const annual = String(title || '').match(/^(\d{4})年度体检报告$/);
+  return annual ? `${annual[1]} Annual health checkup report` : t(title);
+};
 
 
-function ReportItemRow({ item }) {
+function ReportItemRow({ item, translation }) {
+  const { t, language } = useLanguage();
   const statusColor = ITEM_STATUS_COLOR[item.status] || colors.textMuted;
   const isImaging = item.itemType === 'imaging' || (!item.value && (item.findings || item.diagnosis));
   if (isImaging) {
@@ -31,30 +39,44 @@ function ReportItemRow({ item }) {
     return (
       <View style={{ padding: '7px 0', borderBottom: `1px solid ${colors.borderLight}` }}>
         <View style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 500 }}>{item.name}</Text>
-          {!!item.bodyPart && <Text style={{ fontSize: '11px', color: colors.textMuted }}>· {item.bodyPart}</Text>}
+          <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 500 }}>{language === 'en-US' && translation?.name ? translation.name : item.name}</Text>
+          {!!item.bodyPart && <Text style={{ fontSize: '11px', color: colors.textMuted }}>· {language === 'en-US' && translation?.bodyPart ? translation.bodyPart : item.bodyPart}</Text>}
         </View>
-        {!!findings && <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '2px' }}>检查所见：{findings}</Text>}
-        {!!item.diagnosis && <Text style={{ fontSize: '11px', color: statusColor, display: 'block', marginTop: '2px' }}>诊断意见：{item.diagnosis}</Text>}
+        {language === 'en-US' && translation?.name && <Text style={{ fontSize: '10px', color: colors.textMuted }}>{item.name}{item.bodyPart ? ` · ${item.bodyPart}` : ''}</Text>}
+        {!!findings && <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '2px' }}>{t('检查所见')}：{language === 'en-US' && translation?.findings ? translation.findings : findings}</Text>}
+        {!!item.diagnosis && <Text style={{ fontSize: '11px', color: statusColor, display: 'block', marginTop: '2px' }}>{t('诊断意见')}：{language === 'en-US' && translation?.diagnosis ? translation.diagnosis : item.diagnosis}</Text>}
+        {language === 'en-US' && (translation?.findings || translation?.diagnosis) && <Text style={{ fontSize: '10px', color: colors.textMuted, display: 'block', marginTop: '3px' }}>Original: {findings}{item.diagnosis ? ` · ${item.diagnosis}` : ''}</Text>}
       </View>
     );
   }
   return (
     <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${colors.borderLight}` }}>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 500, display: 'block' }}>{item.name}</Text>
-        {!!item.referenceRange && <Text style={{ fontSize: '11px', color: colors.textMuted }}>参考范围：{item.referenceRange}</Text>}
+        <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 500, display: 'block' }}>{language === 'en-US' && translation?.name ? translation.name : item.name}</Text>
+        {language === 'en-US' && translation?.name && <Text style={{ fontSize: '10px', color: colors.textMuted }}>{item.name}</Text>}
+        {!!item.referenceRange && <Text style={{ fontSize: '11px', color: colors.textMuted }}>{t('参考范围')}：{item.referenceRange}</Text>}
       </View>
       <View style={{ textAlign: 'right' }}>
         <Text style={{ fontSize: '13px', fontWeight: 700, color: statusColor, display: 'block' }}>{item.value}{item.unit ? ` ${item.unit}` : ''}</Text>
-        <Text style={{ fontSize: '10px', color: statusColor }}>{ITEM_STATUS_LABEL[item.status] || ''}</Text>
+        <Text style={{ fontSize: '10px', color: statusColor }}>{t(ITEM_STATUS_LABEL[item.status] || '')}</Text>
       </View>
     </View>
   );
 }
 
-function ReportCard({ report }) {
+function ReportCard({ report, allowTranslate = true }) {
+  const { t, language } = useLanguage();
   const [expanded, setExpanded] = useState(false);
+  const [translation, setTranslation] = useState(report.translationEn || null);
+  const [translating, setTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState('');
+  const translate = async () => {
+    if (!allowTranslate || translating || !await ensureAiDataConsent('report_translation', { language })) return;
+    setTranslating(true); setTranslateError('');
+    try { const response = await reportsAPI.translateEn(report._id); setTranslation(response.data); }
+    catch (error) { setTranslateError(error.message || 'Translation unavailable'); }
+    finally { setTranslating(false); }
+  };
   const hasItems = report.reportItems?.length > 0;
   const hasAI = !!report.aiSummary;
   const hasFile = !!(report.fileUrl || report.fileUrls?.length || report.hasContent);
@@ -63,7 +85,8 @@ function ReportCard({ report }) {
     <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, marginBottom: `${spacing.sm}px`, boxShadow: shadow.xs, overflow: 'hidden' }}>
       <View onClick={() => setExpanded((e) => !e)} style={{ display: 'flex', alignItems: 'flex-start', padding: `${spacing.md}px`, gap: `${spacing.sm}px` }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{report.title}</Text>
+          <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{language === 'en-US' ? (translation?.title || displayReportTitle(report.title, language, t)) : report.title}</Text>
+          {language === 'en-US' && (translation?.title || displayReportTitle(report.title, language, t) !== report.title) && <Text style={{ fontSize: '10px', color: colors.textMuted }}>{report.title}</Text>}
           <View style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
             {(report.checkDate || report.date) && (
               <View style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -80,7 +103,7 @@ function ReportCard({ report }) {
           </View>
         </View>
         <View style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {report.aiStatus === 'pending' && <Text style={{ fontSize: '10px', color: colors.warning, backgroundColor: '#FEF3E2', borderRadius: `${radius.full}px`, padding: '2px 8px' }}>待审核</Text>}
+          {report.aiStatus === 'pending' && <Text style={{ fontSize: '10px', color: colors.warning, backgroundColor: '#FEF3E2', borderRadius: `${radius.full}px`, padding: '2px 8px' }}>{t('待审核')}</Text>}
           {report.aiStatus === 'reviewed' && <Text style={{ fontSize: '14px', color: colors.success }}>✓</Text>}
           <Text style={{ fontSize: '12px', color: colors.textMuted }}>{expanded ? '▲' : '▼'}</Text>
         </View>
@@ -88,26 +111,31 @@ function ReportCard({ report }) {
 
       {expanded && (
         <View style={{ padding: `${spacing.sm}px ${spacing.md}px ${spacing.md}px`, borderTop: `1px solid ${colors.borderLight}` }}>
+          {language === 'en-US' && <View style={{ marginBottom: `${spacing.sm}px` }}>
+            <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block' }}>Machine translation is for reference. Check the original report for medical decisions.</Text>
+            {!translation && allowTranslate && <Text onClick={translate} style={{ fontSize: '13px', color: colors.primary, padding: '8px 0' }}>{translating ? 'Translating…' : 'Translate this report ›'}</Text>}
+            {!!translateError && <Text style={{ fontSize: '11px', color: colors.danger }}>{translateError}</Text>}
+          </View>}
           {hasFile && (
             <View onClick={() => openOriginalFile(report)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', border: `1px solid ${colors.primary}`, borderRadius: `${radius.sm}px`, padding: '8px', marginBottom: `${spacing.sm}px` }}>
               <Icon name="📎" size={13} color={colors.primary} />
-              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>查看原始报告文件</Text>
+              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>{t('查看原始报告文件')}</Text>
             </View>
           )}
           {hasAI && (
             <View style={{ backgroundColor: '#E8F5EF', borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
-              <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.primary, display: 'block', marginBottom: '4px' }}>AI 趋势分析{report.aiStatus === 'reviewed' ? '（已审核）' : '（待审核）'}</Text>
+              <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.primary, display: 'block', marginBottom: '4px' }}>{t('AI 趋势分析')}{t(report.aiStatus === 'reviewed' ? '（已审核）' : '（待审核）')}</Text>
               <Text style={{ fontSize: '12px', color: colors.textSecondary, lineHeight: '18px' }}>{report.aiSummary}</Text>
             </View>
           )}
           {hasItems ? (
             <View>
-              <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.xs}px` }}>检查项目（{report.reportItems.length} 项）</Text>
-              {report.reportItems.map((item, i) => <ReportItemRow key={i} item={item} />)}
+              <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.xs}px` }}>{t('检查项目')} ({report.reportItems.length})</Text>
+              {report.reportItems.map((item, i) => <ReportItemRow key={i} item={item} translation={translation?.items?.[i]} />)}
             </View>
           ) : (
             <View style={{ textAlign: 'center', padding: `${spacing.md}px 0` }}>
-              <Text style={{ fontSize: '12px', color: colors.textMuted }}>暂无解析数据，请联系健管专员</Text>
+              <Text style={{ fontSize: '12px', color: colors.textMuted }}>{t('暂无解析数据，请联系健管专员')}</Text>
             </View>
           )}
         </View>
@@ -117,6 +145,7 @@ function ReportCard({ report }) {
 }
 
 export default function MedicalReportsPage() {
+  const { t, language } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const archive = useArchiveSubject();
   const [years, setYears] = useState([]);
@@ -142,7 +171,7 @@ export default function MedicalReportsPage() {
   const currentYear = years.find((y) => y.year === selYear);
   const kw = searchKw.trim();
   const searchResults = kw
-    ? years.flatMap((y) => y.categories.flatMap((cat) => cat.reports)).filter((r) => (r.title || '').toLowerCase().includes(kw.toLowerCase()))
+    ? years.flatMap((y) => y.categories.flatMap((cat) => cat.reports)).filter((r) => `${r.title || ''} ${r.translationEn?.title || ''} ${displayReportTitle(r.title || '', language, t)}`.toLowerCase().includes(kw.toLowerCase()))
     : null;
 
   return (
@@ -155,36 +184,36 @@ export default function MedicalReportsPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>体检报告</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{t('体检报告')}</Text>
         <View style={{ width: '28px' }} />
       </View>
 
-      <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', margin: `${spacing.sm}px ${spacing.lg}px` }}>所属档案：{archive.subject?.name || archive.user?.name || '本人'}</Text>
+      <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', margin: `${spacing.sm}px ${spacing.lg}px` }}>{t('所属档案')}：{archive.subject?.name || archive.user?.name || t('本人')}</Text>
       {!!archive.error && <Text onClick={archive.refresh} style={{ color: colors.danger, margin: `${spacing.sm}px ${spacing.lg}px` }}>{archive.error} · 点击重试</Text>}
       {years.length > 0 && (
         <View style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: `${spacing.sm}px ${spacing.lg}px ${spacing.xs}px`, padding: '0 12px', height: '36px', borderRadius: `${radius.full}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxSizing: 'border-box' }}>
           <Icon name="🔍" size={13} color={colors.textMuted} />
-          <Input style={{ flex: 1, fontSize: '13px', color: colors.textPrimary }} placeholder="搜索报告标题" value={searchKw} onInput={(e) => setSearchKw(e.detail.value)} />
+          <Input style={{ flex: 1, fontSize: '13px', color: colors.textPrimary }} placeholder={t('搜索报告标题')} value={searchKw} onInput={(e) => setSearchKw(e.detail.value)} />
           {!!searchKw && <View onClick={() => setSearchKw('')}><Icon name="✕" size={13} color={colors.textMuted} /></View>}
         </View>
       )}
 
       {archive.error ? null : loading || archive.loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted, textAlign: 'center', display: 'block', marginTop: '60px' }}>加载中...</Text>
+        <Text style={{ fontSize: '13px', color: colors.textMuted, textAlign: 'center', display: 'block', marginTop: '60px' }}>{t('加载中...')}</Text>
       ) : years.length === 0 ? (
         <View style={{ textAlign: 'center', padding: `${spacing.xl}px` }}>
           <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.sm}px` }}><Icon name="📄" size={48} /></View>
-          <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>暂无体检报告</Text>
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>上传报告后，将按年度和类目自动归类展示</Text>
+          <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{t('暂无体检报告')}</Text>
+          <Text style={{ fontSize: '13px', color: colors.textMuted }}>{t('上传报告后，将按年度和类目自动归类展示')}</Text>
         </View>
       ) : searchResults ? (
         <View style={{ padding: `0 ${spacing.lg}px` }}>
           {searchResults.length === 0 ? (
             <View style={{ textAlign: 'center', padding: `${spacing.xl}px` }}>
               <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.sm}px` }}><Icon name="🔍" size={48} /></View>
-              <Text style={{ fontSize: '13px', color: colors.textMuted }}>没有匹配"{kw}"的报告</Text>
+              <Text style={{ fontSize: '13px', color: colors.textMuted }}>{language === 'en-US' ? `No reports match “${kw}”` : `没有匹配"${kw}"的报告`}</Text>
             </View>
-          ) : searchResults.map((r) => <ReportCard key={r._id} report={r} />)}
+          ) : searchResults.map((r) => <ReportCard key={r._id} report={r} allowTranslate={!archive.subject} />)}
         </View>
       ) : (
         <>
@@ -194,7 +223,7 @@ export default function MedicalReportsPage() {
                 display: 'inline-block', padding: '7px 16px', borderRadius: `${radius.full}px`, marginRight: '8px',
                 border: `1.5px solid ${selYear === y.year ? colors.primary : colors.border}`, backgroundColor: selYear === y.year ? colors.primary : '#fff',
               }}>
-                <Text style={{ fontSize: '13px', fontWeight: 600, color: selYear === y.year ? '#fff' : colors.textSecondary }}>{y.year ? `${y.year} 年` : '日期待核对'}</Text>
+                <Text style={{ fontSize: '13px', fontWeight: 600, color: selYear === y.year ? '#fff' : colors.textSecondary }}>{y.year ? (language === 'en-US' ? String(y.year) : `${y.year} 年`) : t('日期待核对')}</Text>
               </View>
             ))}
           </ScrollView>
@@ -208,10 +237,10 @@ export default function MedicalReportsPage() {
                     <View style={{ width: '36px', height: '36px', borderRadius: `${radius.sm}px`, backgroundColor: meta.color + '30', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Icon name={meta.icon} size={18} color={meta.color} />
                     </View>
-                    <Text style={{ fontSize: '14px', fontWeight: 700, color: meta.color, flex: 1 }}>{meta.label}</Text>
-                    <Text style={{ fontSize: '12px', color: colors.textMuted }}>{cat.reports.length} 份</Text>
+                    <Text style={{ fontSize: '14px', fontWeight: 700, color: meta.color, flex: 1 }}>{t(meta.label)}</Text>
+                    <Text style={{ fontSize: '12px', color: colors.textMuted }}>{language === 'en-US' ? `${cat.reports.length} reports` : `${cat.reports.length} 份`}</Text>
                   </View>
-                  {cat.reports.map((r) => <ReportCard key={r._id} report={r} />)}
+                  {cat.reports.map((r) => <ReportCard key={r._id} report={r} allowTranslate={!archive.subject} />)}
                 </View>
               );
             })}

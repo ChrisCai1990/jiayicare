@@ -99,6 +99,7 @@ const medicalReportSchema = new mongoose.Schema({
   examConclusion:       { type: String, default: '' }, // 检查医嘱：诊断结论模板
   examMainConclusions:  { type: mongoose.Schema.Types.Mixed, default: {} }, // 检查项主要结论 { [项目名]: '结论文字' }
   reportItems:     [reportItemSchema],                // 解析后的各项结果
+  translationEn:   { type: mongoose.Schema.Types.Mixed, default: null }, // 独立英文参考译文；原文与检验数值不改
   reviewRevision:  { type: Number, default: 0 },      // 审核编辑乐观锁；任何项目/整表写入后递增
   deletedReportItems: { type: mongoose.Schema.Types.Mixed, default: [] }, // 补提排除人工删除项
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
@@ -144,7 +145,7 @@ const medicalReportSchema = new mongoose.Schema({
   // 避免门诊病历、处方、问卷等资料被强行归入体检报告类型。
   documentCategory: {
     type: String,
-    enum: ['physical_exam', 'lab_report', 'exam_report', 'body_composition', 'functional_medicine', 'genetic_test', 'outpatient_record', 'inpatient_record', 'prescription_order', 'questionnaire', 'other_customer_material'],
+    enum: ['physical_exam', 'lab_report', 'exam_report', 'body_composition', 'functional_medicine', 'genetic_test', 'outpatient_record', 'inpatient_record', 'prescription_order', 'questionnaire', 'other_customer_material', 'insurance_claim_receipt'],
     default: undefined,
   },
   hospital:    { type: String, default: '' },
@@ -179,6 +180,7 @@ const medicalReportSchema = new mongoose.Schema({
   reject_reason:{ type: String, default: '' },
   // 同次体检后补的完整原件：保留文件，结构化结果仍以关联的已审核报告为准。
   archiveOnly: { type: Boolean, default: false },
+  insuranceClaim: { type: Boolean, default: false },
   archiveSourceReportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
   archiveOnlyAt: { type: Date, default: null },
   archiveOnlyBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
@@ -245,6 +247,7 @@ const medicalReportSchema = new mongoose.Schema({
     source: { type: String, default: '' },
     at: { type: Date, default: Date.now },
   }],
+  categoryCorrectionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 医护端：上传人 & 关联方案项目
   uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   submittedByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // 代孩子上传时保留实际提交者

@@ -9,6 +9,7 @@ const schema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   assignedHealthManagerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  assignedNutritionistId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   payload: { type: mongoose.Schema.Types.Mixed, required: true },
   delivery: {
     method: { type: String, enum: ['pickup', 'shipping'], required: true },
@@ -30,5 +31,6 @@ const schema = new mongoose.Schema({
 
 schema.index({ tenantId: 1, requestId: 1 }, { unique: true })
 schema.index({ tenantId: 1, status: 1, assignedHealthManagerId: 1, createdAt: 1 })
+schema.index({ tenantId: 1, status: 1, assignedNutritionistId: 1, createdAt: 1 })
 schema.plugin(require('../utils/tenantScope').tenantScopePlugin)
 module.exports = mongoose.model('InventoryDispatchRequest', schema)

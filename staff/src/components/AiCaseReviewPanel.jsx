@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { staffAPI, API_ORIGIN } from '../api'
+import { staffAPI, API_ORIGIN, managementReviewAPI } from '../api'
 import ReviewPlanAmendment from './ReviewPlanAmendment'
 import AnnualConcernsPanel from './AnnualConcernsPanel'
 import { parseAnnualReviewMessage } from '../utils/annualReviewMessage.mjs'
 import { isActiveAnnualConcern, isEvidenceConcern } from '../utils/annualConcernLabels'
+import { suggestCaseReviewScopes } from '../utils/caseReviewScopeSuggestions.mjs'
 
 const PHASE_ROLES = { familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师' }
 const PHASE_DOMAINS = { comprehensive: '综合健康', nutrition: '营养', exercise: '运动', tcm: '药食同源' }
@@ -63,8 +64,8 @@ function AnnualReviewAnalysis({ content, onReframe, busy }) {
 
 const STAGE_SECTION_META = [
   { icon: '📈', label: '阶段变化', color: '#2563EB', background: '#EFF6FF' },
-  { icon: '🔗', label: '生活关联', color: '#16845B', background: '#EEF8F3' },
-  { icon: '📋', label: '问题与就医', color: '#B45309', background: '#FFF8ED' },
+  { icon: '🔗', label: '生活方式关联', color: '#16845B', background: '#EEF8F3' },
+  { icon: '📋', label: '问题分析', color: '#B45309', background: '#FFF8ED' },
   { icon: '🧭', label: '下一步规划', color: '#7C3AED', background: '#F5F3FF' },
 ]
 
@@ -133,6 +134,8 @@ function StageWorkflow({ assessment }) {
 }
 
 export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all', onNavigate }) {
+  const [cyclePilot,setCyclePilot]=useState(false)
+  useEffect(()=>{setCyclePilot(false);managementReviewAPI.get(patientId).then(r=>setCyclePilot(r.enabled===true)).catch(()=>{})},[patientId])
   const [assessmentDomain, setAssessmentDomain] = useState(({ nutritionist: 'nutrition', rehabSpecialist: 'exercise', tcmDoctor: 'tcm' })[staff?.role] || 'comprehensive')
   const [topics, setTopics] = useState([])
   const [managedTemplates, setManagedTemplates] = useState([])
@@ -156,7 +159,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [showCreate, setShowCreate] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [headerExpanded, setHeaderExpanded] = useState(false)
-  const [form, setForm] = useState({ title: '', description: '', reviewType: 'custom', templateId: '', preferredProvider: 'qwen', contextScopes: SCOPES.map(([key]) => key), managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] })
+  const [form, setForm] = useState({ title: '', description: '', reviewType: 'custom', templateId: '', preferredProvider: 'qwen', contextScopes: suggestCaseReviewScopes('custom'), managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] })
   const [editForm, setEditForm] = useState({ title: '', description: '', contextScopes: [], managementTargets: [], targetChangeNote: '' })
   const [conclusionText, setConclusionText] = useState('')
   const [managementTargets, setManagementTargets] = useState([])
@@ -260,7 +263,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     try {
       const res = await staffAPI.createAiCaseReview(patientId, { ...form, managementTargets })
       replaceTopic(res.data); setShowCreate(false)
-      setForm(f => ({ ...f, title: '', description: '', reviewType: 'custom', templateId: '', managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] }))
+      setForm(f => ({ ...f, title: '', description: '', reviewType: 'custom', templateId: '', contextScopes: suggestCaseReviewScopes('custom'), managementTargets: [{ goal: '', focus: '', nutritionRelevant: false }] }))
       if (['annual', 'checkup'].includes(res.data.reviewType) && res.data.contextScopes?.includes('reports')) {
         try {
           const started = await staffAPI.sendAiCaseReviewMessage(patientId, res.data._id, { autoStart: true, requestId: `auto_${res.data._id}` })
@@ -444,7 +447,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     .sort((a, b) => Number(isMonthlyAssessment(b)) - Number(isMonthlyAssessment(a)) || new Date(b.createdAt) - new Date(a.createdAt))
   const currentAssessment = visibleAssessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
   return <div style={{ display: 'grid', gridTemplateColumns: mode === 'assessment' ? '1fr' : '230px minmax(0, 1fr)', gap: 14, minHeight: mode === 'assessment' ? 0 : 760 }}>
-    {mode !== 'specialty' && <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
+    {mode !== 'specialty' && cyclePilot && <div className="card" style={{gridColumn:'1/-1',padding:18}}><h3>月度复盘 · 季度评估 · 年度总评</h3><p>各岗位提交复盘，健康顾问审核；历史记录在统一入口查看。</p><a className="btn btn-primary" href={`/patients/${patientId}/monthly-reviews`}>进入持续管理复盘</a></div>}
+    {mode !== 'specialty' && !cyclePilot && <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
         <div className="card-header" style={{ alignItems: 'flex-start' }}>
           <div style={{ flex: 1 }}>
             <div className="card-title">阶段性评估与复盘</div>
@@ -474,6 +478,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           const activeSection = Number.isInteger(activeSectionIndex) ? stageSections[activeSectionIndex] : null
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.displayLabel || `${item.periodLabel}${item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}`}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
+            {item.templateSnapshot?.contentRevision === 'four-dimensions-v2' && status !== 'finalized' && <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>本稿已按四板块新口径重新整理，待当前审核岗位核对。此前岗位已确认意见保留为原稿意见。</div>}
             {item.notice && <div style={{ marginTop: 7, padding: '8px 10px', borderRadius: 8, background: '#FFF7E7', color: '#8A5700', fontSize: 12 }}>{item.notice}</div>}
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
             <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>{item.templateSnapshot?.source === 'local_manual' ? '本底稿在系统内汇总已有健康记录、服务随访、就医服务记录及已审核报告名称和项目；营养师与健康顾问需查看原始资料，填写分析与结论。' : 'AI草稿仅参考当前可用的健康记录、随访及部分已审核报告项目；未覆盖全部就医和检查资料。'}健康顾问请核对本月所有需要跟进的问题、就医次数及原因。</div>
@@ -572,6 +577,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           const checked = active.contextScopes?.includes(key)
           return <label key={key} style={{ fontSize: 12, border: `1px solid ${checked ? '#1E6B50' : '#D8E1DC'}`, color: checked ? '#1E6B50' : '#65776F', borderRadius: 16, padding: '5px 9px', cursor: active.annualPlanYear ? 'default' : 'pointer' }}><input type="checkbox" checked={checked} disabled={!!active.annualPlanYear} onChange={() => updateScopes(checked ? active.contextScopes.filter(v => v !== key) : [...active.contextScopes, key])} style={{ marginRight: 5 }} />{label}</label>
         })}</div>
+        {!active.annualPlanYear && <div style={{ fontSize: 12, color: '#65776F', marginTop: 7 }}>按主题建议：{SCOPES.filter(([key]) => suggestCaseReviewScopes(active.reviewType, active.title).includes(key)).map(([, label]) => label).join('、')}。依据主题类型和名称；请核对后调整。<button type="button" className="btn btn-secondary btn-sm" disabled={busy} style={{ marginLeft: 8 }} onClick={() => updateScopes(suggestCaseReviewScopes(active.reviewType, active.title))}>应用建议勾选</button></div>}
         {!active.annualPlanYear && <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #E5ECE8' }}><div style={{ fontSize: 12, color: '#65776F', marginBottom: 7 }}>套用研判模板（可用于当前主题）</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{reviewTemplates.map(item => <button key={item.key} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => applyReviewTemplate(item.key)}>{item.label}</button>)}</div></div>}
         </>}
       </div></div>
@@ -639,6 +645,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       <div className="form-group"><label className="form-label">研判主题</label><select className="form-input" defaultValue="" onChange={e => { const item = reviewTemplates.find(v => v.key === e.target.value); if (item) setForm(f => ({ ...f, title: item.title, description: item.outputGuide ? `${item.description}\n\n固定研判输出：${item.outputGuide}` : item.description, reviewType: item.reviewType || 'specialty', templateId: item.key, contextScopes: item.scopes })); else setForm(f => ({ ...f, reviewType: 'custom', templateId: '', title: '', description: '' })) }}>{reviewSettings.allowCustomTopic && <option value="">自定义主题</option>}{!reviewSettings.allowCustomTopic && <option value="">请选择主题</option>}{reviewTemplates.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select><div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>主题及其资料范围、输出结构由 Admin 后台统一设置。</div></div>
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="例如：近期血压波动原因分析" /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
+      <div className="form-group"><label className="form-label">研判资料范围</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={form.contextScopes.includes(key)} onChange={e => setForm(value => ({ ...value, contextScopes: e.target.checked ? [...value.contextScopes, key] : value.contextScopes.filter(item => item !== key) }))} /> {label}</label>)}</div><div style={{ marginTop: 7, color: '#65776F', fontSize: 12 }}>按主题建议：{SCOPES.filter(([key]) => suggestCaseReviewScopes(form.reviewType, form.title).includes(key)).map(([, label]) => label).join('、')}。依据主题类型和名称；请核对后调整。<button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => setForm(value => ({ ...value, contextScopes: suggestCaseReviewScopes(value.reviewType, value.title) }))}>应用建议勾选</button></div></div>
       <div className="form-group"><label className="form-label">拟管理目标与拟干预重点</label><div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>可先填写研判方向；年度或体检主题也可留空，由AI根据最近一次已审核体检报告提出草稿。资料核实后仍须在结论处逐条确认。</div>
         {(form.managementTargets || []).map((row, index) => <div key={index} style={{ border: '1px solid #E1E9E3', borderRadius: 8, padding: 9, marginBottom: 8 }}>
           <input className="form-input" aria-label={`拟管理目标 ${index + 1}`} value={row.goal || ''} onChange={e => setForm(f => ({ ...f, managementTargets: f.managementTargets.map((item, i) => i === index ? { ...item, goal: e.target.value } : item) }))} placeholder="拟管理目标，如改善空腹血糖" style={{ marginBottom: 7 }} />
@@ -653,7 +660,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       <div style={{ fontSize: 13, color: '#65776F', marginBottom: 12 }}>类型：{topicTypeLabel(active)}{active.templateSnapshot?.name ? ` · 模板：${active.templateSnapshot.name}` : ''}</div>
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={editForm.title} onChange={e => setEditForm(value => ({ ...value, title: e.target.value }))} /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={5} value={editForm.description} onChange={e => setEditForm(value => ({ ...value, description: e.target.value }))} /></div>
-      <div className="form-group"><label className="form-label">研判资料范围</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={editForm.contextScopes.includes(key)} onChange={e => setEditForm(value => ({ ...value, contextScopes: e.target.checked ? [...value.contextScopes, key] : value.contextScopes.filter(item => item !== key) }))} /> {label}</label>)}</div></div>
+      <div className="form-group"><label className="form-label">研判资料范围</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={editForm.contextScopes.includes(key)} onChange={e => setEditForm(value => ({ ...value, contextScopes: e.target.checked ? [...value.contextScopes, key] : value.contextScopes.filter(item => item !== key) }))} /> {label}</label>)}</div><button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setEditForm(value => ({ ...value, contextScopes: suggestCaseReviewScopes(active.reviewType, value.title) }))}>应用建议勾选</button></div>
       <div className="form-group"><label className="form-label">拟管理目标与拟干预重点</label>{active.conclusion?.status === 'confirmed' && <div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>可按客户沟通结果调整。保存后仍为健康顾问确认版，原目标保留在历史记录中。</div>}
         {(editForm.managementTargets || []).map((row, index) => <div key={index} style={{ border: '1px solid #E1E9E3', borderRadius: 8, padding: 9, marginBottom: 8 }}>
           <input className="form-input" aria-label={`编辑拟管理目标 ${index + 1}`} value={row.goal || ''} onChange={e => setEditForm(value => ({ ...value, managementTargets: value.managementTargets.map((item, i) => i === index ? { ...item, goal: e.target.value } : item) }))} placeholder="拟管理目标" style={{ marginBottom: 7 }} />

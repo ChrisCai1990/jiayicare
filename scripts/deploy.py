@@ -62,7 +62,7 @@ def push_clean_master():
     print("GitHub push 完成")
 
 
-def deploy(backend_only=False, clean=False, github_source=False, skip_data_migrations=False, care_tenant_migration=False, phase_assessment_index=False):
+def deploy(backend_only=False, clean=False, github_source=False, skip_data_migrations=False, care_tenant_migration=False, phase_assessment_index=False, partner_team_indexes=False):
     require_clean_master()
     revision = run_git("rev-parse", "HEAD").stdout.strip()
     dependency_hash = dependency_fingerprint()
@@ -219,6 +219,15 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         )
         if code:
             raise RuntimeError("构建期间线上版本被其他发布修改，已停止本次重启和迁移")
+
+        if partner_team_indexes:
+            command = f"cd {REPO_DIR}/backend && node src/scripts/preparePartnerTeamIndexes.js"
+            code, _ = remote(command, timeout=60, label="只读核对团队账本与员工门槛索引")
+            if code:
+                raise RuntimeError("团队核算索引预检失败，未重启后端")
+            code, _ = remote(command + " --apply", timeout=120, label="为新团队核算集合建立索引")
+            if code:
+                raise RuntimeError("团队核算索引建立失败，未重启后端")
 
         if phase_assessment_index:
             command = f"cd {REPO_DIR}/backend && node scripts/migratePhaseAssessmentPeriodIndex.js"
@@ -774,6 +783,7 @@ def main():
     parser.add_argument("--skip-data-migrations", action="store_true", help="仅发布代码，不执行数据迁移或创建迁移标记")
     parser.add_argument("--care-tenant-migration", action="store_true", help="重启前停写、备份并迁移嘉医汇随访与推送归属")
     parser.add_argument("--phase-assessment-index", action="store_true", help="重启前核对并切换月度评估唯一索引")
+    parser.add_argument("--partner-team-indexes", action="store_true", help="重启前核对并建立新团队核算索引")
     parser.add_argument("--clean", action="store_true", help="先清理服务器 node_modules")
     parser.add_argument(
         "--github-source",
@@ -792,6 +802,7 @@ def main():
             skip_data_migrations=args.skip_data_migrations,
             care_tenant_migration=args.care_tenant_migration,
             phase_assessment_index=args.phase_assessment_index,
+            partner_team_indexes=args.partner_team_indexes,
         )
     except (RuntimeError, OSError) as exc:
         print(f"部署失败：{exc}", file=sys.stderr)

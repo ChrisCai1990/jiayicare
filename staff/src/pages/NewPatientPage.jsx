@@ -683,7 +683,7 @@ export default function NewPatientPage() {
                   {serviceOptions.map(p => <option key={p._id || p.name} value={p.name}>{p.name}</option>)}
                 </select>
               </F>
-              <F label="服务开始日期"><DateField className="form-input" type="date" value={form.serviceStartDate} onChange={set('serviceStartDate')} /></F>
+              <F label="首次加入日期（服务开始）"><DateField className="form-input" type="date" value={form.serviceStartDate} onChange={set('serviceStartDate')} /></F>
               <F label="服务到期日期"><DateField className="form-input" type="date" value={form.serviceExpiry} onChange={set('serviceExpiry')} /></F>
               <F label="会员来源"><select className="form-input" value={form.source} onChange={set('source')}><option value="">未填写</option>{SOURCE_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></F>
               <F label="备注" span={2}><textarea className="form-input" rows={3} value={form.remark} onChange={set('remark')} style={{ resize: 'vertical' }} /></F>

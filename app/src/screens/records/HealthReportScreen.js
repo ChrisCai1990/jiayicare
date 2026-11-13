@@ -1,30 +1,76 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, ActivityIndicator,
+  StyleSheet, SafeAreaView, ActivityIndicator, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Polyline, Circle, Text as SvgText, Line } from 'react-native-svg';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { userAPI } from '../../services/api';
+import { userAPI, recordsAPI } from '../../services/api';
 import ShareSheet from '../../components/ShareSheet';
 
 const PERIOD_TABS = ['周报', '月报'];
+const TREND_DESCRIPTION = { down: '下降', up: '上升', stable: '基本持平' };
+const reportDate = value => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '时间未记录' : `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
+const bloodPressureArm = record => {
+  const arm = String(record?.extra?.arm || record?.note || '');
+  return /左[臂手]/.test(arm) ? '左臂' : /右[臂手]/.test(arm) ? '右臂' : '未标注';
+};
+const recordNumber = (record, field) => {
+  if (field === 'sys' || field === 'dia') {
+    const parts = String(record.value || '').split('/');
+    return Number(record.extra?.[field] ?? parts[field === 'sys' ? 0 : 1]);
+  }
+  return Number(record.value);
+};
 
-function MetricRow({ m }) {
-  const statusColor = colors.textPrimary;
-  const trendIcon = m.trend === 'down' ? 'trending-down' : m.trend === 'up' ? 'trending-up' : 'remove';
-  const trendColor = colors.textSecondary;
+function ReportCurve({ records, field, color, unit }) {
+  const values = records.map(record => ({ value: recordNumber(record, field), recordedAt: record.recordedAt }))
+    .filter(point => Number.isFinite(point.value) && point.value > 0).slice(-12);
+  if (!values.length) return <Text style={styles.chartEmpty}>暂无曲线记录</Text>;
+  const width = Dimensions.get('window').width - spacing.lg * 2 - spacing.md * 2;
+  const height = 100;
+  const min = Math.min(...values.map(point => point.value));
+  const max = Math.max(...values.map(point => point.value));
+  const pad = Math.max((max - min) * 0.2, 1);
+  const x = index => values.length === 1 ? width / 2 : 25 + index * (width - 50) / (values.length - 1);
+  const y = value => 20 + (max + pad - value) * 65 / (max - min + pad * 2);
+  return <View>
+    <Svg width={width} height={height}>
+      {[25, 52, 80].map(lineY => <Line key={lineY} x1={25} y1={lineY} x2={width - 25} y2={lineY} stroke={colors.border} />)}
+      {values.length > 1 && <Polyline points={values.map((point, index) => `${x(index)},${y(point.value)}`).join(' ')} fill="none" stroke={color} strokeWidth={2.5} />}
+      {values.map((point, index) => <React.Fragment key={`${point.recordedAt}-${index}`}>
+        <Circle cx={x(index)} cy={y(point.value)} r={4} fill="#fff" stroke={color} strokeWidth={2} />
+        <SvgText x={x(index)} y={Math.max(11, y(point.value) - 9)} fontSize={10} fill={color} textAnchor="middle">{point.value}</SvgText>
+      </React.Fragment>)}
+    </Svg>
+    <View style={styles.chartDates}><Text style={styles.chartDate}>{reportDate(values[0].recordedAt).split(' ')[0]}</Text><Text style={styles.chartDate}>{values.length > 1 ? reportDate(values[values.length - 1].recordedAt).split(' ')[0] : unit}</Text></View>
+  </View>;
+}
+
+function MetricRow({ m, records, expanded, onToggle, loading, error }) {
+  const metricRecords = records.filter(record => record.type === m.type).sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt));
+  const bpArms = ['左臂', '右臂', '未标注'].filter(arm => metricRecords.some(record => bloodPressureArm(record) === arm));
+  const [arm, setArm] = useState('');
+  const activeArm = bpArms.includes(arm) ? arm : bpArms[0];
+  const chartRecords = m.type === 'bloodPressure' ? metricRecords.filter(record => bloodPressureArm(record) === activeArm) : metricRecords;
+  const description = m.type === 'bloodPressure' ? '查看分侧趋势' : metricRecords.length > 1 ? (TREND_DESCRIPTION[m.trend] || '查看变化趋势') : '已有记录';
   return (
-    <View style={styles.metricRow}>
-      <Text style={styles.metricLabel}>{m.label}</Text>
-      <View style={styles.metricRight}>
-        <Text style={[styles.metricValue, { color: statusColor }]}>{m.value}</Text>
-        <Text style={styles.metricUnit}>{m.unit}</Text>
-        <View style={[styles.trendTag, { backgroundColor: trendColor + '12' }]}>
-          <Ionicons name={trendIcon} size={12} color={trendColor} />
-          <Text style={[styles.trendTagText, { color: trendColor }]}>{m.delta}</Text>
-        </View>
-      </View>
+    <View>
+      <TouchableOpacity style={styles.metricRow} onPress={onToggle} accessibilityRole="button" accessibilityLabel={`${m.label}${expanded ? '收起' : '查看曲线'}`}>
+        <Text style={styles.metricLabel}>{m.label}</Text>
+        <View style={styles.metricRight}><Text style={styles.metricDescription}>{description}</Text><Text style={styles.metricAction}>{expanded ? '收起 ▲' : '查看曲线 ›'}</Text></View>
+      </TouchableOpacity>
+      {expanded && <View style={styles.metricChart}>
+        {loading ? <ActivityIndicator color={colors.primary} /> : error ? <Text style={styles.chartEmpty}>{error}</Text> : m.type === 'bloodPressure' ? <>
+          <View style={styles.armTabs}>{bpArms.map(item => <TouchableOpacity key={item} onPress={() => setArm(item)} style={[styles.armTab, item === activeArm && styles.armTabActive]}><Text style={item === activeArm ? styles.armTabTextActive : styles.armTabText}>{item}</Text></TouchableOpacity>)}</View>
+          <Text style={styles.chartTitle}>收缩压（mmHg）</Text><ReportCurve records={chartRecords} field="sys" color={colors.primary} />
+          <Text style={styles.chartTitle}>舒张压（mmHg）</Text><ReportCurve records={chartRecords} field="dia" color={colors.primary} />
+        </> : <ReportCurve records={chartRecords} color={colors.primary} unit={m.unit} />}
+      </View>}
     </View>
   );
 }
@@ -58,11 +104,18 @@ export default function HealthReportScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
   const [showShare, setShowShare] = useState(false);
+  const [expandedMetric, setExpandedMetric] = useState('');
+  const [showRecords, setShowRecords] = useState(false);
+  const [records, setRecords] = useState([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState('');
 
   const loadReport = useCallback(async (period) => {
     setLoading(true);
     setError(null);
     setReport(null);
+    setExpandedMetric('');
+    setShowRecords(false);
     try {
       const res = await userAPI.getReport(period);
       if (res.success) setReport(res.data);
@@ -77,6 +130,25 @@ export default function HealthReportScreen({ navigation }) {
   useEffect(() => {
     loadReport(tab === '周报' ? 'week' : 'month');
   }, [tab, loadReport]);
+
+  useEffect(() => {
+    if (!report) return;
+    let active = true;
+    setRecords([]);
+    setRecordsError('');
+    setRecordsLoading(true);
+    (async () => {
+      const all = [];
+      for (let page = 1; page <= 20; page += 1) {
+        const result = await recordsAPI.list({ days: tab === '月报' ? 30 : 7, limit: 100, page });
+        if (!result.success || !Array.isArray(result.data)) throw new Error('记录加载失败');
+        all.push(...result.data);
+        if (result.data.length < 100) break;
+      }
+      if (active) setRecords(all);
+    })().catch(() => { if (active) setRecordsError('记录加载失败，请稍后重试'); }).finally(() => { if (active) setRecordsLoading(false); });
+    return () => { active = false; };
+  }, [report, tab]);
 
   const isEmpty = !loading && !error && report && report.recordCount === 0;
   const currentPeriod = tab === '周报' ? 'week' : 'month';
@@ -156,7 +228,7 @@ export default function HealthReportScreen({ navigation }) {
               <View style={styles.metricsCard}>
                 {report.metrics.map((m, i) => (
                   <View key={i}>
-                    <MetricRow m={m} />
+                    <MetricRow m={m} records={records} loading={recordsLoading} error={recordsError} expanded={expandedMetric === m.type} onToggle={() => setExpandedMetric(current => current === m.type ? '' : m.type)} />
                     {i < report.metrics.length - 1 && <View style={styles.divider} />}
                   </View>
                 ))}
@@ -166,10 +238,12 @@ export default function HealthReportScreen({ navigation }) {
 
           {/* Record Count */}
           <View style={styles.section}>
-            <View style={styles.countCard}>
+            <TouchableOpacity style={styles.countCard} onPress={() => setShowRecords(value => !value)}>
               <Ionicons name="clipboard-outline" size={20} color={colors.primary} />
               <Text style={styles.countText}>本期共记录 <Text style={styles.countNum}>{report.recordCount}</Text> 条健康数据</Text>
-            </View>
+              <Text style={styles.metricAction}>{showRecords ? '收起 ▲' : '查看明细 ›'}</Text>
+            </TouchableOpacity>
+            {showRecords && <View style={styles.recordList}>{recordsLoading ? <ActivityIndicator color={colors.primary} /> : recordsError ? <Text style={styles.chartEmpty}>{recordsError}</Text> : records.length ? records.map((record, index) => <View key={record._id || index} style={styles.recordRow}><View style={styles.recordHead}><Text style={styles.metricLabel}>{record.label || record.type}{record.type === 'bloodPressure' ? ` · ${bloodPressureArm(record)}` : ''}</Text><Text style={styles.recordValue}>{record.value} {record.unit}</Text></View><Text style={styles.chartDate}>{reportDate(record.recordedAt)}</Text></View>) : <Text style={styles.chartEmpty}>暂无可查看的记录明细</Text>}</View>}
           </View>
 
           {/* Share Button */}
@@ -275,6 +349,18 @@ const styles = StyleSheet.create({
   },
   metricLabel: { fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
   metricRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  metricDescription: { fontSize: 12, color: colors.textSecondary },
+  metricAction: { fontSize: 12, color: colors.primary },
+  metricChart: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },
+  chartTitle: { fontSize: 12, color: colors.textSecondary, marginTop: 10, marginBottom: 4 },
+  chartEmpty: { fontSize: 12, color: colors.textMuted, paddingVertical: 14 },
+  chartDates: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
+  chartDate: { fontSize: 11, color: colors.textMuted },
+  armTabs: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  armTab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full, backgroundColor: colors.background },
+  armTabActive: { backgroundColor: colors.primary },
+  armTabText: { fontSize: 12, color: colors.textSecondary },
+  armTabTextActive: { fontSize: 12, color: colors.white },
   metricValue: { fontSize: 18, fontWeight: '800' },
   metricUnit: { fontSize: 11, color: colors.textMuted, marginRight: 4 },
   trendTag: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.full },
@@ -287,6 +373,10 @@ const styles = StyleSheet.create({
   },
   countText: { fontSize: 14, color: colors.textSecondary },
   countNum: { fontSize: 16, fontWeight: '800', color: colors.primary },
+  recordList: { backgroundColor: colors.white, marginTop: 8, paddingHorizontal: spacing.md, borderRadius: radius.md },
+  recordRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  recordHead: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginBottom: 4 },
+  recordValue: { fontSize: 13, color: colors.primary, fontWeight: '700' },
 
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

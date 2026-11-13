@@ -377,9 +377,10 @@ export default function EmployeePage() {
                   </div>
                 )}
               </div>
-              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #E5E7EB' }}>
+              <details style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #E5E7EB' }}>
+                <summary style={{ cursor: 'pointer' }}>历史个人绩效比例（旧规则兼容；新规则请到“佣金规则”设置）</summary>
                 <PersonalPerformanceRuleForm rule={form.personalPerformanceRule} onChange={v => setForm(f => ({ ...f, personalPerformanceRule: v }))} />
-              </div>
+              </details>
             </form>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setShowModal(false)}>取消</button>

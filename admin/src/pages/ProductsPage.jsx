@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { adminAPI, API_ORIGIN } from '../api'
 import { useToast } from '../App'
 
@@ -18,7 +19,7 @@ function safeImgSrc(url) {
 const EMPTY_FORM = {
   name: '', subtitle: '', category: '', originalPrice: '', sortOrder: 999,
   features: '', description: '', stock: 0, stockLimited: false, status: 'off',
-  images: [], servicePrices: [],
+  images: [], servicePrices: [], businessAllocations: [],
   fulfillmentType: 'offline_service', paymentChannel: 'wechat_pay', bookingRequired: true,
   deliveryRequired: false, serviceLocation: '', validityDays: 365,
   refundPolicy: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。', skus: [],
@@ -27,6 +28,7 @@ const EMPTY_FORM = {
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
   servicePerformerRoles: [],
   serviceItems: [],
+  staffPerformanceOverrides: [],
   aiProfile: {
     enabledForRecommendation: false, targetNeeds: [], suitableFor: [], notSuitableFor: [],
     requiredQuestions: [], supportedCities: [], includedItems: [], excludedItems: [],
@@ -140,6 +142,13 @@ const PERFORMER_ROLE_OPTIONS = [
   { value: 'tcmDoctor', label: '中医师' },
 ]
 const ROLE_LABEL_MAP = Object.fromEntries(PERFORMER_ROLE_OPTIONS.map(o => [o.value, o.label]))
+const allocationItemName = (item, products) => item.businessType === 'product'
+  ? (products.find(product => String(product._id) === String(item.childProductId))?.name || item.name || '')
+  : item.businessType === 'enterprise' ? '企业资源'
+  : `${ROLE_LABEL_MAP[item.teamRole] || '健管专员'}管理服务`
+const moneyCents = value => Math.round(Number(value || 0) * 100)
+const allocationCents = (row, priceCents) => row.allocationAmountCents != null
+  ? Number(row.allocationAmountCents) : Math.round(priceCents * Number(row.revenueSharePercent || 0) / 100)
 
 function ServicePerformerRolesForm({ roles, staffList, onChange }) {
   const list = roles || []
@@ -197,23 +206,185 @@ function ServicePerformerRolesForm({ roles, staffList, onChange }) {
   )
 }
 
-function ServiceItemsForm({ items, staffList, onChange }) {
+function ChildProductPicker({ products, parentId, value, onChange }) {
+  const [search, setSearch] = useState('')
+  const query = search.trim().toLowerCase()
+  const available = products.filter(product => product._id === value || (product._id !== parentId
+    && !(product.serviceItems || []).some(child => child.childProductId)))
+  const matches = available.filter(product => product._id === value
+    || !query || `${product.name || ''} ${product.category || ''}`.toLowerCase().includes(query))
+  return <div style={{ display: 'grid', gap: 6 }}>
+    <input className="form-input" type="search" value={search} onChange={event => setSearch(event.target.value)}
+      placeholder="搜索子产品名称或分类" aria-label="搜索产品库子产品" />
+    <select className="form-input" value={value || ''} onChange={event => onChange(event.target.value)}
+      aria-label="关联产品库子产品">
+      <option value="">不关联子产品（管理服务）</option>
+      {matches.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
+    </select>
+    {query && <span style={{ fontSize: 12, color: '#6B7D74' }}>匹配 {matches.filter(product => product._id !== value).length} 项{matches.every(product => product._id === value) ? '，请换个关键词' : ''}</span>}
+  </div>
+}
+
+function ServiceItemsForm({ items, products, parentId, originalPrice, onChange }) {
   const list = items || []
-  const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '', units: 1, performers: [] }])
+  const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '健管专员管理服务', units: 1, businessType: 'service', childProductId: '', teamRole: 'healthManager', revenueSharePercent: 0, performers: [] }])
   const update = (i, patch) => onChange(list.map((item, idx) => idx === i ? { ...item, ...patch } : item))
+  const totalShare = list.reduce((sum, item) => sum + (Number(item.revenueSharePercent) || 0), 0)
+  const price = Number(originalPrice) || 0
   return <div style={{ marginTop: 18, borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-      <label className="form-label">组合服务子项目（按子项目逐次核销）</label>
+      <label className="form-label">服务交付子项（按服务项目逐次核销）</label>
       <button type="button" className="btn btn-sm btn-ghost" onClick={add}>+ 添加子项目</button>
     </div>
-    <div style={{fontSize:12,color:'#888',marginBottom:10}}>每个子项目可独立设置次数、岗位和结算方式；固定金额及比例均按每次核销计算。</div>
+    <div style={{fontSize:12,color:'#888',marginBottom:10}}>这里配置实际交付和核销的子项目。业务金额请在“业务归属”页按服务、产品、资源分配；旧产品尚未配置新归属时，历史子项目比例继续生效。</div>
     {list.map((item, i) => <div key={item.key || i} style={{border:'1px solid #e0d9ce',borderRadius:8,padding:12,marginBottom:12}}>
       <div style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,alignItems:'center'}}>
-        <input className="form-input" value={item.name || ''} placeholder="子项目名称" onChange={e=>update(i,{name:e.target.value})}/>
-        <input className="form-input" type="number" min="1" value={item.units || 1} onChange={e=>update(i,{units:Math.max(1,parseInt(e.target.value)||1)})}/>
+        <div style={{fontWeight:600,color:'#365a4a'}}>{allocationItemName(item, products) || '请选择产品库项目'}</div>
+        <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#667a6d'}}>数量/次数
+          <input className="form-input" type="number" min="1" aria-label="数量或服务次数" value={item.units || 1} onChange={e=>update(i,{units:Math.max(1,parseInt(e.target.value)||1)})}/>
+        </label>
         <button type="button" onClick={()=>onChange(list.filter((_,idx)=>idx!==i))} style={{color:'#c0392b',background:'none',border:'none',cursor:'pointer'}}>删除</button>
       </div>
-      <ServicePerformerRolesForm roles={item.performers || []} staffList={staffList} onChange={v=>update(i,{performers:v})}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1.3fr 1fr 1fr',gap:8,marginTop:8}}>
+        <select className="form-input" aria-label="业务归属类型" value={item.businessType || 'service'} onChange={e=>update(i,{businessType:e.target.value})}>
+          <option value="service">管理服务</option><option value="product">产品／检测</option>
+        </select>
+        <select className="form-input" value={item.teamRole || 'healthManager'} onChange={e=>update(i,{teamRole:e.target.value})}>
+          {PERFORMER_ROLE_OPTIONS.map(role=><option key={role.value} value={role.value}>{role.label}团队</option>)}
+        </select>
+        <input key={`${item.key}:${price}`} className="form-input" type="number" min="0" step="0.01" defaultValue={price ? (price * Number(item.revenueSharePercent || 0) / 100).toFixed(2) : ''}
+          placeholder="归属金额 ¥" aria-label={`${item.name || `第${i + 1}项`}归属金额元`} disabled={!price}
+          onBlur={e=>update(i,{revenueSharePercent: Math.round(Number(e.target.value || 0) / price * 1000000) / 10000})}
+          onKeyDown={e=>{ if (e.key === 'Enter') e.currentTarget.blur() }}/>
+        <div className="form-input" style={{background:'#f6f8f7',color:'#5c6e6a'}}>{Number(item.revenueSharePercent || 0).toFixed(2)}%</div>
+      </div>
+      <details style={{marginTop:8}} open={item.businessType === 'product' ? true : undefined}><summary style={{cursor:'pointer',fontSize:12,color:'#6B7D74'}}>交付商品关联（{item.businessType === 'product' ? '必填' : '可选'}）</summary>
+        <ChildProductPicker products={products} parentId={parentId} value={item.childProductId} onChange={childProductId=>{
+          const child = products.find(p=>p._id===childProductId)
+          update(i,{childProductId,name:child?.name || ''})
+        }} />
+      </details>
+    </div>)}
+    {!!list.length && <div style={{fontSize:12,color:Math.abs(totalShare-100)<0.001?'#1E6B50':'#c0392b'}}>团队归属金额合计：¥{(price * totalShare / 100).toFixed(2)} / ¥{price.toFixed(2)}；比例合计：{totalShare.toFixed(2)}%{totalShare > 0 && Math.abs(totalShare-100)>=0.001?'（须覆盖整笔配置基准金额）':''}</div>}
+  </div>
+}
+
+function SpecificationAllocationsForm({ prices, products, onChange }) {
+  const updatePrice = (index, rows) => onChange(prices.map((price, i) => i === index ? { ...price, businessAllocations: rows } : price))
+  return <div style={{ marginTop: 16 }}>
+    <div style={{ fontSize: 12, color: '#667a6d', marginBottom: 12 }}>按收费项目填写归属金额，金额精确到分并须合计售价；百分比仅供查看。实收或退款变化时按这些金额的比例分摊。资源归属不自动生成个人佣金。</div>
+    {prices.filter(price => price.label?.trim()).map(price => {
+      const index = prices.indexOf(price)
+      const rows = price.businessAllocations || []
+      const amount = Number(price.price) || 0
+      const priceCents = moneyCents(amount)
+      const allocatedCents = rows.reduce((sum, row) => sum + allocationCents(row, priceCents), 0)
+      const updateRow = (rowIndex, patch) => updatePrice(index, rows.map((row, i) => i === rowIndex ? { ...row, ...patch } : row))
+      return <div key={`${price.label}:${index}`} style={{ border: '1px solid #e0d9ce', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <strong>{price.label} · ¥{amount.toFixed(2)}</strong>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => updatePrice(index, [...rows, {
+            key: `allocation_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '健管专员管理服务',
+            businessType: 'service', teamRole: 'healthManager', childProductId: '', revenueSharePercent: 0,
+          }])}>+ 添加归属</button>
+        </div>
+        {rows.map((row, rowIndex) => <div key={row.key || rowIndex} style={{ borderTop: '1px solid #edf0ed', paddingTop: 10, marginTop: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr 1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+            <select className="form-input" value={row.businessType || 'service'} onChange={event => updateRow(rowIndex, { businessType: event.target.value, teamRole: event.target.value === 'enterprise' ? 'enterpriseResource' : 'healthManager', childProductId: '', name: '' })}>
+              <option value="service">服务</option><option value="product">产品</option><option value="enterprise">资源</option>
+            </select>
+            {row.businessType === 'enterprise' ? <div className="form-input" style={{ background: '#f6f8f7' }}>企业资源（不关联个人）</div>
+              : <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => updateRow(rowIndex, { teamRole: event.target.value })}>
+                {PERFORMER_ROLE_OPTIONS.map(role => <option key={role.value} value={role.value}>{role.label}团队</option>)}
+              </select>}
+            <input key={`${row.key}:${amount}`} className="form-input" type="number" min="0" step="0.01"
+              defaultValue={priceCents ? (allocationCents(row, priceCents) / 100).toFixed(2) : ''}
+              placeholder="归属金额 ¥" aria-label={`${price.label}归属金额元`} disabled={!amount}
+              onBlur={event => {
+                const cents = moneyCents(event.target.value)
+                updatePrice(index, rows.map((item, i) => {
+                  const value = i === rowIndex ? cents : allocationCents(item, priceCents)
+                  return { ...item, allocationAmountCents: value,
+                    revenueSharePercent: priceCents ? Math.round(value / priceCents * 10000000000) / 100000000 : 0 }
+                }))
+              }}
+              onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+            <div className="form-input" style={{ background: '#f6f8f7' }}>{(priceCents ? allocationCents(row, priceCents) / priceCents * 100 : 0).toFixed(2)}%</div>
+            <button type="button" onClick={() => updatePrice(index, rows.filter((_, i) => i !== rowIndex))} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer' }}>删除</button>
+          </div>
+          {row.businessType === 'product' && <ChildProductPicker products={products} value={row.childProductId}
+            onChange={childProductId => updateRow(rowIndex, { childProductId })} />}
+        </div>)}
+        <div style={{ fontSize: 12, marginTop: 8, color: rows.length && allocatedCents === priceCents ? '#1E6B50' : '#c0392b' }}>
+          {rows.length ? `已分配 ¥${(allocatedCents / 100).toFixed(2)} / ¥${amount.toFixed(2)}（${(priceCents ? allocatedCents / priceCents * 100 : 0).toFixed(2)}%）${allocatedCents !== priceCents ? `，差额 ¥${((priceCents - allocatedCents) / 100).toFixed(2)}` : ''}` : '尚未配置业务归属'}
+        </div>
+      </div>
+    })}
+  </div>
+}
+
+function ServiceItemPerformanceSettings({ items, staffList, onChange }) {
+  const list = items || []
+  if (!list.length) return null
+  const configured = list.filter(item => item.performers?.length).length
+  return <details style={{ marginTop: 20, borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
+    <summary style={{ cursor: 'pointer', fontWeight: 600 }}>子项目服务绩效（{configured} 项已配置）</summary>
+    <p style={{ fontSize: 12, color: '#667a6d' }}>此处设置实际服务人员的绩效，与“业务归属”中的团队营收分配分别核算。需有服务核销和实际执行人。</p>
+    {list.map((item, index) => <div key={item.key || index} style={{ border: '1px solid #e0d9ce', borderRadius: 8, padding: 12, marginTop: 10 }}>
+      <strong>{item.name || `第 ${index + 1} 个子项目`}</strong>
+      <ServicePerformerRolesForm roles={item.performers || []} staffList={staffList}
+        onChange={performers => onChange(list.map((row, i) => i === index ? { ...row, performers } : row))} />
+    </div>)}
+  </details>
+}
+
+function SpecificationPerformanceSettings({ prices, staffList, productRule, productRoles, productOverrides, onChange }) {
+  const update = (index, performanceConfig) => onChange(prices.map((price, i) => i === index ? { ...price, performanceConfig } : price))
+  return <div style={{ marginTop: 16 }}>
+    <p style={{ color: '#667a6d', fontSize: 12 }}>每个收费项目可独立设置推广和服务绩效；未单独设置时沿用下方产品通用规则。订单按实际购买项目冻结规则。</p>
+    {prices.filter(price => price.label?.trim()).map(price => {
+      const index = prices.indexOf(price)
+      const config = price.performanceConfig?.enabled === true ? price.performanceConfig : null
+      const setConfig = patch => update(index, { ...config, ...patch, enabled: true })
+      return <details key={`${price.label}:${index}`} style={{ border: '1px solid #e0d9ce', borderRadius: 8, padding: 12, marginBottom: 10 }}>
+        <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{price.label} · ¥{Number(price.price || 0).toFixed(2)} · {config ? '独立绩效' : '沿用通用规则'}</summary>
+        <label style={{ display: 'block', marginTop: 12 }}>规则来源
+          <select className="form-input" value={config ? 'specific' : 'default'} onChange={event => update(index,
+            event.target.value === 'specific' ? { enabled: true,
+              performanceRule: { ...productRule }, servicePerformerRoles: [...(productRoles || [])],
+              staffPerformanceOverrides: [...(productOverrides || [])] } : null)}>
+            <option value="default">沿用产品通用规则</option><option value="specific">此收费项目单独设置</option>
+          </select>
+        </label>
+        {config && <>
+          <PerformanceRuleForm rule={config.performanceRule} onChange={performanceRule => setConfig({ performanceRule })} />
+          <ServicePerformerRolesForm roles={config.servicePerformerRoles || []} staffList={staffList}
+            onChange={servicePerformerRoles => setConfig({ servicePerformerRoles })} />
+          <StaffPerformanceOverridesForm rows={config.staffPerformanceOverrides || []} staffList={staffList}
+            onChange={staffPerformanceOverrides => setConfig({ staffPerformanceOverrides })} />
+        </>}
+      </details>
+    })}
+  </div>
+}
+
+function StaffPerformanceOverridesForm({ rows, staffList, onChange }) {
+  const list = rows || []
+  const update = (index, patch) => onChange(list.map((row, i) => i===index?{...row,...patch}:row))
+  return <div style={{marginTop:18,borderTop:'1px solid #e0d9ce',paddingTop:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <label className="form-label">本产品员工个人推广／服务佣金</label>
+      <button type="button" className="btn btn-sm btn-ghost" onClick={()=>onChange([...list,{staffId:'',ruleType:'percentage',referrerRate:0,fulfillerRate:0,referrerAmount:0,fulfillerAmount:0}])}>+ 添加员工</button>
+    </div>
+    <div style={{fontSize:12,color:'#888',marginBottom:10}}>有个人规则时优先于员工通用比例和产品岗位比例；推广与服务分别计提，服务仍须实际履约。</div>
+    {list.map((row,i)=><div key={i} style={{display:'grid',gridTemplateColumns:'1.4fr 1fr 1fr 1fr auto',gap:8,marginBottom:8}}>
+      <select className="form-input" value={row.staffId || ''} onChange={e=>update(i,{staffId:e.target.value})}>
+        <option value="">选择员工</option>{staffList.map(staff=><option key={staff._id} value={staff._id}>{staff.name} · {ROLE_LABEL_MAP[staff.role] || staff.role}</option>)}
+      </select>
+      <select className="form-input" value={row.ruleType || 'percentage'} onChange={e=>update(i,{ruleType:e.target.value})}><option value="percentage">按比例</option><option value="fixedAmount">固定金额</option></select>
+      <input className="form-input" type="number" min="0" max={row.ruleType==='fixedAmount'?undefined:100} step="0.01" value={row.ruleType==='fixedAmount'?row.referrerAmount:row.referrerRate} placeholder="推广" onChange={e=>update(i,{[row.ruleType==='fixedAmount'?'referrerAmount':'referrerRate']:e.target.value})}/>
+      <input className="form-input" type="number" min="0" max={row.ruleType==='fixedAmount'?undefined:100} step="0.01" value={row.ruleType==='fixedAmount'?row.fulfillerAmount:row.fulfillerRate} placeholder="服务" onChange={e=>update(i,{[row.ruleType==='fixedAmount'?'fulfillerAmount':'fulfillerRate']:e.target.value})}/>
+      <button type="button" onClick={()=>onChange(list.filter((_,idx)=>idx!==i))} style={{color:'#c0392b',background:'none',border:'none',cursor:'pointer'}}>删除</button>
     </div>)}
   </div>
 }
@@ -390,7 +561,7 @@ function ImageUploadList({ images, onChange }) {
 }
 
 // ── 产品表单 Modal ──────────────────────────────────────────────
-function ProductModal({ product, categories, onClose, onSaved }) {
+function ProductModal({ product, categories, onClose, onSaved, commissionMode = false }) {
   const toast = useToast()
   const isEdit = !!product?._id
   const inventoryTracked = product?.inventoryTracking?.enabled === true || product?.usesSharedInventory === true
@@ -408,7 +579,14 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       stockLimited: product.stockLimited === true || Number(product.stock) > 0,
       status: product.status || 'off',
       images: product.images || [],
-      servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price) })),
+      servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price),
+        businessAllocations: (sp.businessAllocations || []).map(row => ({ key: row.key, name: row.name,
+          businessType: row.businessType || 'service', teamRole: row.teamRole, childProductId: row.childProductId || '',
+          revenueSharePercent: row.revenueSharePercent, allocationAmountCents: row.allocationAmountCents })),
+        performanceConfig: sp.performanceConfig?.enabled === true ? sp.performanceConfig : null })),
+      businessAllocations: (product.businessAllocations || []).map(row => ({ key: row.key, name: row.name,
+        businessType: row.businessType || 'service', teamRole: row.teamRole, childProductId: row.childProductId || '',
+        revenueSharePercent: row.revenueSharePercent, allocationAmountCents: row.allocationAmountCents })),
       fulfillmentType: product.fulfillmentType || 'offline_service',
       paymentChannel: product.paymentChannel || 'wechat_pay',
       bookingRequired: product.bookingRequired !== false,
@@ -429,7 +607,14 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       })),
       serviceItems: (product.serviceItems || []).map(item => ({
         key: item.key, name: item.name, units: item.units || 1,
+        childProductId: item.childProductId ? String(item.childProductId) : '',
+        businessType: item.businessType || 'service', teamRole: item.teamRole || 'healthManager', revenueSharePercent: item.revenueSharePercent || 0,
         performers: (item.performers || []).map(r => ({ role:r.role, ruleType:r.ruleType || 'percentage', rate:r.rate || 0, amount:r.amount || 0, defaultStaffId:r.defaultStaffId ? String(r.defaultStaffId) : '' })),
+      })),
+      staffPerformanceOverrides: (product.staffPerformanceOverrides || []).map(row => ({
+        staffId: String(row.staffId || ''), ruleType: row.ruleType || 'percentage',
+        referrerRate: row.referrerRate || 0, fulfillerRate: row.fulfillerRate || 0,
+        referrerAmount: row.referrerAmount || 0, fulfillerAmount: row.fulfillerAmount || 0,
       })),
       specialtyTerms: product.specialtyTerms || null,
       aiProfile: {
@@ -449,7 +634,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   })
   const [loading, setLoading] = useState(false)
   const [generatingAi, setGeneratingAi] = useState(false)
-  const [tab, setTab] = useState('basic')
+  const [tab, setTab] = useState(commissionMode ? 'performance' : 'basic')
   const [staffList, setStaffList] = useState([])
   const [productsForBundle, setProductsForBundle] = useState([])
 
@@ -490,6 +675,53 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   }
 
   const save = async () => {
+    if (commissionMode) {
+      setLoading(true)
+      try {
+        await adminAPI.updateProductCommissionRules(product._id, {
+          expectedUpdatedAt: product.updatedAt,
+          performanceRule: form.performanceRule,
+          servicePerformerRoles: form.servicePerformerRoles || [],
+          staffPerformanceOverrides: form.staffPerformanceOverrides || [],
+          servicePrices: (form.servicePrices || []).map(row => ({ label: row.label,
+            performanceConfig: row.performanceConfig?.enabled === true ? row.performanceConfig : null })),
+          serviceItems: (form.serviceItems || []).map(row => ({ key: row.key, performers: row.performers || [] })),
+        })
+        toast('✅ 佣金规则已保存')
+        onSaved()
+        onClose()
+      } catch (err) { toast('❌ ' + (err.message || '保存失败，请刷新后重试')) }
+      finally { setLoading(false) }
+      return
+    }
+    const allocatedItems = form.serviceItems || []
+    const specAllocationsInvalid = (form.servicePrices || []).some(price => {
+      const rows = price.businessAllocations || []
+      const cents = moneyCents(price.price)
+      const exact = rows.some(row => row.allocationAmountCents != null)
+      return rows.length && (rows.some(row => Number(row.revenueSharePercent) <= 0
+        || (row.businessType === 'product' && !row.childProductId))
+        || (exact ? rows.reduce((sum, row) => sum + allocationCents(row, cents), 0) !== cents
+          : Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001))
+    })
+    if (specAllocationsInvalid) { toast('每个已配置收费项目的归属金额须合计为该项目售价'); setTab('businessAllocation'); return }
+    const wholeRows = form.businessAllocations || []
+    const wholeCents = moneyCents(form.originalPrice)
+    const wholeExact = wholeRows.some(row => row.allocationAmountCents != null)
+    if (wholeRows.length && ((form.servicePrices || []).some(price => price.label?.trim())
+      || wholeRows.some(row => Number(row.revenueSharePercent) <= 0 || (row.businessType === 'product' && !row.childProductId))
+      || (wholeExact ? wholeRows.reduce((sum, row) => sum + allocationCents(row, wholeCents), 0) !== wholeCents
+        : Math.abs(wholeRows.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001))) {
+      toast('整单业务归属须合计100%；有收费项目时请逐项设置'); setTab('businessAllocation'); return
+    }
+    const hasSeparateAllocations = wholeRows.length > 0 || ((form.servicePrices || []).length > 0
+      && form.servicePrices.every(price => (price.businessAllocations || []).length > 0))
+    if (allocatedItems.length && (allocatedItems.some(item => !allocationItemName(item, productsForBundle).trim()
+      || (item.businessType === 'product' && !item.childProductId)
+      || (!hasSeparateAllocations && Number(item.revenueSharePercent) <= 0))
+      || (!hasSeparateAllocations && Math.abs(allocatedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001))) {
+      toast('请为每项业务填写归属金额；产品／检测须关联产品库，金额合计须覆盖产品原价'); setTab('businessAllocation'); return
+    }
     const fundValue = Number(form.healthFundDeduction?.value)
     if (form.healthFundDeduction?.mode === 'percentage' && (!Number.isFinite(fundValue) || fundValue < 1 || fundValue > 100)) { toast('商品抵扣比例须为1%-100%'); return }
     const isUnpricedIbdDraft = form.category === '专病管理' && /IBD|炎症性肠病/i.test(form.name) && form.status === 'off'
@@ -501,7 +733,19 @@ function ProductModal({ product, categories, onClose, onSaved }) {
     try {
       const cleanedPrices = form.servicePrices
         .filter(sp => sp.label.trim() && sp.price !== '' && !isNaN(parseFloat(sp.price)))
-        .map(sp => ({ label: sp.label.trim(), price: parseFloat(sp.price) }))
+        .map(sp => ({ label: sp.label.trim(), price: parseFloat(sp.price),
+          businessAllocations: (sp.businessAllocations || []).map(row => ({
+            key: row.key, name: `${sp.label.trim()} · ${allocationItemName(row, productsForBundle).trim().replace(`${sp.label.trim()} · `, '')}`,
+            businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
+            childProductId: row.childProductId || null, revenueSharePercent: Number(row.revenueSharePercent) || 0,
+            ...(row.allocationAmountCents == null ? {} : { allocationAmountCents: allocationCents(row, moneyCents(sp.price)) }),
+          })) }))
+      const cleanedWholeRows = wholeRows.map(row => ({
+        key: row.key, name: `整单 · ${allocationItemName(row, productsForBundle).trim().replace('整单 · ', '')}`,
+        businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
+        childProductId: row.childProductId || null, revenueSharePercent: Number(row.revenueSharePercent) || 0,
+        ...(row.allocationAmountCents == null ? {} : { allocationAmountCents: allocationCents(row, wholeCents) }),
+      }))
 
       const payload = {
         name: form.name,
@@ -515,6 +759,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         status: form.status,
         images: form.images,
         servicePrices: cleanedPrices,
+        businessAllocations: cleanedWholeRows,
         fulfillmentType: form.fulfillmentType,
         paymentChannel: form.paymentChannel,
         bookingRequired: form.bookingRequired,
@@ -540,19 +785,9 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           })),
         } : { enabled:false },
         skus: form.skus || [],
-        performanceRule: form.performanceRule,
-        servicePerformerRoles: (form.servicePerformerRoles || [])
-          .filter(r => r.role)
-          .map(r => ({
-            role: r.role,
-            ruleType: r.ruleType || 'percentage',
-            rate: parseFloat(r.rate) || 0,
-            amount: parseFloat(r.amount) || 0,
-            defaultStaffId: r.defaultStaffId || null,
-          })),
-        serviceItems: (form.serviceItems || []).filter(item => item.name?.trim()).map(item => ({
-          key: item.key || `item_${Date.now()}`, name: item.name.trim(), units: Math.max(1, parseInt(item.units) || 1),
-          performers: (item.performers || []).filter(r=>r.role).map(r=>({ role:r.role, ruleType:r.ruleType || 'percentage', rate:parseFloat(r.rate)||0, amount:parseFloat(r.amount)||0, defaultStaffId:r.defaultStaffId||null })),
+        serviceItems: (form.serviceItems || []).map(item => ({
+          key: item.key || `item_${Date.now()}`, name: allocationItemName(item, productsForBundle).trim(), units: Math.max(1, parseInt(item.units) || 1),
+          childProductId: item.childProductId || null, businessType: item.businessType || 'service', teamRole: item.teamRole || 'healthManager', revenueSharePercent: Number(item.revenueSharePercent) || 0,
         })),
         specialtyTerms: form.specialtyTerms || undefined,
         aiProfile: form.aiProfile,
@@ -572,12 +807,12 @@ function ProductModal({ product, categories, onClose, onSaved }) {
     }
   }
 
-  const tabs = [
+  const tabs = commissionMode ? [{ key: 'performance', label: '员工推广／服务佣金' }] : [
     { key: 'basic', label: '基本信息' },
     { key: 'price', label: '收费项目' },
     { key: 'fund', label: '基金抵扣' },
     { key: 'memberBundle', label: '会员专享包' },
-    { key: 'performance', label: '绩效分配' },
+    { key: 'businessAllocation', label: '业务归属' },
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
     { key: 'ai', label: 'AI推荐设置' },
@@ -591,7 +826,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         onClick={e => e.stopPropagation()}
       >
         <div className="modal-header">
-          <div className="modal-title">{isEdit ? '✏️ 编辑产品' : '➕ 新增产品'}</div>
+          <div className="modal-title">{commissionMode ? `佣金规则 · ${product.name}` : isEdit ? '✏️ 编辑产品' : '➕ 新增产品'}</div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
@@ -660,6 +895,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                 <select className="form-input" value={form.paymentChannel} onChange={e => set('paymentChannel', e.target.value)}>
                   <option value="wechat_pay">普通微信支付</option>
                   <option value="offline">线下收款</option>
+                  <option value="both">微信支付和线下收款</option>
                 </select>
               </div>
               <div className="form-group" style={{ gridColumn: '1/-1' }}>
@@ -716,6 +952,11 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                   onChange={v => set('servicePrices', v)}
                 />
               </div>
+              <details style={{ marginTop: 20 }}>
+                <summary style={{ cursor: 'pointer' }}>服务交付与核销子项（{form.serviceItems?.length || 0} 项）</summary>
+                <ServiceItemsForm items={form.serviceItems} products={productsForBundle}
+                  parentId={product?._id} originalPrice={form.originalPrice} onChange={v => set('serviceItems', v)} />
+              </details>
             </div>
           )}
 
@@ -745,15 +986,31 @@ function ProductModal({ product, categories, onClose, onSaved }) {
 
           {tab === 'performance' && (
             <div>
-              <PerformanceRuleForm rule={form.performanceRule} onChange={v => set('performanceRule', v)} />
-              <ServicePerformerRolesForm
-                roles={form.servicePerformerRoles}
-                staffList={staffList}
-                onChange={v => set('servicePerformerRoles', v)}
-              />
-              <ServiceItemsForm items={form.serviceItems} staffList={staffList} onChange={v => set('serviceItems', v)} />
+              <p style={{ color: '#667a6d', fontSize: 12 }}>本页仅设置员工的推广佣金与实际履约服务佣金，可按收费项目、岗位及个人调整；市场合伙人佣金在“合伙人管理”单独设置。业务营收归属在“业务归属”页。</p>
+              {(form.servicePrices || []).some(price => price.label?.trim()) && <SpecificationPerformanceSettings
+                prices={form.servicePrices} staffList={staffList} productRule={form.performanceRule}
+                productRoles={form.servicePerformerRoles} productOverrides={form.staffPerformanceOverrides}
+                onChange={v => set('servicePrices', v)} />}
+              <details open={!(form.servicePrices || []).some(price => price.label?.trim())}>
+                {(form.servicePrices || []).some(price => price.label?.trim()) && <summary style={{ cursor: 'pointer', fontWeight: 600 }}>产品通用绩效规则（未单独设置的收费项目适用）</summary>}
+                <PerformanceRuleForm rule={form.performanceRule} onChange={v => set('performanceRule', v)} />
+                <ServicePerformerRolesForm roles={form.servicePerformerRoles} staffList={staffList}
+                  onChange={v => set('servicePerformerRoles', v)} />
+                <StaffPerformanceOverridesForm rows={form.staffPerformanceOverrides} staffList={staffList}
+                  onChange={v => set('staffPerformanceOverrides', v)} />
+              </details>
+              <ServiceItemPerformanceSettings items={form.serviceItems} staffList={staffList} onChange={v => set('serviceItems', v)} />
             </div>
           )}
+
+          {tab === 'businessAllocation' && (form.servicePrices || []).some(price => price.label?.trim()) &&
+            <SpecificationAllocationsForm prices={form.servicePrices} products={productsForBundle}
+              onChange={v => set('servicePrices', v)} />}
+          {tab === 'businessAllocation' && !(form.servicePrices || []).some(price => price.label?.trim()) && <>
+            <h3 style={{ marginBottom: 4 }}>整单业务归属</h3>
+            <SpecificationAllocationsForm prices={[{ label: '整单', price: form.originalPrice, businessAllocations: form.businessAllocations || [] }]}
+              products={productsForBundle} onChange={v => set('businessAllocations', v[0].businessAllocations)} />
+          </>}
 
           {tab === 'images' && (
             <div className="form-group">
@@ -910,7 +1167,7 @@ function CategoryModal({ categories, onClose, onChanged }) {
 }
 
 // ── 主页面 ──────────────────────────────────────────────────────
-export default function ProductsPage() {
+export default function ProductsPage({ commissionMode = false }) {
   const toast = useToast()
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
@@ -920,6 +1177,7 @@ export default function ProductsPage() {
   const [showCatModal, setShowCatModal] = useState(false)
   const [selected, setSelected] = useState([])
   const [filters, setFilters] = useState({ name: '', category: '', status: '' })
+  const [commissionPage, setCommissionPage] = useState(1)
 
   const categoryNames = categories.map(c => c.name)
 
@@ -1004,14 +1262,58 @@ export default function ProductsPage() {
     ))
   }
 
+  if (commissionMode) {
+    const pageCount = Math.max(1, Math.ceil(products.length / 10))
+    const visible = products.slice((Math.min(commissionPage, pageCount) - 1) * 10, Math.min(commissionPage, pageCount) * 10)
+    return <div className="page">
+      <div className="page-header"><div><div className="page-title">佣金规则</div>
+        <div className="page-subtitle">员工推广与履约服务按产品和收费项目设置；市场合伙人按独立规则结算。</div></div></div>
+      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <strong>市场合伙人推广佣金</strong>
+        <p style={{ color: '#667a6d', margin: '8px 0 12px' }}>首次、续费及规则版本在市场合伙人模块管理，与员工佣金分别核算。</p>
+        <Link className="btn btn-ghost" to="/commission-rules?tab=partner">进入市场合伙人佣金规则</Link>
+      </div>
+      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <strong>员工推广与服务佣金</strong>
+        <p style={{ color: '#667a6d', margin: '8px 0 12px' }}>选择产品后，可设置通用规则、各收费项目、服务岗位及指定员工例外。保存仅更新佣金规则，不修改价格或业务归属。</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input className="form-input" type="search" style={{ maxWidth: 300 }} placeholder="搜索产品名称" value={filters.name}
+            onChange={event => { setCommissionPage(1); setFilters(current => ({ ...current, name: event.target.value })) }} />
+          <select className="form-input" style={{ maxWidth: 180 }} value={filters.category}
+            onChange={event => { setCommissionPage(1); setFilters(current => ({ ...current, category: event.target.value })) }}>
+            <option value="">全部分类</option>{categoryNames.map(name => <option key={name}>{name}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+        {loading ? <div className="loading">加载中...</div> : <table className="table"><thead><tr>
+          <th>产品</th><th>收费项目</th><th>规则状态</th><th>操作</th>
+        </tr></thead><tbody>{visible.length ? visible.map(product => {
+          const specific = (product.servicePrices || []).filter(row => row.performanceConfig?.enabled === true).length
+          return <tr key={product._id}><td>{product.name}</td><td>{product.servicePrices?.length || 0} 项</td>
+            <td>{specific ? `${specific} 项独立规则` : product.performanceRule?.ruleType && product.performanceRule.ruleType !== 'none' ? '产品通用规则' : '未设置／沿用员工规则'}</td>
+            <td><button className="btn btn-sm btn-ghost" onClick={() => { setEditing(product); setShowModal(true) }}>设置佣金</button></td></tr>
+        }) : <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24 }}>暂无匹配产品</td></tr>}</tbody></table>}
+      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', marginTop: 12 }}>
+        <span>第 {Math.min(commissionPage, pageCount)} / {pageCount} 页</span>
+        <button className="btn btn-sm" disabled={commissionPage <= 1} onClick={() => setCommissionPage(page => page - 1)}>上一页</button>
+        <button className="btn btn-sm" disabled={commissionPage >= pageCount} onClick={() => setCommissionPage(page => page + 1)}>下一页</button>
+      </div>
+      {showModal && <ProductModal product={editing} commissionMode categories={categoryNames}
+        onClose={() => setShowModal(false)} onSaved={load} />}
+    </div>
+  }
+
   return (
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-title">🏪 商城产品管理</div>
+          <div className="page-title">收费产品管理</div>
           <div className="page-subtitle">管理用户端"服务商城"中展示的产品，支持自定义收费项目</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Link className="btn btn-ghost" to="/settings/members?tab=packages">365会员服务包归属</Link>
           <button className="btn btn-ghost" onClick={() => setShowCatModal(true)}>⚙️ 管理分类</button>
           <button className="btn btn-ghost" onClick={openIbdProduct}>IBD 年度专病商品</button>
           <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>＋ 新增产品</button>

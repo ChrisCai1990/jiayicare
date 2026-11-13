@@ -68,8 +68,11 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
   const ongoingById = new Map(management.filter(item => ongoing.has(item.id)).map(item => [item.id, item.content]));
   const nodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(row => {
     if (!require('./annualPlanPresentation').internalDaily({ standardPlanName: templates.get(String(row.standardPlanId || ''))?.name })) return row;
-    const sourceIds = Array.isArray(row.sourceIds) ? row.sourceIds.filter(id => !id.startsWith('management_issue:') || ongoing.has(id)) : row.sourceIds;
-    if (Array.isArray(row.sourceIds) && row.sourceIds.length && !sourceIds.length) return null;
+    // The model may select the internal daily template from background evidence
+    // even when the advisor has not chosen ongoing management. Such a row is
+    // unsupported and must not block the rest of the generated plan.
+    const sourceIds = Array.isArray(row.sourceIds) ? row.sourceIds.filter(id => ongoing.has(id)) : [];
+    if (!sourceIds.length) return null;
     const issues = sourceIds.map(id => ongoingById.get(id)).filter(Boolean);
     const labels = [...new Set(issues.map(item => String(item.problem || '').trim()).filter(Boolean))];
     const details = [...new Set(issues.map(item => String(item.advisorNote || '').trim()).filter(Boolean))];

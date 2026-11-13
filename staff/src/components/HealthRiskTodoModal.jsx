@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { staffAPI } from '../api'
 
 const OUTCOMES = [
   ['confirmed', '已核实需关注'],
+  ['no_followup', '已核实无需后续跟进'],
   ['needs_information', '待补资料（继续待办）'],
   ['contacted', '已联系并安排后续'],
   ['referred', '已建议就医'],
@@ -15,6 +16,7 @@ export default function HealthRiskTodoModal({ todo, onClose, onViewSource, onDon
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const noteRef = useRef(null)
   const eventId = todo.id.replace(/^risk_event_/, '')
 
   useEffect(() => {
@@ -31,8 +33,13 @@ export default function HealthRiskTodoModal({ todo, onClose, onViewSource, onDon
   }, [todo.patientId, eventId])
 
   const save = async () => {
-    if (!outcome || !note.trim()) {
-      setError('请选择核实结果，并填写实际处理情况与下一步安排')
+    if (!outcome) {
+      setError('请选择核实结果')
+      return
+    }
+    if (!note.trim()) {
+      setError(outcome === 'no_followup' ? '请填写核实依据及无需后续跟进的原因' : '请填写实际处理情况与下一步安排')
+      noteRef.current?.focus()
       return
     }
     setSaving(true)
@@ -62,11 +69,12 @@ export default function HealthRiskTodoModal({ todo, onClose, onViewSource, onDon
         {event.sourceType === 'monitoring_trend' && <p style={{ fontSize: 13 }}>原始记录：{(event.evidence?.records || []).map(record => `${record.value} ${record.unit}（${new Date(record.recordedAt).toLocaleDateString('zh-CN')}）`).join('；')}</p>}
         <button type="button" className="btn btn-secondary btn-sm" onClick={onViewSource}>查看原始资料</button>
         <div style={{ marginTop: 16 }}>
-          <select className="form-input" aria-label="核实结果" value={outcome} onChange={e => setOutcome(e.target.value)}>
+          <select className="form-input" aria-label="核实结果" value={outcome} onChange={e => { setOutcome(e.target.value); setError('') }}>
             <option value="">请选择核实结果</option>
             {OUTCOMES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <textarea className="form-input" aria-label="实际处理情况与下一步安排" rows={3} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="记录核实依据、联系结果和下一步安排" style={{ marginTop: 8 }} />
+          <label htmlFor="health-risk-decision-note" style={{ display: 'block', marginTop: 8 }}>核实说明（必填）</label>
+          <textarea ref={noteRef} id="health-risk-decision-note" className="form-input" aria-required="true" rows={3} maxLength={1000} value={note} onChange={e => { setNote(e.target.value); setError('') }} placeholder={outcome === 'no_followup' ? '请说明核实依据和无需新增跟进的原因；如已有随访安排，可注明' : '记录核实依据、联系结果和下一步安排'} />
           <button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={save} style={{ marginTop: 8 }}>{saving ? '保存中…' : '保存核实结果'}</button>
         </div>
       </>}

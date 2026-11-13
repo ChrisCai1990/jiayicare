@@ -305,6 +305,7 @@ const userSchema = new mongoose.Schema({
   archiveVersionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 心理健康量表最新结果（问卷推送→会员填写→自动写入，无需审核）
   // { epworth: {totalScore,severity,filledAt,questionnaireId}, scl90: {totalScore,factorScores:{躯体化:2.1,...},filledAt,questionnaireId}, sds:{...}, sas:{...} }
+  sleepIntakeRecords: { type: mongoose.Schema.Types.Mixed, default: {} },
   psychAssessments: { type: mongoose.Schema.Types.Mixed, default: {} },
   // 10年ASCVD风险评估（医护端录入体检参数→按中国指南自动分层，展示在心理评估下方）
   // { level, levelLabel, description, riskFactors:[], directHighRisk, advice, inputs:{...}, evaluatedBy, evaluatedAt }

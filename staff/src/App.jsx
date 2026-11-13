@@ -39,6 +39,7 @@ import AvailabilityPage from './pages/AvailabilityPage'
 import ExpertConsultationsPage from './pages/ExpertConsultationsPage'
 import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
+import FeedbackPage from './pages/FeedbackPage'
 import MarketingPage from './pages/MarketingPage'
 import VisitorLeadsPage from './pages/VisitorLeadsPage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
@@ -50,6 +51,7 @@ import MetabolicPilotPage from './pages/MetabolicPilotPage'
 import ForcePasswordChangePage from './pages/ForcePasswordChangePage'
 import ServiceAssistantPage from './pages/ServiceAssistantPage'
 import InAppServiceGroupsPage from './pages/InAppServiceGroupsPage'
+import AiWorkspacePage from './pages/AiWorkspacePage'
 import ContentReviewsPage from './pages/ContentReviewsPage'
 import ContentReviewHistoryPage from './pages/ContentReviewHistoryPage'
 import MedicalResourceKnowledgePage from './pages/MedicalResourceKnowledgePage'
@@ -199,6 +201,7 @@ function RequirePasswordChanged({ children }) {
 function RequireModule({ children }) {
   const { staff } = useStaff()
   const loc = useLocation()
+  if (staff?.role === 'psychologist' && !['/expert-consultations', '/psychology', '/ai-workspace'].includes(loc.pathname)) return <Navigate to="/expert-consultations?view=psychology" replace />
   const matched = Object.keys(ROUTE_MODULE).find(
     p => loc.pathname === p || loc.pathname.startsWith(p + '/')
   )
@@ -220,9 +223,11 @@ export default function App() {
             <Route path="/change-password" element={<RequireAuth><ForcePasswordChangePage /></RequireAuth>} />
             <Route path="/" element={<RequireAuth><RequirePasswordChanged><RequireModule><Layout /></RequireModule></RequirePasswordChanged></RequireAuth>}>
               <Route index element={<Navigate to="/home" replace />} />
+              <Route path="psychology" element={<Navigate to="/expert-consultations?view=psychology" replace />} />
               <Route path="home" element={<HomePage />} />
               <Route path="service-assistant" element={<ErrorBoundary><ServiceAssistantPage /></ErrorBoundary>} />
               <Route path="in-app-service-groups" element={<ErrorBoundary><InAppServiceGroupsPage /></ErrorBoundary>} />
+              <Route path="ai-workspace" element={<ErrorBoundary><AiWorkspacePage /></ErrorBoundary>} />
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<ErrorBoundary><PatientDetailPage /></ErrorBoundary>} />
@@ -249,6 +254,7 @@ export default function App() {
               <Route path="expert-consultations" element={<ExpertConsultationsPage />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="feedback" element={<FeedbackPage />} />
               <Route path="marketing" element={<MarketingPage />} />
               <Route path="visitor-leads" element={<VisitorLeadsPage />} />
               <Route path="daily-checkin" element={<DailyCheckinPage />} />

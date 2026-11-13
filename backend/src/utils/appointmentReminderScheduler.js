@@ -53,7 +53,7 @@ async function scanAndSendAppointmentReminders(now = new Date()) {
       }
       const label = reminder.kind.startsWith('day_before') ? '明天' : '2小时后';
       const dedupeKey = `expert-appointment-reminder:${reminder.orderId}:${reminder.kind}:${new Date(reminder.appointmentAt).getTime()}`;
-      await Message.findOneAndUpdate(
+      const message = await Message.findOneAndUpdate(
         { dedupeKey },
         { $setOnInsert: {
           user: reminder.user, type: 'system', sender: '嘉医管家', title: '专家就诊提醒',
@@ -64,6 +64,7 @@ async function scanAndSendAppointmentReminders(now = new Date()) {
         } },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
+      await require('./nativePush').enqueueNativePush(message);
       await AppointmentReminder.updateOne(
         { _id: reminder._id, status: 'processing', appointmentAt: reminder.appointmentAt },
         { $set: { status: 'sent', sentAt: now, processingAt: null } },

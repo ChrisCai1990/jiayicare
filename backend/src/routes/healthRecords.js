@@ -247,6 +247,11 @@ router.post('/', auth, async (req, res) => {
     if (!type || value === undefined || value === null || value === '') {
       return res.status(400).json({ success: false, message: '类型和数值不能为空' });
     }
+    if (type === 'bloodPressure' && recordedAt) {
+      const measuredAt = new Date(recordedAt);
+      if (Number.isNaN(measuredAt.getTime()) || measuredAt.getTime() > Date.now())
+        return res.status(400).json({ success: false, message: '测量时间无效或晚于当前时间' });
+    }
 
     // category 兼容中英文，默认归为 vitals
     const resolvedCategory = category || 'vitals';

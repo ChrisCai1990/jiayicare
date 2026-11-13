@@ -16,6 +16,7 @@ const MemberTag      = require('../models/MemberTag');
 const MemberSource   = require('../models/MemberSource');
 const MemberType     = require('../models/MemberType');
 const ServicePackage = require('../models/ServicePackage');
+const Product        = require('../models/Product');
 const Disease        = require('../models/Disease');
 const ProjectCategory = require('../models/ProjectCategory');
 const LabTestItem    = require('../models/LabTestItem');
@@ -775,6 +776,45 @@ router.get('/service-packages', adminAuth, async (req, res) => {
   res.json({ success: true, data: list });
 });
 
+const PACKAGE_ALLOCATION_ROLE_NAMES = { familyDoctor: '健康顾问', nutritionist: '营养师',
+  healthManager: '健管专员', medicalAssistant: '就医专员', psychologist: '心理咨询师',
+  rehabSpecialist: '运动复健师', specialist: '专科医师', tcmDoctor: '中医师' };
+
+function normalizePackageAllocationNames(configuration) {
+  if (!Array.isArray(configuration?.businessAllocations)) return configuration;
+  return { ...configuration, businessAllocations: configuration.businessAllocations.map(row => ({ ...row,
+    name: String(row.name || '').trim() || (row.businessType === 'enterprise' ? '企业资源'
+      : row.businessType === 'product' ? '产品／检测归属'
+        : `${PACKAGE_ALLOCATION_ROLE_NAMES[row.teamRole] || '服务团队'}管理服务`),
+  })) };
+}
+
+async function validatePackageBusinessAllocations(rows, tenantId) {
+  if (rows == null) return null;
+  if (!Array.isArray(rows) || rows.length > 50) return '业务归属配置格式无效';
+  if (!rows.length) return null;
+  const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
+  if (new Set(rows.map(row => row.key)).size !== rows.length
+    || rows.some(row => !String(row.key || '').trim() || !String(row.name || '').trim()
+      || !['service', 'product', 'enterprise'].includes(row.businessType)
+      || (row.businessType === 'enterprise' ? row.teamRole !== 'enterpriseResource' || !!row.childProductId
+        : !roles.includes(row.teamRole))
+      || !Number.isFinite(Number(row.revenueSharePercent)) || Number(row.revenueSharePercent) <= 0
+      || (row.businessType === 'product' && !mongoose.isValidObjectId(row.childProductId))))
+    return '业务归属项目须填写类型、负责团队和有效金额；产品项目须关联产品库';
+  if (Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent), 0) - 100) > 0.001)
+    return '服务、产品与资源归属比例合计须为100%';
+  const productIds = [...new Set(rows.filter(row => row.businessType === 'product').map(row => String(row.childProductId)))];
+  if (productIds.length) {
+    const found = await Product.find({ _id: { $in: productIds }, tenantId }).select('_id').lean();
+    if (found.length !== productIds.length) return '关联产品须来自本机构产品库';
+  }
+  return null;
+}
+
+const paidPackageNeedsAllocation = (activation, configuration) => activation?.enabled === true
+  && Number(activation.price) > 0 && !(configuration?.businessAllocations || []).length;
+
 async function normalizeServicePackageConfiguration(clientBrand, configuration) {
   const next = configuration && typeof configuration === 'object' ? { ...configuration } : {};
   // 不复用运营维护的 MemberType 树：其中可能有归属根节点和历史类型，
@@ -799,7 +839,12 @@ router.post('/service-packages', adminAuth, async (req, res) => {
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
-  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, configuration);
+  const namedConfiguration = normalizePackageAllocationNames(configuration);
+  const allocationError = await validatePackageBusinessAllocations(namedConfiguration?.businessAllocations, req.admin.tenantId);
+  if (allocationError) return res.status(400).json({ success: false, message: allocationError });
+  if (paidPackageNeedsAllocation(activation, namedConfiguration))
+    return res.status(400).json({ success: false, message: '请先完成收费服务包的业务归属拆解，再启用开通' });
+  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, namedConfiguration);
   const item = await ServicePackage.create({ name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: normalizedConfiguration });
   res.json({ success: true, data: item });
 });
@@ -809,7 +854,14 @@ router.put('/service-packages/:id', adminAuth, async (req, res) => {
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
-  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, configuration);
+  const namedConfiguration = normalizePackageAllocationNames(configuration);
+  const allocationError = await validatePackageBusinessAllocations(namedConfiguration?.businessAllocations, req.admin.tenantId);
+  if (allocationError) return res.status(400).json({ success: false, message: allocationError });
+  const existing = await ServicePackage.findById(req.params.id).select('activation configuration').lean();
+  if (!existing) return res.status(404).json({ success: false, message: '服务包不存在' });
+  if (!existing.activation?.enabled && paidPackageNeedsAllocation(activation, namedConfiguration))
+    return res.status(400).json({ success: false, message: '请先完成收费服务包的业务归属拆解，再启用开通' });
+  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, namedConfiguration);
   const item = await ServicePackage.findByIdAndUpdate(
     req.params.id,
     { name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: normalizedConfiguration },
@@ -822,6 +874,8 @@ router.put('/service-packages/:id', adminAuth, async (req, res) => {
 router.patch('/service-packages/:id/toggle', adminAuth, async (req, res) => {
   const item = await ServicePackage.findById(req.params.id);
   if (!item) return res.status(404).json({ success: false, message: '服务包不存在' });
+  if (!item.active && paidPackageNeedsAllocation(item.activation, item.configuration))
+    return res.status(400).json({ success: false, message: '请先完成收费服务包的业务归属拆解，再启用' });
   item.active = !item.active;
   await item.save();
   res.json({ success: true, data: item });
@@ -1067,9 +1121,9 @@ router.get('/lab-test-packages', adminAuth, async (req, res) => {
   res.json({ success: true, data: list, total });
 });
 makeProjectCRUD(LabTestPackage, 'lab-test-packages');
-makeProjectCRUD(ServiceItem,    'service-items');
+router.use('/service-items', adminAuth, (_req, res) => res.status(410).json({ success: false, message: '服务收费已统一到产品库，请在收费产品管理中维护' }));
 makeProjectCRUD(MedicalDeliveryResource, 'medical-delivery-resources');
-makeProjectCRUD(OtherCharge,    'other-charges');
+router.use('/other-charges', adminAuth, (_req, res) => res.status(410).json({ success: false, message: '其他收费已统一到产品库，请在收费产品管理中维护' }));
 
 // ── 特殊检查项目（额外支持软删除和检查类型筛选）──────────────────
 router.get('/special-exams', adminAuth, async (req, res) => {

@@ -1,16 +1,19 @@
 import Taro from '@tarojs/taro';
 import { aiDataConsentAPI } from '../services/api';
 
-export async function ensureAiDataConsent(purpose, { cancelText = '暂不使用' } = {}) {
+export async function ensureAiDataConsent(purpose, { cancelText = '暂不使用', language = 'zh-CN' } = {}) {
   let result;
   try { result = await aiDataConsentAPI.list(); }
   catch { Taro.showToast({ title: '授权状态暂不可用，本次不使用AI或语音处理', icon: 'none' }); return false; }
   const item = result.data?.find(row => row.purpose === purpose);
   if (!item || !item.available) return false;
   if (item.granted) return true;
-  const decision = await Taro.showModal({ title: item.title,
-    content: `接收方：${item.recipient}\n发送资料：${item.data}\n用途：${item.use}\n${item.optional}\n可在会话页“AI与语音授权”查看政策和撤回。`,
-    confirmText: '同意使用', cancelText,
+  const englishTranslation = language === 'en-US' && purpose === 'report_translation';
+  const decision = await Taro.showModal({ title: englishTranslation ? 'English report translation' : item.title,
+    content: englishTranslation
+      ? `Provider: ${item.recipient}\nData: extracted title, test names, findings and diagnostic text from the selected reviewed report. May include names and measurements in narrative text. Report images are not sent; structured test values, units and ranges are not sent separately.\nUse: English reference translation only. The original report is unchanged. You may decline or withdraw future processing in AI and voice consent settings. Past processing cannot be undone.`
+      : `接收方：${item.recipient}\n发送资料：${item.data}\n用途：${item.use}\n${item.optional}\n可在会话页“AI与语音授权”查看政策和撤回。`,
+    confirmText: englishTranslation ? 'Agree' : '同意使用', cancelText: englishTranslation ? 'Not now' : cancelText,
   });
   if (!decision.confirm) return false;
   await aiDataConsentAPI.update(purpose, { subjectId: item.subjectId, granted: true, version: item.version, revision: item.revision });

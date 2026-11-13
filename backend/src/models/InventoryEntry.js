@@ -7,6 +7,7 @@ const schema = new mongoose.Schema({
   sourceReceiptId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryEntry', default: null },
   materialId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryMaterial', default: null },
   serviceProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+  salePriceLabel: { type: String, default: '', trim: true },
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   requestId: { type: String },
   type: { type: String, enum: ['opening', 'receipt', 'issue', 'use', 'return', 'loss', 'count', 'manual_sale', 'reversal', 'customer_return'], required: true },

@@ -9,6 +9,7 @@ import { colors, spacing, radius } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { ordersAPI, userAPI } from '../../services/api';
 import Avatar, { AvatarOnDark } from '../../components/Avatar';
+import { useLanguage } from '../../i18n';
 
 const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
 
@@ -285,7 +286,9 @@ function LogoutModal({ visible, onConfirm, onCancel }) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
+  const { t, language, setLanguage } = useLanguage();
   const { user, isDemo, logout, updateUser } = useAuth();
+  const [showLanguage, setShowLanguage] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const [pendingOrders, setPendingOrders] = useState(0);
   const [notifLabel, setNotifLabel] = useState('');
@@ -508,8 +511,9 @@ export default function ProfileScreen({ navigation }) {
 
         {/* ── 账号设置 ─────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>账号设置</Text>
+          <Text style={styles.sectionTitle}>{t('账号设置')}</Text>
           <View style={styles.menuCard}>
+            <MenuItem icon="language-outline" iconColor="#2563EB" label={t('语言')} value={language === 'en-US' ? 'English' : '简体中文'} onPress={() => setShowLanguage(true)} />
             <MenuItem icon="notifications-outline" iconColor="#7C3AED" label="消息通知" value={notifLabel} onPress={() => navigation.navigate('NotificationSettings')} />
             <MenuItem icon="chatbubbles-outline" iconColor="#0077B6" label="服务消息" onPress={() => navigation.navigate('Messages')} />
             <MenuItem icon="lock-closed-outline"   iconColor="#22A06B" label="账号安全"            onPress={() => navigation.navigate('AccountSecurity')} />
@@ -545,6 +549,19 @@ export default function ProfileScreen({ navigation }) {
         onCancel={() => setShowLogout(false)}
         onConfirm={() => { setShowLogout(false); logout(); }}
       />
+      <Modal visible={showLanguage} transparent animationType="fade" onRequestClose={() => setShowLanguage(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{t('语言')}</Text>
+            {[['zh-CN', '简体中文'], ['en-US', 'English']].map(([value, label]) => (
+              <TouchableOpacity key={value} onPress={() => { setLanguage(value); setShowLanguage(false); }} style={{ paddingVertical: 12, width: '100%', alignItems: 'center' }}>
+                <Text style={{ color: language === value ? colors.primary : colors.textPrimary, fontSize: 16 }}>{label}{language === value ? ' ✓' : ''}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setShowLanguage(false)} style={{ padding: 10 }}><Text style={styles.modalCancelText}>{t('取消')}</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

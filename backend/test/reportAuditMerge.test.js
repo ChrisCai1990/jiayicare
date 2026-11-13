@@ -84,11 +84,14 @@ test('a simple numeric lab result inside its printed range becomes normal', () =
     assert.equal(normalizeExplicitNormalStatus({ name, itemType: 'lab', value, referenceRange, status: 'unknown' }).status, 'normal');
   }
   const lab = { itemType: 'lab', value: '0.61', referenceRange: '0.0-0.60', status: 'unknown' };
-  assert.equal(normalizeExplicitNormalStatus(lab).status, 'unknown');
+  assert.equal(normalizeExplicitNormalStatus(lab).status, 'abnormal');
   assert.equal(normalizeExplicitNormalStatus({ ...lab, value: '0.12', findings: '异常' }).status, 'unknown');
   assert.equal(normalizeExplicitNormalStatus({ ...lab, value: '0.12', reviewIssues: ['读数不清'] }).status, 'unknown');
   assert.equal(normalizeExplicitNormalStatus({ ...lab, value: '0.12', referenceRange: '<0.60' }).status, 'unknown');
   assert.equal(normalizeExplicitNormalStatus({ ...lab, value: '0.12', status: 'abnormal' }).status, 'abnormal');
+  assert.equal(normalizeExplicitNormalStatus({ ...lab, status: 'normal' }).status, 'abnormal');
+  assert.equal(normalizeExplicitNormalStatus({ ...lab, status: 'normal', manualReviewStatus: 'reviewed' }).status, 'normal');
+  assert.equal(normalizeExplicitNormalStatus({ ...lab, value: '0.60', status: 'normal' }).status, 'normal');
 });
 
 test('single-page supplement replaces a dash without changing reviewed content', () => {

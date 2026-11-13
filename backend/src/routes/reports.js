@@ -10,13 +10,16 @@ const HealthRecord = require('../models/HealthRecord');
 const { reportOwner, canAccessReport, canManageReport } = require('../utils/reportArchiveAccess');
 const { uploadBase64, deleteFile, urlToKey, signStoredUrl, getObjectStream } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
+const { sourceForTranslation, sourceHash, validateTranslation } = require('../utils/reportTranslation');
 const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 const router = express.Router();
 
 function withSignedReportFiles(report) {
   const obj = report.toObject ? report.toObject() : { ...report };
+  if (obj.translationEn && obj.translationEn.sourceHash !== sourceHash(sourceForTranslation(obj))) delete obj.translationEn;
   delete obj.duplicateOriginal;
   if (obj.advisorCorrection?.status === 'returned') {
+    delete obj.translationEn;
     // 顾问指出结果错误后，客户仍可查看原件，但暂不展示有争议的结构化结论。
     obj.reportItems = [];
     obj.aiSummary = '';
@@ -771,6 +774,44 @@ router.get('/:id', auth, async (req, res) => {
     res.json({ success: true, data: withSignedReportFiles(report) });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取报告失败', error: err.message });
+  }
+});
+
+// 英文仅作阅读参考，保留中文原文。只发送已提取的文字，不发送报告图片、数值或参考范围。
+router.post('/:id/translate-en', auth, async (req, res) => {
+  try {
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (!(await canAccessReport(req.user, report))) return res.status(403).json({ success: false, message: '没有这份报告的访问权限' });
+    if (String(report.user) !== String(req.user._id)) return res.status(403).json({ success: false, message: '仅资料本人可申请自动翻译' });
+    if (report.advisorCorrection?.status === 'returned') return res.status(409).json({ success: false, message: '报告内容正在核对，暂不能翻译' });
+    if (report.audit_status !== 'audited') return res.status(409).json({ success: false, message: '报告尚未核对完成，暂不能翻译' });
+    const source = sourceForTranslation(report);
+    const hash = sourceHash(source);
+    if (report.translationEn?.sourceHash === hash) return res.json({ success: true, data: report.translationEn });
+    if (JSON.stringify(source).length > 24000) return res.status(413).json({ success: false, message: '报告文字较长，请查看原件或联系服务团队' });
+    if (!process.env.QWEN_API_KEY) return res.status(503).json({ success: false, message: '翻译服务暂不可用' });
+    await require('../utils/aiDataConsent').assertPermission(report.user, 'report_translation', 'qwen');
+    const raw = await require('../utils/aiDataConsent').withPersonalData(report.user, 'report_translation', () =>
+      require('../utils/ai').chat([{ role: 'user', content: JSON.stringify(source) }], {
+        provider: 'qwen', jsonMode: true, temperature: 0, maxTokens: 7000, timeoutMs: 60000,
+        systemPrompt: 'Translate this medical report text from Chinese to English for reading reference only. Return JSON with exactly {"title":"","items":[{"name":"","bodyPart":"","findings":"","diagnosis":""}]}. Keep item order and count. Translate only supplied nonempty text fields; empty fields remain empty. Preserve negations, uncertainty, measurements, dates, abbreviations and clinical meaning exactly. Do not infer, explain, diagnose, recommend, add or omit content. Values, units and reference ranges are not supplied and must not be generated.',
+      }));
+    let parsed;
+    try { parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, '').trim()); } catch { parsed = null; }
+    const translation = validateTranslation(parsed, source);
+    if (!translation) return res.status(502).json({ success: false, message: '译文格式未通过校验，请稍后重试' });
+    const latest = await MedicalReport.findById(report._id).select('title reportItems reviewRevision advisorCorrection audit_status');
+    if (!latest || latest.audit_status !== 'audited' || latest.advisorCorrection?.status === 'returned' || sourceHash(sourceForTranslation(latest)) !== hash) {
+      return res.status(409).json({ success: false, message: '报告内容已更新，请重试翻译' });
+    }
+    const data = { language: 'en-US', sourceHash: hash, ...translation, status: 'machine', generatedAt: new Date() };
+    const saved = await MedicalReport.updateOne({ _id: report._id, reviewRevision: latest.reviewRevision }, { $set: { translationEn: data } });
+    if (!saved.matchedCount) return res.status(409).json({ success: false, message: '报告内容已更新，请重试翻译' });
+    res.json({ success: true, data });
+  } catch (error) {
+    if (error.code === 'AI_DATA_CONSENT_REQUIRED') return res.status(403).json({ success: false, code: error.code, message: error.message });
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : '翻译暂时失败，请稍后重试' });
   }
 });
 

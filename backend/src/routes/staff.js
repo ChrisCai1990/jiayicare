@@ -125,6 +125,8 @@ const { findUnderExtractedPages } = require('../utils/reportPanelCount');
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
+router.use('/', (req,res,next)=>{ if(req.path.includes('/management-reviews'))return staffAuth(req,res,next);next(); }, require('./managementReviews').router);
+router.use(require('../middleware/legacyPsychologyGuard'));
 async function allPushPatientsBelongToStaff(patientIds, staff) {
   if (!Array.isArray(patientIds) || !patientIds.length) return false;
   const ids = [...new Set(patientIds.map(String))];
@@ -1345,9 +1347,9 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     if (enrollment) {
       const policy = await EnterpriseInsurancePolicy.findOne({ _id: enrollment.policyId, status: 'active' }).lean();
       if (canUseInsuranceCoverage(policy, enrollment)) insuranceCoverage = { policy, enrollment };
-      insuranceCases = await InsuranceServiceCase.find({ patientId: user._id, enrollmentId: enrollment._id })
-        .sort({ createdAt: -1 }).limit(20).populate('assignedTo', 'name role').lean();
     }
+    insuranceCases = await InsuranceServiceCase.find({ patientId: user._id, enterpriseId: user.enterpriseId })
+      .sort({ createdAt: -1 }).limit(20).populate('assignedTo', 'name role').lean();
   }
 
   const displayedUser = user.toObject();
@@ -1848,7 +1850,7 @@ router.put('/patients/:id', staffAuth, checkPatientEditOrLifestyleSurvey, async 
     'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
     'assignedSpecialist', 'assignedTcmDoctor', 'assignedPsychologist',
     'assignedRehabSpecialist', 'assignedMedicalAssistant', 'assignedHealthPlanner',
-    'servicePackage', 'serviceExpiry', 'serviceStartDate', 'isRegisteredClient',
+    'servicePackage', 'serviceExpiry', 'isRegisteredClient',
     'bloodTypeABO', 'bloodTypeRH',
     'traumaHistory', 'transfusionHistory', 'poisoningHistory', 'infectiousHistory', 'vaccinationHistory', 'otherDiseaseHistory',
     'basic_insurance', 'commercial_medical', 'critical_illness',
@@ -1868,6 +1870,16 @@ router.put('/patients/:id', staffAuth, checkPatientEditOrLifestyleSurvey, async 
   allowed.forEach(k => {
     if (req.body[k] !== undefined) updateData[k] = req.body[k];
   });
+  try {
+    const firstStart = require('../utils/firstServiceStartDate').firstServiceStartDateUpdate(existingPatient.serviceStartDate, req.body.serviceStartDate);
+    if (firstStart.write) {
+      updateData.serviceStartDate = firstStart.value;
+      // 空白日期仅能初始化一次，防止两个编辑页面并发覆盖首次加入日期。
+      editFilter.serviceStartDate = { $in: ['', null] };
+    }
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ success: false, message: err.message });
+  }
 
   if (req.body.clientBrand !== undefined) {
     const clientBrand = req.body.clientBrand;
@@ -3782,7 +3794,7 @@ router.get('/medical-resource-knowledge', staffAuth, checkPermission('medical_re
 // GET /api/staff/plans?patientId=&type=&status=
 router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, res) => {
   const { patientId, type, status, patientName, page = 1, limit = 20 } = req.query;
-  const filter = {};
+  const filter = { $and: [await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] };
   if (patientId) filter.patientId = patientId;
   if (type) filter.type = type;
   if (status) filter.status = status;
@@ -5447,6 +5459,12 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
   }
   if (assignedItemIds) await report.save();
   const data = withSignedReportFiles(report);
+  // Older parsers stored alternative automatic candidates in screeningKeys,
+  // although only screeningKey is the actual screening destination. Present
+  // only the current unique match when it still agrees with that destination.
+  data.reportItems = await require('../utils/reportClassificationReview').collapseStaleAutomaticCandidates(
+    data.reportItems, require('../utils/screeningMatch').classifyItemsAsync
+  );
   if (require('../utils/pdf').isPdfReport(report)) {
     try {
       const { fetchReportBuffer, getPdfPageCountFromBuffer } = require('../utils/pdf');
@@ -5551,17 +5569,19 @@ router.patch('/medical-reports/:id/items/:itemId', staffAuth, async (req, res) =
 });
 
 // 完整原件仅留存时，必须由所属健管专员关联本客户已审核的单项结果。
-async function validateArchiveOnlyUpload(staff, patientId, sourceReportId, date) {
+async function validateArchiveOnlyUpload(staff, patientId, sourceReportId, date, documentCategory) {
   if (!['healthManager', 'superadmin'].includes(staff.role)) return { status: 403, message: '仅健管专员可确认留存原件' };
-  if (!mongoose.isValidObjectId(sourceReportId)) return { status: 400, message: '请选择同次体检中已审核的结果报告' };
+  const claimReceipt = documentCategory === 'insurance_claim_receipt';
+  if (!claimReceipt && !mongoose.isValidObjectId(sourceReportId)) return { status: 400, message: '请选择同次体检中已审核的结果报告' };
   const [source, owner] = await Promise.all([
-    MedicalReport.findOne({ _id: sourceReportId, user: patientId }).select('audit_status archiveOnly checkDate date').lean(),
+    claimReceipt ? null : MedicalReport.findOne({ _id: sourceReportId, user: patientId }).select('audit_status archiveOnly checkDate date').lean(),
     User.findById(patientId).select('tenantId assignedHealthManager isDeleted').lean(),
   ]);
   if (!owner || owner.isDeleted) return { status: 404, message: '客户不存在' };
   if (staff.role !== 'superadmin' && (String(owner.tenantId || '') !== String(staff.tenantId || '') || String(owner.assignedHealthManager || '') !== String(staff._id))) {
     return { status: 403, message: '仅客户所属健管专员可确认留存原件' };
   }
+  if (claimReceipt) return { source: null };
   if (!source || source.audit_status !== 'audited' || source.archiveOnly) return { status: 409, message: '关联报告须为同一客户已审核的结果报告' };
   const sourceYear = String(source.checkDate || source.date || '').slice(0, 4);
   if (date && /^\d{4}$/.test(sourceYear) && sourceYear !== String(date).slice(0, 4)) return { status: 400, message: '存档原件与关联报告的体检年份不一致' };
@@ -5606,6 +5626,7 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
   const selectedCategory = documentCategory || sources[0].documentCategory || 'physical_exam';
   if (!allowedTypes.includes(selectedType) || !allowedCategories.includes(selectedCategory))
     return res.status(400).json({ success: false, message: '报告分类无效' });
+  if (selectedCategory === 'insurance_claim_receipt') return res.status(400).json({ success: false, message: '报销票据请从原始资料上传入口单独存档' });
   if (autoClinicalSplit && (ids.length !== 1 || !['outpatient_record','prescription_order'].includes(selectedCategory) || sources[0].audit_status !== 'unaudited'))
     return res.status(409).json({ success:false, message:'自动拆分仅适用于同一条待审核原件中的病历或处方图片' });
   const organizedId = autoClinicalSplit ? new mongoose.Types.ObjectId(crypto.createHash('sha256')
@@ -5628,6 +5649,7 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
       ...(organizedId ? { _id:organizedId } : {}),
       user: patient._id, tenantId: patient.tenantId,
       title: String(title).trim().slice(0, 200), type: selectedType, documentCategory: selectedCategory,
+      insuranceClaim: sources.every(source => source.insuranceClaim === true),
       hospital: String(hospital || '').trim().slice(0, 200), date: date || '', checkDate: date || '',
       reportYear: date ? Number(date.slice(0, 4)) : null,
       note: String(note || '').trim().slice(0, 1000),
@@ -5655,11 +5677,13 @@ router.post('/medical-reports/organize', staffAuth, checkPermission('reports', '
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
-    const { patientId, title, type, documentCategory, hospital, date, note, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2, sourceOrderId, sourceProductId, sourceServiceRecordId, archiveOnly, archiveSourceReportId } = req.body;
+    const { patientId, title, type, documentCategory, hospital, date, note, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2, sourceOrderId, sourceProductId, sourceServiceRecordId, archiveOnly, archiveSourceReportId, insuranceClaim } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
+    const claimReceipt = documentCategory === 'insurance_claim_receipt';
+    if (claimReceipt && (!archiveOnly || !insuranceClaim || archiveSourceReportId || planId || planItemId || screeningL1 || screeningL2)) return res.status(400).json({ success: false, message: '报销票据须作为独立原件仅存档' });
     let archiveSource;
     if (archiveOnly) {
-      const validation = await validateArchiveOnlyUpload(req.staff, patientId, archiveSourceReportId, date);
+      const validation = await validateArchiveOnlyUpload(req.staff, patientId, archiveSourceReportId, date, documentCategory);
       if (validation.message) return res.status(validation.status).json({ success: false, message: validation.message });
       archiveSource = validation.source;
     }
@@ -5751,7 +5775,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     }
 
     report = await MedicalReport.create({
-      user: patientId, title, type: type || 'other', documentCategory: documentCategory || 'physical_exam', hospital: hospital || '', note: String(note || '').slice(0, 1000),
+      user: patientId, title, type: type || 'other', documentCategory: documentCategory || 'physical_exam', hospital: hospital || '', note: String(note || '').slice(0, 1000), insuranceClaim: insuranceClaim === true || claimReceipt,
       date: checkDate, checkDate, reportYear,
       fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, ossKey: resolvedOssKey, ossKeys: resolvedOssKeys, content: effectiveContent,
       mimeType: effectiveMimeType, fileSize: fileSize || '',
@@ -5761,7 +5785,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       sourceServiceRecordId: sourceServiceRecordId || null, uploadedByRole: req.staff.role || '',
       planId: planId || null, planItemId: planItemId || null,
       screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '',
-      ...(archiveOnly ? { archiveOnly: true, archiveSourceReportId, archiveOnlyAt: new Date(), archiveOnlyBy: req.staff._id } : {}),
+      ...(archiveOnly ? { archiveOnly: true, archiveSourceReportId: claimReceipt ? null : archiveSourceReportId, archiveOnlyAt: new Date(), archiveOnlyBy: req.staff._id } : {}),
     });
     // report 已成功入库，回填体检方案条目失败不应让前端误判整次上传失败（此前 plan.save() 抛错会被下面
     // 的 catch 捕到、返回500"上传失败"，但 report 记录其实已经存在——健管专员据此又重传一次，导致同一
@@ -5847,6 +5871,71 @@ router.patch('/medical-reports/:id/page-dates/:page', staffAuth, async (req, res
   }
 });
 
+// 已审资料的大类更正重新开启对应类别的解析与审核。旧顾问草稿失效，已入档记录须先撤销。
+router.patch('/medical-reports/:id/category-correction', staffAuth, async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role))
+      return res.status(403).json({ success:false, message:'仅健管专员可更正已审核资料分类' });
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success:false, message:'报告不存在' });
+    const scope = await getVisiblePlanPatientIds(req.staff);
+    if (scope && !scope.some(id => String(id) === String(report.user)))
+      return res.status(403).json({ success:false, message:'无此会员权限' });
+    const category = String(req.body?.documentCategory || '');
+    const reason = cleanMedicalText(req.body?.reason, 500);
+    if (!MedicalReport.schema.path('documentCategory').enumValues.includes(category))
+      return res.status(400).json({ success:false, message:'请选择有效的资料分类' });
+    if (reason.length < 5) return res.status(400).json({ success:false, message:'请填写至少5字的更正原因' });
+    if (report.audit_status !== 'audited' || report.archiveOnly || report.duplicateOf)
+      return res.status(409).json({ success:false, message:'仅正常已审核报告可更正分类，请刷新' });
+    if (category === report.documentCategory)
+      return res.status(400).json({ success:false, message:'新旧资料分类相同' });
+    if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running'
+      || report.parseJob?.status === 'processing' || report.pageParseStatus?.status === 'processing'
+      || report.healthCourseDraft?.status === 'extracting')
+      return res.status(409).json({ success:false, message:'报告正在处理，请完成后刷新重试' });
+    const patient = await User.findById(report.user).select('diseaseRecords').lean();
+    if (patient && findReportArchive(patient.diseaseRecords, report._id))
+      return res.status(409).json({ success:false, message:'报告已有诊疗时间轴记录，请先由健康顾问撤销误入档记录' });
+    if (report.healthCourseDraft?.status === 'approved')
+      return res.status(409).json({ success:false, message:'顾问草稿已入档，请先撤销误入档记录' });
+    const now = new Date();
+    const previousDraft = report.healthCourseDraft || null;
+    const previousClinicalReview = report.clinicalReview || null;
+    const update = { $set: { documentCategory:category, audit_status:'unaudited', aiStatus:'none',
+      parseJob:null, audited_by:'', audited_at:null, reviewedAt:null, reviewedByStaff:null,
+      staffAuditSnapshot:{ reportItems:null, snapshotAt:null }, advisorCorrection:null, aiSummary:'',
+      reportItems:[], keyFindings:[], examDescription:'', examConclusion:'', examMainConclusions:{},
+      healthCourseDraft:previousDraft ? { ...previousDraft, status:'superseded', supersededAt:now, supersededReason:'资料分类更正' } : null,
+      clinicalReview:null,
+    }, $push: { categoryCorrectionHistory: {
+      from:report.documentCategory || '', to:category, reason, at:now,
+      by:req.staff._id, byName:req.staff.name || req.staff.username || '',
+      previousDraft, previousClinicalReview,
+      previousAudit:{ status:report.audit_status, by:report.audited_by, at:report.audited_at, aiStatus:report.aiStatus },
+      previousStaffAuditSnapshot:report.staffAuditSnapshot, previousAdvisorCorrection:report.advisorCorrection,
+      previousAiSummary:report.aiSummary, previousReportItems:report.reportItems,
+      previousKeyFindings:report.keyFindings, previousExamDescription:report.examDescription,
+      previousExamConclusion:report.examConclusion, previousExamMainConclusions:report.examMainConclusions,
+    }, dataEditLog: {
+      itemIndex:-1, itemName:'已审资料大类更正', field:'documentCategory', oldValue:report.documentCategory || '', newValue:category,
+      operatorId:req.staff._id, operatorName:req.staff.name || req.staff.username || '', operatorRole:req.staff.role,
+      source:`audited_category_correction: ${reason}`, at:now,
+    } }, $inc:{ reviewRevision:1 } };
+    if (report.documentCategory === 'outpatient_record' && category !== 'outpatient_record')
+      update.$set.courseTargetDiseaseId = null;
+    const changed = await MedicalReport.updateOne({ _id:report._id, updatedAt:report.updatedAt,
+      audit_status:'audited', documentCategory:report.documentCategory }, update);
+    if (!changed.modifiedCount)
+      return res.status(409).json({ success:false, message:'报告已变化，请刷新后重新核对' });
+    // 与顾问退回相同：待重审期间撤出由旧审核派生的筛查、身体成分和风险记录。
+    await UserScreeningItem.deleteMany({ user:report.user, reportId:report._id });
+    await removeBodyCompositionFromReturnedReport(report.user, report._id);
+    await require('../utils/healthRiskEvents').syncReportRisk(await MedicalReport.findById(report._id));
+    return res.json({ success:true, data:{ documentCategory:category, invalidatedDraft:!!previousDraft, needsReview:true } });
+  } catch (err) { return res.status(500).json({ success:false, message:err.message }); }
+});
+
 router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
@@ -5875,6 +5964,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     }
     if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision, clinicalReview, courseTargetDiseaseId, screeningReclassification } = req.body;
+    if (documentCategory === 'insurance_claim_receipt' && report.documentCategory !== 'insurance_claim_receipt') return res.status(400).json({ success: false, message: '报销票据请从原始资料上传入口单独存档' });
+    if (report.documentCategory === 'insurance_claim_receipt' && documentCategory && documentCategory !== 'insurance_claim_receipt') return res.status(409).json({ success: false, message: '报销票据不能直接改为医疗报告' });
     if (report.archiveOnly && (aiStatus !== undefined || reportItems !== undefined || screeningReclassification)) return res.status(409).json({ success: false, message: '仅留存原件不参与解析和审核' });
     if (screeningReclassification && (editSource !== 'ocr_review' || !Array.isArray(reportItems) || aiStatus !== undefined)) {
       return res.status(400).json({ success: false, message: '重新归类请求无效' });
@@ -6011,11 +6102,14 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       }).map(item => ({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
       // Reviewers may choose existing Admin nodes for this item; no taxonomy/rule creation.
-      const previousById = new Map((report.reportItems || []).map(item => [item.itemId, item]));
+      // Legacy reports can lack persisted itemIds on every row. Mongoose may
+      // generate different transient IDs on GET and PATCH; a unique identity
+      // match preserves the right row's classification without guessing.
+      const previousItems = require('../utils/reportItemPreviousMatch').previousReportItemsFor(nextItems, report.reportItems || []);
       const classificationFields = ['screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence', 'classificationSource', 'classificationReviewedBy', 'classificationReviewedAt'];
       const manualIndex = nextItems.some(item => Object.hasOwn(item, 'manualClassificationKeys')) ? await require('../utils/screeningMatch').buildAdminIndex({ fresh: true }) : null;
-      for (const item of nextItems) {
-        const previous = previousById.get(item.itemId);
+      for (const [index, item] of nextItems.entries()) {
+        const previous = previousItems[index];
         if (Object.hasOwn(item, 'manualClassificationKeys')) {
           try { Object.assign(item, require('../utils/reportManualClassification').manualClassification(item.manualClassificationKeys, manualIndex, req.staff._id)); }
           catch (error) { return res.status(400).json({ success: false, message: error.message }); }
@@ -6038,6 +6132,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         })
         : await require('../utils/screeningMatch').classifyItemsAsync(nextItems);
       nextItems.splice(0, nextItems.length, ...matchedItems);
+      const currentCandidates = await require('../utils/reportClassificationReview').collapseStaleAutomaticCandidates(
+        nextItems, require('../utils/screeningMatch').classifyItemsAsync
+      );
+      nextItems.splice(0, nextItems.length, ...currentCandidates);
       nextItems.forEach(item => {
         if (item.manualReviewStatus === 'reviewed') {
           item.manualReviewedAt = item.manualReviewedAt || new Date();
@@ -6078,6 +6176,25 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         report.date = confirmedDate;
         if (reportYear === undefined) report.reportYear = Number(confirmedDate.slice(0, 4));
       }
+    }
+    // A draft may contain unmatched results, but approval must not silently omit
+    // them from the screening record. Check the server-classified items, including
+    // requests that only change aiStatus without sending reportItems.
+    if ((aiStatus === 'reviewed' || screeningReclassification) && report.documentCategory !== 'prescription_order') {
+      report.reportItems = await require('../utils/reportClassificationReview').collapseStaleAutomaticCandidates(
+        report.reportItems, require('../utils/screeningMatch').classifyItemsAsync
+      );
+      const unclassified = require('../utils/screeningMatch').findUnclassifiedNamedItems(report.reportItems);
+      if (aiStatus === 'reviewed' && unclassified.length) return res.status(400).json({
+        success: false,
+        code: 'REPORT_ITEMS_UNCLASSIFIED',
+        message: `整份报告还有 ${unclassified.length} 项未归类：${unclassified.slice(0, 5).map(item => `第${Number(item.sourcePage) || 1}页「${item.name}」`).join('、')}${unclassified.length > 5 ? '等' : ''}。请逐项归类；当前修改可保存为草稿。人工核对进度不影响保存`,
+      });
+      const ambiguous = require('../utils/screeningMatch').findUnconfirmedMultiClassifiedItems(report.reportItems);
+      if (ambiguous.length) return res.status(400).json({
+        success: false, code: 'REPORT_ITEMS_MULTIPLE_CLASSIFICATIONS',
+        message: `整份报告有 ${ambiguous.length} 项同时匹配多个分类，须逐项确认：${ambiguous.slice(0, 5).map(item => `第${Number(item.sourcePage) || 1}页「${item.name}」`).join('、')}${ambiguous.length > 5 ? '等' : ''}。请在项目下方选择并确认正确分类后再提交审核；可先保存草稿`,
+      });
     }
     if (autoAuditPending) {
       const roleError = clinicalManagerAuditError(report, req.staff);
@@ -6563,11 +6680,27 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   const { action, rejectReason, abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } = req.body;
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+  const wasAudited = report.audit_status === 'audited';
   const clinicalRoleError = clinicalManagerAuditError(report, req.staff);
   if (clinicalRoleError) return res.status(403).json({ success: false, message: clinicalRoleError });
   if (report.archiveOnly) return res.status(409).json({ success: false, message: '仅留存的补充原件不参与解析和审核' });
   if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
+    if (!['prescription_order', 'outpatient_record'].includes(report.documentCategory)) {
+      report.reportItems = await require('../utils/reportClassificationReview').collapseStaleAutomaticCandidates(
+        report.reportItems, require('../utils/screeningMatch').classifyItemsAsync
+      );
+      const unclassified = require('../utils/screeningMatch').findUnclassifiedNamedItems(report.reportItems);
+      if (unclassified.length) return res.status(400).json({
+        success: false, code: 'REPORT_ITEMS_UNCLASSIFIED',
+        message: `整份报告还有 ${unclassified.length} 项未归类：${unclassified.slice(0, 5).map(item => `第${Number(item.sourcePage) || 1}页「${item.name}」`).join('、')}${unclassified.length > 5 ? '等' : ''}。请逐项归类；当前修改可保存为草稿。人工核对进度不影响保存`,
+      });
+      const ambiguous = require('../utils/screeningMatch').findUnconfirmedMultiClassifiedItems(report.reportItems);
+      if (ambiguous.length) return res.status(400).json({
+        success: false, code: 'REPORT_ITEMS_MULTIPLE_CLASSIFICATIONS',
+        message: `整份报告有 ${ambiguous.length} 项同时匹配多个分类，须逐项确认：${ambiguous.slice(0, 5).map(item => `第${Number(item.sourcePage) || 1}页「${item.name}」`).join('、')}${ambiguous.length > 5 ? '等' : ''}。请在项目下方选择并确认正确分类后再提交审核；可先保存草稿`,
+      });
+    }
     const targetError = await outpatientCourseTargetError(report);
     if (targetError) return res.status(409).json({ success: false, message: targetError });
     if (!isManualOnlyReportAudit(report) && report.aiStatus !== 'reviewed') {
@@ -6653,6 +6786,17 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
       const workflow = require('../utils/medicalProxyWorkflow');
       await workflow.createClinicalPrescriptionMedicationDrafts(report, req.staff);
       if (!report.clinicalReview) await workflow.createPrescriptionMedicationDrafts({ patientId: report.user, assignedTo: req.staff._id }, [String(report._id)]);
+    }
+    if (!wasAudited) {
+      try {
+        const dedupeKey = `report-organized:${report._id}:${report.reviewRevision || 0}`;
+        const message = await Message.findOneAndUpdate({ dedupeKey }, { $setOnInsert: {
+          user: report.user, type: 'system', sender: '嘉医管家', title: '报告整理完成',
+          content: '您的检查资料已完成整理，可在 App 的报告档案中查看。',
+          pushCategory: 'report', unread: true, dedupeKey,
+        } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+        await require('../utils/nativePush').enqueueNativePush(message);
+      } catch (error) { console.error('[report-organized-push] failed', report._id, error.message); }
     }
   }
   res.json({ success: true, data: await MedicalReport.findById(report._id) });
@@ -6787,11 +6931,14 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
     if (metadata.date && !/^\d{4}-\d{2}-\d{2}$/.test(metadata.date)) {
       return res.status(400).json({ success: false, message: '报告日期格式错误' });
     }
+    const claimReceipt = metadata.documentCategory === 'insurance_claim_receipt';
+    if (claimReceipt && (metadata.archiveOnly !== true || metadata.insuranceClaim !== true || metadata.archiveSourceReportId))
+      return res.status(400).json({ success: false, message: '报销票据须作为独立原件仅存档' });
     let archiveSourceDate = '';
     if (metadata.archiveOnly) {
-      const validation = await validateArchiveOnlyUpload(req.staff, metadata.patientId, metadata.archiveSourceReportId, metadata.date);
+      const validation = await validateArchiveOnlyUpload(req.staff, metadata.patientId, metadata.archiveSourceReportId, metadata.date, metadata.documentCategory);
       if (validation.message) return res.status(validation.status).json({ success: false, message: validation.message });
-      archiveSourceDate = validation.source.checkDate || validation.source.date || '';
+      archiveSourceDate = validation.source?.checkDate || validation.source?.date || '';
     }
     const patient = await User.findOne({ _id: metadata.patientId, tenantId: req.staff.tenantId, isDeleted: { $ne: true } }).select('_id tenantId').lean();
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
@@ -6804,14 +6951,15 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
       date: metadata.date || archiveSourceDate,
       note: String(metadata.note || '').slice(0, 1000),
       archiveOnly: metadata.archiveOnly === true,
-      archiveSourceReportId: metadata.archiveOnly ? metadata.archiveSourceReportId : null,
+      archiveSourceReportId: metadata.archiveOnly && !claimReceipt ? metadata.archiveSourceReportId : null,
+      insuranceClaim: metadata.insuranceClaim === true || claimReceipt,
       uploadedBy: req.staff._id, uploadedByRole: req.staff.role || '',
     };
   }
   const jobId = createReportUploadJob(req.staff._id, req.file, async (buffer, mimeType) => {
     if (!metadata) return uploadBuffer(buffer, mimeType, 'reports');
     if (metadata.archiveOnly) {
-      const validation = await validateArchiveOnlyUpload(req.staff, metadata.patientId, metadata.archiveSourceReportId, metadata.date);
+      const validation = await validateArchiveOnlyUpload(req.staff, metadata.patientId, metadata.archiveSourceReportId, metadata.date, metadata.documentCategory);
       if (validation.message) throw new Error(validation.message);
     }
     const sourceSha256 = crypto.createHash('sha256').update(buffer).digest('hex');
@@ -6822,7 +6970,7 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
     try {
       const report = await MedicalReport.create({
         user: metadata.patientId, tenantId: metadata.tenantId, title: metadata.title,
-        type: metadata.type, documentCategory: metadata.documentCategory,
+        type: metadata.type, documentCategory: metadata.documentCategory, insuranceClaim: metadata.insuranceClaim,
         hospital: metadata.hospital, date: metadata.date, checkDate: metadata.date,
         reportYear: metadata.date ? Number(metadata.date.slice(0, 4)) : null,
         note: metadata.note, fileUrl: stored.url, fileUrls: [stored.url],
@@ -7240,7 +7388,7 @@ router.get('/service-records/:id/preview/:source/:index', async (req, res) => {
     || (req.params.source !== 'main' && !mongoose.Types.ObjectId.isValid(req.params.source))) {
     return res.status(403).json({ success: false, message: '预览链接无效或已失效' });
   }
-  const record = await ServiceRecord.findById(req.params.id).select('attachments supplements');
+  const record = await ServiceRecord.findOne({ _id: req.params.id, type: { $ne: 'psychology' } }).select('attachments supplements');
   if (!record) return res.status(404).json({ success: false, message: '服务记录不存在' });
   const files = req.params.source === 'main'
     ? record.attachments
@@ -7337,7 +7485,7 @@ router.post('/followups/:id/expert-appointment/reschedule', staffAuth, checkPerm
 // GET /api/staff/service-records?patientId=&type=
 router.get('/service-records', staffAuth, checkPermission('service_records', 'view'), async (req, res) => {
   const { patientId, type, page = 1, limit = 20 } = req.query;
-  const filter = {};
+  const filter = { $and: [await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] };
   if (req.staff.role !== 'superadmin') filter.staffId = req.staff._id;
   if (patientId) filter.patientId = patientId;
   if (type) filter.type = type;
@@ -7352,6 +7500,7 @@ router.get('/service-records', staffAuth, checkPermission('service_records', 'vi
 
 // POST /api/staff/service-records
 router.post('/service-records', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
+  if (req.body.type === 'psychology') return res.status(409).json({ success: false, message: '心理咨询请从专用工作台记录' });
   if (req.body.type === 'rehab') return res.status(409).json({ success: false, message: '请在客户运动评估与复健模块填写记录' });
   const { patientId, type, date, title, content, result, nextDate, nextFollowUpTheme, diseaseName, medicalEscort, tcmRecord, specialistRecord, attachments } = req.body;
   if (!patientId || !type) return res.status(400).json({ success: false, message: '会员和类型不能为空' });
@@ -7719,7 +7868,7 @@ router.put('/me/password', staffAuth, async (req, res) => {
 // GET /api/staff/products — 从商城产品集合获取（与管理后台联通）
 router.get('/products', staffAuth, checkPermission('products', 'view'), async (req, res) => {
   const { category = '' } = req.query;
-  const filter = { status: 'on' };
+  const filter = { status: 'on', tenantId: req.staff.tenantId || null };
   if (category) filter.category = category;
   const products = await Product.find(filter).sort({ sortOrder: 1 });
   const list = products.map(p => ({
@@ -7731,10 +7880,124 @@ router.get('/products', staffAuth, checkPermission('products', 'view'), async (r
     originalPrice: p.originalPrice,
     icon: '🛍',
     servicePrices: p.servicePrices || [],
+    skus: (p.skus || []).filter(sku => sku.active !== false).map(sku => ({ label: sku.label, price: sku.price })),
+    paymentChannel: p.paymentChannel,
+    offlineOrderEligible: !p.stockLimited && !p.memberBundle?.enabled && !(p.serviceItems || []).length
+      && p.serviceWorkflow?.key !== 'annual_management',
     features: p.features || [],
     servicePerformerRoles: p.servicePerformerRoles || [],
   }));
   res.json({ success: true, data: { products: list } });
+});
+
+// 医护登记线下成交：只建待收款订单，金额取 Admin 产品库；财务仍在 Admin 核实收款。
+router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products', 'send'), async (req, res) => {
+  const tenantId = req.staff.tenantId || null;
+  const contractReference = String(req.body?.contractReference || '').trim();
+  const requestId = String(req.body?.requestId || '').trim();
+  const partnerCode = String(req.body?.partnerCode || '').trim().toUpperCase();
+  const specificationLabel = String(req.body?.specificationLabel || '').trim();
+  if (!mongoose.isValidObjectId(req.params.id) || !mongoose.isValidObjectId(req.body?.productId)
+    || (contractReference && !/^[A-Za-z0-9_.-]{6,100}$/.test(contractReference))
+    || (!contractReference && !/^[a-f\d-]{36}$/i.test(requestId))
+    || (partnerCode && !/^[A-F0-9]{12}$/.test(partnerCode)))
+    return res.status(400).json({ success: false, message: '请选择客户、商品并填写有效合同编号或重新打开登记窗口' });
+  let claimedAttributionId = null;
+  let createdOrder = false;
+  try {
+    if (!await allPushPatientsBelongToStaff([req.params.id], req.staff))
+      return res.status(403).json({ success: false, message: '只能为本机构客户登记' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id)))
+      return res.status(403).json({ success: false, message: '只能为自己负责的客户登记' });
+    const [patient, product] = await Promise.all([
+      User.findOne({ _id: req.params.id, tenantId, isDeleted: { $ne: true } }).select('_id name'),
+      Product.findOne({ _id: req.body.productId, tenantId, status: 'on' }),
+    ]);
+    if (!patient || !product) return res.status(404).json({ success: false, message: '本机构客户或上架商品不存在' });
+    if (product.stockLimited || product.memberBundle?.enabled || product.serviceItems?.length
+      || product.serviceWorkflow?.key === 'annual_management')
+      return res.status(409).json({ success: false, message: '该商品需使用专属购买、年度合同或权益流程' });
+    const sku = specificationLabel ? (product.skus || []).find(item => item.label === specificationLabel && item.active !== false) : null;
+    const listed = specificationLabel ? (sku?.price ?? (product.servicePrices || []).find(item => item.label === specificationLabel)?.price)
+      : product.originalPrice;
+    if ((specificationLabel && !sku && !(product.servicePrices || []).some(item => item.label === specificationLabel))
+      || (!specificationLabel && ((product.skus || []).some(item => item.active !== false) || (product.servicePrices || []).length))
+      || !Number.isFinite(listed) || listed <= 0 || Math.round(listed * 100) !== Number(req.body.priceCents))
+      return res.status(409).json({ success: false, message: '价格或规格已变化，请刷新产品库后重试' });
+    const orderId = crypto.createHash('sha256').update(`staff-offline:${tenantId}:${contractReference || `${req.staff._id}:${requestId}`}`).digest('hex').slice(0, 24);
+    const businessReference = contractReference || `SO${orderId.toUpperCase()}`;
+    if (await Order.exists({ _id: orderId }) || await Order.exists({ tenantId, marketPartnerContractReference: businessReference }))
+      return res.status(409).json({ success: false, message: '该合同或业务编号已有订单' });
+
+    const roleRules = require('../utils/productPerformanceSnapshot').snapshot(product, specificationLabel).servicePerformerRoles;
+    const submitted = Array.isArray(req.body.servicePerformers) ? req.body.servicePerformers : [];
+    if (submitted.length > roleRules.length || submitted.some(item => !roleRules.some(rule => rule.role === item.role) || !mongoose.isValidObjectId(item.staffId))
+      || new Set(submitted.map(item => item.role)).size !== submitted.length)
+      return res.status(400).json({ success: false, message: '服务团队岗位无效' });
+    const staffIds = submitted.map(item => item.staffId);
+    if (staffIds.length) {
+      const staffRows = await Admin.find({ _id: { $in: staffIds }, tenantId, staffStatus: 'active' }).select('_id role').lean();
+      if (submitted.some(item => !staffRows.some(staff => String(staff._id) === String(item.staffId) && staff.role === item.role)))
+        return res.status(400).json({ success: false, message: '服务人员须为本机构在职且岗位一致' });
+    }
+
+    let partner = null;
+    let contribution = null;
+    {
+      const attribution = require('../utils/marketPartnerAttribution');
+      const codePartner = partnerCode ? await require('../models/MarketPartner').findOne({ tenantId,
+        referralCode: String(partnerCode).trim().toUpperCase(), status: 'active' }).select('_id').lean() : null;
+      const rule = await attribution.activeRule(tenantId, product._id, new Date(), codePartner?._id);
+      if (rule?.productLine === 'consumer365')
+        return res.status(409).json({ success: false, message: '365 会员须走商城下单' });
+      if (rule?.kind === 'annual' && !contractReference)
+        return res.status(400).json({ success: false, message: '年度合伙人服务须填写实际合同编号，供服务期核对' });
+      partner = partnerCode
+        ? await attribution.claim({ tenantId, patientId: patient._id, productId: product._id, code: partnerCode })
+        : await attribution.resolveForOrder({ tenantId, patientId: patient._id, productId: product._id });
+      if (partnerCode && !partner) return res.status(409).json({ success: false, message: '推荐码无效或合伙人未获该商品授权' });
+      if (partner) {
+        if (partnerCode) claimedAttributionId = partner.attribution._id;
+        contribution = await require('../utils/marketPartnerLeadEvent').contributionAtOrder({ tenantId,
+          partnerId: partner.attribution.partnerId, patientId: patient._id, productId: product._id, at: new Date() });
+      }
+    }
+
+    const order = await Order.create({ _id: orderId, user: patient._id, payerUser: patient._id,
+      beneficiaryName: patient.name || '', tenantId, serviceId: String(product._id), serviceName: product.name,
+      servicePrice: listed, unitPrice: listed, specificationLabel, skuCode: sku?.code || '', totalUnits: sku?.totalUnits || 1,
+      businessAllocationsSnapshot: require('../utils/productBusinessAllocations').snapshot(product, specificationLabel),
+      orderNo: `SO${Date.now()}${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+      orderType: 'product', fulfillmentType: sku?.fulfillmentType || product.fulfillmentType,
+      tradeStatus: 'awaiting_payment', paymentStatus: 'unpaid', paymentMethod: '', paymentExpectedAmount: listed,
+      initiationSource: 'staff_direct', initiatedByStaff: req.staff._id,
+      serviceWorkflowSnapshot: product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null,
+      serviceProviderSnapshot: { code: product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
+      performanceRuleSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, specificationLabel).performanceRule,
+      staffPerformanceOverridesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, specificationLabel).staffPerformanceOverrides,
+      servicePerformerRolesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(product, specificationLabel).servicePerformerRoles,
+      servicePerformers: submitted.map(item => ({ role: item.role, staffId: item.staffId })),
+      ...(partner ? { marketPartnerId: partner.attribution.partnerId,
+        marketPartnerAttributionId: partner.attribution._id, marketPartnerRuleId: partner.rule._id,
+        marketPartnerRuleVersion: partner.rule.version, marketPartnerLeadEventId: contribution?.eventId || null,
+        marketPartnerDirectEventId: contribution?.directEventId || null,
+        marketPartnerDirectReferral: contribution?.directReferral === true,
+        marketPartnerFirstConversationAt: contribution?.firstConversationAt || null,
+        marketPartnerContractReference: businessReference } : {}),
+      note: `医护线下登记，${contractReference ? '合同编号' : '系统业务编号'}：${businessReference}` });
+    createdOrder = true;
+    if (partner) await require('../models/MarketPartnerAttribution').updateOne({ _id: partner.attribution._id, tenantId },
+      { $set: { orderId: order._id } });
+    res.status(201).json({ success: true, data: { orderId: order._id, orderNo: order.orderNo,
+      serviceName: order.serviceName, price: listed, businessReference, partnerAttributed: !!partner,
+      servicePerformers: order.servicePerformers, paymentStatus: order.paymentStatus } });
+  } catch (err) {
+    if (claimedAttributionId && !createdOrder)
+      await require('../models/MarketPartnerAttribution').deleteOne({ _id: claimedAttributionId, orderId: null });
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '合同编号或订单已存在' });
+    res.status(500).json({ success: false, message: '线下订单登记失败' });
+  }
 });
 
 // 医护端单项服务基金结算：报价和扣款均以当前上架商品、当前余额和服务端规则为准。
@@ -7822,9 +8085,12 @@ router.post('/patients/:id/fund-orders', staffAuth, checkPermission('products', 
           initiationSource: 'staff_direct', initiatedByStaff: req.staff._id,
           supervisorId: quote.patient.assignedHealthPlanner || null,
           serviceItemsSnapshot: serviceItems.map(item => ({ key: item.key, name: item.name,
-            units: item.units, usedUnits: 0, performers: item.performers || [] })),
-          performanceRuleSnapshot: quote.product.performanceRule?.toObject?.() || quote.product.performanceRule || null,
-          servicePerformerRolesSnapshot: quote.product.servicePerformerRoles || [],
+            units: item.units, usedUnits: 0, childProductId: item.childProductId || null,
+            teamRole: item.teamRole || '', revenueSharePercent: item.revenueSharePercent || 0, performers: item.performers || [] })),
+          businessAllocationsSnapshot: require('../utils/productBusinessAllocations').snapshot(quote.product, quote.label),
+          performanceRuleSnapshot: require('../utils/productPerformanceSnapshot').snapshot(quote.product, quote.label).performanceRule,
+          staffPerformanceOverridesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(quote.product, quote.label).staffPerformanceOverrides,
+          servicePerformerRolesSnapshot: require('../utils/productPerformanceSnapshot').snapshot(quote.product, quote.label).servicePerformerRoles,
           serviceWorkflowSnapshot: quote.product.serviceWorkflow?.toObject?.() || quote.product.serviceWorkflow || null,
           serviceProviderSnapshot: { code: quote.product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
           note: `医护端直接从健康基金扣款；操作人：${req.staff.name || req.staff._id}`,
@@ -7880,13 +8146,13 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const products = await Product.find({ _id: { $in: productIds } });
   if (!products.length) return res.status(404).json({ success: false, message: '产品不存在' });
-  const priceMap = {};
+  const priceMap = {}, specificationMap = {};
   if (pricedProducts?.length) {
-    pricedProducts.forEach(pp => { priceMap[String(pp.productId)] = pp.price });
+    pricedProducts.forEach(pp => { priceMap[String(pp.productId)] = pp.price; specificationMap[String(pp.productId)] = String(pp.specificationLabel || '').trim() });
   }
   const productItems = products.map(p => ({
     productId: p._id.toString(), name: p.name,
-    price: priceMap[p._id.toString()] ?? p.originalPrice, category: p.category, icon: '🛍',
+    price: priceMap[p._id.toString()] ?? p.originalPrice, specificationLabel: specificationMap[p._id.toString()] || '', category: p.category, icon: '🛍',
     images: p.images || [], servicePrices: p.servicePrices || [],
   }));
   const totalPrice = productItems.reduce((sum, p) => sum + p.price, 0);
@@ -7978,7 +8244,7 @@ router.get('/team', staffAuth, checkPermission('team', 'view'), async (req, res)
 // GET /api/staff/patients/:id/plans — 会员的健康方案列表（含年度管理方案）
 router.get('/patients/:id/plans', staffAuth, async (req, res) => {
   const [healthPlans, annualPlans] = await Promise.all([
-    HealthPlan.find({ patientId: req.params.id })
+    HealthPlan.find({ $and: [{ patientId: req.params.id }, await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] })
       .sort({ createdAt: -1 })
       .populate('staffId', 'name role'),
     AnnualPlan.find({ patientId: req.params.id })
@@ -8294,7 +8560,7 @@ router.get('/requisition-items/:type/:id/sub-items', staffAuth, async (req, res)
 // ── User app: 获取待上传开单 ──────────────────────────────
 // GET /api/staff/patients/:id/service-records — 会员的服务记录
 router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
-  const records = await ServiceRecord.find({ patientId: req.params.id })
+  const records = await ServiceRecord.find({ $and: [{ patientId: req.params.id }, await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] })
     .sort({ date: -1 })
     .populate('staffId', 'name role');
   // Show specialist details already saved in completed tasks for older records too.
@@ -8507,6 +8773,7 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
 // ── 跨角色转介 ──────────────────────────────────────────────
 // POST /api/staff/referrals — 发起转介
 router.post('/referrals', staffAuth, async (req, res) => {
+  if (req.body.referralType !== 'external_medical' && mongoose.isValidObjectId(req.body.toStaffId) && await Admin.exists({ _id: req.body.toStaffId, role: 'psychologist' })) return res.status(409).json({ success: false, message: '心理咨询请通过客户转介中的长期心理咨询流程提交' });
   const { patientId, toStaffId, reason, content, urgency, attachedHealthInfo, linkedDiseaseRecordId, linkedDiseaseName, referralPurpose, questionList, requiresConclusion, referralType = 'internal_collaboration', medicalExpertId } = req.body;
   if (!patientId || !reason || (referralType === 'internal_collaboration' ? !toStaffId : !medicalExpertId)) {
     return res.status(400).json({ success: false, message: referralType === 'external_medical' ? '会员、外部专家、原因不能为空' : '会员、接收人、原因不能为空' });
@@ -8996,7 +9263,7 @@ router.get('/notifications', staffAuth, async (req, res) => {
 // ── 获取会员的活跃方案（用于报告关联） ─────────────────────
 // GET /api/staff/patients/:id/active-plan-items
 router.get('/patients/:id/active-plan-items', staffAuth, async (req, res) => {
-  const plans = await HealthPlan.find({ patientId: req.params.id, status: 'active' })
+  const plans = await HealthPlan.find({ $and: [{ patientId: req.params.id, status: 'active' }, await require('../utils/psychologyLegacyAccess').legacyPsychologyFilter(req.staff)] })
     .select('title type items');
   const items = [];
   plans.forEach(plan => {
@@ -9427,8 +9694,9 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
         ...(isMedicalAssistProduct
           ? require('../utils/serviceOwnership').orderOwnershipFields({ supervisorId, initiationSource: 'staff_direct', initiatedByStaff: req.staff._id, closureMode: product.serviceWorkflow?.closureMode })
           : { initiationSource: 'staff_direct' }),
-      serviceItemsSnapshot: serviceItems.map(item => ({ key: item.key, name: item.name, units: item.units, usedUnits: 0, performers: item.performers || [] })),
+      serviceItemsSnapshot: serviceItems.map(item => ({ key: item.key, name: item.name, units: item.units, usedUnits: 0, childProductId: item.childProductId || null, teamRole: item.teamRole || '', revenueSharePercent: item.revenueSharePercent || 0, performers: item.performers || [] })),
       performanceRuleSnapshot: product.performanceRule || null,
+      staffPerformanceOverridesSnapshot: (product.staffPerformanceOverrides || []).map(row => row.toObject?.() || row),
       servicePerformerRolesSnapshot: product.servicePerformerRoles || [],
       serviceWorkflowSnapshot: product.serviceWorkflow || null,
       serviceProviderSnapshot: { code: product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
@@ -9864,6 +10132,16 @@ router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
 });
 
 // 月度服务复盘：团队内部记录，与阶段性临床评估及用户端健康计划分离。
+router.use(async (req,res,next)=>{
+ if(req.method==='GET'||!req.path.includes('monthly-service-reviews'))return next();
+ try {
+  const match=req.path.match(/^\/patients\/([a-f0-9]{24})\/monthly-service-reviews/i);
+  const record=req.path.match(/^\/monthly-service-reviews\/([a-f0-9]{24})/i);
+  const patientId=match?.[1]||(record?(await MonthlyServiceReview.findById(record[1]).select('patientId').lean())?.patientId:null);
+  if(require('../utils/managementReviewPolicy').enabled(patientId))return res.status(409).json({success:false,message:'该客户请使用新的月度、季度、年度复盘入口'});
+  next();
+ }catch(e){next(e);}
+});
 const monthlyReviewFields = ['healthProgress', 'serviceExecution', 'customerFeedback', 'teamCollaboration', 'unresolvedIssues'];
 async function monthlyReviewRightsForPatient(patientId) {
   const user = await User.findById(patientId).select('servicePackage serviceStartDate serviceExpiry clientBrand familyLinks');
@@ -9905,6 +10183,7 @@ router.get('/patients/:id/monthly-service-reviews', staffAuth, async (req, res) 
     const visible = await getVisiblePlanPatientIds(req.staff);
     const patientScope = !visible || visible.some(id => String(id) === String(req.params.id));
     if (!mongoose.isValidObjectId(req.params.id) || (!patientScope && !(await MonthlyServiceReview.exists({ patientId: req.params.id, 'actions.assigneeId': req.staff._id })))) return res.status(403).json({ success: false, message: '无权查看该客户复盘' });
+    if (require('../utils/managementReviewPolicy').enabled(req.params.id)) return res.json({success:true,enabled:true,data:{plans:[],reviews:[],canOrganize:false}});
     if (!(await monthlyReviewEnabledForPatient(req.params.id))) return res.json({ success: true, enabled: false, data: { plans: [], reviews: [], canOrganize: false } });
     const allPlans = await AnnualPlan.find({ patientId: req.params.id, confirmedAt: { $ne: null } }).select('_id year servicePlanCode templateName confirmedAt').sort({ confirmedAt: -1 }).lean();
     const seenYears = new Set();
@@ -10055,7 +10334,9 @@ router.get('/monthly-service-reviews/workbench', staffAuth, async (req, res) => 
     }).map(month => ({ annualPlanId: plan._id, patientId: plan.patientId?._id, patientName: plan.patientId?.name, month, reviewId: byPatientMonth.get(`${plan.patientId?._id}:${month}`)?._id || null })));
     const assignedReviews = await MonthlyServiceReview.find({ 'actions.assigneeId': req.staff._id, status: 'confirmed', ...rollout.patientFilter() }).select('patientId annualPlanId month actions').lean();
     const actions = assignedReviews.flatMap(review => review.actions.filter(action => action.status === 'pending' && String(action.assigneeId) === String(req.staff._id)).map(action => ({ reviewId: review._id, annualPlanId: review.annualPlanId, patientId: review.patientId, month: review.month, actionId: action._id, title: action.title, dueAt: action.dueAt })));
-    res.json({ success: true, data: { pending, actions } });
+    const cycle = await require('./managementReviews').workbench(req.staff);
+    const isPilot = require('../utils/managementReviewPolicy').enabled;
+    res.json({ success: true, data: { pending: [...pending.filter(x=>!isPilot(x.patientId)), ...cycle.pending], actions: [...actions.filter(x=>!isPilot(x.patientId)), ...cycle.actions] } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -11359,7 +11640,7 @@ router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, r
       return res.json({ success: true, message: '已驳回并删除' });
     }
     med.aiStatus = 'approved';
-    if (med.active === false && (String(med.sourceRecordKey || '').startsWith('prescription_report_review:') || med.archiveRecordId)) med.active = true;
+    if (med.active === false && (String(med.sourceRecordKey || '').startsWith('prescription_report_review:') || String(med.sourceRecordKey || '').startsWith('prescription_manual:') || med.archiveRecordId)) med.active = true;
     med.reviewedByName = req.staff.name || '';
     med.reviewedAt = new Date();
     await med.save();
@@ -11525,17 +11806,34 @@ router.get('/patients/:id/medications/:medId/attachments/:index/preview', async 
 
 router.post('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
-    const { name, brandName, specification, dosage, method, frequency, timing, startDate, endDate, purpose, note, imageUrls } = req.body;
-    if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
+    const { name, brandName, specification, dosage, method, frequency, timing, startDate, endDate, purpose, note, imageUrls, sourceReportId } = req.body;
+    if (!String(name || '').trim() || !String(dosage || '').trim() || !String(frequency || '').trim()) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
+    let sourceReport = null;
+    if (sourceReportId) {
+      if (!mongoose.isValidObjectId(sourceReportId)) return res.status(400).json({ success: false, message: '处方编号无效' });
+      if (!['healthManager', 'medicalAssistant', 'familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '当前岗位不能从处方录入用药' });
+      const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+      if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+      if (req.staff.role !== 'superadmin' && String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '只能处理本机构客户' });
+      if (req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅客户所属健康顾问可核对用药' });
+      sourceReport = await MedicalReport.findOne({ _id: sourceReportId, user: req.params.id, documentCategory: 'prescription_order', audit_status: 'audited' }).select('fileUrl fileUrls').lean();
+      if (!sourceReport) return res.status(409).json({ success: false, message: '未找到该客户已审核的处方，请刷新后重试' });
+      const normalizedName = String(name).trim().toLocaleLowerCase('zh-CN');
+      const existing = await Medication.find({ user: req.params.id, stopped: { $ne: true }, aiStatus: { $ne: 'rejected' } }).select('name aiStatus').lean();
+      if (existing.some(medication => String(medication.name || '').trim().toLocaleLowerCase('zh-CN') === normalizedName)) return res.status(409).json({ success: false, message: '已有同名服用中或待核对用药，请先核对现有记录，勿重复写入' });
+      const sourceRecordKey = `prescription_manual:${sourceReport._id}:${normalizedName}`;
+      if (await Medication.exists({ user: req.params.id, sourceRecordKey })) return res.status(409).json({ success: false, message: '此处方药物已经录入，请刷新用药列表' });
+    }
     // 健管专员/就医专员录入的客户现有用药信息需健康顾问核对后归档；不代表平台开药或调整用药。
-    const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
+    const needReview = !!sourceReport || NEEDS_REVIEW_ROLES.includes(req.staff.role);
     const med = await Medication.create({
-      user: req.params.id, name, brandName: brandName || '', specification: specification || '', dosage, method: method || '口服',
-      frequency, timing: timing || '', startDate: startDate || '', endDate: endDate || '',
+      user: req.params.id, name: String(name).trim(), brandName: brandName || '', specification: specification || '', dosage: String(dosage).trim(), method: sourceReport ? (method || '') : (method || '口服'),
+      frequency: String(frequency).trim(), timing: timing || '', startDate: startDate || '', endDate: endDate || '',
       purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
-      imageUrls: await require('../utils/medicationAttachmentStorage').normalizeMedicationAttachments(imageUrls, req.params.id, Medication),
+      imageUrls: sourceReport ? (sourceReport.fileUrls?.length ? sourceReport.fileUrls : sourceReport.fileUrl ? [sourceReport.fileUrl] : []) : await require('../utils/medicationAttachmentStorage').normalizeMedicationAttachments(imageUrls, req.params.id, Medication),
       createdByName: req.staff.name || '',
       aiStatus: needReview ? 'pending' : null,
+      ...(sourceReport ? { active: false, sourceRecordKey: `prescription_manual:${sourceReport._id}:${String(name).trim().toLocaleLowerCase('zh-CN')}`, aiGeneratedBy: '已审核处方/医嘱' } : {}),
     });
     await require('../utils/annualPlanPreparationTasks').completeAnnualPreparationTask(req.params.id, 'medications').catch(() => {});
     res.status(201).json({ success: true, data: med });
@@ -11900,7 +12198,7 @@ router.patch('/health-risk-events/:id/resolve', staffAuth, async (req, res) => {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可处理风险事件' });
     const disposition = String(req.body?.disposition || '').trim();
     const note = String(req.body?.note || '').trim();
-    if (!['confirmed', 'needs_information', 'contacted', 'referred', 'false_positive'].includes(disposition) || !note || note.length > 1000) return res.status(400).json({ success: false, message: '请选择核实结果并填写处理说明（最多1000字）' });
+    if (!['confirmed', 'no_followup', 'needs_information', 'contacted', 'referred', 'false_positive'].includes(disposition) || !note || note.length > 1000) return res.status(400).json({ success: false, message: '请选择核实结果并填写处理说明（最多1000字）' });
     const HealthRiskEvent = require('../models/HealthRiskEvent');
     const event = await HealthRiskEvent.findById(req.params.id).select('patientId status assignedTo');
     if (!event) return res.status(404).json({ success: false, message: '风险事件不存在' });
@@ -12186,7 +12484,15 @@ router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (re
     record.value = String(value);
     if (extra !== undefined) record.extra = extra;
     if (note !== undefined) record.note = note;
-    if (recordedAt) { const d = new Date(recordedAt); if (!isNaN(d.getTime())) record.recordedAt = d; }
+    if (recordedAt) {
+      const d = new Date(recordedAt);
+      if (Number.isNaN(d.getTime()) || (record.type === 'bloodPressure' && d.getTime() > Date.now()))
+        return res.status(400).json({ success: false, message: '测量时间无效或晚于当前时间' });
+      if (record.type === 'bloodPressure' && d.getTime() !== record.recordedAt.getTime()) {
+        record.measurementTimeRevisions.push({ previousAt: record.recordedAt, updatedAt: d, editedBy: req.staff._id });
+      }
+      record.recordedAt = d;
+    }
     record.status = calcHealthRecordStatus(record.type, value, extra !== undefined ? extra : record.extra);
     record.aiAlertStatus = (record.type === 'bloodPressure' && record.status === 'danger') ? 'pending' : null;
     record.editedBy = {
@@ -15867,8 +16173,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         audit_status: 'audited',
         status: 'pending',
         advisorInterpretationConfirmedAt: null,
-        // 处方/医嘱已经由“用药信息审核”闭环，不再作为体检报告解读或随访的第二入口。
-        documentCategory: { $ne: 'prescription_order' },
+        // 处方/医嘱和门诊病历走各自的临床资料审核，不生成体检报告解读待办。
+        documentCategory: { $nin: ['prescription_order', 'outpatient_record'] },
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const reportsToInterpret = await MedicalReport.find(interpretationFilter)
@@ -16033,13 +16339,23 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const dietaryResponses = await QuestionnaireResponse.find(dietaryFilter)
-        .populate('user', 'name phone').sort({ submittedAt: -1 }).lean();
+        .populate('user', 'name phone lifestyle_data lifestyleHistory archiveVersionHistory').sort({ submittedAt: -1 }).lean();
+      const dietaryQuestionnaire = dietaryResponses.length
+        ? await DynamicQuestionnaire.findById(DIETARY_SURVEY_QUESTIONNAIRE_ID).select('title questions').lean()
+        : null;
       dietaryResponses.forEach(r => {
         const createdAt = r.submittedAt || r.createdAt;
+        const currentLifestyle = r.user ? require('../utils/effectiveLifestyle').effectiveLifestyle(r.user) : {};
+        const changes = dietaryQuestionnaire && r.user
+          ? buildArchiveDraft({ ...r.user, lifestyle_data: currentLifestyle }, dietaryQuestionnaire, r).items
+            .filter(item => item.path.startsWith('lifestyle_data.') && item.existing !== item.valueStr)
+          : [];
         todos.push({
           id: 'dietary_' + r._id, type: 'dietary_survey_review', label: '膳食调查问卷待复核', priority: 3,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: '客户已提交膳食调查问卷，待营养师复核',
+          summary: changes.length
+            ? `${changes.length} 项与当前生活方式档案不同：${changes.slice(0, 3).map(item => item.label).join('、')}${changes.length > 3 ? '等' : ''}；待营养师核实`
+            : '客户已提交膳食调查问卷，待营养师复核',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=archive&responseId=${r._id}`,
         });
@@ -16272,6 +16588,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name membershipTier ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
       assessments.filter(item => {
         if (!item.patientId || !item.patientId.assignedFamilyDoctor) return false;
+        if (item.assessmentMode !== 'intensive_nutrition' && require('../utils/managementReviewPolicy').enabled(item.patientId._id)) return false;
         if (item.status === 'team_review') {
           const targetRole = isSuper ? phaseReviewer(item) : role;
           return !!targetRole && (item.teamRoles || []).includes(targetRole) && item.teamReviews?.[targetRole]?.status !== 'approved'
@@ -16460,6 +16777,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }).populate('patientId', 'name isDeleted').lean();
     todos.push(...require('../utils/consultationTodos').consultationTodos(consultationRows, req.staff));
     todos.push(...await require('../utils/workbenchAssignmentAttention').loadAssignmentAttention(req.staff));
+    todos.push(...await require('../utils/feedbackWorkflow').loadTodos(req.staff));
     const scopedTodos = todos.filter(todo => visibleTodo(todo, req.staff, inMyScope));
 
     // 按优先级排序：priority越小越紧急，同级按时间倒序；超时优先
@@ -16531,6 +16849,7 @@ router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
 });
 
 const { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, normalizeReportDate, isCalendarReportDate, reviewMetadataError } = require('../utils/reportExtractionPolicy');
+const { reportParsePromptForCategory } = require('../utils/reportCategoryPrompt');
 
 function safeParseJSON(text) {
   try { return JSON.parse(String(text).trim().replace(/^```json\n?|\n?```$/g, '')); }
@@ -17640,7 +17959,8 @@ async function runOutpatientRecordParse(report, rawParseImage) {
 async function runReportParseControlled(reportId) {
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
-  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage, renderSinglePageRegions } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage, renderSinglePageRegions, renderSinglePageBands } = require('../utils/pdf');
+  const { parseAnnualPageBands } = require('../utils/reportAnnualPageFallback');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { filterMissingReportItems, hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
   const { reviewRevisionMatch } = require('../utils/reportReviewRevision');
@@ -17657,7 +17977,7 @@ async function runReportParseControlled(reportId) {
   }
   const parseStartRevision = Number(report.reviewRevision || 0);
   const isPrescriptionReport = report.documentCategory === 'prescription_order';
-  const reportParsePrompt = isPrescriptionReport ? PRESCRIPTION_PARSE_PROMPT : REPORT_PARSE_PROMPT;
+  const reportParsePrompt = isPrescriptionReport ? PRESCRIPTION_PARSE_PROMPT : reportParsePromptForCategory(report.documentCategory);
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const bodyCompositionPrompt = usePediatricBodyComposition
@@ -17677,7 +17997,9 @@ async function runReportParseControlled(reportId) {
   try {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-      const isComprehensiveCheckup = report.type === 'annual';
+      // Historical uploads can retain type=other even when the selected
+      // document category is a full physical examination report.
+      const isComprehensiveCheckup = report.type === 'annual' || report.documentCategory === 'physical_exam';
       // 大型扫描件没有文字层；若首轮采用 max、双次重试及逐页覆盖复核，
       // 一个 8 页批次最坏会等待数十分钟，队列会长期停在“识别中”。
       // 首轮优先让医生拿到可审核草稿；遗漏项仍可由既有的逐页补提功能处理。
@@ -17766,6 +18088,25 @@ async function runReportParseControlled(reportId) {
                 } catch (e) {
                   rethrowAiControl(e);
                   if (['AI_PAGE_BUDGET_PAUSED', 'AI_PAGE_CIRCUIT_PAUSED'].includes(e.code)) break;
+                  if (isComprehensiveCheckup && ['AI_TIMEOUT', 'AI_OUTPUT_LENGTH'].includes(e.code)) {
+                    try {
+                      const fallbackPrompt = reportParsePrompt
+                        + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
+                        + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
+                      const splitPage = await parseAnnualPageBands({
+                        renderBands: () => renderSinglePageBands(pdfBuf, pageNum, 160),
+                        parseImage, parseJSON: safeParseJSON, mergeItems: mergeCoverageAuditItems,
+                        prompt: fallbackPrompt, pageNum, model: VL_MODEL,
+                      });
+                      batchResults[i] = splitPage;
+                      await MedicalReport.findByIdAndUpdate(reportId, { $set: { [`parseJob.firstPassPages.${pageNum}`]: splitPage } });
+                      console.log(`[parse-ai] 页${pageNum}整页输出失败，四段识别成功：${splitPage.items.length}项`);
+                    } catch (splitError) {
+                      rethrowAiControl(splitError);
+                      console.log(`[parse-ai] 页${pageNum}四段识别失败: ${splitError.message}`);
+                    }
+                    break; // Never retry the same oversized whole-page request.
+                  }
                   if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${pageNum}异常: ${e.message}`);
                 }
               }
@@ -18191,6 +18532,15 @@ async function runReportParseControlled(reportId) {
       const parsedItemDates = [...new Set(classified.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
       const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : normalizeReportDate(checkDate);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
+      // Searchable PDF pages are independently checked against printed result
+      // rows. This audit records counts only and never adds an unverified item.
+      const textCoverage = !isPrescriptionReport && report.type === 'annual'
+        ? await require('../utils/reportOcrWords').auditPdfTextCoverage(
+          pdfBuf, classified, Array.from({ length: knownTotalPages || totalPageCount }, (_, i) => i + 1))
+        : null;
+      const textGapWarning = textCoverage?.uncoveredRows
+        ? `⚠️ PDF文字层在第${textCoverage.pagesWithGaps.join('、')}页发现至少${textCoverage.uncoveredRows}条有结果的原文行未与草稿同名同值对应，请逐行核对；该数字是保守候选统计，不代表全部漏项。`
+        : '';
       const summaryText = [...new Set([...summaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
       const failedPageList = [...new Set([...failedPageNumbers, ...qualityRetryPages])].sort((a, b) => a - b);
@@ -18204,13 +18554,15 @@ async function runReportParseControlled(reportId) {
         : failedPages > 0
           ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败${failedPageLabel}，请核对是否有遗漏项目${qualityWarning ? `\n${qualityWarning}` : ''}`
           : [summaryText, qualityWarning].filter(Boolean).join('\n');
+      const reviewedSummary = [aiSummaryOut, textGapWarning].filter(Boolean).join('\n');
       const savedPdf = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(parseStartRevision) }, {
         $inc: { reviewRevision: 1 },
         reportItems: classified,
         imagePageEvidence,
-        aiSummary:   aiSummaryOut,
+        aiSummary:   reviewedSummary,
         aiStatus:    allFailed ? 'failed' : 'pending',
-        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}` },
+        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${textCoverage?.uncoveredRows ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
+          ...(textCoverage ? { textCoverage } : {}) },
         institution, checkDate: resolvedCheckDate, reportYear: resolvedCheckDate ? Number(resolvedCheckDate.slice(0, 4)) : null,
       });
       if (!savedPdf) throw new Error('审核期间内容已修改，AI结果未覆盖人工数据');
@@ -18490,10 +18842,13 @@ async function runReportPageParseControlled(reportId, pageNum) {
   if (!report) throw new Error('报告不存在');
   if (isManualOnlyReport(report)) throw new Error(manualOnlyReportMessage(report));
   const imagePageEvidence = {};
-  const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence) => {
+  const regionEvidenceSections = new Map();
+  const parseImage = createReportImageParser(rawParseImage, { report, verifyTableRows: true, onEvidence: (page, evidence, sections, options) => {
     recordPageEvidence(imagePageEvidence, page, evidence);
+    if (Number.isInteger(options?.regionIndex) && sections) regionEvidenceSections.set(options.regionIndex, sections);
   } });
 
+  const { findUncoveredPrintedRows } = require('../utils/reportImageEvidence');
   const { alignSupplementCandidate, describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, supplementMatches } = require('../utils/reportPageSupplement');
   const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
   const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
@@ -18513,8 +18868,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const templatePrompt = useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum)
     : useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '';
   let images;
+  let pdfBuf;
   if (isPdf) {
-    const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
+    pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
     // 单页补提必须保留整张表格的同一行关系。过去无差别左右切图，会把左侧项目名和右侧数值拆开，
     // 导致模型返回“有名称、无数值”的空壳项；先渲染整页，再对较大的页按上下分区。
     images = [await renderSinglePage(pdfBuf, pageNum, 200)];
@@ -18524,10 +18880,13 @@ async function runReportPageParseControlled(reportId, pageNum) {
     // 约 375 KB JPEG 起分区：线上 648K 字符整页在 180 秒内连续超时，
     // 同页 160 DPI 上下分区分别仅约 296K / 226K 字符。
     const densePageBase64Threshold = 500000;
-    if (images[0]?.length > densePageBase64Threshold) {
-      // The largest Shaoyifu/Zheyi lab tables may still exceed the model's
-      // output limit in two halves. Use four horizontal bands for these pages.
-      const useBands = images[0].length > 600000 && (useShaoyifuTemplate || useZheyiTemplate);
+    // The independent transcript already audits printed table rows. On annual
+    // pages the extra coverage pass repeatedly hit OUTPUT_LENGTH, and four
+    // bands doubled the minimum calls without improving that page. Keep the
+    // full table row in each top/bottom crop; reserve four bands for unusually
+    // large rendered pages that cannot fit two crops.
+    if (report.type === 'annual' || images[0]?.length > densePageBase64Threshold) {
+      const useBands = images[0].length > 1000000;
       images = useBands
         ? await renderSinglePageBands(pdfBuf, pageNum, 160)
         : await renderSinglePageRegions(pdfBuf, pageNum, 160);
@@ -18541,10 +18900,54 @@ async function runReportPageParseControlled(reportId, pageNum) {
     images = [buffers[pageNum - 1].toString('base64')];
   }
   if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
-  await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * 3);
-  let parsedItems = [];
-  let allRegionsImageOnly = true;
-  for (let regionIndex = 0; regionIndex < images.length; regionIndex++) {
+  // Structured annual text-layer lab and department rows can be read locally
+  // without consuming visual-model calls. Results remain unverified drafts.
+  let localScan = null;
+  if (isPdf && report.type === 'annual') {
+    try {
+      const { readPdfPageLayout, parseLayoutResultPairs } = require('../utils/reportOcrWords');
+      const layout = await readPdfPageLayout(pdfBuf, pageNum);
+      const { parseTextLabTable } = require('../utils/reportTextLabTable');
+      const textCandidate = parseTextLabTable(layout, pageNum);
+      const { parseTextUrineTable } = require('../utils/reportTextUrineTable');
+      const urineCandidate = parseTextUrineTable(layout, pageNum);
+      const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
+      const physicalCandidate = parseTextPhysicalExam(layout, pageNum);
+      const { parseTextUltrasoundTable } = require('../utils/reportTextUltrasoundTable');
+      let ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum);
+      if (ultrasoundCandidate.supported && !ultrasoundCandidate.items[0].diagnosis
+        && pageNum < Number(report.pdfPageCount || 0)) {
+        ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
+      }
+      if (textCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported) {
+        localScan = { source: 'pdf_text', items: [
+          ...(textCandidate.supported ? textCandidate.items : []),
+          ...(urineCandidate.supported ? urineCandidate.items : []),
+          ...(physicalCandidate.supported ? physicalCandidate.items : []),
+          ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
+        ] };
+      } else if (parseLayoutResultPairs(layout, pageNum).length < 3) {
+        const { extractScannedLabTable } = require('../utils/reportScanOcr');
+        const scanImage = await renderSinglePage(pdfBuf, pageNum, 300);
+        const candidate = await extractScannedLabTable(Buffer.from(scanImage, 'base64'), pageNum);
+        if (candidate.supported && candidate.items.length >= 6) {
+          localScan = { ...candidate, source: 'local_ocr' };
+        }
+      }
+      if (localScan) imagePageEvidence[pageNum] = { status: 'needs_review',
+        message: `本地${localScan.source === 'pdf_text' ? 'PDF文字层' : '扫描表格'}提取出${localScan.items.length}条待核对候选；请逐行核对项目、数值、单位及异常标记。` };
+    } catch (error) {
+      console.log(`[parse-page] P${pageNum} 本地表格OCR不可用，继续原补提流程：${error.code || error.name || 'ERROR'}`);
+    }
+  }
+  // For annual reports the independent transcript checks every printed table
+  // row. Repeating a full candidate list as a coverage audit is both costly
+  // and prone to output truncation on dense lab pages.
+  const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
+  if (!localScan) await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
+  let parsedItems = localScan?.items || [];
+  let allRegionsImageOnly = !localScan;
+  for (let regionIndex = 0; regionIndex < (localScan ? 0 : images.length); regionIndex++) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -18553,8 +18956,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
         : images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
-        : REPORT_PARSE_PROMPT;
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对本图可见内容，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
+        : reportParsePromptForCategory(report.documentCategory);
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对本图可见内容，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, regionIndex, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) { rethrowAiControl(error);
@@ -18566,10 +18969,38 @@ async function runReportPageParseControlled(reportId, pageNum) {
     if (parsed.imageEvidence?.status !== 'image_only') allRegionsImageOnly = false;
     if (shouldSkipParsedReportPage(parsed)) continue;
     let regionItems = parsed.items;
-    // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
+    if (report.type === 'annual' || report.documentCategory === 'lab_report'
+      || (!report.documentCategory && ['blood', 'bloodTest', 'tumor'].includes(report.type))) {
+      const uncovered = findUncoveredPrintedRows(regionEvidenceSections.get(regionIndex), [...oldPageAtStart, ...regionItems]).rows;
+      if (uncovered.length) {
+        // An optional focused pass asks only about rows independently read but
+        // missed by the first pass. Keep enough page quota for the remaining
+        // regions; never let this pass strand a half-finished page.
+        let capacity = true;
+        try {
+          await require('../utils/aiBudget').assertSupplementCallCapacity(
+            { reportId: String(reportId), page: pageNum }, undefined, 1 + 2 * (images.length - regionIndex - 1));
+        } catch (error) { rethrowAiControl(error); capacity = false; }
+        if (capacity) {
+          try {
+            const targets = uncovered.slice(0, 24).map(row => `${row.sectionTitle || '未命名栏目'}：${row.name}`).join('、');
+            const focusedRaw = await parseImage(images[regionIndex], `${reportParsePromptForCategory(report.documentCategory)}\n\n【遗漏检验行定向补提】独立原文转录发现以下项目有印刷结果，但本页草稿和首轮候选尚未覆盖：${targets}。只输出本图中这些项目的同一行名称、结果、单位和参考范围；逐行读取两侧表格。不得重复输出其他项目；看不清的行不要猜测。`, { sourcePage: pageNum, regionIndex, stage: 'focused_supplement', isUrl: false, model: 'qwen-vl-plus', maxTokens: 4000, timeoutMs: 180000 });
+            const focused = safeParseJSON(focusedRaw);
+            if (Array.isArray(focused?.items)) regionItems = mergeCoverageAuditItems(regionItems, focused.items);
+          } catch (error) { rethrowAiControl(error);
+            console.log(`[parse-page] ${reportId} P${pageNum} 遗漏行定向补提未完成: ${error.message}`);
+          }
+        }
+      }
+    }
+    // 两段页做覆盖复核；四段页已有重叠分区，保留独立原文校验并避免超出默认调用额度。
+    if (!runCoverageAudit) {
+      parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
+      continue;
+    }
     try {
       const existingNames = [existingItemText, ...regionItems.map(item => str(item.name)).filter(Boolean)].filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧；除遗漏项目，也输出空结果和文字检查后续编号段落的完整原文，保持原项目名和itemType。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请从上到下逐个检查栏目，每个栏目先读左栏再读右栏；除遗漏项目，也输出空结果和文字检查后续编号段落的完整原文，保持原项目名和itemType。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
       const audit = safeParseJSON(auditRaw);
       if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
     } catch (auditError) { rethrowAiControl(auditError);
@@ -18591,8 +19022,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // 模型即使违反差量指令返回整页，也只允许真正缺项进入；同身份且原来为空的未审核项
   // 可由有原文证据的候选补全，避免“第一次空、补提仍被去重挡住”。
   const alignedCandidates = parsedItems.map(item => alignSupplementCandidate(oldPageAtStart, item)).filter(Boolean);
-  const missingCandidates = filterMissingReportItems(oldPageAtStart, alignedCandidates, { targetOrgans });
-  const enrichmentCandidates = alignedCandidates.filter(item => supplementMatches(oldPageAtStart, item).length && hasReportItemEvidence(item));
+  const supplementOptions = { targetOrgans, preserveDistinctMeasuredSections: Boolean(localScan) };
+  const missingCandidates = filterMissingReportItems(oldPageAtStart, alignedCandidates, supplementOptions);
+  const enrichmentCandidates = alignedCandidates.filter(item => supplementMatches(oldPageAtStart, item, supplementOptions).length && hasReportItemEvidence(item));
   let newPage = resequenceSupplementSourceOrder(tagReportPageItems([...missingCandidates, ...enrichmentCandidates], pageNum));
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
@@ -18602,10 +19034,10 @@ async function runReportPageParseControlled(reportId, pageNum) {
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage);
-  const latestMissing = filterMissingReportItems(oldPage, newPage, { targetOrgans });
-  const latestEnrichment = newPage.filter(item => supplementMatches(oldPage, item).length && hasReportItemEvidence(item));
+  const latestMissing = filterMissingReportItems(oldPage, newPage, supplementOptions);
+  const latestEnrichment = newPage.filter(item => supplementMatches(oldPage, item, supplementOptions).length && hasReportItemEvidence(item));
   const deletedItems = (latest.deletedReportItems || []).filter(belongsToRequestedPage);
-  const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !supplementMatches(deletedItems, item).length));
+  const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !supplementMatches(deletedItems, item, supplementOptions).length), supplementOptions);
   const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched];
   const mergedPage = supplementMerge.items;
   const classifiedPage = (await classifyItemsAsync(mergedPage)).map(normalizeExplicitNormalStatus);
@@ -18624,15 +19056,32 @@ async function runReportPageParseControlled(reportId, pageNum) {
     afterItems: classifiedPage,
   }].slice(-3);
   const pageEvidence = imagePageEvidence[pageNum];
-  const resultMessage = acceptedSupplementItems.length
+  const candidateDiagnostics = { existing: 0, withoutResult: 0, other: 0 };
+  if (!acceptedSupplementItems.length) {
+    for (const candidate of parsedItems) {
+      if (!hasReportItemEvidence(candidate)) candidateDiagnostics.withoutResult++;
+      else if (supplementMatches(oldPage, candidate).length) candidateDiagnostics.existing++;
+      else candidateDiagnostics.other++;
+    }
+  }
+  const candidateDetail = !acceptedSupplementItems.length && parsedItems.length
+    ? `（与已有项目匹配且未接纳${candidateDiagnostics.existing}项、缺可核对结果${candidateDiagnostics.withoutResult}项、其他待核对${candidateDiagnostics.other}项）`
+    : '';
+  const resultMessage = localScan
+    ? `第${pageNum}页本地${localScan.source === 'pdf_text' ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
+    : acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
-    : `第${pageNum}页未找到有原文证据的遗漏项，已保留原${oldPage.length}项`;
+    : pageEvidence?.status === 'needs_review'
+      ? `第${pageNum}页有候选未通过原文校验，已保留原${oldPage.length}项，请对照原件人工核对`
+      : parsedItems.length
+        ? `第${pageNum}页识别到${parsedItems.length}项候选${candidateDetail}，未形成可接纳的新项目，已保留原${oldPage.length}项，请核对遗漏`
+        : `第${pageNum}页AI未读到可接纳的遗漏项目，已保留原${oldPage.length}项，请对照原件核对是否漏提`;
   const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision) }, {
     $set: {
       reportItems: combined,
       ...(pageEvidence ? { [`imagePageEvidence.${pageNum}`]: pageEvidence } : {}),
       aiStatus: 'pending',
-      pageParseStatus: { pageNum, status: acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
+      pageParseStatus: { pageNum, status: localScan ? 'needs_review' : acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
       pageParseHistory,
     },
     $inc: { reviewRevision: 1 },
@@ -18872,7 +19321,11 @@ router.get('/patients/:id/questionnaire-responses', staffAuth, async (req, res) 
     const data = responses
       .filter(r => r.questionnaire && (String(r.questionnaire._id) === DIETARY_SURVEY_QUESTIONNAIRE_ID || (r.questionnaire.questions || []).some(q => q.archiveField)))
       .map(r => {
-        const draft = buildArchiveDraft(r.proxyEntry ? {...archiveUser,lifestyle_data:require('../utils/effectiveLifestyle').effectiveLifestyle(archiveUser||{})} : archiveUser || {}, r.questionnaire, r);
+        // 膳食问卷要与已核实修订后的当前值比较，不能只看首次建档的基础值。
+        const comparisonUser = String(r.questionnaire._id) === DIETARY_SURVEY_QUESTIONNAIRE_ID || r.proxyEntry
+          ? { ...archiveUser, lifestyle_data: require('../utils/effectiveLifestyle').effectiveLifestyle(archiveUser || {}) }
+          : archiveUser || {};
+        const draft = buildArchiveDraft(comparisonUser, r.questionnaire, r);
         const draftByQuestionId = new Map((draft.items || []).map(item => [String(item.questionId), item]));
         const questions = r.questionnaireSnapshot?.questions?.length ? r.questionnaireSnapshot.questions : r.questionnaire.questions || [];
         const answers = questions.flatMap(question => {

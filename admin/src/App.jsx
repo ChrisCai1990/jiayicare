@@ -5,6 +5,11 @@ import { getToken, clearToken } from './api'
 import LoginPage from './pages/LoginPage'
 import HrApp from './pages/hr/HrApp'
 import PublicOpsDashboardPage from './pages/public/PublicOpsDashboardPage'
+import MarketPartnerPortalPage from './pages/public/MarketPartnerPortalPage'
+import MarketPartnerManagementPage from './pages/MarketPartnerManagementPage'
+import MarketPartnerDirectoryPage from './pages/MarketPartnerDirectoryPage'
+import BusinessAccountingPage from './pages/BusinessAccountingPage'
+import PartnerTeamsPage from './pages/PartnerTeamsPage'
 import ExpertInvitationPage from './pages/public/ExpertInvitationPage'
 import ExpertSupplementPage from './pages/public/ExpertSupplementPage'
 import ExpertRecruitmentPage from './pages/settings/ExpertRecruitmentPage'
@@ -43,6 +48,7 @@ import DepartmentPage     from './pages/settings/DepartmentPage'
 import RolePage           from './pages/settings/RolePage'
 import EmployeePage       from './pages/settings/EmployeePage'
 import MemberSettingsPage from './pages/settings/MemberSettingsPage'
+import PersonCommissionRulesPage from './pages/PersonCommissionRulesPage'
 import ScoringConfigPage  from './pages/settings/ScoringConfigPage'
 import DailyCareConfigPage from './pages/settings/DailyCareConfigPage'
 import ReviewExperiencePage from './pages/settings/ReviewExperiencePage'
@@ -144,6 +150,7 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/hr/*" element={<HrApp />} />
             <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
+            <Route path="/market-partner" element={<MarketPartnerPortalPage />} />
             <Route path="/expert-invitation/:token" element={<ExpertInvitationPage />} />
             <Route path="/expert-questionnaire/:token" element={<ExpertInvitationPage reusable />} />
             <Route path="/expert-supplement/:token" element={<ExpertSupplementPage />} />
@@ -166,8 +173,14 @@ export default function App() {
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />
               <Route path="products"   element={<ProductsPage />} />
+              <Route path="commission-rules" element={<PersonCommissionRulesPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="partners"   element={<PartnersPage />} />
+              <Route path="market-partners" element={<MarketPartnerDirectoryPage />} />
+              <Route path="market-partner-operations" element={<MarketPartnerManagementPage view="operations" />} />
+              <Route path="market-partner-finance" element={<MarketPartnerManagementPage view="finance" />} />
+              <Route path="business-accounting" element={<BusinessAccountingPage />} />
+              <Route path="partner-teams" element={<PartnerTeamsPage />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
               <Route path="tenants" element={<TenantsPage />} />
               <Route path="agreements" element={<PlatformAgreementPage />} />
@@ -209,8 +222,9 @@ export default function App() {
               <Route path="projects/lab-test-packages" element={<LabTestPackagePage />} />
               <Route path="projects/special-exams"    element={<SpecialExamPage />} />
               <Route path="projects/functional-medicine" element={<FunctionalMedicinePage />} />
-              <Route path="projects/service-items"    element={<ServiceItemPage />} />
-              <Route path="projects/other-charges"    element={<OtherChargePage />} />
+              <Route path="projects/charge-products" element={<ProductsPage />} />
+              <Route path="projects/service-items" element={<Navigate to="/projects/charge-products" replace />} />
+              <Route path="projects/other-charges" element={<Navigate to="/projects/charge-products" replace />} />
               <Route path="projects/templates"        element={<ProjectTemplatePage />} />
               <Route path="projects/followup-forms"   element={<FollowUpFormPage />} />
               <Route path="projects/followup-plans"   element={<FollowUpPlanPage />} />

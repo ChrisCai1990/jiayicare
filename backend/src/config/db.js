@@ -13,6 +13,10 @@ const connectDB = async () => {
     }
     const conn = await mongoose.connect(process.env.MONGODB_URI);
     await guard.verifyRestoredDatabase({ db: conn.connection.db, objectId: id => new mongoose.Types.ObjectId(id) });
+    if (process.env.MARKET_PARTNER_ENABLED === 'true') {
+      const missing = await require('../utils/marketPartnerIndexes').auditMarketPartnerIndexes();
+      if (missing.length) throw new Error(`市场合伙人索引未就绪：${missing.join(', ')}`);
+    }
     console.log(`✅ MongoDB 连接成功: ${conn.connection.host}`);
     if (!schemaWritesEnabled) {
       console.log('[startup] automatic schema writes disabled; indexes require reviewed migration');

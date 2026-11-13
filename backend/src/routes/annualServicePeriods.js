@@ -37,13 +37,22 @@ router.post('/annual-plans/:planId/service-period', staffAuth, async (req, res) 
     const data = await load(req, res); if (!data) return;
     if (req.body.sourceType === 'paid_order' && !mongoose.isValidObjectId(req.body.sourceOrderId)) return res.status(400).json({ success: false, message: '请选择有效的年度订单' });
     const period = await confirmAnnualServicePeriod({ ...data, staff: req.staff, input: req.body });
+    let settlementWarning = '';
+    if (process.env.MARKET_PARTNER_ENABLED === 'true' && period.sourceType === 'offline_contract') {
+      try {
+        const partnerOrder = await Order.findOne({ user: data.patient._id,
+          marketPartnerContractReference: period.contractReference, marketPartnerId: { $ne: null },
+          paymentStatus: 'paid' });
+        if (partnerOrder) await require('../utils/marketPartnerSettlement').syncOrder(partnerOrder);
+      } catch (error) { settlementWarning = `合伙人佣金待重算：${error.message}`; }
+    }
     const activation = await annualExecutionGate(data.plan);
     let warning = '';
     if (activation.allowed) {
       try { const result = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(data.plan); warning = (result.warnings || []).join('；'); }
       catch { warning = '服务期已确认，任务同步待系统重试'; }
     }
-    res.json({ success: true, data: { period: await Period.findOne({ annualPlanId: data.plan._id }).lean() || period, activation: publicActivation(activation), warning } });
+    res.json({ success: true, data: { period: await Period.findOne({ annualPlanId: data.plan._id }).lean() || period, activation: publicActivation(activation), warning: [warning, settlementWarning].filter(Boolean).join('；') } });
   } catch (error) { res.status(error.code === 11000 ? 409 : error.statusCode || 500).json({ success: false, message: error.code === 11000 ? '该方案或续约凭据已被使用，请刷新核对' : error.statusCode ? error.message : '确认服务期失败，请稍后重试' }); }
 });
 router.post('/annual-plans/:planId/service-period/retry', staffAuth, async (req, res) => {

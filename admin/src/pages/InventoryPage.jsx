@@ -8,6 +8,18 @@ import SearchableProductSelect from '../../../shared/SearchableProductSelect'
 const labels = { opening:'期初', receipt:'入库', issue:'领用', use:'发放/实际使用', return:'退回', loss:'报损', count:'盘点', manual_sale:'医护录入消费' }
 const money = value => `¥${Number(value || 0).toFixed(2)}`
 const date = value => value ? new Date(value).toLocaleString('zh-CN') : '-'
+function SalePricesEditor({ value, onChange, unit = '件' }) {
+  const update = (index, patch) => onChange(value.map((row, i) => i === index ? { ...row, ...patch } : row))
+  return <div style={{ margin:'12px 0' }}><label>物资销售规格（每份含几{unit}、每份总价）</label>
+    {value.map((row, index) => <div key={index} style={{ display:'flex', gap:6, marginTop:6 }}>
+      <input className="form-input" placeholder="如四盒组合" value={row.label} onChange={e => update(index, { label:e.target.value })} />
+      <input className="form-input" type="number" min="1" step="1" style={{ width:100 }} aria-label="每份件数" value={row.units} onChange={e => update(index, { units:e.target.value })} />
+      <input className="form-input" type="number" min="0" step="0.01" style={{ width:130 }} aria-label="每份总价" value={row.price} onChange={e => update(index, { price:e.target.value })} />
+      <button className="btn btn-secondary" type="button" onClick={() => onChange(value.filter((_, i) => i !== index))}>移除</button>
+    </div>)}
+    <button className="btn btn-secondary" type="button" style={{ marginTop:6 }} onClick={() => onChange([...value, { label:'', units:1, price:'' }])}>添加销售规格</button>
+  </div>
+}
 
 export default function InventoryPage() {
   const [data, setData] = useState({ products: [], recent: [] })
@@ -19,10 +31,11 @@ export default function InventoryPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [enable, setEnable] = useState({ name:'', linkedProductIds:[], kind:'consumable', unit:'件', minStock:0, defaultCost:0, location:'', openingQuantity:'', openingNote:'' })
-  const [entry, setEntry] = useState({ productId:'', serviceProductId:'', orderId:'', requestId:crypto.randomUUID(), type:'receipt', units:1, batchNo:'', serialNo:'', expiresAt:'', location:'', userId:'', assigneeId:'', unitCost:'', unitPrice:'', note:'' })
+  const [enable, setEnable] = useState({ name:'', linkedProductIds:[], salePrices:[], kind:'consumable', unit:'件', minStock:0, defaultCost:0, location:'', openingQuantity:'', openingNote:'' })
+  const [entry, setEntry] = useState({ productId:'', serviceProductId:'', salePriceLabel:'', orderId:'', requestId:crypto.randomUUID(), type:'receipt', units:1, batchNo:'', serialNo:'', expiresAt:'', location:'', userId:'', assigneeId:'', unitCost:'', unitPrice:'', note:'' })
   const [count, setCount] = useState({ productId:'', counted:'', note:'' })
-  const [settings, setSettings] = useState({ productId:'', name:'', linkedProductIds:[], minStock:0, defaultCost:0, location:'' })
+  const [settings, setSettings] = useState({ productId:'', name:'', unit:'件', linkedProductIds:[], salePrices:[], minStock:0, defaultCost:0, location:'' })
+  const [priceEditor, setPriceEditor] = useState({ productId:'', salePrices:[] })
   const load = async () => {
     const [inventory, products, usage, staff] = await Promise.all([adminAPI.inventory(), adminAPI.products(), adminAPI.inventoryConsumption(), adminAPI.inventoryPeople()])
     setData(inventory.data)
@@ -33,8 +46,8 @@ export default function InventoryPage() {
   useEffect(() => { load().catch(e => setError(e.message)) }, [])
   const submit = async (operation) => {
     setBusy(true); setError(''); setMessage('')
-    try { await operation(); await load(); setMessage('已保存') }
-    catch (e) { setError(e.message) }
+    try { await operation(); await load(); setMessage('已保存'); return true }
+    catch (e) { setError(e.message); return false }
     finally { setBusy(false) }
   }
   const selected = data.products.find(p => p._id === entry.productId)
@@ -45,6 +58,20 @@ export default function InventoryPage() {
       document.getElementById('inventory-count-form')?.scrollIntoView({ behavior:'smooth', block:'center' })
       document.getElementById('inventory-counted')?.focus({ preventScroll:true })
     })
+  }
+  const startSettings = productId => {
+    const p = data.products.find(row => row._id === productId)
+    if (!p) return
+    setSettings({ productId, name:p.name || '', unit:p.inventoryTracking?.unit || '件', linkedProductIds:p.linkedProductIds || [], salePrices:p.salePrices || [], minStock:p.inventoryTracking?.minStock ?? 0, defaultCost:p.inventoryTracking?.defaultCost ?? 0, location:p.inventoryTracking?.location ?? '' })
+    requestAnimationFrame(() => {
+      document.getElementById('inventory-settings-form')?.scrollIntoView({ behavior:'smooth', block:'center' })
+      document.getElementById('inventory-sale-prices')?.focus({ preventScroll:true })
+    })
+  }
+  const saveSalePrices = async e => {
+    e.preventDefault()
+    if (await submit(() => adminAPI.updateInventorySettings(priceEditor.productId, { salePrices:priceEditor.salePrices })))
+      setPriceEditor({ productId:'', salePrices:[] })
   }
   const actualValue = data.products.filter(p => !p.needsOpeningCount).reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.inventoryTracking?.defaultCost || 0), 0)
   const unverifiedCount = data.products.filter(p => p.needsOpeningCount).length
@@ -58,15 +85,18 @@ export default function InventoryPage() {
     <section className="card" style={{ padding:20, marginBottom:18 }}>
       <h2>库存概览</h2>
       <p>实物物资 {data.products.length} 项 · 已核实物资按参考成本估算库存 {money(actualValue)} · 待实盘核实 {unverifiedCount} 项 · 近 500 条记录中的商城订单 {money(mallSales)} / 医护录入消费 {money(manualSales)}</p>
-      <div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>物资</th><th>类别</th><th>可用</th><th>预警</th><th>关联服务</th><th>参考成本</th><th>存放地点</th><th>操作</th></tr></thead><tbody>
-        {data.products.map(p => <tr key={p._id}><td>{p.name}</td><td>{p.inventoryTracking?.kind === 'reusable' ? '可重复使用设备' : '耗材/商品'}</td><td>{p.needsOpeningCount ? `待核实（旧账面 ${p.stock}）` : `${p.stock} ${p.inventoryTracking?.unit || ''}`}</td><td>{p.needsOpeningCount ? '待实盘核实' : Number(p.stock) <= Number(p.inventoryTracking?.minStock || 0) ? '低库存' : '-'}</td><td>{(p.linkedProducts || []).map(x => x.name).join('、') || '未关联'}</td><td>{money(p.inventoryTracking?.defaultCost)}</td><td>{p.inventoryTracking?.location || '-'}</td><td><button className="btn btn-secondary" type="button" onClick={() => startCount(p._id)}>校正库存</button></td></tr>)}
+      <div style={{ overflowX:'auto' }}><table className="table"><thead><tr><th>物资</th><th>类别</th><th>可用</th><th>预警</th><th>销售定价</th><th>关联服务</th><th>参考成本</th><th>存放地点</th><th>操作</th></tr></thead><tbody>
+        {data.products.map(p => <React.Fragment key={p._id}><tr><td>{p.name}</td><td>{p.inventoryTracking?.kind === 'reusable' ? '可重复使用设备' : '耗材/商品'}</td><td>{p.needsOpeningCount ? `待核实（旧账面 ${p.stock}）` : `${p.stock} ${p.inventoryTracking?.unit || ''}`}</td><td>{p.needsOpeningCount ? '待实盘核实' : Number(p.stock) <= Number(p.inventoryTracking?.minStock || 0) ? '低库存' : '-'}</td><td>{p.salePrices?.length ? p.salePrices.map(row => <div key={row.label}>{row.label} · {row.units}{p.inventoryTracking?.unit || '件'} / {money(row.price)}</div>) : <span style={{ color:'#b45309' }}>未设置</span>}</td><td>{(p.linkedProducts || []).map(x => x.name).join('、') || '未关联'}</td><td>{money(p.inventoryTracking?.defaultCost)}</td><td>{p.inventoryTracking?.location || '-'}</td><td><div style={{ display:'flex', gap:6, flexWrap:'wrap' }}><button className="btn btn-primary" type="button" onClick={() => setPriceEditor({ productId:p._id, salePrices:(p.salePrices || []).map(row => ({ label:row.label, units:row.units, price:row.price })) })}>编辑定价</button><button className="btn btn-secondary" type="button" onClick={() => startCount(p._id)}>校正库存</button></div></td></tr>
+          {priceEditor.productId === p._id && <tr><td colSpan={9}><form onSubmit={saveSalePrices} style={{ maxWidth:650, padding:'12px 0' }}><strong>{p.name} · 销售定价</strong><SalePricesEditor value={priceEditor.salePrices} onChange={salePrices => setPriceEditor(current => ({ ...current, salePrices }))} unit={p.inventoryTracking?.unit || '件'} /><div style={{ display:'flex', gap:8 }}><button className="btn btn-primary" disabled={busy}>保存定价</button><button className="btn btn-secondary" type="button" onClick={() => setPriceEditor({ productId:'', salePrices:[] })}>取消</button></div></form></td></tr>}
+        </React.Fragment>)}
       </tbody></table></div>
     </section>
     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:18 }}>
-      <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); if (enable.name.trim()) submit(async () => { await adminAPI.createInventoryMaterial(enable); setEnable(current => ({ ...current, name:'', linkedProductIds:[], openingQuantity:'', openingNote:'' })) }) }}>
+      <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); if (enable.name.trim()) submit(async () => { await adminAPI.createInventoryMaterial(enable); setEnable(current => ({ ...current, name:'', linkedProductIds:[], salePrices:[], openingQuantity:'', openingNote:'' })) }) }}>
         <h2>新建实物物资</h2><p>按实际物资名称、规格建一份库存，可关联多个商城产品或服务。</p>
         <label>物资名称 / 规格<input className="form-input" required placeholder="如动态血糖传感器 · 型号/规格" value={enable.name} onChange={e => setEnable({ ...enable, name:e.target.value })} /></label>
         <ProductLinksEditor products={catalog} value={enable.linkedProductIds} onChange={linkedProductIds => setEnable({ ...enable, linkedProductIds })} />
+        <SalePricesEditor value={enable.salePrices} onChange={salePrices => setEnable({ ...enable, salePrices })} unit={enable.unit} />
         <label>实盘期初数量<input className="form-input" type="number" min="0" step="1" required placeholder="填写实际清点数量" value={enable.openingQuantity} onChange={e => setEnable({ ...enable, openingQuantity:e.target.value })} /></label>
         <label>清点依据<input className="form-input" required placeholder="如清点日期、地点及核对人" value={enable.openingNote} onChange={e => setEnable({ ...enable, openingNote:e.target.value })} /></label>
         <select className="form-input" value={enable.kind} onChange={e => setEnable({ ...enable, kind:e.target.value })}><option value="consumable">耗材/商品</option><option value="reusable">可重复使用设备</option></select>
@@ -76,11 +106,13 @@ export default function InventoryPage() {
         <input className="form-input" placeholder="存放地点" value={enable.location} onChange={e => setEnable({ ...enable, location:e.target.value })} />
         <button className="btn btn-primary" disabled={busy || !enable.name.trim() || enable.openingQuantity === '' || !enable.openingNote.trim()}>建立物资台账</button>
       </form>
-      <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(() => adminAPI.updateInventorySettings(settings.productId, settings)) }}>
-        <h2>物资设置与服务关联</h2><p>物资名称、成本、预警只维护一次；可关联多个服务，各服务售价在商城产品中分别维护。</p>
-        <SearchableProductSelect products={data.products} value={settings.productId} onChange={productId => { const p = data.products.find(x => x._id === productId); setSettings({ productId, name:p?.name || '', linkedProductIds:p?.linkedProductIds || [], minStock:p?.inventoryTracking?.minStock ?? 0, defaultCost:p?.inventoryTracking?.defaultCost ?? 0, location:p?.inventoryTracking?.location ?? '' }) }} />
+      <form id="inventory-settings-form" className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(() => adminAPI.updateInventorySettings(settings.productId, settings)) }}>
+        <h2>物资设置与销售定价</h2><p>在这里维护物资的销售规格和价格；参考成本仅用于估算库存，不是客户售价。商城服务价格仍在商城产品中维护。</p>
+        <SearchableProductSelect products={data.products} value={settings.productId} onChange={startSettings} />
         <label>物资名称 / 规格<input className="form-input" required value={settings.name} onChange={e => setSettings({ ...settings, name:e.target.value })} /></label>
+        <label>库存单位<input className="form-input" required value={settings.unit} onChange={e => setSettings({ ...settings, unit:e.target.value })} /></label>
         <ProductLinksEditor products={catalog} value={settings.linkedProductIds} onChange={linkedProductIds => setSettings({ ...settings, linkedProductIds })} />
+        <div id="inventory-sale-prices" tabIndex={-1}><SalePricesEditor value={settings.salePrices} onChange={salePrices => setSettings({ ...settings, salePrices })} unit={settings.unit} /></div>
         <label>最低库存<input className="form-input" type="number" min="0" value={settings.minStock} onChange={e => setSettings({ ...settings, minStock:e.target.value })} /></label>
         <label>参考成本价<input className="form-input" type="number" min="0" step="0.01" value={settings.defaultCost} onChange={e => setSettings({ ...settings, defaultCost:e.target.value })} /></label>
         <input className="form-input" placeholder="存放地点" value={settings.location} onChange={e => setSettings({ ...settings, location:e.target.value })} />
@@ -88,11 +120,12 @@ export default function InventoryPage() {
       </form>
       <form className="card" style={{ padding:20 }} onSubmit={e => { e.preventDefault(); submit(async () => { await adminAPI.inventoryEntry(entry); setEntry(current => ({ ...current, requestId:crypto.randomUUID() })) }) }}>
         <h2>登记出入库</h2>
-        <SearchableProductSelect products={data.products} value={entry.productId} onChange={productId => setEntry({ ...entry, productId, batchNo:'', expiresAt:'', sourceReceiptId:'', serviceProductId:'', orderId:'', unitPrice:'' })} optionLabel={p => `${p.name} · 现有 ${p.stock}`} />
-        <select className="form-input" value={entry.type} onChange={e => setEntry({ ...entry, type:e.target.value, batchNo:'', expiresAt:'', sourceReceiptId:'' })}>{['receipt','issue','use','return','loss','manual_sale'].map(type => <option key={type} value={type}>{labels[type]}</option>)}</select>
-        {['issue','use','manual_sale'].includes(entry.type) && <><label>用于服务{entry.type === 'manual_sale' ? '（必选）' : '（可选）'}</label><SearchableProductSelect products={selected?.linkedProducts || []} value={entry.serviceProductId} placeholder="选择关联服务" onChange={serviceProductId => setEntry({ ...entry, serviceProductId, orderId:'', unitPrice:selected?.linkedProducts.find(p => p._id === serviceProductId)?.originalPrice ?? '' })} /></>}
+        <SearchableProductSelect products={data.products} value={entry.productId} onChange={productId => setEntry({ ...entry, productId, batchNo:'', expiresAt:'', sourceReceiptId:'', serviceProductId:'', salePriceLabel:'', orderId:'', unitPrice:'' })} optionLabel={p => `${p.name} · 现有 ${p.stock}`} />
+        <select className="form-input" value={entry.type} onChange={e => setEntry({ ...entry, type:e.target.value, units:e.target.value === 'manual_sale' ? 1 : entry.units, salePriceLabel:'', serviceProductId:'', unitPrice:'', batchNo:'', expiresAt:'', sourceReceiptId:'' })}>{['receipt','issue','use','return','loss','manual_sale'].map(type => <option key={type} value={type}>{labels[type]}</option>)}</select>
+        {['issue','use'].includes(entry.type) || (entry.type === 'manual_sale' && !selected?.salePrices?.length) ? <><label>用于服务{entry.type === 'manual_sale' ? '（必选）' : '（可选）'}</label><SearchableProductSelect products={selected?.linkedProducts || []} value={entry.serviceProductId} placeholder="选择关联服务" onChange={serviceProductId => setEntry({ ...entry, serviceProductId, orderId:'', unitPrice:selected?.linkedProducts.find(p => p._id === serviceProductId)?.originalPrice ?? '' })} /></> : null}
+        {entry.type === 'manual_sale' && !!selected?.salePrices?.length && <label>物资销售规格（必选）<select className="form-input" required value={entry.salePriceLabel} onChange={e => { const option = selected.salePrices.find(row => row.label === e.target.value); setEntry({ ...entry, salePriceLabel:e.target.value, serviceProductId:'', units:option?.units || 1, unitPrice:'' }) }}><option value="">选择规格</option>{selected.salePrices.map(row => <option key={row.label} value={row.label}>{row.label} · {row.units}{selected.inventoryTracking?.unit || '件'} · {money(row.price)}/份</option>)}</select></label>}
         {entry.type === 'manual_sale' && <p>此处只登记服务消费金额；实物发放请登记“实际使用”或“领用”。</p>}
-        <label>数量<input className="form-input" type="number" min="1" required value={entry.units} onChange={e => setEntry({ ...entry, units:e.target.value })} /></label>
+        <label>{entry.type === 'manual_sale' ? `销售数量（${selected?.inventoryTracking?.unit || '件'}）` : '数量'}<input className="form-input" type="number" min="1" step={entry.type === 'manual_sale' ? selected?.salePrices?.find(row => row.label === entry.salePriceLabel)?.units || 1 : 1} required value={entry.units} onChange={e => setEntry({ ...entry, units:e.target.value })} /></label>
         {['issue','use','return','loss'].includes(entry.type) && <InventoryBatchPicker batches={selected?.receiptBatches || []} value={entry} onChange={patch => setEntry(f => ({ ...f, ...patch }))} />}
         {entry.type === 'receipt' && <input className="form-input" placeholder="批次号" value={entry.batchNo} onChange={e => setEntry({ ...entry, batchNo:e.target.value })} />}
         {selected?.inventoryTracking?.kind === 'reusable' && <input className="form-input" placeholder="设备序列号" value={entry.serialNo} onChange={e => setEntry({ ...entry, serialNo:e.target.value })} />}
@@ -101,7 +134,7 @@ export default function InventoryPage() {
         {['use','manual_sale'].includes(entry.type) && <><div style={{ display:'flex', gap:6 }}><input className="form-input" placeholder="客户姓名或手机号" value={search} onChange={e => setSearch(e.target.value)} /><button className="btn btn-secondary" type="button" onClick={() => adminAPI.inventoryUsers(search).then(r => setUsers(r.data)).catch(e => setError(e.message))}>查找</button></div><select className="form-input" required value={entry.userId} onChange={e => setEntry({ ...entry, userId:e.target.value })}><option value="">选择客户</option>{users.map(u => <option key={u._id} value={u._id}>{u.name} · {u.phone || u.patientNo || ''}</option>)}</select></>}
         {entry.type === 'use' && entry.userId && <label>消费来源订单（可选）<select className="form-input" value={entry.orderId} onChange={e => setEntry({ ...entry, orderId:e.target.value })}><option value="">未关联订单</option>{consumption.orders.filter(o => o.user?._id === entry.userId && selected?.linkedProductIds?.includes(o.serviceId) && (!entry.serviceProductId || o.serviceId === entry.serviceProductId)).map(o => <option key={o._id} value={o._id}>{o.orderNo} · {o.serviceName}</option>)}</select></label>}
         {['issue','return'].includes(entry.type) && <select className="form-input" required value={entry.assigneeId} onChange={e => setEntry({ ...entry, assigneeId:e.target.value })}><option value="">选择领用/归还人员</option>{people.map(person => <option key={person._id} value={person._id}>{person.name}</option>)}</select>}
-        {entry.type === 'manual_sale' && <label>本次成交单价<input className="form-input" type="number" min="0" step="0.01" required value={entry.unitPrice} onChange={e => setEntry({ ...entry, unitPrice:e.target.value })} /></label>}
+        {entry.type === 'manual_sale' && (selected?.salePrices?.length ? <p>本次销售金额：{money((selected.salePrices.find(row => row.label === entry.salePriceLabel)?.price || 0) * (Number(entry.units) / Number(selected.salePrices.find(row => row.label === entry.salePriceLabel)?.units || 1)))}</p> : <label>本次成交单价<input className="form-input" type="number" min="0" step="0.01" required value={entry.unitPrice} onChange={e => setEntry({ ...entry, unitPrice:e.target.value })} /></label>)}
         <input className="form-input" placeholder="备注/凭据" value={entry.note} onChange={e => setEntry({ ...entry, note:e.target.value })} />
         <button className="btn btn-primary" disabled={busy || !entry.productId}>保存流水</button>
       </form>

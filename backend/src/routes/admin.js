@@ -774,9 +774,13 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   }
   const receipt = require('../utils/manualOrderPayment').validateManualOrderPayment(order, paymentMethod, paidAmount);
   if (receipt.error) return res.status(400).json({ success: false, message: receipt.error });
+  if (order.marketPartnerContractReference && (paymentMethod !== 'onsite'
+    || Math.round(receipt.amount * 100) !== Math.round(Number(order.servicePrice) * 100)))
+    return res.status(409).json({ success: false, message: '合伙人线下合同须按核定合同金额登记现金收款' });
 
   order.paymentMethod = paymentMethod;
   order.paymentStatus = 'paid';
+  if (order.marketPartnerContractReference) order.tradeStatus = 'paid';
   order.paidAmount = receipt.amount;
   order.paidAt = new Date();
   order.paidBy = req.admin._id;
@@ -910,6 +914,7 @@ router.patch('/orders/:id/fulfillment', adminAuth, async (req, res) => {
   order.fulfillmentStatus = fulfillment.status;
   if (['booked', 'shipped', 'in_service'].includes(fulfillment.status)) order.tradeStatus = 'fulfilling';
   if (fulfillment.status === 'completed') order.tradeStatus = 'completed';
+  if (fulfillment.status === 'completed' && !order.completedAt) order.completedAt = fulfillment.completedAt || new Date();
   await order.save();
   res.json({ success: true, data: { order, fulfillment }, message: fulfillment.wechatDeliveryStatus === 'reported' ? '履约已更新并上报微信' : '履约已更新' });
 });
@@ -1058,10 +1063,16 @@ router.patch('/commissions/:id/attribution', adminAuth, async (req, res) => {
     const product = /^[a-f0-9]{24}$/i.test(order.serviceId) ? await Product.findById(order.serviceId) : null;
     rule = product?.performanceRule || (await Service.findOne({ serviceId: order.serviceId }))?.performanceRule;
   }
-  const amounts = staffId ? require('../utils/commissionAttribution').calculateAttribution({ ...commission.toObject(), orderAmount: commission.originalOrderAmount ?? commission.orderAmount }, staff, rule) : { commissionAmount: commission.commissionAmount, commissionRate: commission.commissionRate };
+  const personRule = staffId && commission.role === 'referrer'
+    ? await require('../utils/staffCommissionRule').forOrder(order, staffId) : null;
+  const amounts = staffId ? require('../utils/commissionAttribution').calculateAttribution(
+    { ...commission.toObject(), orderAmount: commission.originalOrderAmount ?? commission.orderAmount },
+    staff, rule, personRule) : { commissionAmount: commission.commissionAmount, commissionRate: commission.commissionRate };
   const cancelled = !staffId || amounts.commissionAmount <= 0;
   const updated = await Commission.findOneAndUpdate({ _id: commission._id, status: commission.status, updatedAt: commission.updatedAt }, {
-    $set: { ...(staffId ? { staffId } : {}), ...amounts, originalOrderAmount: commission.originalOrderAmount ?? commission.orderAmount, originalCommissionAmount: amounts.commissionAmount, status: cancelled ? 'cancelled' : 'pending',
+    $set: { ...(staffId ? { staffId } : {}), ...amounts,
+      staffCommissionRuleId: personRule?.sourceRuleId || null, staffCommissionRuleVersion: personRule?.sourceRuleVersion || null,
+      originalOrderAmount: commission.originalOrderAmount ?? commission.orderAmount, originalCommissionAmount: amounts.commissionAmount, status: cancelled ? 'cancelled' : 'pending',
       cancellationReason: cancelled ? (!staffId ? '人工确认无转介绍人：' : '新归属人员无佣金：') + reason.trim() : '', cancelledAt: cancelled ? new Date() : null },
     $push: { attributionHistory: { previousStaffId: commission.staffId, staffId: staffId || null, previousAmount: commission.commissionAmount, amount: cancelled ? 0 : amounts.commissionAmount, changedBy: req.admin._id, changedAt: new Date(), reason: reason.trim() } },
   }, { new: true });
@@ -2095,25 +2106,135 @@ router.post('/products/ai-draft', adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/products
+async function validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, originalPrice, staffPerformanceOverrides }, tenantId, productId = null) {
+  if (businessAllocations !== undefined) {
+    if (!Array.isArray(businessAllocations)) return '整单业务归属格式错误';
+    if (businessAllocations.length && (servicePrices || []).length) return '有收费项目时请逐项设置业务归属';
+    if (businessAllocations.length) {
+      const error = await validateProductSettlementConfig({ servicePrices: [{ label: '整单', price: originalPrice, businessAllocations }] }, tenantId, productId);
+      if (error) return error.replace('收费项目「整单」', '整单');
+    }
+  }
+  if (servicePrices !== undefined) {
+    if (!Array.isArray(servicePrices)) return '收费项目格式错误';
+    const labels = servicePrices.map(row => String(row.label || '').trim());
+    if (new Set(labels).size !== labels.length) return '收费项目名称不能重复';
+    const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
+    for (const price of servicePrices) {
+      const performance = price.performanceConfig;
+      if (performance != null) {
+        const rule = performance.performanceRule || {};
+        const roles = performance.servicePerformerRoles || [];
+        const overrides = performance.staffPerformanceOverrides || [];
+        if (performance.enabled !== true || !['none', 'percentage', 'fixedAmount'].includes(rule.ruleType)
+          || !Array.isArray(roles) || !Array.isArray(overrides)
+          || ['referrerRate', 'fulfillerRate'].some(key => !Number.isFinite(Number(rule[key] ?? 0)) || Number(rule[key] ?? 0) < 0 || Number(rule[key] ?? 0) > 100)
+          || ['referrerAmount', 'fulfillerAmount'].some(key => !Number.isFinite(Number(rule[key] ?? 0)) || Number(rule[key] ?? 0) < 0)
+          || roles.some(row => !require('../utils/tenantScope').SERVICE_PERFORMER_ROLES.includes(row.role)
+            || !['none', 'percentage', 'fixedAmount'].includes(row.ruleType || 'percentage')
+            || !Number.isFinite(Number(row.rate || 0)) || Number(row.rate || 0) < 0 || Number(row.rate || 0) > 100
+            || !Number.isFinite(Number(row.amount || 0)) || Number(row.amount || 0) < 0))
+          return `收费项目「${price.label}」的绩效规则无效`;
+        const overrideError = await validateProductSettlementConfig({ staffPerformanceOverrides: overrides }, tenantId, productId);
+        if (overrideError) return `收费项目「${price.label}」：${overrideError}`;
+      }
+      const rows = price.businessAllocations || [];
+      if (!Array.isArray(rows)) return '收费项目业务归属格式错误';
+      if (!rows.length) continue;
+      const exactAmounts = rows.some(row => row.allocationAmountCents != null);
+      const amountCents = Math.round(Number(price.price) * 100);
+      if (!String(price.label || '').trim() || new Set(rows.map(row => row.key)).size !== rows.length
+        || rows.some(row => !String(row.key || '').trim() || !String(row.name || '').trim()
+          || !['service', 'product', 'enterprise'].includes(row.businessType || 'service')
+          || (row.businessType === 'enterprise' ? row.teamRole !== 'enterpriseResource' : !roles.includes(row.teamRole))
+          || !Number.isFinite(Number(row.revenueSharePercent)) || Number(row.revenueSharePercent) <= 0
+          || (row.businessType === 'product' && !mongoose.isValidObjectId(row.childProductId)))
+        || (exactAmounts
+          ? !Number.isSafeInteger(amountCents) || amountCents <= 0
+            || rows.some(row => !Number.isSafeInteger(Number(row.allocationAmountCents)) || Number(row.allocationAmountCents) <= 0)
+            || rows.reduce((sum, row) => sum + Number(row.allocationAmountCents), 0) !== amountCents
+          : Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent), 0) - 100) > 0.001))
+        return `收费项目「${price.label}」的业务归属须完整填写且合计100%`;
+      const ids = [...new Set(rows.filter(row => row.childProductId).map(row => String(row.childProductId)))];
+      if (ids.some(id => !mongoose.isValidObjectId(id) || id === String(productId))) return '关联产品不能是当前产品';
+      if (ids.length && await Product.countDocuments({ _id: { $in: ids }, tenantId }) !== ids.length)
+        return '关联产品须来自本机构产品库';
+    }
+  }
+  if (serviceItems !== undefined) {
+    if (!Array.isArray(serviceItems)) return '子产品配置格式错误';
+    const hasSeparateAllocations = (businessAllocations || []).length > 0
+      || ((servicePrices || []).length > 0 && servicePrices.every(price => (price.businessAllocations || []).length > 0));
+    const linked = serviceItems.filter(item => item.name || item.childProductId || Number(item.revenueSharePercent) > 0);
+    if (linked.length) {
+      if (linked.length !== serviceItems.length || linked.some(item => !String(item.name || '').trim())) return '团队归属项目须填写名称';
+      if (!hasSeparateAllocations && Math.abs(linked.reduce((sum, item) => sum + Number(item.revenueSharePercent), 0) - 100) > 0.001)
+        return '团队归属比例合计必须为100%';
+      if (new Set(linked.map(item => item.key)).size !== linked.length) return '子项目标识不能重复';
+      const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
+      if (linked.some(item => !['service', 'product'].includes(item.businessType || 'service')
+        || !roles.includes(item.teamRole) || !Number.isFinite(Number(item.revenueSharePercent))
+        || Number(item.revenueSharePercent) < 0 || (!hasSeparateAllocations && Number(item.revenueSharePercent) <= 0)
+        || (item.businessType === 'product' && !item.childProductId)))
+        return '请为每个子项目选择团队并填写大于0的营收比例';
+      const ids = linked.filter(item => item.childProductId).map(item => String(item.childProductId));
+      if (ids.some(id => !mongoose.Types.ObjectId.isValid(id) || id === String(productId))) return '子产品不能是当前组合产品';
+      const children = await Product.find({ _id: { $in: ids }, tenantId }).select('_id serviceItems').lean();
+      if (new Set(children.map(row => String(row._id))).size !== new Set(ids).size) return '子产品必须来自本机构产品库';
+      if (children.some(row => (row.serviceItems || []).some(item => item.childProductId))) return '暂不支持嵌套拆解的子产品';
+    }
+  }
+  if (staffPerformanceOverrides !== undefined) {
+    if (!Array.isArray(staffPerformanceOverrides)) return '个人佣金规则格式错误';
+    const ids = staffPerformanceOverrides.map(row => String(row.staffId || ''));
+    if (ids.some(id => !mongoose.Types.ObjectId.isValid(id)) || new Set(ids).size !== ids.length) return '员工规则不能重复或缺少人员';
+    if (staffPerformanceOverrides.some(row => !['percentage', 'fixedAmount'].includes(row.ruleType)
+      || ['referrerRate', 'fulfillerRate'].some(key => !Number.isFinite(Number(row[key] ?? 0)) || Number(row[key] ?? 0) < 0 || Number(row[key] ?? 0) > 100)
+      || ['referrerAmount', 'fulfillerAmount'].some(key => !Number.isFinite(Number(row[key] ?? 0)) || Number(row[key] ?? 0) < 0)))
+      return '个人佣金比例须为0–100%，固定金额不得为负';
+    if (ids.length) {
+      const staff = await Admin.find({ _id: { $in: ids }, tenantId }).select('_id').lean();
+      if (staff.length !== ids.length) return '员工必须属于本机构';
+    }
+  }
+  return null;
+}
+
+function productBusinessAttributionRequired({ status, servicePrices, businessAllocations, originalPrice }) {
+  if (status !== 'on') return null;
+  const prices = servicePrices || [];
+  if (prices.length) {
+    const missing = prices.find(price => Number(price.price) > 0 && !(price.businessAllocations || []).length);
+    return missing ? `请先为收费项目「${missing.label}」完成业务归属拆解，再上架产品` : null;
+  }
+  return Number(originalPrice) > 0 && !(businessAllocations || []).length
+    ? '请先完成整单业务归属拆解，再上架产品' : null;
+}
+
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
+  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, originalPrice, staffPerformanceOverrides }, req.admin.tenantId);
+  if (settlementError) return res.status(400).json({ success: false, message: settlementError });
+  const attributionError = productBusinessAttributionRequired({ status: status || 'off', servicePrices, businessAllocations, originalPrice });
+  if (attributionError) return res.status(400).json({ success: false, message: attributionError });
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
   if (!name || !category) return res.status(400).json({ success: false, message: '名称、分类为必填项' });
   const priceError = productPublicationError({ name, category, originalPrice, servicePrices, memberPrices, skus, specialtyTerms, status: status || 'off' });
   if (priceError) return res.status(400).json({ success: false, message: priceError });
-  if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
+  if (paymentChannel && !['wechat_pay', 'offline', 'both'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
   const product = await Product.create({
     name, subtitle: subtitle || '', images: images || [],
-    originalPrice: originalPrice === '' ? null : originalPrice, servicePrices: servicePrices || [], memberPrices: memberPrices || {},
+    originalPrice: originalPrice === '' ? null : originalPrice, servicePrices: servicePrices || [], businessAllocations: businessAllocations || [], memberPrices: memberPrices || {},
     category, sortOrder: sortOrder ?? 999, features: features || [],
     description: description || '', stock: stock ?? 0, stockLimited: stockLimited === true || Number(stock) > 0, status: status || 'off',
     performanceRule: performanceRule || undefined,
     servicePerformerRoles: servicePerformerRoles || [],
     serviceItems: serviceItems || [],
+    staffPerformanceOverrides: staffPerformanceOverrides || [],
     fulfillmentType: fulfillmentType || 'offline_service', paymentChannel: paymentChannel || 'wechat_pay',
     bookingRequired: bookingRequired !== false, deliveryRequired: !!deliveryRequired,
     serviceLocation: serviceLocation || '', validityDays: validityDays || 365,
@@ -2126,15 +2247,34 @@ router.post('/products', adminAuth, async (req, res) => {
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
-  if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
+  if (paymentChannel && !['wechat_pay', 'offline', 'both'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
   const existingProduct = await Product.findById(req.params.id);
   if (!existingProduct) return res.status(404).json({ success: false, message: '产品不存在' });
+  const mergedServicePrices = servicePrices?.map(price => ({ ...price,
+    performanceConfig: price.performanceConfig === undefined
+      ? existingProduct.servicePrices.find(row => row.label === price.label)?.performanceConfig || null
+      : price.performanceConfig,
+  }));
+  const mergedServiceItems = serviceItems?.map(item => ({ ...item,
+    performers: item.performers === undefined
+      ? existingProduct.serviceItems.find(row => row.key === item.key)?.performers || []
+      : item.performers,
+  }));
+  const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations,
+    originalPrice: originalPrice === undefined ? existingProduct.originalPrice : originalPrice,
+    staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
+  if (settlementError) return res.status(400).json({ success: false, message: settlementError });
+  const attributionError = productBusinessAttributionRequired({ status: status ?? existingProduct.status,
+    servicePrices: servicePrices ?? existingProduct.servicePrices,
+    businessAllocations: businessAllocations ?? existingProduct.businessAllocations,
+    originalPrice: originalPrice ?? existingProduct.originalPrice });
+  if (attributionError) return res.status(400).json({ success: false, message: attributionError });
   const sharedInventory = existingProduct.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: existingProduct._id });
   if (sharedInventory && stock !== undefined && Number(stock) !== Number(existingProduct.stock)) return res.status(409).json({ success: false, message: '已启用物资台账，请通过入库或盘点调整库存' });
   const priceError = productPublicationError({ name: name ?? existingProduct.name, category: category ?? existingProduct.category,
@@ -2143,7 +2283,15 @@ router.put('/products/:id', adminAuth, async (req, res) => {
     skus: skus ?? existingProduct.skus,
     specialtyTerms: specialtyTerms ?? existingProduct.specialtyTerms, status: status ?? existingProduct.status });
   if (priceError) return res.status(400).json({ success: false, message: priceError });
-  const updateData = { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, ...(healthFundDeduction !== undefined ? { healthFundDeduction } : {}), memberBundle: memberBundle || { enabled:false }, skus: skus || [] };
+  const updateData = { name, subtitle, images, originalPrice,
+    ...(servicePrices !== undefined ? { servicePrices: mergedServicePrices } : {}),
+    ...(businessAllocations !== undefined ? { businessAllocations } : {}), memberPrices, category, sortOrder, features, description, stock, status,
+    ...(performanceRule !== undefined ? { performanceRule } : {}),
+    ...(servicePerformerRoles !== undefined ? { servicePerformerRoles } : {}),
+    ...(serviceItems !== undefined ? { serviceItems: mergedServiceItems } : {}),
+    ...(staffPerformanceOverrides !== undefined ? { staffPerformanceOverrides } : {}),
+    fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy,
+    ...(healthFundDeduction !== undefined ? { healthFundDeduction } : {}), memberBundle: memberBundle || { enabled:false }, skus: skus || [] };
   if (originalPrice === '') updateData.originalPrice = null;
   if (specialtyTerms !== undefined) updateData.specialtyTerms = specialtyTerms;
   if (stock !== undefined) updateData.stockLimited = stockLimited === true || Number(stock) > 0;
@@ -2153,6 +2301,42 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   const product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, data: product, message: '产品更新成功' });
+});
+
+// Commission rules are edited independently of catalog pricing and business attribution.
+router.patch('/products/:id/commission-rules', adminAuth, async (req, res) => {
+  const product = await Product.findOne({ _id: req.params.id, tenantId: req.admin.tenantId });
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  const { expectedUpdatedAt, performanceRule, servicePerformerRoles, staffPerformanceOverrides, servicePrices, serviceItems } = req.body;
+  if (!expectedUpdatedAt || !Number.isFinite(new Date(expectedUpdatedAt).getTime()))
+    return res.status(400).json({ success: false, message: '缺少产品版本，请刷新后重试' });
+  if (!performanceRule || !['none', 'percentage', 'fixedAmount'].includes(performanceRule.ruleType)
+    || ['referrerRate', 'fulfillerRate'].some(key => !Number.isFinite(Number(performanceRule[key] ?? 0)) || Number(performanceRule[key] ?? 0) < 0 || Number(performanceRule[key] ?? 0) > 100)
+    || ['referrerAmount', 'fulfillerAmount'].some(key => !Number.isFinite(Number(performanceRule[key] ?? 0)) || Number(performanceRule[key] ?? 0) < 0))
+    return res.status(400).json({ success: false, message: '员工推广／服务规则无效' });
+  const validRoles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
+  const validPerformers = rows => Array.isArray(rows) && rows.every(row => validRoles.includes(row.role)
+    && ['none', 'percentage', 'fixedAmount'].includes(row.ruleType || 'percentage')
+    && Number.isFinite(Number(row.rate || 0)) && Number(row.rate || 0) >= 0 && Number(row.rate || 0) <= 100
+    && Number.isFinite(Number(row.amount || 0)) && Number(row.amount || 0) >= 0);
+  if (!validPerformers(servicePerformerRoles) || !Array.isArray(servicePrices) || !Array.isArray(serviceItems)
+    || servicePrices.length !== product.servicePrices.length || serviceItems.length !== product.serviceItems.length
+    || new Set(servicePrices.map(row => row.label)).size !== servicePrices.length
+    || new Set(serviceItems.map(row => row.key)).size !== serviceItems.length
+    || servicePrices.some(row => !product.servicePrices.some(current => current.label === row.label))
+    || serviceItems.some(row => !product.serviceItems.some(current => current.key === row.key) || !validPerformers(row.performers || [])))
+    return res.status(400).json({ success: false, message: '收费项目或服务子项已变化，请刷新后重试' });
+  const prices = product.servicePrices.map(current => ({ ...current.toObject(),
+    performanceConfig: servicePrices.find(row => row.label === current.label)?.performanceConfig || null }));
+  const items = product.serviceItems.map(current => ({ ...current.toObject(),
+    performers: serviceItems.find(row => row.key === current.key)?.performers || [] }));
+  const error = await validateProductSettlementConfig({ servicePrices: prices, staffPerformanceOverrides }, req.admin.tenantId, product._id);
+  if (error) return res.status(400).json({ success: false, message: error });
+  const updated = await Product.findOneAndUpdate({ _id: product._id, tenantId: req.admin.tenantId,
+    updatedAt: new Date(expectedUpdatedAt) }, { $set: { performanceRule, servicePerformerRoles,
+    staffPerformanceOverrides, servicePrices: prices, serviceItems: items } }, { new: true, runValidators: true });
+  if (!updated) return res.status(409).json({ success: false, message: '产品已被其他人修改，请刷新后重试' });
+  res.json({ success: true, data: updated, message: '佣金规则已保存' });
 });
 
 router.patch('/products/:id/health-fund-deduction', adminAuth, async (req, res) => {

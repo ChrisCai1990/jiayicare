@@ -95,6 +95,7 @@ app.use('/api/services',      require('./routes/services'));
 // 官网访客独立入口：不复用会员聊天和健康档案，避免未登录访客数据混入会员体系。
 app.use('/api/visitor-assistant', require('./routes/visitorAssistant'));
 app.use('/api/partner-benefits', require('./routes/partnerBenefits'));
+app.use('/api/market-partner', require('./routes/marketPartnerPortal'));
 app.use('/api/enterprise-hr', require('./routes/enterpriseHr'));
 app.use('/api/enterprise-hr', require('./routes/enterpriseServiceRecords').hrRouter);
 app.use('/api/ops-dashboard', require('./routes/opsDashboard'));
@@ -105,12 +106,18 @@ app.use('/api/share',         require('./routes/share'));
 app.use('/api/admin/account-deletion', require('./routes/accountDeletionAdmin'));
 app.use('/api/admin/nutrition-assessment-config', require('./routes/nutritionAssessmentConfig'));
 app.use('/api/admin',         require('./routes/admin'));
+app.use('/api/admin/person-commission-rules', require('./routes/personCommissionRulesAdmin'));
+app.use('/api/admin/partner-teams', require('./routes/partnerTeamsAdmin'));
+if (process.env.MARKET_PARTNER_ENABLED === 'true')
+  app.use('/api/admin/market-partners', require('./routes/marketPartnersAdmin'));
 app.use('/api/admin/inventory', require('./routes/inventory').adminRouter);
 app.use('/api/admin',         require('./routes/enterpriseServiceRecords').adminRouter);
 app.use('/api/admin/clinical-standards', require('./routes/clinicalStandardsAdmin'));
 app.use('/api/admin',         require('./routes/settings'));
 app.use('/api/expert-recruitment', require('./routes/expertRecruitment'));
+app.use('/api/staff/psychology', require('./routes/psychologyCare'));
 app.use('/api/staff/availability', require('./routes/staffAvailability'));
+app.use('/api/staff/ai-workspace', require('./routes/aiWorkspace'));
 app.use('/api/expert-consultations', require('./routes/expertConsultations'));
 app.use('/api/admin/specialty-library', require('./routes/specialtyLibrary').adminRouter);
 app.use('/api/admin/ai-control', require('./routes/aiControl'));
@@ -175,6 +182,7 @@ app.listen(PORT, () => {
   require('./utils/onboardingPush').startBatch2Scheduler();
 
   require('./utils/commissionMaturity').startCommissionScheduler();
+  require('./utils/marketPartnerSettlement').startScheduler();
 
   // AI每日健康关怀
   require('./utils/dailyCareScheduler').startDailyCareScheduler();
@@ -183,6 +191,7 @@ app.listen(PORT, () => {
   // 已确认管理方案会员的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
   require('./utils/monthlyFollowUpScheduler').startMonthlyReviewScheduler();
   require('./utils/phaseAssessmentScheduler').startPhaseAssessmentScheduler();
+  require('./utils/managementReviewScheduler').start();
   require('./utils/nutritionRecordFollowUp').reconcileUpcoming().then(count => {
     console.log(`[nutrition-followup] 已核对 ${count} 条未来预约记录`);
   }).catch(error => console.error('[nutrition-followup] 预约任务核对失败', error.message));
@@ -212,6 +221,8 @@ app.listen(PORT, () => {
   require('./utils/recurringSupplyPlanScheduler').startRecurringSupplyPlanScheduler();
   require('./utils/medicationLifecycleScheduler').startMedicationLifecycleScheduler();
   require('./utils/combinedMedicationReminder').startMedicationReminderScheduler();
+  require('./utils/customerReminderPushScheduler').startCustomerReminderPushScheduler();
+  require('./utils/serviceExpiryPushScheduler').startServiceExpiryPushScheduler();
   require('./utils/appointmentReminderScheduler').startAppointmentReminderScheduler();
   require('./utils/checkupAppointmentReminderScheduler').startCheckupAppointmentReminderScheduler();
 });

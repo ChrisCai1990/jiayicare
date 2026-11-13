@@ -42,6 +42,12 @@ const commissionSchema = new mongoose.Schema({
   serviceItemKey: { type: String, default: '' },
   serviceItemName: { type: String, default: '' },
   calculationType: { type: String, enum: ['', 'percentage', 'fixedAmount'], default: '' },
+  staffCommissionRuleId: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffCommissionRule', default: null },
+  staffCommissionRuleVersion: { type: Number, default: null },
+  serviceThresholdRuleId: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffServiceThresholdRule', default: null },
+  serviceThresholdRuleVersion: { type: Number, default: null },
+  serviceThresholdCents: { type: Number, default: null },
+  serviceThresholdEligibleCents: { type: Number, default: null },
 }, { timestamps: true });
 
 commissionSchema.index({ staffId: 1, createdAt: -1 });
@@ -52,5 +58,21 @@ commissionSchema.index(
 );
 
 commissionSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
+
+commissionSchema.post('save', async function (doc) {
+  await require('../utils/partnerTeamEarning').syncSource('staffCommission', doc);
+});
+commissionSchema.post('findOneAndUpdate', async function (doc) {
+  if (doc) await require('../utils/partnerTeamEarning').syncSource('staffCommission', doc);
+});
+commissionSchema.pre('updateOne', async function () {
+  const doc = await this.model.findOne(this.getQuery()).select('_id');
+  this._teamSourceId = doc?._id || null;
+});
+commissionSchema.post('updateOne', async function () {
+  if (!this._teamSourceId) return;
+  const doc = await this.model.findById(this._teamSourceId);
+  if (doc) await require('../utils/partnerTeamEarning').syncSource('staffCommission', doc);
+});
 
 module.exports = mongoose.model('Commission', commissionSchema);

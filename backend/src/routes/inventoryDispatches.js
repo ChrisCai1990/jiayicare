@@ -3,6 +3,7 @@ const Material = require('../models/InventoryMaterial');
 const Product = require('../models/Product');
 const User = require('../models/User');
 const Admin = require('../models/Admin');
+const Team = require('../models/Team');
 const Order = require('../models/Order');
 const InventoryEntry = require('../models/InventoryEntry');
 const Dispatch = require('../models/InventoryDispatchRequest');
@@ -10,9 +11,18 @@ const Dispatch = require('../models/InventoryDispatchRequest');
 const validId = value => mongoose.isValidObjectId(value);
 const bad = (res, message, status = 400) => res.status(status).json({ success: false, message });
 const tenant = req => req.staff.tenantId;
-const manager = req => ['healthManager', 'superadmin'].includes(req.staff.role);
-const belongsToManager = (req, row) => req.staff.role === 'superadmin' || !row.assignedHealthManagerId
-  || String(row.assignedHealthManagerId) === String(req.staff._id);
+const reviewer = req => ['nutritionist', 'superadmin'].includes(req.staff.role);
+async function reviewableNutritionistIds(req) {
+  const teams = await Team.find({ tenantId: tenant(req), mentorId: req.staff._id, status: 'active' }).select('_id').lean();
+  if (!teams.length) return [req.staff._id];
+  const members = await Admin.find({ tenantId: tenant(req), teamId: { $in: teams.map(team => team._id) }, role: 'nutritionist', staffStatus: { $ne: 'inactive' } }).select('_id').lean();
+  return [req.staff._id, ...members.map(member => member._id)];
+}
+async function belongsToReviewer(req, row) {
+  if (req.staff.role === 'superadmin' || !row.assignedNutritionistId) return true;
+  const ids = await reviewableNutritionistIds(req);
+  return ids.some(id => String(id) === String(row.assignedNutritionistId));
+}
 const payloadKeys = ['productId', 'type', 'units', 'sourceReceiptId', 'batchNo', 'serialNo', 'expiresAt',
   'location', 'userId', 'assigneeId', 'fromIssued', 'orderId', 'unitCost', 'serviceProductId', 'requestId', 'note'];
 
@@ -41,7 +51,7 @@ module.exports = function registerInventoryDispatches(router, addEntry) {
       if (!await Product.exists({ _id: serviceProductId, tenantId: tenant(req) })) return bad(res, '关联服务不存在');
     }
     const customer = userId ? await User.findOne({ _id: userId, tenantId: tenant(req) })
-      .select('name phone contactName contactPhone deliveryAddress assignedHealthManager').lean() : null;
+      .select('name phone contactName contactPhone deliveryAddress assignedNutritionist').lean() : null;
     if (userId && !customer) return bad(res, '客户不存在', 404);
     const assignee = assigneeId ? await Admin.findOne({ _id: assigneeId, tenantId: tenant(req), staffStatus: { $ne: 'inactive' } }).select('name').lean() : null;
     if (assigneeId && !assignee) return bad(res, '领用人员不存在', 404);
@@ -63,15 +73,15 @@ module.exports = function registerInventoryDispatches(router, addEntry) {
     };
     if (method === 'pickup' && !delivery.pickupBy) return bad(res, '请填写线下领取人');
     if (method === 'shipping' && (!delivery.recipientName || !delivery.recipientPhone || !delivery.deliveryAddress)) return bad(res, '请核实收件人、联系电话和地址');
-    let managerId = customer?.assignedHealthManager || null;
-    if (managerId && !await Admin.exists({ _id: managerId, tenantId: tenant(req), role: 'healthManager', staffStatus: { $ne: 'inactive' } })) managerId = null;
+    let nutritionistId = customer?.assignedNutritionist || null;
+    if (nutritionistId && !await Admin.exists({ _id: nutritionistId, tenantId: tenant(req), role: 'nutritionist', staffStatus: { $ne: 'inactive' } })) nutritionistId = null;
     const payload = Object.fromEntries(payloadKeys.map(key => [key, body[key]]));
     try {
       const request = await Dispatch.create({
         tenantId: tenant(req), requestId, type, materialId: productId, userId: customer?._id || null,
-        actorId: req.staff._id, assignedHealthManagerId: managerId, payload, delivery,
+        actorId: req.staff._id, assignedNutritionistId: nutritionistId, payload, delivery,
       });
-      return res.status(202).json({ success: true, data: request, message: '已提交健管专员确认出库，库存尚未扣减' });
+      return res.status(202).json({ success: true, data: request, message: '已提交营养师确认出库，库存尚未扣减' });
     } catch (error) {
       if (error.code === 11000) return bad(res, '这笔申请已提交，请刷新查看', 409);
       throw error;
@@ -80,17 +90,17 @@ module.exports = function registerInventoryDispatches(router, addEntry) {
 
   router.get('/dispatches', async (req, res) => {
     const mine = req.query.view === 'mine';
-    if (!mine && !manager(req)) return bad(res, '仅健管专员可查看待出库任务', 403);
+    if (!mine && !reviewer(req)) return bad(res, '仅营养师可查看待出库任务', 403);
     const filter = { tenantId: tenant(req) };
     if (mine) filter.actorId = req.staff._id;
     else {
       const stale = new Date(Date.now() - 5 * 60 * 1000);
       filter.$or = [{ status: 'pending' }, { status: 'processing', processingAt: { $lte: stale } }];
-      if (req.staff.role !== 'superadmin') filter.assignedHealthManagerId = { $in: [req.staff._id, null] };
+      if (req.staff.role !== 'superadmin') filter.assignedNutritionistId = { $in: [...await reviewableNutritionistIds(req), null] };
     }
     const items = await Dispatch.find(filter).sort({ createdAt: mine ? -1 : 1 }).limit(100)
       .populate('materialId', 'name inventoryTracking stock').populate('userId', 'name phone contactName contactPhone deliveryAddress')
-      .populate('actorId', 'name').populate('assignedHealthManagerId', 'name').lean();
+      .populate('actorId', 'name').populate('assignedNutritionistId', 'name').lean();
     res.json({ success: true, data: items });
   });
 
@@ -100,7 +110,7 @@ module.exports = function registerInventoryDispatches(router, addEntry) {
     if (!reason) return bad(res, '请填写撤销原因');
     const request = await Dispatch.findOne({ _id: req.params.id, tenantId: tenant(req) });
     if (!request) return bad(res, '申请不存在', 404);
-    if (String(request.actorId) !== String(req.staff._id) && !(manager(req) && belongsToManager(req, request))) return bad(res, '只能撤销本人申请或由健管专员处理', 403);
+    if (String(request.actorId) !== String(req.staff._id) && !(reviewer(req) && await belongsToReviewer(req, request))) return bad(res, '只能撤销本人申请或由营养师处理', 403);
     const updated = await Dispatch.findOneAndUpdate(
       { _id: request._id, tenantId: tenant(req), status: 'pending' },
       { $set: { status: 'cancelled', cancelledAt: new Date(), cancelledBy: req.staff._id, cancellationReason: reason } },
@@ -114,7 +124,7 @@ module.exports = function registerInventoryDispatches(router, addEntry) {
     if (!validId(req.params.id)) return bad(res, '申请编号无效');
     const request = await Dispatch.findOne({ _id: req.params.id, tenantId: tenant(req) });
     if (!request) return bad(res, '申请不存在', 404);
-    if (!manager(req) || !belongsToManager(req, request)) return bad(res, '仅对应健管专员可确认出库', 403);
+    if (!reviewer(req) || !await belongsToReviewer(req, request)) return bad(res, '仅对应营养师可确认出库', 403);
     if (request.status === 'cancelled') return bad(res, '申请已撤销', 409);
     if (request.status === 'completed') return res.json({ success: true, data: request, repeated: true });
     const stale = new Date(Date.now() - 5 * 60 * 1000);

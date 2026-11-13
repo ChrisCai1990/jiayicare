@@ -10,6 +10,17 @@ const dependencies = {
 };
 const check = (provider, context) => consent.assertContextPermission(provider, context, dependencies);
 
+test('staff workspace trial permits only an authenticated staff scope without a customer subject', async () => {
+  const context = { actorId: 'staff-a', tenantId: 'tenant-a', stage: 'staff_ai_workspace_trial' };
+  await assert.rejects(check('qwen', context), { code: 'AI_DATA_CONSENT_REQUIRED' });
+  await consent.withStaffService(staff, async () => {
+    await check('qwen', context);
+    await assert.rejects(check('qwen', { ...context, actorId: 'other' }), { code: 'AI_DATA_CONSENT_REQUIRED' });
+    await assert.rejects(check('deepseek', context), { code: 'AI_DATA_CONSENT_REQUIRED' });
+    await assert.rejects(consent.withPersonalData('patient-a', 'assistant', () => check('qwen', context)), { code: 'AI_DATA_CONSENT_REQUIRED' });
+  });
+});
+
 test('staff nutrition draft and report supplement use staff service scope without customer App consent', async () => {
   let sent = 0;
   const call = createConsentCheckedCall(async (_, send) => send(), check);

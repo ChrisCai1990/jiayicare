@@ -245,7 +245,7 @@ function JumpLogicEditor({ jumpLogic = [], options = [], allQuestions = [], curr
 }
 
 // ── 单题编辑卡 ────────────────────────────────────────────────────
-function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, scoringEnabled, archivePurpose, archiveFields = [] }) {
+function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, scoringEnabled, archivePurpose, wholeSleepArchive = false, archiveFields = [] }) {
   const [collapsed, setCollapsed] = useState(false)
 
   const handleTypeChange = (type) => {
@@ -418,6 +418,10 @@ function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, s
             <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>适用年龄段 <span style={{ fontWeight: 400, color: '#65776F' }}>（不选表示全部年龄段）</span></div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>{childAgeStages.map(stage => <label key={stage.id} style={{ fontSize: 12 }}><input type="checkbox" checked={(q.ageStages || []).includes(stage.id)} onChange={e => onUpdate({ ageStages: e.target.checked ? [...(q.ageStages || []), stage.id] : (q.ageStages || []).filter(id => id !== stage.id) })} /> {stage.label}</label>)}</div>
           </div>}
+          {wholeSleepArchive ? <div style={{ borderTop: '1px dashed #E0D9CE', paddingTop: 10, color: '#176B50', fontSize: 13 }}>
+            <div style={{ fontWeight: 600 }}>写入位置：客户健康档案 → 睡眠评估</div>
+            <div style={{ marginTop: 4 }}>本题随整份答卷自动写入，客户提交后即可查看，无需逐题选择字段或手动导入。</div>
+          </div> : <>
           {/* 对应健康档案字段（答卷自动导入档案用，一次配置长期生效） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px dashed #E0D9CE', paddingTop: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: '#2b6cb0', whiteSpace: 'nowrap' }}>🔗 对应健康档案字段</span>
@@ -432,6 +436,7 @@ function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, s
             </select>
             {q.archiveField && <span style={{ fontSize: 11, color: '#22A06B' }}>✓ 答卷将自动写入此字段</span>}
           </div>
+          </>}
         </div>
       )}
     </div>
@@ -711,6 +716,7 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
                       onRemove={() => removeQ(i)}
                       onMove={dir => moveQ(i, dir)}
                       scoringEnabled={form.scoringEnabled}
+                      wholeSleepArchive={questionnaire?.standardTemplateKey === 'jiayihui_sleep_intake_v1'}
                       archivePurpose={form.archivePurpose}
                       archiveFields={archiveFields.filter(g => form.archivePurpose === 'child_health' ? g.group.startsWith('儿童·') : !g.group.startsWith('儿童·'))}
                     />

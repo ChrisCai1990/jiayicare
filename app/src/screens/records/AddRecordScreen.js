@@ -180,6 +180,7 @@ const tpStyles = StyleSheet.create({
 
 const TIME_OPTIONS = ['现在', '今日早上', '今日中午', '今日晚上', '昨日'];
 const MEASURE_OPTIONS = { bloodSugar: ['空腹', '餐后2小时', '睡前', '随机'], bloodPressure: ['左臂', '右臂'] };
+const beijingNow = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16).split('T');
 
 export default function AddRecordScreen({ navigation, route }) {
   const { user } = useAuth();
@@ -189,6 +190,9 @@ export default function AddRecordScreen({ navigation, route }) {
   const [activeType, setActiveType] = useState(initialType);
   const [values, setValues] = useState({});
   const [time, setTime] = useState('现在');
+  const [manualBpTime, setManualBpTime] = useState(false);
+  const [bpDate, setBpDate] = useState(() => beijingNow()[0]);
+  const [bpTime, setBpTime] = useState(() => beijingNow()[1]);
   const [note, setNote] = useState('');
   const [measureOption, setMeasureOption] = useState('');
   const [saving, setSaving] = useState(false);
@@ -257,6 +261,14 @@ export default function AddRecordScreen({ navigation, route }) {
       if (activeType.id === 'bloodPressure') {
         const sys = parseInt(values.sys, 10);
         const dia = parseInt(values.dia, 10);
+        if (manualBpTime) {
+          const measuredAt = new Date(`${bpDate}T${bpTime}:00+08:00`);
+          const normalized = Number.isNaN(measuredAt.getTime()) ? '' : new Date(measuredAt.getTime() + 8 * 3600000).toISOString().slice(0, 16);
+          if (normalized !== `${bpDate}T${bpTime}` || measuredAt.getTime() > Date.now()) {
+            showToast('warn', '请填写有效且不晚于当前时间的测量日期和时间'); return;
+          }
+          payload.recordedAt = measuredAt.toISOString();
+        }
         payload.value = `${sys}/${dia}`;
         payload.extra = { sys, dia };
         payload.status = sys >= 140 || dia >= 90 ? 'warning' : sys < 90 || dia < 60 ? 'low' : 'normal';
@@ -458,7 +470,18 @@ export default function AddRecordScreen({ navigation, route }) {
         </View>
 
         {/* Time - 血糖自动使用当前时间，不显示选择器 */}
-        {activeType.id !== 'bloodSugar' && (
+        {activeType.id === 'bloodPressure' ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>测量时间默认取提交时间；补录时可手动修改</Text>
+            <TouchableOpacity onPress={() => { const [date, clock] = beijingNow(); setBpDate(date); setBpTime(clock); setManualBpTime(value => !value); }}>
+              <Text style={{ color: colors.primary, paddingVertical: 8 }}>{manualBpTime ? '使用提交时间' : '修改测量时间'}</Text>
+            </TouchableOpacity>
+            {manualBpTime && <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput style={[styles.noteInput, { flex: 1, minHeight: 44 }]} value={bpDate} onChangeText={setBpDate} placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" />
+              <TextInput style={[styles.noteInput, { width: 95, minHeight: 44 }]} value={bpTime} onChangeText={setBpTime} placeholder="HH:mm" keyboardType="numbers-and-punctuation" />
+            </View>}
+          </View>
+        ) : activeType.id !== 'bloodSugar' && (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>记录时间</Text>
             <View style={styles.timeRow}>

@@ -5,6 +5,7 @@ const Draft = require('../src/models/ReportFollowUpDraft');
 const User = require('../src/models/User');
 const FollowUp = require('../src/models/FollowUp');
 const workflow = require('../src/utils/reportFollowUpAutomation');
+require('../src/models/AnnualPlan').exists = async () => false;
 const ids = { draft: '000000000000000000000001', patient: '000000000000000000000002', advisor: '000000000000000000000003' };
 let actor = { _id: ids.advisor, role: 'familyDoctor' }, visible = [ids.patient];
 const auth = require.resolve('../src/middleware/staffAuth'); require(auth);

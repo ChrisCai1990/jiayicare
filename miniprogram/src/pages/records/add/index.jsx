@@ -47,6 +47,11 @@ function calcSleepDuration(sleepTime, wakeTime) {
   return ((w - s) / 60).toFixed(1);
 }
 
+function beijingNow() {
+  const [date, time] = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16).split('T');
+  return { date, time };
+}
+
 export default function AddRecordPage() {
   const { statusBarHeight } = useNavBar();
   const router = useRouter();
@@ -60,6 +65,8 @@ export default function AddRecordPage() {
   const [moodScore, setMoodScore] = useState(7);
   const [note, setNote] = useState('');
   const [bloodPressureArm, setBloodPressureArm] = useState('');
+  const [manualBpTime, setManualBpTime] = useState(false);
+  const [bpWhen, setBpWhen] = useState(beijingNow);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -74,11 +81,16 @@ export default function AddRecordPage() {
       const dia = parseInt(values.dia, 10);
       if (!sys || !dia) { setError('请填写完整的收缩压/舒张压'); return; }
       if (!bloodPressureArm) { setError('请选择左臂或右臂'); return; }
+      const measuredAt = manualBpTime ? new Date(`${bpWhen.date}T${bpWhen.time}:00+08:00`) : null;
+      if (manualBpTime && (Number.isNaN(measuredAt.getTime()) || measuredAt.getTime() > Date.now())) {
+        setError('测量时间不能晚于当前时间'); return;
+      }
       payload = {
         type: 'bloodPressure', category: 'vitals', label: '血压', unit: 'mmHg',
         value: `${sys}/${dia}`, extra: { sys, dia, arm: bloodPressureArm },
         status: sys >= 140 || dia >= 90 ? 'warning' : sys < 90 || dia < 60 ? 'low' : 'normal',
         note,
+        ...(manualBpTime ? { recordedAt: measuredAt.toISOString() } : {}),
       };
     } else if (activeType.id === 'sleep') {
       const dur = calcSleepDuration(sleepTime, wakeTime);
@@ -166,6 +178,20 @@ export default function AddRecordPage() {
           <View style={{ display: 'flex', gap: '8px' }}>
             {['左臂', '右臂'].map(arm => <View key={arm} onClick={() => setBloodPressureArm(arm)} style={{ padding: '8px 16px', borderRadius: `${radius.full}px`, backgroundColor: bloodPressureArm === arm ? colors.primary : colors.background }}><Text style={{ color: bloodPressureArm === arm ? '#fff' : colors.textPrimary }}>{arm}</Text></View>)}
           </View>
+        </View>}
+        {activeType.id === 'bloodPressure' && <View style={{ marginBottom: `${spacing.md}px` }}>
+          <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block' }}>测量时间默认取提交时间；补录时可手动修改。</Text>
+          <Text onClick={() => { setManualBpTime(value => !value); setBpWhen(beijingNow()); }} style={{ fontSize: '13px', color: colors.primary, display: 'block', padding: '10px 0' }}>
+            {manualBpTime ? '使用提交时间' : '修改测量时间'}
+          </Text>
+          {manualBpTime && <View style={{ display: 'flex', gap: '8px' }}>
+            <Picker mode="date" value={bpWhen.date} end={beijingNow().date} onChange={e => setBpWhen(current => ({ ...current, date: e.detail.value }))}>
+              <View style={{ padding: '10px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px` }}>{bpWhen.date}</View>
+            </Picker>
+            <Picker mode="time" value={bpWhen.time} onChange={e => setBpWhen(current => ({ ...current, time: e.detail.value }))}>
+              <View style={{ padding: '10px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px` }}>{bpWhen.time}</View>
+            </Picker>
+          </View>}
         </View>}
         {activeType.id === 'bloodSugar' && <BloodSugarPhoto onSaved={() => Taro.navigateBack()} />}
         {activeType.id === 'weight' && <WeightPhoto onSaved={() => Taro.navigateBack()} />}

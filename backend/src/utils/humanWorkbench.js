@@ -53,6 +53,7 @@ function summaryTodos(user, can, now = new Date()) {
 
 // Exceptions to patient ownership must be backed by an explicit assignee or a separately scoped query.
 function visibleTodo(todo, staff, inMyScope) {
+  if (todo.type === 'feedback_assigned') return String(todo.assignedTo) === String(staff._id);
   if (staff.role === 'superadmin') return true;
   if (todo.type === 'geo_content_review') return true;
   if (todo.type === 'wecom_kf_handoff') return String(todo.assignedTo) === String(staff._id);

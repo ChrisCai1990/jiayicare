@@ -48,6 +48,7 @@ test('同分命中多个Admin分类时保持待归类', () => {
 test('提交审核仅阻止存在名称但未归类的报告项目', () => {
   assert.deepEqual(findUnclassifiedNamedItems([]), []);
   assert.deepEqual(findUnclassifiedNamedItems([{ name: '' }]), []);
+  assert.deepEqual(findUnclassifiedNamedItems([{ name: '', findings: '原报告检查所见', diagnosis: '原报告结论' }]), []);
   assert.equal(findUnclassifiedNamedItems([
     { name: '已归类A', screeningKey: 'l1|l2|a' },
     { name: '已归类B', matchStatus: 'matched', screeningKeys: ['l1|l2|b'] },

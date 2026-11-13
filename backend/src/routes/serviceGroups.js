@@ -383,7 +383,7 @@ router.get(
       followups: () =>
         FollowUp.find({ patientId: p._id }).sort({ date: -1 }).limit(50).lean(),
       service_records: () =>
-        ServiceRecord.find({ patientId: p._id })
+        ServiceRecord.find({ patientId: p._id, type: { $ne: 'psychology' } })
           .sort({ date: -1 })
           .limit(30)
           .select("title content result date type")

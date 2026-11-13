@@ -1,3 +1,5 @@
+import SleepAssessmentPreparation from '../components/SleepAssessmentPreparation'
+import PsychologyPage from './PsychologyPage'
 import ReferralRecordCard from '../components/ReferralRecordCard'
 import ConsultationCorrespondence from '../components/ConsultationCorrespondence'
 import ConsultationReadStatus from '../components/ConsultationReadStatus'
@@ -15,6 +17,7 @@ import NutritionAssessmentFields, { initialNutritionAssessment, missingNutrition
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import { calendarDate } from '../../../shared/calendarDate.mjs'
+import { trendChange } from '../utils/trendChange.mjs'
 import { resolveReportReviewDate } from '../../../shared/reportReviewDate.mjs'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
 import ChildHealthArchive from '../components/ChildHealthArchive'
@@ -38,6 +41,7 @@ import MembershipBenefitsSummary from '../components/MembershipBenefitsSummary'
 import PackageHistoryReview from '../components/PackageHistoryReview'
 import customerNumber from '../../../shared/customerNumber.cjs'
 import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
+import { groupImagingReportItems } from '../utils/groupImagingReportItems.mjs'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
 import CheckupProgressPanel from '../components/CheckupProgressPanel'
@@ -48,8 +52,9 @@ import { lifestyleHistoryLabel } from '../utils/lifestyleHistoryLabels.mjs'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { staffAPI, API_ORIGIN } from '../api'
+import { staffAPI, psychologyAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
+import { useAiWorkbench } from '../components/AiWorkbenchProvider'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
 import FollowUpModal from '../components/FollowUpModal'
 import MonitoringFollowUpFields, { isStaffMonitoringFollowUp, initialMonitoringMeasurement, monitoringSubmission } from '../components/MonitoringFollowUpFields'
@@ -71,6 +76,7 @@ import ReviewSourceImage from '../components/ReviewSourceImage'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
+import { screeningItemIssueTitle } from '../utils/specialtyIssueSuggestion.mjs'
 import AICheckupReview from '../components/AICheckupReview'
 import AnnualReviewCommunicationPanel from '../components/AnnualReviewCommunicationPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
@@ -102,7 +108,7 @@ import MedicationProxyStageForm, { medicationProxyStage } from '../components/Me
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
-import { insertReportItemBelow, orderReportItemsForReview, sameReviewSection } from '../utils/reportItemOrder'
+import { appendReportItemOnPage, insertReportItemBelow, orderReportItemsForReview, sameReviewSection } from '../utils/reportItemOrder'
 import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
 import { resolveScreeningCategory } from '../utils/screeningCategoryLabel.mjs'
 
@@ -631,7 +637,7 @@ function LsText({ label, value = '', editing, placeholder, multiline, onChange }
 }
 
 // ── 简易 SVG 折线趋势图 ───────────────────────────────────────────
-function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
+function MiniTrendChart({ data, color = '#1E6B50', label, unit = '', showChange = false, refLow, refHigh }) {
   const [selectedPoint, setSelectedPoint] = useState(null);
   if (!data || data.length < 2) return null;
   const W = 260, H = 80, PAD = 8;
@@ -646,10 +652,12 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
   const ys = vals.map(v => toY(v));
   const pts = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
   const last = data[data.length - 1];
+  const change = trendChange(data);
+  const formatValue = value => new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(value);
   const highY = refHigh != null ? toY(refHigh) : null;
   const lowY  = refLow  != null ? toY(refLow)  : null;
   return (
-    <div style={{ display: 'inline-block', marginRight: 16, marginBottom: 12 }}>
+    <div style={{ display: 'inline-block', width: showChange ? W : undefined, verticalAlign: 'top', marginRight: 16, marginBottom: 12 }}>
       <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4, fontWeight: 600 }}>{label}</div>
       <svg width={W} height={H} style={{ border: '1px solid #f0ece4', borderRadius: 8, background: '#faf9f6' }}>
         {highY != null && (
@@ -686,6 +694,14 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
         <text x={PAD} y={H - 2} fontSize="9" fill="#aaa">{data[0].x}</text>
         <text x={W - PAD} y={H - 2} textAnchor="end" fontSize="9" fill="#aaa">{last.x}</text>
       </svg>
+      {showChange && change && (
+        <div style={{ fontSize: 11, color: '#4A6558', marginTop: 4 }} aria-label={`${label}首末记录变化`}>
+          首末记录：{formatValue(change.first)} → {formatValue(change.last)}{unit ? ` ${unit}` : ''}
+          <strong style={{ marginLeft: 6, color: '#1A2B24' }}>
+            {change.direction} {formatValue(change.amount)}{unit ? ` ${unit}` : ''}
+          </strong>
+        </div>
+      )}
       {selectedPoint && data.includes(selectedPoint) && (
         <div aria-live="polite" style={{ fontSize: 11, color: '#4A6558', marginTop: 4 }}>
           日期：{selectedPoint.date || selectedPoint.x}　数值：{selectedPoint.y}
@@ -780,6 +796,7 @@ const DOCUMENT_CATEGORIES = [
   { key: 'prescription_order', label: '处方与医嘱' },
   { key: 'questionnaire', label: '问卷资料' },
   { key: 'other_customer_material', label: '其他资料' },
+  { key: 'insurance_claim_receipt', label: '报销票据／费用清单' },
 ]
 const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
 // 用药信息在“用药”模块审核后即完成闭环，不再要求健康顾问重复审核同一处方的健康变化。
@@ -2176,6 +2193,7 @@ export default function PatientDetailPage() {
   const location = useLocation()
   const toast = useToast()
   const { staff } = useStaff()
+  const { refresh: refreshAiTodos } = useAiWorkbench()
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null) // 加载会员详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
@@ -2233,6 +2251,7 @@ export default function PatientDetailPage() {
   const [reportPage, setReportPage] = useState(1)
   const [openReportActionId, setOpenReportActionId] = useState(null)
   const [patientOrders, setPatientOrders] = useState([])
+  const [inventoryConsumption, setInventoryConsumption] = useState({ patientId: '', manual: [] })
   const [scheduleBookingContext, setScheduleBookingContext] = useState(null)
   const [patientOrdersLoading, setPatientOrdersLoading] = useState(false)
   const [patientOrdersError, setPatientOrdersError] = useState('')
@@ -2283,6 +2302,7 @@ export default function PatientDetailPage() {
   const [showReferralModal, setShowReferralModal] = useState(() => !!location.state?.editReferral || new URLSearchParams(location.search).get('compose') === 'referral')
   const [editingReferral, setEditingReferral] = useState(() => location.state?.editReferral || null)
   const [showReportDetail, setShowReportDetail] = useState(null)
+  const [categoryCorrection, setCategoryCorrection] = useState(null)
   const [archiveSourceReportId, setArchiveSourceReportId] = useState('')
   const [duplicateSourceReportId, setDuplicateSourceReportId] = useState('')
   const [duplicateReason, setDuplicateReason] = useState('')
@@ -2369,6 +2389,8 @@ export default function PatientDetailPage() {
   const [pendingMedicalAssistOrderId, setPendingMedicalAssistOrderId] = useState('') // 手动点按钮生成时若有关联订单，带给选模板弹窗
   const [reqPrefill, setReqPrefill] = useState(null)
   const [showMedModal, setShowMedModal] = useState(false)
+  const [showPrescriptionPicker, setShowPrescriptionPicker] = useState(false)
+  const [sourcePrescriptionReport, setSourcePrescriptionReport] = useState(null)
   const [showSupModal, setShowSupModal] = useState(false)
   const [editingMed, setEditingMed] = useState(null)
   const [medCorrectionReason, setMedCorrectionReason] = useState('')
@@ -2508,7 +2530,7 @@ export default function PatientDetailPage() {
     finally { setDeleteRecordSaving(false) }
   }
   const [editingRecord, setEditingRecord] = useState(null) // 正在修正的健康数据记录（数据有疑问时医护端修改，留痕修改人）
-  const [editRecordForm, setEditRecordForm] = useState({ value: '', sys: '', dia: '', note: '' })
+  const [editRecordForm, setEditRecordForm] = useState({ value: '', sys: '', dia: '', note: '', recordedAt: '' })
   const [editRecordSaving, setEditRecordSaving] = useState(false)
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
@@ -2867,10 +2889,14 @@ export default function PatientDetailPage() {
   }
 
   // 健康数据记录有疑问时医护端修正：血压拆sys/dia两个数值输入，其余类型统一走单值输入
+  const beijingRecordTime = value => {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? '' : new Date(date.getTime() + 8 * 3600000).toISOString().slice(0, 16)
+  }
   const startEditRecord = (r) => {
     setEditingRecord(r)
     if (r.type === 'bloodPressure') {
-      setEditRecordForm({ value: '', sys: String(r.extra?.sys ?? ''), dia: String(r.extra?.dia ?? ''), note: r.note || '' })
+      setEditRecordForm({ value: '', sys: String(r.extra?.sys ?? ''), dia: String(r.extra?.dia ?? ''), note: r.note || '', recordedAt: beijingRecordTime(r.recordedAt) })
     } else {
       setEditRecordForm({ value: String(r.value ?? ''), sys: '', dia: '', note: r.note || '' })
     }
@@ -2887,6 +2913,13 @@ export default function PatientDetailPage() {
         if (!sys || !dia) { toast('收缩压和舒张压不能为空'); setEditRecordSaving(false); return }
         payload.value = `${sys}/${dia}`
         payload.extra = { ...editingRecord.extra, sys, dia }
+        if (editRecordForm.recordedAt !== beijingRecordTime(editingRecord.recordedAt)) {
+          const measuredAt = new Date(`${editRecordForm.recordedAt}:00+08:00`)
+          if (Number.isNaN(measuredAt.getTime()) || measuredAt.getTime() > Date.now()) {
+            toast('测量时间无效或晚于当前时间'); setEditRecordSaving(false); return
+          }
+          payload.recordedAt = measuredAt.toISOString()
+        }
       } else {
         if (!editRecordForm.value) { toast('数值不能为空'); setEditRecordSaving(false); return }
         if (editingRecord.type === 'waist' && (!Number.isFinite(Number(editRecordForm.value)) || Number(editRecordForm.value) <= 0)) {
@@ -3433,6 +3466,7 @@ export default function PatientDetailPage() {
   const openReportDetail = (r) => {
     // 立即显示弹窗（用列表里已有的数据）
     setShowReportDetail(r)
+    setCategoryCorrection(null)
     setArchiveSourceReportId('')
     setLegacyOutpatientTargetId('')
     setAdvisorReturnReason('')
@@ -4066,7 +4100,8 @@ export default function PatientDetailPage() {
 
   const handleSave = async () => {
     try {
-      await staffAPI.updatePatient(id, editForm)
+      const { serviceStartDate, ...changes } = editForm
+      await staffAPI.updatePatient(id, user.serviceStartDate ? changes : { ...changes, serviceStartDate })
       toast('保存成功')
       setEditing(false)
       load()
@@ -4334,7 +4369,7 @@ export default function PatientDetailPage() {
 
   useEffect(() => {
     if (!ocrReviewReport || ocrFocusItemIndex == null) return
-    const focusKey = `${ocrReviewReport._id}:${ocrFocusItemIndex}`
+    const focusKey = `${ocrReviewReport._id}:${ocrReviewPage}:${ocrFocusItemIndex}`
     if (ocrFocusHandledRef.current === focusKey) return
     ocrFocusHandledRef.current = focusKey
     const frame = requestAnimationFrame(() => {
@@ -4348,7 +4383,7 @@ export default function PatientDetailPage() {
     })
     const timer = setTimeout(() => setOcrFocusItemIndex(null), 2600)
     return () => { cancelAnimationFrame(frame); clearTimeout(timer) }
-  }, [ocrReviewReport, ocrFocusItemIndex])
+  }, [ocrReviewReport, ocrReviewPage, ocrFocusItemIndex])
 
   const handleOpenOCRReview = async (r, focusItems = [], options = {}) => {
     ocrFocusHandledRef.current = null
@@ -4413,7 +4448,7 @@ export default function PatientDetailPage() {
     // 旧数据迁移：只有明确标记为 imaging 的旧记录才把 value 搬到 findings。
     // 不能用“内容长度 > 40”猜类型，否则用户只是打开并保存，字段内容也会被改写。
     const items = JSON.parse(JSON.stringify(latestReport.reportItems || []))
-      .filter(it => it.name && String(it.name).trim())
+      .filter(it => [it.name, it.value, it.findings, it.diagnosis, it.conclusion].some(value => String(value || '').trim()))
       .map(it => {
         // 旧处方曾借用 lab 类型；打开审核时即迁移为独立药品类型，保存后持久化。
         if (latestReport.documentCategory === 'prescription_order') {
@@ -4562,7 +4597,7 @@ export default function PatientDetailPage() {
         ocrRevisionRef.current = Number(latest.reviewRevision || 0)
         setOcrReviewReport(prev => (prev && prev._id === latest._id) ? { ...prev, ...latest } : prev)
         if (latest.pageParseStatus?.status !== 'processing') {
-          if (latest.pageParseStatus?.status === 'success') {
+          if (['success', 'needs_review'].includes(latest.pageParseStatus?.status)) {
             setOcrEditItems(JSON.parse(JSON.stringify(latest.reportItems || [])))
             toast(latest.pageParseStatus.message || `第${ocrReviewPage}页补提完成`)
           } else if (latest.pageParseStatus?.status === 'failed') {
@@ -4926,6 +4961,8 @@ export default function PatientDetailPage() {
       await staffAPI.reviewAISupplement(id, supId, action)
       toast(action === 'approve' ? '已采纳营养素建议' : action === 'withdraw' ? '已撤回' : '已拒绝')
       loadSupplements()
+      refreshAiTodos()
+      if (location.state?.sourceTodo?.id === `supplement_${supId}`) nav(location.pathname + location.search, { replace: true, state: {} })
     } catch (err) { toast(err.message || '操作失败') }
   }
 
@@ -4935,6 +4972,8 @@ export default function PatientDetailPage() {
       await staffAPI.reviewPatientMedication(id, medId, action)
       toast(action === 'approve' ? '用药信息已核对并归档' : action === 'withdraw' ? '已撤回' : '已退回订正')
       loadMedications()
+      refreshAiTodos()
+      if (location.state?.sourceTodo?.id === `medication_${medId}`) nav(location.pathname + location.search, { replace: true, state: {} })
     } catch (err) { toast(err.message || '操作失败') }
   }
 
@@ -5079,6 +5118,12 @@ export default function PatientDetailPage() {
       toast('已确认报告解读')
       setShowReportDetail(null)
       await loadReports()
+      await refreshAiTodos()
+      if (location.state?.sourceTodo?.type === 'report_interpretation') {
+        const search = new URLSearchParams(location.search)
+        search.delete('reportId')
+        nav(location.pathname + (search.toString() ? `?${search}` : ''), { replace: true, state: {} })
+      }
       loadPendingDoctorAudit()
       load()
     } catch (err) { setReportFlowError(err.message || '确认失败') }
@@ -5294,7 +5339,7 @@ export default function PatientDetailPage() {
           <span style={{ fontSize: 18 }}>🥗</span>
           <div style={{ flex: 1, minWidth: 180 }}>
             <span style={{ color: '#166534', fontWeight: 600, fontSize: 14 }}>膳食调查问卷待营养师复核</span>
-            <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>提交于 {new Date(r.submittedAt).toLocaleDateString('zh-CN')}</span>
+            <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>提交于 {new Date(r.submittedAt).toLocaleDateString('zh-CN')} · {r.answers.filter(answer => answer.archiveField && answer.changed).length} 项与当前生活方式档案不同</span>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpenDietaryResponseId(value => value === String(r.responseId) ? '' : String(r.responseId))}>{openDietaryResponseId === String(r.responseId) ? '收起问卷' : '查看问卷内容'}</button>
           {(staff?.role === 'nutritionist' || staff?.role === 'superadmin') && (
@@ -5304,7 +5349,7 @@ export default function PatientDetailPage() {
           )}
           {openDietaryResponseId === String(r.responseId) && <div style={{ flexBasis: '100%', borderTop: '1px solid #BBF7D0', paddingTop: 12, marginTop: 3 }}>
             <div style={{ color: '#166534', fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{r.title || '膳食调查问卷'} · 客户原始回答（{r.answers?.length || 0}项）</div>
-            {(r.answers || []).length ? (r.answers || []).map((answer, index) => <div key={`${answer.questionId}-${index}`} style={{ padding: '9px 11px', marginBottom: 7, border: '1px solid #DCF0E4', borderRadius: 8, background: '#fff' }}><div style={{ fontSize: 12, color: '#65776F' }}>{index + 1}. {answer.questionText || '题目'}</div><div style={{ fontSize: 13, color: '#173B2E', marginTop: 4, whiteSpace: 'pre-wrap' }}>{readableDietaryAnswer(answer.answer)}</div></div>) : <div style={{ color: '#B45309', fontSize: 13 }}>这份答卷没有可显示的题目与回答，请先核对问卷原始记录，不要直接确认。</div>}
+            {(r.answers || []).length ? (r.answers || []).map((answer, index) => <div key={`${answer.questionId}-${index}`} style={{ padding: '9px 11px', marginBottom: 7, border: `1px solid ${answer.archiveField && answer.changed ? '#F4D7A4' : '#DCF0E4'}`, borderRadius: 8, background: answer.archiveField && answer.changed ? '#FFF9EF' : '#fff' }}><div style={{ fontSize: 12, color: '#65776F' }}>{index + 1}. {answer.questionText || '题目'}{answer.archiveField && answer.changed && <strong style={{ color: '#9A6B1D', marginLeft: 8 }}>与当前档案不同 · 待核实</strong>}</div><div style={{ fontSize: 13, color: '#173B2E', marginTop: 4, whiteSpace: 'pre-wrap' }}>{readableDietaryAnswer(answer.answer)}</div>{answer.archiveField && answer.changed && <div style={{ marginTop: 4, fontSize: 12, color: '#806F52' }}>当前已核实档案：{answer.baselineValue || '未记录'}</div>}</div>) : <div style={{ color: '#B45309', fontSize: 13 }}>这份答卷没有可显示的题目与回答，请先核对问卷原始记录，不要直接确认。</div>}
           </div>}
         </div>
       ))}
@@ -5323,6 +5368,7 @@ export default function PatientDetailPage() {
       <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps.filter(task => task.serviceExecutionVisible !== false)} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={user.phaseAssessmentEnabled === true} />
 
       {user.initialArchiveImportPending && <div className="card" style={{padding:16,marginBottom:16}}>初次问卷已保存，档案写入待重试。<button className="btn btn-primary btn-sm" disabled={archiveBusy} onClick={async () => {setArchiveBusy(true);try{await staffAPI.retryInitialArchive(id);await load()}catch(err){toast(err.message)}finally{setArchiveBusy(false)}}}>重新写入初次档案</button></div>}
+      {staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff?._id) && tab === 'info' && <div className="card" style={{ padding: 18, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><div><strong>心理咨询</strong><p style={{ margin: '6px 0 0', color: '#718078', fontSize: 13 }}>查看该客户的历次咨询记录，或发起长期咨询服务</p></div><button className="btn btn-secondary" onClick={() => setTab('psychology')}>查看与跟进</button></div>}
       {/* Tabs */}
       {(() => {
         const groups = [
@@ -5341,7 +5387,7 @@ export default function PatientDetailPage() {
             ...(user.phaseAssessmentEnabled === true ? [{ key: 'aiReview', label: '阶段性评估与复盘' }] : []),
           ] },
           { key: 'serviceExecution', label: '服务执行', tabs: [{ key: 'followups', label: '执行任务' }] },
-          { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }] },
+          { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }, ...(staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff?._id) ? [{ key: 'psychology', label: '心理咨询' }] : [])] },
           { key: 'referrals', label: '转介记录', tabs: [{ key: 'referrals', label: '转介记录' }] },
           { key: 'consumption', label: '消费记录', tabs: [{ key: 'consumption', label: '消费记录' }] },
           { key: 'family', label: '家庭信息', tabs: [{ key: 'family', label: '家庭信息' }] },
@@ -5366,6 +5412,8 @@ export default function PatientDetailPage() {
           {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{secondaryTabs.map(renderTab)}</div>}
         </div>
       })()}
+
+      {tab === 'psychology' && (staff?.role === 'familyDoctor' && String(user.assignedFamilyDoctor?._id || user.assignedFamilyDoctor || '') === String(staff?._id) ? <PsychologyPage key={id} embedded patient={{ _id: id, name: user.name }} /> : <div className="card" style={{ padding: 20 }}>仅该客户的负责健康顾问可查看心理咨询档案。</div>)}
 
       {['ai', 'aiCase'].includes(tab) && <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
         {[['screening','筛查与评估结果'],['analysis','AI健康信息整理'],['specialty','专项研判']].map(([key,label]) => <button key={key} className={`btn btn-sm ${(tab === 'aiCase' ? key === 'specialty' : screeningWorkspaceView === key) ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setTab(key === 'specialty' ? 'aiCase' : 'ai'); if (key !== 'specialty') setScreeningWorkspaceView(key) }}>{label}</button>)}
@@ -5699,9 +5747,11 @@ export default function PatientDetailPage() {
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">服务开始时间</label>
-                    <DateField className="form-input" type="date" value={editForm.serviceStartDate}
-                      onChange={e => setEditForm(f => ({ ...f, serviceStartDate: e.target.value }))} />
+                    <label className="form-label">首次加入日期（服务开始）</label>
+                    {user.serviceStartDate
+                      ? <div className="form-input" style={{ background: '#f7f5f0', color: '#4A6558' }}>{user.serviceStartDate}（已记录，不可修改）</div>
+                      : <DateField className="form-input" type="date" value={editForm.serviceStartDate}
+                          onChange={e => setEditForm(f => ({ ...f, serviceStartDate: e.target.value }))} />}
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">服务到期时间</label>
@@ -5746,7 +5796,7 @@ export default function PatientDetailPage() {
                   <InfoRow label="会员类型（运营标签）" value={user.memberType || '-'} />
                   <InfoRow label="会员来源" value={user.source || '-'} />
                   <InfoRow label="服务包" value={getServicePackageLabel(user.servicePackage)} />
-                  <InfoRow label="服务开始" value={user.serviceStartDate || '-'} />
+                  <InfoRow label="首次加入日期" value={user.serviceStartDate || '未记录'} />
                   <InfoRow label="服务到期" value={user.serviceExpiry || '-'} />
                   <InfoRow label="健康评分" value={(() => {
                     const s = user.healthScore
@@ -6314,6 +6364,7 @@ export default function PatientDetailPage() {
         <CoreArchiveSection user={user} section="medication" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} canImport={['healthManager','superadmin','platformSuper'].includes(staff?.role)}/>
 
         {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，会员自填自动写入）── */}
+        <SleepAssessmentPreparation records={Object.values(user.sleepIntakeRecords || {})} />
         <PsychAssessmentPanel user={user} />
         <div className="card"><RehabWorkspace patientId={id} staff={staff} view="assessment" onSaved={loadServiceRecords} /></div>
 
@@ -6648,6 +6699,19 @@ export default function PatientDetailPage() {
           )
         })()}
 
+        {/* 客户问卷中的不同答案先供营养师核实，不混入已确认的变化历史。 */}
+        {(() => {
+          const latestSurvey = qResponses.find(response => response.isDietarySurvey)
+          const pendingAnswers = (latestSurvey?.answers || []).filter(answer => answer.archiveField && answer.changed)
+          if (!pendingAnswers.length) return null
+          return <div className="card" style={{ marginBottom: 20, padding: '16px 20px', border: '1px solid #F4D7A4', background: '#FFF9EF' }}>
+            <div style={{ fontWeight: 700, color: '#7C4A03' }}>客户膳食问卷与当前生活方式档案不同（{pendingAnswers.length} 项）</div>
+            <div style={{ fontSize: 12, color: '#806F52', marginTop: 4 }}>提交于 {new Date(latestSurvey.submittedAt).toLocaleDateString('zh-CN')}；以下为客户自述，营养师核实后才计入下方变化记录。</div>
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {pendingAnswers.map(answer => <div key={answer.questionId} style={{ fontSize: 12, color: '#4B3512' }}><b>{answer.questionText}</b><div>当前档案：{answer.baselineValue || '未记录'} → 问卷回答：{readableDietaryAnswer(answer.answer)}</div></div>)}
+            </div>
+          </div>
+        })()}
         {/* 生活方式变化历史：每次只展示本次真正改变的字段，并关联同期健康状况变化。 */}
         {(() => {
           const entries = [...(user.lifestyleHistory || [])].sort((a, b) => new Date(b.effectiveAt || b.recordedAt) - new Date(a.effectiveAt || a.recordedAt))
@@ -6861,9 +6925,10 @@ export default function PatientDetailPage() {
             const fullUrl = resolvedUrls[0] || null
             const labItems = (r.reportItems || []).filter(i => i.itemType !== 'data' && i.itemType !== 'imaging')
             const imgItems = (r.reportItems || []).filter(i => i.itemType === 'imaging')
+            const imgGroups = groupImagingReportItems(imgItems)
             const funcItems = (r.reportItems || []).filter(i => i.itemType === 'data')
             const hasExam = r.examDescription || r.examConclusion
-            const totalCount = labItems.length + imgItems.length + funcItems.length + (hasExam ? 1 : 0)
+            const totalCount = labItems.length + imgGroups.length + funcItems.length + (hasExam ? 1 : 0)
             return (
               <div id={`screening-record-${r._id}`} data-source-report-id={(r._sourceItems || [])[0]?.reportId || r._id} key={r._id} style={{ padding: '6px 0 6px 12px', borderLeft: `2px solid ${color}40`, marginBottom: 2, transition: 'box-shadow .2s' }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -6946,6 +7011,7 @@ export default function PatientDetailPage() {
                             <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
                             <td style={{ padding: '4px 8px' }}><SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
                               source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                              suggestedIssue={screeningItemIssueTitle(item)}
                               sourceText={[item.name, item.conclusion, item.diagnosis, item.findings].filter(Boolean).join('；')}
                               sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} /></td>
                           </tr>
@@ -6982,7 +7048,9 @@ export default function PatientDetailPage() {
                     {imgItems.length > 0 && (
                       <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: 11, fontWeight: 600, color: '#0369A1', marginBottom: 4 }}>检查项目</div>
-                        {imgItems.map((item, j) => {
+                        {imgGroups.map(({ items, primary, sourcePages }, j) => {
+                          const item = primary
+                          const sourceReportCount = new Set(items.map(i => i.reportId).filter(Boolean)).size
                           const findings = item.findings || item.value || ''
                           return (
                             <div key={j} style={{ border: '1px solid #BFDBFE', borderRadius: 6, marginBottom: 6, overflow: 'hidden' }}>
@@ -6990,12 +7058,15 @@ export default function PatientDetailPage() {
                                 <span style={{ fontWeight: 600, color: '#1E40AF', fontSize: 12 }}>{item.name}</span>
                                 {item.bodyPart && <span style={{ fontSize: 11, color: '#3B82F6' }}>· {item.bodyPart}</span>}
                                 {(item.examDate || r.checkDate) && <span style={{ fontSize: 11, color: '#93C5FD', marginLeft: 'auto' }}>{item.examDate || r.checkDate}</span>}
+                                {sourcePages.length > 1 && <span style={{ fontSize: 11, color: '#3B82F6' }}>{sourceReportCount > 1 ? '多份原件，来源页见下' : `来源第${sourcePages.join('、')}页`}</span>}
                                 <SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast}
-                                  source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                                  source={{ kind: 'screening', reportId: item.reportId || (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                                  suggestedIssue={screeningItemIssueTitle(item)}
                                   sourceText={[item.name, item.conclusion, item.diagnosis, item.findings].filter(Boolean).join('；')}
                                   sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} />
                               </div>
                               <div style={{ padding: '6px 10px', fontSize: 12, background: '#fff', lineHeight: 1.7 }}>
+                                {items.length > 1 && <details style={{ marginBottom: 4, color: '#6B7280' }}><summary style={{ cursor: 'pointer' }}>查看原报告识别来源（{items.length}处）</summary><div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{items.map(i => `${i.reportTitle || '原报告'}第${i.sourcePage || '未知'}页 ${i.name || '检查项'}：${i.findings || i.value || ''}${i.diagnosis ? `；${i.diagnosis}` : ''}`).join('\n')}</div></details>}
                                 {item.conclusion && <div style={{ color: '#5B21B6', fontWeight: 600, marginBottom: 4 }}><span style={{ color: '#7C3AED' }}>主要结论：</span>{item.conclusion}</div>}
                                 {findings && <div style={{ color: '#374151', marginBottom: 4, whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>检查所见：</span>{findings}</div>}
                                 {item.diagnosis && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>诊断意见：</span>{item.diagnosis}</div>}
@@ -7063,6 +7134,7 @@ export default function PatientDetailPage() {
                             <span style={{ color: '#4A6558' }}>{item.value || '-'}</span>
                             <SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast}
                               source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                              suggestedIssue={screeningItemIssueTitle(item)}
                               sourceText={[item.name, item.value, item.conclusion].filter(Boolean).join('；')}
                               sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} />
                           </div>
@@ -7298,6 +7370,8 @@ export default function PatientDetailPage() {
                 // 把 AI 识别的 UserScreeningItem 转成虚拟记录合并进 treeData
                 const aiVirtualMap = {}
                 screeningItems.forEach(it => {
+                  // 报告仍在、但旧归类键已不再指向任何项目时，不生成空的虚拟检查卡。
+                  if (Array.isArray(it.matchedItems) && it.matchedItems.length === 0) return
                   const originalL1 = knownTreeIds.has(String(it.category)) ? String(it.category) : (catToTreeId[it.category] || `ai_${it.category}`)
                   const category = resolveScreeningCategory(screeningTree, originalL1, it.parentLabel || '其他')
                   const l1Key = category.l1Id || originalL1
@@ -7320,7 +7394,13 @@ export default function PatientDetailPage() {
                   const subItems = Array.isArray(it.matchedItems) && it.matchedItems.length ? it.matchedItems : [it]
                   subItems.forEach(sub => {
                     aiVirtualMap[vKey].reportItems.push({
+                      reportId: rid,
+                      reportTitle: it.reportTitle || '',
+                      itemId: it.itemId || '',
                       name: sub.name || it.itemLabel,
+                      sourcePage: sub.sourcePage || '',
+                      examDate: sub.examDate || '',
+                      institution: sub.institution || it.institution || '',
                       value: sub.value || '',
                       unit: sub.unit || '',
                       referenceRange: sub.referenceRange || '',
@@ -7348,6 +7428,17 @@ export default function PatientDetailPage() {
                   if (!treeData[_l1Key]) treeData[_l1Key] = {}
                   if (!treeData[_l1Key][_l2]) treeData[_l1Key][_l2] = {}
                   if (!treeData[_l1Key][_l2][_l3]) treeData[_l1Key][_l2][_l3] = []
+                  const sibling = treeData[_l1Key][_l2][_l3].find(previous =>
+                    previous.isAI && previous.checkDate === rec.checkDate &&
+                    previous.reportItems.length && rec.reportItems.length &&
+                    [...previous.reportItems, ...rec.reportItems].every(item => item.itemType === 'imaging') &&
+                    groupImagingReportItems([...previous.reportItems, ...rec.reportItems]).length === 1
+                  )
+                  if (sibling) {
+                    sibling.reportItems.push(...rec.reportItems)
+                    sibling._sourceItems.push(...rec._sourceItems)
+                    return
+                  }
                   treeData[_l1Key][_l2][_l3].push(rec)
                 })
 
@@ -8455,23 +8546,24 @@ export default function PatientDetailPage() {
               const dateStr = recordedDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
               const fullDate = recordedDate.toLocaleDateString('zh-CN');
               if (r.type === 'bloodPressure') {
+                const measuredAt = recordedDate.toLocaleString('zh-CN', { hour12: false });
                 const [valueSys, valueDia] = String(r.value || '').split('/').map(Number);
                 const systolic = Number(r.extra?.sys ?? r.sys ?? valueSys);
                 const diastolic = Number(r.extra?.dia ?? r.dia ?? valueDia);
                 if (systolic > 0) {
                   if (!byType.bloodPressureSystolic) byType.bloodPressureSystolic = [];
-                  byType.bloodPressureSystolic.push({ x: dateStr, date: fullDate, y: systolic });
+                  byType.bloodPressureSystolic.push({ x: dateStr, date: measuredAt, y: systolic, unit: 'mmHg' });
                 }
                 if (diastolic > 0) {
                   if (!byType.bloodPressureDiastolic) byType.bloodPressureDiastolic = [];
-                  byType.bloodPressureDiastolic.push({ x: dateStr, date: fullDate, y: diastolic });
+                  byType.bloodPressureDiastolic.push({ x: dateStr, date: measuredAt, y: diastolic, unit: 'mmHg' });
                 }
                 return;
               }
               const y = parseFloat(r.value) || 0;
               if (y > 0) {
                 if (!byType[r.type]) byType[r.type] = [];
-                byType[r.type].push({ x: dateStr, date: fullDate, y });
+                byType[r.type].push({ x: dateStr, date: fullDate, y, unit: r.unit || '' });
               }
             });
             return Object.entries(byType).filter(([, arr]) => arr.length >= 2).reverse();
@@ -8549,7 +8641,7 @@ export default function PatientDetailPage() {
               ) : charts.length >= 1 ? (
                 <div id="trend-chart-wrap" style={{ padding: '12px 16px', overflowX: 'auto' }}>
                   {charts.map(([type, arr]) => (
-                    <MiniTrendChart key={type} data={[...arr].reverse()} color={TYPE_COLORS[type] || '#1E6B50'} label={TREND_TYPE_LABELS[type] || type} />
+                    <MiniTrendChart key={type} data={[...arr].reverse()} color={TYPE_COLORS[type] || '#1E6B50'} label={TREND_TYPE_LABELS[type] || type} unit={arr[0]?.unit || ''} showChange />
                   ))}
                 </div>
               ) : (
@@ -9899,6 +9991,8 @@ export default function PatientDetailPage() {
                 onClick={() => setMedSubTab(t.key)}>{t.label}</button>
             ))}
             <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              {medSubTab === 'med' && reports.some(report => report.documentCategory === 'prescription_order' && report.audit_status === 'audited') && ['healthManager', 'medicalAssistant', 'familyDoctor', 'superadmin'].includes(staff?.role) &&
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowPrescriptionPicker(true)}>从处方录入</button>}
               {false && medSubTab === 'sup' && (
                 <button className="btn btn-secondary btn-sm" disabled={aiSupGenerating}
                   onClick={generateAISupplement}>
@@ -9906,7 +10000,7 @@ export default function PatientDetailPage() {
                 </button>
               )}
               <button className="btn btn-primary btn-sm"
-                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', specification:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingMed(null); setMedError(''); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', specification:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
+                onClick={() => { if (medSubTab === 'med') { setSourcePrescriptionReport(null); setMedForm({ name:'', brandName:'', specification:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingMed(null); setMedError(''); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', specification:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
                 ＋ 新增{medSubTab === 'med' ? '药物' : '营养素'}
               </button>
             </div>
@@ -9917,20 +10011,8 @@ export default function PatientDetailPage() {
             const activeMeds = medications.filter(m => m.aiStatus !== 'pending')
             const visibleMeds = activeMeds.filter(m => medHistoryTab === 'stopped' ? m.stopped : !m.stopped)
             const canApproveMed = staff?.role === 'familyDoctor' || staff?.role === 'superadmin'
-            const prescriptionReports = reports.filter(report => report.documentCategory === 'prescription_order' && report.audit_status === 'audited')
             return (
             <>
-            {prescriptionReports.length > 0 && <div className="card" style={{ marginBottom: 12 }}>
-              <div className="card-header"><span className="card-title">已审核处方与医嘱</span></div>
-              <div className="card-body" style={{ display: 'grid', gap: 10 }}>
-                <div style={{ fontSize: 12, color: '#60756B' }}>这里保留原处方记录；只有明确核对为当前服用的药物才进入下方用药清单。</div>
-                {prescriptionReports.map(report => <div key={report._id} style={{ borderTop: '1px solid #E5EEE9', paddingTop: 8 }}>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setTab('reports'); openReportDetail(report) }}>{report.title || '处方与医嘱'} · {report.clinicalReview?.issuedDate || report.checkDate || '日期未记录'}</button>
-                  {report.clinicalReview?.medicationDecision === 'has_medications' && <div style={{ fontSize: 12, marginTop: 5 }}>{(report.clinicalReview.medications || []).map(row => `${row.name || '未命名药物'}${row.includeInCurrentMedication ? '（拟纳入当前用药）' : '（仅处方记录）'}`).join('、')}</div>}
-                  {!report.clinicalReview && <div style={{ fontSize: 12, marginTop: 5 }}>{(report.reportItems || []).filter(item => item.itemType === 'medication').map(item => item.genericName || item.name).filter(Boolean).join('、') || '药物明细请查看原处方'}</div>}
-                </div>)}
-              </div>
-            </div>}
             {pendingMeds.length > 0 && (
               <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
                 <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -10218,15 +10300,33 @@ export default function PatientDetailPage() {
             </div>
           </div>}
 
+          {showPrescriptionPicker && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 680 }}>
+            <div className="modal-header"><h3 className="modal-title">选择已审核处方</h3><button className="modal-close" onClick={() => setShowPrescriptionPicker(false)}>✕</button></div>
+            <div className="modal-body" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
+              <p style={{ color: '#60756B', fontSize: 13 }}>只录入经核实仍在服用的药物；每个药物单独提交待审核。仅历史处方无需写入当前用药。</p>
+              {reports.filter(report => report.documentCategory === 'prescription_order' && report.audit_status === 'audited').map(report => {
+                const linkedCount = medications.filter(med => String(med.sourceRecordKey || '').includes(String(report._id))).length
+                return <div key={report._id} style={{ borderTop: '1px solid #E5EEE9', padding: '12px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div><strong>{report.title || '处方与医嘱'}</strong> · {report.clinicalReview?.issuedDate || report.checkDate || '日期未记录'}<div style={{ fontSize: 12, color: '#60756B', marginTop: 4 }}>{linkedCount ? `已关联 ${linkedCount} 条用药记录` : '尚无直接关联的用药记录'}</div></div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setShowPrescriptionPicker(false); openReportDetail(report) }}>查看原件</button>
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => { setShowPrescriptionPicker(false); setSourcePrescriptionReport(report); setEditingMed(null); setMedError(''); setMedForm({ name:'', brandName:'', specification:'', dosage:'', method:'', frequency:'', timing:'', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setShowMedModal(true) }}>录入用药</button>
+                  </div>
+                </div>
+              })}
+            </div>
+          </div></div>}
+
           {/* 新增/编辑药物弹窗：表单字段多，鼠标移出边界误触遮罩会丢失编辑，去掉点遮罩关闭 */}
           {showMedModal && (
             <div className="modal-overlay">
               <div className="modal" style={{ maxWidth: 560 }}>
                 <div className="modal-header">
-                  <h3 className="modal-title">{editingStoppedMed ? '订正已停用药物信息' : editingMed ? '编辑药物' : '新增药物'}</h3>
-                  <button className="modal-close" onClick={() => { setShowMedModal(false); setMedError('') }}>✕</button>
+                  <h3 className="modal-title">{sourcePrescriptionReport ? '依据处方录入用药' : editingStoppedMed ? '订正已停用药物信息' : editingMed ? '编辑药物' : '新增药物'}</h3>
+                  <button className="modal-close" onClick={() => { setShowMedModal(false); setSourcePrescriptionReport(null); setMedError('') }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  {sourcePrescriptionReport && <div style={{ gridColumn: '1/-1', padding: 10, background: '#F2F8F5', borderRadius: 8, fontSize: 13 }}>来源：{sourcePrescriptionReport.title || '处方与医嘱'} · {sourcePrescriptionReport.checkDate || '日期未记录'}。请对照原件并核实当前实际服用情况；提交后进入待审核，不会直接加入服用中。</div>}
                   {editingStoppedMed && <div style={{ gridColumn: '1/-1', fontSize: 12, color: '#8A5A44' }}>只订正历史记录；保存后仍为“已停用”，不会恢复用药提醒。</div>}
                   {[
                     { k: 'name', label: '药品化学名 *', full: false, placeholder: '如：苯磺酸氨氯地平' },
@@ -10252,12 +10352,12 @@ export default function PatientDetailPage() {
                     <div className="form-group"><label className="form-label">停用原因 *</label><input className="form-input" value={medForm.stopReason || ''} onChange={e => setMedForm(f => ({ ...f, stopReason: e.target.value }))}/></div>
                     <div className="form-group" style={{ gridColumn: '1/-1' }}><label className="form-label">本次订正理由 *</label><textarea className="form-input" rows={2} maxLength={1000} value={medCorrectionReason} onChange={e => setMedCorrectionReason(e.target.value)} placeholder="说明原信息哪里不准确及核实依据"/></div>
                   </>}
-                  <RecordImageUploader imageUrls={medForm.imageUrls || []} onChange={imageUrls => setMedForm(form => ({ ...form, imageUrls }))}
-                    uploading={medImageUploading} setUploading={setMedImageUploading} onError={setMedError} />
+                  {sourcePrescriptionReport ? <div style={{ gridColumn: '1/-1', fontSize: 12, color: '#60756B' }}>处方原件将自动作为核对附件。</div> : <RecordImageUploader imageUrls={medForm.imageUrls || []} onChange={imageUrls => setMedForm(form => ({ ...form, imageUrls }))}
+                    uploading={medImageUploading} setUploading={setMedImageUploading} onError={setMedError} />}
                 </div>
                 <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
                   {medError && <div role="alert" style={{ color: '#C0392B', flex: '1 1 100%' }}>{medError}</div>}
-                  <button className="btn btn-ghost" onClick={() => { setShowMedModal(false); setMedError('') }}>取消</button>
+                  <button className="btn btn-ghost" onClick={() => { setShowMedModal(false); setSourcePrescriptionReport(null); setMedError('') }}>取消</button>
                   <button className="btn btn-primary" disabled={medSaving || medImageUploading} onClick={async () => {
                     setMedError('')
                     if (!medForm.name?.trim() || !medForm.dosage?.trim() || !medForm.frequency?.trim()) { setMedError('请填写药品化学名、剂量和频次'); return }
@@ -10267,12 +10367,12 @@ export default function PatientDetailPage() {
                       const needReview = !editingMed && (staff?.role === 'healthManager' || staff?.role === 'medicalAssistant')
                       if (editingStoppedMed) await staffAPI.correctStoppedMedication(id, editingMed, { ...medForm, correctionReason: medCorrectionReason })
                       else if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
-                      else await staffAPI.createPatientMedication(id, medForm)
-                      setShowMedModal(false); loadMedications()
-                      toast(editingStoppedMed ? '历史信息已订正，仍为已停用' : editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
+                      else await staffAPI.createPatientMedication(id, { ...medForm, ...(sourcePrescriptionReport ? { sourceReportId: sourcePrescriptionReport._id } : {}) })
+                      setShowMedModal(false); setSourcePrescriptionReport(null); loadMedications(); refreshAiTodos()
+                      toast(sourcePrescriptionReport ? '已从处方录入，待健康顾问审核' : editingStoppedMed ? '历史信息已订正，仍为已停用' : editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
                     } catch (err) { setMedError(err.message || '保存失败，请稍后重试') }
                     finally { setMedSaving(false) }
-                  }}>{medImageUploading ? '图片上传中...' : medSaving ? '保存中...' : '保存'}</button>
+                  }}>{medImageUploading ? '图片上传中...' : medSaving ? '保存中...' : sourcePrescriptionReport ? '提交待审核' : '保存'}</button>
                 </div>
               </div>
             </div>
@@ -10919,7 +11019,8 @@ export default function PatientDetailPage() {
               </div>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {editingRecord.type === 'bloodPressure' ? (
-                  <div style={{ display: 'flex', gap: 12 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'flex', gap: 12 }}>
                     <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                       <label className="form-label">收缩压（mmHg）</label>
                       <input className="form-input" type="number" value={editRecordForm.sys}
@@ -10929,6 +11030,13 @@ export default function PatientDetailPage() {
                       <label className="form-label">舒张压（mmHg）</label>
                       <input className="form-input" type="number" value={editRecordForm.dia}
                         onChange={e => setEditRecordForm(p => ({ ...p, dia: e.target.value }))} />
+                    </div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">测量时间（北京时间，可修正）</label>
+                      <input className="form-input" type="datetime-local" value={editRecordForm.recordedAt}
+                        max={beijingRecordTime(new Date())}
+                        onChange={e => setEditRecordForm(p => ({ ...p, recordedAt: e.target.value }))} />
                     </div>
                   </div>
                 ) : isFreeText ? (
@@ -11182,7 +11290,7 @@ export default function PatientDetailPage() {
             && (!reportFocusId || String(r._id) === String(reportFocusId))
         })
         const categoryCount = key => reportsInBaseScope.filter(r => inferDocumentCategory(r) === key).length
-        const reportsInScope = reportsInBaseScope.filter(r => reportDocumentCategory === 'all' || inferDocumentCategory(r) === reportDocumentCategory)
+        const reportsInScope = reportsInBaseScope.filter(r => reportDocumentCategory === 'all' || (reportDocumentCategory === 'insurance_claim' ? r.insuranceClaim : inferDocumentCategory(r) === reportDocumentCategory))
         const isReportInfoMissing = report => !(report.hospital || report.institution) || !(report.checkDate || report.date)
         const missingReportCount = reportsInScope.filter(isReportInfoMissing).length
         const taskFilterCount = key => key === 'all' ? reportsInScope.length : reportsInScope.filter(r => getReportTaskKey(r) === key).length
@@ -11304,6 +11412,7 @@ export default function PatientDetailPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 8, marginBottom: 12 }}>
               <button type="button" onClick={() => { setReportDocumentCategory('all'); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === 'all' ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === 'all' ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>全部资料</strong><span style={{ float: 'right', color: '#789287' }}>{reportsInBaseScope.length}</span></button>
+              <button type="button" onClick={() => { setReportDocumentCategory('insurance_claim'); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === 'insurance_claim' ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === 'insurance_claim' ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>高端险事后报销资料</strong><span style={{ float: 'right', color: '#789287' }}>{reportsInBaseScope.filter(r => r.insuranceClaim).length}</span></button>
               {DOCUMENT_CATEGORIES.map(item => <button key={item.key} type="button" onClick={() => { setReportDocumentCategory(item.key); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === item.key ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === item.key ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>{item.label}</strong><span style={{ float: 'right', color: '#789287' }}>{categoryCount(item.key)}</span></button>)}
             </div>
             {reports.length > 0 && <div className="report-list-toolbar">
@@ -11370,10 +11479,10 @@ export default function PatientDetailPage() {
                             <td>
                               <button type="button" onClick={() => openReportDetail(r)} className="report-table-list-title-btn">{r.title || '未命名报告'}</button>
                               {!manualOnly && r.parseJob?.status === 'paused' && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}；请联系管理员恢复。</div>}
-                              {((r.parseJob?.status === 'failed') || (r.parseJob?.status === 'completed' && r.parseJob.message?.includes('识别失败'))) && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}</div>}
+                              {((r.parseJob?.status === 'failed') || (r.parseJob?.status === 'completed' && /识别失败|待核对/.test(r.parseJob.message || ''))) && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>首轮：{r.parseJob.message}；补提结果请进入审核页核对。</div>}
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
-                            <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
+                            <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{r.insuranceClaim ? '高端险事后报销资料' : typeLabel}</div></td>
                             <td style={{ color: '#60756B' }}>{r.hospital || r.institution || (r.institutionStatus === 'unknown' ? '来源机构不明' : '') || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ fontSize: 11 }}>{r.audited_at ? new Date(r.audited_at).toLocaleString() : '未完成'}<br />{r.audited_by || ''}<br />{Object.keys(r.reviewActivity || {}).length ? `有效时长 ${Math.round(Object.values(r.reviewActivity).reduce((sum, session) => sum + (session.durationMs || 0), 0) / 60000)} 分钟` : '时长未记录'}</td>
@@ -11772,10 +11881,15 @@ export default function PatientDetailPage() {
         const thisYear = new Date().getFullYear()
         const yearOrders = patientOrders.filter(o => new Date(o.createdAt).getFullYear() === thisYear)
         const billableYearOrders = yearOrders.filter(o => o.status !== 'cancelled' && o.paymentStatus !== 'refunded' && o.tradeStatus !== 'refunded' && o.tradeStatus !== 'closed')
-        const yearTotal = billableYearOrders.reduce((sum, order) => {
+        const orderYearTotal = billableYearOrders.reduce((sum, order) => {
           const paid = Number(order.paidAmount || 0)
           return sum + (paid > 0 ? paid : Number(order.servicePrice || 0))
         }, 0)
+        const manualYearTotal = inventoryConsumption.patientId === id
+          ? inventoryConsumption.manual.filter(entry => entry.type === 'manual_sale' && new Date(entry.createdAt).getFullYear() === thisYear)
+            .reduce((sum, entry) => sum + Number(entry.units || 0) * Number(entry.unitPrice || 0), 0)
+          : 0
+        const yearTotal = orderYearTotal + manualYearTotal
         const includedServices = packageEntitlements.length ? packageEntitlements.flatMap(entitlement => {
           const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
           return (entitlement.rights?.productEntitlements || []).map((right, index) => {
@@ -11835,7 +11949,7 @@ export default function PatientDetailPage() {
         }
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <PatientInventoryConsumption patientId={id} />
+            <PatientInventoryConsumption patientId={id} onDataChange={(patientId, data) => setInventoryConsumption({ patientId, manual: data.manual || [] })} />
             {/* 账户概览 */}
             <div className="card">
               <div className="card-header"><div className="card-title">账户概览</div></div>
@@ -12799,7 +12913,7 @@ export default function PatientDetailPage() {
                 <label className="form-label">报告归类</label>
                 <select className="form-input" value={editingReportForm.documentCategory || ''}
                   onChange={e => setEditingReportForm(f => ({ ...f, documentCategory: e.target.value, clinicalReview: {} }))}>
-                  {DOCUMENT_CATEGORIES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  {DOCUMENT_CATEGORIES.filter(t => t.key !== 'insurance_claim_receipt' || editingReport?.documentCategory === 'insurance_claim_receipt').map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -12989,13 +13103,15 @@ export default function PatientDetailPage() {
                 const l1Node = r.screeningL1 ? screeningTree.find(n => String(n._id) === r.screeningL1) : null
                 const categoryLabel = l1Node ? [l1Node.label, r.screeningL2].filter(Boolean).join(' › ') : (r.type === 'annual' ? '年度体检报告' : null)
                 const rows = [
-                  ['报告类型', typeLabel],
+                  ['资料分类', DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'],
+                  ...(r.categoryCorrectionHistory?.length ? [['分类更正', `${DOCUMENT_CATEGORY_LABEL[r.categoryCorrectionHistory.at(-1).from] || '其他资料'} → ${DOCUMENT_CATEGORY_LABEL[r.categoryCorrectionHistory.at(-1).to] || '其他资料'}（${r.categoryCorrectionHistory.at(-1).byName || '医护人员'}）`]] : []),
+                  ['筛查类型', typeLabel],
                   ...(categoryLabel && categoryLabel !== typeLabel ? [['分类', categoryLabel]] : []),
                   ['医院 / 机构', r.hospital || '-'],
                   ['报告日期', r.checkDate || r.date || '-'],
                   ['审核状态', r.duplicateOf ? '重复上传·不计入筛查' : r.archiveOnly ? '仅留存·不解析' : r.advisorCorrection?.status === 'returned' ? '顾问退回·待修改' : r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
                   ['审核人', r.audited_by || '-'],
-                  ...(r.archiveOnly ? [['关联已审报告', reports.find(item => item._id === String(r.archiveSourceReportId))?.title || '已关联']] : []),
+                  ...(r.archiveOnly && r.archiveSourceReportId ? [['关联已审报告', reports.find(item => item._id === String(r.archiveSourceReportId))?.title || '已关联']] : []),
                   ...(r.duplicateOf ? [['重复确认依据', r.duplicateReason || '已核对原件']] : []),
                   ...(r.advisorCorrection?.reason ? [['顾问退回原因', r.advisorCorrection.reason]] : []),
                   ...(r.reject_reason ? [['驳回原因', r.reject_reason]] : []),
@@ -13280,8 +13396,10 @@ export default function PatientDetailPage() {
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && showReportDetail.audit_status === 'audited' && !showReportDetail.archiveOnly && (
                 <div style={{ display: 'grid', gap: 7, padding: 10, background: '#FFF7F5', borderRadius: 8 }}>
-                  <b style={{ fontSize: 13 }}>健康顾问核对报告</b>
-                  {showReportDetail.advisorInterpretationConfirmedAt
+                  <b style={{ fontSize: 13 }}>{inferDocumentCategory(showReportDetail) === 'prescription_order' ? '已审核处方与医嘱' : inferDocumentCategory(showReportDetail) === 'outpatient_record' ? '已审核门诊病历' : '健康顾问核对报告'}</b>
+                  {['prescription_order', 'outpatient_record'].includes(inferDocumentCategory(showReportDetail))
+                    ? <span style={{ fontSize: 13, color: '#4A6558' }}>{inferDocumentCategory(showReportDetail) === 'prescription_order' ? '处方原件无需另做报告解读；“用药信息待核对”须在用药信息管理中逐条确认录入内容与资料一致。' : '门诊病历由诊疗资料流程核对，无需另做体检报告解读。'}</span>
+                    : showReportDetail.advisorInterpretationConfirmedAt
                     ? <span style={{ fontSize: 13, color: '#1E6B50' }}>已确认解读</span>
                     : <button className="btn btn-primary btn-sm" disabled={reportFlowSaving || reportDetailLoading} onClick={confirmReportInterpretation}>确认无误，完成解读</button>}
                   <span style={{ fontSize: 12 }}>发现归类或正常/异常判断有误，可写明原因退回健管专员修改。</span>
@@ -13387,6 +13505,37 @@ export default function PatientDetailPage() {
                   {showReportDetail.aiStatus === 'none' ? '请先返回报告列表点击“AI解析”，再在“审核AI结果”中核对并确认' : '请在“审核AI结果”里确认解析数据，确认后自动完成审核'}
                 </div>
               )}
+              {showReportDetail.audit_status === 'audited' && !showReportDetail.archiveOnly && !showReportDetail.duplicateOf
+                && ['healthManager', 'superadmin'].includes(staff?.role) && (
+                <div style={{ display:'grid', gap:8, padding:'10px 0' }}>
+                  {!categoryCorrection ? <button className="btn btn-secondary btn-sm" onClick={() => setCategoryCorrection({ documentCategory:inferDocumentCategory(showReportDetail), reason:'' })}>更正资料分类</button> : <>
+                    <div style={{ fontSize:12, color:'#60756B' }}>更正会保留原审核记录供追溯，使旧顾问草稿失效，并按新分类重新进入解析与审核。已入档资料须先由健康顾问撤销误入档记录。</div>
+                    <select className="form-input" value={categoryCorrection.documentCategory} onChange={e => setCategoryCorrection(v => ({ ...v, documentCategory:e.target.value }))}>
+                      {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+                    </select>
+                    <textarea className="form-input" rows={2} placeholder="填写更正依据（至少5字）" value={categoryCorrection.reason} onChange={e => setCategoryCorrection(v => ({ ...v, reason:e.target.value }))} />
+                    {reportFlowError && <div role="alert" style={{ color:'#B42318', fontSize:12 }}>{reportFlowError}</div>}
+                    <div style={{ display:'flex', gap:8 }}>
+                      <button className="btn btn-primary btn-sm" disabled={reportFlowSaving || categoryCorrection.reason.trim().length < 5 || categoryCorrection.documentCategory === inferDocumentCategory(showReportDetail)} onClick={async () => {
+                        if (!window.confirm(`确认将资料分类更正为「${DOCUMENT_CATEGORY_LABEL[categoryCorrection.documentCategory]}」？原审核将留痕，报告须按新分类重新解析和审核；旧顾问草稿将失效。`)) return
+                        setReportFlowSaving(true)
+                        setReportFlowError('')
+                        try {
+                          const result = await staffAPI.correctReportCategory(showReportDetail._id, categoryCorrection)
+                          const latest = await staffAPI.getReport(showReportDetail._id)
+                          setShowReportDetail(latest.data)
+                          setReportScreeningData([])
+                          setCategoryCorrection(null)
+                          await loadReports()
+                          toast(result.data?.invalidatedDraft ? '资料分类已更正；旧顾问草稿已失效，请按新分类重新解析和审核' : '资料分类已更正，请按新分类重新解析和审核')
+                        } catch (error) { setReportFlowError(error.message || '资料分类更正失败') }
+                        finally { setReportFlowSaving(false) }
+                      }}>确认更正</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setCategoryCorrection(null)}>取消</button>
+                    </div>
+                  </>}
+                </div>
+              )}
               <button className="btn btn-secondary" onClick={() => { setShowReportDetail(null); setShowRejectInput(false); setRejectReason('') }}>关闭</button>
             </div>
           </div>
@@ -13434,7 +13583,8 @@ export default function PatientDetailPage() {
         ]
         const updItem = (i, patch) => setOcrEditItems(arr => arr.map((it, idx) => idx === i ? { ...it, ...patch } : it))
         const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
-        const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'unknown', itemType: ocrReviewReport.documentCategory === 'prescription_order' ? 'medication' : 'lab' }])
+        const addItem = () => setOcrEditItems(arr => appendReportItemOnPage(arr, activePage, { name: '', value: '', unit: '', referenceRange: '', status: 'unknown', itemType: ocrReviewReport.documentCategory === 'prescription_order' ? 'medication' : 'lab' }))
+        const addImagingItem = () => setOcrEditItems(arr => appendReportItemOnPage(arr, activePage, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }))
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
         const sourcePages = [...new Set(ocrEditItems.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0))].sort((a, b) => a - b)
         const firstSourcePage = 1
@@ -13469,9 +13619,31 @@ export default function PatientDetailPage() {
             return next
           })
         }
-        const isClassified = it => Boolean(it?.screeningKey || (Array.isArray(it?.screeningKeys) && it.screeningKeys.length))
-        const matchedN = ocrEditItems.filter(isClassified).length
-        const unclassifiedN = ocrEditItems.length - matchedN
+        const isClassified = it => {
+          const original = ocrReviewReport.reportItems?.find(item => item.itemId && item.itemId === it.itemId)
+          const identityChanged = original && ['name', 'bodyPart', 'orderName', 'sourceSection', 'specimen', 'modality', 'unit'].some(field => String(original[field] || '') !== String(it[field] || ''))
+          return Boolean((it?.screeningKey || (Array.isArray(it?.screeningKeys) && it.screeningKeys.length)) && (!identityChanged || it.classificationSource === 'manual'))
+        }
+        const isSubstantiveItem = it => [it.name, it.value, it.findings, it.diagnosis, it.conclusion].some(value => String(value || '').trim())
+        const substantiveItems = ocrEditItems.map((it, i) => ({ it, i })).filter(({ it }) => isSubstantiveItem(it))
+        const unclassifiedItems = substantiveItems.filter(({ it }) => String(it.name || '').trim() && !isClassified(it))
+        const unclassifiedN = ocrReviewReport.documentCategory === 'prescription_order' ? 0 : unclassifiedItems.length
+        const ambiguousItems = ocrReviewReport.documentCategory === 'prescription_order' ? [] : substantiveItems.filter(({ it }) => {
+          const keys = [...new Set([...(Array.isArray(it.screeningKeys) ? it.screeningKeys : []), it.screeningKey].filter(Boolean))]
+          return String(it.name || '').trim() && isClassified(it) && keys.length > 1
+            && !(it.classificationSource === 'manual' && (it.classificationReviewedBy || Object.hasOwn(it, 'manualClassificationKeys')))
+        })
+        const matchedN = substantiveItems.filter(({ it }) => String(it.name || '').trim() && isClassified(it)).length
+        const unclassifiedByPage = unclassifiedItems.reduce((counts, { it }) => {
+          const page = Number(it.sourcePage) || 1
+          counts[page] = (counts[page] || 0) + 1
+          return counts
+        }, {})
+        const jumpToUnclassified = ({ it, i }) => {
+          ocrFocusHandledRef.current = null
+          setOcrReviewPage(Number(it.sourcePage) || 1)
+          setOcrFocusItemIndex(i)
+        }
         // 所有可选归类项打平，供搜索用
         const allClassifyOpts = classifyGroups.flatMap(g => g.opts.map(o => ({ ...o, groupLabel: g.label })))
         const classifyCell = (it, i) => {
@@ -13481,11 +13653,13 @@ export default function PatientDetailPage() {
           const identityChanged = original && ['name', 'bodyPart', 'orderName', 'sourceSection', 'specimen', 'modality', 'unit'].some(field => String(original[field] || '') !== String(it[field] || ''))
           const manual = it.classificationSource === 'manual'
           const selected = it.screeningKeys?.length ? it.screeningKeys : it.screeningKey ? [it.screeningKey] : []
+          const needsMultiConfirmation = ambiguousItems.some(entry => entry.i === i)
           const search = (ocrClassifySearch[i] || '').trim().toLowerCase()
           const options = allClassifyOpts.filter(option => !search || [option.groupLabel, option.label, ...(option.searchTerms || [])].join(' ').toLowerCase().includes(search))
           return <div style={{ fontSize: 12, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
             {identityChanged && !manual ? <div style={{ color: '#B45309' }}>项目已修改，保存后重新匹配归类</div> : labels.length ? labels.map(label => <div key={label} style={{ color: '#1E6B50' }}>{manual ? '人工归类' : '系统归类'}：{label}</div>)
-              : <div style={{ color: '#8AA89C' }}>暂未匹配，可手动归类</div>}
+              : !String(it.name || '').trim() ? <div style={{ color: '#6B7E75' }}>原文未识别出项目名称；可对照原件补写名称后归类</div>
+              : <div role="alert" style={{ color: '#B42318', fontWeight: 800, padding: '4px 7px', background: '#FFF1F0', border: '1px solid #FCA5A5', borderRadius: 4 }}>⚠ 未归类 · 请在下方选择分类</div>}
             <details><summary style={{ cursor: 'pointer', color: '#0077B6' }}>选择 / 修改归类</summary>
               <input style={{ width: '100%', marginTop: 4, padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }} placeholder="搜索 Admin 分类或项目别名" value={ocrClassifySearch[i] || ''} onChange={e => setOcrClassifySearch(current => ({ ...current, [i]: e.target.value }))} />
               <div style={{ maxHeight: 180, overflowY: 'auto' }}>{options.map(option => <label key={option.value} style={{ display: 'block', padding: '4px 0' }}>
@@ -13495,6 +13669,10 @@ export default function PatientDetailPage() {
               <div style={{ color: '#8AA89C' }}>可多选；保存草稿或提交审核后生效。</div>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setClassify(i, [])}>恢复自动匹配</button>
             </details>
+            {needsMultiConfirmation && <div role="alert" style={{ marginTop: 6, padding: '7px 9px', color: '#B42318', background: '#FFF1F0', borderRadius: 5 }}>
+              此项目同时匹配 {selected.length} 个分类。请核对原件与上方路径；可在“选择 / 修改归类”中调整。
+              <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => setClassify(i, selected)}>确认这些分类</button>
+            </div>}
             {nameConcern && <div role="alert" style={{ color: '#B45309' }}>{nameConcern}</div>}
           </div>
         }
@@ -13518,16 +13696,33 @@ export default function PatientDetailPage() {
               }} onFocus={index => { setOcrReviewPage(Number(ocrEditItems[index]?.sourcePage) || 1); setOcrFocusItemIndex(index) }} />
               <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h3 className="modal-title">{ocrReviewReport._screeningRecordEdit ? '修改筛查项目归类' : '审核AI识别结果'} · {ocrReviewReport.title}</h3>
-                {ocrReviewReport.parseJob?.message?.includes('识别失败') && <span style={{ fontSize: 12, color: '#B86A19', marginLeft: 12 }}>{ocrReviewReport.parseJob.message}</span>}
+                {/识别失败|待核对/.test(ocrReviewReport.parseJob?.message || '') && <span style={{ fontSize: 12, color: '#B86A19', marginLeft: 12 }}>首轮：{ocrReviewReport.parseJob.message}；当前草稿 {ocrEditItems.filter(isSubstantiveItem).length} 项，补提项仍需核对原件。</span>}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
                   <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
                   <select value={activePage} onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
-                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{ocrReviewReport.imagePageEvidence?.[page]?.status === 'image_only' ? '（影像资料）' : missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
+                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{unclassifiedByPage[page] ? `（未归类 ${unclassifiedByPage[page]} 项）` : ocrReviewReport.imagePageEvidence?.[page]?.status === 'image_only' ? '（影像资料）' : missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
                   </select>
                   <button className="btn btn-secondary btn-sm" disabled={activePage >= lastSourcePage} onClick={() => setOcrReviewPage(p => Math.min(lastSourcePage, (p || firstSourcePage) + 1))}>下一页</button>
                 </div>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
+              {unclassifiedN > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF1F0', borderBottom: '1px solid #FCA5A5', color: '#B42318', fontSize: 12 }}>
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>⚠ 未归类 {unclassifiedN} 项：可以保存草稿，全部归类后才能提交审核。点击下列项目直接定位：</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 104, overflowY: 'auto' }}>
+                  {unclassifiedItems.map(entry => <button key={entry.it.itemId || entry.i} type="button" onClick={() => jumpToUnclassified(entry)}
+                    style={{ color: '#B42318', border: '1px solid #FCA5A5', background: '#fff', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', fontSize: 12, textAlign: 'left', maxWidth: '100%' }}>
+                    第 {Number(entry.it.sourcePage) || 1} 页 · {entry.it.sourceSection || entry.it.orderName || '未识别栏目'} · <strong>{entry.it.name || '未命名项目'}</strong>
+                  </button>)}
+                </div>
+              </div>}
+              {ambiguousItems.length > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF8E6', borderBottom: '1px solid #FCD34D', color: '#92400E', fontSize: 12 }}>
+                <strong>⚠ {ambiguousItems.length} 项同时匹配多个分类，须逐项核对归属后才能提交审核。可先保存草稿：</strong>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, maxHeight: 104, overflowY: 'auto' }}>
+                  {ambiguousItems.map(entry => <button key={entry.it.itemId || entry.i} type="button" onClick={() => jumpToUnclassified(entry)} style={{ border: '1px solid #FCD34D', borderRadius: 5, padding: '4px 8px', background: '#fff', color: '#92400E', cursor: 'pointer', textAlign: 'left' }}>
+                    第 {Number(entry.it.sourcePage) || 1} 页 · {entry.it.name}：{reportClassificationLabels(entry.it, screeningCatalog).join('；')}
+                  </button>)}
+                </div>
+              </div>}
               <div className="ocr-review-layout" style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 {/* 左：原始报告预览 */}
                 {(() => {
@@ -13601,7 +13796,7 @@ export default function PatientDetailPage() {
                 })()}
               <div className="modal-body ocr-review-fields" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
                 {activePageParse && activePageParse.status !== 'image_only' && (
-                  <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
+                  <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing || activePageParse.status === 'needs_review' ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing || activePageParse.status === 'needs_review' ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
                     {pageParsing ? `第${activePage}页正在补提，请稍候，完成后本页会自动刷新。` : pageParseStale ? `第${activePage}页上次补提已中断，可以重新补提。` : activePageParse.message}
                   </div>
                 )}
@@ -13668,12 +13863,12 @@ export default function PatientDetailPage() {
                       {/* 异常快览仅适用于检验数值，不用于处方。 */}
                       {!isPrescription && <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>
-                          检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 影像/检查 ${imgRows.length} 项` : ''}
+                          本页检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 本页影像/检查 ${imgRows.length} 项` : ''}
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
                           {labRows.length > 0 && !activeImageEvidence?.message && abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
-                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已归类 {matchedN} 项（将写入专项筛查）</span>
-                          <span style={{ marginLeft: 8, fontWeight: 400, color: reviewedCount === indexedAll.length ? '#16A34A' : '#D97706' }}>· 人工已核对 {reviewedCount}/{indexedAll.length}</span>
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 整份报告已归类 {matchedN} 项（提交审核后写入专项筛查）</span>
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: reviewedCount === indexedAll.length ? '#16A34A' : '#D97706' }}>· 整份报告人工已核对 {reviewedCount}/{indexedAll.length}（仅记录核对进度，不阻止保存）</span>
                         </div>
                         {abn.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -13709,7 +13904,7 @@ export default function PatientDetailPage() {
                             } : item))
                           }}>{pageAllReviewed ? '撤销本页已核对' : '✓ 标记本页已核对'}</button>
                           <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增{isPrescription ? '药品' : '检验项'}</button>
-                          {!isPrescription && <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }])}>＋ 新增检查项</button>}
+                          {!isPrescription && <button className="btn btn-secondary btn-sm" onClick={addImagingItem}>＋ 新增检查项</button>}
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
@@ -13724,8 +13919,9 @@ export default function PatientDetailPage() {
                               原件栏目：{it.sourceSection || it.orderName || '未识别栏目'}
                             </div>}
                             <div ref={node => { if (node) ocrItemRefs.current[i] = node; else delete ocrItemRefs.current[i] }}
-                              style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
+                              style={{ border: !isPrescription && isSubstantiveItem(it) && !isClassified(it) ? '2px solid #E5484D' : isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: !isPrescription && isSubstantiveItem(it) && !isClassified(it) ? '#FFF8F7' : isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
                               {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
+                              {!isPrescription && isSubstantiveItem(it) && !isClassified(it) && <div style={{ color: '#B42318', fontSize: 12, fontWeight: 800, marginBottom: 6 }}>⚠ 未归类 · 此项阻止完成审核</div>}
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
                                 <span style={{ color: isPrescription ? '#1E6B50' : sc, fontSize: 12 }}>{isPrescription ? '处方药品' : (STATUS_OPTS.find(s => s.v === it.status)?.label || '未知')}</span>
                                 <span style={{ color: '#8AA89C', fontWeight: 400, marginLeft: 8 }}>{it.sourcePage ? `P${it.sourcePage} · ` : ''}第 {it.sourceRowOrder || visibleIndex + 1} 项</span>
@@ -13928,7 +14124,8 @@ export default function PatientDetailPage() {
                 </button>}
                 {ocrDraftSavedAt && <span style={{ alignSelf: 'center', color: '#16845B', fontSize: 11, whiteSpace: 'nowrap' }}>已保存 {ocrDraftSavedAt.toLocaleTimeString('zh-CN')}</span>}
                 <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
-                  disabled={ocrSaving} onClick={handleApproveOCR}>
+                  disabled={ocrSaving || (!ocrReviewReport._screeningRecordEdit && unclassifiedN > 0) || ambiguousItems.length > 0} onClick={handleApproveOCR}
+                  title={ambiguousItems.length > 0 ? `还有 ${ambiguousItems.length} 项多分类待确认` : unclassifiedN > 0 && !ocrReviewReport._screeningRecordEdit ? `还有 ${unclassifiedN} 项未归类，请先归类或保存草稿` : undefined}>
                   {ocrSaving ? '保存中…' : ocrReviewReport._screeningRecordEdit ? '✓ 保存重新归类' : '✓ 提交审核（写入专项筛查）'}
                 </button>
                 {!ocrReviewReport._screeningRecordEdit && <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
@@ -15369,10 +15566,11 @@ const DOCUMENT_CATEGORY_REPORT_TYPE = {
   physical_exam: 'annual', lab_report: 'blood', exam_report: 'other', body_composition: 'body_comp',
   functional_medicine: 'functional', genetic_test: 'genetic', outpatient_record: 'other', inpatient_record: 'other',
   prescription_order: 'other', questionnaire: 'other', other_customer_material: 'other',
+  insurance_claim_receipt: 'other',
 }
 
 function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, onQueued }) {
-  const [form, setForm] = useState({ documentCategory: '', title: '', hospital: '', date: '', note: '', archiveOnly: false, archiveSourceReportId: '' })
+  const [form, setForm] = useState({ documentCategory: '', title: '', hospital: '', date: '', note: '', archiveOnly: false, archiveSourceReportId: '', insuranceClaim: false })
   const [fileDatas, setFileDatas] = useState([])
   // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
   // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
@@ -15384,6 +15582,8 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
   const [error, setError] = useState('')
 
   const selectedReportType = DOCUMENT_CATEGORY_REPORT_TYPE[form.documentCategory] || 'other'
+  const claimReceipt = form.documentCategory === 'insurance_claim_receipt'
+  const archiveOnly = form.archiveOnly || claimReceipt
 
   const [metaDetecting, setMetaDetecting] = useState(false)
   const [metaMessage, setMetaMessage] = useState('')
@@ -15405,7 +15605,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
     // 语义不明确（可能是多页同一份报告，也可能是多份不同报告），不做自动识别，交回手动填写
     // Large PDFs may take minutes to store. Uploading once here and again on
     // submit starts two simultaneous copies when staff confirms immediately.
-    if (!form.archiveOnly && files.length === 1 && files[0].size < 8 * 1024 * 1024 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
+    if (form.documentCategory && !archiveOnly && files.length === 1 && files[0].size < 8 * 1024 * 1024 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
       setMetaDetecting(true)
       try {
         const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
@@ -15425,13 +15625,13 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
     if (!form.title) { setError('请填写资料名称'); return }
     if (!form.documentCategory) { setError('请先按原件内容选择资料分类'); return }
     if (!fileDatas.length) { setError('请选择资料文件（图片或PDF）'); return }
-    if (form.archiveOnly && !form.archiveSourceReportId) { setError('请选择同次体检中已审核的结果报告'); return }
+    if (form.archiveOnly && !claimReceipt && !form.archiveSourceReportId) { setError('请选择同次体检中已审核的结果报告'); return }
     const normalizedDate = form.date ? calendarDate(form.date) : ''
     if (form.date && !normalizedDate) { setError('报告日期无效，请填写完整日期（如 2026-09-23）'); return }
     try {
       setSaving(true); setServerAccepted(false); setError(''); setUploadProgress(0)
       const total = fileDatas.length
-      if (!form.archiveOnly && total > 1 && ['outpatient_record', 'prescription_order'].includes(form.documentCategory)) {
+      if (!archiveOnly && total > 1 && ['outpatient_record', 'prescription_order'].includes(form.documentCategory)) {
         const classified = []
         for (let i = 0; i < total; i++) {
           const fd = fileDatas[i]
@@ -15471,7 +15671,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
             type: DOCUMENT_CATEGORY_REPORT_TYPE[category], documentCategory: category,
             hospital: hospitals.length === 1 ? hospitals[0] : groups.length === 1 ? form.hospital : '',
             date: dates.length === 1 ? dates[0] : groups.length === 1 ? normalizedDate : '',
-            note: form.note, fileUrl: group[0].url, fileUrls: group.map(fd => fd.url),
+            note: form.note, insuranceClaim: form.insuranceClaim, fileUrl: group[0].url, fileUrls: group.map(fd => fd.url),
             ossKey: group[0].ossKey || '', ossKeys: group.map(fd => fd.ossKey).filter(Boolean),
             mimeType: group[0].mimeType, fileSize: String(group.reduce((sum, fd) => sum + (Number(fd.fileSize) || 0), 0)),
           })
@@ -15503,8 +15703,9 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
           hospital: form.hospital,
           date: normalizedDate,
           note: form.note,
-          archiveOnly: form.archiveOnly,
-          archiveSourceReportId: form.archiveSourceReportId,
+          archiveOnly,
+          archiveSourceReportId: claimReceipt ? '' : form.archiveSourceReportId,
+          insuranceClaim: form.insuranceClaim || claimReceipt,
           fileUrl: urls[0],
           fileUrls: urls,
           ossKey: ossKeys[0] || '',
@@ -15533,7 +15734,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
                 patientId, title: form.title, type: selectedReportType,
                 documentCategory: form.documentCategory, hospital: form.hospital,
                 date: normalizedDate, note: form.note,
-                archiveOnly: form.archiveOnly, archiveSourceReportId: form.archiveSourceReportId,
+                archiveOnly, archiveSourceReportId: claimReceipt ? '' : form.archiveSourceReportId, insuranceClaim: form.insuranceClaim || claimReceipt,
               } : undefined,
               serverCreatesReport ? () => setServerAccepted(true) : undefined
             )
@@ -15548,8 +15749,9 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
             hospital: form.hospital,
             date: normalizedDate,
             note: form.note,
-            archiveOnly: form.archiveOnly,
-            archiveSourceReportId: form.archiveSourceReportId,
+            archiveOnly,
+            archiveSourceReportId: claimReceipt ? '' : form.archiveSourceReportId,
+            insuranceClaim: form.insuranceClaim || claimReceipt,
             fileUrl: url,
             fileUrls: [url],
             ossKey: ossKey || '',
@@ -15580,7 +15782,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-          {['healthManager', 'superadmin'].includes(staffRole) && (
+          {['healthManager', 'superadmin'].includes(staffRole) && !claimReceipt && (
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                 <input type="checkbox" checked={form.archiveOnly} onChange={e => setForm(f => ({ ...f, archiveOnly: e.target.checked, archiveSourceReportId: e.target.checked ? f.archiveSourceReportId : '' }))} />
@@ -15600,12 +15802,18 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
             <label className="form-label">资料分类 *</label>
             <select className="form-input" value={form.documentCategory} onChange={e => setForm(f => ({ ...f, documentCategory: e.target.value }))}>
               <option value="">请选择资料分类</option>
-              {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+              {DOCUMENT_CATEGORIES.filter(item => item.key !== 'insurance_claim_receipt' || ['healthManager', 'superadmin'].includes(staffRole)).map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
             </select>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>
               按原件选：年度／综合体检报告、门诊病历、处方、检验报告或检查报告；单项 MRI、听力等检查请选择“检查报告”。
             </div>
+            {claimReceipt && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 6 }}>发票、费用清单等仅保存原件，不进行医疗解析或生成审核待办。病历、检验及检查报告请选各自原有分类。</div>}
           </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            <input type="checkbox" checked={form.insuranceClaim || claimReceipt} disabled={claimReceipt} onChange={e => setForm(f => ({ ...f, insuranceClaim: e.target.checked }))} />
+            归入高端险事后报销资料
+          </label>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">资料名称 *</label>
@@ -15618,7 +15826,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
               <input className="form-input" value={form.hospital} onChange={e => setForm(f => ({ ...f, hospital: e.target.value }))} placeholder={metaDetecting ? '正在自动识别...' : '如：协和医院'} />
             </div>
             <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-              <label className="form-label">报告日期 {metaDetecting && <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>识别中…</span>}</label>
+              <label className="form-label">{claimReceipt ? '资料日期' : '报告日期'} {metaDetecting && <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>识别中…</span>}</label>
               <DateField className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
             </div>
           </div>
@@ -15641,14 +15849,14 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
                 )}
                 {fileDatas.length > 1 && (
                   <>
-                    {['outpatient_record', 'prescription_order'].includes(form.documentCategory) && !form.archiveOnly && <div style={{ fontSize: 12, color:'#4A6558', marginTop:6 }}>病历与处方图片可一次上传；系统逐张识别并按类别分别建档。识别不清时请核对分类，资料内容仍需健管专员审核。</div>}
+                    {['outpatient_record', 'prescription_order'].includes(form.documentCategory) && !archiveOnly && <div style={{ fontSize: 12, color:'#4A6558', marginTop:6 }}>病历与处方图片可一次上传；系统逐张识别并按类别分别建档。识别不清时请核对分类，资料内容仍需健管专员审核。</div>}
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: '#4A6558', cursor: 'pointer' }}>
                       <input type="checkbox" checked={mergeFiles} onChange={e => setMergeFiles(e.target.checked)} />
                       这些文件是同一份报告的多张照片（如结论页+数据页），合并为一条记录
                     </label>
                     <div style={{ fontSize: 11, color: '#8AA89C' }}>
                       {mergeFiles
-                        ? form.archiveOnly ? `共 ${fileDatas.length} 个文件将合并为一条仅存档资料` : `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
+                        ? archiveOnly ? `共 ${fileDatas.length} 个文件将合并为一条仅存档资料` : `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
                         : `共 ${fileDatas.length} 个文件，每个文件将分别创建一条报告记录`}
                     </div>
                   </>
@@ -16057,6 +16265,15 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
     setSaving(true); setError('')
     try {
       const payload = { patientId, ...form, consultationCaseId, expectedUpdatedAt: initialReferral?.updatedAt, attachedHealthInfo: buildAttachedHealthInfo() }
+      if (form.referralType === 'internal_collaboration' && selectedRecipient?.role === 'psychologist') {
+        if (initialReferral || consultationCaseId) { setError('已有转介或专家咨询事项请保留原流程；长期心理咨询请从客户页面新建内部转介'); return }
+        const diseases = diseaseOptions.filter(d => form.linkedDiseaseRecordIds.map(String).includes(String(d._id)))
+        const sharedBackground = [`转介原因：${form.reason}`, `紧急程度：${form.urgency === 'urgent' ? '紧急' : '普通'}`, form.questionList && `需要解决的问题：${form.questionList}`, form.content && `详细说明：${form.content}`, diseases.length && `本次所选专病：${JSON.stringify(diseases)}`, ...buildAttachedHealthInfoForAI().map(section => `${section.label}：${formatReferralHealthValue(section.val)}`)].filter(Boolean).join('\n\n')
+        const result = await psychologyAPI.post('', { patientId, psychologistId: form.toStaffId, sharedBackground })
+        window.location.assign(`/patients/${patientId}?tab=psychology`)
+        return
+      }
+
       if (initialReferral) await staffAPI.resubmitReferral(initialReferral._id, payload)
       else if (consultationCaseId) {
         let draft = savedConsultationDraft
@@ -16301,7 +16518,8 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, initial
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           {consultationCaseId && consultationType !== 'mdt' && <label><input type="checkbox" checked={materialsReviewed} onChange={e=>setMaterialsReviewed(e.target.checked)} /> 已审核资料及会诊诉求</label>}
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : initialReferral ? '保存修改并提交' : consultationCaseId ? '保存转介信并确认预约安排' : '发送转介'}</button>
+          {selectedRecipient?.role === 'psychologist' && form.referralType === 'internal_collaboration' && <p style={{ fontSize:12 }}>首次转介建立长期服务关系；后续在“专家咨询”中继续跟进。正式咨询资料仅负责顾问与咨询师可见。</p>}
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : selectedRecipient?.role === 'psychologist' && form.referralType === 'internal_collaboration' ? '发起长期心理咨询' : initialReferral ? '保存修改并提交' : consultationCaseId ? '保存转介信并确认预约安排' : '发送转介'}</button>
         </div>
       </div>
     </div>

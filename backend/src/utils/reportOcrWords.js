@@ -1,0 +1,146 @@
+// Read-only OCR evidence adapter for the shadow parser. It does not classify,
+// change reportItems, or send report content to an external service.
+const { execFile } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+function decodeXml(value) {
+  return String(value || '').replace(/&(#(?:x[0-9a-f]+|\d+)|amp|lt|gt|quot|apos);/gi, (_, entity) => {
+    const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+    if (entity[0] !== '#') return named[entity.toLowerCase()] || '';
+    const point = entity[1].toLowerCase() === 'x' ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+    return Number.isInteger(point) && point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : '';
+  });
+}
+
+function parsePdfTextBoxes(xml) {
+  const words = [];
+  const pattern = /<word\b([^>]*)>([\s\S]*?)<\/word>/gi;
+  for (const match of String(xml || '').matchAll(pattern)) {
+    const attrs = Object.fromEntries([...match[1].matchAll(/(xMin|yMin|xMax|yMax)="([^"]+)"/g)].map(([, key, value]) => [key, Number(value)]));
+    if (Object.keys(attrs).length !== 4 || Object.values(attrs).some(value => !Number.isFinite(value))) continue;
+    const text = decodeXml(match[2].replace(/<[^>]+>/g, '')).trim();
+    if (!text) continue;
+    words.push({ text, x: attrs.xMin, y: attrs.yMin, width: attrs.xMax - attrs.xMin,
+      height: attrs.yMax - attrs.yMin, confidence: null, source: 'pdf_text' });
+  }
+  return words;
+}
+
+function parseTesseractTsv(tsv) {
+  const words = [];
+  for (const line of String(tsv || '').split(/\r?\n/).slice(1)) {
+    const cells = line.split('\t');
+    if (cells.length < 12 || cells[0] !== '5') continue;
+    const text = cells.slice(11).join('\t').trim();
+    const [x, y, width, height, confidence] = cells.slice(6, 11).map(Number);
+    if (!text || [x, y, width, height, confidence].some(value => !Number.isFinite(value))
+      || width <= 0 || height <= 0 || confidence < 0) continue;
+    words.push({ text, x, y, width, height, confidence, source: 'scan_ocr',
+      block: Number(cells[2]), line: `${cells[2]}:${cells[3]}:${cells[4]}` });
+  }
+  return words;
+}
+
+// Conservative shadow-only detector. A pair identifies a possible printed
+// result row; it is never sufficient by itself to write a clinical item.
+function parseLayoutResultPairs(layoutText, pageNum) {
+  if (!Number.isInteger(pageNum) || pageNum < 1) throw new Error('页码无效');
+  const pairs = [];
+  const identityOrFooter = /姓名|身份证|体检号|病历号|报告时间|检查时间|检查医生|报告人|医师|医生|医院|中心|第\s*\d+\s*页/;
+  const pair = /([\u4e00-\u9fffA-Za-z（）()\/+\-]{2,30})\s+([<>≤≥]?[+-]?\d+(?:\.\d+)?|阴性|阳性)(?=\s|$)/g;
+  for (const [index, line] of String(layoutText || '').split(/\r?\n/).entries()) {
+    if (identityOrFooter.test(line) || /\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(line)) continue;
+    for (const match of line.matchAll(pair)) {
+      if (/^(阴性|阳性|正常|异常)$/.test(match[1])) continue;
+      pairs.push({ page: pageNum, line: index + 1, name: match[1], value: match[2], source: 'pdf_text' });
+    }
+  }
+  return pairs;
+}
+
+function compareShadowPairsToItems(pairs, reportItems) {
+  const normalize = value => String(value || '').normalize('NFKC').toLowerCase()
+    .replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
+  const existing = new Set((reportItems || []).map(item =>
+    `${Number(item.sourcePage) || 1}|${normalize(item.name)}|${normalize(item.value)}`));
+  const seen = new Set();
+  let matched = 0;
+  for (const row of pairs || []) {
+    const key = `${Number(row.page) || 1}|${normalize(row.name)}|${normalize(row.value)}`;
+    if (!normalize(row.name) || !normalize(row.value) || seen.has(key)) continue;
+    seen.add(key);
+    if (existing.has(key)) matched++;
+  }
+  return { candidateRows: seen.size, matchedRows: matched, uncoveredRows: seen.size - matched };
+}
+
+function run(program, args, { timeoutMs = 60000, maxBuffer = 12 * 1024 * 1024 } = {}) {
+  return new Promise((resolve, reject) => execFile(program, args,
+    { timeout: timeoutMs, maxBuffer, encoding: 'utf8' }, (error, stdout) => {
+      if (error) reject(new Error(`${program} 原文读取失败：${error.code || error.message}`));
+      else resolve(stdout);
+    }));
+}
+
+async function withTempFile(buffer, extension, action) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'report-ocr-'));
+  const filename = path.join(directory, `source.${extension}`);
+  try {
+    fs.writeFileSync(filename, buffer);
+    return await action(filename);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+async function readPdfPageTextBoxes(pdfBuffer, pageNum) {
+  if (!Buffer.isBuffer(pdfBuffer) || !Number.isInteger(pageNum) || pageNum < 1) throw new Error('PDF 页码或内容无效');
+  return withTempFile(pdfBuffer, 'pdf', async filename => parsePdfTextBoxes(await run('pdftotext',
+    ['-f', String(pageNum), '-l', String(pageNum), '-bbox-layout', filename, '-'])));
+}
+
+async function readPdfPageLayout(pdfBuffer, pageNum) {
+  if (!Buffer.isBuffer(pdfBuffer) || !Number.isInteger(pageNum) || pageNum < 1) throw new Error('PDF 页码或内容无效');
+  return withTempFile(pdfBuffer, 'pdf', async filename => run('pdftotext',
+    ['-f', String(pageNum), '-l', String(pageNum), '-layout', filename, '-']));
+}
+
+async function readScanImageWords(imageBuffer, { language = 'chi_sim+eng' } = {}) {
+  if (!Buffer.isBuffer(imageBuffer) || !imageBuffer.length) throw new Error('扫描图内容无效');
+  if (!/^[a-z_]+(?:\+[a-z_]+)*$/i.test(language)) throw new Error('OCR 语言参数无效');
+  const extension = imageBuffer[0] === 0xff && imageBuffer[1] === 0xd8 ? 'jpg' : 'png';
+  return withTempFile(imageBuffer, extension, async filename => parseTesseractTsv(await run('tesseract',
+    [filename, 'stdout', '-l', language, 'tsv'], { timeoutMs: 120000 })));
+}
+
+// Fail-closed coverage audit for searchable PDFs. This intentionally does not
+// create clinical items: a same-line pair is evidence of an omission, not proof
+// that every field (unit, reference range, abnormal mark) was read correctly.
+async function auditPdfTextCoverage(pdfBuffer, reportItems, pageNumbers) {
+  if (!Buffer.isBuffer(pdfBuffer) || !pdfBuffer.length) throw new Error('PDF 内容无效');
+  const pages = [...new Set(pageNumbers || [])].filter(page => Number.isInteger(page) && page > 0).sort((a, b) => a - b);
+  const result = { checkedPages: 0, candidateRows: 0, matchedRows: 0, uncoveredRows: 0, pagesWithGaps: [], unavailablePages: [] };
+  await withTempFile(pdfBuffer, 'pdf', async filename => {
+    for (const page of pages) {
+      try {
+        const layout = await run('pdftotext', ['-f', String(page), '-l', String(page), '-layout', filename, '-']);
+        const pairs = parseLayoutResultPairs(layout, page);
+        if (!pairs.length) continue;
+        const counts = compareShadowPairsToItems(pairs, reportItems);
+        result.checkedPages++;
+        result.candidateRows += counts.candidateRows;
+        result.matchedRows += counts.matchedRows;
+        result.uncoveredRows += counts.uncoveredRows;
+        if (counts.uncoveredRows) result.pagesWithGaps.push(page);
+      } catch (_) {
+        result.unavailablePages.push(page);
+      }
+    }
+  });
+  return result;
+}
+
+module.exports = { parsePdfTextBoxes, parseTesseractTsv, parseLayoutResultPairs, compareShadowPairsToItems,
+  readPdfPageTextBoxes, readPdfPageLayout, readScanImageWords, auditPdfTextCoverage };

@@ -120,6 +120,28 @@ test('年度综合研判首次讨论留足输出空间并约束篇幅', async ()
   assert.match(options.prompt, /结合客户资料分析/);
 });
 
+test('首次专病研判限制篇幅并允许输出截断后精简重试', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/aiCaseReviews.js'), 'utf8');
+  const start = source.indexOf("router.post('/patients/:patientId/ai-case-reviews/:topicId/messages'");
+  const end = source.indexOf("router.patch('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId'", start);
+  let handler, options;
+  const topic = { _id: 'topic', reviewType: 'specialty', generation: { requestId: 'saved-request', status: 'running' }, messages: [{ role: 'staff', requestId: 'saved-request', content: '分析甲胎蛋白升高' }], contextScopes: ['basic', 'healthProfile', 'reports'] };
+  vm.runInNewContext(source.slice(start, end), {
+    router: { post(_path, _auth, fn) { handler = fn; } }, staffAuth() {}, ROLE_LABEL: {}, AUTO_REVIEW_MESSAGE: '【系统自动启动研判】',
+    isActiveAnnualConcern: () => true, isEvidenceConcern: () => false,
+    caseReviewPatientOr404: async () => ({ _id: 'patient' }), acceptSend: async () => ({ topic, claimed: true }),
+    finishSend: async (_model, _topic, generate) => { await generate(); },
+    buildContext: async () => ({ sources: [] }), providerAdapter: { reply: async value => { options = value; return { content: '测试回复' }; } },
+    AiCaseReview: { findOne: async () => ({ ...topic, generation: { status: 'completed' } }) }, forClient: value => value, console,
+  });
+  const response = { status() { return this; }, json() { return this; } };
+  await handler({ params: { topicId: 'topic' }, staff: { _id: 'staff' }, body: { content: '分析甲胎蛋白升高' } }, response);
+  assert.equal(options.maxTokens, 1800);
+  assert.equal(options.retryOnEmptyOrLength, true);
+  assert.equal(options.retryMode, 'topic');
+  assert.match(options.prompt, /全文控制在600个中文字以内/);
+});
+
 test('provider sends and returns exactly the same packed snapshot, prioritizing latest records', async () => {
   let sent, options;
   const sandbox = { module: { exports: {} }, process: { env: { QWEN_API_KEY: 'synthetic' } }, require: key => key === './ai' ? { chat: async (messages, config) => { sent = messages; options = config; return '测试回复'; } } : { prepareContext } };
@@ -159,4 +181,19 @@ test('annual provider retries one empty or truncated reply with shorter cards an
   assert.equal(calls[1].config.maxTokens, 6500);
   assert.match(calls[1].messages.at(-1).content, /每个问题最多180字/);
   assert.equal(calls[0].messages.at(-1).content.includes('已审核记录'), true);
+});
+
+test('specialty provider retries truncated output once with focused instructions', async () => {
+  const calls = [];
+  const sandbox = { module: { exports: {} }, process: { env: { QWEN_API_KEY: 'synthetic' } }, require: key => key === './ai' ? { chat: async (messages, config) => {
+    calls.push({ messages, config });
+    if (calls.length === 1) throw Object.assign(new Error('AI 输出达到长度上限'), { code: 'AI_OUTPUT_LENGTH' });
+    return '关键依据：已审核报告待核对。';
+  } } : { prepareContext } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/utils/aiCaseReviewProvider.js'), 'utf8'), sandbox);
+  const result = await sandbox.module.exports.reply({ prompt: '分析甲胎蛋白升高', context: { sources: ['已审核报告'] }, maxTokens: 1800, retryOnEmptyOrLength: true, retryMode: 'topic' });
+  assert.match(result.content, /关键依据/);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].config.maxTokens, 3200);
+  assert.match(calls[1].messages.at(-1).content, /全文不超过400个中文字/);
 });

@@ -29,11 +29,26 @@ const orderSchema = new mongoose.Schema({
   serviceItemsSnapshot: [{
     key: { type: String, required: true },
     name: { type: String, required: true },
+    businessType: { type: String, enum: ['service', 'product'], default: 'service' },
+    childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+    teamRole: { type: String, default: '' },
+    revenueSharePercent: { type: Number, default: 0 },
     units: { type: Number, default: 1, min: 1 },
     usedUnits: { type: Number, default: 0, min: 0 },
     performers: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
   }],
+  // 年度会员服务包的业务归属独立于权益核销，不生成虚构的服务次数。
+  businessAllocationsSnapshot: [{
+    key: { type: String, required: true },
+    name: { type: String, required: true },
+    businessType: { type: String, enum: ['service', 'product', 'enterprise'], required: true },
+    teamRole: { type: String, default: '' },
+    childProductId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+    revenueSharePercent: { type: Number, min: 0, max: 100, required: true },
+    allocationAmountCents: { type: Number, min: 1, default: undefined },
+  }],
   performanceRuleSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+  staffPerformanceOverridesSnapshot: { type: [mongoose.Schema.Types.Mixed], default: [] },
   servicePerformerRolesSnapshot: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
   serviceWorkflowSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   specialtyTermsSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
@@ -164,6 +179,16 @@ const orderSchema = new mongoose.Schema({
   // ── 绩效归属（供佣金自动结算使用，谁引流/谁服务）──
   referrerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 转介绍人（引流下单）
   referralSource: { type: String, enum: ['', 'direct', 'share', 'push', 'manual'], default: '' },
+  // 外部市场合伙人与内部员工推荐归属分别记账。
+  marketPartnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartner', default: null },
+  marketPartnerAttributionId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerAttribution', default: null },
+  marketPartnerRuleId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerRule', default: null },
+  marketPartnerRuleVersion: { type: Number, default: null },
+  marketPartnerDirectReferral: { type: Boolean, default: false },
+  marketPartnerFirstConversationAt: { type: Date, default: null },
+  marketPartnerLeadEventId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerLeadEvent', default: null },
+  marketPartnerDirectEventId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerLeadEvent', default: null },
+  marketPartnerContractReference: { type: String, default: null },
   fulfillerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 服务人（实际提供服务，单服务人场景）
   // 多服务岗位归属：产品由多岗位协同服务时，每个岗位对应的具体服务人。结算时按产品 servicePerformerRoles
   // 里各岗位的比例，为这里指定的人各生成一条绩效记录。为空则退回 referrer/fulfiller 单服务人逻辑。
@@ -176,15 +201,27 @@ const orderSchema = new mongoose.Schema({
 
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ paymentStatus: 1, wecomOrderAlertQueuedAt: 1, paidAt: 1 });
+orderSchema.index({ tenantId: 1, marketPartnerContractReference: 1 }, { unique: true,
+  partialFilterExpression: { marketPartnerContractReference: { $type: 'string' } } });
 
 // 用户取消、Admin取消和支付退款共用订单状态联动；重复通知可安全重试。
 orderSchema.post('save', async function (doc) {
   await require('../utils/commissionMaturity').refreshOrderCommissions(doc);
+  if (process.env.MARKET_PARTNER_ENABLED === 'true')
+    await require('../utils/marketPartnerSettlement').syncOrder(doc);
+  if (process.env.MARKET_PARTNER_ENABLED === 'true')
+    await require('../utils/teamIncentiveSettlement').syncOrder(doc);
+  await require('../utils/partnerTeamEarning').syncOrderServices(doc);
 });
 orderSchema.post('findOneAndUpdate', async function (doc) {
   if (!doc) return;
   const current = await this.model.findById(doc._id);
   await require('../utils/commissionMaturity').refreshOrderCommissions(current);
+  if (process.env.MARKET_PARTNER_ENABLED === 'true')
+    await require('../utils/marketPartnerSettlement').syncOrder(current);
+  if (process.env.MARKET_PARTNER_ENABLED === 'true')
+    await require('../utils/teamIncentiveSettlement').syncOrder(current);
+  await require('../utils/partnerTeamEarning').syncOrderServices(current);
 });
 
 orderSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);

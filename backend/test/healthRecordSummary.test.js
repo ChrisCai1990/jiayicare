@@ -16,7 +16,20 @@ test('summary is deterministic, retains values and computes time-ordered numeric
   assert.equal(result.recordCount, 5);
   assert.equal(result.metrics[0].delta, '-0.8'); assert.equal(result.metrics[0].trend, 'down');
   assert.equal(result.metrics[1].delta, '+10/+5'); assert.equal(result.metrics[1].value, '130/85');
+  assert.equal(result.metrics[0].changeText, '10月20日至10月22日：体重下降 0.8 kg。');
+  assert.equal(result.metrics[1].changeText, '10月20日至10月22日：收缩压上升 10 mmHg，舒张压上升 5 mmHg。');
   assert.equal(records[0].value, '63.2');
+});
+test('one reading or different blood pressure arms does not claim a change', () => {
+  const summary = summarizeHealthRecords([
+    row('weight', '64', '2026-10-20'),
+    row('bloodPressure', '120/80', '2026-10-20', { arm: '左臂' }),
+    row('bloodPressure', '130/85', '2026-10-22', { arm: '右臂' }),
+  ]);
+  assert.equal(summary.metrics[0].delta, null);
+  assert.match(summary.metrics[0].changeText, /只有 1 次/);
+  assert.equal(summary.metrics[1].delta, null);
+  assert.match(summary.metrics[1].changeText, /测量手臂不同/);
 });
 test('malformed values do not become NaN, zero or a health assessment', () => {
   const result = summarizeHealthRecords([row('bloodSugar','','2026-10-20'),row('bloodSugar','未测','2026-10-22')]);

@@ -6,6 +6,7 @@ import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, ttsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../i18n';
 import useNavBar from '../../hooks/useNavBar';
 import { storedArchiveId } from '../../hooks/useArchiveSubject';
 import Icon from '../../components/Icon';
@@ -123,6 +124,7 @@ function fmtMsgTime(t) {
 }
 
 export default function MessagesPage({ embedded = false, active = true, refreshKey = 0, assistantConfig = {} }) {
+  const { t, language } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   // Older production users can have careTeam saved as null/object. Keep render
@@ -352,7 +354,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
   return (
     <View style={{ width: '100%', flex: embedded ? 1 : 'none', minHeight: embedded ? 'auto' : '100vh', boxSizing: 'border-box', backgroundColor: colors.background, paddingBottom: `${spacing.xl}px` }}>
       {!embedded && <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.sm}px` }}>
-        <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary }}>消息</Text>
+        <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary }}>{t('消息')}</Text>
         {totalUnread > 0 && (
           <View style={{ marginLeft: '8px', minWidth: '22px', height: '22px', borderRadius: '11px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 6px' }}>
             <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
@@ -362,22 +364,22 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
 
       {!!loadError && <Text onClick={loadMessages} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{loadError}</Text>}
       {loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>
+        <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>{t('加载中...')}</Text>
       ) : (
         <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.sm}px` }}>
           <View style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>
             <View>
-              <Text style={{ display: 'block', fontSize: '17px', fontWeight: 800, color: colors.textPrimary }}>{assistantConfig.teamName || '健康服务团队'}</Text>
-              <Text style={{ display: 'block', fontSize: '11px', color: colors.textMuted, marginTop: '2px' }}>{assignedTeamCount > 0 ? `已配置 ${assignedTeamCount} 位服务人员` : '开通相应服务后为您配置专属人员'}</Text>
+              <Text style={{ display: 'block', fontSize: '17px', fontWeight: 800, color: colors.textPrimary }}>{assistantConfig.teamName || t('健康服务团队')}</Text>
+              <Text style={{ display: 'block', fontSize: '11px', color: colors.textMuted, marginTop: '2px' }}>{assignedTeamCount > 0 ? (language === 'en-US' ? `${assignedTeamCount} care team members assigned` : `已配置 ${assignedTeamCount} 位服务人员`) : t('开通相应服务后为您配置专属人员')}</Text>
             </View>
-            {assignedTeamCount > 0 && <View style={{ padding: '4px 8px', borderRadius: `${radius.full}px`, backgroundColor: '#E8F5EF' }}><Text style={{ color: colors.primary, fontSize: '10px', fontWeight: 700 }}>服务中</Text></View>}
+            {assignedTeamCount > 0 && <View style={{ padding: '4px 8px', borderRadius: `${radius.full}px`, backgroundColor: '#E8F5EF' }}><Text style={{ color: colors.primary, fontSize: '10px', fontWeight: 700 }}>{t('服务中')}</Text></View>}
           </View>
           <View style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, margin: `0 0 ${spacing.lg}px` }}>
           {[...roleConvs, ...extraTeamMembers].map((conv) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false && !conv.hasHistory;
             const preview = unassigned
-              ? '仅对年度会员开放，开通后为您配置专属服务团队'
-              : visibleMessageContent(conv.last) || conv.last?.title || (conv.member ? `已配置：${conv.member.name}` : '暂无消息');
+              ? t('仅对年度会员开放，开通后为您配置专属服务团队')
+              : visibleMessageContent(conv.last) || conv.last?.title || (conv.member ? (language === 'en-US' ? `Assigned: ${conv.member.name}` : `已配置：${conv.member.name}`) : t('暂无消息'));
             return (
                 <View key={conv.key} onClick={() => conv.kind === 'role' && openConv(conv)} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: 0, height: '92px', overflow: 'hidden', padding: '12px 14px', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${unassigned ? colors.border : `${conv.color}30`}`, boxShadow: shadow.xs }}>
                   <View style={{
@@ -393,10 +395,10 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
                   </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <View style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                      <Text style={{ fontSize: '14px', fontWeight: 750, color: unassigned ? colors.textMuted : colors.textPrimary }}>{conv.member?.name || conv.label}</Text>
-                      {!!conv.member?.name && <Text style={{ fontSize: '10px', color: conv.color, backgroundColor: `${conv.color}14`, borderRadius: `${radius.full}px`, padding: '2px 6px' }}>{conv.member.role || conv.label}</Text>}
+                      <Text style={{ fontSize: '14px', fontWeight: 750, color: unassigned ? colors.textMuted : colors.textPrimary }}>{conv.member?.name || t(conv.label)}</Text>
+                      {!!conv.member?.name && <Text style={{ fontSize: '10px', color: conv.color, backgroundColor: `${conv.color}14`, borderRadius: `${radius.full}px`, padding: '2px 6px' }}>{t(conv.member.role || conv.label)}</Text>}
                     </View>
-                    <Text style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', marginTop: '5px', fontSize: '11px', color: colors.textMuted, lineHeight: '16px', maxHeight: '32px', wordBreak: 'break-all' }}>{conv.member?.name ? (visibleMessageContent(conv.last) || conv.last?.title || '已加入您的服务团队，可在这里查看沟通与服务消息') : preview}</Text>
+                    <Text style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', marginTop: '5px', fontSize: '11px', color: colors.textMuted, lineHeight: '16px', maxHeight: '32px', wordBreak: 'break-all' }}>{conv.member?.name ? (visibleMessageContent(conv.last) || conv.last?.title || t('已加入您的服务团队，可在这里查看沟通与服务消息')) : preview}</Text>
                   </View>
                   {conv.kind === 'role' && !unassigned && <Text style={{ fontSize: '18px', color: colors.textMuted, marginLeft: '8px' }}>›</Text>}
                 </View>
@@ -404,7 +406,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
           })}
           </View>
 
-          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>消息与提醒</Text>
+          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>{t('消息与提醒')}</Text>
           <View style={{ display: 'flex', width: '100%', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
             {[
               { label: '待填问卷', icon: '📝', color: '#0077B6', count: questionnaireMessages.length, tab: '待填问卷' },
@@ -413,7 +415,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
             ].map((item) => (
               <View key={item.label} onClick={() => openNotifications(item.tab)} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, height: '92px', overflow: 'hidden', padding: '11px 5px 9px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
                 <View style={{ width: '34px', height: '34px', borderRadius: '11px', margin: '0 auto 7px', backgroundColor: `${item.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={item.icon} size={16} color={item.color} /></View>
-                <Text style={{ fontSize: '12px', fontWeight: 650, color: colors.textPrimary }}>{item.label}</Text>
+                <Text style={{ fontSize: '12px', fontWeight: 650, color: colors.textPrimary }}>{t(item.label)}</Text>
                 {item.tab === '系统通知' && familyProductCount > 0 && <Text style={{ display: 'block', fontSize: '10px', color: colors.primary }}>家人推荐 {familyProductCount}</Text>}
                 {item.count > 0 && <View style={{ position: 'absolute', top: '7px', right: '12px', minWidth: '17px', height: '17px', borderRadius: '9px', padding: '0 3px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontSize: '9px', fontWeight: 700 }}>{item.count > 99 ? '99+' : item.count}</Text></View>}
               </View>
@@ -442,6 +444,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
 }
 
 function NotifModal({ messages, tab, setTab, onClose, onPress, loadError, onRetry }) {
+  const { t } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const filtered = messages.filter((m) => {
     if (tab === '待填问卷') return m.type === 'questionnaire';
@@ -453,13 +456,13 @@ function NotifModal({ messages, tab, setTab, onClose, onPress, loadError, onRetr
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: colors.background, zIndex: 100, display: 'flex', flexDirection: 'column' }}>
       <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px` , backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <Text onClick={onClose} style={{ fontSize: '14px', color: colors.primary, marginRight: '12px' }}>‹ 返回</Text>
-        <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center', marginRight: '40px' }}>系统通知</Text>
+        <Text onClick={onClose} style={{ fontSize: '14px', color: colors.primary, marginRight: '12px' }}>‹ {t('返回')}</Text>
+        <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center', marginRight: '40px' }}>{t(tab)}</Text>
       </View>
       <View style={{ display: 'flex', margin: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#EEEAE3', borderRadius: `${radius.sm}px`, padding: '3px' }}>
-        {['全部', '待填问卷', '每日关怀', '系统通知'].map((t) => (
-          <View key={t} onClick={() => setTab(t)} style={{ flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: `${radius.xs}px`, backgroundColor: tab === t ? '#fff' : 'transparent' }}>
-            <Text style={{ fontSize: '13px', color: tab === t ? colors.textPrimary : colors.textMuted, fontWeight: tab === t ? 600 : 500 }}>{t}</Text>
+        {['全部', '待填问卷', '每日关怀', '系统通知'].map((tabName) => (
+          <View key={tabName} onClick={() => setTab(tabName)} style={{ flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: `${radius.xs}px`, backgroundColor: tab === tabName ? '#fff' : 'transparent' }}>
+            <Text style={{ fontSize: '13px', color: tab === tabName ? colors.textPrimary : colors.textMuted, fontWeight: tab === tabName ? 600 : 500 }}>{t(tabName)}</Text>
           </View>
         ))}
       </View>

@@ -476,6 +476,11 @@ function normalizeOrderType(t) {
   return ({ labTestOrder: 'lab', labTestPackage: 'lab', specialExam: 'exam', functionalTest: 'func' })[t] || t
 }
 function orderTypeMeta(t) { return ORDER_TYPE_META[normalizeOrderType(t)] || ORDER_TYPE_META.exam }
+const CHECKUP_TYPE_ORDER = { lab: 0, exam: 1, func: 2 }
+const groupCheckupOrders = items => (Array.isArray(items) ? items : [])
+  .map((item, index) => ({ item, index }))
+  .sort((a, b) => (CHECKUP_TYPE_ORDER[normalizeOrderType(a.item?.type)] ?? 3) - (CHECKUP_TYPE_ORDER[normalizeOrderType(b.item?.type)] ?? 3) || a.index - b.index)
+  .map(({ item }) => item)
 const addonSelectionKey = addon => `${addon.id || addon._id || ''}|${addon.type || ''}|${addon.name || ''}`
 
 // getRequisitionItems 接口返回的 item.type 取值(labTestOrder/specialExam/functionalTest/labTestPackage)
@@ -502,7 +507,7 @@ function templateToItems(tpl) {
 
   // ── 年度体检方案 ──────────────────────────────────────────
   if (tpl.type === 'annual_checkup') {
-    return (c.checkItems || []).map(ci => ({
+    return groupCheckupOrders(c.checkItems).map(ci => ({
       name:     ci.name,
       category: orderTypeMeta(ci.type).category,
       itemId:   ci.id || null,
@@ -1686,8 +1691,8 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
     const c = tpl.content || {}
     setPackageName(c.packageName || tpl.name || '')
     setPackageDesc(c.packageDesc || '')
-    setCheckItems((c.checkItems || []).map(ci => ({ ...ci })))
-    setAddons((c.addons || []).map(a => ({ ...a })))
+    setCheckItems(groupCheckupOrders(c.checkItems).map(ci => ({ ...ci })))
+    setAddons(groupCheckupOrders(c.addons).map(a => ({ ...a })))
     setSelectedAddonKeys(new Set((c.addons || []).map(addonSelectionKey)))
     setStep(2)
     setError('')
@@ -1706,7 +1711,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initi
   }
   const addAddon = (item) => {
     const addon = { type: normalizeOrderType(item.type), id: item._id, name: item.name, reason: '' }
-    setAddons(prev => [...prev, addon])
+    setAddons(prev => groupCheckupOrders([...prev, addon]))
     setSelectedAddonKeys(prev => new Set([...prev, addonSelectionKey(addon)]))
     setAddonQ(''); setAddonResults([]); setShowAddonSearch(false)
   }

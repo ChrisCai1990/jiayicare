@@ -29,6 +29,8 @@ function harness(config = {}) {
       release: async order => events.push(['sharedRelease', String(order._id)]),
     },
     './checkoutAmounts': require('../src/utils/checkoutAmounts'),
+    './productBusinessAllocations': require('../src/utils/productBusinessAllocations'),
+    './productPerformanceSnapshot': require('../src/utils/productPerformanceSnapshot'),
     './packageFeatureEntitlements': { hasHealthFundAccess: async checkedUser => {
       assert.equal(checkedUser, user);
       if (config.eligibilityError) throw new Error('eligibility unavailable');
@@ -80,6 +82,17 @@ test('two items create two independent owned orders and one WeChat charge for 71
   assert.deepEqual(h.orders.map(o => o.servicePerformers[0].staffId), ['n1', 'n2']);
   assert.ok(h.orders.every(o => String(o.checkoutGroupId) === String(h.orders[0]._id) && o.supervisorId === 'planner'));
   assert.equal(paymentAllocations(h.payments[0]).length, 2);
+});
+
+test('group checkout freezes the selected charge item performance rule', async () => {
+  const h = harness({ products: { a: { servicePrices: [{ label: '营养方案', price: 6800,
+    performanceConfig: { enabled: true, performanceRule: { ruleType: 'percentage', referrerRate: 7 },
+      servicePerformerRoles: [{ role: 'nutritionist', ruleType: 'percentage', rate: 3 }],
+      staffPerformanceOverrides: [] } }] } } });
+  await h.run({ expectedAmount: 7118.44 });
+  assert.equal(h.orders[0].specificationLabel, '营养方案');
+  assert.equal(h.orders[0].performanceRuleSnapshot.referrerRate, 7);
+  assert.equal(h.orders[0].servicePerformerRolesSnapshot[0].rate, 3);
 });
 
 test('shared enterprise pool covers only selected items and no more than half their after-coupon price', async () => {

@@ -279,6 +279,7 @@ export const remindersAPI = {
 export const reportsAPI = {
   list: (patientId = '') => request(`/reports${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
   byCategory: (patientId = '') => request(`/reports/by-category${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`),
+  translateEn: (id) => request(`/reports/${id}/translate-en`, { method: 'POST', timeout: 70000 }),
   get: (id) => request(`/reports/${id}`),
   create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
   delete: (id) => request(`/reports/${id}`, { method: 'DELETE' }),
@@ -368,10 +369,11 @@ export const checkupAPI = {
 export const servicesAPI = {
   createProductShare: (productId) => request('/services/product-shares', { method: 'POST', body: JSON.stringify({ productId }) }),
   claimProductShare: (token) => request(`/services/product-shares/${token}/claim`, { method: 'POST' }),
+  claimPartnerReferral: (productId, partnerCode) => request('/services/partner-referrals/claim', { method: 'POST', body: JSON.stringify({ productId, partnerCode }) }),
   list: () => request('/services'),
   packages: () => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount, useEnterpriseSharedFund = false, beneficiaryUserId = '', pushRecordId = '') =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount, useEnterpriseSharedFund, beneficiaryUserId, pushRecordId }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount, useEnterpriseSharedFund = false, beneficiaryUserId = '', pushRecordId = '', partnerCode = '') =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, partnerCode, desiredServiceDate, serviceRequirements, expectedAmount, useEnterpriseSharedFund, beneficiaryUserId, pushRecordId }) }),
   inquire: (serviceId, note, specificationLabel, beneficiaryUserId = '') =>
     request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel, beneficiaryUserId }) }),
   coupons: () => request('/services/coupons'),

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme';
+import { useLanguage } from '../i18n';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
@@ -45,6 +46,7 @@ const TAB_CONFIG = [
 ];
 
 function MainTabs() {
+  const { t, language } = useLanguage();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -75,7 +77,7 @@ function MainTabs() {
           key={tab.name}
           name={tab.name}
           component={tab.component}
-          options={{ tabBarLabel: tab.label }}
+          options={{ tabBarLabel: language === 'en-US' && tab.name === 'Records' ? 'Records' : t(tab.label) }}
         />
       ))}
     </Tab.Navigator>

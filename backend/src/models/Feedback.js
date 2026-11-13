@@ -9,9 +9,28 @@ const feedbackSchema = new mongoose.Schema({
   reply:    { type: String, default: '' },
   repliedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   repliedAt: { type: Date, default: null },
+  workflowState: { type: String, enum: ['unassigned', 'assigned', 'submitted', 'closed'], default: 'unassigned' },
+  workflowVersion: { type: Number, default: 0 },
+  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  assignedName: { type: String, default: '' },
+  assignedAt: { type: Date, default: null },
+  assignmentNote: { type: String, default: '' },
+  handlingResult: { type: String, default: '' },
+  resultAt: { type: Date, default: null },
+  workflowHistory: [{
+    _id: false,
+    action: { type: String, enum: ['assign', 'submit', 'close'] },
+    actor: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    actorName: String,
+    assignee: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    assigneeName: String,
+    note: String,
+    at: Date,
+  }],
 }, { timestamps: true });
 
 feedbackSchema.index({ createdAt: -1 });
+feedbackSchema.index({ tenantId: 1, assignedTo: 1, status: 1, workflowState: 1 });
 feedbackSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
 module.exports = mongoose.model('Feedback', feedbackSchema);
