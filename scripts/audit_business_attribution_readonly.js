@@ -40,6 +40,10 @@ async function main() {
     console.log(JSON.stringify({ auditedAt: new Date().toISOString(),
       productionRevision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       activeProductCount: products.length, products: counts(results), packages: counts(packageResults),
+      packageAllocations: packages.map(row => ({ name: row.name,
+        rows: (row.configuration?.businessAllocations || []).map(item => ({ name: item.name,
+          businessType: item.businessType, teamRole: item.teamRole,
+          revenueSharePercent: item.revenueSharePercent })) })),
       productIssues: results.filter(row => row.status !== 'complete'),
       packageIssues: packageResults.filter(row => row.status !== 'complete') }));
   } finally { await client.close(); }

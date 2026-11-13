@@ -777,13 +777,15 @@ router.get('/service-packages', adminAuth, async (req, res) => {
 });
 
 const PACKAGE_ALLOCATION_ROLE_NAMES = { familyDoctor: '健康顾问', nutritionist: '营养师',
-  healthManager: '健管专员', medicalAssistant: '就医团队' };
+  healthManager: '健管专员', medicalAssistant: '就医专员', psychologist: '心理咨询师',
+  rehabSpecialist: '运动复健师', specialist: '专科医师', tcmDoctor: '中医师' };
 
 function normalizePackageAllocationNames(configuration) {
   if (!Array.isArray(configuration?.businessAllocations)) return configuration;
   return { ...configuration, businessAllocations: configuration.businessAllocations.map(row => ({ ...row,
-    name: String(row.name || '').trim() || (row.businessType === 'product'
-      ? '产品／检测归属' : `${PACKAGE_ALLOCATION_ROLE_NAMES[row.teamRole] || '服务团队'}管理服务`),
+    name: String(row.name || '').trim() || (row.businessType === 'enterprise' ? '企业资源'
+      : row.businessType === 'product' ? '产品／检测归属'
+        : `${PACKAGE_ALLOCATION_ROLE_NAMES[row.teamRole] || '服务团队'}管理服务`),
   })) };
 }
 
@@ -794,13 +796,14 @@ async function validatePackageBusinessAllocations(rows, tenantId) {
   const roles = require('../utils/tenantScope').SERVICE_PERFORMER_ROLES;
   if (new Set(rows.map(row => row.key)).size !== rows.length
     || rows.some(row => !String(row.key || '').trim() || !String(row.name || '').trim()
-      || !['service', 'product'].includes(row.businessType)
-      || !roles.includes(row.teamRole)
+      || !['service', 'product', 'enterprise'].includes(row.businessType)
+      || (row.businessType === 'enterprise' ? row.teamRole !== 'enterpriseResource' || !!row.childProductId
+        : !roles.includes(row.teamRole))
       || !Number.isFinite(Number(row.revenueSharePercent)) || Number(row.revenueSharePercent) <= 0
       || (row.businessType === 'product' && !mongoose.isValidObjectId(row.childProductId))))
-    return '业务归属项目须填写名称、类型、负责团队和有效金额；产品项目须关联产品库';
+    return '业务归属项目须填写类型、负责团队和有效金额；产品项目须关联产品库';
   if (Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent), 0) - 100) > 0.001)
-    return '服务与产品归属比例合计须为100%';
+    return '服务、产品与资源归属比例合计须为100%';
   const productIds = [...new Set(rows.filter(row => row.businessType === 'product').map(row => String(row.childProductId)))];
   if (productIds.length) {
     const found = await Product.find({ _id: { $in: productIds }, tenantId }).select('_id').lean();

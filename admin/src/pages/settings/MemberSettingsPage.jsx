@@ -21,11 +21,13 @@ const MEMBERSHIP_TIERS = [
 
 const ALLOCATION_ROLES = [
   ['familyDoctor', '健康顾问'], ['nutritionist', '营养师'],
-  ['healthManager', '健管专员'], ['medicalAssistant', '就医团队'],
+  ['healthManager', '健管专员'], ['medicalAssistant', '就医专员'],
+  ['psychologist', '心理咨询师'], ['rehabSpecialist', '运动复健师'],
+  ['specialist', '专科医师'], ['tcmDoctor', '中医师'],
 ]
-const packageAllocationName = row => row.businessType === 'product'
-  ? '产品／检测归属'
-  : `${ALLOCATION_ROLES.find(([role]) => role === row.teamRole)?.[1] || '服务团队'}管理服务`
+const packageAllocationName = row => row.businessType === 'enterprise' ? '企业资源'
+  : row.businessType === 'product' ? '产品／检测归属'
+    : `${ALLOCATION_ROLES.find(([role]) => role === row.teamRole)?.[1] || '服务团队'}管理服务`
 
 function PackageAllocationRow({ row, price, products, onChange, onRemove }) {
   const [search, setSearch] = useState('')
@@ -35,17 +37,21 @@ function PackageAllocationRow({ row, price, products, onChange, onRemove }) {
   return <div style={{ border: '1px solid #D9E4DD', borderRadius: 8, padding: 10, marginTop: 8 }}>
     <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr auto', gap: 8 }}>
       <input className="form-input" value={row.name || ''} placeholder="项目名称可留空，按团队自动命名" onChange={event => onChange({ name: event.target.value })} />
-      <select className="form-input" value={row.businessType || 'service'} onChange={event => onChange({ businessType: event.target.value })}>
-        <option value="service">管理服务</option><option value="product">产品／检测</option>
+      <select className="form-input" value={row.businessType || 'service'} onChange={event => {
+        const businessType = event.target.value
+        const next = { ...row, businessType, teamRole: businessType === 'enterprise' ? 'enterpriseResource' : 'healthManager', childProductId: '' }
+        onChange({ ...next, name: packageAllocationName(next) })
+      }}>
+        <option value="service">服务</option><option value="product">产品</option><option value="enterprise">资源</option>
       </select>
       <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>删除</button>
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-      <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => onChange({ teamRole: event.target.value,
-        ...(!row.name?.trim() || row.name === packageAllocationName(row)
-          ? { name: packageAllocationName({ ...row, teamRole: event.target.value }) } : {}) })}>
-        {ALLOCATION_ROLES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
+      {row.businessType === 'enterprise' ? <div className="form-input" style={{ background: '#F6F8F7' }}>企业资源（不关联个人）</div>
+        : <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => onChange({ teamRole: event.target.value,
+          name: packageAllocationName({ ...row, teamRole: event.target.value }) })}>
+          {ALLOCATION_ROLES.map(([value, label]) => <option key={value} value={value}>{label}团队</option>)}
+        </select>}
       <input key={`${row.key}:${price}`} className="form-input" type="number" min="0" step="0.01"
         defaultValue={price ? (price * Number(row.revenueSharePercent || 0) / 100).toFixed(2) : ''}
         placeholder="归属金额 ¥" aria-label={`${row.name || '项目'}归属金额元`} disabled={!price}
@@ -76,7 +82,7 @@ function PackageAllocationEditor({ rows, price, products, onChange }) {
         businessType: 'service', teamRole: 'healthManager', childProductId: '', revenueSharePercent: 0,
       }])}>+ 添加归属项目</button>
     </div>
-    <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0' }}>按本服务包售价填金额，服务与产品合计应为100%。实际付款或退款按冻结比例分摊；此处不设置个人服务费，也不改变会员权益。</p>
+    <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0' }}>按本服务包售价填金额，服务、产品和资源合计应为100%。实际付款或退款按冻结比例分摊；资源不关联个人，此处不设置个人服务费。</p>
     {list.map((row, index) => <PackageAllocationRow key={row.key || index} row={row} price={Number(price) || 0}
       products={products} onChange={patch => update(index, patch)} onRemove={() => onChange(list.filter((_, i) => i !== index))} />)}
     {!!list.length && <div style={{ marginTop: 8, color: Math.abs(total - 100) < 0.001 ? '#1E6B50' : '#C0392B' }}>
