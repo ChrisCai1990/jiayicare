@@ -8,7 +8,7 @@ async function hasPublishedAnnualPlan(patientId) {
     { formalizedAt: { $ne: null } }, { pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } },
   ] }));
 }
-const { reportSnapshot, isReportSourceCurrent, reportExclusion } = require('./reportFollowUpSource');
+const { reportSnapshot, isReportSourceCurrent, reportExclusion, needsAdvisorInterpretation } = require('./reportFollowUpSource');
 const { runAssessmentDraft } = require('./assessmentFollowUpAutomation');
 
 async function completeReportReview(id) {
@@ -41,6 +41,7 @@ async function assertReportDraftSource(draft) {
   require('./healthManagementRollout').assertPatientEnabled(draft.patientId);
   const report = await Report.findById(draft.reportId).lean();
   if (!isReportSourceCurrent(draft, report)) throw Object.assign(new Error('报告已更新或撤销审核，请处理最新版本'), { statusCode: 409 });
+  if (needsAdvisorInterpretation(report) && !report.advisorInterpretationConfirmedAt) throw Object.assign(new Error('请先完成本次报告的健康顾问解读确认'), { statusCode: 409 });
   const reason = draft.purpose === 'annual_report_input' ? '' : await reportExclusion(report);
   if (reason) throw Object.assign(new Error(reason), { statusCode: 409 });
 }
@@ -49,6 +50,10 @@ async function materializeReportEvent(report) {
   if (!require('./healthManagementRollout').enabledForPatient(report.user)) return;
   const event = report.followUpSourceEvent;
   if (!event || event.status !== 'queued') return;
+  if (needsAdvisorInterpretation(report) && !report.advisorInterpretationConfirmedAt) {
+    await Report.updateOne({ _id: report._id, 'followUpSourceEvent.sequence': event.sequence, 'followUpSourceEvent.digest': event.digest, 'followUpSourceEvent.status': 'queued', advisorInterpretationConfirmedAt: null }, { $set: { 'followUpSourceEvent.status': 'waiting_interpretation' } });
+    return;
+  }
   const key = `${report._id}:${event.sequence}:${event.digest}`;
   const reason = await reportExclusion(report);
   // A published annual plan already owns long-term planning. Later visits only

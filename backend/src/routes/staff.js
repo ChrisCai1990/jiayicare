@@ -6827,21 +6827,50 @@ router.patch('/medical-reports/:id/family-doctor-view', staffAuth, async (req, r
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+async function confirmAdvisorReportBatch(req, patientId, reportIds) {
+  const MedicalReport = require('../models/MedicalReport');
+  const { sourceDigest, needsAdvisorInterpretation } = require('../utils/reportFollowUpSource');
+  const { enabledForPatient } = require('../utils/healthManagementRollout');
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) throw Object.assign(new Error('仅健康顾问可确认报告'), { statusCode: 403 });
+  if (!Array.isArray(reportIds) || !reportIds.length || reportIds.length > 100 || new Set(reportIds.map(String)).size !== reportIds.length || reportIds.some(id => !require('mongoose').isValidObjectId(id))) throw Object.assign(new Error('请选择 1 至 100 份报告'), { statusCode: 400 });
+  const patient = await User.findById(patientId).select('tenantId assignedFamilyDoctor').lean();
+  if (!patient) throw Object.assign(new Error('客户不存在'), { statusCode: 404 });
+  if (req.staff.role !== 'superadmin' && (String(patient.tenantId || '') !== String(req.staff.tenantId || '') || String(patient.assignedFamilyDoctor || '') !== String(req.staff._id))) throw Object.assign(new Error('仅客户所属健康顾问可确认'), { statusCode: 403 });
+  const reports = await MedicalReport.find({ _id: { $in: reportIds }, user: patientId });
+  if (reports.length !== reportIds.length || reports.some(report => report.audit_status !== 'audited' || report.archiveOnly || report.advisorCorrection?.status === 'returned' || ['prescription_order', 'outpatient_record'].includes(report.documentCategory))) throw Object.assign(new Error('所选报告状态已变化，请刷新'), { statusCode: 409 });
+  let confirmed = 0;
+  for (const report of reports) {
+    if (!report.advisorInterpretationConfirmedAt) {
+      const now = new Date();
+      const changed = await MedicalReport.updateOne({ _id: report._id, audit_status: 'audited', archiveOnly: { $ne: true }, advisorInterpretationConfirmedAt: null, reviewRevision: reviewRevisionMatch(report.reviewRevision) }, { $set: { advisorInterpretationConfirmedAt: now, advisorInterpretationConfirmedBy: req.staff._id, familyDoctorViewedAt: now, familyDoctorViewedBy: req.staff._id, ...(report.status === 'pending' ? { status: 'analyzed' } : {}) } });
+      if (!changed.modifiedCount) throw Object.assign(new Error(`已确认 ${confirmed} 份；其余报告已变化，请刷新后重试`), { statusCode: 409 });
+      confirmed++;
+    }
+    if (!enabledForPatient(patientId) || !needsAdvisorInterpretation(report)) continue;
+    const current = await MedicalReport.findById(report._id);
+    const event = current.followUpSourceEvent;
+    if (event?.status === 'waiting_interpretation') {
+      await MedicalReport.updateOne({ _id: current._id, 'followUpSourceEvent.sequence': event.sequence, 'followUpSourceEvent.digest': event.digest, 'followUpSourceEvent.status': 'waiting_interpretation' }, { $set: { 'followUpSourceEvent.status': 'queued', 'followUpSourceEvent.queuedAt': new Date() } });
+    } else if (!event) {
+      await MedicalReport.updateOne({ _id: current._id, followUpSourceEvent: null }, { $set: { followUpSourceEvent: { status: 'queued', digest: sourceDigest(current), sequence: 1, queuedAt: new Date() } } });
+    }
+  }
+  if (enabledForPatient(patientId)) require('../utils/reportFollowUpAutomation').wakeReportDraftWorker();
+  return { confirmed, total: reports.length };
+}
+
+router.patch('/patients/:id/reports/advisor-confirm', staffAuth, async (req, res) => {
+  try { res.json({ success: true, ...await confirmAdvisorReportBatch(req, req.params.id, req.body.reportIds) }); }
+  catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
+});
+
 router.patch('/medical-reports/:id/advisor-confirm', staffAuth, async (req, res) => {
   try {
-    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认报告' });
-    const report = await MedicalReport.findById(req.params.id).select('user status audit_status archiveOnly reviewRevision advisorCorrection advisorInterpretationConfirmedAt');
+    const report = await MedicalReport.findById(req.params.id).select('user');
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const patient = await User.findById(report.user).select('tenantId assignedFamilyDoctor').lean();
-    if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
-    if (req.staff.role !== 'superadmin' && (String(patient.tenantId || '') !== String(req.staff.tenantId || '') || String(patient.assignedFamilyDoctor || '') !== String(req.staff._id))) return res.status(403).json({ success: false, message: '仅客户所属健康顾问可确认' });
-    if (report.audit_status !== 'audited' || report.archiveOnly || report.advisorCorrection?.status === 'returned') return res.status(409).json({ success: false, message: '报告审核状态已变化，请刷新' });
-    if (report.advisorInterpretationConfirmedAt) return res.json({ success: true, alreadyConfirmed: true });
-    const now = new Date();
-    const changed = await MedicalReport.updateOne({ _id: report._id, audit_status: 'audited', archiveOnly: { $ne: true }, advisorInterpretationConfirmedAt: null, reviewRevision: reviewRevisionMatch(report.reviewRevision) }, { $set: { advisorInterpretationConfirmedAt: now, advisorInterpretationConfirmedBy: req.staff._id, familyDoctorViewedAt: now, familyDoctorViewedBy: req.staff._id, ...(report.status === 'pending' ? { status: 'analyzed' } : {}) } });
-    if (!changed.modifiedCount) return res.status(409).json({ success: false, message: '报告已被修改，请刷新后确认' });
-    res.json({ success: true });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+    const result = await confirmAdvisorReportBatch(req, report.user, [String(report._id)]);
+    res.json({ success: true, alreadyConfirmed: result.confirmed === 0 });
+  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });
 
 // GET /api/staff/patients/:id/screening-yearly-summary?year=2026 — 专项筛查年度小结（肿瘤/
@@ -16222,8 +16251,10 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         .populate('patientId', 'name').sort({ createdAt: -1 }).lean();
       const reviewDrafts = await require('../models/ReportFollowUpDraft').find({
         _id: { $in: reportFollowUpReviews.map(task => task.sourceId).filter(Boolean) },
-      }).select('_id purpose title').lean();
+      }).select('_id purpose title reportId').lean();
       const reviewDraftById = new Map(reviewDrafts.map(draft => [String(draft._id), draft]));
+      const annualReports = await MedicalReport.find({ _id: { $in: reviewDrafts.filter(draft => draft.purpose === 'annual_report_input').map(draft => draft.reportId) } }).select('_id documentCategory advisorInterpretationConfirmedAt').lean();
+      const annualReportById = new Map(annualReports.map(report => [String(report._id), report]));
       const annualReviewByPatient = new Map();
       reportFollowUpReviews.forEach(task => {
         if (!inMyScope(task.patientId?._id)) return;
@@ -16231,6 +16262,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         const draft = reviewDraftById.get(String(task.sourceId));
         const annualInput = draft?.purpose === 'annual_report_input';
         if (annualInput) {
+          const sourceReport = annualReportById.get(String(draft.reportId));
+          if (sourceReport && require('../utils/reportFollowUpSource').needsAdvisorInterpretation(sourceReport) && !sourceReport.advisorInterpretationConfirmedAt) return;
           const patientId = String(task.patientId?._id || '');
           if (!patientId) return;
           if (!annualReviewByPatient.has(patientId)) annualReviewByPatient.set(patientId, []);
