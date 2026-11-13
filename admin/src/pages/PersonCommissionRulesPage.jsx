@@ -61,19 +61,19 @@ export default function PersonCommissionRulesPage() {
   }, [products, packages])
   const items = category === '365会员' ? packages : products.filter(row => row.category === category)
   const visibleItems = items.filter(row => `${row.name} ${row.category || ''}`.toLowerCase().includes(search.trim().toLowerCase()))
-  const activeStaff = staffRules.find(row => String(row.staffId) === personId && row.category === category && !row.effectiveUntil)
-  const activePartner = partnerRules.filter(row => String(row.partnerId) === personId && row.category === category
-    && row.status === 'active' && !row.effectiveUntil)
+  const productId = selected[0]
+  const activeStaff = staffRules.find(row => String(row.staffId) === personId && row.category === category
+    && row.productIds?.some(id => String(id) === productId) && !row.effectiveUntil)
+  const activePartner = partnerRules.find(row => String(row.partnerId) === personId && row.category === category
+    && String(row.productId) === productId && row.status === 'active' && !row.effectiveUntil)
 
-  const loadExisting = (id, nextCategory, nextTab = tab) => {
+  const loadExisting = (id, nextCategory, nextProductId, nextTab = tab) => {
     const row = nextTab === 'staff'
-      ? staffRules.find(item => String(item.staffId) === id && item.category === nextCategory && !item.effectiveUntil)
+      ? staffRules.find(item => String(item.staffId) === id && item.category === nextCategory
+        && item.productIds?.some(product => String(product) === nextProductId) && !item.effectiveUntil)
       : partnerRules.find(item => String(item.partnerId) === id && item.category === nextCategory
-        && item.status === 'active' && !item.effectiveUntil)
-    const rows = nextTab === 'staff' ? row?.productIds?.map(String) || []
-      : partnerRules.filter(item => String(item.partnerId) === id && item.category === nextCategory
-        && item.status === 'active' && !item.effectiveUntil).map(item => String(item.productId))
-    setSelected(rows)
+        && String(item.productId) === nextProductId && item.status === 'active' && !item.effectiveUntil)
+    setSelected(nextProductId ? [nextProductId] : [])
     setReferrerRate(nextTab === 'staff' ? String(row?.referrerRate ?? 0)
       : String((row?.firstBasisPoints || 0) / 100))
     setFulfillerRate(nextTab === 'staff' ? String(row?.fulfillerRate ?? 0) : '0')
@@ -86,7 +86,7 @@ export default function PersonCommissionRulesPage() {
     setPersonId(id); setCategory(''); setSelected([]); setSearch(''); setMessage('')
   }
   const changeCategory = value => {
-    setCategory(value); setSearch(''); setMessage(''); loadExisting(personId, value)
+    setCategory(value); setSearch(''); setMessage(''); loadExisting(personId, value, '')
     if (tab === 'partner' && !partnerRules.some(item => String(item.partnerId) === personId
       && item.category === value && item.status === 'active' && !item.effectiveUntil)) {
       setKind(value === '365会员' || value.includes('年度') ? 'annual' : 'first')
@@ -95,11 +95,9 @@ export default function PersonCommissionRulesPage() {
   const changeTab = value => {
     setTab(value); setPersonId(''); setPersonSearch(''); setCategory(''); setSelected([]); setSearch(''); setMessage('')
   }
-  const toggle = id => setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
-  const selectVisible = () => setSelected(current => [...new Set([...current, ...visibleItems.map(item => String(item._id))])])
-  const clearVisible = () => setSelected(current => current.filter(id => !visibleItems.some(item => String(item._id) === id)))
+  const chooseProduct = id => { loadExisting(personId, category, id); setMessage('') }
   const save = async () => {
-    if (!personId || !category || !selected.length) { setMessage('请选择人员、类别和适用项目'); return }
+    if (!personId || !category || selected.length !== 1) { setMessage('请选择人员、类别和一个产品'); return }
     if ([referrerRate, ...(tab === 'staff' ? [fulfillerRate] : kind === 'annual' ? [renewal2, renewal35] : [])]
       .some(value => !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) {
       setMessage('比例须为 0–100%'); return
@@ -112,7 +110,7 @@ export default function PersonCommissionRulesPage() {
         productLine: person.productLine, category, productIds: selected, kind,
         firstPercent: Number(referrerRate), renewals: kind === 'annual'
           ? [{ year: 2, percent: Number(renewal2) }, ...[3, 4, 5].map(year => ({ year, percent: Number(renewal35) }))] : [] })
-      await load(); setMessage('规则已保存，新订单按新版计算；历史订单保持原版本')
+      await load(); setMessage('规则已保存，该产品的新订单按新版计算；其他产品设置不变')
     } catch (error) { setMessage(error.message || '保存失败') }
     finally { setBusy(false) }
   }
@@ -120,7 +118,7 @@ export default function PersonCommissionRulesPage() {
 
   return <div className="page">
     <div className="page-header"><div><div className="page-title">佣金规则</div>
-      <div className="page-subtitle">按人员和业务类别设置，勾选适用项目后统一生效</div></div></div>
+      <div className="page-subtitle">选择人员与产品，逐个设置推广和服务佣金；类别只用于查找</div></div></div>
     <div style={card}>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button className={tab === 'staff' ? 'btn btn-primary' : 'btn btn-ghost'} onClick={() => changeTab('staff')}>员工</button>
@@ -144,16 +142,13 @@ export default function PersonCommissionRulesPage() {
           </select></div>
         </div>
         {!!category && <>
-          <div style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-            <strong>适用项目（已选 {selected.length} 项）</strong>
-            <div><button className="btn btn-sm btn-ghost" onClick={selectVisible}>勾选当前结果</button>{' '}
-              <button className="btn btn-sm btn-ghost" onClick={clearVisible}>取消当前结果</button></div>
-          </div>
+          <div style={{ marginTop: 18 }}><strong>选择产品</strong></div>
           <input className="form-input" type="search" value={search} onChange={event => setSearch(event.target.value)}
             placeholder="搜索项目名称" style={{ margin: '10px 0', maxWidth: 360 }} />
           <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid #e5ebe7', borderRadius: 8, padding: 8 }}>
             {visibleItems.map(row => <label key={row._id} style={{ display: 'block', padding: 7 }}>
-              <input type="checkbox" checked={selected.includes(String(row._id))} onChange={() => toggle(String(row._id))} />{' '}{row.name}
+              <input type="radio" name="commissionProduct" checked={productId === String(row._id)}
+                onChange={() => chooseProduct(String(row._id))} />{' '}{row.name}
             </label>)}
             {!visibleItems.length && <span style={{ color: '#667a6d' }}>该类别暂无匹配的在售项目</span>}
           </div>
@@ -174,18 +169,20 @@ export default function PersonCommissionRulesPage() {
           <p style={{ color: '#667a6d', fontSize: 13 }}>示例：实收 ¥1,000，按当前推广比例约 ¥{preview.toFixed(2)}。
             {tab === 'staff' ? '服务费须有实际履约证据后计提。' : kind === 'annual' ? '第 6 年起为 0。' : ''}
           </p>
-          <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? '保存中...' : '保存该人员规则'}</button>
+          <button className="btn btn-primary" disabled={busy || !productId} onClick={save}>{busy ? '保存中...' : '保存该产品规则'}</button>
         </>}
         {message && <p role="status" style={{ color: message.startsWith('规则已') ? '#1E6B50' : '#b42318' }}>{message}</p>}
       </>}
     </div>
-    <div style={card}><strong>已设置</strong><p style={{ color: '#667a6d' }}>选择人员和类别后显示生效规则；修改时保存为新版本，旧订单不回算。</p>
-      {category && personId && <div>{tab === 'staff'
-        ? activeStaff ? `员工规则 v${activeStaff.version} · ${activeStaff.productIds.length} 项 · 推广 ${activeStaff.referrerRate}% · 服务 ${activeStaff.fulfillerRate}%` : '尚未设置员工规则'
-        : activePartner.length ? `合伙人规则 · ${activePartner.length} 项 · ${activePartner[0].kind === 'annual' ? '年度首续' : activePartner[0].kind === 'every' ? '每次' : '仅首次'} · 首次 ${activePartner[0].firstBasisPoints / 100}%` : '尚未设置合伙人规则'}</div>}
-      {category && personId && <details style={{ marginTop: 12 }}><summary>历史版本</summary>
-        {(tab === 'staff' ? staffRules.filter(row => String(row.staffId) === personId && row.category === category && row.effectiveUntil)
-          : partnerRules.filter(row => String(row.partnerId) === personId && row.category === category && row.effectiveUntil))
+    <div style={card}><strong>当前产品规则</strong><p style={{ color: '#667a6d' }}>选择产品后查看；修改保存为新版本，旧订单不回算。</p>
+      {productId && personId && <div>{tab === 'staff'
+        ? activeStaff ? `员工规则 v${activeStaff.version} · 推广 ${activeStaff.referrerRate}% · 服务 ${activeStaff.fulfillerRate}%` : '该产品尚未设置员工规则'
+        : activePartner ? `合伙人规则 v${activePartner.version} · ${activePartner.kind === 'annual' ? '年度首续' : activePartner.kind === 'every' ? '每次' : '仅首次'} · 首次 ${activePartner.firstBasisPoints / 100}%` : '该产品尚未设置合伙人规则'}</div>}
+      {productId && personId && <details style={{ marginTop: 12 }}><summary>该产品历史版本</summary>
+        {(tab === 'staff' ? staffRules.filter(row => String(row.staffId) === personId && row.category === category
+          && row.productIds?.some(id => String(id) === productId) && row.effectiveUntil)
+          : partnerRules.filter(row => String(row.partnerId) === personId && row.category === category
+            && String(row.productId) === productId && row.effectiveUntil))
           .map(row => <div key={row._id} style={{ padding: 6, borderBottom: '1px solid #edf0ed' }}>
             v{row.version} · {tab === 'staff' ? `${row.productIds?.length || 0} 项 · 推广 ${row.referrerRate}% · 服务 ${row.fulfillerRate}%`
               : `${row.kind} · 推广 ${row.firstBasisPoints / 100}%`} · {row.effectiveFrom?.slice(0, 10)} 至 {row.effectiveUntil?.slice(0, 10)}

@@ -24,7 +24,7 @@ router.get('/staff', async (req, res) => {
 
 router.post('/staff', async (req, res) => {
   const { staffId, category, productIds, referrerRate, fulfillerRate } = req.body || {};
-  if (!mongoose.isValidObjectId(staffId) || !String(category || '').trim() || !validIds(productIds)
+  if (!mongoose.isValidObjectId(staffId) || !String(category || '').trim() || !validIds(productIds) || productIds.length !== 1
     || !validRate(referrerRate) || !validRate(fulfillerRate))
     return res.status(400).json({ success: false, message: '请选择员工、类别、项目和有效比例' });
   const tenantId = req.admin.tenantId;
@@ -46,6 +46,7 @@ router.post('/staff', async (req, res) => {
       productIds, version: (latest?.version || 0) + 1, effectiveFrom: now,
       referrerRate: Number(referrerRate), fulfillerRate: Number(fulfillerRate), createdBy: req.admin._id });
     await StaffCommissionRule.updateMany({ tenantId, staffId, category: categoryName,
+      productIds: { $size: 1, $all: productIds },
       _id: { $ne: row._id }, effectiveUntil: null }, { $set: { effectiveUntil: now } });
     res.status(201).json({ success: true, data: row });
   } catch (error) {
@@ -64,7 +65,7 @@ router.post('/partners', async (req, res) => {
   const { partnerId, productLine, category, productIds, kind, firstPercent, renewals } = req.body || {};
   const yearRows = Array.isArray(renewals) ? renewals : [];
   if (!mongoose.isValidObjectId(partnerId) || !String(productLine || '').trim()
-    || !String(category || '').trim() || !validIds(productIds)
+    || !String(category || '').trim() || !validIds(productIds) || productIds.length !== 1
     || !['annual', 'first', 'every'].includes(kind) || !validRate(firstPercent)
     || yearRows.length > 19 || yearRows.some(row => !Number.isSafeInteger(Number(row.year))
       || Number(row.year) < 2 || Number(row.year) > 20 || !validRate(row.percent))
@@ -86,6 +87,7 @@ router.post('/partners', async (req, res) => {
     return res.status(400).json({ success: false, message: '所选项目不在本机构可售范围' });
   const now = new Date();
   const existing = await MarketPartnerRule.find({ tenantId, partnerId, productLine, category,
+    productId: productIds[0],
     status: 'active', effectiveUntil: null }).lean();
   try {
     const rows = [];

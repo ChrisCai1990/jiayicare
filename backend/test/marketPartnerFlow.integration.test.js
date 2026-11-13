@@ -934,6 +934,18 @@ test('online and offline partner payments, renewals, refunds and team incentives
       referrerRate: 0, fulfillerRate: 0 });
     assert.equal(newerStaff.status, 201, JSON.stringify(newerStaff.body));
     assert.equal((await require('../src/utils/staffCommissionRule').forOrder(personStaffOrder, plannerId)).sourceRuleVersion, 1);
+    const otherProductId = oid();
+    await mongoose.connection.db.collection('products').insertOne({ _id: otherProductId, tenantId,
+      name: '同类别不同佣金商品', category: 'health', status: 'on', originalPrice: 200 });
+    const otherStaffRule = await call(clerkId, 'POST', `${personPrefix}/staff`, {
+      staffId: String(plannerId), category: 'health', productIds: [String(otherProductId)],
+      referrerRate: 8, fulfillerRate: 2 });
+    assert.equal(otherStaffRule.status, 201, JSON.stringify(otherStaffRule.body));
+    const currentStaff = await require('../src/models/StaffCommissionRule').findOne({ _id: newerStaff.body.data._id }).lean();
+    assert.equal(currentStaff.effectiveUntil, null, 'saving another product must preserve the first product rule');
+    assert.equal((await call(clerkId, 'POST', `${personPrefix}/staff`, {
+      staffId: String(plannerId), category: 'health', productIds: [String(productId), String(otherProductId)],
+      referrerRate: 8, fulfillerRate: 2 })).status, 400, 'bulk category save must be rejected');
     const partnerSave = await call(clerkId, 'POST', `${personPrefix}/partners`, {
       partnerId: String(profile._id), productLine: 'medicalAssist', category: 'health',
       productIds: [String(productId)], kind: 'first', firstPercent: 12, renewals: [] });
