@@ -19,6 +19,7 @@ export default function PersonCommissionRulesPage() {
   const [staffRules, setStaffRules] = useState([])
   const [partnerRules, setPartnerRules] = useState([])
   const [personId, setPersonId] = useState('')
+  const [personSearch, setPersonSearch] = useState('')
   const [category, setCategory] = useState('')
   const [selected, setSelected] = useState([])
   const [search, setSearch] = useState('')
@@ -48,6 +49,11 @@ export default function PersonCommissionRulesPage() {
 
   const people = tab === 'staff' ? staff : partners
   const person = people.find(row => String(row._id) === personId)
+  const matchingPeople = people.filter(row => {
+    const keyword = personSearch.trim().toLowerCase()
+    return !keyword || `${row.name || ''} ${row.username || ''} ${row.phone || ''} ${row.role || ''} ${lineName[row.productLine] || row.productLine || ''}`
+      .toLowerCase().includes(keyword) || String(row._id) === personId
+  })
   const availableCategories = useMemo(() => {
     const names = [...new Set(products.map(row => row.category).filter(Boolean))].sort()
     if (packages.length) names.unshift('365会员')
@@ -87,7 +93,7 @@ export default function PersonCommissionRulesPage() {
     }
   }
   const changeTab = value => {
-    setTab(value); setPersonId(''); setCategory(''); setSelected([]); setSearch(''); setMessage('')
+    setTab(value); setPersonId(''); setPersonSearch(''); setCategory(''); setSelected([]); setSearch(''); setMessage('')
   }
   const toggle = id => setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
   const selectVisible = () => setSelected(current => [...new Set([...current, ...visibleItems.map(item => String(item._id))])])
@@ -124,8 +130,11 @@ export default function PersonCommissionRulesPage() {
       {loading ? <p>加载中...</p> : <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
           <div><label style={label}>选择{tab === 'staff' ? '员工' : '合伙人'}</label>
+            <input className="form-input" type="search" aria-label={`搜索${tab === 'staff' ? '员工' : '合伙人'}`}
+              value={personSearch} onChange={event => setPersonSearch(event.target.value)}
+              placeholder="搜索姓名、账号或手机号" style={{ marginBottom: 8 }} />
             <select className="form-input" value={personId} onChange={event => changePerson(event.target.value)}>
-              <option value="">请选择</option>{people.map(row => <option key={row._id} value={row._id}>{row.name}{tab === 'staff' ? ` · ${row.role}` : ` · ${lineName[row.productLine] || row.productLine}`}</option>)}
+              <option value="">{matchingPeople.length ? '请选择' : '无匹配人员'}</option>{matchingPeople.map(row => <option key={row._id} value={row._id}>{row.name}{tab === 'staff' ? ` · ${row.role}` : ` · ${lineName[row.productLine] || row.productLine}`}</option>)}
             </select></div>
           <div><label style={label}>业务类别</label><select className="form-input" value={category}
             disabled={!personId} onChange={event => changeCategory(event.target.value)}><option value="">请选择</option>
