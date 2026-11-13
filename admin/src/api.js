@@ -128,6 +128,8 @@ export const adminAPI = {
   getAiControl: (params = {}) => req(`/ai-control?${new URLSearchParams(params)}`),
   getAiTenantUsage: () => req('/ai-control/tenant-usage'),
   getAiTenantPolicy: () => req('/ai-control/tenant-policy'),
+  getAiTenantPausedReports: () => req('/ai-control/tenant-paused-reports'),
+  resumeAiTenantReport: id => req(`/ai-control/tenant-reports/${encodeURIComponent(id)}/resume`, { method: 'POST', body: '{}' }),
   saveAiTenantPolicy: (policy, revision) => req('/ai-control/tenant-policy', { method: 'PUT', body: JSON.stringify({ policy, revision }) }),
   searchAiReports: (q) => req(`/ai-control/reports?${new URLSearchParams({ q })}`),
   getAiUsage: (params = {}) => req(`/ai-control/usage?${new URLSearchParams(params)}`),

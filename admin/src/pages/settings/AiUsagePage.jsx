@@ -28,6 +28,7 @@ export default function AiUsagePage() {
   const [usage, setUsage] = useState(null)
   const [tenantSnapshot, setTenantSnapshot] = useState(null)
   const [tenantPolicy, setTenantPolicy] = useState(null)
+  const [pausedReports, setPausedReports] = useState([])
   const [policy, setPolicy] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -38,10 +39,11 @@ export default function AiUsagePage() {
     try { await fn() } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
   const refresh = async () => {
-    const [control, institutionUsage, institutionPolicy] = await Promise.all([platform ? adminAPI.getAiControl() : Promise.resolve(null), adminAPI.getAiTenantUsage(), platform ? Promise.resolve(null) : adminAPI.getAiTenantPolicy()])
+    const [control, institutionUsage, institutionPolicy, paused] = await Promise.all([platform ? adminAPI.getAiControl() : Promise.resolve(null), adminAPI.getAiTenantUsage(), platform ? Promise.resolve(null) : adminAPI.getAiTenantPolicy(), platform ? Promise.resolve(null) : adminAPI.getAiTenantPausedReports()])
     if (control) { setSnapshot(control.data); setPolicy(control.data.policy) }
     if (institutionPolicy) { setTenantSnapshot(institutionPolicy.data); setTenantPolicy(institutionPolicy.data.policy || institutionPolicy.data.defaults) }
     setUsage(institutionUsage.data)
+    if (paused) setPausedReports(paused.data)
   }
   useEffect(() => { if (allowed) action(refresh) }, [allowed])
 
@@ -58,6 +60,11 @@ export default function AiUsagePage() {
     setTenantPolicy(response.data)
     setTenantSnapshot(previous => ({ ...previous, policy: response.data }))
     setMessage('本机构额度已生效；平台总预算仍同时适用。')
+  }
+  const resumeReport = async id => {
+    await adminAPI.resumeAiTenantReport(id)
+    await refresh()
+    setMessage('报告已恢复排队，请在医护端查看识别进度。')
   }
   const counter = id => snapshot?.counters.find(row => row._id === id) || {}
   const card = (title, id, limit) => {
@@ -77,6 +84,7 @@ export default function AiUsagePage() {
       {platform && <div className="aiu-grid">{card('今日 Token 占用', `day:${snapshot.day}`, snapshot.policy.dailyTokens)}{card('本月 Token 占用', `month:${snapshot.month}`, snapshot.policy.monthlyTokens)}{card('OCR 今日占用', `business:ocr:${snapshot.day}`, snapshot.policy.ocrDailyTokens)}{card('其他 AI 今日占用', `business:other:${snapshot.day}`, snapshot.policy.otherDailyTokens)}</div>}
       <section className="aiu-card"><h2>{platform ? '各机构 AI 调用情况' : '本机构 AI 调用情况'}</h2><p className="aiu-muted">按北京时间统计；Token 和费用含尚未确认实际用量的预留值，费用仅计算已配置单价的调用，账单以供应商为准。</p><div className="aiu-table-wrap"><table><thead><tr><th>机构</th><th>今日 Token</th><th>今日调用</th><th>今日 OCR / 其他</th><th>今日已定价费用</th><th>本月 Token</th><th>本月调用</th><th>本月 OCR / 其他</th><th>本月已定价费用</th></tr></thead><tbody>{usage.rows.map(row => <tr key={row.tenantId}><td><strong>{row.name}</strong><small>{row.code}</small></td><td>{number(row.todayTokens)}</td><td>{number(row.todayCalls)}</td><td>{number(row.todayOcrCalls)} / {number(row.todayOtherCalls)}</td><td>{money(row.todayMicros)}</td><td>{number(row.monthTokens)}</td><td>{number(row.monthCalls)}</td><td>{number(row.monthOcrCalls)} / {number(row.monthOtherCalls)}</td><td>{money(row.monthMicros)}</td></tr>)}{platform && hasUnattributed && <tr><td><strong>待核对归属</strong><small>缺少或无法识别机构标识</small></td><td>{number(unattributed.todayTokens)}</td><td>{number(unattributed.todayCalls)}</td><td>{number(unattributed.todayOcrCalls)} / {number(unattributed.todayOtherCalls)}</td><td>{money(unattributed.todayMicros)}</td><td>{number(unattributed.monthTokens)}</td><td>{number(unattributed.monthCalls)}</td><td>{number(unattributed.monthOcrCalls)} / {number(unattributed.monthOtherCalls)}</td><td>{money(unattributed.monthMicros)}</td></tr>}</tbody></table></div>{usage.rows.length === 0 && <p className="aiu-empty">暂无机构记录</p>}</section>
       {!platform && <section className="aiu-card"><div className="aiu-split"><h2>本机构 AI 额度</h2><button className="btn btn-primary" disabled={busy} onClick={() => action(saveTenant)}>保存并生效</button></div><p className="aiu-muted">仅限制本机构新调用；平台共享总预算仍同时生效。首次保存后开始累计机构额度用量，已有调用不追溯计入。</p><p className="aiu-muted">{tenantSnapshot.policy ? `当前配置版本 ${tenantSnapshot.policy.revision}` : '尚未设置机构额度，以下为建议初始值；保存后生效。'}</p><div className="aiu-fields">{tenantFields.map(([key, label]) => <label key={key}>{label}<input type="number" min={key.endsWith('Yuan') ? 0 : 1} step={key.endsWith('Yuan') ? '0.01' : '1'} value={tenantPolicy[key]} onChange={e => setTenantPolicy({ ...tenantPolicy, [key]: e.target.value === '' ? '' : Number(e.target.value) })} /></label>)}</div>{tenantSnapshot.policy && <p className="aiu-muted">本机构今日额度计数：{number(tenantSnapshot.counters.find(row => row._id.endsWith(`:day:${tenantSnapshot.day}`))?.tokens)} Token；本月额度计数：{number(tenantSnapshot.counters.find(row => row._id.endsWith(`:month:${tenantSnapshot.month}`))?.tokens)} Token。额度计数包含尚未结算的预留量。</p>}</section>}
+      {!platform && <section className="aiu-card"><h2>本机构暂停识别的报告</h2><p className="aiu-muted">恢复后从已保存的识别结果继续；模型调用仍受预算保护。仅显示最近 50 份。</p>{pausedReports.length ? pausedReports.map(report => <div className="aiu-row" key={report.id}><div><strong className="aiu-report-title">{report.title || '体检报告'} · {report.date ? String(report.date).slice(0, 10) : '日期未录入'}</strong><p>{report.message || '识别已暂停'}</p></div><button className="btn" disabled={busy} onClick={() => action(() => resumeReport(report.id))}>恢复识别</button></div>) : <p className="aiu-muted">暂无暂停报告。</p>}</section>}
       {platform && <>
       <section className="aiu-card"><h2>共享预算控制</h2><p>已暂停报告：{number(snapshot.pausedReportsTotal)} 份。</p><div className="aiu-actions"><button className="btn" disabled={busy} onClick={() => action(() => save({ ...snapshot.policy, ocrPaused: !snapshot.policy.ocrPaused }))}>{snapshot.policy.ocrPaused ? '解除 OCR 暂停' : '暂停 OCR'}</button><button className="btn" disabled={busy} onClick={() => action(() => save({ ...snapshot.policy, paused: !snapshot.policy.paused }))}>{snapshot.policy.paused ? '解除全部暂停' : '暂停全部 AI'}</button></div></section>
       <section className="aiu-card"><div className="aiu-split"><h2>总额度与模型单价</h2><button className="btn btn-primary" disabled={busy} onClick={() => action(() => save(policy))}>保存并生效</button></div><p className="aiu-muted">费用按实际供应商账单核对。</p><div className="aiu-fields">{fields.map(([key, label]) => <label key={key}>{label}<input type="number" min={key.endsWith('Yuan') ? 0 : 1} step={key.endsWith('Yuan') ? '0.01' : '1'} value={policy[key]} onChange={e => setPolicy({ ...policy, [key]: Number(e.target.value) })} /></label>)}</div><div className="aiu-table-wrap"><table><thead><tr><th>模型</th><th>输入单价（元／百万 Token）</th><th>输出单价（元／百万 Token）</th></tr></thead><tbody>{models.map(model => <tr key={model}><td>{model}</td>{['input', 'output'].map(key => <td key={key}><input aria-label={`${model} ${key === 'input' ? '输入' : '输出'}单价`} type="number" min="0" step="0.01" placeholder="未定价" value={policy.prices[model]?.[key] ?? ''} onChange={e => { const prices = { ...policy.prices }; if (e.target.value === '') { delete prices[model] } else { prices[model] = { input: '', output: '', ...prices[model], [key]: Number(e.target.value) } } setPolicy({ ...policy, prices }) }} /></td>)}</tr>)}</tbody></table></div></section>

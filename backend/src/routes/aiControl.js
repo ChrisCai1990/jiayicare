@@ -78,6 +78,34 @@ router.put('/tenant-policy', adminAuth, async (req, res) => {
   if (!result.modifiedCount) return res.status(409).json({ success: false, message: '机构额度已被其他管理员更新，请刷新后重试' });
   res.json({ success: true, data: await store.tenantPolicy(tenantId) });
 });
+// Report recovery belongs to the institution that owns the source document.
+// Keep these routes ahead of the platform-only policy middleware.
+router.get('/tenant-paused-reports', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅机构超管可恢复本机构报告' });
+  const rows = await collection('medicalreports').find({ tenantId: req.admin.tenantId, 'parseJob.status': 'paused' }, {
+    projection: { title: 1, checkDate: 1, date: 1, 'parseJob.message': 1, 'parseJob.pauseCode': 1, 'parseJob.progress.nextPage': 1 },
+  }).sort({ updatedAt: -1, _id: -1 }).limit(50).toArray();
+  res.json({ success: true, data: rows.map(row => ({
+    id: String(row._id), title: row.title, date: row.checkDate || row.date || '',
+    message: row.parseJob?.message || '', pauseCode: row.parseJob?.pauseCode || '',
+    nextPage: row.parseJob?.progress?.nextPage || null,
+  })) });
+});
+router.post('/tenant-reports/:id/resume', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅机构超管可恢复本机构报告' });
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ success: false, message: '报告 ID 格式无效' });
+  const MedicalReport = require('../models/MedicalReport');
+  const id = req.params.id;
+  const auditId = randomUUID();
+  await collection('ai_control_audit').insertOne({ _id: auditId, action: 'resume_report', target: id, tenantId: String(req.admin.tenantId), status: 'pending', at: new Date(), actorId: String(req.admin._id) });
+  const result = await MedicalReport.findOneAndUpdate({ _id: id, tenantId: req.admin.tenantId, 'parseJob.status': 'paused', aiStatus: { $in: ['failed', 'pending'] } }, {
+    $set: { aiStatus: 'processing', 'parseJob.status': 'processing', 'parseJob.message': '机构管理员已恢复，等待继续识别', 'parseJob.resumedAt': new Date(), 'parseJob.resumedBy': String(req.admin._id) },
+  });
+  await collection('ai_control_audit').updateOne({ _id: auditId }, { $set: { status: result ? 'applied' : 'conflict' } });
+  if (!result) return res.status(409).json({ success: false, message: '报告不属于本机构或已不在暂停状态，请刷新' });
+  require('./staff').scheduleReportParse(id);
+  res.json({ success: true, message: '已恢复排队；后续调用仍受预算保护' });
+});
 router.use(adminAuth, (req, res, next) => canManageAi(req.admin) ? next() : res.status(403).json({ success: false, message: '仅平台管理员可管理 AI 总预算' }));
 
 router.get('/', async (req, res) => {
