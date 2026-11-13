@@ -61,6 +61,7 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit }) {
     return () => clearTimeout(timer)
   }, [rows, dirty, patientId])
   const update = (id, drafts) => { setDirtyRows(prev => ({ ...prev, [id]: true })); setReviewed(prev => ({ ...prev, [id]: false })); setRows(prev => prev.map(row => row._id === id ? { ...row, issueDrafts: drafts } : row)) }
+  const updateFollowUps = (id, drafts) => { setDirtyRows(prev => ({ ...prev, [id]: true })); setRows(prev => prev.map(row => row._id === id ? { ...row, followUpDrafts: drafts } : row)) }
   const act = async (row, action, coverageDecisions) => {
     if (action === 'generate' && (dirty || row.issueDrafts?.length || row.followUpDrafts?.length) && !window.confirm('将按健康问题重新整理并合并多处来源。已保存的顾问意见会保留，无法准确对应的意见单列待核对；未保存编辑会被替换。是否继续？')) return
     const requestedPatient = patientId
@@ -73,19 +74,31 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit }) {
       setRows(prev => prev.map(item => item._id === row._id ? result.data : item)); setReviewed(prev => ({ ...prev, [row._id]: false })); setDirtyRows(prev => ({ ...prev, [row._id]: false }))
     } catch (e) { if (activePatient.current === requestedPatient) setError(e.message) } finally { if (activePatient.current === requestedPatient) setBusy(false) }
   }
+  const actFollowUp = async (row, action) => {
+    const requestedPatient = patientId
+    setBusy(true); setError('')
+    try {
+      const result = action === 'generate'
+        ? await staffAPI.generateReportFollowUpDraft(row._id, { revision: row.__v, confirmIncrement: true })
+        : await staffAPI.reviewReportFollowUpDraft(row._id, { action, revision: row.__v, followUpDrafts: row.followUpDrafts || [] })
+      if (activePatient.current !== requestedPatient) return
+      setRows(prev => prev.map(item => item._id === row._id ? result.data : item))
+      setDirtyRows(prev => ({ ...prev, [row._id]: false }))
+    } catch (e) { if (activePatient.current === requestedPatient) setError(e.message) } finally { if (activePatient.current === requestedPatient) setBusy(false) }
+  }
   const reference = screening.patientId === patientId ? approvedScreeningReference(screening.rows, year) : null
   const reviewDraftId = new URLSearchParams(window.location.search).get('reviewDraftId')
   const reviewAnnualInputs = new URLSearchParams(window.location.search).get('reviewAnnualInputs') === '1'
   const visibleRows = reviewDraftId ? rows.filter(row => String(row._id) === reviewDraftId)
     : reviewAnnualInputs ? rows.filter(row => row.purpose === PURPOSE && ['advisor_review', 'no_action', 'excluded'].includes(row.status)) : rows
   return <section id="report-followup-drafts" className="report-issues">
-    <header className="report-issues-heading"><div><h3>年度管理重点 · 问题、分析与建议</h3><p>先参考年度筛查小结定位重点，再逐项确认问题分析和处理建议，纳入年度管理方案。</p></div><button disabled={busy} onClick={() => { if (!dirty || window.confirm('刷新会替换未保存编辑，是否继续？')) load() }}>刷新状态</button></header>
-    <div className="report-screening-reference"><h4>{year}年度筛查小结 · 定位参考</h4>
+    <header className="report-issues-heading"><div><h3>{reviewDraftId && visibleRows.length === 1 && visibleRows[0].purpose !== PURPOSE ? '本次就医 · 单次随访' : '报告问题与后续随访'}</h3><p>已有年度方案的客户，后续就医只核对本次报告并安排一次随访；首次资料的问题建议供年度方案参考。</p></div><button disabled={busy} onClick={() => { if (!dirty || window.confirm('刷新会替换未保存编辑，是否继续？')) load() }}>刷新状态</button></header>
+    {visibleRows.some(row => row.purpose === PURPOSE) && <div className="report-screening-reference"><h4>{year}年度筛查小结 · 定位参考</h4>
       {screening.error ? <p role="alert">{screening.error}</p> : screening.loading ? <p>正在读取年度筛查小结…</p> : reference ? <>
         <p className="report-issue-summary">已审核{reference.createdAt ? ` · ${String(reference.createdAt).slice(0, 10)}` : ''}。结合原报告核对，后续新发现仍需补充。</p>
         {[['tumor_risk', '肿瘤筛查'], ['cardiovascular_risk', '心脑血管病筛查'], ['chronic_disease', '慢性病及其他']].map(([key, label]) => <details key={key}><summary>{label}</summary><p>{reference.sections?.[key]?.summary || '暂无相关小结'}</p></details>)}
       </> : <p>本年度暂无已审核小结，可先核对下方报告问题。</p>}
-    </div>
+    </div>}
     {error && <p role="alert" className="report-issues-error">{error}</p>}
     {!rows.length && <p>暂无问题整理记录。新报告审核后生成；历史资料不会自动批量重跑。</p>}
     {reviewDraftId && !busy && rows.length > 0 && !visibleRows.length && <p role="alert">这条审核任务已处理或不属于当前客户，请返回工作台刷新任务。</p>}
@@ -99,14 +112,30 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit }) {
       const pending = coverage.filter(item => item.status === 'pending')
       return <article key={row._id} className="report-issues-report">
         <header><h4>{row.title}</h4><span className="report-issue-tag">{historical ? '历史随访记录' : statusLabel[row.status]}</span></header>
-        <p>{annual ? row.followUpAutomation?.message : historical ? '保留原已审核随访及执行记录。' : '旧版仅整理后续行动，可能遗漏未写建议的异常。请重新提取完整问题清单。'}</p>
+        <p>{annual ? row.followUpAutomation?.message : historical ? '保留原已审核随访及执行记录。' : row.followUpAutomation?.message || '请核对本次就医资料，填写一条综合随访。'}</p>
         {annual && <div className="report-issues-overview"><b>{drafts.filter(issue => issue.decision !== 'exclude').length}项待纳入管理的问题</b><span>{drafts.filter(issue => issue.decision !== 'exclude' && !issue.advisorRecommendation).length}项建议待确认</span>{pending.length > 0 && <span>{pending.length}项资料待核对</span>}</div>}
         {annual && groupedIssues(drafts).map(group => <section key={group.key} className="report-problem-group"><h4>{group.label}<span>{group.issues.length}个问题</span></h4>{group.issues.map((issue, index) => <ReportIssueCard key={issue.id} issue={issue} index={index} disabled={busy || !editable} onChange={patch => update(row._id, drafts.map(item => item.id === issue.id ? { ...item, ...patch } : item))} />)}</section>)}
         {annual && <div className="report-issues-coverage"><p><b>{drafts.length}项问题建议</b>{pending.length > 0 && <> · {pending.length}项资料待核对</>} · {coverage.filter(item => item.status === 'normal').length}项正常或无需跟进，已略过</p>
           {!!pending.length && <details><summary>尚待判断的资料（{pending.length}项）</summary><p>可点击“按问题重新整理”自动判断，或查看下列原文后选择是否需要跟进。</p><ul>{pending.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? ` · 第${item.page}页` : ''}<details><summary>{evidenceSummary(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '查看原文'}</summary><p>{compactEvidence(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '缺少结果，请核对原件'}</p></details>{editable && <div className="report-issues-actions"><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'normal' })}>已核对，无需跟进</button><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'problem' })}>列入问题建议</button></div>}</li>)}</ul></details>}
           <details><summary>资料来源（仅供查阅）</summary>{coverage.length ? <ul>{coverage.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? `（第${item.page}页）` : ''}：{{ normal: '正常或无需跟进', problem: '已列入问题', uncertain: '具体问题待核实', pending: '尚未判断' }[item.status]}{item.reason ? `；${item.reason}` : ''}<details><summary>查看该项原文</summary><p>{compactEvidence(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '缺少结果，需核对原件'}</p></details></li>)}</ul> : <p>没有可核对的结构化资料，请核对原件并补充问题。</p>}</details></div>}
-        {!annual && <details><summary>查看旧版内容及来源</summary>{(row.followUpDrafts || []).map((item, i) => <div key={i}><b>{item.title}</b><p>{item.content}</p></div>)}<pre>{JSON.stringify(row.sourceSnapshot, null, 2)}</pre></details>}
-        {available && <div className="report-issues-actions">
+        {!annual && <>
+          <details><summary>查看本次报告来源</summary><pre>{JSON.stringify(row.sourceSnapshot, null, 2)}</pre></details>
+          {(row.followUpDrafts || []).map((item, index) => <fieldset key={index} className="report-issue-card" disabled={busy || !available || status !== 'ready'}>
+            <legend>本次随访{index > 0 ? ` ${index + 1}` : ''}</legend>
+            <label>标题<input value={item.title || ''} maxLength={40} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, title: e.target.value } : draft))} /></label>
+            <label>计划日期<input type="date" value={item.date || ''} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, date: e.target.value } : draft))} /></label>
+            <label>类型<select value={item.category || 'information'} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, category: e.target.value } : draft))}><option value="medical_visit">就医</option><option value="examination">检查</option><option value="review">结果回访</option><option value="lifestyle">生活方式</option><option value="information">资料核对</option></select></label>
+            <label>随访内容<textarea value={item.content || ''} rows={4} maxLength={3000} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, content: e.target.value } : draft))} /></label>
+            <label><input type="checkbox" checked={item.requiresService === true} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, requiresService: e.target.checked } : draft))} />需要规划师安排服务</label>
+            {available && status === 'ready' && <button type="button" onClick={() => updateFollowUps(row._id, row.followUpDrafts.filter((_, i) => i !== index))}>移除此条</button>}
+          </fieldset>)}
+          {available && <div className="report-issues-actions">
+            {status === 'failed' && <><button disabled={busy} onClick={() => actFollowUp(row, 'generate')}>重新生成单次随访</button><button disabled={busy} onClick={() => actFollowUp(row, 'take_over')}>人工填写单次随访</button></>}
+            {status === 'ready' && <>{!row.followUpDrafts?.length && <button disabled={busy} onClick={() => updateFollowUps(row._id, [{ title: '', content: '', date: '', category: 'information', requiresService: false }])}>添加单次随访</button>}<button disabled={busy || (row.followUpDrafts || []).length > 1} onClick={() => actFollowUp(row, 'approve')}>终审并发布</button><button disabled={busy} onClick={() => actFollowUp(row, 'reject')}>不需要后续随访</button></>}
+          </div>}
+          {historical && row.followUpPublication?.status !== 'published' && canEdit && <button disabled={busy} onClick={() => actFollowUp(row, 'approve')}>重试发布单次随访</button>}
+        </>}
+        {available && annual && <div className="report-issues-actions">
           <button disabled={busy || ['running', 'queued'].includes(status)} onClick={() => act(row, 'generate')}>按问题重新整理</button>
           {(!annual || status === 'failed') && <button disabled={busy || status === 'running'} onClick={() => act(row, 'manual_issues')}>转人工逐项核对</button>}
           {editable && <><button disabled={busy} onClick={() => update(row._id, [...drafts, { id: `manual:${crypto.randomUUID()}`, title: '', advisorRecommendation: '', decision: 'include' }])}>补充问题</button><button disabled={busy} onClick={() => act(row, 'save_issues')}>保存草稿</button></>}
