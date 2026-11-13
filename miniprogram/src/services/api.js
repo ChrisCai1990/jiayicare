@@ -258,6 +258,15 @@ export const messagesAPI = {
   recall: (id) => request(`/messages/${id}/recall`, { method: 'PATCH' }),
 };
 
+export const inAppServiceGroupAPI = {
+  list: () => request('/in-app-service-groups'),
+  start: () => request('/in-app-service-groups', { method: 'POST', body: '{}' }),
+  messages: id => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages`),
+  send: (id, content) => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
+    method: 'POST', body: JSON.stringify({ content }),
+  }),
+};
+
 // ── Push Records (医护端推送) ─────────────────────────────────────
 export const pushRecordsAPI = {
   sharedFundQuote: (id, selectedProductIds, couponId) => request(`/user/push-records/${id}/shared-fund-quote`, { method: 'POST', body: JSON.stringify({ selectedProductIds, couponId }) }),
