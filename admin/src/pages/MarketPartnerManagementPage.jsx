@@ -9,6 +9,8 @@ const LINES = [
   ['assessment', '单次评估'], ['psychology', '心理咨询'], ['rehabilitation', '运动复健'],
   ['testing', '检测'], ['supplements', '营养素补充'],
 ]
+const SEGMENTS = [['medical', '就医板块'], ['nutrition', '营养板块'],
+  ['annual', '年度管理板块'], ['consultation', '咨询板块']]
 const ROLES = [['familyDoctor', '健康顾问'], ['nutritionist', '营养师'], ['healthManager', '健管专员'], ['medicalAssistant', '就医专员'], ['psychologist', '心理咨询师'], ['rehabSpecialist', '运动复健师'], ['specialist', '专科医师'], ['tcmDoctor', '中医师']]
 const inputStyle = { padding: '9px 10px', border: '1px solid #cbd8d1', borderRadius: 6, minWidth: 150 }
 const boxStyle = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
@@ -35,7 +37,7 @@ export default function MarketPartnerManagementPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const [partner, setPartner] = useState({ name: '', phone: '', productLine: 'consumer365', contractReference: '' })
+  const [partner, setPartner] = useState({ name: '', phone: '', segment: 'medical', contractReference: '' })
   const [editingPartner, setEditingPartner] = useState(null)
   const [partnerChangeReason, setPartnerChangeReason] = useState('')
   const [rule, setRule] = useState({ productId: '', productLine: 'consumer365', kind: 'annual', firstPercent: '20', tiers: '', renewals: '2:10,3:5,4:5,5:5', effectiveFrom: '', directReferralRequired: false, quickCloseEnabled: false, retentionFloorPercent: '' })
@@ -108,7 +110,7 @@ export default function MarketPartnerManagementPage() {
   }
   const loadPartner = item => {
     setEditingPartner(item)
-    setPartner({ name: item.name, phone: item.phone, productLine: item.productLine,
+    setPartner({ name: item.name, phone: item.phone, productLine: item.productLine, segment: item.segment || '',
       contractReference: item.contractReference || '' })
     setPartnerChangeReason('')
     document.getElementById('market-partner-profile-form')?.scrollIntoView({ behavior: 'smooth' })
@@ -232,14 +234,17 @@ export default function MarketPartnerManagementPage() {
       <form id="market-partner-profile-form" onSubmit={submitPartner} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <input style={inputStyle} aria-label="姓名" placeholder="姓名或机构名" value={partner.name} onChange={e => setPartner({ ...partner, name: e.target.value })} required />
         <input style={inputStyle} aria-label="手机号" placeholder="登记手机号" value={partner.phone} onChange={e => setPartner({ ...partner, phone: e.target.value })} required />
-        <select style={inputStyle} aria-label="授权产品线" value={partner.productLine} disabled={editingPartner?.status === 'active'} onChange={e => setPartner({ ...partner, productLine: e.target.value })}>{LINES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <select style={inputStyle} aria-label="合伙人所属板块" value={partner.segment || ''} disabled={editingPartner?.status === 'active'} onChange={e => setPartner({ ...partner, segment: e.target.value })}>
+          {!partner.segment && <option value="">历史产品线（未归类）</option>}
+          {SEGMENTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
         <input style={inputStyle} aria-label="合同编号" placeholder="合同编号" value={partner.contractReference} onChange={e => setPartner({ ...partner, contractReference: e.target.value })} required />
         {editingPartner && <input style={{ ...inputStyle, minWidth: 210 }} aria-label="资料修改原因" placeholder="修改原因及依据" value={partnerChangeReason} onChange={e => setPartnerChangeReason(e.target.value)} required />}
         <button className="btn btn-primary" disabled={busy}>{editingPartner ? '保存合伙人资料修改' : '创建待审核合伙人'}</button>
         {editingPartner && <button type="button" className="btn" onClick={() => setEditingPartner(null)}>取消编辑</button>}
       </form>
-      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>名称</th><th>手机号</th><th>产品线</th><th>推荐码</th><th>状态</th><th>操作</th></tr></thead><tbody>
-        {partners.map(item => <tr key={item._id}><td>{item.name}</td><td>{item.phone}</td><td>{LINES.find(([value]) => value === item.productLine)?.[1] || item.productLine}</td><td>{item.referralCode}</td><td>{item.status}</td><td>
+      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>名称</th><th>手机号</th><th>所属板块</th><th>推荐码</th><th>状态</th><th>操作</th></tr></thead><tbody>
+        {partners.map(item => <tr key={item._id}><td>{item.name}</td><td>{item.phone}</td><td>{SEGMENTS.find(([value]) => value === item.segment)?.[1] || LINES.find(([value]) => value === item.productLine)?.[1] || item.productLine}</td><td>{item.referralCode}</td><td>{item.status}</td><td>
           {item.status !== 'closed' && <button className="btn btn-sm" disabled={busy} onClick={() => loadPartner(item)}>编辑资料</button>}
           {item.status !== 'active' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.setMarketPartnerStatus(item._id, 'active'))}>启用</button>}
           {item.status === 'active' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.setMarketPartnerStatus(item._id, 'suspended'))}>暂停</button>}

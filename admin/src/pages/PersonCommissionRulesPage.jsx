@@ -8,7 +8,8 @@ const round = value => Math.round(Number(value || 0) * 100) / 100
 const lineName = { consumer365: '365会员', annualAdvisor: '年度顾问', premiumAdvisor: '高端顾问',
   weightManagement: '体重管理', chronicManagement: '慢病管理', medicalAssist: '单次就医',
   oneStopMedical: '一站式就医', assessment: '评估', psychology: '心理咨询', rehabilitation: '运动复健',
-  testing: '检测', supplements: '营养素补充' }
+  testing: '检测', supplements: '营养素补充', medical: '就医板块', nutrition: '营养板块',
+  annual: '年度管理板块', consultation: '咨询板块' }
 
 export default function PersonCommissionRulesPage() {
   const [tab, setTab] = useState('staff')
@@ -51,7 +52,7 @@ export default function PersonCommissionRulesPage() {
   const person = people.find(row => String(row._id) === personId)
   const matchingPeople = people.filter(row => {
     const keyword = personSearch.trim().toLowerCase()
-    return !keyword || `${row.name || ''} ${row.username || ''} ${row.phone || ''} ${row.role || ''} ${lineName[row.productLine] || row.productLine || ''}`
+    return !keyword || `${row.name || ''} ${row.username || ''} ${row.phone || ''} ${row.role || ''} ${lineName[row.segment || row.productLine] || row.segment || row.productLine || ''}`
       .toLowerCase().includes(keyword) || String(row._id) === personId
   })
   const availableCategories = useMemo(() => {
@@ -132,11 +133,11 @@ export default function PersonCommissionRulesPage() {
               value={personSearch} onChange={event => setPersonSearch(event.target.value)}
               placeholder="搜索姓名、账号或手机号" style={{ marginBottom: 8 }} />
             <select className="form-input" value={personId} onChange={event => changePerson(event.target.value)}>
-              <option value="">{matchingPeople.length ? '请选择' : '无匹配人员'}</option>{matchingPeople.map(row => <option key={row._id} value={row._id}>{row.name}{tab === 'staff' ? ` · ${row.role}` : ` · ${lineName[row.productLine] || row.productLine}`}</option>)}
+              <option value="">{matchingPeople.length ? '请选择' : '无匹配人员'}</option>{matchingPeople.map(row => <option key={row._id} value={row._id}>{row.name}{tab === 'staff' ? ` · ${row.role}` : ` · ${lineName[row.segment || row.productLine] || row.segment || row.productLine}`}</option>)}
             </select></div>
           <div><label style={label}>业务类别</label><select className="form-input" value={category}
             disabled={!personId} onChange={event => changeCategory(event.target.value)}><option value="">请选择</option>
-            {availableCategories.filter(name => tab === 'staff' || (person?.productLine === 'consumer365'
+            {availableCategories.filter(name => tab === 'staff' || person?.segment || (person?.productLine === 'consumer365'
               ? name === '365会员' : name !== '365会员'))
               .map(name => <option key={name} value={name}>{name}</option>)}
           </select></div>

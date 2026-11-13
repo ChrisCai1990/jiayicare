@@ -72,10 +72,13 @@ router.post('/partners', async (req, res) => {
     || new Set(yearRows.map(row => Number(row.year))).size !== yearRows.length)
     return res.status(400).json({ success: false, message: '请选择合伙人、类别、项目及有效佣金比例' });
   const tenantId = req.admin.tenantId;
-  const partner = await MarketPartner.findOne({ _id: partnerId, tenantId, productLine,
-    status: { $in: ['draft', 'active', 'suspended'] } }).select('_id').lean();
+  const partner = await MarketPartner.findOne({ _id: partnerId, tenantId,
+    status: { $in: ['draft', 'active', 'suspended'] } }).select('_id productLine segment').lean();
   if (!partner) return res.status(404).json({ success: false, message: '本机构合伙人或授权类别不存在' });
-  const sourceType = productLine === 'consumer365' ? 'servicePackage' : 'product';
+  const sourceType = category === '365会员' ? 'servicePackage' : 'product';
+  const ruleLine = partner.segment ? (sourceType === 'servicePackage' ? 'consumer365' : category) : productLine;
+  if (!partner.segment && productLine !== partner.productLine)
+    return res.status(409).json({ success: false, message: '旧合伙人产品线不一致' });
   const found = sourceType === 'servicePackage'
     ? await ServicePackage.find({ _id: { $in: productIds }, active: true, 'activation.enabled': true,
       'configuration.membershipTier': 'consumer365', 'configuration.includes365': true }).select('_id').lean()
@@ -86,14 +89,14 @@ router.post('/partners', async (req, res) => {
   if (found.length !== productIds.length)
     return res.status(400).json({ success: false, message: '所选项目不在本机构可售范围' });
   const now = new Date();
-  const existing = await MarketPartnerRule.find({ tenantId, partnerId, productLine, category,
+  const existing = await MarketPartnerRule.find({ tenantId, partnerId, productLine: ruleLine, category,
     productId: productIds[0],
     status: 'active', effectiveUntil: null }).lean();
   try {
     const rows = [];
     for (const productId of productIds) {
       const latest = await MarketPartnerRule.findOne({ tenantId, productId }).sort({ version: -1 }).select('version').lean();
-      rows.push({ tenantId, productId, partnerId, sourceType, productLine, category,
+      rows.push({ tenantId, productId, partnerId, sourceType, productLine: ruleLine, category,
         version: (latest?.version || 0) + 1, status: 'active', effectiveFrom: now,
         kind, firstBasisPoints: Math.round(Number(firstPercent) * 100),
         renewalBasisPoints: kind === 'annual' ? yearRows.map(row => ({ year: Number(row.year),

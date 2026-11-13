@@ -63,7 +63,8 @@ router.post('/login', async (req, res) => {
   if (!consumed.deletedCount) return res.status(401).json({ success: false, message: '验证码已使用' });
   const token = jwt.sign({ type: 'marketPartner', id: String(partner._id), tenantId: String(partner.tenantId) },
     process.env.JWT_SECRET, { expiresIn: '1d' });
-  res.json({ success: true, data: { token, name: partner.name, productLine: partner.productLine } });
+  res.json({ success: true, data: { token, name: partner.name,
+    segment: partner.segment || null, productLine: partner.productLine } });
 });
 
 router.use(async (req, res, next) => {

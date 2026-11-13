@@ -135,10 +135,14 @@ router.post('/', async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
     const phone = String(req.body?.phone || '').trim();
-    const productLine = String(req.body?.productLine || '').trim();
+    const segment = String(req.body?.segment || '').trim();
+    const productLine = segment || String(req.body?.productLine || '').trim();
+    if (segment && !['medical', 'nutrition', 'annual', 'consultation'].includes(segment))
+      return res.status(400).json({ success: false, message: '合伙人板块无效' });
     if (!name || !/^1\d{10}$/.test(phone) || !productLine)
-      return res.status(400).json({ success: false, message: '请填写名称、手机号和授权产品线' });
+      return res.status(400).json({ success: false, message: '请填写名称、手机号和所属板块' });
     const row = await MarketPartner.create({ tenantId: tenant(req), name, phone, productLine,
+      segment: segment || null,
       contractReference: String(req.body?.contractReference || '').trim().slice(0, 150),
       referralCode: crypto.randomBytes(6).toString('hex').toUpperCase() });
     res.status(201).json({ success: true, data: row });
@@ -149,11 +153,13 @@ router.patch('/:id', async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效合伙人' });
   const name = String(req.body?.name || '').trim().slice(0, 150);
   const phone = String(req.body?.phone || '').trim();
-  const productLine = String(req.body?.productLine || '').trim();
+  const segment = String(req.body?.segment || '').trim();
+  const productLine = segment || String(req.body?.productLine || '').trim();
   const contractReference = String(req.body?.contractReference || '').trim().slice(0, 150);
   const reason = String(req.body?.reason || '').trim().slice(0, 500);
   const expected = new Date(req.body?.updatedAt);
-  if (!name || !/^1\d{10}$/.test(phone) || !productLine || !reason || !Number.isFinite(expected.getTime()))
+  if (!name || !/^1\d{10}$/.test(phone) || !productLine || (segment && !['medical', 'nutrition', 'annual', 'consultation'].includes(segment))
+    || !reason || !Number.isFinite(expected.getTime()))
     return res.status(400).json({ success: false, message: '请填写合伙人信息、修改原因及当前版本' });
   try {
     const current = await MarketPartner.findOne({ _id: req.params.id, tenantId: tenant(req) }).lean();
@@ -164,8 +170,9 @@ router.patch('/:id', async (req, res) => {
     if (current.status === 'active' && !contractReference)
       return res.status(409).json({ success: false, message: '启用中的合伙人须保留合同编号' });
     const before = { name: current.name, phone: current.phone, productLine: current.productLine,
+      segment: current.segment || null,
       contractReference: current.contractReference || '' };
-    const after = { name, phone, productLine, contractReference };
+    const after = { name, phone, productLine, segment: segment || null, contractReference };
     const row = await MarketPartner.findOneAndUpdate({ _id: current._id, tenantId: tenant(req),
       updatedAt: expected, status: current.status }, { $set: after, $push: { changeHistory: {
       at: new Date(), by: req.admin._id, reason, before, after,
@@ -295,12 +302,12 @@ router.post('/lead-events', async (req, res) => {
     const [patient, product, partner] = await Promise.all([
       User.findOne({ _id: req.body.patientId, tenantId: tenant(req), isDeleted: { $ne: true } }).select('_id').lean(),
       Product.findOne({ _id: req.body.productId, tenantId: tenant(req), status: 'on' }).select('_id').lean(),
-      MarketPartner.findOne({ tenantId: tenant(req), referralCode: code, status: 'active' }).select('_id productLine').lean(),
+      MarketPartner.findOne({ tenantId: tenant(req), referralCode: code, status: 'active' }).select('_id productLine segment').lean(),
     ]);
     if (!patient || !product || !partner)
       return res.status(404).json({ success: false, message: '本机构客户、商品或合伙人不存在' });
     const rule = await require('../utils/marketPartnerAttribution').activeRule(tenant(req), product._id, new Date(), partner._id);
-    if (!rule || rule.productLine !== partner.productLine)
+    if (!rule || (partner.segment ? String(rule.partnerId) !== String(partner._id) : rule.productLine !== partner.productLine))
       return res.status(409).json({ success: false, message: '该合伙人未获此商品授权' });
     const row = await MarketPartnerLeadEvent.create({ tenantId: tenant(req),
       partnerId: partner._id, patientId: patient._id, productId: product._id,
@@ -1082,7 +1089,8 @@ router.patch('/commissions/:id/pay', async (req, res) => {
     const originalRule = await MarketPartnerRule.findOne({ _id: before.ruleId,
       tenantId: tenant(req), version: before.ruleVersion }).lean();
     if (!originalRule || (order.marketPartnerContractReference && before.periodNumber > 1
-      && ['annualAdvisor', 'premiumAdvisor'].includes(originalRule.productLine)
+      && (originalRule.partnerId && originalRule.kind === 'annual' && originalRule.sourceType === 'product'
+        || ['annualAdvisor', 'premiumAdvisor'].includes(originalRule.productLine))
       && !await require('../utils/marketPartnerSettlement').annualContractPeriod(order, originalRule, before.periodNumber)))
       return res.status(409).json({ success: false, message: '年度续费合同尚未对应已确认的服务期' });
     await require('../utils/marketPartnerSettlement').syncOrder(order);

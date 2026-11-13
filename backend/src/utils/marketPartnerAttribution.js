@@ -16,10 +16,11 @@ async function activeRule(tenantId, productId, at = new Date(), partnerId = null
 
 async function claim({ tenantId, patientId, productId, code, at = new Date() }) {
   const partner = await MarketPartner.findOne({ tenantId, referralCode: String(code || '').trim().toUpperCase(),
-    status: 'active' }).select('_id productLine').lean();
+    status: 'active' }).select('_id productLine segment').lean();
   if (!partner) return null;
   const rule = await activeRule(tenantId, productId, at, partner._id);
-  if (!rule || rule.productLine !== partner.productLine) return null;
+  if (!rule || (partner.segment ? String(rule.partnerId) !== String(partner._id)
+    : rule.productLine !== partner.productLine)) return null;
   const attribution = await MarketPartnerAttribution.create({ tenantId, partnerId: partner._id, patientId,
     productLine: rule.productLine, productId, source: 'code', referralCode: String(code).trim().toUpperCase(),
     effectiveAt: at, expiresAt: new Date(at.getTime() + 30 * 86400000), status: 'approved' });
@@ -34,11 +35,12 @@ async function resolveForOrder({ tenantId, patientId, productId, code, at = new 
   const attribution = await MarketPartnerAttribution.findOne({ tenantId, patientId,
     productId, status: 'approved', effectiveAt: { $lte: at }, expiresAt: { $gt: at } }).sort({ effectiveAt: -1 }).lean();
   if (!attribution) return null;
-  const partner = await MarketPartner.findOne({ _id: attribution.partnerId, tenantId, status: 'active',
-    productLine: attribution.productLine }).select('_id productLine').lean();
+  const partner = await MarketPartner.findOne({ _id: attribution.partnerId, tenantId, status: 'active' })
+    .select('_id productLine segment').lean();
   if (!partner) return null;
   const rule = await activeRule(tenantId, productId, at, partner._id);
-  return rule?.productLine === partner.productLine ? { attribution, rule } : null;
+  return (partner.segment ? String(rule?.partnerId) === String(partner._id)
+    : rule?.productLine === partner.productLine) ? { attribution, rule } : null;
 }
 
 module.exports = { activeRule, claim, resolveForOrder };

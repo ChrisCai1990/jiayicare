@@ -76,7 +76,8 @@ async function paidPeriodNumber(order, rule) {
 
 async function annualContractPeriod(order, rule, periodNumber) {
   if (!order.marketPartnerContractReference || periodNumber <= 1
-    || !['annualAdvisor', 'premiumAdvisor'].includes(rule.productLine)) return null;
+    || !(rule.partnerId && rule.kind === 'annual' && rule.sourceType === 'product'
+      || ['annualAdvisor', 'premiumAdvisor'].includes(rule.productLine))) return null;
   return AnnualServicePeriod.findOne({ patientId: order.user, sourceType: 'offline_contract',
     contractReference: order.marketPartnerContractReference,
     confirmedAt: { $ne: null } }).select('_id').lean();
@@ -129,7 +130,8 @@ async function syncOrder(order, now = new Date()) {
   const periodNumber = await paidPeriodNumber(order, rule);
   if (periodNumber === null) return null;
   if (order.marketPartnerContractReference && periodNumber > 1
-    && ['annualAdvisor', 'premiumAdvisor'].includes(rule.productLine)
+    && (rule.partnerId && rule.kind === 'annual' && rule.sourceType === 'product'
+      || ['annualAdvisor', 'premiumAdvisor'].includes(rule.productLine))
     && !await annualContractPeriod(order, rule, periodNumber)) return null;
   const monthlyQualifiedCount = await qualifiedMonthlyCount(order, rule, now);
   const calculated = commissionCents({ paidCents: eligibleCashCents, policy: policyFromRule(rule), periodNumber,

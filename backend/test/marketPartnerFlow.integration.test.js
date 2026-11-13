@@ -953,4 +953,32 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const active = await require('../src/utils/marketPartnerAttribution').activeRule(tenantId, productId,
       new Date(), profile._id);
     assert.equal(String(active._id), String(partnerSave.body.data[0]._id));
+
+    const segmentPartner = await call(clerkId, 'POST', prefix, { name: '咨询板块合伙人',
+      phone: '13900000009', segment: 'consultation', contractReference: 'CONSULT-001' });
+    assert.equal(segmentPartner.status, 201, JSON.stringify(segmentPartner.body));
+    assert.equal(segmentPartner.body.data.segment, 'consultation');
+    assert.equal((await call(clerkId, 'PATCH', `${prefix}/${segmentPartner.body.data._id}/status`,
+      { status: 'active' })).status, 200);
+    const segmentProductRule = await call(clerkId, 'POST', `${personPrefix}/partners`, {
+      partnerId: segmentPartner.body.data._id, productLine: 'consultation', category: 'health',
+      productIds: [String(otherProductId)], kind: 'first', firstPercent: 9, renewals: [] });
+    assert.equal(segmentProductRule.status, 201, JSON.stringify(segmentProductRule.body));
+    const segmentAnnualRule = await call(clerkId, 'POST', `${personPrefix}/partners`, {
+      partnerId: segmentPartner.body.data._id, productLine: 'consultation', category: '365会员',
+      productIds: [String(memberPackageId)], kind: 'annual', firstPercent: 20,
+      renewals: [{ year: 2, percent: 10 }, ...[3, 4, 5].map(year => ({ year, percent: 5 }))] });
+    assert.equal(segmentAnnualRule.status, 201, JSON.stringify(segmentAnnualRule.body));
+    assert.equal(segmentAnnualRule.body.data[0].productLine, 'consumer365');
+    const segmentPatientId = oid();
+    await mongoose.connection.db.collection('users').insertOne({ _id: segmentPatientId, tenantId,
+      name: '跨产品合成客户' });
+    const matchedProduct = await require('../src/utils/marketPartnerAttribution').claim({ tenantId,
+      patientId: segmentPatientId, productId: otherProductId,
+      code: segmentPartner.body.data.referralCode });
+    assert.equal(String(matchedProduct.rule.partnerId), String(segmentPartner.body.data._id));
+    const matchedAnnual = await require('../src/utils/marketPartnerAttribution').claim({ tenantId,
+      patientId: segmentPatientId, productId: memberPackageId,
+      code: segmentPartner.body.data.referralCode });
+    assert.equal(matchedAnnual.rule.productLine, 'consumer365');
   });

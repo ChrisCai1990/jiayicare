@@ -5,6 +5,7 @@ const schema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   phone: { type: String, required: true, trim: true },
   productLine: { type: String, required: true, trim: true },
+  segment: { type: String, enum: ['medical', 'nutrition', 'annual', 'consultation'], default: null },
   status: { type: String, enum: ['draft', 'active', 'suspended', 'closed'], default: 'draft' },
   contractReference: { type: String, default: '' },
   referralCode: { type: String, required: true, uppercase: true, trim: true },
