@@ -19,10 +19,11 @@ async function activeRule(tenantId, productId, at = new Date(), partnerId = null
   return hasPromotion(generic) ? generic : null;
 }
 
-async function claim({ tenantId, patientId, productId, code, at = new Date() }) {
+async function claim({ tenantId, patientId, productId, code, at = new Date(), excludedPhones = [] }) {
   const partner = await MarketPartner.findOne({ tenantId, referralCode: String(code || '').trim().toUpperCase(),
-    status: 'active' }).select('_id productLine segment').lean();
+    status: 'active' }).select('_id phone productLine segment').lean();
   if (!partner) return null;
+  if (excludedPhones.includes(partner.phone)) return null;
   const rule = await activeRule(tenantId, productId, at, partner._id);
   if (!rule || (partner.segment ? String(rule.partnerId) !== String(partner._id)
     : rule.productLine !== partner.productLine)) return null;
@@ -32,17 +33,18 @@ async function claim({ tenantId, patientId, productId, code, at = new Date() }) 
   return { attribution, rule };
 }
 
-async function resolveForOrder({ tenantId, patientId, productId, code, at = new Date() }) {
+async function resolveForOrder({ tenantId, patientId, productId, code, at = new Date(), excludedPhones = [] }) {
   if (code) {
-    const current = await claim({ tenantId, patientId, productId, code, at });
+    const current = await claim({ tenantId, patientId, productId, code, at, excludedPhones });
     if (current) return current;
   }
   const attribution = await MarketPartnerAttribution.findOne({ tenantId, patientId,
     productId, status: 'approved', effectiveAt: { $lte: at }, expiresAt: { $gt: at } }).sort({ effectiveAt: -1 }).lean();
   if (!attribution) return null;
   const partner = await MarketPartner.findOne({ _id: attribution.partnerId, tenantId, status: 'active' })
-    .select('_id productLine segment').lean();
+    .select('_id phone productLine segment').lean();
   if (!partner) return null;
+  if (excludedPhones.includes(partner.phone)) return null;
   const rule = await activeRule(tenantId, productId, at, partner._id);
   // Per-purchase rules require a referral code on this order. A prior claim for the
   // same customer and product must not silently attribute a later self-purchase.

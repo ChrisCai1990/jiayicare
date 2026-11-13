@@ -21,15 +21,21 @@ const maskedName = name => {
   return value.length <= 1 ? value : `${value.slice(0, 1)}${'*'.repeat(Math.min(3, value.length - 1))}`;
 };
 
+async function partnerForPhone(phone) {
+  const partners = await MarketPartner.find({ phone, status: 'active' }).limit(2).lean();
+  if (partners.length > 1) return { ambiguous: true };
+  return { partner: partners[0] || null };
+}
+
 router.post('/send-code', async (req, res) => {
-  const referralCode = String(req.body?.referralCode || '').trim().toUpperCase();
   const phone = String(req.body?.phone || '').trim();
-  if (!/^[A-F0-9]{12}$/.test(referralCode) || !/^1[3-9]\d{9}$/.test(phone))
-    return res.status(400).json({ success: false, message: '请核对推荐码和手机号' });
+  if (!/^1[3-9]\d{9}$/.test(phone))
+    return res.status(400).json({ success: false, message: '请核对手机号' });
   const limit = checkSmsRateLimit(phone, req.ip);
   if (!limit.allowed) return res.status(429).json({ success: false, message: limit.message });
   recordSmsAttempt(phone, req.ip);
-  const partner = await MarketPartner.findOne({ referralCode, phone, status: 'active' }).select('_id').lean();
+  const { partner, ambiguous } = await partnerForPhone(phone);
+  if (ambiguous) return res.status(409).json({ success: false, message: '该手机号关联多个合伙人档案，请联系管理员核对' });
   if (!partner) return res.status(404).json({ success: false, message: '未找到已开通的合伙人账号' });
   const code = String(crypto.randomInt(100000, 1000000));
   await MarketPartnerVerificationCode.findOneAndUpdate({ partnerId: partner._id },
@@ -44,12 +50,12 @@ router.post('/send-code', async (req, res) => {
 });
 
 router.post('/login', async (req, res) => {
-  const referralCode = String(req.body?.referralCode || '').trim().toUpperCase();
   const phone = String(req.body?.phone || '').trim();
   const code = String(req.body?.code || '').trim();
-  if (!/^[A-F0-9]{12}$/.test(referralCode) || !/^1[3-9]\d{9}$/.test(phone) || !/^\d{6}$/.test(code))
+  if (!/^1[3-9]\d{9}$/.test(phone) || !/^\d{6}$/.test(code))
     return res.status(400).json({ success: false, message: '登录信息不完整' });
-  const partner = await MarketPartner.findOne({ referralCode, phone, status: 'active' }).lean();
+  const { partner, ambiguous } = await partnerForPhone(phone);
+  if (ambiguous) return res.status(409).json({ success: false, message: '该手机号关联多个合伙人档案，请联系管理员核对' });
   if (!partner) return res.status(401).json({ success: false, message: '验证码或账号无效' });
   const row = await MarketPartnerVerificationCode.findOne({ partnerId: partner._id,
     expiresAt: { $gt: new Date() }, attempts: { $lt: 5 } });

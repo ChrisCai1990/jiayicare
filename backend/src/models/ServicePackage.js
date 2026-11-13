@@ -25,6 +25,7 @@ const servicePackageSchema = new mongoose.Schema({
     enabled: { type: Boolean, default: false },
     durationMonths: { type: Number, min: 1, default: 12 },
     price: { type: Number, min: 0, default: 0 },
+    partnerSelfPrice: { type: Number, min: 0, default: null },
     originalPrice: { type: Number, min: 0, default: 0 },
     features: [{ type: String, trim: true }],
     tag: { type: String, trim: true, default: '' },

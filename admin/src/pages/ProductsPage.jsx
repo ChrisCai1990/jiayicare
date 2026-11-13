@@ -17,7 +17,7 @@ function safeImgSrc(url) {
 }
 
 const EMPTY_FORM = {
-  name: '', subtitle: '', category: '', originalPrice: '', sortOrder: 999,
+  name: '', subtitle: '', category: '', originalPrice: '', partnerSelfPrice: '', sortOrder: 999,
   features: '', description: '', stock: 0, stockLimited: false, status: 'off',
   images: [], servicePrices: [], businessAllocations: [],
   fulfillmentType: 'offline_service', paymentChannel: 'wechat_pay', bookingRequired: true,
@@ -391,7 +391,7 @@ function StaffPerformanceOverridesForm({ rows, staffList, onChange }) {
 
 // ── 自定义价格列表 ──────────────────────────────────────────────
 function ServicePricesForm({ servicePrices, onChange }) {
-  const add = () => onChange([...servicePrices, { label: '', price: '' }])
+  const add = () => onChange([...servicePrices, { label: '', price: '', partnerSelfPrice: '' }])
   const remove = (i) => onChange(servicePrices.filter((_, idx) => idx !== i))
   const update = (i, field, val) => {
     const next = servicePrices.map((item, idx) =>
@@ -429,6 +429,9 @@ function ServicePricesForm({ servicePrices, onChange }) {
             value={item.price}
             onChange={e => update(i, 'price', e.target.value)}
           />
+          <input className="form-input" type="number" min="0" step="0.01" style={{ flex: 1 }}
+            placeholder="合伙人自购价（可空）" value={item.partnerSelfPrice ?? ''}
+            onChange={e => update(i, 'partnerSelfPrice', e.target.value)} />
           <button
             type="button"
             onClick={() => remove(i)}
@@ -572,6 +575,7 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
       subtitle: product.subtitle || '',
       category: product.category,
       originalPrice: product.originalPrice == null ? '' : String(product.originalPrice),
+      partnerSelfPrice: product.partnerSelfPrice == null ? '' : String(product.partnerSelfPrice),
       sortOrder: product.sortOrder,
       features: (product.features || []).join(', '),
       description: product.description || '',
@@ -580,6 +584,7 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
       status: product.status || 'off',
       images: product.images || [],
       servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price),
+        partnerSelfPrice: sp.partnerSelfPrice == null ? '' : String(sp.partnerSelfPrice),
         businessAllocations: (sp.businessAllocations || []).map(row => ({ key: row.key, name: row.name,
           businessType: row.businessType || 'service', teamRole: row.teamRole, childProductId: row.childProductId || '',
           revenueSharePercent: row.revenueSharePercent, allocationAmountCents: row.allocationAmountCents })),
@@ -734,6 +739,7 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
       const cleanedPrices = form.servicePrices
         .filter(sp => sp.label.trim() && sp.price !== '' && !isNaN(parseFloat(sp.price)))
         .map(sp => ({ label: sp.label.trim(), price: parseFloat(sp.price),
+          partnerSelfPrice: sp.partnerSelfPrice === '' ? null : Number(sp.partnerSelfPrice),
           businessAllocations: (sp.businessAllocations || []).map(row => ({
             key: row.key, name: `${sp.label.trim()} · ${allocationItemName(row, productsForBundle).trim().replace(`${sp.label.trim()} · `, '')}`,
             businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
@@ -752,6 +758,7 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
         subtitle: form.subtitle,
         category: form.category,
         originalPrice: form.originalPrice === '' ? null : parseFloat(form.originalPrice),
+        partnerSelfPrice: form.partnerSelfPrice === '' ? null : Number(form.partnerSelfPrice),
         sortOrder: parseInt(form.sortOrder) || 999,
         features: form.features.split(',').map(s => s.trim()).filter(Boolean),
         description: form.description,
@@ -945,6 +952,12 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
                     onChange={e => set('originalPrice', e.target.value)} placeholder="0.00" />
                   <span style={{ fontSize: 12, color: '#aaa' }}>商城显示为划线价</span>
                 </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">合伙人自购价（可空）</label>
+                <input className="form-input" type="number" min="0" step="0.01" style={{ width: 180 }}
+                  value={form.partnerSelfPrice} onChange={e => set('partnerSelfPrice', e.target.value)} placeholder="未设置则按客户价" />
+                <div style={{ fontSize: 12, color: '#667a6d', marginTop: 5 }}>仅本人购买且已有满 30 天的有效业务时显示；有收费项目时按各项目单独设置。</div>
               </div>
               <div style={{ marginTop: 16 }}>
                 <ServicePricesForm

@@ -18,6 +18,7 @@ const ProductShare = require('../models/ProductShare');
 const crypto = require('crypto');
 
 const Product = require('../models/Product');
+const MarketPartnerRule = require('../models/MarketPartnerRule');
 const ProductCategory = require('../models/ProductCategory');
 const { resolveOrderWorkflowAssignee, orderOwnershipFields } = require('../utils/serviceOwnership');
 
@@ -293,9 +294,51 @@ router.post('/partner-referrals/claim', auth, async (req, res) => {
   const match = await require('../utils/marketPartnerAttribution').claim({
     tenantId: req.user.tenantId, patientId: req.user._id,
     productId: product?._id || servicePackage._id, code,
+    excludedPhones: [req.user.phone],
   });
   if (!match) return res.status(404).json({ success: false, message: '推荐码无效或未授权该商品' });
   res.json({ success: true, data: { productId, productLine: match.rule.productLine } });
+});
+
+// 合伙人以登记手机号登录用户端后，取得本人可分享的在售商品。
+router.get('/my-partner-promotion', auth, async (req, res) => {
+  const { partner, eligible, ambiguous } = await require('../utils/partnerSelfPurchase').partnerSelfPurchaseStatus(req.user);
+  if (ambiguous) return res.status(409).json({ success: false,
+    message: '该手机号关联多个合伙人档案，请联系管理员核对' });
+  if (!partner) return res.json({ success: true, data: null });
+  const now = new Date();
+  const rules = await MarketPartnerRule.find({ tenantId: req.user.tenantId,
+    ...(partner.segment ? { partnerId: partner._id }
+      : { partnerId: null, productLine: partner.productLine }),
+    status: 'active', disabled: { $ne: true }, effectiveFrom: { $lte: now },
+    $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: now } }] })
+    .select('productId sourceType firstBasisPoints repeatBasisPoints tierBasisPoints renewalBasisPoints').lean();
+  const promotable = rules.filter(rule => rule.firstBasisPoints > 0 || rule.repeatBasisPoints > 0
+    || (rule.tierBasisPoints || []).some(value => value > 0)
+    || (rule.renewalBasisPoints || []).some(value => value.basisPoints > 0));
+  const [products, packages] = await Promise.all([
+    Product.find({ _id: { $in: promotable.filter(row => row.sourceType !== 'servicePackage').map(row => row.productId) },
+      tenantId: req.user.tenantId, status: 'on', paymentChannel: { $ne: 'offline' } })
+      .select('name images').lean(),
+    ServicePackage.find({ _id: { $in: promotable.filter(row => row.sourceType === 'servicePackage').map(row => row.productId) },
+      active: true, 'activation.enabled': true, 'activation.durationMonths': 12,
+      'configuration.membershipTier': 'consumer365', 'configuration.includes365': true })
+      .select('name activation.partnerSelfPrice').lean(),
+  ]);
+  const priced = eligible ? await Product.find({ tenantId: req.user.tenantId, status: 'on',
+    paymentChannel: { $ne: 'offline' }, 'memberBundle.enabled': { $ne: true },
+    $or: [{ partnerSelfPrice: { $ne: null } },
+      { 'servicePrices.partnerSelfPrice': { $ne: null } }] })
+    .select('_id partnerSelfPrice servicePrices.label servicePrices.partnerSelfPrice').lean() : [];
+  res.json({ success: true, data: { name: partner.name, referralCode: partner.referralCode,
+    selfPurchaseEligible: eligible,
+    selfPrices: [...priced.map(item => ({ id: String(item._id), price: item.partnerSelfPrice,
+      specifications: (item.servicePrices || []).filter(row => row.partnerSelfPrice != null)
+        .map(row => ({ label: row.label, price: row.partnerSelfPrice })) })),
+      ...(eligible ? packages.filter(item => item.activation?.partnerSelfPrice != null)
+        .map(item => ({ id: String(item._id), price: item.activation.partnerSelfPrice, specifications: [] })) : [])],
+    products: [...products, ...packages]
+    .map(item => ({ id: String(item._id), name: item.name, image: item.images?.[0] || '' })) } });
 });
 
 // POST /api/services/order — 提交服务预约（支持单项服务 & 服务包）
@@ -441,6 +484,27 @@ router.post('/order', auth, async (req, res) => {
   if (pushedItem && pushedItem.price != null && Number.isFinite(Number(pushedItem.price))
     && Math.round(Number(pushedItem.price) * 100) !== Math.round(Number(service.price) * 100)) {
     return res.status(409).json({ success: false, message: '推荐商品价格已变化，请联系医护人员重新推送后付款' });
+  }
+
+  let partnerSelfPurchaseApplied = false;
+  if (product && !product.memberBundle?.enabled && String(req.user._id) === String(serviceUser._id)) {
+    const selectedRow = (product.servicePrices || []).find(row => row.label === service.specificationLabel);
+    const configuredPrice = selectedRow ? selectedRow.partnerSelfPrice : product.partnerSelfPrice;
+    if (configuredPrice != null) {
+      const selfStatus = await require('../utils/partnerSelfPurchase').partnerSelfPurchaseStatus(req.user);
+      if (selfStatus.eligible) {
+        service.price = Number(configuredPrice);
+        partnerSelfPurchaseApplied = true;
+      }
+    }
+  }
+  if (servicePackage?.activation?.partnerSelfPrice != null
+    && String(req.user._id) === String(serviceUser._id)) {
+    const selfStatus = await require('../utils/partnerSelfPurchase').partnerSelfPurchaseStatus(req.user);
+    if (selfStatus.eligible) {
+      service.price = Number(servicePackage.activation.partnerSelfPrice);
+      partnerSelfPurchaseApplied = true;
+    }
   }
 
   const serviceProvider = service.serviceProvider || 'platform';
@@ -616,6 +680,7 @@ router.post('/order', auth, async (req, res) => {
       tenantId: serviceUser.tenantId, patientId: serviceUser._id,
       productId: product?._id || servicePackage._id,
       code: partnerCode, at: new Date(),
+      excludedPhones: [req.user.phone, serviceUser.phone].filter(Boolean),
     }) : null;
   if (marketPartnerMatch) referrerId = null;
   const marketPartnerContribution = marketPartnerMatch && product
@@ -653,6 +718,7 @@ router.post('/order', auth, async (req, res) => {
     serviceId:    service.id,
     serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
     servicePrice: service.price,
+    partnerSelfPurchaseApplied,
     specificationLabel: service.specificationLabel || '',
     skuCode: service.skuCode || '',
     unitPrice,

@@ -2074,6 +2074,14 @@ function productPriceError({ name, category, originalPrice, status }) {
   return null;
 }
 
+function partnerSelfPriceError({ originalPrice, partnerSelfPrice, servicePrices = [] }) {
+  const valid = (value, ceiling) => value == null || value === ''
+    || (Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= Number(ceiling));
+  if (!valid(partnerSelfPrice, originalPrice)) return '合伙人自购价须在 0 与商品原价之间';
+  const invalid = servicePrices.find(row => !valid(row.partnerSelfPrice, row.price));
+  return invalid ? `收费项目「${invalid.label || '未命名'}」的合伙人自购价无效` : null;
+}
+
 function productPublicationError(product) {
   const priceError = productPriceError(product);
   if (priceError || product.status !== 'on') return priceError;
@@ -2212,7 +2220,9 @@ function productBusinessAttributionRequired({ status, servicePrices, businessAll
 }
 
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
+  const { name, subtitle, images, originalPrice, partnerSelfPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
+  const selfPriceError = partnerSelfPriceError({ originalPrice, partnerSelfPrice, servicePrices });
+  if (selfPriceError) return res.status(400).json({ success: false, message: selfPriceError });
   const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, originalPrice, staffPerformanceOverrides }, req.admin.tenantId);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const attributionError = productBusinessAttributionRequired({ status: status || 'off', servicePrices, businessAllocations, originalPrice });
@@ -2228,7 +2238,9 @@ router.post('/products', adminAuth, async (req, res) => {
   }
   const product = await Product.create({
     name, subtitle: subtitle || '', images: images || [],
-    originalPrice: originalPrice === '' ? null : originalPrice, servicePrices: servicePrices || [], businessAllocations: businessAllocations || [], memberPrices: memberPrices || {},
+    originalPrice: originalPrice === '' ? null : originalPrice,
+    partnerSelfPrice: partnerSelfPrice === '' ? null : partnerSelfPrice ?? null,
+    servicePrices: servicePrices || [], businessAllocations: businessAllocations || [], memberPrices: memberPrices || {},
     category, sortOrder: sortOrder ?? 999, features: features || [],
     description: description || '', stock: stock ?? 0, stockLimited: stockLimited === true || Number(stock) > 0, status: status || 'off',
     performanceRule: performanceRule || undefined,
@@ -2247,7 +2259,7 @@ router.post('/products', adminAuth, async (req, res) => {
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
+  const { name, subtitle, images, originalPrice, partnerSelfPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
@@ -2256,6 +2268,10 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   }
   const existingProduct = await Product.findById(req.params.id);
   if (!existingProduct) return res.status(404).json({ success: false, message: '产品不存在' });
+  const selfPriceError = partnerSelfPriceError({ originalPrice: originalPrice === undefined ? existingProduct.originalPrice : originalPrice,
+    partnerSelfPrice: partnerSelfPrice === undefined ? existingProduct.partnerSelfPrice : partnerSelfPrice,
+    servicePrices: servicePrices === undefined ? existingProduct.servicePrices : servicePrices });
+  if (selfPriceError) return res.status(400).json({ success: false, message: selfPriceError });
   const mergedServicePrices = servicePrices?.map(price => ({ ...price,
     performanceConfig: price.performanceConfig === undefined
       ? existingProduct.servicePrices.find(row => row.label === price.label)?.performanceConfig || null
@@ -2284,6 +2300,7 @@ router.put('/products/:id', adminAuth, async (req, res) => {
     specialtyTerms: specialtyTerms ?? existingProduct.specialtyTerms, status: status ?? existingProduct.status });
   if (priceError) return res.status(400).json({ success: false, message: priceError });
   const updateData = { name, subtitle, images, originalPrice,
+    ...(partnerSelfPrice !== undefined ? { partnerSelfPrice: partnerSelfPrice === '' ? null : partnerSelfPrice } : {}),
     ...(servicePrices !== undefined ? { servicePrices: mergedServicePrices } : {}),
     ...(businessAllocations !== undefined ? { businessAllocations } : {}), memberPrices, category, sortOrder, features, description, stock, status,
     ...(performanceRule !== undefined ? { performanceRule } : {}),

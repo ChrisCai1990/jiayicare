@@ -299,6 +299,28 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(partner.status, 201, JSON.stringify(partner.body));
     assert.equal((await call(clerkId, 'PATCH', `${prefix}/${partner.body.data._id}/status`,
       { status: 'active' })).status, 200);
+    let sentCode = '';
+    require('../src/utils/marketPartnerSms').sendCode = async (_phone, code) => { sentCode = code; };
+    const portalCall = async (route, body) => {
+      const response = await fetch(`${base}/api/market-partner/${route}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      return { status: response.status, body: await response.json() };
+    };
+    assert.equal((await portalCall('send-code', { phone: '13900000001' })).status, 200);
+    assert.match(sentCode, /^\d{6}$/);
+    assert.equal((await portalCall('login', { phone: '13900000001', code: '000000' })).status, 401);
+    const portalLogin = await portalCall('login', { phone: '13900000001', code: sentCode });
+    assert.equal(portalLogin.status, 200, JSON.stringify(portalLogin.body));
+    assert.ok(portalLogin.body.data.token);
+    assert.equal((await portalCall('login', { phone: '13900000001', code: sentCode })).status, 401);
+    const duplicatePhoneId = oid();
+    await mongoose.connection.db.collection('marketpartners').insertOne({ _id: duplicatePhoneId, tenantId,
+      name: '重复手机号合成档案', phone: '13900000001', productLine: 'nutrition', status: 'active',
+      referralCode: 'ABCD1234EF56' });
+    require('../src/utils/smsRateLimiter').resetSmsRateLimits();
+    assert.equal((await portalCall('send-code', { phone: '13900000001' })).status, 409);
+    assert.equal((await portalCall('login', { phone: '13900000001', code: sentCode })).status, 409);
+    await mongoose.connection.db.collection('marketpartners').deleteOne({ _id: duplicatePhoneId });
     const partnerB = await call(clerkId, 'POST', prefix, { name: '对接合伙人B',
       phone: '13900000071', productLine: 'nutrition', contractReference: 'PARTNER-B' });
     const partnerC = await call(clerkId, 'POST', prefix, { name: '对接合伙人C',
@@ -648,6 +670,25 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(onlineRule.status, 201, JSON.stringify(onlineRule.body));
     assert.equal((await call(clerkId, 'PATCH',
       `${prefix}/rules/${onlineRule.body.data._id}/publish`, {})).status, 200);
+    const partnerBuyerId = oid();
+    await mongoose.connection.db.collection('users').insertOne({ _id: partnerBuyerId, tenantId,
+      name: '合成合伙人本人', phone: '13900000003', contactPhone: '13900000003',
+      onboardingCompleted: true, wechatMpOpenid: 'synthetic-partner-openid',
+      assignedHealthPlanner: plannerId });
+    await mongoose.connection.db.collection('products').updateOne({ _id: onlineProductId },
+      { $set: { partnerSelfPrice: 80 } });
+    const partnerBuyerToken = jwt.sign({ id: String(partnerBuyerId) }, process.env.JWT_SECRET);
+    const myPromotion = async () => (await (await fetch(`${base}/api/services/my-partner-promotion`,
+      { headers: { authorization: `Bearer ${partnerBuyerToken}` } })).json()).data;
+    assert.equal((await myPromotion()).selfPurchaseEligible, false);
+    await mongoose.connection.db.collection('orders').insertOne({ _id: oid(), tenantId,
+      user: patientId, serviceId: String(onlineProductId), serviceName: '合成已完成客户业务',
+      marketPartnerId: new mongoose.Types.ObjectId(onlinePartner.body.data._id),
+      paymentStatus: 'paid', paidAmount: 100, refundedAmount: 0, refundStatus: 'none',
+      paidAt: new Date(Date.now() - 31 * 86400000) });
+    const eligiblePromotion = await myPromotion();
+    assert.equal(eligiblePromotion.selfPurchaseEligible, true);
+    assert.equal(eligiblePromotion.selfPrices.find(row => row.id === String(onlineProductId)).price, 80);
     const customerToken = jwt.sign({ id: String(patientId) }, process.env.JWT_SECRET);
     const wrongClaim = await fetch(`${base}/api/services/partner-referrals/claim`, {
       method: 'POST', headers: { authorization: `Bearer ${customerToken}`,
@@ -696,6 +737,25 @@ test('online and offline partner payments, renewals, refunds and team incentives
     });
     const checkout = await checkoutResponse.json();
     assert.equal(checkoutResponse.status, 200, JSON.stringify(checkout));
+    const ownClaim = await fetch(`${base}/api/services/partner-referrals/claim`, {
+      method: 'POST', headers: { authorization: `Bearer ${partnerBuyerToken}`,
+        'content-type': 'application/json' },
+      body: JSON.stringify({ productId: String(onlineProductId),
+        partnerCode: onlinePartner.body.data.referralCode }),
+    });
+    assert.equal(ownClaim.status, 404);
+    const ownCheckoutResponse = await fetch(`${base}/api/services/order`, {
+      method: 'POST', headers: { authorization: `Bearer ${partnerBuyerToken}`,
+        'content-type': 'application/json' },
+      body: JSON.stringify({ serviceId: String(onlineProductId), paymentMethod: 'wechat_pay',
+        expectedAmount: 80, partnerCode: onlinePartner.body.data.referralCode }),
+    });
+    const ownCheckout = await ownCheckoutResponse.json();
+    assert.equal(ownCheckoutResponse.status, 200, JSON.stringify(ownCheckout));
+    const ownOrder = await Order.findById(ownCheckout.data.orderId);
+    assert.equal(ownOrder.servicePrice, 80);
+    assert.equal(ownOrder.partnerSelfPurchaseApplied, true);
+    assert.equal(ownOrder.marketPartnerId, null);
     const onlineOrderId = new mongoose.Types.ObjectId(checkout.data.orderId);
     const createdOrder = await Order.findById(onlineOrderId);
     assert.equal(String(createdOrder.marketPartnerId), String(match.attribution.partnerId));

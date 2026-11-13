@@ -836,6 +836,10 @@ async function normalizeServicePackageConfiguration(clientBrand, configuration) 
 
 router.post('/service-packages', adminAuth, async (req, res) => {
   const { name, clientBrand, sortOrder, entitlements, activation, configuration } = req.body;
+  if (activation?.partnerSelfPrice != null && activation.partnerSelfPrice !== ''
+    && (!Number.isFinite(Number(activation.partnerSelfPrice)) || Number(activation.partnerSelfPrice) < 0
+      || Number(activation.partnerSelfPrice) > Number(activation.price)))
+    return res.status(400).json({ success: false, message: '合伙人自购价须在 0 与服务包售价之间' });
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
@@ -851,6 +855,10 @@ router.post('/service-packages', adminAuth, async (req, res) => {
 
 router.put('/service-packages/:id', adminAuth, async (req, res) => {
   const { name, clientBrand, sortOrder, entitlements, activation, configuration } = req.body;
+  if (activation?.partnerSelfPrice != null && activation.partnerSelfPrice !== ''
+    && (!Number.isFinite(Number(activation.partnerSelfPrice)) || Number(activation.partnerSelfPrice) < 0
+      || Number(activation.partnerSelfPrice) > Number(activation.price)))
+    return res.status(400).json({ success: false, message: '合伙人自购价须在 0 与服务包售价之间' });
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
