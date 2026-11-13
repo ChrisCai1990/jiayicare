@@ -7,6 +7,7 @@ export default defineAppConfig({
     'pages/tasks/index',
     'pages/tasks/report-upload/index',
     'pages/messages/index',
+    'pages/messages/service-group/index',
     'pages/profile/index/index',
 
     'pages/onboarding/index',
