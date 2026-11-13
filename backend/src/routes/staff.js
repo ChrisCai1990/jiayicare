@@ -18088,7 +18088,7 @@ async function runReportParseControlled(reportId) {
                 } catch (e) {
                   rethrowAiControl(e);
                   if (['AI_PAGE_BUDGET_PAUSED', 'AI_PAGE_CIRCUIT_PAUSED'].includes(e.code)) break;
-                  if (report.type === 'annual' && ['AI_TIMEOUT', 'AI_OUTPUT_LENGTH'].includes(e.code)) {
+                  if (isComprehensiveCheckup && ['AI_TIMEOUT', 'AI_OUTPUT_LENGTH'].includes(e.code)) {
                     try {
                       const fallbackPrompt = reportParsePrompt
                         + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
