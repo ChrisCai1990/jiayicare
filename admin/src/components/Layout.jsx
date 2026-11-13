@@ -23,7 +23,9 @@ const NAV_SECTIONS = [
       { label: '佣金规则', icon: 'money', path: '/commission-rules' },
       { label: '物资与设备', icon: 'product', path: '/inventory' },
       { label: '合作伙伴权益', icon: 'partner', path: '/partners' },
-      { label: '合伙人业务登记与核算', icon: 'orders', path: '/market-partner-operations', superadminOnly: true },
+      { label: '市场合伙人', icon: 'partner', path: '/market-partners', superadminOnly: true },
+      { label: '合伙人业务登记', icon: 'orders', path: '/market-partner-operations', superadminOnly: true },
+      { label: '合伙人财务审核', icon: 'money', path: '/market-partner-finance', superadminOnly: true },
       { label: '经营与分账总览', icon: 'chart', path: '/business-accounting', superadminOnly: true },
       { label: '企业客户', icon: 'company', path: '/enterprises' },
       { label: '健康基金', icon: 'fund', path: '/health-fund' },
@@ -163,7 +165,7 @@ export default function Layout() {
         ...section,
         items: section.items.filter(item =>
           (!item.superadminOnly || admin?.role === 'superadmin')
-          && (!['/market-partner-operations', '/business-accounting'].includes(item.path) || marketPartnerAvailable)
+          && (!['/market-partners', '/market-partner-operations', '/market-partner-finance', '/business-accounting'].includes(item.path) || marketPartnerAvailable)
           && (!item.allowedRoles || item.allowedRoles.includes(admin?.role))
           && (!item.aiControlOnly || admin?.role === 'platformSuper')
           && (admin?.tenantStatus !== 'setup' || ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees', '/saas-plan'].includes(item.path))),

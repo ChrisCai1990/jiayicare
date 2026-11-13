@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const MarketPartner = require('../models/MarketPartner');
+const MarketPartnerTeamMember = require('../models/MarketPartnerTeamMember');
 const MarketPartnerRule = require('../models/MarketPartnerRule');
 const TeamIncentiveRule = require('../models/TeamIncentiveRule');
 const MarketPartnerCommission = require('../models/MarketPartnerCommission');
@@ -36,6 +37,60 @@ router.get('/', async (req, res) => {
   try {
     const rows = await MarketPartner.find({ tenantId: tenant(req) }).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.get('/team-members', async (req, res) => {
+  try {
+    const partnerId = String(req.query.partnerId || '');
+    if (!validId(partnerId)) return res.status(400).json({ success: false, message: '请选择合伙人' });
+    const partner = await MarketPartner.exists({ _id: partnerId, tenantId: tenant(req) });
+    if (!partner) return res.status(404).json({ success: false, message: '合伙人不存在' });
+    const rows = await MarketPartnerTeamMember.find({ tenantId: tenant(req), partnerId })
+      .sort({ createdAt: -1 }).lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/team-members', async (req, res) => {
+  const partnerId = String(req.body?.partnerId || '');
+  const name = String(req.body?.name || '').trim().slice(0, 150);
+  const phone = String(req.body?.phone || '').trim();
+  if (!validId(partnerId) || !name || !/^1\d{10}$/.test(phone))
+    return res.status(400).json({ success: false, message: '请选择合伙人并填写成员姓名、手机号' });
+  try {
+    const partner = await MarketPartner.findOne({ _id: partnerId, tenantId: tenant(req), status: { $ne: 'closed' } }).lean();
+    if (!partner) return res.status(404).json({ success: false, message: '合伙人不存在或已关闭' });
+    if (await MarketPartnerTeamMember.exists({ tenantId: tenant(req), partnerId, phone, status: 'active' }))
+      return res.status(409).json({ success: false, message: '该手机号已在此合伙人团队中' });
+    const row = await MarketPartnerTeamMember.create({ tenantId: tenant(req), partnerId, name, phone });
+    res.status(201).json({ success: true, data: row });
+  } catch (err) { fail(res, err); }
+});
+
+router.patch('/team-members/:id', async (req, res) => {
+  const name = String(req.body?.name || '').trim().slice(0, 150);
+  const phone = String(req.body?.phone || '').trim();
+  const status = String(req.body?.status || '');
+  const reason = String(req.body?.reason || '').trim().slice(0, 500);
+  const expected = new Date(req.body?.updatedAt);
+  if (!validId(req.params.id) || !name || !/^1\d{10}$/.test(phone)
+    || !['active', 'suspended'].includes(status) || !reason || !Number.isFinite(expected.getTime()))
+    return res.status(400).json({ success: false, message: '请填写成员信息、修改原因及当前版本' });
+  try {
+    const current = await MarketPartnerTeamMember.findOne({ _id: req.params.id, tenantId: tenant(req) }).lean();
+    if (!current) return res.status(404).json({ success: false, message: '团队成员不存在' });
+    if (status === 'active' && await MarketPartnerTeamMember.exists({ tenantId: tenant(req), partnerId: current.partnerId,
+      phone, status: 'active', _id: { $ne: current._id } }))
+      return res.status(409).json({ success: false, message: '该手机号已在此合伙人团队中' });
+    const before = { name: current.name, phone: current.phone, status: current.status };
+    const after = { name, phone, status };
+    const row = await MarketPartnerTeamMember.findOneAndUpdate({ _id: current._id, tenantId: tenant(req),
+      updatedAt: expected }, { $set: after, $push: { changeHistory: {
+      at: new Date(), by: req.admin._id, reason, before, after,
+    } } }, { new: true, runValidators: true });
+    if (!row) return res.status(409).json({ success: false, message: '团队成员资料已变化，请刷新后重试' });
+    res.json({ success: true, data: row });
   } catch (err) { fail(res, err); }
 });
 

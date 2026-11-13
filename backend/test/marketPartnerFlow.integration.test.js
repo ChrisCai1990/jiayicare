@@ -260,6 +260,18 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(partner.status, 201, JSON.stringify(partner.body));
     assert.equal((await call(clerkId, 'PATCH', `${prefix}/${partner.body.data._id}/status`,
       { status: 'active' })).status, 200);
+    const teamMember = await call(clerkId, 'POST', `${prefix}/team-members`, {
+      partnerId: partner.body.data._id, name: '合成拓展成员', phone: '13900000006' });
+    assert.equal(teamMember.status, 201, JSON.stringify(teamMember.body));
+    assert.equal((await call(clerkId, 'POST', `${prefix}/team-members`, {
+      partnerId: partner.body.data._id, name: '重复成员', phone: '13900000006' })).status, 409);
+    assert.equal((await call(outsiderId, 'GET', `${prefix}/team-members?partnerId=${partner.body.data._id}`)).status, 404);
+    assert.equal((await call(clerkId, 'GET', `${prefix}/team-members?partnerId=${partner.body.data._id}`)).body.data.length, 1);
+    const pausedMember = await call(clerkId, 'PATCH', `${prefix}/team-members/${teamMember.body.data._id}`, {
+      name: '合成拓展成员', phone: '13900000006', status: 'suspended', reason: '离开团队',
+      updatedAt: teamMember.body.data.updatedAt });
+    assert.equal(pausedMember.status, 200, JSON.stringify(pausedMember.body));
+    assert.equal(pausedMember.body.data.changeHistory.length, 1);
     const rule = await call(clerkId, 'POST', `${prefix}/rules`, { productId: String(productId),
       productLine: 'singleVisit', kind: 'first', firstBasisPoints: 1000,
       effectiveFrom: new Date(Date.now() - 86400000).toISOString() });

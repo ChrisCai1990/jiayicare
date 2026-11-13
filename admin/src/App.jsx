@@ -7,6 +7,7 @@ import HrApp from './pages/hr/HrApp'
 import PublicOpsDashboardPage from './pages/public/PublicOpsDashboardPage'
 import MarketPartnerPortalPage from './pages/public/MarketPartnerPortalPage'
 import MarketPartnerManagementPage from './pages/MarketPartnerManagementPage'
+import MarketPartnerDirectoryPage from './pages/MarketPartnerDirectoryPage'
 import BusinessAccountingPage from './pages/BusinessAccountingPage'
 import ExpertInvitationPage from './pages/public/ExpertInvitationPage'
 import ExpertSupplementPage from './pages/public/ExpertSupplementPage'
@@ -174,8 +175,9 @@ export default function App() {
               <Route path="commission-rules" element={<PersonCommissionRulesPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="partners"   element={<PartnersPage />} />
-              <Route path="market-partners" element={<Navigate to="/commission-rules?tab=partner" replace />} />
-              <Route path="market-partner-operations" element={<MarketPartnerManagementPage />} />
+              <Route path="market-partners" element={<MarketPartnerDirectoryPage />} />
+              <Route path="market-partner-operations" element={<MarketPartnerManagementPage view="operations" />} />
+              <Route path="market-partner-finance" element={<MarketPartnerManagementPage view="finance" />} />
               <Route path="business-accounting" element={<BusinessAccountingPage />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
               <Route path="tenants" element={<TenantsPage />} />

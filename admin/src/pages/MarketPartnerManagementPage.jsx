@@ -2,23 +2,13 @@ import React, { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { adminAPI } from '../api'
 
-const LINES = [
-  ['consumer365', '365会员'], ['annualAdvisor', '年度顾问'], ['premiumAdvisor', '高端顾问'],
-  ['weightManagement', '体重管理'], ['chronicManagement', '慢性病管理'],
-  ['medicalAssist', '单次就医协助'], ['oneStopMedical', '一站式就医'],
-  ['assessment', '单次评估'], ['psychology', '心理咨询'], ['rehabilitation', '运动复健'],
-  ['testing', '检测'], ['supplements', '营养素补充'],
-]
-const SEGMENTS = [['medical', '就医板块'], ['nutrition', '营养板块'],
-  ['annual', '年度管理板块'], ['consultation', '咨询板块']]
 const ROLES = [['familyDoctor', '健康顾问'], ['nutritionist', '营养师'], ['healthManager', '健管专员'], ['medicalAssistant', '就医专员'], ['psychologist', '心理咨询师'], ['rehabSpecialist', '运动复健师'], ['specialist', '专科医师'], ['tcmDoctor', '中医师']]
 const inputStyle = { padding: '9px 10px', border: '1px solid #cbd8d1', borderRadius: 6, minWidth: 150 }
 const boxStyle = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
 
-export default function MarketPartnerManagementPage() {
+export default function MarketPartnerManagementPage({ view = 'operations' }) {
   const [searchParams] = useSearchParams()
   const orderFromUrl = searchParams.get('order')
-  const [partners, setPartners] = useState([])
   const [rules, setRules] = useState([])
   const [teamRevenue, setTeamRevenue] = useState([])
   const [commissions, setCommissions] = useState([])
@@ -33,9 +23,6 @@ export default function MarketPartnerManagementPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const [partner, setPartner] = useState({ name: '', phone: '', segment: 'medical', contractReference: '' })
-  const [editingPartner, setEditingPartner] = useState(null)
-  const [partnerChangeReason, setPartnerChangeReason] = useState('')
   const [payouts, setPayouts] = useState({})
   const [recoveries, setRecoveries] = useState({})
   const [receipt, setReceipt] = useState({ orderId: '', amountYuan: '', reference: '', receivedAt: '', evidence: '' })
@@ -49,10 +36,9 @@ export default function MarketPartnerManagementPage() {
   const [accountingError, setAccountingError] = useState('')
 
   const refresh = async () => {
-    const [p, r, productsResponse, commissionsResponse, receiptsResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse, teamRevenueResponse] = await Promise.all([
-      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(), adminAPI.marketPartnerTeamRevenue(),
+    const [r, productsResponse, commissionsResponse, receiptsResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse, teamRevenueResponse] = await Promise.all([
+      adminAPI.marketPartnerRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(), adminAPI.marketPartnerTeamRevenue(),
     ])
-    setPartners(p.data || [])
     setRules(r.data || [])
     setProducts(productsResponse.data || [])
     setCommissions(commissionsResponse.data?.rows || [])
@@ -80,22 +66,6 @@ export default function MarketPartnerManagementPage() {
     catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
-  const submitPartner = e => {
-    e.preventDefault()
-    run(async () => {
-      if (editingPartner) await adminAPI.updateMarketPartner(editingPartner._id, {
-        ...partner, reason: partnerChangeReason, updatedAt: editingPartner.updatedAt })
-      else await adminAPI.createMarketPartner(partner)
-      setEditingPartner(null); setPartnerChangeReason('')
-    })
-  }
-  const loadPartner = item => {
-    setEditingPartner(item)
-    setPartner({ name: item.name, phone: item.phone, productLine: item.productLine, segment: item.segment || '',
-      contractReference: item.contractReference || '' })
-    setPartnerChangeReason('')
-    document.getElementById('market-partner-profile-form')?.scrollIntoView({ behavior: 'smooth' })
-  }
   const setPayout = (id, value) => setPayouts(current => ({ ...current, [id]: { ...current[id], ...value } }))
   const pay = item => {
     const form = payouts[item._id] || {}
@@ -114,13 +84,15 @@ export default function MarketPartnerManagementPage() {
   const yuan = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
 
   return <div style={{ maxWidth: 1100 }}>
-    <div className="page-header"><div><div className="page-title">合伙人业务登记与核算</div><div className="page-subtitle">管理合伙人资料、登记沟通与收款、审核和核算订单</div></div></div>
+    <div className="page-header"><div><div className="page-title">{view === 'finance' ? '合伙人财务审核与结算' : '合伙人业务登记'}</div><div className="page-subtitle">{view === 'finance' ? '线下收退款复核与佣金转账核对' : '首次沟通、线下合同订单、流失与年度年序登记'}</div></div></div>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      <Link className="btn btn-ghost" to="/market-partners">合伙人档案与团队</Link>
       <Link className="btn btn-ghost" to="/commission-rules?tab=partner">设置合伙人佣金</Link>
+      <Link className="btn btn-ghost" to={view === 'finance' ? '/market-partner-operations' : '/market-partner-finance'}>{view === 'finance' ? '业务登记' : '财务审核与结算'}</Link>
     </div>
     {error && <div role="alert" style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
     {notice && <div style={{ color: '#176b4d', marginBottom: 12 }}>{notice}</div>}
-    <>
+    {view === 'operations' && <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>订单一页核算</h2>
       <p style={{ color: '#667a6d' }}>按同一订单查看客户、产品、实收、合伙人推广费和服务团队绩效。预估与已发分开显示；履约成本和交易成本未录入时不计算最终毛利。</p>
@@ -146,29 +118,6 @@ export default function MarketPartnerManagementPage() {
       {teamRevenue.length ? <table className="table"><thead><tr><th>归属类型</th><th>负责团队</th><th>项目</th><th>订单数</th><th>净实收归属</th></tr></thead><tbody>
         {teamRevenue.map(item=><tr key={`${item.businessType}:${item.teamRole}:${item.childProductId || item.serviceItemKey}`}><td>{item.businessType === 'enterprise' ? '企业资源' : item.businessType === 'product' ? '产品／检测' : '管理服务'}</td><td>{item.businessType === 'enterprise' ? '企业资源' : ROLES.find(([role])=>role===item.teamRole)?.[1] || item.teamRole}</td><td>{item.name}</td><td>{item.orderCount}</td><td>{yuan(item.amountCents)}</td></tr>)}
       </tbody></table> : <div>暂无已付款且完成业务归属配置的订单</div>}
-    </section>
-    <section style={boxStyle}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人</h2>
-      <form id="market-partner-profile-form" onSubmit={submitPartner} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <input style={inputStyle} aria-label="姓名" placeholder="姓名或机构名" value={partner.name} onChange={e => setPartner({ ...partner, name: e.target.value })} required />
-        <input style={inputStyle} aria-label="手机号" placeholder="登记手机号" value={partner.phone} onChange={e => setPartner({ ...partner, phone: e.target.value })} required />
-        <select style={inputStyle} aria-label="合伙人所属板块" value={partner.segment || ''} disabled={editingPartner?.status === 'active'} onChange={e => setPartner({ ...partner, segment: e.target.value })}>
-          {!partner.segment && <option value="">历史产品线（未归类）</option>}
-          {SEGMENTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-        <input style={inputStyle} aria-label="合同编号" placeholder="合同编号" value={partner.contractReference} onChange={e => setPartner({ ...partner, contractReference: e.target.value })} required />
-        {editingPartner && <input style={{ ...inputStyle, minWidth: 210 }} aria-label="资料修改原因" placeholder="修改原因及依据" value={partnerChangeReason} onChange={e => setPartnerChangeReason(e.target.value)} required />}
-        <button className="btn btn-primary" disabled={busy}>{editingPartner ? '保存合伙人资料修改' : '创建待审核合伙人'}</button>
-        {editingPartner && <button type="button" className="btn" onClick={() => setEditingPartner(null)}>取消编辑</button>}
-      </form>
-      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>名称</th><th>手机号</th><th>所属板块</th><th>推荐码</th><th>状态</th><th>操作</th></tr></thead><tbody>
-        {partners.map(item => <tr key={item._id}><td>{item.name}</td><td>{item.phone}</td><td>{SEGMENTS.find(([value]) => value === item.segment)?.[1] || LINES.find(([value]) => value === item.productLine)?.[1] || item.productLine}</td><td>{item.referralCode}</td><td>{item.status}</td><td>
-          {item.status !== 'closed' && <button className="btn btn-sm" disabled={busy} onClick={() => loadPartner(item)}>编辑资料</button>}
-          {item.status !== 'active' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.setMarketPartnerStatus(item._id, 'active'))}>启用</button>}
-          {item.status === 'active' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.setMarketPartnerStatus(item._id, 'suspended'))}>暂停</button>}
-          {!!item.changeHistory?.length && <details><summary>修改记录（{item.changeHistory.length}）</summary>{item.changeHistory.map((change, index) => <div key={index} style={{ maxWidth: 280, fontSize: 12, padding: 4 }}>{change.at?.slice(0, 16).replace('T', ' ')} · {change.reason}<br />{change.before?.name} / {change.before?.productLine} → {change.after?.name} / {change.after?.productLine}</div>)}</details>}
-        </td></tr>)}
-      </tbody></table></div>
     </section>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>首次沟通与亲自促成证据</h2>
@@ -199,6 +148,8 @@ export default function MarketPartnerManagementPage() {
         {lossReviews.map(item => <tr key={item._id}><td>{item.orderId?.orderNo || item.orderId}</td><td>{item.terminatedAt?.slice(0, 10)}</td><td>{item.reason}</td><td>{item.status}</td><td>{item.status === 'requested' && <><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerLoss(item._id, 'approved'))}>审核通过</button> <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerLoss(item._id, 'rejected'))}>退回</button></>}</td></tr>)}
       </tbody></table></div>
     </section>
+    </>}
+    {view === 'finance' && <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>线下退款复核</h2>
       <p style={{ color: '#667a6d' }}>登记已经完成的退款转账。另一位管理员复核后，订单与合伙人佣金按实际退款金额重算。</p>
@@ -214,6 +165,8 @@ export default function MarketPartnerManagementPage() {
         {offlineRefunds.map(item => <tr key={item._id}><td>{item.order?.orderNo || item.order}</td><td>¥{Number(item.amount || 0).toFixed(2)}</td><td>{item.marketPartnerOfflineReference}</td><td>{item.status}</td><td>{['requested', 'processing'].includes(item.status) && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.confirmMarketPartnerOfflineRefund(item._id))}>确认已退款</button>}</td></tr>)}
       </tbody></table></div>
     </section>
+    </>}
+    {view === 'operations' && <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>非商城线下合同订单</h2>
       <p style={{ color: '#667a6d' }}>按已上架的线下商品原价或规格价建单。建单后登记线下实收，再在下方提交收款凭据复核。</p>
@@ -244,7 +197,7 @@ export default function MarketPartnerManagementPage() {
       </tbody></table></div>
     </section>
     </>}
-    <>
+    {view === 'finance' && <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>线下收款复核</h2>
       <p style={{ color: '#667a6d' }}>订单须先走原有线下收款登记。提交收款凭据后，由另一位超级管理员复核；通过后才计提佣金。</p>
@@ -261,7 +214,7 @@ export default function MarketPartnerManagementPage() {
       </tbody></table></div>
     </section>
     </>}
-    <>
+    {view === 'finance' && <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人佣金核对</h2>
       <p style={{ color: '#667a6d' }}>这里只登记已经完成的转账；系统不会自动向合伙人付款。首笔与尾款上限由后端核验。</p>

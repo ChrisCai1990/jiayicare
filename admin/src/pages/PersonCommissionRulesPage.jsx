@@ -125,7 +125,7 @@ export default function PersonCommissionRulesPage() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button className={tab === 'staff' ? 'btn btn-primary' : 'btn btn-ghost'} onClick={() => changeTab('staff')}>员工</button>
         <button className={tab === 'partner' ? 'btn btn-primary' : 'btn btn-ghost'} onClick={() => changeTab('partner')}>市场合伙人</button>
-        {tab === 'partner' && <Link className="btn btn-ghost" to="/market-partner-operations">合伙人资料与结算</Link>}
+        {tab === 'partner' && <Link className="btn btn-ghost" to="/market-partners">合伙人档案与团队</Link>}
       </div>
       {loading ? <p>加载中...</p> : <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
