@@ -133,6 +133,8 @@ app.use('/api/staff/clinical-standards', require('./routes/clinicalStandardsStaf
 app.use('/api/staff',         require('./routes/aiCaseReviews'));
 app.use('/api/staff',         require('./routes/annualServicePeriods'));
 app.use('/api/staff/service-groups', require('./routes/serviceGroups'));
+app.use('/api/staff/in-app-service-groups', require('./routes/inAppServiceGroups').staffRouter);
+app.use('/api/in-app-service-groups', require('./routes/inAppServiceGroups').customerRouter);
 app.use('/api/staff/care-flow', require('./routes/careFlow'));
 app.use('/api/admin/care-quality', require('./routes/careQuality'));
 app.use('/api/admin/research-care-journeys', require('./routes/researchCareJourneys'));
