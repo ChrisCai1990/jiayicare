@@ -789,8 +789,8 @@ test('online and offline partner payments, renewals, refunds and team incentives
       tenantId, partner: { ...onlinePartner.body.data, _id: onlinePartner.body.data._id,
         productLine: 'onlineSingle' }, userId: partnerBuyerId, productId: onlineProductId,
       customerPrice: 100 });
-    assert.equal(annualOwnQuote.periodNumber, 2);
-    assert.equal(annualOwnQuote.price, 90);
+    assert.equal(annualOwnQuote.periodNumber, 1);
+    assert.equal(annualOwnQuote.price, 80, '年度产品自购价统一按首次推广比例');
     await mongoose.connection.db.collection('orders').deleteOne({ _id: priorOwnOrderId });
     await mongoose.connection.db.collection('marketpartnerrules').deleteOne({ _id: annualOwnRuleId });
     const onlineOrderId = new mongoose.Types.ObjectId(checkout.data.orderId);

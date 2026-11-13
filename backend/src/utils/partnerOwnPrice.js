@@ -22,7 +22,8 @@ async function ownPriceFor({ tenantId, partner, userId, productId, customerPrice
   if (!rule || (partner.segment ? String(rule.partnerId) !== String(partner._id)
     : rule.productLine !== partner.productLine)) return null;
   let periodNumber = 1;
-  if (userId && !(rule.kind === 'every' && rule.repeatBasisPoints == null)) {
+  // 年度产品的自购优惠统一取首次推广档，与本人续费年次无关。
+  if (userId && rule.kind !== 'annual' && !(rule.kind === 'every' && rule.repeatBasisPoints == null)) {
     const productIds = rule.kind === 'every' ? [rule.productId]
       : await MarketPartnerRule.distinct('productId', { tenantId, productLine: rule.productLine });
     const priorPaid = await Order.countDocuments({ tenantId, user: userId,
