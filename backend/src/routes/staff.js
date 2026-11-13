@@ -18909,10 +18909,17 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const textCandidate = parseTextLabTable(layout, pageNum);
       const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
       const physicalCandidate = parseTextPhysicalExam(layout, pageNum);
-      if (textCandidate.supported || physicalCandidate.supported) {
+      const { parseTextUltrasoundTable } = require('../utils/reportTextUltrasoundTable');
+      let ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum);
+      if (ultrasoundCandidate.supported && !ultrasoundCandidate.items[0].diagnosis
+        && pageNum < Number(report.pdfPageCount || 0)) {
+        ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
+      }
+      if (textCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported) {
         localScan = { source: 'pdf_text', items: [
           ...(textCandidate.supported ? textCandidate.items : []),
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
+          ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
         ] };
       } else if (parseLayoutResultPairs(layout, pageNum).length < 3) {
         const { extractScannedLabTable } = require('../utils/reportScanOcr');
