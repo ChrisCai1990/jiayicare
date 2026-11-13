@@ -14,15 +14,12 @@ const SEGMENTS = [['medical', '就医板块'], ['nutrition', '营养板块'],
 const ROLES = [['familyDoctor', '健康顾问'], ['nutritionist', '营养师'], ['healthManager', '健管专员'], ['medicalAssistant', '就医专员'], ['psychologist', '心理咨询师'], ['rehabSpecialist', '运动复健师'], ['specialist', '专科医师'], ['tcmDoctor', '中医师']]
 const inputStyle = { padding: '9px 10px', border: '1px solid #cbd8d1', borderRadius: 6, minWidth: 150 }
 const boxStyle = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
-const toBasisPoints = value => Math.round(Number(value) * 100)
 
-export default function MarketPartnerManagementPage({ view = 'operations' }) {
+export default function MarketPartnerManagementPage() {
   const [searchParams] = useSearchParams()
   const orderFromUrl = searchParams.get('order')
   const [partners, setPartners] = useState([])
   const [rules, setRules] = useState([])
-  const [teamRules, setTeamRules] = useState([])
-  const [teamIncentives, setTeamIncentives] = useState([])
   const [teamRevenue, setTeamRevenue] = useState([])
   const [commissions, setCommissions] = useState([])
   const [receipts, setReceipts] = useState([])
@@ -33,25 +30,12 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
   const [offlineRefunds, setOfflineRefunds] = useState([])
   const [lossReviews, setLossReviews] = useState([])
   const [products, setProducts] = useState([])
-  const [eligiblePackages, setEligiblePackages] = useState([])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [partner, setPartner] = useState({ name: '', phone: '', segment: 'medical', contractReference: '' })
   const [editingPartner, setEditingPartner] = useState(null)
   const [partnerChangeReason, setPartnerChangeReason] = useState('')
-  const [rule, setRule] = useState({ productId: '', productLine: 'consumer365', kind: 'annual', firstPercent: '20', tiers: '', renewals: '2:10,3:5,4:5,5:5', effectiveFrom: '', directReferralRequired: false, quickCloseEnabled: false, retentionFloorPercent: '' })
-  const [editingRule, setEditingRule] = useState(null)
-  const [ruleEndDates, setRuleEndDates] = useState({})
-  const [preview, setPreview] = useState({ ruleId: '', paidYuan: '', directCostYuan: '', teamCostYuan: '', transactionCostYuan: '', periodNumber: '1', monthlyQualifiedCount: '1', directReferral: false })
-  const [previewResult, setPreviewResult] = useState(null)
-  const [team, setTeam] = useState({ productId: '', specificationLabel: '', role: 'familyDoctor', trigger: 'service_completed', ruleType: 'percentage', percent: '0', amountYuan: '0', effectiveFrom: '' })
-  const [editingTeam, setEditingTeam] = useState(null)
-  const [teamEndDates, setTeamEndDates] = useState({})
-  const [teamClaim, setTeamClaim] = useState({ orderId: '', staffId: '', role: 'familyDoctor', serviceItemKey: '', serviceEvidenceId: '', note: '' })
-  const [teamClaimOrder, setTeamClaimOrder] = useState(null)
-  const [teamPaymentReferences, setTeamPaymentReferences] = useState({})
-  const [teamRecoveries, setTeamRecoveries] = useState({})
   const [payouts, setPayouts] = useState({})
   const [recoveries, setRecoveries] = useState({})
   const [receipt, setReceipt] = useState({ orderId: '', amountYuan: '', reference: '', receivedAt: '', evidence: '' })
@@ -65,17 +49,14 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
   const [accountingError, setAccountingError] = useState('')
 
   const refresh = async () => {
-    const [p, r, t, productsResponse, packagesResponse, commissionsResponse, receiptsResponse, teamIncentivesResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse, teamRevenueResponse] = await Promise.all([
-      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.teamIncentiveRules(), adminAPI.products({}), adminAPI.marketPartnerEligiblePackages(), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.teamIncentives(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(), adminAPI.marketPartnerTeamRevenue(),
+    const [p, r, productsResponse, commissionsResponse, receiptsResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse, teamRevenueResponse] = await Promise.all([
+      adminAPI.marketPartners(), adminAPI.marketPartnerRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(), adminAPI.marketPartnerTeamRevenue(),
     ])
     setPartners(p.data || [])
     setRules(r.data || [])
-    setTeamRules(t.data || [])
     setProducts(productsResponse.data || [])
-    setEligiblePackages(packagesResponse.data || [])
     setCommissions(commissionsResponse.data?.rows || [])
     setReceipts(receiptsResponse.data || [])
-    setTeamIncentives(teamIncentivesResponse.data || [])
     setTeamRevenue(teamRevenueResponse.data || [])
     setOfflineOrders(offlineOrdersResponse.data || [])
     setAttributedOrders(attributedOrdersResponse.data || [])
@@ -115,72 +96,6 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
     setPartnerChangeReason('')
     document.getElementById('market-partner-profile-form')?.scrollIntoView({ behavior: 'smooth' })
   }
-  const submitRule = e => {
-    e.preventDefault()
-    const tierBasisPoints = rule.tiers.trim() ? rule.tiers.split(',').map(part => toBasisPoints(part.trim())) : []
-    const renewalBasisPoints = rule.renewals.trim() ? rule.renewals.split(',').map(part => {
-      const [year, percent] = part.split(':').map(value => value.trim())
-      return { year: Number(year), basisPoints: toBasisPoints(percent) }
-    }) : []
-    const payload = { productId: rule.productId, productLine: rule.productLine,
-      sourceType: rule.productLine === 'consumer365' ? 'servicePackage' : 'product',
-      kind: rule.kind, firstBasisPoints: toBasisPoints(rule.firstPercent), tierBasisPoints,
-      renewalBasisPoints, effectiveFrom: new Date(rule.effectiveFrom).toISOString(),
-      directReferralRequired: rule.directReferralRequired, quickCloseEnabled: rule.quickCloseEnabled,
-      retentionFloorBasisPoints: rule.retentionFloorPercent === '' ? null : toBasisPoints(rule.retentionFloorPercent) }
-    run(async () => {
-      if (editingRule) await adminAPI.updateMarketPartnerRule(editingRule._id, { ...payload, updatedAt: editingRule.updatedAt })
-      else await adminAPI.createMarketPartnerRule(payload)
-      setEditingRule(null)
-    })
-  }
-  const submitTeam = e => {
-    e.preventDefault()
-    const payload = { productId: team.productId,
-      specificationLabel: team.specificationLabel, role: team.role, trigger: team.trigger,
-      ruleType: team.ruleType, basisPoints: toBasisPoints(team.percent),
-      amountCents: Math.round(Number(team.amountYuan) * 100), effectiveFrom: new Date(team.effectiveFrom).toISOString() }
-    run(async () => {
-      if (editingTeam) await adminAPI.updateTeamIncentiveRule(editingTeam._id, { ...payload, updatedAt: editingTeam.updatedAt })
-      else await adminAPI.createTeamIncentiveRule(payload)
-      setEditingTeam(null)
-    })
-  }
-  const loadRule = (item, edit) => {
-    setEditingRule(edit ? item : null)
-    setRule({ productId: String(item.productId), productLine: item.productLine, kind: item.kind,
-      firstPercent: String((item.firstBasisPoints || 0) / 100),
-      tiers: (item.tierBasisPoints || []).map(value => value / 100).join(','),
-      renewals: (item.renewalBasisPoints || []).map(value => `${value.year}:${value.basisPoints / 100}`).join(','),
-      effectiveFrom: edit ? item.effectiveFrom?.slice(0, 10) || '' : '',
-      directReferralRequired: !!item.directReferralRequired, quickCloseEnabled: !!item.quickCloseEnabled,
-      retentionFloorPercent: item.retentionFloorBasisPoints == null ? '' : String(item.retentionFloorBasisPoints / 100) })
-    document.getElementById('market-partner-rule-form')?.scrollIntoView({ behavior: 'smooth' })
-  }
-  const loadTeam = (item, edit) => {
-    setEditingTeam(edit ? item : null)
-    setTeam({ productId: String(item.productId), specificationLabel: item.specificationLabel || '', role: item.role,
-      trigger: item.trigger, ruleType: item.ruleType, percent: String((item.basisPoints || 0) / 100),
-      amountYuan: String((item.amountCents || 0) / 100), effectiveFrom: edit ? item.effectiveFrom?.slice(0, 10) || '' : '' })
-    document.getElementById('team-incentive-rule-form')?.scrollIntoView({ behavior: 'smooth' })
-  }
-  const loadTeamClaimOrder = async () => {
-    setTeamClaimOrder(null); setError('')
-    try { setTeamClaimOrder((await adminAPI.marketPartnerOrderAccounting(teamClaim.orderId.trim())).data.order) }
-    catch (err) { setError(err.message || '订单子项读取失败') }
-  }
-  const productName = id => products.find(item => String(item._id) === String(id))?.name
-    || eligiblePackages.find(item => String(item._id) === String(id))?.name || String(id || '')
-  const runPreview = e => {
-    e.preventDefault(); setBusy(true); setError(''); setPreviewResult(null)
-    adminAPI.previewMarketPartnerRule({ ruleId: preview.ruleId, paidCents: Math.round(Number(preview.paidYuan) * 100),
-      directCostCents: Math.round(Number(preview.directCostYuan) * 100),
-      teamIncentiveCents: Math.round(Number(preview.teamCostYuan) * 100),
-      transactionCostCents: Math.round(Number(preview.transactionCostYuan) * 100),
-      periodNumber: Number(preview.periodNumber), monthlyQualifiedCount: Number(preview.monthlyQualifiedCount),
-      directReferral: preview.directReferral, paidAt: new Date().toISOString() })
-      .then(response => setPreviewResult(response.data)).catch(err => setError(err.message)).finally(() => setBusy(false))
-  }
   const setPayout = (id, value) => setPayouts(current => ({ ...current, [id]: { ...current[id], ...value } }))
   const pay = item => {
     const form = payouts[item._id] || {}
@@ -199,15 +114,13 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
   const yuan = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
 
   return <div style={{ maxWidth: 1100 }}>
-    <div className="page-header"><div><div className="page-title">{view === 'rules' ? '市场合伙人规则' : '合伙人业务登记与核算'}</div><div className="page-subtitle">{view === 'rules' ? '设置佣金和服务团队激励规则' : '管理合伙人资料、登记沟通与收款、审核和核算订单'}</div></div></div>
+    <div className="page-header"><div><div className="page-title">合伙人业务登记与核算</div><div className="page-subtitle">管理合伙人资料、登记沟通与收款、审核和核算订单</div></div></div>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-      <Link className={view === 'rules' ? 'btn btn-primary' : 'btn btn-ghost'} to="/market-partners">规则设置</Link>
-      <Link className={view === 'operations' ? 'btn btn-primary' : 'btn btn-ghost'} to="/market-partner-operations">业务登记与核算</Link>
-      {view === 'rules' && <Link className="btn btn-ghost" to="/commission-rules?tab=partner">按合伙人设置个人佣金</Link>}
+      <Link className="btn btn-ghost" to="/commission-rules?tab=partner">设置合伙人佣金</Link>
     </div>
     {error && <div role="alert" style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
     {notice && <div style={{ color: '#176b4d', marginBottom: 12 }}>{notice}</div>}
-    {view === 'operations' && <>
+    <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>订单一页核算</h2>
       <p style={{ color: '#667a6d' }}>按同一订单查看客户、产品、实收、合伙人推广费和服务团队绩效。预估与已发分开显示；履约成本和交易成本未录入时不计算最终毛利。</p>
@@ -224,7 +137,6 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
         <div>服务团队：{accounting.order.servicePerformers?.length ? accounting.order.servicePerformers.map(item => `${ROLES.find(([role]) => role === item.role)?.[1] || item.role} ${item.staffId?.name || '待确认'}`).join('、') : '待确认'}</div>
         <div>合伙人推广费：{accounting.partnerCommission.length ? accounting.partnerCommission.map(item => `${yuan(item.accruedCents)}（${item.status}，已发 ${yuan(item.paidCents)}，已追回 ${yuan(item.recoveredCents)}）`).join('；') : '暂无计提'}</div>
         <div>内部推广与服务绩效：{accounting.staffCommissions.length ? accounting.staffCommissions.map(item => `${item.staffId?.name || '员工'} ${item.role === 'referrer' ? '推广' : '服务'} ${yuan(Math.round(Number(item.commissionAmount || 0) * 100))}（${item.status}）`).join('；') : '暂无计提'}</div>
-        <div>服务团队专项激励：{accounting.teamIncentives.length ? accounting.teamIncentives.map(item => `${item.staffId?.name || '员工'} ${yuan(item.amountCents)}（${item.status}，已发 ${yuan(item.paidCents)}）`).join('；') : '暂无计提'}</div>
         <div>线下到账凭据：{accounting.receipts.length ? accounting.receipts.map(item => `${yuan(item.amountCents)}（${item.status}）`).join('；') : '无'}</div>
       </div>}
     </section>
@@ -331,70 +243,8 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
         {customerHistories.map(item => <tr key={item._id}><td>{item.patientId?.name || item.patientId}</td><td>{item.productLine}</td><td>{item.priorPaidPeriods}</td><td>{item.status}</td><td>{item.status === 'requested' && <><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerCustomerHistory(item._id, 'approved'))}>核准</button> <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerCustomerHistory(item._id, 'rejected'))}>退回</button></>}{item.status === 'approved' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.recalculateMarketPartnerCustomerHistory(item._id))}>重算佣金</button>}</td></tr>)}
       </tbody></table></div>
     </section>
-    <section style={boxStyle}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>服务团队实际贡献</h2>
-      <p style={{ color: '#667a6d' }}>仅对已付款且履约记录已完成的订单计提；与原有服务绩效重复时系统拒绝。计提与审核须由不同管理员完成。</p>
-      <form onSubmit={e => { e.preventDefault(); run(() => adminAPI.createTeamIncentive(teamClaim)) }} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <input style={inputStyle} aria-label="团队订单ID" placeholder="订单ID" value={teamClaim.orderId} onChange={e => { setTeamClaim({ ...teamClaim, orderId: e.target.value, serviceItemKey: '', serviceEvidenceId: '' }); setTeamClaimOrder(null) }} required />
-        <button type="button" className="btn" disabled={!teamClaim.orderId.trim()} onClick={loadTeamClaimOrder}>读取订单子项</button>
-        {!!teamClaimOrder?.serviceItemsSnapshot?.length && <>
-          <select style={inputStyle} aria-label="已完成服务项目" value={teamClaim.serviceItemKey} onChange={e => setTeamClaim({ ...teamClaim, serviceItemKey: e.target.value, serviceEvidenceId: '' })} required><option value="">选择服务项目</option>{teamClaimOrder.serviceItemsSnapshot.map(item => <option key={item.key} value={item.key}>{item.name} · {ROLES.find(([role]) => role === item.teamRole)?.[1] || item.teamRole}</option>)}</select>
-          <select style={inputStyle} aria-label="子产品核销记录" value={teamClaim.serviceEvidenceId} onChange={e => setTeamClaim({ ...teamClaim, serviceEvidenceId: e.target.value })} required><option value="">选择已核销记录</option>{(teamClaimOrder.redemptions || []).filter(item => item.serviceItemKey === teamClaim.serviceItemKey).map(item => <option key={item._id} value={item._id}>第 {item.sequence} 次 · {item.redeemedAt?.slice(0, 16).replace('T', ' ')}</option>)}</select>
-        </>}
-        <input style={inputStyle} aria-label="服务人员ID" placeholder="实际服务人员ID" value={teamClaim.staffId} onChange={e => setTeamClaim({ ...teamClaim, staffId: e.target.value })} required />
-        <select style={inputStyle} aria-label="实际服务岗位" value={teamClaim.role} onChange={e => setTeamClaim({ ...teamClaim, role: e.target.value })}>{ROLES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        <input style={inputStyle} aria-label="贡献说明" placeholder="实际贡献说明" value={teamClaim.note} onChange={e => setTeamClaim({ ...teamClaim, note: e.target.value })} required />
-        <button className="btn btn-primary" disabled={busy}>提交计提</button>
-      </form>
-      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>订单</th><th>服务人员</th><th>岗位</th><th>激励</th><th>状态</th><th>操作</th></tr></thead><tbody>
-        {teamIncentives.map(item => <tr key={item._id}><td>{item.orderId?.orderNo || item.orderId}{item.serviceItemKey && <><br /><small>子项 {item.serviceItemKey}</small></>}</td><td>{item.staffId?.name || item.staffId}</td><td>{ROLES.find(([value]) => value === item.role)?.[1] || item.role}</td><td>¥{(item.amountCents / 100).toFixed(2)}<br /><small>已发 ¥{((item.paidCents || 0) / 100).toFixed(2)}／追回 ¥{((item.recoveredCents || 0) / 100).toFixed(2)}</small></td><td>{item.status}</td><td>{item.status === 'pending' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.confirmTeamIncentive(item._id))}>审核确认</button>}{item.status === 'confirmed' && <div style={{ display: 'flex', gap: 5 }}><input style={inputStyle} aria-label="团队激励转账凭证号" placeholder="已转账凭证号" value={teamPaymentReferences[item._id] || ''} onChange={e => setTeamPaymentReferences(current => ({ ...current, [item._id]: e.target.value }))} /><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.payTeamIncentive(item._id, teamPaymentReferences[item._id]))}>确认已转账</button></div>}{item.status === 'reversal_due' && <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}><input style={{ ...inputStyle, width: 95 }} aria-label="团队已追回金额元" type="number" min="0.01" step="0.01" placeholder="追回 元" value={teamRecoveries[item._id]?.amountYuan || ''} onChange={e => setTeamRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], amountYuan: e.target.value } }))} /><input style={inputStyle} aria-label="团队追回凭证号" placeholder="追回凭证号" value={teamRecoveries[item._id]?.reference || ''} onChange={e => setTeamRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], reference: e.target.value } }))} /><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.recoverTeamIncentive(item._id, { amountCents: Math.round(Number(teamRecoveries[item._id]?.amountYuan) * 100), recoveryReference: teamRecoveries[item._id]?.reference }))}>确认已追回</button></div>}</td></tr>)}
-      </tbody></table></div>
-    </section>
     </>}
-    {view === 'rules' && <>
-    <details style={boxStyle}>
-      <summary style={{ fontWeight: 600, cursor: 'pointer' }}>历史逐商品佣金规则（兼容旧配置）</summary>
-      <p>新的按人员设置入口：<Link to="/commission-rules">佣金规则</Link></p>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人佣金规则</h2>
-      <p style={{ color: '#667a6d' }}>先保存草稿，检查产品、比例与生效时间后再发布。旧订单沿用原规则版本。</p>
-      <p style={{ color: '#667a6d' }}>普通产品与组合拆解在 <Link to="/products">Admin 产品库</Link> 修改；365 会员服务包在 <Link to="/settings/members">会员设置 → 服务包</Link> 修改。下面只调整相应的推广佣金规则。</p>
-      <form id="market-partner-rule-form" onSubmit={submitRule} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <select style={inputStyle} aria-label="商品或服务包" value={rule.productId} disabled={!!editingRule} onChange={e => setRule({ ...rule, productId: e.target.value })} required><option value="">选择商品或服务包</option>{(rule.productLine === 'consumer365' ? eligiblePackages : products).map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
-        <select style={inputStyle} aria-label="产品线" value={rule.productLine} disabled={!!editingRule} onChange={e => setRule({ ...rule, productLine: e.target.value, productId: '' })}>{LINES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        <select style={inputStyle} aria-label="计佣类型" value={rule.kind} onChange={e => setRule({ ...rule, kind: e.target.value })}><option value="annual">年度</option><option value="first">首次</option><option value="every">每次</option></select>
-        <input style={inputStyle} aria-label="首年或首次比例" type="number" min="0" max="100" step="0.01" value={rule.firstPercent} onChange={e => setRule({ ...rule, firstPercent: e.target.value })} placeholder="首次比例 %" />
-        <input style={inputStyle} aria-label="阶梯比例" value={rule.tiers} onChange={e => setRule({ ...rule, tiers: e.target.value })} placeholder="阶梯 10,15,18,20" />
-        <input style={{ ...inputStyle, minWidth: 215 }} aria-label="续费比例" value={rule.renewals} onChange={e => setRule({ ...rule, renewals: e.target.value })} placeholder="续费 2:10,3:5,4:5,5:5" />
-        <input style={inputStyle} aria-label="生效日期" type="date" value={rule.effectiveFrom} onChange={e => setRule({ ...rule, effectiveFrom: e.target.value })} required />
-        <label><input type="checkbox" checked={rule.directReferralRequired} onChange={e => setRule({ ...rule, directReferralRequired: e.target.checked })} /> 须亲自推荐</label>
-        <label><input type="checkbox" checked={rule.quickCloseEnabled} onChange={e => setRule({ ...rule, quickCloseEnabled: e.target.checked })} /> 7日促成奖励</label>
-        <input style={inputStyle} aria-label="企业留存底线" type="number" min="0" max="100" step="0.01" placeholder="留存底线 %（可留空）" value={rule.retentionFloorPercent} onChange={e => setRule({ ...rule, retentionFloorPercent: e.target.value })} />
-        <button className="btn btn-primary" disabled={busy}>{editingRule ? `保存 v${editingRule.version} 草稿修改` : '保存佣金规则新草稿'}</button>
-        {editingRule && <button type="button" className="btn" onClick={() => setEditingRule(null)}>取消编辑</button>}
-      </form>
-      <p style={{ color: '#667a6d' }}>草稿可直接修改；已发布规则请复制为新版，填写新生效日，并将旧版结束日设为同一天。旧订单始终保留原规则版本。</p>
-      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>商品</th><th>产品线</th><th>版本</th><th>状态</th><th>生效</th><th>操作</th></tr></thead><tbody>
-        {rules.map(item => <tr key={item._id}><td>{productName(item.productId)}</td><td>{item.productLine}</td><td>{item.version}</td><td>{item.status}</td><td>{item.effectiveFrom?.slice(0, 10)}</td><td>
-          {item.status === 'draft' && <><button className="btn btn-sm" disabled={busy} onClick={() => loadRule(item, true)}>编辑草稿</button> <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.publishMarketPartnerRule(item._id))}>发布</button></>}
-          {item.status === 'active' && <><button className="btn btn-sm" disabled={busy} onClick={() => loadRule(item, false)}>复制修改新版</button> <input type="date" aria-label={`${productName(item.productId)}旧版结束日`} value={ruleEndDates[item._id] || ''} onChange={e => setRuleEndDates(current => ({ ...current, [item._id]: e.target.value }))} /> <button className="btn btn-sm" disabled={busy || !ruleEndDates[item._id]} onClick={() => run(() => adminAPI.endMarketPartnerRule(item._id, new Date(ruleEndDates[item._id]).toISOString()))}>设置旧版结束日</button></>}
-        </td></tr>)}
-      </tbody></table></div>
-      <h3 style={{ fontSize: 16 }}>规则与企业留存试算</h3>
-      <form onSubmit={runPreview} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <select style={inputStyle} aria-label="试算规则" value={preview.ruleId} onChange={e => setPreview({ ...preview, ruleId: e.target.value })} required><option value="">选择规则版本</option>{rules.map(item => <option key={item._id} value={item._id}>{productName(item.productId)} · v{item.version}</option>)}</select>
-        <input style={inputStyle} aria-label="试算现金实收元" type="number" min="0.01" step="0.01" placeholder="现金实收 元" value={preview.paidYuan} onChange={e => setPreview({ ...preview, paidYuan: e.target.value })} required />
-        <input style={inputStyle} aria-label="履约直接成本元" type="number" min="0" step="0.01" placeholder="履约直接成本 元" value={preview.directCostYuan} onChange={e => setPreview({ ...preview, directCostYuan: e.target.value })} required />
-        <input style={inputStyle} aria-label="团队激励成本元" type="number" min="0" step="0.01" placeholder="团队激励 元" value={preview.teamCostYuan} onChange={e => setPreview({ ...preview, teamCostYuan: e.target.value })} required />
-        <input style={inputStyle} aria-label="交易成本元" type="number" min="0" step="0.01" placeholder="交易成本 元" value={preview.transactionCostYuan} onChange={e => setPreview({ ...preview, transactionCostYuan: e.target.value })} required />
-        <input style={{ ...inputStyle, width: 85 }} aria-label="服务年度序号" type="number" min="1" step="1" value={preview.periodNumber} onChange={e => setPreview({ ...preview, periodNumber: e.target.value })} />
-        <input style={{ ...inputStyle, width: 85 }} aria-label="月度有效新客数" type="number" min="1" step="1" value={preview.monthlyQualifiedCount} onChange={e => setPreview({ ...preview, monthlyQualifiedCount: e.target.value })} />
-        <label><input type="checkbox" checked={preview.directReferral} onChange={e => setPreview({ ...preview, directReferral: e.target.checked })} /> 亲自促成</label>
-        <button className="btn btn-primary" disabled={busy}>计算留存</button>
-      </form>
-      {previewResult && <p style={{ marginBottom: 0 }}>合伙人佣金 ¥{(previewResult.totalCents / 100).toFixed(2)}；企业预计留存 {previewResult.retention ? `¥${(previewResult.retention.retainedCents / 100).toFixed(2)}（${(previewResult.retention.retentionBasisPoints / 100).toFixed(2)}%）` : '成本不全，请人工复核'}{previewResult.retention?.belowFloor && '；低于本产品留存底线，请复核'}</p>}
-    </details>
-    </>}
-    {view === 'operations' && <>
+    <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>线下收款复核</h2>
       <p style={{ color: '#667a6d' }}>订单须先走原有线下收款登记。提交收款凭据后，由另一位超级管理员复核；通过后才计提佣金。</p>
@@ -411,32 +261,7 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
       </tbody></table></div>
     </section>
     </>}
-    {view === 'rules' && <>
-    <section style={boxStyle}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>服务团队激励规则</h2>
-      <p style={{ color: '#667a6d' }}>管理服务可按母产品设置岗位规则，实际计提只取已核销服务项目的净实收份额；关联商品仍按子产品规则。团队业务归属与个人服务费分别核算。</p>
-      <form id="team-incentive-rule-form" onSubmit={submitTeam} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <select style={inputStyle} aria-label="团队商品" value={team.productId} disabled={!!editingTeam} onChange={e => setTeam({ ...team, productId: e.target.value })} required><option value="">选择商品</option>{products.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
-        <input style={inputStyle} aria-label="规格" placeholder="规格，可留空" value={team.specificationLabel} disabled={!!editingTeam} onChange={e => setTeam({ ...team, specificationLabel: e.target.value })} />
-        <select style={inputStyle} aria-label="岗位" value={team.role} disabled={!!editingTeam} onChange={e => setTeam({ ...team, role: e.target.value })}>{ROLES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        <input style={inputStyle} aria-label="完成节点" placeholder="完成节点" value={team.trigger} disabled={!!editingTeam} onChange={e => setTeam({ ...team, trigger: e.target.value })} required />
-        <select style={inputStyle} aria-label="计算类型" value={team.ruleType} onChange={e => setTeam({ ...team, ruleType: e.target.value })}><option value="percentage">按实收比例</option><option value="fixedAmount">固定金额</option></select>
-        {team.ruleType === 'percentage' ? <input style={inputStyle} aria-label="激励比例" type="number" min="0" max="100" step="0.01" value={team.percent} onChange={e => setTeam({ ...team, percent: e.target.value })} placeholder="比例 %" />
-          : <input style={inputStyle} aria-label="激励金额" type="number" min="0" step="0.01" value={team.amountYuan} onChange={e => setTeam({ ...team, amountYuan: e.target.value })} placeholder="金额 元" />}
-        <input style={inputStyle} aria-label="团队规则生效日期" type="date" value={team.effectiveFrom} onChange={e => setTeam({ ...team, effectiveFrom: e.target.value })} required />
-        <button className="btn btn-primary" disabled={busy}>{editingTeam ? `保存 v${editingTeam.version} 草稿修改` : '保存团队规则新草稿'}</button>
-        {editingTeam && <button type="button" className="btn" onClick={() => setEditingTeam(null)}>取消编辑</button>}
-      </form>
-      <p style={{ color: '#667a6d' }}>草稿可修改；已发布版本复制为新草稿后，先设置旧版结束日，再发布不重叠的新版本。</p>
-      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr><th>商品</th><th>岗位</th><th>完成节点</th><th>规则</th><th>状态</th><th>操作</th></tr></thead><tbody>
-        {teamRules.map(item => <tr key={item._id}><td>{productName(item.productId)}</td><td>{ROLES.find(([value]) => value === item.role)?.[1]}</td><td>{item.trigger}</td><td>{item.ruleType === 'percentage' ? `${(item.basisPoints / 100).toFixed(2)}%` : `¥${(item.amountCents / 100).toFixed(2)}`}</td><td>{item.status}</td><td>
-          {item.status === 'draft' && <><button className="btn btn-sm" disabled={busy} onClick={() => loadTeam(item, true)}>编辑草稿</button> <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.publishTeamIncentiveRule(item._id))}>发布</button></>}
-          {item.status === 'active' && <><button className="btn btn-sm" disabled={busy} onClick={() => loadTeam(item, false)}>复制修改新版</button> <input type="date" aria-label={`${productName(item.productId)}团队旧版结束日`} value={teamEndDates[item._id] || ''} onChange={e => setTeamEndDates(current => ({ ...current, [item._id]: e.target.value }))} /> <button className="btn btn-sm" disabled={busy || !teamEndDates[item._id]} onClick={() => run(() => adminAPI.endTeamIncentiveRule(item._id, new Date(teamEndDates[item._id]).toISOString()))}>设置旧版结束日</button></>}
-        </td></tr>)}
-      </tbody></table></div>
-    </section>
-    </>}
-    {view === 'operations' && <>
+    <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人佣金核对</h2>
       <p style={{ color: '#667a6d' }}>这里只登记已经完成的转账；系统不会自动向合伙人付款。首笔与尾款上限由后端核验。</p>

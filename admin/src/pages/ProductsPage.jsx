@@ -1271,7 +1271,7 @@ export default function ProductsPage({ commissionMode = false }) {
       <div className="card" style={{ padding: 18, marginBottom: 16 }}>
         <strong>市场合伙人推广佣金</strong>
         <p style={{ color: '#667a6d', margin: '8px 0 12px' }}>首次、续费及规则版本在市场合伙人模块管理，与员工佣金分别核算。</p>
-        <Link className="btn btn-ghost" to="/market-partners">进入市场合伙人规则</Link>
+        <Link className="btn btn-ghost" to="/commission-rules?tab=partner">进入市场合伙人佣金规则</Link>
       </div>
       <div className="card" style={{ padding: 18, marginBottom: 16 }}>
         <strong>员工推广与服务佣金</strong>

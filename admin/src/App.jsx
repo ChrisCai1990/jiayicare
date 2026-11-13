@@ -174,8 +174,8 @@ export default function App() {
               <Route path="commission-rules" element={<PersonCommissionRulesPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="partners"   element={<PartnersPage />} />
-              <Route path="market-partners" element={<MarketPartnerManagementPage view="rules" />} />
-              <Route path="market-partner-operations" element={<MarketPartnerManagementPage view="operations" />} />
+              <Route path="market-partners" element={<Navigate to="/commission-rules?tab=partner" replace />} />
+              <Route path="market-partner-operations" element={<MarketPartnerManagementPage />} />
               <Route path="business-accounting" element={<BusinessAccountingPage />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
               <Route path="tenants" element={<TenantsPage />} />
