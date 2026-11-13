@@ -108,7 +108,7 @@ import MedicationProxyStageForm, { medicationProxyStage } from '../components/Me
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
-import { insertReportItemBelow, orderReportItemsForReview, sameReviewSection } from '../utils/reportItemOrder'
+import { appendReportItemOnPage, insertReportItemBelow, orderReportItemsForReview, sameReviewSection } from '../utils/reportItemOrder'
 import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
 import { resolveScreeningCategory } from '../utils/screeningCategoryLabel.mjs'
 
@@ -13583,7 +13583,8 @@ export default function PatientDetailPage() {
         ]
         const updItem = (i, patch) => setOcrEditItems(arr => arr.map((it, idx) => idx === i ? { ...it, ...patch } : it))
         const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
-        const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'unknown', itemType: ocrReviewReport.documentCategory === 'prescription_order' ? 'medication' : 'lab' }])
+        const addItem = () => setOcrEditItems(arr => appendReportItemOnPage(arr, activePage, { name: '', value: '', unit: '', referenceRange: '', status: 'unknown', itemType: ocrReviewReport.documentCategory === 'prescription_order' ? 'medication' : 'lab' }))
+        const addImagingItem = () => setOcrEditItems(arr => appendReportItemOnPage(arr, activePage, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }))
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
         const sourcePages = [...new Set(ocrEditItems.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0))].sort((a, b) => a - b)
         const firstSourcePage = 1
@@ -13903,7 +13904,7 @@ export default function PatientDetailPage() {
                             } : item))
                           }}>{pageAllReviewed ? '撤销本页已核对' : '✓ 标记本页已核对'}</button>
                           <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增{isPrescription ? '药品' : '检验项'}</button>
-                          {!isPrescription && <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }])}>＋ 新增检查项</button>}
+                          {!isPrescription && <button className="btn btn-secondary btn-sm" onClick={addImagingItem}>＋ 新增检查项</button>}
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>

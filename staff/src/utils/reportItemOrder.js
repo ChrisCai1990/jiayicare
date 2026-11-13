@@ -31,6 +31,17 @@ export function sameReviewSection(left, right) {
   return normalizedSectionKey(left) === normalizedSectionKey(right)
 }
 
+export function appendReportItemOnPage(items, page, draft) {
+  const sourcePage = Number(page)
+  if (!Number.isInteger(sourcePage) || sourcePage < 1) return items
+  const lastIndex = items.findLastIndex(item => Number(item.sourcePage || 1) === sourcePage)
+  const next = [...items]
+  const nextPageIndex = items.findIndex(item => Number(item.sourcePage || 1) > sourcePage)
+  const insertAt = lastIndex >= 0 ? lastIndex + 1 : nextPageIndex >= 0 ? nextPageIndex : items.length
+  next.splice(insertAt, 0, { ...draft, sourcePage })
+  return next
+}
+
 const isSameSourceSection = (left, right) => (
   Number(left?.sourcePage || 0) === Number(right?.sourcePage || 0)
   && Number(left?.sourceSectionOrder || 0) === Number(right?.sourceSectionOrder || 0)
