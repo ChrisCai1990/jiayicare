@@ -48,13 +48,6 @@ export default function ServiceGroupsScreen({ navigation }) {
   const open = group => {
     selectedRef.current = group.id; setSelected(group); setMessages([]); setError(''); read(group.id);
   };
-  const start = async () => {
-    if (busy) return;
-    setBusy(true); setError('');
-    try { const response = await api.start(); await refresh(); open(response.data); }
-    catch (e) { setError(e.message || '服务群建立失败'); }
-    finally { setBusy(false); }
-  };
   const send = async () => {
     if (!selected || !draft.trim() || busy) return;
     setBusy(true); setError('');
@@ -82,9 +75,7 @@ export default function ServiceGroupsScreen({ navigation }) {
         <Text style={styles.note}>团队成员：{group.staff.map(person => person.name).join('、')}</Text>
         <Text style={styles.note}>{stamp(group.lastMessageAt) || '暂无消息'}{group.waitingForStaff ? ' · 等待团队回复' : ''}</Text>
       </TouchableOpacity>)}
-      {!loading && groups.length === 0 && <TouchableOpacity style={styles.start} onPress={start} disabled={busy}>
-        <Text style={styles.startText}>{busy ? '正在建立…' : '开始服务群沟通'}</Text>
-      </TouchableOpacity>}
+      {!loading && groups.length === 0 && <Text style={styles.note}>团队负责人尚未为您配置服务群成员，请联系服务团队。配置完成后点击右上角刷新。</Text>}
     </ScrollView> : <>
       <Text style={styles.members}>服务团队：{selected.staff.map(person => person.name).join('、')} · 团队负责人可查看</Text>
       <ScrollView ref={listRef} style={styles.list} onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}>

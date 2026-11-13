@@ -328,7 +328,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
   };
 
   const markReadAndOpenDetail = async (msg) => {
-    if (msg.type !== 'plan') setDetailMsg(msg);
+    if (msg.type !== 'plan' && msg.action?.type !== 'service_group') setDetailMsg(msg);
     if (msg.unread) {
       listRequestRef.current += 1;
       setMessages((prev) => prev.map((m) => (m._id === msg._id ? { ...m, unread: false } : m)));
@@ -343,6 +343,11 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
       Taro.navigateTo({ url: `/pages/services/plans/index?${query}` }).catch(() => {
         setDetailMsg(msg);
         Taro.showToast({ title: '方案暂时无法打开，请稍后重试', icon: 'none' });
+      });
+    }
+    if (msg.action?.type === 'service_group') {
+      Taro.navigateTo({ url: '/pages/messages/service-group/index' }).catch(() => {
+        Taro.showToast({ title: '服务群暂时无法打开，请稍后重试', icon: 'none' });
       });
     }
   };
@@ -363,6 +368,11 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
       </View>}
 
       {!!loadError && <Text onClick={loadMessages} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{loadError}</Text>}
+      <View onClick={() => Taro.navigateTo({ url: '/pages/messages/service-group/index' })}
+        style={{ margin: `0 ${spacing.md}px ${spacing.md}px`, padding: '14px 16px', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.primary}30` }}>
+        <Text style={{ display: 'block', fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>我的服务群 ›</Text>
+        <Text style={{ display: 'block', marginTop: '4px', fontSize: '12px', color: colors.textMuted }}>与当前健康服务团队沟通，团队负责人可查看</Text>
+      </View>
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>{t('加载中...')}</Text>
       ) : (

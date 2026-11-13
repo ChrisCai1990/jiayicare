@@ -15,6 +15,9 @@ export default function InAppServiceGroupsPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [canConfigure, setCanConfigure] = useState(false);
+  const [configuration, setConfiguration] = useState(null);
+  const [memberIds, setMemberIds] = useState([]);
   const currentId = useRef('');
   const loadedPages = useRef(1);
 
@@ -23,6 +26,7 @@ export default function InAppServiceGroupsPage() {
       const pages = await Promise.all(Array.from({ length: loadedPages.current }, (_, i) => api.list(i + 1)));
       setGroups(pages.flatMap(res => res.data || []));
       setHasMore(!!pages.at(-1)?.hasMore);
+      setCanConfigure(!!pages[0]?.canConfigure);
     }
     catch (e) { setError(e.message || '服务群读取失败'); }
   };
@@ -53,14 +57,28 @@ export default function InAppServiceGroupsPage() {
   const open = group => { currentId.current = group.id; setSelected(group); setMessages([]); setError(''); loadMessages(group.id); };
   const findPatient = async () => {
     if (!search.trim()) return setPatients([]);
-    try { const res = await staffAPI.getPatients({ search: search.trim(), limit: 10, scope: 'mine' });
+    try { const res = await staffAPI.getPatients({ search: search.trim(), limit: 10 });
       setPatients(res.data?.patients || []); setError(''); }
     catch (e) { setError(e.message || '客户查询失败'); }
   };
-  const create = async patientId => {
+  const editMembers = async patientId => {
     setBusy(true); setError('');
-    try { const res = await api.create(patientId); await refresh(); setPatients([]); setSearch(''); open(res.data); }
-    catch (e) { setError(e.message || '建立服务群失败'); }
+    try {
+      const res = await api.configuration(patientId);
+      setConfiguration(res.data);
+      setMemberIds((res.data.memberIds || []).map(String));
+    } catch (e) { setError(e.message || '群成员读取失败'); }
+    finally { setBusy(false); }
+  };
+  const saveMembers = async () => {
+    if (!configuration || busy) return;
+    setBusy(true); setError('');
+    try {
+      const res = await api.configure({ patientId: configuration.patientId,
+        memberIds, membershipVersion: configuration.membershipVersion });
+      setConfiguration(null); setPatients([]); setSearch('');
+      await refresh(); open(res.data);
+    } catch (e) { setError(e.message || '保存群成员失败，请刷新后重试'); }
     finally { setBusy(false); }
   };
   const send = async () => {
@@ -76,14 +94,28 @@ export default function InAppServiceGroupsPage() {
 
   return <main className="service-assistant">
     <h1>系统服务群</h1>
-    <p>客户在嘉医汇 App 发消息，当前服务团队在这里沟通。团队负责人可以只读查看本团队服务群。</p>
+    <p>团队负责人为每位客户勾选入群人员；客户在嘉医汇 App 或小程序发消息。未入群的服务人员不能查看或回复，负责人可只读监管。</p>
+    {canConfigure && <>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <input aria-label="查找客户" value={search} onChange={e => setSearch(e.target.value)} placeholder="查找负责的客户" />
       <button type="button" onClick={findPatient}>查找</button>
       <button type="button" onClick={refresh}>刷新</button>
     </div>
     {patients.map(patient => <button key={patient._id} type="button" disabled={busy}
-      onClick={() => create(patient._id)}>{patient.name} · 建立或打开服务群</button>)}
+      onClick={() => editMembers(patient._id)}>{patient.name} · 配置服务群成员</button>)}
+    </>}
+    {configuration && <section aria-label="配置服务群成员" style={{ padding: 16, background: '#fff', marginTop: 12 }}>
+      <h2>{configuration.patientName} · 选择入群成员</h2>
+      <p>只有当前分配的服务人员可入群；至少选择一名本团队成员。</p>
+      {configuration.candidates.map(person => <label key={person._id} style={{ display: 'block', margin: '8px 0' }}>
+        <input type="checkbox" checked={memberIds.includes(String(person._id))}
+          onChange={event => setMemberIds(previous => event.target.checked
+            ? [...previous, String(person._id)] : previous.filter(id => id !== String(person._id)))} />
+        {person.name} · {person.role}
+      </label>)}
+      <button type="button" disabled={busy || memberIds.length === 0} onClick={saveMembers}>保存群成员</button>
+      <button type="button" onClick={() => setConfiguration(null)}>取消</button>
+    </section>}
     {error && <p role="alert">{error}</p>}
     <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
       <button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>全部服务群（{groups.length}）</button>
@@ -96,7 +128,7 @@ export default function InAppServiceGroupsPage() {
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 16, marginTop: 16 }}>
       <section aria-label="服务群列表">
-        {visibleGroups.length === 0 && <p>此范围暂无服务群。可查找客户后建立；客户也可以在 App 中发起。</p>}
+        {visibleGroups.length === 0 && <p>此范围暂无已配置的服务群。团队负责人可查找客户并配置成员。</p>}
         {visibleGroups.map(group => <button key={group.id} type="button" onClick={() => open(group)}
           style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 8 }}>
           <strong>{group.patientName}的服务群</strong>
@@ -107,7 +139,8 @@ export default function InAppServiceGroupsPage() {
         {hasMore && <button type="button" disabled={busy} onClick={loadMore}>加载更多服务群</button>}
       </section>
       <section aria-label="群消息">
-        {selected && <><h2>{selected.patientName}的服务群</h2>
+          {selected && <><h2>{selected.patientName}的服务群</h2>
+          {selected.canConfigure && <button type="button" onClick={() => editMembers(selected.patientId)}>调整群成员</button>}
           <small>团队成员：{selected.staff.map(person => person.name).join('、')}</small>
           {messages.map(message => <article key={message.id}
             style={{ borderBottom: '1px solid #d8e2dc', padding: '10px 0', overflowWrap: 'anywhere' }}>

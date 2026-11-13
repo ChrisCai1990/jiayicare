@@ -25,6 +25,7 @@ const { advanceCheckupTask, isCheckupService, onCheckupReportAudited, stageForSc
 const { ensureStaffInitiatedCheckupService } = require('../utils/checkupServiceInstance');
 const { generateCompactMedicalAssistPurposes } = require('../utils/medicalAssistPurposeDraft');
 const { isReportInterpretation } = require('../utils/checkupWorkflow');
+const { sameStandardCheckupItems } = require('../utils/checkupTemplateItems');
 const { reverseFamilyRelation } = require('../utils/familyLinks');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
 const tenantMatchStage = () => {
@@ -4003,12 +4004,7 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
     }
     const standardItems = Array.isArray(template.content?.checkItems) ? template.content.checkItems : [];
     const requestedBase = Array.isArray(items) ? items.filter(item => item.itemGroup === 'base') : [];
-    const sameBase = requestedBase.length === standardItems.length && standardItems.every((ci, index) => {
-      const item = requestedBase[index];
-      const meta = orderTypeMetaBackend(ci.type);
-      return item.name === ci.name && String(item.itemId || '') === String(ci.id || '')
-        && item.category === meta.category && item.itemType === meta.itemType;
-    });
+    const sameBase = sameStandardCheckupItems(requestedBase, standardItems, orderTypeMetaBackend);
     if (!sameBase) return res.status(409).json({ success: false, message: '标准套餐项目已变化或被修改，请重新选择最新模板' });
     planContent = { ...planContent, checkItems: standardItems, templateUpdatedAt: template.updatedAt };
   }
