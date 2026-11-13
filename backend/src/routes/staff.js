@@ -17997,7 +17997,9 @@ async function runReportParseControlled(reportId) {
   try {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-      const isComprehensiveCheckup = report.type === 'annual';
+      // Historical uploads can retain type=other even when the selected
+      // document category is a full physical examination report.
+      const isComprehensiveCheckup = report.type === 'annual' || report.documentCategory === 'physical_exam';
       // 大型扫描件没有文字层；若首轮采用 max、双次重试及逐页覆盖复核，
       // 一个 8 页批次最坏会等待数十分钟，队列会长期停在“识别中”。
       // 首轮优先让医生拿到可审核草稿；遗漏项仍可由既有的逐页补提功能处理。
@@ -18086,7 +18088,7 @@ async function runReportParseControlled(reportId) {
                 } catch (e) {
                   rethrowAiControl(e);
                   if (['AI_PAGE_BUDGET_PAUSED', 'AI_PAGE_CIRCUIT_PAUSED'].includes(e.code)) break;
-                  if (report.type === 'annual' && ['AI_TIMEOUT', 'AI_OUTPUT_LENGTH'].includes(e.code)) {
+                  if (isComprehensiveCheckup && ['AI_TIMEOUT', 'AI_OUTPUT_LENGTH'].includes(e.code)) {
                     try {
                       const fallbackPrompt = reportParsePrompt
                         + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')

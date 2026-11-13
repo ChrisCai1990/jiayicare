@@ -198,7 +198,9 @@ test('Mongo integration: concurrent reservations, timeout accounting, circuits a
       const previousSecret = process.env.JWT_SECRET;
       process.env.JWT_SECRET = 'isolated-ai-budget-integration-test-only';
       const adminId = new mongoose.Types.ObjectId(), staffId = new mongoose.Types.ObjectId(), tenantAdminId = new mongoose.Types.ObjectId();
-      await Admin.collection.insertMany([{ _id: adminId, username: 'budget_admin', role: 'platformSuper' }, { _id: staffId, username: 'budget_staff', role: 'healthManager' }, { _id: tenantAdminId, username: 'budget_tenant', role: 'superadmin', tenantId: new mongoose.Types.ObjectId() }]);
+      const tenantId = new mongoose.Types.ObjectId(), otherTenantId = new mongoose.Types.ObjectId();
+      await collection('tenants').insertMany([{ _id: tenantId, code: 'ai_budget_tenant', status: 'active', serviceScope: ['admin'] }, { _id: otherTenantId, code: 'ai_budget_other', status: 'active', serviceScope: ['admin'] }]);
+      await Admin.collection.insertMany([{ _id: adminId, username: 'budget_admin', role: 'platformSuper' }, { _id: staffId, username: 'budget_staff', role: 'healthManager' }, { _id: tenantAdminId, username: 'budget_tenant', role: 'superadmin', tenantId }]);
       const app = express(); app.use(express.json()); app.use('/api/admin/ai-control', require('../src/routes/aiControl'));
       app.use((error, req, res, next) => res.status(500).json({ message: error.message }));
       const server = await new Promise(resolve => { const value = app.listen(0, '127.0.0.1', () => resolve(value)); });
@@ -216,6 +218,27 @@ test('Mongo integration: concurrent reservations, timeout accounting, circuits a
         assert.equal((await request('/reports')).status, 403);
         assert.equal((await request(`/reports/${reportId}/allowance`, { tokens: 10000, calls: 2 })).status, 403);
         assert.equal((await request(`/reports/${reportId}/resume`, {})).status, 403);
+        const otherReportId = new mongoose.Types.ObjectId();
+        await collection('medicalreports').insertMany([
+          { _id: reportId, tenantId, title: 'Own paused report', aiStatus: 'pending', parseJob: { status: 'paused', message: 'timeout' } },
+          { _id: otherReportId, tenantId: otherTenantId, title: 'Other tenant report', aiStatus: 'pending', parseJob: { status: 'paused' } },
+        ]);
+        assert.equal((await request('/tenant-paused-reports')).status, 403);
+        const ownListResponse = await request('/tenant-paused-reports', null, tenantAdminId);
+        assert.equal(ownListResponse.status, 200);
+        const ownList = (await ownListResponse.json()).data;
+        assert.deepEqual(ownList.map(row => row.id), [String(reportId)]);
+        assert.equal((await request(`/tenant-reports/${otherReportId}/resume`, {}, tenantAdminId)).status, 409);
+        assert.equal((await request(`/tenant-reports/${reportId}/resume`, {}, staffId)).status, 403);
+        const staffRouter = require('../src/routes/staff');
+        const originalSchedule = staffRouter.scheduleReportParse;
+        staffRouter.scheduleReportParse = () => true;
+        try {
+          assert.equal((await request(`/tenant-reports/${reportId}/resume`, {}, tenantAdminId)).status, 200);
+          assert.equal((await request(`/tenant-reports/${reportId}/resume`, {}, tenantAdminId)).status, 409);
+          const changed = await collection('medicalreports').findOne({ _id: reportId });
+          assert.equal(changed.parseJob.status, 'processing');
+        } finally { staffRouter.scheduleReportParse = originalSchedule; }
       } finally {
         if (previousSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = previousSecret;
         await new Promise(resolve => server.close(resolve));
