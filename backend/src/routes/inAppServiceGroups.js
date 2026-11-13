@@ -10,7 +10,7 @@ const User = require('../models/User');
 const Admin = require('../models/Admin');
 const Team = require('../models/Team');
 const StaffRole = require('../models/StaffRole');
-const { assignmentFields, assignedIds, canCustomerAccess, canStaffAccess,
+const { assignmentFields, assignedIds, isAssignedLeader, canCustomerAccess, canStaffAccess,
   canMentorObserve, needsStaffReply, same } = require('../utils/inAppServiceGroupPolicy');
 
 const customerRouter = express.Router();
@@ -63,8 +63,12 @@ function summary(group, patient, staffMembers, supervised = false, canConfigure 
     supervised, canConfigure };
 }
 function leaderCanConfigure(patient, staff, mentoredIds) {
-  return staff.role === 'superadmin' || assignedIds(patient).some(id =>
+  return staff.role === 'superadmin' || isAssignedLeader(patient, staff) || assignedIds(patient).some(id =>
     mentoredIds.some(memberId => same(id, memberId)));
+}
+function leaderCanObserve(patient, staff, group) {
+  return isAssignedLeader(patient, staff) &&
+    (group.memberIds || []).length > 0;
 }
 async function recentMessages(group) {
   const rows = await Message.find({ groupId: group._id, tenantId: group.tenantId })
@@ -139,13 +143,15 @@ staffRouter.get('/', wrap(async (req, res) => {
   for (const group of groups.slice(0, pageSize)) {
     const patient = patientMap.get(String(group.patientId));
     const direct = canStaffAccess(group, patient, req.staff);
-    const supervised = !direct && canMentorObserve(group, patient, req.staff, mentoredIds);
+    const supervised = !direct && (canMentorObserve(group, patient, req.staff, mentoredIds) ||
+      leaderCanObserve(patient, req.staff, group));
     const canConfigure = leaderCanConfigure(patient, req.staff, mentoredIds);
     if (direct || supervised)
       data.push(summary(group, patient, await groupStaff(group, patient), !direct, canConfigure));
   }
   res.json({ success: true, data, page, hasMore,
-    canConfigure: req.staff.role === 'superadmin' || mentoredIds.length > 0 });
+    canConfigure: req.staff.role === 'superadmin' || mentoredIds.length > 0 ||
+      patients.some(patient => leaderCanConfigure(patient, req.staff, mentoredIds)) });
 }));
 staffRouter.get('/configuration/:patientId', wrap(async (req, res) => {
   await permitStaff(req, 'send');
@@ -174,7 +180,8 @@ staffRouter.post('/', wrap(async (req, res) => {
     new Set(rawIds.map(String)).size !== rawIds.length) fail('请选择有效的入群成员', 400);
   const members = candidates.filter(person => rawIds.some(id => same(id, person._id)));
   if (members.length !== rawIds.length) fail('入群人员必须是当前服务人员', 400);
-  if (req.staff.role !== 'superadmin' && !members.some(person =>
+  const directLeader = isAssignedLeader(patient, req.staff);
+  if (req.staff.role !== 'superadmin' && !directLeader && !members.some(person =>
     mentoredIds.some(id => same(id, person._id)))) fail('至少选择一名本团队服务人员', 400);
   const version = Number(req.body?.membershipVersion);
   if (!Number.isSafeInteger(version) || version < 0) fail('请刷新群成员名单后重试', 409);
@@ -206,7 +213,8 @@ staffRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId);
   const direct = canStaffAccess(group, patient, req.staff);
   const mentoredIds = await mentorStaffIds(req.staff);
-  const supervised = !direct && canMentorObserve(group, patient, req.staff, mentoredIds);
+  const supervised = !direct && (canMentorObserve(group, patient, req.staff, mentoredIds) ||
+    leaderCanObserve(patient, req.staff, group));
   if (!direct && !supervised) fail('无权查看服务群');
   const data = await recentMessages(group);
   if (supervised) await View.create({ tenantId: group.tenantId, groupId: group._id,
