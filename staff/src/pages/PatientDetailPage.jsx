@@ -2309,6 +2309,7 @@ export default function PatientDetailPage() {
   const [legacyOutpatientTargetId, setLegacyOutpatientTargetId] = useState('')
   const [advisorReturnReason, setAdvisorReturnReason] = useState('')
   const [reportFlowSaving, setReportFlowSaving] = useState(false)
+  const [reportInterpretationSelection, setReportInterpretationSelection] = useState({})
   const [reportFlowError, setReportFlowError] = useState('')
   const [reportDetailLoading, setReportDetailLoading] = useState(false)
   const [showSRDetail, setShowSRDetail] = useState(null)
@@ -5127,6 +5128,21 @@ export default function PatientDetailPage() {
       loadPendingDoctorAudit()
       load()
     } catch (err) { setReportFlowError(err.message || '确认失败') }
+    finally { setReportFlowSaving(false) }
+  }
+
+  const confirmPatientReportInterpretations = async (reportIds) => {
+    if (!reportIds.length || reportFlowSaving) return
+    try {
+      setReportFlowSaving(true)
+      setReportFlowError('')
+      const result = await staffAPI.confirmPatientReportInterpretations(id, reportIds)
+      toast(`已一起确认 ${result.confirmed} 份报告的顾问解读`)
+      await loadReports()
+      await refreshAiTodos()
+      loadPendingDoctorAudit()
+      load()
+    } catch (err) { setReportFlowError(err.message || '确认失败'); toast(err.message || '确认失败，请刷新后重试') }
     finally { setReportFlowSaving(false) }
   }
 
@@ -11251,6 +11267,10 @@ export default function PatientDetailPage() {
 
       {/* ── Reports Tab ── */}
       {tab === 'reports' && (() => {
+        const pendingInterpretations = reports.filter(report => report.audit_status === 'audited' && !report.archiveOnly
+          && !report.advisorInterpretationConfirmedAt && report.advisorCorrection?.status !== 'returned'
+          && !['prescription_order', 'outpatient_record'].includes(inferDocumentCategory(report)))
+        const selectedInterpretationIds = pendingInterpretations.filter(report => reportInterpretationSelection[report._id] === true).map(report => report._id)
         const getReportYear = (report) => {
           const dateStr = report.checkDate || report.date
           const dateYear = dateStr ? new Date(dateStr).getFullYear() : NaN
@@ -11375,6 +11395,19 @@ export default function PatientDetailPage() {
 
         return (
           <div>
+            {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingInterpretations.length > 0 && <div className="card" style={{ padding: 16, marginBottom: 16, border: '1px solid #CFE5D8' }}>
+              <strong>健康顾问报告解读 · 待确认 {pendingInterpretations.length} 份</strong>
+              <p style={{ margin: '8px 0', fontSize: 13, color: '#4A6558' }}>可跨年份一起解读。核对原件后勾选本次已完成解读的报告，确认后进入对应的问题建议审核。</p>
+              <div style={{ display: 'grid', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
+                {pendingInterpretations.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <input type="checkbox" checked={reportInterpretationSelection[report._id] === true} onChange={event => setReportInterpretationSelection(current => ({ ...current, [report._id]: event.target.checked }))} />
+                  <span>{report.checkDate || report.date || '日期待核对'} · {report.title || '未命名报告'}</span>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={event => { event.preventDefault(); openReportDetail(report) }}>查看</button>
+                </label>)}
+              </div>
+              {reportFlowError && <div role="alert" style={{ color: '#B42318', fontSize: 13, marginTop: 8 }}>{reportFlowError}</div>}
+              <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 12 }} disabled={reportFlowSaving || !selectedInterpretationIds.length} onClick={() => confirmPatientReportInterpretations(selectedInterpretationIds)}>{reportFlowSaving ? '确认中…' : `完成本次解读并确认 ${selectedInterpretationIds.length} 份`}</button>
+            </div>}
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
               <div className="card-title">原始资料 <span style={{ fontSize: 12, fontWeight: 400, color: '#8AA89C', marginLeft: 6 }}>{tableRows.length} 份</span></div>
               <div className="report-filter-bar">

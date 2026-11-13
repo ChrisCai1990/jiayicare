@@ -33,7 +33,14 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     await visible(req, req.params.patientId);
     if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.patientId)) return res.json({ success: true, data: [], enabled: false });
     const rows = await Draft.find({ patientId: req.params.patientId }).sort({ createdAt: -1 }).limit(100).lean();
-    res.json({ success: true, data: rows.map(require('../utils/reportIssues').reviewView) });
+    const pending = rows.filter(row => row.status === 'advisor_review' && row.purpose === 'annual_report_input');
+    const reports = await require('../models/MedicalReport').find({ _id: { $in: pending.map(row => row.reportId) } }).select('_id documentCategory advisorInterpretationConfirmedAt').lean();
+    const reportById = new Map(reports.map(report => [String(report._id), report]));
+    const { needsAdvisorInterpretation } = require('../utils/reportFollowUpSource');
+    res.json({ success: true, data: rows.filter(row => {
+      const report = reportById.get(String(row.reportId));
+      return !report || !needsAdvisorInterpretation(report) || !!report.advisorInterpretationConfirmedAt;
+    }).map(require('../utils/reportIssues').reviewView) });
   }));
   router.post('/:id/generate', staffAuth, wrap(async (req, res) => {
     const row = await load(req);
