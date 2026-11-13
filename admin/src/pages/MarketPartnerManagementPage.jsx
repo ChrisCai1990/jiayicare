@@ -88,7 +88,7 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
       <Link className="btn btn-ghost" to="/market-partners">合伙人档案与团队</Link>
       <Link className="btn btn-ghost" to="/commission-rules?tab=partner">设置合伙人佣金</Link>
-      <Link className="btn btn-ghost" to={view === 'finance' ? '/market-partner-operations' : '/market-partner-finance'}>{view === 'finance' ? '业务登记' : '财务审核与结算'}</Link>
+      <Link className="btn btn-ghost" to={view === 'finance' ? '/partner-workbench/operations' : '/partner-workbench/finance'}>{view === 'finance' ? '业务登记' : '财务审核与结算'}</Link>
     </div>
     {error && <div role="alert" style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
     {notice && <div style={{ color: '#176b4d', marginBottom: 12 }}>{notice}</div>}

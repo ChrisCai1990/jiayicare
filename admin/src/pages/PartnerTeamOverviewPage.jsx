@@ -49,7 +49,7 @@ export default function PartnerTeamOverviewPage() {
   return <div className="page" style={{ maxWidth: 1240 }}>
     <div className="page-header"><div><div className="page-title">合伙人团队总览</div>
       <div className="page-subtitle">按人员查看团队、推广与服务业务量；企业营收请到经营与分账总览核对</div></div>
-      <Link className="btn btn-primary" to="/partner-teams">团队设置与财务审核</Link></div>
+      <Link className="btn btn-primary" to="/partner-teams">团队规则设置</Link></div>
     {error && <p role="alert" style={{ color: '#b42318' }}>{error}</p>}
     <section style={card}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

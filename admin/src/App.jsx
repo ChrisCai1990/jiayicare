@@ -11,6 +11,8 @@ import MarketPartnerDirectoryPage from './pages/MarketPartnerDirectoryPage'
 import BusinessAccountingPage from './pages/BusinessAccountingPage'
 import PartnerTeamsPage from './pages/PartnerTeamsPage'
 import PartnerTeamOverviewPage from './pages/PartnerTeamOverviewPage'
+import PartnerWorkbench from './pages/public/PartnerWorkbench'
+import PartnerTeamEarningsPage from './pages/public/PartnerTeamEarningsPage'
 import ExpertInvitationPage from './pages/public/ExpertInvitationPage'
 import ExpertSupplementPage from './pages/public/ExpertSupplementPage'
 import ExpertRecruitmentPage from './pages/settings/ExpertRecruitmentPage'
@@ -137,6 +139,11 @@ function HomeRoute() {
   return <Navigate to={admin?.role === 'platformSuper' ? '/tenants' : admin?.tenantStatus === 'setup' ? '/setup' : '/dashboard'} replace />
 }
 
+function LegacyPartnerRoute({ target }) {
+  const { search } = useLocation()
+  return <Navigate to={`${target}${search}`} replace />
+}
+
 function InstitutionSetupPage() {
   const { admin } = useAdmin()
   return <div className="page"><div className="page-header"><div><h1 className="page-title">{admin?.tenantName} · 机构配置</h1><p className="page-subtitle">当前没有本机构客户。先维护企业信息、部门、岗位和员工。</p></div></div><div className="card" style={{ padding: 28 }}><p>客户与医护业务将在跨机构数据隔离验收后开放。</p><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>{[['企业信息', '/settings/company'], ['部门管理', '/settings/departments'], ['岗位权限', '/settings/roles'], ['员工账号', '/settings/employees'], ['本机构套餐', '/saas-plan']].map(([label, path]) => <a key={path} className="btn btn-secondary" href={path}>{label}</a>)}</div></div></div>
@@ -152,6 +159,14 @@ export default function App() {
             <Route path="/hr/*" element={<HrApp />} />
             <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
             <Route path="/market-partner" element={<MarketPartnerPortalPage />} />
+            <Route path="/partner-workbench" element={<RequireAuth><PartnerWorkbench /></RequireAuth>}>
+              <Route index element={<Navigate to="overview" replace />} />
+              <Route path="overview" element={<PartnerTeamOverviewPage />} />
+              <Route path="business-accounting" element={<BusinessAccountingPage />} />
+              <Route path="operations" element={<MarketPartnerManagementPage view="operations" />} />
+              <Route path="finance" element={<MarketPartnerManagementPage view="finance" />} />
+              <Route path="team-earnings" element={<PartnerTeamEarningsPage />} />
+            </Route>
             <Route path="/expert-invitation/:token" element={<ExpertInvitationPage />} />
             <Route path="/expert-questionnaire/:token" element={<ExpertInvitationPage reusable />} />
             <Route path="/expert-supplement/:token" element={<ExpertSupplementPage />} />
@@ -178,11 +193,11 @@ export default function App() {
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="partners"   element={<PartnersPage />} />
               <Route path="market-partners" element={<MarketPartnerDirectoryPage />} />
-              <Route path="market-partner-operations" element={<MarketPartnerManagementPage view="operations" />} />
-              <Route path="market-partner-finance" element={<MarketPartnerManagementPage view="finance" />} />
-              <Route path="business-accounting" element={<BusinessAccountingPage />} />
+              <Route path="market-partner-operations" element={<LegacyPartnerRoute target="/partner-workbench/operations" />} />
+              <Route path="market-partner-finance" element={<LegacyPartnerRoute target="/partner-workbench/finance" />} />
+              <Route path="business-accounting" element={<LegacyPartnerRoute target="/partner-workbench/business-accounting" />} />
               <Route path="partner-teams" element={<PartnerTeamsPage />} />
-              <Route path="partner-team-overview" element={<PartnerTeamOverviewPage />} />
+              <Route path="partner-team-overview" element={<LegacyPartnerRoute target="/partner-workbench/overview" />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
               <Route path="tenants" element={<TenantsPage />} />
               <Route path="agreements" element={<PlatformAgreementPage />} />

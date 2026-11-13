@@ -118,7 +118,7 @@ export default function MarketPartnerDirectoryPage() {
     <div style={{ ...row, marginBottom: 16 }}>
       <Link className="btn btn-ghost" to="/commission-rules?tab=partner">设置合伙人佣金</Link>
       <Link className="btn btn-ghost" to="/partner-teams">设置团队关系与负责人收益</Link>
-      <Link className="btn btn-ghost" to="/market-partner-operations">业务登记</Link>
+      <Link className="btn btn-ghost" to="/partner-workbench/operations">打开业务登记</Link>
     </div>
     {error && <p role="alert" style={{ color: '#b42318' }}>{error}</p>}
     {notice && <p role="status" style={{ color: '#176b4d' }}>{notice}</p>}
