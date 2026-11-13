@@ -1312,7 +1312,8 @@ export default function ProductsPage({ commissionMode = false }) {
           <div className="page-title">收费产品管理</div>
           <div className="page-subtitle">管理用户端"服务商城"中展示的产品，支持自定义收费项目</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Link className="btn btn-ghost" to="/settings/members?tab=packages">365会员服务包归属</Link>
           <button className="btn btn-ghost" onClick={() => setShowCatModal(true)}>⚙️ 管理分类</button>
           <button className="btn btn-ghost" onClick={openIbdProduct}>IBD 年度专病商品</button>
           <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>＋ 新增产品</button>

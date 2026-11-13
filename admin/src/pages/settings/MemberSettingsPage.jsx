@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
@@ -179,7 +180,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              {(withClientBrand ? ['名称', '客户归属', ...(withEntitlements ? ['AI权益'] : []), ...(withActivation ? ['用户开通'] : []), '状态', '操作'] : ['名称', '状态', '操作']).map(h => (
+              {(withClientBrand ? ['名称', '客户归属', ...(withEntitlements ? ['AI权益'] : []), ...(withActivation ? ['用户开通', '业务归属'] : []), '状态', '操作'] : ['名称', '状态', '操作']).map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
               ))}
             </tr>
@@ -195,19 +196,24 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                 {withActivation && <td style={{ padding: '10px 14px', fontSize: 12, color: '#4B5563' }}>
                   {item.activation?.enabled ? `${item.activation.durationMonths || '-'}个月 / ¥${item.activation.price || 0}` : '不展示'}
                 </td>}
+                {withActivation && <td style={{ padding: '10px 14px', fontSize: 12 }}>
+                  {Math.abs((item.configuration?.businessAllocations || []).reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) < 0.001
+                    ? <span style={{ color: '#1E6B50' }}>已设置 100%</span>
+                    : <span style={{ color: '#C0392B' }}>未设置完整</span>}
+                </td>}
                 <td style={{ padding: '10px 14px' }}>
                   <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: isItemActive(item) ? '#E8F5EF' : '#FEF2F2', color: isItemActive(item) ? '#1E6B50' : '#DC2626' }}>
                     {isItemActive(item) ? '启用' : '停用'}
                   </span>
                 </td>
                 <td style={{ padding: '10px 14px' }}>
-                  <button className="btn btn-secondary btn-sm" onClick={() => openEdit(item)} style={{ marginRight: 6 }}>编辑</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => openEdit(item)} style={{ marginRight: 6 }}>{withActivation ? '编辑／业务归属' : '编辑'}</button>
                   <button className="btn btn-secondary btn-sm" onClick={() => handleToggle(item)} style={{ marginRight: 6 }}>{isItemActive(item) ? '停用' : '启用'}</button>
                   <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item)}>删除</button>
                 </td>
               </tr>
             ))}
-            {!visibleList.length && <tr><td colSpan={withClientBrand ? 6 : 3} style={{ padding: 28, textAlign: 'center', color: '#6B7280' }}>当前筛选条件下暂无服务包</td></tr>}
+            {!visibleList.length && <tr><td colSpan={withClientBrand ? (withActivation ? 7 : 6) : 3} style={{ padding: 28, textAlign: 'center', color: '#6B7280' }}>当前筛选条件下暂无服务包</td></tr>}
           </tbody>
         </table>
       )}
@@ -529,7 +535,9 @@ function MemberTypeTab() {
 const TABS = ['会员标签', '会员来源', '会员类型', '服务包']
 
 export default function MemberSettingsPage() {
-  const [tab, setTab] = useState(0)
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState(searchParams.get('tab') === 'packages' ? 3 : 0)
+  useEffect(() => { if (searchParams.get('tab') === 'packages') setTab(3) }, [searchParams])
 
   return (
     <div>
@@ -579,7 +587,7 @@ export default function MemberSettingsPage() {
         {tab === 3 && (
           <SimpleListTab
             title="服务包"
-            desc="按客户归属维护医护端可选的服务包"
+            desc="365健康会员等年度服务包在此维护；点击“编辑／业务归属”设置团队拆分"
             fetchFn={adminAPI.servicePackages}
             createFn={adminAPI.createServicePackage}
             updateFn={adminAPI.updateServicePackage}
