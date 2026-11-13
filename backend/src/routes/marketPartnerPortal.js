@@ -85,12 +85,18 @@ router.get('/me', (req, res) => res.json({ success: true, data: { name: req.mark
 
 router.get('/products', async (req, res) => {
   const rules = await MarketPartnerRule.find({ tenantId: req.marketPartner.tenantId,
-    productLine: req.marketPartner.productLine, status: 'active', effectiveFrom: { $lte: new Date() },
-    $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: new Date() } }] }).select('productId sourceType').lean();
-  const products = await Product.find({ _id: { $in: rules.filter(row => row.sourceType !== 'servicePackage').map(row => row.productId) },
+    ...(req.marketPartner.segment ? { partnerId: req.marketPartner._id }
+      : { partnerId: null, productLine: req.marketPartner.productLine }),
+    status: 'active', disabled: { $ne: true }, effectiveFrom: { $lte: new Date() },
+    $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: new Date() } }] })
+    .select('productId sourceType firstBasisPoints tierBasisPoints renewalBasisPoints').lean();
+  const promotable = rules.filter(rule => rule.firstBasisPoints > 0
+    || (rule.tierBasisPoints || []).some(value => value > 0)
+    || (rule.renewalBasisPoints || []).some(value => value.basisPoints > 0));
+  const products = await Product.find({ _id: { $in: promotable.filter(row => row.sourceType !== 'servicePackage').map(row => row.productId) },
     status: 'on', paymentChannel: { $ne: 'offline' } })
     .select('name').lean();
-  const packages = await ServicePackage.find({ _id: { $in: rules.filter(row => row.sourceType === 'servicePackage').map(row => row.productId) },
+  const packages = await ServicePackage.find({ _id: { $in: promotable.filter(row => row.sourceType === 'servicePackage').map(row => row.productId) },
     active: true, 'activation.enabled': true, 'activation.durationMonths': 12,
     'configuration.membershipTier': 'consumer365', 'configuration.includes365': true })
     .select('name').lean();

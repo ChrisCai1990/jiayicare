@@ -18,6 +18,8 @@ export default function PersonCommissionRulesPage() {
   const [partners, setPartners] = useState([])
   const [products, setProducts] = useState([])
   const [packages, setPackages] = useState([])
+  const [allProducts, setAllProducts] = useState([])
+  const [allPackages, setAllPackages] = useState([])
   const [staffRules, setStaffRules] = useState([])
   const [serviceThresholds, setServiceThresholds] = useState([])
   const [thresholdYuan, setThresholdYuan] = useState('0')
@@ -35,19 +37,22 @@ export default function PersonCommissionRulesPage() {
   const [renewal35, setRenewal35] = useState('5')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const [rowEdit, setRowEdit] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
-    const [employees, partnerRows, productRows, packageRows, employeeRules, externalRules, thresholds] = await Promise.all([
+    const [employees, partnerRows, productRows, packageRows, allPackageRows, employeeRules, externalRules, thresholds] = await Promise.all([
       adminAPI.employees({ limit: 500 }), adminAPI.marketPartners(), adminAPI.products(),
-      adminAPI.marketPartnerEligiblePackages(), adminAPI.staffCommissionRules(),
+      adminAPI.marketPartnerEligiblePackages(), adminAPI.servicePackages(), adminAPI.staffCommissionRules(),
       adminAPI.partnerPersonCommissionRules(),
       adminAPI.staffServiceThresholds(),
     ])
     setStaff((employees.data || []).filter(row => row.staffStatus === 'active'))
     setPartners((partnerRows.data || []).filter(row => row.status !== 'closed'))
+    setAllProducts(productRows.data || [])
     setProducts((productRows.data || []).filter(row => row.status === 'on'))
     setPackages(packageRows.data || [])
+    setAllPackages(allPackageRows.data || [])
     setStaffRules(employeeRules.data || [])
     setServiceThresholds(thresholds.data || [])
     setPartnerRules(externalRules.data || [])
@@ -81,6 +86,36 @@ export default function PersonCommissionRulesPage() {
     && row.productIds?.some(id => String(id) === productId) && !row.effectiveUntil)
   const activePartner = partnerRules.find(row => String(row.partnerId) === personId && row.category === category
     && String(row.productId) === productId && row.status === 'active' && !row.effectiveUntil)
+  const currentPromotionRows = useMemo(() => {
+    if (!personId) return []
+    const now = new Date()
+    const rows = tab === 'staff'
+      ? staffRules.filter(rule => String(rule.staffId) === personId
+        && (!rule.effectiveUntil || new Date(rule.effectiveUntil) > now)
+        && new Date(rule.effectiveFrom) <= now)
+        .flatMap(rule => (rule.productIds || []).map(id => ({ rule, id: String(id) })))
+      : partnerRules.filter(rule => String(rule.partnerId) === personId && rule.status === 'active'
+        && (!rule.effectiveUntil || new Date(rule.effectiveUntil) > now)
+        && new Date(rule.effectiveFrom) <= now)
+        .map(rule => ({ rule, id: String(rule.productId) }))
+    const latest = new Map()
+    for (const item of rows) {
+      const previous = latest.get(item.id)
+      if (!previous || new Date(item.rule.effectiveFrom) > new Date(previous.rule.effectiveFrom)
+        || (item.rule.version > previous.rule.version && item.rule.effectiveFrom === previous.rule.effectiveFrom))
+        latest.set(item.id, item)
+    }
+    return [...latest.values()].filter(item => tab === 'staff' ? Number(item.rule.referrerRate) > 0
+      : !item.rule.disabled && (Number(item.rule.firstBasisPoints) > 0
+        || (item.rule.renewalBasisPoints || []).some(year => year.basisPoints > 0)))
+      .map(item => {
+      const catalog = [...allProducts, ...allPackages].find(row => String(row._id) === item.id)
+      const onSale = allProducts.some(row => String(row._id) === item.id && row.status === 'on')
+        || packages.some(row => String(row._id) === item.id)
+      return { ...item, name: catalog?.name || `已移除产品（${item.id}）`, onSale,
+        category: item.rule.category || catalog?.category || '未分类' }
+    }).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  }, [personId, tab, staffRules, partnerRules, allProducts, allPackages, packages])
 
   const loadExisting = (id, nextCategory, nextProductId, nextTab = tab) => {
     const row = nextTab === 'staff'
@@ -98,7 +133,7 @@ export default function PersonCommissionRulesPage() {
     setRenewal35(String(renewal[3] ?? 5))
   }
   const changePerson = id => {
-    setPersonId(id); setCategory(''); setSelected([]); setSearch(''); setMessage('')
+    setPersonId(id); setCategory(''); setSelected([]); setSearch(''); setMessage(''); setRowEdit(null)
     const current = serviceThresholds.find(row => String(row.staffId) === id && !row.effectiveUntil)
     setThresholdYuan(String((current?.thresholdCents || 0) / 100))
   }
@@ -110,7 +145,7 @@ export default function PersonCommissionRulesPage() {
     }
   }
   const changeTab = value => {
-    setTab(value); setPersonId(''); setPersonSearch(''); setCategory(''); setSelected([]); setSearch(''); setMessage('')
+    setTab(value); setPersonId(''); setPersonSearch(''); setCategory(''); setSelected([]); setSearch(''); setMessage(''); setRowEdit(null)
     setThresholdYuan('0')
   }
   const saveThreshold = async () => {
@@ -145,6 +180,43 @@ export default function PersonCommissionRulesPage() {
     finally { setBusy(false) }
   }
   const preview = round(1000 * Number(referrerRate || 0) / 100)
+  const editPromotion = item => setRowEdit({ id: item.id, rate: String(tab === 'staff'
+    ? item.rule.referrerRate : item.rule.firstBasisPoints / 100),
+    serviceRate: String(item.rule.fulfillerRate ?? 0), kind: item.rule.kind || 'first',
+    renewals: Object.fromEntries((item.rule.renewalBasisPoints || []).map(year =>
+      [year.year, String(year.basisPoints / 100)])) })
+  const savePromotionRow = async item => {
+    const rate = Number(rowEdit?.rate)
+    const years = Object.entries(rowEdit?.renewals || {}).map(([year, percent]) =>
+      ({ year: Number(year), percent: Number(percent) }))
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100
+      || years.some(year => !Number.isFinite(year.percent) || year.percent < 0 || year.percent > 100)) {
+      setMessage('比例须为 0–100%'); return
+    }
+    setBusy(true); setMessage('')
+    try {
+      if (tab === 'staff') await adminAPI.saveStaffCommissionRule({ staffId: personId,
+        category: item.category, productIds: [item.id], referrerRate: rate,
+        fulfillerRate: item.rule.fulfillerRate })
+      else await adminAPI.savePartnerPersonCommissionRule({ partnerId: personId,
+        productLine: person.productLine, category: item.category, productIds: [item.id],
+        kind: rowEdit.kind, firstPercent: rate, renewals: rowEdit.kind === 'annual' ? years : [] })
+      await load(); setRowEdit(null)
+      setMessage('推广佣金已更新，新订单按新版规则计算')
+    } catch (error) { setMessage(error.message || '保存失败') }
+    finally { setBusy(false) }
+  }
+  const removePromotionRow = async item => {
+    if (!window.confirm(`移除 ${item.name} 的推广佣金？历史订单仍保留原规则。`)) return
+    setBusy(true); setMessage('')
+    try {
+      if (tab === 'staff') await adminAPI.removeStaffPromotionRule(item.rule._id, item.id)
+      else await adminAPI.removePartnerPromotionRule(item.rule._id)
+      await load(); setRowEdit(null)
+      setMessage('推广佣金已移除，新订单不再计提；历史订单保留原规则')
+    } catch (error) { setMessage(error.message || '移除失败') }
+    finally { setBusy(false) }
+  }
 
   return <div className="page">
     <div className="page-header"><div><div className="page-title">佣金规则</div>
@@ -216,10 +288,47 @@ export default function PersonCommissionRulesPage() {
           </p>
           <button className="btn btn-primary" disabled={busy || !productId} onClick={save}>{busy ? '保存中...' : '保存该产品规则'}</button>
         </>}
-        {message && <p role="status" style={{ color: message.startsWith('规则已') ? '#1E6B50' : '#b42318' }}>{message}</p>}
+        {message && <p role="status" style={{ color: /^(规则已|推广佣金已)/.test(message) ? '#1E6B50' : '#b42318' }}>{message}</p>}
       </>}
     </div>
-    <div style={card}><strong>当前产品规则</strong><p style={{ color: '#667a6d' }}>选择产品后查看；修改保存为新版本，旧订单不回算。</p>
+    <div style={card}><strong>{person ? `${person.name} · 有推广佣金的产品（${currentPromotionRows.length}）` : '人员推广佣金总览'}</strong>
+      <p style={{ color: '#667a6d' }}>选择人员后直接查看当前有推广佣金的产品，并在此编辑或移除。修改只影响新订单，历史订单保留原规则。</p>
+      {person && <><div style={{ overflowX: 'auto' }}><table className="table"><thead><tr>
+        <th>产品／服务包</th><th>类别</th><th>推广佣金</th><th>销售状态</th><th>操作</th>
+      </tr></thead><tbody>{currentPromotionRows.map(item => <tr key={item.id}>
+        <td>{item.name}</td><td>{item.category}</td>
+        <td>{tab === 'staff' ? `${item.rule.referrerRate}%` : item.rule.kind === 'annual'
+          ? `首年 ${item.rule.firstBasisPoints / 100}%${(item.rule.renewalBasisPoints || []).length
+            ? `；${item.rule.renewalBasisPoints.map(year => `第${year.year}年 ${year.basisPoints / 100}%`).join('；')}` : ''}`
+          : `${item.rule.firstBasisPoints / 100}% · ${item.rule.kind === 'every' ? '每次' : '仅首次'}`}</td>
+        <td>{item.onSale ? '在售' : '已下架／不可售'}</td>
+        <td><button className="btn btn-sm" disabled={busy || !item.onSale} onClick={() => editPromotion(item)}>直接编辑</button>{' '}
+          <button className="btn btn-sm" disabled={busy} onClick={() => removePromotionRow(item)}>移除推广佣金</button></td>
+      </tr>).flatMap((entry, index) => {
+        const item = currentPromotionRows[index]
+        if (rowEdit?.id !== item.id) return [entry]
+        return [entry, <tr key={`${item.id}:edit`}><td colSpan="5"><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {tab === 'partner' && <label>计佣方式 <select className="form-input" value={rowEdit.kind}
+            onChange={event => setRowEdit({ ...rowEdit, kind: event.target.value,
+              renewals: event.target.value === 'annual' && !Object.keys(rowEdit.renewals).length
+                ? { 2: '10', 3: '5', 4: '5', 5: '5' } : rowEdit.renewals })}>
+            <option value="first">仅首次</option><option value="annual">年度首续</option><option value="every">每次</option>
+          </select></label>}
+          <label>推广比例 % <input className="form-input" type="number" min="0" max="100" step="0.01"
+            value={rowEdit.rate} onChange={event => setRowEdit({ ...rowEdit, rate: event.target.value })}
+            style={{ maxWidth: 130 }} /></label>
+          {tab === 'partner' && rowEdit.kind === 'annual' && Object.entries(rowEdit.renewals)
+            .sort(([a], [b]) => Number(a) - Number(b)).map(([year, percent]) =>
+              <label key={year}>第 {year} 年 % <input className="form-input" type="number" min="0" max="100" step="0.01"
+                value={percent} onChange={event => setRowEdit({ ...rowEdit,
+                  renewals: { ...rowEdit.renewals, [year]: event.target.value } })} style={{ maxWidth: 110 }} /></label>)}
+          <button className="btn btn-primary" disabled={busy} onClick={() => savePromotionRow(item)}>保存新版</button>
+          <button className="btn btn-ghost" onClick={() => setRowEdit(null)}>取消</button>
+        </div></td></tr>]
+      })}</tbody></table></div>
+        {!currentPromotionRows.length && <p>该人员当前没有生效且比例大于 0 的推广佣金产品。</p>}</>}
+    </div>
+    <div style={card}><strong>当前选中产品规则</strong><p style={{ color: '#667a6d' }}>选择产品后查看；修改保存为新版本，旧订单不回算。</p>
       {productId && personId && <div>{tab === 'staff'
         ? activeStaff ? `员工规则 v${activeStaff.version} · 推广 ${activeStaff.referrerRate}% · 服务 ${activeStaff.fulfillerRate}%` : '该产品尚未设置员工规则'
         : activePartner ? `合伙人规则 v${activePartner.version} · ${activePartner.kind === 'annual' ? '年度首续' : activePartner.kind === 'every' ? '每次' : '仅首次'} · 首次 ${activePartner.firstBasisPoints / 100}%` : '该产品尚未设置合伙人规则'}</div>}

@@ -1,6 +1,9 @@
 const MarketPartner = require('../models/MarketPartner');
 const MarketPartnerRule = require('../models/MarketPartnerRule');
 const MarketPartnerAttribution = require('../models/MarketPartnerAttribution');
+const hasPromotion = rule => !!rule && !rule.disabled && (rule.firstBasisPoints > 0
+  || (rule.tierBasisPoints || []).some(value => value > 0)
+  || (rule.renewalBasisPoints || []).some(value => value.basisPoints > 0));
 
 async function activeRule(tenantId, productId, at = new Date(), partnerId = null) {
   const match = { tenantId, productId, status: 'active',
@@ -8,10 +11,11 @@ async function activeRule(tenantId, productId, at = new Date(), partnerId = null
   if (partnerId) {
     const personal = await MarketPartnerRule.findOne({ ...match, partnerId })
       .sort({ effectiveFrom: -1, version: -1 }).lean();
-    if (personal) return personal;
+    if (personal) return hasPromotion(personal) ? personal : null;
   }
-  return MarketPartnerRule.findOne({ ...match, partnerId: null })
+  const generic = await MarketPartnerRule.findOne({ ...match, partnerId: null })
     .sort({ effectiveFrom: -1, version: -1 }).lean();
+  return hasPromotion(generic) ? generic : null;
 }
 
 async function claim({ tenantId, patientId, productId, code, at = new Date() }) {
