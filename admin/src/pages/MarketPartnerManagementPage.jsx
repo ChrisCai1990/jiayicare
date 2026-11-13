@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { adminAPI } from '../api'
+import './partnerWorkspace.css'
 
 const ROLES = [['familyDoctor', '健康顾问'], ['nutritionist', '营养师'], ['healthManager', '健管专员'], ['medicalAssistant', '就医专员'], ['psychologist', '心理咨询师'], ['rehabSpecialist', '运动复健师'], ['specialist', '专科医师'], ['tcmDoctor', '中医师']]
-const inputStyle = { padding: '9px 10px', border: '1px solid #cbd8d1', borderRadius: 6, minWidth: 150 }
-const boxStyle = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
+const inputStyle = { padding: '10px 12px', border: '1px solid #d5e2d8', borderRadius: 10, minWidth: 150 }
+const boxStyle = { background: '#fff', border: '1px solid #dce9df', borderRadius: 18, padding: 22, marginBottom: 16, boxShadow: '0 5px 22px #23473508' }
 
 export default function MarketPartnerManagementPage({ view = 'operations' }) {
   const [searchParams] = useSearchParams()

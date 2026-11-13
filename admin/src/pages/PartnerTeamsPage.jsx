@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { adminAPI } from '../api'
+import './partnerWorkspace.css'
 
-const card = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
 const row = { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }
 const yuan = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
 const typeName = type => type === 'staff' ? '员工' : '市场合伙人'
@@ -65,8 +65,8 @@ export default function PartnerTeamsPage() {
       <div className="page-subtitle">员工和市场人员共用团队关系；推广、服务分别设置负责人收益</div></div>
       <Link className="btn" to="/partner-workbench/overview">打开业务工作台</Link></div>
     {message && <p role="status" style={{ color: message === '已保存' ? '#176b4d' : '#b42318' }}>{message}</p>}
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>新增负责人团队</h2>
+    <section className="partner-ui__card">
+      <h2>新增负责人团队</h2>
       <p style={{ color: '#667a6d' }}>员工或市场合伙人都可独立成为负责人。市场人员须先建立<Link to="/market-partners">合伙人档案</Link>。每个人同一时间只能独立负责一个团队，或作为成员归属一个团队。</p>
       <div style={row}>
         <select aria-label="负责人类型" className="form-input" value={leaderType} onChange={event => { setLeaderType(event.target.value); setLeaderId('') }}>
@@ -77,8 +77,8 @@ export default function PartnerTeamsPage() {
           onClick={() => run(() => adminAPI.createPartnerTeam({ leaderType, leaderId }))}>新增负责人</button>
       </div>
     </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>负责人团队（{teams.length}）</h2>
+    <section className="partner-ui__card">
+      <h2>负责人团队（{teams.length}）</h2>
       <select aria-label="筛选负责人" className="form-input" value={selectedLeader} onChange={event => setSelectedLeader(event.target.value)}
         style={{ maxWidth: 320, marginBottom: 12 }}><option value="">所有负责人</option>
         {leaderOptions.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
@@ -87,7 +87,7 @@ export default function PartnerTeamsPage() {
         const key = `${team.leaderType}:${team.leaderId}`
         const draft = memberDrafts[key] || { memberType: 'staff', memberId: '' }
         const members = relations.filter(item => `${item.leaderType}:${item.leaderId}` === key)
-        return <div key={team._id} style={{ borderTop: '1px solid #e5ebe7', padding: '14px 0' }}>
+        return <div key={team._id} className="partner-ui__members">
           <div style={row}><strong>{team.leaderName}（{typeName(team.leaderType)}负责人）</strong>
             <span>{members.length} 位成员</span>
             <button className="btn btn-sm" disabled={busy || members.length > 0}
@@ -107,8 +107,8 @@ export default function PartnerTeamsPage() {
         </div>
       })}
     </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>成员关系与负责人收益规则</h2>
+    <section className="partner-ui__card">
+      <h2>成员关系与负责人收益规则</h2>
       {!visible.length && <p>暂无生效成员关系</p>}
       {visible.map(relation => <div key={relation._id} style={{ borderTop: '1px solid #e5ebe7', padding: '14px 0' }}>
         <div style={row}><strong>{relation.leaderName}（{typeName(relation.leaderType)}）→ {relation.memberName}（{typeName(relation.memberType)}）</strong>
