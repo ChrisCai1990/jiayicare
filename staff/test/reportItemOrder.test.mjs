@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { insertReportItemBelow, orderReportItemsForReview, sameReviewSection } from '../src/utils/reportItemOrder.js'
+import { appendReportItemOnPage, insertReportItemBelow, orderReportItemsForReview, sameReviewSection } from '../src/utils/reportItemOrder.js'
+
+test('空白页手动新增检查项后立即出现在该页，并保留页序', () => {
+  const items = [{ name: '前页项目', sourcePage: 15 }, { name: '后页项目', sourcePage: 18 }]
+  const result = appendReportItemOnPage(items, 16, { name: '', itemType: 'imaging' })
+  assert.deepEqual(result.map(item => item.sourcePage), [15, 16, 18])
+  assert.equal(result[1].itemType, 'imaging')
+  assert.equal(items.length, 2)
+})
 
 test('补提栏目序号冲突时仍将血常规和尿常规分组展示', () => {
   const items = [
