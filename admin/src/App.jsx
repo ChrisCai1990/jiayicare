@@ -46,6 +46,7 @@ import DepartmentPage     from './pages/settings/DepartmentPage'
 import RolePage           from './pages/settings/RolePage'
 import EmployeePage       from './pages/settings/EmployeePage'
 import MemberSettingsPage from './pages/settings/MemberSettingsPage'
+import PersonCommissionRulesPage from './pages/PersonCommissionRulesPage'
 import ScoringConfigPage  from './pages/settings/ScoringConfigPage'
 import DailyCareConfigPage from './pages/settings/DailyCareConfigPage'
 import ReviewExperiencePage from './pages/settings/ReviewExperiencePage'
@@ -170,7 +171,7 @@ export default function App() {
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />
               <Route path="products"   element={<ProductsPage />} />
-              <Route path="commission-rules" element={<ProductsPage commissionMode />} />
+              <Route path="commission-rules" element={<PersonCommissionRulesPage />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="partners"   element={<PartnersPage />} />
               <Route path="market-partners" element={<MarketPartnerManagementPage />} />

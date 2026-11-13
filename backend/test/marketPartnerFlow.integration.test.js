@@ -78,6 +78,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const app = express();
     app.use(express.json());
     app.use('/api/admin/market-partners', require('../src/routes/marketPartnersAdmin'));
+    app.use('/api/admin/person-commission-rules', require('../src/routes/personCommissionRulesAdmin'));
     app.use('/api/market-partner', require('../src/routes/marketPartnerPortal'));
     app.use('/api/admin', require('../src/routes/admin'));
     app.use('/api/admin', require('../src/routes/settings'));
@@ -912,4 +913,32 @@ test('online and offline partner payments, renewals, refunds and team incentives
     await Order.collection.updateOne({ _id: managedOrder._id }, { $set: { refundedAmount: 1000 } });
     await require('../src/utils/teamIncentiveSettlement').syncOrder(await Order.findById(managedOrder._id));
     assert.equal((await TeamIncentive.findById(managedIncentive.body.data._id)).basisCents, 240000);
+
+    // 新入口按人员与类别批量设置；订单按付款时有效的员工版本和合伙人个人规则取值。
+    const personPrefix = '/api/admin/person-commission-rules';
+    const staffSave = await call(clerkId, 'POST', `${personPrefix}/staff`, {
+      staffId: String(plannerId), category: 'health', productIds: [String(productId)],
+      referrerRate: 10, fulfillerRate: 3 });
+    assert.equal(staffSave.status, 201, JSON.stringify(staffSave.body));
+    const personStaffOrder = await Order.create({ tenantId, user: patientId, serviceId: String(productId),
+      serviceName: '员工转介绍合成单', orderType: 'product', orderNo: 'SYNTHETIC-PERSON-1',
+      paymentStatus: 'paid', paymentMethod: 'wechat', paidAt: new Date(), paidAmount: 1000,
+      referrerId: plannerId });
+    await require('../src/utils/commissionSettlement').settleReferralCommission(personStaffOrder);
+    const personStaffCommission = await require('../src/models/Commission').findOne({ orderId: personStaffOrder._id,
+      role: 'referrer' }).lean();
+    assert.equal(personStaffCommission.commissionAmount, 100);
+    assert.equal(String(personStaffCommission.staffCommissionRuleId), String(staffSave.body.data._id));
+    const newerStaff = await call(clerkId, 'POST', `${personPrefix}/staff`, {
+      staffId: String(plannerId), category: 'health', productIds: [String(productId)],
+      referrerRate: 0, fulfillerRate: 0 });
+    assert.equal(newerStaff.status, 201, JSON.stringify(newerStaff.body));
+    assert.equal((await require('../src/utils/staffCommissionRule').forOrder(personStaffOrder, plannerId)).sourceRuleVersion, 1);
+    const partnerSave = await call(clerkId, 'POST', `${personPrefix}/partners`, {
+      partnerId: String(profile._id), productLine: 'medicalAssist', category: 'health',
+      productIds: [String(productId)], kind: 'first', firstPercent: 12, renewals: [] });
+    assert.equal(partnerSave.status, 201, JSON.stringify(partnerSave.body));
+    const active = await require('../src/utils/marketPartnerAttribution').activeRule(tenantId, productId,
+      new Date(), profile._id);
+    assert.equal(String(active._id), String(partnerSave.body.data[0]._id));
   });

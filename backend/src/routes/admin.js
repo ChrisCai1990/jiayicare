@@ -1062,10 +1062,16 @@ router.patch('/commissions/:id/attribution', adminAuth, async (req, res) => {
     const product = /^[a-f0-9]{24}$/i.test(order.serviceId) ? await Product.findById(order.serviceId) : null;
     rule = product?.performanceRule || (await Service.findOne({ serviceId: order.serviceId }))?.performanceRule;
   }
-  const amounts = staffId ? require('../utils/commissionAttribution').calculateAttribution({ ...commission.toObject(), orderAmount: commission.originalOrderAmount ?? commission.orderAmount }, staff, rule) : { commissionAmount: commission.commissionAmount, commissionRate: commission.commissionRate };
+  const personRule = staffId && commission.role === 'referrer'
+    ? await require('../utils/staffCommissionRule').forOrder(order, staffId) : null;
+  const amounts = staffId ? require('../utils/commissionAttribution').calculateAttribution(
+    { ...commission.toObject(), orderAmount: commission.originalOrderAmount ?? commission.orderAmount },
+    staff, rule, personRule) : { commissionAmount: commission.commissionAmount, commissionRate: commission.commissionRate };
   const cancelled = !staffId || amounts.commissionAmount <= 0;
   const updated = await Commission.findOneAndUpdate({ _id: commission._id, status: commission.status, updatedAt: commission.updatedAt }, {
-    $set: { ...(staffId ? { staffId } : {}), ...amounts, originalOrderAmount: commission.originalOrderAmount ?? commission.orderAmount, originalCommissionAmount: amounts.commissionAmount, status: cancelled ? 'cancelled' : 'pending',
+    $set: { ...(staffId ? { staffId } : {}), ...amounts,
+      staffCommissionRuleId: personRule?.sourceRuleId || null, staffCommissionRuleVersion: personRule?.sourceRuleVersion || null,
+      originalOrderAmount: commission.originalOrderAmount ?? commission.orderAmount, originalCommissionAmount: amounts.commissionAmount, status: cancelled ? 'cancelled' : 'pending',
       cancellationReason: cancelled ? (!staffId ? '人工确认无转介绍人：' : '新归属人员无佣金：') + reason.trim() : '', cancelledAt: cancelled ? new Date() : null },
     $push: { attributionHistory: { previousStaffId: commission.staffId, staffId: staffId || null, previousAmount: commission.commissionAmount, amount: cancelled ? 0 : amounts.commissionAmount, changedBy: req.admin._id, changedAt: new Date(), reason: reason.trim() } },
   }, { new: true });

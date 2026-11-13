@@ -339,7 +339,9 @@ export default function MarketPartnerManagementPage() {
         {teamIncentives.map(item => <tr key={item._id}><td>{item.orderId?.orderNo || item.orderId}{item.serviceItemKey && <><br /><small>子项 {item.serviceItemKey}</small></>}</td><td>{item.staffId?.name || item.staffId}</td><td>{ROLES.find(([value]) => value === item.role)?.[1] || item.role}</td><td>¥{(item.amountCents / 100).toFixed(2)}<br /><small>已发 ¥{((item.paidCents || 0) / 100).toFixed(2)}／追回 ¥{((item.recoveredCents || 0) / 100).toFixed(2)}</small></td><td>{item.status}</td><td>{item.status === 'pending' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.confirmTeamIncentive(item._id))}>审核确认</button>}{item.status === 'confirmed' && <div style={{ display: 'flex', gap: 5 }}><input style={inputStyle} aria-label="团队激励转账凭证号" placeholder="已转账凭证号" value={teamPaymentReferences[item._id] || ''} onChange={e => setTeamPaymentReferences(current => ({ ...current, [item._id]: e.target.value }))} /><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.payTeamIncentive(item._id, teamPaymentReferences[item._id]))}>确认已转账</button></div>}{item.status === 'reversal_due' && <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}><input style={{ ...inputStyle, width: 95 }} aria-label="团队已追回金额元" type="number" min="0.01" step="0.01" placeholder="追回 元" value={teamRecoveries[item._id]?.amountYuan || ''} onChange={e => setTeamRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], amountYuan: e.target.value } }))} /><input style={inputStyle} aria-label="团队追回凭证号" placeholder="追回凭证号" value={teamRecoveries[item._id]?.reference || ''} onChange={e => setTeamRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], reference: e.target.value } }))} /><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.recoverTeamIncentive(item._id, { amountCents: Math.round(Number(teamRecoveries[item._id]?.amountYuan) * 100), recoveryReference: teamRecoveries[item._id]?.reference }))}>确认已追回</button></div>}</td></tr>)}
       </tbody></table></div>
     </section>
-    <section style={boxStyle}>
+    <details style={boxStyle}>
+      <summary style={{ fontWeight: 600, cursor: 'pointer' }}>历史逐商品佣金规则（兼容旧配置）</summary>
+      <p>新的按人员设置入口：<Link to="/commission-rules">佣金规则</Link></p>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人佣金规则</h2>
       <p style={{ color: '#667a6d' }}>先保存草稿，检查产品、比例与生效时间后再发布。旧订单沿用原规则版本。</p>
       <p style={{ color: '#667a6d' }}>普通产品与组合拆解在 <Link to="/products">Admin 产品库</Link> 修改；365 会员服务包在 <Link to="/settings/members">会员设置 → 服务包</Link> 修改。下面只调整相应的推广佣金规则。</p>
@@ -377,7 +379,7 @@ export default function MarketPartnerManagementPage() {
         <button className="btn btn-primary" disabled={busy}>计算留存</button>
       </form>
       {previewResult && <p style={{ marginBottom: 0 }}>合伙人佣金 ¥{(previewResult.totalCents / 100).toFixed(2)}；企业预计留存 {previewResult.retention ? `¥${(previewResult.retention.retainedCents / 100).toFixed(2)}（${(previewResult.retention.retentionBasisPoints / 100).toFixed(2)}%）` : '成本不全，请人工复核'}{previewResult.retention?.belowFloor && '；低于本产品留存底线，请复核'}</p>}
-    </section>
+    </details>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>线下收款复核</h2>
       <p style={{ color: '#667a6d' }}>订单须先走原有线下收款登记。提交收款凭据后，由另一位超级管理员复核；通过后才计提佣金。</p>

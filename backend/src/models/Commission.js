@@ -42,6 +42,8 @@ const commissionSchema = new mongoose.Schema({
   serviceItemKey: { type: String, default: '' },
   serviceItemName: { type: String, default: '' },
   calculationType: { type: String, enum: ['', 'percentage', 'fixedAmount'], default: '' },
+  staffCommissionRuleId: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffCommissionRule', default: null },
+  staffCommissionRuleVersion: { type: Number, default: null },
 }, { timestamps: true });
 
 commissionSchema.index({ staffId: 1, createdAt: -1 });

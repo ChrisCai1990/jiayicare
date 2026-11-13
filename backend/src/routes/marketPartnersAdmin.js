@@ -299,7 +299,7 @@ router.post('/lead-events', async (req, res) => {
     ]);
     if (!patient || !product || !partner)
       return res.status(404).json({ success: false, message: '本机构客户、商品或合伙人不存在' });
-    const rule = await require('../utils/marketPartnerAttribution').activeRule(tenant(req), product._id);
+    const rule = await require('../utils/marketPartnerAttribution').activeRule(tenant(req), product._id, new Date(), partner._id);
     if (!rule || rule.productLine !== partner.productLine)
       return res.status(409).json({ success: false, message: '该合伙人未获此商品授权' });
     const row = await MarketPartnerLeadEvent.create({ tenantId: tenant(req),
@@ -448,7 +448,10 @@ router.post('/offline-orders', async (req, res) => {
       return res.status(409).json({ success: false, message: '合同金额须与当前商品规格价格一致，请核对' });
     if (await Order.exists({ tenantId: tenant(req), marketPartnerContractReference: contractReference }))
       return res.status(409).json({ success: false, message: '该合同编号已有订单' });
-    const applicableRule = await require('../utils/marketPartnerAttribution').activeRule(tenant(req), product._id);
+    const codePartner = await MarketPartner.findOne({ tenantId: tenant(req), referralCode: code,
+      status: 'active' }).select('_id').lean();
+    const applicableRule = await require('../utils/marketPartnerAttribution').activeRule(tenant(req), product._id,
+      new Date(), codePartner?._id);
     if (applicableRule?.productLine === 'consumer365')
       return res.status(409).json({ success: false, message: '365 会员须走商城下单' });
     const match = await require('../utils/marketPartnerAttribution').claim({ tenantId: tenant(req),
@@ -710,7 +713,7 @@ router.patch('/rules/:id/publish', async (req, res) => {
   try {
     const row = await MarketPartnerRule.findOne({ _id: req.params.id, tenantId: tenant(req), status: 'draft' });
     if (!row) return res.status(404).json({ success: false, message: '草稿规则不存在' });
-    const overlap = await MarketPartnerRule.exists({ tenantId: tenant(req), productId: row.productId,
+    const overlap = await MarketPartnerRule.exists({ tenantId: tenant(req), productId: row.productId, partnerId: row.partnerId || null,
       status: 'active', effectiveFrom: { $lt: row.effectiveUntil || new Date('9999-12-31') },
       $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: row.effectiveFrom } }] });
     if (overlap) return res.status(409).json({ success: false, message: '与已生效规则时间重叠，请先结束旧规则' });

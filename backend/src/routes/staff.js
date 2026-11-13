@@ -7946,7 +7946,9 @@ router.post('/patients/:id/offline-orders', staffAuth, checkPermission('products
     let contribution = null;
     {
       const attribution = require('../utils/marketPartnerAttribution');
-      const rule = await attribution.activeRule(tenantId, product._id);
+      const codePartner = partnerCode ? await require('../models/MarketPartner').findOne({ tenantId,
+        referralCode: String(partnerCode).trim().toUpperCase(), status: 'active' }).select('_id').lean() : null;
+      const rule = await attribution.activeRule(tenantId, product._id, new Date(), codePartner?._id);
       if (rule?.productLine === 'consumer365')
         return res.status(409).json({ success: false, message: '365 会员须走商城下单' });
       if (rule?.kind === 'annual' && !contractReference)
