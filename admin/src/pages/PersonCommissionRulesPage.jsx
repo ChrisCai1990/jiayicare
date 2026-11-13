@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { adminAPI } from '../api'
 
 const card = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
@@ -12,7 +12,8 @@ const lineName = { consumer365: '365会员', annualAdvisor: '年度顾问', prem
   annual: '年度管理板块', consultation: '咨询板块' }
 
 export default function PersonCommissionRulesPage() {
-  const [tab, setTab] = useState('staff')
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState(searchParams.get('tab') === 'partner' ? 'partner' : 'staff')
   const [staff, setStaff] = useState([])
   const [partners, setPartners] = useState([])
   const [products, setProducts] = useState([])
@@ -124,7 +125,7 @@ export default function PersonCommissionRulesPage() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button className={tab === 'staff' ? 'btn btn-primary' : 'btn btn-ghost'} onClick={() => changeTab('staff')}>员工</button>
         <button className={tab === 'partner' ? 'btn btn-primary' : 'btn btn-ghost'} onClick={() => changeTab('partner')}>市场合伙人</button>
-        {tab === 'partner' && <Link className="btn btn-ghost" to="/market-partners">合伙人资料与结算</Link>}
+        {tab === 'partner' && <Link className="btn btn-ghost" to="/market-partner-operations">合伙人资料与结算</Link>}
       </div>
       {loading ? <p>加载中...</p> : <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>

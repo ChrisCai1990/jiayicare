@@ -16,7 +16,7 @@ const inputStyle = { padding: '9px 10px', border: '1px solid #cbd8d1', borderRad
 const boxStyle = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
 const toBasisPoints = value => Math.round(Number(value) * 100)
 
-export default function MarketPartnerManagementPage() {
+export default function MarketPartnerManagementPage({ view = 'operations' }) {
   const [searchParams] = useSearchParams()
   const orderFromUrl = searchParams.get('order')
   const [partners, setPartners] = useState([])
@@ -199,7 +199,15 @@ export default function MarketPartnerManagementPage() {
   const yuan = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
 
   return <div style={{ maxWidth: 1100 }}>
-    <div className="page-header"><div><div className="page-title">市场合伙人</div><div className="page-subtitle">审核合伙人、按产品配置佣金和服务团队激励</div></div></div>
+    <div className="page-header"><div><div className="page-title">{view === 'rules' ? '市场合伙人规则' : '合伙人业务登记与核算'}</div><div className="page-subtitle">{view === 'rules' ? '设置佣金和服务团队激励规则' : '管理合伙人资料、登记沟通与收款、审核和核算订单'}</div></div></div>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      <Link className={view === 'rules' ? 'btn btn-primary' : 'btn btn-ghost'} to="/market-partners">规则设置</Link>
+      <Link className={view === 'operations' ? 'btn btn-primary' : 'btn btn-ghost'} to="/market-partner-operations">业务登记与核算</Link>
+      {view === 'rules' && <Link className="btn btn-ghost" to="/commission-rules?tab=partner">按合伙人设置个人佣金</Link>}
+    </div>
+    {error && <div role="alert" style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
+    {notice && <div style={{ color: '#176b4d', marginBottom: 12 }}>{notice}</div>}
+    {view === 'operations' && <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>订单一页核算</h2>
       <p style={{ color: '#667a6d' }}>按同一订单查看客户、产品、实收、合伙人推广费和服务团队绩效。预估与已发分开显示；履约成本和交易成本未录入时不计算最终毛利。</p>
@@ -227,8 +235,6 @@ export default function MarketPartnerManagementPage() {
         {teamRevenue.map(item=><tr key={`${item.businessType}:${item.teamRole}:${item.childProductId || item.serviceItemKey}`}><td>{item.businessType === 'enterprise' ? '企业资源' : item.businessType === 'product' ? '产品／检测' : '管理服务'}</td><td>{item.businessType === 'enterprise' ? '企业资源' : ROLES.find(([role])=>role===item.teamRole)?.[1] || item.teamRole}</td><td>{item.name}</td><td>{item.orderCount}</td><td>{yuan(item.amountCents)}</td></tr>)}
       </tbody></table> : <div>暂无已付款且完成业务归属配置的订单</div>}
     </section>
-    {error && <div role="alert" style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
-    {notice && <div style={{ color: '#176b4d', marginBottom: 12 }}>{notice}</div>}
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人</h2>
       <form id="market-partner-profile-form" onSubmit={submitPartner} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
@@ -344,6 +350,8 @@ export default function MarketPartnerManagementPage() {
         {teamIncentives.map(item => <tr key={item._id}><td>{item.orderId?.orderNo || item.orderId}{item.serviceItemKey && <><br /><small>子项 {item.serviceItemKey}</small></>}</td><td>{item.staffId?.name || item.staffId}</td><td>{ROLES.find(([value]) => value === item.role)?.[1] || item.role}</td><td>¥{(item.amountCents / 100).toFixed(2)}<br /><small>已发 ¥{((item.paidCents || 0) / 100).toFixed(2)}／追回 ¥{((item.recoveredCents || 0) / 100).toFixed(2)}</small></td><td>{item.status}</td><td>{item.status === 'pending' && <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.confirmTeamIncentive(item._id))}>审核确认</button>}{item.status === 'confirmed' && <div style={{ display: 'flex', gap: 5 }}><input style={inputStyle} aria-label="团队激励转账凭证号" placeholder="已转账凭证号" value={teamPaymentReferences[item._id] || ''} onChange={e => setTeamPaymentReferences(current => ({ ...current, [item._id]: e.target.value }))} /><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.payTeamIncentive(item._id, teamPaymentReferences[item._id]))}>确认已转账</button></div>}{item.status === 'reversal_due' && <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}><input style={{ ...inputStyle, width: 95 }} aria-label="团队已追回金额元" type="number" min="0.01" step="0.01" placeholder="追回 元" value={teamRecoveries[item._id]?.amountYuan || ''} onChange={e => setTeamRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], amountYuan: e.target.value } }))} /><input style={inputStyle} aria-label="团队追回凭证号" placeholder="追回凭证号" value={teamRecoveries[item._id]?.reference || ''} onChange={e => setTeamRecoveries(current => ({ ...current, [item._id]: { ...current[item._id], reference: e.target.value } }))} /><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.recoverTeamIncentive(item._id, { amountCents: Math.round(Number(teamRecoveries[item._id]?.amountYuan) * 100), recoveryReference: teamRecoveries[item._id]?.reference }))}>确认已追回</button></div>}</td></tr>)}
       </tbody></table></div>
     </section>
+    </>}
+    {view === 'rules' && <>
     <details style={boxStyle}>
       <summary style={{ fontWeight: 600, cursor: 'pointer' }}>历史逐商品佣金规则（兼容旧配置）</summary>
       <p>新的按人员设置入口：<Link to="/commission-rules">佣金规则</Link></p>
@@ -385,6 +393,8 @@ export default function MarketPartnerManagementPage() {
       </form>
       {previewResult && <p style={{ marginBottom: 0 }}>合伙人佣金 ¥{(previewResult.totalCents / 100).toFixed(2)}；企业预计留存 {previewResult.retention ? `¥${(previewResult.retention.retainedCents / 100).toFixed(2)}（${(previewResult.retention.retentionBasisPoints / 100).toFixed(2)}%）` : '成本不全，请人工复核'}{previewResult.retention?.belowFloor && '；低于本产品留存底线，请复核'}</p>}
     </details>
+    </>}
+    {view === 'operations' && <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>线下收款复核</h2>
       <p style={{ color: '#667a6d' }}>订单须先走原有线下收款登记。提交收款凭据后，由另一位超级管理员复核；通过后才计提佣金。</p>
@@ -400,6 +410,8 @@ export default function MarketPartnerManagementPage() {
         {receipts.map(item => <tr key={item._id}><td>{item.orderId?.orderNo || item.orderId}</td><td>¥{(item.amountCents / 100).toFixed(2)}</td><td>{item.reference}</td><td>{item.status}</td><td>{item.status === 'submitted' && <><button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerReceipt(item._id, { status: 'approved' }))}>复核通过</button> <button className="btn btn-sm" disabled={busy} onClick={() => run(() => adminAPI.reviewMarketPartnerReceipt(item._id, { status: 'rejected' }))}>退回</button></>}</td></tr>)}
       </tbody></table></div>
     </section>
+    </>}
+    {view === 'rules' && <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>服务团队激励规则</h2>
       <p style={{ color: '#667a6d' }}>管理服务可按母产品设置岗位规则，实际计提只取已核销服务项目的净实收份额；关联商品仍按子产品规则。团队业务归属与个人服务费分别核算。</p>
@@ -423,6 +435,8 @@ export default function MarketPartnerManagementPage() {
         </td></tr>)}
       </tbody></table></div>
     </section>
+    </>}
+    {view === 'operations' && <>
     <section style={boxStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人佣金核对</h2>
       <p style={{ color: '#667a6d' }}>这里只登记已经完成的转账；系统不会自动向合伙人付款。首笔与尾款上限由后端核验。</p>
@@ -442,5 +456,6 @@ export default function MarketPartnerManagementPage() {
         </tr>)}
       </tbody></table></div>
     </section>
+    </>}
   </div>
 }
